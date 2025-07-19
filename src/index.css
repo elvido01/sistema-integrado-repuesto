@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --background: 240 10% 97%;
+  --foreground: 240 5% 20%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 240 5% 20%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 5% 20%;
+
+  --primary: 222 84% 30%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 35 92% 54%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 240 5% 90%;
+  --muted-foreground: 240 4% 46%;
+
+  --accent: 240 5% 90%;
+  --accent-foreground: 240 6% 10%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 240 6% 88%;
+  --input: 240 6% 88%;
+  --ring: 222 84% 30%;
+
+  --radius: 8px;
+}
+
+.dark {
+  --background: 231 14% 11%;
+  --foreground: 0 0% 98%;
+
+  --card: 231 14% 11%;
+  --card-foreground: 0 0% 98%;
+
+  --popover: 231 14% 11%;
+  --popover-foreground: 0 0% 98%;
+
+  --primary: 222 84% 40%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 35 92% 54%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 240 4% 16%;
+  --muted-foreground: 240 5% 65%;
+
+  --accent: 240 4% 16%;
+  --accent-foreground: 0 0% 98%;
+
+  --destructive: 0 63% 31%;
+  --destructive-foreground: 0 0% 98%;
+
+  --border: 240 4% 16%;
+  --input: 240 4% 16%;
+  --ring: 222 84% 40%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-morla-gray-light text-morla-gray-dark;
+    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg text-sm font-semibold shadow-micro transition-all duration-150 hover:shadow-micro-hover focus:outline-none focus:ring-2 focus:ring-offset-2;
+}
+
+.btn-primary {
+  @apply bg-morla-blue text-white hover:bg-opacity-90 focus:ring-morla-blue;
+}
+
+.btn-secondary {
+  @apply bg-gradient-to-b from-morla-gold-start to-morla-gold-end text-white hover:opacity-90 focus:ring-morla-gold-start;
+}
+
+.gold-gradient-text {
+    @apply bg-gradient-to-b from-morla-gold-start to-morla-gold-end bg-clip-text text-transparent;
+}
