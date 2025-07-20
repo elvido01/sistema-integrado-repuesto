@@ -1,21 +1,21 @@
 ## Pages
-- [Actualizar Ubicación - Repuestos Morla](/updatelocation): Módulo para actualizar la ubicación de los productos en el inventario.
+- [Actualizar Ubicación - Repuestos Morla](/actualizar-ubicacion): Módulo para actualizar la ubicación de los productos en el inventario.
 - [Clientes - Repuestos Morla](/clientes): No description available
 - [Compra de Mercancía - Repuestos Morla](/compras): No description available
-- [Cotizaciones - Repuestos Morla](/cotizacion): No description available
+- [Cotizaciones - Repuestos Morla](/cotizaciones): No description available
 - [Cuentas por Pagar - Repuestos Morla](/cuentasporpagar): No description available
 - [Devoluciones - Repuestos Morla](/devoluciones): No description available
-- [Entrada de Mercancía - Repuestos Morla](/entradamercancia): No description available
+- [Entrada de Mercancía - Repuestos Morla](/entrada-mercancia): No description available
 - [Gestión de Usuarios - Repuestos Morla](/usuarios): No description available
-- [Inicio - Repuestos Morla](/home): Dashboard principal del Sistema Integrado de Información Financiera de Repuestos Morla.
-- [Lista de Transacciones Diarias - Repuestos Morla](/reportetransaccionesdiarias): No description available
-- [Maestro de Artículos - Repuestos Morla](/products): No description available
-- [Orden de Compra - Repuestos Morla](/ordencompra): No description available
-- [Pago a Suplidores - Repuestos Morla](/pagosuplidores): No description available
-- [Pago de Comisiones - Repuestos Morla](/pagocomisiones): No description available
+- [Inicio - Repuestos Morla](/inicio): Dashboard principal del Sistema Integrado de Información Financiera de Repuestos Morla.
+- [Lista de Transacciones Diarias - Repuestos Morla](/reporte-transacciones-diarias): No description available
+- [Maestro de Artículos - Repuestos Morla](/mercancias): No description available
+- [Orden de Compra - Repuestos Morla](/orden-compra): No description available
+- [Pago a Suplidores - Repuestos Morla](/pago-suplidores): No description available
+- [Pago de Comisiones - Repuestos Morla](/pago-comisiones-vendedor): No description available
 - [Pedidos - Repuestos Morla](/pedidos): No description available
-- [Recibo de Ingreso - Repuestos Morla](/reciboingreso): No description available
-- [Reporte de Compras - Repuestos Morla](/reportecompras): No description available
-- [Salida de Mercancía - Repuestos Morla](/salidamercancia): No description available
+- [Recibo de Ingreso - Repuestos Morla](/recibo-ingreso): No description available
+- [Reporte de Compras - Repuestos Morla](/reporte-compras): No description available
+- [Salida de Mercancía - Repuestos Morla](/salida-mercancia): No description available
 - [Suplidores - Repuestos Morla](/suplidores): No description available
 - [Ventas - Repuestos Morla](/ventas): No description available
