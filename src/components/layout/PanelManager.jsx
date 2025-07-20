@@ -15,9 +15,9 @@ const PanelManager = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
-      <div className="flex-shrink-0 border-b border-gray-200">
-        <div className="flex items-center space-x-1 p-1 bg-gray-100">
+    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
+      <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center space-x-1 p-1 bg-gray-100 dark:bg-gray-800">
           {panels.map((panel) => (
             <motion.div
               key={panel.id}
@@ -33,15 +33,15 @@ const PanelManager = () => {
                 className={cn(
                   'h-8 px-3 text-xs flex items-center',
                   activePanel === panel.id
-                    ? 'bg-white shadow-sm'
-                    : 'hover:bg-gray-200'
+                    ? 'bg-white dark:bg-gray-700 shadow-sm'
+                    : 'hover:bg-gray-200 dark:hover:bg-gray-700'
                 )}
               >
                 {getIcon(panel)}
                 {panel.name}
                 {panel.id !== 'inicio' && (
                   <X
-                    className="w-3 h-3 ml-2 text-gray-500 hover:text-red-500"
+                    className="w-3 h-3 ml-2 text-gray-500 dark:text-gray-400 hover:text-red-500"
                     onClick={(e) => {
                       e.stopPropagation();
                       closePanel(panel.id);

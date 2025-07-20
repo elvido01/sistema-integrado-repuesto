@@ -22,15 +22,15 @@ const LoginForm = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-morla-blue to-blue-800">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-morla-blue to-blue-800 dark:from-gray-800 dark:to-gray-900">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-8 w-full max-w-md"
       >
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-morla-blue mb-2">Repuestos Morla</h1>
-          <p className="text-gray-600">Sistema Integrado de Información</p>
+          <p className="text-gray-600 dark:text-gray-300">Sistema Integrado de Información</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
