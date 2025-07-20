@@ -44,27 +44,27 @@ export const generateTotals = (doc, totals, finalY) => {
   const totalsY = finalY + 20;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  
+
+  if (typeof totals.yOffset !== 'number') {
+    totals.yOffset = 0;
+  }
+
   const addTotalRow = (label, value, isBold = false, isLarge = false) => {
-    const yOffset = (isLarge ? 5 : 0);
     doc.setFontSize(isLarge ? 12 : 10);
     doc.setFont('helvetica', isBold ? 'bold' : 'normal');
-    doc.text(label, totalsX, totalsY + yOffset);
-    doc.text(value, PAGE_WIDTH - MARGIN, totalsY + yOffset, { align: 'right' });
+    doc.text(label, totalsX, totalsY + totals.yOffset);
+    doc.text(value, PAGE_WIDTH - MARGIN, totalsY + totals.yOffset, { align: 'right' });
+    totals.yOffset += isLarge ? 20 : 15;
   };
 
   addTotalRow("Sub-Total:", totals.subtotal.toFixed(2));
-  totals.yOffset += 15;
   addTotalRow("Descuento:", `(${totals.descuento.toFixed(2)})`);
-  totals.yOffset += 15;
   addTotalRow("ITBIS:", totals.itbis.toFixed(2));
-  totals.yOffset += 15;
 
   doc.setLineWidth(1.5);
   doc.line(totalsX, totalsY + totals.yOffset - 5, PAGE_WIDTH - MARGIN, totalsY + totals.yOffset - 5);
-  
+
   addTotalRow("TOTAL:", totals.total.toFixed(2), true, true);
-  totals.yOffset += 20;
 
   return totalsY + totals.yOffset;
 };
