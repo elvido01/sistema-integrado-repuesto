@@ -27,6 +27,26 @@ const EXTRACTION_REGEX = {
   description: /<meta\s+name=["']description["']\s+content=["'](.*?)["']/i
 };
 
+function extractPanelRoutes(panelContextPath) {
+  if (!fs.existsSync(panelContextPath)) return new Map();
+
+  try {
+    const content = fs.readFileSync(panelContextPath, 'utf8');
+    const routes = new Map();
+
+    const mappingRegex = /['"]([\w-]+)['"]\s*:\s*\{[^}]*component:\s*(\w+)/g;
+    for (const match of content.matchAll(mappingRegex)) {
+      const id = match[1];
+      const componentName = match[2];
+      routes.set(componentName, `/${id}`);
+    }
+
+    return routes;
+  } catch {
+    return new Map();
+  }
+}
+
 function cleanContent(content) {
   return content
     .replace(CLEAN_CONTENT_REGEX.comments, '')
@@ -103,8 +123,8 @@ function extractHelmetData(content, filePath, routes) {
   const description = cleanText(descMatch?.[1]);
   
   const fileName = path.basename(filePath, path.extname(filePath));
-  const url = routes.length && routes.has(fileName) 
-    ? routes.get(fileName) 
+  const url = routes instanceof Map && routes.has(fileName)
+    ? routes.get(fileName)
     : generateFallbackUrl(fileName);
   
   return {
@@ -147,13 +167,16 @@ function processPageFile(filePath, routes) {
 function main() {
   const pagesDir = path.join(process.cwd(), 'src', 'pages');
   const appJsxPath = path.join(process.cwd(), 'src', 'App.jsx');
+  const panelContextPath = path.join(process.cwd(), 'src', 'contexts', 'PanelContext.jsx');
 
   let pages = [];
-  
+
   if (!fs.existsSync(pagesDir)) {
     pages.push(processPageFile(appJsxPath, []));
   } else {
-    const routes = extractRoutes(appJsxPath);
+    const appRoutes = extractRoutes(appJsxPath);
+    const panelRoutes = extractPanelRoutes(panelContextPath);
+    const routes = new Map([...appRoutes, ...panelRoutes]);
     const reactFiles = findReactFiles(pagesDir);
 
     pages = reactFiles
