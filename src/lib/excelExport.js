@@ -1,9 +1,8 @@
 import ExcelJS from 'exceljs';
 
 export const exportToExcel = async (data, headers, fileName) => {
-  const ExcelJS = window.ExcelJS;
   if (!ExcelJS) {
-    console.error("ExcelJS library not found on window object.");
+    console.error("ExcelJS library not found.");
     return;
   }
   const workbook = new ExcelJS.Workbook();
