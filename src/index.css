@@ -71,7 +71,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-morla-gray-light text-morla-gray-dark;
+    @apply bg-morla-gray-light text-morla-gray-dark dark:bg-gray-900 dark:text-gray-100;
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   }
 }
