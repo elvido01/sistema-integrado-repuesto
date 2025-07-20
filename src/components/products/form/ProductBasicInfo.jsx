@@ -14,7 +14,11 @@ import { useCatalogData } from '@/hooks/useSupabase';
 
 const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented }) => {
   const { tipos, marcas, modelos, proveedores, almacenes, fetchCatalogs } = useCatalogData();
-  const [modalState, setModalState] = useState({ isOpen: false, catalog: null });
+  const [isTipoModalOpen, setIsTipoModalOpen] = useState(false);
+  const [isMarcaModalOpen, setIsMarcaModalOpen] = useState(false);
+  const [isModeloModalOpen, setIsModeloModalOpen] = useState(false);
+  const [isProveedorModalOpen, setIsProveedorModalOpen] = useState(false);
+  const [isUbicacionModalOpen, setIsUbicacionModalOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
   const handleInputChange = (e) => {
@@ -43,13 +47,6 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
     setFormData(prev => ({...prev, [id]: parseInt(value) || 0 }));
   }
 
-  const openCatalogModal = (catalog) => {
-    setModalState({ isOpen: true, catalog });
-  };
-
-  const closeCatalogModal = () => {
-    setModalState({ isOpen: false, catalog: null });
-  };
   
   const handleSaveSuccess = () => {
     fetchCatalogs();
@@ -132,7 +129,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                     </ScrollArea>
                   </SelectContent>
                 </Select>
-                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => openCatalogModal('tipos')}><MoreHorizontal className="w-4 h-4" /></Button>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setIsTipoModalOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
               </div>
             </div>
             <div>
@@ -149,7 +146,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                     </ScrollArea>
                   </SelectContent>
                 </Select>
-                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => openCatalogModal('marcas')}><MoreHorizontal className="w-4 h-4" /></Button>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setIsMarcaModalOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
               </div>
             </div>
             <div>
@@ -166,7 +163,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                     </ScrollArea>
                   </SelectContent>
                 </Select>
-                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => openCatalogModal('modelos')} disabled={!formData.marca_id}><MoreHorizontal className="w-4 h-4" /></Button>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setIsModeloModalOpen(true)} disabled={!formData.marca_id}><MoreHorizontal className="w-4 h-4" /></Button>
               </div>
             </div>
             <div>
@@ -183,7 +180,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                     </ScrollArea>
                   </SelectContent>
                 </Select>
-                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => openCatalogModal('proveedores')}><MoreHorizontal className="w-4 h-4" /></Button>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setIsProveedorModalOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
               </div>
             </div>
             <div>
@@ -200,7 +197,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                     </ScrollArea>
                   </SelectContent>
                 </Select>
-                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => openCatalogModal('ubicaciones')}><MoreHorizontal className="w-4 h-4" /></Button>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setIsUbicacionModalOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
               </div>
             </div>
             <div>
@@ -273,14 +270,36 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
           </div>
         </RadioGroup>
       </div>
-      {modalState.isOpen && (
-        <CatalogManagementModal
-          isOpen={modalState.isOpen}
-          onClose={closeCatalogModal}
-          config={catalogConfig[modalState.catalog]}
-          onSaveSuccess={handleSaveSuccess}
-        />
-      )}
+      <CatalogManagementModal
+        isOpen={isTipoModalOpen}
+        onClose={() => setIsTipoModalOpen(false)}
+        config={catalogConfig.tipos}
+        onSaveSuccess={handleSaveSuccess}
+      />
+      <CatalogManagementModal
+        isOpen={isMarcaModalOpen}
+        onClose={() => setIsMarcaModalOpen(false)}
+        config={catalogConfig.marcas}
+        onSaveSuccess={handleSaveSuccess}
+      />
+      <CatalogManagementModal
+        isOpen={isModeloModalOpen}
+        onClose={() => setIsModeloModalOpen(false)}
+        config={catalogConfig.modelos}
+        onSaveSuccess={handleSaveSuccess}
+      />
+      <CatalogManagementModal
+        isOpen={isProveedorModalOpen}
+        onClose={() => setIsProveedorModalOpen(false)}
+        config={catalogConfig.proveedores}
+        onSaveSuccess={handleSaveSuccess}
+      />
+      <CatalogManagementModal
+        isOpen={isUbicacionModalOpen}
+        onClose={() => setIsUbicacionModalOpen(false)}
+        config={catalogConfig.ubicaciones}
+        onSaveSuccess={handleSaveSuccess}
+      />
       <ProductSearchModal
         isOpen={isSearchModalOpen}
         onClose={() => setIsSearchModalOpen(false)}
