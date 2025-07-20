@@ -188,7 +188,7 @@ const EntradaMercanciaPage = () => {
       
       toast({ title: 'Éxito', description: `Entrada ${entrada.numero} guardada y existencia actualizada.` });
       
-      //TODO: Implementar impresion de PDF si entrada.imprimir es true
+      //TODO: Implementar impresión de PDF si entrada.imprimir es true
 
       resetForm();
 
