@@ -207,7 +207,7 @@ const ProductsPage = () => {
         setLoading(true);
         const { data, error } = await supabase
             .from('productos')
-            .select('*, presentaciones(*)')
+            .select('*, presentaciones(*), tipo:tipos_producto(id), marca:marcas(id), modelo:modelos(id), suplidor:proveedores(id)')
             .eq('id', product.id)
             .single();
         setLoading(false);
@@ -363,7 +363,7 @@ const ProductsPage = () => {
       {/* Fin del modal principal */}
       
       <ChangeProductCodeModal
-        isOpen={isChangeCodeModalOpen}
+        isOpen={isChangeCodeOpen}
         onClose={() => setIsChangeCodeModalOpen(false)}
         product={selectedProduct}
         onCodeChanged={refreshProducts}
