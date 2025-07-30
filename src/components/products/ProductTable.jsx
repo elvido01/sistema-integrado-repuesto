@@ -42,13 +42,13 @@ import React from 'react';
                   <TableHead className="w-[100px]">Modelo</TableHead>
                   <TableHead className="w-[100px] text-right">Existencia</TableHead>
                   <TableHead className="w-[100px]">Estado</TableHead>
-                  <TableHead className="w-[120px] text-center">Acciones</TableHead>
+                  
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       <div className="flex justify-center items-center gap-2">
                         <Loader2 className="w-5 h-5 animate-spin" />
                         <span>Cargando productos...</span>
@@ -78,39 +78,12 @@ import React from 'react';
                       <TableCell>
                         {getStockBadge(product.existencia, product.min_stock)}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-center gap-1">
-                           <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="sm" onClick={() => onChangeCode(product)} className="h-8 w-8 p-0">
-                                      <RefreshCw className="w-4 h-4 text-blue-600" />
-                                  </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Cambiar Código</p></TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                             <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => onEdit(product)} className="h-8 w-8 p-0">
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                             </TooltipTrigger>
-                              <TooltipContent><p>Editar Producto</p></TooltipContent>
-                          </Tooltip>
-                           <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="sm" onClick={() => onDelete(product.id)} className="h-8 w-8 p-0 text-red-600 hover:text-red-700">
-                                      <Trash2 className="w-4 h-4" />
-                                  </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Eliminar Producto</p></TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TableCell>
+                      
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={9} className="text-center py-8 text-gray-500">
                       No se encontraron productos que coincidan con los filtros.
                     </TableCell>
                   </TableRow>

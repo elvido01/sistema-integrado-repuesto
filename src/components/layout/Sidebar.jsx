@@ -77,6 +77,10 @@ const navItems = [
       { title: 'Clientes', id: 'clientes', icon: Users },
       { title: 'Suplidores', id: 'suplidores', icon: Truck },
       { title: 'Mercancías', id: 'mercancias', icon: Package },
+      { title: 'Tipos de Producto', id: 'tipos-producto' },
+      { title: 'Marcas', id: 'marcas' },
+      { title: 'Modelos', id: 'modelos' },
+      { title: 'Ubicaciones', id: 'ubicaciones' },
     ],
   },
   {

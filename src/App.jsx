@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Helmet } from 'react-helmet';
 import { Toaster } from '@/components/ui/toaster';
@@ -38,7 +37,10 @@ function App() {
         <FacturacionProvider>
           <Helmet>
             <title>Repuestos Morla - Sistema Integrado</title>
-            <meta name="description" content="Sistema Integrado de Información Financiera para la gestión de Repuestos Morla." />
+            <meta
+              name="description"
+              content="Sistema Integrado de Información Financiera para la gestión de Repuestos Morla."
+            />
             <link rel="icon" href="/favicon.ico" type="image/x-icon" />
           </Helmet>
           <AppContent />
@@ -50,4 +52,3 @@ function App() {
 }
 
 export default App;
-  

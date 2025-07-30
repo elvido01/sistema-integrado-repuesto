@@ -132,12 +132,12 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9 }}
-          className="relative bg-white rounded-lg border-2 border-morla-gold shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden mx-4 flex flex-col"
+          className="relative bg-white rounded-lg border-2 border-morla-gold shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto mx-4 flex flex-col"
           onClick={e => e.stopPropagation()}
           onKeyDown={e => e.stopPropagation()}
           tabIndex={0}
         >
-          <div className="bg-morla-blue text-white px-4 py-2 flex items-center justify-between">
+          <div className="bg-morla-blue text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
             <h2 className="text-md font-bold">{title}</h2>
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={resetForm}><Plus /></Button>
@@ -147,7 +147,7 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
             </div>
           </div>
 
-          <div className="p-4 space-y-3">
+          <div className="p-4 space-y-3 flex-shrink-0">
             <div className="grid grid-cols-3 gap-4 items-end">
               {columns.map(col => (
                 <div key={col.accessor} className={col.accessor === 'nombre' ? 'col-span-2' : ''}>
@@ -193,7 +193,7 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
             </ScrollArea>
           </div>
 
-          <div className="border-t bg-gray-50 px-4 py-3 flex justify-end gap-3">
+          <div className="border-t bg-gray-50 px-4 py-3 flex justify-end gap-3 flex-shrink-0">
             <Button variant="outline" onClick={onClose}>ESC - Cerrar</Button>
             <Button onClick={handleSave} className="bg-morla-blue text-white">Guardar</Button>
           </div>

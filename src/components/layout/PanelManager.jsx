@@ -14,6 +14,7 @@ const PanelManager = () => {
     return <Icon className="w-4 h-4 mr-2" />;
   };
 
+  console.log("Panels:", panels, "Active:", activePanel);
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700">
@@ -65,7 +66,7 @@ const PanelManager = () => {
                 exit={{ opacity: 0, x: -50 }}
                 transition={{ duration: 0.2 }}
                 className={cn(
-                  'absolute inset-0 w-full h-full',
+                  'absolute inset-0 w-full h-full p-4',
                   activePanel === panel.id ? 'z-10' : 'z-0'
                 )}
                 style={{
@@ -76,16 +77,6 @@ const PanelManager = () => {
               </motion.div>
             );
           })}
-          {panels.length === 0 && (
-             <motion.div
-                key="homepage"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="w-full h-full p-4"
-              >
-                <HomePage />
-              </motion.div>
-          )}
         </AnimatePresence>
       </div>
     </div>

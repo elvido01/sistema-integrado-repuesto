@@ -21,6 +21,7 @@ import PagoSuplidoresPage from '@/pages/PagoSuplidoresPage';
 import PagoComisionesPage from '@/pages/PagoComisionesPage';
 import UsuariosPage from '@/pages/UsuariosPage';
 import CambioCodigoPage from '@/pages/CambioCodigoPage';
+import CatalogPage from '@/pages/CatalogPage';
 
 const componentMapping = {
   'inicio': { component: HomePage, icon: Home, name: 'Inicio' },
@@ -43,6 +44,10 @@ const componentMapping = {
   'clientes': { component: ClientesPage, icon: Users, name: 'Clientes' },
   'suplidores': { component: SuplidoresPage, icon: Briefcase, name: 'Suplidores' },
   'usuarios': { component: UsuariosPage, icon: UserCog, name: 'Usuarios' },
+  'tipos-producto': { component: () => <CatalogPage catalogType="tipos-producto" />, icon: Briefcase, name: 'Tipos de Producto' },
+  'marcas': { component: () => <CatalogPage catalogType="marcas" />, icon: Briefcase, name: 'Marcas' },
+  'modelos': { component: () => <CatalogPage catalogType="modelos" />, icon: Briefcase, name: 'Modelos' },
+  'ubicaciones': { component: () => <CatalogPage catalogType="ubicaciones" />, icon: MapPin, name: 'Ubicaciones' },
 };
 
 const PanelContext = createContext();
