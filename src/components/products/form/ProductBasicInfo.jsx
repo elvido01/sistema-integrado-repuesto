@@ -125,7 +125,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                   <SelectContent>
                     <ScrollArea className="h-48">
                       <SelectItem value="NULL_VALUE">Sin tipo</SelectItem>
-                      {tipos.filter(t => t.activo).map(tipo => <SelectItem key={tipo.id} value={tipo.id}>{tipo.nombre}</SelectItem>)}
+                      {tipos.filter(t => t.activo).map(tipo => <SelectItem key={tipo.id} value={String(tipo.id)}>{tipo.nombre}</SelectItem>)}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -142,7 +142,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                   <SelectContent>
                     <ScrollArea className="h-48">
                       <SelectItem value="NULL_VALUE">Sin marca</SelectItem>
-                      {marcas.filter(m => m.activo).map(marca => <SelectItem key={marca.id} value={marca.id}>{marca.nombre}</SelectItem>)}
+                      {marcas.filter(m => m.activo).map(marca => <SelectItem key={marca.id} value={String(marca.id)}>{marca.nombre}</SelectItem>)}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -159,7 +159,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                   <SelectContent>
                     <ScrollArea className="h-48">
                       <SelectItem value="NULL_VALUE">Sin modelo</SelectItem>
-                      {filteredModelos.filter(m => m.activo).map(modelo => <SelectItem key={modelo.id} value={modelo.id}>{modelo.nombre}</SelectItem>)}
+                      {filteredModelos.filter(m => m.activo).map(modelo => <SelectItem key={modelo.id} value={String(modelo.id)}>{modelo.nombre}</SelectItem>)}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -176,7 +176,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                   <SelectContent>
                     <ScrollArea className="h-48">
                       <SelectItem value="NULL_VALUE">Sin proveedor</SelectItem>
-                      {proveedores.filter(p => p.activo).map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
+                      {proveedores.filter(p => p.activo).map(p => <SelectItem key={p.id} value={String(p.id)}>{p.nombre}</SelectItem>)}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -193,7 +193,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                   <SelectContent>
                     <ScrollArea className="h-48">
                       <SelectItem value="NULL_VALUE">Sin ubicación</SelectItem>
-                      {almacenes.filter(a => a.activo).map(a => <SelectItem key={a.id} value={a.nombre}>{a.nombre}</SelectItem>)}
+                      {almacenes.filter(a => a.activo).map(a => <SelectItem key={a.id} value={String(a.nombre)}>{a.nombre}</SelectItem>)}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
