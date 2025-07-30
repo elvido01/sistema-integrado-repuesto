@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save } from 'lucide-react';
@@ -90,6 +89,12 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
     }
   }, [toast]);
 
+  const resetForm = useCallback(() => {
+    setFormData(initialFormData);
+    setPresentations([defaultPresentation]);
+    setIsEditing(false);
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       if (product?.id) {
@@ -100,8 +105,10 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
         setFormData(initialFormData);
         setPresentations([defaultPresentation]);
       }
+    } else {
+      resetForm(); // Reset form when modal closes
     }
-  }, [isOpen, product, populateForm]);
+  }, [isOpen, product, populateForm, resetForm]);
 
 
   const handleFetchProductByCode = useCallback(async (codigo) => {
