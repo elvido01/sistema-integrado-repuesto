@@ -7,18 +7,28 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, PlusCircle, Search, Loader2 } from 'lucide-react';
+import SuplidorFormModal from '@/components/catalogo/SuplidorFormModal';
 
 const SuplidoresPage = () => {
     const { toast } = useToast();
     const [suplidores, setSuplidores] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedSuplidor, setSelectedSuplidor] = useState(null);
 
     const fetchSuplidores = useCallback(async () => {
         setLoading(true);
-        const { data, error } = await supabase.from('proveedores').select('*').order('nombre', { ascending: true });
+        const { data, error } = await supabase
+            .from('proveedores')
+            .select('*')
+            .order('nombre', { ascending: true });
         if (error) {
-            toast({ title: 'Error', description: 'No se pudieron cargar los suplidores.', variant: 'destructive' });
+            toast({
+                title: 'Error',
+                description: 'No se pudieron cargar los suplidores.',
+                variant: 'destructive',
+            });
         } else {
             setSuplidores(data);
         }
@@ -31,18 +41,37 @@ const SuplidoresPage = () => {
 
     const filteredSuplidores = useMemo(() => {
         if (!searchTerm) return suplidores;
-        return suplidores.filter(s =>
+        return suplidores.filter((s) =>
             s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
             s.rnc?.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [suplidores, searchTerm]);
-    
+
     const handleNotImplemented = () => {
         toast({
-            title: "🚧 Función no implementada",
-            description: `Esta función estará disponible próximamente. ¡Puedes solicitarla en tu próximo prompt! 🚀`,
+            title: '🚧 Función no implementada',
+            description:
+                'Esta función estará disponible próximamente. ¡Puedes solicitarla en tu próximo prompt! 🚀',
             duration: 3000,
         });
+    };
+
+    const handleEdit = (suplidor) => {
+        setSelectedSuplidor(suplidor);
+        setIsModalOpen(true);
+    };
+
+    const handleCreate = () => {
+        setSelectedSuplidor(null);
+        setIsModalOpen(true);
+    };
+
+    const handleModalClose = (dataChanged) => {
+        setIsModalOpen(false);
+        setSelectedSuplidor(null);
+        if (dataChanged) {
+            fetchSuplidores();
+        }
     };
 
     return (
@@ -56,9 +85,14 @@ const SuplidoresPage = () => {
                     <div className="flex items-center gap-2">
                         <div className="relative">
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input placeholder="Buscar suplidor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-64" />
+                            <Input
+                                placeholder="Buscar suplidor..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-8 w-64"
+                            />
                         </div>
-                        <Button onClick={handleNotImplemented}>
+                        <Button onClick={handleCreate}>
                             <PlusCircle className="mr-2 h-4 w-4" />
                             Crear Suplidor
                         </Button>
@@ -86,7 +120,7 @@ const SuplidoresPage = () => {
                                         </TableCell>
                                     </TableRow>
                                 ) : filteredSuplidores.length > 0 ? (
-                                    filteredSuplidores.map(suplidor => (
+                                    filteredSuplidores.map((suplidor) => (
                                         <TableRow key={suplidor.id}>
                                             <TableCell className="font-medium">{suplidor.nombre}</TableCell>
                                             <TableCell>{suplidor.rnc}</TableCell>
@@ -101,8 +135,12 @@ const SuplidoresPage = () => {
                                                         </Button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem onClick={handleNotImplemented}>Editar</DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={handleNotImplemented} className="text-destructive">Eliminar</DropdownMenuItem>
+                                                        <DropdownMenuItem onClick={() => handleEdit(suplidor)}>
+                                                            Editar
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem onClick={handleNotImplemented} className="text-destructive">
+                                                            Eliminar
+                                                        </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             </TableCell>
@@ -120,6 +158,11 @@ const SuplidoresPage = () => {
                     </div>
                 </div>
             </div>
+            <SuplidorFormModal
+                isOpen={isModalOpen}
+                onClose={handleModalClose}
+                suplidor={selectedSuplidor}
+            />
         </>
     );
 };

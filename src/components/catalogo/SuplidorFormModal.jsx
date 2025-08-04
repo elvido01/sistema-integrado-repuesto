@@ -2,7 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -54,10 +61,12 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
 
     let result;
     if (suplidor) {
-      // Update
-      result = await supabase.from('proveedores').update(formData).eq('id', suplidor.id).select();
+      result = await supabase
+        .from('proveedores')
+        .update(formData)
+        .eq('id', suplidor.id)
+        .select();
     } else {
-      // Insert
       result = await supabase.from('proveedores').insert(formData).select();
     }
 
@@ -74,7 +83,7 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
         title: 'Éxito',
         description: `Suplidor ${suplidor ? 'actualizado' : 'creado'} correctamente.`,
       });
-      onClose(true); // pass true to indicate success and trigger refresh
+      onClose(true);
     }
     setIsSubmitting(false);
   };
@@ -87,28 +96,70 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="nombre" className="text-right">Nombre</Label>
-            <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleChange} className="col-span-3" required />
+            <Label htmlFor="nombre" className="text-right">
+              Nombre
+            </Label>
+            <Input
+              id="nombre"
+              name="nombre"
+              value={formData.nombre}
+              onChange={handleChange}
+              className="col-span-3"
+              required
+            />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="rnc" className="text-right">RNC</Label>
-            <Input id="rnc" name="rnc" value={formData.rnc} onChange={handleChange} className="col-span-3" />
+            <Label htmlFor="rnc" className="text-right">
+              RNC
+            </Label>
+            <Input
+              id="rnc"
+              name="rnc"
+              value={formData.rnc}
+              onChange={handleChange}
+              className="col-span-3"
+            />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="telefono" className="text-right">Teléfono</Label>
-            <Input id="telefono" name="telefono" value={formData.telefono} onChange={handleChange} className="col-span-3" />
+            <Label htmlFor="telefono" className="text-right">
+              Teléfono
+            </Label>
+            <Input
+              id="telefono"
+              name="telefono"
+              value={formData.telefono}
+              onChange={handleChange}
+              className="col-span-3"
+            />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="email" className="text-right">Email</Label>
-            <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} className="col-span-3" />
+            <Label htmlFor="email" className="text-right">
+              Email
+            </Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              className="col-span-3"
+            />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="activo" className="text-right">Activo</Label>
-            <Checkbox id="activo" checked={formData.activo} onCheckedChange={handleCheckedChange} />
+            <Label htmlFor="activo" className="text-right">
+              Activo
+            </Label>
+            <Checkbox
+              id="activo"
+              checked={formData.activo}
+              onCheckedChange={handleCheckedChange}
+            />
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="secondary">Cancelar</Button>
+              <Button type="button" variant="secondary">
+                Cancelar
+              </Button>
             </DialogClose>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
