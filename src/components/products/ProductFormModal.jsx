@@ -11,8 +11,9 @@ import ProductPlaceholderTab from '@/components/products/form/ProductPlaceholder
 import { supabase } from '@/lib/customSupabaseClient';
 
 const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
+  console.log("ProductFormModal received product prop:", product); // Log product prop
   const { toast } = useToast();
-  const { tiposPresentacion } = useCatalogData();
+  const { tiposPresentacion, tipos, marcas, modelos, proveedores, almacenes, fetchCatalogs } = useCatalogData();
   
   const initialFormData = {
     id: null,
@@ -34,7 +35,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
     activo: true
   };
 
-  const defaultPresentation = {
+  const createNewPresentation = useCallback(() => ({
     id: `new-${Date.now()}`,
     tipo: 'UND - Unidad',
     cantidad: '1',
@@ -45,13 +46,14 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
     precio_final: '0.00',
     afecta_ft: true,
     afecta_inv: true
-  };
+  }), []);
 
   const [formData, setFormData] = useState(initialFormData);
-  const [presentations, setPresentations] = useState([]);
+  const [presentations, setPresentations] = useState(() => [createNewPresentation()]);
   const [isEditing, setIsEditing] = useState(false);
 
   const populateForm = useCallback(async (p) => {
+    console.log("populateForm received object (p):", p); // Log object received by populateForm
     setFormData({
       id: p.id || null,
       codigo: p.codigo || '',
@@ -60,19 +62,21 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       precio: p.precio || 0,
       costo: p.costo || 0,
       ubicacion: p.ubicacion ? String(p.ubicacion) : '',
-      tipo_id: p.tipo?.id ? String(p.tipo.id) : null,
-      marca_id: p.marca?.id ? String(p.marca.id) : null,
-      modelo_id: p.modelo?.id ? String(p.modelo.id) : null,
-      suplidor_id: p.suplidor?.id ? String(p.suplidor.id) : null,
+      tipo_id: p.tipo_id || (p.tipo?.id ? String(p.tipo.id) : null),
+      marca_id: p.marca_id || (p.marca?.id ? String(p.marca.id) : null),
+      modelo_id: p.modelo_id || (p.modelo?.id ? String(p.modelo.id) : null),
+      suplidor_id: p.suplidor_id || (p.suplidor?.id ? String(p.suplidor.id) : null),
       garantia_meses: p.garantia_meses || 0,
       itbis_pct: p.itbis_pct || 0.18,
       min_stock: p.min_stock || 0,
       max_stock: p.max_stock || 0,
-      imagen_url: p.imagen_url || '',
+      imagen_url: '',
       activo: p.activo !== false
     });
 
-    if (p.id) {
+    if (p.presentaciones && p.presentaciones.length > 0) {
+      setPresentations(p.presentaciones);
+    } else if (p.id) {
       const { data: presData, error } = await supabase
         .from('presentaciones')
         .select('*')
@@ -80,20 +84,28 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       
       if (error) {
         toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar las presentaciones.' });
-        setPresentations([defaultPresentation]);
+        setPresentations([createNewPresentation()]);
       } else {
-        setPresentations(presData.length > 0 ? presData : [defaultPresentation]);
+        setPresentations(presData.length > 0 ? presData : [createNewPresentation()]);
       }
     } else {
-      setPresentations([defaultPresentation]);
+      setPresentations([createNewPresentation()]);
     }
-  }, [toast]);
+  }, [toast, createNewPresentation]);
 
   const resetForm = useCallback(() => {
     setFormData(initialFormData);
-    setPresentations([defaultPresentation]);
+    setPresentations([createNewPresentation()]);
     setIsEditing(false);
-  }, []);
+  }, [createNewPresentation]);
+
+  const handleClose = useCallback(() => {
+    onClose();
+    // We delay the reset slightly to allow the closing animation to complete.
+    setTimeout(() => {
+      resetForm();
+    }, 300);
+  }, [onClose, resetForm]);
 
   useEffect(() => {
     if (isOpen) {
@@ -101,12 +113,8 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
         setIsEditing(true);
         populateForm(product);
       } else {
-        setIsEditing(false);
-        setFormData(initialFormData);
-        setPresentations([defaultPresentation]);
+        resetForm();
       }
-    } else {
-      resetForm(); // Reset form when modal closes
     }
   }, [isOpen, product, populateForm, resetForm]);
 
@@ -216,9 +224,10 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       handleSubmit(e);
     }
     if (e.key === 'Escape') {
-      onClose();
+      e.stopPropagation(); // ← evita que llegue al padre
+      handleClose();
     }
-  }, [onClose, handleSubmit]);
+  }, [handleClose, handleSubmit]);
 
   const handleNotImplemented = (feature) => {
     toast({
@@ -244,7 +253,9 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="absolute inset-0 bg-black/30"
-          onClick={onClose}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleClose();
+          }}
         />
         
         <motion.div
@@ -258,7 +269,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
             <Button
               variant="ghost"
               size="sm"
-              onClick={onClose}
+              onClick={handleClose}
               className="text-white hover:bg-white/20 h-8 w-8 p-0"
             >
               <X className="w-4 h-4" />
@@ -280,6 +291,12 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
                       onCodigoBlur={handleFetchProductByCode}
                       onProductSelect={handleProductSelect}
                       isEditing={isEditing}
+                      tipos={tipos}
+                      marcas={marcas}
+                      modelos={modelos}
+                      proveedores={proveedores}
+                      almacenes={almacenes}
+                      fetchCatalogs={fetchCatalogs}
                     />
                   </AccordionContent>
                 </AccordionItem>
@@ -329,7 +346,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
             <Button
               type="button"
               variant="outline"
-              onClick={onClose}
+              onClick={handleClose}
             >
               Cancelar
             </Button>

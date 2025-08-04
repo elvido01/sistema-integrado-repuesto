@@ -1,0 +1,3 @@
+fix: Fetch full product details for editing
+
+Modifies the handleOpenFormModal function in ProductsPage.jsx to fetch complete product details, including nested tipo, marca, modelo, and suplidor objects with their IDs, when a product is selected for editing. This ensures that ProductFormModal receives all necessary data to populate its fields correctly.

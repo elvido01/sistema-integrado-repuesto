@@ -22,7 +22,7 @@ const ProductsPage = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ marca_id: '', tipo_id: '' });
+  const [filters, setFilters] = useState({ marca_id: '', tipo_id: '', modelo_id: '' });
   const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0 });
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -52,7 +52,7 @@ const ProductsPage = () => {
           p_offset: offset,
           p_search_term: searchTerm,
           p_marca_filter: filters.marca_id,
-          p_modelo_filter: '' // Modelo filter not implemented in UI yet
+          p_modelo_filter: filters.modelo_id
       });
 
       if (error) throw error;
@@ -203,25 +203,51 @@ const ProductsPage = () => {
   };
 
   const handleOpenFormModal = async (product = null) => {
-    if (product?.id) {
-        setLoading(true);
-        const { data, error } = await supabase
-            .from('productos')
-            .select('*, presentaciones(*), tipo:tipos_producto(id), marca:marcas(id), modelo:modelos(id), suplidor:proveedores(id)')
-            .eq('id', product.id)
-            .single();
-        setLoading(false);
-
-        if (error) {
-            toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos completos del producto.' });
-            setSelectedProduct(product);
-        } else {
-            setSelectedProduct(data);
-        }
-    } else {
-        setSelectedProduct(null);
+    // Para crear un producto nuevo, simplemente abre el modal sin datos.
+    if (!product?.id) {
+      setSelectedProduct(null);
+      setIsFormModalOpen(true);
+      return;
     }
-    setIsFormModalOpen(true);
+
+    // Para editar, busca los datos completos y anidados del producto.
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('productos')
+        .select('*, presentaciones(*), tipo:tipos_producto(id, nombre), marca:marcas(id, nombre), modelo:modelos(id, nombre), suplidor:proveedores(id, nombre)')
+        .eq('id', product.id)
+        .single();
+
+      if (error) throw error;
+
+      // Puntos 1, 2, 5: "Aplanar" el objeto de Supabase para el formulario.
+      // Extraemos los objetos anidados y el resto de las propiedades.
+      const { tipo, marca, modelo, suplidor, ...restOfProduct } = data;
+      
+      // Creamos un nuevo objeto plano, convirtiendo los IDs a string para Radix UI.
+      const flattenedProduct = {
+        ...restOfProduct,
+        tipo_id: tipo?.id?.toString() || '',
+        marca_id: marca?.id?.toString() || '',
+        modelo_id: modelo?.id?.toString() || '',
+        suplidor_id: suplidor?.id?.toString() || '',
+      };
+      
+      setSelectedProduct(flattenedProduct);
+
+    } catch (error) {
+      toast({ 
+        variant: 'destructive', 
+        title: 'Error al cargar datos',
+        description: `No se pudo obtener la información completa del producto: ${error.message}` 
+      });
+      // Si la carga falla, usamos los datos básicos que ya teníamos.
+      setSelectedProduct(product);
+    } finally {
+      setLoading(false);
+      setIsFormModalOpen(true);
+    }
   };
   
   const handleOpenChangeCodeModal = (product) => {
@@ -363,7 +389,7 @@ const ProductsPage = () => {
       {/* Fin del modal principal */}
       
       <ChangeProductCodeModal
-        isOpen={isChangeCodeOpen}
+        isOpen={isChangeCodeModalOpen}
         onClose={() => setIsChangeCodeModalOpen(false)}
         product={selectedProduct}
         onCodeChanged={refreshProducts}

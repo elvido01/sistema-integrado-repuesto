@@ -35,20 +35,15 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => {} }) => 
     try {
       const offset = page * PAGE_LIMIT;
       
-      let query = supabase.rpc('get_productos_paginados', {
+      const { data, error } = await supabase.rpc('get_productos_paginados', {
         p_limit: PAGE_LIMIT,
         p_offset: offset,
         p_search_term: debouncedSearchTerm,
         p_marca_filter: debouncedMarcaFilter,
         p_modelo_filter: debouncedModeloFilter,
+        p_include_zero_stock: includeZeroStock
       });
 
-      if (!includeZeroStock) {
-          query = query.gt('existencia', 0);
-      }
-      
-      const { data, error } = await query;
-      
       if (error) throw error;
 
       const newProducts = data || [];
@@ -70,20 +65,21 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => {} }) => 
 
   useEffect(() => {
     if (isOpen) {
+      // Reset filters and state when modal opens
+      setSearchTerm('');
+      setMarcaFilter('');
+      setModeloFilter('');
       setCurrentPage(0);
-      setProducts([]);
       setHasMore(true);
-      fetchProducts(0, true);
-    } else {
-        setProducts([]);
-        setCurrentPage(0);
-        setHasMore(true);
-        setSearchTerm('');
-        setMarcaFilter('');
-        setModeloFilter('');
-        setIncludeZeroStock(true);
+      setProducts([]);
     }
-  }, [isOpen, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchProducts(0, true);
+    }
+  }, [isOpen, fetchProducts]);
   
   const handleLoadMore = useCallback(() => {
       if (hasMore && !loading) {

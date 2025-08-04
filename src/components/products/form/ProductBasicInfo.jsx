@@ -10,10 +10,10 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import CatalogManagementModal from '@/components/products/form/CatalogManagementModal';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useCatalogData } from '@/hooks/useSupabase';
 
-const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented }) => {
-  const { tipos, marcas, modelos, proveedores, almacenes, fetchCatalogs } = useCatalogData();
+const NULL_VALUE = 'null_value';
+
+const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented, tipos, marcas, modelos, proveedores, almacenes, fetchCatalogs }) => {
   const [isTipoModalOpen, setIsTipoModalOpen] = useState(false);
   const [isMarcaModalOpen, setIsMarcaModalOpen] = useState(false);
   const [isModeloModalOpen, setIsModeloModalOpen] = useState(false);
@@ -21,36 +21,52 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
   const [isUbicacionModalOpen, setIsUbicacionModalOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
+  const catalogConfig = useMemo(() => ({
+    tipos: { title: 'Tipos de Producto', table: 'tipos_producto', columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }] },
+    marcas: { title: 'Marcas', table: 'marcas', columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }] },
+    modelos: {
+      title: 'Modelos',
+      table: 'modelos',
+      columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }],
+      extraData: { marca_id: formData.marca_id || null }
+    },
+    proveedores: { title: 'Suplidores', table: 'proveedores', columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }] },
+    ubicaciones: { title: 'Ubicaciones', table: 'almacenes', columns: [{ accessor: 'codigo', header: 'Código', type: 'text' }, { accessor: 'nombre', header: 'Nombre', type: 'text' }] },
+  }), [formData.marca_id]);
+
+  
+
   const handleInputChange = (e) => {
     const { id, value } = e.target;
     setFormData(prev => ({ ...prev, [id]: value }));
   };
-  
-  const handleSelectChange = (id, value) => {
-    const isNull = value === 'NULL_VALUE' || value === '';
+
+  const handleSelectChange = useCallback((id, value) => {
+    const parsedValue = value === NULL_VALUE ? null : value; // Corrected: Removed Number() conversion
     setFormData(prev => {
-        const newState = { ...prev, [id]: isNull ? null : value };
+        const newState = { ...prev, [id]: parsedValue };
         if (id === 'marca_id') {
-            newState.modelo_id = null;
+            newState.modelo_id = null; // Reset modelo when marca changes
         }
         return newState;
     });
-  };
+  }, [setFormData]);
 
   const handleNumberChange = (e) => {
     const { id, value } = e.target;
     setFormData(prev => ({...prev, [id]: parseFloat(value) || 0 }));
   };
-  
+
   const handleIntChange = (e) => {
-    const { id, value } = e.target;
-    setFormData(prev => ({...prev, [id]: parseInt(value) || 0 }));
+    const { id, value = '' } = e.target; // Ensure value is a string for parseInt
+    setFormData(prev => ({...prev, [id]: parseInt(value, 10) || 0 }));
   }
 
-  
-  const handleSaveSuccess = () => {
+  const handleSaveSuccess = useCallback(() => {
     fetchCatalogs();
-  }
+  }, [fetchCatalogs]);
+
+  const closeModal = useCallback((setter) => () => setter(false), []);
 
   const handleCodigoKeyDown = useCallback((e) => {
     if (e.key === 'F3') {
@@ -64,24 +80,41 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
     setIsSearchModalOpen(false);
   };
 
-  const catalogConfig = {
-    tipos: { title: 'Tipos de Producto', table: 'tipos_producto', columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }] },
-    marcas: { title: 'Marcas', table: 'marcas', columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }] },
-    modelos: { 
-      title: 'Modelos', 
-      table: 'modelos', 
-      columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }],
-      extraData: { marca_id: formData.marca_id }
-    },
-    proveedores: { title: 'Suplidores', table: 'proveedores', columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }] },
-    ubicaciones: { title: 'Ubicaciones', table: 'almacenes', columns: [{ accessor: 'codigo', header: 'Código', type: 'text' }, { accessor: 'nombre', header: 'Nombre', type: 'text' }] },
-  };
+  const tipoOptions = useMemo(() => {
+    return (tipos || []).filter(t => t.activo).map(tipo => (
+      <SelectItem key={tipo.id} value={String(tipo.id)}>{tipo.nombre}</SelectItem>
+    ));
+  }, [tipos]);
+
+  const marcaOptions = useMemo(() => {
+    return (marcas || []).filter(m => m.activo).map(marca => (
+      <SelectItem key={marca.id} value={String(marca.id)}>{marca.nombre}</SelectItem>
+    ));
+  }, [marcas]);
 
   const filteredModelos = useMemo(() => {
     if (!formData.marca_id || !modelos) return [];
     return modelos.filter(m => m.marca_id === formData.marca_id);
   }, [formData.marca_id, modelos]);
-  
+
+  const modeloOptions = useMemo(() => {
+    return (filteredModelos || []).filter(m => m.activo).map(modelo => (
+      <SelectItem key={modelo.id} value={String(modelo.id)}>{modelo.nombre}</SelectItem>
+    ));
+  }, [filteredModelos]);
+
+  const proveedorOptions = useMemo(() => {
+    return (proveedores || []).filter(p => p.activo).map(p => (
+      <SelectItem key={p.id} value={String(p.id)}>{p.nombre}</SelectItem>
+    ));
+  }, [proveedores]);
+
+  const ubicacionOptions = useMemo(() => {
+    return (almacenes || []).filter(a => a.activo).map(a => (
+      <SelectItem key={a.id} value={String(a.nombre)}>{a.nombre}</SelectItem>
+    ));
+  }, [almacenes]);
+
   useEffect(() => {
     if (formData.modelo_id && !filteredModelos.some(m => m.id === formData.modelo_id)) {
       setFormData(prev => ({...prev, modelo_id: null}));
@@ -94,14 +127,14 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
         <div className="md:col-span-2 grid grid-cols-2 gap-3">
           <div>
             <Label htmlFor="codigo" className="text-xs font-semibold">Código (SKU) * <span className="text-morla-blue font-bold">[F3]</span></Label>
-            <Input 
-              id="codigo" 
-              value={formData.codigo} 
-              onChange={handleInputChange} 
+            <Input
+              id="codigo"
+              value={formData.codigo}
+              onChange={handleInputChange}
               onBlur={(e) => onCodigoBlur(e.target.value)}
               onKeyDown={handleCodigoKeyDown}
-              className="h-7 text-sm" 
-              required 
+              className="h-7 text-sm"
+              required
               disabled={isEditing}
             />
           </div>
@@ -113,19 +146,19 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
             <Label htmlFor="descripcion" className="text-xs font-semibold">Descripción *</Label>
             <Textarea id="descripcion" value={formData.descripcion} onChange={handleInputChange} className="text-sm min-h-[60px]" required />
           </div>
-          
+
           <div className="col-span-2 grid grid-cols-2 gap-3">
              <div>
               <Label className="text-xs font-semibold">Tipo</Label>
               <div className="flex items-center gap-1">
-                <Select value={formData.tipo_id || 'NULL_VALUE'} onValueChange={(value) => handleSelectChange('tipo_id', value)}>
+                <Select value={String(formData.tipo_id ?? NULL_VALUE)} onValueChange={(value) => handleSelectChange('tipo_id', value)}>
                   <SelectTrigger className="h-7 text-sm">
                     <SelectValue placeholder="Seleccionar tipo" />
                   </SelectTrigger>
                   <SelectContent>
                     <ScrollArea className="h-48">
-                      <SelectItem value="NULL_VALUE">Sin tipo</SelectItem>
-                      {tipos.filter(t => t.activo).map(tipo => <SelectItem key={tipo.id} value={String(tipo.id)}>{tipo.nombre}</SelectItem>)}
+                      <SelectItem value={NULL_VALUE}>Sin tipo</SelectItem>
+                      {tipoOptions}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -135,14 +168,14 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
             <div>
               <Label className="text-xs font-semibold">Marca</Label>
               <div className="flex items-center gap-1">
-                <Select value={formData.marca_id || 'NULL_VALUE'} onValueChange={(value) => handleSelectChange('marca_id', value)}>
+                <Select value={String(formData.marca_id ?? NULL_VALUE)} onValueChange={(value) => handleSelectChange('marca_id', value)}>
                   <SelectTrigger className="h-7 text-sm">
                     <SelectValue placeholder="Seleccionar marca" />
                   </SelectTrigger>
                   <SelectContent>
                     <ScrollArea className="h-48">
-                      <SelectItem value="NULL_VALUE">Sin marca</SelectItem>
-                      {marcas.filter(m => m.activo).map(marca => <SelectItem key={marca.id} value={String(marca.id)}>{marca.nombre}</SelectItem>)}
+                      <SelectItem value={NULL_VALUE}>Sin marca</SelectItem>
+                      {marcaOptions}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -152,14 +185,14 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
             <div>
               <Label className="text-xs font-semibold">Modelo</Label>
               <div className="flex items-center gap-1">
-                <Select value={formData.modelo_id || 'NULL_VALUE'} onValueChange={(value) => handleSelectChange('modelo_id', value)} disabled={!formData.marca_id}>
+                <Select value={String(formData.modelo_id ?? NULL_VALUE)} onValueChange={(value) => handleSelectChange('modelo_id', value)} disabled={!formData.marca_id}>
                   <SelectTrigger className="h-7 text-sm">
                     <SelectValue placeholder="Seleccionar modelo" />
                   </SelectTrigger>
                   <SelectContent>
                     <ScrollArea className="h-48">
-                      <SelectItem value="NULL_VALUE">Sin modelo</SelectItem>
-                      {filteredModelos.filter(m => m.activo).map(modelo => <SelectItem key={modelo.id} value={String(modelo.id)}>{modelo.nombre}</SelectItem>)}
+                      <SelectItem value={NULL_VALUE}>Sin modelo</SelectItem>
+                      {modeloOptions}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -169,14 +202,14 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
             <div>
               <Label className="text-xs font-semibold">Suplidor</Label>
               <div className="flex items-center gap-1">
-                <Select value={formData.suplidor_id || 'NULL_VALUE'} onValueChange={(value) => handleSelectChange('suplidor_id', value)}>
+                <Select value={String(formData.suplidor_id ?? NULL_VALUE)} onValueChange={(value) => handleSelectChange('suplidor_id', value)}>
                   <SelectTrigger className="h-7 text-sm">
                     <SelectValue placeholder="Seleccionar proveedor" />
                   </SelectTrigger>
                   <SelectContent>
                     <ScrollArea className="h-48">
-                      <SelectItem value="NULL_VALUE">Sin proveedor</SelectItem>
-                      {proveedores.filter(p => p.activo).map(p => <SelectItem key={p.id} value={String(p.id)}>{p.nombre}</SelectItem>)}
+                      <SelectItem value={NULL_VALUE}>Sin proveedor</SelectItem>
+                      {proveedorOptions}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -186,14 +219,14 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
             <div>
               <Label htmlFor="ubicacion" className="text-xs font-semibold">Ubicación</Label>
               <div className="flex items-center gap-1">
-                <Select value={formData.ubicacion || 'NULL_VALUE'} onValueChange={(value) => handleSelectChange('ubicacion', value)}>
+                <Select value={String(formData.ubicacion ?? NULL_VALUE)} onValueChange={(value) => handleSelectChange('ubicacion', value)}>
                   <SelectTrigger className="h-7 text-sm">
                     <SelectValue placeholder="Seleccionar ubicación" />
                   </SelectTrigger>
                   <SelectContent>
                     <ScrollArea className="h-48">
-                      <SelectItem value="NULL_VALUE">Sin ubicación</SelectItem>
-                      {almacenes.filter(a => a.activo).map(a => <SelectItem key={a.id} value={String(a.nombre)}>{a.nombre}</SelectItem>)}
+                      <SelectItem value={NULL_VALUE}>Sin ubicación</SelectItem>
+                      {ubicacionOptions}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -249,60 +282,39 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
           </div>
         </div>
       </div>
-      <div className="border rounded-lg p-3 mt-3">
-        <Label className="text-xs font-semibold mb-2 block">Tipo de Mercancía</Label>
-        <RadioGroup defaultValue="normal" className="flex space-x-4">
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="normal" id="tipo-normal" />
-            <Label htmlFor="tipo-normal" className="text-sm font-normal">Normal</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="servicio" id="tipo-servicio" />
-            <Label htmlFor="tipo-servicio" className="text-sm font-normal">Servicio</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="no-serie" id="tipo-no-serie" />
-            <Label htmlFor="tipo-no-serie" className="text-sm font-normal">Usa No. de Serie</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="vencimiento" id="tipo-vencimiento" />
-            <Label htmlFor="tipo-vencimiento" className="text-sm font-normal">Usa Fecha de Vencimiento</Label>
-          </div>
-        </RadioGroup>
-      </div>
       <CatalogManagementModal
         isOpen={isTipoModalOpen}
-        onClose={() => setIsTipoModalOpen(false)}
+        onClose={closeModal(setIsTipoModalOpen)}
         config={catalogConfig.tipos}
         onSaveSuccess={handleSaveSuccess}
       />
       <CatalogManagementModal
         isOpen={isMarcaModalOpen}
-        onClose={() => setIsMarcaModalOpen(false)}
+        onClose={closeModal(setIsMarcaModalOpen)}
         config={catalogConfig.marcas}
         onSaveSuccess={handleSaveSuccess}
       />
       <CatalogManagementModal
         isOpen={isModeloModalOpen}
-        onClose={() => setIsModeloModalOpen(false)}
+        onClose={closeModal(setIsModeloModalOpen)}
         config={catalogConfig.modelos}
         onSaveSuccess={handleSaveSuccess}
       />
       <CatalogManagementModal
         isOpen={isProveedorModalOpen}
-        onClose={() => setIsProveedorModalOpen(false)}
+        onClose={closeModal(setIsProveedorModalOpen)}
         config={catalogConfig.proveedores}
         onSaveSuccess={handleSaveSuccess}
       />
       <CatalogManagementModal
         isOpen={isUbicacionModalOpen}
-        onClose={() => setIsUbicacionModalOpen(false)}
+        onClose={closeModal(setIsUbicacionModalOpen)}
         config={catalogConfig.ubicaciones}
         onSaveSuccess={handleSaveSuccess}
       />
       <ProductSearchModal
         isOpen={isSearchModalOpen}
-        onClose={() => setIsSearchModalOpen(false)}
+        onClose={closeModal(setIsSearchModalOpen)}
         onSelectProduct={handleProductSelection}
       />
     </>

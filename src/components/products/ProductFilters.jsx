@@ -1,9 +1,13 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Download, Upload } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useCatalogData } from '@/hooks/useSupabase';
+
+const NULL_VALUE = 'null_value';
 
 const ProductFilters = ({
   searchTerm,
@@ -16,6 +20,7 @@ const ProductFilters = ({
 }) => {
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const { marcas, tipos, modelos } = useCatalogData();
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'F3') {
@@ -34,6 +39,32 @@ const ProductFilters = ({
   const handleImportClick = () => {
     fileInputRef.current?.click();
   };
+
+  const handleFilterChange = useCallback((filterName, value) => {
+    console.log(`Changing filter ${filterName} to: ${value}`);
+    setFilters(prev => ({
+      ...prev,
+      [filterName]: value === NULL_VALUE ? null : Number(value)
+    }));
+  }, [setFilters]);
+
+  const marcaOptions = useMemo(() => {
+    return (marcas || []).filter(m => m.activo).map(marca => (
+      <SelectItem key={marca.id} value={String(marca.id)}>{marca.nombre}</SelectItem>
+    ));
+  }, [marcas]);
+
+  const tipoOptions = useMemo(() => {
+    return (tipos || []).filter(t => t.activo).map(tipo => (
+      <SelectItem key={tipo.id} value={String(tipo.id)}>{tipo.nombre}</SelectItem>
+    ));
+  }, [tipos]);
+
+  const modeloOptions = useMemo(() => {
+    return (modelos || []).filter(m => m.activo).map(modelo => (
+      <SelectItem key={modelo.id} value={String(modelo.id)}>{modelo.nombre}</SelectItem>
+    ));
+  }, [modelos]);
 
   return (
     <div className="p-4 border-b space-y-4">
@@ -64,24 +95,51 @@ const ProductFilters = ({
             />
         </div>
       </div>
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 flex-1">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="flex items-center gap-2">
           <Label htmlFor="marca-filter" className="whitespace-nowrap">Marca</Label>
-          <Input
-            id="marca-filter"
-            placeholder="Filtrar por marca..."
-            value={filters.marca_id || ''}
-            onChange={(e) => setFilters(prev => ({...prev, marca_id: e.target.value}))}
-          />
+          <Select
+            value={filters.marca_id === null ? NULL_VALUE : String(filters.marca_id)}
+            onValueChange={(value) => handleFilterChange('marca_id', value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Todas las marcas" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NULL_VALUE}>Todas las marcas</SelectItem>
+              {marcaOptions}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="flex items-center gap-2 flex-1">
+        <div className="flex items-center gap-2">
           <Label htmlFor="tipo-filter" className="whitespace-nowrap">Tipo</Label>
-          <Input
-            id="tipo-filter"
-            placeholder="Filtrar por tipo..."
-            value={filters.tipo_id || ''}
-            onChange={(e) => setFilters(prev => ({...prev, tipo_id: e.target.value}))}
-          />
+          <Select
+            value={filters.tipo_id === null ? NULL_VALUE : String(filters.tipo_id)}
+            onValueChange={(value) => handleFilterChange('tipo_id', value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Todos los tipos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NULL_VALUE}>Todos los tipos</SelectItem>
+              {tipoOptions}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="modelo-filter" className="whitespace-nowrap">Modelo</Label>
+          <Select
+            value={filters.modelo_id === null ? NULL_VALUE : String(filters.modelo_id)}
+            onValueChange={(value) => handleFilterChange('modelo_id', value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Todos los modelos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NULL_VALUE}>Todos los modelos</SelectItem>
+              {modeloOptions}
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>
