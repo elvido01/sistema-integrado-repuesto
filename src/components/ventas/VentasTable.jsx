@@ -18,12 +18,12 @@ const VentasTable = ({
   return (
     <div className="flex-grow border border-gray-500 bg-white flex flex-col">
       <div className="flex-grow overflow-y-auto">
-        <Table>
+    <Table className="table-auto w-full">
           <TableHeader className="sticky top-0 bg-gray-200 z-10">
             <TableRow className="border-b-2 border-gray-400">
               <TableHead className="h-6 p-1 w-[150px]">CODIGO</TableHead>
-              <TableHead className="h-6 p-1">DESCRIPCION</TableHead>
-              <TableHead className="h-6 p-1 w-[100px]">UBICACION</TableHead>
+        <TableHead className="h-6 p-1 w-[30%]">DESCRIPCION</TableHead>
+        <TableHead className="h-6 p-1 w-[30%]">UBICACION</TableHead>
               <TableHead className="h-6 p-1 w-[60px] text-center">CANT.</TableHead>
               <TableHead className="h-6 p-1 w-[90px] text-right">PRECIO</TableHead>
               <TableHead className="h-6 p-1 w-[70px] text-right">DESC.</TableHead>
@@ -55,10 +55,10 @@ const VentasTable = ({
             {items.map((item) => {
               const itbisTotal = item.itbis;
               return (
-                <TableRow key={item.id} className="border-b border-dotted border-gray-300 hover:bg-yellow-50">
+        <TableRow key={item.id} className="border-b border-dotted border-gray-300 hover:bg-yellow-50">
                   <TableCell className="h-6 p-1 font-medium">{item.codigo}</TableCell>
-                  <TableCell className="h-6 p-1">{item.descripcion}</TableCell>
-                  <TableCell className="h-6 p-1">{item.ubicacion}</TableCell>
+      <TableCell className="h-6 p-1 w-[30%]">{item.descripcion}</TableCell>
+      <TableCell className="h-6 p-1 w-[30%]">{item.ubicacion}</TableCell>
                   <TableCell className="h-6 p-1"><Input type="number" value={item.cantidad} onChange={(e) => onUpdateItem(item.id, 'cantidad', e.target.value)} className="h-6 text-center text-xs w-full" min="1" /></TableCell>
                   <TableCell className="h-6 p-1 text-right">{Number(item.precio).toFixed(2)}</TableCell>
                   <TableCell className="h-6 p-1"><Input type="number" value={item.descuento} onChange={(e) => onUpdateItem(item.id, 'descuento', e.target.value)} className="h-6 text-right text-xs w-full" min="0" /></TableCell>

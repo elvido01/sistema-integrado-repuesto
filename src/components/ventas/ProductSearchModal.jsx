@@ -41,7 +41,6 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => {} }) => 
         p_search_term: debouncedSearchTerm,
         p_marca_filter: debouncedMarcaFilter,
         p_modelo_filter: debouncedModeloFilter,
-        p_include_zero_stock: includeZeroStock
       });
 
       if (error) throw error;
@@ -158,15 +157,15 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => {} }) => 
         </div>
 
         <div className="flex-grow overflow-y-auto">
-          <Table>
+      <Table className="table-auto w-full">
             <TableHeader className="sticky top-0 bg-white z-10">
               <TableRow>
                 <TableHead>Código</TableHead>
                 <TableHead>Referencia</TableHead>
-                <TableHead>Descripción</TableHead>
+        <TableHead className="w-[40%]">Descripción</TableHead>
                 <TableHead>Marca</TableHead>
                 <TableHead>Modelo</TableHead>
-                <TableHead>Ubicación</TableHead>
+        <TableHead className="w-[15%]">Ubicación</TableHead>
                 <TableHead className="text-right">Existencia</TableHead>
                 <TableHead className="text-right">Precio</TableHead>
               </TableRow>
@@ -183,10 +182,10 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => {} }) => 
                 >
                   <TableCell>{product.codigo}</TableCell>
                   <TableCell>{product.referencia || '-'}</TableCell>
-                  <TableCell>{product.descripcion}</TableCell>
+                  <TableCell className="w-[40%]">{product.descripcion}</TableCell>
                   <TableCell>{product.marca_nombre || '-'}</TableCell>
                   <TableCell>{product.modelo_nombre || '-'}</TableCell>
-                  <TableCell>{product.ubicacion || '-'}</TableCell>
+                  <TableCell className="w-[15%]">{product.ubicacion || '-'}</TableCell>
                   <TableCell className="text-right">{product.existencia?.toFixed(2) || '0.00'}</TableCell>
                   <TableCell className="text-right font-semibold text-green-600">{formatPrice(product.precio)}</TableCell>
                 </TableRow>

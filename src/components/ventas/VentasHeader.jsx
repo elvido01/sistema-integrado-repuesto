@@ -92,11 +92,21 @@ const VentasHeader = ({
         </p>
         <div className="grid grid-cols-5 gap-x-2 gap-y-1 items-center">
           <Label className="col-span-1">NUMERO</Label>
-          <div className="col-span-1 bg-white border border-gray-300 rounded px-2 py-0.5 h-6 text-center font-bold flex items-center justify-center">
+          <div className="col-span-2 flex items-center">
             {loadingNumero ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
+              <div className="bg-white border border-gray-300 rounded px-2 py-0.5 h-6 flex items-center justify-center w-[6ch]">
+                <Loader2 className="w-3 h-3 animate-spin" />
+              </div>
             ) : (
-              nextFacturaNumero
+              <Input
+                readOnly
+                value={nextFacturaNumero || ''}
+                className="h-6 text-center font-bold font-mono leading-tight px-1 w-[ch] focus-visible:ring-0"
+                style={{
+                  width: `${String(nextFacturaNumero || '').length || 6}ch`,
+                  fontSize: 'clamp(0.65rem, 1.8vw, 0.9rem)'
+                }}
+              />
             )}
           </div>
 

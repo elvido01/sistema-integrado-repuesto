@@ -141,12 +141,12 @@ const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymen
 
               <div className="col-span-12 mt-4 bg-white rounded-md shadow-sm">
                 <div className="h-[450px] overflow-y-auto">
-                  <Table>
+      <Table className="table-auto w-full">
                     <TableHeader className="sticky top-0 bg-gray-200 z-10">
                       <TableRow>
                         <TableHead className="w-[120px]">CÓDIGO</TableHead>
-                        <TableHead>DESCRIPCIÓN</TableHead>
-                        <TableHead className="w-[120px]">UBICACIÓN</TableHead>
+        <TableHead className="w-[45%]">DESCRIPCIÓN</TableHead>
+        <TableHead className="w-[15%]">UBICACIÓN</TableHead>
                         <TableHead className="w-[80px]">CANT.</TableHead>
                         <TableHead className="w-[100px]">UND</TableHead>
                         <TableHead className="w-[120px] text-right">PRECIO</TableHead>
@@ -176,8 +176,8 @@ const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymen
                       {items.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell>{item.codigo}</TableCell>
-                          <TableCell className="font-medium">{item.descripcion}</TableCell>
-                          <TableCell>{item.ubicacion || '-'}</TableCell>
+                          <TableCell className="font-medium w-[45%]">{item.descripcion}</TableCell>
+                          <TableCell className="w-[15%]">{item.ubicacion || '-'}</TableCell>
                           <TableCell><Input type="number" value={item.cantidad} onChange={(e) => handleUpdateItem(item.id, 'cantidad', e.target.value)} className="w-full text-center" /></TableCell>
                           <TableCell>{item.unidad}</TableCell>
                           <TableCell><Input type="number" value={item.precio} onChange={(e) => handleUpdateItem(item.id, 'precio', e.target.value)} className="w-full text-right" /></TableCell>
