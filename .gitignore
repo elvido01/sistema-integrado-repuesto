@@ -1,2 +1,24 @@
+# dependencies
+node_modules/
+contexts/node_modules/
+
+# build outputs & caches
+dist/
+build/
+.vite/
+node_modules/.vite/
+
+# env & local
+.env
+.env.*
+server/.env
+contexts/.env
+
+# editor
+.vscode/
+.DS_Store
+
+# misc
+*.local
 node_modules
 node_modules

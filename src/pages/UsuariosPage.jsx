@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Helmet } from 'react-helmet';
+import { Helmet } from 'react-helmet-async';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
-import { supabase } from '@/lib/customSupabaseClient';
+import { supabase } from '../lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,13 +57,14 @@ const UsuariosPage = () => {
   const fetchUsuarios = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.rpc('get_perfiles_con_email');
+      const { data, error } = await supabase.rpc('get_usuarios_panel');
       if (error) throw error;
-      setUsuarios(data);
+      setUsuarios(data ?? []);
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error al cargar usuarios', description: error.message });
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, [toast]);
 
   useEffect(() => {
@@ -91,14 +92,38 @@ const UsuariosPage = () => {
     }
   };
 
-  const handleEditClick = (user) => {
-    setSelectedUser(user);
-    resetEdit({
-      nombre_completo: user.nombre_completo,
-      rol: user.rol,
-      activo: user.activo,
-      password: '',
-    });
+  const handleEditClick = async (row) => {
+    setSelectedUser(row);
+    try {
+      const { data: perfil } = await supabase
+        .from('perfiles')
+        .select('nombre_completo, rol, activo')
+        .eq('id', row.id)
+        .single();
+
+      const nombreUsado = perfil?.nombre_completo ?? row.display_name ?? '';
+      const rolUsado = perfil?.rol ?? row.rol ?? 'Vendedor';
+      const activoUsado = (perfil?.activo ?? row.activo ?? true);
+
+      resetEdit({
+        nombre_completo: nombreUsado,
+        rol: rolUsado,
+        activo: activoUsado,
+        password: ''
+      });
+      // asegurar que el Select apunte al valor correcto
+      setValueEdit('rol', rolUsado);
+    } catch (_) {
+      // fallback si algo falla: usar los datos de la fila
+      const rolUsado = row.rol ?? 'Vendedor';
+      resetEdit({
+        nombre_completo: row.display_name ?? '',
+        rol: rolUsado,
+        activo: row.activo ?? true,
+        password: ''
+      });
+      setValueEdit('rol', rolUsado);
+    }
     setIsEditDialogOpen(true);
   };
 
@@ -238,9 +263,9 @@ const UsuariosPage = () => {
                 ) : usuarios.length === 0 ? (
                   <TableRow><TableCell colSpan="5" className="text-center text-muted-foreground py-8">No se encontraron usuarios.</TableCell></TableRow>
                 ) : (
-                  usuarios.map(user => (
+          usuarios.map(user => (
                     <TableRow key={user.id}>
-                      <TableCell>{user.nombre_completo || 'N/A'}</TableCell>
+            <TableCell>{user.display_name || 'N/A'}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>{user.rol}</TableCell>
                       <TableCell>
