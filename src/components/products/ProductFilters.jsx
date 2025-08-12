@@ -1,13 +1,10 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Download, Upload } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Download, Upload } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCatalogData } from '@/hooks/useSupabase';
-
-const NULL_VALUE = 'null_value';
+import SearchableSelect from "@/components/common/SearchableSelect";
 
 const ProductFilters = ({
   searchTerm,
@@ -40,31 +37,24 @@ const ProductFilters = ({
     fileInputRef.current?.click();
   };
 
-  const handleFilterChange = useCallback((filterName, value) => {
-    console.log(`Changing filter ${filterName} to: ${value}`);
-    setFilters(prev => ({
-      ...prev,
-      [filterName]: value === NULL_VALUE ? null : Number(value)
-    }));
-  }, [setFilters]);
+  // Opciones para los combobox (solo elementos activos)
+  const marcaOptions = useMemo(() => (
+    (marcas || [])
+      .filter(m => m.activo)
+      .map(m => ({ value: String(m.id), label: m.nombre }))
+  ), [marcas]);
 
-  const marcaOptions = useMemo(() => {
-    return (marcas || []).filter(m => m.activo).map(marca => (
-      <SelectItem key={marca.id} value={String(marca.id)}>{marca.nombre}</SelectItem>
-    ));
-  }, [marcas]);
+  const tipoOptions = useMemo(() => (
+    (tipos || [])
+      .filter(t => t.activo)
+      .map(t => ({ value: String(t.id), label: t.nombre }))
+  ), [tipos]);
 
-  const tipoOptions = useMemo(() => {
-    return (tipos || []).filter(t => t.activo).map(tipo => (
-      <SelectItem key={tipo.id} value={String(tipo.id)}>{tipo.nombre}</SelectItem>
-    ));
-  }, [tipos]);
-
-  const modeloOptions = useMemo(() => {
-    return (modelos || []).filter(m => m.activo).map(modelo => (
-      <SelectItem key={modelo.id} value={String(modelo.id)}>{modelo.nombre}</SelectItem>
-    ));
-  }, [modelos]);
+  const modeloOptions = useMemo(() => (
+    (modelos || [])
+      .filter(m => m.activo)
+      .map(m => ({ value: String(m.id), label: m.nombre }))
+  ), [modelos]);
 
   return (
     <div className="p-4 border-b space-y-4">
@@ -80,66 +70,60 @@ const ProductFilters = ({
           />
         </div>
         <div className="flex gap-2">
-            <Button variant="outline" onClick={onExport}>
-              <Download className="w-4 h-4 mr-2" /> Exportar
-            </Button>
-            <Button variant="outline" onClick={handleImportClick}>
-              <Upload className="w-4 h-4 mr-2" /> Importar Existencias
-            </Button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept=".csv"
-              onChange={onFileUpload}
-            />
+          <Button variant="outline" onClick={onExport}>
+            <Download className="w-4 h-4 mr-2" /> Exportar
+          </Button>
+          <Button variant="outline" onClick={handleImportClick}>
+            <Upload className="w-4 h-4 mr-2" /> Importar Existencias
+          </Button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept=".csv"
+            onChange={onFileUpload}
+          />
         </div>
       </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Marca */}
         <div className="flex items-center gap-2">
           <Label htmlFor="marca-filter" className="whitespace-nowrap">Marca</Label>
-          <Select
-            value={filters.marca_id === null ? NULL_VALUE : String(filters.marca_id)}
-            onValueChange={(value) => handleFilterChange('marca_id', value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Todas las marcas" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NULL_VALUE}>Todas las marcas</SelectItem>
-              {marcaOptions}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            label="Marca"
+            placeholder="Todas las marcas"
+            options={marcaOptions}
+            value={filters.marca_id ?? ''}
+            onChange={(v) => setFilters(prev => ({ ...prev, marca_id: v ?? '' }))}
+            className="w-full"
+          />
         </div>
+
+        {/* Tipo */}
         <div className="flex items-center gap-2">
           <Label htmlFor="tipo-filter" className="whitespace-nowrap">Tipo</Label>
-          <Select
-            value={filters.tipo_id === null ? NULL_VALUE : String(filters.tipo_id)}
-            onValueChange={(value) => handleFilterChange('tipo_id', value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Todos los tipos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NULL_VALUE}>Todos los tipos</SelectItem>
-              {tipoOptions}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            label="Tipo"
+            placeholder="Todos los tipos"
+            options={tipoOptions}
+            value={filters.tipo_id ?? ''}
+            onChange={(v) => setFilters(prev => ({ ...prev, tipo_id: v ?? '' }))}
+            className="w-full"
+          />
         </div>
+
+        {/* Modelo */}
         <div className="flex items-center gap-2">
           <Label htmlFor="modelo-filter" className="whitespace-nowrap">Modelo</Label>
-          <Select
-            value={filters.modelo_id === null ? NULL_VALUE : String(filters.modelo_id)}
-            onValueChange={(value) => handleFilterChange('modelo_id', value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Todos los modelos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NULL_VALUE}>Todos los modelos</SelectItem>
-              {modeloOptions}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            label="Modelo"
+            placeholder="Todos los modelos"
+            options={modeloOptions}
+            value={filters.modelo_id ?? ''}
+            onChange={(v) => setFilters(prev => ({ ...prev, modelo_id: v ?? '' }))}
+            className="w-full"
+          />
         </div>
       </div>
     </div>
