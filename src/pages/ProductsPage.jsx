@@ -221,11 +221,8 @@ const ProductsPage = () => {
 
       if (error) throw error;
 
-      // Puntos 1, 2, 5: "Aplanar" el objeto de Supabase para el formulario.
-      // Extraemos los objetos anidados y el resto de las propiedades.
       const { tipo, marca, modelo, suplidor, ...restOfProduct } = data;
       
-      // Creamos un nuevo objeto plano, convirtiendo los IDs a string para Radix UI.
       const flattenedProduct = {
         ...restOfProduct,
         tipo_id: tipo?.id?.toString() || '',
@@ -242,7 +239,6 @@ const ProductsPage = () => {
         title: 'Error al cargar datos',
         description: `No se pudo obtener la información completa del producto: ${error.message}` 
       });
-      // Si la carga falla, usamos los datos básicos que ya teníamos.
       setSelectedProduct(product);
     } finally {
       setLoading(false);
@@ -353,15 +349,22 @@ const ProductsPage = () => {
         <ProductHeader onAdd={() => handleOpenFormModal()} />
 
         <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
-          <ProductFilters
-            searchTerm={searchTerm}
-            setSearchTerm={setSearchTerm}
-            filters={filters}
-            setFilters={setFilters}
-            onExport={handleExport}
-            onFileUpload={handleFileUpload}
-            onUpdateLocation={() => openPanel('update-location')}
-          />
+          {/* Barra de filtros sticky */}
+          <div
+            className="sticky top-0 z-40 border-b bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60"
+            style={{ '--filters-h': '56px' }}
+          >
+            <ProductFilters
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              filters={filters}
+              setFilters={setFilters}
+              onExport={handleExport}
+              onFileUpload={handleFileUpload}
+              onUpdateLocation={() => openPanel('update-location')}
+            />
+          </div>
+
           <ProductTable
             products={products}
             loading={loading && pagination.page === 1}
