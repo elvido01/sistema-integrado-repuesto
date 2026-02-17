@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { generateHeader, formatCurrency, formatDate } from './pdfUtils';
 
 export const generateDevolucionPDF = (devolucion, factura, cliente, details) => {
@@ -42,7 +42,7 @@ export const generateDevolucionPDF = (devolucion, factura, cliente, details) => 
     tableRows.push(itemData);
   });
 
-  doc.autoTable({
+  autoTable(doc, {
     head: [tableColumn],
     body: tableRows,
     startY: 115,
@@ -55,12 +55,12 @@ export const generateDevolucionPDF = (devolucion, factura, cliente, details) => 
   });
 
   // Totals
-  const finalY = doc.autoTable.previous.finalY;
+  const finalY = doc.lastAutoTable.finalY;
   const totalsX = 140;
   const totalsY = finalY + 20;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  
+
   doc.text("Sub-Total:", totalsX, totalsY);
   doc.text("Descuento:", totalsX, totalsY + 15);
   doc.text("ITBIS:", totalsX, totalsY + 30);
@@ -77,7 +77,7 @@ export const generateDevolucionPDF = (devolucion, factura, cliente, details) => 
   doc.text(formatCurrency(devolucion.total_devolucion), 200, totalsY + 47, { align: 'right' });
 
   // Notes
-  if(devolucion.notas) {
+  if (devolucion.notas) {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text("Notas:", 14, totalsY);

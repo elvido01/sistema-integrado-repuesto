@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -23,14 +23,26 @@ const ReporteTransaccionesDiariasPage = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
-    clienteId: 'all',
-    tipoCliente: 'all',
     fechaDesde: getCurrentDateInTimeZone(),
     fechaHasta: getCurrentDateInTimeZone(),
+    clienteId: 'all',
     tipoTransaccion: 'all',
     numeroTransaccion: '',
     descripcion: '',
-    concepto: 'all',
+    tipoCliente: 'all',
+    concepto: 'all'
+  });
+
+  const updateFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value ?? null }));
+  const clearFilters = () => setFilters({
+    fechaDesde: getCurrentDateInTimeZone(),
+    fechaHasta: getCurrentDateInTimeZone(),
+    clienteId: 'all',
+    tipoTransaccion: 'all',
+    numeroTransaccion: '',
+    descripcion: '',
+    tipoCliente: 'all',
+    concepto: 'all'
   });
 
   const fetchClients = useCallback(async () => {
@@ -41,15 +53,15 @@ const ReporteTransaccionesDiariasPage = () => {
       setClients(data);
     }
   }, [toast]);
-  
+
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
-    
+
     const { data, error } = await supabase.rpc('get_transacciones_diarias_sin_limite', {
-        p_fecha_desde: formatDateForSupabase(filters.fechaDesde),
-        p_fecha_hasta: formatDateForSupabase(filters.fechaHasta),
-        p_cliente_id: filters.clienteId === 'all' ? null : filters.clienteId,
-        p_tipo_transaccion: filters.tipoTransaccion === 'all' ? null : filters.tipoTransaccion
+      p_fecha_desde: formatDateForSupabase(filters.fechaDesde),
+      p_fecha_hasta: formatDateForSupabase(filters.fechaHasta),
+      p_cliente_id: filters.clienteId === 'all' ? null : filters.clienteId,
+      p_tipo_transaccion: filters.tipoTransaccion === 'all' ? null : filters.tipoTransaccion
     })
 
     if (error) {
@@ -92,7 +104,7 @@ const ReporteTransaccionesDiariasPage = () => {
       .channel('public:devoluciones')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'devoluciones' }, handleRealtimeUpdate)
       .subscribe();
-      
+
     const recibosChannel = supabase
       .channel('public:recibos_ingreso')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recibos_ingreso' }, handleRealtimeUpdate)
@@ -115,9 +127,9 @@ const ReporteTransaccionesDiariasPage = () => {
       handleConsultar();
     }
     if (e.key === 'F5') {
-        e.preventDefault();
-        // TODO: Implement print
-         toast({ title: 'Info', description: 'La función de imprimir no está implementada todavía.' });
+      e.preventDefault();
+      // TODO: Implement print
+      toast({ title: 'Info', description: 'La función de imprimir no está implementada todavía.' });
     }
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -137,7 +149,7 @@ const ReporteTransaccionesDiariasPage = () => {
       return acc;
     }, { debitos: 0, creditos: 0 });
   }, [transactions]);
-  
+
   const formatCurrency = (value) => new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2 }).format(value || 0);
 
   return (
@@ -154,14 +166,14 @@ const ReporteTransaccionesDiariasPage = () => {
           <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
             <h1 className="text-xl font-bold">Lista de Transacciones</h1>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border rounded-lg mb-4">
             {/* Col 1 */}
             <div className="space-y-4">
-               <div className="space-y-1">
+              <div className="space-y-1">
                 <Label>Código de Cliente</Label>
-                <Select value={filters.clienteId} onValueChange={(value) => setFilters(prev => ({...prev, clienteId: value}))}>
-                  <SelectTrigger><SelectValue/></SelectTrigger>
+                <Select value={filters.clienteId} onValueChange={(value) => setFilters(prev => ({ ...prev, clienteId: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos los clientes</SelectItem>
                     {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
@@ -170,80 +182,80 @@ const ReporteTransaccionesDiariasPage = () => {
               </div>
               <div className="space-y-1">
                 <Label>Tipo de Cliente</Label>
-                <Select value={filters.tipoCliente} onValueChange={(value) => setFilters(prev => ({...prev, tipoCliente: value}))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">-*- Todos los Tipos -*-</SelectItem>
-                      <SelectItem value="credito">Crédito</SelectItem>
-                      <SelectItem value="contado">Contado</SelectItem>
-                    </SelectContent>
+                <Select value={filters.tipoCliente} onValueChange={(value) => setFilters(prev => ({ ...prev, tipoCliente: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">-*- Todos los Tipos -*-</SelectItem>
+                    <SelectItem value="credito">Crédito</SelectItem>
+                    <SelectItem value="contado">Contado</SelectItem>
+                  </SelectContent>
                 </Select>
               </div>
             </div>
             {/* Col 2 */}
             <div className="space-y-4">
-                <div className="space-y-1">
-                    <Label>Fecha Desde</Label>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                        <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !filters.fechaDesde && "text-muted-foreground")}>
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {filters.fechaDesde ? formatInTimeZone(filters.fechaDesde, "dd/MM/yyyy") : <span>Seleccione fecha</span>}
-                        </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={filters.fechaDesde} onSelect={date => setFilters(prev => ({ ...prev, fechaDesde: date }))} initialFocus /></PopoverContent>
-                    </Popover>
-                </div>
-                <div className="space-y-1">
-                    <Label>Fecha Hasta</Label>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                        <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !filters.fechaHasta && "text-muted-foreground")}>
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {filters.fechaHasta ? formatInTimeZone(filters.fechaHasta, "dd/MM/yyyy") : <span>Seleccione fecha</span>}
-                        </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={filters.fechaHasta} onSelect={date => setFilters(prev => ({ ...prev, fechaHasta: date }))} initialFocus /></PopoverContent>
-                    </Popover>
-                </div>
+              <div className="space-y-1">
+                <Label>Fecha Desde</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !filters.fechaDesde && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {filters.fechaDesde ? formatInTimeZone(filters.fechaDesde, "dd/MM/yyyy") : <span>Seleccione fecha</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={filters.fechaDesde} onSelect={date => setFilters(prev => ({ ...prev, fechaDesde: date }))} initialFocus /></PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-1">
+                <Label>Fecha Hasta</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !filters.fechaHasta && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {filters.fechaHasta ? formatInTimeZone(filters.fechaHasta, "dd/MM/yyyy") : <span>Seleccione fecha</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={filters.fechaHasta} onSelect={date => setFilters(prev => ({ ...prev, fechaHasta: date }))} initialFocus /></PopoverContent>
+                </Popover>
+              </div>
             </div>
             {/* Col 3 */}
             <div className="space-y-4">
-                 <div className="space-y-1">
-                    <Label>Transacción</Label>
-                    <Select value={filters.tipoTransaccion} onValueChange={(value) => setFilters(prev => ({...prev, tipoTransaccion: value}))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todas las transacciones</SelectItem>
-                          <SelectItem value="FT">Ventas (FT)</SelectItem>
-                          <SelectItem value="DV">Devoluciones (DV)</SelectItem>
-                          <SelectItem value="PG">Pagos (PG)</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="space-y-1">
-                    <Label>Número</Label>
-                    <Input placeholder="Número de transacción" value={filters.numeroTransaccion} onChange={e => setFilters(prev => ({...prev, numeroTransaccion: e.target.value}))}/>
-                </div>
+              <div className="space-y-1">
+                <Label>Transacción</Label>
+                <Select value={filters.tipoTransaccion} onValueChange={(value) => setFilters(prev => ({ ...prev, tipoTransaccion: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las transacciones</SelectItem>
+                    <SelectItem value="FT">Ventas (FT)</SelectItem>
+                    <SelectItem value="DV">Devoluciones (DV)</SelectItem>
+                    <SelectItem value="PG">Pagos (PG)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Número</Label>
+                <Input placeholder="Número de transacción" value={filters.numeroTransaccion} onChange={e => setFilters(prev => ({ ...prev, numeroTransaccion: e.target.value }))} />
+              </div>
             </div>
-             {/* Col 4 */}
+            {/* Col 4 */}
             <div className="space-y-4">
-                <div className="space-y-1">
-                    <Label>Descripción</Label>
-                    <Input placeholder="Buscar por descripción" value={filters.descripcion} onChange={e => setFilters(prev => ({...prev, descripcion: e.target.value}))}/>
-                </div>
-                <div className="space-y-1">
-                    <Label>Concepto</Label>
-                    <Select value={filters.concepto} onValueChange={(value) => setFilters(prev => ({...prev, concepto: value}))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">-*- Todos -*-</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
+              <div className="space-y-1">
+                <Label>Descripción</Label>
+                <Input placeholder="Buscar por descripción" value={filters.descripcion} onChange={e => setFilters(prev => ({ ...prev, descripcion: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Concepto</Label>
+                <Select value={filters.concepto} onValueChange={(value) => setFilters(prev => ({ ...prev, concepto: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">-*- Todos -*-</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
-          
+
           <ScrollArea className="flex-grow border rounded-lg bg-lime-50/20">
             <Table>
               <TableHeader className="bg-gray-200 sticky top-0 z-10">
@@ -280,23 +292,23 @@ const ReporteTransaccionesDiariasPage = () => {
               </TableBody>
               <TableFooter className="sticky bottom-0 bg-gray-200 z-10">
                 <TableRow className="font-bold">
-                    <TableCell colSpan={6} className="text-right">TOTAL -></TableCell>
-                    <TableCell className="text-right text-blue-700">{formatCurrency(totals.debitos)}</TableCell>
-                    <TableCell className="text-right text-red-700">{formatCurrency(totals.creditos)}</TableCell>
+                  <TableCell colSpan={6} className="text-right uppercase">TOTALES →</TableCell>
+                  <TableCell className="text-right text-blue-700">{formatCurrency(totals.debitos)}</TableCell>
+                  <TableCell className="text-right text-red-700">{formatCurrency(totals.creditos)}</TableCell>
                 </TableRow>
               </TableFooter>
             </Table>
           </ScrollArea>
 
-           <div className="mt-4 flex justify-end items-center space-x-4">
+          <div className="mt-4 flex justify-end items-center space-x-4">
             <Button onClick={handleConsultar} disabled={loading} className="bg-gray-200 text-black hover:bg-gray-300">
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />} F10 - Consultar
             </Button>
-            <Button variant="outline" onClick={() => {toast({ title: 'Info', description: 'Imprimir no implementado' })}}>
+            <Button variant="outline" onClick={() => { toast({ title: 'Info', description: 'Imprimir no implementado' }) }}>
               <Printer className="mr-2 h-4 w-4" /> F5 - Imprimir
             </Button>
             <Button variant="outline" onClick={() => closePanel('reporte-transacciones-diarias')} disabled={loading}>
-                <X className="mr-2 h-4 w-4" /> ESC - Salir
+              <X className="mr-2 h-4 w-4" /> ESC - Salir
             </Button>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Save, XCircle, Plus, Upload, Image as ImageIcon } from 'lucide-react';
@@ -31,7 +31,7 @@ import { products, calculateStock } from '@/data/mockData';
 const UBICACIONES = [
   { value: 'A-CAJA-3', label: 'A-CAJA-3' },
   { value: 'B-CAJA-1', label: 'B-CAJA-1' },
-  { value: 'Sin ubicación', label: 'Sin ubicación' },
+  { value: 'Sin ubicaciÃ³n', label: 'Sin ubicaciÃ³n' },
   { value: 'PRINCIPAL', label: 'PRINCIPAL' },
 ];
 const TIPOS = [
@@ -43,7 +43,7 @@ const TIPOS = [
 const MARCAS = [
   { value: 'TVS', label: 'TVS' },
   { value: 'HONDA', label: 'HONDA' },
-  { value: 'GENÉRICA', label: 'GENÉRICA' },
+  { value: 'GENÃ‰RICA', label: 'GENÃ‰RICA' },
   { value: 'Sin marca', label: 'Sin marca' },
 ];
 const MODELOS = [
@@ -53,11 +53,11 @@ const MODELOS = [
 ];
 const SUPLIDORES = [
   { value: 'PROV01', label: 'Proveedor 01' },
-  { value: 'GENÉRICO', label: 'Genérico' },
+  { value: 'GENÃ‰RICO', label: 'GenÃ©rico' },
   { value: 'Sin proveedor', label: 'Sin proveedor' },
 ];
 
-// --- COMPONENTE SELECT GENÉRICO ---
+// --- COMPONENTE SELECT GENÃ‰RICO ---
 const SelectComponent = ({ label, value, onChange, options }) => (
   <div>
     <Label>{label}</Label>
@@ -81,8 +81,8 @@ const defaultForm = {
   descripcion: '',
   tipo: 'UND',
   ubicacion: 'PRINCIPAL',
-  suplidor: 'GENÉRICO',
-  marca: 'GENÉRICA',
+  suplidor: 'GENÃ‰RICO',
+  marca: 'GENÃ‰RICA',
   modelo: '',
   activo: true,
   garantia_meses: 0,
@@ -92,7 +92,7 @@ const defaultForm = {
   stock: 0,
   tramo: '',
   tipo_mercancia: 'normal',
-  // ...agrega aquí los demás campos necesarios
+  // ...agrega aquÃ­ los demÃ¡s campos necesarios
 };
 
 const ProductFormPage = () => {
@@ -152,10 +152,10 @@ const ProductFormPage = () => {
   });
 
   const handleSave = () => {
-    // Aquí puedes conectar con tu API/backend/Supabase
+    // AquÃ­ puedes conectar con tu API/backend/Supabase
     toast({
-      title: "✅ Guardado",
-      description: "La información de la mercancía ha sido guardada.",
+      title: "âœ… Guardado",
+      description: "La informaciÃ³n de la mercancÃ­a ha sido guardada.",
     });
     navigate('/inventario/mercancias');
   };
@@ -166,8 +166,8 @@ const ProductFormPage = () => {
 
   const handleNotImplemented = () => {
     toast({
-      title: "🚧 Función no implementada",
-      description: "Esta función aún no está disponible.",
+      title: "ðŸš§ FunciÃ³n no implementada",
+      description: "Esta funciÃ³n aÃºn no estÃ¡ disponible.",
       duration: 3000,
     });
   };
@@ -188,16 +188,16 @@ const ProductFormPage = () => {
     >
       <div className="p-4 border-b">
         <h1 className="text-xl font-bold text-morla-blue">
-          {isEditing ? 'Editar Mercancía' : 'Nueva Mercancía'}
+          {isEditing ? 'Editar MercancÃ­a' : 'Nueva MercancÃ­a'}
         </h1>
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto">
         <Tabs defaultValue="basicos" className="w-full">
           <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="basicos">Datos básicos</TabsTrigger>
-            <TabsTrigger value="clasificacion">Clasificación</TabsTrigger>
-            <TabsTrigger value="politicas">Políticas</TabsTrigger>
+            <TabsTrigger value="basicos">Datos bÃ¡sicos</TabsTrigger>
+            <TabsTrigger value="clasificacion">ClasificaciÃ³n</TabsTrigger>
+            <TabsTrigger value="politicas">PolÃ­ticas</TabsTrigger>
             <TabsTrigger value="presentaciones">Presentaciones</TabsTrigger>
             <TabsTrigger value="componentes">Componentes</TabsTrigger>
             <TabsTrigger value="contabilidad">Contabilidad</TabsTrigger>
@@ -209,7 +209,7 @@ const ProductFormPage = () => {
                 <div className="md:col-span-2 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="codigo">Código (SKU)</Label>
+                      <Label htmlFor="codigo">CÃ³digo (SKU)</Label>
                       <Input
                         id="codigo"
                         value={form.codigo}
@@ -227,7 +227,7 @@ const ProductFormPage = () => {
                     </div>
                   </div>
                   <div>
-                    <Label htmlFor="descripcion">Descripción</Label>
+                    <Label htmlFor="descripcion">DescripciÃ³n</Label>
                     <Textarea
                       id="descripcion"
                       rows={4}
@@ -265,7 +265,7 @@ const ProductFormPage = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-4">
                   <SelectComponent
-                    label="Ubicación"
+                    label="UbicaciÃ³n"
                     value={form.ubicacion}
                     onChange={value => handleChange('ubicacion', value)}
                     options={UBICACIONES}
@@ -305,7 +305,7 @@ const ProductFormPage = () => {
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="garantia">Garantía (meses)</Label>
+                    <Label htmlFor="garantia">GarantÃ­a (meses)</Label>
                     <Input
                       id="garantia"
                       type="number"
@@ -317,7 +317,7 @@ const ProductFormPage = () => {
                     variant="outline"
                     className="w-full"
                     onClick={handleNotImplemented}
-                  >📦 Ver últimas compras</Button>
+                  >ðŸ“¦ Ver Ãºltimas compras</Button>
                 </div>
               </div>
             </TabsContent>
@@ -325,10 +325,10 @@ const ProductFormPage = () => {
             <TabsContent value="politicas">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-4">
-                  <Label>Políticas de Stock</Label>
+                  <Label>PolÃ­ticas de Stock</Label>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="min_stock">Mínima</Label>
+                      <Label htmlFor="min_stock">MÃ­nima</Label>
                       <Input
                         id="min_stock"
                         type="number"
@@ -337,7 +337,7 @@ const ProductFormPage = () => {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="max_stock">Máxima</Label>
+                      <Label htmlFor="max_stock">MÃ¡xima</Label>
                       <Input
                         id="max_stock"
                         type="number"
@@ -347,7 +347,7 @@ const ProductFormPage = () => {
                     </div>
                   </div>
                   <div>
-                    <Label>IE – % ITBIS</Label>
+                    <Label>IE â€“ % ITBIS</Label>
                     <Select
                       value={form.itbis_pct?.toString() ?? "18"}
                       onValueChange={value => handleChange('itbis_pct', Number(value))}
@@ -362,7 +362,7 @@ const ProductFormPage = () => {
                   </div>
                 </div>
                 <div className="md:col-span-2">
-                  <Label>Tipo de mercancía</Label>
+                  <Label>Tipo de mercancÃ­a</Label>
                   <RadioGroup
                     value={form.tipo_mercancia ?? "normal"}
                     onValueChange={value => handleChange('tipo_mercancia', value)}
@@ -393,10 +393,10 @@ const ProductFormPage = () => {
               <PresentationsTab onNotImplemented={handleNotImplemented} />
             </TabsContent>
             <TabsContent value="componentes">
-              <p className="text-center text-gray-500 p-8">Función de componentes/producción no implementada.</p>
+              <p className="text-center text-gray-500 p-8">FunciÃ³n de componentes/producciÃ³n no implementada.</p>
             </TabsContent>
             <TabsContent value="contabilidad">
-              <p className="text-center text-gray-500 p-8">Función de contabilidad no implementada.</p>
+              <p className="text-center text-gray-500 p-8">FunciÃ³n de contabilidad no implementada.</p>
             </TabsContent>
           </div>
         </Tabs>
@@ -404,10 +404,10 @@ const ProductFormPage = () => {
 
       <div className="p-4 border-t bg-morla-gray-light flex justify-end gap-4">
         <Button className="btn-primary" onClick={handleSave}>
-          <Save className="w-4 h-4 mr-2" /> F10 – Grabar
+          <Save className="w-4 h-4 mr-2" /> F10 â€“ Grabar
         </Button>
         <Button variant="outline" onClick={handleCancel}>
-          <XCircle className="w-4 h-4 mr-2" /> ESC – Salir
+          <XCircle className="w-4 h-4 mr-2" /> ESC â€“ Salir
         </Button>
       </div>
     </motion.div>
@@ -423,7 +423,7 @@ const PresentationsTab = ({ onNotImplemented }) => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Presentación</TableHead>
+                <TableHead>PresentaciÃ³n</TableHead>
                 <TableHead>Cantidad</TableHead>
                 <TableHead>COSTO</TableHead>
                 <TableHead>%Ben.</TableHead>
@@ -449,7 +449,7 @@ const PresentationsTab = ({ onNotImplemented }) => {
                   </Select>
                 </TableCell>
                 <TableCell><Input type="number" defaultValue="1" className="w-20" /></TableCell>
-                <TableCell><Input type="number" defaultValue="0.00" className="w-24 bg-orange-100" /></TableCell>
+                <TableCell><Input type="number" defaultValue="0.00" className="w-24 bg-accent" /></TableCell>
                 <TableCell><Input type="number" defaultValue="0" className="w-20" /></TableCell>
                 <TableCell><Input type="number" defaultValue="0.00" className="w-24 bg-green-100" /></TableCell>
                 <TableCell><Input type="number" defaultValue="0" className="w-20" /></TableCell>
@@ -459,7 +459,7 @@ const PresentationsTab = ({ onNotImplemented }) => {
             </TableBody>
           </Table>
           <Button size="sm" variant="outline" className="mt-4" onClick={onNotImplemented}>
-            <Plus className="w-4 h-4 mr-2" />Añadir Presentación
+            <Plus className="w-4 h-4 mr-2" />AÃ±adir PresentaciÃ³n
           </Button>
         </div>
         <div className="space-y-2">
@@ -482,7 +482,7 @@ const PresentationsTab = ({ onNotImplemented }) => {
                   <p className="text-xs font-medium">JPEG</p>
                 </div>
                 <div>
-                  <Label className="text-xs text-gray-500">Tamaño:</Label>
+                  <Label className="text-xs text-gray-500">TamaÃ±o:</Label>
                   <p className="text-xs font-medium">245 KB</p>
                 </div>
                 <div>
@@ -526,3 +526,4 @@ const PresentationsTab = ({ onNotImplemented }) => {
 };
 
 export default ProductFormPage;
+

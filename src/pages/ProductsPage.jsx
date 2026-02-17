@@ -1,12 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { Button } from '@/components/ui/button';
-import { Plus, Download, Upload } from 'lucide-react';
-import Papa from 'papaparse';
-import { exportToExcel } from '@/lib/excelExport';
 import { usePanels } from '@/contexts/PanelContext';
 
 import ProductHeader from '@/components/products/ProductHeader';
@@ -16,103 +12,122 @@ import ProductTableFooter from '@/components/products/ProductTableFooter';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ChangeProductCodeModal from '@/components/products/ChangeProductCodeModal';
 
+import Papa from 'papaparse';
+import { exportToExcel } from '@/lib/excelExport';
+
+// 👇 helpers y catálogos
+import { useCatalogData } from '@/hooks/useSupabase';
+import { orNull, nombreById } from '@/lib/rpc-helpers';
+
 const ProductsPage = () => {
   const { toast } = useToast();
   const { openPanel } = usePanels();
+
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ marca_id: '', tipo_id: '', modelo_id: '' });
-  const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0 });
+  const [filters, setFilters] = useState({ marca_id: null, modelo_id: null, tipo_id: null });
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0 });
+
+  // ✅ usar alias para no chocar con otras variables
+  const {
+    marcas: catalogMarcas = [],
+    modelos: catalogModelos = [],
+    tipos: catalogTipos = [],
+  } = useCatalogData() ?? {};
+
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isChangeCodeModalOpen, setIsChangeCodeModalOpen] = useState(false);
 
-  const observer = useRef();
-  
-  const lastProductElementRef = useCallback(node => {
-      if (loading) return;
-      if (observer.current) observer.current.disconnect();
-      observer.current = new IntersectionObserver(entries => {
-          if (entries[0].isIntersecting && products.length < pagination.total) {
-              setPagination(prev => ({ ...prev, page: prev.page + 1 }));
-          }
-      });
-      if (node) observer.current.observe(node);
-  }, [loading, products.length, pagination.total]);
+  // ✅ Se eliminó el observer (Infinite Scroll) para evitar saltos de pantalla
+  // por requerimiento del usuario. La carga se controla por el selector de límites.
 
-  const fetchProducts = useCallback(async (isNewSearch = false) => {
-    setLoading(true);
-    try {
-      const currentPage = isNewSearch ? 1 : pagination.page;
-      const offset = (currentPage - 1) * pagination.limit;
-      
-      const { data, error } = await supabase.rpc('get_productos_paginados', {
+  const fetchProducts = useCallback(
+    async (isNewSearch = false) => {
+      setLoading(true);
+      try {
+        const currentPage = isNewSearch ? 1 : pagination.page;
+        const offset = (currentPage - 1) * pagination.limit;
+
+        // ✅ convertir ID -> NOMBRE para la RPC
+        const marcaNombre = nombreById(catalogMarcas, filters?.marca_id ?? filters?.marcaId);
+        const modeloNombre = nombreById(catalogModelos, filters?.modelo_id ?? filters?.modeloId);
+
+        const { data, error } = await supabase.rpc('get_productos_paginados', {
           p_limit: pagination.limit,
           p_offset: offset,
-          p_search_term: searchTerm,
-          p_marca_filter: filters.marca_id,
-          p_modelo_filter: filters.modelo_id
-      });
+          p_search_term: orNull(searchTerm),
+          p_marca_filter: orNull(marcaNombre),    // TEXT (nombre)
+          p_modelo_filter: orNull(modeloNombre),  // TEXT (nombre)
+          p_include_zero_stock: true,
+          // p_tipo_filter: orNull(filters.tipo_id) // la RPC actual no lo usa
+        });
 
-      if (error) throw error;
-      
-      const newProducts = data || [];
+        if (error) throw error;
 
-      if (isNewSearch) {
-        setProducts(newProducts);
-      } else {
-        setProducts(prev => [...prev, ...newProducts]);
+        const newProducts = data || [];
+        if (isNewSearch) {
+          setProducts(newProducts);
+        } else {
+          setProducts((prev) => {
+            // ✅ Evitar duplicados por ID (por si acaso el offset se desfasa)
+            const existingIds = new Set(prev.map(p => p.id));
+            const uniqueNew = newProducts.filter(p => !existingIds.has(p.id));
+            return [...prev, ...uniqueNew];
+          });
+        }
+
+        if (newProducts.length > 0) {
+          setPagination((prev) => ({
+            ...prev,
+            total: newProducts[0].total_count,
+            page: currentPage,
+          }));
+        } else {
+          setPagination((prev) => ({ ...prev, total: 0, page: 1 }));
+        }
+      } catch (error) {
+        toast({
+          variant: 'destructive',
+          title: 'Error al cargar productos',
+          description: error.message,
+        });
+      } finally {
+        setLoading(false);
       }
-      
-      if(newProducts.length > 0) {
-        setPagination(prev => ({...prev, total: newProducts[0].total_count, page: currentPage}));
-      } else if (isNewSearch) {
-        setPagination(prev => ({...prev, total: 0, page: 1}));
-      }
+    },
+    [pagination.page, pagination.limit, searchTerm, filters, toast, catalogMarcas, catalogModelos]
+  );
 
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error al cargar productos',
-        description: error.message,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [pagination.page, pagination.limit, searchTerm, filters, toast]);
-  
   useEffect(() => {
     const handler = setTimeout(() => {
       fetchProducts(true);
-    }, 500); 
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [searchTerm, filters]);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchTerm, filters, fetchProducts]);
 
   useEffect(() => {
-      if (pagination.page > 1) {
-          fetchProducts();
-      }
-  }, [pagination.page]);
-  
+    if (pagination.page > 1) {
+      fetchProducts();
+    }
+  }, [pagination.page, fetchProducts]);
+
   const refreshProducts = () => {
     setProducts([]);
-    setPagination(prev => ({...prev, page: 1}));
+    setPagination((prev) => ({ ...prev, page: 1 }));
     fetchProducts(true);
   };
-  
+
   const handleSaveProduct = async (productData, presentations, isEditing) => {
     try {
       let savedProduct;
-  
+
       const parseNumeric = (value) => {
         const parsed = parseFloat(value);
         return isNaN(parsed) ? 0 : parsed;
       };
-  
+
       const productPayload = {
         ...productData,
         costo: parseNumeric(productData.costo),
@@ -122,11 +137,9 @@ const ProductsPage = () => {
         max_stock: parseNumeric(productData.max_stock),
         garantia_meses: parseInt(productData.garantia_meses, 10) || 0,
       };
-      
-      if (!isEditing) {
-        delete productPayload.id;
-      }
-  
+
+      if (!isEditing) delete productPayload.id;
+
       if (isEditing) {
         const { id, ...updateData } = productPayload;
         const { data, error } = await supabase
@@ -139,18 +152,14 @@ const ProductsPage = () => {
         savedProduct = data;
         toast({ title: 'Éxito', description: 'Producto actualizado correctamente.' });
       } else {
-        const { data, error } = await supabase
-          .from('productos')
-          .insert(productPayload)
-          .select()
-          .single();
+        const { data, error } = await supabase.from('productos').insert(productPayload).select().single();
         if (error) throw error;
         savedProduct = data;
         toast({ title: 'Éxito', description: 'Producto creado correctamente.' });
       }
-  
+
       if (savedProduct && presentations.length > 0) {
-        const presentationsToUpsert = presentations.map(p => {
+        const presentationsToUpsert = presentations.map((p) => {
           const { id, ...rest } = p;
           const presentationPayload = {
             ...rest,
@@ -167,12 +176,12 @@ const ProductsPage = () => {
           }
           return presentationPayload;
         });
-  
+
         const { error: presError } = await supabase.from('presentaciones').upsert(presentationsToUpsert);
         if (presError) throw presError;
       }
-  
-      setIsFormModalOpen(false); // Solo cierra el modal principal desde aquí
+
+      setIsFormModalOpen(false);
       refreshProducts();
     } catch (error) {
       toast({
@@ -184,45 +193,73 @@ const ProductsPage = () => {
   };
 
   const handleDeleteProduct = async (productId) => {
+    setLoading(true);
     try {
-      const { error } = await supabase
-        .from('productos')
-        .update({ activo: false })
-        .eq('id', productId);
+      // 1. Verificar movimientos en varias tablas
+      const tablesToCheck = [
+        { name: 'facturas_detalle', label: 'facturas' },
+        { name: 'pedidos_detalle', label: 'pedidos' },
+        { name: 'compras_detalle', label: 'compras' },
+        { name: 'inventario_movimientos', label: 'movimientos de inventario' }
+      ];
 
+      for (const table of tablesToCheck) {
+        const { count, error: checkError } = await supabase
+          .from(table.name)
+          .select('*', { count: 'exact', head: true })
+          .eq('producto_id', productId);
+
+        if (checkError) throw checkError;
+
+        if (count > 0) {
+          toast({
+            variant: 'destructive',
+            title: 'No se puede eliminar',
+            description: 'Esta mercancia no puede ser eliminada porque ya tiene movimientos.',
+          });
+          return;
+        }
+      }
+
+      // 2. Si no hay movimientos, proceder con la desactivación (soft delete)
+      const { error } = await supabase.from('productos').update({ activo: false }).eq('id', productId);
       if (error) throw error;
-      toast({ title: 'Éxito', description: 'Producto desactivado correctamente.' });
+
+      toast({ title: 'Éxito', description: 'Producto eliminado correctamente.' });
+      setSelectedProduct(null);
       refreshProducts();
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Error al desactivar el producto',
+        title: 'Error al eliminar el producto',
         description: error.message,
       });
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleOpenFormModal = async (product = null) => {
-    // Para crear un producto nuevo, simplemente abre el modal sin datos.
     if (!product?.id) {
       setSelectedProduct(null);
       setIsFormModalOpen(true);
       return;
     }
 
-    // Para editar, busca los datos completos y anidados del producto.
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('productos')
-        .select('*, presentaciones(*), tipo:tipos_producto(id, nombre), marca:marcas(id, nombre), modelo:modelos(id, nombre), suplidor:proveedores(id, nombre)')
+        .select(
+          '*, presentaciones(*), tipo:tipos_producto(id, nombre), marca:marcas(id, nombre), modelo:modelos(id, nombre), suplidor:proveedores(id, nombre)'
+        )
         .eq('id', product.id)
         .single();
 
       if (error) throw error;
 
       const { tipo, marca, modelo, suplidor, ...restOfProduct } = data;
-      
+
       const flattenedProduct = {
         ...restOfProduct,
         tipo_id: tipo?.id?.toString() || '',
@@ -230,14 +267,13 @@ const ProductsPage = () => {
         modelo_id: modelo?.id?.toString() || '',
         suplidor_id: suplidor?.id?.toString() || '',
       };
-      
-      setSelectedProduct(flattenedProduct);
 
+      setSelectedProduct(flattenedProduct);
     } catch (error) {
-      toast({ 
-        variant: 'destructive', 
+      toast({
+        variant: 'destructive',
         title: 'Error al cargar datos',
-        description: `No se pudo obtener la información completa del producto: ${error.message}` 
+        description: `No se pudo obtener la información completa del producto: ${error.message}`,
       });
       setSelectedProduct(product);
     } finally {
@@ -245,11 +281,11 @@ const ProductsPage = () => {
       setIsFormModalOpen(true);
     }
   };
-  
+
   const handleOpenChangeCodeModal = (product) => {
     setSelectedProduct(product);
     setIsChangeCodeModalOpen(true);
-  }
+  };
 
   const handleExport = async () => {
     setLoading(true);
@@ -262,35 +298,37 @@ const ProductsPage = () => {
 
       if (error) throw error;
 
-      const productsWithStock = await Promise.all(data.map(async (p) => {
-        const { data: stock } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
-        return {
-          ...p,
-          existencia: stock || 0,
-          tipo_nombre: p.tipo?.nombre || '',
-          marca_nombre: p.marca?.nombre || '',
-          modelo_nombre: p.modelo?.nombre || '',
-        };
+      const productsWithStock = await Promise.all(
+        data.map(async (p) => {
+          const { data: stock } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
+          return {
+            ...p,
+            existencia: stock || 0,
+            tipo_nombre: p.tipo?.nombre || '',
+            marca_nombre: p.marca?.nombre || '',
+            modelo_nombre: p.modelo?.nombre || '',
+          };
+        })
+      );
+
+      const dataToExport = productsWithStock.map((p) => ({
+        Código: p.codigo,
+        Descripción: p.descripcion,
+        Referencia: p.referencia,
+        Existencia: p.existencia,
+        Costo: p.costo,
+        Precio: p.precio,
+        'ITBIS %': p.itbis_pct,
+        Tipo: p.tipo_nombre,
+        Marca: p.marca_nombre,
+        Modelo: p.modelo_nombre,
+        Ubicación: p.ubicacion,
       }));
 
-      const dataToExport = productsWithStock.map(p => ({
-        'Código': p.codigo,
-        'Descripción': p.descripcion,
-        'Referencia': p.referencia,
-        'Existencia': p.existencia,
-        'Costo': p.costo,
-        'Precio': p.precio,
-        'ITBIS %': p.itbis_pct,
-        'Tipo': p.tipo_nombre,
-        'Marca': p.marca_nombre,
-        'Modelo': p.modelo_nombre,
-        'Ubicación': p.ubicacion,
-      }));
-      
       exportToExcel(dataToExport, 'Listado_de_Productos');
-      toast({title: 'Exportación Exitosa', description: 'El listado de productos se ha exportado a Excel.'});
+      toast({ title: 'Exportación Exitosa', description: 'El listado de productos se ha exportado a Excel.' });
     } catch (error) {
-       toast({variant: 'destructive', title: 'Error de Exportación', description: error.message});
+      toast({ variant: 'destructive', title: 'Error de Exportación', description: error.message });
     } finally {
       setLoading(false);
     }
@@ -305,12 +343,12 @@ const ProductsPage = () => {
         complete: async (results) => {
           try {
             const updates = results.data
-              .filter(row => row.codigo && row.existencia !== undefined)
-              .map(row => ({
+              .filter((row) => row.codigo && row.existencia !== undefined)
+              .map((row) => ({
                 codigo: row.codigo,
-                existencia: parseFloat(row.existencia)
+                existencia: parseFloat(row.existencia),
               }));
-            
+
             if (updates.length > 0) {
               setLoading(true);
               const { error } = await supabase.rpc('ajustar_inventario_batch', { p_ajustes: updates });
@@ -318,9 +356,13 @@ const ProductsPage = () => {
               toast({ title: 'Importación Exitosa', description: `${updates.length} existencias han sido actualizadas.` });
               refreshProducts();
             } else {
-              toast({ variant: 'destructive', title: 'Archivo Inválido', description: 'El archivo CSV debe tener columnas "codigo" y "existencia".' });
+              toast({
+                variant: 'destructive',
+                title: 'Archivo Inválido',
+                description: 'El archivo CSV debe tener columnas "codigo" y "existencia".',
+              });
             }
-          } catch(err) {
+          } catch (err) {
             toast({ variant: 'destructive', title: 'Error al procesar archivo', description: err.message });
           } finally {
             setLoading(false);
@@ -346,7 +388,12 @@ const ProductsPage = () => {
         transition={{ duration: 0.5 }}
         className="p-4 sm:p-6"
       >
-        <ProductHeader onAdd={() => handleOpenFormModal()} />
+        <ProductHeader
+          onAdd={() => handleOpenFormModal()}
+          onDelete={() => selectedProduct && handleDeleteProduct(selectedProduct.id)}
+          onChangeCode={() => selectedProduct && handleOpenChangeCodeModal(selectedProduct)}
+          hasSelection={!!selectedProduct}
+        />
 
         <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
           {/* Barra de filtros sticky */}
@@ -359,6 +406,8 @@ const ProductsPage = () => {
               setSearchTerm={setSearchTerm}
               filters={filters}
               setFilters={setFilters}
+              limit={pagination.limit}
+              setLimit={(newLimit) => setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }))}
               onExport={handleExport}
               onFileUpload={handleFileUpload}
               onUpdateLocation={() => openPanel('update-location')}
@@ -368,11 +417,14 @@ const ProductsPage = () => {
           <ProductTable
             products={products}
             loading={loading && pagination.page === 1}
+            loadingMore={loading && pagination.page > 1}
             onEdit={handleOpenFormModal}
             onDelete={handleDeleteProduct}
             onChangeCode={handleOpenChangeCodeModal}
-            lastProductElementRef={lastProductElementRef}
+            selectedProduct={selectedProduct}
+            onSelectProduct={setSelectedProduct}
           />
+
           <ProductTableFooter
             pagination={pagination}
             setPagination={setPagination}
@@ -382,15 +434,14 @@ const ProductsPage = () => {
         </div>
       </motion.div>
 
-      {/* Aquí el modal principal - NO PASAR este onClose a ningún modal hijo */}
+      {/* Modal principal */}
       <ProductFormModal
         isOpen={isFormModalOpen}
         onClose={() => setIsFormModalOpen(false)}
         onSave={handleSaveProduct}
         product={selectedProduct}
       />
-      {/* Fin del modal principal */}
-      
+
       <ChangeProductCodeModal
         isOpen={isChangeCodeModalOpen}
         onClose={() => setIsChangeCodeModalOpen(false)}

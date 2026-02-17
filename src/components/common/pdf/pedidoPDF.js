@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { generateHeader, formatCurrency, formatDate } from './pdfUtils';
 
 export const generatePedidoPDF = (pedido, cliente, vendedor, details) => {
@@ -11,10 +11,19 @@ export const generatePedidoPDF = (pedido, cliente, vendedor, details) => {
   doc.setFont('helvetica', 'bold');
   doc.text("CLIENTE:", 14, 80);
   doc.setFont('helvetica', 'normal');
-  doc.text(cliente.nombre || '', 14, 86);
-  doc.text(`RNC: ${cliente.rnc || ''}`, 14, 92);
-  doc.text(cliente.direccion || '', 14, 98);
-  doc.text(`Tel: ${cliente.telefono || ''}`, 14, 104);
+
+  const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+  const isGeneric = !cliente || !cliente.id || genericIds.includes(cliente.id) || (cliente.nombre?.toUpperCase().includes('GENERICO'));
+
+  const displayNombre = (isGeneric && pedido.manual_cliente_nombre)
+    ? pedido.manual_cliente_nombre.toUpperCase()
+    : (cliente?.nombre || 'CLIENTE GENERICO').toUpperCase();
+
+  doc.text(displayNombre, 14, 86);
+
+  doc.text(`RNC: ${cliente?.rnc || ''}`, 14, 92);
+  doc.text(cliente?.direccion || '', 14, 98);
+  doc.text(`Tel: ${cliente?.telefono || ''}`, 14, 104);
 
   // Pedido Info
   doc.setFont('helvetica', 'bold');
@@ -47,7 +56,7 @@ export const generatePedidoPDF = (pedido, cliente, vendedor, details) => {
     tableRows.push(itemData);
   });
 
-  doc.autoTable({
+  autoTable(doc, {
     head: [tableColumn],
     body: tableRows,
     startY: 115,
@@ -60,12 +69,12 @@ export const generatePedidoPDF = (pedido, cliente, vendedor, details) => {
   });
 
   // Totals
-  const finalY = doc.autoTable.previous.finalY;
+  const finalY = doc.lastAutoTable.finalY;
   const totalsX = 140;
   const totalsY = finalY + 20;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  
+
   doc.text("Sub-Total:", totalsX, totalsY);
   doc.text("Descuento:", totalsX, totalsY + 15);
   doc.text("ITBIS:", totalsX, totalsY + 30);
@@ -82,7 +91,7 @@ export const generatePedidoPDF = (pedido, cliente, vendedor, details) => {
   doc.text(formatCurrency(pedido.monto_total), 200, totalsY + 47, { align: 'right' });
 
   // Notes
-  if(pedido.notas) {
+  if (pedido.notas) {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text("Notas:", 14, totalsY);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { useToast } from '@/components/ui/use-toast';
 import { useVentas } from '@/hooks/useVentas';
@@ -7,7 +7,9 @@ import VentasTable from '@/components/ventas/VentasTable';
 import VentasFooter from '@/components/ventas/VentasFooter';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
+import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
 import { generateFacturaPDF } from '@/components/common/PDFGenerator';
+import { printFacturaPOS, printFacturaQZ } from '@/lib/printPOS';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -15,22 +17,22 @@ import { Loader2 } from 'lucide-react';
 
 const VentasPage = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const grabarBtnRef = useRef(null);
+  /* UI state for invoice editing search */
+  const [isEditingNumero, setIsEditingNumero] = useState(false);
+  const [editNumero, setEditNumero] = useState('');
+
   const {
-    date,
-    setDate,
-    paymentType,
-    setPaymentType,
-    diasCredito,
-    setDiasCredito,
-    items,
-    setItems,
-    itemCode,
-    setItemCode,
+    date, setDate,
+    paymentType, setPaymentType,
+    diasCredito, setDiasCredito,
+    items, setItems,
+    itemCode, setItemCode,
     isSaving,
-    montoRecibido,
-    setMontoRecibido,
-    cliente,
+    montoRecibido, setMontoRecibido,
+    cliente, setCliente,
+    vendedor, setVendedor,
     totals,
     cambio,
     resetVenta,
@@ -41,7 +43,32 @@ const VentasPage = () => {
     handleDeleteItem,
     handleAddProductByCode,
     handleSelectCotizacion,
+    handleSelectPedido,
+    currentItem,
+    updateCurrentItem,
+    commitCurrentItem,
+    clearCurrentItem,
+    printFormat, setPrintFormat,
+    printMethod, setPrintMethod,
+    recargo, setRecargo,
+    editingFacturaId,
+    editingFacturaNumero,
+    loadInvoiceByNumero,
+    manualClienteNombre,
+    setManualClienteNombre
   } = useVentas();
+
+  const handleEditFacturaToggle = () => {
+    setIsEditingNumero(!isEditingNumero);
+    if (!isEditingNumero) setEditNumero('');
+  };
+
+  const handleSearchInvoice = async () => {
+    if (!editNumero) return;
+    await loadInvoiceByNumero(editNumero);
+    setIsEditingNumero(false);
+    setEditNumero('');
+  };
 
   // Modal de búsqueda de cliente
   const [isClienteSearchModalOpen, setIsClienteSearchModalOpen] = useState(false);
@@ -50,6 +77,8 @@ const VentasPage = () => {
 
   // Modal de búsqueda de producto
   const [isProductSearchModalOpen, setIsProductSearchModalOpen] = useState(false);
+  const [isCotizacionModalOpen, setIsCotizacionModalOpen] = useState(false);
+  const [isPedidoModalOpen, setIsPedidoModalOpen] = useState(false);
   const { pedidoParaFacturar, setPedidoParaFacturar } = useFacturacion();
 
   const [loadingInitialData, setLoadingInitialData] = useState(true);
@@ -60,15 +89,43 @@ const VentasPage = () => {
   const [nextFacturaNumero, setNextFacturaNumero] = useState(null);
   const [loadingNumero, setLoadingNumero] = useState(true);
 
+  const fetchNextNumero = useCallback(async () => {
+    setLoadingNumero(true);
+    try {
+      const { data: numeroData, error: numeroError } = await supabase.rpc('get_next_factura_numero');
+      if (numeroError) throw numeroError;
+      setNextFacturaNumero(numeroData);
+    } catch (error) {
+      console.error('Error fetching next number', error);
+    } finally {
+      setLoadingNumero(false);
+    }
+  }, []);
+
   useEffect(() => {
     const fetchInitialData = async () => {
       setLoadingInitialData(true);
       try {
-        const { data: vendedoresData, error: vendedoresError } = await supabase.rpc('get_perfiles_con_email');
+        const { data: vendedoresData, error: vendedoresError } = await supabase
+          .from('vendedores')
+          .select('id, nombre')
+          .eq('activo', true)
+          .order('nombre', { ascending: true });
         if (vendedoresError) throw vendedoresError;
         setVendedores(vendedoresData);
+        if (vendedoresData.length === 0) {
+          toast({
+            title: 'Advertencia',
+            description: 'No se encontraron vendedores activos. Verifique los permisos o el catálogo.',
+            variant: 'warning'
+          });
+        }
+
+        // Default selection: closest to 'A' or current user if they are a vendor
         if (user && vendedoresData.some(v => v.id === user.id)) {
           setSelectedVendedor(user.id);
+        } else if (vendedoresData.length > 0) {
+          setSelectedVendedor(vendedoresData[0].id);
         }
 
         const { data: almacenesData, error: almacenesError } = await supabase
@@ -77,74 +134,93 @@ const VentasPage = () => {
           .eq('activo', true);
         if (almacenesError) throw almacenesError;
         setAlmacenes(almacenesData);
-        if (almacenesData.length > 0) setSelectedAlmacen(almacenesData[0].id);
+        const defaultAlmacen = almacenesData.find(a => a.id === 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7') || almacenesData[0];
+        if (defaultAlmacen) setSelectedAlmacen(defaultAlmacen.id);
 
-        const { data: numeroData, error: numeroError } = await supabase.rpc('get_next_factura_numero');
-        if (numeroError) throw numeroError;
-        setNextFacturaNumero(numeroData);
+        await fetchNextNumero();
       } catch (error) {
         console.error('Error fetching initial data', error);
         toast({ title: 'Error', description: 'No se pudieron cargar los datos iniciales.', variant: 'destructive' });
       } finally {
         setLoadingInitialData(false);
-        setLoadingNumero(false);
       }
     };
     fetchInitialData();
-  }, [user, toast]);
+  }, [user, toast, fetchNextNumero]);
 
   useEffect(() => {
     if (pedidoParaFacturar) {
-      handleSelectCliente(pedidoParaFacturar.cliente);
-      const newItems = pedidoParaFacturar.detalles.map(d => ({
-        id: d.producto_id,
-        producto_id: d.producto_id,
-        codigo: d.codigo,
-        descripcion: d.descripcion,
-        ubicacion: d.ubicacion || '',
-        cantidad: d.cantidad,
-        precio: d.precio,
-        descuento: 0,
-        unidad: d.unidad,
-        itbis_pct: d.productos?.itbis_pct || 0.18,
-        itbis: d.precio * d.cantidad * (d.productos?.itbis_pct || 0.18),
-        importe: d.precio * d.cantidad * (1 + (d.productos?.itbis_pct || 0.18)),
-      }));
-      setItems(newItems);
-      toast({ title: 'Pedido Cargado', description: `Se ha cargado el pedido #${pedidoParaFacturar.numero} para facturación.` });
+      if (pedidoParaFacturar.type === 'cotizacion') {
+        handleSelectCotizacion(pedidoParaFacturar);
+      } else if (pedidoParaFacturar.type === 'pedido') {
+        handleSelectPedido(pedidoParaFacturar);
+      }
       setPedidoParaFacturar(null);
     }
-  }, [pedidoParaFacturar, handleSelectCliente, setItems, toast, setPedidoParaFacturar]);
+  }, [pedidoParaFacturar, handleSelectCotizacion, handleSelectPedido, setPedidoParaFacturar]);
 
   const handleConfirmAndPrint = () => {
-    handleSave(facturaData => {
+    const activeVendedor = vendedores.find(v => v.id === selectedVendedor);
+    handleSave(async (facturaData) => {
       if (facturaData) {
-        generateFacturaPDF(facturaData);
+        // Route to QZ Tray or browser based on printMethod
+        if (printMethod === 'qz') {
+          try {
+            await printFacturaQZ(facturaData);
+          } catch (err) {
+            console.error('[QZ] Error, falling back to browser:', err);
+            printFacturaPOS(facturaData);
+          }
+        } else {
+          printFacturaPOS(facturaData);
+        }
+
         toast({ title: 'Factura Guardada', description: `La factura #${facturaData.numero} ha sido generada y guardada.` });
         resetVenta();
+        fetchNextNumero();
       }
-    });
+    }, activeVendedor?.nombre, selectedVendedor);
   };
 
-  const handleKeyDown = useCallback(
-    e => {
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === 'F3') {
+        e.preventDefault();
+        setIsProductSearchModalOpen(true);
+      }
       if (e.key === 'F10') {
         e.preventDefault();
         handleConfirmAndPrint();
       }
-    },
-    [handleConfirmAndPrint]
-  );
+    };
 
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleConfirmAndPrint]);
 
-  const onItemCodeKeyDown = e => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAddProductByCode(itemCode);
+  const handleProductSearchSelect = async (product) => {
+    try {
+      const { data: presData } = await supabase
+        .from('presentaciones')
+        .select('*')
+        .eq('producto_id', product.id);
+
+      let processedProduct = { ...product };
+      if (presData && presData.length > 0) {
+        processedProduct.presentaciones = presData;
+        const mainPres = presData.find(p => p.afecta_ft) || presData[0];
+        if (mainPres) {
+          processedProduct.precio = parseFloat(mainPres.precio1 || 0);
+          processedProduct.max_descuento = parseFloat(mainPres.descuento_pct || 0);
+        }
+      }
+      addProductToInvoice(processedProduct);
+    } catch (e) {
+      console.error("Error fetching presentations", e);
+      addProductToInvoice(product);
+    } finally {
+      setIsProductSearchModalOpen(false);
+      // Focus will return to Cantidad via VentasTable useEffect
     }
   };
 
@@ -153,7 +229,7 @@ const VentasPage = () => {
   }
 
   return (
-    <div className="p-4 bg-gray-50 h-full flex flex-col">
+    <div className="bg-gray-50 h-full flex flex-col">
       <Helmet><title>Ventas - Repuestos Morla</title></Helmet>
 
       <VentasHeader
@@ -162,13 +238,7 @@ const VentasPage = () => {
         cliente={cliente}
         onClienteSearch={handleOpenClienteSearch}
         onSelectCliente={handleSelectCliente}
-        onClearCliente={() => handleSelectCliente(null)}
-        itemCode={itemCode}
-        setItemCode={setItemCode}
-        onAddProductByCode={() => handleAddProductByCode(itemCode)}
-        onAddProduct={addProductToInvoice}
-        resetVenta={resetVenta}
-        onSelectCotizacion={handleSelectCotizacion}
+        onClearCliente={resetVenta}
         vendedores={vendedores}
         selectedVendedor={selectedVendedor}
         onVendedorChange={setSelectedVendedor}
@@ -177,18 +247,37 @@ const VentasPage = () => {
         onAlmacenChange={setSelectedAlmacen}
         nextFacturaNumero={nextFacturaNumero}
         loadingNumero={loadingNumero}
+        onEditFactura={handleEditFacturaToggle}
+        onCotizacionesClick={() => setIsCotizacionModalOpen(true)}
+        onPedidosClick={() => setIsPedidoModalOpen(true)}
+        isEditingNumero={isEditingNumero}
+        editNumero={editNumero}
+        setEditNumero={setEditNumero}
+        onSearchInvoice={handleSearchInvoice}
+        editingFacturaNumero={editingFacturaNumero}
+        manualClienteNombre={manualClienteNombre}
+        setManualClienteNombre={setManualClienteNombre}
       />
 
-      <main className="flex-grow my-4 overflow-hidden">
-        <div className="h-full overflow-y-auto bg-white rounded-lg shadow border">
+      <main className="flex-grow overflow-hidden">
+        <div className="h-full overflow-y-auto bg-white shadow border-b border-gray-300">
           <VentasTable
             items={items}
-            onUpdateItem={handleUpdateItem}
-            onDeleteItem={handleDeleteItem}
             itemCode={itemCode}
             setItemCode={setItemCode}
-            onItemCodeKeyDown={onItemCodeKeyDown}
+            onItemCodeKeyDown={async (e) => {
+              if (e.key === 'Enter') {
+                await handleAddProductByCode(itemCode);
+              }
+            }}
             onProductSearch={() => setIsProductSearchModalOpen(true)}
+            onUpdateItem={handleUpdateItem}
+            onDeleteItem={handleDeleteItem}
+            currentItem={currentItem}
+            updateCurrentItem={updateCurrentItem}
+            commitCurrentItem={commitCurrentItem}
+            clearCurrentItem={clearCurrentItem}
+            userRole={profile?.role}
           />
         </div>
       </main>
@@ -205,15 +294,20 @@ const VentasPage = () => {
         totals={totals}
         onFacturar={handleConfirmAndPrint}
         isSaving={isSaving}
+        printFormat={printFormat}
+        setPrintFormat={setPrintFormat}
+        printMethod={printMethod}
+        setPrintMethod={(v) => { setPrintMethod(v); localStorage.setItem('ventas_printMethod', v); }}
+        recargo={recargo}
+        setRecargo={setRecargo}
+        resetVenta={resetVenta}
+        grabarBtnRef={grabarBtnRef}
       />
 
       <ProductSearchModal
         isOpen={isProductSearchModalOpen}
         onClose={() => setIsProductSearchModalOpen(false)}
-        onSelectProduct={(product) => {
-          addProductToInvoice(product);
-          setIsProductSearchModalOpen(false);
-        }}
+        onSelectProduct={handleProductSearchSelect}
       />
 
       <ClienteSearchModal
@@ -223,6 +317,22 @@ const VentasPage = () => {
           handleSelectCliente(cliente);
           handleCloseClienteSearch();
         }}
+      />
+
+      <DocumentSearchModal
+        isOpen={isCotizacionModalOpen}
+        onClose={() => setIsCotizacionModalOpen(false)}
+        type="cotizacion"
+        vendedores={vendedores}
+        onSelect={handleSelectCotizacion}
+      />
+
+      <DocumentSearchModal
+        isOpen={isPedidoModalOpen}
+        onClose={() => setIsPedidoModalOpen(false)}
+        type="pedido"
+        vendedores={vendedores}
+        onSelect={handleSelectPedido}
       />
     </div>
   );

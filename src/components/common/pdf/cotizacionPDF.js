@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { generateHeader, formatCurrency, formatDate } from './pdfUtils';
 
 const CLIENTE_GENERICO_INFO = {
@@ -13,14 +13,23 @@ export const generateCotizacionPDF = (cotizacion, cliente, details) => {
   const doc = new jsPDF();
   generateHeader(doc, "COTIZACIÓN", cotizacion.numero);
 
-  const displayCliente = cliente?.id ? cliente : CLIENTE_GENERICO_INFO;
+  const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+  const isGeneric = !cliente?.id || genericIds.includes(cliente.id) || (cliente.nombre?.toUpperCase().includes('GENERICO'));
+
+  const displayNombre = (isGeneric && cotizacion.manual_cliente_nombre)
+    ? cotizacion.manual_cliente_nombre.toUpperCase()
+    : (cliente?.nombre || 'CLIENTE GENERICO').toUpperCase();
+
+  const displayCliente = (isGeneric && cotizacion.manual_cliente_nombre)
+    ? { ...CLIENTE_GENERICO_INFO, nombre: displayNombre }
+    : (cliente?.id ? cliente : CLIENTE_GENERICO_INFO);
 
   // Client Info
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.text("CLIENTE:", 14, 80);
   doc.setFont('helvetica', 'normal');
-  doc.text(displayCliente.nombre || '', 14, 86);
+  doc.text(displayNombre, 14, 86);
   doc.text(`RNC: ${displayCliente.rnc || ''}`, 14, 92);
   doc.text(displayCliente.direccion || '', 14, 98);
   doc.text(`Tel: ${displayCliente.telefono || ''}`, 14, 104);
@@ -49,7 +58,7 @@ export const generateCotizacionPDF = (cotizacion, cliente, details) => {
     tableRows.push(itemData);
   });
 
-  doc.autoTable({
+  autoTable(doc, {
     head: [tableColumn],
     body: tableRows,
     startY: 115,
@@ -62,12 +71,12 @@ export const generateCotizacionPDF = (cotizacion, cliente, details) => {
   });
 
   // Totals
-  const finalY = doc.autoTable.previous.finalY;
+  const finalY = doc.lastAutoTable.finalY;
   const totalsX = 140;
   const totalsY = finalY + 20;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  
+
   doc.text("Sub-Total:", totalsX, totalsY);
   doc.text("Descuento:", totalsX, totalsY + 15);
   doc.text("ITBIS:", totalsX, totalsY + 30);
@@ -84,7 +93,7 @@ export const generateCotizacionPDF = (cotizacion, cliente, details) => {
   doc.text(formatCurrency(cotizacion.total_cotizacion), 200, totalsY + 47, { align: 'right' });
 
   // Notes
-  if(cotizacion.notas) {
+  if (cotizacion.notas) {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text("Notas:", 14, totalsY);

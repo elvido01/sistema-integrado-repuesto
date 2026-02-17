@@ -1,93 +1,303 @@
+﻿@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
-:root {
-  --background: 240 10% 97%;
-  --foreground: 240 5% 20%;
-
-  --card: 0 0% 100%;
-  --card-foreground: 240 5% 20%;
-
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 5% 20%;
-
-  --primary: 222 84% 30%;
-  --primary-foreground: 0 0% 100%;
-
-  --secondary: 35 92% 54%;
-  --secondary-foreground: 0 0% 100%;
-
-  --muted: 240 5% 90%;
-  --muted-foreground: 240 4% 46%;
-
-  --accent: 240 5% 90%;
-  --accent-foreground: 240 6% 10%;
-
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
-
-  --border: 240 6% 88%;
-  --input: 240 6% 88%;
-  --ring: 222 84% 30%;
-
-  --radius: 8px;
-}
-
-.dark {
-  --background: 231 14% 11%;
-  --foreground: 0 0% 98%;
-
-  --card: 231 14% 11%;
-  --card-foreground: 0 0% 98%;
-
-  --popover: 231 14% 11%;
-  --popover-foreground: 0 0% 98%;
-
-  --primary: 222 84% 40%;
-  --primary-foreground: 0 0% 100%;
-
-  --secondary: 35 92% 54%;
-  --secondary-foreground: 0 0% 100%;
-
-  --muted: 240 4% 16%;
-  --muted-foreground: 240 5% 65%;
-
-  --accent: 240 4% 16%;
-  --accent-foreground: 0 0% 98%;
-
-  --destructive: 0 63% 31%;
-  --destructive-foreground: 0 0% 98%;
-
-  --border: 240 4% 16%;
-  --input: 240 4% 16%;
-  --ring: 222 84% 40%;
-}
-
+/* Tema base y mapeos visuales para que se vean colores aunque el HTML no use tokens explícitos */
 @layer base {
-  * {
-    @apply border-border;
+
+  /* Tokens (ajustables). Azul corporativo + dorado aproximados */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 47.4% 11.2%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 215 20.2% 65.1%;
+
+    /* Marca */
+    --primary: 221.6 56.1% 41.4%;
+    /* ≈ blue-700 */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --accent: 24 94% 50%;
+    /* ≈ amber-500 (dorado) */
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --radius: 0.5rem;
   }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --accent: 24 94% 50%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+  }
+
+  /* Aplicación base */
   body {
-    @apply bg-morla-gray-light text-morla-gray-dark dark:bg-gray-900 dark:text-gray-100;
-    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /* Color de borde global */
+  *,
+  ::before,
+  ::after {
+    border-color: hsl(var(--border));
+  }
+
+  /* Colorear elementos típicos sin tocar tu JSX */
+  h1,
+  h2,
+  h3,
+  .heading {
+    @apply text-primary;
+  }
+
+  a {
+    @apply text-primary hover:text-primary/80;
   }
 }
 
-.btn {
-  @apply inline-flex items-center justify-center rounded-lg text-sm font-semibold shadow-micro transition-all duration-150 hover:shadow-micro-hover focus:outline-none focus:ring-2 focus:ring-offset-2;
+/* Componentes utilitarios (útiles si tus componentes no traen variantes) */
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background;
+  }
+
+  .badge-accent {
+    @apply inline-flex items-center px-2 py-0.5 rounded bg-accent text-accent-foreground;
+  }
+
+  .card {
+    @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm;
+  }
+
+  .link {
+    @apply text-primary hover:text-primary/80 underline-offset-2 hover:underline;
+  }
 }
 
-.btn-primary {
-  @apply bg-morla-blue text-white hover:bg-opacity-90 focus:ring-morla-blue;
+
+@layer components {
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background;
+  }
 }
 
-.btn-secondary {
-  @apply bg-gradient-to-b from-morla-gold-start to-morla-gold-end text-white hover:opacity-90 focus:ring-morla-gold-start;
+/* Fix visibilidad en diálogos (modales) */
+@layer components {
+
+  /* Si un submit no tiene fondo explícito, dale el primario para que se vea */
+  [role="dialog"] form button[type="submit"]:not([class*="bg-"]):not([class*="btn-"]) {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 transition;
+  }
+
+  /* Asegurar color de la X (botón cerrar del encabezado del modal) */
+  [role="dialog"] [aria-label="Close"],
+  [role="dialog"] button[title="Cerrar"] {
+    @apply text-foreground opacity-70 hover:opacity-100;
+  }
 }
 
-.gold-gradient-text {
-    @apply bg-gradient-to-b from-morla-gold-start to-morla-gold-end bg-clip-text text-transparent;
+/* Visibilidad de acciones en modales */
+@layer components {
+
+  /* Si el botón de guardar es submit: muéstralo azul, como antes */
+  [role="dialog"] form button[type="submit"] {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 transition;
+  }
+
+  /* Si no es submit y no tiene clases de fondo: al menos que el texto se vea */
+  [role="dialog"] form button:not([class*="bg-"]):not([class*="btn-"]) {
+    @apply text-primary;
+  }
+
+  [role="dialog"] form button:not([class*="bg-"]):not([class*="btn-"]):hover {
+    @apply bg-muted;
+  }
+
+  /* X del modal visible */
+  [role="dialog"] [aria-label="Close"],
+  [role="dialog"] button[title="Cerrar"] {
+    @apply text-foreground opacity-70 hover:opacity-100;
+  }
+}
+
+/* Visibilidad de acciones en modales */
+@layer components {
+
+  /* Si el botón de guardar es submit: muéstralo azul, como antes */
+  [role="dialog"] form button[type="submit"] {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 transition;
+  }
+
+  /* Si no es submit y no tiene clases de fondo: al menos que el texto se vea */
+  [role="dialog"] form button:not([class*="bg-"]):not([class*="btn-"]) {
+    @apply text-primary;
+  }
+
+  [role="dialog"] form button:not([class*="bg-"]):not([class*="btn-"]):hover {
+    @apply bg-muted;
+  }
+
+  /* X del modal visible */
+  [role="dialog"] [aria-label="Close"],
+  [role="dialog"] button[title="Cerrar"] {
+    @apply text-foreground opacity-70 hover:opacity-100;
+  }
+}
+
+/* === Navy Save Button (global) === */
+@layer base {
+  :root {
+    --primary: 216 64% 14%;
+    --primary-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    --primary: 216 64% 18%;
+    --primary-foreground: 0 0% 100%;
+  }
+}
+
+/* Fondo azul marino a cualquier botón con icono Save o clase bg-morla-blue */
+button:has(svg.lucide.lucide-save),
+a:has(svg.lucide.lucide-save),
+[role="button"]:has(svg.lucide.lucide-save),
+.bg-morla-blue {
+  background-color: #0a1e3a !important;
+  border-color: #0a1e3a !important;
+  color: #fff !important;
+}
+
+/* Hover */
+button:has(svg.lucide.lucide-save):hover,
+a:has(svg.lucide.lucide-save):hover,
+[role="button"]:has(svg.lucide.lucide-save):hover,
+.bg-morla-blue:hover {
+  background-color: #0a1e3acc !important;
+}
+
+/* Aun deshabilitado, que se vea sólido */
+button:has(svg.lucide.lucide-save)[disabled],
+.bg-morla-blue[disabled] {
+  opacity: 1 !important;
+  background-color: #0a1e3a !important;
+  border-color: #0a1e3a !important;
+  color: #fff !important;
+}
+
+/* === Remove Spin Buttons from Number Inputs === */
+/* Chrome, Safari, Edge, Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0;
+}
+
+/* Firefox */
+input[type=number] {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+/* Specific class to be extra sure */
+.hide-spinner::-webkit-inner-spin-button,
+.hide-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0;
+}
+
+.hide-spinner {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+.modern-section-card {
+  @apply bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden;
+}
+
+.modern-section-header {
+  @apply bg-blue-300 text-blue-900 px-3 py-1 text-[11px] font-bold uppercase tracking-wider flex items-center justify-between border-b border-blue-400;
+}
+
+/* === Legacy UI Utilities === */
+.classic-button-3d {
+  background: linear-gradient(to bottom, #eeeeee 0%, #d4d0c8 100%) !important;
+  border-top: 2px solid #ffffff !important;
+  border-left: 2px solid #ffffff !important;
+  border-right: 2px solid #808080 !important;
+  border-bottom: 2px solid #808080 !important;
+  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2) !important;
+  border-radius: 0 !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+  transition: none !important;
+}
+
+.classic-button-3d:active {
+  border-top: 2px solid #808080 !important;
+  border-left: 2px solid #808080 !important;
+  border-right: 2px solid #ffffff !important;
+  border-bottom: 2px solid #ffffff !important;
+  padding-top: 1px !important;
+  padding-left: 1px !important;
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.3) !important;
+}
+
+.totals-grid-legacy {
+  border: 1px solid #808080 !important;
+  background-color: #ffffff !important;
+}
+
+.totals-row-zebra:nth-child(odd) {
+  background-color: #ffffff !important;
+}
+
+.totals-row-zebra:nth-child(even) {
+  background-color: #f0f7ff !important;
+}
+
+.totals-separator {
+  border-left: 1px dashed #808080 !important;
 }

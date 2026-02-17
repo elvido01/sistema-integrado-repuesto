@@ -60,7 +60,7 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
       fetchData();
       resetForm();
     }
-    
+
     const onKey = (e) => {
       if (isOpen && e.key === 'Escape') {
         e.stopPropagation();
@@ -72,183 +72,171 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
 
   }, [isOpen, table, fetchData, resetForm, onClose]);
 
-  // =================================================================
-  // 2. EARLY RETURNS - Can now happen after all hooks are called.
-  // =================================================================
-  if (!isOpen) {
-    return null;
-  }
-
-  if (!table || !columns.length) {
-    console.error('Invalid config provided to CatalogManagementModal', config);
-    // Still render a minimal modal to avoid breaking the UI completely
-    return (
-        <AnimatePresence>
-            <div className="fixed inset-0 z-[60] flex items-center justify-center">
-                <div className="relative bg-white p-4 rounded-lg shadow-lg">
-                    <p>Error: Configuración de modal inválida.</p>
-                    <Button onClick={onClose}>Cerrar</Button>
-                </div>
-            </div>
-      </AnimatePresence>
-    );
-  }
-
-  // =================================================================
-  // 3. HANDLERS & RENDER LOGIC
-  // =================================================================
-  const handleSelectRow = (item) => {
-    setSelectedItem(item);
-    const newFormData = columns.reduce((acc, col) => ({ ...acc, [col.accessor]: item[col.accessor] || '' }), {});
-    newFormData.activo = item.activo !== false;
-    if (item.marca_id) {
-        newFormData.marca_id = item.marca_id;
-    }
-    newFormData.id = item.id;
-    setFormData(newFormData);
-    setIsEditing(true);
-  };
-
   const handleInputChange = (e) => {
     const { id, value } = e.target;
-    setFormData(prev => ({ ...prev, [id]: value }));
+    setFormData((prev) => ({ ...prev, [id]: value }));
   };
 
   const handleCheckboxChange = (checked) => {
-    setFormData(prev => ({ ...prev, activo: checked }));
+    setFormData((prev) => ({ ...prev, activo: checked }));
   };
 
-  const handleSave = async (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const requiredField = columns.find(c => c.accessor === 'nombre') ? 'nombre' : columns[0]?.accessor;
-    if (!formData[requiredField]?.trim()) {
-      toast({ variant: 'destructive', title: 'Error', description: `El campo ${requiredField} es requerido.` });
+  const handleSelectRow = (item) => {
+    setSelectedItem(item);
+    setFormData({ ...item });
+    setIsEditing(true);
+  };
+
+  const handleSave = async () => {
+    if (!formData.nombre) {
+      toast({ variant: 'destructive', title: 'Error', description: 'El nombre es obligatorio.' });
       return;
     }
-    const { id, ...dataToSave } = formData;
-    let result;
-    if (isEditing && id) {
-      result = await supabase.from(table).update(dataToSave).eq('id', id).select();
+
+    const dataToSave = { ...formData };
+
+    let response;
+    if (isEditing) {
+      response = await supabase.from(table).update(dataToSave).eq('id', selectedItem.id).select().single();
     } else {
-      result = await supabase.from(table).insert([dataToSave]).select();
+      response = await supabase.from(table).insert(dataToSave).select().single();
     }
-    if (result.error) {
-      toast({ variant: 'destructive', title: 'Error al guardar', description: result.error.message });
+
+    if (response.error) {
+      toast({ variant: 'destructive', title: 'Error al guardar', description: response.error.message });
     } else {
       toast({ title: 'Éxito', description: `${title} guardado correctamente.` });
-      await fetchData();
+      fetchData();
       resetForm();
-      if (onSaveSuccess) onSaveSuccess();
-      onClose();
+      if (onSaveSuccess) onSaveSuccess(response.data);
+      onClose(); // ← Cerrar ventana automáticamente
     }
   };
 
   const handleDelete = async () => {
-    if (!selectedItem?.id) return;
+    if (!selectedItem) return;
+
     const { error } = await supabase.from(table).delete().eq('id', selectedItem.id);
+
     if (error) {
       toast({ variant: 'destructive', title: 'Error al eliminar', description: error.message });
     } else {
-      toast({ title: 'Éxito', description: `${title} eliminado correctamente.` });
-      await fetchData();
+      toast({ title: 'Éxito', description: `${title} eliminado.` });
+      fetchData();
       resetForm();
-      if (onSaveSuccess) onSaveSuccess();
     }
   };
 
+  // =================================================================
+  // 2. EARLY RETURNS - Can now happen after all hooks are called.
+  // =================================================================
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[60] flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-black/40"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-        />
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          className="relative bg-white rounded-lg border-2 border-morla-gold shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto mx-4 flex flex-col"
-          onClick={e => e.stopPropagation()}
-          onKeyDown={e => e.stopPropagation()}
-          tabIndex={0}
-        >
-          <div className="bg-morla-blue text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
-            <h2 className="text-md font-bold">{title}</h2>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={resetForm}><Plus /></Button>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={handleSave}><Save /></Button>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={handleDelete} disabled={!selectedItem}><Trash2 /></Button>
-            </div>
-          </div>
-
-          <div className="p-4 space-y-3 flex-shrink-0">
-            <div className="grid grid-cols-3 gap-4 items-end">
-              {columns.map(col => (
-                <div key={col.accessor} className={col.accessor === 'nombre' ? 'col-span-2' : ''}>
-                  <Label htmlFor={col.accessor} className="text-xs">{col.header}</Label>
-                  <Input 
-                    id={col.accessor} 
-                    value={formData[col.accessor] || ''} 
-                    onChange={handleInputChange} 
-                    className="h-8" 
-                    type={col.type || 'text'}
-                  />
+      {isOpen && (
+        <>
+          <motion.div
+            key="catalog-modal-backdrop"
+            className="fixed inset-0 z-40 bg-black/50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+          <motion.div
+            key="catalog-modal-panel"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0, scale: 0.98, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: 8 }}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="relative bg-white rounded-lg border-2 border-morla-gold shadow-2xl w-full max-w-2xl max-h-[80vh] mx-4 flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-morla-blue text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
+                <h2 className="text-md font-bold">{title}</h2>
+                <div className="flex items-center gap-1">
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={resetForm}><Plus /></Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={handleSave}><Save /></Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={handleDelete} disabled={!selectedItem}><Trash2 /></Button>
                 </div>
-              ))}
-              <div className="flex items-center space-x-2 pb-1">
-                <Checkbox id="activo" checked={formData.activo || false} onCheckedChange={handleCheckboxChange} />
-                <Label htmlFor="activo" className="text-sm">Activo</Label>
+              </div>
+
+              <div className="p-4 space-y-3 flex-shrink-0">
+                <div className="grid grid-cols-3 gap-4 items-end">
+                  {columns.map((col) => (
+                    <div key={col.accessor} className={col.accessor === 'nombre' ? 'col-span-2' : ''}>
+                      <Label htmlFor={col.accessor} className="text-xs">{col.header}</Label>
+                      <Input
+                        id={col.accessor}
+                        value={formData[col.accessor] || ''}
+                        onChange={handleInputChange}
+                        className="h-8"
+                        type={col.type || 'text'}
+                      />
+                    </div>
+                  ))}
+                  <div className="flex items-center space-x-2 pb-1">
+                    <Checkbox id="activo" checked={formData.activo || false} onCheckedChange={handleCheckboxChange} />
+                    <Label htmlFor="activo" className="text-sm">Activo</Label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 px-4 pb-4 overflow-hidden">
+                <ScrollArea className="h-full border rounded-md">
+                  <Table>
+                    <TableHeader className="bg-gray-100/50">
+                      <TableRow className="h-8">
+                        {columns.map((col) => (
+                          <TableHead key={col.accessor} className={col.accessor === 'nombre' ? 'w-[70%]' : ''}>
+                            {col.header}
+                          </TableHead>
+                        ))}
+                        <TableHead className="w-[80px]">Activo</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {loading ? (
+                        <TableRow><TableCell colSpan={columns.length + 1} className="text-center py-4">Cargando...</TableCell></TableRow>
+                      ) : (
+                        items.map((item) => (
+                          <TableRow
+                            key={item.id}
+                            onClick={() => handleSelectRow(item)}
+                            className={`cursor-pointer h-8 hover:bg-morla-blue/5 transition-colors ${selectedItem?.id === item.id ? 'bg-blue-100 font-bold' : ''}`}
+                          >
+                            {columns.map((col) => {
+                              const value = item[col.accessor];
+                              return (
+                                <TableCell key={col.accessor} className="py-1 px-2 text-xs leading-tight">
+                                  <span className="block break-words whitespace-normal min-w-[150px]">
+                                    {typeof value === 'object' && value !== null
+                                      ? value?.nombre ?? JSON.stringify(value)
+                                      : value}
+                                  </span>
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className="py-1 px-2 text-xs">{item.activo ? 'Sí' : 'No'}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </div>
+
+              <div className="border-t bg-gray-50 px-4 py-3 flex justify-end gap-3 flex-shrink-0">
+                <Button type="button" variant="outline" onClick={onClose}>ESC - Cerrar</Button>
+                <Button type="button" onClick={handleSave} className="bg-morla-blue text-white">Guardar</Button>
               </div>
             </div>
-          </div>
-
-          <div className="flex-1 px-4 pb-4 overflow-hidden">
-            <ScrollArea className="h-full border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {columns.map(col => <TableHead key={col.accessor}>{col.header}</TableHead>)}
-                    <TableHead>Activo</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow><TableCell colSpan={columns.length + 1} className="text-center">Cargando...</TableCell></TableRow>
-                  ) : (
-                    items.map(item => (
-                      <TableRow key={item.id} onClick={() => handleSelectRow(item)} className={`cursor-pointer ${selectedItem?.id === item.id ? 'bg-blue-100' : ''}`}>
-                        {columns.map(col => {
-                          const value = item[col.accessor];
-                          return (
-                            <TableCell key={col.accessor}>
-                              {typeof value === 'object' && value !== null
-                                ? value?.nombre ?? JSON.stringify(value)
-                                : value}
-                            </TableCell>
-                          )
-                        })}
-                        <TableCell>{item.activo ? 'Sí' : 'No'}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </div>
-
-          <div className="border-t bg-gray-50 px-4 py-3 flex justify-end gap-3 flex-shrink-0">
-            <Button variant="outline" onClick={onClose}>ESC - Cerrar</Button>
-            <Button onClick={handleSave} className="bg-morla-blue text-white">Guardar</Button>
-          </div>
-        </motion.div>
-      </div>
+          </motion.div>
+        </>
+      )}
     </AnimatePresence>
   );
 };

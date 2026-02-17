@@ -27,7 +27,7 @@ const initialState = {
   fecha: getCurrentDateInTimeZone(),
   referencia: '',
   concepto: 'AJUSTE DE SALIDA',
-  almacen_id: null,
+  almacen_id: 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7', // ALM01 default
   notas: '',
   imprimir: false,
 };
@@ -61,8 +61,14 @@ const SalidaMercanciaPage = () => {
       setAlmacenes(almData);
 
       const { data: nextNumData, error: nextNumError } = await supabase.rpc('get_next_salida_numero');
-      if(nextNumError) throw nextNumError;
-      setSalida(prev => ({...prev, numero: nextNumData}));
+      if (nextNumError) throw nextNumError;
+
+      const defaultAlmacen = almData.find(a => a.id === 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7');
+      setSalida(prev => ({
+        ...prev,
+        numero: nextNumData,
+        almacen_id: defaultAlmacen ? defaultAlmacen.id : (almData[0]?.id || prev.almacen_id)
+      }));
 
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error al cargar datos', description: error.message });
@@ -72,7 +78,7 @@ const SalidaMercanciaPage = () => {
   useEffect(() => {
     fetchInitialData();
   }, [fetchInitialData]);
-  
+
   const resetForm = useCallback(() => {
     setSalida(initialState);
     setDetalles([]);
@@ -85,7 +91,7 @@ const SalidaMercanciaPage = () => {
     const totalCosto = detalles.reduce((sum, item) => sum + item.importe, 0);
     return { totalItems, totalCosto };
   }, [detalles]);
-  
+
   const handleProductSelect = (product) => {
     setCurrentDetalle({
       codigo: product.codigo,
@@ -123,7 +129,7 @@ const SalidaMercanciaPage = () => {
     } else {
       setDetalles([...detalles, { ...currentDetalle, cantidad, costo_unitario: costo, importe, id: Date.now() }]);
     }
-    
+
     setCurrentDetalle(initialDetalleState);
     document.getElementById('codigo-producto')?.focus();
   };
@@ -134,44 +140,44 @@ const SalidaMercanciaPage = () => {
 
   const updateDetalle = (id, field, value) => {
     setDetalles(detalles.map(d => {
-        if (d.id === id) {
-            const newDetalle = { ...d, [field]: value };
-            if (field === 'cantidad' || field === 'costo_unitario') {
-                newDetalle.importe = (parseFloat(newDetalle.cantidad) || 0) * (parseFloat(newDetalle.costo_unitario) || 0);
-            }
-            return newDetalle;
+      if (d.id === id) {
+        const newDetalle = { ...d, [field]: value };
+        if (field === 'cantidad' || field === 'costo_unitario') {
+          newDetalle.importe = (parseFloat(newDetalle.cantidad) || 0) * (parseFloat(newDetalle.costo_unitario) || 0);
         }
-        return d;
+        return newDetalle;
+      }
+      return d;
     }));
   };
-  
+
   const handleConfirmSave = () => {
-     if (!salida.almacen_id || detalles.length === 0) {
-        toast({ variant: "destructive", title: "Datos incompletos", description: "Debe seleccionar un almacén y añadir al menos un producto." });
-        return;
+    if (!salida.almacen_id || detalles.length === 0) {
+      toast({ variant: "destructive", title: "Datos incompletos", description: "Debe seleccionar un almacén y añadir al menos un producto." });
+      return;
     }
     setIsConfirming(true);
   }
 
   const handleSave = async () => {
     setIsSaving(true);
-    
+
     const salidaData = {
-        ...salida,
-        fecha: formatDateForSupabase(salida.fecha),
-        total_costo: totals.totalCosto,
-        numero: salida.numero
+      ...salida,
+      fecha: formatDateForSupabase(salida.fecha),
+      total_costo: totals.totalCosto,
+      numero: salida.numero
     };
     delete salidaData.imprimir;
 
     const detallesData = detalles.map(d => ({
-        producto_id: d.producto_id,
-        codigo: d.codigo,
-        descripcion: d.descripcion,
-        cantidad: d.cantidad,
-        unidad: d.unidad,
-        costo_unitario: d.costo_unitario,
-        importe: d.importe,
+      producto_id: d.producto_id,
+      codigo: d.codigo,
+      descripcion: d.descripcion,
+      cantidad: d.cantidad,
+      unidad: d.unidad,
+      costo_unitario: d.costo_unitario,
+      importe: d.importe,
     }));
 
     const tipoMovimiento = salida.concepto === 'AJUSTE DE SALIDA' ? 'AJUSTE' : 'SALIDA';
@@ -184,9 +190,9 @@ const SalidaMercanciaPage = () => {
       });
 
       if (error) throw error;
-      
+
       toast({ title: 'Éxito', description: `Salida ${salida.numero} guardada y existencia actualizada.` });
-      
+
       //TODO: Implementar impresión de PDF si salida.imprimir es true
 
       resetForm();
@@ -198,7 +204,7 @@ const SalidaMercanciaPage = () => {
       setIsConfirming(false);
     }
   };
-  
+
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'F10') {
       e.preventDefault();
@@ -209,8 +215,8 @@ const SalidaMercanciaPage = () => {
       closePanel('salida-mercancia');
     }
     if (e.key === 'F3') {
-        e.preventDefault();
-        setIsSearchModalOpen(true);
+      e.preventDefault();
+      setIsSearchModalOpen(true);
     }
   }, [closePanel, handleConfirmSave]);
 
@@ -225,7 +231,7 @@ const SalidaMercanciaPage = () => {
         <title>Salida de Mercancía - Repuestos Morla</title>
       </Helmet>
       <ProductSearchModal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} onSelectProduct={handleProductSelect} />
-      
+
       <AlertDialog open={isConfirming} onOpenChange={setIsConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -253,8 +259,8 @@ const SalidaMercanciaPage = () => {
           <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg">
             <h1 className="text-xl font-bold">SALIDA DE MERCANCÍAS</h1>
           </div>
-          
-          <SalidaHeader 
+
+          <SalidaHeader
             salida={salida}
             setSalida={setSalida}
             almacenes={almacenes}
@@ -269,7 +275,7 @@ const SalidaMercanciaPage = () => {
             updateDetalle={updateDetalle}
             setIsSearchModalOpen={setIsSearchModalOpen}
           />
-          
+
           <div className="flex-grow"></div>
 
           <SalidaFooter
@@ -279,7 +285,7 @@ const SalidaMercanciaPage = () => {
           />
 
           <div className="mt-6 flex justify-between items-center">
-             <Button variant="outline" onClick={resetForm} disabled={isSaving}>
+            <Button variant="outline" onClick={resetForm} disabled={isSaving}>
               <FilePlus className="mr-2 h-4 w-4" /> Nuevo
             </Button>
             <div className="flex space-x-4">

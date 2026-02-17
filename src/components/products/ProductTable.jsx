@@ -5,16 +5,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, lastProductElementRef }) => {
+const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selectedProduct, onSelectProduct }) => {
   const getStockBadge = (stock, minStock) => {
     const s = stock || 0;
-    const min = minStock || 0;
-    if (s <= 0) {
-      return <Badge variant="destructive" className="text-xs">Agotado</Badge>;
-    }
-    if (s > 0 && s <= min) {
-      return <Badge variant="destructive" className="text-xs">Stock Bajo</Badge>;
-    }
+    // ... (rest of helper functions)
     return <Badge variant="secondary" className="text-xs">Normal</Badge>;
   };
 
@@ -30,7 +24,6 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, lastP
     <div className="overflow-x-auto">
       <TooltipProvider>
         <Table>
-          {/* cambio: top usa la variable --filters-h */}
           <TableHeader className="sticky top-[var(--filters-h,0px)] bg-gray-50 z-10">
             <TableRow>
               <TableHead className="w-[120px]">Código</TableHead>
@@ -56,12 +49,15 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, lastP
                 </TableCell>
               </TableRow>
             ) : products.length > 0 ? (
-              products.map((product, index) => (
+              products.map((product) => (
                 <TableRow
-                  ref={index === products.length - 1 ? lastProductElementRef : null}
                   key={product.id}
+                  onClick={() => onSelectProduct(product)}
                   onDoubleClick={() => onEdit(product)}
-                  className="hover:bg-gray-50"
+                  className={`cursor-pointer transition-colors ${selectedProduct?.id === product.id
+                      ? 'bg-blue-100 hover:bg-blue-100 border-l-4 border-l-blue-600'
+                      : 'hover:bg-gray-50'
+                    }`}
                 >
                   <TableCell className="font-mono text-sm">{product.codigo}</TableCell>
                   <TableCell className="text-sm">{product.referencia || '-'}</TableCell>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -27,6 +27,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     limite_credito: 0,
     dias_credito: 0,
     tipo_ncf: '02', // Consumidor Final
+    precio_nivel: 1,
   });
 
   useEffect(() => {
@@ -43,6 +44,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
           limite_credito: cliente.limite_credito || 0,
           dias_credito: cliente.dias_credito || 0,
           tipo_ncf: cliente.tipo_ncf || '02',
+          precio_nivel: cliente.precio_nivel || 1,
         });
       } else {
         // Reset for new client
@@ -57,6 +59,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
           limite_credito: 0,
           dias_credito: 0,
           tipo_ncf: '02',
+          precio_nivel: 1,
         });
       }
     }
@@ -81,9 +84,9 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     setIsSubmitting(true);
 
     const dataToSubmit = {
-        ...formData,
-        limite_credito: formData.autorizar_credito ? formData.limite_credito : 0,
-        dias_credito: formData.autorizar_credito ? formData.dias_credito : 0,
+      ...formData,
+      limite_credito: formData.autorizar_credito ? formData.limite_credito : 0,
+      dias_credito: formData.autorizar_credito ? formData.dias_credito : 0,
     };
 
     let result;
@@ -118,6 +121,9 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{cliente ? 'Editar Cliente' : 'Crear Cliente'}</DialogTitle>
+          <DialogDescription>
+            {cliente ? 'Actualiza la información de este cliente.' : 'Crea un nuevo cliente en el sistema.'}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <Tabs defaultValue="personal" className="w-full">
@@ -185,6 +191,20 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
                     <SelectItem value="15">15 - Gubernamental</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="precio_nivel">Nivel de Precio</Label>
+                <Select name="precio_nivel" value={String(formData.precio_nivel)} onValueChange={(value) => handleSelectChange('precio_nivel', parseInt(value))}>
+                  <SelectTrigger id="precio_nivel">
+                    <SelectValue placeholder="Seleccione un nivel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Nivel 1 (General)</SelectItem>
+                    <SelectItem value="2">Nivel 2 (Precio 2)</SelectItem>
+                    <SelectItem value="3">Nivel 3 (Precio 3)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-gray-500 italic">Determina qué columna de precio se asigna automáticamente al facturar.</p>
               </div>
             </TabsContent>
           </Tabs>

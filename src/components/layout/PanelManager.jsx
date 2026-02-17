@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePanels } from '@/contexts/PanelContext';
 import { Button } from '@/components/ui/button';
@@ -54,33 +54,29 @@ const PanelManager = () => {
           ))}
         </div>
       </div>
-      <div className="flex-grow overflow-auto relative">
-        <AnimatePresence mode="wait">
-          {panels.map((panel) => {
-            const PanelComponent = panel.component;
-            return (
-              <motion.div
-                key={panel.id}
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -50 }}
-                transition={{ duration: 0.2 }}
-                className={cn(
-                  'absolute inset-0 w-full h-full p-4',
-                  activePanel === panel.id ? 'z-10' : 'z-0'
-                )}
-                style={{
-                  display: activePanel === panel.id ? 'block' : 'none',
-                }}
-              >
-                <PanelComponent />
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+      <div className="flex-grow relative overflow-hidden">
+        {panels.map((panel) => {
+          const PanelComponent = panel.component;
+          const isActive = activePanel === panel.id;
+
+          return (
+            <div
+              key={panel.id}
+              className={cn(
+                "absolute inset-0 w-full h-full p-4 overflow-auto transition-opacity duration-200 bg-white dark:bg-gray-900",
+                isActive
+                  ? "opacity-100 z-10 pointer-events-auto shadow-sm"
+                  : "opacity-0 z-0 pointer-events-none"
+              )}
+            >
+              <PanelComponent extraData={panel.extraData} panelId={panel.id} />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 };
 
 export default PanelManager;
+

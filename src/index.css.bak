@@ -1,0 +1,151 @@
+﻿@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tema base y mapeos visuales para que se vean colores aunque el HTML no use tokens explícitos */
+@layer base {
+  /* Tokens (ajustables). Azul corporativo + dorado aproximados */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 47.4% 11.2%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 215 20.2% 65.1%;
+
+    /* Marca */
+    --primary: 221.6 56.1% 41.4%;           /* ≈ blue-700 */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --accent:    24 94% 50%;             /* ≈ amber-500 (dorado) */
+    --accent-foreground:    210 40% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --accent:    24 94% 50%;
+    --accent-foreground:    210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+  }
+
+  /* Aplicación base */
+  body { @apply bg-background text-foreground antialiased; }
+
+  /* Color de borde global */
+  *, ::before, ::after { border-color: hsl(var(--border)); }
+
+  /* Colorear elementos típicos sin tocar tu JSX */
+  h1, h2, h3, .heading { @apply text-primary; }
+  a { @apply text-primary hover:text-primary/80; }
+}
+
+/* Componentes utilitarios (útiles si tus componentes no traen variantes) */
+@layer components {
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background; }
+  .badge-accent { @apply inline-flex items-center px-2 py-0.5 rounded bg-accent text-accent-foreground; }
+  .card { @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm; }
+  .link { @apply text-primary hover:text-primary/80 underline-offset-2 hover:underline; }
+}
+
+
+@layer components {
+  .btn-accent { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background; }
+}
+
+/* Fix visibilidad en diálogos (modales) */
+@layer components {
+  /* Si un submit no tiene fondo explícito, dale el primario para que se vea */
+  [role="dialog"] form button[type="submit"]:not([class*="bg-"]):not([class*="btn-"]) {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 transition;
+  }
+
+  /* Asegurar color de la X (botón cerrar del encabezado del modal) */
+  [role="dialog"] [aria-label="Close"],
+  [role="dialog"] button[title="Cerrar"] {
+    @apply text-foreground opacity-70 hover:opacity-100;
+  }
+}
+/* Visibilidad de acciones en modales */
+@layer components {
+  /* Si el botón de guardar es submit: muéstralo azul, como antes */
+  [role="dialog"] form button[type="submit"] {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 transition;
+  }
+
+  /* Si no es submit y no tiene clases de fondo: al menos que el texto se vea */
+  [role="dialog"] form button:not([class*="bg-"]):not([class*="btn-"]) {
+    @apply text-primary;
+  }
+  [role="dialog"] form button:not([class*="bg-"]):not([class*="btn-"]):hover {
+    @apply bg-muted;
+  }
+
+  /* X del modal visible */
+  [role="dialog"] [aria-label="Close"],
+  [role="dialog"] button[title="Cerrar"] {
+    @apply text-foreground opacity-70 hover:opacity-100;
+  }
+}
+/* Visibilidad de acciones en modales */
+@layer components {
+  /* Si el botón de guardar es submit: muéstralo azul, como antes */
+  [role="dialog"] form button[type="submit"] {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 transition;
+  }
+
+  /* Si no es submit y no tiene clases de fondo: al menos que el texto se vea */
+  [role="dialog"] form button:not([class*="bg-"]):not([class*="btn-"]) {
+    @apply text-primary;
+  }
+  [role="dialog"] form button:not([class*="bg-"]):not([class*="btn-"]):hover {
+    @apply bg-muted;
+  }
+
+  /* X del modal visible */
+  [role="dialog"] [aria-label="Close"],
+  [role="dialog"] button[title="Cerrar"] {
+    @apply text-foreground opacity-70 hover:opacity-100;
+  }
+}

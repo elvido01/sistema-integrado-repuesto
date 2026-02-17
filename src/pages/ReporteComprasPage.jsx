@@ -12,11 +12,16 @@ import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { subDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
-import { Calendar as CalendarIcon, Search } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Printer, FileText, Barcode } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePanels } from '@/contexts/PanelContext';
+import { generateCompraPDF } from '@/components/common/PDFGenerator';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ReporteComprasPage = () => {
   const { toast } = useToast();
+  const { openPanel } = usePanels();
+  const { user } = useAuth();
   const [compras, setCompras] = useState([]);
   const [proveedores, setProveedores] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -77,7 +82,7 @@ const ReporteComprasPage = () => {
     fetchProveedores();
     fetchCompras();
   }, [fetchProveedores, fetchCompras]);
-  
+
   const handleFilter = () => {
     fetchCompras();
   };
@@ -96,7 +101,7 @@ const ReporteComprasPage = () => {
           <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
             <h1 className="text-xl font-bold">REPORTE DE COMPRAS</h1>
           </div>
-          
+
           <div className="flex items-end gap-4 p-4 border rounded-lg mb-4">
             <div className="space-y-1">
               <Label>Fecha</Label>
@@ -131,7 +136,7 @@ const ReporteComprasPage = () => {
                     mode="range"
                     defaultMonth={filters.dateRange?.from}
                     selected={filters.dateRange}
-                    onSelect={(range) => setFilters(prev => ({...prev, dateRange: range}))}
+                    onSelect={(range) => setFilters(prev => ({ ...prev, dateRange: range }))}
                     numberOfMonths={2}
                   />
                 </PopoverContent>
@@ -139,7 +144,7 @@ const ReporteComprasPage = () => {
             </div>
             <div className="space-y-1 flex-1">
               <Label>Suplidor</Label>
-              <Select value={filters.proveedorId} onValueChange={(value) => setFilters(prev => ({...prev, proveedorId: value}))}>
+              <Select value={filters.proveedorId} onValueChange={(value) => setFilters(prev => ({ ...prev, proveedorId: value }))}>
                 <SelectTrigger>
                   <SelectValue placeholder="Todos los suplidores" />
                 </SelectTrigger>
@@ -164,6 +169,7 @@ const ReporteComprasPage = () => {
                   <TableHead>Suplidor</TableHead>
                   <TableHead className="text-right">Total Compra</TableHead>
                   <TableHead>NCF</TableHead>
+                  <TableHead className="text-center w-24">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -183,6 +189,28 @@ const ReporteComprasPage = () => {
                       <TableCell>{compra.proveedores?.nombre || 'N/A'}</TableCell>
                       <TableCell className="text-right font-bold">RD$ {Number(compra.total_compra).toFixed(2)}</TableCell>
                       <TableCell>{compra.ncf}</TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-morla-blue hover:bg-morla-blue/10"
+                            title="Imprimir Etiquetas"
+                            onClick={() => openPanel('etiquetas-masivas', { docNumber: compra.numero })}
+                          >
+                            <Barcode className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-slate-500 hover:bg-slate-100"
+                            title="Reimprimir Factura"
+                            onClick={() => generateCompraPDF(compra, compra.proveedores, compra.compras_detalle, user)}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}

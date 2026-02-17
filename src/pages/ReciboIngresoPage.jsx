@@ -12,6 +12,10 @@ import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } fro
 import { Save, X, Loader2, FilePlus, Search, Trash2, PlusCircle } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
+import { printReciboPOS, printRecibo4Pulgadas } from '@/lib/printPOS';
+import { generateReciboPDF } from '@/components/common/PDFGenerator';
 
 const initialState = {
   numero: '',
@@ -21,7 +25,7 @@ const initialState = {
   balanceAnterior: 0,
   totalPagado: 0,
   balanceActual: 0,
-  imprimir: false,
+  imprimir: true,
 };
 
 const ReciboIngresoPage = () => {
@@ -34,13 +38,15 @@ const ReciboIngresoPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [datosCliente, setDatosCliente] = useState({ balance_anterior: 0, ultimo_pago: null });
+  const [isClienteSearchModalOpen, setIsClienteSearchModalOpen] = useState(false);
+  const [tipoPapel, setTipoPapel] = useState('4 Pulgadas');
 
   const formatCurrency = (value) => new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2 }).format(value || 0);
 
   const fetchInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data: clientesData, error: clientesError } = await supabase.from('clientes').select('id, nombre').eq('activo', true);
+      const { data: clientesData, error: clientesError } = await supabase.from('clientes').select('id, nombre, rnc, direccion, telefono').eq('activo', true);
       if (clientesError) throw clientesError;
       setClientes(clientesData);
 
@@ -69,7 +75,7 @@ const ReciboIngresoPage = () => {
     try {
       const { data, error } = await supabase.rpc('get_datos_cliente_para_recibo', { p_cliente_id: clienteId });
       if (error) throw error;
-      
+
       const facturasConAbono = data.facturas_pendientes.map(f => ({ ...f, abono: 0 }));
 
       setFacturas(facturasConAbono);
@@ -100,16 +106,49 @@ const ReciboIngresoPage = () => {
     }));
   };
 
+  const totalPagadoFormas = useMemo(() => {
+    return pagos.reduce((sum, p) => sum + Number(p.monto), 0);
+  }, [pagos]);
+
   const totalAbonos = useMemo(() => {
     return facturas.reduce((sum, f) => sum + Number(f.abono), 0);
   }, [facturas]);
 
+  // FIFO Auto-distribution logic
   useEffect(() => {
-    const balanceActual = recibo.balanceAnterior - totalAbonos;
-    setRecibo(prev => ({ ...prev, totalPagado: totalAbonos, balanceActual }));
-    if (pagos.length === 1) {
-      setPagos([{ ...pagos[0], monto: totalAbonos }]);
+    let remaining = totalPagadoFormas;
+    const sortedFacturas = [...facturas].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+    const newFacturas = facturas.map(f => {
+      // Find where this invoice stands in the FIFO queue
+      const montoPendiente = parseFloat(f.monto_pendiente);
+      let abono = 0;
+
+      // Find the equivalent sorted invoice to determine allocation order
+      const sortedIdx = sortedFacturas.findIndex(sf => sf.id === f.id);
+
+      // Calculate how much prior invoices in the queue took
+      let takenBefore = 0;
+      for (let i = 0; i < sortedIdx; i++) {
+        takenBefore += parseFloat(sortedFacturas[i].monto_pendiente);
+      }
+
+      const availableForThis = Math.max(0, totalPagadoFormas - takenBefore);
+      abono = Math.min(montoPendiente, availableForThis);
+
+      return { ...f, abono: Number(abono.toFixed(2)) };
+    });
+
+    // Only update if the result is different from current abonos to prevent loops
+    const currentTotalAbonos = facturas.reduce((sum, f) => sum + Number(f.abono), 0);
+    if (Math.abs(currentTotalAbonos - totalPagadoFormas) > 0.01) {
+      setFacturas(newFacturas);
     }
+  }, [totalPagadoFormas, facturas.length]);
+
+  useEffect(() => {
+    const balanceActual = Number((recibo.balanceAnterior - totalAbonos).toFixed(2));
+    setRecibo(prev => ({ ...prev, totalPagado: totalAbonos, balanceActual }));
   }, [totalAbonos, recibo.balanceAnterior]);
 
   const handlePagoChange = (id, field, value) => {
@@ -125,10 +164,6 @@ const ReciboIngresoPage = () => {
       setPagos(pagos.filter(p => p.id !== id));
     }
   };
-
-  const totalPagadoFormas = useMemo(() => {
-    return pagos.reduce((sum, p) => sum + Number(p.monto), 0);
-  }, [pagos]);
 
   const handleSave = async () => {
     if (!recibo.clienteId) {
@@ -169,7 +204,33 @@ const ReciboIngresoPage = () => {
       if (error) throw error;
 
       toast({ title: 'Éxito', description: `Recibo ${reciboNumero} guardado correctamente.` });
-      // TODO: Implementar impresión
+
+      if (recibo.imprimir) {
+        const clientFullInfo = clientes.find(c => c.id === recibo.clienteId);
+        const dataForPrint = {
+          numero: reciboNumero,
+          fecha: recibo.fecha,
+          clienteNombre: recibo.clienteNombre,
+          balanceAnterior: recibo.balanceAnterior,
+          totalPagado: totalAbonos,
+          balanceActual: recibo.balanceActual,
+          abonos: facturas.filter(f => f.abono > 0).map(f => ({
+            referencia: f.referencia,
+            monto_pendiente: f.monto_pendiente,
+            monto_abono: f.abono
+          })),
+          formasPago: pagos
+        };
+
+        if (tipoPapel === '80mm') {
+          printReciboPOS(dataForPrint);
+        } else if (tipoPapel === '4 Pulgadas') {
+          printRecibo4Pulgadas(dataForPrint);
+        } else {
+          generateReciboPDF(dataForPrint, clientFullInfo, dataForPrint.abonos, dataForPrint.formasPago);
+        }
+      }
+
       resetForm();
 
     } catch (error) {
@@ -184,10 +245,15 @@ const ReciboIngresoPage = () => {
     setFacturas([]);
     setPagos([{ id: 1, forma: 'Efectivo', monto: 0, referencia: '' }]);
     setDatosCliente({ balance_anterior: 0, ultimo_pago: null });
+    setTipoPapel('4 Pulgadas');
     fetchInitialData();
   }, [fetchInitialData]);
 
   const handleKeyDown = useCallback((e) => {
+    if (e.key === 'F3') {
+      e.preventDefault();
+      setIsClienteSearchModalOpen(true);
+    }
     if (e.key === 'F10') {
       e.preventDefault();
       handleSave();
@@ -196,7 +262,7 @@ const ReciboIngresoPage = () => {
       e.preventDefault();
       closePanel('recibo-ingreso');
     }
-  }, [handleSave, closePanel]);
+  }, [handleSave, closePanel, setIsClienteSearchModalOpen]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -213,146 +279,266 @@ const ReciboIngresoPage = () => {
         animate={{ opacity: 1, y: 0 }}
         className="p-1 md:p-4 bg-gray-100 min-h-full flex flex-col"
       >
-        <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
-          <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
-            <h1 className="text-xl font-bold">Recibo de Ingreso</h1>
+        <div className="bg-[#f0f0f0] border border-gray-300 rounded shadow-lg flex-grow flex flex-col overflow-hidden">
+          {/* LEGACY HEADER STYLE */}
+          <div className="bg-[#b4c7e7] text-[#0a1e3a] text-center py-1 border-b border-gray-400 relative">
+            <h1 className="text-2xl font-black uppercase tracking-widest italic" style={{ textShadow: '1px 1px 0px white' }}>RECIBO DE INGRESO</h1>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-4">
-            {/* Columna Izquierda - Datos Cliente y Recibo */}
-            <div className="lg:col-span-2 space-y-4 p-4 border rounded-lg">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label>No. Recibo</Label>
-                  <Input value={recibo.numero} readOnly disabled className="bg-gray-100" />
-                </div>
-                <div>
-                  <Label>Fecha</Label>
-                  <Input value={formatInTimeZone(recibo.fecha, 'dd/MM/yyyy')} readOnly disabled className="bg-gray-100" />
-                </div>
-              </div>
-              <div>
-                <Label>Cliente</Label>
-                <Select onValueChange={handleClientSelect} disabled={isLoading}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={isLoading ? "Cargando clientes..." : "Seleccione un cliente"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div className="p-2 bg-gray-50 rounded">
-                  <span className="font-semibold">Último Pago:</span> 
-                  {datosCliente.ultimo_pago ? ` ${formatCurrency(datosCliente.ultimo_pago.monto_pagado)} el ${formatInTimeZone(new Date(datosCliente.ultimo_pago.fecha), 'dd/MM/yyyy')}` : ' N/A'}
-                </div>
-                <div className="p-2 bg-gray-50 rounded">
-                  <span className="font-semibold">Balance Anterior:</span>
-                  <span className="font-bold ml-2 text-red-600">{formatCurrency(datosCliente.balance_anterior)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Columna Derecha - Formas de Pago */}
-            <div className="p-4 border rounded-lg">
-              <h3 className="font-bold mb-2 border-b pb-1">Formas de Pago</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {pagos.map((pago, index) => (
-                  <div key={pago.id} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
-                    <Select value={pago.forma} onValueChange={(v) => handlePagoChange(pago.id, 'forma', v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Efectivo">Efectivo</SelectItem>
-                        <SelectItem value="Cheque">Cheque</SelectItem>
-                        <SelectItem value="Tarjeta de Crédito">T. Crédito</SelectItem>
-                        <SelectItem value="Tarjeta de Débito">T. Débito</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input type="number" placeholder="Monto" value={pago.monto} onChange={(e) => handlePagoChange(pago.id, 'monto', e.target.value)} className="text-right" />
-                    <Button variant="ghost" size="icon" onClick={() => removePago(pago.id)} disabled={pagos.length === 1}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                    {pago.forma !== 'Efectivo' && (
-                      <Input placeholder={pago.forma === 'Cheque' ? 'No. Cheque' : 'No. Autorización'} value={pago.referencia} onChange={(e) => handlePagoChange(pago.id, 'referencia', e.target.value)} className="col-span-3" />
-                    )}
+          <div className="p-3 flex-grow flex flex-col space-y-3">
+            <div className="grid grid-cols-12 gap-4">
+              {/* SECCIÓN CLIENTE (IZQUIERDA) */}
+              <div className="col-span-12 lg:col-span-8 space-y-2">
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-6 bg-white border border-gray-300 p-2 rounded shadow-sm relative">
+                    <div className="absolute -top-2 left-2 bg-gray-100 px-1 text-[10px] font-bold text-gray-500 uppercase">Cliente</div>
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-[11px] font-black w-24">Código de Cliente</Label>
+                        <Select onValueChange={handleClientSelect} disabled={isLoading} value={recibo.clienteId || ''}>
+                          <SelectTrigger className="h-7 text-[11px] font-bold border-gray-400">
+                            <SelectValue placeholder="Busque un cliente..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 font-bold bg-gray-100"
+                          onClick={() => setIsClienteSearchModalOpen(true)}
+                        >
+                          F3
+                        </Button>
+                      </div>
+                      <div className="pl-24">
+                        <div className="text-[12px] font-black text-blue-800 uppercase leading-tight">{recibo.clienteNombre || '---'}</div>
+                        <div className="text-[10px] text-gray-600 italic">AV. JUAN XXIII, LOS NARANJOS, HIGUEY</div>
+                      </div>
+                    </div>
                   </div>
-                ))}
-              </div>
-              <Button variant="outline" size="sm" onClick={addPago} className="mt-2 w-full">
-                <PlusCircle className="h-4 w-4 mr-2" /> Añadir Forma de Pago
-              </Button>
-            </div>
-          </div>
 
-          {/* Tabla de Facturas Pendientes */}
-          <div className="flex-grow overflow-y-auto border rounded-lg">
-            <Table>
-              <TableHeader className="bg-gray-200">
-                <TableRow>
-                  <TableHead>Fecha Emisión</TableHead>
-                  <TableHead>Fecha Vence</TableHead>
-                  <TableHead>Origen</TableHead>
-                  <TableHead>Referencia</TableHead>
-                  <TableHead>Monto Total</TableHead>
-                  <TableHead>Monto Pendiente</TableHead>
-                  <TableHead className="w-[150px] text-right">Abono</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan="7" className="text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></TableCell></TableRow>
-                ) : facturas.length === 0 ? (
-                  <TableRow><TableCell colSpan="7" className="text-center text-muted-foreground py-8">Seleccione un cliente para ver sus facturas pendientes.</TableCell></TableRow>
-                ) : (
-                  facturas.map(f => (
-                    <TableRow key={f.id}>
-                      <TableCell>{formatInTimeZone(new Date(f.fecha), 'dd/MM/yyyy')}</TableCell>
-                      <TableCell>{formatInTimeZone(new Date(f.fecha_vencimiento), 'dd/MM/yyyy')}</TableCell>
-                      <TableCell>{f.origen}</TableCell>
-                      <TableCell>{f.referencia}</TableCell>
-                      <TableCell>{formatCurrency(f.monto_total)}</TableCell>
-                      <TableCell className="font-semibold">{formatCurrency(f.monto_pendiente)}</TableCell>
-                      <TableCell className="text-right">
-                        <Input type="number" value={f.abono} onChange={(e) => handleAbonoChange(f.id, e.target.value)} className="text-right h-8 bg-yellow-100" />
-                      </TableCell>
+                  <div className="col-span-6 flex flex-col gap-2">
+                    <div className="bg-white border border-gray-300 p-2 rounded shadow-sm flex items-center justify-between">
+                      <div className="text-[11px] font-black uppercase">Cobrador</div>
+                      <Select defaultValue="REPUESTOS MORLA">
+                        <SelectTrigger className="h-7 w-40 text-[11px] font-bold border-gray-400">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="REPUESTOS MORLA">REPUESTOS MORLA</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="text-[10px] italic text-blue-600 font-bold ml-2">
+                        Ultimo Pago --{'>'} {datosCliente.ultimo_pago ? formatInTimeZone(new Date(datosCliente.ultimo_pago.fecha), 'dd/MM/yyyy') : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 justify-end">
+                      <Button variant="destructive" size="sm" className="h-7 px-4 font-black text-[11px] uppercase shadow-md hover:scale-105 transition-transform">
+                        Generar Proxima Cuota
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECCIÓN PAGO (DERECHA) */}
+              <div className="col-span-12 lg:col-span-4 space-y-2">
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div className="flex flex-col items-end">
+                    <Label className="text-[11px] font-bold uppercase mr-2">Numero :</Label>
+                    <Input value={recibo.numero} readOnly className="h-7 w-24 text-[11px] font-black text-center bg-gray-50 border-gray-400 shadow-inner" />
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <Label className="text-[11px] font-bold uppercase mr-2">Fecha :</Label>
+                    <Input value={formatInTimeZone(recibo.fecha, 'dd/MM/yyyy')} readOnly className="h-7 w-28 text-[11px] font-black text-center bg-gray-50 border-gray-400 shadow-inner" />
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-400 overflow-hidden shadow-sm">
+                  <Table className="border-collapse">
+                    <TableHeader className="bg-gray-100 border-b border-gray-400">
+                      <TableRow className="h-6">
+                        <TableHead className="text-[10px] font-black text-center uppercase p-0 h-6 border-r border-gray-300">Forma de Pago</TableHead>
+                        <TableHead className="text-[10px] font-black text-center uppercase p-0 h-6 border-r border-gray-300">NUMERO</TableHead>
+                        <TableHead className="text-[10px] font-black text-center uppercase p-0 h-6">MONTO</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pagos.map((pago) => (
+                        <TableRow key={pago.id} className="h-7 border-b border-gray-200 group">
+                          <TableCell className="p-0 border-r border-gray-300">
+                            <Select value={pago.forma} onValueChange={(v) => handlePagoChange(pago.id, 'forma', v)}>
+                              <SelectTrigger className="h-6 border-0 rounded-none text-[10px] font-bold focus:ring-0 shadow-none">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Efectivo">EFECTIVO</SelectItem>
+                                <SelectItem value="Cheque">CHEQUE</SelectItem>
+                                <SelectItem value="Tarjeta de Crédito">TARJ. CREDITO</SelectItem>
+                                <SelectItem value="Tarjeta de Débito">TARJ. DEBITO</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="p-0 border-r border-gray-300">
+                            <Input
+                              placeholder=""
+                              value={pago.referencia}
+                              onChange={(e) => handlePagoChange(pago.id, 'referencia', e.target.value)}
+                              className="h-6 border-0 rounded-none text-[10px] font-bold focus:ring-0 shadow-none text-center uppercase"
+                            />
+                          </TableCell>
+                          <TableCell className="p-0">
+                            <Input
+                              type="number"
+                              value={pago.monto}
+                              onChange={(e) => handlePagoChange(pago.id, 'monto', e.target.value)}
+                              className="h-6 border-0 rounded-none text-[11px] font-black text-right pr-2 focus:ring-0 shadow-none text-red-600"
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-blue-50/50 h-7 border-t border-gray-400 font-black">
+                        <TableCell colSpan={2} className="text-[12px] text-right pr-4 uppercase border-r border-gray-300">Total a Pagar</TableCell>
+                        <TableCell className="text-[13px] text-right pr-2 text-blue-900 leading-none">{formatCurrency(totalPagadoFormas)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="flex justify-end pt-1">
+                  <Button variant="ghost" size="sm" onClick={addPago} className="h-5 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-100 p-1">
+                    [+] Agregar Forma
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* TABLA DE FACTURAS PENDIENTES */}
+            <div className="flex-grow overflow-hidden border border-gray-400 rounded bg-[#f5fff5] shadow-inner group">
+              <ScrollArea className="h-full">
+                <Table className="border-collapse">
+                  <TableHeader className="bg-white border-b border-gray-400 sticky top-0 z-10 shadow-sm">
+                    <TableRow className="h-7">
+                      <TableHead className="text-[11px] font-black uppercase h-7 border-r border-gray-300 px-2">Fecha</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase h-7 border-r border-gray-300 px-2">Vence</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase h-7 border-r border-gray-300 px-2">Origen</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase h-7 border-r border-gray-300 px-2">Referencia</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase h-7 border-r border-gray-300 px-2">Descripcion</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase h-7 border-r border-gray-300 px-2 text-right">Monto</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase h-7 border-r border-gray-300 px-2 text-right">Pendiente</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase h-7 px-2 text-right text-red-700 bg-red-50/50">Abono</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableRow><TableCell colSpan="8" className="text-center h-40"><Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-600" /></TableCell></TableRow>
+                    ) : facturas.length === 0 ? (
+                      <TableRow><TableCell colSpan="8" className="text-center text-gray-400 py-12 text-[12px] italic uppercase font-bold">--- Seleccione un cliente para ver registros ---</TableCell></TableRow>
+                    ) : (
+                      facturas.map(f => (
+                        <TableRow key={f.id} className="h-7 border-b border-gray-200 hover:bg-white transition-colors even:bg-green-50/30">
+                          <TableCell className="text-[11px] font-bold px-2 py-0 border-r border-gray-300">{f.fecha ? formatInTimeZone(new Date(f.fecha), 'd/L/yyyy') : '---'}</TableCell>
+                          <TableCell className="text-[11px] font-bold px-2 py-0 border-r border-gray-300 text-gray-500">{f.fecha_vencimiento ? formatInTimeZone(new Date(f.fecha_vencimiento), 'd/L/yyyy') : '---'}</TableCell>
+                          <TableCell className="text-[11px] font-black px-2 py-0 border-r border-gray-300 text-blue-700 uppercase">{f.origen}</TableCell>
+                          <TableCell className="text-[11px] font-black px-2 py-0 border-r border-gray-300 uppercase">{f.referencia}</TableCell>
+                          <TableCell className="text-[11px] font-medium px-2 py-0 border-r border-gray-300 italic text-gray-400">---</TableCell>
+                          <TableCell className="text-[11px] font-bold px-2 py-0 border-r border-gray-300 text-right text-blue-600 bg-blue-50/10 font-mono">{formatCurrency(f.monto_total)}</TableCell>
+                          <TableCell className="text-[11px] font-black px-2 py-0 border-r border-gray-300 text-right text-red-600 bg-red-50/10 font-mono">{formatCurrency(f.monto_pendiente)}</TableCell>
+                          <TableCell className="p-0 text-right bg-yellow-50/50">
+                            <Input
+                              type="number"
+                              value={f.abono}
+                              onChange={(e) => handleAbonoChange(f.id, e.target.value)}
+                              className="text-[12px] font-black text-right h-7 border-0 rounded-none bg-transparent focus:ring-0 shadow-none text-red-700 font-mono"
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
 
-          {/* Footer con Totales y Acciones */}
-          <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="imprimir" checked={recibo.imprimir} onCheckedChange={(checked) => setRecibo(prev => ({ ...prev, imprimir: checked }))} />
-                <Label htmlFor="imprimir">Imprimir al guardar</Label>
+            {/* BARRA DE TOTALES (INFERIOR) */}
+            <div className="flex flex-col md:flex-row justify-between items-end pb-1 border-t border-gray-400 pt-2 bg-gray-50/50 px-2 rounded">
+              <div className="flex items-center gap-4 mb-2 md:mb-0">
+                <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded border border-gray-300 shadow-sm">
+                  <Checkbox
+                    id="imprimir"
+                    checked={recibo.imprimir}
+                    onCheckedChange={(checked) => setRecibo(prev => ({ ...prev, imprimir: checked }))}
+                    className="border-gray-500"
+                  />
+                  <Label htmlFor="imprimir" className="text-[11px] font-black uppercase cursor-pointer text-gray-600">Imprimir</Label>
+                  <Select value={tipoPapel} onValueChange={setTipoPapel}>
+                    <SelectTrigger className="h-6 w-40 text-[10px] font-bold border-gray-300 bg-gray-50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="8.5 x 11 Pulgadas">8.5 x 11 Pulgadas (Papel Normal)</SelectItem>
+                      <SelectItem value="4 Pulgadas">4 Pulgadas (Recibo Compacto)</SelectItem>
+                      <SelectItem value="80mm">80mm (Ticket Térmico)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-8 gap-y-0.5 min-w-[300px]">
+                <div className="text-[12px] font-bold text-gray-500 text-right uppercase italic">Balance Anterior</div>
+                <div className="text-[13px] font-black text-right border-b border-gray-300 font-mono">{formatCurrency(recibo.balanceAnterior)}</div>
+
+                <div className="text-[14px] font-black text-[#0a1e3a] text-right uppercase tracking-tighter">Total Pagado</div>
+                <div className="text-[16px] font-black text-right text-blue-800 border-b-2 border-[#0a1e3a] font-mono leading-none">{formatCurrency(recibo.totalPagado)}</div>
+
+                <div className="text-[12px] font-bold text-red-600 text-right uppercase italic">Balance Actual</div>
+                <div className="text-[13px] font-black text-right text-red-700 font-mono">{formatCurrency(recibo.balanceActual)}</div>
               </div>
             </div>
-            <div className="space-y-2 text-right font-semibold">
-              <div className="flex justify-between"><span className="text-gray-600">Balance Anterior:</span><span>{formatCurrency(recibo.balanceAnterior)}</span></div>
-              <div className="flex justify-between text-blue-600"><span >Total Pagado:</span><span>{formatCurrency(recibo.totalPagado)}</span></div>
-              <div className="flex justify-between text-red-600 text-lg border-t pt-1"><span >Balance Actual:</span><span>{formatCurrency(recibo.balanceActual)}</span></div>
-            </div>
           </div>
 
-          <div className="mt-6 flex justify-between items-center">
-            <Button variant="outline" onClick={resetForm} disabled={isSaving}>
-              <FilePlus className="mr-2 h-4 w-4" /> Nuevo
+          {/* ACCIONES (FOOTER) */}
+          <div className="bg-[#e9e9e9] border-t border-gray-400 p-2 flex justify-between gap-4">
+            <Button
+              variant="outline"
+              onClick={resetForm}
+              disabled={isSaving}
+              className="h-8 text-[11px] font-black uppercase border-gray-400 shadow-sm hover:bg-white flex items-center gap-2"
+            >
+              <PlusCircle className="w-4 h-4 text-green-600" /> Nuevo
             </Button>
-            <div className="flex space-x-4">
-              <Button variant="outline" onClick={() => closePanel('recibo-ingreso')} disabled={isSaving}>
-                <X className="mr-2 h-4 w-4" /> ESC - Salir
+
+            <div className="flex gap-4">
+              <Button
+                variant="outline"
+                onClick={() => closePanel('recibo-ingreso')}
+                disabled={isSaving}
+                className="h-8 text-[11px] font-black uppercase border-gray-400 shadow-sm hover:bg-white flex items-center gap-2 px-6"
+              >
+                <X className="w-4 h-4 text-red-600" /> ESC - Retornar
               </Button>
-              <Button className="bg-morla-blue hover:bg-morla-blue/90" onClick={handleSave} disabled={isSaving || isLoading}>
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} F10 - Grabar
+
+              <Button
+                className="h-8 text-[11px] font-black uppercase bg-[#0a1e3a] hover:bg-[#0a1e3a]/90 text-white shadow-md border border-[#0a1e3a] flex items-center gap-2 px-10"
+                onClick={handleSave}
+                disabled={isSaving || isLoading}
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 text-green-400" />} F10 - Grabar
               </Button>
             </div>
           </div>
         </div>
       </motion.div>
+
+      <ClienteSearchModal
+        isOpen={isClienteSearchModalOpen}
+        onClose={() => setIsClienteSearchModalOpen(false)}
+        onSelectCliente={(cliente) => {
+          handleClientSelect(cliente.id);
+          setIsClienteSearchModalOpen(false);
+        }}
+      />
     </>
   );
 };

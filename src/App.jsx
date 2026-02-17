@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import { PanelProvider } from '@/contexts/PanelContext';
 import { FacturacionProvider } from '@/contexts/FacturacionContext';
+import { ComprasProvider } from '@/contexts/ComprasContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import MainLayout from '@/components/layout/MainLayout';
 import LoginForm from '@/components/auth/LoginForm';
@@ -35,16 +36,18 @@ function App() {
     <ThemeProvider>
       <AuthProvider>
         <FacturacionProvider>
-          <Helmet>
-            <title>Repuestos Morla - Sistema Integrado</title>
-            <meta
-              name="description"
-              content="Sistema Integrado de Información Financiera para la gestión de Repuestos Morla."
-            />
-            <link rel="icon" href="/favicon.ico" type="image/x-icon" />
-          </Helmet>
-          <AppContent />
-          <Toaster />
+          <ComprasProvider>
+            <Helmet>
+              <title>Repuestos Morla - Sistema Integrado</title>
+              <meta
+                name="description"
+                content="Sistema Integrado de Información Financiera para la gestión de Repuestos Morla."
+              />
+              <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+            </Helmet>
+            <AppContent />
+            <Toaster />
+          </ComprasProvider>
         </FacturacionProvider>
       </AuthProvider>
     </ThemeProvider>

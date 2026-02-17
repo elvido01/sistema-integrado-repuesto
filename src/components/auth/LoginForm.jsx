@@ -22,14 +22,14 @@ const LoginForm = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-morla-blue to-blue-800 dark:from-gray-800 dark:to-gray-900">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary to-blue-800 dark:from-gray-800 dark:to-gray-900">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-8 w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-morla-blue mb-2">Repuestos Morla</h1>
+          <h1 className="text-2xl font-bold text-primary mb-2">Repuestos Morla</h1>
           <p className="text-gray-600 dark:text-gray-300">Sistema Integrado de Información</p>
         </div>
 
@@ -71,8 +71,8 @@ const LoginForm = () => {
 
           <Button
             type="submit"
-            className="w-full bg-morla-blue hover:bg-morla-blue/90"
-            disabled={loading}
+            className="w-full"
+            disabled={loading || !email || !password}
           >
             {loading ? (
               <div className="flex items-center">

@@ -96,21 +96,21 @@ const HomePage = () => {
               title="Inventario Bajo"
               value={stats.stockBajo}
               icon={AlertTriangle}
-              color="red"
+              color="destructive"
               description="productos con stock crítico"
             />
             <SummaryCard
               title="Ventas del Día"
-              value={`$${stats.ventasHoy.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
+              value={`${stats.ventasHoy.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
               icon={TrendingUp}
-              color="green"
+              color="accent"
               description="ingresos de hoy"
             />
             <SummaryCard
               title="Clientes Activos"
               value={stats.clientesActivos}
               icon={Users}
-              color="blue"
+              color="primary"
               description="clientes registrados"
             />
             <SummaryCard

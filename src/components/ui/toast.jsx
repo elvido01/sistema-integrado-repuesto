@@ -34,7 +34,7 @@ const toastVariants = cva(
 	},
 );
 
-const Toast = React.forwardRef(({ className, variant, ...props }, ref) => {
+const Toast = React.forwardRef(({ className, variant, dismiss, ...props }, ref) => {
 	return (
 		<ToastPrimitives.Root
 			ref={ref}
