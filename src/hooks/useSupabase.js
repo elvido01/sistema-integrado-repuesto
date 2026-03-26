@@ -10,37 +10,13 @@ export const useProducts = () => {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('productos')
-        .select('*, tipos_producto(nombre), marcas(nombre), modelos(nombre)')
-        .eq('activo', true)
-        .order('codigo');
+      const { data, error } = await supabase.rpc('get_all_products_with_stock');
 
       if (error) throw error;
 
-      const productsWithStock = await Promise.all(
-        data.map(async (product) => {
-          const { data: stockData, error: stockError } = await supabase
-            .rpc('get_stock_actual', { producto_uuid: product.id });
-
-          if (stockError) {
-             console.error(`Error fetching stock for product ${product.id}:`, stockError);
-             return { ...product, existencia: 0 };
-          }
-          
-          return {
-            ...product,
-            existencia: Math.trunc(stockData || 0),
-            tipo: product.tipos_producto?.nombre || '',
-            marca: product.marcas?.nombre || '',
-            modelo: product.modelos?.nombre || '',
-          };
-        })
-      );
-
-      setProducts(productsWithStock);
+      setProducts(data || []);
     } catch (error) {
-       toast({
+      toast({
         variant: "destructive",
         title: "Error al cargar productos",
         description: error.message

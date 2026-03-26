@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, Search } from 'lucide-react';
 
-const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetalle, removeDetalle, setIsSearchModalOpen, onCreateProduct, itbisIncluido }) => {
+const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetalle, removeDetalle, onEditLine, setIsSearchModalOpen, onCreateProduct, itbisIncluido, onSearchByCode }) => {
 
   const handleInputChange = (field, value) => {
     setCurrentDetalle(prev => ({ ...prev, [field]: value }));
@@ -43,6 +43,14 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
             value={currentDetalle.codigo}
             className="h-8 border-none bg-transparent text-xs focus-visible:ring-0 focus-visible:ring-offset-0 font-mono"
             onChange={e => handleInputChange('codigo', e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (currentDetalle.codigo) {
+                  onSearchByCode?.(currentDetalle.codigo);
+                }
+              }
+            }}
             placeholder="F3 Búscar"
           />
           <Button
@@ -149,7 +157,16 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
               </TableRow>
             ) : (
               detalles.map(d => (
-                <TableRow key={d.id} className={`group divide-x divide-gray-100 hover:bg-gray-50 transition-colors h-9 ${!d.producto_id ? 'bg-red-50/50' : ''}`}>
+                <TableRow
+                  key={d.id}
+                  className={`group divide-x divide-gray-100 transition-colors h-9 ${!d.producto_id ? 'bg-red-50/50 cursor-default' : 'hover:bg-morla-blue/5 cursor-pointer'}`}
+                  onClick={() => {
+                    if (d.producto_id) {
+                      onEditLine?.(d);
+                    }
+                  }}
+                  title={d.producto_id ? "Click para editar esta línea" : "Crea el producto primero para poder editarlo"}
+                >
                   <TableCell className="w-[120px] p-0 px-2 font-mono text-[11px] h-9">
                     <div className="flex items-center justify-between">
                       <span>{d.codigo}</span>
@@ -159,7 +176,10 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
                           size="icon"
                           className="h-5 w-5 text-red-600"
                           title="Crear este producto"
-                          onClick={() => onCreateProduct?.(d)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCreateProduct?.(d);
+                          }}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
@@ -195,7 +215,10 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"
-                      onClick={() => removeDetalle(d.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeDetalle(d.id);
+                      }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>

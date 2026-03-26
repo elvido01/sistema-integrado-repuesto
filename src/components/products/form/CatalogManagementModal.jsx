@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 
@@ -93,7 +92,18 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
       return;
     }
 
-    const dataToSave = { ...formData };
+    // Check for duplicates (case-insensitive)
+    const nombreNorm = formData.nombre.trim().toUpperCase();
+    const duplicate = items.find(item =>
+      item.nombre?.trim().toUpperCase() === nombreNorm &&
+      (!isEditing || item.id !== selectedItem?.id)
+    );
+    if (duplicate) {
+      toast({ variant: 'destructive', title: 'Duplicado', description: `"${formData.nombre.trim()}" ya existe en ${title}. No se permiten nombres duplicados.` });
+      return;
+    }
+
+    const dataToSave = { ...formData, nombre: formData.nombre.trim().toUpperCase() };
 
     let response;
     if (isEditing) {
@@ -103,13 +113,17 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
     }
 
     if (response.error) {
-      toast({ variant: 'destructive', title: 'Error al guardar', description: response.error.message });
+      if (response.error.message?.includes('unique') || response.error.message?.includes('duplicate')) {
+        toast({ variant: 'destructive', title: 'Duplicado', description: `"${formData.nombre.trim()}" ya existe. No se permiten nombres duplicados.` });
+      } else {
+        toast({ variant: 'destructive', title: 'Error al guardar', description: response.error.message });
+      }
     } else {
       toast({ title: 'Éxito', description: `${title} guardado correctamente.` });
       fetchData();
       resetForm();
       if (onSaveSuccess) onSaveSuccess(response.data);
-      onClose(); // ← Cerrar ventana automáticamente
+      onClose();
     }
   };
 
@@ -152,11 +166,11 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
             aria-modal="true"
           >
             <div
-              className="relative bg-white rounded-lg border-2 border-morla-gold shadow-2xl w-full max-w-2xl max-h-[80vh] mx-4 flex flex-col"
+              className="relative bg-white rounded-lg border-2 border-morla-gold shadow-2xl w-full max-w-2xl h-[85vh] mx-4 flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="bg-morla-blue text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
-                <h2 className="text-md font-bold">{title}</h2>
+                <h2 className="text-2xl font-bold !text-white">{title}</h2>
                 <div className="flex items-center gap-1">
                   <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={resetForm}><Plus /></Button>
                   <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-white hover:bg-white/20" onClick={handleSave}><Save /></Button>
@@ -186,9 +200,9 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
               </div>
 
               <div className="flex-1 px-4 pb-4 overflow-hidden">
-                <ScrollArea className="h-full border rounded-md">
+                <div className="h-full border rounded-md overflow-y-auto">
                   <Table>
-                    <TableHeader className="bg-gray-100/50">
+                    <TableHeader className="bg-gray-100/50 sticky top-0 z-10">
                       <TableRow className="h-8">
                         {columns.map((col) => (
                           <TableHead key={col.accessor} className={col.accessor === 'nombre' ? 'w-[70%]' : ''}>
@@ -226,7 +240,7 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
                       )}
                     </TableBody>
                   </Table>
-                </ScrollArea>
+                </div>
               </div>
 
               <div className="border-t bg-gray-50 px-4 py-3 flex justify-end gap-3 flex-shrink-0">

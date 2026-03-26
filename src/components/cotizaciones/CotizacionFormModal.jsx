@@ -12,7 +12,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { X, CalendarPlus as CalendarIcon, Search, Loader2, AlertTriangle, UserX, PlusCircle } from 'lucide-react';
+import { X, CalendarPlus as CalendarIcon, Search, Loader2, AlertTriangle, UserX, PlusCircle, Share2 } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { generateCotizacionPDF } from '@/components/common/PDFGenerator';
@@ -67,15 +67,15 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
       telefono: cot.cliente_telefono || 'N/A'
     });
     setVendedorId(cot.vendedor_id || '');
-    setFechaCotizacion(new Date(cot.fecha_cotizacion));
-    setFechaVencimiento(new Date(cot.fecha_vencimiento));
+    setFechaCotizacion(cot.fecha_cotizacion ? new Date(cot.fecha_cotizacion + "T12:00:00") : new Date());
+    setFechaVencimiento(cot.fecha_vencimiento ? new Date(cot.fecha_vencimiento + "T12:00:00") : addDays(new Date(), 7));
     setNotas(cot.notas || '');
     setManualClienteNombre(cot.manual_cliente_nombre || '');
 
     // Fetch details
     const { data: details, error } = await supabase
       .from('cotizaciones_detalle')
-      .select('*')
+      .select('*, productos(imagen_url)')
       .eq('cotizacion_id', cot.id);
 
     if (error) {
@@ -91,6 +91,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
         precio_unitario: d.precio_unitario,
         itbis_pct: (d.itbis_valor / (d.importe - d.itbis_valor)) || 0.18, // Rough estimate if not in row
         descuento_pct: d.descuento_pct || 0,
+        imagen_url: d.productos?.imagen_url,
       })));
     }
   }, [toast]);
@@ -194,7 +195,8 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
       precio_unitario: finalPrice,
       itbis_pct: product.itbis_pct || 0.18,
       descuento_pct: 0,
-      max_descuento: maxDesc
+      max_descuento: maxDesc,
+      imagen_url: product.imagen_url
     };
     setCurrentItem(newItem);
     setItemCode(product.codigo);
@@ -205,6 +207,34 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
       document.getElementById('cot-input-cantidad')?.focus();
       document.getElementById('cot-input-cantidad')?.select();
     }, 100);
+  };
+
+  // Share product image via Web Share API or open in new tab
+  const handleShareImage = async (item) => {
+    const imageUrl = item.imagen_url;
+    if (!imageUrl) return;
+
+    try {
+      if (navigator.share) {
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        const file = new File([blob], `${item.codigo || 'producto'}.jpg`, { type: blob.type });
+
+        await navigator.share({
+          title: item.descripcion || 'Imagen del producto',
+          text: `${item.descripcion} — Código: ${item.codigo}`,
+          files: [file],
+        });
+        toast({ title: 'Compartido', description: 'Imagen compartida exitosamente.' });
+      } else {
+        window.open(imageUrl, '_blank');
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('[Share] Error:', err);
+        window.open(imageUrl, '_blank');
+      }
+    }
   };
 
   const updateCurrentItem = (field, value) => {
@@ -249,7 +279,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
     const { data, error } = await supabase
       .from('productos')
       .select('*, presentaciones(*)')
-      .eq('codigo', code.trim())
+      .ilike('codigo', code.trim())
       .maybeSingle();
     if (data) handleSelectProduct(data);
     else toast({ title: 'No encontrado', description: 'Producto no existe', variant: 'destructive' });
@@ -298,19 +328,22 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
     let subtotal = 0;
     let descuento_total = 0;
     let itbis_total = 0;
+    let total_cotizacion = 0;
 
     articulos.forEach(item => {
-      const itemSubtotal = (item.cantidad || 0) * (item.precio_unitario || 0);
-      const itemDescuento = itemSubtotal * ((item.descuento_pct || 0) / 100);
-      const baseImponible = itemSubtotal - itemDescuento;
-      const itemItbis = baseImponible * (item.itbis_pct || 0);
+      const importeBruto = (item.cantidad || 0) * (item.precio_unitario || 0);
+      const itemDescuento = importeBruto * ((item.descuento_pct || 0) / 100);
+      const importeFinal = importeBruto - itemDescuento;
 
-      subtotal += itemSubtotal;
+      const baseImponible = importeFinal / (1 + (item.itbis_pct || 0.18));
+      const itemItbis = importeFinal - baseImponible;
+
+      subtotal += baseImponible;
       descuento_total += itemDescuento;
       itbis_total += itemItbis;
+      total_cotizacion += importeFinal;
     });
 
-    const total_cotizacion = subtotal - descuento_total + itbis_total;
     return { subtotal, descuento_total, itbis_total, total_cotizacion };
   }, [articulos]);
 
@@ -378,10 +411,13 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
       }
 
       const detallesData = articulos.map(item => {
-        const itemSubtotal = (item.cantidad || 0) * (item.precio_unitario || 0);
-        const itemDescuento = itemSubtotal * ((item.descuento_pct || 0) / 100);
-        const baseImponible = itemSubtotal - itemDescuento;
-        const itemItbis = baseImponible * (item.itbis_pct || 0);
+        const importeBruto = (item.cantidad || 0) * (item.precio_unitario || 0);
+        const itemDescuento = importeBruto * ((item.descuento_pct || 0) / 100);
+        const importeFinal = importeBruto - itemDescuento;
+        
+        const baseImponible = importeFinal / (1 + (item.itbis_pct || 0.18));
+        const itemItbis = importeFinal - baseImponible;
+
         return {
           cotizacion_id: cotId,
           producto_id: item.producto_id,
@@ -393,7 +429,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
           descuento_pct: item.descuento_pct,
           descuento_valor: itemDescuento,
           itbis_valor: itemItbis,
-          importe: baseImponible + itemItbis,
+          importe: importeFinal,
         };
       });
 
@@ -418,13 +454,13 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-w-6xl h-[95vh] flex flex-col">
+        <DialogContent className="max-w-6xl w-[95vw] md:w-full max-h-[95vh] overflow-y-auto flex flex-col p-4 md:p-6">
           <DialogHeader>
             <DialogTitle>{editingCotizacion ? `Modificando Cotización ${editingCotizacion.numero}` : 'Crear Nueva Cotización'}</DialogTitle>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border-b">
-            <div className="col-span-2 space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b">
+            <div className="md:col-span-2 space-y-2">
               <Label htmlFor="cliente-search">Cliente <span className="text-morla-blue font-bold">[F3]</span></Label>
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-grow justify-start text-left font-normal" onClick={() => setIsClienteSearchOpen(true)}>
@@ -502,13 +538,13 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
             </div>
           </div>
 
-          <div className="flex-grow p-4 min-h-0 flex flex-col">
+          <div className="flex-grow py-4 min-h-[350px] flex flex-col">
             <div className="flex justify-between items-center mb-2">
               <h3 className="font-semibold">Artículos</h3>
               <Button size="sm" onClick={() => setIsProductSearchOpen(true)}>Agregar Artículo</Button>
             </div>
-            <ScrollArea className="flex-grow border rounded-md">
-              <Table>
+            <div className="flex-grow border rounded-md overflow-x-auto overflow-y-auto max-h-[50vh] md:max-h-none">
+              <Table className="min-w-[800px]">
                 <TableHeader className="sticky top-0 bg-gray-50 z-10 text-xs">
                   <TableRow className="bg-[#ffffbf] hover:bg-[#ffffbf] border-b-2 border-gray-600 shadow-md h-10 group">
                     <TableCell className="p-1 border-r border-gray-400">
@@ -572,7 +608,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                       />
                     </TableCell>
                     <TableCell className="p-1 text-right font-black text-blue-800 bg-blue-50/30 border-r border-gray-400">
-                      {currentItem ? (Number((currentItem.cantidad * currentItem.precio_unitario) * (1 - currentItem.descuento_pct / 100) * (1 + currentItem.itbis_pct))).toFixed(2) : '0.00'}
+                      {currentItem ? (Number((currentItem.cantidad * currentItem.precio_unitario) * (1 - currentItem.descuento_pct / 100))).toFixed(2) : '0.00'}
                     </TableCell>
                     <TableCell className="p-1 text-center">
                       <Button size="sm" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50" onClick={commitCurrentItem}><PlusCircle className="h-5 w-5" /></Button>
@@ -590,11 +626,9 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                 </TableHeader>
                 <TableBody className="text-xs">
                   {articulos.length > 0 ? articulos.map((item, index) => {
-                    const itemSubtotal = (item.cantidad || 0) * (item.precio_unitario || 0);
-                    const itemDescuento = itemSubtotal * ((item.descuento_pct || 0) / 100);
-                    const baseImponible = itemSubtotal - itemDescuento;
-                    const itemItbis = baseImponible * (item.itbis_pct || 0);
-                    const importe = baseImponible + itemItbis;
+                    const importeBruto = (item.cantidad || 0) * (item.precio_unitario || 0);
+                    const itemDescuento = importeBruto * ((item.descuento_pct || 0) / 100);
+                    const importeFinal = importeBruto - itemDescuento;
                     return (
                       <TableRow key={index} className="hover:bg-gray-50">
                         <TableCell className="font-bold">{item.codigo}</TableCell>
@@ -620,11 +654,23 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                             className="h-7 text-xs text-right border-gray-300 font-bold text-red-600"
                           />
                         </TableCell>
-                        <TableCell className="text-right font-black text-blue-900 bg-blue-50/20">{Number(importe || 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-black text-blue-900 bg-blue-50/20">{Number(importeFinal || 0).toFixed(2)}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRemoveArticle(index)}>
-                            <X className="h-3 w-3" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-morla-blue disabled:opacity-30 disabled:text-gray-400 group relative"
+                              disabled={!item.imagen_url}
+                              title={item.imagen_url ? "Compartir Imagen" : "Sin imagen"}
+                              onClick={() => handleShareImage(item)}
+                            >
+                              <Share2 className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleRemoveArticle(index)}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -637,10 +683,10 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                   )}
                 </TableBody>
               </Table>
-            </ScrollArea>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border-t">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-t pt-4">
             <div>
               <Label htmlFor="notas">Notas y Comentarios</Label>
               <Textarea id="notas" value={notas} onChange={e => setNotas(e.target.value)} placeholder="Condiciones de pago, tiempo de entrega, etc." className="h-20" />

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -11,6 +11,7 @@ import ProductTable from '@/components/products/ProductTable';
 import ProductTableFooter from '@/components/products/ProductTableFooter';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ChangeProductCodeModal from '@/components/products/ChangeProductCodeModal';
+import PrintLabelModal from '@/components/products/PrintLabelModal';
 
 import Papa from 'papaparse';
 import { exportToExcel } from '@/lib/excelExport';
@@ -18,6 +19,7 @@ import { exportToExcel } from '@/lib/excelExport';
 // 👇 helpers y catálogos
 import { useCatalogData } from '@/hooks/useSupabase';
 import { orNull, nombreById } from '@/lib/rpc-helpers';
+import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 
 const ProductsPage = () => {
   const { toast } = useToast();
@@ -29,7 +31,6 @@ const ProductsPage = () => {
   const [filters, setFilters] = useState({ marca_id: null, modelo_id: null, tipo_id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0 });
 
-  // ✅ usar alias para no chocar con otras variables
   const {
     marcas: catalogMarcas = [],
     modelos: catalogModelos = [],
@@ -39,44 +40,44 @@ const ProductsPage = () => {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isChangeCodeModalOpen, setIsChangeCodeModalOpen] = useState(false);
+  const [isPrintLabelModalOpen, setIsPrintLabelModalOpen] = useState(false);
 
   // ✅ Se eliminó el observer (Infinite Scroll) para evitar saltos de pantalla
   // por requerimiento del usuario. La carga se controla por el selector de límites.
+
+  // Refs para mantener fetchProducts estable y evitar bucles de actualización
+  const searchTermRef = useRef(searchTerm);
+  const filtersRef = useRef(filters);
+  const paginationRef = useRef(pagination);
+
+  useEffect(() => { searchTermRef.current = searchTerm; }, [searchTerm]);
+  useEffect(() => { filtersRef.current = filters; }, [filters]);
+  useEffect(() => { paginationRef.current = pagination; }, [pagination]);
 
   const fetchProducts = useCallback(
     async (isNewSearch = false) => {
       setLoading(true);
       try {
-        const currentPage = isNewSearch ? 1 : pagination.page;
-        const offset = (currentPage - 1) * pagination.limit;
+        const currentPage = isNewSearch ? 1 : paginationRef.current.page;
+        const currentLimit = paginationRef.current.limit;
+        const offset = (currentPage - 1) * currentLimit;
 
-        // ✅ convertir ID -> NOMBRE para la RPC
-        const marcaNombre = nombreById(catalogMarcas, filters?.marca_id ?? filters?.marcaId);
-        const modeloNombre = nombreById(catalogModelos, filters?.modelo_id ?? filters?.modeloId);
+        const marcaNombre = nombreById(catalogMarcas, filtersRef.current?.marca_id ?? filtersRef.current?.marcaId);
+        const modeloNombre = nombreById(catalogModelos, filtersRef.current?.modelo_id ?? filtersRef.current?.modeloId);
 
         const { data, error } = await supabase.rpc('get_productos_paginados', {
-          p_limit: pagination.limit,
+          p_limit: currentLimit,
           p_offset: offset,
-          p_search_term: orNull(searchTerm),
-          p_marca_filter: orNull(marcaNombre),    // TEXT (nombre)
-          p_modelo_filter: orNull(modeloNombre),  // TEXT (nombre)
+          p_search_term: orNull(searchTermRef.current),
+          p_marca_filter: orNull(marcaNombre),
+          p_modelo_filter: orNull(modeloNombre),
           p_include_zero_stock: true,
-          // p_tipo_filter: orNull(filters.tipo_id) // la RPC actual no lo usa
         });
 
         if (error) throw error;
 
         const newProducts = data || [];
-        if (isNewSearch) {
-          setProducts(newProducts);
-        } else {
-          setProducts((prev) => {
-            // ✅ Evitar duplicados por ID (por si acaso el offset se desfasa)
-            const existingIds = new Set(prev.map(p => p.id));
-            const uniqueNew = newProducts.filter(p => !existingIds.has(p.id));
-            return [...prev, ...uniqueNew];
-          });
-        }
+        setProducts(newProducts);
 
         if (newProducts.length > 0) {
           setPagination((prev) => ({
@@ -97,9 +98,10 @@ const ProductsPage = () => {
         setLoading(false);
       }
     },
-    [pagination.page, pagination.limit, searchTerm, filters, toast, catalogMarcas, catalogModelos]
+    [toast, catalogMarcas, catalogModelos]
   );
 
+  // Efecto para búsqueda y filtros debounced (RESETEAN página)
   useEffect(() => {
     const handler = setTimeout(() => {
       fetchProducts(true);
@@ -107,16 +109,17 @@ const ProductsPage = () => {
     return () => clearTimeout(handler);
   }, [searchTerm, filters, fetchProducts]);
 
+  // Efecto para cambios de página y límite (MANTIENEN página)
   useEffect(() => {
-    if (pagination.page > 1) {
-      fetchProducts();
-    }
-  }, [pagination.page, fetchProducts]);
+    fetchProducts(false);
+  }, [pagination.page, pagination.limit, fetchProducts]);
 
-  const refreshProducts = () => {
+  const refreshProducts = (keepPage = false) => {
     setProducts([]);
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    fetchProducts(true);
+    if (!keepPage) {
+      setPagination((prev) => ({ ...prev, page: 1 }));
+    }
+    fetchProducts(keepPage ? false : true);
   };
 
   const handleSaveProduct = async (productData, presentations, isEditing) => {
@@ -128,8 +131,10 @@ const ProductsPage = () => {
         return isNaN(parsed) ? 0 : parsed;
       };
 
+      const { existencia, ...productDataWithoutStock } = productData;
+
       const productPayload = {
-        ...productData,
+        ...productDataWithoutStock,
         costo: parseNumeric(productData.costo),
         precio: parseNumeric(productData.precio),
         itbis_pct: parseNumeric(productData.itbis_pct),
@@ -158,31 +163,137 @@ const ProductsPage = () => {
         toast({ title: 'Éxito', description: 'Producto creado correctamente.' });
       }
 
-      if (savedProduct && presentations.length > 0) {
-        const presentationsToUpsert = presentations.map((p) => {
-          const { id, ...rest } = p;
-          const presentationPayload = {
-            ...rest,
-            producto_id: savedProduct.id,
-            cantidad: parseNumeric(p.cantidad),
-            costo: parseNumeric(p.costo),
-            margen_pct: parseNumeric(p.margen_pct),
-            precio1: parseNumeric(p.precio1),
-            descuento_pct: parseNumeric(p.descuento_pct),
-            precio_final: parseNumeric(p.precio_final),
-          };
-          if (id && !id.toString().startsWith('new-')) {
-            presentationPayload.id = id;
-          }
-          return presentationPayload;
-        });
+      if (savedProduct) {
+        // 1. Recopilar IDs de presentaciones que el usuario conservó (las que ya existían en BD)
+        const keepIds = presentations
+          .map(p => p.id)
+          .filter(id => id && !id.toString().startsWith('new-'));
 
-        const { error: presError } = await supabase.from('presentaciones').upsert(presentationsToUpsert);
-        if (presError) throw presError;
+        // 2. Eliminar de la BD las presentaciones que el usuario borró
+        if (isEditing) {
+          let deleteQuery = supabase
+            .from('presentaciones')
+            .delete()
+            .eq('producto_id', savedProduct.id);
+
+          if (keepIds.length > 0) {
+            // Borrar solo las que NO están en la lista actual
+            deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.join(',')})`);
+          }
+          // Si keepIds está vacío, borra todas (el usuario las eliminó todas)
+
+          const { error: delError } = await deleteQuery;
+          if (delError) console.error('Error eliminando presentaciones:', delError);
+        }
+
+        // 3. Upsert las presentaciones que quedaron
+        if (presentations.length > 0) {
+          const presentationsToUpsert = presentations.map((p) => {
+            const { id, ...rest } = p;
+            const presentationPayload = {
+              ...rest,
+              producto_id: savedProduct.id,
+              cantidad: parseNumeric(p.cantidad),
+              costo: parseNumeric(p.costo),
+              margen_pct: parseNumeric(p.margen_pct),
+              precio1: parseNumeric(p.precio1),
+              descuento_pct: parseNumeric(p.descuento_pct),
+              precio_final: parseNumeric(p.precio_final),
+            };
+            if (id && !id.toString().startsWith('new-')) {
+              presentationPayload.id = id;
+            }
+            return presentationPayload;
+          });
+
+          const { error: presError } = await supabase.from('presentaciones').upsert(presentationsToUpsert);
+          if (presError) throw presError;
+        }
+
+        // 4. Ajustar inventario automáticamente si hubo cambio en 'existencia'
+        const currentExistencia = selectedProduct?.existencia || 0;
+        const newExistencia = productData.existencia || 0;
+        const diff = parseFloat(newExistencia) - parseFloat(currentExistencia);
+
+        if (Math.abs(diff) > 0.001) {
+          const mainPresentation = presentations.find(p => p.afecta_ft) || presentations[0];
+          const unitToUse = mainPresentation ? mainPresentation.tipo : 'UND - Unidad';
+          
+          if (diff > 0) {
+            // ENTRADA
+            const { data: numData } = await supabase.rpc('get_next_entrada_numero');
+            const entradaData = {
+              numero: numData,
+              fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
+              referencia: `AJUSTE DESDE FICHA`,
+              concepto: 'AJUSTE DE INVENTARIO',
+              almacen_id: 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7', // ALM01
+              notas: `Ajuste automático creado al editar/crear producto ${savedProduct.codigo}`,
+              total_costo: (diff * savedProduct.costo) || 0
+            };
+            const detallesData = [{
+              producto_id: savedProduct.id,
+              codigo: savedProduct.codigo,
+              descripcion: savedProduct.descripcion,
+              cantidad: diff,
+              unidad: unitToUse,
+              costo_unitario: savedProduct.costo || 0,
+              importe: (diff * savedProduct.costo) || 0
+            }];
+
+            const { error: entError } = await supabase.rpc('crear_entrada_inventario', {
+              p_entrada_data: entradaData,
+              p_detalles_data: detallesData,
+              p_tipo_movimiento: 'AJUSTE'
+            });
+
+            if (entError) {
+              console.error("Error creating auto entrada:", entError);
+              toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste automático de entrada.' });
+            } else {
+              toast({ title: 'Ajuste automático', description: `Se autogeneró una Entrada de Mercancía (${numData}) por +${diff} uds.` });
+            }
+          } else {
+            // SALIDA
+            const absDiff = Math.abs(diff);
+            const { data: numData } = await supabase.rpc('get_next_salida_numero');
+            const salidaData = {
+              numero: numData,
+              fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
+              referencia: `AJUSTE DESDE FICHA`,
+              concepto: 'AJUSTE DE SALIDA',
+              almacen_id: 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7', // ALM01
+              notas: `Ajuste automático creado al editar producto ${savedProduct.codigo}`,
+              total_costo: (absDiff * savedProduct.costo) || 0
+            };
+            const detallesData = [{
+              producto_id: savedProduct.id,
+              codigo: savedProduct.codigo,
+              descripcion: savedProduct.descripcion,
+              cantidad: absDiff,
+              unidad: unitToUse,
+              costo_unitario: savedProduct.costo || 0,
+              importe: (absDiff * savedProduct.costo) || 0
+            }];
+
+            const { error: salError } = await supabase.rpc('crear_salida_inventario', {
+              p_salida_data: salidaData,
+              p_detalles_data: detallesData,
+              p_tipo_movimiento: 'AJUSTE'
+            });
+
+            if (salError) {
+              console.error("Error creating auto salida:", salError);
+              toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste automático de salida.' });
+            } else {
+              toast({ title: 'Ajuste automático', description: `Se autogeneró una Salida de Mercancía (${numData}) por -${absDiff} uds.` });
+            }
+          }
+        }
       }
 
       setIsFormModalOpen(false);
-      refreshProducts();
+      refreshProducts(isEditing);
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -227,7 +338,7 @@ const ProductsPage = () => {
 
       toast({ title: 'Éxito', description: 'Producto eliminado correctamente.' });
       setSelectedProduct(null);
-      refreshProducts();
+      refreshProducts(true);
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -240,14 +351,28 @@ const ProductsPage = () => {
   };
 
   const handleOpenFormModal = async (product = null) => {
+    // Si no hay producto, es una creación nueva
     if (!product?.id) {
       setSelectedProduct(null);
       setIsFormModalOpen(true);
       return;
     }
 
+    const initialProduct = {
+      ...product,
+      tipo_id: product.tipo_id?.toString() || '',
+      marca_id: product.marca_id?.toString() || '',
+      modelos_ids: product.modelos_ids || (product.modelo_id ? [product.modelo_id] : []),
+      suplidor_id: product.suplidor_id?.toString() || '',
+    };
+
+    // Mostrar modal con datos iniciales inmediatamente para mejor UX
+    setSelectedProduct(initialProduct);
+    setIsFormModalOpen(true);
     setLoading(true);
+
     try {
+      // Re-fetch detalles profundos (presentaciones y stock actualizado)
       const { data, error } = await supabase
         .from('productos')
         .select(
@@ -258,27 +383,29 @@ const ProductsPage = () => {
 
       if (error) throw error;
 
-      const { tipo, marca, modelo, suplidor, ...restOfProduct } = data;
+      // Obtener stock actual
+      const { data: stockData } = await supabase.rpc('get_stock_actual', { producto_uuid: product.id });
 
-      const flattenedProduct = {
-        ...restOfProduct,
-        tipo_id: tipo?.id?.toString() || '',
-        marca_id: marca?.id?.toString() || '',
-        modelo_id: modelo?.id?.toString() || '',
-        suplidor_id: suplidor?.id?.toString() || '',
+      const fullProduct = {
+        ...data,
+        tipo_id: data.tipo?.id?.toString() || data.tipo_id?.toString() || '',
+        marca_id: data.marca?.id?.toString() || data.marca_id?.toString() || '',
+        modelos_ids: data.modelos_ids || (data.modelo_id ? [data.modelo_id] : []),
+        suplidor_id: data.suplidor?.id?.toString() || data.suplidor_id?.toString() || '',
+        existencia: stockData || 0,
       };
 
-      setSelectedProduct(flattenedProduct);
+      setSelectedProduct(fullProduct);
     } catch (error) {
+      console.error("Error al cargar detalles del producto:", error);
       toast({
         variant: 'destructive',
-        title: 'Error al cargar datos',
-        description: `No se pudo obtener la información completa del producto: ${error.message}`,
+        title: 'Aviso',
+        description: 'Usando datos locales. Los precios y presentaciones podrían no estar actualizados.',
       });
-      setSelectedProduct(product);
+      // Mantenemos el initialProduct que ya pusimos en el estado
     } finally {
       setLoading(false);
-      setIsFormModalOpen(true);
     }
   };
 
@@ -288,44 +415,16 @@ const ProductsPage = () => {
   };
 
   const handleExport = async () => {
-    setLoading(true);
     try {
+      setLoading(true);
       const { data, error } = await supabase
-        .from('productos')
-        .select('*, tipo:tipos_producto(nombre), marca:marcas(nombre), modelo:modelos(nombre)')
-        .eq('activo', true)
-        .order('codigo');
+        .from('v_productos_export')
+        .select('*')
+        .order('Codigo');
 
       if (error) throw error;
 
-      const productsWithStock = await Promise.all(
-        data.map(async (p) => {
-          const { data: stock } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
-          return {
-            ...p,
-            existencia: stock || 0,
-            tipo_nombre: p.tipo?.nombre || '',
-            marca_nombre: p.marca?.nombre || '',
-            modelo_nombre: p.modelo?.nombre || '',
-          };
-        })
-      );
-
-      const dataToExport = productsWithStock.map((p) => ({
-        Código: p.codigo,
-        Descripción: p.descripcion,
-        Referencia: p.referencia,
-        Existencia: p.existencia,
-        Costo: p.costo,
-        Precio: p.precio,
-        'ITBIS %': p.itbis_pct,
-        Tipo: p.tipo_nombre,
-        Marca: p.marca_nombre,
-        Modelo: p.modelo_nombre,
-        Ubicación: p.ubicacion,
-      }));
-
-      exportToExcel(dataToExport, 'Listado_de_Productos');
+      exportToExcel(data, 'Listado_de_Productos');
       toast({ title: 'Exportación Exitosa', description: 'El listado de productos se ha exportado a Excel.' });
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error de Exportación', description: error.message });
@@ -379,7 +478,7 @@ const ProductsPage = () => {
   return (
     <>
       <Helmet>
-        <title>Maestro de Artículos - Repuestos Morla</title>
+        <title>Maestro de Artículos - MotoFlow</title>
       </Helmet>
 
       <motion.div
@@ -388,17 +487,19 @@ const ProductsPage = () => {
         transition={{ duration: 0.5 }}
         className="p-4 sm:p-6"
       >
-        <ProductHeader
-          onAdd={() => handleOpenFormModal()}
-          onDelete={() => selectedProduct && handleDeleteProduct(selectedProduct.id)}
-          onChangeCode={() => selectedProduct && handleOpenChangeCodeModal(selectedProduct)}
-          hasSelection={!!selectedProduct}
-        />
+        <div className="sticky top-0 z-50 bg-gray-100/95 backdrop-blur supports-[backdrop-filter]:bg-gray-100/75 pt-4 pb-2 -mt-4 mb-4 border-b border-gray-200">
+          <ProductHeader
+            onAdd={() => handleOpenFormModal()}
+            onDelete={() => selectedProduct && handleDeleteProduct(selectedProduct.id)}
+            onChangeCode={() => selectedProduct && handleOpenChangeCodeModal(selectedProduct)}
+            hasSelection={!!selectedProduct}
+          />
+        </div>
 
         <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
           {/* Barra de filtros sticky */}
           <div
-            className="sticky top-0 z-40 border-b bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60"
+            className="sticky top-[88px] z-40 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 py-2 -mx-4 px-4"
             style={{ '--filters-h': '56px' }}
           >
             <ProductFilters
@@ -423,6 +524,10 @@ const ProductsPage = () => {
             onChangeCode={handleOpenChangeCodeModal}
             selectedProduct={selectedProduct}
             onSelectProduct={setSelectedProduct}
+            onPrintLabel={(prod) => {
+              setSelectedProduct(prod);
+              setIsPrintLabelModalOpen(true);
+            }}
           />
 
           <ProductTableFooter
@@ -447,6 +552,12 @@ const ProductsPage = () => {
         onClose={() => setIsChangeCodeModalOpen(false)}
         product={selectedProduct}
         onCodeChanged={refreshProducts}
+      />
+
+      <PrintLabelModal
+        isOpen={isPrintLabelModalOpen}
+        onClose={() => setIsPrintLabelModalOpen(false)}
+        product={selectedProduct}
       />
     </>
   );

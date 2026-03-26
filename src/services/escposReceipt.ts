@@ -68,7 +68,7 @@ const totalsRow = (label: string, value: string) => {
 // ── Common Header ────────────────────────────────────────
 function buildHeader(): string {
     const lines: string[] = [];
-    lines.push(CMD.BOLD_ON + centerLine('REPUESTOS MORLA') + CMD.BOLD_OFF);
+    lines.push(CMD.BOLD_ON + centerLine('MotoFlow') + CMD.BOLD_OFF);
     lines.push(centerLine('Av. Duarte, esq. Baldemiro Rijo'));
     lines.push(centerLine('Higuey, Rep. Dom.'));
     lines.push(centerLine('809-390-5965'));
@@ -200,7 +200,7 @@ export function buildFacturaEscPos(factura: FacturaData): string {
     // ── Footer ──
     lines.push(dashLine());
     lines.push(`Le Atendio : ${seller?.email?.split('@')[0] || 'N/A'}`);
-    lines.push(`Vendedor : ${factura.vendedor || 'REPUESTOS MORLA'}`);
+    lines.push(`Vendedor : ${factura.vendedor || 'MotoFlow'}`);
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
@@ -309,7 +309,7 @@ export function buildCotizacionEscPos(
     lines.push(centerLine('Los precios estan sujetos a cambios'));
     lines.push(centerLine('sin previo aviso.'));
     lines.push('');
-    lines.push(centerLine('REPUESTOS MORLA'));
+    lines.push(centerLine('MotoFlow'));
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 

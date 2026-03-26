@@ -8,7 +8,17 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Plus, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const CompraFooter = ({ compra, setCompra, pagos, setPagos, totals }) => {
+const CompraFooter = ({
+  compra,
+  setCompra,
+  pagos,
+  setPagos,
+  totals,
+  printMethod,
+  setPrintMethod,
+  paperSize,
+  setPaperSize
+}) => {
   const [activeTab, setActiveTab] = useState('pago');
 
   const handlePaymentChange = (id, field, value) => {
@@ -79,7 +89,7 @@ const CompraFooter = ({ compra, setCompra, pagos, setPagos, totals }) => {
                     <Input
                       type="number"
                       value={compra.dias_credito}
-                      onChange={e => setCompra({ ...compra, dias_credito: e.target.value })}
+                      onChange={e => setCompra({ ...compra, dias_credito: parseInt(e.target.value) || 0 })}
                       className="w-16 h-7 text-xs text-center"
                       disabled={compra.forma_pago !== 'Credito'}
                     />
@@ -216,6 +226,35 @@ const CompraFooter = ({ compra, setCompra, pagos, setPagos, totals }) => {
               {totals.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
+        </div>
+
+        <div className="mt-3 pt-3 border-t space-y-2">
+          <div>
+            <Label className="text-[11px] font-bold text-gray-500 uppercase mb-1 block tracking-wider">Método Impresión</Label>
+            <Select value={printMethod} onValueChange={setPrintMethod}>
+              <SelectTrigger className="h-8 text-xs font-bold bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pdf">📄 PDF (ESTÁNDAR)</SelectItem>
+                <SelectItem value="pos">📑 POS (TÉRMICO)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {printMethod === 'pos' && (
+            <div>
+              <Label className="text-[11px] font-bold text-gray-500 uppercase mb-1 block tracking-wider">Tamaño Papel</Label>
+              <Select value={paperSize} onValueChange={setPaperSize}>
+                <SelectTrigger className="h-8 text-xs font-bold bg-white italic">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="80mm">80mm (3 pulgadas)</SelectItem>
+                  <SelectItem value="4inch">101.6mm (4 pulgadas)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         <div className="pt-4 space-y-2 border-t mt-4 border-gray-200">

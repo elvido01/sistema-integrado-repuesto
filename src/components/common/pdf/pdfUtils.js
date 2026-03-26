@@ -12,9 +12,9 @@ export const generateHeader = (doc, title, number, config = {}) => {
   }
 
   doc.setFontSize(20);
-  doc.setTextColor(4, 53, 115); // morla-blue
+  doc.setTextColor(37, 99, 235); // motoflow-blue #2563EB
   doc.setFont('helvetica', 'bold');
-  doc.text("Repuestos Morla", MARGIN, 50);
+  doc.text("MotoFlow", MARGIN, 50);
 
   doc.setFontSize(16);
   doc.setTextColor(0, 0, 0);

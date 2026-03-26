@@ -16,9 +16,9 @@ const PanelManager = () => {
 
   console.log("Panels:", panels, "Active:", activePanel);
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
+    <div className="h-full flex flex-col bg-slate-100 dark:bg-gray-900">
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center space-x-1 p-1 bg-gray-100 dark:bg-gray-800">
+        <div className="flex items-center space-x-1 p-1 bg-slate-200 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
           {panels.map((panel) => (
             <motion.div
               key={panel.id}
@@ -34,8 +34,8 @@ const PanelManager = () => {
                 className={cn(
                   'h-8 px-3 text-xs flex items-center',
                   activePanel === panel.id
-                    ? 'bg-white dark:bg-gray-700 shadow-sm'
-                    : 'hover:bg-gray-200 dark:hover:bg-gray-700'
+                    ? 'bg-slate-100 dark:bg-gray-700 shadow-sm font-semibold border-t border-l border-r border-gray-300 rounded-b-none'
+                    : 'hover:bg-slate-300 dark:hover:bg-gray-700 text-gray-600'
                 )}
               >
                 {getIcon(panel)}
@@ -63,7 +63,7 @@ const PanelManager = () => {
             <div
               key={panel.id}
               className={cn(
-                "absolute inset-0 w-full h-full p-4 overflow-auto transition-opacity duration-200 bg-white dark:bg-gray-900",
+                "absolute inset-0 w-full h-full p-4 overflow-auto transition-opacity duration-200 bg-slate-100 dark:bg-gray-900",
                 isActive
                   ? "opacity-100 z-10 pointer-events-auto shadow-sm"
                   : "opacity-0 z-0 pointer-events-none"

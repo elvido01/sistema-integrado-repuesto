@@ -72,7 +72,7 @@ const VendedoresPage = () => {
     return (
         <>
             <Helmet>
-                <title>Vendedores - Repuestos Morla</title>
+                <title>Vendedores - MotoFlow</title>
             </Helmet>
             <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">
                 <div className="bg-white p-4 rounded-lg shadow-sm border flex justify-between items-center">

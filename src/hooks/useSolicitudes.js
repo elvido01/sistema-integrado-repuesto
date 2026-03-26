@@ -4,6 +4,10 @@ import {
     fetchSolicitudes,
     createSolicitud,
     cerrarSolicitud,
+    marcarSolicitado,
+    eliminarSolicitud,
+    updateSolicitud,
+    enviarSolicitudAPedido
 } from '@/services/solicitudesService';
 
 export const useSolicitudes = () => {
@@ -39,6 +43,17 @@ export const useSolicitudes = () => {
         }
     }, [refetch, toast]);
 
+    const actualizar = useCallback(async (id, payload) => {
+        try {
+            await updateSolicitud(id, payload);
+            toast({ title: 'Éxito', description: 'Solicitud actualizada correctamente.' });
+            await refetch();
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo actualizar la solicitud.' });
+            throw err;
+        }
+    }, [refetch, toast]);
+
     const cerrar = useCallback(async (id) => {
         try {
             await cerrarSolicitud(id);
@@ -49,6 +64,36 @@ export const useSolicitudes = () => {
         }
     }, [refetch, toast]);
 
+    const marcarComoSolicitado = useCallback(async (id) => {
+        try {
+            await marcarSolicitado(id);
+            toast({ title: 'Solicitud marcada', description: 'Producto marcado como solicitado al suplidor.' });
+            await refetch();
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo marcar la solicitud.' });
+        }
+    }, [refetch, toast]);
+
+    const eliminar = useCallback(async (id) => {
+        try {
+            await eliminarSolicitud(id);
+            toast({ title: 'Solicitud eliminada', description: 'La solicitud fue borrada.' });
+            await refetch();
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo borrar la solicitud.' });
+        }
+    }, [refetch, toast]);
+
+    const enviarAPedido = useCallback(async (solicitud, userId) => {
+        try {
+            await enviarSolicitudAPedido(solicitud, userId);
+            toast({ title: 'Enviado a Pedidos', description: 'Se generó un pedido listo para la facturación.' });
+            await refetch();
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo enviar a pedidos.' });
+        }
+    }, [refetch, toast]);
+
     return {
         solicitudes,
         loading,
@@ -56,6 +101,10 @@ export const useSolicitudes = () => {
         setFiltroEstado,
         crear,
         cerrar,
+        marcarComoSolicitado,
+        eliminar,
+        actualizar,
+        enviarAPedido,
         refetch,
     };
 };

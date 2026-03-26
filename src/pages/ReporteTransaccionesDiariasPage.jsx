@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -15,6 +15,7 @@ import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } fro
 import { Calendar as CalendarIcon, Search, Printer, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
+import { generateTransaccionesReportePDF, generateFacturaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
 
 const ReporteTransaccionesDiariasPage = () => {
   const { toast } = useToast();
@@ -70,7 +71,7 @@ const ReporteTransaccionesDiariasPage = () => {
     } else {
       let filteredData = data;
       if (filters.numeroTransaccion) {
-        filteredData = filteredData.filter(t => t.transaccion.includes(filters.numeroTransaccion));
+        filteredData = filteredData.filter(t => t.transaccion.toLowerCase().includes(filters.numeroTransaccion.toLowerCase()));
       }
       if (filters.descripcion) {
         filteredData = filteredData.filter(t => t.descripcion?.toLowerCase().includes(filters.descripcion.toLowerCase()));
@@ -121,6 +122,58 @@ const ReporteTransaccionesDiariasPage = () => {
     fetchTransactions();
   };
 
+  const handleRowDoubleClick = async (transaction) => {
+    const parts = transaction.transaccion.split('-');
+    if (parts.length < 2) return;
+    const prefix = parts[0];
+    const transId = parseInt(parts[1], 10);
+
+    try {
+      if (prefix === 'FT') {
+        const { data: factura, error } = await supabase
+          .from('facturas')
+          .select('*, facturas_detalle(*, productos(*)), clientes(*), perfiles:usuario_id(email, nombre_completo)')
+          .eq('numero', transId)
+          .single();
+        if (error) throw error;
+        if (factura) generateFacturaPDF(factura);
+      } else if (prefix === 'DV') {
+        const { data: devolucion, error } = await supabase
+          .from('devoluciones')
+          .select('*, devoluciones_detalle(*, productos(*)), facturas(*), clientes(*)')
+          .eq('numero', transId)
+          .single();
+        if (error) throw error;
+        if (devolucion) generateDevolucionPDF(devolucion, devolucion.facturas, devolucion.clientes, devolucion.devoluciones_detalle);
+      } else if (prefix === 'PG' || prefix === 'RI') {
+        const { data: recibo, error } = await supabase
+          .from('recibos_ingreso')
+          .select('*, clientes(*), recibos_ingreso_detalle(*, facturas(*)), recibos_ingreso_pago(*)')
+          .eq('numero', transId)
+          .single();
+        if (error) throw error;
+        if (recibo) {
+          const abonos = recibo.recibos_ingreso_detalle.map(d => ({
+            referencia: d.facturas?.numero || 'N/A',
+            monto_pendiente: d.monto_pendiente_anterior || d.monto_aplicado,
+            monto_abono: d.monto_aplicado
+          }));
+          const formasPago = recibo.recibos_ingreso_pago.map(p => ({
+            forma: p.metodo_pago,
+            referencia: p.referencia || '',
+            monto: p.monto
+          }));
+          generateReciboPDF(recibo, recibo.clientes, abonos, formasPago);
+        }
+      } else {
+        toast({ title: 'Aviso', description: 'Tipo de transacción no soportada para visualizar.' });
+      }
+    } catch (err) {
+      console.error("Error loading transaction PDF:", err);
+      toast({ title: 'Error', description: 'No se pudo cargar el documento.', variant: 'destructive' });
+    }
+  };
+
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'F10') {
       e.preventDefault();
@@ -128,14 +181,21 @@ const ReporteTransaccionesDiariasPage = () => {
     }
     if (e.key === 'F5') {
       e.preventDefault();
-      // TODO: Implement print
-      toast({ title: 'Info', description: 'La función de imprimir no está implementada todavía.' });
+      handlePrint();
     }
     if (e.key === 'Escape') {
       e.preventDefault();
       closePanel('reporte-transacciones-diarias');
     }
   }, [closePanel, fetchTransactions, toast]);
+
+  const handlePrint = () => {
+    if (transactions.length === 0) {
+      toast({ title: 'Aviso', description: 'No hay transacciones para imprimir.' });
+      return;
+    }
+    generateTransaccionesReportePDF(transactions, filters, totals);
+  };
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -155,7 +215,7 @@ const ReporteTransaccionesDiariasPage = () => {
   return (
     <>
       <Helmet>
-        <title>Lista de Transacciones Diarias - Repuestos Morla</title>
+        <title>Lista de Transacciones Diarias - MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -164,7 +224,7 @@ const ReporteTransaccionesDiariasPage = () => {
       >
         <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
           <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
-            <h1 className="text-xl font-bold">Lista de Transacciones</h1>
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">LISTA DE TRANSACCIONES</h1>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border rounded-lg mb-4">
@@ -277,8 +337,12 @@ const ReporteTransaccionesDiariasPage = () => {
                   <TableRow><TableCell colSpan="8" className="text-center h-48">No se encontraron transacciones con los filtros seleccionados.</TableCell></TableRow>
                 ) : (
                   transactions.map((t, index) => (
-                    <TableRow key={index} className="hover:bg-lime-100/50">
-                      <TableCell>{formatInTimeZone(t.fecha, 'dd/MM/yyyy HH:mm:ss')}</TableCell>
+                    <TableRow 
+                      key={index} 
+                      className="hover:bg-lime-100/50 cursor-pointer"
+                      onDoubleClick={() => handleRowDoubleClick(t)}
+                    >
+                      <TableCell>{formatInTimeZone(t.fecha, 'dd/MM/yyyy hh:mm:ss a')}</TableCell>
                       <TableCell>{t.transaccion}</TableCell>
                       <TableCell>{t.ncf}</TableCell>
                       <TableCell>{t.cliente_codigo}</TableCell>
@@ -304,7 +368,7 @@ const ReporteTransaccionesDiariasPage = () => {
             <Button onClick={handleConsultar} disabled={loading} className="bg-gray-200 text-black hover:bg-gray-300">
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />} F10 - Consultar
             </Button>
-            <Button variant="outline" onClick={() => { toast({ title: 'Info', description: 'Imprimir no implementado' }) }}>
+            <Button variant="outline" onClick={handlePrint} disabled={loading}>
               <Printer className="mr-2 h-4 w-4" /> F5 - Imprimir
             </Button>
             <Button variant="outline" onClick={() => closePanel('reporte-transacciones-diarias')} disabled={loading}>

@@ -11,7 +11,7 @@ export const generateOrderPDF = (order, supplier, details) => {
   doc.setFont('times', 'bold');
   doc.setFontSize(22);
   doc.setTextColor(0, 0, 0);
-  doc.text("REPUESTOS MORLA", MARGIN, 20);
+  doc.text("MotoFlow", MARGIN, 20);
 
   doc.setFontSize(10);
   doc.setFont('times', 'normal');

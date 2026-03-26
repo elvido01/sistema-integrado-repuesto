@@ -121,7 +121,7 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                         <Input
                             id="email"
                             type="email"
-                            placeholder="juan@repuestosmorla.com"
+                            placeholder="juan@motoflow.app"
                             value={formData.email}
                             onChange={handleChange}
                             required

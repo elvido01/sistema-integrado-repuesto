@@ -33,7 +33,7 @@ export function buildEplLabel({
         "q448",
         "Q406,24",
         "",
-        `A35,15,0,3,1,1,N,"REPUESTOS MORLA"`,
+        `A35,15,0,3,1,1,N,"MotoFlow"`,
         "",
         `A35,45,0,2,1,1,N,"${line1}"`,
         `A35,65,0,2,1,1,N,"${line2}"`,

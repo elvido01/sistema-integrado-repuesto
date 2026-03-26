@@ -16,6 +16,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     // Personal Info
+    codigo: '',
     nombre: '',
     rnc: '',
     telefono: '',
@@ -34,6 +35,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     if (isOpen) {
       if (cliente) {
         setFormData({
+          codigo: cliente.codigo || '',
           nombre: cliente.nombre || '',
           rnc: cliente.rnc || '',
           telefono: cliente.telefono || '',
@@ -49,6 +51,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
       } else {
         // Reset for new client
         setFormData({
+          codigo: '',
           nombre: '',
           rnc: '',
           telefono: '',
@@ -132,7 +135,11 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
               <TabsTrigger value="credito">Crédito y Facturación</TabsTrigger>
             </TabsList>
             <TabsContent value="personal" className="py-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="codigo">Código</Label>
+                  <Input id="codigo" name="codigo" value={formData.codigo} onChange={handleChange} placeholder="Ej: C001" />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="nombre">Nombre/Razón Social</Label>
                   <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleChange} required />

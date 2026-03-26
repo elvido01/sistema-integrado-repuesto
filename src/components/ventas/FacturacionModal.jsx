@@ -136,7 +136,7 @@ const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymen
                       </div>
                       <div><Label>Tipo NCF</Label><Select><SelectTrigger><SelectValue placeholder="Consumidor Final" /></SelectTrigger><SelectContent></SelectContent></Select></div>
                       <div><Label>NCF</Label><p className="p-2 bg-gray-100 rounded-md text-sm">B0200000001</p></div>
-                      <div><Label>Vendedor</Label><Select><SelectTrigger><SelectValue placeholder="Repuestos Morla" /></SelectTrigger><SelectContent></SelectContent></Select></div>
+                      <div><Label>Vendedor</Label><Select><SelectTrigger><SelectValue placeholder="MotoFlow" /></SelectTrigger><SelectContent></SelectContent></Select></div>
                       <div><Label>Almacén</Label><Select><SelectTrigger><SelectValue placeholder="A01 - PRINCIPAL" /></SelectTrigger><SelectContent></SelectContent></Select></div>
                     </div>
                   </div>

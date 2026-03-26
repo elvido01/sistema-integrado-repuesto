@@ -86,5 +86,5 @@ export const generateDevolucionPDF = (devolucion, factura, cliente, details) => 
     doc.text(splitNotes, 14, totalsY + 15);
   }
 
-  doc.save(`Devolucion_${devolucion.numero || 'N_A'}.pdf`);
+  doc.output('dataurlnewwindow', { filename: `Devolucion_${devolucion.numero || 'N_A'}.pdf` });
 };

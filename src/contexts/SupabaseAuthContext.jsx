@@ -148,17 +148,22 @@ export const AuthProvider = ({ children }) => {
     return { error };
   }, [toast, handleSession]);
 
+  const tenantId = profile?.tenant_id || null;
+  const isSuperAdmin = profile?.is_superadmin === true;
+
   const value = useMemo(() => ({
     user,
     session,
     profile,
     permissions,
     loading,
+    tenantId,
+    isSuperAdmin,
     signUp,
     signIn,
     signOut,
     refreshPermissions: () => user && fetchProfileAndPermissions(user.id)
-  }), [user, session, profile, permissions, loading, signUp, signIn, signOut, fetchProfileAndPermissions]);
+  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, signUp, signIn, signOut, fetchProfileAndPermissions]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

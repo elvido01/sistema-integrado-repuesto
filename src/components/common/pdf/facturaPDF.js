@@ -4,13 +4,14 @@ import { formatInTimeZone } from '@/lib/dateUtils';
 import { formatCurrency } from './pdfUtils';
 
 export const generateFacturaPDF = (factura) => {
-  const pageWidth = 226.77; // 80mm
-  const margin = 10;
-  const col1X = margin;
-  const col2X = col1X + 40;
+  // Papel térmico de 80mm (3.15 pulgadas) = ~226.77pt
+  const pageWidth = 226;
+  const marginLeft = 8;
+  const marginRight = 35;
+  const contentWidth = pageWidth - marginLeft - marginRight;
 
   const renderContent = (doc) => {
-    let currentY = 20;
+    let currentY = 15;
 
     const detalles = factura.facturas_detalle || [];
     const cliente = factura.clientes || {};
@@ -18,102 +19,103 @@ export const generateFacturaPDF = (factura) => {
 
     // --- Header ---
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text("REPUESTOS MORLA", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 14;
+    doc.setFontSize(14);
+    doc.text("MotoFlow", pageWidth / 2, currentY, { align: 'center' });
+    currentY += 12;
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text("Av. Duarte, esq. Baldemiro Rijo", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 11;
+    currentY += 10;
     doc.text("Higuey, Rep. Dom.", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 11;
+    currentY += 10;
     doc.text("809-390-5965", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 18;
-
-    doc.setFontSize(10);
-    doc.text("FACTURA", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 18;
-
-    // --- Invoice & Client Details ---
-    doc.setFontSize(9);
-
-    // Line 1: Numero and Time
-    doc.text("Numero :", col1X, currentY);
-    const numeroStr = `FT-${String(factura.numero || 'N/A').padStart(7, '0')}`;
-    doc.text(numeroStr, col2X, currentY);
-
-    const horaStr = formatInTimeZone(new Date(factura.fecha), 'HH:mm');
-    doc.text(horaStr, pageWidth - margin, currentY, { align: 'right' });
-    currentY += 11;
-
-    // Line 1.5: Client Name
-    const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
-    const isGeneric = !cliente.id || genericIds.includes(cliente.id) || (cliente.nombre?.toUpperCase().includes('GENERICO'));
+    currentY += 13;
 
     doc.setFont('helvetica', 'bold');
-    doc.text("Cliente :", col1X, currentY);
+    doc.setFontSize(11);
+    doc.text("FACTURA", pageWidth / 2, currentY, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    currentY += 13;
+
+    // --- Invoice & Client Details (same order as POS) ---
+    const labelX = marginLeft;
+    const valueX = marginLeft + 42;
+    const rightX = pageWidth - marginRight;
+
+    doc.setFontSize(10);
+
+    // Line 1: Numero + Hora (same line)
+    doc.text("Numero :", labelX, currentY);
+    const numeroStr = `FT-${String(factura.numero || 'N/A').padStart(7, '0')}`;
+    doc.text(numeroStr, valueX, currentY);
+    const horaStr = formatInTimeZone(new Date(factura.fecha), 'hh:mm a');
+    doc.text(horaStr, rightX, currentY, { align: 'right' });
+    currentY += 12;
+
+    // Fecha
+    const fechaStr = formatInTimeZone(new Date(factura.fecha), 'd/L/yyyy');
+    doc.text("Fecha :", labelX, currentY);
+    doc.text(fechaStr, valueX, currentY);
+    currentY += 12;
+
+    // Vence
+    doc.text("Vence :", labelX, currentY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(factura.forma_pago === 'CREDITO' ? `Crédito ${factura.dias_credito} días` : 'CONTADO', valueX, currentY);
+    doc.setFont('helvetica', 'normal');
+    currentY += 12;
+
+    // Cliente
+    const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+    const isGeneric = !cliente.id || genericIds.includes(cliente.id) || (cliente.nombre?.toUpperCase().includes('GENERICO'));
+    doc.setFont('helvetica', 'bold');
+    doc.text("Cliente :", labelX, currentY);
     const displayNombre = (isGeneric && factura.manual_cliente_nombre)
       ? factura.manual_cliente_nombre.toUpperCase()
       : (cliente.nombre || 'CLIENTE GENERICO').toUpperCase();
-    doc.text(displayNombre, col2X, currentY);
+    doc.text(displayNombre, valueX, currentY);
     doc.setFont('helvetica', 'normal');
-    currentY += 11;
-
-    // Line 2: Fecha
-    const fechaStr = formatInTimeZone(new Date(factura.fecha), 'd/L/yyyy');
-    doc.text("Fecha :", col1X, currentY);
-    doc.text(fechaStr, col2X, currentY);
-    currentY += 11;
-
-    // Line 3: Vence
-    doc.text("Vence :", col1X, currentY);
-    doc.setFont('helvetica', 'bold');
-    doc.text(factura.forma_pago === 'CREDITO' ? `Crédito ${factura.dias_credito} días` : 'CONTADO', col2X, currentY);
-    doc.setFont('helvetica', 'normal');
-    currentY += 15;
-
-    // Client Info
-    doc.text("Direccion :", col1X, currentY);
-    if (cliente.direccion) {
-      const addressLines = doc.splitTextToSize(cliente.direccion, pageWidth - col2X - margin);
-      doc.text(addressLines, col2X, currentY);
-      currentY += (addressLines.length * 11);
-    } else {
-      currentY += 11;
-    }
-
-    doc.text("Tel. :", col1X, currentY);
-    if (cliente.telefono) {
-      doc.text(cliente.telefono, col2X, currentY);
-    }
-    currentY += 10;
-
-    // Separator before table
-    doc.setLineDashPattern([2, 2], 0);
-    doc.line(margin, currentY, pageWidth - margin, currentY);
     currentY += 12;
 
-    // --- Table ---
-    doc.setFontSize(9);
-    doc.text("Descripcion de la Mercancia", margin, currentY);
+    // Direccion
+    doc.text("Direccion :", labelX, currentY);
+    const direccionStr = cliente.direccion || 'N/A';
+    const addressLines = doc.splitTextToSize(direccionStr, contentWidth - 42);
+    doc.text(addressLines, valueX, currentY);
+    currentY += (addressLines.length * 11);
+    currentY += 1;
+
+    // Tel
+    doc.text("Tel. :", labelX, currentY);
+    doc.text(cliente.telefono || 'N/A', valueX, currentY);
+    currentY += 12;
+
+    // --- Separator ---
+    doc.setLineDashPattern([2, 2], 0);
+    doc.line(marginLeft, currentY, rightX, currentY);
     currentY += 10;
+
+    // --- Table ---
+    doc.setFontSize(10);
+    doc.text("Descripcion de la Mercancia", marginLeft, currentY);
+    currentY += 11;
 
     const tableHead = [['CANT.', 'PRECIO', 'ITBIS', 'MONTO']];
     const tableBody = [];
 
     detalles.forEach(item => {
-      // Line 1: Description in Upper Case and Bold
+      // Line 1: Description (full width)
       tableBody.push([{
         content: (item.descripcion || '').toUpperCase(),
         colSpan: 4,
-        styles: { fontStyle: 'bold', halign: 'left', cellPadding: { top: 5, bottom: 1, left: 0, right: 0 } }
+        styles: { fontStyle: 'bold', halign: 'left', cellPadding: { top: 4, bottom: 1, left: 0, right: 0 } }
       }]);
 
       // Line 2: Stats
       const isExempt = (item.itbis || 0) < 0.01;
       tableBody.push([
-        { content: `${item.cantidad} UND`, styles: { halign: 'left', cellPadding: { top: 1, bottom: 2, left: 0, right: 0 } } },
+        { content: `${item.cantidad} UND`, styles: { halign: 'left', cellPadding: { top: 1, bottom: 1, left: 0, right: 0 } } },
         { content: formatCurrency(item.precio), styles: { halign: 'right' } },
         { content: formatCurrency(item.itbis), styles: { halign: 'right' } },
         { content: `${formatCurrency(item.importe)}${isExempt ? ' E' : ''}`, styles: { halign: 'right' } }
@@ -126,88 +128,112 @@ export const generateFacturaPDF = (factura) => {
       startY: currentY,
       theme: 'plain',
       styles: {
-        fontSize: 9,
-        cellPadding: 0,
+        fontSize: 10,
+        cellPadding: { top: 1, bottom: 1, left: 0, right: 0 },
         overflow: 'linebreak',
         font: 'helvetica'
       },
       headStyles: {
-        halign: 'left',
         fontStyle: 'normal',
-        cellPadding: { bottom: 5, top: 2 }
+        cellPadding: { bottom: 3, top: 1 }
       },
       columnStyles: {
-        0: { cellWidth: 40 },
-        1: { halign: 'right' },
-        2: { halign: 'right' },
-        3: { halign: 'right' }
+        0: { cellWidth: 30, halign: 'left' },
+        1: { cellWidth: 42, halign: 'right' },
+        2: { cellWidth: 42, halign: 'right' },
+        3: { cellWidth: 69, halign: 'right' }
       },
-      margin: { left: margin, right: margin },
+      margin: { left: marginLeft, right: marginRight },
       didDrawPage: function (data) {
-        // Draw dashed lines for header
         const tableStart = data.settings.startY;
         doc.setLineDashPattern([2, 2], 0);
-        doc.line(margin, tableStart - 8, pageWidth - margin, tableStart - 8);
-        doc.line(margin, tableStart + 12, pageWidth - margin, tableStart + 12);
+        doc.line(marginLeft, tableStart - 4, rightX, tableStart - 4);
+        doc.line(marginLeft, tableStart + 11, rightX, tableStart + 11);
       }
     });
 
-    currentY = doc.lastAutoTable.finalY + 10;
+    currentY = doc.lastAutoTable.finalY + 6;
     doc.setLineDashPattern([2, 2], 0);
-    doc.line(margin, currentY, pageWidth - margin, currentY);
-    currentY += 15;
+    doc.line(marginLeft, currentY, rightX, currentY);
+    currentY += 10;
 
-    // --- Totals ---
-    const valuesX = pageWidth - margin;
-    const labelsX = valuesX - 60;
+    // --- Totals (same layout as POS) ---
+    doc.setFontSize(10);
 
-    const addTotalRow = (label, value, isBold = false) => {
+    const totValuesX = rightX;
+    const totLabelsX = totValuesX - 50;
+
+    const addTotalRow = (label, value, isBold = false, fontSize = 10) => {
+      doc.setFontSize(fontSize);
       if (isBold) doc.setFont('helvetica', 'bold');
-      doc.text(label, labelsX, currentY, { align: 'right' });
-      doc.text(value, valuesX, currentY, { align: 'right' });
-      if (isBold) doc.setFont('helvetica', 'normal');
-      currentY += 11;
+      else doc.setFont('helvetica', 'normal');
+      doc.text(label, totLabelsX, currentY, { align: 'right' });
+      doc.text(value, totValuesX, currentY, { align: 'right' });
+      currentY += (fontSize > 11 ? 14 : 12);
     };
 
-    // Label on the left
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text("Valores en", margin + 10, currentY);
-    doc.text("DOP", margin + 15, currentY + 10);
-    doc.setFont('helvetica', 'normal');
-
+    // Sub-Total row
     addTotalRow("Sub-Total :", formatCurrency(factura.subtotal));
     addTotalRow("Descuento en Items :", formatCurrency(factura.descuento));
     addTotalRow("Otros Descuento :", formatCurrency(0));
     addTotalRow("Recargo :", formatCurrency(0));
+
+    // "Valores en DOP" label on the left (like POS)
+    const valoresY = currentY;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text("Valores en", marginLeft + 2, valoresY);
+    doc.text("DOP", marginLeft + 5, valoresY + 11);
+    doc.setFont('helvetica', 'normal');
+
+    // ITBIS
     addTotalRow("ITBIS :", formatCurrency(factura.itbis));
 
-    doc.text("==========", valuesX, currentY, { align: 'right' });
-    currentY += 10;
-
+    // Separator ==========
     doc.setFontSize(10);
-    addTotalRow("TOTAL :", formatCurrency(factura.total), true);
-    doc.setFontSize(9);
-    currentY += 10;
+    doc.text("==========", totValuesX, currentY, { align: 'right' });
+    currentY += 8;
 
-    // Separator before payments
+    // TOTAL
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text("TOTAL :", totLabelsX, currentY, { align: 'right' });
+    doc.text(formatCurrency(factura.total), totValuesX, currentY, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    currentY += 14;
+
+    // --- Separator ---
     doc.setLineDashPattern([2, 2], 0);
-    doc.line(margin, currentY, pageWidth - margin, currentY);
-    currentY += 15;
+    doc.line(marginLeft, currentY, rightX, currentY);
+    currentY += 10;
 
     // --- Payment Info ---
+    doc.setFontSize(10);
     if (factura.forma_pago === 'CONTADO') {
-      addTotalRow("PAGADO :", formatCurrency(factura.monto_recibido));
-      addTotalRow("CAMBIO :", formatCurrency(factura.cambio));
+      doc.setFont('helvetica', 'bold');
+      doc.text("PAGADO:", totLabelsX, currentY, { align: 'right' });
+      doc.text(formatCurrency(factura.monto_recibido), totValuesX, currentY, { align: 'right' });
+      currentY += 10;
+      doc.text("CAMBIO:", totLabelsX, currentY, { align: 'right' });
+      doc.text(formatCurrency(factura.cambio), totValuesX, currentY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      currentY += 12;
     }
-    currentY += 15;
+
+    // --- Separator ---
+    doc.setLineDashPattern([2, 2], 0);
+    doc.line(marginLeft, currentY, rightX, currentY);
+    currentY += 10;
 
     // --- Footer ---
-    doc.setFontSize(8);
-    doc.text(`Le Atendio: ${vendedor?.email?.split('@')[0] || 'N/A'}`, margin, currentY);
-    currentY += 10;
-    doc.text(`Vendedor: ${factura.vendedor || 'REPUESTOS MORLA'}`, margin, currentY);
-    currentY += 20; // Bottom margin
+    doc.setFontSize(10);
+    doc.text(`Le Atendio : ${vendedor?.email?.split('@')[0] || 'N/A'}`, marginLeft, currentY);
+    currentY += 11;
+    doc.text(`Vendedor : ${factura.vendedor || 'MotoFlow'}`, marginLeft, currentY);
+    currentY += 14;
+    doc.setFontSize(10);
+    doc.text("*** GRACIAS POR SU COMPRA ***", pageWidth / 2, currentY, { align: 'center' });
+    currentY += 15;
 
     return currentY;
   };
@@ -216,7 +242,7 @@ export const generateFacturaPDF = (factura) => {
   const tempDoc = new jsPDF({
     orientation: 'portrait',
     unit: 'pt',
-    format: [pageWidth, 3000] // Long temporary paper
+    format: [pageWidth, 3000]
   });
   const finalHeight = renderContent(tempDoc);
 
@@ -229,5 +255,23 @@ export const generateFacturaPDF = (factura) => {
   renderContent(doc);
 
   // Open PDF in new tab
-  doc.output('dataurlnewwindow', { filename: `Factura-FT-${factura.numero}.pdf` });
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  const pdfWindow = window.open('', '_blank');
+  if (pdfWindow) {
+    pdfWindow.document.write(`
+      <html>
+        <head>
+          <title>Factura-FT-${factura.numero}</title>
+          <style>body { margin: 0; padding: 0; overflow: hidden; }</style>
+        </head>
+        <body>
+          <embed src="${url}#toolbar=1&navpanes=0&scrollbar=1" type="application/pdf" width="100%" height="100%" />
+        </body>
+      </html>
+    `);
+    pdfWindow.document.close();
+  } else {
+    window.open(url, '_blank');
+  }
 };

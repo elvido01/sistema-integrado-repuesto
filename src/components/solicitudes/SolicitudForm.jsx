@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import SearchableSelect from '@/components/common/SearchableSelect';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { supabase } from '@/lib/customSupabaseClient';
+import { useToast } from '@/components/ui/use-toast';
 
 const emptyLine = () => ({
     _key: Date.now() + Math.random(),
@@ -19,7 +20,8 @@ const emptyLine = () => ({
     cantidad_solicitada: 1,
 });
 
-const SolicitudForm = ({ isOpen, onClose, onSave, userId }) => {
+const SolicitudForm = ({ isOpen, onClose, onSave, onUpdate, solicitudEditando, userId }) => {
+    const { toast } = useToast();
     const [buscarCliente, setBuscarCliente] = useState(false);
     const [saving, setSaving] = useState(false);
     const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
@@ -35,6 +37,8 @@ const SolicitudForm = ({ isOpen, onClose, onSave, userId }) => {
 
     const [lines, setLines] = useState([emptyLine()]);
     const [notas, setNotas] = useState('');
+
+    const isEditing = !!solicitudEditando;
 
     // Fetch clients only when toggled
     useEffect(() => {
@@ -64,8 +68,32 @@ const SolicitudForm = ({ isOpen, onClose, onSave, userId }) => {
     }, []);
 
     useEffect(() => {
-        if (isOpen) resetForm();
-    }, [isOpen, resetForm]);
+        if (isOpen) {
+            if (solicitudEditando) {
+                // Populate form for editing
+                const hasClienteId = !!solicitudEditando.cliente_id;
+                setBuscarCliente(hasClienteId);
+                setClienteData({
+                    cliente_id: solicitudEditando.cliente_id || null,
+                    cliente_nombre: solicitudEditando.cliente_nombre || '',
+                    cliente_telefono: solicitudEditando.cliente_telefono || '',
+                });
+                
+                setLines([{
+                    _key: Date.now(),
+                    producto_id: solicitudEditando.producto_id || null,
+                    producto_display: solicitudEditando.productos ? `${solicitudEditando.productos.codigo} — ${solicitudEditando.productos.descripcion}` : '',
+                    producto_texto: solicitudEditando.producto_texto || '',
+                    es_texto_libre: !solicitudEditando.producto_id,
+                    cantidad_solicitada: solicitudEditando.cantidad_solicitada || 1,
+                }]);
+                
+                setNotas(solicitudEditando.notas || '');
+            } else {
+                resetForm();
+            }
+        }
+    }, [isOpen, resetForm, solicitudEditando]);
 
     // Product search callback
     const handleProductSelect = (product) => {
@@ -86,10 +114,13 @@ const SolicitudForm = ({ isOpen, onClose, onSave, userId }) => {
         setIsProductSearchOpen(true);
     };
 
-    const addLine = () => setLines((prev) => [...prev, emptyLine()]);
+    const addLine = () => {
+        if (isEditing) return; // Prevent multiple lines while editing
+        setLines((prev) => [...prev, emptyLine()]);
+    }
 
     const removeLine = (idx) => {
-        if (lines.length <= 1) return;
+        if (lines.length <= 1 || isEditing) return;
         setLines((prev) => prev.filter((_, i) => i !== idx));
     };
 
@@ -103,43 +134,97 @@ const SolicitudForm = ({ isOpen, onClose, onSave, userId }) => {
         // Validate client
         const hasCliente = buscarCliente
             ? clienteData.cliente_id
-            : clienteData.cliente_nombre.trim();
-        if (!hasCliente) return;
+            : clienteData.cliente_nombre?.trim();
+        if (!hasCliente) {
+            toast({
+                variant: 'destructive',
+                title: 'Datos Incompletos',
+                description: 'Debe especificar el nombre del cliente o seleccionar uno registrado.',
+            });
+            return;
+        }
+
+        let currentLines = [...lines];
+        let currentNotas = notas;
+
+        // Auto-fallback for a single free-text line with empty description but valid notes
+        if (currentLines.length === 1 && currentLines[0].es_texto_libre) {
+            if (!currentLines[0].producto_texto?.trim() && currentNotas.trim()) {
+                currentLines[0].producto_texto = currentNotas.trim();
+            }
+        }
 
         // Validate at least one product
-        const validLines = lines.filter((l) =>
-            l.es_texto_libre ? l.producto_texto.trim() : l.producto_id
+        const validLines = currentLines.filter((l) =>
+            l.es_texto_libre ? l.producto_texto?.trim() : l.producto_id
         );
-        if (validLines.length === 0) return;
+        
+        if (validLines.length === 0) {
+            toast({
+                variant: 'destructive',
+                title: 'Datos Incompletos',
+                description: 'Si utiliza un producto Libre, debe proveer una descripción del mismo o anotarlo en las notas.',
+            });
+            return;
+        }
 
         setSaving(true);
         try {
-            // Save one row per product line (same client)
-            for (const line of validLines) {
+            if (isEditing) {
+                // UPDATE single line
+                const line = validLines[0];
                 const payload = {
-                    creado_por: userId,
                     cantidad_solicitada: parseFloat(line.cantidad_solicitada) || 1,
                     notas: notas || null,
                 };
 
                 if (buscarCliente) {
                     payload.cliente_id = clienteData.cliente_id;
+                    payload.cliente_nombre = null;
+                    payload.cliente_telefono = null;
                 } else {
+                    payload.cliente_id = null;
                     payload.cliente_nombre = clienteData.cliente_nombre.trim();
-                    payload.cliente_telefono = clienteData.cliente_telefono.trim() || null;
+                    payload.cliente_telefono = clienteData.cliente_telefono?.trim() || null;
                 }
 
                 if (line.es_texto_libre) {
+                    payload.producto_id = null;
                     payload.producto_texto = line.producto_texto.trim();
                 } else {
                     payload.producto_id = line.producto_id;
+                    payload.producto_texto = null;
                 }
 
-                await onSave(payload);
+                await onUpdate(solicitudEditando.id, payload);
+            } else {
+                // Save one row per product line (same client)
+                for (const line of validLines) {
+                    const payload = {
+                        creado_por: userId,
+                        cantidad_solicitada: parseFloat(line.cantidad_solicitada) || 1,
+                        notas: notas || null,
+                    };
+
+                    if (buscarCliente) {
+                        payload.cliente_id = clienteData.cliente_id;
+                    } else {
+                        payload.cliente_nombre = clienteData.cliente_nombre.trim();
+                        payload.cliente_telefono = clienteData.cliente_telefono?.trim() || null;
+                    }
+
+                    if (line.es_texto_libre) {
+                        payload.producto_texto = line.producto_texto.trim();
+                    } else {
+                        payload.producto_id = line.producto_id;
+                    }
+
+                    await onSave(payload);
+                }
             }
             onClose();
         } catch {
-            // toast handled by onSave
+            // toast handled by hook
         } finally {
             setSaving(false);
         }

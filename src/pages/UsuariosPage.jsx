@@ -192,7 +192,7 @@ const UsuariosPage = () => {
   return (
     <>
       <Helmet>
-        <title>Gestión de Usuarios - Repuestos Morla</title>
+        <title>Gestión de Usuarios - MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

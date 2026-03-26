@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { Plus, ClipboardList, Filter } from 'lucide-react';
@@ -9,16 +9,62 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useSolicitudes } from '@/hooks/useSolicitudes';
 import SolicitudForm from '@/components/solicitudes/SolicitudForm';
 import SolicitudesTable from '@/components/solicitudes/SolicitudesTable';
+import { useToast } from '@/components/ui/use-toast';
 
 const SolicitudesPage = () => {
-    const { user } = useAuth();
-    const { solicitudes, loading, filtroEstado, setFiltroEstado, crear, cerrar } = useSolicitudes();
+    const { user, profile } = useAuth();
+    const { toast } = useToast();
+    const { 
+        solicitudes, loading, filtroEstado, setFiltroEstado, 
+        crear, cerrar, marcarComoSolicitado, eliminar, actualizar, enviarAPedido 
+    } = useSolicitudes();
+    
     const [isFormOpen, setIsFormOpen] = useState(false);
+    const [solicitudEditando, setSolicitudEditando] = useState(null);
+
+    // Recordatorio diario a las 9:00 AM
+    useEffect(() => {
+        if (loading || solicitudes.length === 0) return;
+
+        const checkDailyReminder = () => {
+            const now = new Date();
+            // Mostrar después de las 9:00 AM
+            if (now.getHours() >= 9) {
+                const alreadyNotified = sessionStorage.getItem('solicitudes_reminder_shown');
+                if (!alreadyNotified) {
+                    const abiertas = solicitudes.filter(s => s.estado === 'abierta');
+                    if (abiertas.length > 0) {
+                        toast({
+                            title: '🔔 Recordatorio de Suplidores',
+                            description: `Tienes ${abiertas.length} producto(s) por investigar/solicitar.`,
+                            duration: 10000,
+                        });
+                        sessionStorage.setItem('solicitudes_reminder_shown', 'true');
+                    }
+                }
+            }
+        };
+
+        checkDailyReminder();
+        // Revisar cada minuto en caso de que dejen la pestaña abierta
+        const interval = setInterval(checkDailyReminder, 60000);
+        return () => clearInterval(interval);
+    }, [solicitudes, loading, toast]);
+
+    const handleEdit = (solicitud) => {
+        setSolicitudEditando(solicitud);
+        setIsFormOpen(true);
+    };
+
+    const handleCloseForm = () => {
+        setIsFormOpen(false);
+        setSolicitudEditando(null);
+    };
 
     return (
         <div className="bg-gray-100 min-h-screen pb-8">
             <Helmet>
-                <title>Solicitudes por Producto Agotado - REPUESTOS MORLA</title>
+                <title>Solicitudes por Producto Agotado - MotoFlow</title>
             </Helmet>
 
             {/* Blue Header Bar */}
@@ -26,14 +72,17 @@ const SolicitudesPage = () => {
                 <div className="container mx-auto px-4 h-11 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-white">
                         <ClipboardList className="w-5 h-5" />
-                        <h1 className="font-black tracking-[0.15em] italic uppercase text-base drop-shadow-sm">
-                            Solicitudes por Producto Agotado
+                        <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">
+                            SOLICITUDES POR PRODUCTO AGOTADO
                         </h1>
                     </div>
                     <Button
                         size="sm"
                         className="bg-white/10 hover:bg-white/20 text-white border border-white/20 h-7 text-[10px] font-bold uppercase transition-all"
-                        onClick={() => setIsFormOpen(true)}
+                        onClick={() => {
+                            setSolicitudEditando(null);
+                            setIsFormOpen(true);
+                        }}
                     >
                         <Plus className="mr-1.5 h-3.5 w-3.5" />
                         Nueva Solicitud
@@ -61,7 +110,7 @@ const SolicitudesPage = () => {
                                     <SelectContent>
                                         <SelectItem value="todas" className="text-xs">Todas</SelectItem>
                                         <SelectItem value="abierta" className="text-xs">Abiertas</SelectItem>
-                                        <SelectItem value="notificada" className="text-xs">Notificadas</SelectItem>
+                                        <SelectItem value="solicitado" className="text-xs">Solicitadas</SelectItem>
                                         <SelectItem value="cerrada" className="text-xs">Cerradas</SelectItem>
                                     </SelectContent>
                                 </Select>
@@ -78,6 +127,10 @@ const SolicitudesPage = () => {
                             solicitudes={solicitudes}
                             loading={loading}
                             onCerrar={cerrar}
+                            onMarcarSolicitado={marcarComoSolicitado}
+                            onEliminar={eliminar}
+                            onEdit={handleEdit}
+                            onEnviarPedido={(sol) => enviarAPedido(sol, profile?.id)}
                         />
                     </div>
                 </motion.div>
@@ -86,8 +139,10 @@ const SolicitudesPage = () => {
             {/* Form Modal */}
             <SolicitudForm
                 isOpen={isFormOpen}
-                onClose={() => setIsFormOpen(false)}
+                onClose={handleCloseForm}
                 onSave={crear}
+                onUpdate={actualizar}
+                solicitudEditando={solicitudEditando}
                 userId={user?.id}
             />
         </div>

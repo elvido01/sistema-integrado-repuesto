@@ -20,14 +20,16 @@ const initialFormData = {
   ubicacion: '',
   tipo_id: null,
   marca_id: null,
-  modelo_id: null,
+  modelos_ids: [],
   suplidor_id: null,
   garantia_meses: 0,
   itbis_pct: 0.18,
   min_stock: 0,
   max_stock: 0,
   imagen_url: '',
-  activo: true
+  activo: true,
+  existencia: 0,
+  stock_mode: 'auto'
 };
 
 const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
@@ -65,16 +67,18 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       precio: p.precio || 0,
       costo: p.costo || 0,
       ubicacion: p.ubicacion ? String(p.ubicacion) : '',
-      tipo_id: p.tipo_id || (p.tipo?.id ? String(p.tipo.id) : null),
-      marca_id: p.marca_id || (p.marca?.id ? String(p.marca.id) : null),
-      modelo_id: p.modelo_id || (p.modelo?.id ? String(p.modelo.id) : null),
-      suplidor_id: p.suplidor_id || (p.suplidor?.id ? String(p.suplidor.id) : null),
+      tipo_id: p.tipo_id?.toString() || (p.tipo?.id ? String(p.tipo.id) : null),
+      marca_id: p.marca_id?.toString() || (p.marca?.id ? String(p.marca.id) : null),
+      modelos_ids: p.modelos_ids || (p.modelo_id ? [p.modelo_id] : []),
+      suplidor_id: p.suplidor_id?.toString() || (p.suplidor?.id ? String(p.suplidor.id) : null),
       garantia_meses: p.garantia_meses || 0,
-      itbis_pct: p.itbis_pct || 0.18,
+      itbis_pct: (p.itbis_pct !== undefined && p.itbis_pct !== null) ? parseFloat(p.itbis_pct) : 0.18,
       min_stock: p.min_stock || 0,
       max_stock: p.max_stock || 0,
-      imagen_url: '',
-      activo: p.activo !== false
+      imagen_url: p.imagen_url || '',
+      activo: p.activo !== false,
+      existencia: p.existencia || 0,
+      stock_mode: p.stock_mode || 'auto'
     });
 
     if (p.presentaciones && p.presentaciones.length > 0) {
@@ -88,8 +92,15 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       if (error) {
         toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar las presentaciones.' });
         setPresentations([createNewPresentation()]);
+      } else if (presData.length > 0) {
+        setPresentations(presData);
       } else {
-        setPresentations(presData.length > 0 ? presData : [createNewPresentation()]);
+        // Pre-llenar con datos del producto para no mostrar 0.00
+        const fallbackPres = createNewPresentation();
+        fallbackPres.costo = String(p.costo || 0);
+        fallbackPres.precio1 = String(p.precio || 0);
+        fallbackPres.precio_final = String(p.precio || 0);
+        setPresentations([fallbackPres]);
       }
     } else {
       // Para productos nuevos pre-llenados (ej. desde OCR)
@@ -137,7 +148,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
           *,
           presentaciones(*)
         `)
-        .eq('codigo', codigo)
+        .ilike('codigo', codigo)
         .maybeSingle();
 
       if (error) {
@@ -145,8 +156,12 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       }
 
       if (data) {
+        // Fetch current stock
+        const { data: stockData } = await supabase.rpc('get_stock_actual', { producto_uuid: data.id });
+        const productWithStock = { ...data, existencia: stockData || 0 };
+
         setIsEditing(true);
-        await populateForm(data);
+        await populateForm(productWithStock);
         toast({
           title: "Producto encontrado",
           description: `Se han cargado los datos del producto ${data.codigo}.`,
@@ -179,7 +194,11 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
         });
         await populateForm(selectedProduct);
       } else {
-        await populateForm(data);
+        // Fetch current stock
+        const { data: stockData } = await supabase.rpc('get_stock_actual', { producto_uuid: data.id });
+        const productWithStock = { ...data, existencia: stockData || 0 };
+
+        await populateForm(productWithStock);
         toast({
           title: "Producto cargado",
           description: `Se han cargado los datos del producto ${data.codigo}.`,
@@ -210,7 +229,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       ...formData,
       tipo_id: formData.tipo_id || null,
       marca_id: formData.marca_id || null,
-      modelo_id: formData.modelo_id || null,
+      modelos_ids: formData.modelos_ids || [],
       suplidor_id: formData.suplidor_id || null,
       referencia: formData.referencia || null,
       ubicacion: formData.ubicacion || null,
@@ -221,6 +240,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       min_stock: parseFloat(formData.min_stock) || 0,
       max_stock: parseFloat(formData.max_stock) || 0,
       itbis_pct: parseFloat(formData.itbis_pct) || 0.18,
+      stock_mode: formData.stock_mode || 'auto',
     };
 
     // Clean presentations to ensure numeric values and include new pricing fields
@@ -302,8 +322,8 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
             </div>
 
             <div className="overflow-y-auto flex-grow bg-gray-50/30">
-              <form onSubmit={handleSubmit} className="p-3">
-                <div className="bg-white border rounded-md shadow-sm p-4 mb-4">
+              <form onSubmit={handleSubmit} className="p-2">
+                <div className="bg-white border rounded-md shadow-sm p-3 mb-2">
                   <ProductBasicInfo
                     formData={formData}
                     setFormData={setFormData}
@@ -327,7 +347,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
                     <TabsTrigger value="contabilidad" className="text-xs">3. Contabilidad</TabsTrigger>
                   </TabsList>
 
-                  <div className="mt-2 bg-white border rounded-md shadow-sm p-4 min-h-[200px]">
+                  <div className="mt-2 bg-white border rounded-md shadow-sm p-3 min-h-[140px]">
                     <TabsContent value="presentaciones" className="m-0 border-0 p-0 shadow-none">
                       <PresentationsTab
                         presentations={presentations}
@@ -355,7 +375,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
               </form>
             </div>
 
-            <div className="border-t bg-gray-100 px-6 py-3 flex justify-end gap-3 flex-shrink-0">
+            <div className="border-t bg-gray-100 px-4 py-2 flex justify-end gap-3 flex-shrink-0">
               <Button
                 id="btn-grabar-producto"
                 onClick={handleSubmit}

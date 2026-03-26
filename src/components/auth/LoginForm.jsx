@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import MotoFlowLogo from '@/components/common/MotoFlowLogo';
 
 const LoginForm = () => {
   const { signIn } = useAuth();
-  const [email, setEmail] = useState('admin@repuestosmorla.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -17,23 +18,25 @@ const LoginForm = () => {
     e.preventDefault();
     setLoading(true);
     await signIn(email, password);
-    // Do not set loading to false here. 
-    // The AuthProvider will handle the transition.
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary to-blue-800 dark:from-gray-800 dark:to-gray-900">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f172a] via-[#1e3a5f] to-[#2563eb]">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-8 w-full max-w-md"
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md border border-white/10"
       >
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-primary mb-2">Repuestos Morla</h1>
-          <p className="text-gray-600 dark:text-gray-300">Sistema Integrado de Información</p>
+          <div className="flex justify-center mb-4">
+            <MotoFlowLogo size="lg" showSlogan={true} />
+          </div>
+          <p className="text-gray-500 dark:text-gray-400 text-xs mt-3">
+            Sistema inteligente de gestión empresarial
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <Label htmlFor="email">Correo Electrónico</Label>
             <Input
@@ -42,6 +45,7 @@ const LoginForm = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              placeholder="tu@empresa.com"
               className="mt-1"
             />
           </div>
@@ -55,6 +59,7 @@ const LoginForm = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                placeholder="••••••••"
                 className="pr-10"
               />
               <Button
@@ -71,7 +76,7 @@ const LoginForm = () => {
 
           <Button
             type="submit"
-            className="w-full"
+            className="w-full bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-bold"
             disabled={loading || !email || !password}
           >
             {loading ? (
@@ -87,6 +92,12 @@ const LoginForm = () => {
             )}
           </Button>
         </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-[10px] text-gray-400">
+            © 2026 MotoFlow — Todos los derechos reservados
+          </p>
+        </div>
       </motion.div>
     </div>
   );

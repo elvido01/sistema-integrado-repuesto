@@ -130,10 +130,10 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
       ubicacion: product.ubicacion || '',
       cantidad: 1,
       unidad: 'UND',
-      precio: finalPrice,
+      precio: finalPrice, // Price is ITBIS-inclusive
       descuento: 0,
       itbis_pct: itbis_pct,
-      itbis: finalPrice * (itbis_pct / 100),
+      itbis: finalPrice - (finalPrice / (1 + (itbis_pct / 100))),
       max_descuento_pct: maxDesc
     };
     setStagingItem(newItem);
@@ -191,7 +191,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
     const { data, error } = await supabase
       .from('productos')
       .select('*, presentaciones(*)')
-      .eq('codigo', code.trim())
+      .ilike('codigo', code.trim())
       .maybeSingle();
     if (data) handleAddProduct(data);
     else toast({ title: 'No encontrado', description: 'Producto no existe', variant: 'destructive' });
@@ -204,24 +204,26 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
   const totals = useMemo(() => {
     return detalles.reduce((acc, item) => {
       const cantidad = parseFloat(item.cantidad) || 0;
-      const precio = parseFloat(item.precio) || 0;
-      const descuento = parseFloat(item.descuento) || 0;
-      const itbis_pct = parseFloat(item.itbis_pct || 18) / 100;
+      const precioInclusive = parseFloat(item.precio) || 0;
+      const descuentoInclusive = parseFloat(item.descuento) || 0;
+      const itbis_pct = parseFloat(item.itbis_pct || 18) > 1 ? (parseFloat(item.itbis_pct) / 100) : parseFloat(item.itbis_pct || 0.18);
 
-      const subtotalItem = cantidad * precio;
-      const baseImponible = subtotalItem - descuento;
-      const itbisItem = baseImponible * itbis_pct;
+      const importeBruto = cantidad * precioInclusive;
+      const importeNeto = importeBruto - descuentoInclusive;
+      
+      const baseImponible = importeNeto / (1 + itbis_pct);
+      const itbisItem = importeNeto - baseImponible;
 
-      acc.subtotal += subtotalItem;
-      acc.descuento_total += descuento;
+      acc.subtotal += baseImponible;
+      acc.descuento_total += descuentoInclusive;
       acc.itbis_total += itbisItem;
-      item.importe = baseImponible + itbisItem;
+      item.importe = importeNeto;
       item.itbis = itbisItem;
       return acc;
     }, { subtotal: 0, descuento_total: 0, itbis_total: 0 });
   }, [detalles]);
 
-  const montoTotal = useMemo(() => totals.subtotal - totals.descuento_total + totals.itbis_total, [totals]);
+  const montoTotal = useMemo(() => totals.subtotal + totals.itbis_total, [totals]);
 
   const selectedCliente = useMemo(() => clientes.find(c => c.id === currentPedido?.cliente_id), [clientes, currentPedido?.cliente_id]);
   const isGenericClient = useMemo(() => {
@@ -395,10 +397,15 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                         />
                       </TableCell>
                       <TableCell className="p-1 text-right text-[10px] font-black text-slate-500 border-r border-gray-300">
-                        {stagingItem ? (stagingItem.precio * stagingItem.cantidad * (1 - stagingItem.descuento / 100) * (stagingItem.itbis_pct / 100)).toFixed(2) : '0.00'}
+                        {stagingItem ? (() => {
+                          const itbis_pct = (stagingItem.itbis_pct || 18) > 1 ? (stagingItem.itbis_pct / 100) : (stagingItem.itbis_pct || 0.18);
+                          const net = (stagingItem.precio * stagingItem.cantidad) - (stagingItem.descuento || 0);
+                          const itbis = net - (net / (1 + itbis_pct));
+                          return itbis.toFixed(2);
+                        })() : '0.00'}
                       </TableCell>
                       <TableCell className="p-1 text-right font-black text-blue-900 bg-blue-100/30 border-r border-gray-300">
-                        {stagingItem ? (stagingItem.precio * stagingItem.cantidad * (1 - stagingItem.descuento / 100) * (1 + stagingItem.itbis_pct / 100)).toFixed(2) : '0.00'}
+                        {stagingItem ? ((stagingItem.precio * stagingItem.cantidad) - (stagingItem.descuento || 0)).toFixed(2) : '0.00'}
                       </TableCell>
                       <TableCell className="p-1 text-center">
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50" onClick={commitStagingItem}>
@@ -528,15 +535,15 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                     <span className="font-mono">RD$ 0.00</span>
                   </div>
                   <div className="flex justify-between items-center text-xs text-slate-600">
-                    <span className="font-medium">Total Gravado:</span>
+                    <span className="font-medium">Subtotal (Gravado):</span>
                     <span className="font-mono">RD$ {totals.subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs text-red-500">
-                    <span className="font-medium">Descuento:</span>
+                    <span className="font-medium">Descuento aplicado:</span>
                     <span className="font-mono">- RD$ {totals.descuento_total.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs text-slate-600">
-                    <span className="font-medium uppercase tracking-tighter">ITBIS Liquidado:</span>
+                    <span className="font-medium uppercase tracking-tighter">ITBIS (Incluido):</span>
                     <span className="font-mono">RD$ {totals.itbis_total.toFixed(2)}</span>
                   </div>
 
@@ -585,7 +592,7 @@ const PedidosPage = () => {
   const [editingPedido, setEditingPedido] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const { setPedidoParaFacturar } = useFacturacion();
-  const { openPanel } = usePanels();
+  const { openPanel, activePanel } = usePanels();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -674,11 +681,20 @@ const PedidosPage = () => {
   };
 
   const handleKeyDown = useCallback((e) => {
+    // Solo responder si el panel activo es 'pedidos'
+    if (activePanel !== 'pedidos') return;
+
+    // No procesar atajos de la tabla/página si hay algún modal abierto
+    if (document.querySelector('[role="dialog"]')) return;
+
+    // Si el usuario está escribiendo en cualquier input, no procesar estas teclas globales
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
     if (e.key.toLowerCase() === 'insert') { e.preventDefault(); setEditingPedido(null); setIsModalOpen(true); }
     if (e.key === 'Enter' && selectedPedido) { e.preventDefault(); setEditingPedido(selectedPedido); setIsModalOpen(true); }
     if (e.key.toLowerCase() === 'delete' && selectedPedido) { e.preventDefault(); document.getElementById('delete-trigger')?.click(); }
     if (e.key === 'F5' && selectedPedido) { e.preventDefault(); handleEnviarAFacturacion(); }
-  }, [selectedPedido, detalles]);
+  }, [selectedPedido, detalles, handleEnviarAFacturacion, activePanel]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -699,7 +715,7 @@ const PedidosPage = () => {
 
   return (
     <>
-      <Helmet><title>Pedidos - Repuestos Morla</title></Helmet>
+      <Helmet><title>Pedidos - MotoFlow</title></Helmet>
       <PedidoFormModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} pedido={editingPedido} onSave={handleSavePedido} clientes={clientes} vendedores={vendedores} />
 
       <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">

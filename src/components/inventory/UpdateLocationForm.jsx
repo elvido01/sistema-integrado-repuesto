@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ScanLine, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import BarcodeScanner from '@/components/common/BarcodeScanner';
+import SearchableSelect from '@/components/common/SearchableSelect';
 
 const UpdateLocationForm = () => {
   const { toast } = useToast();
@@ -17,9 +18,35 @@ const UpdateLocationForm = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanningField, setScanningField] = useState(null);
+  const [almacenes, setAlmacenes] = useState([]);
 
-  const ubicacionRef = useRef(null);
   const codigoRef = useRef(null);
+
+  // Cargar almacenes/ubicaciones al montar
+  useEffect(() => {
+    const fetchAlmacenes = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('almacenes')
+          .select('id, nombre, codigo')
+          .eq('activo', true)
+          .order('nombre', { ascending: true });
+        if (error) throw error;
+        setAlmacenes(data || []);
+      } catch (err) {
+        console.error('Error fetching almacenes:', err);
+      }
+    };
+    fetchAlmacenes();
+  }, []);
+
+  // Opciones para el SearchableSelect
+  const ubicacionOptions = useMemo(() => {
+    return almacenes.map(a => ({
+      value: a.nombre,
+      label: a.nombre,
+    }));
+  }, [almacenes]);
 
   const resetForm = useCallback(() => {
     setCodigo('');
@@ -42,9 +69,7 @@ const UpdateLocationForm = () => {
         .or(`codigo.eq.${searchCodigo},referencia.eq.${searchCodigo}`)
         .limit(1);
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       if (!data || data.length === 0) {
         throw new Error('Producto no encontrado.');
@@ -57,8 +82,6 @@ const UpdateLocationForm = () => {
         title: 'Producto encontrado',
         description: foundProduct.descripcion,
       });
-      ubicacionRef.current?.focus();
-      ubicacionRef.current?.select();
     } catch (err) {
       toast({
         variant: 'destructive',
@@ -85,7 +108,7 @@ const UpdateLocationForm = () => {
       toast({
         variant: 'destructive',
         title: 'Ubicación requerida',
-        description: 'Debe especificar una nueva ubicación.',
+        description: 'Debe seleccionar una ubicación de la lista.',
       });
       return;
     }
@@ -141,8 +164,19 @@ const UpdateLocationForm = () => {
       setCodigo(decodedText);
       handleProductSearch(decodedText);
     } else if (scanningField === 'location') {
-      setUbicacion(decodedText);
-      ubicacionRef.current?.focus();
+      // Check if scanned value matches an existing location
+      const matchedLocation = almacenes.find(
+        a => a.nombre.toUpperCase() === decodedText.toUpperCase() || a.codigo?.toUpperCase() === decodedText.toUpperCase()
+      );
+      if (matchedLocation) {
+        setUbicacion(matchedLocation.nombre);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Ubicación no encontrada',
+          description: `"${decodedText}" no coincide con ninguna ubicación registrada.`,
+        });
+      }
     }
   };
   
@@ -170,7 +204,7 @@ const UpdateLocationForm = () => {
       >
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-morla-blue">Actualizar Ubicación</h1>
-          <p className="text-gray-500 text-sm">Escanee o ingrese el código del producto y su nueva ubicación.</p>
+          <p className="text-gray-500 text-sm">Escanee o ingrese el código del producto y seleccione su nueva ubicación.</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
@@ -214,23 +248,21 @@ const UpdateLocationForm = () => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="ubicacion" className="text-morla-blue font-bold">UBICACIÓN*</Label>
-            <div className="relative">
-              <Input
-                id="ubicacion"
-                ref={ubicacionRef}
-                type="text"
+            <Label className="text-morla-blue font-bold">UBICACIÓN*</Label>
+            <div className="flex items-center gap-1">
+              <SearchableSelect
+                placeholder="Seleccionar ubicación"
+                options={ubicacionOptions}
                 value={ubicacion}
-                onChange={(e) => setUbicacion(e.target.value)}
-                placeholder="Ingrese o escanee la nueva ubicación"
-                className="pr-10"
+                onChange={(v) => setUbicacion(v || '')}
                 disabled={!product || loading || isSaving}
+                className="flex-grow"
               />
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 p-0 text-gray-500 hover:text-morla-blue"
+                className="h-9 w-9 p-0 text-gray-500 hover:text-morla-blue border"
                 onClick={() => handleScanClick('location')}
                 disabled={!product || loading || isSaving}
               >

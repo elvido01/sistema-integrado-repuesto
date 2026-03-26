@@ -12,6 +12,7 @@ import { format } from 'date-fns';
 import { Save, X, Loader2, FilePlus, Trash2, PlusCircle } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { Checkbox } from '@/components/ui/checkbox';
+import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
 
 const initialState = {
   numero: '',
@@ -166,7 +167,18 @@ const CuentasPorPagarPage = () => {
       if (error) throw error;
 
       toast({ title: 'Éxito', description: `Pago ${data} guardado correctamente.` });
-      // TODO: Implementar impresión
+
+      if (pago.imprimir) {
+        generatePagoSuplidorPDF(
+          { ...pagoData, numero: data },
+          pago.suplidorNombre,
+          detallesData.map(d => {
+            const original = compras.find(c => c.id === d.compra_id);
+            return { ...d, fecha_emision: original?.fecha_emision, referencia: original?.referencia, monto_pendiente: original?.monto_pendiente };
+          }),
+          formasPago
+        );
+      }
       resetForm();
 
     } catch (error) {
@@ -202,7 +214,7 @@ const CuentasPorPagarPage = () => {
   return (
     <>
       <Helmet>
-        <title>Cuentas por Pagar - Repuestos Morla</title>
+        <title>Cuentas por Pagar - MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -211,7 +223,7 @@ const CuentasPorPagarPage = () => {
       >
         <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
           <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
-            <h1 className="text-xl font-bold">Pago a Suplidores (Cuentas por Pagar)</h1>
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">PAGO A SUPLIDORES (CUENTAS POR PAGAR)</h1>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-4">

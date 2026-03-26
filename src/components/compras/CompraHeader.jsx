@@ -6,10 +6,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Search } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplidorSearch }) => {
+const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplidorSearch, onEditSuplidor }) => {
   const selectedProveedor = proveedores.find(p => p.id === compra.suplidor_id);
 
   return (
@@ -38,7 +38,15 @@ const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplido
                 id="fecha"
                 value={compra.fecha ? format(compra.fecha, 'yyyy-MM-dd') : ''}
                 className="h-7 text-xs"
-                onChange={e => setCompra({ ...compra, fecha: e.target.value ? new Date(e.target.value) : null })}
+                onChange={e => {
+                  if (!e.target.value) {
+                    setCompra({ ...compra, fecha: null });
+                    return;
+                  }
+                  const [y, m, d] = e.target.value.split('-').map(Number);
+                  const newDate = new Date(y, m - 1, d, 12, 0, 0);
+                  setCompra({ ...compra, fecha: newDate });
+                }}
               />
             </div>
           </div>
@@ -102,7 +110,7 @@ const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplido
                 <Label className="text-[11px] font-bold w-16 shrink-0">Suplidor</Label>
                 <div className="flex gap-1 flex-1">
                   <Input
-                    value={compra.suplidor_id || ""}
+                    value={selectedProveedor?.nombre || compra.suplidor_id || ""}
                     className="h-7 text-xs bg-white text-center font-bold"
                     placeholder="F3 Búscar"
                     onKeyDown={(e) => e.key === 'F3' && onOpenSuplidorSearch()}
@@ -118,6 +126,18 @@ const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplido
                   >
                     <Search className="h-3 w-3" />
                   </Button>
+                  {compra.suplidor_id && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-8 shrink-0 text-blue-600 border-blue-200"
+                      onClick={() => onEditSuplidor(selectedProveedor)}
+                      type="button"
+                      title="Editar Suplidor"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-1">

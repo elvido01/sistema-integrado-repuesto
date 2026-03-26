@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import { printReciboPOS, printRecibo4Pulgadas } from '@/lib/printPOS';
-import { generateReciboPDF } from '@/components/common/PDFGenerator';
+import { generateReciboPDF, generateFacturaPDF } from '@/components/common/PDFGenerator';
 
 const initialState = {
   numero: '',
@@ -249,6 +249,40 @@ const ReciboIngresoPage = () => {
     fetchInitialData();
   }, [fetchInitialData]);
 
+  const handleRowDoubleClick = async (f) => {
+    if (!f.referencia) return;
+    
+    const parts = f.referencia.toString().split('-');
+    let prefix = 'FT';
+    let transId;
+    
+    if (parts.length >= 2) {
+      prefix = parts[0].toUpperCase();
+      transId = parseInt(parts[1], 10);
+    } else {
+      transId = parseInt(parts[0], 10);
+    }
+
+    if (isNaN(transId)) return;
+
+    if (prefix === 'FT') {
+      try {
+        const { data: factura, error } = await supabase
+          .from('facturas')
+          .select('*, facturas_detalle(*, productos(*)), clientes(*), perfiles:usuario_id(email, nombre_completo)')
+          .eq('numero', transId)
+          .single();
+        if (error) throw error;
+        if (factura) generateFacturaPDF(factura);
+      } catch (err) {
+        console.error("Error loading transaction PDF:", err);
+        toast({ title: 'Error', description: 'No se pudo cargar el documento de la factura.', variant: 'destructive' });
+      }
+    } else {
+      toast({ title: 'Aviso', description: 'Aún no se soporta imprimir orígenes alternativos desde aquí.' });
+    }
+  };
+
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'F3') {
       e.preventDefault();
@@ -272,7 +306,7 @@ const ReciboIngresoPage = () => {
   return (
     <>
       <Helmet>
-        <title>Recibo de Ingreso - Repuestos Morla</title>
+        <title>Recibo de Ingreso - MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -322,12 +356,12 @@ const ReciboIngresoPage = () => {
                   <div className="col-span-6 flex flex-col gap-2">
                     <div className="bg-white border border-gray-300 p-2 rounded shadow-sm flex items-center justify-between">
                       <div className="text-[11px] font-black uppercase">Cobrador</div>
-                      <Select defaultValue="REPUESTOS MORLA">
+                      <Select defaultValue="MotoFlow">
                         <SelectTrigger className="h-7 w-40 text-[11px] font-bold border-gray-400">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="REPUESTOS MORLA">REPUESTOS MORLA</SelectItem>
+                          <SelectItem value="MotoFlow">MotoFlow</SelectItem>
                         </SelectContent>
                       </Select>
                       <div className="text-[10px] italic text-blue-600 font-bold ml-2">
@@ -437,7 +471,11 @@ const ReciboIngresoPage = () => {
                       <TableRow><TableCell colSpan="8" className="text-center text-gray-400 py-12 text-[12px] italic uppercase font-bold">--- Seleccione un cliente para ver registros ---</TableCell></TableRow>
                     ) : (
                       facturas.map(f => (
-                        <TableRow key={f.id} className="h-7 border-b border-gray-200 hover:bg-white transition-colors even:bg-green-50/30">
+                        <TableRow 
+                          key={f.id} 
+                          className="h-7 border-b border-gray-200 hover:bg-white transition-colors even:bg-green-50/30 cursor-pointer"
+                          onDoubleClick={() => handleRowDoubleClick(f)}
+                        >
                           <TableCell className="text-[11px] font-bold px-2 py-0 border-r border-gray-300">{f.fecha ? formatInTimeZone(new Date(f.fecha), 'd/L/yyyy') : '---'}</TableCell>
                           <TableCell className="text-[11px] font-bold px-2 py-0 border-r border-gray-300 text-gray-500">{f.fecha_vencimiento ? formatInTimeZone(new Date(f.fecha_vencimiento), 'd/L/yyyy') : '---'}</TableCell>
                           <TableCell className="text-[11px] font-black px-2 py-0 border-r border-gray-300 text-blue-700 uppercase">{f.origen}</TableCell>

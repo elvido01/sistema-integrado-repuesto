@@ -16,6 +16,8 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
     telefono: '',
     email: '',
     activo: true,
+    vende_a_credito: false,
+    dias_credito: 0,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -27,6 +29,8 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
         telefono: suplidor.telefono || '',
         email: suplidor.email || '',
         activo: suplidor.activo ?? true,
+        vende_a_credito: suplidor.vende_a_credito ?? false,
+        dias_credito: suplidor.dias_credito || 0,
       });
     } else {
       setFormData({
@@ -35,6 +39,8 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
         telefono: '',
         email: '',
         activo: true,
+        vende_a_credito: false,
+        dias_credito: 0,
       });
     }
   }, [suplidor, isOpen]);
@@ -44,8 +50,8 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleCheckedChange = (checked) => {
-    setFormData((prev) => ({ ...prev, activo: checked }));
+  const handleCheckedChange = (name, checked) => {
+    setFormData((prev) => ({ ...prev, [name]: checked }));
   };
 
   const handleSubmit = async (e) => {
@@ -104,8 +110,18 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="activo" className="text-right">Activo</Label>
-            <Checkbox id="activo" checked={formData.activo} onCheckedChange={handleCheckedChange} />
+            <Checkbox id="activo" checked={formData.activo} onCheckedChange={(checked) => handleCheckedChange('activo', checked)} />
           </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="vende_a_credito" className="text-right">Vende a Crédito</Label>
+            <Checkbox id="vende_a_credito" checked={formData.vende_a_credito} onCheckedChange={(checked) => handleCheckedChange('vende_a_credito', checked)} />
+          </div>
+          {formData.vende_a_credito && (
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="dias_credito" className="text-right">Días Crédito</Label>
+              <Input id="dias_credito" name="dias_credito" type="number" value={formData.dias_credito} onChange={handleChange} className="col-span-3" />
+            </div>
+          )}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="secondary">Cancelar</Button>

@@ -13,97 +13,129 @@ function cleanEnv(v: any): string {
 
 // ─── Certificado auto-firmado para QZ Tray ───
 const QZ_CERTIFICATE = `-----BEGIN CERTIFICATE-----
-MIIDSTCCAjGgAwIBAgIUUCYCP6pQPvK6jVxtVwos+/t5L5IwDQYJKoZIhvcNAQEL
-BQAwNDEYMBYGA1UEAwwPUmVwdWVzdG9zIE1vcmxhMRgwFgYDVQQKDA9SZXB1ZXN0
-b3MgTW9ybGEwHhcNMjYwMjE3MjMyMTI1WhcNMzYwMjE1MjMyMTI1WjA0MRgwFgYD
-VQQDDA9SZXB1ZXN0b3MgTW9ybGExGDAWBgNVBAoMD1JlcHVlc3RvcyBNb3JsYTCC
-ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKwt696OudMkBZCsmtu9IZIh
-TsG8YiLzOEEp4f0ZcJlIWDEWnbbBNpQPqNxU32zMbHRzP+ET1Eo3phHEXhsljphq
-modVXMvzQ8Ri2zAjIMjx3wyPUa7bbdrSkLIDcqQF+ndBtyPX0qj2GvktD7vd10tV
-EIewSVEo+80KAJdMPLQPDWyN+4gulS7tzWKg8/YWad80PPMr9FXiBlEd92wTy8Nz
-CJW9tVS6O8vdtMrIs+zP9WM2l9PK0BqGvmXcq6nH+nk8EG306Swlv2sNkJ4X2ocN
-LXDbDXmi/PdKEnFuMJAREgl5Y2UOr9+mAxA+/HmJrFoeXUjauKaAU1FZLzuBQxUC
-AwEAAaNTMFEwHQYDVR0OBBYEFMxERB/d3n2aDghEybBeRqnNAHAMMB8GA1UdIwQY
-MBaAFMxERB/d3n2aDghEybBeRqnNAHAMMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
-hvcNAQELBQADggEBABTrVG1+caEATXnEecEQzXmCtooKgXeVuSRMRoMy/3F5njqX
-I9ZvST2t+aFqWa8iUyL8fLDjffG+gKLeIlv3OnvwfPoLBbTUSk//ZY8dAFP3vbI9
-CKp9kBWypX6fpNvzI53b5AO6Butfxm7VFnJEaL3FTW208PE4aJPPU1t3woIgi8B3
-da8vgdwkVIb2otd/E7+j7RfuIwTxsf48GxD3qYxH5wfdM0LpV4w1YZSzXebizGDR
-++sxsQpcAY/54tOAwrjDiKu3BMo1Fv++Bpj64a0ySdN7t8okIdLpiuQFM0NaGgJB
-8djlHPpIBt+zTqdPhgPObZObF6wAbWuLn5tdAxU=
+MIIEEzCCAvugAwIBAgIBATANBgkqhkiG9w0BAQsFADCBhDEeMBwGA1UEAxMVUmVw
+dWVzdG9zIE1vcmxhIFRydXN0MQswCQYDVQQGEwJETzEWMBQGA1UECBMNU2FudG8g
+RG9taW5nbzEWMBQGA1UEBxMNU2FudG8gRG9taW5nbzEYMBYGA1UEChMPUmVwdWVz
+dG9zIE1vcmxhMQswCQYDVQQLEwJJVDAeFw0yNjAyMTgyMjQwNTVaFw0zNjAyMTgy
+MjQwNTVaMIGEMR4wHAYDVQQDExVSZXB1ZXN0b3MgTW9ybGEgVHJ1c3QxCzAJBgNV
+BAYTAkRPMRYwFAYDVQQIEw1TYW50byBEb21pbmdvMRYwFAYDVQQHEw1TYW50byBE
+b21pbmdvMRgwFgYDVQQKEw9SZXB1ZXN0b3MgTW9ybGExCzAJBgNVBAsTAklUMIIB
+IjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmZ/wSV/azGCNUYD4RFmxNhHM
+TlwHvN8e6hzGO4infSGo1Cm8Ms5LzB7Sok3ePjKo4AjXjIPSokc7kJMm0WTFPT0J
+mWP9AYB7jGE1FyvAZV9fScCCXEZGsDBz7ySgebJqT83RQsuL0pGwiLrmGA40uT2Y
+DTZA+rg926Wo8Glv/xlukvBg5UpY2DwtRyc+STTeoZRsJrYwjhz2oM1P/tDmr1R/
+K4hGAWQYGdmY3lzXecxbARQyeeina5DOYZa1RSPa2fVljldiSimICJf38To5F1XS
+8oRoMQkbqxG+hZrwcYj1hWmO2FkHJH2JB6k/S8CSct6NOnR9hy2tG9wCrX0BqwID
+AQABo4GNMIGKMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgL0MDsGA1UdJQQ0MDIG
+CCsGAQUFBwMBBggrBgEFBQcDAgYIKwYBBQUHAwMGCCsGAQUFBwMEBggrBgEFBQcD
+CDARBglghkgBhvhCAQEEBAMCAPcwHQYDVR0OBBYEFJXmMzkXqdNeqXdE/HLjiJRI
+XEjYMA0GCSqGSIb3DQEBCwUAA4IBAQAzUnFzuK+luDkZmr/LlLTUIOp7HAOXe/Nk
+nXQ1ZbFJsloaLZxw2O4hHKByWil3nVgRoVfWMiD0fH5euHJJ0Tyg5XTmWUlA4r65
+MZv3ljJFdhg9Q1FRv3D+URmtr5fvlkF4d2KSqzu5ZxlHnpE/pUj8SC1s7YANOmR5
+1VL4ebuDsNvFpE2qIYFuYNvxQQagsePHmXzeHIpq05hINqZ3Fzp1o224kn2r5nFB
+ad9YC3qILe37qS1ZvkmIgHqVEKBSGvlRuu08fBXifKrqBJIPhlT941DavYkBMqsS
+Vj8mBWGq/KDZs2mVNzhhhr1CfPQrbrzuinC0qlQpGJ4sLTqych3A
 -----END CERTIFICATE-----`;
 
 // ─── Clave privada para firmar solicitudes ───
 const QZ_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCsLevejrnTJAWQ
-rJrbvSGSIU7BvGIi8zhBKeH9GXCZSFgxFp22wTaUD6jcVN9szGx0cz/hE9RKN6YR
-xF4bJY6YapqHVVzL80PEYtswIyDI8d8Mj1Gu223a0pCyA3KkBfp3Qbcj19Ko9hr5
-LQ+73ddLVRCHsElRKPvNCgCXTDy0Dw1sjfuILpUu7c1ioPP2FmnfNDzzK/RV4gZR
-HfdsE8vDcwiVvbVUujvL3bTKyLPsz/VjNpfTytAahr5l3Kupx/p5PBBt9OksJb9r
-DZCEF9qHDS1w2w15ovz3ShJxbjCQERIJeWNlDq/fpgMQPvx5iaxaHl1I2rimgFNR
-WS87gUMVAgMBAAECggEAS6w9G8on0qvkxEKQJx53ODXqWsyUZx71bPJe7/Gz4rKA
-jEaP12gQuD8vrHKi5brsubuDakVgSqQtmWZwI8c8ZjGILA2w5LRMZu45vmzZ9mcT
-bH463Lp1DDT6QjqwsnUsMSjROHAdFoRfs38CCMQF4QaIZtJsTr7P+Dw6qURo84tm
-sJopH4Cd5A7/9yr3IwmpcKDxk7fwGJvXk2d7tVkq3cRQaHb7F3o1KOgoCneQ7ufA
-Ah+Sbp70Gp7btcDX+ysCZskKabr7dyT/AKVCJ6tM6feri+AULwxQAiunzfi2kC4m
-rRK6rX9RCPViX21K/J3ucqeY5EqAe4GNleHcNwG5OwKBgQDmv4z+t9cf+tl06rqI
-e/N1HBl2F05MOm9jSZ+Qej+Qz/91Y+Ka0jJlhXeL5fhr+Os6kpDlwjXf+MeNh+Ar
-KR2Wub6kog/39roPsEMoF4rmiS+JMfCbJJMBAlzE7FpzeTUz/1vQVZA+R5dfdXND
-zg5AOFJY7k9VTJ+HOzSQ1wqhewKBgQC/BY3u0Gf6DWn+I9uJ157MjRTCBuH5LUys
-5H44C5CVUFzuhf0l1ngHYQ4jyWKGwjfHOBZZGry8UdbPzow4Xnlpqie+yviNKpdY
-tBLXXbhsMUSG2DB8iMtBGFx3oQ9qFkU2HHundL5vh5EK4ffHbKaF80lhDxjJR+XT
-r6dcqfCgrwKBgA8jylB8J3VFtDbjn9GMsHCio1kINm7x9pUBI6MLIliSDSTapOeb
-mwrmMu3O7PnIn0Z8j11D3N0RKaazn5W1YOee0E9lAr82RQb6fa2HvelaXvAVgr/r
-KmoKiaOyDk09SqxauN92fbxYXio5PpLYVj8Icv66xCHIoT7yN4S5V005AoGAIYrk
-JW9LEsmQNyQsxMOsCtcrMfbrb0nZEPL+hvDg7pcx+mBk12QVp5YPWZFfT7KDAOSE
-aBkd0yO7yLnIPY25XCiY2hPiGUfFU7orJM48OCNemR8VRIjwx/lzIz6Q6lwGwz21
-KO6DEiqH+ZU8YTRe+V6DIBv6ij2pycYqaUceDdkCgYEAyVMQC+G9vXyClLqjEfF/
-Nt+I3G9nvbbt3mS5FTfiRatRdUrzt8PzqERuMTrtyUWDh9N5IRqxks5/I9j5kXhT
-5IlDCtfrRaYXrMSA44WQV14jrNksz/TJQj/vjaa/IlFo4uyvIzTj7kZH13GKRjKz
-rL5VA38FzX+kJmseKdlFQBo=
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCZn/BJX9rMYI1R
+gPhEWbE2EcxOXAe83x7qHMY7iKd9IajUKbwyzkvMHtKiTd4+MqjgCNeMg9KiRzuQ
+kybRZMU9PQmZY/0BgHuMYTUXK8BlX19JwIJcRkawMHPvJKB5smpPzdFCy4vSkbCI
+uuYYDjS5PZgNNkD6uD3bpajwaW//GW6S8GDlSljYPC1HJz5JNN6hlGwmtjCOHPag
+zU/+0OavVH8riEYBZBgZ2ZjeXNd5zFsBFDJ56KdrkM5hlrVFI9rZ9WWOV2JKKYgI
+l/fxOjkXVdLyhGgxCRurEb6FmvBxiPWFaY7YWQckfYkHqT9LwJJy3o06dH2HLa0b
+3AKtfQGrAgMBAAECggEAMVYK/hV5l/8+AznPAWxom/u1SEkH9yEUtYzOINpvJ6GC
+rbhFh293KjOP463sPL9aOrC8QJUpNRJ5T6HiaobZTSRoC8nvu+a+RsQFH87eN/Ac
+EvxvISE0nGrDIL77hnnE6KIpnTDvU42USyTytjEBv6fHSB7vWVWIEB0wlxzVafAK
+kFD5EqjBbZnQLlbym+udQSPDdWlayvXechZMtMSDt7R6+HZHkRtvM7pXCsjemn0C
+HTB9hbWh64x6d9FiNZTgSWX2pj1/uh7rWN/lYrm6EjJW29zlbOLqNdJwpRD4pwDP
+JApqn12DQ7Fd7lrdOoen9GOGRHFUHTIzY077jXTS8QKBgQDH2Bst4rvZIAcUY1HZ
+3h/ahxDC9F8DUKYl232z6MDNCZFMmuzkAbwGu5lDauuj3gENKv+P66IXBXwhoOAj
+85UVRUyJiXRCUPUNPkmVR0i4XPvpLIqZePrxFB9XsfDSOxEJygL2SlYVwIyOTlF2
+i3C/NzeifHAGiYn0a6sBrV1rEwKBgQDEywP8j0BGpS5fpEqJhI+3gJzIbgQGtxnM
+VOnXn96v6OB9lqlF3D/QFgTxhCGZvTL9C6cC1nA3Ldheg9/WVVPIGFw6+aJnlUnF
+lakh3NVDIleQo3i9XVmNk9Ah0YpmURzN3GSUtruAH6lLMxAlzrbqO7HhVyhgSasP
+mcUhNBSKCQKBgQCZDiEazokSLN5fNgYNN3rr8f/bYC+YqV7mpakrbfqjzk0S/6Co
+q89m1Kz4Hl5kvXXOsPzULCKTQScl1kF0J20pwk5xE+4PkFNuFiNjChpe4RAqMGvi
+SO7gTooGrwiC6qwM9EO6f4pY1ISRxNfNU9RBDrg0YNunlhUrNn7dJPrkMwKBgQCa
+o9mXHk5o9SYyu9xioct5bFRHX8RELp/UJCm5agRIgRvfNIQBxKhUcOkjjCwHLlih
+5gUwQqfdhGYRJ1m+iECU7SeUpFPNR8+3tvo4BNuErLjYjMy1KWTUzwFvgcRa0IRs
+9DIJdmpyrO6QjCi1PPIZsB0AsUemGl2UncX9aHp3WQKBgAW3pkajkbe48VLoeMOf
+RKc8sVpxBGlKuy5zr5ic7/LA7NDqQo6rA/teeC0Xu0qSI3mAyxecNJ3agQK+ZUQo
+zKc/bgiuihqDif8IHhf8vEiVD/AxQG7UaQcIcnXqeZ5/6SCPVVzkM6SplrrU2l4M
+resb4umEFsq2bsAzV44OoeUF
 -----END PRIVATE KEY-----`;
 
 /**
  * Convierte un string PEM de clave privada a un CryptoKey para Web Crypto API
  */
+/**
+ * Convierte un string PEM de clave privada a un CryptoKey para Web Crypto API
+ */
 async function importPrivateKey(pem: string): Promise<CryptoKey> {
-    const pemBody = pem
-        .replace("-----BEGIN PRIVATE KEY-----", "")
-        .replace("-----END PRIVATE KEY-----", "")
-        .replace(/\s/g, "");
-    const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
-    return await crypto.subtle.importKey(
-        "pkcs8",
-        binaryDer.buffer,
-        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-512" },
-        false,
-        ["sign"]
-    );
+    try {
+        const pemBody = pem
+            .replace("-----BEGIN PRIVATE KEY-----", "")
+            .replace("-----END PRIVATE KEY-----", "")
+            .replace(/\s/g, "");
+
+        console.log("[QZ] Decodificando clave privada... Longitud cuerpo:", pemBody.length);
+        const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
+        console.log("[QZ] Clave binaria (bytes):", binaryDer.byteLength);
+
+        const key = await crypto.subtle.importKey(
+            "pkcs8",
+            binaryDer.buffer,
+            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+            false,
+            ["sign"]
+        );
+        console.log("[QZ] Clave importada correctamente.");
+        return key;
+    } catch (e) {
+        console.error("[QZ] Error importando clave privada:", e);
+        throw e;
+    }
 }
 
 /**
- * Firma datos usando la clave privada con RSA-SHA512
+ * Firma datos usando la clave privada con RSA-SHA256
  */
+
 async function signData(data: string): Promise<string> {
-    const key = await importPrivateKey(QZ_PRIVATE_KEY);
-    const enc = new TextEncoder();
-    const signature = await crypto.subtle.sign(
-        "RSASSA-PKCS1-v1_5",
-        key,
-        enc.encode(data)
-    );
-    // Convertir a base64
-    const bytes = new Uint8Array(signature);
-    let binary = "";
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
+    if (!window.crypto || !window.crypto.subtle) {
+        throw new Error("Vida 'crypto.subtle' no disponible. Asegúrese de usar HTTPS o localhost.");
     }
-    return btoa(binary);
+
+    try {
+        console.log("[QZ] Iniciando firma de mensaje:", data.substring(0, 20) + "...");
+        const key = await importPrivateKey(QZ_PRIVATE_KEY);
+        const enc = new TextEncoder();
+        const signature = await crypto.subtle.sign(
+            "RSASSA-PKCS1-v1_5",
+            key,
+            enc.encode(data)
+        );
+
+        // Convertir a base64
+        const bytes = new Uint8Array(signature);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+        console.log("[QZ] Firma generada exitosamente.");
+        return base64;
+    } catch (err) {
+        console.error("[QZ] Error CRÍTICO generando firma digital:", err);
+        throw err;
+    }
 }
 
 /**
  * Configura los certificados de seguridad de QZ Tray.
- * Usa un certificado auto-firmado + firma RSA-SHA512 para eliminar
+ * Usa un certificado auto-firmado + firma RSA-SHA256 para eliminar
  * el diálogo "Untrusted website / Action Required".
  */
 let securityConfigured = false;
@@ -111,8 +143,12 @@ function setupQzSecurity() {
     if (securityConfigured) return;
     if (typeof qz === "undefined") return;
 
-    // Algoritmo de firma SHA-512
-    qz.security.setSignatureAlgorithm("SHA512");
+    // Algoritmo de firma SHA-256 (estándar compatible)
+    try {
+        qz.security.setSignatureAlgorithm("SHA256");
+    } catch (e) {
+        console.warn("[QZ] setSignatureAlgorithm no disponible, usando default (SHA1/SHA256)");
+    }
 
     // Proveer el certificado público
     qz.security.setCertificatePromise(function (resolve: any, reject: any) {
@@ -122,14 +158,18 @@ function setupQzSecurity() {
     // Firmar cada solicitud con la clave privada
     qz.security.setSignaturePromise(function (toSign: any) {
         return function (resolve: any, reject: any) {
+            console.log("[QZ] Solicitud de firma recibida para:", toSign);
             signData(toSign)
                 .then(resolve)
-                .catch(reject);
+                .catch((err: any) => {
+                    console.error("[QZ] La promesa de firma falló:", err);
+                    reject(err);
+                });
         };
     });
 
     securityConfigured = true;
-    console.log("[QZ] Seguridad configurada con certificado auto-firmado.");
+    console.log("[QZ] Seguridad configurada con certificado auto-firmado (SHA-256).");
 }
 
 /**
@@ -149,12 +189,14 @@ export async function qzEnsureConnection() {
     if (connectingPromise) return await connectingPromise;
 
     connectingPromise = (async () => {
+        let hosts: string[] = ["localhost"];
+        let port = 8182;
+
         try {
             const envHostsRaw = cleanEnv(import.meta.env.VITE_QZ_HOSTS);
             const envPortRaw = cleanEnv(import.meta.env.VITE_QZ_PORT);
 
             // ✅ REGLA: en desarrollo local, conecta sin args (lo más estable)
-            // Solo usa host/port si de verdad vienen bien definidos
             const shouldUseParams = !!envHostsRaw || !!envPortRaw;
 
             if (!shouldUseParams) {
@@ -164,10 +206,10 @@ export async function qzEnsureConnection() {
             }
 
             // Si hay params, host debe ser string y nunca vacío
-            let port = envPortRaw ? Number(envPortRaw) : 8182;
+            port = envPortRaw ? Number(envPortRaw) : 8182;
             if (!Number.isFinite(port) || port <= 0) port = 8182;
 
-            const hosts = (envHostsRaw ? envHostsRaw.split(",") : ["localhost"])
+            hosts = (envHostsRaw ? envHostsRaw.split(",") : ["localhost"])
                 .map(h => h.trim())
                 .filter(h => h && h.toLowerCase() !== "undefined" && h.toLowerCase() !== "null");
 
@@ -177,23 +219,36 @@ export async function qzEnsureConnection() {
             let lastErr: any = null;
             for (const host of finalHosts) {
                 try {
-                    if (import.meta.env.DEV) console.log("[QZ] Intentando connect con:", { host, port });
-                    await qz.websocket.connect({ host, port });
+                    // Construct options strictly as QZ expects
+                    const options: any = { host: [host] };
+
+                    // Only override port if explicitly set in ENV (default 8182 is handled by QZ defaults)
+                    if (envPortRaw) {
+                        const p = Number(envPortRaw);
+                        if (Number.isFinite(p) && p > 0) {
+                            options.port = { secure: [p], insecure: [p] };
+                        }
+                    }
+
+                    console.log(`[QZ] Intentando conectar con: ${host} (port: ${envPortRaw || 'auto'})`);
+                    await qz.websocket.connect(options);
+                    console.log(`[QZ] Conectado exitosamente.`);
                     return;
                 } catch (e) {
+                    console.warn(`[QZ] Falló conexión a ${host}:`, e);
                     lastErr = e;
                 }
             }
 
             throw lastErr ?? new Error("No fue posible conectar con QZ Tray.");
         } catch (err: any) {
-            // Si sale el famoso "already exists", lo ignoramos
             if (String(err?.message || "").includes("already exists")) {
                 console.warn("[QZ] La conexión ya existía.");
                 return;
             }
             console.error("[QZ] Error al conectar:", err);
-            throw err;
+            // Re-lanzar con más contexto si es posible
+            throw new Error(`No se pudo conectar a QZ Tray en ${hosts.join(',')}:${port}. Detalles: ${err.message || err}`);
         } finally {
             connectingPromise = null;
         }

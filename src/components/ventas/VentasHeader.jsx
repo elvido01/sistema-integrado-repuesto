@@ -16,6 +16,9 @@ const VentasHeader = ({
   onClienteSearch,
   onSelectCliente,
   onClearCliente,
+  onSearchClienteByCodigo,
+  clienteCodigoInput,
+  setClienteCodigoInput,
   vendedores = [],
   selectedVendedor,
   onVendedorChange,
@@ -39,8 +42,22 @@ const VentasHeader = ({
     ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'].includes(cliente.id) ||
     cliente.nombre?.toUpperCase().includes('GENERICO');
 
+  const handleClienteCodigoKeyDown = (e) => {
+    if (e.key === 'Enter' && clienteCodigoInput.trim()) {
+      onSearchClienteByCodigo(clienteCodigoInput.trim());
+    }
+  };
+
+  const handleBuscarClick = () => {
+    if (clienteCodigoInput.trim()) {
+      onSearchClienteByCodigo(clienteCodigoInput.trim());
+    } else {
+      onClienteSearch();
+    }
+  };
+
   return (
-    <div className="bg-white space-y-0.5 border-b border-gray-300">
+    <div className="bg-[#f0efe8] space-y-0 border-b-2 border-gray-500">
       {/* Top Utility Bar - Solid Navy */}
       <div className="bg-[#0a1e3a] text-white flex items-center justify-between px-2 py-0.5 h-8">
         <TooltipProvider>
@@ -90,7 +107,7 @@ const VentasHeader = ({
         </TooltipProvider>
 
         <h1 className="flex-grow text-center text-[15px] font-black tracking-[0.2em] uppercase text-white">
-          REPUESTOS MORLA <span className="text-blue-300 mx-2">|</span> FACTURACIÓN
+          MotoFlow <span className="text-blue-300 mx-2">|</span> FACTURACIÓN
         </h1>
 
         <div className="flex items-center gap-2">
@@ -98,15 +115,15 @@ const VentasHeader = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-1 p-1 px-1.5">
+      <div className="grid grid-cols-12 gap-0 p-1 px-1.5">
         {/* Client Data Section */}
-        <div className="col-span-8 modern-section-card bg-white border-t border-x border-gray-300 !rounded-none !shadow-none mb-0">
-          <div className="py-0.5 px-2 bg-white border-b border-gray-200">
-            <h2 className="text-[12px] font-bold text-[#0a1e3a] uppercase tracking-wider border-b-2 border-[#0a1e3a] inline-block pb-0.5">DATOS DEL CLIENTE</h2>
-            <span className="float-right text-[10px] text-gray-400 font-bold tracking-widest uppercase mt-0.5">TECLA F3 PARA BUSCAR</span>
+        <div className="col-span-8 bg-[#faf9f4] border-2 border-gray-400 mb-0">
+          <div className="py-0.5 px-2 bg-gradient-to-r from-[#d4d4cc] to-[#c8c8c0] border-b-2 border-gray-500">
+            <h2 className="text-[12px] font-black text-[#0a1e3a] uppercase tracking-wider inline-block">DATOS DEL CLIENTE</h2>
+            <span className="float-right text-[10px] text-[#0a1e3a]/60 font-bold tracking-widest uppercase mt-0.5">TECLA F3 PARA BUSCAR</span>
           </div>
           <div className="p-1 px-2 grid grid-cols-12 gap-x-2 gap-y-1 items-center">
-            {/* Row 1: ID and Search */}
+            {/* Row 1: Code and Search */}
             <div className="col-span-2 text-right">
               <Label htmlFor="cliente-id" className="text-[11px] font-black text-gray-500 uppercase tracking-tight">CLIENTE ID:</Label>
             </div>
@@ -115,18 +132,18 @@ const VentasHeader = ({
                 <Search className="absolute left-1 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
                 <Input
                   id="cliente-id"
-                  className="h-5 pl-5 text-[11px] font-medium border-gray-300 rounded-none bg-gray-50 focus:ring-0 focus:border-blue-500 uppercase text-[#0a1e3a]"
-                  placeholder="000.000.00"
-                  value={cliente ? cliente.id : ''}
-                  readOnly
-                  onClick={onClienteSearch}
+                  className="h-5 pl-5 text-[11px] font-medium border-gray-300 rounded-none bg-white focus:ring-0 focus:border-blue-500 uppercase text-[#0a1e3a]"
+                  placeholder="CÓDIGO DEL CLIENTE..."
+                  value={clienteCodigoInput}
+                  onChange={(e) => setClienteCodigoInput(e.target.value.toUpperCase())}
+                  onKeyDown={handleClienteCodigoKeyDown}
                 />
               </div>
               <Button
                 variant="default"
                 size="sm"
                 className="h-5 px-3 bg-[#0a1e3a] hover:bg-[#0a1e3a]/90 text-white rounded-none font-bold text-[10px] tracking-wider uppercase border border-[#0a1e3a]"
-                onClick={onClienteSearch}
+                onClick={handleBuscarClick}
               >
                 <Search className="w-3 h-3 mr-1" />
                 BUSCAR
@@ -187,46 +204,48 @@ const VentasHeader = ({
         </div>
 
         {/* Detalles de la Factura */}
-        <div className="col-span-4 modern-section-card border-gray-300 !rounded-none !shadow-none">
-          <div className="px-2 py-0.5 border-b border-gray-100 flex items-center justify-between h-7">
-            <h2 className="text-[14px] font-black text-[#0a1e3a] uppercase tracking-wider border-b-2 border-[#0a1e3a] pb-0.5 mr-2">DETALLES FACTURA</h2>
+        <div className="col-span-4 bg-[#faf9f4] border-2 border-gray-400">
+          <div className="px-2 py-0.5 bg-gradient-to-r from-[#d4d4cc] to-[#c8c8c0] border-b-2 border-gray-500">
+            <div className="flex items-center justify-between h-6">
+              <h2 className="text-[11px] font-black text-[#0a1e3a] uppercase tracking-wide whitespace-nowrap">DETALLES FACTURA</h2>
 
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] font-black text-gray-500 uppercase tracking-tight">FECHA:</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="h-5 text-[10px] font-bold border-gray-300 rounded-none bg-white hover:bg-blue-50 justify-start px-2 shadow-sm w-[110px]">
-                    <CalendarIcon className="w-3 h-3 mr-1 text-[#0a1e3a]" />
-                    {date ? format(date, 'dd/MM/yyyy') : '---'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={date} onSelect={setDate} initialFocus /></PopoverContent>
-              </Popover>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black text-gray-600 uppercase">FECHA:</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="h-5 text-[10px] font-bold border-gray-300 rounded-none bg-white hover:bg-blue-50 justify-start px-1.5 shadow-sm w-[95px]">
+                      <CalendarIcon className="w-3 h-3 mr-1 text-[#0a1e3a]" />
+                      {date ? format(date, 'dd/MM/yyyy') : '---'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={date} onSelect={setDate} initialFocus /></PopoverContent>
+                </Popover>
 
-              {isEditingNumero ? (
-                <div className="flex items-center gap-1">
-                  <Input
-                    autoFocus
-                    className="h-5 w-20 text-[10px] font-black px-1.5 bg-red-50 border-red-200 text-red-600 uppercase"
-                    placeholder="Nº..."
-                    value={editNumero}
-                    onChange={(e) => setEditNumero(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && onSearchInvoice()}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 text-gray-400 hover:text-red-600"
-                    onClick={onEditFactura}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              ) : (
-                <div className={`text-white text-[11px] px-3 py-0.5 font-black uppercase rounded shadow-sm min-w-[140px] text-center ${editingFacturaNumero ? 'bg-orange-600' : 'bg-red-600'}`}>
-                  {loadingNumero ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : `Nº ${editingFacturaNumero || nextFacturaNumero || '---'}`}
-                </div>
-              )}
+                {isEditingNumero ? (
+                  <div className="flex items-center gap-0.5">
+                    <Input
+                      autoFocus
+                      className="h-5 w-16 text-[10px] font-black px-1 bg-red-50 border-red-200 text-red-600 uppercase"
+                      placeholder="Nº..."
+                      value={editNumero}
+                      onChange={(e) => setEditNumero(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && onSearchInvoice()}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-gray-400 hover:text-red-600"
+                      onClick={onEditFactura}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className={`text-white text-[10px] px-2 py-0.5 font-black uppercase rounded shadow-sm min-w-[100px] text-center ${editingFacturaNumero ? 'bg-orange-600' : 'bg-red-600'}`}>
+                    {loadingNumero ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : `Nº ${editingFacturaNumero || nextFacturaNumero || '---'}`}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="p-1 px-2 space-y-0.5">

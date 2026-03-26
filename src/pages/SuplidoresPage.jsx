@@ -36,7 +36,7 @@ const SuplidoresPage = () => {
             s.rnc?.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [suplidores, searchTerm]);
-    
+
     const handleNotImplemented = () => {
         toast({
             title: "🚧 Función no implementada",
@@ -48,17 +48,17 @@ const SuplidoresPage = () => {
     return (
         <>
             <Helmet>
-                <title>Suplidores - Repuestos Morla</title>
+                <title>Suplidores - MotoFlow</title>
             </Helmet>
             <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">
-                <div className="bg-white p-4 rounded-lg shadow-sm border flex justify-between items-center">
-                    <h1 className="text-2xl font-bold text-morla-blue">Gestión de Suplidores</h1>
+                <div className="bg-morla-blue p-4 rounded-lg shadow-sm border flex justify-between items-center">
+                    <h1 className="text-2xl font-bold text-white">Gestión de Suplidores</h1>
                     <div className="flex items-center gap-2">
                         <div className="relative">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input placeholder="Buscar suplidor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-64" />
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                            <Input placeholder="Buscar suplidor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-64 bg-white text-black" />
                         </div>
-                        <Button onClick={handleNotImplemented}>
+                        <Button onClick={handleNotImplemented} variant="secondary">
                             <PlusCircle className="mr-2 h-4 w-4" />
                             Crear Suplidor
                         </Button>
@@ -68,7 +68,7 @@ const SuplidoresPage = () => {
                 <div className="bg-white p-2 rounded-lg shadow-sm border flex-grow min-h-0">
                     <div className="h-full overflow-y-auto">
                         <Table>
-                            <TableHeader className="sticky top-0 bg-gray-100">
+                            <TableHeader className="sticky top-0 bg-blue-50">
                                 <TableRow>
                                     <TableHead>Nombre</TableHead>
                                     <TableHead>RNC</TableHead>

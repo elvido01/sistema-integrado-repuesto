@@ -1,0 +1,633 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Helmet } from 'react-helmet';
+import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '@/lib/customSupabaseClient';
+import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { usePanels } from '@/contexts/PanelContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+/* ──────────────── Denominaciones de moneda ──────────────── */
+const DENOMINACIONES = [
+  { label: '2,000', value: 2000 },
+  { label: '1,000', value: 1000 },
+  { label: '500', value: 500 },
+  { label: '200', value: 200 },
+  { label: '100', value: 100 },
+  { label: '50', value: 50 },
+  { label: '25', value: 25 },
+  { label: '20', value: 20 },
+  { label: '10', value: 10 },
+  { label: '5', value: 5 },
+  { label: '1', value: 1 },
+  { label: 'Cent.', value: 0 },
+  { label: 'Tarjetas', value: 0, tipo: 'tarjeta' },
+  { label: 'Cheques', value: 0, tipo: 'cheque' },
+  { label: 'Otros', value: 0, tipo: 'otro' },
+];
+
+const formatCurrency = (v) =>
+  new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
+
+/* ─────────────────────────────────────────────────────────── */
+const CierreCajaPage = () => {
+  const { toast } = useToast();
+  const { user, profile } = useAuth();
+  const { closePanel } = usePanels();
+
+  /* ── State ── */
+  const [fecha, setFecha] = useState(getCurrentDateInTimeZone());
+  const [turno, setTurno] = useState(1);
+  const [cajeros, setCajeros] = useState([]);
+  const [selectedCajero, setSelectedCajero] = useState('ALL');
+  const [showDesglose, setShowDesglose] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loadingResumen, setLoadingResumen] = useState(false);
+  const [imprimir, setImprimir] = useState(true);
+
+  /* Resumen de ventas */
+  const [resumen, setResumen] = useState(null);
+
+  /* Cantidades del desglose */
+  const [cantidades, setCantidades] = useState(
+    DENOMINACIONES.reduce((acc, d) => ({ ...acc, [d.label]: 0 }), {})
+  );
+
+  /* ── Fetch cajeros (perfiles) ── */
+  useEffect(() => {
+    const loadCajeros = async () => {
+      const { data, error } = await supabase
+        .from('perfiles')
+        .select('id, nombre_completo, email')
+        .order('nombre_completo');
+      if (!error && data) {
+        setCajeros(data);
+        // Default to ALL to show consolidated daily total
+        setSelectedCajero('ALL');
+      }
+    };
+    loadCajeros();
+  }, [user]);
+
+  /* ── Fetch resumen del turno ── */
+  const fetchResumen = useCallback(async () => {
+    if (!fecha) return;
+    setLoadingResumen(true);
+
+    const fechaStr = formatDateForSupabase(fecha);
+    const startOfDay = `${fechaStr}T00:00:00`;
+    const endOfDay = `${fechaStr}T23:59:59`;
+
+    let ventas = [];
+    let devoluciones = [];
+    let recibos = [];
+    let pagosSuplidores = [];
+
+    try {
+      // Ventas del día
+      let ventasQuery = supabase
+        .from('facturas')
+        .select('total, itbis, subtotal, descuento, forma_pago, monto_recibido, cambio')
+        .gte('fecha', startOfDay)
+        .lte('fecha', endOfDay);
+
+      if (selectedCajero && selectedCajero !== 'ALL') {
+        ventasQuery = ventasQuery.eq('usuario_id', selectedCajero);
+      }
+
+      const { data: ventasData, error: ventasErr } = await ventasQuery;
+      if (ventasErr) {
+        console.warn('Error cargando ventas:', ventasErr.message);
+      } else {
+        ventas = ventasData || [];
+      }
+    } catch (e) {
+      console.warn('Exception cargando ventas:', e);
+    }
+
+    try {
+      // Devoluciones del día (sin filtro de usuario)
+      const { data: devData, error: devErr } = await supabase
+        .from('devoluciones')
+        .select('total_devolucion')
+        .gte('fecha_devolucion', startOfDay)
+        .lte('fecha_devolucion', endOfDay);
+
+      if (devErr) {
+        console.warn('Error cargando devoluciones:', devErr.message);
+      } else {
+        devoluciones = devData || [];
+      }
+    } catch (e) {
+      console.warn('Exception cargando devoluciones:', e);
+    }
+
+    try {
+      // Recibos de Ingreso del día
+      // El campo real del monto es 'monto_pagado' (no existe 'total' en esta tabla).
+      // Primero filtramos por fecha como DATE, luego fallback a created_at.
+      const { data: recibosData, error: recibosErr } = await supabase
+        .from('recibos_ingreso')
+        .select('monto_pagado, fecha, created_at')
+        .eq('fecha', fechaStr);
+
+      if (recibosErr) {
+        console.warn('Error cargando recibos por fecha:', recibosErr.message);
+        // Fallback: intentar por created_at (TIMESTAMPTZ)
+        const { data: recibosCreatedData, error: recibosCreatedErr } = await supabase
+          .from('recibos_ingreso')
+          .select('monto_pagado, created_at')
+          .gte('created_at', startOfDay)
+          .lte('created_at', endOfDay);
+
+        if (recibosCreatedErr) {
+          console.warn('Error cargando recibos por created_at:', recibosCreatedErr.message);
+        } else {
+          recibos = recibosCreatedData || [];
+        }
+      } else {
+        recibos = recibosData || [];
+      }
+
+      console.log(`Recibos encontrados para ${fechaStr}:`, recibos.length, recibos);
+    } catch (e) {
+      console.warn('Exception cargando recibos:', e);
+    }
+
+    try {
+      // Pagos a Suplidores del día
+      const { data: pagosData, error: pagosErr } = await supabase
+        .from('pagos_suplidores')
+        .select('monto_pagado, formas_pago')
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+
+      if (pagosErr) {
+        console.warn('Error cargando pagos suplidores:', pagosErr.message);
+      } else {
+        pagosSuplidores = pagosData || [];
+      }
+    } catch (e) {
+      console.warn('Exception cargando pagos suplidores:', e);
+    }
+
+    const totalVentasContado = ventas
+      .filter(v => v.forma_pago === 'CONTADO')
+      .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
+
+    const totalVentasCredito = ventas
+      .filter(v => v.forma_pago === 'CREDITO')
+      .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
+
+    const totalVentas = ventas.reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
+    const totalItbis = ventas.reduce((sum, v) => sum + (parseFloat(v.itbis) || 0), 0);
+    const totalDescuento = ventas.reduce((sum, v) => sum + (parseFloat(v.descuento) || 0), 0);
+    const totalDevoluciones = devoluciones.reduce((sum, d) => sum + (parseFloat(d.total_devolucion) || 0), 0);
+    const totalRecibos = recibos.reduce((sum, r) => sum + (parseFloat(r.monto_pagado) || 0), 0);
+    const totalPagosSuplidoresEfectivo = pagosSuplidores.reduce((sum, p) => {
+      const efectivo = (p.formas_pago || []).filter(fp => fp.forma === 'Efectivo')
+        .reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0);
+      return sum + efectivo;
+    }, 0);
+
+    const cambioEntregado = ventas
+      .filter(v => v.forma_pago === 'CONTADO')
+      .reduce((sum, v) => sum + (parseFloat(v.cambio) || 0), 0);
+
+    const cantFacturas = ventas.length;
+
+    setResumen({
+      totalVentas,
+      totalVentasContado,
+      totalVentasCredito,
+      totalItbis,
+      totalDescuento,
+      totalDevoluciones,
+      totalRecibos,
+      totalPagosSuplidores: totalPagosSuplidoresEfectivo,
+      cambioEntregado,
+      cantFacturas,
+      // Fórmula final: Efectivo en Caja = Ventas Contado + Recibos de Ingreso - Devoluciones - Pagos Suplidores (Efectivo)
+      efectivoEnCaja: totalVentasContado + totalRecibos - totalDevoluciones - totalPagosSuplidoresEfectivo,
+    });
+
+    setLoadingResumen(false);
+  }, [fecha, selectedCajero]);
+
+  useEffect(() => {
+    fetchResumen();
+  }, [fetchResumen]);
+
+  /* ── Desglose math ── */
+  const handleCantidadChange = (label, value) => {
+    const parsed = parseInt(value, 10);
+    setCantidades(prev => ({ ...prev, [label]: isNaN(parsed) ? 0 : parsed }));
+  };
+
+  const desgloseTotal = useMemo(() => {
+    return DENOMINACIONES.reduce((sum, d) => {
+      const cant = cantidades[d.label] || 0;
+      if (d.tipo) return sum + cant; // Para tarjetas/cheques/otros el valor se ingresa directo
+      return sum + (cant * d.value);
+    }, 0);
+  }, [cantidades]);
+
+  /* ── Cerrar turno ── */
+  const handleCerrarTurno = async () => {
+    setSaving(true);
+    try {
+      const cajeroName = selectedCajero === 'ALL'
+        ? 'Todos los Cajeros'
+        : (cajeros.find(c => c.id === selectedCajero)?.nombre_completo || 'N/A');
+
+      const cierre = {
+        fecha: formatDateForSupabase(fecha),
+        turno,
+        cajero_id: selectedCajero === 'ALL' ? user?.id : selectedCajero,
+        cajero_nombre: cajeroName,
+        total_ventas: resumen?.totalVentas || 0,
+        total_ventas_contado: resumen?.totalVentasContado || 0,
+        total_ventas_credito: resumen?.totalVentasCredito || 0,
+        total_itbis: resumen?.totalItbis || 0,
+        total_descuento: resumen?.totalDescuento || 0,
+        total_devoluciones: resumen?.totalDevoluciones || 0,
+        total_recibos: resumen?.totalRecibos || 0,
+        cambio_entregado: resumen?.cambioEntregado || 0,
+        efectivo_en_caja: resumen?.efectivoEnCaja || 0,
+        total_desglose: desgloseTotal,
+        diferencia: desgloseTotal - (resumen?.efectivoEnCaja || 0),
+        desglose: cantidades,
+        usuario_id: user?.id,
+      };
+
+      const { error } = await supabase.from('cierres_caja').insert([cierre]);
+      if (error) throw error;
+
+      if (imprimir) {
+        printCierreCaja(cierre, resumen);
+      }
+
+      toast({ title: 'Cierre de Caja', description: `El cierre del turno ${turno} ha sido registrado exitosamente.` });
+
+      // Reset
+      setCantidades(DENOMINACIONES.reduce((acc, d) => ({ ...acc, [d.label]: 0 }), {}));
+      setShowDesglose(false);
+      setTurno(prev => prev + 1);
+      fetchResumen();
+    } catch (err) {
+      console.error('Error saving cierre:', err);
+      toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo registrar el cierre de caja.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* ── Print cierre ── */
+  const printCierreCaja = (cierre, resumen) => {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="UTF-8">
+        <style>
+          @page { margin: 0; size: 80mm auto; }
+          body {
+            width: 72mm; margin: 0 auto; padding: 2mm 4mm;
+            font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #000;
+          }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .bold { font-weight: bold; }
+          .separator { border-top: 1px dashed #000; margin: 5px 0; }
+          h1 { font-size: 15px; margin: 0; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+          .total-row { font-weight: bold; font-size: 14px; border-top: 2px solid #000; padding-top: 4px; margin-top: 6px; }
+        </style>
+      </head>
+      <body onload="window.print()">
+        <div class="text-center">
+          <h1 class="bold">MotoFlow</h1>
+          <p style="margin: 2px 0; font-size: 11px;">CIERRE DE CAJA</p>
+        </div>
+        <div class="separator"></div>
+        <div class="row"><span>Fecha:</span><span>${formatInTimeZone(new Date(cierre.fecha), 'dd/MM/yyyy')}</span></div>
+        <div class="row"><span>Turno:</span><span>${cierre.turno}</span></div>
+        <div class="row"><span>Cajero:</span><span>${cierre.cajero_nombre}</span></div>
+        <div class="separator"></div>
+        <div class="bold" style="margin-bottom: 4px;">RESUMEN DE VENTAS</div>
+        <div class="row"><span>Ventas Contado:</span><span>${formatCurrency(resumen?.totalVentasContado)}</span></div>
+        <div class="row"><span>Ventas Crédito:</span><span>${formatCurrency(resumen?.totalVentasCredito)}</span></div>
+        <div class="row"><span>Total Ventas:</span><span class="bold">${formatCurrency(resumen?.totalVentas)}</span></div>
+        <div class="row"><span>ITBIS:</span><span>${formatCurrency(resumen?.totalItbis)}</span></div>
+        <div class="row"><span>Descuentos:</span><span>${formatCurrency(resumen?.totalDescuento)}</span></div>
+        <div class="row"><span>Devoluciones:</span><span>${formatCurrency(resumen?.totalDevoluciones)}</span></div>
+        <div class="row"><span>Recibos Ingreso:</span><span>${formatCurrency(resumen?.totalRecibos)}</span></div>
+        <div class="row"><span>Pagos Suplidores:</span><span>${formatCurrency(resumen?.totalPagosSuplidores)}</span></div>
+        <div class="row"><span>Cambio Entregado:</span><span>${formatCurrency(resumen?.cambioEntregado)}</span></div>
+        <div class="row total-row"><span>Efectivo en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
+        <div class="separator"></div>
+        <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE MONEDAS</div>
+        ${DENOMINACIONES.map(d => {
+          const cant = cierre.desglose[d.label] || 0;
+          const val = d.tipo ? cant : cant * d.value;
+          return `<div class="row"><span>${d.label}</span><span>${cant}</span><span class="text-right" style="width:60px;">${formatCurrency(val)}</span></div>`;
+        }).join('')}
+        <div class="row total-row"><span>Total Desglose:</span><span>${formatCurrency(cierre.total_desglose)}</span></div>
+        <div class="row" style="margin-top: 6px; font-weight: bold; ${cierre.diferencia < 0 ? 'color:red;' : cierre.diferencia > 0 ? 'color: green;' : ''}">
+          <span>Diferencia:</span><span>${formatCurrency(cierre.diferencia)}</span>
+        </div>
+        <div class="separator"></div>
+        <p class="text-center" style="margin-top: 10px; font-size: 11px;">*** FIN DEL CIERRE ***</p>
+      </body>
+      </html>
+    `;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(iframe);
+    iframe.contentWindow.document.open();
+    iframe.contentWindow.document.write(html);
+    iframe.contentWindow.document.close();
+    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  };
+
+  /* ── Keyboard shortcuts ── */
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F8' && showDesglose) {
+        e.preventDefault();
+        handleCerrarTurno();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (showDesglose) setShowDesglose(false);
+        else closePanel('cierre-caja');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showDesglose, handleCerrarTurno, closePanel]);
+
+  return (
+    <>
+      <Helmet>
+        <title>Cierre de Caja - MotoFlow</title>
+      </Helmet>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-1 md:p-4 bg-gray-100 min-h-full flex flex-col"
+      >
+        <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
+          {/* Title */}
+          <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">
+              CIERRE DE CAJA
+            </h1>
+          </div>
+
+          {/* Filters Row */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg mb-4">
+            {/* Fecha */}
+            <div className="space-y-1">
+              <Label className="font-bold">Fecha</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !fecha && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {fecha ? formatInTimeZone(fecha, "dd/MM/yyyy") : <span>Seleccione</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={fecha} onSelect={setFecha} initialFocus /></PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Turno */}
+            <div className="space-y-1">
+              <Label className="font-bold">Turno</Label>
+              <Input
+                type="number"
+                min="1"
+                value={turno}
+                onChange={e => setTurno(parseInt(e.target.value, 10) || 1)}
+                className="text-center font-bold text-lg"
+              />
+            </div>
+
+            {/* Caja */}
+            <div className="space-y-1">
+              <Label className="font-bold">Caja</Label>
+              <Select value="caja1" disabled>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="caja1">Caja No. 1</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Cajero */}
+            <div className="space-y-1">
+              <Label className="font-bold">Cajero</Label>
+              <Select value={selectedCajero} onValueChange={setSelectedCajero}>
+                <SelectTrigger><SelectValue placeholder="Seleccione cajero" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="font-bold text-morla-blue">
+                    📊 Todos los Cajeros (Consolidado)
+                  </SelectItem>
+                  {cajeros.map(c => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nombre_completo || c.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* ── Resumen Section ── */}
+          {loadingResumen ? (
+            <div className="flex-grow flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-morla-blue" />
+            </div>
+          ) : resumen ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
+              {/* Summary Card */}
+              <div className="border rounded-lg p-4 bg-gradient-to-br from-slate-50 to-blue-50">
+                <h2 className="font-bold text-sm uppercase text-gray-500 tracking-wider mb-3">
+                  {selectedCajero === 'ALL' ? 'Resumen Total del Día' : 'Resumen del Turno'}
+                </h2>
+                <div className="space-y-2">
+                  {[
+                    ['Cantidad de Facturas', resumen.cantFacturas, false, true],
+                    ['Ventas Contado', resumen.totalVentasContado],
+                    ['Ventas Crédito', resumen.totalVentasCredito],
+                    ['Total Ventas', resumen.totalVentas, true],
+                    ['ITBIS Cobrado', resumen.totalItbis],
+                    ['Descuentos', resumen.totalDescuento],
+                    ['Devoluciones', resumen.totalDevoluciones],
+                    ['Recibos de Ingreso', resumen.totalRecibos],
+                    ['Pagos a Suplidores (Efectivo)', resumen.totalPagosSuplidores],
+                    ['Cambio Entregado', resumen.cambioEntregado],
+                  ].map(([label, value, bold, isCount]) => (
+                    <div key={label} className={`flex justify-between items-center py-1 ${bold ? 'border-t-2 border-morla-blue pt-2' : ''}`}>
+                      <span className={`text-sm ${bold ? 'font-bold text-morla-blue' : 'text-gray-600'}`}>{label}</span>
+                      <span className={`font-mono text-sm ${bold ? 'font-bold text-morla-blue text-base' : 'text-gray-800'}`}>
+                        {isCount ? value : formatCurrency(value)}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between items-center py-2 mt-2 bg-morla-blue/10 rounded px-3 border border-morla-blue/30">
+                    <span className="font-bold text-morla-blue">Efectivo en Caja</span>
+                    <span className="font-bold text-morla-blue text-lg font-mono">{formatCurrency(resumen.efectivoEnCaja)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions / Desglose Card */}
+              <div className="border rounded-lg p-4 flex flex-col">
+                {!showDesglose ? (
+                  <div className="flex-grow flex flex-col items-center justify-center gap-6">
+                    <Button
+                      onClick={() => {
+                        handleCerrarTurno();
+                      }}
+                      disabled={saving}
+                      size="lg"
+                      className="bg-morla-blue hover:bg-morla-blue/90 text-white px-8 py-6 text-base gap-3 shadow-lg"
+                    >
+                      {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Lock className="h-5 w-5" />}
+                      Cerrar el Turno
+                    </Button>
+
+                    <Button
+                      onClick={() => setShowDesglose(true)}
+                      variant="outline"
+                      size="lg"
+                      className="bg-cyan-600 hover:bg-cyan-700 text-white px-8 py-6 text-base gap-3 shadow-lg border-none"
+                    >
+                      <Coins className="h-5 w-5" />
+                      Desglose de Monedas
+                    </Button>
+                  </div>
+                ) : (
+                  /* ── Desglose de Monedas ── */
+                  <div className="flex flex-col h-full">
+                    <h3 className="font-bold text-center text-sm uppercase tracking-widest text-gray-600 mb-3">
+                      DESGLOSE DE MONEDAS
+                    </h3>
+
+                    <div className="mb-3">
+                      <Label className="text-xs text-gray-500">Moneda</Label>
+                      <Select value="DOP" disabled>
+                        <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                        <SelectContent><SelectItem value="DOP">DOP - PESO</SelectItem></SelectContent>
+                      </Select>
+                    </div>
+
+                    <ScrollArea className="flex-grow border rounded-lg max-h-[380px]">
+                      <Table>
+                        <TableHeader className="bg-gray-200 sticky top-0 z-10">
+                          <TableRow>
+                            <TableHead className="w-24 font-bold">MONEDA</TableHead>
+                            <TableHead className="w-28 font-bold text-center">CANTIDAD</TableHead>
+                            <TableHead className="text-right font-bold">VALOR</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {DENOMINACIONES.map(d => {
+                            const cant = cantidades[d.label] || 0;
+                            const val = d.tipo ? cant : cant * d.value;
+                            return (
+                              <TableRow key={d.label} className="hover:bg-yellow-50/50">
+                                <TableCell className="font-semibold text-right pr-4">{d.label}</TableCell>
+                                <TableCell className="text-center">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={cant}
+                                    onChange={e => handleCantidadChange(d.label, e.target.value)}
+                                    className="w-20 mx-auto text-center h-7 text-sm"
+                                  />
+                                </TableCell>
+                                <TableCell className="text-right font-mono">{formatCurrency(val)}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                        <TableFooter className="sticky bottom-0 bg-yellow-100 z-10">
+                          <TableRow className="font-bold">
+                            <TableCell colSpan={2} className="text-right text-red-600 uppercase">TOTAL ==&gt;</TableCell>
+                            <TableCell className="text-right text-red-600 font-mono text-base">{formatCurrency(desgloseTotal)}</TableCell>
+                          </TableRow>
+                        </TableFooter>
+                      </Table>
+                    </ScrollArea>
+
+                    <div className="mt-3 flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={imprimir}
+                          onChange={e => setImprimir(e.target.checked)}
+                          className="rounded"
+                        />
+                        <Printer className="h-4 w-4" />
+                        Imprimir ?
+                      </label>
+                      <Button
+                        onClick={handleCerrarTurno}
+                        disabled={saving}
+                        className="bg-morla-blue hover:bg-morla-blue/90 text-white gap-2"
+                      >
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                        F8 - Grabar el Desglose
+                      </Button>
+                    </div>
+
+                    {/* Diferencia indicator */}
+                    {resumen && (
+                      <div className={`mt-3 p-3 rounded-lg text-center font-bold text-sm ${
+                        desgloseTotal - resumen.efectivoEnCaja === 0
+                          ? 'bg-green-100 text-green-700'
+                          : desgloseTotal - resumen.efectivoEnCaja < 0
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        Diferencia: {formatCurrency(desgloseTotal - resumen.efectivoEnCaja)}
+                        {desgloseTotal - resumen.efectivoEnCaja === 0 && ' ✓ Cuadra'}
+                        {desgloseTotal - resumen.efectivoEnCaja < 0 && ' (Faltante)'}
+                        {desgloseTotal - resumen.efectivoEnCaja > 0 && ' (Sobrante)'}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Bottom Actions */}
+          <div className="mt-auto pt-4 flex justify-end items-center space-x-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => closePanel('cierre-caja')}
+              className="gap-2"
+            >
+              <X className="h-4 w-4" /> ESC - Salir
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </>
+  );
+};
+
+export default CierreCajaPage;

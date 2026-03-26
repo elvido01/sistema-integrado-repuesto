@@ -1,6 +1,16 @@
-﻿module.exports = {
+module.exports = {
   darkMode: ["class"],
-  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx,vue,html}"],
+  content: [
+    "./index.html",
+    "./src/components/**/*.{js,ts,jsx,tsx}",
+    "./src/pages/**/*.{js,ts,jsx,tsx}",
+    "./src/contexts/**/*.{js,ts,jsx,tsx}",
+    "./src/hooks/**/*.{js,ts,jsx,tsx}",
+    "./src/lib/**/*.{js,ts,jsx,tsx}",
+    "./src/services/**/*.{js,ts,jsx,tsx}",
+    "./src/App.jsx",
+    "./src/main.jsx"
+  ],
   theme: {
     container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } },
     extend: {
@@ -24,8 +34,11 @@
         "card-foreground": "hsl(var(--card-foreground))",
         popover: "hsl(var(--popover))",
         "popover-foreground": "hsl(var(--popover-foreground))",
-        "morla-blue": "#0a1e3a",
+        "morla-blue": "#2563EB",
         "morla-gold": "#d4af37",
+        "motoflow-blue": "#2563EB",
+        "motoflow-dark": "#0F172A",
+        "motoflow-accent": "#38bdf8",
       },
       borderRadius: {
         lg: "var(--radius)",

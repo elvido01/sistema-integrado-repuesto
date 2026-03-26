@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Loader2, Search, PlusCircle, Send, Edit, Trash2, X, Printer } from 'lucide-react';
+import { Loader2, Search, PlusCircle, Send, Edit, Trash2, X, Printer, Share2, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
 import CotizacionFormModal from '@/components/cotizaciones/CotizacionFormModal';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { printCotizacionPOS, printCotizacionQZ } from '@/lib/printPOS';
@@ -41,6 +41,8 @@ const CotizacionPage = () => {
   const [paperSize, setPaperSize] = useState(() => localStorage.getItem('cot_paper_size') || '4inch');
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('cot_print_method') || 'qz');
   const [isPrinting, setIsPrinting] = useState(false);
+  const [showMobileActions, setShowMobileActions] = useState(false);
+  const [sharingImageId, setSharingImageId] = useState(null);
   const containerRef = useRef(null);
 
   const handlePaperSizeChange = (val) => {
@@ -96,7 +98,7 @@ const CotizacionPage = () => {
   const fetchDetalles = useCallback(async (cotId) => {
     const { data, error } = await supabase
       .from('cotizaciones_detalle')
-      .select('*, productos(itbis_pct)')
+      .select('*, productos(itbis_pct, imagen_url)')
       .eq('cotizacion_id', cotId);
 
     if (error) {
@@ -105,6 +107,41 @@ const CotizacionPage = () => {
       setDetalles(data);
     }
   }, [toast]);
+
+  // Share product image via Web Share API or open in new tab
+  const handleShareImage = async (detalle) => {
+    const imageUrl = detalle.productos?.imagen_url;
+    if (!imageUrl) return;
+
+    setSharingImageId(detalle.id);
+    try {
+      // Try Web Share API (works great on mobile)
+      if (navigator.share) {
+        // Fetch the image as a blob for native sharing
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        const file = new File([blob], `${detalle.codigo || 'producto'}.jpg`, { type: blob.type });
+
+        await navigator.share({
+          title: detalle.descripcion || 'Imagen del producto',
+          text: `${detalle.descripcion} — Código: ${detalle.codigo}`,
+          files: [file],
+        });
+        toast({ title: 'Compartido', description: 'Imagen compartida exitosamente.' });
+      } else {
+        // Fallback: open image in new tab
+        window.open(imageUrl, '_blank');
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('[Share] Error:', err);
+        // Fallback to opening in new tab
+        window.open(imageUrl, '_blank');
+      }
+    } finally {
+      setSharingImageId(null);
+    }
+  };
 
   useEffect(() => {
     console.log('ALIVE: CotizacionPage mounted');
@@ -229,26 +266,26 @@ const CotizacionPage = () => {
   return (
     <>
       <Helmet>
-        <title>Cotizaciones - Repuestos Morla</title>
+        <title>Cotizaciones - MotoFlow</title>
       </Helmet>
-      <div ref={containerRef} tabIndex={-1} className="h-full grid grid-cols-12 gap-4 p-4 bg-gray-50 overflow-hidden">
+      <div ref={containerRef} tabIndex={-1} className="h-full flex flex-col lg:grid lg:grid-cols-12 gap-4 p-4 bg-gray-50 overflow-y-auto lg:overflow-hidden">
 
         {/* Main Content */}
-        <div className="col-span-10 flex flex-col space-y-4 min-h-0">
+        <div className="lg:col-span-10 flex flex-col space-y-4 lg:min-h-0">
 
           {/* Header */}
-          <div className="bg-white p-4 rounded-lg shadow-sm border flex justify-between items-center">
+          <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <h1 className="text-2xl font-bold text-morla-blue">Gestión de Cotizaciones</h1>
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Buscar por cliente o número..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-64 h-9" />
+              <Input placeholder="Buscar por cliente o número..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-full sm:w-64 h-9" />
             </div>
           </div>
 
           {/* Master Table */}
-          <div className="bg-white rounded-lg shadow-sm border flex-grow overflow-hidden flex flex-col">
-            <div className="overflow-y-auto flex-grow">
-              <Table>
+          <div className="bg-white rounded-lg shadow-sm border lg:flex-grow min-h-[350px] lg:min-h-0 flex flex-col overflow-hidden">
+            <div className="overflow-y-auto overflow-x-auto flex-grow">
+              <Table className="min-w-[800px]">
                 <TableHeader className="sticky top-0 bg-gray-100 z-10">
                   <TableRow>
                     <TableHead>Número</TableHead>
@@ -274,8 +311,8 @@ const CotizacionPage = () => {
                     >
                       <TableCell className="font-bold">{c.numero}</TableCell>
                       <TableCell>
-                        {c.fecha_cotizacion && !isNaN(new Date(c.fecha_cotizacion))
-                          ? formatInTimeZone(new Date(c.fecha_cotizacion), 'dd/MM/yyyy')
+                        {c.fecha_cotizacion && !isNaN(new Date(c.fecha_cotizacion + "T12:00:00"))
+                          ? formatInTimeZone(new Date(c.fecha_cotizacion + "T12:00:00"), 'dd/MM/yyyy')
                           : '---'}
                       </TableCell>
                       <TableCell>{c.cliente_nombre}</TableCell>
@@ -301,13 +338,13 @@ const CotizacionPage = () => {
           </div>
 
           {/* Details Table */}
-          <div className="bg-white rounded-lg shadow-sm border h-1/3 flex flex-col overflow-hidden">
+          <div className="bg-white rounded-lg shadow-sm border lg:h-1/3 min-h-[250px] lg:min-h-0 flex flex-col overflow-hidden">
             <div className="bg-gray-100 px-4 py-2 border-b font-semibold text-sm flex justify-between">
               <span>Detalle de Cotización: {selectedCotizacion?.numero || '---'}</span>
               <span>{detalles.length} Artículos</span>
             </div>
-            <div className="overflow-y-auto flex-grow">
-              <Table>
+            <div className="overflow-y-auto overflow-x-auto flex-grow">
+              <Table className="min-w-[600px]">
                 <TableHeader>
                   <TableRow className="h-8">
                     <TableHead className="text-xs">Código</TableHead>
@@ -315,6 +352,7 @@ const CotizacionPage = () => {
                     <TableHead className="text-xs text-right">Cant.</TableHead>
                     <TableHead className="text-xs text-right">Precio</TableHead>
                     <TableHead className="text-xs text-right">Importe</TableHead>
+                    <TableHead className="text-xs text-center w-[50px]">Img</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -325,10 +363,32 @@ const CotizacionPage = () => {
                       <TableCell className="py-1 text-xs text-right">{d.cantidad || 0}</TableCell>
                       <TableCell className="py-1 text-xs text-right">{Number(d.precio_unitario || 0).toFixed(2)}</TableCell>
                       <TableCell className="py-1 text-xs text-right font-medium">{Number(d.importe || 0).toFixed(2)}</TableCell>
+                      <TableCell className="py-1 text-center">
+                        {d.productos?.imagen_url ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                            onClick={() => handleShareImage(d)}
+                            disabled={sharingImageId === d.id}
+                            title="Compartir imagen del producto"
+                          >
+                            {sharingImageId === d.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Share2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        ) : (
+                          <span className="text-gray-300" title="Sin imagen">
+                            <ImageIcon className="h-3.5 w-3.5 mx-auto" />
+                          </span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {!selectedCotizacion && (
-                    <TableRow><TableCell colSpan="5" className="text-center py-4 text-gray-400 text-xs">Seleccione una cotización para ver sus detalles</TableCell></TableRow>
+                    <TableRow><TableCell colSpan="6" className="text-center py-4 text-gray-400 text-xs">Seleccione una cotización para ver sus detalles</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -336,12 +396,26 @@ const CotizacionPage = () => {
           </div>
         </div>
 
-        {/* Actions Sidebar */}
-        <div className="col-span-2 space-y-2">
-          <div className="bg-morla-blue text-white p-3 rounded-t-lg font-bold flex items-center gap-2">
+        {/* Actions Sidebar — hidden on mobile by default, toggleable */}
+        <div className="lg:col-span-2 space-y-2 order-first lg:order-last mb-4 lg:mb-0">
+          {/* Mobile toggle header */}
+          <button
+            onClick={() => setShowMobileActions(prev => !prev)}
+            className="lg:hidden w-full bg-morla-blue text-white p-3 rounded-lg font-bold flex items-center justify-between gap-2"
+          >
+            <div className="flex items-center gap-2">
+              <PlusCircle className="w-5 h-5" /> Acciones
+            </div>
+            {showMobileActions ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          </button>
+
+          {/* Desktop header (always visible on lg) */}
+          <div className="hidden lg:flex bg-morla-blue text-white p-3 rounded-t-lg font-bold items-center gap-2">
             <PlusCircle className="w-5 h-5" /> Acciones
           </div>
-          <div className="bg-white p-4 rounded-b-lg shadow-sm border space-y-2">
+
+          {/* Actions content — always visible on desktop, toggleable on mobile */}
+          <div className={`bg-white p-4 rounded-b-lg shadow-sm border space-y-2 ${showMobileActions ? 'block' : 'hidden lg:block'}`}>
             <Button onClick={() => setIsModalOpen(true)} className="w-full justify-between bg-green-600 hover:bg-green-700">
               <span>INS - Crear Cotización</span>
               <PlusCircle size={18} />
@@ -432,9 +506,10 @@ const CotizacionPage = () => {
             </div>
           </div>
 
-          <div className="bg-gray-100 p-4 rounded-lg border text-xs text-gray-500 space-y-1">
+          <div className={`bg-gray-100 p-4 rounded-lg border text-xs text-gray-500 space-y-1 ${showMobileActions ? 'block' : 'hidden lg:block'}`}>
             <p>• Haga doble clic para editar</p>
             <p>• Los pedidos facturados se archivan</p>
+            <p>• Toque el ícono <Share2 className="inline h-3 w-3" /> para compartir imagen</p>
           </div>
         </div>
 

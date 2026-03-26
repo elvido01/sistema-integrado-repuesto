@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableRow, TableHeader, TableHead } from '@
 import { Trash2, Search } from 'lucide-react';
 
 const SalidaDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetalle, removeDetalle, updateDetalle, setIsSearchModalOpen }) => {
-  
+
   const handleInputChange = (field, value) => {
     const newDetalle = { ...currentDetalle, [field]: value };
     if (field === 'cantidad' || field === 'costo_unitario') {
@@ -26,12 +26,17 @@ const SalidaDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
     <div className="mt-4 flex-grow flex flex-col">
       <div className="grid grid-cols-[150px_1fr_90px_90px_110px_130px_40px] gap-2 items-end p-2 bg-gray-200 rounded-t-lg">
         <div className="relative flex items-center">
-          <Input 
-            id="codigo-producto" 
+          <Input
+            id="codigo-producto"
             placeholder="Código (F3)"
-            value={currentDetalle.codigo} 
-            onChange={e => handleInputChange('codigo', e.target.value)} 
-            onKeyDown={handleKeyDown} 
+            value={currentDetalle.codigo}
+            onChange={e => handleInputChange('codigo', e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={() => {
+              if (currentDetalle.codigo && !currentDetalle.producto_id) {
+                addDetalle();
+              }
+            }}
           />
           <Button variant="ghost" size="icon" className="h-8 w-8 absolute right-0" onClick={() => setIsSearchModalOpen(true)}>
             <Search className="h-4 w-4 text-gray-400" />
@@ -55,15 +60,15 @@ const SalidaDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
       <div className="flex-grow overflow-y-auto border-x border-b rounded-b-lg">
         <Table>
           <TableHeader className="sticky top-0 bg-gray-50 z-10">
-              <TableRow>
-                  <TableHead className="w-[150px]">CÓDIGO</TableHead>
-                  <TableHead>DESCRIPCIÓN</TableHead>
-                  <TableHead className="text-right w-[90px]">CANT.</TableHead>
-                  <TableHead className="w-[90px]">UND</TableHead>
-                  <TableHead className="text-right w-[110px]">COSTO</TableHead>
-                  <TableHead className="text-right w-[130px]">IMPORTE</TableHead>
-                  <TableHead className="w-[40px]"></TableHead>
-              </TableRow>
+            <TableRow>
+              <TableHead className="w-[150px]">CÓDIGO</TableHead>
+              <TableHead>DESCRIPCIÓN</TableHead>
+              <TableHead className="text-right w-[90px]">CANT.</TableHead>
+              <TableHead className="w-[90px]">UND</TableHead>
+              <TableHead className="text-right w-[110px]">COSTO</TableHead>
+              <TableHead className="text-right w-[130px]">IMPORTE</TableHead>
+              <TableHead className="w-[40px]"></TableHead>
+            </TableRow>
           </TableHeader>
           <TableBody>
             {detalles.map(d => (
@@ -71,7 +76,7 @@ const SalidaDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
                 <TableCell>{d.codigo}</TableCell>
                 <TableCell>{d.descripcion}</TableCell>
                 <TableCell className="text-right">
-                  <Input 
+                  <Input
                     type="number"
                     value={d.cantidad}
                     onChange={e => updateDetalle(d.id, 'cantidad', e.target.value)}
@@ -79,17 +84,17 @@ const SalidaDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
                   />
                 </TableCell>
                 <TableCell>
-                   <Select value={d.unidad} onValueChange={v => updateDetalle(d.id, 'unidad', v)}>
-                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UND">UND</SelectItem>
-                        <SelectItem value="CAJA">CAJA</SelectItem>
-                        <SelectItem value="PAQUETE">PAQUETE</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <Select value={d.unidad} onValueChange={v => updateDetalle(d.id, 'unidad', v)}>
+                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UND">UND</SelectItem>
+                      <SelectItem value="CAJA">CAJA</SelectItem>
+                      <SelectItem value="PAQUETE">PAQUETE</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 <TableCell className="text-right">
-                   <Input 
+                  <Input
                     type="number"
                     value={d.costo_unitario}
                     onChange={e => updateDetalle(d.id, 'costo_unitario', e.target.value)}
@@ -102,12 +107,12 @@ const SalidaDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
                 </TableCell>
               </TableRow>
             ))}
-             {detalles.length === 0 && (
-                <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        Añada productos a la salida.
-                    </TableCell>
-                </TableRow>
+            {detalles.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  Añada productos a la salida.
+                </TableCell>
+              </TableRow>
             )}
           </TableBody>
         </Table>

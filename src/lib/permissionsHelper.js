@@ -39,6 +39,7 @@ export const MODULES = [
     { key: 'compras', label: 'Compras' },
     { key: 'pedidos', label: 'Pedidos' },
     { key: 'cotizaciones', label: 'Cotizaciones' },
+    { key: 'cotizaciones-magna', label: 'Cot. Facturas Magna' },
     { key: 'orden-compra', label: 'Orden de Compra' },
     { key: 'devoluciones', label: 'Devoluciones' },
     { key: 'pago-suplidores', label: 'Pago a Suplidores' },
@@ -48,6 +49,7 @@ export const MODULES = [
     { key: 'salida-mercancia', label: 'Salida Mercancía' },
     { key: 'actualizar-ubicacion', label: 'Actualizar Ubicación' },
     { key: 'etiquetas-masivas', label: 'Impresión Etiquetas' },
+    { key: 'solicitudes', label: 'Inventario - Solicitudes Agotados' },
     { key: 'reporte-compras', label: 'Reporte de Compras' },
     { key: 'reporte-transacciones-diarias', label: 'Transacciones Diarias' },
     { key: 'inventario-fisico', label: 'Reporte - Inventario Físico' },
@@ -58,4 +60,6 @@ export const MODULES = [
     { key: 'modelos', label: 'Catálogo - Modelos' },
     { key: 'ubicaciones', label: 'Catálogo - Ubicaciones' },
     { key: 'usuarios', label: 'Configuración - Usuarios' },
+    { key: 'cierre-caja', label: 'Configuración - Cierre de Caja' },
+    { key: 'config_sistema', label: 'Configuración - Sistema' },
 ];

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Plus, Trash2, Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,16 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+// Format number with thousands separator (commas) and 2 decimal places
+const formatNumber = (value) => {
+  const num = parseFloat(value);
+  if (isNaN(num)) return '0.00';
+  return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, onNotImplemented }) => {
+  // Track which field is currently focused so we show raw value for editing
+  const [focusedField, setFocusedField] = useState(null);
 
   const calculatePrice = (costo, margenPct) => {
     const costoNum = parseFloat(costo) || 0;
@@ -50,10 +59,34 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
   };
 
   const removePresentation = (id) => {
-    setPresentations(presentations.filter(p => p.id !== id));
+    deletingRef.current = true;
+    const toRemove = presentations.find(p => p.id === id);
+    const remaining = presentations.filter(p => p.id !== id);
+
+    // Si la presentación eliminada tenía afecta_ft o afecta_inv,
+    // transferir al primero que quede
+    if (remaining.length > 0) {
+      if (toRemove?.afecta_ft && !remaining.some(p => p.afecta_ft)) {
+        remaining[0] = { ...remaining[0], afecta_ft: true };
+      }
+      if (toRemove?.afecta_inv && !remaining.some(p => p.afecta_inv)) {
+        remaining[0] = { ...remaining[0], afecta_inv: true };
+      }
+    }
+
+    setPresentations(remaining);
   };
 
+  // Ref para saltar el useEffect de sync después de borrar
+  const deletingRef = useRef(false);
+
   React.useEffect(() => {
+    // Saltar sync si acabamos de borrar una presentación
+    if (deletingRef.current) {
+      deletingRef.current = false;
+      return;
+    }
+
     // Ensure P2/P3 are calculated if they are 0 but auto is on
     const needsSync = presentations.some(p =>
       (p.auto_precio2 && (parseFloat(p.precio2) === 0 || !p.precio2) && parseFloat(p.precio1) > 0) ||
@@ -62,15 +95,89 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
 
     if (needsSync) {
       const synced = presentations.map(p => {
+        const costoNum = parseFloat(p.costo) || 0;
+        const precio1Num = parseFloat(p.precio1) || 0;
+        const margenActual = costoNum > 0 ? ((precio1Num / costoNum) - 1) * 100 : 0;
+        const eps = 0.001;
+
         const autos = calculateAutoPrices(p.precio1, p.auto_precio2, p.auto_precio3);
         const updated = { ...p };
-        if (p.auto_precio2 && (parseFloat(p.precio2) === 0 || !p.precio2)) updated.precio2 = autos.precio2;
-        if (p.auto_precio3 && (parseFloat(p.precio3) === 0 || !p.precio3)) updated.precio3 = autos.precio3;
+
+        if (p.auto_precio2 && (parseFloat(p.precio2) === 0 || !p.precio2)) {
+          if (precio1Num > 0 && (margenActual <= 15 + eps || (parseFloat(autos.precio2) > 0 && parseFloat(autos.precio2) < costoNum))) {
+            updated.auto_precio2 = false;
+            updated.precio2 = '0.00';
+          } else {
+            updated.precio2 = autos.precio2;
+          }
+        }
+
+        if (p.auto_precio3 && (parseFloat(p.precio3) === 0 || !p.precio3)) {
+          if (precio1Num > 0 && (margenActual <= 20 + eps || (parseFloat(autos.precio3) > 0 && parseFloat(autos.precio3) < costoNum))) {
+            updated.auto_precio3 = false;
+            updated.precio3 = '0.00';
+          } else {
+            updated.precio3 = autos.precio3;
+          }
+        }
+
         return updated;
       });
       setPresentations(synced);
     }
   }, [presentations, setPresentations]);
+
+  // Get display value: formatted with commas when not focused, raw when focused
+  const getDisplayValue = useCallback((presentationId, field, rawValue) => {
+    if (focusedField === `${field}-${presentationId}`) {
+      return rawValue; // Raw value while editing
+    }
+    // Formatted with commas when not editing
+    const numericFields = ['costo', 'precio1', 'precio2', 'precio3', 'precio_final'];
+    if (numericFields.includes(field)) {
+      return formatNumber(rawValue);
+    }
+    return rawValue;
+  }, [focusedField]);
+
+  const handleFocus = useCallback((presentationId, field, e) => {
+    setFocusedField(`${field}-${presentationId}`);
+    // Select all text on focus for easy editing
+    setTimeout(() => e.target.select(), 0);
+  }, []);
+
+  const handleBlur = useCallback((presentationId, field) => {
+    setFocusedField(null);
+    // Format to 2 decimal places on blur for numeric fields
+    const numericFields = ['costo', 'precio1', 'precio2', 'precio3'];
+    if (numericFields.includes(field)) {
+      setPresentations(prev => prev.map(p => {
+        if (p.id === presentationId) {
+          const num = parseFloat(p[field]);
+          const newP = { ...p, [field]: isNaN(num) ? '0.00' : num.toFixed(2) };
+
+          // Enforce margin rules and below-cost rules on blur
+          const costoNum = parseFloat(newP.costo) || 0;
+          const precio1Num = parseFloat(newP.precio1) || 0;
+          const margenActual = costoNum > 0 ? ((precio1Num / costoNum) - 1) * 100 : 0;
+          const eps = 0.001;
+
+          if (precio1Num > 0 && (margenActual <= 15 + eps || (parseFloat(newP.precio2) > 0 && parseFloat(newP.precio2) < costoNum))) {
+            newP.auto_precio2 = false;
+            newP.precio2 = '0.00';
+          }
+
+          if (precio1Num > 0 && (margenActual <= 20 + eps || (parseFloat(newP.precio3) > 0 && parseFloat(newP.precio3) < costoNum))) {
+            newP.auto_precio3 = false;
+            newP.precio3 = '0.00';
+          }
+
+          return newP;
+        }
+        return p;
+      }));
+    }
+  }, [setPresentations]);
 
   const updatePresentation = (id, field, value) => {
     setPresentations(presentations.map(p => {
@@ -93,15 +200,64 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
           }
         }
 
-        // Always ensure auto prices are calculated if auto-flags are set
-        const autos = calculateAutoPrices(updated.precio1, updated.auto_precio2, updated.auto_precio3);
-        if (updated.auto_precio2) updated.precio2 = autos.precio2;
-        if (updated.auto_precio3) updated.precio3 = autos.precio3;
+        // Do NOT apply toFixed(2) during typing — only on blur
+        // This prevents cursor jumping
+
+        const costoNum = parseFloat(updated.costo) || 0;
+        const precio1Num = parseFloat(updated.precio1) || 0;
+        const margenActual = costoNum > 0 ? ((precio1Num / costoNum) - 1) * 100 : 0;
+        const eps = 0.001;
+
+        // Force temp calculation to check conditions mathematically
+        const p2Calc = (precio1Num * 0.90).toFixed(2);
+        const p3Calc = (precio1Num * 0.85).toFixed(2);
+
+        // Auto-restore flags if they were disabled (0.00) and now comply, when changing base values
+        if (field === 'precio1' || field === 'costo' || field === 'margen_pct') {
+          if (!updated.auto_precio2 && (parseFloat(updated.precio2) === 0 || !updated.precio2) && precio1Num > 0 && margenActual > 15 + eps && parseFloat(p2Calc) >= costoNum) {
+            updated.auto_precio2 = true;
+          }
+          if (!updated.auto_precio3 && (parseFloat(updated.precio3) === 0 || !updated.precio3) && precio1Num > 0 && margenActual > 20 + eps && parseFloat(p3Calc) >= costoNum) {
+            updated.auto_precio3 = true;
+          }
+        }
+
+        // Keep manual check intent
+        if (field === 'auto_precio2' && value === true) updated.auto_precio2 = true;
+        if (field === 'auto_precio3' && value === true) updated.auto_precio3 = true;
+
+        if (updated.auto_precio2) {
+          if (precio1Num > 0 && (margenActual <= 15 + eps || parseFloat(p2Calc) < costoNum)) {
+            updated.auto_precio2 = false;
+            updated.precio2 = '0.00';
+          } else {
+            updated.precio2 = p2Calc;
+          }
+        }
+
+        if (updated.auto_precio3) {
+          if (precio1Num > 0 && (margenActual <= 20 + eps || parseFloat(p3Calc) < costoNum)) {
+            updated.auto_precio3 = false;
+            updated.precio3 = '0.00';
+          } else {
+            updated.precio3 = p3Calc;
+          }
+        }
 
         updated.precio_final = calculateFinalPrice(updated.precio1, updated.descuento_pct);
 
         return updated;
       }
+
+      // --- afecta_ft y afecta_inv como radio buttons ---
+      // Si estamos activando F o I en una presentación, desactivar en las demás
+      if (field === 'afecta_ft' && value === true) {
+        return { ...p, afecta_ft: false };
+      }
+      if (field === 'afecta_inv' && value === true) {
+        return { ...p, afecta_inv: false };
+      }
+
       return p;
     }));
   };
@@ -127,7 +283,8 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
         <Button
           size="sm"
           variant="outline"
-          onClick={addPresentation}
+          onDoubleClick={addPresentation}
+          title="Doble clic para agregar nueva presentación"
           className="h-7 text-[10px] font-bold uppercase bg-white border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors shadow-sm"
         >
           <Plus className="w-3.5 h-3.5 mr-1" />
@@ -192,8 +349,10 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
                   <Input
                     id={`costo-${presentation.id}`}
                     type="text"
-                    value={presentation.costo}
+                    value={getDisplayValue(presentation.id, 'costo', presentation.costo)}
                     onChange={(e) => updatePresentation(presentation.id, 'costo', e.target.value)}
+                    onFocus={(e) => handleFocus(presentation.id, 'costo', e)}
+                    onBlur={() => handleBlur(presentation.id, 'costo')}
                     onKeyDown={(e) => handleKeyDown(e, `margen-${presentation.id}`)}
                     className="h-6 text-[11px] text-right bg-blue-50/30 border-gray-200 px-1 font-medium focus:ring-0"
                   />
@@ -227,8 +386,10 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
                       <Input
                         id={`precio1-${presentation.id}`}
                         type="text"
-                        value={presentation.precio1}
+                        value={getDisplayValue(presentation.id, 'precio1', presentation.precio1)}
                         onChange={(e) => updatePresentation(presentation.id, 'precio1', e.target.value)}
+                        onFocus={(e) => handleFocus(presentation.id, 'precio1', e)}
+                        onBlur={() => handleBlur(presentation.id, 'precio1')}
                         onKeyDown={(e) => handleKeyDown(e, 'btn-grabar-producto')}
                         className="h-6 text-[11px] text-right bg-green-50/20 border-green-100 text-green-700 font-bold px-1 focus:ring-0 flex-grow"
                       />
@@ -240,8 +401,10 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
                       <Input
                         type="text"
                         disabled={presentation.auto_precio2}
-                        value={presentation.precio2}
+                        value={getDisplayValue(presentation.id, 'precio2', presentation.precio2)}
                         onChange={(e) => updatePresentation(presentation.id, 'precio2', e.target.value)}
+                        onFocus={(e) => handleFocus(presentation.id, 'precio2', e)}
+                        onBlur={() => handleBlur(presentation.id, 'precio2')}
                         className={`h-6 text-[11px] text-right bg-white border-gray-200 px-1 focus:ring-0 flex-grow font-semibold text-black ${presentation.auto_precio2 ? 'bg-gray-50/50' : ''}`}
                       />
                       <Checkbox
@@ -256,8 +419,10 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
                       <Input
                         type="text"
                         disabled={presentation.auto_precio3}
-                        value={presentation.precio3}
+                        value={getDisplayValue(presentation.id, 'precio3', presentation.precio3)}
                         onChange={(e) => updatePresentation(presentation.id, 'precio3', e.target.value)}
+                        onFocus={(e) => handleFocus(presentation.id, 'precio3', e)}
+                        onBlur={() => handleBlur(presentation.id, 'precio3')}
                         className={`h-6 text-[11px] text-right bg-white border-gray-200 px-1 focus:ring-0 flex-grow font-semibold text-black ${presentation.auto_precio3 ? 'bg-gray-50/50' : ''}`}
                       />
                       <Checkbox
@@ -271,7 +436,7 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
 
                 <TableCell className="p-1 align-top pt-2">
                   <div className="h-6 flex items-center justify-end px-2 bg-gray-50 border border-gray-200 rounded text-[11px] font-bold text-gray-700">
-                    {presentation.precio_final}
+                    {formatNumber(presentation.precio_final)}
                   </div>
                 </TableCell>
                 <TableCell className="p-1 text-center align-top pt-3">

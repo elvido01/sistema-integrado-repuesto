@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
         const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
         const prompt = `Extrae los datos de esta factura de repuestos en formato JSON puro.
 Extrae: Nombre Suplidor, RNC, Número Factura, NCF, Fecha (YYYY-MM-DD).
-Para los items extrae: Código, Descripción, Cantidad, Unidad, Costo (neto), Descuento %, ITBIS % e Importe.
+Para los items extrae: Código, Referencia, Descripción, Cantidad, Unidad, Costo (neto), Descuento %, ITBIS % e Importe.
 
 OCR TEXT:
 ${fullOcrText}
@@ -72,7 +72,7 @@ ${fullOcrText}
 JSON FORMAT:
 {
   "invoice": { "supplier_name": "", "supplier_rnc": "", "invoice_number": "", "ncf": "", "date": "YYYY-MM-DD", "reference": "" },
-  "items": [ { "code": "", "description": "", "qty": 1, "unit": "UND", "unit_cost": 0, "discount_pct": 0, "itbis_pct": 0.18, "line_total": 0 } ]
+  "items": [ { "code": "", "reference": "", "description": "", "qty": 1, "unit": "UND", "unit_cost": 0, "discount_pct": 0, "itbis_pct": 0.18, "line_total": 0 } ]
 }`;
 
         // Modelos confirmados disponibles en esta cuenta

@@ -9,9 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
-import { Save, X, Loader2, FilePlus, Trash2, PlusCircle } from 'lucide-react';
+import { Save, X, Loader2, FilePlus, Trash2, PlusCircle, Printer } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { Checkbox } from '@/components/ui/checkbox';
+import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
 
 const initialState = {
   numero: '',
@@ -167,8 +168,33 @@ const PagoSuplidoresPage = () => {
       if (error) throw error;
 
       toast({ title: 'Éxito', description: `Pago ${data} guardado correctamente.` });
-      // TODO: Implementar impresión
-      resetForm();
+
+      if (pago.imprimir) {
+        generatePagoSuplidorPDF(
+          { ...pagoData, numero: data },
+          pago.suplidorNombre,
+          detallesData.map(d => {
+            const original = compras.find(c => c.id === d.compra_id);
+            return { ...d, fecha_emision: original?.fecha_emision, referencia: original?.referencia, monto_pendiente: original?.monto_pendiente };
+          }),
+          formasPago
+        );
+      }
+
+      // En lugar de resetear todo el formulario, refrescamos los datos del suplidor actual
+      const currentSuplidorId = pago.suplidorId;
+      const currentSuplidorNombre = pago.suplidorNombre;
+
+      // Limpiar datos del pago anterior pero mantener el suplidor
+      setPago({
+        ...initialState,
+        suplidorId: currentSuplidorId,
+        suplidorNombre: currentSuplidorNombre,
+      });
+      setFormasPago([{ id: 1, forma: 'Efectivo', monto: 0, referencia: '' }]);
+
+      // Re-cargar compras pendientes
+      handleSuplidorSelect(currentSuplidorId);
 
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error al guardar el pago', description: error.message });
@@ -203,7 +229,7 @@ const PagoSuplidoresPage = () => {
   return (
     <>
       <Helmet>
-        <title>Pago a Suplidores - Repuestos Morla</title>
+        <title>Pago a Suplidores - MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -212,7 +238,7 @@ const PagoSuplidoresPage = () => {
       >
         <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
           <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
-            <h1 className="text-xl font-bold">Pago a Suplidores</h1>
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">PAGO A SUPLIDORES</h1>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-4">

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext } from 'react';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -20,13 +20,19 @@ import ReciboIngresoPage from '@/pages/ReciboIngresoPage';
 import PagoSuplidoresPage from '@/pages/PagoSuplidoresPage';
 import PagoComisionesPage from '@/pages/PagoComisionesPage';
 import UsuariosPermissionsPage from '@/pages/Configuracion/UsuariosPermissionsPage';
+import CierreCajaPage from '@/pages/Configuracion/CierreCajaPage';
 import CambioCodigoPage from '@/pages/CambioCodigoPage';
+import ConfiguracionSistemaPage from '@/pages/Configuracion/ConfiguracionSistemaPage';
 import CatalogPage from '@/pages/CatalogPage';
 import EtiquetasMasivasPage from '@/pages/EtiquetasMasivasPage';
 import VendedoresPage from '@/pages/VendedoresPage';
 import InventarioFisicoPage from '@/pages/InventarioFisicoPage';
 import SolicitudesPage from '@/pages/SolicitudesPage';
+import CotizacionesMagnaPage from '@/pages/CotizacionesMagnaPage';
+import PerfilEmpresa from '@/pages/Configuracion/PerfilEmpresa';
+import AdminDashboard from '@/pages/Admin/AdminDashboard';
 import RouteGuard from '@/components/auth/RouteGuard';
+import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
 
 const Protected = ({ module, children }) => (
   <RouteGuard moduleKey={module}>
@@ -43,6 +49,7 @@ const componentMapping = {
   'compras': { component: () => <Protected module="compras"><ComprasPage /></Protected>, icon: Truck, name: 'Compras' },
   'pedidos': { component: () => <Protected module="pedidos"><PedidosPage /></Protected>, icon: ListOrdered, name: 'Pedidos' },
   'cotizaciones': { component: () => <Protected module="cotizaciones"><CotizacionPage /></Protected>, icon: FileText, name: 'Cotizaciones' },
+  'cotizaciones-magna': { component: () => <Protected module="cotizaciones-magna"><CotizacionesMagnaPage /></Protected>, icon: FileText, name: 'Cot. Facturas Magna' },
   'orden-compra': { component: () => <Protected module="orden-compra"><OrdenCompraPage /></Protected>, icon: FileText, name: 'Orden de Compra' },
   'devoluciones': { component: () => <Protected module="devoluciones"><DevolucionesPage /></Protected>, icon: CornerUpLeft, name: 'Devoluciones' },
   'mercancias': { component: () => <Protected module="mercancias"><ProductsPage /></Protected>, icon: Package, name: 'Mercancías' },
@@ -63,6 +70,10 @@ const componentMapping = {
   'vendedores': { component: () => <Protected module="vendedores"><VendedoresPage /></Protected>, icon: Users, name: 'Vendedores' },
   'inventario-fisico': { component: () => <Protected module="inventario-fisico"><InventarioFisicoPage /></Protected>, icon: Archive, name: 'Inventario Físico' },
   'solicitudes': { component: () => <Protected module="solicitudes"><SolicitudesPage /></Protected>, icon: ClipboardList, name: 'Solicitudes Agotados' },
+  'cierre-caja': { component: () => <Protected module="cierre-caja"><CierreCajaPage /></Protected>, icon: Settings, name: 'Cierre de Caja' },
+  'config_sistema': { component: () => <Protected module="config_sistema"><ConfiguracionSistemaPage /></Protected>, icon: Settings, name: 'Configuracion del Sistema' },
+  'perfil-empresa': { component: () => <Protected module="perfil-empresa"><PerfilEmpresa /></Protected>, icon: Building2, name: 'Perfil Empresa' },
+  'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
 };
 
 const PanelContext = createContext();

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import PanelManager from '@/components/layout/PanelManager';
+import SuscripcionAlert from '@/components/common/SuscripcionAlert';
 
 const MainLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -10,8 +11,6 @@ const MainLayout = () => {
     const handleResize = () => {
       if (window.innerWidth < 768) {
         setSidebarOpen(false);
-      } else {
-        setSidebarOpen(true);
       }
     };
     handleResize();
@@ -21,16 +20,19 @@ const MainLayout = () => {
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
-      <Sidebar sidebarOpen={sidebarOpen} />
+      <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
       <div
-        className={`flex-1 flex flex-col transition-all duration-300 ml-0 ${
-          sidebarOpen ? 'md:ml-64' : 'md:ml-20'
-        }`}
+        className={`flex-1 flex flex-col transition-all duration-300 ml-0 ${sidebarOpen ? 'md:ml-64' : 'md:ml-20'
+          }`}
       >
+        <SuscripcionAlert />
         <Header setSidebarOpen={setSidebarOpen} />
         <main className="flex-1 overflow-y-auto">
           <PanelManager />
         </main>
+        <footer className="text-center py-2 text-[10px] text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+          © 2026 MotoFlow — Todos los derechos reservados
+        </footer>
       </div>
     </div>
   );

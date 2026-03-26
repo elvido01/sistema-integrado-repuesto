@@ -1,29 +1,53 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import MotoFlowLogo from '@/components/common/MotoFlowLogo';
+import { supabase } from '@/lib/customSupabaseClient';
 
-const Logo = () => {
+const CONFIG_ID = '00000000-0000-0000-0000-000000000001';
+
+// Cache the config so we don't fetch on every render
+let cachedConfig = null;
+
+/**
+ * Logo — Wrapper del logo de MotoFlow para el sidebar/header.
+ * Ahora muestra el logo de la PLATAFORMA (MotoFlow), no del tenant.
+ */
+const Logo = ({ size = 'default' }) => {
+  const [config, setConfig] = useState(cachedConfig);
+
+  useEffect(() => {
+    if (cachedConfig) {
+      setConfig(cachedConfig);
+      return;
+    }
+
+    const fetchConfig = async () => {
+      try {
+        const { data } = await supabase
+          .from('config_empresa')
+          .select('nombre, logo_url')
+          .eq('id', CONFIG_ID)
+          .single();
+
+        if (data) {
+          cachedConfig = data;
+          setConfig(data);
+        }
+      } catch (err) {
+        console.error('[Logo] Error fetching config:', err);
+      }
+    };
+
+    fetchConfig();
+  }, []);
+
+  const logoSize = size === 'large' ? 'lg' : 'md';
+
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex items-center gap-2"
-    >
-      <div className="relative">
-        <div className="w-7 h-7 bg-gradient-to-br from-primary to-primary/80 rounded-lg flex items-center justify-center shadow-sm">
-          <span className="text-white font-bold text-xs">RM</span>
-        </div>
-        <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-gradient-to-br from-accent to-accent/80 rounded-full"></div>
-      </div>
-      
-      <div className="flex flex-col">
-        <h1 className="text-sm font-bold text-primary leading-none">
-          Repuestos Morla
-        </h1>
-        <p className="text-xs text-gray-500 leading-none">
-          Sistema Integrado
-        </p>
-      </div>
-    </motion.div>
+    <MotoFlowLogo 
+      size={logoSize} 
+      showText={true} 
+      showSlogan={size === 'large'} 
+    />
   );
 };
 

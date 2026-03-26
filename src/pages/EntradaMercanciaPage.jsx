@@ -11,6 +11,7 @@ import EntradaHeader from '@/components/inventario/EntradaHeader';
 import EntradaDetalles from '@/components/inventario/EntradaDetalles';
 import EntradaFooter from '@/components/inventario/EntradaFooter';
 import SalidaFooter from '@/components/inventario/SalidaFooter';
+import { generateEntradaPDF } from '@/components/common/PDFGenerator';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -107,9 +108,42 @@ const EntradaMercanciaPage = () => {
     setTimeout(() => document.getElementById('cantidad-producto')?.focus(), 100);
   };
 
-  const addDetalle = () => {
+  const fetchProductByCode = async (code) => {
+    if (!code) return;
+    try {
+      const { data, error } = await supabase
+        .from('productos')
+        .select('id, codigo, descripcion, costo')
+        .ilike('codigo', code)
+        .eq('activo', true)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        handleProductSelect(data);
+        return true;
+      } else {
+        toast({ variant: 'destructive', title: 'Producto no encontrado', description: `No existe un producto activo con el código "${code}".` });
+        return false;
+      }
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error al buscar producto', description: error.message });
+      return false;
+    }
+  };
+
+  const addDetalle = async () => {
+    // Si tiene código pero no descripción/id, intentamos buscarlo primero
+    if (currentDetalle.codigo && !currentDetalle.producto_id) {
+      const found = await fetchProductByCode(currentDetalle.codigo);
+      if (!found) return;
+      // No agregamos inmediatamente, dejamos que el usuario ajuste la cantidad
+      return;
+    }
+
     if (!currentDetalle.codigo || !currentDetalle.descripcion) {
-      toast({ variant: 'destructive', title: 'Producto no válido', description: 'Por favor, seleccione un producto de la lista.' });
+      toast({ variant: 'destructive', title: 'Producto no válido', description: 'Por favor, ingrese un código válido o seleccione de la lista.' });
       return;
     }
     const cantidad = parseFloat(currentDetalle.cantidad);
@@ -194,7 +228,10 @@ const EntradaMercanciaPage = () => {
 
       toast({ title: 'Éxito', description: `Entrada ${entrada.numero} guardada y existencia actualizada.` });
 
-      //TODO: Implementar impresión de PDF si entrada.imprimir es true
+      if (entrada.imprimir) {
+        const almacen = almacenes.find(a => a.id === entrada.almacen_id);
+        generateEntradaPDF(entradaData, almacen, detallesData);
+      }
 
       resetForm();
 
@@ -229,7 +266,7 @@ const EntradaMercanciaPage = () => {
   return (
     <>
       <Helmet>
-        <title>Entrada de Mercancía - Repuestos Morla</title>
+        <title>Entrada de Mercancía - MotoFlow</title>
       </Helmet>
       <ProductSearchModal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} onSelectProduct={handleProductSelect} />
 
@@ -258,7 +295,7 @@ const EntradaMercanciaPage = () => {
       >
         <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
           <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg">
-            <h1 className="text-xl font-bold">ENTRADA DE MERCANCÍAS</h1>
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">ENTRADA DE MERCANCÍAS</h1>
           </div>
 
           <EntradaHeader

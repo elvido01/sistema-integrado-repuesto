@@ -29,7 +29,7 @@ const CambioCodigoPage = () => {
       const { data, error } = await supabase
         .from('productos')
         .select('id, codigo, descripcion')
-        .eq('codigo', currentCode.trim())
+        .ilike('codigo', currentCode.trim())
         .single();
 
       if (error) {
@@ -162,7 +162,7 @@ const CambioCodigoPage = () => {
               </div>
             </div>
             {product && (
-              <motion.p 
+              <motion.p
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="pt-2 text-morla-blue font-medium text-center text-lg bg-gray-50 p-2 rounded-md border"
@@ -187,8 +187,8 @@ const CambioCodigoPage = () => {
 
         <div className="bg-gray-50 px-8 py-4 flex justify-end gap-3 rounded-b-lg border-t">
           <Button variant="outline" onClick={() => closePanel('cambio-codigo')}>Salir</Button>
-          <Button 
-            onClick={handleChangeCode} 
+          <Button
+            onClick={handleChangeCode}
             disabled={!product || !newCode.trim() || isUpdating}
             className="bg-morla-blue hover:bg-morla-blue/90"
           >

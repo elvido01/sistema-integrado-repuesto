@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @version 2.2.4
+ * @version 2.2.5
  * @overview QZ Tray Connector
  * @license LGPL-2.1-only
  * <p/>
@@ -27,7 +27,7 @@ var qz = (function() {
 ///// PRIVATE METHODS /////
 
     var _qz = {
-        VERSION: "2.2.4",                              //must match @version above
+        VERSION: "2.2.5",                              //must match @version above
         DEBUG: false,
 
         log: {
@@ -963,7 +963,8 @@ var qz = (function() {
             /** Check if QZ version supports chosen algorithm */
             algorithm: function(quiet) {
                 //if not connected yet we will assume compatibility exists for the time being
-                if (_qz.tools.isActive()) {
+                //check semver to guard race condition for pending connections
+                if (_qz.tools.isActive() && _qz.websocket.connection.semver) {
                     if (_qz.tools.isVersion(2, 0)) {
                         if (!quiet) {
                             _qz.log.warn("Connected to an older version of QZ, alternate signature algorithms are not supported");
@@ -983,10 +984,10 @@ var qz = (function() {
         SHA: {
             //@formatter:off - keep this block compact
             hash: function(msg) {
-                // add trailing '1' bit (+ 0's padding) to string [ง5.1.1]
+                // add trailing '1' bit (+ 0's padding) to string [ยง5.1.1]
                 msg = _qz.SHA._utf8Encode(msg) + String.fromCharCode(0x80);
 
-                // constants [ง4.2.2]
+                // constants [ยง4.2.2]
                 var K = [
                     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
                     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -997,11 +998,11 @@ var qz = (function() {
                     0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
                     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
                 ];
-                // initial hash value [ง5.3.1]
+                // initial hash value [ยง5.3.1]
                 var H = [ 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 ];
 
-                // convert string msg into 512-bit/16-integer blocks arrays of ints [ง5.2.1]
-                var l = msg.length / 4 + 2; // length (in 32-bit integers) of msg + ‘1’ + appended length
+                // convert string msg into 512-bit/16-integer blocks arrays of ints [ยง5.2.1]
+                var l = msg.length / 4 + 2; // length (in 32-bit integers) of msg + โ€1โ€ + appended length
                 var N = Math.ceil(l / 16);  // number of 16-integer-blocks required to hold 'l' ints
                 var M = new Array(N);
 
@@ -1012,14 +1013,14 @@ var qz = (function() {
                             (msg.charCodeAt(i * 64 + j * 4 + 2) << 8) | (msg.charCodeAt(i * 64 + j * 4 + 3));
                     } // note running off the end of msg is ok 'cos bitwise ops on NaN return 0
                 }
-                // add length (in bits) into final pair of 32-bit integers (big-endian) [ง5.1.1]
+                // add length (in bits) into final pair of 32-bit integers (big-endian) [ยง5.1.1]
                 // note: most significant word would be (len-1)*8 >>> 32, but since JS converts
                 // bitwise-op args to 32 bits, we need to simulate this by arithmetic operators
                 M[N-1][14] = ((msg.length - 1) * 8) / Math.pow(2, 32);
                 M[N-1][14] = Math.floor(M[N-1][14]);
                 M[N-1][15] = ((msg.length - 1) * 8) & 0xffffffff;
 
-                // HASH COMPUTATION [ง6.1.2]
+                // HASH COMPUTATION [ยง6.1.2]
                 var W = new Array(64); var a, b, c, d, e, f, g, h;
                 for(var i = 0; i < N; i++) {
                     // 1 - prepare message schedule 'W'
@@ -2857,4 +2858,3 @@ var qz = (function() {
         window.qz = qz;
     }
 })();
-

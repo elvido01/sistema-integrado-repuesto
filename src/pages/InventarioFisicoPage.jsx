@@ -32,36 +32,14 @@ const InventarioFisicoPage = () => {
 
         setLoading(true);
         try {
-            let query = supabase
-                .from('productos')
-                .select('id, codigo, descripcion, referencia, ubicacion, activo')
-                .eq('activo', true);
-
-            if (selectedUbicacion !== 'none' && selectedUbicacion !== 'all') {
-                // Usamos ilike para mayor flexibilidad con los nombres de ubicación
-                query = query.ilike('ubicacion', `%${selectedUbicacion}%`);
-            }
-
-            if (searchTerm) {
-                query = query.or(`codigo.ilike.%${searchTerm}%,descripcion.ilike.%${searchTerm}%,referencia.ilike.%${searchTerm}%`);
-            }
-
-            const { data, error } = await query.order('codigo');
+            const { data, error } = await supabase.rpc('get_inventario_fisico', {
+                p_ubicacion: selectedUbicacion,
+                p_search: searchTerm
+            });
 
             if (error) throw error;
 
-            // Fetch stock for each product
-            const productsWithStock = await Promise.all(
-                (data || []).map(async (p) => {
-                    const { data: stock } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
-                    return {
-                        ...p,
-                        existencia: stock || 0
-                    };
-                })
-            );
-
-            setProducts(productsWithStock);
+            setProducts(data || []);
         } catch (error) {
             toast({
                 variant: 'destructive',
@@ -120,7 +98,7 @@ const InventarioFisicoPage = () => {
       </head>
       <body onload="window.print()">
         <div class="header">
-          <h1>REPUESTOS MORLA</h1>
+          <h1>MotoFlow</h1>
           <p>Inventario Físico por Ubicación</p>
         </div>
         <div class="info">
@@ -166,7 +144,7 @@ const InventarioFisicoPage = () => {
     return (
         <>
             <Helmet>
-                <title>Inventario Físico por Ubicación - Repuestos Morla</title>
+                <title>Inventario Físico por Ubicación - MotoFlow</title>
             </Helmet>
 
             <motion.div

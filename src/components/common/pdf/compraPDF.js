@@ -26,7 +26,7 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario) => {
     // --- Header ---
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text("REPUESTOS MORLA", margin, 20);
+    doc.text("MotoFlow", margin, 20);
 
     doc.setFontSize(12);
     doc.text("COMPRA DE MERCANCIAS", margin, 28);
@@ -44,9 +44,12 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario) => {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text(`Numero : ${String(compra.numero || '').padStart(7, '0')}`, pageWidth - margin, 20, { align: 'right' });
+    // Add 'OC-' prefix to match image 'OC-0152'
+    const docNumber = String(compra.numero || '').padStart(4, '0');
+    doc.text(`Numero : OC-${docNumber}`, pageWidth - margin, 20, { align: 'right' });
 
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
     doc.text(`REFERENCIA : ${compra.referencia || ''}`, pageWidth - margin, 26, { align: 'right' });
     doc.text(`NCF : ${compra.ncf || ''}`, pageWidth - margin, 32, { align: 'right' });
 
@@ -86,16 +89,37 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario) => {
 
     // --- Table ---
     const tableColumn = ["CODIGO", "DESCRIPCION", "CANT.", "UND", "PRECIO/U", "DESC.", "ITBIS", "TOTAL"];
-    const tableRows = detalles.map(item => [
-        item.codigo,
-        (item.descripcion || '').toUpperCase(),
-        item.cantidad,
-        item.unidad || 'UND',
-        formatCurrency(item.costo_unitario),
-        `${(item.descuento_pct || 0).toFixed(2)}%`,
-        formatCurrency(item.importe - (item.importe / (1 + (item.itbis_pct || 0.18)))), // ITBIS amount
-        formatCurrency(item.importe)
-    ]);
+    const tableRows = detalles.map(item => {
+        // Calculate ITBIS correctly based on its pct
+        // If itbis is already included in importe, we need the formula (importe - (importe / (1 + itbis_pct)))
+        // If itbis is NOT included, then it's (base * itbis_pct)
+        const itbisPct = item.itbis_pct || 0.18;
+        let itbisAmount = 0;
+        
+        if (compra.itbis_incluido) {
+            itbisAmount = item.importe - (item.importe / (1 + itbisPct));
+        } else {
+            // Se asume que item.importe ya tiene el ITBIS si no está incluido?
+            // En ComprasPage, importe = base + itbis si itbis_incluido es false
+            // La base es (cant * costo * (1 - desc))
+            const subtotalItem = Number((item.cantidad * item.costo_unitario).toFixed(2));
+            const descuentoItem = Number((subtotalItem * ((item.descuento_pct || 0) / 100)).toFixed(2));
+            const baseCalculo = Number((subtotalItem - descuentoItem).toFixed(2));
+            
+            itbisAmount = Math.trunc((baseCalculo * itbisPct) * 100) / 100;
+        }
+
+        return [
+            item.codigo || '',
+            (item.descripcion || '').toUpperCase(),
+            item.cantidad,
+            item.unidad || 'UND',
+            formatCurrency(item.costo_unitario),
+            `${(item.descuento_pct || 0).toFixed(2)}%`,
+            formatCurrency(itbisAmount),
+            formatCurrency(item.importe)
+        ];
+    });
 
     autoTable(doc, {
         head: [tableColumn],
@@ -166,6 +190,24 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario) => {
 
     addTotalLine("Total de la Compra", formatCurrency(compra.total_compra), 40, true);
 
-    // Open PDF
-    doc.output('dataurlnewwindow', { filename: `Compra-${compra.numero}.pdf` });
+    // Open PDF reliably using Blob URL
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const pdfWindow = window.open('', '_blank');
+    if (pdfWindow) {
+        pdfWindow.document.write(`
+            <html>
+                <head>
+                    <title>Compra-OC-${docNumber}</title>
+                    <style>body { margin: 0; padding: 0; overflow: hidden; }</style>
+                </head>
+                <body>
+                    <embed src="${url}#toolbar=1&navpanes=0&scrollbar=1" type="application/pdf" width="100%" height="100%" />
+                </body>
+            </html>
+        `);
+        pdfWindow.document.close();
+    } else {
+        window.open(url, '_blank');
+    }
 };

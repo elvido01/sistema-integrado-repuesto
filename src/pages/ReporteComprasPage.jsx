@@ -12,7 +12,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { subDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
-import { Calendar as CalendarIcon, Search, Printer, FileText, Barcode } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Printer, FileText, Barcode, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateCompraPDF } from '@/components/common/PDFGenerator';
@@ -48,13 +48,8 @@ const ReporteComprasPage = () => {
       .from('compras')
       .select(`
         *,
-        proveedores (nombre),
-        compras_detalle (
-          descripcion,
-          cantidad,
-          costo_unitario,
-          importe
-        )
+        proveedores (*),
+        compras_detalle (*)
       `)
       .order('fecha', { ascending: false });
 
@@ -90,7 +85,7 @@ const ReporteComprasPage = () => {
   return (
     <>
       <Helmet>
-        <title>Reporte de Compras - Repuestos Morla</title>
+        <title>Reporte de Compras - MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -99,7 +94,7 @@ const ReporteComprasPage = () => {
       >
         <div className="bg-white p-4 rounded-lg shadow-md">
           <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
-            <h1 className="text-xl font-bold">REPORTE DE COMPRAS</h1>
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">REPORTE DE COMPRAS</h1>
           </div>
 
           <div className="flex items-end gap-4 p-4 border rounded-lg mb-4">
@@ -191,6 +186,15 @@ const ReporteComprasPage = () => {
                       <TableCell>{compra.ncf}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-amber-500 hover:bg-amber-50"
+                            title="Editar Compra"
+                            onClick={() => openPanel('compras', { compraParaEditar: compra })}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"

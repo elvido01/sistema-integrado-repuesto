@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -21,6 +21,7 @@ import { useCompras } from '@/contexts/ComprasContext';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
+import { printOrdenCompraPOS } from '@/lib/printPOS';
 import { loadDraft, useAutoDraft, clearDraft } from '@/lib/drafts';
 
 const formatDateForTable = (dateStr) => {
@@ -64,7 +65,7 @@ const OrdenCompraPage = () => {
     fecha_orden: getCurrentDateInTimeZone(),
     fecha_vencimiento: addDays(getCurrentDateInTimeZone(), 30),
     notas: '',
-    aplicar_itbis: false,
+    aplicar_itbis: true,
     itbis_incluido: true,
     direccion_entrega: '',
   });
@@ -72,6 +73,8 @@ const OrdenCompraPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
+  const [printMethod, setPrintMethod] = useState('pos');
+  const [paperSize, setPaperSize] = useState('4inch');
 
   // --- STAGING ITEM STATE (New for Form) ---
   const [stagingItem, setStagingItem] = useState({
@@ -206,12 +209,27 @@ const OrdenCompraPage = () => {
   };
 
   const addStagingToDetails = () => {
-    if (!stagingItem.producto_id) {
+    if (!stagingItem.producto_id && !stagingItem.codigo) {
       toast({ variant: 'destructive', title: 'Error', description: 'Seleccione un producto.' });
       return;
     }
-    if (detalles.find(d => d.producto_id === stagingItem.producto_id)) {
-      toast({ title: 'Aviso', description: 'El producto ya está en la lista.' });
+    // Verificar duplicados por producto_id O por código
+    const existingIndex = detalles.findIndex(d =>
+      (stagingItem.producto_id && d.producto_id === stagingItem.producto_id) ||
+      (stagingItem.codigo && d.codigo === stagingItem.codigo)
+    );
+    if (existingIndex >= 0) {
+      // En lugar de rechazar, sumar la cantidad al existente
+      setDetalles(prev => {
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          cantidad: (parseFloat(updated[existingIndex].cantidad) || 0) + (parseFloat(stagingItem.cantidad) || 1)
+        };
+        return calculateAllImportes(updated);
+      });
+      toast({ title: 'Cantidad actualizada', description: `Se sumó la cantidad al producto ${stagingItem.codigo} existente.` });
+      resetStaging();
       return;
     }
     setDetalles(prev => calculateAllImportes([...prev, { ...stagingItem, id: Date.now() + Math.random() }]));
@@ -233,13 +251,14 @@ const OrdenCompraPage = () => {
 
   // --- ACTIONS ---
   const handleNew = () => {
+    clearDraft(DRAFT_KEY);
     setSelectedProveedor(null);
     setOrden({
       numero: '',
       fecha_orden: getCurrentDateInTimeZone(),
       fecha_vencimiento: addDays(getCurrentDateInTimeZone(), 30),
       notas: '',
-      aplicar_itbis: false,
+      aplicar_itbis: true,
       itbis_incluido: true,
       direccion_entrega: '',
     });
@@ -250,7 +269,8 @@ const OrdenCompraPage = () => {
   };
 
   const addProductToOrder = (product) => {
-    if (detalles.find((d) => d.producto_id === product.id)) {
+    // Verificar duplicados por producto_id O por código
+    if (detalles.find((d) => d.producto_id === product.id || d.codigo === product.codigo)) {
       toast({ title: 'Producto ya agregado', description: 'Este producto ya se encuentra en la orden.' });
       return;
     }
@@ -346,8 +366,11 @@ const OrdenCompraPage = () => {
       setSelectedProveedor(orderData.proveedores);
       setOrden({
         ...orderData,
-        fecha_orden: new Date(orderData.fecha_orden),
-        fecha_vencimiento: new Date(orderData.fecha_vencimiento)
+        numero: orderData.numero || '',
+        notas: orderData.notas || '',
+        direccion_entrega: orderData.direccion_entrega || '',
+        fecha_orden: orderData.fecha_orden ? new Date(orderData.fecha_orden + 'T00:00:00') : new Date(),
+        fecha_vencimiento: orderData.fecha_vencimiento ? new Date(orderData.fecha_vencimiento + 'T00:00:00') : new Date()
       });
       setDetalles(detailsData.map(d => ({ ...d, id: d.id || Date.now() + Math.random() })));
 
@@ -488,29 +511,40 @@ const OrdenCompraPage = () => {
       return;
     }
 
-    const newDetalles = data.map((p) => {
-      const diff = (p.max_stock || p.min_stock || 0) - (p.existencia || 0);
-      const sugerida = diff > 0 ? Math.ceil(diff) : 1;
-      return {
-        id: Date.now() + Math.random(),
-        producto_id: p.id,
-        codigo: p.codigo,
-        descripcion: p.descripcion,
-        cantidad: sugerida,
-        sugerida,
-        unidad: 'UND',
-        precio: p.precio || 0,
-        descuento_pct: 0,
-        itbis_pct: p.itbis_pct || 0,
-        importe: 0,
-      };
-    });
+    // Deduplicar resultados de la RPC (puede devolver el mismo producto más de una vez)
+    const uniqueData = data.filter((p, index, self) =>
+      index === self.findIndex(x => x.id === p.id)
+    );
 
-    setDetalles(calculateAllImportes(newDetalles));
-    toast({ title: 'Orden AutomÃ¡tica Generada', description: `${data.length} productos bajo stock fueron aÃ±adidos.` });
+    const newDetalles = uniqueData
+      .filter(p => !detalles.find(d => d.producto_id === p.id || d.codigo === p.codigo))
+      .map((p) => {
+        // Usar la cantidad sugerida calculada por el backend (max_stock - existencia)
+        const sugerida = p.cantidad_sugerida || Math.max(1, Math.ceil((p.max_stock || p.min_stock || 0) - (p.existencia || 0)));
+        return {
+          id: Date.now() + Math.random(),
+          producto_id: p.id,
+          codigo: p.codigo,
+          descripcion: p.descripcion,
+          cantidad: sugerida,
+          sugerida,
+          unidad: 'UND',
+          precio: p.costo || p.precio || 0,  // Usar COSTO del producto, no precio de venta
+          descuento_pct: 0,
+          itbis_pct: p.itbis_pct || 0,
+          importe: 0,
+        };
+      });
+
+    // Merge con los existentes en lugar de reemplazar
+    setDetalles(prev => calculateAllImportes([...prev, ...newDetalles]));
+
+    const totalVentas90d = uniqueData.reduce((sum, p) => sum + (p.ventas_90d || 0), 0);
+    toast({ title: 'Orden Automática Generada', description: `${newDetalles.length} productos bajo stock añadidos. Ventas 90d del suplidor: ${totalVentas90d} unidades.` });
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     if (!selectedProveedor || detalles.length === 0) {
       toast({
         variant: 'destructive',
@@ -533,11 +567,37 @@ const OrdenCompraPage = () => {
       // direccion_entrega: orden.direccion_entrega, // descomentar si existe en DB
     };
 
-    const { data: savedOrden, error: ordenError } = await supabase
-      .from('ordenes_compra')
-      .insert(ordenData)
-      .select()
-      .single();
+    let savedOrden;
+    let ordenError;
+
+    if (isEditMode && orden.id) {
+      const { data: updated, error: updateErr } = await supabase
+        .from('ordenes_compra')
+        .update(ordenData)
+        .eq('id', orden.id)
+        .select()
+        .single();
+      savedOrden = updated;
+      ordenError = updateErr;
+
+      if (!ordenError) {
+        // Delete old details because we will re-insert them 
+        await supabase.from('ordenes_compra_detalle').delete().eq('orden_compra_id', orden.id);
+      }
+    } else {
+      let finalData = { ...ordenData };
+      if (!finalData.numero) {
+        const { data: nextNum } = await supabase.rpc('get_next_orden_compra_numero');
+        finalData.numero = nextNum;
+      }
+      const { data: inserted, error: insertErr } = await supabase
+        .from('ordenes_compra')
+        .insert(finalData)
+        .select()
+        .single();
+      savedOrden = inserted;
+      ordenError = insertErr;
+    }
 
     if (ordenError) {
       toast({ variant: 'destructive', title: 'Error al guardar la orden', description: ordenError.message });
@@ -565,18 +625,24 @@ const OrdenCompraPage = () => {
     } else {
       toast({ title: 'Ã‰xito', description: 'Orden de compra guardada correctamente.' });
 
-      generateOrderPDF(savedOrden, selectedProveedor, detalles);
+      toast({ title: 'Éxito', description: 'Orden de compra guardada correctamente.' });
 
+      if (printMethod === 'pos') {
+        printOrdenCompraPOS(savedOrden, selectedProveedor, detallesData, paperSize);
+      } else {
+        generateOrderPDF(savedOrden, selectedProveedor, detallesData);
+      }
 
       clearDraft(DRAFT_KEY);
       // Reset
       setSelectedProveedor(null);
+      setIsEditMode(false);
       setOrden({
         numero: '',
         fecha_orden: getCurrentDateInTimeZone(),
         fecha_vencimiento: addDays(getCurrentDateInTimeZone(), 30),
         notas: '',
-        aplicar_itbis: false,
+        aplicar_itbis: true,
         itbis_incluido: true,
         direccion_entrega: '',
       });
@@ -614,7 +680,13 @@ const OrdenCompraPage = () => {
           </Button>
           <Button variant="ghost" className="h-10 flex flex-col items-center px-2 py-1 text-[10px]" disabled={!selectedOrderID} onClick={() => {
             const current = orders.find(o => o.id === selectedOrderID);
-            if (current) generateOrderPDF(current, current.proveedores, previewDetails);
+            if (current) {
+              if (printMethod === 'pos') {
+                 printOrdenCompraPOS(current, current.proveedores, previewDetails, paperSize);
+              } else {
+                 generateOrderPDF(current, current.proveedores, previewDetails);
+              }
+            }
           }}>
             <FileDown className="h-5 w-5 mb-0.5 text-red-600" />
             IMPRIMIR
@@ -1006,12 +1078,33 @@ const OrdenCompraPage = () => {
             </div>
           </div>
 
-          <div className="pt-2 flex flex-col space-y-1">
-            <Label className="text-[10px] text-slate-500 uppercase font-bold">Imprimir en</Label>
-            <Select defaultValue="normal">
-              <SelectTrigger className="h-7 text-xs border-slate-400"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="normal">8.5 Pulgadas (Papel Normal)</SelectItem></SelectContent>
-            </Select>
+          <div className="pt-2 flex flex-col space-y-2">
+            <div>
+              <Label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Método Impresión</Label>
+              <Select value={printMethod} onValueChange={setPrintMethod}>
+                <SelectTrigger className="h-8 text-xs font-bold bg-white border-slate-400">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pdf">📄 PDF (ESTÁNDAR)</SelectItem>
+                  <SelectItem value="pos">📑 POS (TÉRMICO)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {printMethod === 'pos' && (
+              <div>
+                <Label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Tamaño Papel</Label>
+                <Select value={paperSize} onValueChange={setPaperSize}>
+                  <SelectTrigger className="h-8 text-xs font-bold bg-white italic border-slate-400">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="80mm">80mm (3 pulgadas)</SelectItem>
+                    <SelectItem value="4inch">101.6mm (4 pulgadas)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1029,7 +1122,7 @@ const OrdenCompraPage = () => {
 
   return (
     <>
-      <Helmet><title>Orden de Compra - Repuestos Morla</title></Helmet>
+      <Helmet><title>Orden de Compra - MotoFlow</title></Helmet>
 
       <ProductSearchModal
         isOpen={isSearchModalOpen}

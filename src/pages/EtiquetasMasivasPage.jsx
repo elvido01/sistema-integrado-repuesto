@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
-import { Search, Printer, Barcode, AlertCircle, Loader2, ChevronRight, Check, X, MapPin } from 'lucide-react';
+import { Search, Printer, Barcode, AlertCircle, Loader2, ChevronRight, Check, X, MapPin, Plus, Tag, Save } from 'lucide-react';
+import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,14 @@ const EtiquetasMasivasPage = ({ extraData }) => {
     const [priceType, setPriceType] = useState('alpha'); // 'alpha' or 'numeric'
     const [showLocation, setShowLocation] = useState(true);
 
+    // Individual product search state
+    const [individualCode, setIndividualCode] = useState('');
+    const [individualProduct, setIndividualProduct] = useState(null);
+    const [individualQty, setIndividualQty] = useState(1);
+    const [individualLoading, setIndividualLoading] = useState(false);
+    const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
+    const [isPrintingSingle, setIsPrintingSingle] = useState(false);
+
     // NO LONGER USING REFS OR CURRENT PRINT ITEM FOR VISUAL CAPTURE
 
     const fetchPurchaseItems = useCallback(async (arg = null) => {
@@ -78,7 +87,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 if (productIds.length > 0) {
                     const { data: productsData, error: productsError } = await supabase
                         .from('productos')
-                        .select('id, precio, ubicacion')
+                        .select('id, descripcion, referencia, precio, ubicacion')
                         .in('id', productIds);
 
                     if (!productsError && productsData) {
@@ -90,7 +99,8 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                     const productInfo = productsMap[d.producto_id] || {};
                     return {
                         codigo: d.codigo,
-                        descripcion: d.descripcion,
+                        // Usar descripción actualizada del producto, fallback al detalle de compra
+                        descripcion: productInfo.descripcion || d.descripcion,
                         cantidadCompra: d.cantidad,
                         cantidadTickets: d.cantidad,
                         precio: productInfo.precio || 0,
@@ -130,7 +140,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 if (productIds.length > 0) {
                     const { data: productsData, error: productsError } = await supabase
                         .from('productos')
-                        .select('id, precio, ubicacion')
+                        .select('id, descripcion, referencia, precio, ubicacion')
                         .in('id', productIds);
 
                     if (!productsError && productsData) {
@@ -142,7 +152,8 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                     const productInfo = productsMap[d.producto_id] || {};
                     return {
                         codigo: d.codigo,
-                        descripcion: d.descripcion,
+                        // Usar descripción actualizada del producto, fallback al detalle de orden
+                        descripcion: productInfo.descripcion || d.descripcion,
                         cantidadCompra: d.cantidad,
                         cantidadTickets: d.cantidad,
                         precio: productInfo.precio || 0,
@@ -177,12 +188,42 @@ const EtiquetasMasivasPage = ({ extraData }) => {
         }
     }, [purchaseNumber, toast]);
 
+    // Effect to fetch initial data on mount
     React.useEffect(() => {
-        if (extraData?.docNumber) {
-            setPurchaseNumber(extraData.docNumber);
-            fetchPurchaseItems(extraData.docNumber);
+        let mounted = true;
+        
+        const loadInitialData = async () => {
+            if (extraData?.docNumber) {
+                setPurchaseNumber(extraData.docNumber);
+                await fetchPurchaseItems(extraData.docNumber);
+            } else {
+                // Fetch the last purchase by default
+                try {
+                    const { data, error } = await supabase
+                        .from('compras')
+                        .select('numero')
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+                    
+                    if (mounted && !error && data?.numero) {
+                        setPurchaseNumber(data.numero);
+                        await fetchPurchaseItems(data.numero);
+                    }
+                } catch (err) {
+                    console.error('Error fetching last purchase:', err);
+                }
+            }
+        };
+
+        // Solo ejecutar si no tenemos ya un purchaseNumber cargado o si cambió el extraData
+        if (!purchaseNumber || extraData?.docNumber) {
+            loadInitialData();
         }
-    }, [extraData, fetchPurchaseItems]);
+
+        return () => { mounted = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [extraData]);
 
     const handleQtyChange = (index, value) => {
         const newItems = [...items];
@@ -206,6 +247,235 @@ const EtiquetasMasivasPage = ({ extraData }) => {
         setShowLocation(checked);
         setItems(prev => prev.map(item => ({ ...item, printLocation: checked })));
     };
+
+    // --- Edición de Precio Inline ---
+    const handlePriceChange = (index, value) => {
+        const newItems = [...items];
+        // Permitir edición libre (el valor se parseará al guardar)
+        newItems[index].precioEdit = value;
+        newItems[index].priceModified = true;
+        setItems(newItems);
+    };
+
+    const handlePriceBlur = async (index) => {
+        const item = items[index];
+        if (!item.priceModified) return;
+
+        const newPrice = parseFloat(item.precioEdit);
+        if (isNaN(newPrice) || newPrice < 0) {
+            // Revertir al precio original
+            const newItems = [...items];
+            newItems[index].precioEdit = undefined;
+            newItems[index].priceModified = false;
+            setItems(newItems);
+            return;
+        }
+
+        // Si el precio no cambio realmente, no hacer nada
+        if (newPrice === item.precio) {
+            const newItems = [...items];
+            newItems[index].precioEdit = undefined;
+            newItems[index].priceModified = false;
+            setItems(newItems);
+            return;
+        }
+
+        try {
+            // Buscar el producto por codigo para obtener su ID
+            const { data: producto, error: prodError } = await supabase
+                .from('productos')
+                .select('id')
+                .ilike('codigo', item.codigo)
+                .maybeSingle();
+
+            if (prodError || !producto) {
+                toast({ variant: 'destructive', title: 'Error', description: 'Producto no encontrado en la base de datos.' });
+                return;
+            }
+
+            // Buscar la presentación principal (afecta_ft = true)
+            const { data: presentacion, error: presError } = await supabase
+                .from('presentaciones')
+                .select('*')
+                .eq('producto_id', producto.id)
+                .eq('afecta_ft', true)
+                .maybeSingle();
+
+            if (presError) throw presError;
+
+            if (presentacion) {
+                // Recalcular margen basado en el nuevo precio
+                const costoNum = parseFloat(presentacion.costo) || 0;
+                const newMargen = costoNum > 0 ? (((newPrice / costoNum) - 1) * 100) : 0;
+
+                // Recalcular P2 y P3 si tienen auto activo
+                const updateObj = {
+                    precio1: newPrice,
+                    margen_pct: parseFloat(newMargen.toFixed(2)),
+                    precio_final: parseFloat((newPrice * (1 - (parseFloat(presentacion.descuento_pct) || 0) / 100)).toFixed(2)),
+                };
+
+                if (presentacion.auto_precio2) {
+                    updateObj.precio2 = parseFloat((newPrice * 0.90).toFixed(2));
+                }
+                if (presentacion.auto_precio3) {
+                    updateObj.precio3 = parseFloat((newPrice * 0.85).toFixed(2));
+                }
+
+                // Actualizar presentación
+                const { error: updatePresError } = await supabase
+                    .from('presentaciones')
+                    .update(updateObj)
+                    .eq('id', presentacion.id);
+
+                if (updatePresError) throw updatePresError;
+            }
+
+            // Actualizar precio principal en tabla productos
+            const { error: updateProdError } = await supabase
+                .from('productos')
+                .update({ precio: newPrice, updated_at: new Date().toISOString() })
+                .eq('id', producto.id);
+
+            if (updateProdError) throw updateProdError;
+
+            // Actualizar el estado local
+            const newItems = [...items];
+            newItems[index].precio = newPrice;
+            newItems[index].precioEdit = undefined;
+            newItems[index].priceModified = false;
+            newItems[index].priceSaved = true;
+            setItems(newItems);
+
+            toast({
+                title: '✅ Precio actualizado',
+                description: `${item.codigo}: $${newPrice.toFixed(2)} guardado en el sistema.`
+            });
+
+            // Quitar indicador de guardado después de 3 segundos
+            setTimeout(() => {
+                setItems(prev => prev.map((it, i) => i === index ? { ...it, priceSaved: false } : it));
+            }, 3000);
+
+        } catch (error) {
+            console.error('Error actualizando precio:', error);
+            toast({
+                variant: 'destructive',
+                title: 'Error al guardar precio',
+                description: error.message || 'No se pudo actualizar el precio.'
+            });
+        }
+    };
+
+    // --- Individual Product Search ---
+    const fetchProductByCode = useCallback(async (code) => {
+        const searchCode = (code || individualCode || '').trim();
+        if (!searchCode) return;
+        setIndividualLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('productos')
+                .select('id, codigo, descripcion, referencia, precio, ubicacion, itbis_pct')
+                .ilike('codigo', searchCode)
+                .maybeSingle();
+            if (error) throw error;
+            if (data) {
+                setIndividualProduct(data);
+                setIndividualCode(data.codigo);
+                toast({ title: 'Producto encontrado', description: data.descripcion });
+            } else {
+                toast({ variant: 'destructive', title: 'No encontrado', description: `No se encontró producto con código "${searchCode}".` });
+                setIndividualProduct(null);
+            }
+        } catch (err) {
+            console.error('Error fetching product:', err);
+            toast({ variant: 'destructive', title: 'Error', description: err.message });
+        } finally {
+            setIndividualLoading(false);
+        }
+    }, [individualCode, toast]);
+
+    const handleProductSearchSelect = useCallback(async (product) => {
+        // Fetch full product data with price
+        try {
+            const { data, error } = await supabase
+                .from('productos')
+                .select('id, codigo, descripcion, referencia, precio, ubicacion, itbis_pct')
+                .eq('id', product.id)
+                .single();
+            if (error) throw error;
+            setIndividualProduct(data);
+            setIndividualCode(data.codigo);
+        } catch (err) {
+            // Fallback: use the product data from the modal directly
+            setIndividualProduct({
+                id: product.id,
+                codigo: product.codigo,
+                descripcion: product.descripcion,
+                referencia: product.referencia || '',
+                precio: product.precio || 0,
+                ubicacion: product.ubicacion || 'N/A',
+            });
+            setIndividualCode(product.codigo);
+        }
+        setIsProductSearchOpen(false);
+    }, []);
+
+    const handleAddIndividualToList = useCallback(() => {
+        if (!individualProduct) return;
+        const qty = parseInt(individualQty) || 1;
+        const newItem = {
+            codigo: individualProduct.codigo,
+            descripcion: individualProduct.descripcion,
+            cantidadCompra: qty,
+            cantidadTickets: qty,
+            precio: individualProduct.precio || 0,
+            ubicacion: individualProduct.ubicacion || 'N/A',
+            selected: true,
+            printLocation: showLocation
+        };
+        setItems(prev => [...prev, newItem]);
+        toast({ title: 'Agregado', description: `${individualProduct.descripcion} (x${qty}) agregado a la lista.` });
+        setIndividualProduct(null);
+        setIndividualCode('');
+        setIndividualQty(1);
+    }, [individualProduct, individualQty, showLocation, toast]);
+
+    const handlePrintSingle = useCallback(async () => {
+        if (!individualProduct || isPrintingSingle) return;
+        const qty = parseInt(individualQty) || 1;
+        setIsPrintingSingle(true);
+        toast({ title: 'Preparando impresión', description: 'Conectando con QZ Tray...' });
+        try {
+            await qzEnsureConnection();
+            const printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
+            const displayPrice = priceType === 'numeric'
+                ? individualProduct.precio
+                : encodeAlphaPrice(individualProduct.precio);
+            const ubicacion = individualProduct.ubicacion || 'N/A';
+            const epl = buildEplLabel({
+                descripcion: individualProduct.descripcion,
+                codigo: individualProduct.codigo,
+                precio: displayPrice,
+                ubicacion,
+                includeUb: showLocation && ubicacion !== 'N/A',
+                copies: qty
+            });
+            await qzPrintRawEpl(printerName, epl);
+            toast({ title: 'Impresión completada', description: `Se imprimieron ${qty} etiquetas de ${individualProduct.codigo}.` });
+        } catch (err) {
+            console.error('[QZ] Error printing single:', err);
+            toast({ variant: 'destructive', title: 'Error de impresión', description: err?.message || 'No se pudo imprimir.' });
+        } finally {
+            setIsPrintingSingle(false);
+        }
+    }, [individualProduct, individualQty, priceType, showLocation, toast]);
+
+    const clearIndividual = useCallback(() => {
+        setIndividualProduct(null);
+        setIndividualCode('');
+        setIndividualQty(1);
+    }, []);
 
     const handlePrint = async () => {
         if (isPrinting) return;
@@ -402,6 +672,121 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                             </Button>
                         </div>
                     </div>
+
+                    {/* ===== PANEL: Búsqueda Individual ===== */}
+                    <div className="col-span-12 lg:col-span-4 bg-white shadow-lg border-2 border-emerald-300 rounded p-6 relative">
+                        <span className="absolute -top-3 left-3 bg-white px-2 text-[10px] font-black text-emerald-600 uppercase">Búsqueda Individual</span>
+
+                        <div className="space-y-3 pt-2">
+                            {/* Code input + search buttons */}
+                            <div className="space-y-2">
+                                <Label htmlFor="individual-code" className="text-[10px] font-bold text-slate-600 uppercase">Código de la Mercancía</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="individual-code"
+                                        placeholder="Ej: 100330"
+                                        value={individualCode}
+                                        onChange={(e) => setIndividualCode(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && fetchProductByCode()}
+                                        className="h-9 border-slate-300 font-bold flex-1"
+                                    />
+                                    <Button
+                                        onClick={() => fetchProductByCode()}
+                                        disabled={individualLoading || !individualCode.trim()}
+                                        className="bg-morla-blue hover:bg-morla-blue/90 h-9"
+                                        title="Buscar por código"
+                                    >
+                                        {individualLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-5 w-5" />}
+                                    </Button>
+                                    <Button
+                                        onClick={() => setIsProductSearchOpen(true)}
+                                        variant="outline"
+                                        className="h-9 border-slate-300"
+                                        title="Buscar en catálogo"
+                                    >
+                                        <Search className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Product details (read-only) */}
+                            {individualProduct ? (
+                                <div className="space-y-2 bg-slate-50 border border-slate-200 rounded p-3">
+                                    <div>
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase">Descripción</span>
+                                        <p className="text-xs font-bold text-slate-800 uppercase leading-tight">{individualProduct.descripcion}</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase">Referencia</span>
+                                            <p className="text-xs font-medium text-slate-600">{individualProduct.referencia || 'N/A'}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase">Precio</span>
+                                            <p className="text-xs font-black text-morla-blue">
+                                                {priceType === 'numeric'
+                                                    ? `$${(individualProduct.precio || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                                                    : encodeAlphaPrice(individualProduct.precio)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase">Ubicación</span>
+                                        <p className="text-xs font-medium text-slate-600 flex items-center gap-1">
+                                            <MapPin className="h-3 w-3 text-slate-400" />
+                                            {individualProduct.ubicacion || 'N/A'}
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-slate-50 border border-dashed border-slate-200 rounded p-4 flex items-center justify-center">
+                                    <p className="text-[10px] text-slate-400 italic font-medium">Busque un producto por código o catálogo</p>
+                                </div>
+                            )}
+
+                            {/* Quantity + Actions */}
+                            <div className="space-y-2">
+                                <Label htmlFor="individual-qty" className="text-[10px] font-bold text-slate-600 uppercase">Cantidad a Imprimir</Label>
+                                <Input
+                                    id="individual-qty"
+                                    type="number"
+                                    min="1"
+                                    value={individualQty}
+                                    onChange={(e) => setIndividualQty(parseInt(e.target.value) || 1)}
+                                    className="h-9 border-slate-300 font-black text-center text-lg bg-yellow-50"
+                                    disabled={!individualProduct}
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-1">
+                                <Button
+                                    onClick={handleAddIndividualToList}
+                                    disabled={!individualProduct}
+                                    className="flex-1 h-10 bg-morla-blue hover:bg-morla-blue/90 text-white font-bold tracking-wider uppercase text-[10px]"
+                                >
+                                    <Plus className="mr-1.5 h-4 w-4" /> Agregar a Lista
+                                </Button>
+                                <Button
+                                    onClick={handlePrintSingle}
+                                    disabled={!individualProduct || isPrintingSingle}
+                                    className="flex-1 h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold tracking-wider uppercase text-[10px]"
+                                >
+                                    {isPrintingSingle
+                                        ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Enviando...</>
+                                        : <><Printer className="mr-1.5 h-4 w-4" /> Imprimir Directo</>}
+                                </Button>
+                            </div>
+
+                            {individualProduct && (
+                                <button
+                                    onClick={clearIndividual}
+                                    className="w-full text-center text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase pt-1 transition-colors"
+                                >
+                                    ✕ Limpiar Producto
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 <div className="col-span-12 lg:col-span-8 bg-white shadow-lg rounded border-2 border-slate-300 overflow-hidden flex flex-col min-h-[500px]">
@@ -463,10 +848,34 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                                                     disabled={!item.selected}
                                                 />
                                             </TableCell>
-                                            <TableCell className="text-right font-bold text-morla-blue text-xs whitespace-nowrap">
-                                                {priceType === 'numeric'
-                                                    ? `$${item.precio.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                                                    : encodeAlphaPrice(item.precio)}
+                                            <TableCell className="p-1 w-28">
+                                                <Input
+                                                    type="text"
+                                                    value={
+                                                        item.priceModified 
+                                                            ? item.precioEdit 
+                                                            : (priceType === 'numeric' 
+                                                                ? item.precio.toFixed(2) 
+                                                                : encodeAlphaPrice(item.precio))
+                                                    }
+                                                    onChange={(e) => handlePriceChange(index, e.target.value)}
+                                                    onBlur={() => handlePriceBlur(index)}
+                                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+                                                    onFocus={(e) => {
+                                                        if (!item.priceModified) {
+                                                            handlePriceChange(index, item.precio.toFixed(2));
+                                                        }
+                                                        setTimeout(() => e.target.select(), 0);
+                                                    }}
+                                                    disabled={!item.selected}
+                                                    className={`h-8 text-right font-black text-xs border-slate-300 px-1.5 ${
+                                                        item.priceSaved
+                                                            ? 'bg-green-50 border-green-400 text-green-700'
+                                                            : item.priceModified
+                                                                ? 'bg-orange-50 border-orange-400 text-orange-700'
+                                                                : 'bg-white text-morla-blue'
+                                                    }`}
+                                                />
                                             </TableCell>
                                             <TableCell className="text-[9px]">
                                                 <div className="flex items-center gap-1.5 text-slate-500 font-bold uppercase">
@@ -500,6 +909,13 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                     Impresión instantánea y de alta calidad sin capturas de pantalla.
                 </p>
             </div>
+
+            {/* Product Search Modal for individual label */}
+            <ProductSearchModal
+                isOpen={isProductSearchOpen}
+                onClose={() => setIsProductSearchOpen(false)}
+                onSelectProduct={handleProductSearchSelect}
+            />
         </div>
     );
 };

@@ -31,8 +31,10 @@ export const useVentas = () => {
   const [cambio, setCambio] = useState(0);
   const [cotizacionId, setCotizacionId] = useState(null);
   const [printFormat, setPrintFormat] = useState('pos_4inch'); // pos_4inch, half_page, full_page
-  const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'qz'); // qz, browser
+  const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser'); // qz, browser
   const [recargo, setRecargo] = useState(0);
+  const [tipoPago, setTipoPago] = useState('EFECTIVO'); // EFECTIVO, TARJETA
+  const [pagos, setPagos] = useState([]); // [{ tipo, ref, monto }]
 
   /* Edit Mode State */
   const [editingFacturaId, setEditingFacturaId] = useState(null);
@@ -121,6 +123,8 @@ export const useVentas = () => {
     setCotizacionId(null);
     setCurrentItem(null);
     setRecargo(0);
+    setTipoPago('EFECTIVO');
+    setPagos([]);
     setPrintFormat('pos_4inch');
     setEditingFacturaId(null);
     setEditingFacturaNumero(null);
@@ -174,14 +178,12 @@ export const useVentas = () => {
   }, [items, recargo]);
 
   useEffect(() => {
-    const recibido = parseFloat(montoRecibido) || 0;
+    const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
+    const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
     const total = totals.totalFactura;
-    if (recibido > 0) {
-      setCambio(Math.max(0, recibido - total));
-    } else {
-      setCambio(0);
-    }
-  }, [montoRecibido, totals.totalFactura]);
+    // Permitir negativos para mostrar "faltante" como cambio negativo
+    setCambio(recibido - total);
+  }, [montoRecibido, pagos, totals.totalFactura]);
 
   const addProductToInvoice = useCallback((product) => {
     let priceToUse = product.precio || 0;
@@ -201,15 +203,15 @@ export const useVentas = () => {
         priceToUse = p1;
 
         if (nivel === 3) {
-          if (auto3 || p3 > 0) {
+          if (auto3 && p3 > 0) {
             priceToUse = p3;
-          } else if (auto2 || p2 > 0) {
+          } else if (auto2 && p2 > 0) {
             priceToUse = p2;
           } else {
             priceToUse = p1;
           }
         } else if (nivel === 2) {
-          if (auto2 || p2 > 0) {
+          if (auto2 && p2 > 0) {
             priceToUse = p2;
           } else {
             priceToUse = p1;
@@ -254,7 +256,7 @@ export const useVentas = () => {
       const { data, error } = await supabase
         .from('productos')
         .select('*, presentaciones(*)')
-        .eq('codigo', code.trim())
+        .ilike('codigo', code.trim())
         .maybeSingle();
 
       if (error) {
@@ -278,15 +280,15 @@ export const useVentas = () => {
             let finalPrice = p1;
 
             if (nivel === 3) {
-              if (auto3 || p3 > 0) {
+              if (auto3 && p3 > 0) {
                 finalPrice = p3;
-              } else if (auto2 || p2 > 0) {
+              } else if (auto2 && p2 > 0) {
                 finalPrice = p2;
               } else {
                 finalPrice = p1;
               }
             } else if (nivel === 2) {
-              if (auto2 || p2 > 0) {
+              if (auto2 && p2 > 0) {
                 finalPrice = p2;
               } else {
                 finalPrice = p1;
@@ -345,6 +347,15 @@ export const useVentas = () => {
       toast({ title: 'Error de crédito', description: 'Este cliente no tiene crédito autorizado.', variant: 'destructive' });
       return;
     }
+    // Validar que el monto recibido no sea menor al total para ventas de contado
+    if (paymentType === 'contado') {
+      const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
+      const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
+      if (recibido < totals.totalFactura) {
+        toast({ title: 'Monto insuficiente', description: `El monto recibido (RD$ ${recibido.toFixed(2)}) no puede ser menor al total de la factura (RD$ ${totals.totalFactura.toFixed(2)}).`, variant: 'destructive' });
+        return;
+      }
+    }
 
     setIsSaving(true);
     try {
@@ -358,8 +369,24 @@ export const useVentas = () => {
       const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
       const isGeneric = !cliente || !cliente.id || genericIds.includes(cliente.id) || (cliente.nombre?.toUpperCase().includes('GENERICO'));
 
+      // Construir la fecha con la hora actual local (America/Santo_Domingo = UTC-4)
+      const now = new Date();
+      const selectedDate = new Date(date);
+      selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      // Formatear con offset de zona horaria local para evitar conversión UTC
+      const pad = (n, len = 2) => String(n).padStart(len, '0');
+      const tzOffset = -selectedDate.getTimezoneOffset();
+      const sign = tzOffset >= 0 ? '+' : '-';
+      const absOffset = Math.abs(tzOffset);
+      const tzHours = pad(Math.floor(absOffset / 60));
+      const tzMinutes = pad(absOffset % 60);
+      const localISO = `${selectedDate.getFullYear()}-${pad(selectedDate.getMonth() + 1)}-${pad(selectedDate.getDate())}T${pad(selectedDate.getHours())}:${pad(selectedDate.getMinutes())}:${pad(selectedDate.getSeconds())}.${pad(selectedDate.getMilliseconds(), 3)}${sign}${tzHours}:${tzMinutes}`;
+
+      const totalPagosRegistrados = pagos.reduce((sum, p) => sum + Number(p.monto), 0) + (parseFloat(montoRecibido) || 0);
+      const abonoCredito = paymentType === 'credito' ? totalPagosRegistrados : 0;
+
       const facturaData = {
-        fecha: date.toISOString(),
+        fecha: localISO,
         cliente_id: cliente.id,
         manual_cliente_nombre: isGeneric ? manualClienteNombre : null,
         vendedor: finalVendedorName,
@@ -370,11 +397,19 @@ export const useVentas = () => {
         itbis: totals.totalItbis,
         total: totals.totalFactura,
         forma_pago: paymentType.toUpperCase(),
-        tipo_pago: paymentType === 'contado' ? 'EFECTIVO' : 'CREDITO',
+        tipo_pago: paymentType === 'contado'
+          ? (pagos.length > 0 ? pagos.map(p => p.tipo).join('/') : tipoPago)
+          : (abonoCredito > 0 ? 'CREDITO/ABONO' : 'CREDITO'),
         dias_credito: paymentType === 'credito' ? diasCredito : 0,
-        monto_recibido: parseFloat(montoRecibido) || 0,
-        cambio: cambio,
-        monto_pendiente: paymentType === 'credito' ? totals.totalFactura : (totals.totalFactura - (parseFloat(montoRecibido) || 0)),
+        monto_recibido: paymentType === 'credito'
+          ? abonoCredito
+          : (pagos.length > 0 ? totalPagosRegistrados : (parseFloat(montoRecibido) || 0)),
+        cambio: paymentType === 'credito'
+          ? 0
+          : Math.max(0, cambio),
+        monto_pendiente: paymentType === 'credito'
+          ? (totals.totalFactura - abonoCredito)
+          : 0,
         estado: paymentType === 'credito' ? 'PENDIENTE' : 'PAGADA',
         usuario_id: user.id
       };
@@ -456,6 +491,45 @@ export const useVentas = () => {
 
       if (cotizacionId && !editingFacturaId) {
         await supabase.from('cotizaciones').update({ estado: 'Facturada' }).eq('id', cotizacionId);
+      }
+
+      // AUTO-CREATE Recibo de Ingreso for partial credit payment (abono)
+      // Uses the same RPC as the Recibo de Ingreso module to keep data consistent
+      if (paymentType === 'credito' && abonoCredito > 0 && !editingFacturaId) {
+        try {
+          const reciboRpcData = {
+            cliente_id: cliente.id,
+            fecha: localISO.split('T')[0],
+            monto_pagado: abonoCredito,
+            concepto: `Abono parcial al momento de la venta - FT-${activeFactura.numero}`,
+            formas_pago: JSON.stringify(
+              pagos.length > 0
+                ? pagos.map(p => ({ forma: p.tipo, monto: p.monto, referencia: p.ref || '' }))
+                : [{ forma: tipoPago, monto: abonoCredito, referencia: '' }]
+            ),
+          };
+
+          const abonosRpcData = JSON.stringify([{
+            factura_id: activeFactura.id,
+            monto_abono: abonoCredito,
+          }]);
+
+          const { data: reciboNumero, error: reciboError } = await supabase.rpc(
+            'crear_recibo_ingreso_y_actualizar_facturas',
+            {
+              p_recibo_data: reciboRpcData,
+              p_abonos_data: abonosRpcData,
+            }
+          );
+
+          if (reciboError) {
+            console.warn('Warning: Could not auto-create recibo de ingreso:', reciboError.message);
+          } else {
+            toast({ title: '\ud83d\udcc4 Recibo Generado', description: `Recibo de Ingreso ${reciboNumero} creado autom\u00e1ticamente por el abono de RD$ ${abonoCredito.toFixed(2)}` });
+          }
+        } catch (reciboErr) {
+          console.warn('Warning: recibo creation failed:', reciboErr.message);
+        }
       }
 
       if (onSuccess) {
@@ -565,9 +639,14 @@ export const useVentas = () => {
 
       const newItems = detallesData.map(d => {
         const itbis_pct = d.productos?.itbis_pct || 0.18;
-        const precioConItbis = d.precio_unitario * (1 + itbis_pct);
-        const baseImponible = precioConItbis / (1 + itbis_pct);
-        const itbis = precioConItbis - baseImponible;
+        const precioConItbis = parseFloat(d.precio_unitario || 0);
+
+        const importeBruto = d.cantidad * precioConItbis;
+        const descuentoMonto = importeBruto * ((d.descuento_pct || 0) / 100);
+        const importeNeto = importeBruto - descuentoMonto;
+
+        const baseImponible = importeNeto / (1 + itbis_pct);
+        const itbisMonto = importeNeto - baseImponible;
 
         return {
           id: d.producto_id,
@@ -576,11 +655,12 @@ export const useVentas = () => {
           descripcion: d.descripcion,
           cantidad: d.cantidad,
           precio: precioConItbis,
-          descuento: d.descuento_pct,
+          descuento: d.descuento_pct || 0,
           unidad: d.unidad,
           itbis_pct: itbis_pct,
-          itbis: itbis * d.cantidad,
-          importe: precioConItbis * d.cantidad,
+          itbis: itbisMonto,
+          importe: importeNeto,
+          max_descuento: d.productos?.max_descuento || d.descuento_pct || 0,
         };
       });
 
@@ -658,9 +738,11 @@ export const useVentas = () => {
     setCotizacionId,
     handleSelectCotizacion,
     recargo, setRecargo,
+    tipoPago, setTipoPago,
     pedidoId, setPedidoId,
     handleSelectPedido,
     printMethod, setPrintMethod,
+    pagos, setPagos,
     currentItem,
     updateCurrentItem,
     commitCurrentItem,

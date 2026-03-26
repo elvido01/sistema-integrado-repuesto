@@ -1,11 +1,45 @@
-import React from 'react';
-import { Edit, Trash2, Loader2, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { Edit, Trash2, Loader2, RefreshCw, Package, Barcode } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from '@/components/ui/context-menu';
+import { useToast } from '@/components/ui/use-toast';
+import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 
-const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selectedProduct, onSelectProduct }) => {
+const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selectedProduct, onSelectProduct, onPrintLabel }) => {
+  const { toast } = useToast();
+  const [sendingToOrder, setSendingToOrder] = useState(null);
+
+  const handleSendToOrden = async (product) => {
+    setSendingToOrder(product.id);
+    try {
+      const result = await sendProductToOrdenCompra(product);
+      if (result.success) {
+        toast({
+          title: result.isNew ? '📦 Orden de Compra Creada' : '📦 Agregado a Orden Existente',
+          description: result.message,
+          duration: 4000,
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.message,
+          duration: 5000,
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Error inesperado',
+        description: err.message,
+      });
+    } finally {
+      setSendingToOrder(null);
+    }
+  };
   const getStockBadge = (stock, minStock) => {
     const s = stock || 0;
     // ... (rest of helper functions)
@@ -50,31 +84,62 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selec
               </TableRow>
             ) : products.length > 0 ? (
               products.map((product) => (
-                <TableRow
-                  key={product.id}
-                  onClick={() => onSelectProduct(product)}
-                  onDoubleClick={() => onEdit(product)}
-                  className={`cursor-pointer transition-colors ${selectedProduct?.id === product.id
-                      ? 'bg-blue-100 hover:bg-blue-100 border-l-4 border-l-blue-600'
-                      : 'hover:bg-gray-50'
-                    }`}
-                >
-                  <TableCell className="font-mono text-sm">{product.codigo}</TableCell>
-                  <TableCell className="text-sm">{product.referencia || '-'}</TableCell>
-                  <TableCell className="text-sm">{product.descripcion}</TableCell>
-                  <TableCell className="text-right font-mono text-sm font-semibold text-green-600">
-                    {formatPrice(product.precio)}
-                  </TableCell>
-                  <TableCell className="text-sm">{product.ubicacion || '-'}</TableCell>
-                  <TableCell className="text-sm">{product.marca_nombre || '-'}</TableCell>
-                  <TableCell className="text-sm">{product.modelo_nombre || '-'}</TableCell>
-                  <TableCell className="text-right font-mono text-sm">
-                    {product.existencia?.toFixed(2) || '0.00'}
-                  </TableCell>
-                  <TableCell>
-                    {getStockBadge(product.existencia, product.min_stock)}
-                  </TableCell>
-                </TableRow>
+                <ContextMenu key={product.id}>
+                  <ContextMenuTrigger asChild>
+                    <TableRow
+                      onClick={() => onSelectProduct(product)}
+                      onDoubleClick={() => onEdit(product)}
+                      className={`cursor-pointer transition-colors relative ${selectedProduct?.id === product.id
+                          ? 'bg-blue-100 hover:bg-blue-100 border-l-4 border-l-blue-600'
+                          : 'hover:bg-gray-50'
+                        }`}
+                    >
+                      <TableCell className="font-mono text-sm">{product.codigo}</TableCell>
+                      <TableCell className="text-sm">{product.referencia || '-'}</TableCell>
+                      <TableCell className="text-sm">{product.descripcion}</TableCell>
+                      <TableCell className="text-right font-mono text-sm font-semibold text-green-600">
+                        {formatPrice(product.precio)}
+                      </TableCell>
+                      <TableCell className="text-sm">{product.ubicacion || '-'}</TableCell>
+                      <TableCell className="text-sm">{product.marca_nombre || '-'}</TableCell>
+                      <TableCell className="text-sm">{product.modelo_nombre || '-'}</TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {product.existencia?.toFixed(2) || '0.00'}
+                      </TableCell>
+                      <TableCell>
+                        {getStockBadge(product.existencia, product.min_stock)}
+                      </TableCell>
+                      {sendingToOrder === product.id && (
+                        <div className="absolute inset-0 bg-white/50 flex items-center justify-center pointer-events-none">
+                          <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                        </div>
+                      )}
+                    </TableRow>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="w-56" style={{ zIndex: 10000 }}>
+                    <ContextMenuItem
+                      className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSendToOrden(product);
+                      }}
+                      disabled={sendingToOrder === product.id}
+                    >
+                      {sendingToOrder === product.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
+                      Enviar a Orden de Compra
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      className="font-bold text-gray-700 cursor-pointer flex items-center gap-2 py-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPrintLabel && onPrintLabel(product);
+                      }}
+                    >
+                      <Barcode className="w-4 h-4 text-emerald-600" />
+                      Imprimir Etiqueta
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               ))
             ) : (
               <TableRow>

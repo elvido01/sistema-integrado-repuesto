@@ -13,6 +13,9 @@ export default defineConfig({
     // host: true,        // Descomenta si quieres acceder desde la red local
     // hmr: { clientPort: 5173 }, // Útil si usas proxy inverso más adelante
   },
+  build: {
+    chunkSizeWarningLimit: 2000,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

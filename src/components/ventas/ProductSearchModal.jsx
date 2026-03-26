@@ -1,15 +1,17 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Loader2, Search, X } from 'lucide-react';
+import { Loader2, Search, X, Package } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import useDebounce from '@/hooks/useDebounce';
 import { orNull } from '@/lib/rpc-helpers';
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
+import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 
 const PAGE_LIMIT = 20;
 
@@ -25,12 +27,24 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
   const [marcaFilter, setMarcaFilter] = useState('');
   const [modeloFilter, setModeloFilter] = useState('');
   const [includeZeroStock, setIncludeZeroStock] = useState(true);
+  const [sendingToOrder, setSendingToOrder] = useState(null); // product id being sent
+  const [selectedIndex, setSelectedIndex] = useState(-1);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const debouncedMarcaFilter = useDebounce(marcaFilter, 300);
   const debouncedModeloFilter = useDebounce(modeloFilter, 300);
 
-  const loaderRef = useRef(null);
+  /* Ref for auto-focus */
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      // Small timeout to allow modal animation/render
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 100);
+    }
+  }, [isOpen]);
 
   const fetchProducts = useCallback(
     async (page, isNewSearch = false) => {
@@ -51,6 +65,9 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
 
         const newProducts = data || [];
         setProducts((prev) => (isNewSearch ? newProducts : [...prev, ...newProducts]));
+        if (isNewSearch) {
+          setSelectedIndex(-1);
+        }
         setHasMore(newProducts.length === PAGE_LIMIT);
         setCurrentPage(page);
       } catch (error) {
@@ -66,19 +83,60 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
     },
     [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock]
   );
+  const loaderRef = useRef(null);
 
+  // Reset state on open
   useEffect(() => {
     if (isOpen) {
-      // reset al abrir
       setSearchTerm('');
       setMarcaFilter('');
       setModeloFilter('');
       setCurrentPage(0);
       setHasMore(true);
       setProducts([]);
+      setSelectedIndex(-1);
     }
   }, [isOpen]);
 
+  // Selected index reset on new search (handled in fetchProducts)
+
+  // Keyboard navigation listener
+  useEffect(() => {
+    if (!isOpen || products.length === 0) return;
+
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex(prev => {
+          const next = Math.min(prev + 1, products.length - 1);
+          // Scroll into view logic
+          const row = document.getElementById(`product-row-${next}`);
+          row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          return next;
+        });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex(prev => {
+          const next = Math.max(prev - 1, 0);
+          // Scroll into view logic
+          const row = document.getElementById(`product-row-${next}`);
+          row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          return next;
+        });
+      } else if (e.key === 'Enter') {
+        if (selectedIndex >= 0 && selectedIndex < products.length) {
+          e.preventDefault();
+          onSelectProduct(products[selectedIndex]);
+          onClose();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isOpen, products, selectedIndex, onSelectProduct, onClose]);
+
+  // Initial fetch on open
   useEffect(() => {
     if (isOpen) {
       fetchProducts(0, true);
@@ -91,6 +149,7 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
     }
   }, [currentPage, hasMore, loading, fetchProducts]);
 
+  // Infinite scroll observer
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -110,6 +169,35 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
 
   const formatPrice = (price) =>
     new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP', minimumFractionDigits: 2 }).format(price || 0);
+
+  const handleSendToOrden = async (product) => {
+    setSendingToOrder(product.id);
+    try {
+      const result = await sendProductToOrdenCompra(product);
+      if (result.success) {
+        toast({
+          title: result.isNew ? '📦 Orden de Compra Creada' : '📦 Agregado a Orden Existente',
+          description: result.message,
+          duration: 4000,
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.message,
+          duration: 5000,
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Error inesperado',
+        description: err.message,
+      });
+    } finally {
+      setSendingToOrder(null);
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -135,6 +223,7 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
                 <div className="relative flex-grow">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
+                    ref={searchInputRef}
                     placeholder="Buscar por código, ref, descripción…"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -182,39 +271,80 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
                     </TableHeader>
                     <TableBody>
                       {products.map((product, idx) => (
-                        <TableRow
-                          key={product.id}
-                          onClick={() => {
-                            onSelectProduct(product);
-                            onClose();
-                          }}
-                          className={`cursor-pointer transition-colors border-b ${idx % 2 === 0 ? 'bg-white' : 'bg-[#e0fadd]'} hover:bg-blue-50 text-xs`}
-                        >
-                          <TableCell className="text-sm text-blue-900 py-2 whitespace-nowrap overflow-hidden text-ellipsis">
-                            {product.codigo}
-                          </TableCell>
-                          <TableCell className="font-medium text-slate-600 py-2 whitespace-nowrap overflow-hidden text-ellipsis">
-                            {product.referencia || '-'}
-                          </TableCell>
-                          <TableCell className="font-medium text-slate-800 py-2 leading-tight">
-                            {product.descripcion}
-                          </TableCell>
-                          <TableCell className="text-slate-500 italic py-2 whitespace-nowrap overflow-hidden text-ellipsis">
-                            {product.ubicacion || '-'}
-                          </TableCell>
-                          <TableCell className={`text-right font-bold py-2 ${product.existencia > 0 ? 'text-green-700' : 'text-red-600'}`}>
-                            {(product.existencia ?? 0).toFixed(2)}
-                          </TableCell>
-                          <TableCell className="text-right font-black text-blue-900 bg-blue-50/20 py-2 whitespace-nowrap text-sm">
-                            {formatPrice(product.precio)}
-                          </TableCell>
-                          <TableCell className="text-slate-500 py-2 whitespace-nowrap overflow-hidden text-ellipsis">
-                            {product.marca_nombre || '-'}
-                          </TableCell>
-                          <TableCell className="text-slate-500 py-2 whitespace-nowrap overflow-hidden text-ellipsis">
-                            {product.modelo_nombre || '-'}
-                          </TableCell>
-                        </TableRow>
+                        <ContextMenu key={product.id}>
+                          <ContextMenuTrigger asChild>
+                            <TableRow
+                              id={`product-row-${idx}`}
+                              onClick={() => {
+                                setSelectedIndex(idx);
+                              }}
+                              onDoubleClick={() => {
+                                onSelectProduct(product);
+                                onClose();
+                              }}
+                              className={`cursor-pointer transition-colors border-b select-none text-xs relative ${
+                                idx === selectedIndex 
+                                  ? 'bg-blue-500 text-white hover:bg-blue-500' 
+                                  : idx % 2 === 0 
+                                    ? 'bg-white hover:bg-white' 
+                                    : 'bg-[#e0fadd] hover:bg-[#e0fadd]'
+                              }`}
+                            >
+                                <TableCell className={`text-sm py-2 whitespace-nowrap overflow-hidden text-ellipsis font-bold ${idx === selectedIndex ? 'text-white' : 'text-blue-900'}`}>
+                                  {product.codigo}
+                                </TableCell>
+                              <TableCell className={`font-medium py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-600'}`}>
+                                {product.referencia || '-'}
+                              </TableCell>
+                                <TableCell className={`font-medium py-2 leading-tight ${idx === selectedIndex ? 'text-white' : 'text-slate-800'}`}>
+                                  {product.descripcion}
+                                </TableCell>
+                              <TableCell className={`italic py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-500'}`}>
+                                {product.ubicacion || '-'}
+                              </TableCell>
+                              <TableCell className={`text-right font-bold py-2 ${idx === selectedIndex ? 'text-white' : product.existencia > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                {(product.existencia ?? 0).toFixed(2)}
+                              </TableCell>
+                                <TableCell className={`text-right font-black py-2 whitespace-nowrap text-sm ${idx === selectedIndex ? 'text-white bg-transparent' : 'text-blue-900 bg-blue-50/20'}`}>
+                                  {formatPrice(product.precio)}
+                                </TableCell>
+                              <TableCell className={`py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-500'}`}>
+                                {product.marca_nombre || '-'}
+                              </TableCell>
+                              <TableCell className={`py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-500'}`}>
+                                {product.modelo_nombre || '-'}
+                              </TableCell>
+                              {sendingToOrder === product.id && (
+                                <div className="absolute inset-0 bg-white/50 flex items-center justify-center pointer-events-none">
+                                  <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                                </div>
+                              )}
+                            </TableRow>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-56" style={{ zIndex: 10000 }}>
+                            <ContextMenuItem
+                              className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSendToOrden(product);
+                              }}
+                              disabled={sendingToOrder === product.id}
+                            >
+                              {sendingToOrder === product.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
+                              Enviar a Orden de Compra
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem
+                              className="cursor-pointer"
+                              onClick={() => {
+                                onSelectProduct(product);
+                                onClose();
+                              }}
+                            >
+                              ✅ Seleccionar Producto
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
                       ))}
                     </TableBody>
                   </Table>

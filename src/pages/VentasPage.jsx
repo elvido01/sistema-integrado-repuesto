@@ -13,6 +13,7 @@ import { printFacturaPOS, printFacturaQZ } from '@/lib/printPOS';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { usePanels } from '@/contexts/PanelContext';
 import { Loader2 } from 'lucide-react';
 
 const VentasPage = () => {
@@ -22,6 +23,7 @@ const VentasPage = () => {
   /* UI state for invoice editing search */
   const [isEditingNumero, setIsEditingNumero] = useState(false);
   const [editNumero, setEditNumero] = useState('');
+  const [clienteCodigoInput, setClienteCodigoInput] = useState('');
 
   const {
     date, setDate,
@@ -51,12 +53,16 @@ const VentasPage = () => {
     printFormat, setPrintFormat,
     printMethod, setPrintMethod,
     recargo, setRecargo,
+    tipoPago, setTipoPago,
+    pagos, setPagos,
     editingFacturaId,
     editingFacturaNumero,
     loadInvoiceByNumero,
     manualClienteNombre,
     setManualClienteNombre
   } = useVentas();
+
+  const { activePanel } = usePanels();
 
   const handleEditFacturaToggle = () => {
     setIsEditingNumero(!isEditingNumero);
@@ -74,6 +80,29 @@ const VentasPage = () => {
   const [isClienteSearchModalOpen, setIsClienteSearchModalOpen] = useState(false);
   const handleOpenClienteSearch = () => setIsClienteSearchModalOpen(true);
   const handleCloseClienteSearch = () => setIsClienteSearchModalOpen(false);
+
+  const handleSearchClienteByCodigo = async (codigo) => {
+    try {
+      const { data, error } = await supabase
+        .from('clientes')
+        .select('*')
+        .ilike('codigo', codigo)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        handleSelectCliente(data);
+        setClienteCodigoInput(data.codigo || '');
+        setTimeout(() => document.getElementById('input-codigo')?.focus(), 100);
+      } else {
+        toast({ title: 'No encontrado', description: `No se encontró un cliente con el código "${codigo}".`, variant: 'destructive' });
+      }
+    } catch (error) {
+      console.error('Error searching client by code:', error);
+      toast({ title: 'Error', description: 'No se pudo buscar el cliente.', variant: 'destructive' });
+    }
+  };
 
   // Modal de búsqueda de producto
   const [isProductSearchModalOpen, setIsProductSearchModalOpen] = useState(false);
@@ -143,6 +172,7 @@ const VentasPage = () => {
         toast({ title: 'Error', description: 'No se pudieron cargar los datos iniciales.', variant: 'destructive' });
       } finally {
         setLoadingInitialData(false);
+        setTimeout(() => document.getElementById('input-codigo')?.focus(), 200);
       }
     };
     fetchInitialData();
@@ -169,21 +199,34 @@ const VentasPage = () => {
             await printFacturaQZ(facturaData);
           } catch (err) {
             console.error('[QZ] Error, falling back to browser:', err);
-            printFacturaPOS(facturaData);
+
+            // Notificar al usuario el error exacto de QZ Tray
+            toast({
+              variant: "destructive",
+              title: "Error de conexión QZ Tray",
+              description: `Fallo QZ: ${err.message || String(err)}. Usando impresión navegador.`,
+              duration: 5000,
+            });
+
+            printFacturaPOS(facturaData);  // Falls back to HTML
           }
         } else {
-          printFacturaPOS(facturaData);
+          printFacturaPOS(facturaData, printFormat);
         }
 
         toast({ title: 'Factura Guardada', description: `La factura #${facturaData.numero} ha sido generada y guardada.` });
         resetVenta();
+        setClienteCodigoInput('');
         fetchNextNumero();
+        setTimeout(() => document.getElementById('input-codigo')?.focus(), 150);
       }
     }, activeVendedor?.nombre, selectedVendedor);
   };
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
+      if (activePanel !== 'ventas') return;
+      
       if (e.key === 'F3') {
         e.preventDefault();
         setIsProductSearchModalOpen(true);
@@ -196,7 +239,7 @@ const VentasPage = () => {
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [handleConfirmAndPrint]);
+  }, [handleConfirmAndPrint, activePanel]);
 
   const handleProductSearchSelect = async (product) => {
     try {
@@ -230,15 +273,24 @@ const VentasPage = () => {
 
   return (
     <div className="bg-gray-50 h-full flex flex-col">
-      <Helmet><title>Ventas - Repuestos Morla</title></Helmet>
+      <Helmet><title>Ventas - MotoFlow</title></Helmet>
 
       <VentasHeader
         date={date}
         setDate={setDate}
         cliente={cliente}
         onClienteSearch={handleOpenClienteSearch}
-        onSelectCliente={handleSelectCliente}
-        onClearCliente={resetVenta}
+        onSelectCliente={(c) => {
+          handleSelectCliente(c);
+          setClienteCodigoInput(c?.codigo || '');
+        }}
+        onClearCliente={() => {
+          resetVenta();
+          setClienteCodigoInput('');
+        }}
+        onSearchClienteByCodigo={handleSearchClienteByCodigo}
+        clienteCodigoInput={clienteCodigoInput}
+        setClienteCodigoInput={setClienteCodigoInput}
         vendedores={vendedores}
         selectedVendedor={selectedVendedor}
         onVendedorChange={setSelectedVendedor}
@@ -298,6 +350,10 @@ const VentasPage = () => {
         setPrintFormat={setPrintFormat}
         printMethod={printMethod}
         setPrintMethod={(v) => { setPrintMethod(v); localStorage.setItem('ventas_printMethod', v); }}
+        tipoPago={tipoPago}
+        setTipoPago={setTipoPago}
+        pagos={pagos}
+        setPagos={setPagos}
         recargo={recargo}
         setRecargo={setRecargo}
         resetVenta={resetVenta}
@@ -315,6 +371,7 @@ const VentasPage = () => {
         onClose={handleCloseClienteSearch}
         onSelectCliente={(cliente) => {
           handleSelectCliente(cliente);
+          setClienteCodigoInput(cliente?.codigo || '');
           handleCloseClienteSearch();
         }}
       />

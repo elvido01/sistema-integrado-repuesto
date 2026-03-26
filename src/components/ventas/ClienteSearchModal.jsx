@@ -19,7 +19,7 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
       let query = supabase.from('clientes').select('*').eq('activo', true);
 
       if (searchTerm) {
-        query = query.or(`nombre.ilike.%${searchTerm}%,rnc.ilike.%${searchTerm}%`);
+        query = query.or(`nombre.ilike.%${searchTerm}%,rnc.ilike.%${searchTerm}%,codigo.ilike.%${searchTerm}%`);
       }
 
       query = query.order('nombre', { ascending: true }).limit(50);
@@ -58,7 +58,7 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
-              placeholder="Buscar por nombre o RNC..."
+              placeholder="Buscar por código, nombre o RNC..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -70,6 +70,7 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
           <Table>
             <TableHeader className="sticky top-0 bg-white z-10">
               <TableRow>
+                <TableHead>Código</TableHead>
                 <TableHead>Nombre</TableHead>
                 <TableHead>RNC/Cédula</TableHead>
                 <TableHead>Teléfono</TableHead>
@@ -79,7 +80,7 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan="4" className="text-center h-24">
+                  <TableCell colSpan="5" className="text-center h-24">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
@@ -90,6 +91,7 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
                     onDoubleClick={() => onSelectCliente(cliente)}
                     className="cursor-pointer hover:bg-muted/50"
                   >
+                    <TableCell className="font-mono text-sm">{cliente.codigo || '—'}</TableCell>
                     <TableCell className="font-medium">{cliente.nombre}</TableCell>
                     <TableCell>{cliente.rnc}</TableCell>
                     <TableCell>{cliente.telefono}</TableCell>
@@ -98,7 +100,7 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan="4" className="text-center h-24 text-muted-foreground">
+                  <TableCell colSpan="5" className="text-center h-24 text-muted-foreground">
                     No se encontraron clientes.
                   </TableCell>
                 </TableRow>

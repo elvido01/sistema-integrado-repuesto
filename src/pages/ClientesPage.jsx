@@ -36,8 +36,9 @@ const ClientesPage = () => {
         if (!searchTerm) return clientes;
         return clientes.filter(c =>
             c.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (c.codigo && c.codigo.toLowerCase().includes(searchTerm.toLowerCase())) ||
             (c.rnc && c.rnc.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (c.telefono && c.telefono.includes(searchTerm))
+            (c.telefono && c.telefono.toLowerCase().includes(searchTerm.toLowerCase()))
         );
     }, [clientes, searchTerm]);
 
@@ -58,7 +59,7 @@ const ClientesPage = () => {
             fetchClientes();
         }
     };
-    
+
     const handleDelete = async (clienteId) => {
         const { error } = await supabase.from('clientes').delete().eq('id', clienteId);
         if (error) {
@@ -79,7 +80,7 @@ const ClientesPage = () => {
     return (
         <>
             <Helmet>
-                <title>Clientes - Repuestos Morla</title>
+                <title>Clientes - MotoFlow</title>
             </Helmet>
             <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">
                 <div className="bg-white p-4 rounded-lg shadow-sm border flex justify-between items-center">
@@ -101,6 +102,7 @@ const ClientesPage = () => {
                         <Table>
                             <TableHeader className="sticky top-0 bg-gray-100">
                                 <TableRow>
+                                    <TableHead>Código</TableHead>
                                     <TableHead>Nombre</TableHead>
                                     <TableHead>RNC/Cédula</TableHead>
                                     <TableHead>Teléfono</TableHead>
@@ -112,13 +114,14 @@ const ClientesPage = () => {
                             <TableBody>
                                 {loading ? (
                                     <TableRow>
-                                        <TableCell colSpan="6" className="text-center">
+                                        <TableCell colSpan="7" className="text-center">
                                             <Loader2 className="mx-auto my-4 h-6 w-6 animate-spin" />
                                         </TableCell>
                                     </TableRow>
                                 ) : filteredClientes.length > 0 ? (
                                     filteredClientes.map(cliente => (
                                         <TableRow key={cliente.id}>
+                                            <TableCell className="font-mono text-sm">{cliente.codigo || '—'}</TableCell>
                                             <TableCell className="font-medium">{cliente.nombre}</TableCell>
                                             <TableCell>{cliente.rnc}</TableCell>
                                             <TableCell>{cliente.telefono}</TableCell>
@@ -141,7 +144,7 @@ const ClientesPage = () => {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan="6" className="text-center text-gray-500 py-8">
+                                        <TableCell colSpan="7" className="text-center text-gray-500 py-8">
                                             No se encontraron clientes.
                                         </TableCell>
                                     </TableRow>

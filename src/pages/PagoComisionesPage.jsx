@@ -145,7 +145,7 @@ const PagoComisionesPage = () => {
   return (
     <>
       <Helmet>
-        <title>Reporte de Comisiones - Repuestos Morla</title>
+        <title>Reporte de Comisiones - MotoFlow</title>
       </Helmet>
       <div className="flex flex-col h-full bg-[#f0f0f0] overflow-hidden">
         {/* Header Style match from image */}
