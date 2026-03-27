@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { LogIn, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import MotoFlowLogo from '@/components/common/MotoFlowLogo';
+import { supabase } from '@/lib/customSupabaseClient';
 
 const LoginForm = ({ onRegistrar }) => {
   const { signIn } = useAuth();
@@ -14,11 +15,45 @@ const LoginForm = ({ onRegistrar }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Branding del tenant detectado por dominio
+  const [tenantBranding, setTenantBranding] = useState(null);
+  const [brandingLoaded, setBrandingLoaded] = useState(false);
+
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    // No detectar en localhost ni en el dominio de MotoFlow
+    const skipDomains = ['localhost', '127.0.0.1', 'motoflow.pages.dev'];
+    if (skipDomains.some(d => hostname.includes(d))) {
+      setBrandingLoaded(true);
+      return;
+    }
+
+    const fetchBranding = async () => {
+      try {
+        const { data } = await supabase.rpc('get_tenant_por_dominio', {
+          p_dominio: hostname,
+        });
+        if (data && data.length > 0) {
+          setTenantBranding(data[0]);
+        }
+      } catch (err) {
+        console.error('[LoginForm] Error fetching tenant branding:', err);
+      } finally {
+        setBrandingLoaded(true);
+      }
+    };
+
+    fetchBranding();
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     await signIn(email, password);
   };
+
+  const nombreMostrado = tenantBranding?.nombre || 'MotoFlow';
+  const logoUrl = tenantBranding?.logo_url || null;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f172a] via-[#1e3a5f] to-[#2563eb]">
@@ -29,11 +64,38 @@ const LoginForm = ({ onRegistrar }) => {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <MotoFlowLogo size="lg" showSlogan={true} />
+            {brandingLoaded && logoUrl ? (
+              // Logo del tenant
+              <img
+                src={logoUrl}
+                alt={nombreMostrado}
+                className="object-contain h-16"
+              />
+            ) : brandingLoaded && tenantBranding ? (
+              // Tenant sin logo: inicial + nombre
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black text-3xl shadow-lg">
+                  {nombreMostrado.charAt(0).toUpperCase()}
+                </div>
+                <span className="text-xl font-bold text-gray-800 dark:text-white">
+                  {nombreMostrado}
+                </span>
+              </div>
+            ) : (
+              // Default: logo MotoFlow
+              <MotoFlowLogo size="lg" showSlogan={true} />
+            )}
           </div>
-          <p className="text-gray-500 dark:text-gray-400 text-xs mt-3">
-            Sistema inteligente de gestión empresarial
-          </p>
+
+          {tenantBranding ? (
+            <p className="text-gray-500 dark:text-gray-400 text-xs mt-1">
+              Sistema de gestión — {nombreMostrado}
+            </p>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400 text-xs mt-3">
+              Sistema inteligente de gestión empresarial
+            </p>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -93,7 +155,8 @@ const LoginForm = ({ onRegistrar }) => {
           </Button>
         </form>
 
-        {onRegistrar && (
+        {/* Link a registro — solo si no hay tenant detectado (es la plataforma MotoFlow) */}
+        {onRegistrar && !tenantBranding && (
           <div className="mt-5 text-center">
             <p className="text-xs text-gray-500">
               ¿Nuevo en MotoFlow?{' '}
@@ -110,7 +173,7 @@ const LoginForm = ({ onRegistrar }) => {
 
         <div className="mt-4 text-center">
           <p className="text-[10px] text-gray-400">
-            © 2026 MotoFlow — Todos los derechos reservados
+            © 2026 {nombreMostrado} — Todos los derechos reservados
           </p>
         </div>
       </motion.div>

@@ -3,9 +3,12 @@ import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import PanelManager from '@/components/layout/PanelManager';
 import SuscripcionAlert from '@/components/common/SuscripcionAlert';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const MainLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { empresa } = useAuth();
+  const nombreEmpresa = empresa?.nombre || 'MotoFlow';
 
   useEffect(() => {
     const handleResize = () => {
@@ -31,7 +34,7 @@ const MainLayout = () => {
           <PanelManager />
         </main>
         <footer className="text-center py-2 text-[10px] text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-          © 2026 MotoFlow — Todos los derechos reservados
+          © 2026 {nombreEmpresa} — Todos los derechos reservados
         </footer>
       </div>
     </div>
