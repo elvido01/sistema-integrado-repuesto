@@ -29,8 +29,8 @@ const Logo = ({ size = 'default' }) => {
           className="object-contain"
           style={{ height: iconSize }}
         />
-        {empresa.nombre && size === 'large' && (
-          <span className={`font-bold text-gray-800 dark:text-white ${textSize}`}>
+        {empresa.nombre && (
+          <span className={`font-bold text-gray-800 dark:text-white ${textSize} truncate max-w-[140px]`}>
             {empresa.nombre}
           </span>
         )}
@@ -59,14 +59,23 @@ const Logo = ({ size = 'default' }) => {
     );
   }
 
-  // Fallback: logo de MotoFlow (superadmin o sin config)
-  const logoSize = size === 'large' ? 'lg' : 'md';
+  // Fallback: nombre genérico (superadmin o sin config)
   return (
-    <MotoFlowLogo
-      size={logoSize}
-      showText={true}
-      showSlogan={size === 'large'}
-    />
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex items-center gap-2"
+    >
+      <div
+        className="rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold shrink-0"
+        style={{ width: iconSize, height: iconSize, fontSize: iconSize * 0.45 }}
+      >
+        S
+      </div>
+      <span className={`font-bold text-gray-800 dark:text-white ${textSize} truncate max-w-[140px]`}>
+        Sistema
+      </span>
+    </motion.div>
   );
 };
 

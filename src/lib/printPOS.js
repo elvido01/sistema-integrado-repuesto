@@ -7,6 +7,28 @@ const formatCurrency = (value) => {
   });
 };
 
+// ── Configuración de empresa para encabezados de impresión ──
+let _empresaConfig = { nombre: 'Sistema', direccion: '', ciudad: '', telefono: '' };
+
+export const setEmpresaPrintConfig = (empresa) => {
+  if (empresa) {
+    _empresaConfig = {
+      nombre: empresa.nombre || 'Sistema',
+      direccion: empresa.direccion || '',
+      ciudad: empresa.ciudad || '',
+      telefono: empresa.telefono || '',
+    };
+  }
+};
+
+const getHeaderHTML = () => {
+  const lines = [`<h1 class="bold">${_empresaConfig.nombre}</h1>`];
+  if (_empresaConfig.direccion) lines.push(`<p>${_empresaConfig.direccion}</p>`);
+  if (_empresaConfig.ciudad) lines.push(`<p>${_empresaConfig.ciudad}</p>`);
+  if (_empresaConfig.telefono) lines.push(`<p class="num">${_empresaConfig.telefono}</p>`);
+  return lines.join('\n        ');
+};
+
 export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
   const details = factura.facturas_detalle || [];
   const client = factura.clientes || {};
@@ -79,10 +101,7 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
     </head>
     <body onload="window.print()">
       <div class="header text-center">
-        <h1 class="bold">MotoFlow</h1>
-        <p>Av. Duarte, esq. Baldemiro Rijo</p>
-        <p>Higuey, Rep. Dom.</p>
-        <p class="num">809-390-5965</p>
+        ${getHeaderHTML()}
         <div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">FACTURA</div>
       </div>
 
@@ -203,7 +222,7 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
 
       <div class="footer">
         <p>Le Atendio : ${seller?.email?.split('@')[0] || 'N/A'}</p>
-        <p>Vendedor : ${factura.vendedor || 'MotoFlow'}</p>
+        <p>Vendedor : ${factura.vendedor || _empresaConfig.nombre}</p>
         <p class="text-center" style="margin-top: 5px;">*** GRACIAS POR SU COMPRA ***</p>
       </div>
     </body>
@@ -291,10 +310,7 @@ export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
     </head>
     <body onload="window.print()">
       <div class="header text-center">
-        <h1 class="bold">MotoFlow</h1>
-        <p>Av. Duarte, esq. Baldemiro Rijo</p>
-        <p>Higuey, Rep. Dom.</p>
-        <p>809-390-5965</p>
+        ${getHeaderHTML()}
         <div style="margin-top: 4px;" class="bold underline text-lg">DEVOLUCION</div>
       </div>
 
@@ -389,7 +405,7 @@ export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
 
       <div class="footer">
         <p>Le Atendio : ${devolucion.usuario_id || 'N/A'}</p>
-        <p>Vendedor : MotoFlow</p>
+        <p>Vendedor : ${_empresaConfig.nombre}</p>
         <p class="text-center" style="margin-top: 8px;">COMPROBANTE DE DEVOLUCION</p>
         <p class="text-center" style="font-size: 9px; margin-top: 4px;">Este documento acredita el ingreso de la mercancía al almacén.</p>
       </div>
@@ -449,9 +465,7 @@ export const printReciboPOS = (reciboData) => {
     </head>
     <body onload="window.print()">
       <div class="header text-center">
-        <h1 class="bold">MotoFlow</h1>
-        <p>Av. Duarte, esq. Baldemiro Rijo, Higuey</p>
-        <p>Tel: 809-390-5965</p>
+        ${getHeaderHTML()}
         <div style="margin-top: 4px; font-weight: bold; text-decoration: underline;">RECIBO DE INGRESO</div>
       </div>
 
@@ -514,7 +528,7 @@ export const printReciboPOS = (reciboData) => {
 
       <div class="text-center" style="margin-top: 15px; font-size: 10px;">
         <p>*** GRACIAS POR SU PAGO ***</p>
-        <p>Le Atendio: MotoFlow</p>
+        <p>Le Atendio: ${_empresaConfig.nombre}</p>
       </div>
     </body>
     </html>
@@ -564,9 +578,7 @@ export const printRecibo4Pulgadas = (reciboData) => {
     </head>
     <body onload="window.print()">
       <div class="header text-center">
-        <h1 class="bold">MotoFlow</h1>
-        <p>Av. Duarte, esq. Baldemiro Rijo, Higuey</p>
-        <p>Tel: 809-390-5965</p>
+        ${getHeaderHTML()}
         <div style="margin-top: 6px; font-weight: bold; font-size: 13px;">RECIBO DE INGRESO</div>
       </div>
 
@@ -735,10 +747,7 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
     </head>
     <body onload="window.print()">
       <div class="header text-center">
-        <h1 class="bold">MotoFlow</h1>
-        <p>Av. Duarte, esq. Baldemiro Rijo</p>
-        <p>Higuey, Rep. Dom.</p>
-        <p class="num">809-390-5965</p>
+        ${getHeaderHTML()}
         <div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">COTIZACION</div>
       </div>
 
@@ -836,7 +845,7 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
       <div class="footer text-center">
         <p style="font-weight: bold; margin-bottom: 3px;">*** COTIZACION — NO ES FACTURA ***</p>
         <p>Los precios estan sujetos a cambios sin previo aviso.</p>
-        <p style="margin-top: 5px;">MotoFlow</p>
+        <p style="margin-top: 5px;">${_empresaConfig.nombre}</p>
       </div>
     </body>
     </html>
@@ -1400,10 +1409,7 @@ export const printCompraPOS = (compra, suplidor, detalles, paperSize = '4inch') 
     </head>
     <body onload="window.print()">
       <div class="header text-center">
-        <h1 class="bold">MotoFlow</h1>
-        <p>Av. Duarte, esq. Baldemiro Rijo</p>
-        <p>Higuey, Rep. Dom.</p>
-        <p class="num">809-390-5965</p>
+        ${getHeaderHTML()}
         <div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">COMPRA DE MERCANCIA</div>
       </div>
 
@@ -1481,7 +1487,7 @@ export const printCompraPOS = (compra, suplidor, detalles, paperSize = '4inch') 
 
       <div class="footer text-center">
         <p style="font-weight: bold; margin-bottom: 3px;">*** COMPRA DE MERCANCIA ***</p>
-        <p>MotoFlow</p>
+        <p>${_empresaConfig.nombre}</p>
       </div>
     </body>
     </html>
@@ -1579,10 +1585,7 @@ export const printOrdenCompraPOS = (orden, suplidor, detalles, paperSize = '4inc
     </head>
     <body onload="window.print()">
       <div class="header text-center">
-        <h1 class="bold">MotoFlow</h1>
-        <p>Av. Duarte, esq. Baldemiro Rijo</p>
-        <p>Higuey, Rep. Dom.</p>
-        <p class="num">809-390-5965</p>
+        ${getHeaderHTML()}
         <div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">ORDEN DE COMPRA</div>
       </div>
 
@@ -1664,7 +1667,7 @@ export const printOrdenCompraPOS = (orden, suplidor, detalles, paperSize = '4inc
 
       <div class="footer text-center">
         <p style="font-weight: bold; margin-bottom: 3px;">*** ORDEN DE COMPRA ***</p>
-        <p>MotoFlow</p>
+        <p>${_empresaConfig.nombre}</p>
       </div>
     </body>
     </html>

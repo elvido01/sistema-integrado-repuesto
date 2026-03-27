@@ -9,6 +9,7 @@ import { Loader2, Printer, MapPin } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { qzEnsureConnection, qzFindBestPrinter, qzPrintRawEpl } from "@/services/qzTrayService";
 import { buildEplLabel } from "@/services/eplLabel";
+import { useAuth } from "@/contexts/SupabaseAuthContext";
 
 const PREFERRED_PRINTERS = [
     "ZDesigner LP 2824 (Copiar 1)",
@@ -31,6 +32,8 @@ const encodeAlphaPrice = (price) => {
 
 const PrintLabelModal = ({ isOpen, onClose, product }) => {
     const { toast } = useToast();
+    const { empresa } = useAuth();
+    const empresaNombre = empresa?.nombre || 'Sistema';
     const [individualQty, setIndividualQty] = useState(1);
     const [priceType, setPriceType] = useState('alpha');
     const [showLocation, setShowLocation] = useState(true);
@@ -60,7 +63,8 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
                 precio: displayPrice,
                 ubicacion,
                 includeUb: showLocation && ubicacion !== 'N/A',
-                copies: qty
+                copies: qty,
+                empresaNombre
             });
             await qzPrintRawEpl(printerName, epl);
             toast({ title: 'Impresión completada', description: `Se imprimieron ${qty} etiquetas de ${product.codigo}.` });

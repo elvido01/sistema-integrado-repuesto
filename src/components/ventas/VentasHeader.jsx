@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const VentasHeader = ({
   cliente,
@@ -38,6 +39,9 @@ const VentasHeader = ({
   manualClienteNombre,
   setManualClienteNombre,
 }) => {
+  const { empresa } = useAuth();
+  const nombreEmpresa = empresa?.nombre || 'Sistema';
+
   const isGeneric = !cliente?.id ||
     ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'].includes(cliente.id) ||
     cliente.nombre?.toUpperCase().includes('GENERICO');
@@ -107,7 +111,7 @@ const VentasHeader = ({
         </TooltipProvider>
 
         <h1 className="flex-grow text-center text-[15px] font-black tracking-[0.2em] uppercase text-white">
-          MotoFlow <span className="text-blue-300 mx-2">|</span> FACTURACIÓN
+          {nombreEmpresa} <span className="text-blue-300 mx-2">|</span> FACTURACIÓN
         </h1>
 
         <div className="flex items-center gap-2">

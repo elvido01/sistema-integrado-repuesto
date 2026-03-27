@@ -15,6 +15,7 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import { Loader2, X, AlertCircle, Trash2 } from 'lucide-react';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const VentasFooter = ({
   cliente,
@@ -41,6 +42,8 @@ const VentasFooter = ({
   pagos = [],
   setPagos,
 }) => {
+  const { empresa } = useAuth();
+  const nombreEmpresa = empresa?.nombre || 'Sistema';
   const [alertOpen, setAlertOpen] = useState(false);
   const [currentRef, setCurrentRef] = useState('');
 
@@ -337,7 +340,7 @@ const VentasFooter = ({
       <AlertDialog open={alertOpen} onOpenChange={setAlertOpen}>
         <AlertDialogContent className="max-w-[400px] border-2 border-gray-400 bg-[#f0f0f0] p-0 rounded-lg shadow-2xl">
           <AlertDialogHeader className="bg-gradient-to-r from-[#0a1e3a] to-[#1a3a5c] px-4 py-2 rounded-t-md">
-            <AlertDialogTitle className="text-white text-sm font-bold">MotoFlow - Punto de Venta</AlertDialogTitle>
+            <AlertDialogTitle className="text-white text-sm font-bold">{nombreEmpresa} - Punto de Venta</AlertDialogTitle>
           </AlertDialogHeader>
           <div className="flex items-start gap-4 px-6 py-5">
             <div className="flex-shrink-0">

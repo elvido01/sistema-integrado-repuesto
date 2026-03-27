@@ -251,18 +251,55 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
     const FINAL_GENERIC_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
     const finalClienteId = currentPedido.cliente_id || FINAL_GENERIC_ID;
 
+    // Recalculate totals cleanly to avoid stale/NaN values
+    let calcSubtotal = 0, calcDescuento = 0, calcItbis = 0;
+    const cleanDetalles = detalles.map(d => {
+      const cantidad = parseFloat(d.cantidad) || 0;
+      const precio = parseFloat(d.precio) || 0;
+      const descuento = parseFloat(d.descuento) || 0;
+      const itbis_pct_raw = parseFloat(d.itbis_pct || 18);
+      const itbis_pct = itbis_pct_raw > 1 ? itbis_pct_raw / 100 : itbis_pct_raw;
+
+      const importeBruto = cantidad * precio;
+      const importeNeto = importeBruto - descuento;
+      const baseImponible = importeNeto / (1 + itbis_pct);
+      const itbisItem = importeNeto - baseImponible;
+
+      calcSubtotal += baseImponible;
+      calcDescuento += descuento;
+      calcItbis += itbisItem;
+
+      return {
+        producto_id: d.producto_id,
+        codigo: d.codigo || '',
+        descripcion: d.descripcion || '',
+        cantidad,
+        unidad: d.unidad || 'UND',
+        precio,
+        descuento,
+        itbis_pct: itbis_pct_raw,
+        itbis: Math.round(itbisItem * 100) / 100,
+        importe: Math.round(importeNeto * 100) / 100,
+      };
+    });
+
     const pedidoData = {
-      ...currentPedido,
+      ...(currentPedido.id ? { id: currentPedido.id } : {}),
       cliente_id: finalClienteId,
+      vendedor_id: currentPedido.vendedor_id,
       fecha: formatDateForSupabase(currentPedido.fecha),
-      subtotal: totals.subtotal,
-      descuento_total: totals.descuento_total,
-      itbis_total: totals.itbis_total,
-      monto_total: montoTotal,
+      notas: currentPedido.notas || '',
+      manual_cliente_nombre: currentPedido.manual_cliente_nombre || '',
+      placa_vehiculo: currentPedido.placa_vehiculo || '',
+      subtotal: Math.round(calcSubtotal * 100) / 100,
+      descuento_total: Math.round(calcDescuento * 100) / 100,
+      itbis_total: Math.round(calcItbis * 100) / 100,
+      monto_total: Math.round((calcSubtotal + calcItbis) * 100) / 100,
     };
-    await onSave(pedidoData, detalles);
+
+    const success = await onSave(pedidoData, cleanDetalles);
     setIsSubmitting(false);
-    onClose();
+    if (success) onClose();
   };
 
   if (!isOpen || !currentPedido) return null;
@@ -630,8 +667,10 @@ const PedidosPage = () => {
 
       toast({ title: "Éxito", description: "Pedido guardado correctamente." });
       fetchData();
+      return true;
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error al guardar', description: error.message });
+      return false;
     }
   };
 

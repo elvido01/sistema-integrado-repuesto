@@ -14,6 +14,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 // Services
 import { qzEnsureConnection, qzFindBestPrinter, qzPrintRawEpl } from "@/services/qzTrayService";
 import { buildEplLabel } from "@/services/eplLabel";
+import { useAuth } from "@/contexts/SupabaseAuthContext";
 
 const PREFERRED_PRINTERS = [
     "ZDesigner LP 2824 (Copiar 1)",
@@ -36,6 +37,8 @@ const encodeAlphaPrice = (price) => {
 
 const EtiquetasMasivasPage = ({ extraData }) => {
     const { toast } = useToast();
+    const { empresa } = useAuth();
+    const empresaNombre = empresa?.nombre || 'Sistema';
     const [purchaseNumber, setPurchaseNumber] = useState('');
     const [loading, setLoading] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
@@ -459,7 +462,8 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 precio: displayPrice,
                 ubicacion,
                 includeUb: showLocation && ubicacion !== 'N/A',
-                copies: qty
+                copies: qty,
+                empresaNombre
             });
             await qzPrintRawEpl(printerName, epl);
             toast({ title: 'Impresión completada', description: `Se imprimieron ${qty} etiquetas de ${individualProduct.codigo}.` });
@@ -550,7 +554,8 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                     precio: displayPrice,
                     ubicacion,
                     includeUb: showLocation && item.printLocation && ubicacion !== 'N/A',
-                    copies: qty
+                    copies: qty,
+                    empresaNombre
                 });
 
                 console.log(`[QZ] Enviando EPL (${qty} copias) para ${codigo}`);

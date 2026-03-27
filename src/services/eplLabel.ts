@@ -10,6 +10,7 @@ interface EplLabelData {
     ubicacion: string;
     includeUb: boolean;
     copies?: number;
+    empresaNombre?: string;
 }
 
 export function buildEplLabel({
@@ -18,7 +19,8 @@ export function buildEplLabel({
     precio,
     ubicacion,
     includeUb,
-    copies = 1
+    copies = 1,
+    empresaNombre = 'Sistema'
 }: EplLabelData) {
     const maxChars = 28;
     const cleanDesc = (descripcion || "").toUpperCase().trim();
@@ -33,7 +35,7 @@ export function buildEplLabel({
         "q448",
         "Q406,24",
         "",
-        `A35,15,0,3,1,1,N,"MotoFlow"`,
+        `A35,15,0,3,1,1,N,"${empresaNombre}"`,
         "",
         `A35,45,0,2,1,1,N,"${line1}"`,
         `A35,65,0,2,1,1,N,"${line2}"`,
