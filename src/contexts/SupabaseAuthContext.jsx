@@ -49,10 +49,17 @@ export const AuthProvider = ({ children }) => {
       if (profileData?.tenant_id) {
         const { data: empresaData } = await supabase
           .from('config_empresa')
-          .select('nombre, rnc, direccion, telefono, email, logo_url')
+          .select('nombre, rnc, direccion1, direccion2, telefono, email, logo_url')
           .eq('tenant_id', profileData.tenant_id)
           .maybeSingle();
-        setEmpresa(empresaData || null);
+        if (empresaData) {
+          // Normaliza direccion1/2 → direccion para compatibilidad con PDFs
+          const direccion = [empresaData.direccion1, empresaData.direccion2]
+            .filter(Boolean).join(', ');
+          setEmpresa({ ...empresaData, direccion });
+        } else {
+          setEmpresa(null);
+        }
       } else {
         setEmpresa(null);
       }
