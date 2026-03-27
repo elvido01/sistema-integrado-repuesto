@@ -13,6 +13,7 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [empresa, setEmpresa] = useState(null);
 
   const fetchProfileAndPermissions = useCallback(async (userId) => {
     try {
@@ -44,6 +45,18 @@ export const AuthProvider = ({ children }) => {
 
       console.log("[AuthDebug] Perms data:", permsData);
 
+      // 3. Fetch Empresa (config_empresa) for PDF/print branding
+      if (profileData?.tenant_id) {
+        const { data: empresaData } = await supabase
+          .from('config_empresa')
+          .select('nombre, rnc, direccion, telefono, email, logo_url')
+          .eq('tenant_id', profileData.tenant_id)
+          .maybeSingle();
+        setEmpresa(empresaData || null);
+      } else {
+        setEmpresa(null);
+      }
+
       setProfile(profileData);
       setPermissions(permsData || []);
 
@@ -51,6 +64,7 @@ export const AuthProvider = ({ children }) => {
       console.error("[AuthDebug] Error fetching profile/permissions:", error);
       setProfile(null);
       setPermissions([]);
+      setEmpresa(null);
     }
   }, []);
 
@@ -159,11 +173,12 @@ export const AuthProvider = ({ children }) => {
     loading,
     tenantId,
     isSuperAdmin,
+    empresa,
     signUp,
     signIn,
     signOut,
     refreshPermissions: () => user && fetchProfileAndPermissions(user.id)
-  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, signUp, signIn, signOut, fetchProfileAndPermissions]);
+  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, signUp, signIn, signOut, fetchProfileAndPermissions]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -2,7 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatCurrency, formatDate } from './pdfUtils';
 
-export const generateOrderPDF = (order, supplier, details) => {
+export const generateOrderPDF = (order, supplier, details, empresa = {}) => {
   const doc = new jsPDF();
   const PAGE_WIDTH = doc.internal.pageSize.getWidth();
   const MARGIN = 14;
@@ -11,14 +11,13 @@ export const generateOrderPDF = (order, supplier, details) => {
   doc.setFont('times', 'bold');
   doc.setFontSize(22);
   doc.setTextColor(0, 0, 0);
-  doc.text("MotoFlow", MARGIN, 20);
+  doc.text(empresa.nombre || 'Mi Empresa', MARGIN, 20);
 
   doc.setFontSize(10);
   doc.setFont('times', 'normal');
-  doc.text("Av. Duarte, esq. Baldemiro Rijo", MARGIN, 25);
-  doc.text("Higuey, Rep. Dom.", MARGIN, 30);
-  doc.text("Tel. 809-390-5965, Fax", MARGIN, 35);
-  doc.text("RNC:", MARGIN, 40);
+  if (empresa.direccion) doc.text(empresa.direccion, MARGIN, 25);
+  if (empresa.telefono) doc.text(`Tel. ${empresa.telefono}`, MARGIN, 30);
+  doc.text(`RNC: ${empresa.rnc || ''}`, MARGIN, 35);
 
   // Document Title & Number (Right Aligned)
   doc.setFont('times', 'bold');

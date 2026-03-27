@@ -18,7 +18,7 @@ const formatDate = (date) => {
     }
 };
 
-export const generateTransaccionesReportePDF = (transactions, filters, totals) => {
+export const generateTransaccionesReportePDF = (transactions, filters, totals, empresa = {}) => {
     const doc = new jsPDF('landscape');
     const pageWidth = doc.internal.pageSize.width;
     const margin = 10;
@@ -26,7 +26,7 @@ export const generateTransaccionesReportePDF = (transactions, filters, totals) =
     // --- Header ---
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text("MotoFlow", margin, 15);
+    doc.text(empresa.nombre || 'Mi Empresa', margin, 15);
 
     doc.setFontSize(12);
     doc.text("LISTA DE TRANSACCIONES DIARIAS", margin, 22);

@@ -13,6 +13,7 @@ import { Save, X, Loader2, FilePlus, Trash2, PlusCircle, Printer } from 'lucide-
 import { usePanels } from '@/contexts/PanelContext';
 import { Checkbox } from '@/components/ui/checkbox';
 import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const initialState = {
   numero: '',
@@ -27,6 +28,7 @@ const initialState = {
 
 const PagoSuplidoresPage = () => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
   const { closePanel } = usePanels();
   const [pago, setPago] = useState(initialState);
   const [suplidores, setSuplidores] = useState([]);
@@ -177,7 +179,8 @@ const PagoSuplidoresPage = () => {
             const original = compras.find(c => c.id === d.compra_id);
             return { ...d, fecha_emision: original?.fecha_emision, referencia: original?.referencia, monto_pendiente: original?.monto_pendiente };
           }),
-          formasPago
+          formasPago,
+          empresa
         );
       }
 

@@ -21,7 +21,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 const ReporteComprasPage = () => {
   const { toast } = useToast();
   const { openPanel } = usePanels();
-  const { user } = useAuth();
+  const { user, empresa } = useAuth();
   const [compras, setCompras] = useState([]);
   const [proveedores, setProveedores] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -209,7 +209,7 @@ const ReporteComprasPage = () => {
                             size="sm"
                             className="h-8 w-8 p-0 text-slate-500 hover:bg-slate-100"
                             title="Reimprimir Factura"
-                            onClick={() => generateCompraPDF(compra, compra.proveedores, compra.compras_detalle, user)}
+                            onClick={() => generateCompraPDF(compra, compra.proveedores, compra.compras_detalle, user, empresa)}
                           >
                             <FileText className="h-4 w-4" />
                           </Button>

@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { formatCurrency } from './pdfUtils';
 
-export const generateFacturaPDF = (factura) => {
+export const generateFacturaPDF = (factura, empresa = {}) => {
   // Papel térmico de 80mm (3.15 pulgadas) = ~226.77pt
   const pageWidth = 226;
   const marginLeft = 8;
@@ -20,17 +20,24 @@ export const generateFacturaPDF = (factura) => {
     // --- Header ---
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text("MotoFlow", pageWidth / 2, currentY, { align: 'center' });
+    doc.text(empresa.nombre || 'Mi Empresa', pageWidth / 2, currentY, { align: 'center' });
     currentY += 12;
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text("Av. Duarte, esq. Baldemiro Rijo", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 10;
-    doc.text("Higuey, Rep. Dom.", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 10;
-    doc.text("809-390-5965", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 13;
+    if (empresa.direccion) {
+      doc.text(empresa.direccion, pageWidth / 2, currentY, { align: 'center' });
+      currentY += 10;
+    }
+    if (empresa.telefono) {
+      doc.text(empresa.telefono, pageWidth / 2, currentY, { align: 'center' });
+      currentY += 10;
+    }
+    if (empresa.rnc) {
+      doc.text(`RNC: ${empresa.rnc}`, pageWidth / 2, currentY, { align: 'center' });
+      currentY += 10;
+    }
+    currentY += 3;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
@@ -229,7 +236,7 @@ export const generateFacturaPDF = (factura) => {
     doc.setFontSize(10);
     doc.text(`Le Atendio : ${vendedor?.email?.split('@')[0] || 'N/A'}`, marginLeft, currentY);
     currentY += 11;
-    doc.text(`Vendedor : ${factura.vendedor || 'MotoFlow'}`, marginLeft, currentY);
+    doc.text(`Vendedor : ${factura.vendedor || empresa.nombre || 'N/A'}`, marginLeft, currentY);
     currentY += 14;
     doc.setFontSize(10);
     doc.text("*** GRACIAS POR SU COMPRA ***", pageWidth / 2, currentY, { align: 'center' });

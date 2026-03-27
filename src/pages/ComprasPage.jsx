@@ -26,7 +26,7 @@ const ComprasPage = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, empresa } = useAuth();
   const { ordenParaFacturar, setOrdenParaFacturar } = useCompras();
   const { panels, activePanel, closePanel } = usePanels();
   const currentPanel = panels.find(p => p.id === activePanel);
@@ -1059,7 +1059,7 @@ const ComprasPage = () => {
       if (printMethod === 'pos') {
         printCompraPOS(savedCompra, selectedSuplidor, detalles, paperSize);
       } else {
-        generateCompraPDF(savedCompra, selectedSuplidor, detalles, authUser || user);
+        generateCompraPDF(savedCompra, selectedSuplidor, detalles, authUser || user, empresa);
       }
 
       resetForm();

@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import { printReciboPOS, printRecibo4Pulgadas } from '@/lib/printPOS';
 import { generateReciboPDF, generateFacturaPDF } from '@/components/common/PDFGenerator';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const initialState = {
   numero: '',
@@ -30,6 +31,7 @@ const initialState = {
 
 const ReciboIngresoPage = () => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
   const { closePanel } = usePanels();
   const [recibo, setRecibo] = useState(initialState);
   const [clientes, setClientes] = useState([]);
@@ -273,7 +275,7 @@ const ReciboIngresoPage = () => {
           .eq('numero', transId)
           .single();
         if (error) throw error;
-        if (factura) generateFacturaPDF(factura);
+        if (factura) generateFacturaPDF(factura, empresa);
       } catch (err) {
         console.error("Error loading transaction PDF:", err);
         toast({ title: 'Error', description: 'No se pudo cargar el documento de la factura.', variant: 'destructive' });

@@ -18,7 +18,7 @@ const formatDate = (date) => {
     }
 };
 
-export const generateCompraPDF = (compra, suplidor, detalles, usuario) => {
+export const generateCompraPDF = (compra, suplidor, detalles, usuario, empresa = {}) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const margin = 14;
@@ -26,17 +26,16 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario) => {
     // --- Header ---
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text("MotoFlow", margin, 20);
+    doc.text(empresa.nombre || 'Mi Empresa', margin, 20);
 
     doc.setFontSize(12);
     doc.text("COMPRA DE MERCANCIAS", margin, 28);
 
-    // Address/Contact (Mirroring other Morla PDFs)
+    // Address/Contact
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text("Av. Duarte, esq. Baldemiro Rijo", pageWidth / 2, 12, { align: 'center' });
-    doc.text("Higuey, Rep. Dom.", pageWidth / 2, 17, { align: 'center' });
-    doc.text("809-390-5965", pageWidth / 2, 22, { align: 'center' });
+    if (empresa.direccion) doc.text(empresa.direccion, pageWidth / 2, 12, { align: 'center' });
+    if (empresa.telefono) doc.text(empresa.telefono, pageWidth / 2, 17, { align: 'center' });
 
     // Right Header Section
     doc.setFontSize(9);

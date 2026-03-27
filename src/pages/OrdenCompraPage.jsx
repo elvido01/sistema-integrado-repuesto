@@ -22,6 +22,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { loadDraft, useAutoDraft, clearDraft } from '@/lib/drafts';
 
 const formatDateForTable = (dateStr) => {
@@ -35,6 +36,7 @@ const formatDateForTable = (dateStr) => {
 
 const OrdenCompraPage = () => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
   const navigate = useNavigate();
   const { openPanel } = usePanels();
   const { setOrdenParaFacturar } = useCompras();
@@ -630,7 +632,7 @@ const OrdenCompraPage = () => {
       if (printMethod === 'pos') {
         printOrdenCompraPOS(savedOrden, selectedProveedor, detallesData, paperSize);
       } else {
-        generateOrderPDF(savedOrden, selectedProveedor, detallesData);
+        generateOrderPDF(savedOrden, selectedProveedor, detallesData, empresa);
       }
 
       clearDraft(DRAFT_KEY);
@@ -684,7 +686,7 @@ const OrdenCompraPage = () => {
               if (printMethod === 'pos') {
                  printOrdenCompraPOS(current, current.proveedores, previewDetails, paperSize);
               } else {
-                 generateOrderPDF(current, current.proveedores, previewDetails);
+                 generateOrderPDF(current, current.proveedores, previewDetails, empresa);
               }
             }
           }}>

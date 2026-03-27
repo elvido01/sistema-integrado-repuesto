@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import MotoFlowLogo from '@/components/common/MotoFlowLogo';
 
-const LoginForm = () => {
+const LoginForm = ({ onRegistrar }) => {
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -93,7 +93,22 @@ const LoginForm = () => {
           </Button>
         </form>
 
-        <div className="mt-6 text-center">
+        {onRegistrar && (
+          <div className="mt-5 text-center">
+            <p className="text-xs text-gray-500">
+              ¿Nuevo en MotoFlow?{' '}
+              <button
+                type="button"
+                onClick={onRegistrar}
+                className="text-blue-500 hover:underline font-semibold"
+              >
+                Registra tu empresa gratis
+              </button>
+            </p>
+          </div>
+        )}
+
+        <div className="mt-4 text-center">
           <p className="text-[10px] text-gray-400">
             © 2026 MotoFlow — Todos los derechos reservados
           </p>

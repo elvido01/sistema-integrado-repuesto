@@ -16,9 +16,11 @@ import { Calendar as CalendarIcon, Search, Printer, X, Loader2 } from 'lucide-re
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateTransaccionesReportePDF, generateFacturaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ReporteTransaccionesDiariasPage = () => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
   const { closePanel } = usePanels();
   const [transactions, setTransactions] = useState([]);
   const [clients, setClients] = useState([]);
@@ -136,7 +138,7 @@ const ReporteTransaccionesDiariasPage = () => {
           .eq('numero', transId)
           .single();
         if (error) throw error;
-        if (factura) generateFacturaPDF(factura);
+        if (factura) generateFacturaPDF(factura, empresa);
       } else if (prefix === 'DV') {
         const { data: devolucion, error } = await supabase
           .from('devoluciones')
@@ -194,7 +196,7 @@ const ReporteTransaccionesDiariasPage = () => {
       toast({ title: 'Aviso', description: 'No hay transacciones para imprimir.' });
       return;
     }
-    generateTransaccionesReportePDF(transactions, filters, totals);
+    generateTransaccionesReportePDF(transactions, filters, totals, empresa);
   };
 
   useEffect(() => {

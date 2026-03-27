@@ -12,6 +12,7 @@ import EntradaDetalles from '@/components/inventario/EntradaDetalles';
 import EntradaFooter from '@/components/inventario/EntradaFooter';
 import SalidaFooter from '@/components/inventario/SalidaFooter';
 import { generateEntradaPDF } from '@/components/common/PDFGenerator';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +47,7 @@ const initialDetalleState = {
 
 const EntradaMercanciaPage = () => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
   const { closePanel } = usePanels();
   const [almacenes, setAlmacenes] = useState([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
@@ -230,7 +232,7 @@ const EntradaMercanciaPage = () => {
 
       if (entrada.imprimir) {
         const almacen = almacenes.find(a => a.id === entrada.almacen_id);
-        generateEntradaPDF(entradaData, almacen, detallesData);
+        generateEntradaPDF(entradaData, almacen, detallesData, empresa);
       }
 
       resetForm();

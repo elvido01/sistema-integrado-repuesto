@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
@@ -10,9 +10,11 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import MainLayout from '@/components/layout/MainLayout';
 import SuscripcionBlocker from '@/components/common/SuscripcionBlocker';
 import LoginForm from '@/components/auth/LoginForm';
+import RegistroEmpresaPage from '@/pages/RegistroEmpresaPage';
 
 function AppContent() {
   const { session, loading, user } = useAuth();
+  const [showRegistro, setShowRegistro] = useState(false);
 
   if (loading) {
     return (
@@ -23,7 +25,10 @@ function AppContent() {
   }
 
   if (!session || !user) {
-    return <LoginForm />;
+    if (showRegistro) {
+      return <RegistroEmpresaPage onVolver={() => setShowRegistro(false)} />;
+    }
+    return <LoginForm onRegistrar={() => setShowRegistro(true)} />;
   }
 
   return (
