@@ -14,10 +14,14 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SearchableSelect from '@/components/common/SearchableSelect';
 import MultiSearchableSelect from '@/components/common/MultiSearchableSelect';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const NULL_VALUE = 'null_value';
+const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
-const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented, tipos, marcas, modelos, proveedores, almacenes, fetchCatalogs }) => {
+const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented, tipos, marcas, modelos, proveedores, ubicaciones, fetchCatalogs }) => {
+  const { tenantId } = useAuth();
+  const showVehicleFields = tenantId === CAMINERO_MOTORS_TENANT;
   const [isTipoModalOpen, setIsTipoModalOpen] = useState(false);
   const [isMarcaModalOpen, setIsMarcaModalOpen] = useState(false);
   const [isModeloModalOpen, setIsModeloModalOpen] = useState(false);
@@ -49,7 +53,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
       extraData: { marca_id: formData.marca_id || null }
     },
     proveedores: { title: 'Suplidores', table: 'proveedores', columns: [{ accessor: 'nombre', header: 'Nombre', type: 'text' }] },
-    ubicaciones: { title: 'Ubicaciones', table: 'almacenes', columns: [{ accessor: 'codigo', header: 'Código', type: 'text' }, { accessor: 'nombre', header: 'Nombre', type: 'text' }] },
+    ubicaciones: { title: 'Ubicaciones', table: 'ubicaciones', columns: [{ accessor: 'codigo', header: 'Código', type: 'text' }, { accessor: 'nombre', header: 'Nombre', type: 'text' }] },
   }), [formData.marca_id]);
 
 
@@ -241,11 +245,11 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
   }, [proveedores]);
 
   const ubicacionOptions = useMemo(() => {
-    return (almacenes || [])
+    return (ubicaciones || [])
       .filter(a => a.activo)
       .map(a => ({ value: String(a.nombre), label: a.nombre }))
       .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
-  }, [almacenes]);
+  }, [ubicaciones]);
 
   useEffect(() => {
     if (formData.modelo_id && !filteredModelos.some(m => m.id === formData.modelo_id)) {
@@ -426,10 +430,10 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
         {/* Columna Izquierda: Datos Básicos (8/12) */}
         <div className="md:col-span-8 space-y-2">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            {/* Código y Referencia */}
+          <div className={`grid grid-cols-1 ${showVehicleFields ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-2`}>
+            {/* Código/Chasis y Referencia/Motor */}
             <div className="md:col-span-1">
-              <Label htmlFor="codigo" className="text-[11px] font-bold text-gray-700 uppercase">Código (SKU)</Label>
+              <Label htmlFor="codigo" className="text-[11px] font-bold text-gray-700 uppercase">{showVehicleFields ? 'Chasis' : 'Código (SKU)'}</Label>
               <div className="flex gap-1">
                 <div className="relative flex-1">
                   <Input
@@ -450,8 +454,8 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
               </div>
             </div>
 
-            <div className="md:col-span-2">
-              <Label htmlFor="referencia" className="text-[11px] font-bold text-gray-700 uppercase">Referencia Interna</Label>
+            <div className={showVehicleFields ? 'md:col-span-1' : 'md:col-span-2'}>
+              <Label htmlFor="referencia" className="text-[11px] font-bold text-gray-700 uppercase">{showVehicleFields ? 'Motor' : 'Referencia Interna'}</Label>
               <Input id="referencia" ref={referenciaRef} value={formData.referencia || ''} onChange={handleInputChange} onKeyDown={(e) => handleEnterToNext(e, descripcionRef)} className="h-7 text-xs bg-white" />
             </div>
           </div>
@@ -548,28 +552,85 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
               </div>
             </div>
 
-            {/* Suplidor */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Suplidor</Label>
-              <div className="col-span-3 flex items-center gap-1">
-                <SearchableSelect
-                  placeholder="Seleccionar proveedor"
-                  options={proveedorOptions}
-                  value={formData.suplidor_id ?? ''}
-                  onChange={(v) => handleSelectChange('suplidor_id', v)}
-                  className="flex-grow"
-                />
-                <Button type="button" variant="ghost" size="sm" className="h-9 px-2 border" onClick={() => setIsProveedorModalOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
+            {/* Suplidor - posición original para tenants normales */}
+            {!showVehicleFields && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Suplidor</Label>
+                <div className="col-span-3 flex items-center gap-1">
+                  <SearchableSelect
+                    placeholder="Seleccionar proveedor"
+                    options={proveedorOptions}
+                    value={formData.suplidor_id ?? ''}
+                    onChange={(v) => handleSelectChange('suplidor_id', v)}
+                    className="flex-grow"
+                  />
+                  <Button type="button" variant="ghost" size="sm" className="h-9 px-2 border" onClick={() => setIsProveedorModalOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Garantía */}
+            {/* Color, Año, Condición - Solo Caminero Motors (inline) */}
+            {showVehicleFields && (
+              <>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Color</Label>
+                  <div className="col-span-3">
+                    <Input value={formData.color || ''} onChange={e => setFormData(prev => ({ ...prev, color: e.target.value }))} className="h-7 text-sm bg-white border-gray-300" placeholder="Color del vehículo" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Año</Label>
+                  <div className="col-span-1">
+                    <Input type="number" value={formData.anio || ''} onChange={e => setFormData(prev => ({ ...prev, anio: e.target.value }))} className="h-7 text-sm bg-white border-gray-300" placeholder="Año" min="1990" max="2030" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Condición</Label>
+                  <div className="col-span-1">
+                    <Select value={formData.condicion || 'NUEVA'} onValueChange={val => setFormData(prev => ({ ...prev, condicion: val }))}>
+                      <SelectTrigger className="h-7 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NUEVA">NUEVA</SelectItem>
+                        <SelectItem value="USADA">USADA</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Garantía (y Kilometraje para Caminero Motors) */}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Garantía (Meses)</Label>
               <div className="col-span-1">
                 <Input id="garantia_meses" type="number" value={formData.garantia_meses} onChange={handleIntChange} className="h-7 text-sm bg-white border-gray-300" min="0" />
               </div>
+              {showVehicleFields && (
+                <>
+                  <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Kilometraje</Label>
+                  <div className="col-span-1">
+                    <Input id="kilometraje" type="number" value={formData.kilometraje || 0} onChange={handleIntChange} className="h-7 text-sm bg-white border-gray-300" min="0" />
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* Suplidor - después de garantía solo para Caminero Motors */}
+            {showVehicleFields && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Suplidor</Label>
+                <div className="col-span-3 flex items-center gap-1">
+                  <SearchableSelect
+                    placeholder="Seleccionar proveedor"
+                    options={proveedorOptions}
+                    value={formData.suplidor_id ?? ''}
+                    onChange={(v) => handleSelectChange('suplidor_id', v)}
+                    className="flex-grow"
+                  />
+                  <Button type="button" variant="ghost" size="sm" className="h-9 px-2 border" onClick={() => setIsProveedorModalOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

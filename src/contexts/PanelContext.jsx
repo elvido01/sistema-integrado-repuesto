@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext } from 'react';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -27,10 +27,14 @@ import CatalogPage from '@/pages/CatalogPage';
 import EtiquetasMasivasPage from '@/pages/EtiquetasMasivasPage';
 import VendedoresPage from '@/pages/VendedoresPage';
 import InventarioFisicoPage from '@/pages/InventarioFisicoPage';
+import ReporteMovimientosPage from '@/pages/ReporteMovimientosPage';
 import SolicitudesPage from '@/pages/SolicitudesPage';
+import SolicitudesComprasPage from '@/pages/SolicitudesComprasPage';
 import CotizacionesMagnaPage from '@/pages/CotizacionesMagnaPage';
 import PerfilEmpresa from '@/pages/Configuracion/PerfilEmpresa';
+import ComprobantesPage from '@/pages/Configuracion/ComprobantesPage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
+import PlanesPage from '@/pages/PlanesPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
 
@@ -43,7 +47,7 @@ const Protected = ({ module, children }) => (
 const componentMapping = {
   'inicio': { component: HomePage, icon: Home, name: 'Inicio' },
   'ventas': { component: () => <Protected module="ventas"><VentasPage /></Protected>, icon: ShoppingCart, name: 'Ventas' },
-  'recibo-ingreso': { component: () => <Protected module="recibo-ingreso"><ReciboIngresoPage /></Protected>, icon: Receipt, name: 'Recibo de Ingreso' },
+  'recibo-ingreso': { component: ({ extraData }) => <Protected module="recibo-ingreso"><ReciboIngresoPage extraData={extraData} /></Protected>, icon: Receipt, name: 'Recibo de Ingreso' },
   'pago-suplidores': { component: () => <Protected module="pago-suplidores"><PagoSuplidoresPage /></Protected>, icon: Truck, name: 'Pago a Suplidores' },
   'pago-comisiones-vendedor': { component: () => <Protected module="pago-comisiones-vendedor"><PagoComisionesPage /></Protected>, icon: Users, name: 'Pago Comisiones' },
   'compras': { component: () => <Protected module="compras"><ComprasPage /></Protected>, icon: Truck, name: 'Compras' },
@@ -59,6 +63,7 @@ const componentMapping = {
   'cambio-codigo': { component: () => <Protected module="cambio-codigo"><CambioCodigoPage /></Protected>, icon: RefreshCw, name: 'Cambio de Código' },
   'reporte-compras': { component: () => <Protected module="reporte-compras"><ReporteComprasPage /></Protected>, icon: BarChart2, name: 'Reporte de Compras' },
   'reporte-transacciones-diarias': { component: () => <Protected module="reporte-transacciones-diarias"><ReporteTransaccionesDiariasPage /></Protected>, icon: ListChecks, name: 'Transacciones Diarias' },
+  'reporte-movimientos': { component: () => <Protected module="reporte-movimientos"><ReporteMovimientosPage /></Protected>, icon: BarChart2, name: 'Entradas y Salidas' },
   'clientes': { component: () => <Protected module="clientes"><ClientesPage /></Protected>, icon: Users, name: 'Clientes' },
   'suplidores': { component: () => <Protected module="suplidores"><SuplidoresPage /></Protected>, icon: Briefcase, name: 'Suplidores' },
   'usuarios': { component: () => <Protected module="usuarios"><UsuariosPermissionsPage /></Protected>, icon: UserCog, name: 'Usuarios y Permisos' },
@@ -66,14 +71,18 @@ const componentMapping = {
   'marcas': { component: () => <Protected module="marcas"><CatalogPage catalogType="marcas" /></Protected>, icon: Briefcase, name: 'Marcas' },
   'modelos': { component: () => <Protected module="modelos"><CatalogPage catalogType="modelos" /></Protected>, icon: Briefcase, name: 'Modelos' },
   'ubicaciones': { component: () => <Protected module="ubicaciones"><CatalogPage catalogType="ubicaciones" /></Protected>, icon: MapPin, name: 'Ubicaciones' },
+  'almacenes': { component: () => <Protected module="almacenes"><CatalogPage catalogType="almacenes" /></Protected>, icon: Warehouse, name: 'Almacenes' },
   'etiquetas-masivas': { component: () => <Protected module="etiquetas-masivas"><EtiquetasMasivasPage /></Protected>, icon: Barcode, name: 'Impresión Etiquetas' },
   'vendedores': { component: () => <Protected module="vendedores"><VendedoresPage /></Protected>, icon: Users, name: 'Vendedores' },
   'inventario-fisico': { component: () => <Protected module="inventario-fisico"><InventarioFisicoPage /></Protected>, icon: Archive, name: 'Inventario Físico' },
   'solicitudes': { component: () => <Protected module="solicitudes"><SolicitudesPage /></Protected>, icon: ClipboardList, name: 'Solicitudes Agotados' },
+  'solicitudes-compras': { component: () => <Protected module="solicitudes-compras"><SolicitudesComprasPage /></Protected>, icon: ClipboardList, name: 'Solicitudes de Compras' },
   'cierre-caja': { component: () => <Protected module="cierre-caja"><CierreCajaPage /></Protected>, icon: Settings, name: 'Cierre de Caja' },
   'config_sistema': { component: () => <Protected module="config_sistema"><ConfiguracionSistemaPage /></Protected>, icon: Settings, name: 'Configuracion del Sistema' },
   'perfil-empresa': { component: () => <Protected module="perfil-empresa"><PerfilEmpresa /></Protected>, icon: Building2, name: 'Perfil Empresa' },
+  'comprobantes-fiscales': { component: () => <Protected module="comprobantes-fiscales"><ComprobantesPage /></Protected>, icon: FileText, name: 'Comprobantes Fiscales' },
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
+  'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
 };
 
 const PanelContext = createContext();

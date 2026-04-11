@@ -24,6 +24,9 @@ import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { loadDraft, useAutoDraft, clearDraft } from '@/lib/drafts';
+import { useCatalogData } from '@/hooks/useSupabase';
+
+const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
 const formatDateForTable = (dateStr) => {
   if (!dateStr) return '---';
@@ -36,10 +39,12 @@ const formatDateForTable = (dateStr) => {
 
 const OrdenCompraPage = () => {
   const { toast } = useToast();
-  const { empresa } = useAuth();
+  const { empresa, tenantId } = useAuth();
   const navigate = useNavigate();
   const { openPanel } = usePanels();
   const { setOrdenParaFacturar } = useCompras();
+  const isVehicleDealer = tenantId === CAMINERO_MOTORS_TENANT;
+  const { marcas: catalogMarcas = [], modelos: catalogModelos = [] } = useCatalogData() ?? {};
 
   // --- VIEW STATE ---
   const [view, setView] = useState('list'); // 'list' or 'form'
@@ -80,8 +85,11 @@ const OrdenCompraPage = () => {
 
   // --- STAGING ITEM STATE (New for Form) ---
   const [stagingItem, setStagingItem] = useState({
-    producto_id: '', codigo: '', descripcion: '', cantidad: 0, unidad: 'UND', precio: 0, descuento_pct: 0, itbis_pct: 0, importe: 0
+    producto_id: '', codigo: '', descripcion: '', cantidad: 0, unidad: 'UND', precio: 0, descuento_pct: 0, itbis_pct: 0, importe: 0, existencia: 0,
+    // Vehicle dealer fields
+    marca_nombre: '', modelo_nombre: '', anio: new Date().getFullYear(), color: ''
   });
+  const [editingDetalleId, setEditingDetalleId] = useState(null);
 
 
   const DRAFT_KEY = 'orden-compra';
@@ -206,37 +214,77 @@ const OrdenCompraPage = () => {
   // --- STAGING ROW HANDLERS (New) ---
   const resetStaging = () => {
     setStagingItem({
-      producto_id: '', codigo: '', descripcion: '', cantidad: 0, unidad: 'UND', precio: 0, descuento_pct: 0, itbis_pct: 0, importe: 0
+      producto_id: '', codigo: '', descripcion: '', cantidad: 0, unidad: 'UND', precio: 0, descuento_pct: 0, itbis_pct: 0, importe: 0, existencia: 0,
+      marca_nombre: '', modelo_nombre: '', anio: new Date().getFullYear(), color: ''
     });
+    setEditingDetalleId(null);
   };
 
   const addStagingToDetails = () => {
-    if (!stagingItem.producto_id && !stagingItem.codigo) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Seleccione un producto.' });
-      return;
+    if (isVehicleDealer) {
+      // Para dealers de vehículos: validar marca y modelo
+      if (!stagingItem.marca_nombre || !stagingItem.modelo_nombre) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Seleccione marca y modelo.' });
+        return;
+      }
+      // Auto-generar descripcion y codigo basados en marca/modelo/color/año
+      const desc = `${stagingItem.marca_nombre} ${stagingItem.modelo_nombre} ${stagingItem.anio || ''} ${stagingItem.color || ''}`.trim().toUpperCase();
+      const autoCode = `${stagingItem.marca_nombre}-${stagingItem.modelo_nombre}`.toUpperCase().replace(/\s+/g, '');
+      stagingItem.descripcion = desc;
+      stagingItem.codigo = autoCode;
+    } else {
+      if (!stagingItem.producto_id && !stagingItem.codigo) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Seleccione un producto.' });
+        return;
+      }
     }
-    // Verificar duplicados por producto_id O por código
-    const existingIndex = detalles.findIndex(d =>
-      (stagingItem.producto_id && d.producto_id === stagingItem.producto_id) ||
-      (stagingItem.codigo && d.codigo === stagingItem.codigo)
-    );
-    if (existingIndex >= 0) {
-      // En lugar de rechazar, sumar la cantidad al existente
+
+    // Mode: editing an existing item in-place
+    if (editingDetalleId) {
       setDetalles(prev => {
-        const updated = [...prev];
-        updated[existingIndex] = {
-          ...updated[existingIndex],
-          cantidad: (parseFloat(updated[existingIndex].cantidad) || 0) + (parseFloat(stagingItem.cantidad) || 1)
-        };
+        const updated = prev.map(d => d.id === editingDetalleId ? { ...d, ...stagingItem, id: d.id } : d);
         return calculateAllImportes(updated);
       });
-      toast({ title: 'Cantidad actualizada', description: `Se sumó la cantidad al producto ${stagingItem.codigo} existente.` });
       resetStaging();
       return;
+    }
+
+    // Mode: adding new — check duplicates
+    if (!isVehicleDealer) {
+      const existingIndex = detalles.findIndex(d =>
+        (stagingItem.producto_id && d.producto_id === stagingItem.producto_id) ||
+        (stagingItem.codigo && d.codigo === stagingItem.codigo)
+      );
+      if (existingIndex >= 0) {
+        setDetalles(prev => {
+          const updated = [...prev];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            cantidad: (parseFloat(updated[existingIndex].cantidad) || 0) + (parseFloat(stagingItem.cantidad) || 1)
+          };
+          return calculateAllImportes(updated);
+        });
+        toast({ title: 'Cantidad actualizada', description: `Se sumó la cantidad al producto ${stagingItem.codigo} existente.` });
+        resetStaging();
+        return;
+      }
     }
     setDetalles(prev => calculateAllImportes([...prev, { ...stagingItem, id: Date.now() + Math.random() }]));
     resetStaging();
   };
+
+  // Calcular existencia por marca/modelo/color para dealers de vehículos
+  const fetchVehicleStock = useCallback(async (marca, modelo, color) => {
+    if (!marca || !modelo) return 0;
+    try {
+      let query = supabase.from('productos').select('id', { count: 'exact', head: true });
+      // Buscar por descripcion que contenga marca y modelo
+      query = query.ilike('descripcion', `%${marca}%`).ilike('descripcion', `%${modelo}%`);
+      if (color) query = query.ilike('descripcion', `%${color}%`);
+      const { count } = await query;
+      return count || 0;
+    } catch { return 0; }
+  }, []);
 
   const handleSelectProduct = (product) => {
     setStagingItem({
@@ -246,7 +294,8 @@ const OrdenCompraPage = () => {
       descripcion: product.descripcion,
       precio: product.costo || product.precio || 0,
       itbis_pct: product.itbis_pct || 0,
-      cantidad: 1
+      cantidad: 1,
+      existencia: product.existencia ?? 0
     });
     setIsSearchModalOpen(false);
   };
@@ -291,6 +340,7 @@ const OrdenCompraPage = () => {
       descuento_pct: 0,
       itbis_pct: itbisPct,
       importe: 0,
+      existencia: product.existencia ?? 0,
     };
 
     setDetalles((prev) => calculateAllImportes([...prev, newDetalle]));
@@ -330,6 +380,16 @@ const OrdenCompraPage = () => {
   };
 
   const handleEditDetalle = (detalle) => {
+    // If there's already an item being edited, commit it back first
+    if (editingDetalleId && stagingItem.producto_id) {
+      setDetalles(prev => {
+        const updated = prev.map(d => d.id === editingDetalleId ? { ...d, ...stagingItem, id: d.id } : d);
+        return calculateAllImportes(updated);
+      });
+    }
+
+    // Copy to staging for editing — item stays in the list
+    setEditingDetalleId(detalle.id);
     setStagingItem({
       producto_id: detalle.producto_id,
       codigo: detalle.codigo,
@@ -341,7 +401,6 @@ const OrdenCompraPage = () => {
       itbis_pct: detalle.itbis_pct,
       importe: detalle.importe
     });
-    removeDetalle(detalle.id);
   };
 
   const handleEditOrder = async (orderId) => {
@@ -362,9 +421,20 @@ const OrdenCompraPage = () => {
         .select('*')
         .eq('orden_compra_id', orderId);
 
-      if (detailsError) throw detailsError;
+      // 3. Enrich details with current product stock (existencia)
+      let enhancedDetails = detailsData;
+      if (detailsData.length > 0) {
+        enhancedDetails = await Promise.all(detailsData.map(async (detail) => {
+          // Call the same function the product search modal uses internally
+          const { data: stockVal } = await supabase.rpc('get_stock_actual', { producto_uuid: detail.producto_id });
+          return {
+            ...detail,
+            existencia: stockVal || 0
+          };
+        }));
+      }
 
-      // 3. Set states
+      // 4. Set states
       setSelectedProveedor(orderData.proveedores);
       setOrden({
         ...orderData,
@@ -374,7 +444,7 @@ const OrdenCompraPage = () => {
         fecha_orden: orderData.fecha_orden ? new Date(orderData.fecha_orden + 'T00:00:00') : new Date(),
         fecha_vencimiento: orderData.fecha_vencimiento ? new Date(orderData.fecha_vencimiento + 'T00:00:00') : new Date()
       });
-      setDetalles(detailsData.map(d => ({ ...d, id: d.id || Date.now() + Math.random() })));
+      setDetalles(enhancedDetails.map(d => ({ ...d, id: d.id || Date.now() + Math.random() })));
 
       setIsEditMode(true);
       setView('form');
@@ -535,6 +605,7 @@ const OrdenCompraPage = () => {
           descuento_pct: 0,
           itbis_pct: p.itbis_pct || 0,
           importe: 0,
+          existencia: p.existencia ?? 0,
         };
       });
 
@@ -936,80 +1007,153 @@ const OrdenCompraPage = () => {
 
       {/* YELLOW STAGING ROW + TABLE */}
       <div className="border border-slate-300 rounded-sm overflow-hidden mb-3 shadow-sm">
-        <div className="bg-yellow-100/80 p-1 flex items-center gap-1 border-b border-slate-200 shadow-sm">
-          <div className="relative">
+        {/* Staging Row - Condicional por tipo de tenant */}
+        {isVehicleDealer ? (
+          /* ── STAGING ROW PARA DEALER DE VEHÍCULOS ── */
+          <div className="bg-yellow-100/80 p-1 flex items-center gap-1 border-b border-slate-200 shadow-sm flex-wrap">
+            <Select value={stagingItem.marca_nombre} onValueChange={(v) => setStagingItem({ ...stagingItem, marca_nombre: v, modelo_nombre: '' })}>
+              <SelectTrigger className="w-36 h-7 text-xs border-slate-400 bg-white"><SelectValue placeholder="Marca" /></SelectTrigger>
+              <SelectContent>
+                {catalogMarcas.filter(m => m.activo).sort((a,b) => a.nombre.localeCompare(b.nombre)).map(m => (
+                  <SelectItem key={m.id} value={m.nombre}>{m.nombre}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={stagingItem.modelo_nombre} onValueChange={(v) => setStagingItem({ ...stagingItem, modelo_nombre: v })}>
+              <SelectTrigger className="w-36 h-7 text-xs border-slate-400 bg-white"><SelectValue placeholder="Modelo" /></SelectTrigger>
+              <SelectContent>
+                {catalogModelos
+                  .filter(m => m.activo && (!stagingItem.marca_nombre || catalogMarcas.find(ma => ma.nombre === stagingItem.marca_nombre && ma.id === m.marca_id)))
+                  .sort((a,b) => a.nombre.localeCompare(b.nombre))
+                  .map(m => (
+                    <SelectItem key={m.id} value={m.nombre}>{m.nombre}</SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
             <Input
-              className="w-32 h-7 text-xs border-slate-400 bg-white pr-7"
-              placeholder="Codigo"
-              value={stagingItem.codigo}
-              onChange={(e) => setStagingItem({ ...stagingItem, codigo: e.target.value })}
-              onKeyDown={(e) => e.key === 'F3' && setIsSearchModalOpen(true)}
+              type="number"
+              className="w-20 h-7 text-xs border-slate-400 bg-white text-center"
+              placeholder="Año"
+              value={stagingItem.anio || ''}
+              onChange={(e) => setStagingItem({ ...stagingItem, anio: parseInt(e.target.value) || '' })}
             />
-            <Button
-              variant="ghost"
-              className="absolute right-0 top-0 h-7 w-7 p-0 hover:bg-transparent"
-              onClick={() => setIsSearchModalOpen(true)}
-            >
-              <Search className="h-3 w-3 text-slate-500" />
-            </Button>
+            <Input
+              className="w-28 h-7 text-xs border-slate-400 bg-white"
+              placeholder="Color"
+              value={stagingItem.color || ''}
+              onChange={(e) => setStagingItem({ ...stagingItem, color: e.target.value.toUpperCase() })}
+            />
+            <Input
+              type="number"
+              className="w-16 h-7 text-xs border-slate-400 bg-white text-center"
+              placeholder="Cant."
+              value={stagingItem.cantidad || ''}
+              onChange={(e) => setStagingItem({ ...stagingItem, cantidad: parseFloat(e.target.value) || 0 })}
+            />
+            <Input
+              type="number"
+              className="w-24 h-7 text-xs border-slate-400 bg-white text-right"
+              placeholder="Precio"
+              value={stagingItem.precio || ''}
+              onChange={(e) => setStagingItem({ ...stagingItem, precio: parseFloat(e.target.value) || 0 })}
+            />
+            <Button className="h-7 px-3 bg-morla-blue text-white" onClick={addStagingToDetails}>Ok</Button>
+            <Button variant="outline" className="h-7 w-7 p-0 text-red-600" onClick={resetStaging}><X className="h-4 w-4" /></Button>
           </div>
-          <Input
-            className="flex-1 h-7 text-xs border-slate-400 bg-slate-50 font-medium truncate"
-            placeholder="Descripcion del Producto"
-            value={stagingItem.descripcion}
-            readOnly
-          />
-          <Input
-            type="number"
-            className="w-16 h-7 text-xs border-slate-400 bg-white text-center"
-            value={stagingItem.cantidad || ''}
-            onChange={(e) => setStagingItem({ ...stagingItem, cantidad: parseFloat(e.target.value) || 0 })}
-          />
-          <Select value={stagingItem.unidad} onValueChange={(v) => setStagingItem({ ...stagingItem, unidad: v })}>
-            <SelectTrigger className="w-20 h-7 text-xs border-slate-400 bg-white"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="UND">UND</SelectItem>
-              <SelectItem value="CAJA">CAJA</SelectItem>
-            </SelectContent>
-          </Select>
-          <Input
-            type="number"
-            className="w-24 h-7 text-xs border-slate-400 bg-white text-right"
-            value={stagingItem.precio || ''}
-            onChange={(e) => setStagingItem({ ...stagingItem, precio: parseFloat(e.target.value) || 0 })}
-          />
-          <Input
-            type="number"
-            className="w-16 h-7 text-xs border-slate-400 bg-white text-right"
-            placeholder="%Desc"
-            value={stagingItem.descuento_pct || ''}
-            onChange={(e) => setStagingItem({ ...stagingItem, descuento_pct: parseFloat(e.target.value) || 0 })}
-          />
-          <Button className="h-7 px-3 bg-morla-blue text-white" onClick={addStagingToDetails}>Ok</Button>
-          <Button variant="ghost" className="h-7 w-7 p-0" onClick={() => setIsSearchModalOpen(true)}><Bot className="h-4 w-4" /></Button>
-          <Button variant="outline" className="h-7 w-7 p-0 text-red-600" onClick={resetStaging}><X className="h-4 w-4" /></Button>
-        </div>
+        ) : (
+          /* ── STAGING ROW ORIGINAL (REPUESTOS) ── */
+          <div className="bg-yellow-100/80 p-1 flex items-center gap-1 border-b border-slate-200 shadow-sm">
+            <div className="relative">
+              <Input
+                className="w-32 h-7 text-xs border-slate-400 bg-white pr-7"
+                placeholder="Codigo"
+                value={stagingItem.codigo}
+                onChange={(e) => setStagingItem({ ...stagingItem, codigo: e.target.value })}
+                onKeyDown={(e) => e.key === 'F3' && setIsSearchModalOpen(true)}
+              />
+              <Button
+                variant="ghost"
+                className="absolute right-0 top-0 h-7 w-7 p-0 hover:bg-transparent"
+                onClick={() => setIsSearchModalOpen(true)}
+              >
+                <Search className="h-3 w-3 text-slate-500" />
+              </Button>
+            </div>
+            <Input
+              className="flex-1 h-7 text-xs border-slate-400 bg-slate-50 font-medium truncate"
+              placeholder="Descripcion del Producto"
+              value={stagingItem.descripcion}
+              readOnly
+            />
+            <Input
+              type="number"
+              className="w-16 h-7 text-xs border-slate-400 bg-white text-center"
+              value={stagingItem.cantidad || ''}
+              onChange={(e) => setStagingItem({ ...stagingItem, cantidad: parseFloat(e.target.value) || 0 })}
+            />
+            <Select value={stagingItem.unidad} onValueChange={(v) => setStagingItem({ ...stagingItem, unidad: v })}>
+              <SelectTrigger className="w-20 h-7 text-xs border-slate-400 bg-white"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="UND">UND</SelectItem>
+                <SelectItem value="CAJA">CAJA</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              className="w-24 h-7 text-xs border-slate-400 bg-white text-right"
+              value={stagingItem.precio || ''}
+              onChange={(e) => setStagingItem({ ...stagingItem, precio: parseFloat(e.target.value) || 0 })}
+            />
+            <Input
+              type="number"
+              className="w-16 h-7 text-xs border-slate-400 bg-white text-right"
+              placeholder="%Desc"
+              value={stagingItem.descuento_pct || ''}
+              onChange={(e) => setStagingItem({ ...stagingItem, descuento_pct: parseFloat(e.target.value) || 0 })}
+            />
+            <Button className="h-7 px-3 bg-morla-blue text-white" onClick={addStagingToDetails}>Ok</Button>
+            <Button variant="ghost" className="h-7 w-7 p-0" onClick={() => setIsSearchModalOpen(true)}><Bot className="h-4 w-4" /></Button>
+            <Button variant="outline" className="h-7 w-7 p-0 text-red-600" onClick={resetStaging}><X className="h-4 w-4" /></Button>
+          </div>
+        )}
 
         <div className="max-h-[350px] overflow-y-auto">
           <Table className="text-[12px]">
             <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
-              <TableRow className="[&_th]:py-1.5 [&_th]:text-slate-600 uppercase text-[11px]">
-                <TableHead className="w-32">Codigo</TableHead>
-                <TableHead>Descripcion</TableHead>
-                <TableHead className="w-24 text-center">Cant.</TableHead>
-                <TableHead className="w-20 text-center">UND</TableHead>
-                <TableHead className="w-28 text-right">Precio</TableHead>
-                <TableHead className="w-20 text-right">Desc.</TableHead>
-                <TableHead className="w-24 text-right">ITBIS</TableHead>
-                <TableHead className="w-32 text-right">Importe</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
+              {isVehicleDealer ? (
+                /* ── ENCABEZADOS DEALER VEHÍCULOS ── */
+                <TableRow className="[&_th]:py-1.5 [&_th]:text-slate-600 uppercase text-[11px]">
+                  <TableHead className="w-28">Marca</TableHead>
+                  <TableHead className="w-32">Modelo</TableHead>
+                  <TableHead className="w-16 text-center">Año</TableHead>
+                  <TableHead className="w-28">Color</TableHead>
+                  <TableHead className="w-20 text-center">Cant.</TableHead>
+                  <TableHead className="w-20 text-center">EXIST.</TableHead>
+                  <TableHead className="w-28 text-right">Precio</TableHead>
+                  <TableHead className="w-24 text-right">ITBIS</TableHead>
+                  <TableHead className="w-32 text-right">Importe</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              ) : (
+                /* ── ENCABEZADOS ORIGINALES ── */
+                <TableRow className="[&_th]:py-1.5 [&_th]:text-slate-600 uppercase text-[11px]">
+                  <TableHead className="w-32">Codigo</TableHead>
+                  <TableHead>Descripcion</TableHead>
+                  <TableHead className="w-24 text-center">Cant.</TableHead>
+                  <TableHead className="w-20 text-center">EXIST.</TableHead>
+                  <TableHead className="w-28 text-right">Precio</TableHead>
+                  <TableHead className="w-20 text-right">Desc.</TableHead>
+                  <TableHead className="w-24 text-right">ITBIS</TableHead>
+                  <TableHead className="w-32 text-right">Importe</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              )}
             </TableHeader>
             <TableBody>
               {detalles.length === 0 ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i} className="h-7 border-b border-slate-100">
-                    {Array.from({ length: 9 }).map((_, j) => (
+                    {Array.from({ length: isVehicleDealer ? 10 : 9 }).map((_, j) => (
                       <TableCell key={j} className="p-0 border-r border-slate-50 last:border-r-0 h-7" />
                     ))}
                   </TableRow>
@@ -1021,14 +1165,32 @@ const OrdenCompraPage = () => {
                     className="h-7 border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors group"
                     onDoubleClick={() => handleEditDetalle(d)}
                   >
-                    <TableCell className="py-0 px-2 text-slate-700 font-medium">{d.codigo}</TableCell>
-                    <TableCell className="py-0 px-2 uppercase truncate max-w-[300px]">{d.descripcion}</TableCell>
-                    <TableCell className="py-0 px-2 text-center text-blue-700 font-bold select-none">{d.cantidad} {d.unidad}</TableCell>
-                    <TableCell className="py-0 px-2 text-center text-slate-500 lowercase">{d.unidad}</TableCell>
-                    <TableCell className="py-0 px-2 text-right font-mono">{d.precio?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                    <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
-                    <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{((d.itbis_pct / 100) * d.precio * d.cantidad).toFixed(2)}</TableCell>
-                    <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{d.importe?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                    {isVehicleDealer ? (
+                      /* ── FILA DEALER VEHÍCULOS ── */
+                      <>
+                        <TableCell className="py-0 px-2 font-bold text-slate-700">{d.marca_nombre || '—'}</TableCell>
+                        <TableCell className="py-0 px-2 font-medium">{d.modelo_nombre || '—'}</TableCell>
+                        <TableCell className="py-0 px-2 text-center">{d.anio || '—'}</TableCell>
+                        <TableCell className="py-0 px-2 uppercase">{d.color || '—'}</TableCell>
+                        <TableCell className="py-0 px-2 text-center text-blue-700 font-bold">{d.cantidad}</TableCell>
+                        <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
+                        <TableCell className="py-0 px-2 text-right font-mono">{d.precio?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{((d.itbis_pct / 100) * d.precio * d.cantidad).toFixed(2)}</TableCell>
+                        <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{d.importe?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      </>
+                    ) : (
+                      /* ── FILA ORIGINAL ── */
+                      <>
+                        <TableCell className="py-0 px-2 text-slate-700 font-medium">{d.codigo}</TableCell>
+                        <TableCell className="py-0 px-2 uppercase truncate max-w-[300px]">{d.descripcion}</TableCell>
+                        <TableCell className="py-0 px-2 text-center text-blue-700 font-bold select-none">{d.cantidad} {d.unidad}</TableCell>
+                        <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
+                        <TableCell className="py-0 px-2 text-right font-mono">{d.precio?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
+                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{((d.itbis_pct / 100) * d.precio * d.cantidad).toFixed(2)}</TableCell>
+                        <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{d.importe?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      </>
+                    )}
                     <TableCell className="py-0 px-1 text-center">
                       <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => removeDetalle(d.id)}>
                         <Trash2 className="h-3 w-3 text-red-500" />
@@ -1124,7 +1286,7 @@ const OrdenCompraPage = () => {
 
   return (
     <>
-      <Helmet><title>Orden de Compra - MotoFlow</title></Helmet>
+      <Helmet><title>Orden de Compra — {empresa?.nombre || 'Sistema'}</title></Helmet>
 
       <ProductSearchModal
         isOpen={isSearchModalOpen}
