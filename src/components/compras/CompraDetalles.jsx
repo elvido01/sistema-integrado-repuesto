@@ -43,12 +43,11 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
             value={currentDetalle.codigo}
             className="h-8 border-none bg-transparent text-xs focus-visible:ring-0 focus-visible:ring-offset-0 font-mono"
             onChange={e => handleInputChange('codigo', e.target.value)}
+            onBlur={() => { if (currentDetalle.codigo) onSearchByCode?.(currentDetalle.codigo); }}
             onKeyDown={e => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault();
-                if (currentDetalle.codigo) {
-                  onSearchByCode?.(currentDetalle.codigo);
-                }
+                if (currentDetalle.codigo) onSearchByCode?.(currentDetalle.codigo);
               }
             }}
             placeholder="F3 Búscar"

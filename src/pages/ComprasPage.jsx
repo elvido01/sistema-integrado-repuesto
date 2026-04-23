@@ -435,14 +435,15 @@ const ComprasPage = () => {
       setDetalles(prev => prev.map(d =>
         d.id === activeLineId
           ? {
-            ...d,
-            producto_id: savedProduct.id,
-            is_matched: true,
-            codigo: savedProduct.codigo || d.codigo,
-            descripcion: savedProduct.descripcion || d.descripcion,
-            referencia: savedProduct.referencia || d.referencia,
-            itbis_pct: savedProduct.itbis_pct,
-          }
+              ...d,
+              producto_id: savedProduct.id,
+              is_matched: true,
+              codigo: savedProduct.codigo || d.codigo,
+              descripcion: savedProduct.descripcion || d.descripcion,
+              referencia: savedProduct.referencia || d.referencia,
+              costo_unitario: savedProduct.costo || d.costo_unitario,
+              itbis_pct: savedProduct.itbis_pct ?? d.itbis_pct,
+            }
           : d
       ));
 
@@ -492,37 +493,37 @@ const ComprasPage = () => {
       let discount_pct = item.discount_pct || 0;
       if (discount_pct > 1) discount_pct = discount_pct / 100;
 
+      let productoCosto = 0;
+      let productoItbis = null;
+
       if (item.code) {
         // Corrección de OCR: Si la IA lee '1-' o 'l-' al inicio de un código, reemplazarlo por 'I-' mayúscula
         item.code = item.code.replace(/^[1l]-/i, 'I-');
 
         const { data: product } = await supabase
           .from('productos')
-          .select('id, descripcion, itbis_pct, referencia, suplidor_id, marca_id, modelos_ids')
+          .select('id, descripcion, costo, itbis_pct, referencia, suplidor_id, marca_id, modelos_ids')
           .ilike('codigo', item.code)
           .maybeSingle();
 
         if (product) {
           producto_id = product.id;
           matched = true;
-          // De las mercancías creadas anteriormente solo traemos nuevo el costo y lo relativo a la factura
+          productoCosto = product.costo || 0;
+          productoItbis = product.itbis_pct ?? null;
           descripcion = product.descripcion;
-          itbis_pct = product.itbis_pct ?? itbis_pct;
 
           // Campos a actualizar si están vacíos en el producto existente
           const updateFields = {};
 
-          // Si el producto no tiene referencia pero el OCR extrajo una, actualizar
           if (!product.referencia && item.reference) {
             updateFields.referencia = item.reference;
           }
 
-          // Si el producto no tiene suplidor, asignar el suplidor seleccionado en la compra
           if (!product.suplidor_id && compra.suplidor_id) {
             updateFields.suplidor_id = compra.suplidor_id;
           }
 
-          // Si el producto no tiene marca, intentar detectarla de la descripción
           if (!product.marca_id) {
             const detectedMarca = detectMarcaFromDescription(product.descripcion || descripcion);
             if (detectedMarca) {
@@ -530,7 +531,6 @@ const ComprasPage = () => {
             }
           }
 
-          // Si el producto no tiene modelos, intentar detectarlos de la descripción
           if (!product.modelos_ids || product.modelos_ids.length === 0) {
             const detectedModelos = detectModelosFromDescription(product.descripcion || descripcion);
             if (detectedModelos.length > 0) {
@@ -538,7 +538,6 @@ const ComprasPage = () => {
             }
           }
 
-          // Actualizar en BD solo si hay campos nuevos que llenar
           if (Object.keys(updateFields).length > 0) {
             await supabase
               .from('productos')
@@ -548,7 +547,8 @@ const ComprasPage = () => {
         }
       }
 
-      const costo = item.unit_cost || 0;
+      if (productoItbis !== null) itbis_pct = productoItbis;
+      const costo = item.unit_cost || productoCosto;
       const cantidad = item.qty || 0;
 
       // La base se calcula restando el descuento
