@@ -30,6 +30,9 @@ import InventarioFisicoPage from '@/pages/InventarioFisicoPage';
 import ReporteMovimientosPage from '@/pages/ReporteMovimientosPage';
 import SolicitudesPage from '@/pages/SolicitudesPage';
 import SolicitudesComprasPage from '@/pages/SolicitudesComprasPage';
+import CartaRutaPage from '@/pages/CartaRutaPage';
+import ReportesDGIIPage from '@/pages/ReportesDGIIPage';
+import LibrosContablesPage from '@/pages/LibrosContablesPage';
 import CotizacionesMagnaPage from '@/pages/CotizacionesMagnaPage';
 import PerfilEmpresa from '@/pages/Configuracion/PerfilEmpresa';
 import ComprobantesPage from '@/pages/Configuracion/ComprobantesPage';
@@ -77,6 +80,9 @@ const componentMapping = {
   'inventario-fisico': { component: () => <Protected module="inventario-fisico"><InventarioFisicoPage /></Protected>, icon: Archive, name: 'Inventario Físico' },
   'solicitudes': { component: () => <Protected module="solicitudes"><SolicitudesPage /></Protected>, icon: ClipboardList, name: 'Solicitudes Agotados' },
   'solicitudes-compras': { component: () => <Protected module="solicitudes-compras"><SolicitudesComprasPage /></Protected>, icon: ClipboardList, name: 'Solicitudes de Compras' },
+  'carta-ruta': { component: () => <Protected module="carta-ruta"><CartaRutaPage /></Protected>, icon: FileText, name: 'Carta de Ruta' },
+  'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },
+  'libros-contables': { component: () => <Protected module="libros-contables"><LibrosContablesPage /></Protected>, icon: FileText, name: 'Libros Contables' },
   'cierre-caja': { component: () => <Protected module="cierre-caja"><CierreCajaPage /></Protected>, icon: Settings, name: 'Cierre de Caja' },
   'config_sistema': { component: () => <Protected module="config_sistema"><ConfiguracionSistemaPage /></Protected>, icon: Settings, name: 'Configuracion del Sistema' },
   'perfil-empresa': { component: () => <Protected module="perfil-empresa"><PerfilEmpresa /></Protected>, icon: Building2, name: 'Perfil Empresa' },

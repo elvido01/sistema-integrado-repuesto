@@ -22,7 +22,7 @@ export function buildEplLabel({
     copies = 1,
     empresaNombre = 'Sistema'
 }: EplLabelData) {
-    const maxChars = 28;
+    const maxChars = 24;
     const cleanDesc = (descripcion || "").toUpperCase().trim();
 
     const line1 = cleanDesc.slice(0, maxChars);
@@ -32,25 +32,26 @@ export function buildEplLabel({
 
     const epl = [
         "N",
-        "q448",
+        "q380",
         "Q406,24",
         "",
-        `A35,15,0,3,1,1,N,"${empresaNombre}"`,
+        `; Empresa en font 3 (mismo grosor que el precio)`,
+        `A55,15,0,3,1,1,N,"${empresaNombre}"`,
         "",
-        `A35,45,0,2,1,1,N,"${line1}"`,
-        `A35,65,0,2,1,1,N,"${line2}"`,
+        `A55,45,0,2,1,1,N,"${line1}"`,
+        `A55,65,0,2,1,1,N,"${line2}"`,
         "",
         `; Barcode SIN texto debajo (human readable OFF)`,
-        `B65,90,0,1,2,4,55,N,"${codigo}"`,
+        `B80,90,0,1,2,4,55,N,"${codigo}"`,
         "",
         `; Código escrito SOLO aquí (una sola vez)`,
-        `A35,150,0,2,1,1,N,"${codigo}"`,
+        `A55,150,0,2,1,1,N,"${codigo}"`,
         "",
         `; Precio alineado con código escrito`,
         `A240,150,0,3,1,1,N,"${precio}"`,
         "",
         `; Ubicación centrada abajo`,
-        includeUb ? `A140,180,0,2,1,1,N,"${ubicacion}"` : "",
+        includeUb ? `A155,180,0,2,1,1,N,"${ubicacion}"` : "",
         "",
         `P${Math.max(1, Math.floor(Number(copies)))}`,
         ""

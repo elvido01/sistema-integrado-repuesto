@@ -10,6 +10,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Search, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+
+const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
 const DocumentSearchModal = ({
     isOpen,
@@ -19,6 +22,8 @@ const DocumentSearchModal = ({
     vendedores = []
 }) => {
     const { toast } = useToast();
+    const { tenantId } = useAuth();
+    const isCamineroMotors = tenantId === CAMINERO_MOTORS_TENANT;
     const [documents, setDocuments] = useState([]);
     const [selectedDoc, setSelectedDoc] = useState(null);
     const [details, setDetails] = useState([]);
@@ -31,8 +36,12 @@ const DocumentSearchModal = ({
     const [dateDesde, setDateDesde] = useState(format(new Date(), 'yyyy-MM-01'));
     const [dateHasta, setDateHasta] = useState(format(new Date(), 'yyyy-MM-dd'));
 
-    const title = type === 'cotizacion' ? 'Lista de Cotizaciones' : 'Lista de Pedidos';
-    const tableHeader = type === 'cotizacion' ? 'Cotizaciones Pendientes' : 'Pedidos Pendientes';
+    const title = type === 'cotizacion'
+        ? 'Lista de Cotizaciones'
+        : (isCamineroMotors ? 'Lista de Solicitudes' : 'Lista de Pedidos');
+    const tableHeader = type === 'cotizacion'
+        ? 'Cotizaciones Pendientes'
+        : (isCamineroMotors ? 'Solicitudes Pendientes' : 'Pedidos Pendientes');
 
     const fetchDocuments = async () => {
         setLoading(true);
@@ -42,9 +51,13 @@ const DocumentSearchModal = ({
             const table = type === 'cotizacion' ? 'cotizaciones' : 'pedidos';
             const dateField = type === 'cotizacion' ? 'fecha_cotizacion' : 'fecha';
 
+            const selectFields = type === 'cotizacion'
+                ? `*, clientes(nombre)`
+                : `*, clientes(nombre), solicitudes_compras(numero)`;
+
             let query = supabase
                 .from(table)
-                .select(`*, clientes(nombre)`)
+                .select(selectFields)
                 .eq('estado', 'Facturando')
                 .gte(dateField, dateDesde)
                 .lte(dateField, dateHasta)
@@ -234,7 +247,7 @@ const DocumentSearchModal = ({
                                         onDoubleClick={handleConfirm}
                                     >
                                         <TableCell className="p-1 text-[11px] font-medium border-r border-gray-200">{format(new Date(type === 'cotizacion' ? doc.fecha_cotizacion : doc.fecha), 'dd/MM/yyyy')}</TableCell>
-                                        <TableCell className="p-1 text-[11px] font-bold border-r border-gray-200 text-blue-700">{doc.numero}</TableCell>
+                                        <TableCell className="p-1 text-[11px] font-bold border-r border-gray-200 text-blue-700">{isCamineroMotors && doc.solicitudes_compras?.numero ? doc.solicitudes_compras.numero : doc.numero}</TableCell>
                                         <TableCell className="p-1 text-[11px] border-r border-gray-200">{doc.cliente_id?.split('-')[0] || 'GENERICO'}</TableCell>
                                         <TableCell className="p-1 text-[11px] border-r border-gray-200 truncate">
                                             {(() => {

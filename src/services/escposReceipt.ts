@@ -66,12 +66,32 @@ const totalsRow = (label: string, value: string) => {
 };
 
 // ── Common Header ────────────────────────────────────────
-function buildHeader(): string {
+interface EmpresaConfig {
+    nombre?: string;
+    direccion?: string;
+    ciudad?: string;
+    telefono?: string;
+}
+
+function buildHeader(empresa?: EmpresaConfig): string {
     const lines: string[] = [];
-    lines.push(CMD.BOLD_ON + centerLine('MotoFlow') + CMD.BOLD_OFF);
-    lines.push(centerLine('Av. Duarte, esq. Baldemiro Rijo'));
-    lines.push(centerLine('Higuey, Rep. Dom.'));
-    lines.push(centerLine('809-390-5965'));
+    const nombre = (empresa?.nombre || 'MotoFlow').toUpperCase();
+    lines.push(CMD.BOLD_ON + centerLine(nombre) + CMD.BOLD_OFF);
+    if (empresa?.direccion) {
+        lines.push(centerLine(empresa.direccion));
+    } else {
+        lines.push(centerLine('Av. Duarte, esq. Baldemiro Rijo'));
+    }
+    if (empresa?.ciudad) {
+        lines.push(centerLine(empresa.ciudad));
+    } else {
+        lines.push(centerLine('Higuey, Rep. Dom.'));
+    }
+    if (empresa?.telefono) {
+        lines.push(centerLine(empresa.telefono));
+    } else {
+        lines.push(centerLine('809-390-5965'));
+    }
     lines.push('');
     return lines.join(CMD.LF);
 }
@@ -115,7 +135,6 @@ interface FacturaData {
 export function buildFacturaEscPos(factura: FacturaData): string {
     const details = factura.facturas_detalle || [];
     const client = factura.clientes || {};
-    const seller = factura.perfiles || {};
 
     const fechaStr = factura.fecha
         ? new Date(factura.fecha).toLocaleDateString('es-DO', { day: 'numeric', month: 'numeric', year: 'numeric' })
@@ -160,7 +179,7 @@ export function buildFacturaEscPos(factura: FacturaData): string {
         const desc = (item.descripcion || '').toUpperCase();
         // Description on full line(s)
         for (let i = 0; i < desc.length; i += W) {
-            lines.push(CMD.BOLD_ON + desc.slice(i, i + W) + CMD.BOLD_OFF);
+            lines.push(desc.slice(i, i + W));
         }
         // Detail row
         lines.push(itemRow(
@@ -184,8 +203,6 @@ export function buildFacturaEscPos(factura: FacturaData): string {
     lines.push(dashLine());
     lines.push(totalsRow('Sub-Total :', fmt(factura.subtotal || 0)));
     lines.push(totalsRow('Descuento en Items:', fmt(factura.descuento || 0)));
-    lines.push(totalsRow('Otros Descuento:', fmt(0)));
-    lines.push(totalsRow('Recargo :', fmt(0)));
     lines.push(totalsRow('ITBIS :', fmt(factura.itbis || 0)));
     lines.push(padR('Valores en', W - 12) + padL('============', 12));
     lines.push(padR('DOP', 10) + CMD.BOLD_ON + padL('TOTAL :', W - 10 - 12) + padL(fmt(factura.total || 0), 12) + CMD.BOLD_OFF);
@@ -199,7 +216,6 @@ export function buildFacturaEscPos(factura: FacturaData): string {
 
     // ── Footer ──
     lines.push(dashLine());
-    lines.push(`Le Atendio : ${seller?.email?.split('@')[0] || 'N/A'}`);
     lines.push(`Vendedor : ${factura.vendedor || 'MotoFlow'}`);
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
     lines.push(CMD.FEED_3);
@@ -283,7 +299,7 @@ export function buildCotizacionEscPos(
     for (const item of itemsCalc) {
         const desc = (item.descripcion || '').toUpperCase();
         for (let i = 0; i < desc.length; i += W) {
-            lines.push(CMD.BOLD_ON + desc.slice(i, i + W) + CMD.BOLD_OFF);
+            lines.push(desc.slice(i, i + W));
         }
         lines.push(itemRow(
             `  ${item.cantidad || 0} UND`,
@@ -297,8 +313,6 @@ export function buildCotizacionEscPos(
     lines.push(dashLine());
     lines.push(totalsRow('Sub-Total :', fmt(subtotal)));
     lines.push(totalsRow('Descuento en Items:', fmt(descuentoItems)));
-    lines.push(totalsRow('Otros Descuento:', fmt(0)));
-    lines.push(totalsRow('Recargo :', fmt(0)));
     lines.push(totalsRow('ITBIS :', fmt(itbisTotal)));
     lines.push(padR('Valores en', W - 12) + padL('============', 12));
     lines.push(padR('DOP', 10) + CMD.BOLD_ON + padL('TOTAL :', W - 10 - 12) + padL(fmt(total), 12) + CMD.BOLD_OFF);
@@ -310,6 +324,84 @@ export function buildCotizacionEscPos(
     lines.push(centerLine('sin previo aviso.'));
     lines.push('');
     lines.push(centerLine('MotoFlow'));
+    lines.push(CMD.FEED_3);
+    lines.push(CMD.CUT);
+
+    return lines.join(CMD.LF);
+}
+
+// ═══════════════════════════════════════════════════════════
+// RECIBO DE INGRESO
+// ═══════════════════════════════════════════════════════════
+
+interface ReciboIngresoData {
+    numero?: number | string;
+    fecha?: string;
+    clienteNombre?: string;
+    balanceAnterior?: number;
+    totalPagado?: number;
+    balanceActual?: number;
+    abonos?: Array<{
+        referencia?: string;
+        monto_abono?: number;
+    }>;
+    formasPago?: Array<{
+        forma?: string;
+        referencia?: string;
+        monto?: number;
+    }>;
+}
+
+export function buildReciboIngresoEscPos(
+    recibo: ReciboIngresoData,
+    empresa?: EmpresaConfig
+): string {
+    const fechaStr = recibo.fecha
+        ? new Date(recibo.fecha).toLocaleDateString('es-DO', { day: 'numeric', month: 'numeric', year: 'numeric' })
+        : 'N/A';
+    const horaStr = new Date().toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const numeroStr = `RI-${String(recibo.numero || 'N/A').padStart(6, '0')}`;
+
+    const lines: string[] = [];
+
+    lines.push(CMD.INIT);
+    lines.push(buildHeader(empresa));
+    lines.push(CMD.BOLD_ON + centerLine('RECIBO DE INGRESO') + CMD.BOLD_OFF);
+    lines.push('');
+
+    // ── Info ──
+    lines.push(leftRight(`No. Recibo : ${numeroStr}`, horaStr));
+    lines.push(`Fecha  : ${fechaStr}`);
+    lines.push(`${CMD.BOLD_ON}CLIENTE: ${(recibo.clienteNombre || 'N/A').toUpperCase()}${CMD.BOLD_OFF}`);
+
+    // ── Abonos ──
+    lines.push(dashLine());
+    lines.push(CMD.BOLD_ON + 'FACTURAS ABONADAS:' + CMD.BOLD_OFF);
+    lines.push(leftRight('REFERENCIA', 'ABONO'));
+    for (const a of (recibo.abonos || [])) {
+        lines.push(leftRight(a.referencia || '---', fmt(a.monto_abono || 0)));
+    }
+
+    // ── Formas de pago ──
+    lines.push(dashLine());
+    lines.push(CMD.BOLD_ON + 'DETALLE DE PAGO:' + CMD.BOLD_OFF);
+    for (const f of (recibo.formasPago || [])) {
+        const forma = (f.forma || '').toUpperCase();
+        const label = f.referencia ? `${forma} (${f.referencia})` : forma;
+        lines.push(leftRight(label, fmt(f.monto || 0)));
+    }
+
+    // ── Totales ──
+    lines.push(dashLine());
+    lines.push(totalsRow('Balance Anterior:', fmt(recibo.balanceAnterior || 0)));
+    lines.push(CMD.BOLD_ON + totalsRow('TOTAL PAGADO:', fmt(recibo.totalPagado || 0)) + CMD.BOLD_OFF);
+    lines.push(CMD.BOLD_ON + totalsRow('Balance Actual:', fmt(recibo.balanceActual || 0)) + CMD.BOLD_OFF);
+
+    // ── Footer ──
+    lines.push('');
+    lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU PAGO ***') + CMD.BOLD_OFF);
+    lines.push('');
+    lines.push('Recibido por: ____________________________');
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 

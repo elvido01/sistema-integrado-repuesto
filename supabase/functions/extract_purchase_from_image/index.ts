@@ -75,12 +75,14 @@ JSON FORMAT:
   "items": [ { "code": "", "reference": "", "description": "", "qty": 1, "unit": "UND", "unit_cost": 0, "discount_pct": 0, "itbis_pct": 0.18, "line_total": 0 } ]
 }`;
 
-        // Modelos confirmados disponibles en esta cuenta
+        // Modelos con cuota disponible en este key (verificado 2026-04-21 en Google AI Studio)
+        // Free tier: 5 RPM, 20 RPD por modelo
         const modelsToTry = [
-            "gemini-2.0-flash",           // El más rápido y moderno confirmado
-            "gemini-flash-latest",        // Alias estable confirmado
-            "gemini-2.5-flash",          // experimental ultra rápido confirmado
-            "gemini-1.5-flash-8b"         // fallback ligero
+            "gemini-2.5-flash",           // Estable, cuota confirmada
+            "gemini-3-flash",             // Más nuevo, cuota confirmada
+            "gemini-flash-latest"         // Alias fallback
+            // gemini-2.0-flash y gemini-1.5-flash removidos:
+            // el primero da 0/0 quota en este key, el segundo fue retirado.
         ];
 
         let extractedData = null;

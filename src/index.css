@@ -320,3 +320,39 @@ input[type=number] {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Sidebar dark scrollbar */
+.custom-sidebar-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+
+.custom-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.15);
+  border-radius: 10px;
+}
+
+.custom-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+/* Sidebar light scrollbar */
+.custom-sidebar-scroll-light::-webkit-scrollbar {
+  width: 3px;
+}
+
+.custom-sidebar-scroll-light::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-sidebar-scroll-light::-webkit-scrollbar-thumb {
+  background: rgba(147, 174, 219, 0.25);
+  border-radius: 10px;
+}
+
+.custom-sidebar-scroll-light::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 174, 219, 0.5);
+}

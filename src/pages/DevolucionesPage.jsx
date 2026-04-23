@@ -29,8 +29,10 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { printDevolucionPOS } from '@/lib/printPOS';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const DevolucionesPage = () => {
+  const { empresa } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isSaving, setIsSaving] = useState(false);
@@ -300,7 +302,7 @@ const DevolucionesPage = () => {
 
   return (
     <>
-      <Helmet><title>Devoluciones - MotoFlow</title></Helmet>
+      <Helmet><title>Devoluciones — {empresa?.nombre || 'Sistema'}</title></Helmet>
       <div className="h-full flex flex-col p-4 bg-gray-100 space-y-4 overflow-hidden">
 
         {/* Title Bar */}

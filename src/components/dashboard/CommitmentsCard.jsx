@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Edit2, Wallet, CreditCard, ArrowRight } from 'lucide-react';
+import { Plus, Edit2, Wallet, CreditCard, ArrowRight, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { isBefore, startOfToday, isAfter, endOfWeek, isSameWeek } from 'date-fns';
 
@@ -57,6 +57,15 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, onAdd, onEdit, onPay, cus
                     {isOverdue && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">Atrasado</span>}
                     {thisWeek && !isOverdue && <span className="text-[9px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-bold uppercase">Esta semana</span>}
                     {future && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase">Futuro</span>}
+                    {c.recurrente && (
+                      <span
+                        className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5"
+                        title={`Se renueva ${c.frecuencia || 'mensual'}mente al pagarlo`}
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" />
+                        {c.frecuencia || 'mensual'}
+                      </span>
+                    )}
                     {onPay && (
                       <button 
                         onClick={() => onPay(c)}

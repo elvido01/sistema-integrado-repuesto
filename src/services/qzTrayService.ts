@@ -291,14 +291,14 @@ export async function qzFindBestPrinter(preferred: string[] = []) {
         return printersList[lpIdx];
     }
 
-    // 3. Fallback genérico Zebra
-    const zebraIdx = lowerList.findIndex(p => p.includes("zdesigner") || p.includes("zebra"));
-    if (zebraIdx >= 0) {
-        console.log("[QZ] Impresora seleccionada (fallback Zebra):", printersList[zebraIdx]);
-        return printersList[zebraIdx];
+    // 3. Fallback genérico Zebra / 4BARCODE
+    const labelIdx = lowerList.findIndex(p => p.includes("zdesigner") || p.includes("zebra") || p.includes("4barcode"));
+    if (labelIdx >= 0) {
+        console.log("[QZ] Impresora seleccionada (fallback label):", printersList[labelIdx]);
+        return printersList[labelIdx];
     }
 
-    throw new Error("No se encontró la impresora ZDesigner/LP 2824. Detectadas: " + printersList.join(", "));
+    throw new Error("No se encontró impresora de etiquetas. Detectadas: " + printersList.join(", "));
 }
 
 /**

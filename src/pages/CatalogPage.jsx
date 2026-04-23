@@ -13,7 +13,8 @@ const catalogConfig = {
       // This will need to be adjusted to work without a selected brand
       extraData: { marca_id: null } 
     },
-    'ubicaciones': { title: 'Ubicaciones', table: 'almacenes', columns: [{ accessor: 'codigo', header: 'Código', type: 'text' }, { accessor: 'nombre', header: 'Nombre', type: 'text' }] },
+    'ubicaciones': { title: 'Ubicaciones', table: 'ubicaciones', columns: [{ accessor: 'codigo', header: 'Código', type: 'text' }, { accessor: 'nombre', header: 'Nombre', type: 'text' }] },
+    'almacenes': { title: 'Almacenes', table: 'almacenes', columns: [{ accessor: 'codigo', header: 'Código', type: 'text' }, { accessor: 'nombre', header: 'Nombre', type: 'text' }] },
 };
 
 const CatalogPage = ({ catalogType }) => {
@@ -41,6 +42,7 @@ const CatalogPage = ({ catalogType }) => {
         onClose={handleClose}
         config={config}
         onSaveSuccess={() => {}}
+        keepOpenOnSave
       />
     </div>
   );

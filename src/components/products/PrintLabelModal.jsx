@@ -5,16 +5,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Printer, MapPin } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { qzEnsureConnection, qzFindBestPrinter, qzPrintRawEpl } from "@/services/qzTrayService";
 import { buildEplLabel } from "@/services/eplLabel";
+import { webUsbPrintEpl, isWebUsbSupported } from "@/services/webUsbPrintService";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 
 const PREFERRED_PRINTERS = [
     "ZDesigner LP 2824 (Copiar 1)",
     "ZDesigner LP 2824",
-    "LP 2824"
+    "LP 2824",
+    "4BARCODE 4B-2074B",
 ];
 
 const MURCIELAGO_KEY = {
@@ -38,10 +41,21 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
     const [priceType, setPriceType] = useState('alpha');
     const [showLocation, setShowLocation] = useState(true);
     const [isPrintingSingle, setIsPrintingSingle] = useState(false);
+    const [labelPrintMethod, setLabelPrintMethod] = useState(() => localStorage.getItem('label_print_method') || 'qz');
 
     useEffect(() => {
         if (isOpen) {
             setIndividualQty(1);
+        } else {
+            // Red de seguridad: Radix Dialog a veces deja `pointer-events: none`
+            // pegado en <body> cuando el modal se abre desde un ContextMenu.
+            // Esto bloquea toda la UI hasta recargar.
+            const t = setTimeout(() => {
+                if (document.body.style.pointerEvents === 'none') {
+                    document.body.style.pointerEvents = '';
+                }
+            }, 200);
+            return () => clearTimeout(t);
         }
     }, [isOpen]);
 
@@ -49,10 +63,8 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
         if (!product || isPrintingSingle) return;
         const qty = parseInt(individualQty) || 1;
         setIsPrintingSingle(true);
-        toast({ title: 'Preparando impresión', description: 'Conectando con QZ Tray...' });
+        toast({ title: 'Preparando impresión', description: labelPrintMethod === 'webusb' ? 'Conectando via WebUSB...' : 'Conectando con QZ Tray...' });
         try {
-            await qzEnsureConnection();
-            const printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
             const displayPrice = priceType === 'numeric'
                 ? product.precio
                 : encodeAlphaPrice(product.precio);
@@ -66,11 +78,19 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
                 copies: qty,
                 empresaNombre
             });
-            await qzPrintRawEpl(printerName, epl);
+
+            if (labelPrintMethod === 'webusb') {
+                await webUsbPrintEpl(epl);
+            } else {
+                await qzEnsureConnection();
+                const printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
+                await qzPrintRawEpl(printerName, epl);
+            }
+
             toast({ title: 'Impresión completada', description: `Se imprimieron ${qty} etiquetas de ${product.codigo}.` });
             onClose();
         } catch (err) {
-            console.error('[QZ] Error printing single:', err);
+            console.error(`[${labelPrintMethod}] Error printing single:`, err);
             toast({ variant: 'destructive', title: 'Error de impresión', description: err?.message || 'No se pudo imprimir.' });
         } finally {
             setIsPrintingSingle(false);
@@ -142,6 +162,19 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
                                 checked={showLocation}
                                 onCheckedChange={setShowLocation}
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold text-slate-600 uppercase">Método de Impresión</Label>
+                            <Select value={labelPrintMethod} onValueChange={(v) => { setLabelPrintMethod(v); localStorage.setItem('label_print_method', v); }}>
+                                <SelectTrigger className="h-9 text-xs font-bold border-slate-300">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="qz">QZ Tray (Nativo)</SelectItem>
+                                    <SelectItem value="webusb" disabled={!isWebUsbSupported()}>WebUSB (Sin Instalar)</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         <div className="space-y-2">

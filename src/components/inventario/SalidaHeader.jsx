@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -6,11 +6,19 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 
-const SalidaHeader = ({ salida, setSalida, almacenes }) => {
+const SalidaHeader = ({ salida, setSalida, almacenes, onBuscarFactura, isSearchingFactura, facturaInfo, ultimaCompraNumero }) => {
+  const [facturaNumero, setFacturaNumero] = useState('');
+
+  useEffect(() => {
+    if (ultimaCompraNumero && !facturaNumero) {
+      setFacturaNumero(ultimaCompraNumero);
+    }
+  }, [ultimaCompraNumero]);
+
   return (
     <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6 border-x border-b rounded-b-lg">
       <div className="space-y-3">
@@ -62,6 +70,7 @@ const SalidaHeader = ({ salida, setSalida, almacenes }) => {
                 <SelectItem value="MERCANCIA DAÑADA">MERCANCIA DAÑADA</SelectItem>
                 <SelectItem value="DEVOLUCION A SUPLIDOR">DEVOLUCION A SUPLIDOR</SelectItem>
                 <SelectItem value="USO INTERNO">USO INTERNO</SelectItem>
+                <SelectItem value="SALIDA POR FACTURA">SALIDA POR COMPRA</SelectItem>
               </SelectContent>
             </Select>
         </div>
@@ -74,6 +83,39 @@ const SalidaHeader = ({ salida, setSalida, almacenes }) => {
             </SelectContent>
           </Select>
         </div>
+        {salida.concepto === 'SALIDA POR FACTURA' && (
+          <div className="space-y-1">
+            <Label className="font-bold text-morla-blue">Buscar Compra #</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="factura-numero-input"
+                placeholder="Ej: OC-0005"
+                value={facturaNumero}
+                onChange={e => setFacturaNumero(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onBuscarFactura?.(facturaNumero);
+                  }
+                }}
+                className="flex-grow border-blue-400 focus:ring-blue-500"
+              />
+              <Button
+                size="icon"
+                onClick={() => onBuscarFactura?.(facturaNumero)}
+                disabled={isSearchingFactura || !facturaNumero}
+                className="bg-morla-blue hover:bg-morla-blue/90 h-9 w-9"
+              >
+                {isSearchingFactura ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              </Button>
+            </div>
+            {facturaInfo && (
+              <p className="text-xs text-green-700 font-medium mt-1">
+                ✅ Factura #{facturaInfo.numero} — {facturaInfo.clienteNombre || 'Sin cliente'} — Total: {Number(facturaInfo.total).toFixed(2)}
+              </p>
+            )}
+          </div>
+        )}
         <div className="space-y-1">
             <Label htmlFor="notas">Notas / Comentarios</Label>
             <Textarea id="notas" value={salida.notas} onChange={e => setSalida({...salida, notas: e.target.value})} />

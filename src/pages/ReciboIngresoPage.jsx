@@ -9,12 +9,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
-import { Save, X, Loader2, FilePlus, Search, Trash2, PlusCircle } from 'lucide-react';
+import { Save, X, Loader2, FilePlus, Search, Trash2, PlusCircle, Phone } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
-import { printReciboPOS, printRecibo4Pulgadas } from '@/lib/printPOS';
+import { printReciboPOS, printRecibo4Pulgadas, printReciboIngresoQZ } from '@/lib/printPOS';
 import { generateReciboPDF, generateFacturaPDF } from '@/components/common/PDFGenerator';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
@@ -29,7 +29,7 @@ const initialState = {
   imprimir: true,
 };
 
-const ReciboIngresoPage = () => {
+const ReciboIngresoPage = ({ extraData }) => {
   const { toast } = useToast();
   const { empresa } = useAuth();
   const { closePanel } = usePanels();
@@ -42,6 +42,12 @@ const ReciboIngresoPage = () => {
   const [datosCliente, setDatosCliente] = useState({ balance_anterior: 0, ultimo_pago: null });
   const [isClienteSearchModalOpen, setIsClienteSearchModalOpen] = useState(false);
   const [tipoPapel, setTipoPapel] = useState('4 Pulgadas');
+
+  // Info del cliente seleccionado (para mostrar teléfono, dirección, etc.)
+  const selectedClientInfo = useMemo(() => {
+    if (!recibo.clienteId) return null;
+    return clientes.find(c => c.id === recibo.clienteId);
+  }, [recibo.clienteId, clientes]);
 
   const formatCurrency = (value) => new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2 }).format(value || 0);
 
@@ -64,6 +70,13 @@ const ReciboIngresoPage = () => {
   useEffect(() => {
     fetchInitialData();
   }, [fetchInitialData]);
+
+  // Auto-seleccionar cliente cuando se abre desde notificación de crédito vencido
+  useEffect(() => {
+    if (extraData?.clienteId && clientes.length > 0) {
+      handleClientSelect(extraData.clienteId);
+    }
+  }, [extraData?.clienteId, clientes.length]);
 
   const handleClientSelect = async (clienteId) => {
     if (!clienteId) {
@@ -224,10 +237,17 @@ const ReciboIngresoPage = () => {
           formasPago: pagos
         };
 
-        if (tipoPapel === '80mm') {
-          printReciboPOS(dataForPrint);
-        } else if (tipoPapel === '4 Pulgadas') {
-          printRecibo4Pulgadas(dataForPrint);
+        if (tipoPapel === '80mm' || tipoPapel === '4 Pulgadas') {
+          try {
+            await printReciboIngresoQZ(dataForPrint);
+          } catch (err) {
+            console.error('[QZ] Fallback a HTML:', err);
+            if (tipoPapel === '80mm') {
+              printReciboPOS(dataForPrint);
+            } else {
+              printRecibo4Pulgadas(dataForPrint);
+            }
+          }
         } else {
           generateReciboPDF(dataForPrint, clientFullInfo, dataForPrint.abonos, dataForPrint.formasPago);
         }
@@ -308,7 +328,7 @@ const ReciboIngresoPage = () => {
   return (
     <>
       <Helmet>
-        <title>Recibo de Ingreso - MotoFlow</title>
+        <title>Recibo de Ingreso — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -350,7 +370,11 @@ const ReciboIngresoPage = () => {
                       </div>
                       <div className="pl-24">
                         <div className="text-[12px] font-black text-blue-800 uppercase leading-tight">{recibo.clienteNombre || '---'}</div>
-                        <div className="text-[10px] text-gray-600 italic">AV. JUAN XXIII, LOS NARANJOS, HIGUEY</div>
+                        <div className="text-[10px] text-gray-600 italic">{selectedClientInfo?.direccion || '---'}</div>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3 h-3 text-green-600" />
+                          <span className="text-[11px] font-bold text-green-700">{selectedClientInfo?.telefono || '---'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -358,12 +382,12 @@ const ReciboIngresoPage = () => {
                   <div className="col-span-6 flex flex-col gap-2">
                     <div className="bg-white border border-gray-300 p-2 rounded shadow-sm flex items-center justify-between">
                       <div className="text-[11px] font-black uppercase">Cobrador</div>
-                      <Select defaultValue="MotoFlow">
+                      <Select defaultValue={empresa?.nombre || 'Empresa'}>
                         <SelectTrigger className="h-7 w-40 text-[11px] font-bold border-gray-400">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="MotoFlow">MotoFlow</SelectItem>
+                          <SelectItem value={empresa?.nombre || 'Empresa'}>{empresa?.nombre || 'Empresa'}</SelectItem>
                         </SelectContent>
                       </Select>
                       <div className="text-[10px] italic text-blue-600 font-bold ml-2">

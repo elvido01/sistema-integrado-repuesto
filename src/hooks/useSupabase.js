@@ -220,17 +220,19 @@ export const useCatalogData = () => {
   const [modelos, setModelos] = useState([]);
   const [proveedores, setProveedores] = useState([]);
   const [almacenes, setAlmacenes] = useState([]);
+  const [ubicaciones, setUbicaciones] = useState([]);
   const [tiposPresentacion, setTiposPresentacion] = useState([]);
   const { toast } = useToast();
 
   const fetchCatalogs = useCallback(async () => {
     try {
-      const [tiposRes, marcasRes, modelosRes, proveedoresRes, almacenesRes, tiposPresentacionRes] = await Promise.all([
+      const [tiposRes, marcasRes, modelosRes, proveedoresRes, almacenesRes, ubicacionesRes, tiposPresentacionRes] = await Promise.all([
         supabase.from('tipos_producto').select('*').order('nombre'),
         supabase.from('marcas').select('*').order('nombre'),
         supabase.from('modelos').select('*').order('nombre'),
         supabase.from('proveedores').select('*').order('nombre'),
-        supabase.from('almacenes').select('*').order('nombre'),
+        supabase.from('almacenes').select('*').eq('activo', true).order('nombre'),
+        supabase.from('ubicaciones').select('*').order('nombre'),
         supabase.from('tipos_presentacion').select('*').order('nombre')
       ]);
 
@@ -238,7 +240,6 @@ export const useCatalogData = () => {
       if (marcasRes.error) throw marcasRes.error;
       if (modelosRes.error) throw modelosRes.error;
       if (proveedoresRes.error) throw proveedoresRes.error;
-      if (almacenesRes.error) throw almacenesRes.error;
       if (tiposPresentacionRes.error) throw tiposPresentacionRes.error;
 
       setTipos(tiposRes.data || []);
@@ -246,6 +247,7 @@ export const useCatalogData = () => {
       setModelos(modelosRes.data || []);
       setProveedores(proveedoresRes.data || []);
       setAlmacenes(almacenesRes.data || []);
+      setUbicaciones(ubicacionesRes.data || []);
       setTiposPresentacion(tiposPresentacionRes.data || []);
     } catch (error) {
       console.error('Error fetching catalog data:', error);
@@ -261,5 +263,5 @@ export const useCatalogData = () => {
     fetchCatalogs();
   }, [fetchCatalogs]);
 
-  return { tipos, marcas, modelos, proveedores, almacenes, tiposPresentacion, fetchCatalogs };
+  return { tipos, marcas, modelos, proveedores, almacenes, ubicaciones, tiposPresentacion, fetchCatalogs };
 };

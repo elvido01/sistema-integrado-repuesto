@@ -38,6 +38,7 @@ const VentasHeader = ({
   editingFacturaNumero,
   manualClienteNombre,
   setManualClienteNombre,
+  ncfPreview,
 }) => {
   const { empresa } = useAuth();
   const nombreEmpresa = empresa?.nombre || 'Sistema';
@@ -268,8 +269,12 @@ const VentasHeader = ({
               </Select>
 
               <Label className="col-span-1 text-[12px] font-black text-gray-300 uppercase tracking-tight text-right">NCF:</Label>
-              <div className="col-span-3 bg-slate-50 border border-gray-200 h-5 text-[12px] font-mono font-bold flex items-center px-2 text-slate-400 rounded-none">
-                B020000000001
+              <div className={`col-span-3 border h-5 text-[12px] font-mono font-bold flex items-center px-2 rounded-none ${
+                ncfPreview?.ncf
+                  ? 'bg-yellow-50 border-yellow-400 text-yellow-700'
+                  : 'bg-slate-50 border-gray-200 text-slate-400'
+              }`}>
+                {ncfPreview?.ncf || '—'}
               </div>
 
               <Label className="col-span-1 text-[10px] font-black text-gray-400 uppercase tracking-tight text-right">VENDEDOR:</Label>

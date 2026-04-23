@@ -5,6 +5,7 @@ import {
     fetchRecent,
     markAsRead,
     subscribeRealtime,
+    checkOverdueCredits,
 } from '@/services/notificationsService';
 
 export const useNotifications = (userId) => {
@@ -72,6 +73,18 @@ export const useNotifications = (userId) => {
         refreshCount();
         refreshList();
     }, [refreshCount, refreshList]);
+
+    // Check overdue credits once per session (DB prevents daily duplicates)
+    useEffect(() => {
+        if (!userId) return;
+        checkOverdueCredits(userId).then((count) => {
+            if (count > 0) {
+                // Refresh to pick up newly created notifications
+                refreshCount();
+                refreshList();
+            }
+        });
+    }, [userId]);
 
     // Realtime subscription
     useEffect(() => {

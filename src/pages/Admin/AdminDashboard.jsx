@@ -9,10 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
 import AdminEmpresaDetalle from './AdminEmpresaDetalle';
+import AdminPagosReview from '@/components/suscripcion/AdminPagosReview';
+import AdminCuentasBancarias from '@/components/suscripcion/AdminCuentasBancarias';
 import {
   Shield, Loader2, Building2, Calendar, Zap, RefreshCw, Users, Activity,
   DollarSign, TrendingUp, Eye, Power, PowerOff, Clock, ArrowUpRight,
-  Package, CreditCard, Search, ChevronDown, ChevronUp, Plus
+  Package, CreditCard, Search, ChevronDown, ChevronUp, Plus, Link, Copy, Check
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -30,6 +32,16 @@ const AdminDashboard = () => {
   // Modal state
   const [selectedTenantId, setSelectedTenantId] = useState(null);
   const [extendDays, setExtendDays] = useState({});
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  const handleCopyRegistroLink = () => {
+    const url = `${window.location.origin}/registro`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      toast({ title: '✅ Link copiado', description: url });
+      setTimeout(() => setLinkCopied(false), 2500);
+    });
+  };
 
   // ── FETCH: intenta RPCs, si fallan usa queries directas ──
   const fetchAll = useCallback(async () => {
@@ -43,12 +55,16 @@ const AdminDashboard = () => {
       const statsRes = await supabase.rpc('admin_get_dashboard_stats');
       const tenantsRes = await supabase.rpc('admin_get_tenants_detalle');
 
-      if (!statsRes.error && !tenantsRes.error) {
+      console.log('[AdminDash] statsRes:', JSON.stringify(statsRes));
+      console.log('[AdminDash] tenantsRes:', JSON.stringify(tenantsRes));
+
+      if (!statsRes.error && !tenantsRes.error && statsRes.data && tenantsRes.data) {
+        console.log('[AdminDash] Usando RPCs. Stats:', statsRes.data, 'Tenants:', tenantsRes.data);
         setStats(statsRes.data);
-        setTenants(tenantsRes.data || []);
+        setTenants(Array.isArray(tenantsRes.data) ? tenantsRes.data : []);
       } else {
         // 3. Fallback: queries directas a tablas
-        console.warn('RPCs no disponibles, usando queries directas:', statsRes.error?.message);
+        console.warn('[AdminDash] RPCs fallaron, usando queries directas. statsErr:', statsRes.error, 'tenantsErr:', tenantsRes.error);
         
         const { data: tenantsData } = await supabase
           .from('tenants')
@@ -66,6 +82,24 @@ const AdminDashboard = () => {
         
         if (!subsError) suscripcionesData = subsData || [];
 
+        // Cargar usuarios reales desde profiles
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0);
+
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, tenant_id');
+
+        const { data: ventasData } = await supabase
+          .from('facturas')
+          .select('total, tenant_id')
+          .gte('fecha', startOfMonth.toISOString())
+          .neq('estado', 'ANULADA');
+
+        const profiles = profilesData || [];
+        const ventas   = ventasData   || [];
+        console.log('[AdminDash] Fallback data - profiles:', profiles.length, profiles, 'ventas:', ventas.length, ventas);
+
         // Mapear tenants con su suscripción más reciente
         const tenantsConSub = allTenants.map(t => {
           const sub = suscripcionesData.find(s => s.tenant_id === t.id);
@@ -73,6 +107,11 @@ const AdminDashboard = () => {
             ? Math.max(0, Math.ceil((new Date(sub.fecha_fin) - new Date()) / (1000 * 60 * 60 * 24)))
             : 0;
           const estadoReal = sub ? (new Date(sub.fecha_fin) > new Date() ? sub.estado : 'vencido') : null;
+
+          const tenantUsers  = profiles.filter(p => p.tenant_id === t.id).length;
+          const tenantVentas = ventas
+            .filter(v => v.tenant_id === t.id)
+            .reduce((sum, v) => sum + Number(v.total || 0), 0);
 
           return {
             ...t,
@@ -85,8 +124,8 @@ const AdminDashboard = () => {
               fecha_fin: sub.fecha_fin,
               dias_restantes: diasRestantes,
             } : null,
-            total_usuarios: 0,
-            total_ventas_mes: 0,
+            total_usuarios: tenantUsers,
+            total_ventas_mes: tenantVentas,
           };
         });
 
@@ -108,9 +147,9 @@ const AdminDashboard = () => {
           mrr: tenantsConSub
             .filter(t => t.suscripcion?.estado === 'activo')
             .reduce((sum, t) => sum + (t.suscripcion?.plan_precio || 0), 0),
-          total_usuarios: 0,
+          total_usuarios: profiles.length,
           total_productos: 0,
-          total_ventas_mes: 0,
+          total_ventas_mes: ventas.reduce((sum, v) => sum + Number(v.total || 0), 0),
         });
       }
     } catch (err) {
@@ -303,6 +342,16 @@ const AdminDashboard = () => {
               <Button
                 variant="ghost"
                 size="sm"
+                className="text-white hover:bg-white/10 gap-1.5"
+                onClick={handleCopyRegistroLink}
+                title="Copiar link de registro para nuevas empresas"
+              >
+                {linkCopied ? <Check className="w-4 h-4 text-green-400" /> : <Link className="w-4 h-4" />}
+                <span className="text-xs hidden sm:inline">{linkCopied ? 'Copiado' : 'Link Registro'}</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 className="text-white hover:bg-white/10"
                 onClick={fetchAll}
               >
@@ -347,6 +396,12 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               </div>
+
+              {/* ── PAGOS PENDIENTES ── */}
+              <AdminPagosReview />
+
+              {/* ── CUENTAS BANCARIAS ── */}
+              <AdminCuentasBancarias />
 
               {/* ── FILTERS ── */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col md:flex-row gap-3 shadow-sm">

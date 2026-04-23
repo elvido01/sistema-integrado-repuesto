@@ -15,8 +15,10 @@ import { Calendar as CalendarIcon, Loader2, Search, Printer, CheckSquare } from 
 import { startOfMonth } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { generateComisionPDF } from '@/components/common/pdf/comisionPDF';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const PagoComisionesPage = () => {
+  const { empresa } = useAuth();
   const { toast } = useToast();
   // ... (state follows)
   const [vendedores, setVendedores] = useState([]);
@@ -145,7 +147,7 @@ const PagoComisionesPage = () => {
   return (
     <>
       <Helmet>
-        <title>Reporte de Comisiones - MotoFlow</title>
+        <title>Reporte de Comisiones — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <div className="flex flex-col h-full bg-[#f0f0f0] overflow-hidden">
         {/* Header Style match from image */}

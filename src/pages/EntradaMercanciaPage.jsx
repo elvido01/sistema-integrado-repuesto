@@ -24,13 +24,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 
 const initialState = {
   numero: '',
   fecha: getCurrentDateInTimeZone(),
   referencia: '',
   concepto: 'AJUSTE DE INVENTARIO',
-  almacen_id: 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7', // ALM01 default
+  almacen_id: '', // Dinámico
   notas: '',
   imprimir: false,
 };
@@ -67,11 +68,11 @@ const EntradaMercanciaPage = () => {
       const { data: nextNumData, error: nextNumError } = await supabase.rpc('get_next_entrada_numero');
       if (nextNumError) throw nextNumError;
 
-      const defaultAlmacen = almData.find(a => a.id === 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7');
+      const defaultAlmacen = findAlmacenPrincipal(almData);
       setEntrada(prev => ({
         ...prev,
         numero: nextNumData,
-        almacen_id: defaultAlmacen ? defaultAlmacen.id : (almData[0]?.id || prev.almacen_id)
+        almacen_id: defaultAlmacen ? defaultAlmacen.id : prev.almacen_id
       }));
 
     } catch (error) {
@@ -268,7 +269,7 @@ const EntradaMercanciaPage = () => {
   return (
     <>
       <Helmet>
-        <title>Entrada de Mercancía - MotoFlow</title>
+        <title>Entrada de Mercancía — {empresa?.nombre || 'MotoFlow'}</title>
       </Helmet>
       <ProductSearchModal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} onSelectProduct={handleProductSelect} />
 

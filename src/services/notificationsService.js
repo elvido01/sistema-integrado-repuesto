@@ -44,6 +44,19 @@ export async function markAsRead(ids) {
 }
 
 /**
+ * Trigger server-side check for overdue credit invoices.
+ * The DB function creates one notification per overdue client (no duplicates per day).
+ */
+export async function checkOverdueCredits(userId) {
+    const { data, error } = await supabase.rpc('fn_check_creditos_vencidos', { p_user_id: userId });
+    if (error) {
+        console.error('[Notifications] Error checking overdue credits:', error);
+        return 0;
+    }
+    return data || 0;
+}
+
+/**
  * Subscribe to realtime INSERT events on notificaciones.
  * Returns the channel so the caller can unsubscribe.
  */

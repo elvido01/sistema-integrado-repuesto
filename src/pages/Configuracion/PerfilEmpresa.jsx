@@ -7,15 +7,19 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Save, Loader2, Building2, Upload, Image } from 'lucide-react';
+import { Save, Loader2, Building2, Upload, Image, Download } from 'lucide-react';
+import { descargarRespaldoTenant } from '@/lib/backupTenant';
 
 const PerfilEmpresa = () => {
   const { toast } = useToast();
-  const { profile } = useAuth();
+  const { profile , empresa} = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [backupProgress, setBackupProgress] = useState('');
   const [tenant, setTenant] = useState(null);
+  const [addonPrices, setAddonPrices] = useState({ precio_placa: 0, precio_gps: 0, precio_casco: 0, precio_seguro: 0 });
 
   const fetchTenant = useCallback(async () => {
     if (!profile?.tenant_id) return;
@@ -28,6 +32,18 @@ const PerfilEmpresa = () => {
         .single();
       if (error) throw error;
       setTenant(data);
+
+      const { data: cfg } = await supabase
+        .from('config_empresa')
+        .select('precio_placa, precio_gps, precio_casco, precio_seguro')
+        .eq('tenant_id', profile.tenant_id)
+        .maybeSingle();
+      setAddonPrices({
+        precio_placa: cfg?.precio_placa || 0,
+        precio_gps: cfg?.precio_gps || 0,
+        precio_casco: cfg?.precio_casco || 0,
+        precio_seguro: cfg?.precio_seguro || 0,
+      });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar el perfil de empresa.' });
     }
@@ -82,7 +98,7 @@ const PerfilEmpresa = () => {
 
       if (error) throw error;
 
-      // Sync with config_empresa for backward compatibility
+      // Sync with config_empresa for backward compatibility + add-on prices
       await supabase
         .from('config_empresa')
         .update({
@@ -92,6 +108,10 @@ const PerfilEmpresa = () => {
           telefono: tenant.telefono,
           email: tenant.email,
           logo_url: tenant.logo_url,
+          precio_placa: parseFloat(addonPrices.precio_placa) || 0,
+          precio_gps: parseFloat(addonPrices.precio_gps) || 0,
+          precio_casco: parseFloat(addonPrices.precio_casco) || 0,
+          precio_seguro: parseFloat(addonPrices.precio_seguro) || 0,
           updated_at: new Date().toISOString(),
         })
         .eq('tenant_id', tenant.id);
@@ -101,6 +121,22 @@ const PerfilEmpresa = () => {
       toast({ variant: 'destructive', title: 'Error al guardar', description: err.message });
     }
     setIsSaving(false);
+  };
+
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    setBackupProgress('Iniciando respaldo...');
+    try {
+      const result = await descargarRespaldoTenant(tenant.nombre, setBackupProgress);
+      toast({
+        title: '✅ Respaldo descargado',
+        description: `${result.tablas} tablas, ${result.registros.toLocaleString()} registros exportados.`,
+      });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error al generar respaldo', description: err.message });
+    }
+    setIsBackingUp(false);
+    setBackupProgress('');
   };
 
   if (isLoading) {
@@ -121,7 +157,7 @@ const PerfilEmpresa = () => {
 
   return (
     <>
-      <Helmet><title>Perfil de Empresa - MotoFlow</title></Helmet>
+      <Helmet><title>Perfil de Empresa — {empresa?.nombre || 'Sistema'}</title></Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -219,6 +255,35 @@ const PerfilEmpresa = () => {
               </div>
             </div>
 
+            {/* Precios de Add-ons para Solicitudes de Compra (motos) */}
+            <div className="border-t border-gray-200 pt-5">
+              <h3 className="text-sm font-black text-gray-700 uppercase mb-1">Precios para Solicitudes de Compra</h3>
+              <p className="text-[11px] text-gray-500 italic mb-3">
+                Estos valores se usan como precio por defecto de los add-ons al crear una Solicitud de Compra. Se suman al financiamiento cuando el cliente marca "si aplica".
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { key: 'precio_placa', label: 'Placa' },
+                  { key: 'precio_gps', label: 'GPS' },
+                  { key: 'precio_casco', label: 'Casco' },
+                  { key: 'precio_seguro', label: 'Seguro' },
+                ].map(p => (
+                  <div key={p.key}>
+                    <Label className="text-xs font-black text-gray-600 uppercase mb-1 block">{p.label}</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={addonPrices[p.key] ?? 0}
+                      onChange={e => setAddonPrices(prev => ({ ...prev, [p.key]: e.target.value }))}
+                      className="h-10 text-sm font-mono font-bold border-gray-300"
+                      placeholder="0.00"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Info badges */}
             <div className="flex flex-wrap gap-2">
               <div className="bg-blue-50 text-blue-700 text-[10px] font-bold px-3 py-1 rounded-full border border-blue-200 uppercase">
@@ -244,6 +309,28 @@ const PerfilEmpresa = () => {
                   ✗ Cobranzas
                 </div>
               )}
+            </div>
+
+            {/* Respaldo de Datos */}
+            <div className="border-t border-gray-200 pt-5">
+              <h3 className="text-sm font-black text-gray-700 uppercase mb-1">Respaldo de Datos</h3>
+              <p className="text-[11px] text-gray-500 italic mb-3">
+                Descarga una copia de seguridad de todos tus datos (productos, clientes, facturas, etc.) en un archivo Excel. Recomendamos hacer respaldo periódicamente.
+              </p>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleBackup}
+                  disabled={isBackingUp}
+                  variant="outline"
+                  className="h-9 px-4 border-green-600 text-green-700 hover:bg-green-50 font-bold text-xs uppercase flex items-center gap-2"
+                >
+                  {isBackingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  {isBackingUp ? 'Generando...' : 'Descargar Respaldo'}
+                </Button>
+                {backupProgress && (
+                  <span className="text-[10px] text-gray-500 italic">{backupProgress}</span>
+                )}
+              </div>
             </div>
 
             {/* Save Button */}

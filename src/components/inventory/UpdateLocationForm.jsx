@@ -18,35 +18,35 @@ const UpdateLocationForm = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanningField, setScanningField] = useState(null);
-  const [almacenes, setAlmacenes] = useState([]);
+  const [ubicaciones, setUbicaciones] = useState([]);
 
   const codigoRef = useRef(null);
 
-  // Cargar almacenes/ubicaciones al montar
+  // Cargar ubicaciones al montar
   useEffect(() => {
-    const fetchAlmacenes = async () => {
+    const fetchUbicaciones = async () => {
       try {
         const { data, error } = await supabase
-          .from('almacenes')
+          .from('ubicaciones')
           .select('id, nombre, codigo')
           .eq('activo', true)
           .order('nombre', { ascending: true });
         if (error) throw error;
-        setAlmacenes(data || []);
+        setUbicaciones(data || []);
       } catch (err) {
-        console.error('Error fetching almacenes:', err);
+        console.error('Error fetching ubicaciones:', err);
       }
     };
-    fetchAlmacenes();
+    fetchUbicaciones();
   }, []);
 
   // Opciones para el SearchableSelect
   const ubicacionOptions = useMemo(() => {
-    return almacenes.map(a => ({
+    return ubicaciones.map(a => ({
       value: a.nombre,
       label: a.nombre,
     }));
-  }, [almacenes]);
+  }, [ubicaciones]);
 
   const resetForm = useCallback(() => {
     setCodigo('');
@@ -165,7 +165,7 @@ const UpdateLocationForm = () => {
       handleProductSearch(decodedText);
     } else if (scanningField === 'location') {
       // Check if scanned value matches an existing location
-      const matchedLocation = almacenes.find(
+      const matchedLocation = ubicaciones.find(
         a => a.nombre.toUpperCase() === decodedText.toUpperCase() || a.codigo?.toUpperCase() === decodedText.toUpperCase()
       );
       if (matchedLocation) {

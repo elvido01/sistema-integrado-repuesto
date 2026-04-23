@@ -3,9 +3,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableRow, TableHeader, TableHead } from '@/components/ui/table';
-import { Trash2, Search } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Trash2, Search, FileText } from 'lucide-react';
 
-const SalidaDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetalle, removeDetalle, updateDetalle, setIsSearchModalOpen }) => {
+const SalidaDetalles = ({
+  currentDetalle, setCurrentDetalle, detalles, addDetalle, removeDetalle, updateDetalle, setIsSearchModalOpen,
+  isFacturaMode = false, facturaItems = [], onToggleItem, onToggleAll, onQtyChange
+}) => {
 
   const handleInputChange = (field, value) => {
     const newDetalle = { ...currentDetalle, [field]: value };
@@ -22,6 +26,94 @@ const SalidaDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
     }
   };
 
+  // Modo factura: tabla con checkboxes
+  if (isFacturaMode) {
+    const allSelected = facturaItems.length > 0 && facturaItems.every(i => i.selected);
+    const someSelected = facturaItems.some(i => i.selected);
+
+    return (
+      <div className="mt-4 flex-grow flex flex-col">
+        {/* Header informativo */}
+        {facturaItems.length > 0 && (
+          <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-t-lg">
+            <FileText className="h-4 w-4 text-morla-blue" />
+            <span className="text-sm font-medium text-morla-blue">
+              Seleccione los productos a dar salida ({facturaItems.filter(i => i.selected).length} de {facturaItems.length} seleccionados)
+            </span>
+          </div>
+        )}
+
+        <div className="flex-grow overflow-y-auto border-x border-b rounded-b-lg">
+          <Table>
+            <TableHeader className="sticky top-0 bg-gray-50 z-10">
+              <TableRow>
+                <TableHead className="w-[50px] text-center">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={(checked) => onToggleAll?.(!!checked)}
+                    disabled={facturaItems.length === 0}
+                    aria-label="Seleccionar todos"
+                  />
+                </TableHead>
+                <TableHead className="w-[150px]">CÓDIGO</TableHead>
+                <TableHead>DESCRIPCIÓN</TableHead>
+                <TableHead className="text-center w-[100px]">CANT. FACT.</TableHead>
+                <TableHead className="text-center w-[110px]">CANT. SALIDA</TableHead>
+                <TableHead className="w-[90px]">UND</TableHead>
+                <TableHead className="text-right w-[110px]">COSTO</TableHead>
+                <TableHead className="text-right w-[130px]">IMPORTE</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {facturaItems.map(item => {
+                const importe = item.selected ? (item.cantidad * item.costo_unitario) : 0;
+                return (
+                  <TableRow key={item.id} className={item.selected ? '' : 'opacity-50 bg-gray-50'}>
+                    <TableCell className="text-center">
+                      <Checkbox
+                        checked={item.selected}
+                        onCheckedChange={() => onToggleItem?.(item.id)}
+                        aria-label={`Seleccionar ${item.codigo}`}
+                      />
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">{item.codigo}</TableCell>
+                    <TableCell className="text-sm">{item.descripcion}</TableCell>
+                    <TableCell className="text-center text-sm text-gray-500 font-medium">{item.cantidad_factura}</TableCell>
+                    <TableCell className="text-center">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={item.cantidad_factura}
+                        value={item.cantidad}
+                        onChange={e => onQtyChange?.(item.id, e.target.value)}
+                        disabled={!item.selected}
+                        className="h-8 text-center w-20 mx-auto font-bold"
+                      />
+                    </TableCell>
+                    <TableCell className="text-sm">{item.unidad}</TableCell>
+                    <TableCell className="text-right text-sm">{item.costo_unitario.toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{importe.toFixed(2)}</TableCell>
+                  </TableRow>
+                );
+              })}
+              {facturaItems.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <div className="flex flex-col items-center gap-2">
+                      <FileText className="h-8 w-8 text-gray-300" />
+                      <span>Busque una factura para cargar sus productos.</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  }
+
+  // Modo normal: entrada manual de productos
   return (
     <div className="mt-4 flex-grow flex flex-col">
       <div className="grid grid-cols-[150px_1fr_90px_90px_110px_130px_40px] gap-2 items-end p-2 bg-gray-200 rounded-t-lg">

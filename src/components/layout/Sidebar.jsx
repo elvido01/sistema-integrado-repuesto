@@ -45,6 +45,7 @@ const navItems = [
       { title: 'Compras', id: 'compras' },
       { title: 'Pedidos', id: 'pedidos', tenantExclude: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Solicitudes de Compras', id: 'solicitudes-compras', icon: ClipboardList, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Carta de Ruta', id: 'carta-ruta', icon: FileText, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Cotizaciones', id: 'cotizaciones' },
       { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, tenantOnly: '00000000-0000-0000-0000-000000000001' },
       { title: 'Orden de Compra', id: 'orden-compra' },
@@ -80,6 +81,8 @@ const navItems = [
       { title: 'Entradas y Salidas', id: 'reporte-movimientos' },
       { title: 'Transacciones Diarias', id: 'reporte-transacciones-diarias', icon: ListChecks },
       { title: 'Inventario Físico', id: 'inventario-fisico', icon: Archive },
+      { title: 'Reportes DGII (606/607/608)', id: 'reportes-dgii', icon: FileText },
+      { title: 'Libros Contables', id: 'libros-contables', icon: FileText },
     ],
   },
   {

@@ -14,7 +14,10 @@ const NotificationBell = () => {
 
     // Navigate to the relevant module on double-click
     const handleDoubleClick = (notif) => {
-        if (notif.tipo === 'resumen_diario' || notif.tipo === 'stock_disponible') {
+        if (notif.tipo === 'credito_vencido' && notif.cliente_id) {
+            openPanel('recibo-ingreso', { clienteId: notif.cliente_id });
+            setPanelOpen(false);
+        } else if (notif.tipo === 'resumen_diario' || notif.tipo === 'stock_disponible') {
             openPanel('solicitudes');
             setPanelOpen(false);
         }
@@ -108,8 +111,8 @@ const NotificationBell = () => {
                                             <div
                                                 key={n.id}
                                                 onDoubleClick={() => handleDoubleClick(n)}
-                                                title="Doble clic para ir al módulo"
-                                                className={`px-4 py-3.5 hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer select-none ${!n.visto_at ? 'bg-blue-50/30 dark:bg-blue-900/10 border-l-4 border-l-morla-blue' : 'pl-[19px]'}`}
+                                                title={n.tipo === 'credito_vencido' ? 'Doble clic para abrir Recibo de Ingreso' : 'Doble clic para ir al módulo'}
+                                                className={`px-4 py-3.5 hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer select-none ${!n.visto_at ? (n.tipo === 'credito_vencido' ? 'bg-red-50/40 dark:bg-red-900/10 border-l-4 border-l-red-500' : 'bg-blue-50/30 dark:bg-blue-900/10 border-l-4 border-l-morla-blue') : 'pl-[19px]'}`}
                                             >
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="flex-1 min-w-0">

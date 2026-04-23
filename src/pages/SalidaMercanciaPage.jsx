@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Save, X, Loader2, FilePlus } from 'lucide-react';
+import { Save, X, Loader2, FilePlus, FileText } from 'lucide-react';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { usePanels } from '@/contexts/PanelContext';
 import SalidaHeader from '@/components/inventario/SalidaHeader';
@@ -23,13 +23,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 
 const initialState = {
   numero: '',
   fecha: getCurrentDateInTimeZone(),
   referencia: '',
   concepto: 'AJUSTE DE SALIDA',
-  almacen_id: 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7', // ALM01 default
+  almacen_id: '', // Dinámico
   notas: '',
   imprimir: false,
 };
@@ -57,6 +58,11 @@ const SalidaMercanciaPage = () => {
   const [currentDetalle, setCurrentDetalle] = useState(initialDetalleState);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Estado para salida por factura
+  const [facturaItems, setFacturaItems] = useState([]);
+  const [facturaInfo, setFacturaInfo] = useState(null);
+  const [isSearchingFactura, setIsSearchingFactura] = useState(false);
+
   const fetchInitialData = useCallback(async () => {
     try {
       const { data: almData, error: almError } = await supabase.from('almacenes').select('*').eq('activo', true);
@@ -66,11 +72,11 @@ const SalidaMercanciaPage = () => {
       const { data: nextNumData, error: nextNumError } = await supabase.rpc('get_next_salida_numero');
       if (nextNumError) throw nextNumError;
 
-      const defaultAlmacen = almData.find(a => a.id === 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7');
+      const defaultAlmacen = findAlmacenPrincipal(almData);
       setSalida(prev => ({
         ...prev,
         numero: nextNumData,
-        almacen_id: defaultAlmacen ? defaultAlmacen.id : (almData[0]?.id || prev.almacen_id)
+        almacen_id: defaultAlmacen ? defaultAlmacen.id : prev.almacen_id
       }));
 
     } catch (error) {
@@ -86,8 +92,175 @@ const SalidaMercanciaPage = () => {
     setSalida(initialState);
     setDetalles([]);
     setCurrentDetalle(initialDetalleState);
+    setFacturaItems([]);
+    setFacturaInfo(null);
     fetchInitialData();
   }, [fetchInitialData]);
+
+  // Buscar compra (OC) por número para cargar sus productos
+  const handleBuscarFactura = useCallback(async (numero) => {
+    if (!numero) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Ingrese un número de compra.' });
+      return;
+    }
+    setIsSearchingFactura(true);
+    setFacturaItems([]);
+    setFacturaInfo(null);
+    setDetalles([]);
+
+    try {
+      // Buscar en compras (ilike como en EtiquetasMasivasPage)
+      const { data: compraData, error: compraError } = await supabase
+        .from('compras')
+        .select('id, numero, total_compra, suplidor_id')
+        .ilike('numero', numero.trim())
+        .maybeSingle();
+
+      if (compraError) throw compraError;
+
+      if (!compraData) {
+        toast({ variant: 'destructive', title: 'No encontrada', description: `No se encontró compra con número "${numero}".` });
+        return;
+      }
+
+      // Obtener nombre del suplidor
+      let suplidorNombre = '';
+      if (compraData.suplidor_id) {
+        const { data: sup } = await supabase.from('proveedores').select('nombre').eq('id', compraData.suplidor_id).single();
+        if (sup) suplidorNombre = sup.nombre;
+      }
+
+      // Buscar detalles de la compra
+      const { data: detallesData, error: detallesError } = await supabase
+        .from('compras_detalle')
+        .select('id, producto_id, codigo, descripcion, cantidad, costo_unitario')
+        .eq('compra_id', compraData.id);
+
+      if (detallesError) throw detallesError;
+
+      if (!detallesData || detallesData.length === 0) {
+        toast({ variant: 'destructive', title: 'Sin detalles', description: 'La compra no tiene productos asociados.' });
+        return;
+      }
+
+      // Obtener costo actual de los productos
+      const productIds = [...new Set(detallesData.map(d => d.producto_id).filter(Boolean))];
+      let productosMap = {};
+      if (productIds.length > 0) {
+        const { data: productosData } = await supabase
+          .from('productos')
+          .select('id, costo')
+          .in('id', productIds);
+        if (productosData) {
+          productosMap = productosData.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
+        }
+      }
+
+      // Preparar items con costo actual del producto
+      const items = detallesData.map(d => {
+        const costoActual = productosMap[d.producto_id]?.costo;
+        return {
+          id: d.id,
+          producto_id: d.producto_id,
+          codigo: d.codigo,
+          descripcion: d.descripcion,
+          cantidad_factura: Number(d.cantidad),
+          cantidad: Number(d.cantidad),
+          costo_unitario: Number(costoActual ?? d.costo_unitario) || 0,
+          unidad: 'UND',
+          selected: true,
+        };
+      });
+
+      setFacturaItems(items);
+      setFacturaInfo({
+        numero: compraData.numero,
+        clienteNombre: suplidorNombre || 'Sin suplidor',
+        total: compraData.total_compra,
+      });
+
+      setSalida(prev => ({ ...prev, referencia: compraData.numero }));
+      syncDetallesFromFactura(items);
+
+      toast({ title: 'Compra cargada', description: `${items.length} producto(s) encontrados en ${compraData.numero}.` });
+
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error al buscar', description: error.message });
+    } finally {
+      setIsSearchingFactura(false);
+    }
+  }, [toast]);
+
+  // Sincronizar detalles desde items de factura seleccionados
+  const syncDetallesFromFactura = (items) => {
+    const selectedItems = items.filter(i => i.selected && i.cantidad > 0);
+    const newDetalles = selectedItems.map(i => ({
+      id: i.id,
+      producto_id: i.producto_id,
+      codigo: i.codigo,
+      descripcion: i.descripcion,
+      cantidad: i.cantidad,
+      unidad: i.unidad,
+      costo_unitario: i.costo_unitario,
+      importe: i.cantidad * i.costo_unitario,
+    }));
+    setDetalles(newDetalles);
+  };
+
+  // Toggle individual item
+  const handleFacturaItemToggle = useCallback((itemId) => {
+    setFacturaItems(prev => {
+      const updated = prev.map(i => i.id === itemId ? { ...i, selected: !i.selected } : i);
+      syncDetallesFromFactura(updated);
+      return updated;
+    });
+  }, []);
+
+  // Toggle all items
+  const handleFacturaItemToggleAll = useCallback((checked) => {
+    setFacturaItems(prev => {
+      const updated = prev.map(i => ({ ...i, selected: checked }));
+      syncDetallesFromFactura(updated);
+      return updated;
+    });
+  }, []);
+
+  // Cambiar cantidad de un item de factura
+  const handleFacturaItemQtyChange = useCallback((itemId, newQty) => {
+    setFacturaItems(prev => {
+      const updated = prev.map(i => {
+        if (i.id === itemId) {
+          const qty = Math.max(0, Math.min(i.cantidad_factura, parseFloat(newQty) || 0));
+          return { ...i, cantidad: qty };
+        }
+        return i;
+      });
+      syncDetallesFromFactura(updated);
+      return updated;
+    });
+  }, []);
+
+  const [ultimaCompraNumero, setUltimaCompraNumero] = useState('');
+
+  // Limpiar datos de factura cuando cambia el concepto
+  const handleConceptoChange = useCallback(async (concepto) => {
+    setSalida(prev => ({ ...prev, concepto }));
+    if (concepto !== 'SALIDA POR FACTURA') {
+      setFacturaItems([]);
+      setFacturaInfo(null);
+      setDetalles([]);
+      setUltimaCompraNumero('');
+    } else {
+      // Precargar el número de la última compra
+      const { data } = await supabase
+        .from('compras')
+        .select('numero')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (data) setUltimaCompraNumero(data.numero);
+    }
+  }, []);
 
   const totals = useMemo(() => {
     const totalItems = detalles.reduce((sum, item) => sum + Number(item.cantidad), 0);
@@ -267,7 +440,7 @@ const SalidaMercanciaPage = () => {
   return (
     <>
       <Helmet>
-        <title>Salida de Mercancía - MotoFlow</title>
+        <title>Salida de Mercancía — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <ProductSearchModal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} onSelectProduct={handleProductSelect} />
 
@@ -301,8 +474,22 @@ const SalidaMercanciaPage = () => {
 
           <SalidaHeader
             salida={salida}
-            setSalida={setSalida}
+            setSalida={(val) => {
+              // Interceptar cambio de concepto
+              if (typeof val === 'function') {
+                setSalida(val);
+              } else if (val.concepto !== salida.concepto) {
+                handleConceptoChange(val.concepto);
+                setSalida(prev => ({ ...prev, ...val }));
+              } else {
+                setSalida(val);
+              }
+            }}
             almacenes={almacenes}
+            onBuscarFactura={handleBuscarFactura}
+            isSearchingFactura={isSearchingFactura}
+            facturaInfo={facturaInfo}
+            ultimaCompraNumero={ultimaCompraNumero}
           />
 
           <SalidaDetalles
@@ -313,6 +500,11 @@ const SalidaMercanciaPage = () => {
             removeDetalle={removeDetalle}
             updateDetalle={updateDetalle}
             setIsSearchModalOpen={setIsSearchModalOpen}
+            isFacturaMode={salida.concepto === 'SALIDA POR FACTURA'}
+            facturaItems={facturaItems}
+            onToggleItem={handleFacturaItemToggle}
+            onToggleAll={handleFacturaItemToggleAll}
+            onQtyChange={handleFacturaItemQtyChange}
           />
 
           <div className="flex-grow"></div>

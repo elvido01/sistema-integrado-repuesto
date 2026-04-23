@@ -4,14 +4,16 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Save, Upload, Trash2, Building2, Globe, Phone, Mail, FileText, Coins, Percent, Calendar as CalendarIcon, Image as ImageIcon, Target } from 'lucide-react';
+import { Loader2, Save, Upload, Trash2, Building2, Globe, Phone, Mail, FileText, Coins, Percent, Calendar as CalendarIcon, Image as ImageIcon, Target, Printer, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-
-const CONFIG_ID = '00000000-0000-0000-0000-000000000001';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import PrinterSettings from '@/components/configuracion/PrinterSettings';
+import IntegracionFiscalSettings from '@/components/configuracion/IntegracionFiscalSettings';
 
 const ConfiguracionSistemaPage = () => {
     const { toast } = useToast();
+    const { tenantId } = useAuth();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -36,9 +38,11 @@ const ConfiguracionSistemaPage = () => {
         incremento_meta_pct: 0,
         intervalo_meta: 'Ninguno',
         fecha_inicio_meta: null,
-        tenant_id: '00000000-0000-0000-0000-000000000001',
+        tenant_id: null,
         limpiar_ordenes_compra_auto: true,
-        modo_limpieza_orden: 'agresivo'
+        modo_limpieza_orden: 'agresivo',
+        formato_factura: 'pos_4inch',
+        formato_precio_etiqueta: 'alpha'
     });
 
     const [originalGoalData, setOriginalGoalData] = useState({
@@ -53,8 +57,8 @@ const ConfiguracionSistemaPage = () => {
             const { data, error } = await supabase
                 .from('config_empresa')
                 .select('*')
-                .eq('id', CONFIG_ID)
-                .single();
+                .eq('tenant_id', tenantId)
+                .maybeSingle();
 
             if (error && error.code !== 'PGRST116') throw error;
             if (data) {
@@ -77,9 +81,11 @@ const ConfiguracionSistemaPage = () => {
                     incremento_meta_pct: data.incremento_meta_pct || 0,
                     intervalo_meta: data.intervalo_meta || 'Ninguno',
                     fecha_inicio_meta: data.fecha_inicio_meta || null,
-                    tenant_id: data.tenant_id || CONFIG_ID,
+                    tenant_id: data.tenant_id || tenantId,
                     limpiar_ordenes_compra_auto: data.limpiar_ordenes_compra_auto ?? true,
-                    modo_limpieza_orden: data.modo_limpieza_orden || 'agresivo'
+                    modo_limpieza_orden: data.modo_limpieza_orden || 'agresivo',
+                    formato_factura: data.formato_factura || 'pos_4inch',
+                    formato_precio_etiqueta: data.formato_precio_etiqueta || 'alpha'
                 });
                 
                 setOriginalGoalData({
@@ -140,11 +146,11 @@ const ConfiguracionSistemaPage = () => {
             const { error: saveError } = await supabase
                 .from('config_empresa')
                 .upsert({
-                    id: CONFIG_ID,
                     ...dataToSave,
+                    tenant_id: tenantId,
                     // Asegurar que si es nulo o vacío se vaya como null para evitar errores de timestamp
                     fecha_inicio_meta: dataToSave.fecha_inicio_meta || null
-                });
+                }, { onConflict: 'tenant_id' });
 
             if (saveError) throw saveError;
             toast({ title: 'Éxito', description: 'Configuración actualizada correctamente.' });
@@ -435,6 +441,60 @@ const ConfiguracionSistemaPage = () => {
                                 </p>
                             </div>
                         </div>
+                    </div>
+
+                    {/* Sección de Impresión: Formato Factura y Etiquetas */}
+                    <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
+                        <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
+                           <Printer className="w-4 h-4" /> Configuración de Impresión
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Formato de Factura (Hoja)</Label>
+                                <Select value={formData.formato_factura} onValueChange={(v) => handleSelectChange('formato_factura', v)}>
+                                    <SelectTrigger className="h-10 border-indigo-200 bg-indigo-50/30 text-indigo-700 font-bold"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="pos_4inch">4 Pulgadas (Punto de Ventas)</SelectItem>
+                                        <SelectItem value="half_page">8.5 x 5.5 (Media Página)</SelectItem>
+                                        <SelectItem value="full_page">8.5 x 11 (Página Completa)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Formato por defecto al imprimir facturas en el módulo de Ventas.
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Formato de Precio en Etiquetas</Label>
+                                <Select value={formData.formato_precio_etiqueta} onValueChange={(v) => handleSelectChange('formato_precio_etiqueta', v)}>
+                                    <SelectTrigger className="h-10 border-indigo-200 bg-indigo-50/30 text-indigo-700 font-bold"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="numeric">Numérico ($1,250.00)</SelectItem>
+                                        <SelectItem value="alpha">Alfabético (Enc.)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Formato por defecto del precio en Impresión de Etiquetas Masivas. El usuario puede cambiarlo temporalmente desde el módulo.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Sección de Impresoras WebUSB */}
+                    <div className="border rounded-md p-6 bg-[#f0f0f0] shadow-inner">
+                        <PrinterSettings />
+                    </div>
+
+                    {/* Sección de Integración Fiscal (e-CF) */}
+                    <div className="border rounded-md p-6 bg-white shadow-inner space-y-4">
+                        <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
+                           <Zap className="w-4 h-4" /> Integración Fiscal / Facturación Electrónica (e-CF)
+                        </h3>
+                        <p className="text-[10px] text-gray-500 italic -mt-2 mb-3">
+                            Conecta tu cuenta de facturación electrónica para emitir comprobantes fiscales electrónicos (e-CF) directamente desde el sistema.
+                            Cada empresa configura su propio proveedor de forma independiente.
+                        </p>
+                        <IntegracionFiscalSettings />
                     </div>
 
                 </CardContent>

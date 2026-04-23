@@ -14,6 +14,7 @@ export const AuthProvider = ({ children }) => {
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [empresa, setEmpresa] = useState(null);
+  const [fiscalActivo, setFiscalActivo] = useState(false);
 
   const fetchProfileAndPermissions = useCallback(async (userId) => {
     try {
@@ -49,7 +50,7 @@ export const AuthProvider = ({ children }) => {
       if (profileData?.tenant_id) {
         const { data: empresaData } = await supabase
           .from('config_empresa')
-          .select('nombre, rnc, direccion1, direccion2, telefono, email, logo_url')
+          .select('nombre, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura, formato_precio_etiqueta')
           .eq('tenant_id', profileData.tenant_id)
           .maybeSingle();
         if (empresaData) {
@@ -62,6 +63,19 @@ export const AuthProvider = ({ children }) => {
         }
       } else {
         setEmpresa(null);
+      }
+
+      // 4. Check if tenant has active fiscal integration
+      if (profileData?.tenant_id) {
+        const { data: integData } = await supabase
+          .from('integraciones_fiscales')
+          .select('activo')
+          .eq('tenant_id', profileData.tenant_id)
+          .eq('activo', true)
+          .maybeSingle();
+        setFiscalActivo(!!integData);
+      } else {
+        setFiscalActivo(false);
       }
 
       setProfile(profileData);
@@ -181,11 +195,12 @@ export const AuthProvider = ({ children }) => {
     tenantId,
     isSuperAdmin,
     empresa,
+    fiscalActivo,
     signUp,
     signIn,
     signOut,
     refreshPermissions: () => user && fetchProfileAndPermissions(user.id)
-  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, signUp, signIn, signOut, fetchProfileAndPermissions]);
+  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, fiscalActivo, signUp, signIn, signOut, fetchProfileAndPermissions]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

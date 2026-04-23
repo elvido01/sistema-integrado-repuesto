@@ -130,9 +130,15 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selec
                     </ContextMenuItem>
                     <ContextMenuItem
                       className="font-bold text-gray-700 cursor-pointer flex items-center gap-2 py-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPrintLabel && onPrintLabel(product);
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        // Diferir la apertura del Dialog hasta el próximo tick:
+                        // así el ContextMenu de Radix termina de desmontarse y
+                        // libera el `pointer-events: none` que pone en <body>.
+                        // Sin esto, el body queda bloqueado tras cerrar el modal.
+                        setTimeout(() => {
+                          onPrintLabel && onPrintLabel(product);
+                        }, 0);
                       }}
                     >
                       <Barcode className="w-4 h-4 text-emerald-600" />

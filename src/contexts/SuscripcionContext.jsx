@@ -81,7 +81,7 @@ export const SuscripcionProvider = ({ children }) => {
 
   // Derived state
   const isActiva = suscripcion?.activa === true;
-  const isVencida = suscripcion?.estado === 'vencido' || suscripcion?.estado === 'cancelado';
+  const isVencida = (suscripcion?.estado === 'vencido' || suscripcion?.estado === 'cancelado') && !suscripcion?.pago_pendiente;
   const isTrial = suscripcion?.estado === 'trial';
   const diasRestantes = suscripcion?.dias_restantes || 0;
   const porVencer = isActiva && diasRestantes <= 3 && diasRestantes > 0;
@@ -101,6 +101,11 @@ export const SuscripcionProvider = ({ children }) => {
 
     // No subscription data yet (still loading)
     if (loading) {
+      return { allowed: true, reason: null };
+    }
+
+    // If payment is pending review, allow access
+    if (suscripcion?.pago_pendiente) {
       return { allowed: true, reason: null };
     }
 

@@ -19,7 +19,7 @@ const roles = ["Administrador", "Supervisor", "Vendedor"];
 
 const UsuariosPage = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user , empresa} = useAuth();
   const [usuarios, setUsuarios] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -192,7 +192,7 @@ const UsuariosPage = () => {
   return (
     <>
       <Helmet>
-        <title>Gestión de Usuarios - MotoFlow</title>
+        <title>Gestión de Usuarios — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

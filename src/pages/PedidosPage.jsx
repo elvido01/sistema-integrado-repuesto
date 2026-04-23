@@ -23,8 +23,9 @@ import { usePanels } from '@/contexts/PanelContext';
 
 const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores }) => {
   const { toast } = useToast();
-  const { profile } = useAuth();
+  const { profile , empresa} = useAuth();
   const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
+  const [modalSessionKey, setModalSessionKey] = useState(0);
   const [currentPedido, setCurrentPedido] = useState(null);
   const [detalles, setDetalles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -206,7 +207,8 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
       const cantidad = parseFloat(item.cantidad) || 0;
       const precioInclusive = parseFloat(item.precio) || 0;
       const descuentoInclusive = parseFloat(item.descuento) || 0;
-      const itbis_pct = parseFloat(item.itbis_pct || 18) > 1 ? (parseFloat(item.itbis_pct) / 100) : parseFloat(item.itbis_pct || 0.18);
+      const itbis_pct_raw = parseFloat(item.itbis_pct || 18);
+      const itbis_pct = itbis_pct_raw > 1 ? itbis_pct_raw / 100 : itbis_pct_raw;
 
       const importeBruto = cantidad * precioInclusive;
       const importeNeto = importeBruto - descuentoInclusive;
@@ -299,14 +301,17 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
 
     const success = await onSave(pedidoData, cleanDetalles);
     setIsSubmitting(false);
-    if (success) onClose();
+    if (success) {
+      setModalSessionKey(k => k + 1);
+      onClose();
+    }
   };
 
   if (!isOpen || !currentPedido) return null;
 
   return (
     <>
-      <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleAddProduct} />
+      <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleAddProduct} sessionKey={modalSessionKey} />
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-[95vw] w-[1400px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl">
 
@@ -402,7 +407,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                           className="h-7 text-xs text-center font-black text-blue-900 border-blue-600 focus:ring-0 bg-white"
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
-                              if (profile?.role === 'admin') {
+                              if (profile?.role === 'admin' || profile?.role === 'owner') {
                                 document.getElementById('ped-input-precio')?.focus();
                               } else {
                                 document.getElementById('ped-input-descuento')?.focus();
@@ -420,7 +425,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                           onChange={e => updateStagingItem('precio', e.target.value)}
                           className="h-7 text-xs text-right font-black text-blue-900 border-blue-600 focus:ring-0 bg-white"
                           onKeyDown={e => { if (e.key === 'Enter') document.getElementById('ped-input-descuento')?.focus(); }}
-                          disabled={profile?.role !== 'admin'}
+                          disabled={profile?.role !== 'admin' && profile?.role !== 'owner'}
                         />
                       </TableCell>
                       <TableCell className="p-1 border-r border-gray-300">
@@ -474,7 +479,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                             value={d.precio}
                             onChange={e => handleUpdateDetail(d.producto_id, 'precio', e.target.value)}
                             className="w-24 h-7 text-xs text-right border-slate-200 focus:border-blue-400 font-bold"
-                            disabled={profile?.role !== 'admin'}
+                            disabled={profile?.role !== 'admin' && profile?.role !== 'owner'}
                           />
                         </TableCell>
                         <TableCell>
@@ -619,6 +624,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
 
 const PedidosPage = () => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
   const [pedidos, setPedidos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [vendedores, setVendedores] = useState([]);
@@ -754,7 +760,7 @@ const PedidosPage = () => {
 
   return (
     <>
-      <Helmet><title>Pedidos - MotoFlow</title></Helmet>
+      <Helmet><title>Pedidos — {empresa?.nombre || 'Sistema'}</title></Helmet>
       <PedidoFormModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} pedido={editingPedido} onSave={handleSavePedido} clientes={clientes} vendedores={vendedores} />
 
       <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">

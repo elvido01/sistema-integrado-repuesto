@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { generateFacturaPDF } from '@/components/common/PDFGenerator';
@@ -16,7 +16,7 @@ const CLIENTE_GENERICO = {
 
 export const useVentas = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, empresa } = useAuth();
   const [date, setDate] = useState(new Date());
   const [paymentType, setPaymentType] = useState('contado');
   const [diasCredito, setDiasCredito] = useState(0);
@@ -30,17 +30,30 @@ export const useVentas = () => {
   const [totals, setTotals] = useState({ subTotal: 0, totalDescuento: 0, totalItbis: 0, totalFactura: 0 });
   const [cambio, setCambio] = useState(0);
   const [cotizacionId, setCotizacionId] = useState(null);
-  const [printFormat, setPrintFormat] = useState('pos_4inch'); // pos_4inch, half_page, full_page
-  const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser'); // qz, browser
+  const [printFormat, setPrintFormat] = useState(() => localStorage.getItem('ventas_printFormat') || empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
+  const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser');
   const [recargo, setRecargo] = useState(0);
   const [tipoPago, setTipoPago] = useState('EFECTIVO'); // EFECTIVO, TARJETA
   const [pagos, setPagos] = useState([]); // [{ tipo, ref, monto }]
+  const [ncfPreview, setNcfPreview] = useState(null); // { ncf: 'B0100000334', tipo_ncf: '01' }
 
   /* Edit Mode State */
   const [editingFacturaId, setEditingFacturaId] = useState(null);
   const [editingFacturaNumero, setEditingFacturaNumero] = useState(null);
   const [pedidoId, setPedidoId] = useState(null);
   const [currentItem, setCurrentItem] = useState(null);
+  const [editingItemIndex, setEditingItemIndex] = useState(null); // index of item being edited in-place
+
+  // Sync printFormat default from config_empresa when it loads (if no localStorage override)
+  useEffect(() => {
+    if (empresa?.formato_factura && !localStorage.getItem('ventas_printFormat')) {
+      setPrintFormat(empresa.formato_factura);
+    }
+  }, [empresa?.formato_factura]);
+
+  /* Ref to access latest items in async callbacks */
+  const itemsRef = useRef(items);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   /* Helper to calculate item derived values */
   const calculateItemValues = (item) => {
@@ -88,6 +101,15 @@ export const useVentas = () => {
     }
 
     setItems(prev => {
+      // Mode: editing an existing item in-place
+      if (editingItemIndex !== null && editingItemIndex >= 0 && editingItemIndex < prev.length) {
+        const updatedItems = [...prev];
+        const calcs = calculateItemValues(currentItem);
+        updatedItems[editingItemIndex] = { ...currentItem, ...calcs };
+        return updatedItems;
+      }
+
+      // Mode: adding new item — check if product already exists
       const existingIndex = prev.findIndex(i => i.id === currentItem.id);
       if (existingIndex >= 0) {
         toast({ title: 'Producto ya existe', description: 'El producto ya está en la lista. Se sumará la cantidad.', variant: 'default' });
@@ -102,13 +124,43 @@ export const useVentas = () => {
     });
 
     setCurrentItem(null);
+    setEditingItemIndex(null);
     setItemCode('');
-  }, [currentItem, toast]);
+  }, [currentItem, editingItemIndex, toast]);
 
   const clearCurrentItem = useCallback(() => {
     setCurrentItem(null);
+    setEditingItemIndex(null);
     setItemCode('');
   }, []);
+
+  /* Double-click: copy item to staging row for in-place editing (item stays in list) */
+  const editItem = useCallback((item) => {
+    // Find the index of this item in the list
+    const idx = items.findIndex(i => i.id === item.id);
+    if (idx < 0) return;
+
+    // If there's already an item being edited, commit it back first
+    if (currentItem && editingItemIndex !== null && editingItemIndex >= 0) {
+      setItems(prev => {
+        const updatedItems = [...prev];
+        if (editingItemIndex < updatedItems.length) {
+          const calcs = calculateItemValues(currentItem);
+          updatedItems[editingItemIndex] = { ...currentItem, ...calcs };
+        }
+        return updatedItems;
+      });
+    }
+
+    // Copy to staging for editing; item stays in the list
+    setEditingItemIndex(idx);
+    setCurrentItem({ ...item });
+    setItemCode(item.codigo);
+    setTimeout(() => {
+      document.getElementById('input-cantidad')?.focus();
+      document.getElementById('input-cantidad')?.select();
+    }, 100);
+  }, [items, currentItem, editingItemIndex]);
 
   const resetVenta = useCallback(() => {
     setDate(new Date());
@@ -122,6 +174,7 @@ export const useVentas = () => {
     setVendedor(null);
     setCotizacionId(null);
     setCurrentItem(null);
+    setEditingItemIndex(null);
     setRecargo(0);
     setTipoPago('EFECTIVO');
     setPagos([]);
@@ -130,9 +183,10 @@ export const useVentas = () => {
     setEditingFacturaNumero(null);
     setPedidoId(null);
     setManualClienteNombre('');
+    setNcfPreview(null);
   }, []);
 
-  const handleSelectCliente = useCallback((selected) => {
+  const handleSelectCliente = useCallback(async (selected) => {
     const finalCliente = selected || CLIENTE_GENERICO;
     setCliente(finalCliente);
 
@@ -144,6 +198,89 @@ export const useVentas = () => {
       setPaymentType('contado');
       setDiasCredito(0);
     }
+
+    // === Preview NCF: mostrar el próximo NCF sin consumirlo ===
+    const tipoNcf = finalCliente.tipo_ncf || '02';
+    if (tipoNcf && tipoNcf !== '00') {
+      try {
+        const { data: seq } = await supabase
+          .from('secuencias_ncf')
+          .select('serie, tipo_ncf, secuencia_desde, ultimo_emitido')
+          .eq('tipo_ncf', tipoNcf)
+          .eq('activo', true)
+          .gte('fecha_vencimiento', new Date().toISOString().split('T')[0])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (seq) {
+          const siguiente = (!seq.ultimo_emitido || seq.ultimo_emitido < seq.secuencia_desde)
+            ? seq.secuencia_desde
+            : seq.ultimo_emitido + 1;
+          const ncfCompleto = `${seq.serie}${seq.tipo_ncf}${String(siguiente).padStart(8, '0')}`;
+          setNcfPreview({ ncf: ncfCompleto, tipo_ncf: tipoNcf });
+        } else {
+          setNcfPreview(null);
+        }
+      } catch (err) {
+        console.warn('No se pudo obtener preview NCF:', err.message);
+        setNcfPreview(null);
+      }
+    } else {
+      setNcfPreview(null);
+    }
+
+    // Re-apply price level to existing items when client changes
+    const currentItems = itemsRef.current;
+    if (currentItems.length === 0) return;
+
+    const nivel = finalCliente?.precio_nivel || 1;
+    const productIds = currentItems.map(i => i.producto_id).filter(Boolean);
+
+    const { data: products } = await supabase
+      .from('productos')
+      .select('id, itbis_pct, presentaciones(*)')
+      .in('id', productIds);
+
+    if (!products) return;
+
+    setItems(prev => prev.map(item => {
+      const product = products.find(p => p.id === item.producto_id);
+      if (!product?.presentaciones?.length) return item;
+
+      const mainPres = product.presentaciones.find(p => p.afecta_ft) || product.presentaciones[0];
+      if (!mainPres) return item;
+
+      const p1 = parseFloat(mainPres.precio1 || 0);
+      const p2 = parseFloat(mainPres.precio2 || 0);
+      const p3 = parseFloat(mainPres.precio3 || 0);
+      const auto2 = !!mainPres.auto_precio2;
+      const auto3 = !!mainPres.auto_precio3;
+
+      let priceToUse = p1;
+      if (nivel === 3) {
+        if (auto3 && p3 > 0) priceToUse = p3;
+        else if (auto2 && p2 > 0) priceToUse = p2;
+      } else if (nivel === 2) {
+        if (auto2 && p2 > 0) priceToUse = p2;
+      }
+
+      const maxDesc = (nivel === 2 || nivel === 3) ? 0 : parseFloat(mainPres.descuento_pct || 0);
+      const itbis_pct = product.itbis_pct || 0.18;
+      const importeNeto = item.cantidad * priceToUse;
+      const baseImponible = importeNeto / (1 + itbis_pct);
+      const montoItbis = importeNeto - baseImponible;
+
+      return {
+        ...item,
+        precio: priceToUse,
+        descuento: 0,
+        itbis_pct,
+        itbis: montoItbis,
+        importe: importeNeto,
+        max_descuento: maxDesc,
+      };
+    }));
   }, []);
 
   useEffect(() => {
@@ -359,15 +496,20 @@ export const useVentas = () => {
 
     setIsSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('Sesión expirada. Por favor, inicie sesión nuevamente.');
       let finalVendedorName = selectedVendedorName || 'N/A';
-      if (!selectedVendedorName && user) {
-        const { data: profile } = await supabase.from('perfiles').select('nombre_completo').eq('id', user.id).single();
-        if (profile) finalVendedorName = profile.nombre_completo;
+
+      // Verificar si el perfil existe para el FK de facturas.usuario_id
+      const { data: profile } = await supabase.from('perfiles').select('id, nombre_completo').eq('id', authUser.id).maybeSingle();
+      const safeUsuarioId = profile ? authUser.id : null;
+      if (!selectedVendedorName && profile) {
+        finalVendedorName = profile.nombre_completo;
       }
 
+      const safeCliente = cliente || CLIENTE_GENERICO;
       const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
-      const isGeneric = !cliente || !cliente.id || genericIds.includes(cliente.id) || (cliente.nombre?.toUpperCase().includes('GENERICO'));
+      const isGeneric = !safeCliente.id || genericIds.includes(safeCliente.id) || (safeCliente.nombre?.toUpperCase().includes('GENERICO'));
 
       // Construir la fecha con la hora actual local (America/Santo_Domingo = UTC-4)
       const now = new Date();
@@ -387,7 +529,7 @@ export const useVentas = () => {
 
       const facturaData = {
         fecha: localISO,
-        cliente_id: cliente.id,
+        cliente_id: safeCliente.id,
         manual_cliente_nombre: isGeneric ? manualClienteNombre : null,
         vendedor: finalVendedorName,
         vendedor_id: selectedVendedorId, // NEW FIELD
@@ -411,8 +553,23 @@ export const useVentas = () => {
           ? (totals.totalFactura - abonoCredito)
           : 0,
         estado: paymentType === 'credito' ? 'PENDIENTE' : 'PAGADA',
-        usuario_id: user.id
+        usuario_id: safeUsuarioId
       };
+
+      // === Asignar NCF automático si el cliente tiene crédito fiscal (tipo_ncf = '01') ===
+      let ncfData = null;
+      if (!editingFacturaId && safeCliente.tipo_ncf === '01') {
+        const { data: ncfResult, error: ncfError } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: '01' });
+        if (ncfError) throw ncfError;
+        if (ncfResult && ncfResult.success) {
+          facturaData.ncf = ncfResult.ncf;
+          ncfData = ncfResult;
+        } else if (ncfResult && !ncfResult.success) {
+          toast({ title: 'Error NCF', description: ncfResult.error, variant: 'destructive' });
+          setIsSaving(false);
+          return;
+        }
+      }
 
       let activeFactura;
 
@@ -435,7 +592,7 @@ export const useVentas = () => {
             tipo: 'ENTRADA',
             cantidad: d.cantidad,
             referencia_doc: `FT-EDIT-REV-${activeFactura.numero}`,
-            usuario_id: user.id,
+            usuario_id: authUser.id,
             fecha: new Date(),
           }));
           await supabase.from('inventario_movimientos').insert(revertMovs);
@@ -484,7 +641,7 @@ export const useVentas = () => {
         tipo: 'SALIDA',
         cantidad: -item.cantidad,
         referencia_doc: `FT-${activeFactura.numero}`,
-        usuario_id: user.id,
+        usuario_id: authUser.id,
         fecha: new Date(),
       }));
       await supabase.from('inventario_movimientos').insert(inventarioMovimientos);
@@ -498,7 +655,7 @@ export const useVentas = () => {
       if (paymentType === 'credito' && abonoCredito > 0 && !editingFacturaId) {
         try {
           const reciboRpcData = {
-            cliente_id: cliente.id,
+            cliente_id: safeCliente.id,
             fecha: localISO.split('T')[0],
             monto_pagado: abonoCredito,
             concepto: `Abono parcial al momento de la venta - FT-${activeFactura.numero}`,
@@ -532,13 +689,36 @@ export const useVentas = () => {
         }
       }
 
+      // Alerta NCF: notificar si quedan pocos comprobantes
+      if (ncfData && ncfData.restantes <= ncfData.alerta_cuando_queden) {
+        try {
+          await supabase.from('notificaciones').insert({
+            user_id: authUser.id,
+            titulo: 'Comprobantes Fiscales por agotarse',
+            mensaje: `Solo quedan ${ncfData.restantes} comprobantes NCF tipo 01 (Crédito Fiscal). Solicite una nueva secuencia a la DGII.`,
+            tipo: 'alerta_ncf',
+          });
+        } catch (e) {
+          console.warn('No se pudo crear notificación NCF:', e.message);
+        }
+      }
+
       if (onSuccess) {
         const { data: fullFacturaData } = await supabase
           .from('facturas')
           .select('*, facturas_detalle(*), clientes(*), perfiles:usuario_id(email, nombre_completo)')
           .eq('id', activeFactura.id)
           .single();
-        onSuccess(fullFacturaData || activeFactura);
+        const facturaForPrint = fullFacturaData || activeFactura;
+        // Asegurar que los datos del cliente siempre estén presentes en el recibo
+        if (!facturaForPrint.clientes || !facturaForPrint.clientes.nombre) {
+          facturaForPrint.clientes = safeCliente;
+        }
+        // Inyectar nombre del emisor NCF para el recibo (no se guarda en DB)
+        if (ncfData?.nombre_emisor) {
+          facturaForPrint.nombre_emisor_ncf = ncfData.nombre_emisor;
+        }
+        onSuccess(facturaForPrint);
       }
       resetVenta();
     } catch (error) {
@@ -741,17 +921,20 @@ export const useVentas = () => {
     tipoPago, setTipoPago,
     pedidoId, setPedidoId,
     handleSelectPedido,
+    printFormat, setPrintFormat,
     printMethod, setPrintMethod,
     pagos, setPagos,
     currentItem,
     updateCurrentItem,
     commitCurrentItem,
     clearCurrentItem,
+    editItem,
     /* Edit Mode Exports */
     editingFacturaId,
     editingFacturaNumero,
     loadInvoiceByNumero,
     manualClienteNombre,
-    setManualClienteNombre
+    setManualClienteNombre,
+    ncfPreview,
   };
 };

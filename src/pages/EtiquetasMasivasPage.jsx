@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Helmet } from 'react-helmet';
 import { Search, Printer, Barcode, AlertCircle, Loader2, ChevronRight, Check, X, MapPin, Plus, Tag, Save } from 'lucide-react';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
@@ -10,16 +10,19 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Services
 import { qzEnsureConnection, qzFindBestPrinter, qzPrintRawEpl } from "@/services/qzTrayService";
 import { buildEplLabel } from "@/services/eplLabel";
+import { webUsbPrintEpl, isWebUsbSupported } from "@/services/webUsbPrintService";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 
 const PREFERRED_PRINTERS = [
     "ZDesigner LP 2824 (Copiar 1)",
     "ZDesigner LP 2824",
-    "LP 2824"
+    "LP 2824",
+    "4BARCODE 4B-2074B",
 ];
 
 const MURCIELAGO_KEY = {
@@ -43,8 +46,15 @@ const EtiquetasMasivasPage = ({ extraData }) => {
     const [loading, setLoading] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
     const [items, setItems] = useState([]);
-    const [priceType, setPriceType] = useState('alpha'); // 'alpha' or 'numeric'
+    const [priceType, setPriceType] = useState(empresa?.formato_precio_etiqueta || 'alpha'); // 'alpha' or 'numeric'
     const [showLocation, setShowLocation] = useState(true);
+
+    // Sync priceType default from config_empresa when it loads
+    useEffect(() => {
+        if (empresa?.formato_precio_etiqueta) {
+            setPriceType(empresa.formato_precio_etiqueta);
+        }
+    }, [empresa?.formato_precio_etiqueta]);
 
     // Individual product search state
     const [individualCode, setIndividualCode] = useState('');
@@ -53,8 +63,20 @@ const EtiquetasMasivasPage = ({ extraData }) => {
     const [individualLoading, setIndividualLoading] = useState(false);
     const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
     const [isPrintingSingle, setIsPrintingSingle] = useState(false);
+    const [labelPrintMethod, setLabelPrintMethod] = useState(() => {
+        const saved = localStorage.getItem('label_print_method');
+        if (saved) return saved;
+        if (isWebUsbSupported() && localStorage.getItem('webusb_label_printer')) return 'webusb';
+        return 'qz';
+    });
 
-    // NO LONGER USING REFS OR CURRENT PRINT ITEM FOR VISUAL CAPTURE
+    const pairedLabelPrinterName = useMemo(() => {
+        try {
+            const saved = localStorage.getItem('webusb_label_printer');
+            if (saved) { const info = JSON.parse(saved); return info.name || null; }
+        } catch {}
+        return null;
+    }, []);
 
     const fetchPurchaseItems = useCallback(async (arg = null) => {
         const forcedNumber = (typeof arg === 'string' || typeof arg === 'number') ? arg : null;
@@ -448,10 +470,8 @@ const EtiquetasMasivasPage = ({ extraData }) => {
         if (!individualProduct || isPrintingSingle) return;
         const qty = parseInt(individualQty) || 1;
         setIsPrintingSingle(true);
-        toast({ title: 'Preparando impresión', description: 'Conectando con QZ Tray...' });
+        toast({ title: 'Preparando impresión', description: labelPrintMethod === 'webusb' ? 'Conectando via WebUSB...' : 'Conectando con QZ Tray...' });
         try {
-            await qzEnsureConnection();
-            const printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
             const displayPrice = priceType === 'numeric'
                 ? individualProduct.precio
                 : encodeAlphaPrice(individualProduct.precio);
@@ -465,15 +485,23 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 copies: qty,
                 empresaNombre
             });
-            await qzPrintRawEpl(printerName, epl);
+
+            if (labelPrintMethod === 'webusb') {
+                await webUsbPrintEpl(epl);
+            } else {
+                await qzEnsureConnection();
+                const printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
+                await qzPrintRawEpl(printerName, epl);
+            }
+
             toast({ title: 'Impresión completada', description: `Se imprimieron ${qty} etiquetas de ${individualProduct.codigo}.` });
         } catch (err) {
-            console.error('[QZ] Error printing single:', err);
+            console.error(`[${labelPrintMethod}] Error printing single:`, err);
             toast({ variant: 'destructive', title: 'Error de impresión', description: err?.message || 'No se pudo imprimir.' });
         } finally {
             setIsPrintingSingle(false);
         }
-    }, [individualProduct, individualQty, priceType, showLocation, toast]);
+    }, [individualProduct, individualQty, priceType, showLocation, toast, labelPrintMethod]);
 
     const clearIndividual = useCallback(() => {
         setIndividualProduct(null);
@@ -517,16 +545,17 @@ const EtiquetasMasivasPage = ({ extraData }) => {
 
         setIsPrinting(true);
         if (import.meta.env.DEV) {
-            console.log("[QZ] Items seleccionados para imprimir:", selectedItems.length);
+            console.log(`[${labelPrintMethod}] Items seleccionados para imprimir:`, selectedItems.length);
         }
-        toast({ title: "Preparando impresión", description: "Conectando con QZ Tray..." });
+        toast({ title: "Preparando impresión", description: labelPrintMethod === 'webusb' ? "Conectando via WebUSB..." : "Conectando con QZ Tray..." });
 
         try {
-            await qzEnsureConnection();
-            console.log("[QZ] QZ conectado");
-
-            const printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
-            console.log("[QZ] Printer seleccionado:", printerName);
+            let printerName = null;
+            if (labelPrintMethod !== 'webusb') {
+                await qzEnsureConnection();
+                printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
+                console.log("[QZ] Printer seleccionado:", printerName);
+            }
 
             let printedCount = 0;
             let skippedCount = 0;
@@ -537,9 +566,8 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 const qty = safeQty(item.cantidadTickets);
                 const ubicacion = safeStr(item.ubicacion);
 
-                // Validación mínima para no romper
                 if (!codigo || codigo.trim().length < 3) {
-                    console.warn("[QZ] Item saltado (datos incompletos):", descripcion);
+                    console.warn(`[${labelPrintMethod}] Item saltado (datos incompletos):`, descripcion);
                     skippedCount++;
                     continue;
                 }
@@ -558,8 +586,11 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                     empresaNombre
                 });
 
-                console.log(`[QZ] Enviando EPL (${qty} copias) para ${codigo}`);
-                await qzPrintRawEpl(printerName, epl);
+                if (labelPrintMethod === 'webusb') {
+                    await webUsbPrintEpl(epl);
+                } else {
+                    await qzPrintRawEpl(printerName, epl);
+                }
                 printedCount++;
             }
 
@@ -635,6 +666,21 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                             <div className="pt-4 border-t border-dashed border-slate-300 space-y-4">
                                 <div className="flex flex-col gap-3">
                                     <Label className="text-[10px] font-bold uppercase text-slate-500">Configuración EPL2 RAW</Label>
+
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-slate-600">Método de Impresión</Label>
+                                        <Select value={labelPrintMethod} onValueChange={(v) => { setLabelPrintMethod(v); localStorage.setItem('label_print_method', v); }}>
+                                            <SelectTrigger className="h-8 text-xs font-bold border-slate-300">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="qz">QZ Tray (Nativo)</SelectItem>
+                                                <SelectItem value="webusb" disabled={!isWebUsbSupported()}>
+                                                    {pairedLabelPrinterName ? `WebUSB — ${pairedLabelPrinterName}` : 'WebUSB (Sin Instalar)'}
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
 
                                     <div className="space-y-2">
                                         <Label className="text-xs font-bold text-slate-600">Formato de Precio</Label>

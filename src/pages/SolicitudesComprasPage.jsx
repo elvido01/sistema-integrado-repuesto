@@ -29,6 +29,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
   const empty = {
     cliente_id: '',
     cliente_nombre: '',
+    cliente_rnc: '',
     vendedor_id: vendedores.length > 0 ? vendedores[0].id : '',
     fecha: getCurrentDateInTimeZone(),
     producto_id: null,
@@ -49,10 +50,37 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     cuota_mensual: 0,
     fecha_vencimiento: '',
     incluye_placa: false,
+    incluye_gps: false,
+    incluye_casco: false,
+    incluye_seguro: false,
+    monto_placa: 0,
+    monto_gps: 0,
+    monto_casco: 0,
+    monto_seguro: 0,
+    tipo_financiamiento: 'simple',
     notas: '',
   };
 
   const [form, setForm] = useState(empty);
+  const [addonPrices, setAddonPrices] = useState({ placa: 0, gps: 0, casco: 0, seguro: 0 });
+
+  // Cargar precios de add-ons desde config_empresa del tenant
+  useEffect(() => {
+    if (!tenantId || !isOpen) return;
+    (async () => {
+      const { data } = await supabase
+        .from('config_empresa')
+        .select('precio_placa, precio_gps, precio_casco, precio_seguro')
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      setAddonPrices({
+        placa: parseFloat(data?.precio_placa) || 0,
+        gps: parseFloat(data?.precio_gps) || 0,
+        casco: parseFloat(data?.precio_casco) || 0,
+        seguro: parseFloat(data?.precio_seguro) || 0,
+      });
+    })();
+  }, [tenantId, isOpen]);
 
   useEffect(() => {
     if (solicitud) {
@@ -67,6 +95,17 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     }
   }, [solicitud, isOpen]);
 
+  // Congelar el monto del add-on al marcar el checkbox (snapshot del precio vigente)
+  useEffect(() => {
+    setForm(prev => ({
+      ...prev,
+      monto_placa: prev.incluye_placa ? (prev.monto_placa || addonPrices.placa) : 0,
+      monto_gps: prev.incluye_gps ? (prev.monto_gps || addonPrices.gps) : 0,
+      monto_casco: prev.incluye_casco ? (prev.monto_casco || addonPrices.casco) : 0,
+      monto_seguro: prev.incluye_seguro ? (prev.monto_seguro || addonPrices.seguro) : 0,
+    }));
+  }, [form.incluye_placa, form.incluye_gps, form.incluye_casco, form.incluye_seguro, addonPrices]);
+
   // ── Auto-cálculos de financiamiento ──
   useEffect(() => {
     const valor = parseFloat(form.valor_contado) || 0;
@@ -75,18 +114,31 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     const tasa = parseFloat(form.tasa_interes) || 0;
     const meses = parseInt(form.tiempo_meses) || 0;
 
-    const montoFinanciado = valor - inic + adic;
+    const addonsTotal =
+      (form.incluye_placa ? parseFloat(form.monto_placa) || 0 : 0) +
+      (form.incluye_gps ? parseFloat(form.monto_gps) || 0 : 0) +
+      (form.incluye_casco ? parseFloat(form.monto_casco) || 0 : 0) +
+      (form.incluye_seguro ? parseFloat(form.monto_seguro) || 0 : 0);
+
+    // Capital a financiar = (contado + add-ons + adicional) - inicial
+    const montoFinanciado = valor + addonsTotal + adic - inic;
     let totalPagares = 0;
     let cuota = 0;
 
     if (meses > 0 && montoFinanciado > 0) {
       if (tasa > 0) {
-        // Fórmula PMT (amortización francesa)
-        const tasaMensual = tasa / 100 / 12;
-        cuota = montoFinanciado * tasaMensual / (1 - Math.pow(1 + tasaMensual, -meses));
-        totalPagares = cuota * meses;
+        if (form.tipo_financiamiento === 'simple') {
+          // Interés simple: interés total = capital × tasa_mensual × meses
+          const interesTotal = montoFinanciado * (tasa / 100) * meses;
+          totalPagares = montoFinanciado + interesTotal;
+          cuota = totalPagares / meses;
+        } else {
+          // Amortización francesa (PMT, interés sobre saldo)
+          const tasaMensual = tasa / 100;
+          cuota = montoFinanciado * tasaMensual / (1 - Math.pow(1 + tasaMensual, -meses));
+          totalPagares = cuota * meses;
+        }
       } else {
-        // Sin interés
         totalPagares = montoFinanciado;
         cuota = montoFinanciado / meses;
       }
@@ -98,41 +150,62 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
       total_pagares: Math.round(totalPagares * 100) / 100,
       cuota_mensual: Math.round(cuota * 100) / 100,
     }));
-  }, [form.valor_contado, form.inicial, form.adicional, form.tasa_interes, form.tiempo_meses]);
+  }, [
+    form.valor_contado, form.inicial, form.adicional, form.tasa_interes, form.tiempo_meses,
+    form.incluye_placa, form.incluye_gps, form.incluye_casco, form.incluye_seguro,
+    form.monto_placa, form.monto_gps, form.monto_casco, form.monto_seguro,
+    form.tipo_financiamiento,
+  ]);
 
   // ── Seleccionar producto (motocicleta) ──
   const handleSelectProduct = async (product) => {
-    // Obtener nombre de marca y modelo desde catálogos
-    let marcaNombre = '';
-    let modeloNombre = '';
+    // El RPC get_productos_paginados no devuelve chasis/motor/color/anio/condicion/marca_id/modelos_ids.
+    // Hacemos fetch directo de productos por id para traer el registro completo.
+    const { data: full, error: fullErr } = await supabase
+      .from('productos')
+      .select('id, marca_id, modelos_ids, chasis, motor, color, anio, condicion, precio')
+      .eq('id', product.id)
+      .maybeSingle();
 
-    if (product.marca_id) {
-      const { data: m } = await supabase.from('marcas').select('nombre').eq('id', product.marca_id).maybeSingle();
+    if (fullErr) {
+      console.error('[handleSelectProduct] error leyendo producto:', fullErr);
+    }
+
+    const full_ = full || {};
+
+    // Nombre de marca: usar el ya resuelto del RPC si está, si no buscar por marca_id
+    let marcaNombre = product.marca_nombre || '';
+    if (!marcaNombre && full_.marca_id) {
+      const { data: m } = await supabase.from('marcas').select('nombre').eq('id', full_.marca_id).maybeSingle();
       marcaNombre = m?.nombre || '';
     }
 
-    if (product.modelos_ids?.length > 0) {
-      const { data: mods } = await supabase.from('modelos').select('nombre').in('id', product.modelos_ids);
+    // Nombre de modelo: usar el ya resuelto del RPC si está, si no buscar por modelos_ids
+    let modeloNombre = product.modelo_nombre || '';
+    if (!modeloNombre && full_.modelos_ids?.length > 0) {
+      const { data: mods } = await supabase.from('modelos').select('nombre').in('id', full_.modelos_ids);
       modeloNombre = mods?.map(m => m.nombre).join(', ') || '';
     }
 
-    // Obtener precio de la presentación principal
-    let precio = parseFloat(product.precio) || 0;
+    // Precio de la presentación principal (viene del RPC)
+    let precio = parseFloat(full_.precio) || parseFloat(product.precio) || 0;
     if (product.presentaciones?.length > 0) {
       const main = product.presentaciones.find(p => p.afecta_ft) || product.presentaciones[0];
       precio = parseFloat(main?.precio1) || precio;
     }
 
+    // En Caminero Motors el form de mercancía mapea "Chasis" → codigo y "Motor" → referencia.
+    // Si las columnas dedicadas chasis/motor están vacías, caer a codigo/referencia.
     setForm(prev => ({
       ...prev,
       producto_id: product.id,
-      chasis: product.chasis || '',
-      motor: product.motor || '',
+      chasis: full_.chasis || product.codigo || '',
+      motor: full_.motor || product.referencia || '',
       marca: marcaNombre,
       modelo: modeloNombre,
-      color: product.color || '',
-      anio: product.anio || '',
-      condicion: product.condicion || 'NUEVA',
+      color: full_.color || '',
+      anio: full_.anio || '',
+      condicion: full_.condicion || 'NUEVA',
       valor_contado: precio,
     }));
 
@@ -147,6 +220,12 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     () => clientes.find(c => c.id === form.cliente_id),
     [clientes, form.cliente_id]
   );
+
+  useEffect(() => {
+    if (selectedCliente && !form.cliente_rnc) {
+      setForm(prev => ({ ...prev, cliente_rnc: selectedCliente.rnc || '' }));
+    }
+  }, [selectedCliente]);
 
   const handleSave = async () => {
     if (!form.cliente_id && !form.cliente_nombre?.trim()) {
@@ -167,6 +246,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
       ...(solicitud?.id ? { id: solicitud.id } : {}),
       cliente_id: form.cliente_id || null,
       cliente_nombre: form.cliente_nombre || selectedCliente?.nombre || '',
+      cliente_rnc: form.cliente_rnc || null,
       vendedor_id: form.vendedor_id,
       fecha: formatDateForSupabase(form.fecha),
       producto_id: form.producto_id,
@@ -187,6 +267,14 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
       cuota_mensual: parseFloat(form.cuota_mensual) || 0,
       fecha_vencimiento: form.fecha_vencimiento || null,
       incluye_placa: form.incluye_placa,
+      incluye_gps: form.incluye_gps,
+      incluye_casco: form.incluye_casco,
+      incluye_seguro: form.incluye_seguro,
+      monto_placa: parseFloat(form.monto_placa) || 0,
+      monto_gps: parseFloat(form.monto_gps) || 0,
+      monto_casco: parseFloat(form.monto_casco) || 0,
+      monto_seguro: parseFloat(form.monto_seguro) || 0,
+      tipo_financiamiento: form.tipo_financiamiento || 'simple',
       notas: form.notas || '',
     });
     setIsSubmitting(false);
@@ -268,7 +356,12 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                 </div>
                 <div className="col-span-3 space-y-1">
                   <Label className="text-[10px] font-bold text-slate-500 uppercase">RNC / Cédula</Label>
-                  <Input readOnly value={selectedCliente?.rnc || ''} className="h-8 bg-slate-50 text-xs font-mono" />
+                  <Input
+                    value={form.cliente_rnc}
+                    onChange={e => updateField('cliente_rnc', e.target.value)}
+                    className="h-8 text-xs font-mono"
+                    placeholder="000-0000000-0"
+                  />
                 </div>
               </div>
             </div>
@@ -361,9 +454,33 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">Vencimiento 1ra Cuota</Label>
                     <Input type="date" value={form.fecha_vencimiento} onChange={e => updateField('fecha_vencimiento', e.target.value)} className="h-9 text-sm" />
                   </div>
-                  <div className="col-span-2 flex items-center gap-2 pt-1">
-                    <Checkbox checked={form.incluye_placa} onCheckedChange={val => updateField('incluye_placa', val)} id="incluye_placa" />
-                    <Label htmlFor="incluye_placa" className="text-xs font-bold text-slate-600 cursor-pointer">INCLUYE PLACA</Label>
+                  <div className="col-span-2 space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Tipo de Financiamiento</Label>
+                    <Select value={form.tipo_financiamiento} onValueChange={val => updateField('tipo_financiamiento', val)}>
+                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="frances">Cuotas fijas (francés, interés sobre saldo)</SelectItem>
+                        <SelectItem value="simple">Cuotas iguales (interés simple)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-2 grid grid-cols-4 gap-2 pt-1">
+                    {[
+                      { key: 'incluye_placa', monto: 'monto_placa', label: 'PLACA', price: addonPrices.placa },
+                      { key: 'incluye_gps', monto: 'monto_gps', label: 'GPS', price: addonPrices.gps },
+                      { key: 'incluye_casco', monto: 'monto_casco', label: 'CASCO', price: addonPrices.casco },
+                      { key: 'incluye_seguro', monto: 'monto_seguro', label: 'SEGURO', price: addonPrices.seguro },
+                    ].map(a => (
+                      <div key={a.key} className="flex items-center gap-1.5 bg-white/60 rounded px-2 py-1 border border-slate-200">
+                        <Checkbox checked={form[a.key]} onCheckedChange={val => updateField(a.key, val)} id={a.key} />
+                        <Label htmlFor={a.key} className="text-[11px] font-bold text-slate-600 cursor-pointer flex-1">
+                          {a.label}
+                          <span className="block text-[9px] font-mono text-slate-400 font-normal">
+                            RD$ {(form[a.key] ? (parseFloat(form[a.monto]) || 0) : a.price).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                        </Label>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -491,8 +608,106 @@ const SolicitudesComprasPage = () => {
   const handleAprobar = async () => {
     if (!selectedSolicitud) return;
     try {
-      await supabase.from('solicitudes_compras').update({ estado: 'Aprobada' }).eq('id', selectedSolicitud.id);
-      toast({ title: 'Solicitud Aprobada', description: `La solicitud #${selectedSolicitud.numero} ha sido aprobada.` });
+      const s = selectedSolicitud;
+
+      // 1. Factura solo el valor de contado del vehículo.
+      //    Los add-ons y el financiamiento van como comentarios (Caminero pasa
+      //    el financiamiento a otra empresa que se incorporará más adelante).
+      const valor = parseFloat(s.valor_contado) || 0;
+      const subtotal = valor;
+      const itbis = 0;
+      const montoTotal = subtotal + itbis;
+
+      // 2. Descripción del vehículo
+      const vehiculoDesc = [
+        s.marca, s.modelo,
+        s.anio ? `${s.anio}` : null,
+        s.color,
+        s.chasis ? `CHASIS: ${s.chasis}` : null,
+        s.motor ? `MOTOR: ${s.motor}` : null,
+      ].filter(Boolean).join(' ');
+
+      // 3. Comentarios: add-ons marcados + datos de financiamiento (solo si aplica)
+      const inicial = parseFloat(s.inicial) || 0;
+      const cuota = parseFloat(s.cuota_mensual) || 0;
+      const meses = parseInt(s.tiempo_meses) || 0;
+
+      // Placa / Matrícula: leer del producto (solo USADAS las tienen). NUEVAS = TRAMITE.
+      let placaTxt = 'TRAMITE';
+      let matriculaTxt = 'TRAMITE';
+      if (s.condicion === 'USADA' && s.producto_id) {
+        const { data: prod } = await supabase
+          .from('productos')
+          .select('placa, matricula')
+          .eq('id', s.producto_id)
+          .maybeSingle();
+        if (prod?.placa) placaTxt = prod.placa;
+        if (prod?.matricula) matriculaTxt = 'SI';
+        else matriculaTxt = 'TRAMITE';
+      }
+
+      const notasExtra = [
+        `SOLICITUD #${s.numero}`,
+        `MATRICULA: ${matriculaTxt}`,
+        `PLACA: ${placaTxt}`,
+        s.incluye_placa ? 'INCLUYE PLACA' : null,
+        s.incluye_gps ? 'INCLUYE GPS' : null,
+        s.incluye_casco ? 'INCLUYE CASCO' : null,
+        s.incluye_seguro ? 'INCLUYE SEGURO' : null,
+        inicial > 0 ? `INICIAL = ${inicial.toFixed(2)}` : null,
+        meses > 0 && cuota > 0 ? `PENDIENTE ${meses} PAGARES DE ${cuota.toFixed(2)}` : null,
+        s.notas,
+      ].filter(Boolean).join(' | ');
+
+      const FINAL_GENERIC_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
+      const pedidoData = {
+        cliente_id: s.cliente_id || FINAL_GENERIC_ID,
+        manual_cliente_nombre: s.cliente_nombre || null,
+        fecha: new Date().toISOString().split('T')[0],
+        vendedor_id: s.vendedor_id || null,
+        subtotal,
+        descuento_total: 0,
+        itbis_total: itbis,
+        monto_total: montoTotal,
+        estado: 'Facturando',
+        notas: notasExtra,
+      };
+
+      const detallesData = [{
+        producto_id: s.producto_id,
+        codigo: s.chasis || '',
+        descripcion: vehiculoDesc || 'VEHÍCULO',
+        cantidad: 1,
+        unidad: 'UND',
+        precio: subtotal,
+        descuento: 0,
+        itbis_pct: 0,
+        itbis: 0,
+        importe: montoTotal,
+      }];
+
+      const { data: pedidoId, error: rpcErr } = await supabase.rpc('crear_o_actualizar_pedido', {
+        p_pedido_data: pedidoData,
+        p_detalles_data: detallesData,
+      });
+      if (rpcErr) throw new Error('No se pudo generar la solicitud en Ventas: ' + rpcErr.message);
+
+      // Vincular el pedido con la solicitud para mostrar el número real
+      if (pedidoId) {
+        await supabase
+          .from('pedidos')
+          .update({ solicitud_compra_id: s.id })
+          .eq('id', pedidoId);
+      }
+
+      // 3. Marcar la solicitud como aprobada
+      const { error: updErr } = await supabase
+        .from('solicitudes_compras')
+        .update({ estado: 'Aprobada' })
+        .eq('id', s.id);
+      if (updErr) throw updErr;
+
+      toast({ title: '✅ Solicitud Aprobada', description: `#${s.numero} enviada a Lista de Solicitudes en Ventas.` });
       fetchData();
       setSelectedSolicitud(null);
     } catch (error) {
@@ -717,7 +932,94 @@ const SolicitudesComprasPage = () => {
 
             <div className="flex-grow" />
 
-            <Button variant="outline" disabled={!selectedSolicitud} className="w-full justify-between" onClick={() => toast({ title: 'Próximamente', description: 'Impresión de solicitud en desarrollo.' })}>
+            <Button variant="outline" disabled={!selectedSolicitud} className="w-full justify-between" onClick={() => {
+              if (!selectedSolicitud) return;
+              const s = selectedSolicitud;
+              const fmtMoney = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              const fechaStr = s.fecha ? formatInTimeZone(new Date(s.fecha), 'dd/MM/yyyy') : '---';
+              const printW = window.open('', '_blank', 'width=816,height=1056');
+              printW.document.write(`<!DOCTYPE html><html><head><title>Solicitud #${s.numero}</title>
+              <style>
+                @page { size: letter; margin: 15mm 20mm; }
+                * { margin:0; padding:0; box-sizing:border-box; }
+                body { font-family: 'Segoe UI', Arial, sans-serif; font-size:12px; color:#000; padding:20px 30px; }
+                .header { text-align:center; margin-bottom:15px; border-bottom:2px solid #1e40af; padding-bottom:8px; }
+                .header h1 { font-size:20px; font-weight:bold; color:#1e40af; }
+                .header .sub { font-size:14px; font-weight:bold; letter-spacing:1px; }
+                .header .rnc { font-size:11px; color:#555; }
+                .info-bar { display:flex; justify-content:space-between; margin-bottom:12px; font-size:13px; }
+                .info-bar strong { color:#1e40af; }
+                .section { margin-bottom:10px; border:1px solid #ddd; border-radius:4px; padding:8px 12px; }
+                .section-title { font-size:11px; font-weight:bold; color:#1e40af; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; border-bottom:1px solid #e5e7eb; padding-bottom:3px; }
+                .grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 20px; font-size:12px; }
+                .grid div { line-height:1.6; }
+                .grid .label { color:#666; font-weight:600; }
+                .grid .value { font-weight:bold; }
+                .summary { background:#f0f9ff; border:1px solid #93c5fd; border-radius:6px; padding:10px 16px; margin-top:10px; }
+                .summary .row { display:flex; justify-content:space-between; padding:3px 0; font-size:13px; }
+                .summary .total { font-size:16px; font-weight:900; color:#1e40af; border-top:2px solid #1e40af; padding-top:6px; margin-top:4px; }
+                .footer { text-align:center; margin-top:30px; font-size:10px; color:#888; border-top:1px solid #ddd; padding-top:6px; }
+                .firmas { display:flex; justify-content:space-around; margin-top:50px; }
+                .firma { text-align:center; }
+                .firma .linea { width:180px; border-top:1px solid #000; margin:0 auto 4px; }
+                .firma .label { font-size:11px; font-weight:bold; }
+                @media print { body { padding:0; } }
+              </style></head><body>
+              <div class="header">
+                <h1>${(empresa?.nombre || 'SISTEMA').toUpperCase()}</h1>
+                <div class="sub">SOLICITUD DE COMPRA</div>
+                <div class="rnc">R.N.C: ${empresa?.rnc || ''}</div>
+              </div>
+              <div class="info-bar">
+                <div><strong>Solicitud #:</strong> ${s.numero}</div>
+                <div><strong>Fecha:</strong> ${fechaStr}</div>
+                <div><strong>Estado:</strong> ${s.estado}</div>
+              </div>
+              <div class="section">
+                <div class="section-title">Datos del Cliente</div>
+                <div class="grid">
+                  <div><span class="label">Nombre:</span> <span class="value">${s.cliente_nombre || '---'}</span></div>
+                  <div><span class="label">Condición:</span> <span class="value">${s.condicion || '---'}</span></div>
+                </div>
+              </div>
+              <div class="section">
+                <div class="section-title">Datos del Vehículo</div>
+                <div class="grid">
+                  <div><span class="label">Chasis:</span> <span class="value">${s.chasis || '---'}</span></div>
+                  <div><span class="label">Motor:</span> <span class="value">${s.motor || '---'}</span></div>
+                  <div><span class="label">Marca:</span> <span class="value">${s.marca || '---'}</span></div>
+                  <div><span class="label">Modelo:</span> <span class="value">${s.modelo || '---'}</span></div>
+                  <div><span class="label">Color:</span> <span class="value">${s.color || '---'}</span></div>
+                  <div><span class="label">Año:</span> <span class="value">${s.anio || '---'}</span></div>
+                </div>
+              </div>
+              <div class="section">
+                <div class="section-title">Opciones de Préstamos</div>
+                <div class="grid">
+                  <div><span class="label">Valor al Contado:</span> <span class="value">RD$ ${fmtMoney(s.valor_contado)}</span></div>
+                  <div><span class="label">Inicial:</span> <span class="value">RD$ ${fmtMoney(s.inicial)}</span></div>
+                  <div><span class="label">Adicional:</span> <span class="value">RD$ ${fmtMoney(s.adicional)}</span></div>
+                  <div><span class="label">Tasa de Interés:</span> <span class="value">${s.tasa_interes || 0}%</span></div>
+                  <div><span class="label">Tiempo:</span> <span class="value">${s.tiempo_meses || 0} meses</span></div>
+                  <div><span class="label">Incluye Placa:</span> <span class="value">${s.incluye_placa ? 'SÍ' : 'NO'}</span></div>
+                </div>
+                <div class="summary">
+                  <div class="row"><span>Financiamiento:</span> <strong>RD$ ${fmtMoney(s.financiamiento)}</strong></div>
+                  <div class="row"><span>Total de Pagarés:</span> <strong>RD$ ${fmtMoney(s.total_pagares)}</strong></div>
+                  <div class="row total"><span>Cuota Mensual:</span> <span>RD$ ${fmtMoney(s.cuota_mensual)}</span></div>
+                </div>
+              </div>
+              ${s.notas ? `<div class="section"><div class="section-title">Notas</div><p style="font-size:12px">${s.notas}</p></div>` : ''}
+              <div class="firmas">
+                <div class="firma"><div class="linea"></div><div class="label">VENDEDOR</div></div>
+                <div class="firma"><div class="linea"></div><div class="label">CLIENTE</div></div>
+                <div class="firma"><div class="linea"></div><div class="label">APROBADO POR</div></div>
+              </div>
+              <div class="footer">${empresa?.direccion || ''} — Tel: ${empresa?.telefono || ''}</div>
+              <script>window.onload=function(){window.print();};</script>
+              </body></html>`);
+              printW.document.close();
+            }}>
               <span>Imprimir Solicitud</span><FileDown />
             </Button>
           </div>

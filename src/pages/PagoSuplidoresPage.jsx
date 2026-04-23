@@ -7,12 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
-import { Save, X, Loader2, FilePlus, Trash2, PlusCircle, Printer } from 'lucide-react';
+import { Save, X, Loader2, FilePlus, Trash2, PlusCircle, Printer, ChevronDown, Search } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { Checkbox } from '@/components/ui/checkbox';
 import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
+import { printPagoSuplidorPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const initialState = {
@@ -23,7 +25,7 @@ const initialState = {
   balanceAnterior: 0,
   totalPagado: 0,
   balanceActual: 0,
-  imprimir: false,
+  imprimir: true,
 };
 
 const PagoSuplidoresPage = () => {
@@ -36,6 +38,15 @@ const PagoSuplidoresPage = () => {
   const [formasPago, setFormasPago] = useState([{ id: 1, forma: 'Efectivo', monto: 0, referencia: '' }]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [suplidorSearch, setSuplidorSearch] = useState('');
+  const [suplidorPopoverOpen, setSuplidorPopoverOpen] = useState(false);
+  const [paperSize, setPaperSize] = useState('4inch'); // 4inch (POS térmico) por defecto
+
+  const filteredSuplidores = useMemo(() => {
+    const q = suplidorSearch.trim().toLowerCase();
+    if (!q) return suplidores;
+    return suplidores.filter(s => (s.nombre || '').toLowerCase().includes(q));
+  }, [suplidores, suplidorSearch]);
 
   const formatCurrency = (value) => new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2 }).format(value);
 
@@ -71,7 +82,14 @@ const PagoSuplidoresPage = () => {
       const { data, error } = await supabase.rpc('get_compras_pendientes_suplidor', { p_suplidor_id: suplidorId });
       if (error) throw error;
 
-      const comprasConAbono = data.map(c => ({ ...c, abono: 0 }));
+      // Ordenar por fecha de vencimiento ascendente: la más próxima a vencer primero.
+      const comprasConAbono = data
+        .map(c => ({ ...c, abono: 0 }))
+        .sort((a, b) => {
+          const da = a.fecha_vencimiento ? new Date(a.fecha_vencimiento).getTime() : Infinity;
+          const db = b.fecha_vencimiento ? new Date(b.fecha_vencimiento).getTime() : Infinity;
+          return da - db;
+        });
       const balanceAnterior = comprasConAbono.reduce((sum, c) => sum + Number(c.monto_pendiente), 0);
 
       setCompras(comprasConAbono);
@@ -172,16 +190,28 @@ const PagoSuplidoresPage = () => {
       toast({ title: 'Éxito', description: `Pago ${data} guardado correctamente.` });
 
       if (pago.imprimir) {
-        generatePagoSuplidorPDF(
-          { ...pagoData, numero: data },
-          pago.suplidorNombre,
-          detallesData.map(d => {
-            const original = compras.find(c => c.id === d.compra_id);
-            return { ...d, fecha_emision: original?.fecha_emision, referencia: original?.referencia, monto_pendiente: original?.monto_pendiente };
-          }),
-          formasPago,
-          empresa
-        );
+        const enrichedDetalles = detallesData.map(d => {
+          const original = compras.find(c => c.id === d.compra_id);
+          return { ...d, fecha_emision: original?.fecha_emision, referencia: original?.referencia, monto_pendiente: original?.monto_pendiente };
+        });
+
+        if (paperSize === 'pdf') {
+          generatePagoSuplidorPDF(
+            { ...pagoData, numero: data },
+            pago.suplidorNombre,
+            enrichedDetalles,
+            formasPago,
+            empresa
+          );
+        } else {
+          printPagoSuplidorPOS(
+            { ...pagoData, numero: data },
+            pago.suplidorNombre,
+            enrichedDetalles,
+            formasPago,
+            paperSize
+          );
+        }
       }
 
       // En lugar de resetear todo el formulario, refrescamos los datos del suplidor actual
@@ -232,7 +262,7 @@ const PagoSuplidoresPage = () => {
   return (
     <>
       <Helmet>
-        <title>Pago a Suplidores - MotoFlow</title>
+        <title>Pago a Suplidores — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -258,14 +288,66 @@ const PagoSuplidoresPage = () => {
               </div>
               <div>
                 <Label>Suplidor</Label>
-                <Select onValueChange={handleSuplidorSelect} disabled={isLoading}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={isLoading ? "Cargando suplidores..." : "Seleccione un suplidor"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suplidores.map(s => <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Popover open={suplidorPopoverOpen} onOpenChange={setSuplidorPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <span className={pago.suplidorNombre ? '' : 'text-muted-foreground'}>
+                        {isLoading
+                          ? 'Cargando suplidores...'
+                          : pago.suplidorNombre || 'Seleccione un suplidor'}
+                      </span>
+                      <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="p-0 w-[var(--radix-popover-trigger-width)]"
+                    align="start"
+                    onOpenAutoFocus={(e) => {
+                      e.preventDefault();
+                      // Focus al input de búsqueda al abrir
+                      setTimeout(() => {
+                        document.getElementById('suplidor-search-input')?.focus();
+                      }, 0);
+                    }}
+                  >
+                    <div className="flex items-center border-b px-2">
+                      <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <Input
+                        id="suplidor-search-input"
+                        placeholder="Buscar suplidor..."
+                        value={suplidorSearch}
+                        onChange={(e) => setSuplidorSearch(e.target.value)}
+                        className="h-9 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+                      />
+                    </div>
+                    <div className="max-h-60 overflow-y-auto p-1">
+                      {filteredSuplidores.length === 0 ? (
+                        <div className="px-2 py-3 text-sm text-center text-muted-foreground">
+                          Sin resultados
+                        </div>
+                      ) : (
+                        filteredSuplidores.map(s => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              handleSuplidorSelect(s.id);
+                              setSuplidorPopoverOpen(false);
+                              setSuplidorSearch('');
+                            }}
+                            className={`w-full text-left px-2 py-2 text-sm rounded hover:bg-accent hover:text-accent-foreground cursor-pointer ${pago.suplidorId === s.id ? 'bg-accent font-semibold' : ''}`}
+                          >
+                            {s.nombre}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div className="p-2 bg-gray-50 rounded">
@@ -341,11 +423,26 @@ const PagoSuplidoresPage = () => {
           </div>
 
           <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
+            <div className="space-y-3">
               <div className="flex items-center space-x-2">
                 <Checkbox id="imprimir" checked={pago.imprimir} onCheckedChange={(checked) => setPago(prev => ({ ...prev, imprimir: checked }))} />
                 <Label htmlFor="imprimir">Imprimir al guardar</Label>
               </div>
+              {pago.imprimir && (
+                <div>
+                  <Label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Tamaño Papel</Label>
+                  <Select value={paperSize} onValueChange={setPaperSize}>
+                    <SelectTrigger className="h-9 w-56 text-xs font-bold bg-white border-slate-400">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="4inch">📑 101.6mm (4 pulgadas)</SelectItem>
+                      <SelectItem value="80mm">📑 80mm (3 pulgadas)</SelectItem>
+                      <SelectItem value="pdf">📄 PDF (Carta)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <div className="space-y-2 text-right font-semibold">
               <div className="flex justify-between"><span className="text-gray-600">Balance Anterior:</span><span>{formatCurrency(pago.balanceAnterior)}</span></div>

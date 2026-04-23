@@ -13,8 +13,12 @@ import LoginForm from '@/components/auth/LoginForm';
 import RegistroEmpresaPage from '@/pages/RegistroEmpresaPage';
 
 function AppContent() {
-  const { session, loading, user } = useAuth();
-  const [showRegistro, setShowRegistro] = useState(false);
+  const { session, loading, user, empresa } = useAuth();
+  const [showRegistro, setShowRegistro] = useState(
+    window.location.pathname === '/registro'
+  );
+
+  const nombreSaaS = empresa?.nombre || 'MotoFlow';
 
   if (loading) {
     return (
@@ -26,14 +30,40 @@ function AppContent() {
 
   if (!session || !user) {
     if (showRegistro) {
-      return <RegistroEmpresaPage onVolver={() => setShowRegistro(false)} />;
+      return (
+        <RegistroEmpresaPage
+          onVolver={() => {
+            window.history.pushState({}, '', '/');
+            setShowRegistro(false);
+          }}
+        />
+      );
     }
-    return <LoginForm onRegistrar={() => setShowRegistro(true)} />;
+    return (
+      <>
+        <Helmet>
+          <title>{nombreSaaS} — Iniciar Sesión</title>
+        </Helmet>
+        <LoginForm
+          onRegistrar={() => {
+            window.history.pushState({}, '', '/registro');
+            setShowRegistro(true);
+          }}
+        />
+      </>
+    );
   }
 
   return (
     <SuscripcionProvider>
       <PanelProvider>
+        <Helmet>
+          <title>{nombreSaaS} — Sistema de Gestión</title>
+          <meta
+            name="description"
+            content={`Sistema inteligente para gestionar inventario, ventas y finanzas en ${nombreSaaS}.`}
+          />
+        </Helmet>
         <SuscripcionBlocker />
         <MainLayout />
       </PanelProvider>
@@ -47,14 +77,6 @@ function App() {
       <AuthProvider>
         <FacturacionProvider>
           <ComprasProvider>
-            <Helmet>
-              <title>MotoFlow — Sistema SaaS de gestión</title>
-              <meta
-                name="description"
-                content="Sistema inteligente para gestionar inventario, ventas y finanzas en negocios de motos y talleres."
-              />
-              <link rel="icon" href="/favicon.ico" type="image/x-icon" />
-            </Helmet>
             <AppContent />
             <Toaster />
           </ComprasProvider>

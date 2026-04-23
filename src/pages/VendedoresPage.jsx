@@ -8,8 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, PlusCircle, Search, Loader2 } from 'lucide-react';
 import VendedorFormModal from '@/components/configuracion/VendedorFormModal';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const VendedoresPage = () => {
+  const { empresa } = useAuth();
     const { toast } = useToast();
     const [vendedores, setVendedores] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -72,7 +74,7 @@ const VendedoresPage = () => {
     return (
         <>
             <Helmet>
-                <title>Vendedores - MotoFlow</title>
+                <title>Vendedores — {empresa?.nombre || 'Sistema'}</title>
             </Helmet>
             <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">
                 <div className="bg-white p-4 rounded-lg shadow-sm border flex justify-between items-center">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useCatalogData } from '@/hooks/useSupabase';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+
+const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 import ProductBasicInfo from './form/ProductBasicInfo';
 import ProductPlaceholderTab from './form/ProductPlaceholderTab';
 import PresentationsTab from './PresentationsTab';
@@ -29,12 +32,21 @@ const initialFormData = {
   imagen_url: '',
   activo: true,
   existencia: 0,
-  stock_mode: 'auto'
+  stock_mode: 'auto',
+  chasis: '',
+  motor: '',
+  color: '',
+  anio: '',
+  condicion: 'NUEVA',
+  placa: '',
+  matricula: false,
 };
 
 const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   const { toast } = useToast();
-  const { tiposPresentacion, tipos, marcas, modelos, proveedores, almacenes, fetchCatalogs } = useCatalogData();
+  const { tenantId } = useAuth();
+  const hasVehicleFields = tenantId === CAMINERO_MOTORS_TENANT;
+  const { tiposPresentacion, tipos, marcas, modelos, proveedores, ubicaciones, fetchCatalogs } = useCatalogData();
 
   const createNewPresentation = useCallback(() => ({
     id: `new-${Date.now()}`,
@@ -56,9 +68,14 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   const [formData, setFormData] = useState(initialFormData);
   const [presentations, setPresentations] = useState(() => [createNewPresentation()]);
   const [isEditing, setIsEditing] = useState(false);
+  // Se incrementa cada vez que populateForm reescribe el formData. Sirve
+  // para que ProductBasicInfo dispare el auto-cálculo de Mín/Máx incluso
+  // cuando el padre re-fetchea el producto y nos sobrescribe los valores.
+  const [loadVersion, setLoadVersion] = useState(0);
 
   const populateForm = useCallback(async (p) => {
     console.log("populateForm received object (p):", p);
+    setLoadVersion(v => v + 1);
     setFormData({
       id: p.id || null,
       codigo: p.codigo || '',
@@ -78,7 +95,14 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       imagen_url: p.imagen_url || '',
       activo: p.activo !== false,
       existencia: p.existencia || 0,
-      stock_mode: p.stock_mode || 'auto'
+      stock_mode: p.stock_mode || 'auto',
+      chasis: p.chasis || '',
+      motor: p.motor || '',
+      color: p.color || '',
+      anio: p.anio || '',
+      condicion: p.condicion || 'NUEVA',
+      placa: p.placa || '',
+      matricula: !!p.matricula,
     });
 
     if (p.presentaciones && p.presentaciones.length > 0) {
@@ -114,10 +138,11 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   }, [toast, createNewPresentation]);
 
   const resetForm = useCallback(() => {
-    setFormData(initialFormData);
+    // Caminero Motors: por defecto 0% ITBIS (vehículos de motor no llevan ITBIS en RD)
+    setFormData({ ...initialFormData, itbis_pct: hasVehicleFields ? 0 : 0.18 });
     setPresentations([createNewPresentation()]);
     setIsEditing(false);
-  }, [createNewPresentation]);
+  }, [createNewPresentation, hasVehicleFields]);
 
   const handleClose = useCallback(() => {
     onClose();
@@ -208,7 +233,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   }, [populateForm, toast]);
 
 
-  const handleSubmit = (e) => {
+  const handleSubmit = useCallback((e) => {
     e.preventDefault();
 
     if (!formData.codigo.trim()) {
@@ -225,8 +250,9 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
     const mainPrice = mainPresentation ? parseFloat(mainPresentation.precio1) : 0;
     const mainCost = mainPresentation ? parseFloat(mainPresentation.costo) : 0;
 
+    const { chasis, motor, color, anio, condicion, placa, matricula, kilometraje, ...restFormData } = formData;
     const cleanedData = {
-      ...formData,
+      ...restFormData,
       tipo_id: formData.tipo_id || null,
       marca_id: formData.marca_id || null,
       modelos_ids: formData.modelos_ids || [],
@@ -241,6 +267,16 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       max_stock: parseFloat(formData.max_stock) || 0,
       itbis_pct: parseFloat(formData.itbis_pct) || 0.18,
       stock_mode: formData.stock_mode || 'auto',
+      ...(hasVehicleFields && {
+        chasis: chasis || null,
+        motor: motor || null,
+        color: color || null,
+        anio: anio ? parseInt(anio) : null,
+        condicion: condicion || null,
+        placa: condicion === 'USADA' ? (placa || null) : null,
+        matricula: condicion === 'USADA' ? !!matricula : false,
+        kilometraje: kilometraje ? parseInt(kilometraje) : null,
+      }),
     };
 
     // Clean presentations to ensure numeric values and include new pricing fields
@@ -259,18 +295,33 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
     }));
 
     onSave(cleanedData, cleanedPresentations, isEditing);
-  };
+
+    // Emitir evento para sincronizar el costo en una compra abierta en pantalla
+    // (Caminero Motors: compran en USD, registran el costo manualmente al crear
+    // la mercancía, y ese costo debe reflejarse en la compra que tienen abierta).
+    if (isEditing && product?.id) {
+      window.dispatchEvent(new CustomEvent('producto:costo-actualizado', {
+        detail: { producto_id: product.id, costo: mainCost }
+      }));
+    }
+  }, [formData, presentations, hasVehicleFields, isEditing, onSave, toast, product?.id]);
+
+  // Ref para que el listener de teclado no se re-registre en cada keystroke
+  const handleSubmitRef = useRef(handleSubmit);
+  const handleCloseRef = useRef(handleClose);
+  useEffect(() => { handleSubmitRef.current = handleSubmit; }, [handleSubmit]);
+  useEffect(() => { handleCloseRef.current = handleClose; }, [handleClose]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'F10' || (e.ctrlKey && e.key === 's')) {
       e.preventDefault();
-      handleSubmit(e);
+      handleSubmitRef.current(e);
     }
     if (e.key === 'Escape') {
-      e.stopPropagation(); // ← evita que llegue al padre
-      handleClose();
+      e.stopPropagation();
+      handleCloseRef.current();
     }
-  }, [handleClose, handleSubmit]);
+  }, []);
 
   const handleNotImplemented = (feature) => {
     toast({
@@ -284,7 +335,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isOpen, formData, presentations, handleKeyDown]);
+  }, [isOpen, handleKeyDown]);
 
   return (
     <AnimatePresence>
@@ -295,7 +346,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-50 flex items-center justify-center"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={(e) => {
             if (e.target === e.currentTarget) handleClose();
           }}
@@ -335,8 +386,9 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
                     marcas={marcas}
                     modelos={modelos}
                     proveedores={proveedores}
-                    almacenes={almacenes}
+                    ubicaciones={ubicaciones}
                     fetchCatalogs={fetchCatalogs}
+                    loadVersion={loadVersion}
                   />
                 </div>
 

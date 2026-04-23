@@ -104,9 +104,17 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     const { error } = result;
 
     if (error) {
+      let msg = error.message;
+      if (msg.includes('clientes_rnc_key') || msg.includes('clientes_rnc_unique')) {
+        msg = 'Ya existe un cliente con ese RNC/Cédula.';
+      } else if (msg.includes('clientes_codigo_key') || msg.includes('unique') && msg.includes('codigo')) {
+        msg = 'Ya existe un cliente con ese código.';
+      } else if (msg.includes('duplicate key')) {
+        msg = 'Ya existe un registro con esos datos. Verifique el código o RNC.';
+      }
       toast({
-        title: 'Error',
-        description: `No se pudo guardar el cliente. ${error.message}`,
+        title: 'Error al guardar cliente',
+        description: msg,
         variant: 'destructive',
       });
     } else {

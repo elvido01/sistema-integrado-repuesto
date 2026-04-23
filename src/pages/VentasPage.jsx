@@ -9,21 +9,23 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
 import { generateFacturaPDF } from '@/components/common/PDFGenerator';
-import { printFacturaPOS, printFacturaQZ } from '@/lib/printPOS';
+import { printFacturaPOS, printFacturaQZ, printFacturaWebUsb } from '@/lib/printPOS';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { supabase } from '@/lib/customSupabaseClient';
+import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { Loader2 } from 'lucide-react';
 
 const VentasPage = () => {
   const { toast } = useToast();
-  const { user, profile } = useAuth();
+  const { user, profile, empresa, fiscalActivo } = useAuth();
   const grabarBtnRef = useRef(null);
   /* UI state for invoice editing search */
   const [isEditingNumero, setIsEditingNumero] = useState(false);
   const [editNumero, setEditNumero] = useState('');
   const [clienteCodigoInput, setClienteCodigoInput] = useState('');
+  const [notasFactura, setNotasFactura] = useState('');
 
   const {
     date, setDate,
@@ -50,6 +52,7 @@ const VentasPage = () => {
     updateCurrentItem,
     commitCurrentItem,
     clearCurrentItem,
+    editItem,
     printFormat, setPrintFormat,
     printMethod, setPrintMethod,
     recargo, setRecargo,
@@ -59,7 +62,8 @@ const VentasPage = () => {
     editingFacturaNumero,
     loadInvoiceByNumero,
     manualClienteNombre,
-    setManualClienteNombre
+    setManualClienteNombre,
+    ncfPreview,
   } = useVentas();
 
   const { activePanel } = usePanels();
@@ -106,6 +110,7 @@ const VentasPage = () => {
 
   // Modal de búsqueda de producto
   const [isProductSearchModalOpen, setIsProductSearchModalOpen] = useState(false);
+  const [modalSessionKey, setModalSessionKey] = useState(0);
   const [isCotizacionModalOpen, setIsCotizacionModalOpen] = useState(false);
   const [isPedidoModalOpen, setIsPedidoModalOpen] = useState(false);
   const { pedidoParaFacturar, setPedidoParaFacturar } = useFacturacion();
@@ -163,7 +168,7 @@ const VentasPage = () => {
           .eq('activo', true);
         if (almacenesError) throw almacenesError;
         setAlmacenes(almacenesData);
-        const defaultAlmacen = almacenesData.find(a => a.id === 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7') || almacenesData[0];
+        const defaultAlmacen = findAlmacenPrincipal(almacenesData);
         if (defaultAlmacen) setSelectedAlmacen(defaultAlmacen.id);
 
         await fetchNextNumero();
@@ -189,33 +194,73 @@ const VentasPage = () => {
     }
   }, [pedidoParaFacturar, handleSelectCotizacion, handleSelectPedido, setPedidoParaFacturar]);
 
+  const emitirECF = async (facturaId, facturaNumero) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/emitir-fiscal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: 'emitir_factura', factura_id: facturaId }),
+      });
+      const result = await resp.json();
+      if (result.ok) {
+        toast({ title: 'e-CF Emitido', description: `Factura #${facturaNumero} emitida fiscalmente. NCF: ${result.ncf || result.proveedor_number || 'OK'}` });
+      } else {
+        toast({ variant: 'destructive', title: 'Error e-CF', description: result.error || 'No se pudo emitir el e-CF. Puede reintentarlo desde el historial.', duration: 8000 });
+      }
+    } catch (err) {
+      console.error('[e-CF] Error:', err);
+      toast({ variant: 'destructive', title: 'Error e-CF', description: 'Error de conexión al emitir e-CF. La factura fue guardada correctamente.', duration: 8000 });
+    }
+  };
+
   const handleConfirmAndPrint = () => {
     const activeVendedor = vendedores.find(v => v.id === selectedVendedor);
     handleSave(async (facturaData) => {
       if (facturaData) {
-        // Route to QZ Tray or browser based on printMethod
+        // Route printing based on selected method
         if (printMethod === 'qz') {
           try {
             await printFacturaQZ(facturaData);
           } catch (err) {
             console.error('[QZ] Error, falling back to browser:', err);
-
-            // Notificar al usuario el error exacto de QZ Tray
             toast({
               variant: "destructive",
               title: "Error de conexión QZ Tray",
               description: `Fallo QZ: ${err.message || String(err)}. Usando impresión navegador.`,
               duration: 5000,
             });
-
-            printFacturaPOS(facturaData);  // Falls back to HTML
+            printFacturaPOS(facturaData);
+          }
+        } else if (printMethod === 'webusb') {
+          try {
+            await printFacturaWebUsb(facturaData);
+          } catch (err) {
+            console.error('[WebUSB] Error, falling back to browser:', err);
+            toast({
+              variant: "destructive",
+              title: "Error WebUSB",
+              description: `${err.message || String(err)}. Usando impresión navegador.`,
+              duration: 5000,
+            });
+            printFacturaPOS(facturaData, printFormat);
           }
         } else {
           printFacturaPOS(facturaData, printFormat);
         }
 
         toast({ title: 'Factura Guardada', description: `La factura #${facturaData.numero} ha sido generada y guardada.` });
+
+        // Emitir e-CF automáticamente si tiene integración fiscal activa
+        if (fiscalActivo && facturaData.id) {
+          emitirECF(facturaData.id, facturaData.numero);
+        }
+
         resetVenta();
+        setModalSessionKey(k => k + 1);
         setClienteCodigoInput('');
         fetchNextNumero();
         setTimeout(() => document.getElementById('input-codigo')?.focus(), 150);
@@ -273,7 +318,7 @@ const VentasPage = () => {
 
   return (
     <div className="bg-gray-50 h-full flex flex-col">
-      <Helmet><title>Ventas - MotoFlow</title></Helmet>
+      <Helmet><title>Ventas — {empresa?.nombre || 'MotoFlow'}</title></Helmet>
 
       <VentasHeader
         date={date}
@@ -309,9 +354,10 @@ const VentasPage = () => {
         editingFacturaNumero={editingFacturaNumero}
         manualClienteNombre={manualClienteNombre}
         setManualClienteNombre={setManualClienteNombre}
+        ncfPreview={ncfPreview}
       />
 
-      <main className="flex-grow overflow-hidden">
+      <main className="flex-1 min-h-0 overflow-hidden">
         <div className="h-full overflow-y-auto bg-white shadow border-b border-gray-300">
           <VentasTable
             items={items}
@@ -325,6 +371,7 @@ const VentasPage = () => {
             onProductSearch={() => setIsProductSearchModalOpen(true)}
             onUpdateItem={handleUpdateItem}
             onDeleteItem={handleDeleteItem}
+            onEditItem={editItem}
             currentItem={currentItem}
             updateCurrentItem={updateCurrentItem}
             commitCurrentItem={commitCurrentItem}
@@ -347,7 +394,7 @@ const VentasPage = () => {
         onFacturar={handleConfirmAndPrint}
         isSaving={isSaving}
         printFormat={printFormat}
-        setPrintFormat={setPrintFormat}
+        setPrintFormat={(v) => { setPrintFormat(v); localStorage.setItem('ventas_printFormat', v); }}
         printMethod={printMethod}
         setPrintMethod={(v) => { setPrintMethod(v); localStorage.setItem('ventas_printMethod', v); }}
         tipoPago={tipoPago}
@@ -358,12 +405,15 @@ const VentasPage = () => {
         setRecargo={setRecargo}
         resetVenta={resetVenta}
         grabarBtnRef={grabarBtnRef}
+        notas={notasFactura}
+        setNotas={setNotasFactura}
       />
 
       <ProductSearchModal
         isOpen={isProductSearchModalOpen}
         onClose={() => setIsProductSearchModalOpen(false)}
         onSelectProduct={handleProductSearchSelect}
+        sessionKey={modalSessionKey}
       />
 
       <ClienteSearchModal

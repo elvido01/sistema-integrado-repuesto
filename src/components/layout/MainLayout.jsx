@@ -30,7 +30,7 @@ const MainLayout = () => {
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
       <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
       <div
-        className={`flex-1 flex flex-col transition-all duration-300 ml-0 ${sidebarOpen ? 'md:ml-64' : 'md:ml-20'
+        className={`flex-1 flex flex-col transition-all duration-300 ml-0 ${sidebarOpen ? 'md:ml-[260px]' : 'md:ml-20'
           }`}
       >
         <SuscripcionAlert />
@@ -39,7 +39,7 @@ const MainLayout = () => {
           <PanelManager />
         </main>
         <footer className="text-center py-2 text-[10px] text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-          © 2026 {nombreEmpresa} — Powered by MotoFlow
+          © {new Date().getFullYear()} {nombreEmpresa} — Sistema de Gestión Integral
         </footer>
       </div>
     </div>

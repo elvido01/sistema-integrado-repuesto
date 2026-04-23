@@ -19,7 +19,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 const NULL_VALUE = 'null_value';
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
-const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented, tipos, marcas, modelos, proveedores, ubicaciones, fetchCatalogs }) => {
+const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented, tipos, marcas, modelos, proveedores, ubicaciones, fetchCatalogs, loadVersion = 0 }) => {
   const { tenantId } = useAuth();
   const showVehicleFields = tenantId === CAMINERO_MOTORS_TENANT;
   const [isTipoModalOpen, setIsTipoModalOpen] = useState(false);
@@ -32,6 +32,10 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
   const [suggestedUbicacion, setSuggestedUbicacion] = useState(null);
   const [isFetchingSuggestion, setIsFetchingSuggestion] = useState(false);
   const { toast } = useToast();
+
+  // Evita recalcular el stock automático en cada keystroke; solo una vez
+  // por producto al abrir la ficha.
+  const autoCalculatedIdRef = useRef(null);
 
   // Image upload
   const fileInputRef = useRef(null);
@@ -251,6 +255,22 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
       .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
   }, [ubicaciones]);
 
+  const anioOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years = [];
+    for (let y = currentYear + 1; y >= 2000; y--) {
+      years.push({ value: String(y), label: String(y) });
+    }
+    return years;
+  }, []);
+
+  const colorOptions = useMemo(() => [
+    'NEGRO', 'BLANCO', 'ROJO', 'AZUL', 'AZUL MARINO', 'GRIS', 'PLATA',
+    'VERDE', 'AMARILLO', 'NARANJA', 'DORADO', 'MARRON', 'BEIGE', 'VINO',
+    'MORADO', 'ROSADO', 'CELESTE', 'TURQUESA', 'NEGRO MATE', 'ROJO MATE',
+    'BLANCO PERLA', 'BICOLOR'
+  ].map(c => ({ value: c, label: c })), []);
+
   useEffect(() => {
     if (formData.modelo_id && !filteredModelos.some(m => m.id === formData.modelo_id)) {
       setFormData(prev => ({ ...prev, modelo_id: null }));
@@ -374,7 +394,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
   }, [suggestedUbicacion, setFormData]);
 
   const calculateAutoStock = useCallback(async () => {
-    if (!formData.id || formData.stock_mode !== 'auto') return;
+    if (!formData.id) return;
 
     setIsCalculatingStock(true);
     try {
@@ -385,16 +405,15 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
       if (error) throw error;
 
       if (data) {
+        // Los valores calculados se reflejan directamente en los inputs
+        // Mín / Máx — sin toast para no saturar al usuario. Además, fuerza
+        // stock_mode='auto' para que la UI muestre los inputs como auto.
         setFormData(prev => ({
           ...prev,
           min_stock: data.min_stock,
-          max_stock: data.max_stock
+          max_stock: data.max_stock,
+          stock_mode: 'auto',
         }));
-
-        toast({
-          title: "Stock Calculado",
-          description: `Ventas 90d: ${data.total_vendido_90d} | Ciclo: ${data.ciclo_compra_dias || 15}d | Mín: ${data.min_stock}, Máx: ${data.max_stock}`,
-        });
       }
     } catch (error) {
       console.error("Error calculando stock:", error);
@@ -408,20 +427,39 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
     } finally {
       setIsCalculatingStock(false);
     }
-  }, [formData.id, formData.stock_mode, setFormData, toast]);
+  }, [formData.id, setFormData, toast]);
 
+  // Auto-cálculo al abrir la ficha. Se dispara cuando:
+  // - Cambia el id (otro producto cargado), o
+  // - El padre re-fetchea y reinyecta el producto (loadVersion incrementa).
+  // El ref evita recálculos en cada keystroke o cambio interno de formData.
   useEffect(() => {
+    if (!formData.id) return;
+    const cacheKey = `${formData.id}::${loadVersion}`;
+    if (autoCalculatedIdRef.current === cacheKey) return;
+    autoCalculatedIdRef.current = cacheKey;
+    calculateAutoStock();
+  }, [formData.id, loadVersion, calculateAutoStock]);
+
+  // Permite recalcular manualmente desde el botón AUTO MÍN/MÁX
+  const recalculateStockManually = useCallback(() => {
+    autoCalculatedIdRef.current = null;
     calculateAutoStock();
   }, [calculateAutoStock]);
 
   const toggleStockMode = () => {
     const newMode = formData.stock_mode === 'auto' ? 'manual' : 'auto';
     setFormData(prev => ({ ...prev, stock_mode: newMode }));
-    if (newMode === 'auto' && !formData.id) {
-      toast({
-        title: "Nota",
-        description: "Guarde el producto primero para calcular en base al historial de ventas.",
-      });
+    if (newMode === 'auto') {
+      if (!formData.id) {
+        toast({
+          title: "Nota",
+          description: "Guarde el producto primero para calcular en base al historial de ventas.",
+        });
+      } else {
+        // Volver a auto recalcula con datos frescos
+        recalculateStockManually();
+      }
     }
   };
 
@@ -575,13 +613,23 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Color</Label>
                   <div className="col-span-3">
-                    <Input value={formData.color || ''} onChange={e => setFormData(prev => ({ ...prev, color: e.target.value }))} className="h-7 text-sm bg-white border-gray-300" placeholder="Color del vehículo" />
+                    <SearchableSelect
+                      placeholder="Seleccionar color"
+                      options={colorOptions}
+                      value={formData.color || ''}
+                      onChange={(v) => setFormData(prev => ({ ...prev, color: v || '' }))}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Año</Label>
                   <div className="col-span-1">
-                    <Input type="number" value={formData.anio || ''} onChange={e => setFormData(prev => ({ ...prev, anio: e.target.value }))} className="h-7 text-sm bg-white border-gray-300" placeholder="Año" min="1990" max="2030" />
+                    <SearchableSelect
+                      placeholder="Seleccionar año"
+                      options={anioOptions}
+                      value={formData.anio ? String(formData.anio) : ''}
+                      onChange={(v) => setFormData(prev => ({ ...prev, anio: v || '' }))}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -596,6 +644,36 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                     </Select>
                   </div>
                 </div>
+
+                {/* Placa y Matrícula: solo visibles cuando la motocicleta es USADA.
+                    Para NUEVA quedan en TRAMITE automáticamente al facturar. */}
+                {formData.condicion === 'USADA' && (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Placa</Label>
+                    <div className="col-span-1">
+                      <Input
+                        id="placa"
+                        type="text"
+                        maxLength={15}
+                        value={formData.placa || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, placa: e.target.value.toUpperCase() }))}
+                        className="h-7 text-sm bg-white border-gray-300 font-mono uppercase"
+                        placeholder="Ej: K1234567"
+                      />
+                    </div>
+                    <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Tiene Matrícula</Label>
+                    <div className="col-span-1 flex items-center h-7">
+                      <Checkbox
+                        id="matricula"
+                        checked={!!formData.matricula}
+                        onCheckedChange={(checked) => setFormData(prev => ({ ...prev, matricula: !!checked }))}
+                      />
+                      <Label htmlFor="matricula" className="text-[10px] font-bold uppercase text-gray-700 ml-2 cursor-pointer">
+                        Documento original
+                      </Label>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 

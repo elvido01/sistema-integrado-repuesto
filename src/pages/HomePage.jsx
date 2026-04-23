@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { AlertTriangle, TrendingUp, Users, Package, Loader2 } from 'lucide-react';
 import Logo from '@/components/common/Logo';
-import MotoFlowLogo from '@/components/common/MotoFlowLogo';
 import SummaryCard from '@/components/common/SummaryCard';
 
 // Componentes SaaS
@@ -16,12 +15,14 @@ import SuscripcionStatusCard from '@/components/dashboard/SuscripcionStatusCard'
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { isSameWeek, addDays, isBefore, startOfToday, differenceInMonths, differenceInYears } from 'date-fns';
+import { usePanels } from '@/contexts/PanelContext';
+import { isSameWeek, addDays, isBefore, startOfToday, differenceInMonths, differenceInYears, addWeeks, addMonths, addYears } from 'date-fns';
 
 const HomePage = () => {
   const { toast } = useToast();
-  const { profile } = useAuth();
-  const isAdmin = profile?.role === 'admin';
+  const { profile, empresa, tenantId } = useAuth();
+  const { openPanel } = usePanels();
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'owner';
 
   // UI Stats (Originales)
   const [stats, setStats] = useState({
@@ -63,7 +64,7 @@ const HomePage = () => {
       const { data: configEmpresa } = await supabase
         .from('config_empresa')
         .select('nombre, meta_ventas, incremento_meta_pct, intervalo_meta, fecha_inicio_meta')
-        .eq('id', '00000000-0000-0000-0000-000000000001')
+        .eq('tenant_id', tenantId)
         .maybeSingle();
 
       if (configEmpresa?.nombre) setNombreEmpresa(configEmpresa.nombre);
@@ -210,16 +211,16 @@ const HomePage = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [toast]);
+  }, [toast, tenantId]);
 
   // Initial load
   useEffect(() => {
-    if (!isAdmin) {
+    if (!isAdmin || !tenantId) {
       setLoading(false);
       return;
     }
     fetchDashboardData();
-  }, [isAdmin, fetchDashboardData]);
+  }, [isAdmin, tenantId, fetchDashboardData]);
 
   // Auto-refresh logic (5 minutes)
   useEffect(() => {
@@ -241,28 +242,68 @@ const HomePage = () => {
   };
 
   const handlePayCommitment = async (c) => {
-    if (confirm(`¿Estás seguro de que deseas pagar "${c.nombre}" por RD$${c.monto?.toLocaleString('es-DO')}? Este monto será descontado de la caja actual automáticamente.`)) {
-      try {
-        const { error } = await supabase
-          .from('compromisos')
-          .update({ activo: false, fecha_pago: new Date().toISOString() })
-          .eq('id', c.id);
+    const recurrenteMsg = c.recurrente
+      ? `\n\nSe creará automáticamente el próximo compromiso (${c.frecuencia || 'mensual'}).`
+      : '';
+    if (!confirm(`¿Estás seguro de que deseas pagar "${c.nombre}" por RD$${c.monto?.toLocaleString('es-DO')}? Este monto será descontado de la caja actual automáticamente.${recurrenteMsg}`)) {
+      return;
+    }
 
-        if (error) throw error;
-        
-        toast({
-          title: "Pago Exitoso",
-          description: "El compromiso ha sido descontado correctamente de la caja."
+    try {
+      const { error } = await supabase
+        .from('compromisos')
+        .update({ activo: false, fecha_pago: new Date().toISOString() })
+        .eq('id', c.id);
+
+      if (error) throw error;
+
+      // Auto-renovación: crear el siguiente compromiso si es recurrente
+      if (c.recurrente) {
+        const baseDate = c.fecha ? new Date(c.fecha + 'T12:00:00') : new Date();
+        let nextDate;
+        switch (c.frecuencia) {
+          case 'semanal':   nextDate = addWeeks(baseDate, 1); break;
+          case 'quincenal': nextDate = addDays(baseDate, 15); break;
+          case 'anual':     nextDate = addYears(baseDate, 1); break;
+          case 'mensual':
+          default:          nextDate = addMonths(baseDate, 1); break;
+        }
+
+        const { error: insErr } = await supabase.from('compromisos').insert({
+          nombre: c.nombre,
+          monto: c.monto,
+          fecha: nextDate.toISOString().split('T')[0],
+          tipo: c.tipo,
+          activo: true,
+          recurrente: true,
+          frecuencia: c.frecuencia || 'mensual',
         });
-        
-        fetchDashboardData(true);
-      } catch (error) {
-         toast({
-           title: "Error de Pago",
-           description: "Hubo un error al intentar descontar de caja.",
-           variant: "destructive"
-         });
+
+        if (insErr) {
+          toast({
+            title: "Pago registrado, falló renovación",
+            description: `El pago se aplicó, pero no se pudo crear el siguiente compromiso: ${insErr.message}`,
+            variant: "destructive",
+          });
+          fetchDashboardData(true);
+          return;
+        }
       }
+
+      toast({
+        title: c.recurrente ? "Pago y renovación exitosos" : "Pago Exitoso",
+        description: c.recurrente
+          ? "Compromiso descontado y siguiente período creado."
+          : "El compromiso ha sido descontado correctamente de la caja.",
+      });
+
+      fetchDashboardData(true);
+    } catch (error) {
+      toast({
+        title: "Error de Pago",
+        description: "Hubo un error al intentar descontar de caja.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -280,7 +321,7 @@ const HomePage = () => {
   return (
     <>
       <Helmet>
-        <title>Inicio - MotoFlow</title>
+        <title>Inicio — {empresa?.nombre || nombreEmpresa || 'Sistema'}</title>
         <meta name="description" content="Dashboard principal financiero inteligente." />
       </Helmet>
       
@@ -297,7 +338,7 @@ const HomePage = () => {
             transition={{ delay: 0.2, duration: 0.5 }}
             className="mb-4"
           >
-            <MotoFlowLogo size="lg" showSlogan={true} />
+            <Logo size="lg" />
           </motion.div>
           
           {nombreEmpresa && (
@@ -343,10 +384,8 @@ const HomePage = () => {
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.2, duration: 0.3 }}
                 >
-                  <SuscripcionStatusCard 
-                    onRenovar={() => {
-                      toast({ title: 'Renovación', description: 'Contacte al administrador para renovar su plan.' });
-                    }}
+                  <SuscripcionStatusCard
+                    onRenovar={() => openPanel('planes')}
                   />
                 </motion.div>
 

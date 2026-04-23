@@ -22,7 +22,13 @@ export const useSolicitudes = () => {
             const data = await fetchSolicitudes(filtroEstado);
             setSolicitudes(data);
         } catch (err) {
-            toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar las solicitudes.' });
+            console.error('[useSolicitudes] fetchSolicitudes error:', err);
+            setSolicitudes([]);
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: err?.message || 'No se pudieron cargar las solicitudes.',
+            });
         } finally {
             setLoading(false);
         }

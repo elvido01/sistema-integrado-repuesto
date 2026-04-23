@@ -13,16 +13,48 @@ import { usePanels } from '@/contexts/PanelContext';
 import { useCatalogData } from '@/hooks/useSupabase';
 import { exportToExcel } from '@/lib/excelExport';
 import SearchableSelect from '@/components/common/SearchableSelect';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import ProductFormModal from '@/components/products/ProductFormModal';
+import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 
 const InventarioFisicoPage = () => {
+  const { empresa } = useAuth();
     const { toast } = useToast();
     const { closePanel } = usePanels();
-    const { almacenes = [] } = useCatalogData() ?? {};
+    const { ubicaciones = [], almacenes = [] } = useCatalogData() ?? {};
 
     const [loading, setLoading] = useState(false);
     const [selectedUbicacion, setSelectedUbicacion] = useState('none');
     const [products, setProducts] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [editingProduct, setEditingProduct] = useState(null);
+
+    const handleRowDoubleClick = useCallback(async (product) => {
+        // Abrir modal inmediatamente con datos básicos
+        const initial = { ...product, tipo_id: product.tipo_id?.toString() || '', marca_id: product.marca_id?.toString() || '', suplidor_id: product.suplidor_id?.toString() || '', modelos_ids: product.modelos_ids || [] };
+        setEditingProduct(initial);
+        setEditModalOpen(true);
+        try {
+            const { data, error } = await supabase
+                .from('productos')
+                .select('*, presentaciones(*), tipo:tipos_producto(id, nombre), marca:marcas(id, nombre), modelo:modelos(id, nombre), suplidor:proveedores(id, nombre)')
+                .eq('id', product.id)
+                .single();
+            if (error) throw error;
+            const { data: stockData } = await supabase.rpc('get_stock_actual', { producto_uuid: product.id });
+            setEditingProduct({
+                ...data,
+                tipo_id: data.tipo?.id?.toString() || data.tipo_id?.toString() || '',
+                marca_id: data.marca?.id?.toString() || data.marca_id?.toString() || '',
+                modelos_ids: data.modelos_ids || (data.modelo_id ? [data.modelo_id] : []),
+                suplidor_id: data.suplidor?.id?.toString() || data.suplidor_id?.toString() || '',
+                existencia: stockData || 0,
+            });
+        } catch (err) {
+            console.error('Error al cargar detalles del producto:', err);
+        }
+    }, []);
 
     const fetchInventory = useCallback(async () => {
         if (selectedUbicacion === 'none' && !searchTerm) {
@@ -50,6 +82,197 @@ const InventarioFisicoPage = () => {
             setLoading(false);
         }
     }, [selectedUbicacion, searchTerm, toast]);
+
+    const handleSaveProduct = useCallback(async (productData, presentations, isEditing) => {
+        // MISMO PROCEDIMIENTO QUE ProductsPage.handleSaveProduct para no
+        // alterar el sistema: el ajuste de existencia genera una Entrada o
+        // Salida real (con secuencia EM/SA) en vez de un movimiento AJUSTE
+        // suelto. Esto mantiene la trazabilidad consistente entre módulos.
+        try {
+            const parseNumeric = (v) => {
+                const n = parseFloat(v);
+                return isNaN(n) ? 0 : n;
+            };
+
+            const { existencia, ...productDataWithoutStock } = productData;
+            const productPayload = {
+                ...productDataWithoutStock,
+                costo: parseNumeric(productData.costo),
+                precio: parseNumeric(productData.precio),
+                itbis_pct: parseNumeric(productData.itbis_pct),
+                min_stock: parseNumeric(productData.min_stock),
+                max_stock: parseNumeric(productData.max_stock),
+                garantia_meses: parseInt(productData.garantia_meses, 10) || 0,
+            };
+
+            let savedProduct = null;
+
+            if (isEditing) {
+                const { id, ...updateData } = productPayload;
+                const { data, error } = await supabase
+                    .from('productos')
+                    .update(updateData)
+                    .eq('id', id)
+                    .select()
+                    .single();
+                if (error) throw error;
+                savedProduct = data;
+            } else {
+                // Esta página normalmente solo edita, pero soportamos crear por seguridad.
+                delete productPayload.id;
+                const { data, error } = await supabase
+                    .from('productos')
+                    .insert(productPayload)
+                    .select()
+                    .single();
+                if (error) throw error;
+                savedProduct = data;
+            }
+
+            if (savedProduct) {
+                // Presentaciones: mismo patrón keep/delete que ProductsPage
+                if (isEditing) {
+                    const keepIds = (presentations || [])
+                        .map(p => p.id)
+                        .filter(id => id && !id.toString().startsWith('new-'));
+
+                    let deleteQuery = supabase
+                        .from('presentaciones')
+                        .delete()
+                        .eq('producto_id', savedProduct.id);
+
+                    if (keepIds.length > 0) {
+                        deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.join(',')})`);
+                    }
+                    const { error: delError } = await deleteQuery;
+                    if (delError) console.error('Error eliminando presentaciones:', delError);
+                }
+
+                if (presentations && presentations.length > 0) {
+                    const presentationsToUpsert = presentations.map((p) => {
+                        const { id, ...rest } = p;
+                        const presentationPayload = {
+                            ...rest,
+                            producto_id: savedProduct.id,
+                            cantidad: parseNumeric(p.cantidad),
+                            costo: parseNumeric(p.costo),
+                            margen_pct: parseNumeric(p.margen_pct),
+                            precio1: parseNumeric(p.precio1),
+                            descuento_pct: parseNumeric(p.descuento_pct),
+                            precio_final: parseNumeric(p.precio_final),
+                        };
+                        if (id && !id.toString().startsWith('new-')) {
+                            presentationPayload.id = id;
+                        }
+                        return presentationPayload;
+                    });
+
+                    const { error: presError } = await supabase.from('presentaciones').upsert(presentationsToUpsert);
+                    if (presError) throw presError;
+                }
+
+                // Ajuste de inventario: crear ENTRADA o SALIDA real según diferencia
+                const currentExistencia = editingProduct?.existencia || 0;
+                const newExistencia = existencia || 0;
+                const diff = parseFloat(newExistencia) - parseFloat(currentExistencia);
+
+                if (Math.abs(diff) > 0.001) {
+                    const almacenId = almacenes[0]?.id;
+                    if (!almacenId) {
+                        toast({
+                            variant: 'destructive',
+                            title: 'Falta el Almacén Principal',
+                            description: 'Se guardó la mercancía, pero no se generó el ajuste porque no existe almacén. Crea el Almacén Principal en Inventario → Almacenes.',
+                        });
+                        setEditModalOpen(false);
+                        setEditingProduct(null);
+                        fetchInventory();
+                        return;
+                    }
+
+                    const mainPresentation = (presentations || []).find(p => p.afecta_ft) || (presentations || [])[0];
+                    const unitToUse = mainPresentation ? mainPresentation.tipo : 'UND - Unidad';
+
+                    if (diff > 0) {
+                        const { data: numData } = await supabase.rpc('get_next_entrada_numero');
+                        const entradaData = {
+                            numero: numData,
+                            fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
+                            referencia: `AJUSTE DESDE INVENTARIO FÍSICO`,
+                            concepto: 'AJUSTE DE INVENTARIO',
+                            almacen_id: almacenId,
+                            notas: `Ajuste desde Inventario Físico por Ubicación, producto ${savedProduct.codigo}`,
+                            total_costo: (diff * savedProduct.costo) || 0,
+                        };
+                        const detallesData = [{
+                            producto_id: savedProduct.id,
+                            codigo: savedProduct.codigo,
+                            descripcion: savedProduct.descripcion,
+                            cantidad: diff,
+                            unidad: unitToUse,
+                            costo_unitario: savedProduct.costo || 0,
+                            importe: (diff * savedProduct.costo) || 0,
+                        }];
+
+                        const { error: entError } = await supabase.rpc('crear_entrada_inventario', {
+                            p_entrada_data: entradaData,
+                            p_detalles_data: detallesData,
+                            p_tipo_movimiento: 'AJUSTE',
+                        });
+
+                        if (entError) {
+                            console.error('Error creating auto entrada:', entError);
+                            toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste automático de entrada.' });
+                        } else {
+                            toast({ title: 'Ajuste automático', description: `Se autogeneró una Entrada de Mercancía (${numData}) por +${diff} uds.` });
+                        }
+                    } else {
+                        const absDiff = Math.abs(diff);
+                        const { data: numData } = await supabase.rpc('get_next_salida_numero');
+                        const salidaData = {
+                            numero: numData,
+                            fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
+                            referencia: `AJUSTE DESDE INVENTARIO FÍSICO`,
+                            concepto: 'AJUSTE DE SALIDA',
+                            almacen_id: almacenId,
+                            notas: `Ajuste desde Inventario Físico por Ubicación, producto ${savedProduct.codigo}`,
+                            total_costo: (absDiff * savedProduct.costo) || 0,
+                        };
+                        const detallesData = [{
+                            producto_id: savedProduct.id,
+                            codigo: savedProduct.codigo,
+                            descripcion: savedProduct.descripcion,
+                            cantidad: absDiff,
+                            unidad: unitToUse,
+                            costo_unitario: savedProduct.costo || 0,
+                            importe: (absDiff * savedProduct.costo) || 0,
+                        }];
+
+                        const { error: salError } = await supabase.rpc('crear_salida_inventario', {
+                            p_salida_data: salidaData,
+                            p_detalles_data: detallesData,
+                            p_tipo_movimiento: 'AJUSTE',
+                        });
+
+                        if (salError) {
+                            console.error('Error creating auto salida:', salError);
+                            toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste automático de salida.' });
+                        } else {
+                            toast({ title: 'Ajuste automático', description: `Se autogeneró una Salida de Mercancía (${numData}) por -${absDiff} uds.` });
+                        }
+                    }
+                } else {
+                    toast({ title: 'Producto actualizado', description: 'Los cambios se guardaron correctamente.' });
+                }
+            }
+
+            setEditModalOpen(false);
+            setEditingProduct(null);
+            fetchInventory();
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error', description: err.message });
+        }
+    }, [toast, fetchInventory, editingProduct, almacenes]);
 
     const filteredProducts = products;
 
@@ -144,7 +367,7 @@ const InventarioFisicoPage = () => {
     return (
         <>
             <Helmet>
-                <title>Inventario Físico por Ubicación - MotoFlow</title>
+                <title>Inventario Físico por Ubicación — {empresa?.nombre || 'Sistema'}</title>
             </Helmet>
 
             <motion.div
@@ -171,7 +394,7 @@ const InventarioFisicoPage = () => {
                                 options={[
                                     { value: 'none', label: '--- SELECCIONE UBICACIÓN ---' },
                                     { value: 'all', label: '--- TODAS LAS UBICACIONES ---' },
-                                    ...almacenes.map(a => ({ value: a.nombre, label: a.nombre }))
+                                    ...ubicaciones.map(a => ({ value: a.nombre, label: a.nombre }))
                                 ]}
                                 value={selectedUbicacion}
                                 onChange={setSelectedUbicacion}
@@ -232,7 +455,7 @@ const InventarioFisicoPage = () => {
                                     </TableRow>
                                 ) : (
                                     filteredProducts.map((p) => (
-                                        <TableRow key={p.id} className="hover:bg-slate-50 transition-colors">
+                                        <TableRow key={p.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onDoubleClick={() => handleRowDoubleClick(p)}>
                                             <TableCell className="font-mono text-xs font-semibold">{p.codigo}</TableCell>
                                             <TableCell className="uppercase text-xs">{p.descripcion}</TableCell>
                                             <TableCell className="text-xs text-slate-500">{p.referencia || '---'}</TableCell>
@@ -267,6 +490,13 @@ const InventarioFisicoPage = () => {
                     </div>
                 </div>
             </motion.div>
+
+            <ProductFormModal
+                isOpen={editModalOpen}
+                onClose={() => { setEditModalOpen(false); setEditingProduct(null); }}
+                onSave={handleSaveProduct}
+                product={editingProduct}
+            />
         </>
     );
 };

@@ -15,6 +15,7 @@ const VentasTable = ({
   onProductSearch,
   onUpdateItem,
   onDeleteItem,
+  onEditItem = null,
   currentItem = null,
   updateCurrentItem = () => { },
   commitCurrentItem = () => { },
@@ -156,7 +157,7 @@ const VentasTable = ({
                   className="w-full h-6 text-right font-black text-blue-900 bg-transparent border-none outline-none hide-spinner text-[14px] focus:bg-white/50"
                   value={currentItem ? currentItem.precio : ''}
                   onChange={(e) => updateCurrentItem && updateCurrentItem('precio', e.target.value)}
-                  disabled={!currentItem || userRole !== 'admin'}
+                  disabled={!currentItem || (userRole !== 'admin' && userRole !== 'owner')}
                   min="0"
                   onDoubleClick={handleInputDoubleClick}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); document.getElementById('input-descuento')?.focus(); document.getElementById('input-descuento')?.select(); } }}
@@ -197,38 +198,21 @@ const VentasTable = ({
               return (
                 <ContextMenu key={item.id || index}>
                   <ContextMenuTrigger asChild>
-                    <TableRow className={`h-7 relative border-b border-gray-400 hover:bg-[#fff4c8] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#f0efe8]'}`}>
+                    <TableRow
+                      className={`h-7 relative border-b border-gray-400 hover:bg-[#fff4c8] transition-colors cursor-pointer ${index % 2 === 0 ? 'bg-white' : 'bg-[#f0efe8]'}`}
+                      onDoubleClick={() => onEditItem && onEditItem(item)}
+                    >
                       <TableCell className="p-1 text-[14px] font-bold border-r border-gray-400 text-[#0a1e3a]">{item.codigo}</TableCell>
                   <TableCell className="p-1 text-[13px] font-semibold text-gray-800 border-r border-gray-400 uppercase truncate max-w-[400px]">{item.descripcion}</TableCell>
                   <TableCell className="p-1 text-[13px] text-gray-600 border-r border-gray-400 text-center font-medium">{item.ubicacion}</TableCell>
-                  <TableCell className="p-0 border-r border-gray-400">
-                    <input type="number" value={item.cantidad} onChange={(e) => onUpdateItem(item.id, 'cantidad', e.target.value)} className="w-full h-full bg-transparent text-center text-[14px] font-bold focus:bg-yellow-50 outline-none hide-spinner" />
+                  <TableCell className="p-1 text-center text-[14px] font-bold border-r border-gray-400">
+                    {item.cantidad}
                   </TableCell>
                   <TableCell className="p-1 text-right text-[14px] font-bold border-r border-gray-400">
-                    {userRole === 'admin' ? (
-                      <input
-                        type="number"
-                        value={item.precio}
-                        onChange={(e) => onUpdateItem(item.id, 'precio', e.target.value)}
-                        className="w-full h-full bg-transparent text-right text-[14px] font-bold focus:bg-yellow-50 outline-none hide-spinner"
-                      />
-                    ) : (
-                      Number(item.precio || 0).toFixed(2)
-                    )}
+                    {Number(item.precio || 0).toFixed(2)}
                   </TableCell>
-                  <TableCell className="p-0 border-r border-gray-400">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={Number((item.precio * item.cantidad) * (item.descuento / 100)).toFixed(2)}
-                      onChange={(e) => {
-                        const newAmount = parseFloat(e.target.value) || 0;
-                        const totalBruto = (item.precio * item.cantidad);
-                        const newPct = totalBruto > 0 ? (newAmount / totalBruto) * 100 : 0;
-                        onUpdateItem(item.id, 'descuento', newPct);
-                      }}
-                      className="w-full h-full bg-transparent text-right text-[14px] font-bold text-red-600 focus:bg-yellow-50 outline-none px-1 hide-spinner"
-                    />
+                  <TableCell className="p-1 text-right text-[14px] font-bold text-red-600 border-r border-gray-400">
+                    {Number((item.precio * item.cantidad) * (item.descuento / 100)).toFixed(2)}
                   </TableCell>
                   <TableCell className="p-1 text-right text-[14px] font-semibold text-gray-600 border-r border-gray-400">{Number(item.itbis || 0).toFixed(2)}</TableCell>
                   <TableCell className="p-1 text-right text-[14px] font-black text-blue-900">{Number(item.importe || 0).toFixed(2)}</TableCell>

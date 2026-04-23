@@ -85,7 +85,7 @@ const ReporteComprasPage = () => {
   return (
     <>
       <Helmet>
-        <title>Reporte de Compras - MotoFlow</title>
+        <title>Reporte de Compras — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

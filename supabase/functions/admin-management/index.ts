@@ -1,3 +1,5 @@
+// @ts-nocheck
+// deno-lint-ignore-file
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 
@@ -38,11 +40,11 @@ Deno.serve(async (req) => {
         // Verify admin role in profiles table
         const { data: profile, error: profileError } = await supabaseClient
             .from('profiles')
-            .select('role')
+            .select('role, tenant_id, is_superadmin')
             .eq('id', user.id)
             .single();
 
-        if (profileError || profile?.role !== 'admin') {
+        if (profileError || (profile?.role !== 'admin' && !profile?.is_superadmin)) {
             return new Response(JSON.stringify({ error: 'Forbidden: Only admins can manage users' }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 403,
@@ -58,6 +60,73 @@ Deno.serve(async (req) => {
             });
         }
 
+        // ── CREATE USER ──────────────────────────────────────────
+        if (action === 'create_user') {
+            const { email, password, full_name, role, tenant_id: requestedTenantId } = updates;
+
+            if (!email || !password) {
+                return new Response(JSON.stringify({ error: 'Email y contraseña son requeridos' }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 400,
+                });
+            }
+
+            // Use caller's tenant_id, or the explicitly provided one (for superadmin creating in another tenant)
+            const callerTenantId = profile?.tenant_id || requestedTenantId || null;
+
+            // Create user via admin API → auto-confirms email, no email sent
+            const { data: newUser, error: createError } = await supabaseClient.auth.admin.createUser({
+                email,
+                password,
+                email_confirm: true, // Mark email as confirmed immediately
+                user_metadata: {
+                    full_name: full_name || '',
+                    role: role || 'seller',
+                },
+            });
+
+            if (createError) throw createError;
+
+            // Upsert the profile row so it's linked to the same tenant
+            if (newUser?.user) {
+                const { error: profileUpsertError } = await supabaseClient
+                    .from('profiles')
+                    .upsert({
+                        id: newUser.user.id,
+                        email: email,
+                        full_name: full_name || '',
+                        role: role || 'seller',
+                        tenant_id: callerTenantId,
+                    }, { onConflict: 'id' });
+
+                if (profileUpsertError) {
+                    console.error('Profile upsert error:', profileUpsertError);
+                }
+
+                // Also create usuarios_empresas record (used by get_user_tenant RPC)
+                if (callerTenantId) {
+                    // Map profiles role → usuarios_empresas rol (different allowed values)
+                    const ueRol = role === 'admin' ? 'admin' : 'vendedor';
+                    const { error: ueError } = await supabaseClient
+                        .from('usuarios_empresas')
+                        .upsert({
+                            user_id: newUser.user.id,
+                            tenant_id: callerTenantId,
+                            rol: ueRol,
+                        }, { onConflict: 'user_id,tenant_id' });
+                    if (ueError) {
+                        console.error('usuarios_empresas upsert error:', ueError);
+                    }
+                }
+            }
+
+            return new Response(JSON.stringify({ message: 'Usuario creado exitosamente', user: newUser?.user }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+            });
+        }
+
+        // ── UPDATE USER ─────────────────────────────────────────
         if (action === 'update_user') {
             const { email, password, full_name } = updates;
 
@@ -84,6 +153,24 @@ Deno.serve(async (req) => {
             }
 
             return new Response(JSON.stringify({ message: 'User updated successfully' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+            });
+        }
+
+        // ── DELETE USER ─────────────────────────────────────────
+        if (action === 'delete_user') {
+            // Delete from auth (cascades to profiles if FK is set)
+            const { error: deleteError } = await supabaseClient.auth.admin.deleteUser(targetUserId);
+            if (deleteError) throw deleteError;
+
+            // Also clean up profile row just in case
+            await supabaseClient
+                .from('profiles')
+                .delete()
+                .eq('id', targetUserId);
+
+            return new Response(JSON.stringify({ message: 'Usuario eliminado exitosamente' }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 200,
             });

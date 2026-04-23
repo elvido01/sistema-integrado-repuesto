@@ -1,18 +1,20 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Crown, Clock, AlertTriangle, XOctagon, Zap, 
+import {
+  Crown, Clock, AlertTriangle, XOctagon, Zap,
   Calendar, Users, Package, ChevronRight, Shield,
-  Sparkles, RefreshCw
+  Sparkles, RefreshCw, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 
 const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
-  const { 
-    suscripcion, loading, isActiva, isVencida, isTrial, 
+  const {
+    suscripcion, loading, isActiva, isVencida, isTrial,
     diasRestantes, porVencer, planActual
   } = useSuscripcion();
+
+  const isEnRevision = suscripcion?.estado === 'en_revision' || suscripcion?.pago_pendiente;
 
   if (loading || !suscripcion) return null;
 
@@ -29,6 +31,15 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
 
   // Status config
   const getStatusConfig = () => {
+    if (isEnRevision) return {
+      color: 'text-amber-600',
+      bgColor: 'bg-amber-50 border-amber-200',
+      barColor: 'bg-amber-500',
+      label: 'PAGO EN REVISIÓN',
+      labelBg: 'bg-amber-100 text-amber-700',
+      icon: Loader2,
+      progressPct: 50
+    };
     if (isVencida) return {
       color: 'text-red-600',
       bgColor: 'bg-red-50 border-red-200',
@@ -182,7 +193,22 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
             </motion.div>
           )}
 
-          {isVencida && (
+          {isEnRevision && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5"
+            >
+              <Loader2 className="w-4 h-4 text-amber-500 mt-0.5 shrink-0 animate-spin" />
+              <p className="text-xs text-amber-800 font-medium">
+                Su comprobante de pago está siendo verificado.
+                Recibirá confirmación en las próximas <strong>24 horas</strong>.
+              </p>
+            </motion.div>
+          )}
+
+          {isVencida && !isEnRevision && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
@@ -191,7 +217,7 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
             >
               <XOctagon className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
               <p className="text-xs text-red-800 font-medium">
-                <strong>Sistema bloqueado.</strong> Tu suscripción ha vencido. 
+                <strong>Sistema bloqueado.</strong> Tu suscripción ha vencido.
                 Renueva tu plan para continuar usando el sistema.
               </p>
             </motion.div>
@@ -199,17 +225,22 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
         </AnimatePresence>
 
         {/* CTA Button */}
-        {(isVencida || porVencer || isTrial) && (
+        {isEnRevision ? (
+          <div className="w-full h-10 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center gap-2 font-black uppercase tracking-wider text-xs">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Verificando Pago...
+          </div>
+        ) : (
           <Button
             onClick={onRenovar}
             className={`w-full h-10 font-black uppercase tracking-wider text-xs shadow-md transition-all ${
-              isVencida 
-                ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' 
+              isVencida
+                ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
                 : `bg-gradient-to-r ${style.gradient} hover:opacity-90 text-white`
             }`}
           >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            {isVencida ? 'Renovar Ahora' : isTrial ? 'Actualizar Plan' : 'Renovar Plan'}
+            {isVencida ? <RefreshCw className="w-4 h-4 mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
+            {isVencida ? 'Renovar Ahora' : isTrial ? 'Actualizar Plan' : planActual === 'ENTERPRISE' ? 'Renovar Plan' : 'Upgrade de Plan'}
             <ChevronRight className="w-4 h-4 ml-2" />
           </Button>
         )}

@@ -79,7 +79,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
 
       if (tenantError) throw tenantError;
 
-      // 2. Registrar el usuario owner con el tenant_id en metadata
+      // 2. Registrar el usuario admin con el tenant_id en metadata
       const { error: signUpError } = await supabase.auth.signUp({
         email: usuario.email.trim(),
         password: usuario.password,
@@ -87,7 +87,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
           data: {
             full_name: usuario.nombre.trim(),
             tenant_id: tenantId,
-            role: 'owner',
+            role: 'admin',
           },
           emailRedirectTo: window.location.origin,
         },
@@ -328,7 +328,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
             </p>
             <p className="text-gray-400 text-xs mb-6">
               Revisa tu correo <span className="font-medium">{usuario.email}</span> para
-              confirmar tu cuenta (si está habilitada la confirmación de email).
+              confirmar tu cuenta y comenzar a usar el sistema.
             </p>
             <Button onClick={onVolver} className="w-full bg-blue-600 hover:bg-blue-700">
               Ir al inicio de sesión

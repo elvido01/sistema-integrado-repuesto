@@ -2,11 +2,9 @@ import React from 'react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { ShieldAlert } from 'lucide-react';
 
-const SUPERADMIN_EMAIL = 'elvidocaminero@gmail.com';
-
 /**
  * SuperAdminGuard protege vistas exclusivas del SuperAdmin.
- * Valida contra el email hardcoded + flag is_superadmin del profile.
+ * Valida contra el flag is_superadmin del profile en la base de datos.
  */
 const SuperAdminGuard = ({ children }) => {
   const { user, profile, loading } = useAuth();
@@ -19,7 +17,7 @@ const SuperAdminGuard = ({ children }) => {
     );
   }
 
-  const isSuperAdmin = user?.email === SUPERADMIN_EMAIL || profile?.is_superadmin === true;
+  const isSuperAdmin = profile?.is_superadmin === true;
 
   if (!isSuperAdmin) {
     return (

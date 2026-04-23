@@ -19,7 +19,7 @@ const formatDate = (date) => {
 };
 
 export const generateTransaccionesReportePDF = (transactions, filters, totals, empresa = {}) => {
-    const doc = new jsPDF('landscape');
+    const doc = new jsPDF('portrait');
     const pageWidth = doc.internal.pageSize.width;
     const margin = 10;
 
@@ -42,25 +42,33 @@ export const generateTransaccionesReportePDF = (transactions, filters, totals, e
 
     // --- Table ---
     const tableColumn = ["FECHA", "TRANS.", "NCF", "CLIENTE", "NOMBRE", "DESCRIPCION", "DEBITOS", "CREDITOS"];
-    const tableRows = transactions.map(t => [
-        formatInTimeZone(t.fecha, 'dd/MM/yyyy hh:mm a'),
-        t.transaccion,
-        t.ncf || '',
-        t.cliente_codigo || '',
-        (t.cliente_nombre || '').substring(0, 30),
-        (t.descripcion || '').substring(0, 40),
-        formatCurrency(t.debito),
-        formatCurrency(t.credito)
-    ]);
+    const tableRows = transactions.map(t => {
+        const codigo = t.cliente_codigo || '';
+        const codigoVisible = codigo.length > 13 ? '' : codigo;
+        return [
+            formatInTimeZone(t.fecha, 'dd/MM/yyyy hh:mm a'),
+            t.transaccion,
+            t.ncf || '',
+            codigoVisible,
+            (t.cliente_nombre || '').substring(0, 30),
+            (t.descripcion || '').substring(0, 40),
+            formatCurrency(t.debito),
+            formatCurrency(t.credito)
+        ];
+    });
 
     autoTable(doc, {
         head: [tableColumn],
         body: tableRows,
         startY: 32,
         theme: 'grid',
-        styles: { fontSize: 8, font: 'helvetica' },
-        headStyles: { fillColor: [4, 53, 115], textColor: 255 },
+        styles: { fontSize: 7, font: 'helvetica', cellPadding: 1.5 },
+        headStyles: { fillColor: [4, 53, 115], textColor: 255, fontSize: 7 },
         columnStyles: {
+            0: { cellWidth: 28 },
+            1: { cellWidth: 18 },
+            2: { cellWidth: 18 },
+            3: { cellWidth: 22 },
             6: { halign: 'right' },
             7: { halign: 'right' }
         },
@@ -76,7 +84,7 @@ export const generateTransaccionesReportePDF = (transactions, filters, totals, e
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text("TOTALES GENERALES:", margin + 150, finalY + 7);
+    doc.text("TOTALES GENERALES:", pageWidth - margin - 80, finalY + 7, { align: 'right' });
     doc.text(formatCurrency(totals.debitos), pageWidth - margin - 35, finalY + 7, { align: 'right' });
     doc.text(formatCurrency(totals.creditos), pageWidth - margin, finalY + 7, { align: 'right' });
 

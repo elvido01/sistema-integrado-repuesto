@@ -32,6 +32,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
   const { profile } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
+  const [modalSessionKey, setModalSessionKey] = useState(0);
   const [isClienteSearchOpen, setIsClienteSearchOpen] = useState(false);
   const [vendedores, setVendedores] = useState([]);
 
@@ -437,6 +438,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
       if (detallesError) throw detallesError;
 
       toast({ title: 'Éxito', description: `Cotización guardada correctamente.` });
+      setModalSessionKey(k => k + 1);
 
       if (imprimir) {
         generateCotizacionPDF({ ...cotizacionData, id: cotId, numero: editingCotizacion?.numero || cotizacionData.numero }, cliente, detallesData);
@@ -577,7 +579,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                         className="h-7 text-xs text-center font-black text-blue-900 border-blue-600 focus:ring-0 bg-white"
                         onKeyDown={e => {
                           if (e.key === 'Enter') {
-                            if (profile?.role === 'admin') {
+                            if (profile?.role === 'admin' || profile?.role === 'owner') {
                               document.getElementById('cot-input-precio')?.focus();
                             } else {
                               document.getElementById('cot-input-descuento')?.focus();
@@ -594,7 +596,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                         onChange={e => updateCurrentItem('precio_unitario', e.target.value)}
                         className="h-7 text-xs text-right font-black text-blue-900 border-blue-600 focus:ring-0 bg-white"
                         onKeyDown={e => { if (e.key === 'Enter') document.getElementById('cot-input-descuento')?.focus(); }}
-                        disabled={profile?.role !== 'admin'}
+                        disabled={profile?.role !== 'admin' && profile?.role !== 'owner'}
                       />
                     </TableCell>
                     <TableCell className="p-1 border-r border-gray-400">
@@ -642,7 +644,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                             value={item.precio_unitario || 0}
                             onChange={e => handleUpdateArticle(index, 'precio_unitario', e.target.value)}
                             className="h-7 text-xs text-right border-gray-300"
-                            disabled={profile?.role !== 'admin'}
+                            disabled={profile?.role !== 'admin' && profile?.role !== 'owner'}
                           />
                         </TableCell>
                         <TableCell>
@@ -716,7 +718,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleSelectProduct} />
+      <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleSelectProduct} sessionKey={modalSessionKey} />
       <ClienteSearchModal isOpen={isClienteSearchOpen} onClose={() => setIsClienteSearchOpen(false)} onSelectCliente={handleSelectCliente} />
     </>
   );

@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 
-const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
+const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOpenOnSave = false }) => {
   // =================================================================
   // 1. HOOKS FIRST - All hooks must be called at the top level.
   // =================================================================
@@ -123,7 +123,10 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess }) => {
       fetchData();
       resetForm();
       if (onSaveSuccess) onSaveSuccess(response.data);
-      onClose();
+      // Cuando el modal se abre desde el menú principal, dejarlo abierto
+      // para crear varias entradas seguidas. Solo cerrar cuando se invoca
+      // desde otro formulario (ej. selector embebido en Mercancías).
+      if (!keepOpenOnSave) onClose();
     }
   };
 

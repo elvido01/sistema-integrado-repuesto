@@ -117,6 +117,9 @@ const OrdenCompraPage = () => {
       query = query.neq('estado', 'Recibida');
     }
 
+    // Mostrar solo las últimas 6 órdenes guardadas (las más recientes).
+    query = query.limit(6);
+
     const { data, error } = await query;
     setIsLoadingList(false);
 
@@ -218,6 +221,10 @@ const OrdenCompraPage = () => {
       marca_nombre: '', modelo_nombre: '', anio: new Date().getFullYear(), color: ''
     });
     setEditingDetalleId(null);
+    // Devolver el foco al campo de código para seguir capturando productos.
+    setTimeout(() => {
+      document.getElementById('staging-codigo-input')?.focus();
+    }, 50);
   };
 
   const addStagingToDetails = () => {
@@ -298,6 +305,35 @@ const OrdenCompraPage = () => {
       existencia: product.existencia ?? 0
     });
     setIsSearchModalOpen(false);
+  };
+
+  // Busca un producto por código exacto y lo carga al staging.
+  // Si no encuentra coincidencia exacta, abre el modal de búsqueda.
+  const lookupProductByCode = async (codigo) => {
+    const code = (codigo || '').trim();
+    if (!code) return;
+    try {
+      const { data, error } = await supabase
+        .from('productos')
+        .select('id, codigo, descripcion, costo, precio, itbis_pct')
+        .ilike('codigo', code)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        // Obtener existencia real desde la RPC (productos no almacena existencia).
+        const { data: stockVal } = await supabase.rpc('get_stock_actual', { producto_uuid: data.id });
+        handleSelectProduct({ ...data, existencia: stockVal || 0 });
+        // Mover foco al campo de cantidad después de cargar
+        setTimeout(() => {
+          document.getElementById('staging-cantidad-input')?.focus();
+        }, 50);
+      } else {
+        toast({ variant: 'destructive', title: 'Producto no encontrado', description: `No existe un producto con código "${code}".` });
+      }
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo buscar el producto.' });
+    }
   };
 
   // --- ACTIONS ---
@@ -925,8 +961,8 @@ const OrdenCompraPage = () => {
     <div className="bg-white p-4 rounded-sm shadow-sm border border-gray-200">
       {/* TÃ­tulo Blue Bar */}
       <div className="bg-morla-blue text-white py-1 px-4 mb-3 rounded-t-sm flex justify-between items-center shadow-md">
-        <h1 className="text-sm font-bold tracking-widest uppercase">Orden de Compra</h1>
-        <div className="text-[10px] font-medium opacity-80 italic">Sistema de Gestión Morla</div>
+        <h1 className="text-sm font-bold tracking-widest uppercase text-white">Orden de Compra</h1>
+        <div className="text-[10px] font-medium opacity-80 italic text-white">Sistema de Gestión Morla</div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[28%_42%_30%] items-stretch gap-3 mb-3">
@@ -1065,11 +1101,19 @@ const OrdenCompraPage = () => {
           <div className="bg-yellow-100/80 p-1 flex items-center gap-1 border-b border-slate-200 shadow-sm">
             <div className="relative">
               <Input
+                id="staging-codigo-input"
                 className="w-32 h-7 text-xs border-slate-400 bg-white pr-7"
                 placeholder="Codigo"
                 value={stagingItem.codigo}
                 onChange={(e) => setStagingItem({ ...stagingItem, codigo: e.target.value })}
-                onKeyDown={(e) => e.key === 'F3' && setIsSearchModalOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'F3') {
+                    setIsSearchModalOpen(true);
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    lookupProductByCode(stagingItem.codigo);
+                  }
+                }}
               />
               <Button
                 variant="ghost"
@@ -1086,10 +1130,17 @@ const OrdenCompraPage = () => {
               readOnly
             />
             <Input
+              id="staging-cantidad-input"
               type="number"
               className="w-16 h-7 text-xs border-slate-400 bg-white text-center"
               value={stagingItem.cantidad || ''}
               onChange={(e) => setStagingItem({ ...stagingItem, cantidad: parseFloat(e.target.value) || 0 })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  document.getElementById('staging-ok-button')?.focus();
+                }
+              }}
             />
             <Select value={stagingItem.unidad} onValueChange={(v) => setStagingItem({ ...stagingItem, unidad: v })}>
               <SelectTrigger className="w-20 h-7 text-xs border-slate-400 bg-white"><SelectValue /></SelectTrigger>
@@ -1111,7 +1162,7 @@ const OrdenCompraPage = () => {
               value={stagingItem.descuento_pct || ''}
               onChange={(e) => setStagingItem({ ...stagingItem, descuento_pct: parseFloat(e.target.value) || 0 })}
             />
-            <Button className="h-7 px-3 bg-morla-blue text-white" onClick={addStagingToDetails}>Ok</Button>
+            <Button id="staging-ok-button" className="h-7 px-3 bg-morla-blue text-white" onClick={addStagingToDetails}>Ok</Button>
             <Button variant="ghost" className="h-7 w-7 p-0" onClick={() => setIsSearchModalOpen(true)}><Bot className="h-4 w-4" /></Button>
             <Button variant="outline" className="h-7 w-7 p-0 text-red-600" onClick={resetStaging}><X className="h-4 w-4" /></Button>
           </div>
@@ -1242,44 +1293,46 @@ const OrdenCompraPage = () => {
             </div>
           </div>
 
-          <div className="pt-2 flex flex-col space-y-2">
-            <div>
-              <Label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Método Impresión</Label>
-              <Select value={printMethod} onValueChange={setPrintMethod}>
-                <SelectTrigger className="h-8 text-xs font-bold bg-white border-slate-400">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pdf">📄 PDF (ESTÁNDAR)</SelectItem>
-                  <SelectItem value="pos">📑 POS (TÉRMICO)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {printMethod === 'pos' && (
-              <div>
-                <Label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Tamaño Papel</Label>
-                <Select value={paperSize} onValueChange={setPaperSize}>
-                  <SelectTrigger className="h-8 text-xs font-bold bg-white italic border-slate-400">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="80mm">80mm (3 pulgadas)</SelectItem>
-                    <SelectItem value="4inch">101.6mm (4 pulgadas)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
       {/* Buttons */}
-      <div className="mt-4 flex justify-end gap-3 border-t border-slate-200 pt-3">
-        <Button variant="outline" className="h-9 px-6 text-xs uppercase font-bold border-slate-400 hover:bg-slate-50" onClick={() => clearDraft(DRAFT_KEY)}>F12 - Limpiar</Button>
-        <Button variant="outline" className="h-9 px-6 text-xs uppercase font-bold border-slate-400 hover:bg-slate-50" onClick={() => setView('list')} disabled={isSaving}>ESC - Retornar</Button>
-        <Button className="h-9 px-8 bg-morla-blue hover:bg-morla-blue/90 text-white text-xs uppercase font-bold shadow-lg" onClick={handleSave} disabled={isSaving}>
-          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} F10 - Continuar
-        </Button>
+      <div className="mt-4 flex items-end justify-between gap-3 border-t border-slate-200 pt-3 flex-wrap">
+        <div className="flex items-end gap-3">
+          <div>
+            <Label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Método Impresión</Label>
+            <Select value={printMethod} onValueChange={setPrintMethod}>
+              <SelectTrigger className="h-9 w-44 text-xs font-bold bg-white border-slate-400">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pdf">📄 PDF (ESTÁNDAR)</SelectItem>
+                <SelectItem value="pos">📑 POS (TÉRMICO)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {printMethod === 'pos' && (
+            <div>
+              <Label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Tamaño Papel</Label>
+              <Select value={paperSize} onValueChange={setPaperSize}>
+                <SelectTrigger className="h-9 w-44 text-xs font-bold bg-white italic border-slate-400">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="80mm">80mm (3 pulgadas)</SelectItem>
+                  <SelectItem value="4inch">101.6mm (4 pulgadas)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+        <div className="flex items-end gap-3">
+          <Button variant="outline" className="h-9 px-6 text-xs uppercase font-bold border-slate-400 hover:bg-slate-50" onClick={() => clearDraft(DRAFT_KEY)}>F12 - Limpiar</Button>
+          <Button variant="outline" className="h-9 px-6 text-xs uppercase font-bold border-slate-400 hover:bg-slate-50" onClick={() => setView('list')} disabled={isSaving}>ESC - Retornar</Button>
+          <Button className="h-9 px-8 bg-morla-blue hover:bg-morla-blue/90 text-white text-xs uppercase font-bold shadow-lg" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} F10 - Continuar
+          </Button>
+        </div>
       </div>
     </div>
   );

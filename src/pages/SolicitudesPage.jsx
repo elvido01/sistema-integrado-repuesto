@@ -12,7 +12,7 @@ import SolicitudesTable from '@/components/solicitudes/SolicitudesTable';
 import { useToast } from '@/components/ui/use-toast';
 
 const SolicitudesPage = () => {
-    const { user, profile } = useAuth();
+    const { user, profile , empresa} = useAuth();
     const { toast } = useToast();
     const { 
         solicitudes, loading, filtroEstado, setFiltroEstado, 
@@ -64,7 +64,7 @@ const SolicitudesPage = () => {
     return (
         <div className="bg-gray-100 min-h-screen pb-8">
             <Helmet>
-                <title>Solicitudes por Producto Agotado - MotoFlow</title>
+                <title>Solicitudes por Producto Agotado — {empresa?.nombre || 'Sistema'}</title>
             </Helmet>
 
             {/* Blue Header Bar */}

@@ -3,27 +3,34 @@ import { Target, TrendingUp, TrendingDown, CheckCircle, XCircle, ShieldCheck, Al
 
 const formatCurrency = (val) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(val || 0);
 
-const HybridFinancialOverviewCard = ({ 
-    meta = 150000, 
-    ventasSemana = 0, 
-    salesMetrics, 
+const HybridFinancialOverviewCard = ({
+    meta = 150000,
+    ventasSemana = 0,
+    salesMetrics,
     growthData,
+    cajaRestante = 0,
     totalCompromisosSemana = 0,
     totalCompromisosMensual = 0
 }) => {
   // 1. Proyección Híbrida
   const totalHistorico = salesMetrics?.total_ventas || 0;
-  const diasHistoricos = salesMetrics?.total_dias || 1;
-  const PromedioHistorico = totalHistorico / diasHistoricos;
-  
+  const diasHistoricosRaw = salesMetrics?.total_dias || 1;
   const ventasActuales = salesMetrics?.ventas_mes_actual || ventasSemana;
   const diasActuales = salesMetrics?.dias_transcurridos_mes || (Math.max(new Date().getDate(), 1));
   const PromedioActual = diasActuales > 0 ? (ventasActuales / diasActuales) : 0;
 
-  const proyeccionHibridaDiaria = (PromedioHistorico * 0.3) + (PromedioActual * 0.7);
-  
-  // Modificado a mensual (30 días) según solicitud
-  const proyeccionFinalMesVentas = proyeccionHibridaDiaria * 30;
+  // Proteger contra promedios históricos inflados: usar al menos los días calendario del mes actual
+  const diasHistoricos = Math.max(diasHistoricosRaw, diasActuales);
+  const PromedioHistorico = diasHistoricos > 0 ? (totalHistorico / diasHistoricos) : 0;
+
+  // Si hay menos de 30 días de historia, dar más peso al promedio actual (más realista)
+  const pesoHistorico = diasHistoricosRaw >= 30 ? 0.3 : 0.1;
+  const pesoActual = 1 - pesoHistorico;
+  const proyeccionHibridaDiaria = (PromedioHistorico * pesoHistorico) + (PromedioActual * pesoActual);
+
+  // Proyección mensual usando los días reales del mes actual
+  const diasEnMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+  const proyeccionFinalMesVentas = proyeccionHibridaDiaria * diasEnMes;
   const resultadoProyectado = proyeccionFinalMesVentas - totalCompromisosMensual;
 
   // 2. Mes Anterior (Desempeño)
@@ -31,7 +38,8 @@ const HybridFinancialOverviewCard = ({
   const resultadoMesAnterior = ventasMesAnterior - totalCompromisosMensual;
   
   const diferenciaPasado = resultadoProyectado - resultadoMesAnterior;
-  const porcentajeCrecimiento = resultadoMesAnterior !== 0 ? (diferenciaPasado / Math.abs(resultadoMesAnterior)) * 100 : (resultadoProyectado > 0 ? 100 : 0);
+  const hasMesAnterior = ventasMesAnterior > 0;
+  const porcentajeCrecimiento = resultadoMesAnterior !== 0 ? (diferenciaPasado / Math.abs(resultadoMesAnterior)) * 100 : 0;
   
   const progressoMeta = Math.min((ventasActuales / meta) * 100, 100);
   const lograMeta = proyeccionFinalMesVentas >= meta;
@@ -39,8 +47,10 @@ const HybridFinancialOverviewCard = ({
   // Utilidades
   const isPositivo = resultadoProyectado >= 0;
   const resultadoColor = isPositivo ? 'text-blue-600' : 'text-red-600';
-  const labelResultado = isPositivo ? 'GANANCIA' : 'DÉFICIT';
-  const signoResultado = isPositivo ? '+' : '-';
+  const labelResultado = totalCompromisosMensual > 0
+    ? (isPositivo ? 'SUPERÁVIT' : 'DÉFICIT')
+    : 'PROYECCIÓN';
+  const signoResultado = totalCompromisosMensual > 0 ? (isPositivo ? '+' : '-') : '';
 
   const getGrowthColor = (val) => {
     if (val > 0) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
@@ -97,9 +107,15 @@ const HybridFinancialOverviewCard = ({
              <span className={`text-2xl font-black ${resultadoColor}`}>
                {labelResultado}: {signoResultado}{formatCurrency(Math.abs(resultadoProyectado))}
              </span>
-             <div className={`flex items-center px-2 py-0.5 mt-1 rounded text-[10px] font-bold ${getGrowthColor(porcentajeCrecimiento)}`}>
-               {getGrowthIcon(porcentajeCrecimiento)} vs. mes pasado: ({porcentajeCrecimiento > 0 ? '+' : ''}{porcentajeCrecimiento.toFixed(1)}%)
-             </div>
+             {hasMesAnterior ? (
+               <div className={`flex items-center px-2 py-0.5 mt-1 rounded text-[10px] font-bold ${getGrowthColor(porcentajeCrecimiento)}`}>
+                 {getGrowthIcon(porcentajeCrecimiento)} vs. mes pasado: ({porcentajeCrecimiento > 0 ? '+' : ''}{porcentajeCrecimiento.toFixed(1)}%)
+               </div>
+             ) : (
+               <div className="flex items-center px-2 py-0.5 mt-1 rounded text-[10px] font-bold text-slate-500 bg-slate-50 border-slate-200">
+                 Sin historial del mes anterior
+               </div>
+             )}
            </div>
 
            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-200">

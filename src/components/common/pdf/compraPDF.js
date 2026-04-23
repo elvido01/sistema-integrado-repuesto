@@ -43,9 +43,8 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario, empresa =
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    // Add 'OC-' prefix to match image 'OC-0152'
-    const docNumber = String(compra.numero || '').padStart(4, '0');
-    doc.text(`Numero : OC-${docNumber}`, pageWidth - margin, 20, { align: 'right' });
+    const docNumber = String(compra.numero || '');
+    doc.text(`Numero : ${docNumber}`, pageWidth - margin, 20, { align: 'right' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);

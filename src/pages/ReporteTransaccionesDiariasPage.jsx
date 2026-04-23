@@ -16,6 +16,7 @@ import { Calendar as CalendarIcon, Search, Printer, X, Loader2 } from 'lucide-re
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateTransaccionesReportePDF, generateFacturaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
+import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ReporteTransaccionesDiariasPage = () => {
@@ -128,14 +129,15 @@ const ReporteTransaccionesDiariasPage = () => {
     const parts = transaction.transaccion.split('-');
     if (parts.length < 2) return;
     const prefix = parts[0];
-    const transId = parseInt(parts[1], 10);
+    const numeroStr = parts.slice(1).join('-');
+    const numeroInt = parseInt(numeroStr, 10);
 
     try {
       if (prefix === 'FT') {
         const { data: factura, error } = await supabase
           .from('facturas')
           .select('*, facturas_detalle(*, productos(*)), clientes(*), perfiles:usuario_id(email, nombre_completo)')
-          .eq('numero', transId)
+          .eq('numero', numeroInt)
           .single();
         if (error) throw error;
         if (factura) generateFacturaPDF(factura, empresa);
@@ -143,36 +145,76 @@ const ReporteTransaccionesDiariasPage = () => {
         const { data: devolucion, error } = await supabase
           .from('devoluciones')
           .select('*, devoluciones_detalle(*, productos(*)), facturas(*), clientes(*)')
-          .eq('numero', transId)
-          .single();
+          .eq('numero', numeroInt)
+          .maybeSingle();
         if (error) throw error;
-        if (devolucion) generateDevolucionPDF(devolucion, devolucion.facturas, devolucion.clientes, devolucion.devoluciones_detalle);
+        if (!devolucion) {
+          toast({ title: 'No encontrado', description: `Devolución ${transaction.transaccion} no encontrada.`, variant: 'destructive' });
+          return;
+        }
+        // Cliente puede venir en clientes(*) o en cliente_info (jsonb) para genéricos
+        const cliente = devolucion.clientes || devolucion.cliente_info || { nombre: 'Cliente Genérico', direccion: 'N/A', telefono: 'N/A' };
+        try {
+          printDevolucionPOS(devolucion, devolucion.facturas, cliente, devolucion.devoluciones_detalle);
+        } catch (printErr) {
+          console.error('[DV] Fallback a PDF:', printErr);
+          generateDevolucionPDF(devolucion, devolucion.facturas, cliente, devolucion.devoluciones_detalle);
+        }
       } else if (prefix === 'PG' || prefix === 'RI') {
+        // recibos_ingreso.numero is stored as full text (e.g. "RI-000226"),
+        // so we query by the full transaccion string.
         const { data: recibo, error } = await supabase
           .from('recibos_ingreso')
-          .select('*, clientes(*), recibos_ingreso_detalle(*, facturas(*)), recibos_ingreso_pago(*)')
-          .eq('numero', transId)
-          .single();
+          .select('*, clientes(*), recibos_ingreso_detalle(*, facturas(numero, total))')
+          .eq('numero', transaction.transaccion)
+          .maybeSingle();
+
         if (error) throw error;
-        if (recibo) {
-          const abonos = recibo.recibos_ingreso_detalle.map(d => ({
-            referencia: d.facturas?.numero || 'N/A',
-            monto_pendiente: d.monto_pendiente_anterior || d.monto_aplicado,
-            monto_abono: d.monto_aplicado
-          }));
-          const formasPago = recibo.recibos_ingreso_pago.map(p => ({
-            forma: p.metodo_pago,
-            referencia: p.referencia || '',
-            monto: p.monto
-          }));
-          generateReciboPDF(recibo, recibo.clientes, abonos, formasPago);
+        if (!recibo) {
+          toast({ title: 'No encontrado', description: `Recibo ${transaction.transaccion} no encontrado.`, variant: 'destructive' });
+          return;
+        }
+
+        const abonos = (recibo.recibos_ingreso_detalle || []).map(d => ({
+          referencia: d.facturas?.numero ? `FT-${d.facturas.numero}` : 'N/A',
+          monto_pendiente: d.monto_abonado,
+          monto_abono: d.monto_abonado
+        }));
+        const formasPago = Array.isArray(recibo.formas_pago)
+          ? recibo.formas_pago.map(p => ({
+              forma: p.forma || p.metodo_pago || 'EFECTIVO',
+              referencia: p.referencia || '',
+              monto: p.monto || 0
+            }))
+          : [{ forma: 'EFECTIVO', referencia: '', monto: recibo.monto_pagado || 0 }];
+
+        const totalPagado = formasPago.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
+        const balanceActual = parseFloat(recibo.clientes?.balance || 0);
+        const balanceAnterior = balanceActual + totalPagado;
+
+        const reciboData = {
+          numero: recibo.numero,
+          fecha: recibo.fecha,
+          clienteNombre: recibo.clientes?.nombre || 'N/A',
+          balanceAnterior,
+          totalPagado,
+          balanceActual,
+          abonos,
+          formasPago
+        };
+
+        try {
+          await printReciboIngresoQZ(reciboData);
+        } catch (printErr) {
+          console.error('[RI] Fallback a HTML:', printErr);
+          printRecibo4Pulgadas(reciboData);
         }
       } else {
         toast({ title: 'Aviso', description: 'Tipo de transacción no soportada para visualizar.' });
       }
     } catch (err) {
       console.error("Error loading transaction PDF:", err);
-      toast({ title: 'Error', description: 'No se pudo cargar el documento.', variant: 'destructive' });
+      toast({ title: 'Error', description: `No se pudo cargar el documento: ${err.message || err}`, variant: 'destructive' });
     }
   };
 
@@ -217,7 +259,7 @@ const ReporteTransaccionesDiariasPage = () => {
   return (
     <>
       <Helmet>
-        <title>Lista de Transacciones Diarias - MotoFlow</title>
+        <title>Lista de Transacciones Diarias — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

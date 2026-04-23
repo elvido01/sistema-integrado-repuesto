@@ -18,6 +18,8 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose }) => {
     fecha: '',
     tipo: 'Fijo',
     activo: true,
+    recurrente: false,
+    frecuencia: 'mensual',
   });
 
   useEffect(() => {
@@ -30,6 +32,8 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose }) => {
           fecha: compromiso.fecha ? new Date(compromiso.fecha).toISOString().split('T')[0] : '',
           tipo: compromiso.tipo || 'Fijo',
           activo: compromiso.activo ?? true,
+          recurrente: compromiso.recurrente ?? false,
+          frecuencia: compromiso.frecuencia || 'mensual',
         });
       } else {
         // Reset for new commitment
@@ -39,6 +43,8 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose }) => {
           fecha: new Date().toISOString().split('T')[0],
           tipo: 'Fijo',
           activo: true,
+          recurrente: true,
+          frecuencia: 'mensual',
         });
       }
     }
@@ -132,6 +138,39 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose }) => {
           <div className="flex items-center space-x-2 pt-2">
             <Checkbox id="activo" checked={formData.activo} onCheckedChange={(checked) => handleCheckedChange('activo', checked)} />
             <Label htmlFor="activo">Compromiso Activo</Label>
+          </div>
+
+          <div className="rounded-md border border-indigo-100 bg-indigo-50/40 p-3 space-y-3">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="recurrente"
+                checked={formData.recurrente}
+                onCheckedChange={(checked) => handleCheckedChange('recurrente', !!checked)}
+              />
+              <Label htmlFor="recurrente" className="font-medium">
+                Recurrente — al pagarlo, crear el siguiente automáticamente
+              </Label>
+            </div>
+            {formData.recurrente && (
+              <div className="space-y-2">
+                <Label htmlFor="frecuencia">Frecuencia</Label>
+                <Select
+                  name="frecuencia"
+                  value={formData.frecuencia}
+                  onValueChange={(value) => handleSelectChange('frecuencia', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione la frecuencia" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="semanal">Semanal (cada 7 días)</SelectItem>
+                    <SelectItem value="quincenal">Quincenal (cada 15 días)</SelectItem>
+                    <SelectItem value="mensual">Mensual (cada mes)</SelectItem>
+                    <SelectItem value="anual">Anual (cada año)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="pt-4 mt-4 border-t">

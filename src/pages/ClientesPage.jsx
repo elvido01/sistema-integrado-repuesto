@@ -8,8 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, PlusCircle, Search, Loader2 } from 'lucide-react';
 import ClienteFormModal from '@/components/catalogo/ClienteFormModal';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ClientesPage = () => {
+  const { empresa } = useAuth();
     const { toast } = useToast();
     const [clientes, setClientes] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ const ClientesPage = () => {
     return (
         <>
             <Helmet>
-                <title>Clientes - MotoFlow</title>
+                <title>Clientes — {empresa?.nombre || 'Sistema'}</title>
             </Helmet>
             <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">
                 <div className="bg-white p-4 rounded-lg shadow-sm border flex justify-between items-center">

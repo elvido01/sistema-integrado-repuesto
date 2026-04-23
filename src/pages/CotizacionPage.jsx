@@ -10,9 +10,10 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Search, PlusCircle, Send, Edit, Trash2, X, Printer, Share2, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
 import CotizacionFormModal from '@/components/cotizaciones/CotizacionFormModal';
 import { formatInTimeZone } from '@/lib/dateUtils';
-import { printCotizacionPOS, printCotizacionQZ } from '@/lib/printPOS';
+import { printCotizacionPOS, printCotizacionQZ, printCotizacionWebUsb } from '@/lib/printPOS';
 import { usePanels } from '@/contexts/PanelContext';
 import { useFacturacion } from '@/contexts/FacturacionContext';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const CotizacionPage = () => {
+  const { empresa } = useAuth();
   const { toast } = useToast();
   const { openPanel } = usePanels();
   const { setPedidoParaFacturar } = useFacturacion();
@@ -62,6 +64,9 @@ const CotizacionPage = () => {
       if (printMethod === 'qz') {
         await printCotizacionQZ(selectedCotizacion, detalles, paperSize);
         toast({ title: 'Impresión enviada', description: 'Cotización enviada a la impresora via QZ Tray.' });
+      } else if (printMethod === 'webusb') {
+        await printCotizacionWebUsb(selectedCotizacion, detalles);
+        toast({ title: 'Impresión enviada', description: 'Cotización enviada via WebUSB.' });
       } else {
         printCotizacionPOS(selectedCotizacion, detalles, paperSize);
       }
@@ -266,7 +271,7 @@ const CotizacionPage = () => {
   return (
     <>
       <Helmet>
-        <title>Cotizaciones - MotoFlow</title>
+        <title>Cotizaciones — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <div ref={containerRef} tabIndex={-1} className="h-full flex flex-col lg:grid lg:grid-cols-12 gap-4 p-4 bg-gray-50 overflow-y-auto lg:overflow-hidden">
 
@@ -458,6 +463,7 @@ const CotizacionPage = () => {
                   <SelectContent>
                     <SelectItem value="qz">QZ Tray (Nativo)</SelectItem>
                     <SelectItem value="browser">Navegador (HTML)</SelectItem>
+                    <SelectItem value="webusb" disabled={!navigator.usb}>WebUSB (Sin Instalar)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

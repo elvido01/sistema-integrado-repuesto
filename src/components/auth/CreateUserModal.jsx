@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
     Dialog,
     DialogContent,
@@ -19,11 +20,13 @@ import {
     SelectTrigger,
     SelectValue
 } from '@/components/ui/select';
-import { Loader2, UserPlus } from 'lucide-react';
+import { Loader2, UserPlus, Eye, EyeOff } from 'lucide-react';
 
 const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
     const { toast } = useToast();
+    const { tenantId } = useAuth();
     const [loading, setLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const [formData, setFormData] = useState({
         email: '',
         password: '',
@@ -54,29 +57,35 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                 throw new Error("La contraseña debe tener al menos 6 caracteres.");
             }
 
-            // Create user in Supabase Auth
-            // Important: We use the normal supabase client here.
-            // In a real production app with email confirmation, this would send an email.
-            // If email confirmation is disabled, it creates the user immediately.
-            const { data, error } = await supabase.auth.signUp({
-                email: formData.email,
-                password: formData.password,
-                options: {
-                    data: {
+            // Create user via Edge Function (uses service_role → auto-confirms email)
+            const { data, error } = await supabase.functions.invoke('admin-management', {
+                body: {
+                    action: 'create_user',
+                    targetUserId: 'new', // placeholder, not used for create
+                    updates: {
+                        email: formData.email,
+                        password: formData.password,
                         full_name: formData.fullName,
-                        role: formData.role
+                        role: formData.role,
+                        tenant_id: tenantId
                     }
                 }
             });
 
-            if (error) throw error;
+            if (error) {
+                let errorMsg = error.message;
+                if (error.context?.json?.error) {
+                    errorMsg = error.context.json.error;
+                }
+                throw new Error(errorMsg);
+            }
 
             toast({
                 title: "Usuario Creado",
-                description: `Se ha creado la cuenta para ${formData.email}.`,
+                description: `Se ha creado la cuenta para ${formData.email}. Ya puede iniciar sesión.`,
             });
 
-            if (onUserCreated) onUserCreated(data.user);
+            if (onUserCreated) onUserCreated(data?.user);
             onClose();
             // Reset form
             setFormData({ email: '', password: '', fullName: '', role: 'seller' });
@@ -129,14 +138,24 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="password">Contraseña Temporal</Label>
-                        <Input
-                            id="password"
-                            type="password"
-                            placeholder="Mínimo 6 caracteres"
-                            value={formData.password}
-                            onChange={handleChange}
-                            required
-                        />
+                        <div className="relative">
+                            <Input
+                                id="password"
+                                type={showPassword ? 'text' : 'password'}
+                                placeholder="Mínimo 6 caracteres"
+                                value={formData.password}
+                                onChange={handleChange}
+                                required
+                            />
+                            <button
+                                type="button"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                onClick={() => setShowPassword(prev => !prev)}
+                                tabIndex={-1}
+                            >
+                                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                        </div>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="role">Rol Inicial</Label>

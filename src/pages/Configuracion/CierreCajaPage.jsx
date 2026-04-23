@@ -42,7 +42,7 @@ const formatCurrency = (v) =>
 /* ─────────────────────────────────────────────────────────── */
 const CierreCajaPage = () => {
   const { toast } = useToast();
-  const { user, profile } = useAuth();
+  const { user, profile , empresa} = useAuth();
   const { closePanel } = usePanels();
 
   /* ── State ── */
@@ -380,7 +380,7 @@ const CierreCajaPage = () => {
   return (
     <>
       <Helmet>
-        <title>Cierre de Caja - MotoFlow</title>
+        <title>Cierre de Caja — {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

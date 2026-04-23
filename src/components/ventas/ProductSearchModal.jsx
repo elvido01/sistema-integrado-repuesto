@@ -16,7 +16,7 @@ import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 const PAGE_LIMIT = 20;
 
 // ✅ firma corregida (no ejecutar hooks en default params)
-const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) => {
+const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sessionKey = null }) => {
   const { toast } = useToast();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -85,18 +85,27 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
   );
   const loaderRef = useRef(null);
 
-  // Reset state on open
+  // Reset search term on open, but keep marca/modelo filters
   useEffect(() => {
     if (isOpen) {
       setSearchTerm('');
-      setMarcaFilter('');
-      setModeloFilter('');
       setCurrentPage(0);
       setHasMore(true);
       setProducts([]);
       setSelectedIndex(-1);
     }
   }, [isOpen]);
+
+  // Reset ALL filters (including marca/modelo) when sessionKey changes (e.g. new invoice)
+  const prevSessionKeyRef = useRef(sessionKey);
+  useEffect(() => {
+    if (sessionKey !== null && sessionKey !== prevSessionKeyRef.current) {
+      prevSessionKeyRef.current = sessionKey;
+      setSearchTerm('');
+      setMarcaFilter('');
+      setModeloFilter('');
+    }
+  }, [sessionKey]);
 
   // Selected index reset on new search (handled in fetchProducts)
 
@@ -201,13 +210,14 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-gray-50/30 border-2 border-morla-gold shadow-2xl">
+      <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-gray-50/30 border-2 border-morla-gold shadow-2xl [&>button[class*='absolute']]:hidden">
         {/* Custom Header matching "información de la mercancía" */}
         <div className="bg-blue-300 border-b border-blue-400 px-4 py-2 flex items-center justify-between flex-shrink-0">
           <h2 className="text-md font-bold text-blue-900 uppercase tracking-wider">Buscar Producto</h2>
           <Button
             variant="ghost"
             size="sm"
+            tabIndex={-1}
             onClick={onClose}
             className="text-blue-900 hover:bg-white/20 h-7 w-7 p-0"
           >
@@ -230,18 +240,32 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { } }) =>
                     className="pl-10 bg-[#ffffd9] border-gray-300 focus:ring-blue-500"
                   />
                 </div>
-                <Input
-                  placeholder="Modelo"
-                  value={modeloFilter}
-                  onChange={(e) => setModeloFilter(e.target.value)}
-                  className="md:w-48 border-gray-300"
-                />
-                <Input
-                  placeholder="Marca"
-                  value={marcaFilter}
-                  onChange={(e) => setMarcaFilter(e.target.value)}
-                  className="md:w-48 border-gray-300"
-                />
+                <div className="relative md:w-48">
+                  <Input
+                    placeholder="Modelo"
+                    value={modeloFilter}
+                    onChange={(e) => setModeloFilter(e.target.value)}
+                    className="border-gray-300 pr-7"
+                  />
+                  {modeloFilter && (
+                    <button type="button" tabIndex={-1} onClick={() => setModeloFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="relative md:w-48">
+                  <Input
+                    placeholder="Marca"
+                    value={marcaFilter}
+                    onChange={(e) => setMarcaFilter(e.target.value)}
+                    className="border-gray-300 pr-7"
+                  />
+                  {marcaFilter && (
+                    <button type="button" tabIndex={-1} onClick={() => setMarcaFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex items-center space-x-2">
                 <Checkbox id="include-zero-stock" checked={includeZeroStock} onCheckedChange={setIncludeZeroStock} />

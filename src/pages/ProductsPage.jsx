@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { usePanels } from '@/contexts/PanelContext';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 import ProductHeader from '@/components/products/ProductHeader';
 import ProductFilters from '@/components/products/ProductFilters';
@@ -24,6 +25,7 @@ import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils
 const ProductsPage = () => {
   const { toast } = useToast();
   const { openPanel } = usePanels();
+  const { empresa } = useAuth();
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -35,12 +37,17 @@ const ProductsPage = () => {
     marcas: catalogMarcas = [],
     modelos: catalogModelos = [],
     tipos: catalogTipos = [],
+    almacenes = [],
   } = useCatalogData() ?? {};
 
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isChangeCodeModalOpen, setIsChangeCodeModalOpen] = useState(false);
   const [isPrintLabelModalOpen, setIsPrintLabelModalOpen] = useState(false);
+  // Estado independiente para impresión: evita que abrir la etiqueta con clic
+  // derecho mientras el modal de edición está abierto deje los dos modales
+  // peleando por el mismo `selectedProduct` y bloquee la UI con un backdrop residual.
+  const [productForPrint, setProductForPrint] = useState(null);
 
   // ✅ Se eliminó el observer (Infinite Scroll) para evitar saltos de pantalla
   // por requerimiento del usuario. La carga se controla por el selector de límites.
@@ -216,9 +223,21 @@ const ProductsPage = () => {
         const diff = parseFloat(newExistencia) - parseFloat(currentExistencia);
 
         if (Math.abs(diff) > 0.001) {
+          const almacenId = almacenes[0]?.id;
+          if (!almacenId) {
+            toast({
+              variant: 'destructive',
+              title: 'Falta el Almacén Principal',
+              description: 'La mercancía se guardó, pero no se pudo generar el ajuste de inventario porque esta empresa aún no tiene un almacén. Crea el Almacén Principal en Inventario → Almacenes.',
+            });
+            setIsFormModalOpen(false);
+            refreshProducts(isEditing);
+            return;
+          }
+
           const mainPresentation = presentations.find(p => p.afecta_ft) || presentations[0];
           const unitToUse = mainPresentation ? mainPresentation.tipo : 'UND - Unidad';
-          
+
           if (diff > 0) {
             // ENTRADA
             const { data: numData } = await supabase.rpc('get_next_entrada_numero');
@@ -227,7 +246,7 @@ const ProductsPage = () => {
               fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
               referencia: `AJUSTE DESDE FICHA`,
               concepto: 'AJUSTE DE INVENTARIO',
-              almacen_id: 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7', // ALM01
+              almacen_id: almacenId,
               notas: `Ajuste automático creado al editar/crear producto ${savedProduct.codigo}`,
               total_costo: (diff * savedProduct.costo) || 0
             };
@@ -262,7 +281,7 @@ const ProductsPage = () => {
               fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
               referencia: `AJUSTE DESDE FICHA`,
               concepto: 'AJUSTE DE SALIDA',
-              almacen_id: 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7', // ALM01
+              almacen_id: almacenId,
               notas: `Ajuste automático creado al editar producto ${savedProduct.codigo}`,
               total_costo: (absDiff * savedProduct.costo) || 0
             };
@@ -478,7 +497,7 @@ const ProductsPage = () => {
   return (
     <>
       <Helmet>
-        <title>Maestro de Artículos - MotoFlow</title>
+        <title>Maestro de Artículos — {empresa?.nombre || 'MotoFlow'}</title>
       </Helmet>
 
       <motion.div
@@ -525,7 +544,10 @@ const ProductsPage = () => {
             selectedProduct={selectedProduct}
             onSelectProduct={setSelectedProduct}
             onPrintLabel={(prod) => {
-              setSelectedProduct(prod);
+              // Cerrar cualquier modal de edición abierto antes de abrir el de impresión.
+              setIsFormModalOpen(false);
+              setIsChangeCodeModalOpen(false);
+              setProductForPrint(prod);
               setIsPrintLabelModalOpen(true);
             }}
           />
@@ -556,8 +578,11 @@ const ProductsPage = () => {
 
       <PrintLabelModal
         isOpen={isPrintLabelModalOpen}
-        onClose={() => setIsPrintLabelModalOpen(false)}
-        product={selectedProduct}
+        onClose={() => {
+          setIsPrintLabelModalOpen(false);
+          setProductForPrint(null);
+        }}
+        product={productForPrint}
       />
     </>
   );
