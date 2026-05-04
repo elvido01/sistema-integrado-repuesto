@@ -36,13 +36,22 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
 
   useEffect(() => {
     if (pedido) {
-      setCurrentPedido({ ...pedido });
-      const fetchDetails = async () => {
+      const fetchPedidoCompleto = async () => {
+        // El listado viene de pedidos_list_view, que no incluye notas
+        // ni manual_cliente_nombre/placa_vehiculo. Traer el row completo
+        // de la tabla `pedidos` para que el formulario muestre todo.
+        const { data: pedidoCompleto } = await supabase
+          .from('pedidos')
+          .select('*')
+          .eq('id', pedido.id)
+          .maybeSingle();
+        setCurrentPedido({ ...pedido, ...(pedidoCompleto || {}) });
+
         const { data } = await supabase.from('pedidos_detalle').select('*, productos(ubicacion)').eq('pedido_id', pedido.id);
-        const detailsWithLocation = data.map(d => ({ ...d, ubicacion: d.productos?.ubicacion || '' }));
-        setDetalles(detailsWithLocation || []);
+        const detailsWithLocation = (data || []).map(d => ({ ...d, ubicacion: d.productos?.ubicacion || '' }));
+        setDetalles(detailsWithLocation);
       };
-      fetchDetails();
+      fetchPedidoCompleto();
     } else {
       setCurrentPedido({
         cliente_id: '',
@@ -329,9 +338,6 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                 <span className="text-xs font-bold text-slate-500 uppercase">Fecha:</span>
                 <span className="text-sm font-bold text-slate-700">{format(new Date(currentPedido.fecha), 'dd/MM/yyyy')}</span>
               </div>
-              <Button variant="ghost" size="icon" onClick={onClose} className="h-6 w-6 hover:bg-red-500 hover:text-white transition-colors">
-                <X className="h-4 w-4" />
-              </Button>
             </div>
           </div>
 

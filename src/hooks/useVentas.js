@@ -284,27 +284,33 @@ export const useVentas = () => {
   }, []);
 
   useEffect(() => {
+    // Calcular totales desde precio + cantidad + descuento de cada item
+    // (no depender del campo importe cacheado, que en algunas rutas — cambio
+    // de cliente, carga de pedido — quedaba como bruto sin descuento aplicado).
+    // Convencion: precio incluye ITBIS. Sub-Total = base pre-tax pre-descuento;
+    // ITBIS = sobre la base pre-descuento; TOTAL = SubTotal - Descuento + ITBIS.
     const calculated = items.reduce((acc, item) => {
       const itbis_pct = Number(item.itbis_pct || 0.18);
-      const importe = Number(item.importe || 0);
-      const itbis = Number(item.itbis || 0);
       const precio = Number(item.precio || 0);
       const cantidad = Number(item.cantidad || 0);
       const descuentoPct = Number(item.descuento || 0);
 
-      const itemSubTotal = importe / (1 + itbis_pct);
-      const itemDiscountAmount = (precio * cantidad) * (descuentoPct / 100);
+      const lineGross = cantidad * precio;
+      const lineDescuento = lineGross * (descuentoPct / 100);
+      const lineNet = lineGross - lineDescuento;
+
+      const itemSubTotal = lineGross / (1 + itbis_pct);
+      const itemItbis = lineGross - itemSubTotal;
 
       return {
         subTotal: acc.subTotal + itemSubTotal,
-        totalDescuento: acc.totalDescuento + itemDiscountAmount,
-        totalItbis: acc.totalItbis + itbis,
-        totalFactura: acc.totalFactura + importe
+        totalDescuento: acc.totalDescuento + lineDescuento,
+        totalItbis: acc.totalItbis + itemItbis,
+        totalFactura: acc.totalFactura + lineNet
       };
     }, { subTotal: 0, totalDescuento: 0, totalItbis: 0, totalFactura: 0 });
 
-    const totalBase = calculated.totalFactura || 0;
-    const finalTotal = totalBase + Number(recargo || 0);
+    const finalTotal = (calculated.totalFactura || 0) + Number(recargo || 0);
 
     setTotals({
       subTotal: calculated.subTotal || 0,
@@ -549,8 +555,12 @@ export const useVentas = () => {
         cambio: paymentType === 'credito'
           ? 0
           : Math.max(0, cambio),
+        // NOTE: Do NOT subtract abonoCredito here — the RPC
+        // crear_recibo_ingreso_y_actualizar_facturas will handle the
+        // deduction. Subtracting here AND in the RPC caused the
+        // double-deduction bug (negative monto_pendiente).
         monto_pendiente: paymentType === 'credito'
-          ? (totals.totalFactura - abonoCredito)
+          ? totals.totalFactura
           : 0,
         estado: paymentType === 'credito' ? 'PENDIENTE' : 'PAGADA',
         usuario_id: safeUsuarioId

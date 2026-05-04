@@ -78,6 +78,10 @@ const ComprasPage = () => {
   const [compra, setCompra] = useState(initialState);
   const [detalles, setDetalles] = useState([]);
   const [currentDetalle, setCurrentDetalle] = useState(initialDetalleState);
+  // Índice del detalle que está siendo editado desde la lista (null = staging para nuevo).
+  // Mismo patrón que useVentas.editingItemIndex para evitar que el doble-click
+  // accidental sustituya y elimine productos.
+  const [editingDetalleIndex, setEditingDetalleIndex] = useState(null);
   const [pagos, setPagos] = useState([{ tipo: '01', referencia: '', monto: 0, id: Date.now() }]);
   const [isSaving, setIsSaving] = useState(false);
   const [printMethod, setPrintMethod] = useState('pos');
@@ -119,6 +123,7 @@ const ComprasPage = () => {
     setCompra(initialState);
     setDetalles([]);
     setCurrentDetalle(initialDetalleState);
+    setEditingDetalleIndex(null);
     setPagos([{ tipo: '01', referencia: '', monto: 0, id: Date.now() }]);
 
     // Fetch new number after reset
@@ -611,18 +616,75 @@ const ComprasPage = () => {
       importe = baseCalculo;
     }
 
-    setDetalles([...detalles, { ...currentDetalle, cantidad, costo_unitario: costo, descuento_pct: descuento, importe: Number(importe.toFixed(2)), id: Date.now() }]);
+    const lineaFinal = { ...currentDetalle, cantidad, costo_unitario: costo, descuento_pct: descuento, importe: Number(importe.toFixed(2)) };
+
+    if (editingDetalleIndex !== null && editingDetalleIndex >= 0) {
+      // Actualizar en su slot original (no mueve el producto al final)
+      setDetalles(prev => {
+        const next = [...prev];
+        if (editingDetalleIndex < next.length) {
+          next[editingDetalleIndex] = { ...lineaFinal, id: next[editingDetalleIndex].id };
+        }
+        return next;
+      });
+      setEditingDetalleIndex(null);
+    } else {
+      setDetalles([...detalles, { ...lineaFinal, id: Date.now() }]);
+    }
     setCurrentDetalle(initialDetalleState);
     document.getElementById('codigo-producto')?.focus();
   };
 
   const removeDetalle = (id) => {
+    const idx = detalles.findIndex(d => d.id === id);
     setDetalles(detalles.filter(d => d.id !== id));
+    // Si se eliminó el que estaba siendo editado, limpiar staging.
+    if (editingDetalleIndex !== null && idx === editingDetalleIndex) {
+      setEditingDetalleIndex(null);
+      setCurrentDetalle(initialDetalleState);
+    } else if (editingDetalleIndex !== null && idx < editingDetalleIndex) {
+      // Si se quitó una línea antes de la editada, reindexar.
+      setEditingDetalleIndex(editingDetalleIndex - 1);
+    }
   };
 
   const handleEditLine = (line) => {
-    // Si ya hay algo en edición, no lo perdemos? 
-    // Por simplicidad, reemplazamos lo que esté en el staging area
+    // Patrón igual al de Ventas (useVentas.editItem): el doble-click sube
+    // una copia al staging para editar, pero el producto PERMANECE en la
+    // lista. Si ya había algo siendo editado, primero se confirma ese
+    // cambio en su slot original para no perderlo.
+    const idx = detalles.findIndex(d => d.id === line.id);
+    if (idx < 0) return;
+
+    if (editingDetalleIndex !== null && editingDetalleIndex >= 0 && currentDetalle.codigo) {
+      const cantPrev = parseFloat(currentDetalle.cantidad) || 0;
+      const costoPrev = parseFloat(currentDetalle.costo_unitario) || 0;
+      const descPrev = parseFloat(currentDetalle.descuento_pct) || 0;
+      const subtotalPrev = Number((cantPrev * costoPrev).toFixed(2));
+      const descValorPrev = Number((subtotalPrev * (descPrev / 100)).toFixed(2));
+      const basePrev = Number((subtotalPrev - descValorPrev).toFixed(2));
+      let importePrev = basePrev;
+      if (currentDetalle.itbis_pct > 0 && !compra.itbis_incluido) {
+        const itbisVal = Math.trunc((basePrev * currentDetalle.itbis_pct) * 100) / 100;
+        importePrev = Number((basePrev + itbisVal).toFixed(2));
+      }
+      setDetalles(prev => {
+        const next = [...prev];
+        if (editingDetalleIndex < next.length) {
+          next[editingDetalleIndex] = {
+            ...currentDetalle,
+            cantidad: cantPrev,
+            costo_unitario: costoPrev,
+            descuento_pct: descPrev,
+            importe: Number(importePrev.toFixed(2)),
+            id: next[editingDetalleIndex].id,
+          };
+        }
+        return next;
+      });
+    }
+
+    setEditingDetalleIndex(idx);
     setCurrentDetalle({
       codigo: line.codigo,
       referencia: line.referencia || '',
@@ -635,12 +697,11 @@ const ComprasPage = () => {
       importe: line.importe,
       producto_id: line.producto_id,
     });
-    // Remove the line from the list so it can be re-added after editing
-    removeDetalle(line.id);
 
-    // Focus on quantity to start editing
     setTimeout(() => {
-      document.getElementById('cantidad-producto')?.focus();
+      const input = document.getElementById('cantidad-producto');
+      input?.focus();
+      input?.select?.();
     }, 100);
   };
 

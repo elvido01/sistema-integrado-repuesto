@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Wifi, WifiOff, Eye, EyeOff, Shield, Trash2, Save, Zap } from 'lucide-react';
+import DgiiCertificadoUploader from './DgiiCertificadoUploader';
 
 const PROVEEDORES = [
   {
@@ -27,6 +28,20 @@ const PROVEEDORES = [
     campos: [
       { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'Tu API Key' },
       { key: 'secret', label: 'Secret Key', type: 'password', placeholder: 'Tu Secret Key' },
+    ],
+    apiBase: '',
+    testEndpoint: '',
+  },
+  {
+    id: 'dgii_directo',
+    nombre: 'DGII Directo (próximamente)',
+    descripcion: 'Conexión nativa a DGII sin intermediario. Requiere certificado digital .p12 emitido por una CA autorizada (DigiFirma, Cámara TIC, ProCert, Avansi). Pendiente Fase 3 del proyecto.',
+    proximamente: true,
+    campos: [
+      { key: 'rnc_emisor', label: 'RNC del emisor', type: 'text', placeholder: '1-30-12345-6' },
+      { key: 'nombre_emisor', label: 'Razón social', type: 'text', placeholder: 'NOMBRE COMERCIAL SRL' },
+      { key: 'ambiente', label: 'Ambiente', type: 'text', placeholder: 'TesteCF / CerteCF / Producción' },
+      { key: 'certificado_password', label: 'Contraseña del certificado .p12', type: 'password', placeholder: '••••••••' },
     ],
     apiBase: '',
     testEndpoint: '',
@@ -246,7 +261,20 @@ const IntegracionFiscalSettings = () => {
         </Select>
       </div>
 
-      {/* Campos dinámicos según proveedor */}
+      {/* Aviso si el proveedor seleccionado aun no esta implementado */}
+      {proveedorInfo.proximamente && (
+        <div className="p-3 rounded-md bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
+          <span className="font-bold">⚠ Emisión aún en desarrollo.</span> Puedes subir tu certificado .p12 y configurar los datos del emisor (Fase 2 ✅), pero la emisión real de e-CF empezará a funcionar cuando termine la Fase 3 del proyecto de integración nativa con DGII.
+        </div>
+      )}
+
+      {/* Para DGII Directo: usar el uploader especializado de .p12 */}
+      {proveedor === 'dgii_directo' && (
+        <DgiiCertificadoUploader />
+      )}
+
+      {/* Campos dinámicos según proveedor (solo proveedores no-DGII directo) */}
+      {proveedor !== 'dgii_directo' && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {proveedorInfo.campos.map(campo => (
           <div key={campo.key} className="space-y-1.5">
@@ -273,6 +301,7 @@ const IntegracionFiscalSettings = () => {
           </div>
         ))}
       </div>
+      )}
 
       {/* Modo */}
       <div className="space-y-1.5">

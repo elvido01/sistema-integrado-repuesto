@@ -30,3 +30,14 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Certificados de prueba (generados por scripts locales)
+test_*.p12
+test_cert.pem
+test_key.pem
+
+# Secretos y artefactos locales que NO deben subirse
+.env.production
+.claude/
+supabase/.temp/
+schema_prod.sql

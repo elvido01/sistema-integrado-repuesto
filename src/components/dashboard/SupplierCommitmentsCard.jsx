@@ -2,7 +2,7 @@ import React from 'react';
 import { Truck, Receipt, ArrowRight, ExternalLink } from 'lucide-react';
 import { format, isSameWeek, isAfter, endOfWeek } from 'date-fns';
 
-const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = null }) => {
+const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = null, onPay }) => {
   const totalCommitments = commitments.reduce((sum, c) => sum + (c.monto_pendiente || 0), 0);
   const effectiveDebt = customTotal !== null ? customTotal : totalCommitments;
   
@@ -46,6 +46,14 @@ const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = nul
                     {c.isOverdue && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">Atrasado</span>}
                     {c.fecha_vencimiento && isSameWeek(new Date(c.fecha_vencimiento), new Date(), { weekStartsOn: 1 }) && !c.isOverdue && <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-bold uppercase">Esta semana</span>}
                     {c.fecha_vencimiento && isAfter(new Date(c.fecha_vencimiento), endOfWeek(new Date(), { weekStartsOn: 1 })) && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase">Futuro</span>}
+                    {onPay && (
+                      <button
+                        onClick={() => onPay(c)}
+                        className="text-[9px] bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase transition-colors cursor-pointer"
+                      >
+                        Pagar
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

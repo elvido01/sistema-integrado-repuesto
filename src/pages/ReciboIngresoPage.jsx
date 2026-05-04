@@ -91,7 +91,15 @@ const ReciboIngresoPage = ({ extraData }) => {
       const { data, error } = await supabase.rpc('get_datos_cliente_para_recibo', { p_cliente_id: clienteId });
       if (error) throw error;
 
-      const facturasConAbono = data.facturas_pendientes.map(f => ({ ...f, abono: 0 }));
+      // Ordenar por fecha de venta ascendente: la mas antigua primero,
+      // la mas reciente al final, para facilitar el cobro cronologico.
+      const facturasConAbono = data.facturas_pendientes
+        .map(f => ({ ...f, abono: 0 }))
+        .sort((a, b) => {
+          const da = a.fecha ? new Date(a.fecha).getTime() : Infinity;
+          const db = b.fecha ? new Date(b.fecha).getTime() : Infinity;
+          return da - db;
+        });
 
       setFacturas(facturasConAbono);
       setDatosCliente({ balance_anterior: data.balance_anterior, ultimo_pago: data.ultimo_pago });
@@ -113,8 +121,9 @@ const ReciboIngresoPage = ({ extraData }) => {
     const abonoValue = parseFloat(abono) || 0;
     setFacturas(facturas.map(f => {
       if (f.id === facturaId) {
-        const montoPendiente = parseFloat(f.monto_pendiente);
-        const newAbono = abonoValue > montoPendiente ? montoPendiente : abonoValue;
+        // Guard: never allow abono on invoices with negative/zero pending
+        const montoPendiente = Math.max(0, parseFloat(f.monto_pendiente) || 0);
+        const newAbono = Math.min(Math.max(0, abonoValue), montoPendiente);
         return { ...f, abono: newAbono };
       }
       return f;
@@ -136,8 +145,14 @@ const ReciboIngresoPage = ({ extraData }) => {
 
     const newFacturas = facturas.map(f => {
       // Find where this invoice stands in the FIFO queue
-      const montoPendiente = parseFloat(f.monto_pendiente);
+      // Guard: treat negative pending as 0 (data anomaly)
+      const montoPendiente = Math.max(0, parseFloat(f.monto_pendiente) || 0);
       let abono = 0;
+
+      // Skip invoices with no positive pending amount
+      if (montoPendiente <= 0) {
+        return { ...f, abono: 0 };
+      }
 
       // Find the equivalent sorted invoice to determine allocation order
       const sortedIdx = sortedFacturas.findIndex(sf => sf.id === f.id);
@@ -145,7 +160,7 @@ const ReciboIngresoPage = ({ extraData }) => {
       // Calculate how much prior invoices in the queue took
       let takenBefore = 0;
       for (let i = 0; i < sortedIdx; i++) {
-        takenBefore += parseFloat(sortedFacturas[i].monto_pendiente);
+        takenBefore += Math.max(0, parseFloat(sortedFacturas[i].monto_pendiente) || 0);
       }
 
       const availableForThis = Math.max(0, totalPagadoFormas - takenBefore);
@@ -508,7 +523,10 @@ const ReciboIngresoPage = ({ extraData }) => {
                           <TableCell className="text-[11px] font-black px-2 py-0 border-r border-gray-300 uppercase">{f.referencia}</TableCell>
                           <TableCell className="text-[11px] font-medium px-2 py-0 border-r border-gray-300 italic text-gray-400">---</TableCell>
                           <TableCell className="text-[11px] font-bold px-2 py-0 border-r border-gray-300 text-right text-blue-600 bg-blue-50/10 font-mono">{formatCurrency(f.monto_total)}</TableCell>
-                          <TableCell className="text-[11px] font-black px-2 py-0 border-r border-gray-300 text-right text-red-600 bg-red-50/10 font-mono">{formatCurrency(f.monto_pendiente)}</TableCell>
+                          <TableCell className={`text-[11px] font-black px-2 py-0 border-r border-gray-300 text-right font-mono ${parseFloat(f.monto_pendiente) < 0 ? 'text-orange-600 bg-orange-100 line-through' : 'text-red-600 bg-red-50/10'}`}>
+                            {formatCurrency(f.monto_pendiente)}
+                            {parseFloat(f.monto_pendiente) < 0 && <span className="text-[9px] block text-orange-700 font-bold">⚠ ANOMALÍA</span>}
+                          </TableCell>
                           <TableCell className="p-0 text-right bg-yellow-50/50">
                             <Input
                               type="number"

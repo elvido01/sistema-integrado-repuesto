@@ -10,6 +10,8 @@ import HybridFinancialOverviewCard from '@/components/dashboard/HybridFinancialO
 import CommitmentsCard from '@/components/dashboard/CommitmentsCard';
 import SupplierCommitmentsCard from '@/components/dashboard/SupplierCommitmentsCard';
 import CommitmentFormModal from '@/components/dashboard/CommitmentFormModal';
+import PayCommitmentModal from '@/components/dashboard/PayCommitmentModal';
+import PaySupplierCommitmentModal from '@/components/dashboard/PaySupplierCommitmentModal';
 import SuscripcionStatusCard from '@/components/dashboard/SuscripcionStatusCard';
 
 import { supabase } from '@/lib/customSupabaseClient';
@@ -54,6 +56,8 @@ const HomePage = () => {
 
   const [isCommitmentModalOpen, setIsCommitmentModalOpen] = useState(false);
   const [selectedCommitment, setSelectedCommitment] = useState(null);
+  const [payCommitmentTarget, setPayCommitmentTarget] = useState(null);
+  const [paySupplierTarget, setPaySupplierTarget] = useState(null);
 
   const fetchDashboardData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -120,7 +124,7 @@ const HomePage = () => {
       // Buscamos todas las facturas de compras con saldo pendiente
       const { data: suplidorRawData, error: suplidorErr } = await supabase
         .from('compras')
-        .select('id, numero, referencia, fecha, dias_credito, monto_pendiente, total_compra, monto_pagado, proveedores(nombre)')
+        .select('id, numero, referencia, fecha, dias_credito, monto_pendiente, total_compra, monto_pagado, suplidor_id, proveedores(nombre)')
         .ilike('forma_pago', 'CREDITO')
         .eq('estado', 'PENDIENTE')
         .order('fecha', { ascending: true });
@@ -241,18 +245,25 @@ const HomePage = () => {
     setIsCommitmentModalOpen(true);
   };
 
-  const handlePayCommitment = async (c) => {
-    const recurrenteMsg = c.recurrente
-      ? `\n\nSe creará automáticamente el próximo compromiso (${c.frecuencia || 'mensual'}).`
-      : '';
-    if (!confirm(`¿Estás seguro de que deseas pagar "${c.nombre}" por RD$${c.monto?.toLocaleString('es-DO')}? Este monto será descontado de la caja actual automáticamente.${recurrenteMsg}`)) {
-      return;
-    }
+  // Click en "Pagar" -> abrir modal con forma de pago
+  const handlePayCommitment = (c) => {
+    setPayCommitmentTarget(c);
+  };
+
+  // Confirmacion desde el modal: aplica el pago con la forma seleccionada
+  const handleConfirmPayCommitment = async ({ forma_pago, referencia_pago }) => {
+    const c = payCommitmentTarget;
+    if (!c) return;
 
     try {
       const { error } = await supabase
         .from('compromisos')
-        .update({ activo: false, fecha_pago: new Date().toISOString() })
+        .update({
+          activo: false,
+          fecha_pago: new Date().toISOString(),
+          forma_pago,
+          referencia_pago,
+        })
         .eq('id', c.id);
 
       if (error) throw error;
@@ -293,15 +304,68 @@ const HomePage = () => {
       toast({
         title: c.recurrente ? "Pago y renovación exitosos" : "Pago Exitoso",
         description: c.recurrente
-          ? "Compromiso descontado y siguiente período creado."
-          : "El compromiso ha sido descontado correctamente de la caja.",
+          ? `Compromiso pagado (${forma_pago}) y siguiente período creado.`
+          : `Compromiso pagado (${forma_pago}).`,
       });
 
+      setPayCommitmentTarget(null);
       fetchDashboardData(true);
     } catch (error) {
       toast({
         title: "Error de Pago",
         description: "Hubo un error al intentar descontar de caja.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Click en "Pagar" sobre una factura de suplidor pendiente
+  const handlePaySupplierCommitment = (c) => {
+    setPaySupplierTarget(c);
+  };
+
+  // Confirmacion del modal: registra el pago a suplidor con la forma elegida.
+  // Usa la misma RPC que el panel de Pago a Suplidores (procesar_pago_suplidor)
+  // pero con un solo abono = monto pendiente.
+  const handleConfirmPaySupplier = async ({ forma_pago, referencia_pago, monto_abonado }) => {
+    const c = paySupplierTarget;
+    if (!c) return;
+
+    try {
+      const pagoData = {
+        fecha: new Date().toISOString().split('T')[0],
+        suplidor_id: c.suplidor_id,
+        total_pagado: monto_abonado,
+        concepto: `Pago factura ${c.numero || c.referencia || ''}`.trim(),
+        formas_pago: [{
+          id: 1,
+          forma: forma_pago,
+          monto: monto_abonado,
+          referencia: referencia_pago || '',
+        }],
+      };
+      const detallesData = [{
+        compra_id: c.id,
+        monto_abonado: monto_abonado,
+      }];
+
+      const { data, error } = await supabase.rpc('procesar_pago_suplidor', {
+        p_pago_data: pagoData,
+        p_detalles_data: detallesData,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Pago a suplidor registrado",
+        description: `Pago ${data} aplicado a factura ${c.numero || c.referencia} (${forma_pago}).`,
+      });
+
+      setPaySupplierTarget(null);
+      fetchDashboardData(true);
+    } catch (error) {
+      toast({
+        title: "Error de Pago",
+        description: error.message || "No se pudo registrar el pago al suplidor.",
         variant: "destructive",
       });
     }
@@ -406,10 +470,11 @@ const HomePage = () => {
                   />
                   
                   {/* Compromisos Suplidores (Nuevo) */}
-                  <SupplierCommitmentsCard 
+                  <SupplierCommitmentsCard
                     commitments={finanzas.suplidorCompromisos}
                     caja={finanzas.caja}
                     customTotal={totalPagosSuplidoresSemana}
+                    onPay={handlePaySupplierCommitment}
                   />
 
                   {/* Metas + Proyección Híbrida */}
@@ -477,6 +542,20 @@ const HomePage = () => {
           compromiso={selectedCommitment}
         />
       )}
+
+      <PayCommitmentModal
+        isOpen={!!payCommitmentTarget}
+        onClose={() => setPayCommitmentTarget(null)}
+        compromiso={payCommitmentTarget}
+        onConfirm={handleConfirmPayCommitment}
+      />
+
+      <PaySupplierCommitmentModal
+        isOpen={!!paySupplierTarget}
+        onClose={() => setPaySupplierTarget(null)}
+        commitment={paySupplierTarget}
+        onConfirm={handleConfirmPaySupplier}
+      />
     </>
   );
 };

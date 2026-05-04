@@ -327,12 +327,9 @@ const CierreCajaPage = () => {
         <div class="row"><span>Ventas Contado:</span><span>${formatCurrency(resumen?.totalVentasContado)}</span></div>
         <div class="row"><span>Ventas Crédito:</span><span>${formatCurrency(resumen?.totalVentasCredito)}</span></div>
         <div class="row"><span>Total Ventas:</span><span class="bold">${formatCurrency(resumen?.totalVentas)}</span></div>
-        <div class="row"><span>ITBIS:</span><span>${formatCurrency(resumen?.totalItbis)}</span></div>
-        <div class="row"><span>Descuentos:</span><span>${formatCurrency(resumen?.totalDescuento)}</span></div>
         <div class="row"><span>Devoluciones:</span><span>${formatCurrency(resumen?.totalDevoluciones)}</span></div>
         <div class="row"><span>Recibos Ingreso:</span><span>${formatCurrency(resumen?.totalRecibos)}</span></div>
         <div class="row"><span>Pagos Suplidores:</span><span>${formatCurrency(resumen?.totalPagosSuplidores)}</span></div>
-        <div class="row"><span>Cambio Entregado:</span><span>${formatCurrency(resumen?.cambioEntregado)}</span></div>
         <div class="row total-row"><span>Efectivo en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE MONEDAS</div>
@@ -471,12 +468,9 @@ const CierreCajaPage = () => {
                     ['Ventas Contado', resumen.totalVentasContado],
                     ['Ventas Crédito', resumen.totalVentasCredito],
                     ['Total Ventas', resumen.totalVentas, true],
-                    ['ITBIS Cobrado', resumen.totalItbis],
-                    ['Descuentos', resumen.totalDescuento],
                     ['Devoluciones', resumen.totalDevoluciones],
                     ['Recibos de Ingreso', resumen.totalRecibos],
                     ['Pagos a Suplidores (Efectivo)', resumen.totalPagosSuplidores],
-                    ['Cambio Entregado', resumen.cambioEntregado],
                   ].map(([label, value, bold, isCount]) => (
                     <div key={label} className={`flex justify-between items-center py-1 ${bold ? 'border-t-2 border-morla-blue pt-2' : ''}`}>
                       <span className={`text-sm ${bold ? 'font-bold text-morla-blue' : 'text-gray-600'}`}>{label}</span>

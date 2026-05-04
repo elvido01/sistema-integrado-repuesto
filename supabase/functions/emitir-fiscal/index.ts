@@ -2,6 +2,10 @@
 // deno-lint-ignore-file
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
+import forge from "https://esm.sh/node-forge@1.3.1";
+import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml } from "./dgii_xml_builder.ts";
+import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
+import { authenticate, enviarEcf, consultarEstado, enviarAnulacion, enviarRfce } from "./dgii_client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,7 +13,282 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
-// ── Adaptadores por proveedor ──
+// ============================================================
+// CONTRATO EmisorAdapter
+// ============================================================
+// Cada proveedor de facturación electrónica implementa este contrato.
+// El handler principal selecciona el adapter según `integraciones_fiscales.proveedor`
+// y llama estos dos métodos. Para agregar un nuevo proveedor:
+//   1. Implementar las dos funciones (testConnection, emitirFactura).
+//   2. Registrarlo en ADAPTADORES con su key (ej. "alegra", "dgii_directo").
+//   3. Insertar fila en integraciones_fiscales con `proveedor = '<key>'` y
+//      `config` con los datos que el adapter espera.
+//
+// CONTRATO:
+//
+//   testConnection(config) -> { ok: boolean, ...info }
+//     Valida credenciales/config. NO emite nada. Lanza si falla.
+//
+//   emitirFactura(supabase, config, factura, detalles, cliente) -> {
+//     proveedor_invoice_id: string,    // id que devuelve el proveedor / TrackId DGII
+//     proveedor_number:     string,    // numero comercial / fullNumber
+//     ncf:                  string,    // NCF / e-NCF asignado
+//     request_payload:      object,    // lo que enviamos (para auditoria)
+//     response_payload:     object,    // lo que recibimos (para auditoria)
+//   }
+//     - Recibe el cliente Supabase (service role) por si necesita persistir
+//       datos del proveedor en tablas (ej. fiscal_contact_id en clientes).
+//     - Recibe `config` desde integraciones_fiscales.config (ya parseado).
+//     - Lanza Error con mensaje legible si falla; el handler lo registra.
+// ============================================================
+
+// ============================================================
+// HELPERS: Cifrado AES-256-GCM para passwords de certificado
+// ============================================================
+// El password del .p12 se almacena en integraciones_fiscales.config
+// cifrado con AES-256-GCM. La master key (32 bytes en base64) vive
+// en la variable de entorno DGII_MASTER_KEY del edge function. La
+// edge function nunca expone la clave al frontend.
+//
+// Para generar la master key una sola vez (en consola local):
+//   openssl rand -base64 32
+// Y configurarla:
+//   supabase secrets set DGII_MASTER_KEY=<base64-output>
+
+async function getMasterKey(): Promise<CryptoKey> {
+  const raw = Deno.env.get("DGII_MASTER_KEY");
+  if (!raw) {
+    throw new Error(
+      "DGII_MASTER_KEY no esta configurada. Genera una con `openssl rand -base64 32` y registrala con `supabase secrets set DGII_MASTER_KEY=...`"
+    );
+  }
+  const keyBytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+  if (keyBytes.byteLength !== 32) {
+    throw new Error("DGII_MASTER_KEY debe ser 32 bytes (256 bits) en base64");
+  }
+  return await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "AES-GCM" },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptPassword(plain: string): Promise<{ iv: string; ciphertext: string }> {
+  const key = await getMasterKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12)); // 96 bits para GCM
+  const enc = new TextEncoder();
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    enc.encode(plain)
+  );
+  return {
+    iv: btoa(String.fromCharCode(...iv)),
+    ciphertext: btoa(String.fromCharCode(...new Uint8Array(ct))),
+  };
+}
+
+async function decryptPassword(ciphertextB64: string, ivB64: string): Promise<string> {
+  const key = await getMasterKey();
+  const iv = Uint8Array.from(atob(ivB64), (c) => c.charCodeAt(0));
+  const ct = Uint8Array.from(atob(ciphertextB64), (c) => c.charCodeAt(0));
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  return new TextDecoder().decode(pt);
+}
+
+// ============================================================
+// HELPERS: Log de documentos fiscales (e-CF) en BD + Storage
+// ============================================================
+// Cada e-CF emitido genera una fila en `documentos_fiscales`
+// (proveedor='dgii_directo'). El XML firmado se guarda en el
+// bucket privado `ecf-xmls` con path:
+//   <tenant_id>/<año>/<mes>/<encf>.xml
+// para retencion legal de 10 anos.
+
+async function logEcfStart(supabase, params) {
+  // params: { tenantId, factura_id, tipo_ecf, encf, ambiente }
+  const { data, error } = await supabase
+    .from("documentos_fiscales")
+    .insert({
+      tenant_id: params.tenantId,
+      factura_id: params.factura_id || null,
+      proveedor: "dgii_directo",
+      tipo_documento: "factura",
+      tipo_ecf: params.tipo_ecf,
+      encf: params.encf,
+      ambiente: params.ambiente,
+      estado: "procesando",
+      ncf: params.encf,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`Error iniciando log e-CF: ${error.message}`);
+  return data;
+}
+
+async function logEcfXmlGenerated(supabase, docId, xmlPath, requestPayload) {
+  const { error } = await supabase
+    .from("documentos_fiscales")
+    .update({
+      xml_firmado_path: xmlPath,
+      request_payload: requestPayload,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", docId);
+  if (error) throw new Error(`Error registrando XML: ${error.message}`);
+}
+
+async function logEcfSent(supabase, docId, trackId) {
+  const { error } = await supabase
+    .from("documentos_fiscales")
+    .update({
+      track_id: trackId,
+      estado_dgii: "enviado",
+      estado: "emitido",
+      emitted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", docId);
+  if (error) throw new Error(`Error registrando envio: ${error.message}`);
+}
+
+async function logEcfArecf(supabase, docId, estado, payload) {
+  // estado: 'aceptado' | 'rechazado' | 'aceptado_condicional'
+  const { error } = await supabase
+    .from("documentos_fiscales")
+    .update({
+      estado_dgii: estado,
+      arecf_recibido_at: new Date().toISOString(),
+      arecf_payload: payload,
+      dgii_messages: payload?.mensajes || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", docId);
+  if (error) throw new Error(`Error registrando ARECF: ${error.message}`);
+}
+
+async function logEcfAecf(supabase, docId, estado, payload) {
+  // estado: 'aprobado' | 'rechazado' (B2B tipo 31)
+  const { error } = await supabase
+    .from("documentos_fiscales")
+    .update({
+      aecf_estado: estado,
+      aecf_recibido_at: new Date().toISOString(),
+      aecf_payload: payload,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", docId);
+  if (error) throw new Error(`Error registrando AECF: ${error.message}`);
+}
+
+async function logEcfError(supabase, docId, errorMessage) {
+  const { error } = await supabase
+    .from("documentos_fiscales")
+    .update({
+      estado: "error",
+      error_message: errorMessage,
+      retry_count: 1, // se incrementa via stored procedure si reintentamos
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", docId);
+  if (error) console.error("[emitir-fiscal] Error registrando error:", error);
+}
+
+async function uploadSignedXml(supabase, tenantId, encf, xmlString) {
+  // path: <tenant>/<año>/<mes>/<encf>.xml
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const path = `${tenantId}/${year}/${month}/${encf}.xml`;
+
+  // upsert: true — el XML para un mismo e-NCF es determinístico. Si la
+  // misma operación se reintenta (timeout, auth DGII falló, etc.) no
+  // queremos que el storage bloquee el retry. En producción, si el
+  // e-NCF es realmente nuevo (correlativo único), nunca habrá colisión.
+  const { error: upErr } = await supabase.storage
+    .from("ecf-xmls")
+    .upload(path, new Blob([xmlString], { type: "application/xml" }), {
+      upsert: true,
+      contentType: "application/xml",
+    });
+  if (upErr) throw new Error(`Error subiendo XML firmado: ${upErr.message}`);
+  return path;
+}
+
+// ============================================================
+// HELPERS: Carga y parsing del certificado .p12 (DGII)
+// ============================================================
+// loadAndParseP12 baja el .p12 del Storage, descifra el password,
+// y parsea el archivo con node-forge para devolver:
+//   - cert     : objeto X.509 del emisor (uso en metadata)
+//   - privateKey: clave privada (para firma XAdES-BES en futuro)
+//   - metadata : { subject_cn, issuer_cn, valid_from, valid_to, serial }
+// La password en plaintext NUNCA sale de esta funcion.
+
+async function loadAndParseP12(supabase, config) {
+  const path = config?.certificado_storage_path;
+  const ctEnc = config?.certificado_password_enc;
+  const ivEnc = config?.certificado_password_iv;
+  if (!path) throw new Error("No hay certificado_storage_path en la config");
+  if (!ctEnc || !ivEnc) throw new Error("No hay password cifrado en la config");
+
+  // 1. Bajar el .p12 desde Storage privado
+  const { data: blob, error: dlErr } = await supabase.storage
+    .from("certificados-dgii")
+    .download(path);
+  if (dlErr) throw new Error(`No se pudo bajar el .p12: ${dlErr.message}`);
+  const buf = new Uint8Array(await blob.arrayBuffer());
+
+  // 2. Descifrar el password con la master key
+  const password = await decryptPassword(ctEnc, ivEnc);
+
+  // 3. Parsear el .p12 con node-forge
+  let p12;
+  try {
+    // forge necesita el DER como binary string
+    let bin = "";
+    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+    const p12Asn1 = forge.asn1.fromDer(bin);
+    p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, password);
+  } catch (e) {
+    throw new Error(`No se pudo abrir el .p12 (password incorrecto o archivo invalido): ${e.message}`);
+  }
+
+  // 4. Extraer cert y private key
+  const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
+  const cert = certBags[forge.pki.oids.certBag]?.[0]?.cert;
+  if (!cert) throw new Error("El .p12 no contiene certificado X.509");
+
+  const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+  const privateKey = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0]?.key
+    ?? p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag]?.[0]?.key;
+  if (!privateKey) throw new Error("El .p12 no contiene la clave privada");
+
+  // 5. Metadata legible
+  const getField = (name, attrs) => attrs.getField(name)?.value || null;
+  const metadata = {
+    subject_cn:  getField("CN", cert.subject),
+    subject_o:   getField("O",  cert.subject),
+    subject_c:   getField("C",  cert.subject),
+    issuer_cn:   getField("CN", cert.issuer),
+    issuer_o:    getField("O",  cert.issuer),
+    valid_from:  cert.validity.notBefore.toISOString(),
+    valid_to:    cert.validity.notAfter.toISOString(),
+    serial:      cert.serialNumber,
+    self_signed: cert.subject.hash === cert.issuer.hash,
+  };
+
+  return { cert, privateKey, metadata };
+}
+
+// ============================================================
+// ADAPTER: ALEGRA
+// ============================================================
+// Estado: ✅ producción. Funciona con la API REST de Alegra.
+// Config esperada:
+//   { user: string, token: string }
 
 async function alegraFetch(path, method, user, token, payload) {
   const basic = btoa(`${user}:${token}`);
@@ -98,19 +377,59 @@ async function alegraEmitirFactura(supabase, config, factura, detalles, cliente)
   };
 }
 
-// ── Proveedores registrados ──
+// ============================================================
+// ADAPTER: DGII DIRECTO
+// ============================================================
+// Estado: 🚧 stub — pendiente Fase 3 del proyecto de integración nativa
+// con DGII (ver feat/dgii-directo).
+//
+// Config esperada (cuando se implemente):
+//   {
+//     rnc_emisor:                 string,
+//     nombre_emisor:              string,
+//     ambiente:                  'TesteCF' | 'CerteCF' | 'Produccion',
+//     certificado_storage_path:   string,   // path en Supabase Storage al .p12 cifrado
+//     certificado_password_enc:   string,   // password del .p12 cifrado con AES-256-GCM
+//     callback_url:               string,   // endpoint publico para ARECF/AECF
+//   }
+//
+// Pasos pendientes de implementacion:
+//   - Cargar .p12 desde storage + descifrar password.
+//   - Generar XML por tipo de e-CF (31, 32, 33, 34, 41, 43, 44, 45, 46, 47).
+//   - Firma XAdES-BES con el certificado.
+//   - POST a endpoint de DGII (Recepcion / Anulacion / Consulta).
+//   - Recibir TrackId, persistir, polling de estado.
+//   - Almacenar XML firmado en Storage por 10 anos.
+
+const DGII_NOT_IMPLEMENTED_MSG =
+  "Adapter DGII directo aun no implementado. Pendiente Fase 3 del proyecto de integracion nativa.";
+
+async function dgiiDirectoTestConnection(_config) {
+  throw new Error(DGII_NOT_IMPLEMENTED_MSG);
+}
+
+async function dgiiDirectoEmitirFactura(_supabase, _config, _factura, _detalles, _cliente) {
+  throw new Error(DGII_NOT_IMPLEMENTED_MSG);
+}
+
+// ============================================================
+// REGISTRO DE PROVEEDORES
+// ============================================================
 const ADAPTADORES = {
   alegra: {
     testConnection: alegraTestConnection,
     emitirFactura: alegraEmitirFactura,
   },
-  // factura_digital: {
-  //   testConnection: facturaDigitalTestConnection,
-  //   emitirFactura: facturaDigitalEmitirFactura,
-  // },
+  dgii_directo: {
+    testConnection: dgiiDirectoTestConnection,
+    emitirFactura: dgiiDirectoEmitirFactura,
+  },
+  // Agregar aqui futuros adapters: alanube, dgmax, voxel, etc.
 };
 
-// ── Handler principal ──
+// ============================================================
+// HANDLER PRINCIPAL
+// ============================================================
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -279,13 +598,731 @@ Deno.serve(async (req) => {
       }
     }
 
-    throw new Error(`Acción '${action}' no reconocida. Use: test_connection, emitir_factura`);
+    // ── ACTION: dgii_save_certificate_meta ──
+    // Llamada por el frontend DESPUES de subir el .p12 al Storage privado
+    // (path: <tenant_id>/certificado.p12). Recibe el password en plaintext,
+    // lo cifra con la master key y lo guarda en integraciones_fiscales.config.
+    if (action === "dgii_save_certificate_meta") {
+      const { rnc_emisor, nombre_emisor, ambiente, callback_url, certificado_password, storage_path } = body;
+
+      if (!certificado_password) throw new Error("certificado_password es requerido");
+      if (!storage_path) throw new Error("storage_path es requerido");
+
+      // Cifrar password
+      const { iv, ciphertext } = await encryptPassword(certificado_password);
+
+      const config = {
+        rnc_emisor: rnc_emisor || null,
+        nombre_emisor: nombre_emisor || null,
+        ambiente: ambiente || "TesteCF",
+        callback_url: callback_url || null,
+        certificado_storage_path: storage_path,
+        certificado_password_enc: ciphertext,
+        certificado_password_iv: iv,
+      };
+
+      // Upsert en integraciones_fiscales (una fila por tenant + proveedor)
+      const { data: existente } = await supabase
+        .from("integraciones_fiscales")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+
+      if (existente) {
+        const { error: updErr } = await supabase
+          .from("integraciones_fiscales")
+          .update({ config, activo: true, updated_at: new Date().toISOString() })
+          .eq("id", existente.id);
+        if (updErr) throw new Error(`Error guardando config: ${updErr.message}`);
+      } else {
+        const { error: insErr } = await supabase
+          .from("integraciones_fiscales")
+          .insert({
+            tenant_id: tenantId,
+            proveedor: "dgii_directo",
+            config,
+            activo: true,
+          });
+        if (insErr) throw new Error(`Error creando integracion: ${insErr.message}`);
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200, headers: corsHeaders,
+      });
+    }
+
+    // ── ACTION: dgii_test_xml_generation ──
+    // DEV/QA: dado un factura_id existente, genera el XML del e-CF
+    // que se enviaria a DGII (sin firmar, sin enviar). Util para
+    // inspeccionar visualmente que el XML tiene la forma correcta
+    // antes de avanzar con firma y envio.
+    if (action === "dgii_test_xml_generation") {
+      const { factura_id, encf_override } = body;
+      if (!factura_id) throw new Error("factura_id requerido");
+
+      // Cargar config del emisor
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo para este tenant");
+
+      // Cargar factura + detalles + cliente
+      const { data: factura, error: fErr } = await supabase
+        .from("facturas")
+        .select("*")
+        .eq("id", factura_id)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (fErr || !factura) throw new Error("Factura no encontrada");
+
+      const { data: detalles } = await supabase
+        .from("facturas_detalle")
+        .select("*")
+        .eq("factura_id", factura_id);
+      if (!detalles?.length) throw new Error("Factura sin detalle");
+
+      let cliente = null;
+      if (factura.cliente_id) {
+        const { data: c } = await supabase
+          .from("clientes")
+          .select("*")
+          .eq("id", factura.cliente_id)
+          .maybeSingle();
+        cliente = c;
+      }
+
+      // Determinar tipo_ecf basado en si el cliente tiene RNC (B2B=31, B2C=32)
+      const isB2B = !!(cliente && cliente.rnc && String(cliente.rnc).trim().length > 0);
+      const detectedTipo = isB2B ? "31" : "32";
+      // Generar e-NCF de prueba que coincida con el tipo detectado
+      const encf = encf_override || `E${detectedTipo}0000000001`;
+
+      let xml, input;
+      try {
+        input = facturaToEcfInput(factura, detalles, cliente, integ.config, encf);
+        xml = buildEcfXml(input.tipo_ecf, input);
+      } catch (xmlErr) {
+        // Error con contexto: que datos teniamos
+        throw new Error(
+          `Generando XML: ${xmlErr.message} | factura.numero=${factura.numero} cliente_id=${factura.cliente_id || 'null'} detalles=${detalles?.length || 0} config_keys=${Object.keys(integ.config || {}).join(',')}`
+        );
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        encf,
+        tipo_ecf: input.tipo_ecf,
+        xml,
+        input,  // util para debugging
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_test_xml_sign ──
+    // DEV/QA: toma una factura, genera el XML del e-CF, lo FIRMA
+    // con el .p12 cargado y devuelve el XML firmado para inspeccion.
+    // Sin enviar a DGII todavia. Util para validar el chunk 3d.
+    if (action === "dgii_test_xml_sign") {
+      const { factura_id, encf_override } = body;
+      if (!factura_id) throw new Error("factura_id requerido");
+
+      // 1. Cargar config del emisor
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo para este tenant");
+
+      // 2. Cargar factura + detalles + cliente
+      const { data: factura, error: fErr } = await supabase
+        .from("facturas")
+        .select("*")
+        .eq("id", factura_id)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (fErr || !factura) throw new Error("Factura no encontrada");
+
+      const { data: detalles } = await supabase
+        .from("facturas_detalle")
+        .select("*")
+        .eq("factura_id", factura_id);
+      if (!detalles?.length) throw new Error("Factura sin detalle");
+
+      let cliente = null;
+      if (factura.cliente_id) {
+        const { data: c } = await supabase
+          .from("clientes")
+          .select("*")
+          .eq("id", factura.cliente_id)
+          .maybeSingle();
+        cliente = c;
+      }
+
+      // 3. Generar XML
+      const isB2B = !!(cliente && cliente.rnc && String(cliente.rnc).trim().length > 0);
+      const tipoEcf = isB2B ? "31" : "32";
+      const encf = encf_override || `E${tipoEcf}0000000001`;
+
+      let xml, input;
+      try {
+        input = facturaToEcfInput(factura, detalles, cliente, integ.config, encf);
+        xml = buildEcfXml(input.tipo_ecf, input);
+      } catch (xmlErr) {
+        throw new Error(
+          `Generando XML: ${xmlErr.message} | factura.numero=${factura.numero} cliente_id=${factura.cliente_id || 'null'} detalles=${detalles?.length || 0}`
+        );
+      }
+
+      // 4. Cargar el .p12 + descifrar password + parsear (cert + privateKey)
+      const { cert, privateKey, metadata } = await loadAndParseP12(supabase, integ.config);
+
+      // 5. Firmar el XML
+      let firmado;
+      try {
+        firmado = await signEcfXml(xml, cert, privateKey);
+      } catch (signErr) {
+        throw new Error(`Firmando XML: ${signErr.message}`);
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        encf,
+        tipo_ecf: input.tipo_ecf,
+        xml_sin_firmar: xml,
+        xml_firmado: firmado.xmlFirmado,
+        digest_value: firmado.digestValue,
+        signature_value_preview: firmado.signatureValue.slice(0, 80) + "...",
+        cert_metadata: metadata,
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_test_nota_xml ──
+    // DEV/QA: simula una nota (33 o 34) sobre una factura existente.
+    // El usuario pasa: factura_id_original, tipo ('33' o '34'),
+    // codigo_modificacion (1-6), razon (opcional), e items del ajuste
+    // (si no se pasan, asume 100% devolucion = todos los items originales).
+    if (action === "dgii_test_nota_xml") {
+      const {
+        factura_id_original,
+        tipo: tipoSolicitado,
+        codigo_modificacion,
+        razon_modificacion,
+        items_ajuste,
+        encf_override,
+      } = body;
+      if (!factura_id_original) throw new Error("factura_id_original requerido");
+
+      const tipo = (tipoSolicitado === "33" || tipoSolicitado === "debito") ? "33" : "34";
+
+      // 1. Cargar config del emisor
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo");
+
+      // 2. Cargar factura original (que se modifica)
+      const { data: facturaOrig } = await supabase
+        .from("facturas")
+        .select("*")
+        .eq("id", factura_id_original)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (!facturaOrig) throw new Error("Factura original no encontrada");
+
+      // 3. Necesitamos su e-NCF. Si la factura ya fue emitida via DGII directo,
+      //    tendra documentos_fiscales con encf. Si no, el ncf de la factura.
+      let encfOriginal = facturaOrig.ncf;
+      if (!encfOriginal || !encfOriginal.match(/^E\d{12}$/)) {
+        // buscar en documentos_fiscales
+        const { data: docOrig } = await supabase
+          .from("documentos_fiscales")
+          .select("encf")
+          .eq("factura_id", factura_id_original)
+          .eq("tenant_id", tenantId)
+          .not("encf", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        encfOriginal = docOrig?.encf;
+      }
+      if (!encfOriginal || !encfOriginal.match(/^E\d{12}$/)) {
+        // Fallback: usar un encf placeholder de prueba (E31...)
+        encfOriginal = "E310000000001";
+      }
+
+      // 4. Items del ajuste — si no se pasan, usamos todos los detalles
+      //    de la factura original (devolucion total)
+      let itemsNota = items_ajuste;
+      if (!Array.isArray(itemsNota) || itemsNota.length === 0) {
+        const { data: detalles } = await supabase
+          .from("facturas_detalle")
+          .select("*")
+          .eq("factura_id", factura_id_original);
+        itemsNota = (detalles || []).map(d => ({
+          descripcion: d.descripcion,
+          cantidad: d.cantidad,
+          precio: d.precio,
+          descuento: d.descuento,
+          itbis_pct: d.itbis_pct,
+          importe: d.importe,
+        }));
+      }
+
+      // 5. Cargar cliente (si la factura era B2B)
+      let cliente = null;
+      if (facturaOrig.cliente_id) {
+        const { data: c } = await supabase
+          .from("clientes")
+          .select("*")
+          .eq("id", facturaOrig.cliente_id)
+          .maybeSingle();
+        cliente = c;
+      }
+
+      // 6. e-NCF de la nota (placeholder para test)
+      const encf = encf_override || `E${tipo}0000000001`;
+
+      // 7. Generar input + XML
+      let xml, input;
+      try {
+        input = notaToEcfInput(
+          { fecha: new Date().toISOString(), items: itemsNota, tipo: tipo === "33" ? "debito" : "credito" },
+          { ncf: encfOriginal, fecha: facturaOrig.fecha, numero: facturaOrig.numero, cliente_id: facturaOrig.cliente_id },
+          cliente,
+          integ.config,
+          encf,
+          { codigo_modificacion: codigo_modificacion || "3", razon_modificacion: razon_modificacion || null }
+        );
+        xml = buildEcfXml(input.tipo_ecf, input);
+      } catch (xmlErr) {
+        throw new Error(
+          `Generando XML Tipo ${tipo}: ${xmlErr.message} | factura_orig=${facturaOrig.numero} encf_orig=${encfOriginal} items=${itemsNota.length}`
+        );
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        encf,
+        tipo_ecf: tipo,
+        encf_modificado: encfOriginal,
+        codigo_modificacion: input.referencia.codigo_modificacion,
+        xml,
+        input,
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_send_to_dgii ──
+    // FLUJO COMPLETO: factura → XML → firma → auth DGII → envio → TrackId
+    // Tambien escribe en documentos_fiscales y guarda el XML en Storage.
+    if (action === "dgii_send_to_dgii") {
+      const { factura_id, encf_override } = body;
+      if (!factura_id) throw new Error("factura_id requerido");
+
+      // 1. Cargar config
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo");
+      const ambiente = integ.config.ambiente || "TesteCF";
+
+      // 2. Cargar factura + detalles + cliente
+      const { data: factura } = await supabase
+        .from("facturas").select("*").eq("id", factura_id).eq("tenant_id", tenantId).single();
+      if (!factura) throw new Error("Factura no encontrada");
+
+      const { data: detalles } = await supabase
+        .from("facturas_detalle").select("*").eq("factura_id", factura_id);
+      if (!detalles?.length) throw new Error("Factura sin detalle");
+
+      let cliente = null;
+      if (factura.cliente_id) {
+        const { data: c } = await supabase
+          .from("clientes").select("*").eq("id", factura.cliente_id).maybeSingle();
+        cliente = c;
+      }
+
+      // 3. Generar e-NCF (en test usamos placeholder; en produccion get_next_encf)
+      const isB2B = !!(cliente?.rnc);
+      const tipoEcf = isB2B ? "31" : "32";
+      const encf = encf_override || `E${tipoEcf}0000000001`;
+
+      // 4. Iniciar log
+      const docFiscal = await logEcfStart(supabase, {
+        tenantId, factura_id, tipo_ecf: tipoEcf, encf, ambiente,
+      });
+
+      try {
+        // 5. Generar XML
+        const input = facturaToEcfInput(factura, detalles, cliente, integ.config, encf);
+        const xmlSinFirmar = buildEcfXml(input.tipo_ecf, input);
+
+        // 6. Cargar .p12 y firmar
+        const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+        const { xmlFirmado } = await signEcfXml(xmlSinFirmar, cert, privateKey);
+
+        // 7. Guardar XML firmado en Storage (para retencion 10 anos)
+        const xmlPath = await uploadSignedXml(supabase, tenantId, encf, xmlFirmado);
+        await logEcfXmlGenerated(supabase, docFiscal.id, xmlPath, { input });
+
+        // 8. Autenticar contra DGII y enviar
+        const auth = await authenticate(cert, privateKey, ambiente);
+        const recepcion = await enviarEcf(xmlFirmado, auth.token, ambiente);
+        const trackId = recepcion.trackId || recepcion.TrackId || recepcion.trackid;
+
+        if (!trackId) {
+          throw new Error(`DGII no devolvio TrackId. Respuesta: ${JSON.stringify(recepcion).slice(0, 300)}`);
+        }
+
+        // 9. Registrar envio
+        await logEcfSent(supabase, docFiscal.id, trackId);
+
+        return new Response(JSON.stringify({
+          ok: true,
+          encf,
+          tipo_ecf: tipoEcf,
+          ambiente,
+          trackId,
+          xml_path: xmlPath,
+          recepcion,
+          documento_id: docFiscal.id,
+        }), { status: 200, headers: corsHeaders });
+
+      } catch (err) {
+        await logEcfError(supabase, docFiscal.id, err.message || String(err));
+        throw err;
+      }
+    }
+
+    // ── ACTION: dgii_consultar_estado ──
+    // Dado un TrackId, consulta a DGII el estado actual del e-CF.
+    if (action === "dgii_consultar_estado") {
+      const { track_id, documento_id } = body;
+      if (!track_id) throw new Error("track_id requerido");
+
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo");
+      const ambiente = integ.config.ambiente || "TesteCF";
+
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const auth = await authenticate(cert, privateKey, ambiente);
+      const estado = await consultarEstado(track_id, auth.token, ambiente);
+
+      // Normalizar estado para nuestra columna estado_dgii
+      const estadoNormalizado = (() => {
+        const e = String(estado.estado || estado.codigo || "").toLowerCase();
+        if (e.includes("aceptado_condicional") || e.includes("condicional")) return "aceptado_condicional";
+        if (e.includes("aceptado") || e === "1") return "aceptado";
+        if (e.includes("rechazado") || e === "0") return "rechazado";
+        return "enviado";
+      })();
+
+      // Si nos dieron un documento_id, actualizamos la fila
+      if (documento_id) {
+        await logEcfArecf(supabase, documento_id, estadoNormalizado, estado);
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        track_id,
+        ambiente,
+        estado: estadoNormalizado,
+        respuesta: estado,
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_list_documentos ──
+    // Devuelve los documentos fiscales del tenant (con filtros opcionales).
+    // Util para una pestaña/lista de "e-CF emitidos" en el frontend.
+    if (action === "dgii_list_documentos") {
+      const { tipo_ecf, estado, desde, hasta, limit } = body;
+      let query = supabase
+        .from("documentos_fiscales")
+        .select("id, factura_id, tipo_ecf, encf, track_id, estado, estado_dgii, aecf_estado, ambiente, emitted_at, arecf_recibido_at, error_message, xml_firmado_path, created_at")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .order("created_at", { ascending: false })
+        .limit(Math.min(parseInt(limit) || 100, 500));
+
+      if (tipo_ecf) query = query.eq("tipo_ecf", tipo_ecf);
+      if (estado)   query = query.eq("estado", estado);
+      if (desde)    query = query.gte("created_at", desde);
+      if (hasta)    query = query.lte("created_at", hasta);
+
+      const { data, error } = await query;
+      if (error) throw new Error(`Error listando documentos: ${error.message}`);
+
+      return new Response(JSON.stringify({ ok: true, documentos: data || [] }), {
+        status: 200, headers: corsHeaders,
+      });
+    }
+
+    // ── ACTION: dgii_validate_certificate ──
+    // Carga el .p12 desde Storage, descifra el password con la master key,
+    // parsea el certificado con node-forge y devuelve metadata. Tambien
+    // persiste la metadata en integraciones_fiscales.config.metadata.
+    if (action === "dgii_validate_certificate") {
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("id, config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+
+      if (!integ) throw new Error("No hay configuracion DGII directo para este tenant");
+
+      const { metadata } = await loadAndParseP12(supabase, integ.config);
+
+      // Persistir metadata en config para mostrarla sin re-cargar el .p12
+      const newConfig = { ...(integ.config || {}), metadata };
+      await supabase
+        .from("integraciones_fiscales")
+        .update({ config: newConfig, updated_at: new Date().toISOString() })
+        .eq("id", integ.id);
+
+      return new Response(JSON.stringify({ ok: true, metadata }), {
+        status: 200, headers: corsHeaders,
+      });
+    }
+
+    // ── ACTION: dgii_delete_certificate ──
+    // Elimina el .p12 del Storage y la fila de integraciones_fiscales
+    // para el proveedor 'dgii_directo' del tenant. Deja el sistema
+    // como si nunca se hubiera configurado.
+    if (action === "dgii_delete_certificate") {
+      // 1. Cargar la integracion existente para conocer el path
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("id, config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+
+      // 2. Borrar el archivo del Storage si esta el path
+      if (integ?.config?.certificado_storage_path) {
+        const path = integ.config.certificado_storage_path;
+        const { error: rmErr } = await supabase.storage
+          .from("certificados-dgii")
+          .remove([path]);
+        if (rmErr) {
+          // No bloqueante: dejamos log y seguimos limpiando la BD
+          console.warn("[emitir-fiscal] no se pudo borrar del storage:", rmErr.message);
+        }
+      }
+
+      // 3. Borrar la fila de integraciones_fiscales
+      if (integ?.id) {
+        const { error: delErr } = await supabase
+          .from("integraciones_fiscales")
+          .delete()
+          .eq("id", integ.id);
+        if (delErr) throw new Error(`Error borrando integracion: ${delErr.message}`);
+      }
+
+      return new Response(JSON.stringify({ ok: true, deleted: !!integ?.id }), {
+        status: 200, headers: corsHeaders,
+      });
+    }
+
+    // ── ACTION: dgii_certificate_info ──
+    // Devuelve metadata del certificado actual del tenant (si existe).
+    // No descifra el password ni descarga el .p12 — solo info publica.
+    if (action === "dgii_certificate_info") {
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config, activo, updated_at")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+
+      if (!integ) {
+        return new Response(JSON.stringify({ ok: true, configured: false }), {
+          status: 200, headers: corsHeaders,
+        });
+      }
+
+      const cfg = integ.config || {};
+      return new Response(JSON.stringify({
+        ok: true,
+        configured: !!cfg.certificado_storage_path,
+        rnc_emisor: cfg.rnc_emisor,
+        nombre_emisor: cfg.nombre_emisor,
+        ambiente: cfg.ambiente,
+        callback_url: cfg.callback_url,
+        storage_path: cfg.certificado_storage_path,
+        metadata: cfg.metadata || null,
+        activo: integ.activo,
+        updated_at: integ.updated_at,
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_anular_ecf ──
+    // Anula uno o varios e-NCF previamente emitidos. Genera un ANECF
+    // firmado y lo envia al endpoint de anulaciones.
+    if (action === "dgii_anular_ecf") {
+      const { ncf_inicial, ncf_final, fecha_anulacion } = body;
+      if (!ncf_inicial) throw new Error("ncf_inicial requerido");
+
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo");
+      const ambiente = integ.config.ambiente || "TesteCF";
+
+      // 1. Generar ANECF
+      const anecfInput = {
+        rnc_emisor: integ.config.rnc_emisor,
+        fecha_anulacion: fecha_anulacion || new Date().toISOString(),
+        ncf_inicial,
+        ncf_final: ncf_final || ncf_inicial,
+      };
+      const anecfXml = buildAnecfXml(anecfInput);
+
+      // 2. Cargar .p12 + firmar
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const { xmlFirmado } = await signXmlGenerico(anecfXml, cert, privateKey);
+
+      // 3. Autenticar y enviar
+      const auth = await authenticate(cert, privateKey, ambiente);
+      const respuesta = await enviarAnulacion(xmlFirmado, auth.token, ambiente);
+
+      // 4. Marcar las filas en documentos_fiscales como anuladas
+      // (todos los e-NCF en el rango)
+      await supabase
+        .from("documentos_fiscales")
+        .update({
+          estado: "anulado",
+          estado_dgii: "anulado",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("tenant_id", tenantId)
+        .gte("encf", ncf_inicial)
+        .lte("encf", ncf_final || ncf_inicial);
+
+      return new Response(JSON.stringify({
+        ok: true,
+        ambiente,
+        ncf_inicial,
+        ncf_final: ncf_final || ncf_inicial,
+        respuesta,
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_enviar_rfce ──
+    // Envia un Resumen de Facturas de Consumo (Tipo 32) en batch.
+    // Toma todos los e-CF Tipo 32 del rango de fechas que aun no se
+    // hayan reportado, los firma juntos en un RFCE y envia a DGII.
+    if (action === "dgii_enviar_rfce") {
+      const { fecha_inicio, fecha_fin } = body;
+      if (!fecha_inicio || !fecha_fin) throw new Error("fecha_inicio y fecha_fin requeridos");
+
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo");
+      const ambiente = integ.config.ambiente || "TesteCF";
+
+      // 1. Cargar todos los Tipo 32 del rango que aun no fueron incluidos en RFCE
+      const { data: docs, error: docsErr } = await supabase
+        .from("documentos_fiscales")
+        .select("id, encf, factura_id")
+        .eq("tenant_id", tenantId)
+        .eq("tipo_ecf", "32")
+        .gte("emitted_at", fecha_inicio)
+        .lte("emitted_at", fecha_fin)
+        .is("track_id", null);  // no enviados aun (RFCE no asigna trackId individual)
+      if (docsErr) throw new Error(`Error cargando docs: ${docsErr.message}`);
+      if (!docs?.length) throw new Error("No hay e-CF Tipo 32 pendientes en el rango");
+
+      // 2. Cargar las facturas para obtener montos
+      const facturaIds = docs.map(d => d.factura_id).filter(Boolean);
+      const { data: facturas } = await supabase
+        .from("facturas")
+        .select("id, total, itbis, subtotal")
+        .in("id", facturaIds);
+      const factById = new Map((facturas || []).map(f => [f.id, f]));
+
+      const facturasResumen = docs.map(d => {
+        const f = factById.get(d.factura_id) || {};
+        return {
+          encf: d.encf,
+          monto_total: Number(f.total) || 0,
+          total_itbis: Number(f.itbis) || 0,
+          monto_gravado: Number(f.subtotal) || 0,
+        };
+      });
+
+      // 3. Generar RFCE
+      const rfceInput = {
+        rnc_emisor: integ.config.rnc_emisor,
+        fecha_inicio,
+        fecha_fin,
+        facturas: facturasResumen,
+      };
+      const rfceXml = buildRfceXml(rfceInput);
+
+      // 4. Cargar .p12 + firmar
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const { xmlFirmado } = await signXmlGenerico(rfceXml, cert, privateKey);
+
+      // 5. Autenticar y enviar
+      const auth = await authenticate(cert, privateKey, ambiente);
+      const respuesta = await enviarRfce(xmlFirmado, auth.token, ambiente);
+
+      // 6. Marcar todos los docs como enviados via RFCE
+      const trackId = respuesta.trackId || respuesta.TrackId || `RFCE-${Date.now()}`;
+      await supabase
+        .from("documentos_fiscales")
+        .update({
+          track_id: trackId,
+          estado_dgii: "enviado_rfce",
+          estado: "emitido",
+          updated_at: new Date().toISOString(),
+        })
+        .in("id", docs.map(d => d.id));
+
+      return new Response(JSON.stringify({
+        ok: true,
+        ambiente,
+        cantidad_resumenes: facturasResumen.length,
+        track_id: trackId,
+        respuesta,
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    throw new Error(`Acción '${action}' no reconocida. Use: test_connection, emitir_factura, dgii_save_certificate_meta, dgii_certificate_info, dgii_validate_certificate, dgii_delete_certificate, dgii_list_documentos, dgii_test_xml_generation, dgii_test_xml_sign, dgii_test_nota_xml, dgii_send_to_dgii, dgii_consultar_estado, dgii_anular_ecf, dgii_enviar_rfce`);
 
   } catch (error) {
-    console.error("[emitir-fiscal]", error);
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error("[emitir-fiscal] ERROR:", errorMessage);
+    if (errorStack) console.error("[emitir-fiscal] STACK:", errorStack);
     return new Response(JSON.stringify({
       ok: false,
-      error: error instanceof Error ? error.message : "Error desconocido",
+      error: errorMessage,
+      // Include stack in dev/test for easier debugging (remove in production)
+      _debug_stack: errorStack || null,
     }), { status: 400, headers: corsHeaders });
   }
 });
