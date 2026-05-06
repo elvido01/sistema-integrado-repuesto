@@ -157,6 +157,50 @@ const DgiiMonitorPage = () => {
     fetchDocumentos();
   }, [fetchDocumentos]);
 
+  const [anulandoId, setAnulandoId] = useState(null);
+
+  const handleAnular = async (doc) => {
+    if (!doc.encf) {
+      toast({ title: 'Sin e-NCF', description: 'No hay e-NCF asignado.', variant: 'destructive' });
+      return;
+    }
+    const confirmText = `Vas a ANULAR el e-CF ${doc.encf}.\n\n` +
+      `Esta acción se reporta a DGII y NO se puede deshacer.\n\n` +
+      `¿Continuar?`;
+    if (!confirm(confirmText)) return;
+
+    setAnulandoId(doc.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
+        body: {
+          action: 'dgii_anular_ecf',
+          ncf_inicial: doc.encf,
+          ncf_final: doc.encf,
+        },
+      });
+      if (error) {
+        let msg = error.message;
+        try {
+          if (error.context?.json) {
+            const parsed = await error.context.json();
+            if (parsed?.error) msg = parsed.error;
+          }
+        } catch (_) {}
+        throw new Error(msg);
+      }
+      if (!data?.ok) throw new Error(data?.error || 'No se pudo anular');
+      toast({
+        title: '✅ e-CF anulado',
+        description: `${doc.encf} anulado en DGII (${data.ambiente}).`,
+      });
+      await fetchDocumentos();
+    } catch (err) {
+      toast({ title: 'Error anulando', description: err.message, variant: 'destructive' });
+    } finally {
+      setAnulandoId(null);
+    }
+  };
+
   const handleConsultarEstado = async (doc) => {
     if (!doc.track_id) {
       toast({ title: 'Sin TrackId', description: 'Este documento no tiene TrackId aún.', variant: 'destructive' });
@@ -419,6 +463,18 @@ const DgiiMonitorPage = () => {
                           title="Reenviar a DGII"
                         >
                           {retryingId === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        </Button>
+                      )}
+                      {d.encf && d.estado !== 'anulado' && d.estado_dgii !== 'anulado' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleAnular(d)}
+                          disabled={anulandoId === d.id}
+                          className="h-7 px-2 border-red-300 text-red-700 hover:bg-red-50"
+                          title="Anular e-CF en DGII (irreversible)"
+                        >
+                          {anulandoId === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
                         </Button>
                       )}
                     </div>

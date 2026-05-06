@@ -518,23 +518,38 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Verificar usuario autenticado
+    // Verificar autenticacion. Hay dos modos:
+    //   1) Usuario normal con JWT — el tenant viene del profile.
+    //   2) Cron / service-role con service_role key — el tenant
+    //      viene de body.service_tenant_id o del header X-Tenant-Id.
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("No autorizado");
-
     const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) throw new Error("Token inválido");
 
-    // Obtener tenant del usuario
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("tenant_id")
-      .eq("id", user.id)
-      .single();
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const isServiceRole = serviceKey && token === serviceKey;
 
-    if (!profile?.tenant_id) throw new Error("Usuario sin tenant");
-    const tenantId = profile.tenant_id;
+    let tenantId;
+    if (isServiceRole) {
+      // Modo cron/system: confiar en body.service_tenant_id o header X-Tenant-Id
+      tenantId = body.service_tenant_id || req.headers.get("X-Tenant-Id");
+      if (!tenantId) {
+        throw new Error("service_tenant_id requerido cuando se usa service_role");
+      }
+    } else {
+      // Modo usuario normal: validar JWT y leer profile
+      const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+      if (userError || !user) throw new Error("Token inválido");
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("tenant_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile?.tenant_id) throw new Error("Usuario sin tenant");
+      tenantId = profile.tenant_id;
+    }
 
     // ── ACTION: test_connection ──
     if (action === "test_connection") {
