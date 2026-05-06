@@ -14,6 +14,7 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
     const [formData, setFormData] = useState({
         nombre: '',
         activo: true,
+        comision_pct: 0,
     });
 
     useEffect(() => {
@@ -22,11 +23,13 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
                 setFormData({
                     nombre: vendedor.nombre || '',
                     activo: vendedor.activo ?? true,
+                    comision_pct: vendedor.comision_pct ?? 0,
                 });
             } else {
                 setFormData({
                     nombre: '',
                     activo: true,
+                    comision_pct: 0,
                 });
             }
         }
@@ -45,13 +48,20 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
         e.preventDefault();
         setIsSubmitting(true);
 
+        // Sanitizar el porcentaje (puede venir como string desde el input)
+        const pct = parseFloat(formData.comision_pct);
+        const payload = {
+            ...formData,
+            comision_pct: Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0,
+        };
+
         let result;
         if (vendedor) {
             // Update
-            result = await supabase.from('vendedores').update(formData).eq('id', vendedor.id).select();
+            result = await supabase.from('vendedores').update(payload).eq('id', vendedor.id).select();
         } else {
             // Insert
-            result = await supabase.from('vendedores').insert(formData).select();
+            result = await supabase.from('vendedores').insert(payload).select();
         }
 
         const { error } = result;
@@ -85,6 +95,27 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
                     <div className="space-y-2">
                         <Label htmlFor="nombre">Nombre Completo</Label>
                         <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej. Juan Pérez" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="comision_pct">% Comisión sobre venta neta</Label>
+                        <div className="relative">
+                            <Input
+                                id="comision_pct"
+                                name="comision_pct"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                value={formData.comision_pct}
+                                onChange={handleChange}
+                                placeholder="Ej. 1.5"
+                                className="pr-8"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none">%</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500">
+                            Se usará como valor por defecto al calcular comisiones de este vendedor.
+                        </p>
                     </div>
                     <div className="flex items-center space-x-2 pt-2">
                         <Checkbox id="activo" checked={formData.activo} onCheckedChange={(checked) => handleCheckedChange('activo', checked)} />

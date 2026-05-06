@@ -46,17 +46,36 @@ const ReportesDGIIPage = () => {
     if (!tenantId) return;
     setLoading(true);
     try {
-      // 607: ventas con NCF en el mes (no anuladas)
-      const { data: v, error: ev } = await supabase
+      // 607: ventas con NCF en el mes (no anuladas).
+      // El NCF puede estar en facturas.ncf O en documentos_fiscales.ncf
+      // (cuando se emitio via PSFE como Alegra). Buscamos en ambas fuentes.
+      const { data: vRaw, error: ev } = await supabase
         .from('facturas')
         .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
         .gte('fecha', desde)
         .lte('fecha', hasta + 'T23:59:59')
-        .not('ncf', 'is', null)
-        .neq('ncf', '')
         .neq('estado', 'ANULADA')
         .order('fecha', { ascending: true });
       if (ev) throw ev;
+
+      // Para las facturas sin NCF directo, buscar en documentos_fiscales
+      const facturasSinNcf = (vRaw || []).filter(f => !f.ncf || f.ncf === '');
+      let docsByFacturaId = new Map();
+      if (facturasSinNcf.length > 0) {
+        const { data: docs } = await supabase
+          .from('documentos_fiscales')
+          .select('factura_id, ncf, proveedor_number, encf')
+          .in('factura_id', facturasSinNcf.map(f => f.id))
+          .eq('estado', 'emitido');
+        (docs || []).forEach(d => {
+          docsByFacturaId.set(d.factura_id, d.ncf || d.encf || d.proveedor_number);
+        });
+      }
+
+      const v = (vRaw || []).map(f => ({
+        ...f,
+        ncf: f.ncf || docsByFacturaId.get(f.id) || null,
+      })).filter(f => f.ncf && f.ncf !== '');
 
       // 606: compras con NCF en el mes
       const { data: c, error: ec } = await supabase
@@ -69,17 +88,31 @@ const ReportesDGIIPage = () => {
         .order('fecha', { ascending: true });
       if (ec) throw ec;
 
-      // 608: facturas anuladas en el mes
-      const { data: a, error: ea } = await supabase
+      // 608: facturas anuladas en el mes (mismo fallback de NCF que 607)
+      const { data: aRaw, error: ea } = await supabase
         .from('facturas')
         .select('id, numero, fecha, ncf, updated_at, estado')
         .gte('fecha', desde)
         .lte('fecha', hasta + 'T23:59:59')
         .eq('estado', 'ANULADA')
-        .not('ncf', 'is', null)
-        .neq('ncf', '')
         .order('fecha', { ascending: true });
       if (ea) throw ea;
+
+      const anuladasSinNcf = (aRaw || []).filter(f => !f.ncf || f.ncf === '');
+      let docsAnul = new Map();
+      if (anuladasSinNcf.length > 0) {
+        const { data: docs } = await supabase
+          .from('documentos_fiscales')
+          .select('factura_id, ncf, proveedor_number, encf')
+          .in('factura_id', anuladasSinNcf.map(f => f.id));
+        (docs || []).forEach(d => {
+          docsAnul.set(d.factura_id, d.ncf || d.encf || d.proveedor_number);
+        });
+      }
+      const a = (aRaw || []).map(f => ({
+        ...f,
+        ncf: f.ncf || docsAnul.get(f.id) || null,
+      })).filter(f => f.ncf && f.ncf !== '');
 
       setVentas((v || []).map(r => ({
         ...r,

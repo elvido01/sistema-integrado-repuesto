@@ -108,6 +108,7 @@ const navItems = [
       { title: 'Perfil Empresa', id: 'perfil-empresa', icon: Building2 },
       { title: 'Cierre de Caja', id: 'cierre-caja', icon: Settings },
       { title: 'Comprobantes Fiscales', id: 'comprobantes-fiscales', icon: FileText },
+      { title: 'Monitor e-CF DGII', id: 'dgii-monitor', icon: FileText },
     ],
   },
 ];

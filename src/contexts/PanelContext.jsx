@@ -36,6 +36,7 @@ import LibrosContablesPage from '@/pages/LibrosContablesPage';
 import CotizacionesMagnaPage from '@/pages/CotizacionesMagnaPage';
 import PerfilEmpresa from '@/pages/Configuracion/PerfilEmpresa';
 import ComprobantesPage from '@/pages/Configuracion/ComprobantesPage';
+import DgiiMonitorPage from '@/pages/Configuracion/DgiiMonitorPage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
 import PlanesPage from '@/pages/PlanesPage';
 import RouteGuard from '@/components/auth/RouteGuard';
@@ -87,6 +88,7 @@ const componentMapping = {
   'config_sistema': { component: () => <Protected module="config_sistema"><ConfiguracionSistemaPage /></Protected>, icon: Settings, name: 'Configuracion del Sistema' },
   'perfil-empresa': { component: () => <Protected module="perfil-empresa"><PerfilEmpresa /></Protected>, icon: Building2, name: 'Perfil Empresa' },
   'comprobantes-fiscales': { component: () => <Protected module="comprobantes-fiscales"><ComprobantesPage /></Protected>, icon: FileText, name: 'Comprobantes Fiscales' },
+  'dgii-monitor': { component: () => <Protected module="dgii-monitor"><DgiiMonitorPage /></Protected>, icon: FileText, name: 'Monitor e-CF DGII' },
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
   'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
 };

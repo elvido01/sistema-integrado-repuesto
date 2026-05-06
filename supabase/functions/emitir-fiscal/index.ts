@@ -401,15 +401,87 @@ async function alegraEmitirFactura(supabase, config, factura, detalles, cliente)
 //   - Recibir TrackId, persistir, polling de estado.
 //   - Almacenar XML firmado en Storage por 10 anos.
 
-const DGII_NOT_IMPLEMENTED_MSG =
-  "Adapter DGII directo aun no implementado. Pendiente Fase 3 del proyecto de integracion nativa.";
-
-async function dgiiDirectoTestConnection(_config) {
-  throw new Error(DGII_NOT_IMPLEMENTED_MSG);
+// testConnection: valida que el .p12 se pueda abrir con la password
+// y que los campos del config esten completos. NO contacta DGII (eso
+// requiere que ya este declarado el callback URL en OFV).
+async function dgiiDirectoTestConnection(config) {
+  if (!config?.rnc_emisor) throw new Error("rnc_emisor no configurado");
+  if (!config?.nombre_emisor) throw new Error("nombre_emisor no configurado");
+  if (!config?.certificado_storage_path) throw new Error("Sube tu .p12 primero");
+  if (!config?.certificado_password_enc) throw new Error("Falta password cifrado");
+  // No podemos llamar loadAndParseP12 aqui sin supabase client — lo hace
+  // la accion dgii_validate_certificate. testConnection solo valida campos.
+  return {
+    ok: true,
+    rnc: config.rnc_emisor,
+    ambiente: config.ambiente || "TesteCF",
+    note: "Use 'Validar' para parsear el .p12 y 'Enviar a DGII' para una prueba real.",
+  };
 }
 
-async function dgiiDirectoEmitirFactura(_supabase, _config, _factura, _detalles, _cliente) {
-  throw new Error(DGII_NOT_IMPLEMENTED_MSG);
+// emitirFactura: flujo completo end-to-end para DGII directo.
+// 1. Genera e-NCF (correlativo del tenant)
+// 2. Construye XML segun tipo (31 B2B / 32 B2C, segun cliente)
+// 3. Carga .p12 y firma con XAdES-BES
+// 4. Sube XML firmado al bucket ecf-xmls (retencion 10 anos)
+// 5. Autentica con DGII (semilla -> firma -> token JWT)
+// 6. POST RecepcionECF -> recibe TrackId
+// 7. Retorna en el formato del contrato EmisorAdapter
+async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cliente) {
+  // 1. Determinar tipo y generar eNCF correlativo
+  const isB2B = !!(cliente && cliente.rnc && String(cliente.rnc).trim().length > 0);
+  const tipoEcf = isB2B ? "31" : "32";
+  const ambiente = config.ambiente || "TesteCF";
+
+  // get_next_encf RPC asigna correlativo atomico al tenant del usuario
+  const { data: encf, error: encfErr } = await supabase.rpc("get_next_encf", {
+    p_tipo_ecf: tipoEcf,
+    p_ambiente: ambiente,
+  });
+  if (encfErr || !encf) {
+    throw new Error(
+      `No se pudo asignar e-NCF (${tipoEcf}/${ambiente}): ${encfErr?.message || "secuencia agotada o no configurada en ecf_secuencias"}`
+    );
+  }
+
+  // 2. Construir XML
+  const input = facturaToEcfInput(factura, detalles, cliente, config, encf);
+  const xmlSinFirmar = buildEcfXml(input.tipo_ecf, input);
+
+  // 3. Cargar .p12 y firmar
+  const { cert, privateKey } = await loadAndParseP12(supabase, config);
+  const { xmlFirmado, digestValue, signatureValue } = await signEcfXml(xmlSinFirmar, cert, privateKey);
+
+  // 4. Guardar XML firmado en Storage privado
+  const xmlPath = await uploadSignedXml(supabase, factura.tenant_id, encf, xmlFirmado);
+
+  // 5. Autenticar con DGII
+  const auth = await authenticate(cert, privateKey, ambiente);
+
+  // 6. Enviar e-CF
+  const recepcion = await enviarEcf(xmlFirmado, auth.token, ambiente);
+  const trackId = recepcion.trackId || recepcion.TrackId || recepcion.trackid;
+  if (!trackId) {
+    throw new Error(
+      `DGII no devolvio TrackId. Respuesta: ${JSON.stringify(recepcion).slice(0, 300)}`
+    );
+  }
+
+  // 7. Retornar en formato EmisorAdapter (lo persiste el handler en
+  //    documentos_fiscales con la columna ncf=encf y track_id=trackId)
+  return {
+    proveedor_invoice_id: trackId,
+    proveedor_number: encf,
+    ncf: encf,
+    request_payload: {
+      tipo_ecf: tipoEcf,
+      ambiente,
+      xml_path: xmlPath,
+      digest_value: digestValue,
+      signature_value: signatureValue.slice(0, 100) + "...",
+    },
+    response_payload: recepcion,
+  };
 }
 
 // ============================================================
@@ -560,18 +632,28 @@ Deno.serve(async (req) => {
         );
 
         // 8. Actualizar como emitido
+        // Para DGII directo, persistir tambien tipo_ecf, track_id, xml_path, ambiente
+        const updatePayload = {
+          estado: "emitido",
+          proveedor_invoice_id: resultado.proveedor_invoice_id,
+          proveedor_number: resultado.proveedor_number,
+          ncf: resultado.ncf,
+          request_payload: resultado.request_payload,
+          response_payload: resultado.response_payload,
+          emitted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        if (integ.proveedor === "dgii_directo") {
+          updatePayload.track_id = resultado.proveedor_invoice_id;  // mismo valor
+          updatePayload.encf = resultado.ncf;
+          updatePayload.tipo_ecf = resultado.request_payload?.tipo_ecf || null;
+          updatePayload.ambiente = resultado.request_payload?.ambiente || null;
+          updatePayload.xml_firmado_path = resultado.request_payload?.xml_path || null;
+          updatePayload.estado_dgii = "enviado";  // a la espera del ARECF
+        }
         await supabase
           .from("documentos_fiscales")
-          .update({
-            estado: "emitido",
-            proveedor_invoice_id: resultado.proveedor_invoice_id,
-            proveedor_number: resultado.proveedor_number,
-            ncf: resultado.ncf,
-            request_payload: resultado.request_payload,
-            response_payload: resultado.response_payload,
-            emitted_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq("id", docFiscal.id);
 
         return new Response(JSON.stringify({

@@ -40,7 +40,7 @@ const PagoComisionesPage = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('vendedores')
-        .select('id, nombre')
+        .select('id, nombre, comision_pct')
         .eq('activo', true)
         .order('nombre', { ascending: true });
       if (error) {
@@ -49,12 +49,25 @@ const PagoComisionesPage = () => {
         setVendedores(data);
         if (data.length > 0) {
           setSelectedVendedor(data[0].id);
+          // Auto-llenar el % con el valor predeterminado del primer vendedor
+          if (data[0].comision_pct != null && Number(data[0].comision_pct) > 0) {
+            setPorcentaje(Number(data[0].comision_pct));
+          }
         }
       }
       setLoading(false);
     };
     fetchVendedores();
   }, [toast]);
+
+  // Auto-llenar % cuando cambia el vendedor seleccionado (lookup local en el array)
+  useEffect(() => {
+    if (!selectedVendedor || vendedores.length === 0) return;
+    const v = vendedores.find(x => x.id === selectedVendedor);
+    if (v?.comision_pct != null && Number(v.comision_pct) > 0) {
+      setPorcentaje(Number(v.comision_pct));
+    }
+  }, [selectedVendedor, vendedores]);
 
   const handleConsultar = useCallback(async () => {
     if (!selectedVendedor) {
