@@ -21,9 +21,18 @@
 -- pero el cron NO se activa automaticamente.
 -- ============================================================
 
--- 1. Habilitar extensiones (idempotente)
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS pg_net;
+-- 1. Habilitar extensiones (manual desde Dashboard)
+-- ------------------------------------------------------------
+-- En Supabase Dashboard → Database → Extensions, busca y habilita:
+--   - pg_cron  (jobs programados)
+--   - pg_net   (HTTP requests desde SQL)
+--
+-- NO usar CREATE EXTENSION desde SQL Editor — Supabase pre-instala
+-- estas extensiones con permisos especiales de supabase_admin y
+-- ejecutar CREATE EXTENSION desde aqui da el error
+-- "dependent privileges exist".
+--
+-- Si ya estan habilitadas, este script funciona tal cual.
 
 -- 2. Tabla de configuracion del cron (1 fila por tenant)
 -- ------------------------------------------------------------

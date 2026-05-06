@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ShieldCheck, Upload, Loader2, FileLock2, Eye, EyeOff, Trash2, BadgeCheck, AlertTriangle, FileCode2, X, Send } from 'lucide-react';
+import { ShieldCheck, Upload, Loader2, FileLock2, Eye, EyeOff, Trash2, BadgeCheck, AlertTriangle, FileCode2, X, Send, FileSignature } from 'lucide-react';
 
 // Tamano maximo permitido para el .p12 (10 MB; reales son <50KB).
 const MAX_P12_BYTES = 10 * 1024 * 1024;
@@ -129,6 +129,55 @@ const DgiiCertificadoUploader = () => {
       toast({ title: 'Error generando XML', description: err.message || 'Error desconocido', variant: 'destructive' });
     } finally {
       setGeneratingXml(false);
+    }
+  };
+
+  const externalXmlInputRef = useRef(null);
+  const [signingExternal, setSigningExternal] = useState(false);
+
+  const handleSignExternalXml = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.xml')) {
+      toast({ title: 'Formato inválido', description: 'Selecciona un archivo .xml', variant: 'destructive' });
+      e.target.value = '';
+      return;
+    }
+    setSigningExternal(true);
+    try {
+      const xml = await file.text();
+      const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
+        body: { action: 'dgii_sign_external_xml', xml },
+      });
+      if (error) {
+        let msg = error.message;
+        try {
+          if (error.context?.json) {
+            const parsed = await error.context.json();
+            if (parsed?.error) msg = parsed.error;
+          }
+        } catch (_) {}
+        throw new Error(msg);
+      }
+      if (!data?.ok) throw new Error(data?.error || 'No se pudo firmar');
+
+      // Descargar el XML firmado
+      const blob = new Blob([data.xml_firmado], { type: 'application/xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name.replace(/\.xml$/i, '_firmado.xml');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({ title: '✅ XML firmado', description: 'Descarga iniciada. Sube ese archivo a DGII OFV.' });
+    } catch (err) {
+      toast({ title: 'Error firmando', description: err.message || 'Error desconocido', variant: 'destructive' });
+    } finally {
+      setSigningExternal(false);
+      e.target.value = '';
     }
   };
 
@@ -367,6 +416,25 @@ const DgiiCertificadoUploader = () => {
               >
                 {saving ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
                 Enviar a DGII
+              </Button>
+              <input
+                ref={externalXmlInputRef}
+                type="file"
+                accept=".xml"
+                onChange={handleSignExternalXml}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => externalXmlInputRef.current?.click()}
+                disabled={signingExternal}
+                className="border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                title="Firma un XML externo (ej. postulacion FI-GDF-016 de OFV) con tu .p12"
+              >
+                {signingExternal ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileSignature className="w-3.5 h-3.5 mr-1" />}
+                Firmar XML
               </Button>
               <Button
                 type="button"

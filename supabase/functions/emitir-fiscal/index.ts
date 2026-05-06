@@ -1016,6 +1016,31 @@ Deno.serve(async (req) => {
       }), { status: 200, headers: corsHeaders });
     }
 
+    // ── ACTION: dgii_sign_external_xml ──
+    // Firma cualquier XML externo (ej. el XML de postulacion FI-GDF-016
+    // que genera DGII en OFV) con el .p12 del tenant. Util para tramites
+    // administrativos en OFV que requieren firma del emisor.
+    if (action === "dgii_sign_external_xml") {
+      const { xml } = body;
+      if (!xml || typeof xml !== "string") throw new Error("xml requerido (string)");
+
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("Sube tu .p12 primero en Configuracion → Integracion Fiscal");
+
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const { xmlFirmado } = await signXmlGenerico(xml, cert, privateKey);
+
+      return new Response(JSON.stringify({
+        ok: true,
+        xml_firmado: xmlFirmado,
+      }), { status: 200, headers: corsHeaders });
+    }
+
     // ── ACTION: dgii_send_to_dgii ──
     // FLUJO COMPLETO: factura → XML → firma → auth DGII → envio → TrackId
     // Tambien escribe en documentos_fiscales y guarda el XML en Storage.
