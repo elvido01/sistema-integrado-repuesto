@@ -2,341 +2,296 @@
 // deno-lint-ignore-file
 //
 // ============================================================
-// Firma XAdES-BES para e-CF DGII (V2 — C14N Exclusive correcto)
+// Firma XML para e-CF DGII (V3 — espec oficial DGII)
 // ============================================================
-// Implementacion basada en @xmldom/xmldom (DOM parser) + C14N
-// Exclusive 1.0 segun W3C (http://www.w3.org/2001/10/xml-exc-c14n#).
+// Implementacion replicando EXACTAMENTE el codigo TypeScript de
+// referencia publicado por DGII en "Firmado de e-CF" v1.0.
 //
-// Diferencias vs version 1 (que DGII rechazo con "Firma Invalida"):
-//   - C14N estricto con ordenamiento de atributos y namespaces
-//   - Manejo correcto de inherited namespaces
-//   - Auto-close consistente
-//   - Whitespace handling segun spec
+// Diferencias vs versiones anteriores:
+//   - SIN prefijo `ds:` — usa default namespace
+//   - C14N 1.0 INCLUSIVE (http://www.w3.org/TR/2001/REC-xml-c14n-20010315)
+//   - SOLO 1 transform: enveloped-signature
+//   - SIN XAdES QualifyingProperties (DGII solo pide XMLDSig core)
+//   - Atributos ordenados alfabeticamente (no por namespace URI)
+//   - Encoding de caracteres especiales segun spec DGII:
+//       texto:    & < > \r  (\r → vacio)
+//       atributo: & < " \r \n \t  (\r \n → vacio)
 //
-// Estandares:
-//   - W3C XML-DSig Core (1.0)
-//   - W3C Exclusive XML Canonicalization 1.0
-//   - ETSI TS 101 903 v1.4.2 (XAdES-BES)
-//   - RSA-SHA256 (RSAwithSHA256)
+// Referencia: PDF "Firmado de e-CF" v1.0 publicado por DGII RD,
+// seccion "Metodo de firmado en TypeScript".
 // ============================================================
 
 import forge from "https://esm.sh/node-forge@1.3.1";
 import { DOMParser, XMLSerializer } from "https://esm.sh/@xmldom/xmldom@0.8.10";
 
 // ────────────────────────────────────────────────
-// C14N Exclusive 1.0 — implementacion W3C
+// Implementacion del DIGEST al estilo dgii-ecf (victors1681)
 // ────────────────────────────────────────────────
-// Ref: https://www.w3.org/TR/xml-exc-c14n/
+// CRITICO: DGII NO usa W3C C14N para calcular el DigestValue del root.
+// En su lugar, espera:
+//   1. Parsear el XML
+//   2. Limpiar text nodes vacios y comentarios
+//   3. Ordenar los xmlns:* del root alfabeticamente por nombre
+//      (la app oficial de DGII en C# emite xmlns:xsd antes de xmlns:xsi
+//       siempre, no en orden documental)
+//   4. Serializar via doc.toString() (XMLSerializer estandar)
+//   5. SHA256 sobre eso
 //
-// Reglas principales:
-//   1. UTF-8 encoding
-//   2. Line breaks normalizados a LF (#xA)
-//   3. Atributos ordenados: namespace URI primero, luego local name
-//   4. Namespace declarations: solo las "visibly utilized" en este nodo
-//   5. Empty elements expandidos: <a/> → <a></a>
-//   6. Sin XML declaration (<?xml ...?>)
-//   7. Default attributes incluidos
-//   8. Caracter encoding en attribute values: " → &quot;, etc
-//
-// Esta implementacion cubre el subset que DGII espera (XMLs nuestros
-// no tienen prefijos mixtos complejos ni inherited namespaces raros).
-
-function escapeAttrValue(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/"/g, "&quot;")
-    .replace(/\r/g, "&#xD;")
-    .replace(/\n/g, "&#xA;")
-    .replace(/\t/g, "&#x9;");
-}
-
-function escapeText(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\r/g, "&#xD;");
-}
-
-// Recorre un nodo y produce su forma canonica segun C14N Exclusive.
-// `inclusiveNs` es un set de prefijos namespace que deben incluirse
-// aunque no se usen visiblemente (InclusiveNamespaces PrefixList).
-function c14nExclusive(node, inheritedNsMap = new Map(), inclusiveNs = new Set()) {
-  const NODE_TYPE_ELEMENT = 1;
-  const NODE_TYPE_TEXT = 3;
-  const NODE_TYPE_CDATA = 4;
-  const NODE_TYPE_PI = 7;
-  const NODE_TYPE_COMMENT = 8;
-  const NODE_TYPE_DOC = 9;
-
-  if (node.nodeType === NODE_TYPE_DOC) {
-    // Procesar el elemento raiz
-    let result = "";
-    for (let i = 0; i < node.childNodes.length; i++) {
-      const child = node.childNodes[i];
-      if (child.nodeType === NODE_TYPE_ELEMENT) {
-        result += c14nExclusive(child, inheritedNsMap, inclusiveNs);
-      } else if (child.nodeType === NODE_TYPE_PI) {
-        result += `<?${child.target} ${child.data}?>`;
-      }
-      // Comentarios omitidos (C14N sin comentarios)
-    }
-    return result;
-  }
-
-  if (node.nodeType !== NODE_TYPE_ELEMENT) {
-    if (node.nodeType === NODE_TYPE_TEXT || node.nodeType === NODE_TYPE_CDATA) {
-      return escapeText(node.data || "");
-    }
-    return "";
-  }
-
-  // Es un elemento
-  const localName = node.localName || node.tagName;
-  const prefix = node.prefix || "";
-  const tagName = prefix ? `${prefix}:${localName}` : localName;
-
-  // Recoger namespaces declarados en este nodo
-  const declaredNs = new Map();
-  const attrs = [];
-  if (node.attributes) {
-    for (let i = 0; i < node.attributes.length; i++) {
-      const a = node.attributes[i];
-      if (a.name === "xmlns") {
-        declaredNs.set("", a.value);
-      } else if (a.name.startsWith("xmlns:")) {
-        const p = a.name.substring(6);
-        declaredNs.set(p, a.value);
-      } else {
-        attrs.push(a);
-      }
-    }
-  }
-
-  // Determinar namespaces "visibly utilized" en este elemento
-  // (es decir, el del propio elemento + el de cada atributo con prefijo)
-  const visiblyUsed = new Set();
-  if (prefix) visiblyUsed.add(prefix);
-  for (const a of attrs) {
-    if (a.prefix) visiblyUsed.add(a.prefix);
-  }
-  // El namespace default (sin prefix) tambien aplica si el elemento no tiene prefix
-  if (!prefix && (declaredNs.has("") || inheritedNsMap.has(""))) {
-    visiblyUsed.add("");
-  }
-  // Y los inclusivos forzados
-  for (const p of inclusiveNs) visiblyUsed.add(p);
-
-  // Construir la lista de namespace declarations a renderizar:
-  // un namespace se renderiza si esta visiblyUsed y (no estaba en inherited
-  // O su valor cambio respecto al heredado).
-  const nsToRender = [];
-  for (const p of visiblyUsed) {
-    let value;
-    if (declaredNs.has(p)) {
-      value = declaredNs.get(p);
-    } else if (inheritedNsMap.has(p)) {
-      value = inheritedNsMap.get(p);
-    } else {
-      continue; // no hay declaracion ni heredada
-    }
-    const inheritedValue = inheritedNsMap.get(p);
-    if (inheritedValue !== value) {
-      nsToRender.push({ prefix: p, value });
-    }
-  }
-  // Si declaredNs tiene prefijos no usados visiblyUsed, en C14N Exclusive
-  // NO se renderizan (esa es la diferencia clave con C14N inclusivo).
-
-  // Ordenar nsToRender por prefix (default primero, luego alfabetico)
-  nsToRender.sort((a, b) => {
-    if (a.prefix === "" && b.prefix !== "") return -1;
-    if (b.prefix === "" && a.prefix !== "") return 1;
-    return a.prefix.localeCompare(b.prefix);
-  });
-
-  // Ordenar atributos por (namespace URI, local name)
-  attrs.sort((a, b) => {
-    const nsA = a.namespaceURI || "";
-    const nsB = b.namespaceURI || "";
-    if (nsA !== nsB) return nsA.localeCompare(nsB);
-    return (a.localName || a.name).localeCompare(b.localName || b.name);
-  });
-
-  // Build inherited map for children
-  const newInherited = new Map(inheritedNsMap);
-  for (const { prefix: p, value } of nsToRender) {
-    newInherited.set(p, value);
-  }
-  // Tambien actualizar con cualquier ns declarado aqui (por si se usa en hijos)
-  for (const [p, v] of declaredNs) {
-    newInherited.set(p, v);
-  }
-
-  // Apertura del tag
-  let result = `<${tagName}`;
-
-  for (const { prefix: p, value } of nsToRender) {
-    if (p === "") {
-      result += ` xmlns="${escapeAttrValue(value)}"`;
-    } else {
-      result += ` xmlns:${p}="${escapeAttrValue(value)}"`;
-    }
-  }
-  for (const a of attrs) {
-    const aName = a.prefix ? `${a.prefix}:${a.localName || a.name}` : (a.localName || a.name);
-    result += ` ${aName}="${escapeAttrValue(a.value)}"`;
-  }
-  result += ">";
-
-  // Procesar hijos
-  for (let i = 0; i < node.childNodes.length; i++) {
-    const child = node.childNodes[i];
-    if (child.nodeType === NODE_TYPE_ELEMENT) {
-      result += c14nExclusive(child, newInherited, inclusiveNs);
-    } else if (child.nodeType === NODE_TYPE_TEXT || child.nodeType === NODE_TYPE_CDATA) {
-      result += escapeText(child.data || "");
-    } else if (child.nodeType === NODE_TYPE_PI) {
-      result += `<?${child.target} ${child.data}?>`;
-    }
-    // Comentarios omitidos
-  }
-
-  // Cierre — siempre con tag explicito (no auto-close)
-  result += `</${tagName}>`;
-  return result;
-}
-
-// Aplica enveloped-signature transform: remover el ds:Signature del DOM
-// antes de canonicalizar (para que el digest no se incluya a si mismo).
-// En nuestro caso, antes de firmar el XML AUN no tiene Signature, asi que
-// este transform es identidad. Lo dejamos documentado para el flujo de
-// verificacion futura.
-
-// ────────────────────────────────────────────────
-// Helpers de hash y firma
+// Esto fue confirmado por el autor de dgii-ecf, quien tardo 3 dias
+// figurando este detalle. Sin esto: "Firma Invalida" perpetuo.
 // ────────────────────────────────────────────────
 
-async function sha256Base64(text) {
-  const data = new TextEncoder().encode(text);
-  const hashBuf = await crypto.subtle.digest("SHA-256", data);
-  return btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
+function cleanNodes(node) {
+  for (let n = 0; n < node.childNodes.length; n++) {
+    const child = node.childNodes[n];
+    if (
+      child.nodeType === 8 || // comment
+      (child.nodeType === 3 && !/\S/.test(child.nodeValue || "")) // whitespace-only text
+    ) {
+      node.removeChild(child);
+      n--;
+    } else if (child.nodeType === 1) {
+      cleanNodes(child);
+    }
+  }
 }
 
-function certToBase64(cert) {
-  const der = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
-  return forge.util.encode64(der);
-}
-
-function certFingerprintSha256(cert) {
-  const der = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
+// Replica EXACTA del Digest.getHash de dgii-ecf (victors1681).
+// El XML de entrada es SOLO el root element serializado (sin xml declaration).
+// Se re-parsea, se ordenan los attributes del root con el comparador
+// "Attr < Attr" (que usa toString para comparar la representacion completa
+// del attr), se Object.assign sobre el NamedNodeMap, y se serializa.
+function digestForDgii(rootStr) {
+  const innerDoc = new DOMParser().parseFromString(rootStr, "text/xml");
+  const attrs = innerDoc.childNodes[0].attributes;
+  const sorted = Array.from(attrs).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  Object.assign(attrs, sorted);
+  const finalStr = innerDoc.toString();
   const md = forge.md.sha256.create();
-  md.update(der);
+  md.update(finalStr, "utf8");
   return forge.util.encode64(md.digest().getBytes());
 }
 
-function signRsaSha256(privateKey, dataString) {
+// Computa digest + serializa doc para insercion de Signature.
+// canonical = doc completo con xml-decl, despues de cleanNodes (sin whitespace).
+// digestInput = solo el root element serializado (sin xml-decl).
+// digestValue = SHA256 sobre digestInput con xmlns sorteados (estilo dgii-ecf).
+function digestSha256OverDoc(xmlString) {
+  const doc = new DOMParser().parseFromString(xmlString, "text/xml");
+  if (!doc?.documentElement) throw new Error("XML no parseable para digest");
+  cleanNodes(doc);
+  // doc.toString() incluye el xml-decl + root sin whitespace.
+  const canonical = doc.toString();
+  // El input al digest es SOLO el root serializado (asi lo pasa xml-crypto a Digest.getHash).
+  const rootStr = doc.documentElement.toString();
+  const digestB64 = digestForDgii(rootStr);
+  return { digestB64, canonical };
+}
+
+// ────────────────────────────────────────────────
+// Encoding de caracteres especiales (segun DGII spec)
+// ────────────────────────────────────────────────
+const xmlSpecialMap = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&apos;",
+  "\r": "",     // OJO: \r se elimina (no se reemplaza)
+  "\n": "",     // OJO: \n se elimina (solo en attrs)
+  "\t": "&#x9;",
+};
+
+function encodeSpecialCharactersInText(text) {
+  // Segun el codigo TypeScript del PDF de DGII, se escapan &, <, > y \r
+  // en nodos de texto. Esto replica EXACTAMENTE su implementacion:
+  //   text.replace(/([&<>\r])/g, ...)
+  return String(text || "").replace(/[&<>\r]/g, (ch) => xmlSpecialMap[ch] ?? ch);
+}
+
+function encodeSpecialCharactersInAttribute(value) {
+  return String(value || "").replace(/[&<"\r\n\t]/g, (ch) => xmlSpecialMap[ch] ?? ch);
+}
+
+// ────────────────────────────────────────────────
+// Comparador de atributos (orden alfabetico por name)
+// ────────────────────────────────────────────────
+function attrCompare(a, b) {
+  if (a.name < b.name) return -1;
+  if (a.name > b.name) return 1;
+  return 0;
+}
+
+// ────────────────────────────────────────────────
+// renderAttrs — ignora xmlns:* y ordena por name
+// ────────────────────────────────────────────────
+function renderAttrs(node, _defaultNs) {
+  if (!node.attributes) return "";
+  const attrListToRender = [];
+  for (let i = 0; i < node.attributes.length; i++) {
+    const attr = node.attributes[i];
+    // Ignorar las definiciones de namespace
+    if (attr.name.indexOf("xmlns") === 0) continue;
+    attrListToRender.push(attr);
+  }
+  attrListToRender.sort(attrCompare);
+  let res = "";
+  for (const attr of attrListToRender) {
+    res += ` ${attr.name}="${encodeSpecialCharactersInAttribute(attr.value)}"`;
+  }
+  return res;
+}
+
+// ────────────────────────────────────────────────
+// renderNs — maneja namespaces del scope
+// ────────────────────────────────────────────────
+function renderNs(node, prefixesInScope, defaultNs, defaultNsForPrefix, ancestorNamespaces) {
+  let res = "";
+  let newDefaultNs = defaultNs;
+  const nsListToRender = [];
+  const currNs = node.namespaceURI || "";
+
+  // Namespace del propio elemento
+  if (node.prefix) {
+    if (prefixesInScope.indexOf(node.prefix) === -1) {
+      nsListToRender.push({
+        prefix: node.prefix,
+        namespaceURI: node.namespaceURI || defaultNsForPrefix[node.prefix],
+      });
+      prefixesInScope.push(node.prefix);
+    }
+  } else if (defaultNs !== currNs) {
+    // Cambio de default namespace
+    newDefaultNs = node.namespaceURI;
+    res += ` xmlns="${newDefaultNs}"`;
+  }
+
+  // Namespaces de atributos prefijados
+  if (node.attributes) {
+    for (let i = 0; i < node.attributes.length; i++) {
+      const attr = node.attributes[i];
+      if (attr.prefix === "xmlns" && prefixesInScope.indexOf(attr.localName) === -1) {
+        nsListToRender.push({ prefix: attr.localName, namespaceURI: attr.value });
+        prefixesInScope.push(attr.localName);
+      }
+      // Tambien declarar el namespace del prefix del attr si no esta en scope
+      if (attr.prefix && attr.prefix !== "xmlns" && prefixesInScope.indexOf(attr.prefix) === -1) {
+        nsListToRender.push({ prefix: attr.prefix, namespaceURI: attr.namespaceURI });
+        prefixesInScope.push(attr.prefix);
+      }
+    }
+  }
+
+  // C14N Inclusive: propagar namespaces heredados de ancestros al primer
+  // nodo canonicalizado (cuando el subtree se canonicaliza fuera de su
+  // contexto natural — ej. SignedInfo dentro de un doc XML mas grande).
+  // Solo aplica al primer nodo: ancestorNamespaces se pasa solo en la
+  // llamada raiz, los descendants reciben [] para no duplicar.
+  if (Array.isArray(ancestorNamespaces) && ancestorNamespaces.length > 0) {
+    for (const a of ancestorNamespaces) {
+      const already = nsListToRender.find(
+        (n) => n.prefix === a.prefix && n.namespaceURI === a.namespaceURI
+      );
+      if (!already && prefixesInScope.indexOf(a.prefix) === -1) {
+        nsListToRender.push({ prefix: a.prefix, namespaceURI: a.namespaceURI });
+        prefixesInScope.push(a.prefix);
+      }
+    }
+  }
+
+  // C14N: ordenar namespace declarations lexicograficamente por prefix
+  nsListToRender.sort((a, b) => (a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0));
+
+  for (const p of nsListToRender) {
+    res += ` xmlns:${p.prefix}="${p.namespaceURI}"`;
+  }
+
+  return { rendered: res, newDefaultNs };
+}
+
+// Recolecta xmlns:* declarados en los ancestros de un nodo, para C14N
+// Inclusive de subtrees fuera de contexto.
+function findAncestorNamespaces(node) {
+  const result = [];
+  const seenPrefixes = new Set();
+  let parent = node.parentNode;
+  while (parent && parent.nodeType === 1) {
+    if (parent.attributes) {
+      for (let i = 0; i < parent.attributes.length; i++) {
+        const a = parent.attributes[i];
+        if (a.prefix === "xmlns" && !seenPrefixes.has(a.localName)) {
+          seenPrefixes.add(a.localName);
+          result.push({ prefix: a.localName, namespaceURI: a.value });
+        }
+      }
+    }
+    parent = parent.parentNode;
+  }
+  return result;
+}
+
+// ────────────────────────────────────────────────
+// c14n recursivo (interno) — replica exacta del PDF DGII
+// ────────────────────────────────────────────────
+function c14nInterno(node, prefixesInScope, defaultNs, defaultNsForPrefix, ancestorNamespaces) {
+  // Comentario — no incluir
+  if (node.nodeType === 8) return "";
+  // Cualquier nodo con .data (texto, CDATA, etc) → tratar como texto
+  // (igual que el codigo DGII: `if (node.data) { return encode... }`)
+  if (node.data !== undefined && node.data !== null) {
+    return encodeSpecialCharactersInText(node.data);
+  }
+
+  // Elemento
+  const ns = renderNs(node, prefixesInScope, defaultNs, defaultNsForPrefix, ancestorNamespaces);
+  const attrsStr = renderAttrs(node, ns.newDefaultNs);
+  let res = `<${node.tagName}${ns.rendered}${attrsStr}>`;
+
+  for (let i = 0; i < node.childNodes.length; i++) {
+    const pfxCopy = prefixesInScope.slice(0);
+    res += c14nInterno(node.childNodes[i], pfxCopy, ns.newDefaultNs, defaultNsForPrefix, []);
+  }
+
+  res += `</${node.tagName}>`;
+  return res;
+}
+
+// API publica de canonicalizacion
+function c14nCanonicalize(node, options) {
+  options = options || {};
+  const defaultNs = options.defaultNs || "";
+  const defaultNsForPrefix = options.defaultNsForPrefix || {};
+  const ancestorNamespaces = options.ancestorNamespaces || [];
+  return c14nInterno(node, [], defaultNs, defaultNsForPrefix, ancestorNamespaces);
+}
+
+// ────────────────────────────────────────────────
+// Helpers PEM
+// ────────────────────────────────────────────────
+function certToPemBody(cert) {
+  // El PEM body sin -----BEGIN/END CERTIFICATE----- y sin saltos
+  let pem = forge.pki.certificateToPem(cert);
+  pem = pem.replace(/-----BEGIN CERTIFICATE-----/g, "");
+  pem = pem.replace(/-----END CERTIFICATE-----/g, "");
+  pem = pem.replace(/[\r\n]/g, "");
+  return pem.trim();
+}
+
+function signRsaSha256(privateKey, data) {
   const md = forge.md.sha256.create();
-  md.update(dataString, "utf8");
+  md.update(data, "utf8");
   const sig = privateKey.sign(md);
   return forge.util.encode64(sig);
 }
 
 // ────────────────────────────────────────────────
-// Construye SignedInfo
+// API principal
 // ────────────────────────────────────────────────
 
-function buildSignedInfoXml(digestValue) {
-  return `<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">` +
-    `<ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"></ds:CanonicalizationMethod>` +
-    `<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"></ds:SignatureMethod>` +
-    `<ds:Reference URI="">` +
-      `<ds:Transforms>` +
-        `<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"></ds:Transform>` +
-        `<ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"></ds:Transform>` +
-      `</ds:Transforms>` +
-      `<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>` +
-      `<ds:DigestValue>${digestValue}</ds:DigestValue>` +
-    `</ds:Reference>` +
-  `</ds:SignedInfo>`;
-}
-
-function buildKeyInfoXml(cert) {
-  const certB64 = certToBase64(cert);
-  return `<ds:KeyInfo>` +
-    `<ds:X509Data>` +
-      `<ds:X509Certificate>${certB64}</ds:X509Certificate>` +
-    `</ds:X509Data>` +
-  `</ds:KeyInfo>`;
-}
-
-function buildQualifyingPropertiesXml(cert) {
-  const fp = certFingerprintSha256(cert);
-  const issuer = cert.issuer.attributes
-    .map(a => `${a.shortName || a.name}=${a.value}`)
-    .reverse()
-    .join(",");
-  const serial = cert.serialNumber;
-  const signingTime = new Date().toISOString();
-
-  return `<xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#Signature">` +
-    `<xades:SignedProperties Id="SignedProperties">` +
-      `<xades:SignedSignatureProperties>` +
-        `<xades:SigningTime>${signingTime}</xades:SigningTime>` +
-        `<xades:SigningCertificate>` +
-          `<xades:Cert>` +
-            `<xades:CertDigest>` +
-              `<ds:DigestMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>` +
-              `<ds:DigestValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">${fp}</ds:DigestValue>` +
-            `</xades:CertDigest>` +
-            `<xades:IssuerSerial>` +
-              `<ds:X509IssuerName xmlns:ds="http://www.w3.org/2000/09/xmldsig#">${issuer}</ds:X509IssuerName>` +
-              `<ds:X509SerialNumber xmlns:ds="http://www.w3.org/2000/09/xmldsig#">${serial}</ds:X509SerialNumber>` +
-            `</xades:IssuerSerial>` +
-          `</xades:Cert>` +
-        `</xades:SigningCertificate>` +
-      `</xades:SignedSignatureProperties>` +
-    `</xades:SignedProperties>` +
-  `</xades:QualifyingProperties>`;
-}
-
-// ────────────────────────────────────────────────
-// API: firmar XML usando DOM + C14N exclusiva W3C
-// ────────────────────────────────────────────────
-
-function canonicalizeViaDom(xmlString) {
-  const doc = new DOMParser().parseFromString(xmlString, "text/xml");
-  // El root real (saltando processing instructions y whitespace)
-  const root = doc.documentElement;
-  if (!root) throw new Error("XML sin elemento raiz");
-  return c14nExclusive(root);
-}
-
-// Calcular digest del XML SIN la firma (enveloped-signature transform)
-async function digestEnveloped(xmlString) {
-  // No hay <ds:Signature> aun, asi que canonicalize direct.
-  const canonical = canonicalizeViaDom(xmlString);
-  return await sha256Base64(canonical);
-}
-
-// Canonicalizar SOLO el bloque SignedInfo (en su contexto namespace)
-async function canonicalizeSignedInfo(signedInfoXml) {
-  // SignedInfo ya viene con xmlns:ds — parseable de raiz
-  const doc = new DOMParser().parseFromString(signedInfoXml, "text/xml");
-  return c14nExclusive(doc.documentElement);
-}
-
-// ────────────────────────────────────────────────
-// signEcfXml — firma documento e-CF (raiz <ECF>)
-// ────────────────────────────────────────────────
 export async function signEcfXml(xmlString, cert, privateKey) {
   return await signXmlGenerico(xmlString, cert, privateKey);
 }
 
-// ────────────────────────────────────────────────
-// signXmlGenerico — firma cualquier XML
-// ────────────────────────────────────────────────
 export async function signXmlGenerico(xmlString, cert, privateKey) {
   if (!xmlString) throw new Error("xmlString requerido");
   if (!cert) throw new Error("cert requerido");
@@ -348,36 +303,132 @@ export async function signXmlGenerico(xmlString, cert, privateKey) {
   const rootTag = m?.[1];
   if (!rootTag) throw new Error("No se pudo detectar el tag raiz del XML");
 
-  // 1. Canonicalizar el XML completo y calcular el digest
-  const digestValue = await digestEnveloped(xmlString);
+  // ─── PASO 0: Eliminar cualquier <Signature> pre-existente ───
+  // Si el XML ya viene firmado (re-envio, postulacion descargada con firma
+  // vieja, etc.), la quitamos antes de procesar. Sin esto:
+  //   - canonical1 incluiria la firma vieja → digest distinto al esperado.
+  //   - getElementsByTagName("SignedInfo")[0] devolveria el SignedInfo
+  //     de la firma VIEJA en vez del que acabamos de agregar → la
+  //     SignatureValue calculada no corresponderia al DigestValue del XML.
+  //
+  // Estrategia: regex sobre el string. Captura <Signature ...>...</Signature>
+  // (con o sin prefijo de namespace), incluyendo el whitespace circundante,
+  // y reemplaza por un solo "\n" para preservar la estructura.
+  const xmlStringClean = xmlString.replace(
+    /\s*<(\w+:)?Signature\b[\s\S]*?<\/(\w+:)?Signature>\s*/g,
+    "\n"
+  );
 
-  // 2. Construir SignedInfo
-  const signedInfoXml = buildSignedInfoXml(digestValue);
-  const signedInfoC14n = await canonicalizeSignedInfo(signedInfoXml);
+  // ─── PASO 1: Calcular digest del XML root (estilo dgii-ecf) ───
+  // NO usamos W3C C14N — DGII no la espera. En vez:
+  //   parse + cleanNodes + sort root xmlns + serialize + SHA256
+  const { digestB64: digestValue, canonical: canonical1 } = digestSha256OverDoc(xmlStringClean);
 
-  // 3. Firmar SignedInfo canonicalizado con RSA-SHA256
-  const signatureValue = signRsaSha256(privateKey, signedInfoC14n);
+  // ─── PASO 2: Construir el bloque <Signature> SIN SignatureValue ───
+  const certPemBody = certToPemBody(cert);
 
-  // 4. Construir KeyInfo y QualifyingProperties
-  const keyInfoXml = buildKeyInfoXml(cert);
-  const qualifyingProps = buildQualifyingPropertiesXml(cert);
-  const objectXml = `<ds:Object>${qualifyingProps}</ds:Object>`;
+  // OJO: sin prefix ds:, con default namespace. Solo 1 transform.
+  const signatureXmlSinValor =
+    `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` +
+      `<SignedInfo>` +
+        `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
+        `<SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>` +
+        `<Reference URI="">` +
+          `<Transforms>` +
+            `<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>` +
+          `</Transforms>` +
+          `<DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>` +
+          `<DigestValue>${digestValue}</DigestValue>` +
+        `</Reference>` +
+      `</SignedInfo>` +
+      `<KeyInfo>` +
+        `<X509Data>` +
+          `<X509Certificate>${certPemBody}</X509Certificate>` +
+        `</X509Data>` +
+      `</KeyInfo>` +
+    `</Signature>`;
 
-  // 5. Ensamblar Signature
-  const signatureXml =
-    `<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="Signature">` +
-      signedInfoXml +
-      `<ds:SignatureValue>${signatureValue}</ds:SignatureValue>` +
-      keyInfoXml +
-      objectXml +
-    `</ds:Signature>`;
-
-  // 6. Insertar la Signature antes del cierre del tag raiz
-  const closingRe = new RegExp(`</${rootTag}\\s*>(\\s*)$`);
-  if (!closingRe.test(xmlString)) {
-    throw new Error(`XML no tiene tag de cierre </${rootTag}>`);
+  // ─── PASO 3: Insertar la Signature antes del cierre del root ───
+  // Se inserta en el XML CANONICAL (NO en el original). Esto es crítico:
+  // el XML que enviamos a DGII queda en forma canónica + Signature, así
+  // si DGII hashea los bytes recibidos directamente (sin re-canonicalizar)
+  // el digest coincide. Si DGII re-canonicaliza, también coincide
+  // (canonical(canonical(X)) === canonical(X)).
+  //
+  // Esto replica la spec oficial de DGII (PDF "Firmado de e-CF", linea
+  // 239 de ejemplo TypeScript): `agregarEstructuraFirma(xmlCanolizadoData2.toString(),...)`.
+  const indiceCierreRoot = canonical1.lastIndexOf(`</${rootTag}>`);
+  if (indiceCierreRoot === -1) {
+    throw new Error(`XML canonical no tiene tag de cierre </${rootTag}>`);
   }
-  const xmlFirmado = xmlString.replace(closingRe, signatureXml + `</${rootTag}>$1`);
+  const xmlSinFirmado =
+    canonical1.substring(0, indiceCierreRoot) +
+    signatureXmlSinValor +
+    canonical1.substring(indiceCierreRoot);
 
-  return { xmlFirmado, digestValue, signatureValue };
+  // ─── PASO 4: Re-parse y canonicalizar SOLO el SignedInfo ───
+  const xmlData = new DOMParser().parseFromString(xmlSinFirmado, "text/xml");
+  // El SignedInfo NO tiene prefix; está en el namespace default heredado de Signature.
+  // Buscamos el primer SignedInfo del documento.
+  const signedInfoNodes = xmlData.getElementsByTagName("SignedInfo");
+  if (!signedInfoNodes.length) throw new Error("SignedInfo no encontrado en el XML firmado");
+  const signedInfoNode = signedInfoNodes[0];
+
+  // C14N Inclusive del SignedInfo: debe propagar los xmlns:* heredados
+  // de los ancestros (Postulacion, Signature, etc) al SignedInfo canonical.
+  // xml-crypto hace esto via findAncestorNs; replicamos aqui.
+  const ancestorNamespaces = findAncestorNamespaces(signedInfoNode);
+  const canonicalSignedInfo = c14nCanonicalize(signedInfoNode, {
+    defaultNsForPrefix: { ds: "http://www.w3.org/2000/09/xmldsig#" },
+    ancestorNamespaces,
+  });
+
+  // ─── PASO 5: Firmar el SignedInfo canonicalizado ───
+  const signatureValue = signRsaSha256(privateKey, canonicalSignedInfo);
+
+  // ─── PASO 6: Insertar SignatureValue DESPUES de </SignedInfo> y ANTES de <KeyInfo> ───
+  // Segun el ejemplo del PDF "Firmado de e-CF" de la DGII, el orden correcto es:
+  //   <SignedInfo>...</SignedInfo>
+  //   <SignatureValue>...</SignatureValue>
+  //   <KeyInfo>...</KeyInfo>
+  const signatureValueXml = `<SignatureValue>${signatureValue}</SignatureValue>`;
+  const indiceFinSignedInfo = xmlSinFirmado.indexOf("</SignedInfo>");
+  if (indiceFinSignedInfo === -1) {
+    throw new Error("No se encontro </SignedInfo> para insertar SignatureValue");
+  }
+  // Insertar justo despues de </SignedInfo> (antes de <KeyInfo>)
+  const insertPos = indiceFinSignedInfo + "</SignedInfo>".length;
+  const xmlFirmado =
+    xmlSinFirmado.substring(0, insertPos) +
+    signatureValueXml +
+    xmlSinFirmado.substring(insertPos);
+
+  // DEBUG: bytes exactos que se canonicalizaron, para verificar offline.
+  // canonical1 = lo que se hasheo para producir DigestValue.
+  // canonicalSignedInfo = lo que se firmo con la llave privada.
+  const enc = new TextEncoder();
+  const canonical1Bytes = enc.encode(canonical1);
+  const canonicalSignedInfoBytes = enc.encode(canonicalSignedInfo);
+  const bytesToB64 = (bytes) => {
+    let bin = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return forge.util.encode64(bin);
+  };
+  const canonical1B64 = bytesToB64(canonical1Bytes);
+  const canonicalSignedInfoB64 = bytesToB64(canonicalSignedInfoBytes);
+
+  return {
+    xmlFirmado,
+    digestValue,
+    signatureValue,
+    _diag: {
+      canonical1_b64: canonical1B64,
+      canonical1_len: canonical1Bytes.length,
+      canonicalSignedInfo_b64: canonicalSignedInfoB64,
+      canonicalSignedInfo_len: canonicalSignedInfoBytes.length,
+    },
+  };
 }

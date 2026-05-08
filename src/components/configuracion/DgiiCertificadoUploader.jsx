@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ShieldCheck, Upload, Loader2, FileLock2, Eye, EyeOff, Trash2, BadgeCheck, AlertTriangle, FileCode2, X, Send, FileSignature } from 'lucide-react';
+import DgiiCertificacionRunner from './DgiiCertificacionRunner';
 
 // Tamano maximo permitido para el .p12 (10 MB; reales son <50KB).
 const MAX_P12_BYTES = 10 * 1024 * 1024;
@@ -172,7 +173,31 @@ const DgiiCertificadoUploader = () => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      toast({ title: '✅ XML firmado', description: 'Descarga iniciada. Sube ese archivo a DGII OFV.' });
+      // Descargar tambien el diagnostico (canonical bytes en base64)
+      // para verificar offline si la firma es valida.
+      if (data._debug?.canonical1_b64) {
+        const diag = {
+          digest_value: data._debug.digest_value,
+          signature_value_preview: data._debug.signature_value_preview,
+          xml_input_length: data._debug.xml_input_length,
+          xml_firmado_length: data._debug.xml_firmado_length,
+          canonical1_b64: data._debug.canonical1_b64,
+          canonical1_len: data._debug.canonical1_len,
+          canonicalSignedInfo_b64: data._debug.canonicalSignedInfo_b64,
+          canonicalSignedInfo_len: data._debug.canonicalSignedInfo_len,
+        };
+        const diagBlob = new Blob([JSON.stringify(diag, null, 2)], { type: 'application/json' });
+        const diagUrl = URL.createObjectURL(diagBlob);
+        const da = document.createElement('a');
+        da.href = diagUrl;
+        da.download = file.name.replace(/\.xml$/i, '_diag.json');
+        document.body.appendChild(da);
+        da.click();
+        document.body.removeChild(da);
+        URL.revokeObjectURL(diagUrl);
+      }
+
+      toast({ title: '✅ XML firmado', description: 'Descarga iniciada (xml + diag.json). Pegame el contenido del diag.json.' });
     } catch (err) {
       toast({ title: 'Error firmando', description: err.message || 'Error desconocido', variant: 'destructive' });
     } finally {
@@ -611,6 +636,13 @@ const DgiiCertificadoUploader = () => {
           </p>
         )}
       </div>
+
+      {/* Set de Pruebas DGII (Paso 2 certificacion) — solo si hay cert configurado */}
+      {info?.configured && (
+        <div className="border-t pt-6 mt-2">
+          <DgiiCertificacionRunner />
+        </div>
+      )}
 
       {/* Modal: visor del XML generado */}
       {xmlPreview && (

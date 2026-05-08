@@ -4,6 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import forge from "https://esm.sh/node-forge@1.3.1";
 import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml } from "./dgii_xml_builder.ts";
+import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 import { authenticate, enviarEcf, consultarEstado, enviarAnulacion, enviarRfce } from "./dgii_client.ts";
 
@@ -1033,11 +1034,201 @@ Deno.serve(async (req) => {
       if (!integ?.config) throw new Error("Sube tu .p12 primero en Configuracion → Integracion Fiscal");
 
       const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
-      const { xmlFirmado } = await signXmlGenerico(xml, cert, privateKey);
+      const { xmlFirmado, digestValue, signatureValue, _diag } = await signXmlGenerico(xml, cert, privateKey);
 
       return new Response(JSON.stringify({
         ok: true,
         xml_firmado: xmlFirmado,
+        // DEBUG: info para diagnosticar "Firma Invalida"
+        _debug: {
+          xml_input_length: xml.length,
+          xml_input_first100: xml.substring(0, 100),
+          xml_input_has_crlf: xml.includes("\r\n"),
+          xml_input_has_xmldecl: xml.startsWith("<?xml"),
+          digest_value: digestValue,
+          signature_value_preview: signatureValue?.slice(0, 60),
+          xml_firmado_length: xmlFirmado.length,
+          // bytes exactos canonicalizados (base64) para verificar offline
+          canonical1_b64: _diag?.canonical1_b64,
+          canonical1_len: _diag?.canonical1_len,
+          canonicalSignedInfo_b64: _diag?.canonicalSignedInfo_b64,
+          canonicalSignedInfo_len: _diag?.canonicalSignedInfo_len,
+        },
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_certif_send_row ──
+    // Procesa UNA fila del set de pruebas DGII (Paso 2 certificacion).
+    // El frontend parsea el xlsx y manda fila por fila para mostrar
+    // progreso en UI sin timeouts.
+    //
+    // Body: { row: <fila xlsx>, kind: 'ECF' | 'RFCE' }
+    // Returns: { ok, encf, tipo_ecf, track_id, estado_dgii, xml_firmado, errors? }
+    if (action === "dgii_certif_send_row") {
+      const { row, kind, ecf_row } = body;
+      if (!row) throw new Error("row requerido");
+      const sheetKind = (kind || "ECF").toUpperCase();
+      const tipoEcf = String(row.TipoeCF || "").trim();
+      const encf = String(row.ENCF || "").trim();
+      if (!tipoEcf || !encf) throw new Error("La fila no tiene TipoeCF/ENCF");
+
+      // 1. Cargar config + cert
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("Config DGII directo ausente. Sube tu .p12 primero.");
+      const ambiente = integ.config.ambiente || "TesteCF";
+
+      // 2. Para RFCE: derivar CodigoSeguridadeCF de la firma del ECF Tipo 32
+      //    correspondiente (estilo dgii-ecf: primeros 6 chars del SignatureValue).
+      //    NO agregamos salt — la spec DGII pide que el mismo ECF se envie
+      //    despues del RFCE (Fase 4). Si el RFCE usa codigo derivado del
+      //    SignatureValue del ECF original, ambos comparten el mismo codigo
+      //    y DGII los matchea correctamente.
+      let codigoSegRfce = null;
+      if (sheetKind === "RFCE") {
+        if (!ecf_row) {
+          return new Response(JSON.stringify({
+            ok: false,
+            step: "build",
+            error: "Para RFCE se requiere ecf_row (fila ECF correspondiente con mismo ENCF)",
+            encf, tipo_ecf: tipoEcf,
+          }), { status: 200, headers: corsHeaders });
+        }
+        try {
+          const xmlEcf = buildEcfFromTestRow(ecf_row);
+          const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+          const signedEcf = await signEcfXml(xmlEcf, cert, privateKey);
+          codigoSegRfce = (signedEcf.signatureValue || "").slice(0, 6);
+          if (!codigoSegRfce || codigoSegRfce.length !== 6) {
+            throw new Error(`No se pudo extraer codigo de seguridad valido (got: '${codigoSegRfce}')`);
+          }
+        } catch (e) {
+          return new Response(JSON.stringify({
+            ok: false,
+            step: "derive_codigo",
+            error: e.message,
+            encf, tipo_ecf: tipoEcf,
+          }), { status: 200, headers: corsHeaders });
+        }
+      }
+
+      // 3. Generar XML segun kind (RFCE recibe codigo derivado)
+      let xmlSinFirmar;
+      let codigoSegDebug = null;
+      try {
+        if (sheetKind === "RFCE") {
+          // Inyectar el codigo derivado en la row antes de buildear
+          xmlSinFirmar = buildRfceFromTestRow({ ...row, CodigoSeguridadeCF: codigoSegRfce });
+        } else {
+          xmlSinFirmar = buildEcfFromTestRow(row);
+        }
+        const m = xmlSinFirmar.match(/<CodigoSeguridadeCF>([^<]+)<\/CodigoSeguridadeCF>/);
+        codigoSegDebug = m?.[1] || null;
+      } catch (e) {
+        return new Response(JSON.stringify({
+          ok: false,
+          step: "build",
+          error: e.message,
+          encf, tipo_ecf: tipoEcf,
+        }), { status: 200, headers: corsHeaders });
+      }
+
+      // 3. Firmar
+      let xmlFirmado;
+      try {
+        const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+        const signed = await signEcfXml(xmlSinFirmar, cert, privateKey);
+        xmlFirmado = signed.xmlFirmado;
+
+        // 4. Auth + enviar
+        // CRITICO: filename debe ser <RNC><eNCF>.xml (DGII rechaza otros).
+        const rncEmisor = String(row.RNCEmisor || integ.config.rnc_emisor || "").replace(/\D/g, "");
+        const fileName = `${rncEmisor}${encf}.xml`;
+        const auth = await authenticate(cert, privateKey, ambiente);
+        const recepcion = sheetKind === "RFCE"
+          ? await enviarRfce(xmlFirmado, auth.token, ambiente, fileName)
+          : await enviarEcf(xmlFirmado, auth.token, ambiente, fileName);
+
+        return new Response(JSON.stringify({
+          ok: true,
+          encf,
+          tipo_ecf: tipoEcf,
+          kind: sheetKind,
+          track_id: recepcion.trackId || recepcion.TrackId || null,
+          estado_dgii: recepcion.estado || recepcion.Estado || "enviado",
+          response_payload: recepcion,
+          xml_firmado_length: xmlFirmado.length,
+          codigo_seguridad: codigoSegDebug,
+        }), { status: 200, headers: corsHeaders });
+      } catch (e) {
+        return new Response(JSON.stringify({
+          ok: false,
+          step: "send",
+          error: e.message,
+          encf, tipo_ecf: tipoEcf,
+          xml_firmado_length: xmlFirmado?.length || 0,
+          codigo_seguridad: codigoSegDebug,
+        }), { status: 200, headers: corsHeaders });
+      }
+    }
+
+    // ── ACTION: dgii_certif_sign_only ──
+    // Genera + firma el XML de un caso (Fase 4 ECF Tipo 32 < 250K) pero NO
+    // lo envia a DGII. El XML firmado se devuelve para que el frontend lo
+    // descargue y el usuario lo suba MANUALMENTE en el portal DGII (cajita
+    // "Facturas de consumo < 250Mil").
+    if (action === "dgii_certif_sign_only") {
+      const { row } = body;
+      if (!row) throw new Error("row requerido");
+
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("Config DGII directo ausente");
+
+      const xmlSinFirmar = buildEcfFromTestRow(row);
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const signed = await signEcfXml(xmlSinFirmar, cert, privateKey);
+
+      return new Response(JSON.stringify({
+        ok: true,
+        xml_firmado: signed.xmlFirmado,
+        xml_firmado_length: signed.xmlFirmado.length,
+        encf: row.ENCF,
+        tipo_ecf: String(row.TipoeCF),
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_certif_check_status ──
+    // Consulta el estado en DGII de un TrackId previamente enviado.
+    if (action === "dgii_certif_check_status") {
+      const { track_id } = body;
+      if (!track_id) throw new Error("track_id requerido");
+
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("Config DGII directo ausente");
+      const ambiente = integ.config.ambiente || "TesteCF";
+
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const auth = await authenticate(cert, privateKey, ambiente);
+      const estado = await consultarEstado(track_id, auth.token, ambiente);
+
+      return new Response(JSON.stringify({
+        ok: true,
+        track_id,
+        estado,
       }), { status: 200, headers: corsHeaders });
     }
 

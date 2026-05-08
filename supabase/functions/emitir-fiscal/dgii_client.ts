@@ -20,11 +20,28 @@
 
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 
+// CRITICO: las paths son case-sensitive. Estos valores estan tomados
+// de la libreria dgii-ecf (victors1681) que esta validada contra DGII
+// en produccion. NO cambiar el casing.
 const DGII_BASES = {
-  TesteCF: "https://ecf.dgii.gov.do/testecf",
-  CerteCF: "https://ecf.dgii.gov.do/certecf",
-  Produccion: "https://ecf.dgii.gov.do/ecf",
+  TesteCF: "https://ecf.dgii.gov.do/TesteCF",
+  CerteCF: "https://ecf.dgii.gov.do/CerteCF",
+  Produccion: "https://ecf.dgii.gov.do/eCF",
 };
+
+// El RFCE/RFCS (Resumen de Facturas Consumo) usa un host DIFERENTE:
+// fc.dgii.gov.do (no ecf.dgii.gov.do). Confirmado en dgii-ecf source.
+const DGII_BASES_FC = {
+  TesteCF: "https://fc.dgii.gov.do/TesteCF",
+  CerteCF: "https://fc.dgii.gov.do/CerteCF",
+  Produccion: "https://fc.dgii.gov.do/eCF",
+};
+
+function baseUrlFc(ambiente) {
+  const url = DGII_BASES_FC[ambiente];
+  if (!url) throw new Error(`Ambiente DGII desconocido: ${ambiente}`);
+  return url;
+}
 
 function baseUrl(ambiente) {
   const url = DGII_BASES[ambiente];
@@ -36,6 +53,7 @@ function baseUrl(ambiente) {
 // 1. GET semilla
 // ────────────────────────────────────────────────
 export async function getSemilla(ambiente) {
+  // Endpoint: Autenticacion/api/Autenticacion/Semilla (case-sensitive)
   const url = `${baseUrl(ambiente)}/Autenticacion/api/Autenticacion/Semilla`;
   const resp = await fetch(url, {
     method: "GET",
@@ -54,7 +72,8 @@ export async function getSemilla(ambiente) {
 // 2. Validar semilla (POST semilla firmada → token)
 // ────────────────────────────────────────────────
 export async function validarSemilla(semillaFirmada, ambiente) {
-  const url = `${baseUrl(ambiente)}/Autenticacion/api/Autenticacion/ValidarSemilla`;
+  // OJO: aqui es 'autenticacion' minuscula (validado contra dgii-ecf)
+  const url = `${baseUrl(ambiente)}/autenticacion/api/Autenticacion/ValidarSemilla`;
 
   // El endpoint espera multipart/form-data con un campo "xml"
   const form = new FormData();
@@ -88,11 +107,14 @@ export async function authenticate(cert, privateKey, ambiente) {
 // ────────────────────────────────────────────────
 // 3. Enviar e-CF firmado → TrackId
 // ────────────────────────────────────────────────
-export async function enviarEcf(xmlFirmado, token, ambiente) {
-  const url = `${baseUrl(ambiente)}/Recepcion/api/Recepcion/RecepcionECF`;
+export async function enviarEcf(xmlFirmado, token, ambiente, fileName) {
+  // Endpoint correcto: recepcion/api/FacturasElectronicas (no RecepcionECF)
+  const url = `${baseUrl(ambiente)}/recepcion/api/FacturasElectronicas`;
 
+  // CRITICO: el filename debe ser <RNC><eNCF>.xml — DGII rechaza si no.
+  const fName = fileName || "ecf.xml";
   const form = new FormData();
-  form.append("xml", new Blob([xmlFirmado], { type: "application/xml" }), "ecf.xml");
+  form.append("xml", new Blob([xmlFirmado], { type: "application/xml" }), fName);
 
   const resp = await fetch(url, {
     method: "POST",
@@ -115,7 +137,7 @@ export async function enviarEcf(xmlFirmado, token, ambiente) {
 // 4. Consultar estado por TrackId
 // ────────────────────────────────────────────────
 export async function consultarEstado(trackId, token, ambiente) {
-  const url = `${baseUrl(ambiente)}/ConsultaResultado/api/Consultas/Estado?trackId=${encodeURIComponent(trackId)}`;
+  const url = `${baseUrl(ambiente)}/consultaresultado/api/Consultas/Estado?trackId=${encodeURIComponent(trackId)}`;
   const resp = await fetch(url, {
     method: "GET",
     headers: { "Authorization": `Bearer ${token}` },
@@ -146,7 +168,7 @@ export async function enviarEcfCompleto(xmlFirmado, cert, privateKey, ambiente) 
 // 5. Enviar ANECF (Anulacion) firmado
 // ────────────────────────────────────────────────
 export async function enviarAnulacion(anecfFirmado, token, ambiente) {
-  const url = `${baseUrl(ambiente)}/Anulacion/api/Anulaciones/AnularRangoNCF`;
+  const url = `${baseUrl(ambiente)}/anulacionrangos/api/operaciones/anularrango`;
   const form = new FormData();
   form.append("xml", new Blob([anecfFirmado], { type: "application/xml" }), "anecf.xml");
 
@@ -167,15 +189,37 @@ export async function enviarAnulacion(anecfFirmado, token, ambiente) {
 // ────────────────────────────────────────────────
 // 6. Enviar RFCE (Resumen Facturas Consumo) firmado
 // ────────────────────────────────────────────────
-export async function enviarRfce(rfceFirmado, token, ambiente) {
-  const url = `${baseUrl(ambiente)}/RFCE/api/RFCE/EnvioFC`;
-  const form = new FormData();
-  form.append("xml", new Blob([rfceFirmado], { type: "application/xml" }), "rfce.xml");
+export async function enviarRfce(rfceFirmado, token, ambiente, fileName) {
+  // OJO: usa host fc.dgii.gov.do (NO ecf.dgii.gov.do) — endpoint
+  // separado para resumenes de facturas de consumo.
+  const url = `${baseUrlFc(ambiente)}/recepcionfc/api/recepcion/ecf`;
+
+  // CRITICO: el servidor IIS de DGII requiere Content-Length explicito.
+  // Sin esto devuelve 411 (Length Required) o 400 con HTML page.
+  // Tambien el filename debe ser <RNC><eNCF>.xml.
+  const fName = fileName || "rfce.xml";
+  const boundary = "----MotoFlowDgii" + Date.now().toString(16);
+  const enc = new TextEncoder();
+  const head = enc.encode(
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="xml"; filename="${fName}"\r\n` +
+    `Content-Type: application/xml\r\n\r\n`
+  );
+  const xmlBytes = enc.encode(rfceFirmado);
+  const tail = enc.encode(`\r\n--${boundary}--\r\n`);
+  const body = new Uint8Array(head.length + xmlBytes.length + tail.length);
+  body.set(head, 0);
+  body.set(xmlBytes, head.length);
+  body.set(tail, head.length + xmlBytes.length);
 
   const resp = await fetch(url, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${token}` },
-    body: form,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "Content-Length": String(body.length),
+    },
+    body,
   });
   const text = await resp.text();
   let data;
