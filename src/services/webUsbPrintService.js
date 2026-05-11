@@ -50,7 +50,12 @@ export function isWebUsbSupported() {
  * Obtiene un nombre legible del dispositivo USB
  */
 function getDeviceName(device) {
-  if (device.productName) return device.productName;
+  if (device.productName) {
+    if (device.manufacturerName && !device.productName.toLowerCase().includes(device.manufacturerName.toLowerCase())) {
+      return `${device.manufacturerName} ${device.productName}`;
+    }
+    return device.productName;
+  }
   if (device.manufacturerName) return `${device.manufacturerName} (${device.vendorId.toString(16)})`;
   return `USB Printer (${device.vendorId.toString(16)}:${device.productId.toString(16)})`;
 }

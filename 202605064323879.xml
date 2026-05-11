@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Postulacion xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <PostulacionID>66073</PostulacionID>
+  <TipoRegistro>1</TipoRegistro>
+  <GrupoComprobante>31,32,33,34,41,43,44,45,46,47</GrupoComprobante>
+  <Contribuyente>
+    <RNCContribuyente>133267772</RNCContribuyente>
+    <RazonSocial>D MARIO CASTRO TERMINACIONES &amp; ALGO MAS SRL</RazonSocial>
+    <NombreComercial>D MARIO CASTRO TERMINACIONES &amp; ALGO MAS</NombreComercial>
+    <ActividadEconomica>261091</ActividadEconomica>
+    <Telefono>8299409142</Telefono>
+    <Direccion>DUARTE ESQUINA BALDOMERO RIJO, CAMBELEN</Direccion>
+    <Provincia>LA ALTAGRACIA</Provincia>
+    <Municipio>SALVALEON DE HIGUEY</Municipio>
+    <Sector>CAMBELEN</Sector>
+    <CorreoElectronico>terminacionesmario@gmail.com</CorreoElectronico>
+  </Contribuyente>
+  <Representante>
+    <RNCRepresentante>40246009563</RNCRepresentante>
+    <NombreRepresentante>MARIO CASTRO </NombreRepresentante>
+    <SectorRepresentante>LOS MANGOS</SectorRepresentante>
+    <CorreoElectronicoRepresentante>MARIELA.VALDEZ@HOTMAIL.COM</CorreoElectronicoRepresentante>
+  </Representante>
+  <Software>
+    <TipoDesarrollo>1</TipoDesarrollo>
+    <NombreSoftware>MOTOFLOW</NombreSoftware>
+    <UrlRecepcion>ecf.dgii.gov.do/testecf/emisorreceptor</UrlRecepcion>
+    <UrlAprobacionComercial>ecf.dgii.gov.do/testecf/emisorreceptor</UrlAprobacionComercial>
+    <UrlAutenticacion>ecf.dgii.gov.do/testecf/autenticacion</UrlAutenticacion>
+    <VersionSoftware>1.0</VersionSoftware>
+  </Software>
+  <FechaSolicitud>2026-05-06T17:43:23.8791335-04:00</FechaSolicitud>
+</Postulacion>

@@ -14,6 +14,7 @@ import { webUsbPrintEpl, isWebUsbSupported } from "@/services/webUsbPrintService
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 
 const PREFERRED_PRINTERS = [
+    "ZEBRA_LP2824_ETIQUETAS",
     "ZDesigner LP 2824 (Copiar 1)",
     "ZDesigner LP 2824",
     "LP 2824",

@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 import ProductBasicInfo from './form/ProductBasicInfo';
 import ProductPlaceholderTab from './form/ProductPlaceholderTab';
+import ProductEcommerceTab from './form/ProductEcommerceTab';
 import PresentationsTab from './PresentationsTab';
 
 const initialFormData = {
@@ -40,12 +41,33 @@ const initialFormData = {
   condicion: 'NUEVA',
   placa: '',
   matricula: false,
+  // Ecommerce fields
+  ecommerce_visible: false,
+  ecommerce_slug: '',
+  ecommerce_descripcion: '',
+  ecommerce_orden: 0,
 };
 
 const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   const { toast } = useToast();
   const { tenantId } = useAuth();
   const hasVehicleFields = tenantId === CAMINERO_MOTORS_TENANT;
+
+  // Check if tenant has tienda feature enabled
+  const [hasTienda, setHasTienda] = useState(false);
+  const [tenantDominio, setTenantDominio] = useState('');
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase
+      .from('tenants')
+      .select('feat_tienda, dominio')
+      .eq('id', tenantId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setHasTienda(!!data?.feat_tienda);
+        setTenantDominio(data?.dominio || '');
+      });
+  }, [tenantId]);
   const { tiposPresentacion, tipos, marcas, modelos, proveedores, ubicaciones, fetchCatalogs } = useCatalogData();
 
   const createNewPresentation = useCallback(() => ({
@@ -103,6 +125,11 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       condicion: p.condicion || 'NUEVA',
       placa: p.placa || '',
       matricula: !!p.matricula,
+      // Ecommerce fields
+      ecommerce_visible: !!p.ecommerce_visible,
+      ecommerce_slug: p.ecommerce_slug || '',
+      ecommerce_descripcion: p.ecommerce_descripcion || '',
+      ecommerce_orden: p.ecommerce_orden || 0,
     });
 
     if (p.presentaciones && p.presentaciones.length > 0) {
@@ -250,7 +277,9 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
     const mainPrice = mainPresentation ? parseFloat(mainPresentation.precio1) : 0;
     const mainCost = mainPresentation ? parseFloat(mainPresentation.costo) : 0;
 
-    const { chasis, motor, color, anio, condicion, placa, matricula, kilometraje, ...restFormData } = formData;
+    const { chasis, motor, color, anio, condicion, placa, matricula, kilometraje,
+            ecommerce_visible, ecommerce_slug, ecommerce_descripcion, ecommerce_orden,
+            ...restFormData } = formData;
     const cleanedData = {
       ...restFormData,
       tipo_id: formData.tipo_id || null,
@@ -277,6 +306,11 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
         matricula: condicion === 'USADA' ? !!matricula : false,
         kilometraje: kilometraje ? parseInt(kilometraje) : null,
       }),
+      // Ecommerce fields — always included, safe defaults
+      ecommerce_visible: !!ecommerce_visible,
+      ecommerce_slug: ecommerce_visible ? (ecommerce_slug || null) : null,
+      ecommerce_descripcion: ecommerce_descripcion || null,
+      ecommerce_orden: parseInt(ecommerce_orden) || 0,
     };
 
     // Clean presentations to ensure numeric values and include new pricing fields
@@ -393,10 +427,13 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
                 </div>
 
                 <Tabs defaultValue="presentaciones" className="w-full">
-                  <TabsList className="grid grid-cols-3 w-full max-w-md h-9">
+                  <TabsList className={`grid ${hasTienda ? 'grid-cols-4' : 'grid-cols-3'} w-full ${hasTienda ? 'max-w-lg' : 'max-w-md'} h-9`}>
                     <TabsTrigger value="presentaciones" className="text-xs">1. Presentación</TabsTrigger>
                     <TabsTrigger value="componentes" className="text-xs">2. Componentes/Produccion</TabsTrigger>
                     <TabsTrigger value="contabilidad" className="text-xs">3. Contabilidad</TabsTrigger>
+                    {hasTienda && (
+                      <TabsTrigger value="tienda" className="text-xs">4. Tienda 🛒</TabsTrigger>
+                    )}
                   </TabsList>
 
                   <div className="mt-2 bg-white border rounded-md shadow-sm p-3 min-h-[140px]">
@@ -422,6 +459,16 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
                         message="¡Puedes solicitarlas en tu próximo prompt! 🚀"
                       />
                     </TabsContent>
+
+                    {hasTienda && (
+                      <TabsContent value="tienda" className="m-0 border-0 p-0 shadow-none">
+                        <ProductEcommerceTab
+                          formData={formData}
+                          setFormData={setFormData}
+                          tenantDominio={tenantDominio}
+                        />
+                      </TabsContent>
+                    )}
                   </div>
                 </Tabs>
               </form>

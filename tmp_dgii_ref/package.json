@@ -1,0 +1,19 @@
+{
+  "name": "tmp_dgii_ref",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.10",
+    "dgii-ecf": "^1.8.0",
+    "node-forge": "^1.4.0",
+    "xlsx": "^0.18.5"
+  }
+}

@@ -11,6 +11,7 @@ import MainLayout from '@/components/layout/MainLayout';
 import SuscripcionBlocker from '@/components/common/SuscripcionBlocker';
 import LoginForm from '@/components/auth/LoginForm';
 import RegistroEmpresaPage from '@/pages/RegistroEmpresaPage';
+import TiendaPage from '@/pages/TiendaPage';
 
 function AppContent() {
   const { session, loading, user, empresa } = useAuth();
@@ -72,6 +73,14 @@ function AppContent() {
 }
 
 function App() {
+  // ── Tienda pública: se renderiza FUERA del AuthProvider ──
+  // No requiere login, no carga sidebar, no necesita contextos internos.
+  // Solo necesita HelmetProvider y BrowserRouter (ya montados en main.jsx).
+  const isTienda = window.location.pathname.startsWith('/tienda');
+  if (isTienda) {
+    return <TiendaPage />;
+  }
+
   return (
     <ThemeProvider>
       <AuthProvider>

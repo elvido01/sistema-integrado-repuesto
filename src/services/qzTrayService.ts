@@ -271,7 +271,17 @@ export async function qzFindBestPrinter(preferred: string[] = []) {
     }
 
     const printersList = Array.isArray(printers) ? printers : [printers];
-    const lowerList = printersList.map(p => (typeof p === 'string' ? p : p.name || String(p)).toLowerCase());
+    const lowerList = printersList.map((p: any) => (typeof p === 'string' ? p : p.name || String(p)).toLowerCase());
+
+    // 0. Ver si hay alguna configurada manualmente en localStorage
+    const savedPrinter = localStorage.getItem('qz_label_printer');
+    if (savedPrinter) {
+        const idx = printersList.findIndex((p: any) => (typeof p === 'string' ? p : p.name || String(p)) === savedPrinter);
+        if (idx >= 0) {
+            console.log("[QZ] Impresora de etiquetas desde localStorage:", printersList[idx]);
+            return printersList[idx];
+        }
+    }
 
     // 1. Intentar nombres preferidos (ZDesigner LP 2824 (Copiar 1), etc)
     for (const name of preferred) {
@@ -284,15 +294,15 @@ export async function qzFindBestPrinter(preferred: string[] = []) {
         }
     }
 
-    // 2. Fallback: buscar cualquiera que contenga "lp 2824"
-    const lpIdx = lowerList.findIndex(p => p.includes("lp 2824"));
+    // 2. Fallback: buscar cualquiera que contenga "lp 2824" o "zebra_lp2824"
+    const lpIdx = lowerList.findIndex((p: string) => p.includes("lp 2824") || p.includes("zebra_lp2824") || p.includes("lp2824"));
     if (lpIdx >= 0) {
         console.log("[QZ] Impresora seleccionada (fallback LP 2824):", printersList[lpIdx]);
         return printersList[lpIdx];
     }
 
     // 3. Fallback genérico Zebra / 4BARCODE
-    const labelIdx = lowerList.findIndex(p => p.includes("zdesigner") || p.includes("zebra") || p.includes("4barcode"));
+    const labelIdx = lowerList.findIndex((p: string) => p.includes("zdesigner") || p.includes("zebra") || p.includes("4barcode"));
     if (labelIdx >= 0) {
         console.log("[QZ] Impresora seleccionada (fallback label):", printersList[labelIdx]);
         return printersList[labelIdx];

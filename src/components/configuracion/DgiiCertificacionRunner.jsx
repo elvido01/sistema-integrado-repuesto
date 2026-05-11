@@ -236,7 +236,25 @@ const DgiiCertificacionRunner = () => {
 
   const consultarEstado = async (idx) => {
     const caso = casos[idx];
-    if (!caso?.trackId || caso.trackId.startsWith('DESCARGADO')) return;
+    if (!caso) return;
+    // Si no hay trackId (ej. RFCE que DGII acepta sin trackId), mostrar
+    // la respuesta local que guardamos al enviar.
+    if (!caso.trackId || caso.trackId.startsWith('DESCARGADO')) {
+      setEstadoModal({
+        titulo: `Respuesta local — ${caso.encf}`,
+        encf: caso.encf,
+        contenido: JSON.stringify({
+          estado: caso.estado,
+          kind: caso.kind,
+          response: caso.response || null,
+          xmlLength: caso.xmlLength || null,
+          nota: caso.trackId?.startsWith('DESCARGADO')
+            ? 'Este caso es Fase 4 — XML descargado para subida manual. No tiene TrackId.'
+            : 'Sin TrackId DGII (DGII aceptó directamente). Mostrando respuesta local.',
+        }, null, 2),
+      });
+      return;
+    }
     const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
       body: { action: 'dgii_certif_check_status', track_id: caso.trackId },
     });

@@ -25,7 +25,15 @@ import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils
 const ProductsPage = () => {
   const { toast } = useToast();
   const { openPanel } = usePanels();
-  const { empresa } = useAuth();
+  const { empresa, tenantId } = useAuth();
+
+  // Check if tenant has tienda feature
+  const [hasTienda, setHasTienda] = useState(false);
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase.from('tenants').select('feat_tienda').eq('id', tenantId).maybeSingle()
+      .then(({ data }) => setHasTienda(!!data?.feat_tienda));
+  }, [tenantId]);
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -369,6 +377,48 @@ const ProductsPage = () => {
     }
   };
 
+  // ── Toggle ecommerce visibility (right-click action) ──
+  const handleToggleEcommerce = async (product) => {
+    const newVisible = !product.ecommerce_visible;
+    const updates = { ecommerce_visible: newVisible };
+
+    // Auto-generate slug when publishing for the first time
+    if (newVisible && !product.ecommerce_slug) {
+      const slug = product.descripcion
+        ?.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 120);
+      updates.ecommerce_slug = slug;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('productos')
+        .update(updates)
+        .eq('id', product.id);
+      if (error) throw error;
+
+      // Update local state immediately
+      setProducts(prev => prev.map(p =>
+        p.id === product.id ? { ...p, ...updates } : p
+      ));
+
+      toast({
+        title: newVisible ? '🛒 Publicado en tienda' : 'Quitado de tienda',
+        description: `${product.descripcion} ${newVisible ? 'ahora es visible' : 'ya no es visible'} en la tienda pública.`,
+        duration: 3000,
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message,
+      });
+    }
+  };
+
   const handleOpenFormModal = async (product = null) => {
     // Si no hay producto, es una creación nueva
     if (!product?.id) {
@@ -544,12 +594,12 @@ const ProductsPage = () => {
             selectedProduct={selectedProduct}
             onSelectProduct={setSelectedProduct}
             onPrintLabel={(prod) => {
-              // Cerrar cualquier modal de edición abierto antes de abrir el de impresión.
               setIsFormModalOpen(false);
               setIsChangeCodeModalOpen(false);
               setProductForPrint(prod);
               setIsPrintLabelModalOpen(true);
             }}
+            onToggleEcommerce={hasTienda ? handleToggleEcommerce : undefined}
           />
 
           <ProductTableFooter
