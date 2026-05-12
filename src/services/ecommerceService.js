@@ -32,6 +32,7 @@ export async function fetchTiendaConfig(dominio) {
  * @param {string} options.search - término de búsqueda
  * @param {string} options.marca - filtro por marca
  * @param {string} options.tipo - filtro por tipo
+ * @param {string} options.modelo - filtro por modelo
  * @returns {{ productos: Array, totalCount: number }}
  */
 export async function fetchProductosTienda(dominio, {
@@ -40,6 +41,7 @@ export async function fetchProductosTienda(dominio, {
   search = '',
   marca = '',
   tipo = '',
+  modelo = '',
 } = {}) {
   const offset = (page - 1) * pageSize;
 
@@ -50,6 +52,7 @@ export async function fetchProductosTienda(dominio, {
     p_search: search || null,
     p_marca: marca || null,
     p_tipo: tipo || null,
+    p_modelo: modelo || null,
   });
 
   if (error) {
@@ -86,9 +89,9 @@ export async function fetchProductoPorSlug(dominio, slug) {
 }
 
 /**
- * Obtiene las marcas y tipos disponibles para filtros.
+ * Obtiene las marcas, tipos y modelos disponibles para filtros.
  * @param {string} dominio
- * @returns {{ marcas: string[], tipos: string[] }}
+ * @returns {{ marcas: string[], tipos: string[], modelos: string[] }}
  */
 export async function fetchFiltrosTienda(dominio) {
   const { data, error } = await supabase.rpc('get_filtros_tienda', {
@@ -97,13 +100,14 @@ export async function fetchFiltrosTienda(dominio) {
 
   if (error) {
     console.error('[ecommerceService] Error fetching filtros:', error);
-    return { marcas: [], tipos: [] };
+    return { marcas: [], tipos: [], modelos: [] };
   }
 
   const row = data?.[0];
   return {
     marcas: (row?.marcas || []).map(m => m.nombre).filter(Boolean),
     tipos: (row?.tipos || []).map(t => t.nombre).filter(Boolean),
+    modelos: (row?.modelos || []).map(m => m.nombre).filter(Boolean),
   };
 }
 
@@ -126,4 +130,28 @@ export function buildWhatsAppUrl(telefono, producto) {
     : 'Hola! Me gustaría consultar sobre sus productos.';
 
   return `https://wa.me/${fullPhone}?text=${encodeURIComponent(mensaje)}`;
+}
+
+/**
+ * Registra un lead (CRM) para cuando un producto está agotado y el cliente desea ser avisado.
+ * @param {string} dominio
+ * @param {string} productoId
+ * @param {string} nombre
+ * @param {string} contacto
+ * @returns {boolean} true si fue exitoso
+ */
+export async function registrarLeadTienda(dominio, productoId, nombre, contacto) {
+  const { data, error } = await supabase.rpc('registrar_lead_tienda', {
+    p_dominio: dominio,
+    p_producto_id: productoId,
+    p_nombre: nombre,
+    p_contacto: contacto,
+  });
+
+  if (error) {
+    console.error('[ecommerceService] Error registrando lead de tienda:', error);
+    return false;
+  }
+
+  return !!data;
 }

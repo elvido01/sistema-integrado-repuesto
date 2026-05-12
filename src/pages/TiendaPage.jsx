@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Helmet } from 'react-helmet';
-import { Search, Store, Phone, ChevronLeft, ChevronRight, Filter, X, ShoppingBag, MessageCircle, ExternalLink, Package, ShoppingCart, Plus, Minus, Trash2 } from 'lucide-react';
+import { Search, Store, Phone, ChevronLeft, ChevronRight, Filter, X, ShoppingBag, MessageCircle, ExternalLink, Package, ShoppingCart, Plus, Minus, Trash2, ArrowRight } from 'lucide-react';
 import {
   fetchTiendaConfig,
   fetchProductosTienda,
   fetchProductoPorSlug,
   fetchFiltrosTienda,
   buildWhatsAppUrl,
+  registrarLeadTienda,
 } from '@/services/ecommerceService';
 
 // ─── Utility: Format price in DOP ───
@@ -161,8 +162,119 @@ const CartPanel = ({ isOpen, onClose, cart, updateQuantity, removeFromCart, tele
   );
 };
 
+// ─── Avisarme Modal (CRM Lead) ───
+const TiendaAvisarmeModal = ({ isOpen, onClose, producto, dominio }) => {
+  const [nombre, setNombre] = useState('');
+  const [contacto, setContacto] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setNombre('');
+      setContacto('');
+      setSuccess(false);
+      setSubmitting(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen || !producto) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!nombre.trim() || !contacto.trim()) return;
+
+    setSubmitting(true);
+    const ok = await registrarLeadTienda(dominio, producto.id, nombre, contacto);
+    setSubmitting(false);
+
+    if (ok) {
+      setSuccess(true);
+      setTimeout(() => {
+        onClose();
+      }, 3000);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center p-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900 text-lg">Avisarme cuando esté disponible</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6">
+          {success ? (
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <MessageCircle className="w-8 h-8" />
+              </div>
+              <h4 className="text-xl font-bold text-gray-900 mb-2">¡Aviso registrado!</h4>
+              <p className="text-gray-500 text-sm">
+                Te contactaremos al <strong>{contacto}</strong> en cuanto tengamos existencias de este producto.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-3 items-center mb-6 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                <div className="w-12 h-12 bg-white rounded-lg border border-gray-200 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                  {producto.imagen_url ? (
+                    <img src={producto.imagen_url} alt="img" className="w-full h-full object-contain p-1" />
+                  ) : (
+                    <Package className="w-6 h-6 text-gray-300" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-gray-900 truncate" title={producto.descripcion}>{producto.descripcion}</h4>
+                  <p className="text-xs text-gray-500">Cód: {producto.codigo}</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Tu Nombre</label>
+                  <input
+                    type="text"
+                    required
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    placeholder="Ej. Juan Pérez"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">WhatsApp o Correo Electrónico</label>
+                  <input
+                    type="text"
+                    required
+                    value={contacto}
+                    onChange={(e) => setContacto(e.target.value)}
+                    placeholder="Ej. 809-555-1234 o juan@email.com"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
+                  />
+                </div>
+                
+                <button
+                  type="submit"
+                  disabled={submitting || !nombre.trim() || !contacto.trim()}
+                  className="w-full mt-2 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold py-3 rounded-xl transition-all"
+                >
+                  {submitting ? 'Registrando...' : 'Avísenme por favor'}
+                </button>
+              </form>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Product Card ───
-const ProductCard = ({ producto, telefono, onViewDetail }) => {
+const ProductCard = ({ producto, telefono, onViewDetail, onAvisarme }) => {
   const whatsappUrl = buildWhatsAppUrl(telefono, producto);
 
   return (
@@ -219,25 +331,43 @@ const ProductCard = ({ producto, telefono, onViewDetail }) => {
         </h3>
         <p className="text-[11px] text-gray-400 mb-3">Código: {producto.codigo}</p>
 
+        {/* Agotado Badge */}
+        {producto.existencia <= 0 && (
+          <div className="mt-auto mb-2">
+            <span className="inline-block bg-red-100 text-red-600 text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider">
+              AGOTADO
+            </span>
+          </div>
+        )}
+
         {/* Price */}
-        <div className="mt-auto">
+        <div className={producto.existencia > 0 ? "mt-auto" : ""}>
           <p className="text-lg font-black text-gray-900">{formatPrice(producto.precio)}</p>
         </div>
 
         {/* CTA */}
-        <button
-          onClick={() => onViewDetail(producto)}
-          className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white text-sm font-semibold py-2.5 rounded-xl transition-all duration-200"
-        >
-          Ver producto
-        </button>
+        {producto.existencia > 0 ? (
+          <button
+            onClick={() => onViewDetail(producto)}
+            className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white text-sm font-semibold py-2.5 rounded-xl transition-all duration-200"
+          >
+            Ver producto
+          </button>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); onAvisarme(producto); }}
+            className="mt-3 w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs sm:text-sm font-semibold py-2.5 rounded-xl transition-all duration-200"
+          >
+            Avisarme cuando esté disponible
+          </button>
+        )}
       </div>
     </div>
   );
 };
 
 // ─── Product Detail Modal ───
-const ProductDetailView = ({ producto, telefono, onBack, onAddToCart }) => {
+const ProductDetailView = ({ producto, telefono, onBack, onAddToCart, onAvisarme }) => {
   if (!producto) return null;
 
   const whatsappUrl = buildWhatsAppUrl(telefono, producto);
@@ -286,7 +416,14 @@ const ProductDetailView = ({ producto, telefono, onBack, onAddToCart }) => {
             </div>
 
             <h1 className="text-2xl font-bold text-gray-900 mb-2">{producto.descripcion}</h1>
-            <p className="text-xs text-gray-400 mb-4">Código: {producto.codigo}{producto.referencia ? ` | Ref: ${producto.referencia}` : ''}</p>
+            <div className="flex items-center gap-3 mb-4">
+              <p className="text-xs text-gray-400">Código: {producto.codigo}{producto.referencia ? ` | Ref: ${producto.referencia}` : ''}</p>
+              {producto.existencia <= 0 && (
+                <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">
+                  AGOTADO
+                </span>
+              )}
+            </div>
 
             {/* Description */}
             {descripcionLarga !== producto.descripcion && (
@@ -301,25 +438,36 @@ const ProductDetailView = ({ producto, telefono, onBack, onAddToCart }) => {
               <p className="text-3xl font-black text-gray-900">{formatPrice(producto.precio)}</p>
               <p className="text-[11px] text-gray-400 mt-1 mb-4">ITBIS incluido</p>
               
-              <button
-                onClick={() => onAddToCart(producto)}
-                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-md hover:shadow-lg hover:shadow-blue-500/20"
-              >
-                <ShoppingCart className="w-4 h-4" />
-                Agregar a la lista
-              </button>
+              {producto.existencia > 0 ? (
+                <button
+                  onClick={() => onAddToCart(producto)}
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-md hover:shadow-lg hover:shadow-blue-500/20"
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  Agregar a la lista
+                </button>
+              ) : (
+                <button
+                  onClick={() => onAvisarme(producto)}
+                  className="w-full flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-900 text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-md hover:shadow-lg"
+                >
+                  Avisarme cuando esté disponible
+                </button>
+              )}
             </div>
 
             {/* Quick WhatsApp CTA (Individual) */}
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full flex items-center justify-center gap-2.5 bg-white border-2 border-green-500 text-green-600 hover:bg-green-50 text-sm font-bold py-3 rounded-xl transition-all mt-auto"
-            >
-              <MessageCircle className="w-4 h-4" />
-              Consulta rápida (solo esto)
-            </a>
+            {producto.existencia > 0 && (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2.5 bg-white border-2 border-green-500 text-green-600 hover:bg-green-50 text-sm font-bold py-3 rounded-xl transition-all mt-auto"
+              >
+                <MessageCircle className="w-4 h-4" />
+                Consulta rápida (solo esto)
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -327,67 +475,189 @@ const ProductDetailView = ({ producto, telefono, onBack, onAddToCart }) => {
   );
 };
 
-// ─── Search & Filters Bar ───
-const SearchFilters = ({ search, setSearch, marca, setMarca, tipo, setTipo, marcas, tipos, onClear }) => {
-  const hasFilters = search || marca || tipo;
+// ─── Search Bar (Top) ───
+const SearchBarTop = ({ search, setSearch, onClear, hasFilters }) => {
+  return (
+    <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-gray-100 p-3 mb-6 shadow-sm flex items-center gap-3">
+      <div className="relative flex-1">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar por nombre, código o referencia..."
+          className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-gray-50/80 placeholder-gray-400 transition-all"
+        />
+      </div>
+      {hasFilters && (
+        <button
+          onClick={onClear}
+          className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-gray-500 hover:text-red-500 border border-gray-200 rounded-xl hover:bg-red-50 transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+          Limpiar Filtros
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ─── Sidebar Filters (Left) ───
+const SidebarFilters = ({ marcas, modelos, tipos, marca, setMarca, modelo, setModelo, tipo, setTipo }) => {
+  const FilterGroup = ({ title, options, selected, onSelect }) => {
+    if (!options || options.length === 0) return null;
+    return (
+      <div className="mb-6">
+        <h4 className="font-bold text-gray-900 text-sm mb-3">{title}</h4>
+        <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <input
+              type="radio"
+              name={title}
+              checked={!selected}
+              onChange={() => onSelect('')}
+              className="w-3.5 h-3.5 text-blue-600 border-gray-300 focus:ring-blue-500"
+            />
+            <span className={`text-xs ${!selected ? 'font-bold text-blue-600' : 'text-gray-600 group-hover:text-blue-500'}`}>
+              Todos
+            </span>
+          </label>
+          {options.map((opt) => (
+            <label key={opt} className="flex items-center gap-2 cursor-pointer group">
+              <input
+                type="radio"
+                name={title}
+                checked={selected === opt}
+                onChange={() => onSelect(opt)}
+                className="w-3.5 h-3.5 text-blue-600 border-gray-300 focus:ring-blue-500"
+              />
+              <span className={`text-xs ${selected === opt ? 'font-bold text-blue-600' : 'text-gray-600 group-hover:text-blue-500'}`}>
+                {opt}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-gray-100 p-4 mb-8 shadow-sm">
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Search input */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nombre, código o referencia..."
-            className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-gray-50/80 placeholder-gray-400 transition-all"
-          />
-        </div>
+    <div className="w-full lg:w-56 flex-shrink-0 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm h-fit sticky top-24">
+      <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
+        <Filter className="w-4 h-4 text-blue-600" />
+        Filtros
+      </h3>
+      <FilterGroup title="Modelos de Moto" options={modelos} selected={modelo} onSelect={setModelo} />
+      <FilterGroup title="Marcas de Repuesto" options={marcas} selected={marca} onSelect={setMarca} />
+      <FilterGroup title="Tipos" options={tipos} selected={tipo} onSelect={setTipo} />
+    </div>
+  );
+};
 
-        {/* Marca filter */}
-        {marcas.length > 0 && (
-          <select
-            value={marca}
-            onChange={(e) => setMarca(e.target.value)}
-            className="px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 bg-gray-50/80 text-gray-600 min-w-[140px]"
-          >
-            <option value="">Todas las marcas</option>
-            {marcas.map(m => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        )}
+const HeroCarousel = () => {
+  const [currentSlide, setCurrentSlide] = useState(0);
 
-        {/* Tipo filter */}
-        {tipos.length > 0 && (
-          <select
-            value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
-            className="px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 bg-gray-50/80 text-gray-600 min-w-[140px]"
-          >
-            <option value="">Todos los tipos</option>
-            {tipos.map(t => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-        )}
+  const slides = [
+    {
+      id: 1,
+      title: "Todo para tu Motocicleta",
+      subtitle: "Encuentra los mejores repuestos y accesorios con entrega rápida.",
+      bgColor: "bg-gradient-to-r from-orange-500 to-amber-600",
+      textColor: "text-white",
+      image: "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?q=80&w=1200&auto=format&fit=crop",
+      action: "Ver catálogo"
+    },
+    {
+      id: 2,
+      title: "Ofertas Especiales en Llantas",
+      subtitle: "Hasta 20% de descuento en llantas seleccionadas. ¡Preparate para la ruta!",
+      bgColor: "bg-gradient-to-r from-blue-600 to-indigo-700",
+      textColor: "text-white",
+      image: "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?q=80&w=1200&auto=format&fit=crop",
+      action: "Aprovechar oferta"
+    },
+    {
+      id: 3,
+      title: "Cascos y Seguridad",
+      subtitle: "La mejor protección para tus viajes. Variedad de marcas y modelos.",
+      bgColor: "bg-gradient-to-r from-gray-800 to-black",
+      textColor: "text-white",
+      image: "https://images.unsplash.com/photo-1533558701576-23c65e0272fb?q=80&w=1200&auto=format&fit=crop",
+      action: "Comprar ahora"
+    }
+  ];
 
-        {/* Clear filters */}
-        {hasFilters && (
+  const nextSlide = useCallback(() => {
+    setCurrentSlide((prev) => (prev === slides.length - 1 ? 0 : prev + 1));
+  }, [slides.length]);
+
+  const prevSlide = useCallback(() => {
+    setCurrentSlide((prev) => (prev === 0 ? slides.length - 1 : prev - 1));
+  }, [slides.length]);
+
+  useEffect(() => {
+    const timer = setInterval(nextSlide, 5000);
+    return () => clearInterval(timer);
+  }, [nextSlide]);
+
+  return (
+    <div className="relative w-full overflow-hidden rounded-2xl mb-8 group bg-gray-100 h-[250px] sm:h-[350px] lg:h-[400px] shadow-sm">
+      <div 
+        className="flex h-full transition-transform duration-700 ease-out" 
+        style={{ transform: `translateX(-${currentSlide * 100}%)` }}
+      >
+        {slides.map((slide) => (
+          <div key={slide.id} className="min-w-full h-full relative flex items-center">
+            <div className="absolute inset-0 z-0">
+              <img src={slide.image} alt={slide.title} className="w-full h-full object-cover" />
+              <div className={`absolute inset-0 opacity-80 ${slide.bgColor}`}></div>
+            </div>
+            
+            <div className="relative z-10 w-full px-8 sm:px-16 lg:px-24 flex flex-col items-start justify-center h-full">
+              <span className={`inline-block py-1 px-3 rounded-full bg-white/20 backdrop-blur-sm text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-3 sm:mb-4 ${slide.textColor}`}>
+                Destacado
+              </span>
+              <h2 className={`text-2xl sm:text-4xl lg:text-5xl font-black mb-2 sm:mb-4 max-w-2xl leading-tight ${slide.textColor}`}>
+                {slide.title}
+              </h2>
+              <p className={`text-xs sm:text-base lg:text-lg mb-6 sm:mb-8 max-w-xl opacity-90 font-medium ${slide.textColor}`}>
+                {slide.subtitle}
+              </p>
+              <button onClick={() => window.scrollTo({ top: 500, behavior: 'smooth' })} className="bg-white text-gray-900 hover:bg-gray-50 text-xs sm:text-sm font-bold py-2.5 sm:py-3 px-5 sm:px-6 rounded-xl flex items-center gap-2 transition-all shadow-lg hover:-translate-y-0.5">
+                {slide.action}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button 
+        onClick={prevSlide}
+        className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/40 backdrop-blur-md text-white opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+      >
+        <ChevronLeft className="w-5 h-5 sm:w-8 sm:h-8" />
+      </button>
+      <button 
+        onClick={nextSlide}
+        className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/40 backdrop-blur-md text-white opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+      >
+        <ChevronRight className="w-5 h-5 sm:w-8 sm:h-8" />
+      </button>
+
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
+        {slides.map((_, index) => (
           <button
-            onClick={onClear}
-            className="flex items-center gap-1.5 px-3 py-2.5 text-xs text-gray-500 hover:text-red-500 border border-gray-200 rounded-xl hover:bg-red-50 transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-            Limpiar
-          </button>
-        )}
+            key={index}
+            onClick={() => setCurrentSlide(index)}
+            className={`h-1.5 sm:h-2 rounded-full transition-all ${currentSlide === index ? 'w-6 sm:w-8 bg-white' : 'w-1.5 sm:w-2 bg-white/50 hover:bg-white/80'}`}
+          />
+        ))}
       </div>
     </div>
   );
 };
+
 
 // ─── Pagination ───
 const Pagination = ({ page, totalPages, setPage }) => {
@@ -527,11 +797,20 @@ const TiendaPage = () => {
   const [search, setSearch] = useState('');
   const [marca, setMarca] = useState('');
   const [tipo, setTipo] = useState('');
+  const [modelo, setModelo] = useState('');
   const [marcas, setMarcas] = useState([]);
   const [tipos, setTipos] = useState([]);
+  const [modelos, setModelos] = useState([]);
 
-  // Detail view
+  // Detail view & CRM Leads
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isAvisarmeModalOpen, setIsAvisarmeModalOpen] = useState(false);
+  const [avisarmeProduct, setAvisarmeProduct] = useState(null);
+
+  const handleOpenAvisarme = useCallback((producto) => {
+    setAvisarmeProduct(producto);
+    setIsAvisarmeModalOpen(true);
+  }, []);
 
   // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -560,6 +839,7 @@ const TiendaPage = () => {
       const filtros = await fetchFiltrosTienda(dominio);
       setMarcas(filtros.marcas);
       setTipos(filtros.tipos);
+      setModelos(filtros.modelos);
     };
     load();
   }, [dominio]);
@@ -574,11 +854,12 @@ const TiendaPage = () => {
       search: debouncedSearch,
       marca,
       tipo,
+      modelo,
     });
-    setProductos(result.productos);
-    setTotalCount(result.totalCount);
+    setProductos(result.productos || []);
+    setTotalCount(result.totalCount || 0);
     setLoadingProducts(false);
-  }, [config, dominio, page, debouncedSearch, marca, tipo]);
+  }, [config, dominio, page, debouncedSearch, marca, tipo, modelo]);
 
   useEffect(() => {
     loadProducts();
@@ -587,7 +868,7 @@ const TiendaPage = () => {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, marca, tipo]);
+  }, [debouncedSearch, marca, tipo, modelo]);
 
   // Handle URL-based product detail (/tienda/slug)
   useEffect(() => {
@@ -632,6 +913,7 @@ const TiendaPage = () => {
     setSearch('');
     setMarca('');
     setTipo('');
+    setModelo('');
     setPage(1);
   };
 
@@ -707,49 +989,66 @@ const TiendaPage = () => {
             telefono={config?.telefono}
             onBack={handleBackToGrid}
             onAddToCart={addToCart}
+            onAvisarme={handleOpenAvisarme}
           />
         ) : (
           <>
-            {/* Search & Filters */}
-            <SearchFilters
-              search={search}
-              setSearch={setSearch}
-              marca={marca}
-              setMarca={setMarca}
-              tipo={tipo}
-              setTipo={setTipo}
-              marcas={marcas}
-              tipos={tipos}
-              onClear={clearFilters}
-            />
-
-            {/* Results count */}
-            {!loadingProducts && totalCount > 0 && (
-              <p className="text-xs text-gray-400 mb-5">
-                Mostrando {productos.length} de {totalCount} producto{totalCount !== 1 ? 's' : ''}
-              </p>
+            {/* Hero Carousel */}
+            {(!search && !marca && !tipo && !modelo && page === 1) && (
+              <HeroCarousel />
             )}
 
-            {/* Product Grid */}
-            {loadingProducts ? (
-              <LoadingSkeleton />
-            ) : productos.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
-                {productos.map(prod => (
-                  <ProductCard
-                    key={prod.id}
-                    producto={prod}
-                    telefono={config?.telefono}
-                    onViewDetail={handleViewDetail}
-                  />
-                ))}
+            {/* Layout Grid: Sidebar + Main Content */}
+            <div className="flex flex-col lg:flex-row gap-6">
+              
+              {/* Sidebar */}
+              <SidebarFilters 
+                marcas={marcas} modelos={modelos} tipos={tipos}
+                marca={marca} setMarca={setMarca}
+                modelo={modelo} setModelo={setModelo}
+                tipo={tipo} setTipo={setTipo}
+              />
+
+              {/* Main Column */}
+              <div className="flex-1 min-w-0">
+                {/* Search Bar */}
+                <SearchBarTop 
+                  search={search} 
+                  setSearch={setSearch} 
+                  onClear={clearFilters} 
+                  hasFilters={!!(search || marca || tipo || modelo)}
+                />
+
+                {/* Results count */}
+                {!loadingProducts && totalCount > 0 && (
+                  <p className="text-xs text-gray-400 mb-5 pl-1">
+                    Mostrando {productos.length} de {totalCount} producto{totalCount !== 1 ? 's' : ''}
+                  </p>
+                )}
+
+                {/* Product Grid */}
+                {loadingProducts ? (
+                  <LoadingSkeleton />
+                ) : productos.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                    {productos.map(prod => (
+                      <ProductCard
+                        key={prod.id}
+                        producto={prod}
+                        telefono={config?.telefono}
+                        onViewDetail={handleViewDetail}
+                        onAvisarme={handleOpenAvisarme}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState search={debouncedSearch} />
+                )}
+
+                {/* Pagination */}
+                <Pagination page={page} totalPages={totalPages} setPage={setPage} />
               </div>
-            ) : (
-              <EmptyState search={debouncedSearch} />
-            )}
-
-            {/* Pagination */}
-            <Pagination page={page} totalPages={totalPages} setPage={setPage} />
+            </div>
           </>
         )}
       </main>
@@ -774,6 +1073,13 @@ const TiendaPage = () => {
         removeFromCart={removeFromCart}
         telefono={config?.telefono}
         configNombre={config?.nombre}
+      />
+
+      <TiendaAvisarmeModal 
+        isOpen={isAvisarmeModalOpen}
+        onClose={() => setIsAvisarmeModalOpen(false)}
+        producto={avisarmeProduct}
+        dominio={dominio}
       />
     </div>
   );
