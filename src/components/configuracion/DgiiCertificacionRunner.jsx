@@ -456,7 +456,7 @@ const DgiiCertificacionRunner = () => {
                           Reintentar
                         </Button>
                       )}
-                      {caso.trackId && !caso.trackId.startsWith('DESCARGADO') && (
+                      {(caso.trackId || caso.response || caso.estado === 'aceptado' || caso.estado === 'descargado' || caso.estado === 'enviado') && (
                         <Button
                           variant="ghost"
                           size="sm"
