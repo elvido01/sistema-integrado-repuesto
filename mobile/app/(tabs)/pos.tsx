@@ -1,24 +1,36 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useMemo, useRef } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Platform } from 'react-native';
 import { useCartStore } from '@/src/store/useCartStore';
-import { Trash2, Plus, Minus, Search, User, CreditCard } from 'lucide-react-native';
+import { Trash2, Plus, Minus, Search, User, CreditCard, ShoppingCart, PlusCircle, Share2, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { shareToWhatsApp } from '@/src/utils/whatsapp';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { supabase } from '@/src/supabase/client';
+import ViewShot, { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 
 export default function POSScreen() {
   const router = useRouter();
-  const { user, empresaId } = useAuthStore();
+  const { user } = useAuthStore();
   const { items, getSubtotal, getTotal, removeItem, updateQuantity, clearCart, clienteNombre, clienteTelefono } = useCartStore();
   const [loading, setLoading] = useState(false);
+  const [montoPagado, setMontoPagado] = useState<string>('');
+  const [facturaModal, setFacturaModal] = useState<any | null>(null);
+  const ticketRef = useRef<ViewShot>(null);
+  const [compartiendo, setCompartiendo] = useState(false);
 
   const subtotal = getSubtotal();
   const total = getTotal();
+  const pagadoNum = parseFloat(montoPagado.replace(/,/g, '')) || 0;
+  const cambio = useMemo(() => Math.max(0, pagadoNum - total), [pagadoNum, total]);
+  const faltante = useMemo(() => Math.max(0, total - pagadoNum), [pagadoNum, total]);
 
   const handleCobrar = async () => {
     if (items.length === 0) {
       Alert.alert('Error', 'El carrito está vacío');
+      return;
+    }
+    if (pagadoNum < total) {
+      Alert.alert('Pago insuficiente', `Falta RD$${faltante.toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
       return;
     }
 
@@ -29,21 +41,21 @@ export default function POSScreen() {
         .from('facturas')
         .insert({
           usuario_id: user?.id,
-          cliente_id: null, // Asumimos cliente genérico por ahora
+          cliente_id: null,
           subtotal: subtotal,
           descuento: 0,
           itbis: 0,
           total: total,
-          forma_pago: 'EFECTIVO', // Por defecto para venta rápida
-          estado: 'PAGADA'
+          forma_pago: 'EFECTIVO',
+          estado: 'PAGADA',
         })
         .select()
         .single();
 
       if (ventaError) throw ventaError;
 
-      // 2. Guardar Detalles de Venta
-      const detalles = items.map(item => ({
+      // 2. Guardar Detalles
+      const detalles = items.map((item) => ({
         factura_id: venta.id,
         producto_id: item.id,
         codigo: item.codigo,
@@ -52,25 +64,28 @@ export default function POSScreen() {
         precio: item.precioSeleccionado,
         descuento: item.descuento,
         itbis: 0,
-        importe: item.precioSeleccionado * item.cantidad - item.descuento
+        importe: item.precioSeleccionado * item.cantidad - item.descuento,
       }));
-
       const { error: detallesError } = await supabase.from('facturas_detalle').insert(detalles);
       if (detallesError) throw detallesError;
 
-      // 3. Compartir por WhatsApp
-      let msg = `Gracias por su compra en Repuestos Morla.\n\nDetalle:\n`;
-      items.forEach((it, index) => {
-        msg += `${index + 1}. ${it.descripcion}\nCantidad: ${it.cantidad}\nPrecio: RD$${it.precioSeleccionado.toLocaleString()}\nSubtotal: RD$${(it.cantidad * it.precioSeleccionado).toLocaleString()}\n\n`;
+      // 3. Preparar snapshot de la factura para el modal
+      const numeroFactura = venta.numero || String(venta.id).slice(0, 8).toUpperCase();
+      setFacturaModal({
+        numero: numeroFactura,
+        fecha: new Date(),
+        cliente: clienteNombre,
+        items: items.map((it) => ({
+          codigo: it.codigo,
+          descripcion: it.descripcion,
+          cantidad: it.cantidad,
+          precio: it.precioSeleccionado,
+          importe: it.precioSeleccionado * it.cantidad - it.descuento,
+        })),
+        total,
+        pagado: pagadoNum,
+        cambio,
       });
-      msg += `Total pagado: RD$${total.toLocaleString()}\n\nRepuestos Morla\nDonde encuentras todo lo que necesitas para tu motocicleta.`;
-
-      shareToWhatsApp({ phone: clienteTelefono, message: msg });
-
-      // 4. Limpiar carrito
-      clearCart();
-      Alert.alert('Éxito', 'Venta completada correctamente');
-
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Error al procesar la venta');
     } finally {
@@ -78,21 +93,153 @@ export default function POSScreen() {
     }
   };
 
+  // Construye el texto de la factura en formato ticket POS (monospace).
+  // Se envuelve en ``` para que WhatsApp/Telegram/Discord lo rendericen
+  // como bloque monospace y se vea como el ticket impreso.
+  const EMPRESA = {
+    nombre: 'REPUESTOS MORLA',
+    direccion: 'Av. Duarte , esq. Baldemiro Rijo,',
+    direccion2: 'Higuey, Rep. Dom.',
+    telefono: '809-390-5965',
+  };
+
+  const buildFacturaTexto = (f: any) => {
+    if (!f) return '';
+    const W = 36; // ancho del ticket
+    const fmt = (n: number) => Number(n || 0).toFixed(2);
+    const center = (s: string) => {
+      const pad = Math.max(0, Math.floor((W - s.length) / 2));
+      return ' '.repeat(pad) + s;
+    };
+    const labelVal = (label: string, value: string) => {
+      const v = String(value);
+      const spaces = Math.max(1, W - label.length - v.length);
+      return label + ' '.repeat(spaces) + v;
+    };
+    const sep = '-'.repeat(W);
+    const sep2 = '='.repeat(W);
+
+    const fecha = f.fecha instanceof Date ? f.fecha : new Date(f.fecha);
+    const fechaStr = fecha.toLocaleDateString('es-DO');
+    const horaStr = fecha.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+    const numStr = f.numero
+      ? `FT-${String(f.numero).padStart(7, '0').slice(-7)}`
+      : `FT-${String(f.id || '0').replace(/[^0-9]/g, '').padStart(7, '0').slice(-7)}`;
+
+    let t = '```\n';
+    t += center(EMPRESA.nombre) + '\n';
+    t += center(EMPRESA.direccion) + '\n';
+    t += center(EMPRESA.direccion2) + '\n';
+    t += center(EMPRESA.telefono) + '\n';
+    t += '\n';
+    t += center('FACTURA') + '\n';
+    t += labelVal(`Numero  : ${numStr}`, horaStr) + '\n';
+    t += `Fecha   : ${fechaStr}\n`;
+    t += `Vence   : CONTADO\n`;
+    t += `Cliente : ${f.cliente || 'CLIENTE GENERICO'}\n`;
+    t += `Direccion N/A\n`;
+    t += `Tel.    : N/A\n`;
+    t += '\n';
+    t += sep + '\n';
+    t += 'Descripcion de la Mercancia\n';
+    t += sep + '\n';
+    t += 'CANT.PRECIO ITBIS   MONTO\n';
+    t += sep + '\n';
+    t += '\n';
+
+    let subtotal = 0;
+    const itbisTotal = 0;
+    f.items.forEach((it: any) => {
+      const importe = Number(it.importe) || 0;
+      subtotal += importe;
+      t += `${it.descripcion}\n`;
+      // Linea de cantidades: CANT UND  PRECIO  ITBIS  MONTO E
+      const cantStr = `${it.cantidad} UND`.padEnd(8);
+      const precioStr = fmt(it.precio).padStart(7);
+      const itbisStr = '0.00'.padStart(7);
+      const montoStr = (fmt(importe) + ' E').padStart(W - 8 - 7 - 7);
+      t += cantStr + precioStr + itbisStr + montoStr + '\n';
+    });
+
+    t += '\n';
+    t += labelVal('              Sub-Total :', fmt(subtotal)) + '\n';
+    t += labelVal('       Descuento en Items:', '0.00') + '\n';
+    t += labelVal('         Otros Descuento :', '0.00') + '\n';
+    t += labelVal('                 Recargo :', '0.00') + '\n';
+    t += labelVal('Valores en         ITBIS :', fmt(itbisTotal)) + '\n';
+    t += 'DOP    ' + '='.repeat(W - 7) + '\n';
+    t += labelVal('                  TOTAL :', fmt(f.total)) + '\n';
+    t += sep2 + '\n';
+    t += '\n';
+    t += labelVal('Pagado :', fmt(f.pagado)) + '\n';
+    t += labelVal('Cambio :', fmt(f.cambio)) + '\n';
+    t += '\n';
+    t += 'Le Atendio : N/A\n';
+    t += `Vendedor   : ${EMPRESA.nombre}\n`;
+    t += '\n';
+    t += center('*** GRACIAS POR SU COMPRA ***') + '\n';
+    t += '```';
+    return t;
+  };
+
+  const compartirFactura = async () => {
+    if (compartiendo) return;
+    setCompartiendo(true);
+    try {
+      // Capturar el ticket renderizado como imagen JPG temporal
+      const uri = await captureRef(ticketRef, {
+        format: 'jpg',
+        quality: 0.95,
+        result: 'tmpfile',
+      });
+      const disponible = await Sharing.isAvailableAsync();
+      if (!disponible) {
+        Alert.alert('No disponible', 'Compartir no está disponible en este dispositivo.');
+        return;
+      }
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/jpeg',
+        dialogTitle: `Factura ${facturaModal?.numero || ''}`,
+        UTI: 'public.jpeg',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'No se pudo compartir la factura');
+    } finally {
+      setCompartiendo(false);
+    }
+  };
+
+  const cerrarFacturaYLimpiar = () => {
+    clearCart();
+    setMontoPagado('');
+    setFacturaModal(null);
+  };
+
   return (
     <View className="flex-1 bg-gray-50">
       <View className="bg-white p-4 border-b border-gray-100 flex-row justify-between items-center">
-        <View className="flex-row items-center">
+        <View className="flex-row items-center flex-1">
           <View className="bg-gray-100 p-2 rounded-full mr-3">
             <User color="#6b7280" size={20} />
           </View>
-          <View>
-            <Text className="text-gray-900 font-bold">{clienteNombre}</Text>
+          <View className="flex-1">
+            <Text className="text-gray-900 font-bold" numberOfLines={1}>{clienteNombre}</Text>
             {clienteTelefono ? <Text className="text-gray-500 text-sm">{clienteTelefono}</Text> : null}
           </View>
         </View>
-        <TouchableOpacity>
-          <Text className="text-brand font-medium">Cambiar</Text>
-        </TouchableOpacity>
+        {items.length > 0 ? (
+          <TouchableOpacity
+            className="bg-brand rounded-full px-3 py-2 flex-row items-center ml-2"
+            onPress={() => router.push('/(tabs)/catalogo?modo=venta')}
+          >
+            <PlusCircle color="white" size={18} />
+            <Text className="text-white font-medium ml-1.5 text-[13px]">Agregar más</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity>
+            <Text className="text-brand font-medium">Cambiar</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <FlatList
@@ -102,9 +249,9 @@ export default function POSScreen() {
           <View className="flex-1 justify-center items-center p-10 mt-20">
             <ShoppingCart color="#d1d5db" size={64} />
             <Text className="text-gray-400 text-lg mt-4 text-center">No hay productos en el carrito</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               className="mt-6 bg-brand px-6 py-3 rounded-full flex-row items-center"
-              onPress={() => router.push('/(tabs)/catalogo')}
+              onPress={() => router.push('/(tabs)/catalogo?modo=venta')}
             >
               <Search color="white" size={20} className="mr-2" />
               <Text className="text-white font-medium">Buscar Productos</Text>
@@ -144,33 +291,146 @@ export default function POSScreen() {
         )}
       />
 
-      <View className="bg-white border-t border-gray-200 p-4 pb-6">
-        <View className="flex-row justify-between mb-2">
-          <Text className="text-gray-500">Subtotal</Text>
-          <Text className="font-medium">RD${subtotal.toLocaleString()}</Text>
-        </View>
-        <View className="flex-row justify-between mb-4">
-          <Text className="text-gray-900 text-xl font-bold">Total</Text>
-          <Text className="text-brand text-xl font-bold">RD${total.toLocaleString()}</Text>
-        </View>
-        
-        <View className="flex-row space-x-3">
-          <TouchableOpacity 
-            className="bg-gray-100 p-4 rounded-xl flex-1 items-center justify-center"
-            onPress={() => clearCart()}
+      {items.length > 0 && (
+        <View className="bg-white border-t border-gray-200 p-4 pb-6">
+          {/* Boton para seguir agregando */}
+          <TouchableOpacity
+            className="bg-gray-100 py-3 rounded-xl flex-row justify-center items-center mb-3"
+            onPress={() => router.push('/(tabs)/catalogo?modo=venta')}
           >
-            <Trash2 color="#ef4444" size={24} />
+            <Search color="#1d4ed8" size={20} />
+            <Text className="text-brand font-medium ml-2">+ Agregar más artículos</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            className={`bg-brand p-4 rounded-xl flex-[4] flex-row justify-center items-center ${items.length === 0 || loading ? 'opacity-50' : ''}`}
-            disabled={items.length === 0 || loading}
-            onPress={handleCobrar}
-          >
-            <CreditCard color="white" size={24} className="mr-2" />
-            <Text className="text-white font-bold text-lg">{loading ? 'Procesando...' : 'Cobrar'}</Text>
-          </TouchableOpacity>
+
+          {/* Total */}
+          <View className="flex-row justify-between mb-3">
+            <Text className="text-gray-900 text-xl font-bold">Total</Text>
+            <Text className="text-brand text-xl font-bold">
+              RD${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          </View>
+
+          {/* Monto Pagado (input) */}
+          <View className="flex-row justify-between items-center mb-1">
+            <Text className="text-gray-600">Monto Pagado</Text>
+            <View className="flex-row items-center bg-gray-100 rounded-lg px-3" style={{ minWidth: 140 }}>
+              <Text className="text-gray-500 mr-1">RD$</Text>
+              <TextInput
+                className="flex-1 text-right text-gray-900 text-base font-semibold"
+                style={{ paddingVertical: 8, includeFontPadding: false } as any}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor="#9ca3af"
+                value={montoPagado}
+                onChangeText={(t) => setMontoPagado(t.replace(/[^0-9.]/g, ''))}
+                selectTextOnFocus
+              />
+            </View>
+          </View>
+
+          {/* Cambio o Faltante */}
+          {pagadoNum > 0 && (
+            <View className="flex-row justify-between mb-3">
+              <Text className={faltante > 0 ? 'text-red-600 font-medium' : 'text-emerald-600 font-medium'}>
+                {faltante > 0 ? 'Falta' : 'Cambio'}
+              </Text>
+              <Text className={faltante > 0 ? 'text-red-600 font-bold' : 'text-emerald-600 font-bold'}>
+                RD${(faltante > 0 ? faltante : cambio).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
+          )}
+
+          {/* Botones */}
+          <View className="flex-row space-x-3">
+            <TouchableOpacity
+              className="bg-gray-100 p-4 rounded-xl flex-1 items-center justify-center"
+              onPress={() => clearCart()}
+            >
+              <Trash2 color="#ef4444" size={24} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={`bg-brand p-4 rounded-xl flex-[4] flex-row justify-center items-center ${loading ? 'opacity-50' : ''}`}
+              disabled={loading}
+              onPress={handleCobrar}
+            >
+              <CreditCard color="white" size={24} className="mr-2" />
+              <Text className="text-white font-bold text-lg">{loading ? 'Procesando...' : 'Finalizar Venta'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      )}
+
+      {/* Modal: factura POS al finalizar venta */}
+      <Modal
+        visible={facturaModal !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={cerrarFacturaYLimpiar}
+      >
+        <View className="flex-1 bg-black/60 justify-center items-center px-3">
+          <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '90%' }}>
+            {/* Header */}
+            <View className="px-4 py-3 border-b border-gray-200 flex-row justify-between items-center bg-gray-50">
+              <View className="flex-1">
+                <Text className="text-[11px] text-gray-500">Factura #{facturaModal?.numero}</Text>
+                <Text className="text-base font-bold text-gray-900">Venta completada</Text>
+              </View>
+              <TouchableOpacity
+                onPress={cerrarFacturaYLimpiar}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                className="p-1"
+              >
+                <X color="#6b7280" size={22} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Cuerpo: ticket monospace envuelto en ViewShot para capturar JPG */}
+            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ padding: 0 }}>
+              <ViewShot
+                ref={ticketRef}
+                options={{ format: 'jpg', quality: 0.95 }}
+                style={{ backgroundColor: 'white' }}
+              >
+                <View style={{ padding: 16, backgroundColor: 'white' }}>
+                  <Text
+                    style={{
+                      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                      fontSize: 11,
+                      color: '#111827',
+                      lineHeight: 16,
+                    }}
+                  >
+                    {buildFacturaTexto(facturaModal)
+                      .replace(/^```\n?/, '')
+                      .replace(/\n?```$/, '')}
+                  </Text>
+                </View>
+              </ViewShot>
+            </ScrollView>
+
+            {/* Botones */}
+            <View className="flex-row border-t border-gray-200">
+              <TouchableOpacity
+                className="flex-1 py-4 items-center justify-center active:bg-gray-100"
+                onPress={cerrarFacturaYLimpiar}
+              >
+                <Text className="text-gray-700 font-medium">Cerrar</Text>
+              </TouchableOpacity>
+              <View className="w-px bg-gray-200" />
+              <TouchableOpacity
+                className={`flex-1 py-4 items-center justify-center flex-row bg-brand active:opacity-80 ${compartiendo ? 'opacity-60' : ''}`}
+                onPress={compartirFactura}
+                disabled={compartiendo}
+              >
+                <Share2 color="white" size={18} />
+                <Text className="text-white font-bold ml-2">
+                  {compartiendo ? 'Generando...' : 'Compartir'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
