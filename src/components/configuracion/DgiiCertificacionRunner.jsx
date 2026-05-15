@@ -33,9 +33,27 @@ const FINAL_ESTADOS = new Set(['aceptado', 'aceptado_condicional', 'rechazado'])
 const ACCEPTED_ESTADOS = new Set(['aceptado', 'aceptado_condicional']);
 const LOCAL_READY_ESTADOS = new Set(['descargado']);
 
+// Helper: un caso cuenta como "aceptado" si su estado lo indica explícitamente
+// O si su response es "Aceptado" (RFCE que DGII aceptó sin TrackId — su estado
+// puede quedar como 'enviado' por el flujo, pero el response ya está aceptado).
+const isCasoAceptado = (c) => {
+  if (ACCEPTED_ESTADOS.has(c?.estado)) return true;
+  const resp = c?.response;
+  if (typeof resp === 'string' && resp.trim().toLowerCase().includes('aceptado')) return true;
+  return false;
+};
+
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function normalizeDgiiStatus(payload) {
+  // Caso especial RFCE: DGII responde directamente { response: "Aceptado", ... }
+  // sin TrackId. El payload original tiene `response` como string plano.
+  if (payload && typeof payload.response === 'string') {
+    const r = payload.response.trim().toLowerCase();
+    if (r.includes('aceptado cond')) return { estado: 'aceptado_condicional', error: null, payload };
+    if (r.includes('aceptado'))      return { estado: 'aceptado',              error: null, payload };
+    if (r.includes('rechaz'))        return { estado: 'rechazado',             error: payload.response, payload };
+  }
   const estadoPayload = payload?.estado || payload || {};
   const rawEstado = String(estadoPayload.estado || estadoPayload.Estado || '').trim().toLowerCase();
   const mensajes = estadoPayload.mensajes || estadoPayload.Mensajes || [];
@@ -273,7 +291,12 @@ const DgiiCertificacionRunner = () => {
         setProgreso({ ok, err });
         continue;
       }
-      if (casoActual.fase === 4 && !aceptadosEnCorrida.has(String(casoActual.encf))) {
+      // Para Fase 4: verificar que el RFCE correspondiente esté aceptado
+      // (en aceptadosEnCorrida) o que algún caso RFCE con el mismo encf tenga
+      // response "Aceptado" (caso de RFCE que DGII aceptó sin TrackId).
+      const rfceAceptado = aceptadosEnCorrida.has(String(casoActual.encf))
+        || casos.some(c => c.encf === casoActual.encf && c.kind === 'RFCE' && isCasoAceptado(c));
+      if (casoActual.fase === 4 && !rfceAceptado) {
         setCasos((prev) => prev.map((c, idx) => idx === i ? {
           ...c,
           estado: 'error',
@@ -416,7 +439,7 @@ const DgiiCertificacionRunner = () => {
       });
       return;
     }
-    if (caso?.fase === 4 && !casos.some(c => c.encf === caso.encf && ACCEPTED_ESTADOS.has(c.estado))) {
+    if (caso?.fase === 4 && !casos.some(c => c.encf === caso.encf && c.kind === 'RFCE' && isCasoAceptado(c))) {
       toast({
         title: 'RFCE pendiente',
         description: `Primero debe quedar aceptado el RFCE ${caso.encf} en ${CERTIFICACION_AMBIENTE}.`,
