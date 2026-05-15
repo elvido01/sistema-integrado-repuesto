@@ -73,6 +73,10 @@ function v(row, key) {
   return x;
 }
 
+function hasAny(...vals) {
+  return vals.some((val) => val !== "" && val !== null && val !== undefined && val !== "#e");
+}
+
 // ────────────────────────────────────────────────
 // Items de detalle
 // ────────────────────────────────────────────────
@@ -91,8 +95,74 @@ function buildItemsXml(row) {
   return items
     .map((i) => {
       const item = (key) => v(row, `${key}[${i}]`);
+      const nested = (key, j) => v(row, `${key}[${i}][${j}]`);
+
+      const codigos = [];
+      for (let j = 1; j <= 5; j++) {
+        const tipoCodigo = nested("TipoCodigo", j);
+        const codigoItem = nested("CodigoItem", j);
+        if (hasAny(tipoCodigo, codigoItem)) {
+          codigos.push(`<CodigosItem>` +
+            t("TipoCodigo", tipoCodigo) +
+            t("CodigoItem", codigoItem) +
+          `</CodigosItem>`);
+        }
+      }
+      const codigosXml = codigos.length
+        ? `<TablaCodigosItem>${codigos.join("")}</TablaCodigosItem>`
+        : "";
+
+      const subDescuentos = [];
+      for (let j = 1; j <= 12; j++) {
+        const tipo = nested("TipoSubDescuento", j);
+        const porcentaje = nested("SubDescuentoPorcentaje", j);
+        const monto = nested("MontoSubDescuento", j);
+        if (hasAny(tipo, porcentaje, monto)) {
+          subDescuentos.push(`<SubDescuento>` +
+            t("TipoSubDescuento", tipo) +
+            t("SubDescuentoPorcentaje", porcentaje) +
+            t("MontoSubDescuento", monto) +
+          `</SubDescuento>`);
+        }
+      }
+      const subDescuentosXml = subDescuentos.length
+        ? `<TablaSubDescuento>${subDescuentos.join("")}</TablaSubDescuento>`
+        : "";
+
+      const subRecargos = [];
+      for (let j = 1; j <= 12; j++) {
+        const tipo = nested("TipoSubRecargo", j);
+        const porcentaje = nested("SubRecargoPorcentaje", j);
+        const monto = nested("MontoSubRecargo", j) || nested("MontosubRecargo", j);
+        if (hasAny(tipo, porcentaje, monto)) {
+          subRecargos.push(`<SubRecargo>` +
+            t("TipoSubRecargo", tipo) +
+            t("SubRecargoPorcentaje", porcentaje) +
+            t("MontoSubRecargo", monto) +
+          `</SubRecargo>`);
+        }
+      }
+      const subRecargosXml = subRecargos.length
+        ? `<TablaSubRecargo>${subRecargos.join("")}</TablaSubRecargo>`
+        : "";
+
+      const otraMonedaXml = hasAny(
+        item("PrecioOtraMoneda"),
+        item("DescuentoOtraMoneda"),
+        item("RecargoOtraMoneda"),
+        item("MontoItemOtraMoneda")
+      )
+        ? `<OtraMonedaDetalle>` +
+            t("PrecioOtraMoneda", item("PrecioOtraMoneda")) +
+            t("DescuentoOtraMoneda", item("DescuentoOtraMoneda")) +
+            t("RecargoOtraMoneda", item("RecargoOtraMoneda")) +
+            t("MontoItemOtraMoneda", item("MontoItemOtraMoneda")) +
+          `</OtraMonedaDetalle>`
+        : "";
+
       return `<Item>` +
         t("NumeroLinea", item("NumeroLinea")) +
+        codigosXml +
         t("IndicadorFacturacion", item("IndicadorFacturacion")) +
         ((item("MontoITBISRetenido") || item("MontoISRRetenido") || item("IndicadorAgenteRetencionoPercepcion"))
           ? `<Retencion>` +
@@ -106,8 +176,16 @@ function buildItemsXml(row) {
         t("DescripcionItem", item("DescripcionItem")) +
         t("CantidadItem", item("CantidadItem")) +
         t("UnidadMedida", item("UnidadMedida")) +
+        t("CantidadReferencia", item("CantidadReferencia")) +
+        t("UnidadReferencia", item("UnidadReferencia")) +
+        t("FechaElaboracion", item("FechaElaboracion")) +
+        t("FechaVencimientoItem", item("FechaVencimientoItem")) +
         t("PrecioUnitarioItem", item("PrecioUnitarioItem")) +
         t("DescuentoMonto", item("DescuentoMonto")) +
+        subDescuentosXml +
+        t("RecargoMonto", item("RecargoMonto")) +
+        subRecargosXml +
+        otraMonedaXml +
         t("MontoItem", item("MontoItem")) +
       `</Item>`;
     })

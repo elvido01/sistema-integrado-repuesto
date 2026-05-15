@@ -34,9 +34,9 @@ const PROVEEDORES = [
   },
   {
     id: 'dgii_directo',
-    nombre: 'DGII Directo (próximamente)',
-    descripcion: 'Conexión nativa a DGII sin intermediario. Requiere certificado digital .p12 emitido por una CA autorizada (DigiFirma, Cámara TIC, ProCert, Avansi). Pendiente Fase 3 del proyecto.',
-    proximamente: true,
+    nombre: 'DGII Directo',
+    descripcion: 'Conexión nativa a DGII sin intermediario. Requiere certificado digital .p12 emitido por una CA autorizada y usa CerteCF para el set oficial de certificación.',
+    proximamente: false,
     campos: [
       { key: 'rnc_emisor', label: 'RNC del emisor', type: 'text', placeholder: '1-30-12345-6' },
       { key: 'nombre_emisor', label: 'Razón social', type: 'text', placeholder: 'NOMBRE COMERCIAL SRL' },

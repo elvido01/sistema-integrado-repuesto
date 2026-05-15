@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -19,20 +19,52 @@ async function parseXlsx(file) {
 const ESTADOS = {
   pending: { label: 'Pendiente', icon: Clock, color: 'text-gray-500' },
   sending: { label: 'Procesando...', icon: Loader2, color: 'text-blue-600 animate-spin' },
+  checking: { label: 'Consultando DGII...', icon: Loader2, color: 'text-blue-600 animate-spin' },
   aceptado: { label: 'Aceptado', icon: CheckCircle2, color: 'text-emerald-600' },
   aceptado_condicional: { label: 'Aceptado (cond.)', icon: CheckCircle2, color: 'text-amber-600' },
-  enviado: { label: 'Enviado', icon: CheckCircle2, color: 'text-blue-600' },
+  enviado: { label: 'Recibido DGII', icon: Clock, color: 'text-blue-600' },
   descargado: { label: 'Descargado (sube manual)', icon: CheckCircle2, color: 'text-purple-600' },
   rechazado: { label: 'Rechazado', icon: XCircle, color: 'text-red-600' },
   error: { label: 'Error', icon: XCircle, color: 'text-red-600' },
 };
+
+const CERTIFICACION_AMBIENTE = 'CerteCF';
+const FINAL_ESTADOS = new Set(['aceptado', 'aceptado_condicional', 'rechazado']);
+const ACCEPTED_ESTADOS = new Set(['aceptado', 'aceptado_condicional']);
+const LOCAL_READY_ESTADOS = new Set(['descargado']);
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function normalizeDgiiStatus(payload) {
+  const estadoPayload = payload?.estado || payload || {};
+  const rawEstado = String(estadoPayload.estado || estadoPayload.Estado || '').trim().toLowerCase();
+  const mensajes = estadoPayload.mensajes || estadoPayload.Mensajes || [];
+  const messageText = Array.isArray(mensajes)
+    ? mensajes.map(m => `${m.codigo || m.Codigo || ''} ${m.valor || m.Valor || ''}`.trim()).filter(Boolean).join(' | ')
+    : '';
+
+  if (rawEstado.includes('aceptado cond')) return { estado: 'aceptado_condicional', error: null, payload: estadoPayload };
+  if (rawEstado.includes('aceptado')) return { estado: 'aceptado', error: null, payload: estadoPayload };
+  if (rawEstado.includes('rechaz')) return { estado: 'rechazado', error: messageText || rawEstado || 'Rechazado por DGII', payload: estadoPayload };
+  if (rawEstado.includes('proces') || rawEstado.includes('pend') || rawEstado.includes('recib')) return { estado: 'enviado', error: null, payload: estadoPayload };
+  return { estado: rawEstado || 'enviado', error: messageText || null, payload: estadoPayload };
+}
 
 const DgiiCertificacionRunner = () => {
   const { toast } = useToast();
   const fileInputRef = useRef(null);
   const [casos, setCasos] = useState([]); // [{ kind, row, casoPrueba, tipo, encf, estado, trackId, error, response }]
   const [running, setRunning] = useState(false);
+  const [consultingAll, setConsultingAll] = useState(false);
   const [progreso, setProgreso] = useState({ ok: 0, err: 0 });
+
+  const resumen = useMemo(() => {
+    const aceptados = casos.filter(c => ACCEPTED_ESTADOS.has(c.estado)).length;
+    const errores = casos.filter(c => c.estado === 'error' || c.estado === 'rechazado').length;
+    const manualesListos = casos.filter(c => LOCAL_READY_ESTADOS.has(c.estado)).length;
+    const pendientes = Math.max(0, casos.length - aceptados - errores - manualesListos);
+    return { aceptados, errores, manualesListos, pendientes };
+  }, [casos]);
 
   const handleFile = async (e) => {
     const f = e.target.files?.[0];
@@ -113,6 +145,7 @@ const DgiiCertificacionRunner = () => {
       const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
         body: {
           action: 'dgii_certif_sign_only',
+          ambiente: CERTIFICACION_AMBIENTE,
           row: caso.row,
         },
       });
@@ -158,6 +191,7 @@ const DgiiCertificacionRunner = () => {
     const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
       body: {
         action: 'dgii_certif_send_row',
+        ambiente: CERTIFICACION_AMBIENTE,
         row: caso.row,
         kind: caso.kind,
         ecf_row: ecfRow,
@@ -182,12 +216,75 @@ const DgiiCertificacionRunner = () => {
     return data;
   };
 
+  const consultarTrackId = async (trackId) => {
+    const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
+      body: { action: 'dgii_certif_check_status', ambiente: CERTIFICACION_AMBIENTE, track_id: trackId },
+    });
+    if (error) {
+      let msg = error.message;
+      try {
+        if (error.context?.json) {
+          const parsed = await error.context.json();
+          if (parsed?.error) msg = parsed.error;
+        }
+      } catch (_) {}
+      throw new Error(msg);
+    }
+    return data;
+  };
+
+  const esperarEstadoFinal = async (trackId, maxIntentos = 8) => {
+    let last = null;
+    for (let intento = 0; intento < maxIntentos; intento++) {
+      if (intento > 0) await delay(3500);
+      const data = await consultarTrackId(trackId);
+      last = normalizeDgiiStatus(data);
+      if (FINAL_ESTADOS.has(last.estado)) return last;
+    }
+    return last || { estado: 'enviado', error: null, payload: null };
+  };
+
   const correrTodos = async () => {
     if (!casos.length || running) return;
-    if (!confirm(`Enviar ${casos.length} casos a DGII?\n\nSe firmara cada uno con tu .p12 y se enviara al ambiente configurado en tu cert (TesteCF probablemente).\n\nEsto puede tardar 1-3 minutos.`)) return;
+    if (!confirm(`Enviar ${casos.length} casos a DGII?\n\nSe firmara cada uno con tu .p12 y se enviara al ambiente oficial de certificacion (${CERTIFICACION_AMBIENTE}).\n\nEsto puede tardar 1-3 minutos.`)) return;
     setRunning(true);
     let ok = 0, err = 0;
+    const aceptadosEnCorrida = new Set(
+      casos.filter(c => ACCEPTED_ESTADOS.has(c.estado)).map(c => String(c.encf))
+    );
     for (let i = 0; i < casos.length; i++) {
+      const casoActual = casos[i];
+      if (ACCEPTED_ESTADOS.has(casoActual.estado) || LOCAL_READY_ESTADOS.has(casoActual.estado)) {
+        if (ACCEPTED_ESTADOS.has(casoActual.estado)) aceptadosEnCorrida.add(String(casoActual.encf));
+        ok++;
+        setProgreso({ ok, err });
+        continue;
+      }
+      const ncfModificado = String(casoActual?.row?.NCFModificado || '').trim();
+      if ((casoActual.tipo === '33' || casoActual.tipo === '34') && ncfModificado && !aceptadosEnCorrida.has(ncfModificado)) {
+        setCasos((prev) => prev.map((c, idx) => idx === i ? {
+          ...c,
+          estado: 'error',
+          error: `Antes de enviar esta nota, el e-NCF modificado ${ncfModificado} debe estar Aceptado en ${CERTIFICACION_AMBIENTE}.`,
+          step: 'orden_dgii',
+          trackId: null,
+        } : c));
+        err++;
+        setProgreso({ ok, err });
+        continue;
+      }
+      if (casoActual.fase === 4 && !aceptadosEnCorrida.has(String(casoActual.encf))) {
+        setCasos((prev) => prev.map((c, idx) => idx === i ? {
+          ...c,
+          estado: 'error',
+          error: `Antes de descargar/subir manualmente esta factura, su RFCE ${casoActual.encf} debe estar Aceptado en ${CERTIFICACION_AMBIENTE}.`,
+          step: 'orden_dgii',
+          trackId: null,
+        } : c));
+        err++;
+        setProgreso({ ok, err });
+        continue;
+      }
       // Limpiar error/trackId viejos al iniciar (evita confusion visual)
       setCasos((prev) => prev.map((c, idx) => idx === i
         ? { ...c, estado: 'sending', error: null, step: null, trackId: null }
@@ -195,17 +292,39 @@ const DgiiCertificacionRunner = () => {
       try {
         const result = await enviarCaso(casos[i]);
         if (result.ok) {
-          const estado = (result.estado_dgii || 'enviado').toLowerCase();
+          const initialEstado = (result.estado_dgii || 'enviado').toLowerCase();
           setCasos((prev) => prev.map((c, idx) => idx === i ? {
             ...c,
-            estado,
+            estado: initialEstado,
             trackId: result.track_id,
             response: result.response_payload,
             xmlLength: result.xml_firmado_length,
             error: null,
             step: null,
           } : c));
-          ok++;
+
+          let final = normalizeDgiiStatus(result.response_payload || { estado: initialEstado });
+          if (result.track_id && !String(result.track_id).startsWith('DESCARGADO') && !FINAL_ESTADOS.has(final.estado)) {
+            setCasos((prev) => prev.map((c, idx) => idx === i ? { ...c, estado: 'checking' } : c));
+            final = await esperarEstadoFinal(result.track_id);
+          }
+
+          setCasos((prev) => prev.map((c, idx) => idx === i ? {
+            ...c,
+            estado: final.estado,
+            response: final.payload || result.response_payload,
+            error: final.error,
+            step: final.error ? 'dgii_status' : null,
+          } : c));
+
+          if (ACCEPTED_ESTADOS.has(final.estado)) {
+            aceptadosEnCorrida.add(String(casos[i].encf));
+            ok++;
+          } else if (LOCAL_READY_ESTADOS.has(final.estado)) {
+            ok++;
+          } else {
+            err++;
+          }
         } else {
           setCasos((prev) => prev.map((c, idx) => idx === i ? {
             ...c,
@@ -239,7 +358,7 @@ const DgiiCertificacionRunner = () => {
     if (!caso) return;
     // Si no hay trackId (ej. RFCE que DGII acepta sin trackId), mostrar
     // la respuesta local que guardamos al enviar.
-    if (!caso.trackId || caso.trackId.startsWith('DESCARGADO')) {
+    if (!caso.trackId || String(caso.trackId).startsWith('DESCARGADO')) {
       setEstadoModal({
         titulo: `Respuesta local — ${caso.encf}`,
         encf: caso.encf,
@@ -248,34 +367,33 @@ const DgiiCertificacionRunner = () => {
           kind: caso.kind,
           response: caso.response || null,
           xmlLength: caso.xmlLength || null,
-          nota: caso.trackId?.startsWith('DESCARGADO')
+          nota: String(caso.trackId || '').startsWith('DESCARGADO')
             ? 'Este caso es Fase 4 — XML descargado para subida manual. No tiene TrackId.'
             : 'Sin TrackId DGII (DGII aceptó directamente). Mostrando respuesta local.',
         }, null, 2),
       });
       return;
     }
-    const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
-      body: { action: 'dgii_certif_check_status', track_id: caso.trackId },
-    });
-    if (error) {
-      let msg = error.message;
-      try {
-        if (error.context?.json) {
-          const parsed = await error.context.json();
-          if (parsed?.error) msg = parsed.error;
-        }
-      } catch (_) {}
-      setEstadoModal({ titulo: 'Error consultando', encf: caso.encf, contenido: msg });
-      return;
+    try {
+      const data = await consultarTrackId(caso.trackId);
+      const normalized = normalizeDgiiStatus(data);
+      setCasos((prev) => prev.map((c, i) => i === idx ? {
+        ...c,
+        estado: normalized.estado,
+        response: normalized.payload,
+        error: normalized.error,
+        step: normalized.error ? 'dgii_status' : null,
+      } : c));
+      setEstadoModal({
+        titulo: `Estado en DGII — ${caso.encf}`,
+        encf: caso.encf,
+        trackId: caso.trackId,
+        contenido: JSON.stringify(data?.estado || data, null, 2),
+      });
+      console.log(`[Certif] Estado ${caso.encf}:`, data);
+    } catch (err) {
+      setEstadoModal({ titulo: 'Error consultando', encf: caso.encf, contenido: err.message });
     }
-    setEstadoModal({
-      titulo: `Estado en DGII — ${caso.encf}`,
-      encf: caso.encf,
-      trackId: caso.trackId,
-      contenido: JSON.stringify(data?.estado || data, null, 2),
-    });
-    console.log(`[Certif] Estado ${caso.encf}:`, data);
   };
 
   const verErrorCompleto = (caso) => {
@@ -288,16 +406,38 @@ const DgiiCertificacionRunner = () => {
 
   const reintentarUno = async (idx) => {
     if (running) return;
+    const caso = casos[idx];
+    const ncfModificado = String(caso?.row?.NCFModificado || '').trim();
+    if ((caso?.tipo === '33' || caso?.tipo === '34') && ncfModificado && !casos.some(c => c.encf === ncfModificado && ACCEPTED_ESTADOS.has(c.estado))) {
+      toast({
+        title: 'Orden DGII',
+        description: `Primero debe quedar aceptado ${ncfModificado} en ${CERTIFICACION_AMBIENTE}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (caso?.fase === 4 && !casos.some(c => c.encf === caso.encf && ACCEPTED_ESTADOS.has(c.estado))) {
+      toast({
+        title: 'RFCE pendiente',
+        description: `Primero debe quedar aceptado el RFCE ${caso.encf} en ${CERTIFICACION_AMBIENTE}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     setCasos((prev) => prev.map((c, i) => i === idx
       ? { ...c, estado: 'sending', error: null, step: null, trackId: null }
       : c));
     try {
       const result = await enviarCaso(casos[idx]);
       if (result.ok) {
+        let final = normalizeDgiiStatus(result.response_payload || { estado: result.estado_dgii || 'enviado' });
+        if (result.track_id && !String(result.track_id).startsWith('DESCARGADO') && !FINAL_ESTADOS.has(final.estado)) {
+          final = await esperarEstadoFinal(result.track_id);
+        }
         setCasos((prev) => prev.map((c, i) => i === idx ? {
-          ...c, estado: (result.estado_dgii || 'enviado').toLowerCase(),
-          trackId: result.track_id, response: result.response_payload,
-          error: null, step: null,
+          ...c, estado: final.estado,
+          trackId: result.track_id, response: final.payload || result.response_payload,
+          error: final.error, step: final.error ? 'dgii_status' : null,
         } : c));
       } else {
         setCasos((prev) => prev.map((c, i) => i === idx ? {
@@ -311,6 +451,38 @@ const DgiiCertificacionRunner = () => {
     }
   };
 
+  const consultarTodos = async () => {
+    if (running || consultingAll) return;
+    const indices = casos
+      .map((caso, idx) => ({ caso, idx }))
+      .filter(({ caso }) => caso.trackId && !String(caso.trackId).startsWith('DESCARGADO'));
+    if (!indices.length) return;
+
+    setConsultingAll(true);
+    for (const { caso, idx } of indices) {
+      setCasos((prev) => prev.map((c, i) => i === idx ? { ...c, estado: 'checking' } : c));
+      try {
+        const data = await consultarTrackId(caso.trackId);
+        const normalized = normalizeDgiiStatus(data);
+        setCasos((prev) => prev.map((c, i) => i === idx ? {
+          ...c,
+          estado: normalized.estado,
+          response: normalized.payload,
+          error: normalized.error,
+          step: normalized.error ? 'dgii_status' : null,
+        } : c));
+      } catch (err) {
+        setCasos((prev) => prev.map((c, i) => i === idx ? {
+          ...c,
+          estado: 'error',
+          error: err.message,
+          step: 'dgii_status',
+        } : c));
+      }
+    }
+    setConsultingAll(false);
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-[12px] text-blue-900">
@@ -320,7 +492,7 @@ const DgiiCertificacionRunner = () => {
         <p>
           Sube el archivo .xlsx que DGII generó para tu RNC en el portal de certificación.
           MotoFlow generará el XML de cada caso, lo firmará con tu .p12 y lo enviará al
-          ambiente DGII configurado. <b>Importante:</b> el archivo .xlsx debe descargarse una sola
+          ambiente oficial <b>{CERTIFICACION_AMBIENTE}</b>. <b>Importante:</b> el archivo .xlsx debe descargarse una sola
           vez — DGII lo regenera con datos distintos cada descarga.
         </p>
       </div>
@@ -354,11 +526,28 @@ const DgiiCertificacionRunner = () => {
           </Button>
         )}
 
+        {casos.some(c => c.trackId && !String(c.trackId).startsWith('DESCARGADO')) && (
+          <Button
+            variant="outline"
+            onClick={consultarTodos}
+            disabled={running || consultingAll}
+            className="border-blue-300 text-blue-700 hover:bg-blue-100"
+          >
+            {consultingAll ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Clock className="w-4 h-4 mr-2" />}
+            Consultar enviados
+          </Button>
+        )}
+
         {casos.length > 0 && (
           <div className="text-[12px] text-gray-600">
-            <span className="font-bold text-emerald-700">{progreso.ok}</span> aceptados ·{' '}
-            <span className="font-bold text-red-700">{progreso.err}</span> errores ·{' '}
-            <span className="font-bold text-gray-500">{casos.length - progreso.ok - progreso.err}</span> pendientes
+            <span className="font-bold text-emerald-700">{resumen.aceptados}</span> aceptados ·{' '}
+            {resumen.manualesListos > 0 && (
+              <>
+                <span className="font-bold text-purple-700">{resumen.manualesListos}</span> listos manual ·{' '}
+              </>
+            )}
+            <span className="font-bold text-red-700">{resumen.errores}</span> errores ·{' '}
+            <span className="font-bold text-gray-500">{resumen.pendientes}</span> pendientes
           </div>
         )}
       </div>

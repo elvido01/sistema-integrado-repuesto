@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, List, ShoppingCart, FileText, Menu } from 'lucide-react-native';
+import { Home, List, ShoppingCart, FileText, Menu, ListOrdered } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -46,6 +46,20 @@ export default function TabLayout() {
         options={{
           title: 'Cotizaciones',
           tabBarIcon: ({ color }) => <FileText color={color} size={24} />,
+        }}
+      />
+      <Tabs.Screen
+        name="pedidos"
+        options={{
+          title: 'Pedidos',
+          tabBarIcon: ({ color }) => <ListOrdered color={color} size={24} />,
+        }}
+      />
+      <Tabs.Screen
+        name="orden-compra"
+        options={{
+          href: null,
+          title: 'Orden de Compra',
         }}
       />
       <Tabs.Screen

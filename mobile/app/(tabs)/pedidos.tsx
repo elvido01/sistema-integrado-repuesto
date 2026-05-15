@@ -1,25 +1,30 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, ScrollView, Modal, Platform } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { FileText, PlusCircle, Search, Trash2, Plus, Minus, Share2, X, RefreshCw, CreditCard } from 'lucide-react-native';
-import { useCartStore } from '@/src/store/useCartStore';
-import { useAuthStore } from '@/src/store/useAuthStore';
-import { supabase } from '@/src/supabase/client';
+import { CreditCard, FileText, ListOrdered, Minus, Plus, PlusCircle, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import { useCartStore } from '@/src/store/useCartStore';
+import { supabase } from '@/src/supabase/client';
 
 const CLIENTE_GENERICO_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
 
-type CotizacionRow = {
+type PedidoRow = {
   id: string;
   numero: number | string | null;
-  fecha_cotizacion: string | null;
+  fecha: string | null;
   cliente_id?: string | null;
   cliente_nombre: string | null;
   cliente_telefono?: string | null;
   manual_cliente_nombre?: string | null;
-  total_cotizacion: number | string | null;
+  placa_vehiculo?: string | null;
+  monto_total: number | string | null;
   estado: string | null;
+};
+
+type Vendedor = {
+  id: string;
+  nombre: string;
 };
 
 const money = (value: number | string | null | undefined) =>
@@ -35,9 +40,8 @@ const dateOnly = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-export default function CotizacionesScreen() {
+export default function PedidosScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
   const {
     items,
     clienteId,
@@ -51,17 +55,21 @@ export default function CotizacionesScreen() {
     removeItem,
     updateQuantity,
     updateDiscount,
-    setCotizacionOrigen,
+    setPedidoOrigen,
     clearCart,
   } = useCartStore();
 
   const [loading, setLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
   const [sendingToVentaId, setSendingToVentaId] = useState<string | null>(null);
-  const [cotizaciones, setCotizaciones] = useState<CotizacionRow[]>([]);
-  const [cotizacionModal, setCotizacionModal] = useState<any | null>(null);
+  const [pedidos, setPedidos] = useState<PedidoRow[]>([]);
+  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
+  const [vendedorId, setVendedorId] = useState<string>('');
+  const [placaVehiculo, setPlacaVehiculo] = useState('');
+  const [notas, setNotas] = useState('');
+  const [pedidoModal, setPedidoModal] = useState<any | null>(null);
   const [compartiendo, setCompartiendo] = useState(false);
-  const cotizacionShotRef = useRef<ViewShot>(null);
+  const pedidoShotRef = useRef<ViewShot>(null);
 
   const subtotalBruto = getSubtotal();
   const descuentoTotal = getTotalDiscount();
@@ -81,40 +89,55 @@ export default function CotizacionesScreen() {
         acc.subtotal += base;
         acc.descuento_total += descuento;
         acc.itbis_total += itbis;
-        acc.total_cotizacion += importe;
+        acc.monto_total += importe;
         return acc;
       },
-      { subtotal: 0, descuento_total: 0, itbis_total: 0, total_cotizacion: 0 }
+      { subtotal: 0, descuento_total: 0, itbis_total: 0, monto_total: 0 }
     );
   }, [items]);
 
-  const fetchCotizaciones = useCallback(async () => {
+  const fetchPedidos = useCallback(async () => {
     setRecentLoading(true);
     try {
       const { data, error } = await supabase
-        .from('cotizaciones_list_view')
+        .from('pedidos_list_view')
         .select('*')
         .eq('estado', 'Pendiente')
-        .order('created_at', { ascending: false })
+        .order('fecha', { ascending: false })
         .limit(10);
 
       if (error) throw error;
-      setCotizaciones((data || []) as CotizacionRow[]);
+      setPedidos((data || []) as PedidoRow[]);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'No se pudieron cargar las cotizaciones.');
+      Alert.alert('Error', error.message || 'No se pudieron cargar los pedidos.');
     } finally {
       setRecentLoading(false);
     }
   }, []);
 
+  const fetchVendedores = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('vendedores')
+      .select('id, nombre')
+      .eq('activo', true)
+      .order('nombre', { ascending: true });
+
+    if (!error) {
+      const rows = (data || []) as Vendedor[];
+      setVendedores(rows);
+      setVendedorId(prev => prev || rows[0]?.id || '');
+    }
+  }, []);
+
   useEffect(() => {
-    fetchCotizaciones();
-  }, [fetchCotizaciones]);
+    fetchPedidos();
+    fetchVendedores();
+  }, [fetchPedidos, fetchVendedores]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchCotizaciones();
-    }, [fetchCotizaciones])
+      fetchPedidos();
+    }, [fetchPedidos])
   );
 
   const updateClienteNombre = (nombre: string) => {
@@ -125,8 +148,8 @@ export default function CotizacionesScreen() {
     setCliente(clienteId, clienteNombre, telefono.replace(/[^0-9+]/g, ''));
   };
 
-  const buildCotizacionTexto = (cotizacion: any) => {
-    if (!cotizacion) return '';
+  const buildPedidoTexto = (pedido: any) => {
+    if (!pedido) return '';
     const W = 36;
     const fmt = (n: number) => Number(n || 0).toFixed(2);
     const center = (s: string) => {
@@ -148,21 +171,21 @@ export default function CotizacionesScreen() {
       'PRECIO'.padStart(PRECIO_W) +
       'ITBIS'.padStart(ITBIS_W) +
       'MONTO'.padStart(MONTO_W);
-    const fecha = cotizacion.fecha instanceof Date ? cotizacion.fecha : new Date(cotizacion.fecha);
+    const fecha = pedido.fecha instanceof Date ? pedido.fecha : new Date(pedido.fecha);
     const fechaStr = fecha.toLocaleDateString('es-DO');
     const horaStr = fecha.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
-    const numero = cotizacion.numero ? `CT-${String(cotizacion.numero).padStart(7, '0').slice(-7)}` : 'CT-N/A';
+    const numero = pedido.numero ? `PD-${String(pedido.numero).padStart(7, '0').slice(-7)}` : 'PD-N/A';
 
     let t = '';
     t += center('REPUESTOS MORLA') + '\n';
     t += center('Av. Duarte , esq. Baldemiro Rijo,') + '\n';
     t += center('Higuey, Rep. Dom.') + '\n';
     t += center('809-390-5965') + '\n\n';
-    t += center('COTIZACION') + '\n';
+    t += center('PEDIDO / PRE-FACTURA') + '\n';
     t += labelVal(`Numero  : ${numero}`, horaStr) + '\n';
     t += `Fecha   : ${fechaStr}\n`;
-    t += `Vence   : ${cotizacion.fechaVencimiento || '7 dias'}\n`;
-    t += `Cliente : ${cotizacion.cliente || 'CLIENTE GENERICO'}\n`;
+    t += `Cliente : ${pedido.cliente || 'CLIENTE GENERICO'}\n`;
+    if (pedido.placa) t += `Vehiculo: ${pedido.placa}\n`;
     t += `Tel.    : ${clienteTelefono || 'N/A'}\n\n`;
     t += sep + '\n';
     t += 'Descripcion de la Mercancia\n';
@@ -170,7 +193,7 @@ export default function CotizacionesScreen() {
     t += columnsHeader + '\n';
     t += sep + '\n\n';
 
-    cotizacion.items.forEach((it: any) => {
+    pedido.items.forEach((it: any) => {
       const importe = Number(it.importe) || 0;
       t += `${it.descripcion}\n`;
       const cantStr = `${it.cantidad} UND`.padEnd(CANT_W);
@@ -181,25 +204,25 @@ export default function CotizacionesScreen() {
     });
 
     t += '\n';
-    t += labelVal('              Sub-Total :', fmt(cotizacion.subtotalBruto)) + '\n';
-    t += labelVal('       Descuento en Items:', fmt(cotizacion.descuentoTotal)) + '\n';
-    t += labelVal('Valores en         ITBIS :', fmt(cotizacion.itbisTotal)) + '\n';
+    t += labelVal('              Sub-Total :', fmt(pedido.subtotalBruto)) + '\n';
+    t += labelVal('       Descuento en Items:', fmt(pedido.descuentoTotal)) + '\n';
+    t += labelVal('Valores en         ITBIS :', fmt(pedido.itbisTotal)) + '\n';
     t += 'DOP    ' + '='.repeat(W - 7) + '\n';
-    t += labelVal('                  TOTAL :', fmt(cotizacion.total)) + '\n';
+    t += labelVal('                  TOTAL :', fmt(pedido.total)) + '\n';
     t += sep2 + '\n\n';
-    t += center('*** COTIZACION NO AFECTA INVENTARIO ***') + '\n';
+    t += center('*** PEDIDO NO AFECTA INVENTARIO ***') + '\n';
     return t;
   };
 
-  const compartirCotizacion = async () => {
-    if (!cotizacionModal || compartiendo) return;
-    if (!cotizacionShotRef.current) {
-      Alert.alert('Error', 'La vista de la cotizacion aun no esta lista para compartir.');
+  const compartirPedido = async () => {
+    if (!pedidoModal || compartiendo) return;
+    if (!pedidoShotRef.current) {
+      Alert.alert('Error', 'La vista del pedido aun no esta lista para compartir.');
       return;
     }
     setCompartiendo(true);
     try {
-      const uri = await captureRef(cotizacionShotRef.current, {
+      const uri = await captureRef(pedidoShotRef.current, {
         format: 'jpg',
         quality: 0.95,
         result: 'tmpfile',
@@ -211,43 +234,45 @@ export default function CotizacionesScreen() {
       }
       await Sharing.shareAsync(uri, {
         mimeType: 'image/jpeg',
-        dialogTitle: `Cotizacion ${cotizacionModal?.numero || ''}`,
+        dialogTitle: `Pedido ${pedidoModal?.numero || ''}`,
         UTI: 'public.jpeg',
       });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'No se pudo compartir la cotizacion.');
+      Alert.alert('Error', error.message || 'No se pudo compartir el pedido.');
     } finally {
       setCompartiendo(false);
     }
   };
 
-  const cerrarCotizacionYLimpiar = () => {
+  const cerrarPedidoYLimpiar = () => {
     clearCart();
-    setCotizacionModal(null);
+    setPlacaVehiculo('');
+    setNotas('');
+    setPedidoModal(null);
   };
 
-  const enviarCotizacionAVenta = async (cotizacion: any) => {
-    if (!cotizacion?.id || sendingToVentaId) return;
-    setSendingToVentaId(cotizacion.id);
+  const enviarPedidoAVenta = async (pedido: any) => {
+    if (!pedido?.id || sendingToVentaId) return;
+    setSendingToVentaId(pedido.id);
     try {
       const { data: detalles, error } = await supabase
-        .from('cotizaciones_detalle')
+        .from('pedidos_detalle')
         .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct)')
-        .eq('cotizacion_id', cotizacion.id);
+        .eq('pedido_id', pedido.id);
 
       if (error) throw error;
       if (!detalles?.length) {
-        Alert.alert('Sin detalle', 'Esta cotizacion no tiene articulos para enviar a venta.');
+        Alert.alert('Sin detalle', 'Este pedido no tiene articulos para enviar a venta.');
         return;
       }
 
       clearCart();
       setCliente(
-        cotizacion.cliente_id || null,
-        cotizacion.manual_cliente_nombre || cotizacion.cliente_nombre || 'Cliente Generico',
-        cotizacion.cliente_telefono || ''
+        pedido.cliente_id || null,
+        pedido.manual_cliente_nombre || pedido.cliente_nombre || 'Cliente Generico',
+        pedido.cliente_telefono || ''
       );
-      setCotizacionOrigen(cotizacion.id, cotizacion.numero);
+      setPedidoOrigen(pedido.id, pedido.numero);
 
       detalles.forEach((detalle: any) => {
         const producto = detalle.productos || {};
@@ -257,36 +282,36 @@ export default function CotizacionesScreen() {
           descripcion: detalle.descripcion || producto.descripcion || '',
           referencia: producto.referencia || null,
           existencia: 0,
-          precio_venta_1: Number(detalle.precio_unitario || 0),
-          precio_venta_2: Number(detalle.precio_unitario || 0),
+          precio_venta_1: Number(detalle.precio || 0),
+          precio_venta_2: Number(detalle.precio || 0),
           itbis_pct: Number(producto.itbis_pct ?? 0.18),
           url_imagen: producto.imagen_url || undefined,
         };
 
         addItem(productoParaVenta, Number(detalle.cantidad || 1), 1);
-        if (Number(detalle.descuento_valor || 0) > 0) {
-          updateDiscount(detalle.producto_id, Number(detalle.descuento_valor || 0));
+        if (Number(detalle.descuento || 0) > 0) {
+          updateDiscount(detalle.producto_id, Number(detalle.descuento || 0));
         }
       });
 
       await supabase
-        .from('cotizaciones')
+        .from('pedidos')
         .update({ estado: 'Facturando' })
-        .eq('id', cotizacion.id);
+        .eq('id', pedido.id);
 
-      setCotizacionModal(null);
-      await fetchCotizaciones();
+      setPedidoModal(null);
+      await fetchPedidos();
       router.push('/(tabs)/pos');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'No se pudo enviar la cotizacion a venta.');
+      Alert.alert('Error', error.message || 'No se pudo enviar el pedido a venta.');
     } finally {
       setSendingToVentaId(null);
     }
   };
 
-  const handleCrearCotizacion = async () => {
+  const handleCrearPedido = async () => {
     if (items.length === 0) {
-      Alert.alert('Carrito vacio', 'Agregue productos para crear una cotizacion.');
+      Alert.alert('Carrito vacio', 'Agregue productos para crear un pedido.');
       return;
     }
 
@@ -296,89 +321,92 @@ export default function CotizacionesScreen() {
       return;
     }
 
+    if (!vendedorId) {
+      Alert.alert('Vendedor requerido', 'Seleccione o configure un vendedor activo.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const fechaCotizacion = new Date();
-      const fechaVencimiento = new Date();
-      fechaVencimiento.setDate(fechaCotizacion.getDate() + 7);
-
-      const { data: numeroData, error: numeroError } = await supabase.rpc('get_next_cotizacion_numero');
-      if (numeroError) throw numeroError;
-
+      const fechaPedido = new Date();
       const isGeneric = !clienteId || clienteId === CLIENTE_GENERICO_ID || clienteNombre.toUpperCase().includes('GENERICO');
-      const cotizacionData = {
-        numero: numeroData,
-        usuario_id: user?.id,
-        fecha_cotizacion: dateOnly(fechaCotizacion),
-        fecha_vencimiento: dateOnly(fechaVencimiento),
+
+      const pedidoData = {
         cliente_id: clienteId || CLIENTE_GENERICO_ID,
-        subtotal: totals.subtotal,
-        descuento_total: totals.descuento_total,
-        itbis_total: totals.itbis_total,
-        total_cotizacion: totals.total_cotizacion,
-        manual_cliente_nombre: isGeneric ? nombreManual : null,
-        estado: 'Pendiente',
+        vendedor_id: vendedorId,
+        fecha: dateOnly(fechaPedido),
+        notas,
+        manual_cliente_nombre: isGeneric ? nombreManual : '',
+        placa_vehiculo: placaVehiculo,
+        subtotal: Math.round(totals.subtotal * 100) / 100,
+        descuento_total: Math.round(totals.descuento_total * 100) / 100,
+        itbis_total: Math.round(totals.itbis_total * 100) / 100,
+        monto_total: Math.round(totals.monto_total * 100) / 100,
       };
-
-      const { data: cotizacion, error: cotizacionError } = await supabase
-        .from('cotizaciones')
-        .insert(cotizacionData)
-        .select()
-        .single();
-
-      if (cotizacionError) throw cotizacionError;
 
       const detalles = items.map((item) => {
         const bruto = Number(item.precioSeleccionado || 0) * Number(item.cantidad || 0);
         const descuento = Math.min(Number(item.descuento || 0), bruto);
         const importe = Math.max(0, bruto - descuento);
-        const descuentoPct = bruto > 0 ? (descuento / bruto) * 100 : 0;
         const itbisPct = Number(item.itbis_pct ?? 0.18);
         const base = importe / (1 + itbisPct);
         const itbis = importe - base;
 
         return {
-          cotizacion_id: cotizacion.id,
           producto_id: item.id,
           codigo: item.codigo,
           descripcion: item.descripcion,
           cantidad: item.cantidad,
           unidad: 'UND',
-          precio_unitario: item.precioSeleccionado,
-          descuento_pct: descuentoPct,
-          descuento_valor: descuento,
-          itbis_valor: itbis,
-          importe,
+          precio: item.precioSeleccionado,
+          descuento,
+          itbis_pct: itbisPct,
+          itbis: Math.round(itbis * 100) / 100,
+          importe: Math.round(importe * 100) / 100,
         };
       });
 
-      const { error: detallesError } = await supabase.from('cotizaciones_detalle').insert(detalles);
-      if (detallesError) throw detallesError;
+      const { data: pedidoId, error } = await supabase.rpc('crear_o_actualizar_pedido', {
+        p_pedido_data: pedidoData,
+        p_detalles_data: detalles,
+      });
+
+      if (error) throw error;
+
+      const { data: pedidoRow } = await supabase
+        .from('pedidos')
+        .select('id, numero')
+        .eq('id', pedidoId)
+        .maybeSingle();
 
       const snapshot = {
-        id: cotizacion.id,
-        numero: cotizacion.numero || numeroData,
-        fecha: fechaCotizacion,
-        fechaVencimiento: dateOnly(fechaVencimiento),
+        id: pedidoRow?.id || pedidoId,
+        numero: pedidoRow?.numero || pedidoId,
+        fecha: fechaPedido,
         cliente: nombreManual,
+        placa: placaVehiculo,
         subtotalBruto,
         descuentoTotal,
         itbisTotal: totals.itbis_total,
         total,
-        items: items.map((item) => ({
-          codigo: item.codigo,
-          descripcion: item.descripcion,
-          cantidad: item.cantidad,
-          precio: item.precioSeleccionado,
-          itbis: Number(item.precioSeleccionado || 0) * Number(item.cantidad || 0) - Number(item.descuento || 0) - ((Number(item.precioSeleccionado || 0) * Number(item.cantidad || 0) - Number(item.descuento || 0)) / (1 + Number(item.itbis_pct ?? 0.18))),
-          importe: Number(item.precioSeleccionado || 0) * Number(item.cantidad || 0) - Number(item.descuento || 0),
-        })),
+        items: items.map((item) => {
+          const importe = Number(item.precioSeleccionado || 0) * Number(item.cantidad || 0) - Number(item.descuento || 0);
+          const itbisPct = Number(item.itbis_pct ?? 0.18);
+          return {
+            codigo: item.codigo,
+            descripcion: item.descripcion,
+            cantidad: item.cantidad,
+            precio: item.precioSeleccionado,
+            itbis: importe - (importe / (1 + itbisPct)),
+            importe,
+          };
+        }),
       };
 
-      setCotizacionModal(snapshot);
-      await fetchCotizaciones();
+      setPedidoModal(snapshot);
+      await fetchPedidos();
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Hubo un error al generar la cotizacion.');
+      Alert.alert('Error', error.message || 'Hubo un error al generar el pedido.');
     } finally {
       setLoading(false);
     }
@@ -389,12 +417,12 @@ export default function CotizacionesScreen() {
       <View className="bg-white px-4 py-3 border-b border-gray-100">
         <View className="flex-row items-center justify-between">
           <View className="flex-1">
-            <Text className="text-gray-500 text-xs font-medium uppercase">Modulo de cotizacion</Text>
-            <Text className="text-gray-900 text-xl font-bold">Cotizacion movil</Text>
+            <Text className="text-gray-500 text-xs font-medium uppercase">Modulo de pedidos</Text>
+            <Text className="text-gray-900 text-xl font-bold">Pedido movil</Text>
           </View>
           <TouchableOpacity
-            className="bg-orange-500 rounded-full px-3 py-2 flex-row items-center"
-            onPress={() => router.push('/(tabs)/catalogo?modo=cotizacion')}
+            className="bg-emerald-600 rounded-full px-3 py-2 flex-row items-center"
+            onPress={() => router.push('/(tabs)/catalogo?modo=pedido')}
           >
             <PlusCircle color="white" size={18} />
             <Text className="text-white font-bold ml-1.5 text-[13px]">Agregar</Text>
@@ -418,24 +446,37 @@ export default function CotizacionesScreen() {
             onChangeText={updateClienteTelefono}
           />
         </View>
+
+        <View className="mt-2 flex-row gap-2">
+          <TextInput
+            className="flex-1 bg-gray-100 rounded-xl px-3 py-2 text-gray-900"
+            placeholder="Placa / vehiculo"
+            placeholderTextColor="#9ca3af"
+            value={placaVehiculo}
+            onChangeText={setPlacaVehiculo}
+          />
+          <Text className="w-[120px] bg-gray-100 rounded-xl px-3 py-2 text-gray-500" numberOfLines={1}>
+            {vendedores.find(v => v.id === vendedorId)?.nombre || 'Vendedor'}
+          </Text>
+        </View>
       </View>
 
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 220 }}
+        contentContainerStyle={{ paddingBottom: 240 }}
         ListEmptyComponent={
           <View className="items-center justify-center px-8 py-16">
-            <View className="bg-orange-100 p-4 rounded-full mb-4">
-              <FileText color="#f97316" size={48} />
+            <View className="bg-emerald-100 p-4 rounded-full mb-4">
+              <ListOrdered color="#059669" size={48} />
             </View>
             <Text className="text-gray-900 text-xl font-bold mb-2">Sin articulos</Text>
             <Text className="text-gray-500 text-center mb-6">
-              Agregue productos igual que en el punto de venta. La cotizacion no afecta inventario.
+              Agregue productos igual que en cotizacion. El pedido no afecta inventario hasta facturarse.
             </Text>
             <TouchableOpacity
               className="bg-brand px-6 py-3 rounded-full flex-row items-center"
-              onPress={() => router.push('/(tabs)/catalogo?modo=cotizacion')}
+              onPress={() => router.push('/(tabs)/catalogo?modo=pedido')}
             >
               <Search color="white" size={20} />
               <Text className="text-white font-bold ml-2">Buscar Productos</Text>
@@ -450,7 +491,7 @@ export default function CotizacionesScreen() {
                 <View className="flex-1 pr-4">
                   <Text className="text-gray-900 font-bold leading-tight">{item.descripcion}</Text>
                   <Text className="text-gray-500 text-sm mt-1">{item.codigo}</Text>
-                  <Text className="text-orange-600 font-medium mt-1">{money(item.precioSeleccionado)}</Text>
+                  <Text className="text-emerald-600 font-medium mt-1">{money(item.precioSeleccionado)}</Text>
                 </View>
                 <View className="items-end">
                   <Text className="text-gray-900 font-bold text-lg mb-2">{money(importe)}</Text>
@@ -478,33 +519,33 @@ export default function CotizacionesScreen() {
           items.length === 0 ? (
             <View className="px-4 pt-4">
               <View className="flex-row justify-between items-center mb-3">
-                <Text className="text-gray-900 font-bold text-base">Registros recientes</Text>
-                <TouchableOpacity className="p-2" onPress={fetchCotizaciones} disabled={recentLoading}>
+                <Text className="text-gray-900 font-bold text-base">Pedidos pendientes</Text>
+                <TouchableOpacity className="p-2" onPress={fetchPedidos} disabled={recentLoading}>
                   <RefreshCw color="#6b7280" size={18} />
                 </TouchableOpacity>
               </View>
-              {cotizaciones.map((cot) => (
-                <View key={cot.id} className="bg-white border border-gray-100 rounded-xl p-3 mb-2">
+              {pedidos.map((pedido) => (
+                <View key={pedido.id} className="bg-white border border-gray-100 rounded-xl p-3 mb-2">
                   <View className="flex-row justify-between">
-                    <Text className="text-gray-900 font-bold">#{cot.numero || 'N/A'}</Text>
-                    <Text className="text-orange-600 font-bold">{money(cot.total_cotizacion)}</Text>
+                    <Text className="text-gray-900 font-bold">#{pedido.numero || 'N/A'}</Text>
+                    <Text className="text-emerald-600 font-bold">{money(pedido.monto_total)}</Text>
                   </View>
                   <Text className="text-gray-600 mt-1" numberOfLines={1}>
-                    {cot.manual_cliente_nombre || cot.cliente_nombre || 'Cliente Generico'}
+                    {pedido.manual_cliente_nombre || pedido.cliente_nombre || 'Cliente Generico'}
                   </Text>
                   <View className="flex-row justify-between mt-1">
-                    <Text className="text-gray-400 text-xs">{cot.fecha_cotizacion || 'Sin fecha'}</Text>
-                    <Text className="text-gray-400 text-xs">{cot.estado || 'Pendiente'}</Text>
+                    <Text className="text-gray-400 text-xs">{pedido.fecha || 'Sin fecha'}</Text>
+                    <Text className="text-gray-400 text-xs">{pedido.estado || 'Pendiente'}</Text>
                   </View>
-                  {cot.estado === 'Pendiente' && (
+                  {pedido.estado === 'Pendiente' && (
                     <TouchableOpacity
-                      className={`mt-3 bg-brand rounded-lg py-2 flex-row items-center justify-center ${sendingToVentaId === cot.id ? 'opacity-60' : ''}`}
-                      disabled={sendingToVentaId === cot.id}
-                      onPress={() => enviarCotizacionAVenta(cot)}
+                      className={`mt-3 bg-brand rounded-lg py-2 flex-row items-center justify-center ${sendingToVentaId === pedido.id ? 'opacity-60' : ''}`}
+                      disabled={sendingToVentaId === pedido.id}
+                      onPress={() => enviarPedidoAVenta(pedido)}
                     >
                       <CreditCard color="white" size={16} />
                       <Text className="text-white font-bold ml-2 text-[13px]">
-                        {sendingToVentaId === cot.id ? 'Enviando...' : 'Enviar a venta'}
+                        {sendingToVentaId === pedido.id ? 'Enviando...' : 'Enviar a venta'}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -519,10 +560,10 @@ export default function CotizacionesScreen() {
         <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-200 p-4 pb-6">
           <TouchableOpacity
             className="bg-gray-100 py-3 rounded-xl flex-row justify-center items-center mb-3"
-            onPress={() => router.push('/(tabs)/catalogo?modo=cotizacion')}
+            onPress={() => router.push('/(tabs)/catalogo?modo=pedido')}
           >
-            <Search color="#f97316" size={20} />
-            <Text className="text-orange-600 font-bold ml-2">Agregar mas articulos</Text>
+            <Search color="#059669" size={20} />
+            <Text className="text-emerald-600 font-bold ml-2">Agregar mas articulos</Text>
           </TouchableOpacity>
 
           <View className="space-y-1 mb-3">
@@ -542,7 +583,7 @@ export default function CotizacionesScreen() {
             ) : null}
             <View className="flex-row justify-between pt-1 border-t border-gray-100">
               <Text className="text-gray-900 text-xl font-bold">Total</Text>
-              <Text className="text-orange-600 text-xl font-bold">{money(total)}</Text>
+              <Text className="text-emerald-600 text-xl font-bold">{money(total)}</Text>
             </View>
           </View>
 
@@ -551,33 +592,33 @@ export default function CotizacionesScreen() {
               <Trash2 color="#ef4444" size={24} />
             </TouchableOpacity>
             <TouchableOpacity
-              className={`bg-orange-500 p-4 rounded-xl flex-[4] flex-row justify-center items-center ${loading ? 'opacity-50' : ''}`}
+              className={`bg-emerald-600 p-4 rounded-xl flex-[4] flex-row justify-center items-center ${loading ? 'opacity-50' : ''}`}
               disabled={loading}
-              onPress={handleCrearCotizacion}
+              onPress={handleCrearPedido}
             >
               <FileText color="white" size={24} />
-              <Text className="text-white font-bold text-lg ml-2">{loading ? 'Guardando...' : 'Guardar Cotizacion'}</Text>
+              <Text className="text-white font-bold text-lg ml-2">{loading ? 'Guardando...' : 'Guardar Pedido'}</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      <Modal visible={cotizacionModal !== null} transparent animationType="slide" onRequestClose={cerrarCotizacionYLimpiar}>
+      <Modal visible={pedidoModal !== null} transparent animationType="slide" onRequestClose={cerrarPedidoYLimpiar}>
         <View className="flex-1 bg-black/60 justify-center items-center px-3">
           <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '90%' }}>
             <View className="px-4 py-3 border-b border-gray-200 flex-row justify-between items-center bg-gray-50">
               <View className="flex-1">
-                <Text className="text-[11px] text-gray-500">Cotizacion #{cotizacionModal?.numero}</Text>
-                <Text className="text-base font-bold text-gray-900">Cotizacion guardada</Text>
+                <Text className="text-[11px] text-gray-500">Pedido #{pedidoModal?.numero}</Text>
+                <Text className="text-base font-bold text-gray-900">Pedido guardado</Text>
               </View>
-              <TouchableOpacity onPress={cerrarCotizacionYLimpiar} className="p-1">
+              <TouchableOpacity onPress={cerrarPedidoYLimpiar} className="p-1">
                 <X color="#6b7280" size={22} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ padding: 0 }}>
               <ViewShot
-                ref={cotizacionShotRef}
+                ref={pedidoShotRef}
                 options={{ format: 'jpg', quality: 0.95 }}
                 style={{ backgroundColor: 'white' }}
               >
@@ -590,31 +631,31 @@ export default function CotizacionesScreen() {
                       lineHeight: 16,
                     }}
                   >
-                    {buildCotizacionTexto(cotizacionModal)}
+                    {buildPedidoTexto(pedidoModal)}
                   </Text>
                 </View>
               </ViewShot>
             </ScrollView>
 
             <View className="flex-row border-t border-gray-200">
-              <TouchableOpacity className="flex-1 py-4 items-center justify-center active:bg-gray-100" onPress={cerrarCotizacionYLimpiar}>
+              <TouchableOpacity className="flex-1 py-4 items-center justify-center active:bg-gray-100" onPress={cerrarPedidoYLimpiar}>
                 <Text className="text-gray-700 font-medium">Cerrar</Text>
               </TouchableOpacity>
               <View className="w-px bg-gray-200" />
               <TouchableOpacity
-                className={`flex-1 py-4 items-center justify-center flex-row bg-brand active:opacity-80 ${sendingToVentaId === cotizacionModal?.id ? 'opacity-60' : ''}`}
-                disabled={sendingToVentaId === cotizacionModal?.id}
-                onPress={() => enviarCotizacionAVenta(cotizacionModal)}
+                className={`flex-1 py-4 items-center justify-center flex-row bg-brand active:opacity-80 ${sendingToVentaId === pedidoModal?.id ? 'opacity-60' : ''}`}
+                disabled={sendingToVentaId === pedidoModal?.id}
+                onPress={() => enviarPedidoAVenta(pedidoModal)}
               >
                 <CreditCard color="white" size={18} />
                 <Text className="text-white font-bold ml-2">
-                  {sendingToVentaId === cotizacionModal?.id ? 'Enviando...' : 'Venta'}
+                  {sendingToVentaId === pedidoModal?.id ? 'Enviando...' : 'Venta'}
                 </Text>
               </TouchableOpacity>
               <View className="w-px bg-gray-200" />
               <TouchableOpacity
-                className={`flex-1 py-4 items-center justify-center flex-row bg-orange-500 active:opacity-80 ${compartiendo ? 'opacity-60' : ''}`}
-                onPress={compartirCotizacion}
+                className={`flex-1 py-4 items-center justify-center flex-row bg-emerald-600 active:opacity-80 ${compartiendo ? 'opacity-60' : ''}`}
+                onPress={compartirPedido}
                 disabled={compartiendo}
               >
                 <Share2 color="white" size={18} />

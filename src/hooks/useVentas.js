@@ -12,6 +12,7 @@ const CLIENTE_GENERICO = {
   telefono: 'N/A',
   autorizar_credito: false,
   dias_credito: 0,
+  tipo_ncf: '02',
 };
 
 export const useVentas = () => {
@@ -566,18 +567,23 @@ export const useVentas = () => {
         usuario_id: safeUsuarioId
       };
 
-      // === Asignar NCF automático si el cliente tiene crédito fiscal (tipo_ncf = '01') ===
+      // === Asignar NCF automático según tipo_ncf del cliente (01, 02, 31, 32...) ===
+      // Si no hay secuencia activa para ese tipo, se permite emitir la factura
+      // sin NCF + warning (útil para tenants nuevos sin autorización DGII aún).
       let ncfData = null;
-      if (!editingFacturaId && safeCliente.tipo_ncf === '01') {
-        const { data: ncfResult, error: ncfError } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: '01' });
+      const tipoNcfCliente = safeCliente.tipo_ncf || '02';
+      if (!editingFacturaId && tipoNcfCliente) {
+        const { data: ncfResult, error: ncfError } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: tipoNcfCliente });
         if (ncfError) throw ncfError;
         if (ncfResult && ncfResult.success) {
           facturaData.ncf = ncfResult.ncf;
           ncfData = ncfResult;
         } else if (ncfResult && !ncfResult.success) {
-          toast({ title: 'Error NCF', description: ncfResult.error, variant: 'destructive' });
-          setIsSaving(false);
-          return;
+          toast({
+            title: 'Sin NCF disponible',
+            description: `${ncfResult.error}. La factura se emite sin NCF.`,
+            variant: 'destructive',
+          });
         }
       }
 

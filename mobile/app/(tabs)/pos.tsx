@@ -11,7 +11,20 @@ import * as Sharing from 'expo-sharing';
 export default function POSScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { items, getSubtotal, getTotal, removeItem, updateQuantity, clearCart, clienteNombre, clienteTelefono } = useCartStore();
+  const {
+    items,
+    getSubtotal,
+    getTotal,
+    removeItem,
+    updateQuantity,
+    clearCart,
+    clienteNombre,
+    clienteTelefono,
+    cotizacionOrigenId,
+    cotizacionOrigenNumero,
+    pedidoOrigenId,
+    pedidoOrigenNumero,
+  } = useCartStore();
   const [loading, setLoading] = useState(false);
   const [montoPagado, setMontoPagado] = useState<string>('');
   const [facturaModal, setFacturaModal] = useState<any | null>(null);
@@ -36,6 +49,24 @@ export default function POSScreen() {
 
     setLoading(true);
     try {
+      // 0. Intentar asignar NCF tipo 02 (Consumidor Final) — el POS móvil
+      //    siempre vende a consumidor genérico. Si no hay secuencia activa,
+      //    la venta procede sin NCF + alerta (igual que en la web).
+      let ncfAsignado: string | null = null;
+      try {
+        const { data: ncfResult } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: '02' });
+        if (ncfResult?.success) {
+          ncfAsignado = ncfResult.ncf;
+        } else if (ncfResult && !ncfResult.success) {
+          Alert.alert(
+            'Sin NCF disponible',
+            `${ncfResult.error}. La factura se emite sin NCF.`,
+          );
+        }
+      } catch (ncfErr: any) {
+        console.warn('[POS] No se pudo obtener NCF:', ncfErr?.message);
+      }
+
       // 1. Guardar Venta en Supabase
       const { data: venta, error: ventaError } = await supabase
         .from('facturas')
@@ -48,6 +79,7 @@ export default function POSScreen() {
           total: total,
           forma_pago: 'EFECTIVO',
           estado: 'PAGADA',
+          ncf: ncfAsignado,
         })
         .select()
         .single();
@@ -69,10 +101,28 @@ export default function POSScreen() {
       const { error: detallesError } = await supabase.from('facturas_detalle').insert(detalles);
       if (detallesError) throw detallesError;
 
+      if (cotizacionOrigenId) {
+        const { error: cotError } = await supabase
+          .from('cotizaciones')
+          .update({ estado: 'Facturada' })
+          .eq('id', cotizacionOrigenId);
+        if (cotError) throw cotError;
+      }
+
+      if (pedidoOrigenId) {
+        const { error: pedidoError } = await supabase
+          .from('pedidos')
+          .update({ estado: 'Facturado' })
+          .eq('id', pedidoOrigenId);
+        if (pedidoError) throw pedidoError;
+      }
+
       // 3. Preparar snapshot de la factura para el modal
       const numeroFactura = venta.numero || String(venta.id).slice(0, 8).toUpperCase();
       setFacturaModal({
         numero: numeroFactura,
+        cotizacionNumero: cotizacionOrigenNumero,
+        pedidoNumero: pedidoOrigenNumero,
         fecha: new Date(),
         cliente: clienteNombre,
         items: items.map((it) => ({
@@ -118,6 +168,15 @@ export default function POSScreen() {
     };
     const sep = '-'.repeat(W);
     const sep2 = '='.repeat(W);
+    const CANT_W = 8;
+    const PRECIO_W = 7;
+    const ITBIS_W = 7;
+    const MONTO_W = W - CANT_W - PRECIO_W - ITBIS_W;
+    const columnsHeader =
+      'CANT'.padEnd(CANT_W) +
+      'PRECIO'.padStart(PRECIO_W) +
+      'ITBIS'.padStart(ITBIS_W) +
+      'MONTO'.padStart(MONTO_W);
 
     const fecha = f.fecha instanceof Date ? f.fecha : new Date(f.fecha);
     const fechaStr = fecha.toLocaleDateString('es-DO');
@@ -133,6 +192,8 @@ export default function POSScreen() {
     t += center(EMPRESA.telefono) + '\n';
     t += '\n';
     t += center('FACTURA') + '\n';
+    if (f.cotizacionNumero) t += center(`Desde cotizacion #${f.cotizacionNumero}`) + '\n';
+    if (f.pedidoNumero) t += center(`Desde pedido #${f.pedidoNumero}`) + '\n';
     t += labelVal(`Numero  : ${numStr}`, horaStr) + '\n';
     t += `Fecha   : ${fechaStr}\n`;
     t += `Vence   : CONTADO\n`;
@@ -143,7 +204,7 @@ export default function POSScreen() {
     t += sep + '\n';
     t += 'Descripcion de la Mercancia\n';
     t += sep + '\n';
-    t += 'CANT.PRECIO ITBIS   MONTO\n';
+    t += columnsHeader + '\n';
     t += sep + '\n';
     t += '\n';
 
@@ -154,10 +215,10 @@ export default function POSScreen() {
       subtotal += importe;
       t += `${it.descripcion}\n`;
       // Linea de cantidades: CANT UND  PRECIO  ITBIS  MONTO E
-      const cantStr = `${it.cantidad} UND`.padEnd(8);
-      const precioStr = fmt(it.precio).padStart(7);
-      const itbisStr = '0.00'.padStart(7);
-      const montoStr = (fmt(importe) + ' E').padStart(W - 8 - 7 - 7);
+      const cantStr = `${it.cantidad} UND`.padEnd(CANT_W);
+      const precioStr = fmt(it.precio).padStart(PRECIO_W);
+      const itbisStr = '0.00'.padStart(ITBIS_W);
+      const montoStr = (fmt(importe) + ' E').padStart(MONTO_W);
       t += cantStr + precioStr + itbisStr + montoStr + '\n';
     });
 
@@ -184,10 +245,14 @@ export default function POSScreen() {
 
   const compartirFactura = async () => {
     if (compartiendo) return;
+    if (!ticketRef.current) {
+      Alert.alert('Error', 'La vista de la factura aun no esta lista para compartir.');
+      return;
+    }
     setCompartiendo(true);
     try {
       // Capturar el ticket renderizado como imagen JPG temporal
-      const uri = await captureRef(ticketRef, {
+      const uri = await captureRef(ticketRef.current, {
         format: 'jpg',
         quality: 0.95,
         result: 'tmpfile',

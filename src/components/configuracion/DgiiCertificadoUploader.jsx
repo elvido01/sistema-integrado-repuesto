@@ -31,7 +31,7 @@ const DgiiCertificadoUploader = () => {
   const [showPwd, setShowPwd] = useState(false);
   const [rnc, setRnc] = useState('');
   const [nombre, setNombre] = useState('');
-  const [ambiente, setAmbiente] = useState('TesteCF');
+  const [ambiente, setAmbiente] = useState('CerteCF');
   const [callbackUrl, setCallbackUrl] = useState('');
   const fileInputRef = useRef(null);
 
@@ -47,7 +47,7 @@ const DgiiCertificadoUploader = () => {
       // Pre-rellenar formulario con valores actuales
       setRnc(data.rnc_emisor || '');
       setNombre(data.nombre_emisor || '');
-      setAmbiente(data.ambiente || 'TesteCF');
+      setAmbiente(data.ambiente || 'CerteCF');
       setCallbackUrl(data.callback_url || '');
     } catch (err) {
       // No es bloqueante: el tenant puede que aun no haya configurado nada
@@ -276,7 +276,7 @@ const DgiiCertificadoUploader = () => {
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error || 'No se pudo eliminar');
       toast({ title: 'Certificado eliminado', description: 'Configuracion DGII directo limpia.' });
-      setRnc(''); setNombre(''); setAmbiente('TesteCF'); setCallbackUrl('');
+      setRnc(''); setNombre(''); setAmbiente('CerteCF'); setCallbackUrl('');
       setFile(null); setPassword('');
       await fetchInfo();
     } catch (err) {
@@ -538,6 +538,9 @@ const DgiiCertificadoUploader = () => {
               ))}
             </SelectContent>
           </Select>
+          <p className="text-[10px] text-amber-700">
+            El set oficial del portal de certificacion se envia siempre por CerteCF.
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Callback URL (DGII envia ARECF/AECF)</Label>

@@ -2,12 +2,18 @@ import { supabase } from '../supabase/client';
 
 export interface Producto {
   id: string;
+  producto_id?: string | null;
   codigo: string;
   descripcion: string;
   referencia: string | null;
   existencia: number;
   precio_venta_1: number;
   precio_venta_2: number;
+  precio_venta_3?: number;
+  precio_venta_4?: number;
+  costo?: number;
+  suplidor_id?: string | null;
+  itbis_pct?: number;
   url_imagen?: string;
 }
 
@@ -48,6 +54,8 @@ export async function fetchProductos(
     const primeraPres = presentaciones[0] || {};
     const precio1 = Number(primeraPres.precio1) || Number(p.precio) || 0;
     const precio2 = Number(primeraPres.precio2) || precio1;
+    const precio3 = Number(primeraPres.precio3) || 0;
+    const precio4 = Number(primeraPres.precio4) || 0;
     return {
       id: p.id,
       codigo: p.codigo,
@@ -56,6 +64,11 @@ export async function fetchProductos(
       existencia: Number(p.existencia) || 0,
       precio_venta_1: precio1,
       precio_venta_2: precio2,
+      precio_venta_3: precio3,
+      precio_venta_4: precio4,
+      costo: Number(p.costo) || 0,
+      suplidor_id: p.suplidor_id || null,
+      itbis_pct: Number(p.itbis_pct) || 0.18,
       url_imagen: p.imagen_url || undefined,
     };
   });

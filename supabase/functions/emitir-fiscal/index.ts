@@ -1080,7 +1080,10 @@ Deno.serve(async (req) => {
         .eq("proveedor", "dgii_directo")
         .maybeSingle();
       if (!integ?.config) throw new Error("Config DGII directo ausente. Sube tu .p12 primero.");
-      const ambiente = integ.config.ambiente || "TesteCF";
+      // El set oficial del Portal de Certificacion DGII debe correr siempre
+      // contra CerteCF, aunque el certificado tenga TesteCF configurado para
+      // pruebas iniciales/pre-certificacion.
+      const ambiente = "CerteCF";
 
       // 2. Para RFCE: derivar CodigoSeguridadeCF de la firma del ECF Tipo 32
       //    correspondiente (estilo dgii-ecf: primeros 6 chars del SignatureValue).
@@ -1158,6 +1161,7 @@ Deno.serve(async (req) => {
           encf,
           tipo_ecf: tipoEcf,
           kind: sheetKind,
+          ambiente,
           track_id: recepcion.trackId || recepcion.TrackId || null,
           estado_dgii: recepcion.estado || recepcion.Estado || "enviado",
           response_payload: recepcion,
@@ -1203,6 +1207,7 @@ Deno.serve(async (req) => {
         xml_firmado_length: signed.xmlFirmado.length,
         encf: row.ENCF,
         tipo_ecf: String(row.TipoeCF),
+        ambiente: "CerteCF",
       }), { status: 200, headers: corsHeaders });
     }
 
@@ -1219,7 +1224,7 @@ Deno.serve(async (req) => {
         .eq("proveedor", "dgii_directo")
         .maybeSingle();
       if (!integ?.config) throw new Error("Config DGII directo ausente");
-      const ambiente = integ.config.ambiente || "TesteCF";
+      const ambiente = "CerteCF";
 
       const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
       const auth = await authenticate(cert, privateKey, ambiente);
@@ -1228,6 +1233,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         ok: true,
         track_id,
+        ambiente,
         estado,
       }), { status: 200, headers: corsHeaders });
     }
