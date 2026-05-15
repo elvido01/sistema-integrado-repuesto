@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Loader2, Upload, CheckCircle2, XCircle, Clock, Play, FileSpreadsheet } from 'lucide-react';
+import { Loader2, Upload, CheckCircle2, XCircle, Clock, Play, FileSpreadsheet, RotateCcw } from 'lucide-react';
 
 // Lee xlsx en cliente y devuelve { ECF: [...], RFCE: [...] }
 async function parseXlsx(file) {
@@ -33,15 +33,48 @@ const FINAL_ESTADOS = new Set(['aceptado', 'aceptado_condicional', 'rechazado'])
 const ACCEPTED_ESTADOS = new Set(['aceptado', 'aceptado_condicional']);
 const LOCAL_READY_ESTADOS = new Set(['descargado']);
 
-// Helper: un caso cuenta como "aceptado" si su estado lo indica explícitamente
-// O si su response es "Aceptado" (RFCE que DGII aceptó sin TrackId — su estado
-// puede quedar como 'enviado' por el flujo, pero el response ya está aceptado).
+const responseText = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(responseText).join(' ');
+  if (typeof value === 'object') {
+    return [
+      value.response,
+      value.estado,
+      value.Estado,
+      value.valor,
+      value.Valor,
+      value.mensaje,
+      value.Mensaje,
+      value.mensajes,
+      value.Mensajes,
+    ].map(responseText).filter(Boolean).join(' ');
+  }
+  return String(value);
+};
+
 const isCasoAceptado = (c) => {
   if (ACCEPTED_ESTADOS.has(c?.estado)) return true;
-  const resp = c?.response;
-  if (typeof resp === 'string' && resp.trim().toLowerCase().includes('aceptado')) return true;
-  return false;
+  return responseText(c?.response).toLowerCase().includes('aceptado');
 };
+
+const isRfceListoParaFacturaCompleta = (c) => {
+  if (c?.kind !== 'RFCE') return false;
+  if (c?.estado === 'error' || c?.estado === 'rechazado') return false;
+  return isCasoAceptado(c) || c?.estado === 'enviado';
+};
+
+function downloadXml(xml, fileName) {
+  const blob = new Blob([xml], { type: 'application/xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -77,7 +110,7 @@ const DgiiCertificacionRunner = () => {
   const [progreso, setProgreso] = useState({ ok: 0, err: 0 });
 
   const resumen = useMemo(() => {
-    const aceptados = casos.filter(c => ACCEPTED_ESTADOS.has(c.estado)).length;
+    const aceptados = casos.filter(c => isCasoAceptado(c) || isRfceListoParaFacturaCompleta(c)).length;
     const errores = casos.filter(c => c.estado === 'error' || c.estado === 'rechazado').length;
     const manualesListos = casos.filter(c => LOCAL_READY_ESTADOS.has(c.estado)).length;
     const pendientes = Math.max(0, casos.length - aceptados - errores - manualesListos);
@@ -160,44 +193,28 @@ const DgiiCertificacionRunner = () => {
     // FASE 4: NO enviar via API. Solo generar XML firmado y descargar
     // para que el usuario lo suba manualmente en el portal DGII.
     if (caso.fase === 4) {
-      const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
-        body: {
-          action: 'dgii_certif_sign_only',
-          ambiente: CERTIFICACION_AMBIENTE,
-          row: caso.row,
-        },
-      });
-      if (error) {
-        let msg = error.message;
-        try {
-          if (error.context?.json) {
-            const parsed = await error.context.json();
-            if (parsed?.error) msg = parsed.error;
-          }
-        } catch (_) {}
-        throw new Error(msg);
+      if (caso.manualEcf?.xml_firmado) {
+        const rncEmisor = String(caso.manualEcf.rnc_emisor || caso.row?.RNCEmisor || '').replace(/\D/g, '');
+        const encf = String(caso.manualEcf.encf || caso.encf || '').trim();
+        const fileName = caso.manualEcf.file_name || (rncEmisor && encf ? `${rncEmisor}${encf}.xml` : `${encf}.xml`);
+        downloadXml(caso.manualEcf.xml_firmado, fileName);
+        return {
+          ok: true,
+          encf: caso.encf,
+          tipo_ecf: caso.tipo,
+          kind: caso.kind,
+          track_id: 'DESCARGADO (sube manual)',
+          estado_dgii: 'descargado',
+          response_payload: {
+            response: 'descargado',
+            codigoSeguridadeCF: caso.manualEcf.signature_prefix || null,
+            fileName,
+            nota: 'XML firmado enlazado al RFCE aceptado.',
+          },
+          xml_firmado_length: caso.manualEcf.xml_firmado_length || caso.manualEcf.xml_firmado.length,
+        };
       }
-      // Descargar XML firmado
-      if (data?.xml_firmado) {
-        const blob = new Blob([data.xml_firmado], { type: 'application/xml' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${caso.encf}_firmado.xml`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-      return {
-        ok: true,
-        encf: caso.encf,
-        tipo_ecf: caso.tipo,
-        kind: caso.kind,
-        track_id: 'DESCARGADO (sube manual)',
-        estado_dgii: 'descargado',
-        xml_firmado_length: data?.xml_firmado_length,
-      };
+      throw new Error('No existe XML firmado enlazado al RFCE. Reinicia la corrida local y envia los 29 casos desde cero antes de descargar la fase 4.');
     }
 
     // FASE 1, 2, 3: enviar via API a DGII
@@ -267,13 +284,20 @@ const DgiiCertificacionRunner = () => {
     if (!confirm(`Enviar ${casos.length} casos a DGII?\n\nSe firmara cada uno con tu .p12 y se enviara al ambiente oficial de certificacion (${CERTIFICACION_AMBIENTE}).\n\nEsto puede tardar 1-3 minutos.`)) return;
     setRunning(true);
     let ok = 0, err = 0;
+    const manualEcfByEncf = new Map(
+      casos
+        .filter(c => c.manualEcf?.xml_firmado)
+        .map(c => [String(c.encf), c.manualEcf])
+    );
     const aceptadosEnCorrida = new Set(
-      casos.filter(c => ACCEPTED_ESTADOS.has(c.estado)).map(c => String(c.encf))
+      casos
+        .filter(c => isCasoAceptado(c) || isRfceListoParaFacturaCompleta(c))
+        .map(c => String(c.encf))
     );
     for (let i = 0; i < casos.length; i++) {
       const casoActual = casos[i];
-      if (ACCEPTED_ESTADOS.has(casoActual.estado) || LOCAL_READY_ESTADOS.has(casoActual.estado)) {
-        if (ACCEPTED_ESTADOS.has(casoActual.estado)) aceptadosEnCorrida.add(String(casoActual.encf));
+      if (isCasoAceptado(casoActual) || isRfceListoParaFacturaCompleta(casoActual) || LOCAL_READY_ESTADOS.has(casoActual.estado)) {
+        if (isCasoAceptado(casoActual) || isRfceListoParaFacturaCompleta(casoActual)) aceptadosEnCorrida.add(String(casoActual.encf));
         ok++;
         setProgreso({ ok, err });
         continue;
@@ -291,11 +315,8 @@ const DgiiCertificacionRunner = () => {
         setProgreso({ ok, err });
         continue;
       }
-      // Para Fase 4: verificar que el RFCE correspondiente esté aceptado
-      // (en aceptadosEnCorrida) o que algún caso RFCE con el mismo encf tenga
-      // response "Aceptado" (caso de RFCE que DGII aceptó sin TrackId).
       const rfceAceptado = aceptadosEnCorrida.has(String(casoActual.encf))
-        || casos.some(c => c.encf === casoActual.encf && c.kind === 'RFCE' && isCasoAceptado(c));
+        || casos.some(c => c.encf === casoActual.encf && isRfceListoParaFacturaCompleta(c));
       if (casoActual.fase === 4 && !rfceAceptado) {
         setCasos((prev) => prev.map((c, idx) => idx === i ? {
           ...c,
@@ -313,8 +334,15 @@ const DgiiCertificacionRunner = () => {
         ? { ...c, estado: 'sending', error: null, step: null, trackId: null }
         : c));
       try {
-        const result = await enviarCaso(casos[i]);
+        const casoParaEnviar = {
+          ...casos[i],
+          manualEcf: manualEcfByEncf.get(String(casos[i].encf)) || casos[i].manualEcf || null,
+        };
+        const result = await enviarCaso(casoParaEnviar);
         if (result.ok) {
+          if (result.manual_ecf?.xml_firmado) {
+            manualEcfByEncf.set(String(result.encf), result.manual_ecf);
+          }
           const initialEstado = (result.estado_dgii || 'enviado').toLowerCase();
           setCasos((prev) => prev.map((c, idx) => idx === i ? {
             ...c,
@@ -322,9 +350,14 @@ const DgiiCertificacionRunner = () => {
             trackId: result.track_id,
             response: result.response_payload,
             xmlLength: result.xml_firmado_length,
+            manualEcf: result.manual_ecf || c.manualEcf || null,
             error: null,
             step: null,
-          } : c));
+          } : (
+            result.manual_ecf?.xml_firmado && c.fase === 4 && String(c.encf) === String(result.encf)
+              ? { ...c, manualEcf: result.manual_ecf, error: null, step: null }
+              : c
+          )));
 
           let final = normalizeDgiiStatus(result.response_payload || { estado: initialEstado });
           if (result.track_id && !String(result.track_id).startsWith('DESCARGADO') && !FINAL_ESTADOS.has(final.estado)) {
@@ -338,9 +371,13 @@ const DgiiCertificacionRunner = () => {
             response: final.payload || result.response_payload,
             error: final.error,
             step: final.error ? 'dgii_status' : null,
-          } : c));
+          } : (
+            result.manual_ecf?.xml_firmado && c.fase === 4 && String(c.encf) === String(result.encf)
+              ? { ...c, manualEcf: result.manual_ecf, error: null, step: null }
+              : c
+          )));
 
-          if (ACCEPTED_ESTADOS.has(final.estado)) {
+          if (ACCEPTED_ESTADOS.has(final.estado) || (casos[i].kind === 'RFCE' && final.estado === 'enviado' && !final.error)) {
             aceptadosEnCorrida.add(String(casos[i].encf));
             ok++;
           } else if (LOCAL_READY_ESTADOS.has(final.estado)) {
@@ -439,7 +476,7 @@ const DgiiCertificacionRunner = () => {
       });
       return;
     }
-    if (caso?.fase === 4 && !casos.some(c => c.encf === caso.encf && c.kind === 'RFCE' && isCasoAceptado(c))) {
+    if (caso?.fase === 4 && !casos.some(c => c.encf === caso.encf && isRfceListoParaFacturaCompleta(c))) {
       toast({
         title: 'RFCE pendiente',
         description: `Primero debe quedar aceptado el RFCE ${caso.encf} en ${CERTIFICACION_AMBIENTE}.`,
@@ -460,8 +497,13 @@ const DgiiCertificacionRunner = () => {
         setCasos((prev) => prev.map((c, i) => i === idx ? {
           ...c, estado: final.estado,
           trackId: result.track_id, response: final.payload || result.response_payload,
+          manualEcf: result.manual_ecf || c.manualEcf || null,
           error: final.error, step: final.error ? 'dgii_status' : null,
-        } : c));
+        } : (
+          result.manual_ecf?.xml_firmado && c.fase === 4 && String(c.encf) === String(result.encf)
+            ? { ...c, manualEcf: result.manual_ecf, error: null, step: null }
+            : c
+        )));
       } else {
         setCasos((prev) => prev.map((c, i) => i === idx ? {
           ...c, estado: 'error', error: result.error, step: result.step, trackId: null,
@@ -504,6 +546,26 @@ const DgiiCertificacionRunner = () => {
       }
     }
     setConsultingAll(false);
+  };
+
+  const reiniciarCorridaLocal = () => {
+    if (!casos.length || running || consultingAll) return;
+    if (!confirm('DGII reinicio las pruebas?\n\nEsto limpiara los estados locales y los TrackIds guardados en esta pantalla para reenviar el set desde cero.')) return;
+    setCasos((prev) => prev.map((c) => ({
+      ...c,
+      estado: 'pending',
+      trackId: null,
+      error: null,
+      step: null,
+      response: null,
+      xmlLength: null,
+      manualEcf: null,
+    })));
+    setProgreso({ ok: 0, err: 0 });
+    toast({
+      title: 'Corrida reiniciada',
+      description: 'Ahora envia nuevamente los 29 casos desde el principio.',
+    });
   };
 
   return (
@@ -558,6 +620,18 @@ const DgiiCertificacionRunner = () => {
           >
             {consultingAll ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Clock className="w-4 h-4 mr-2" />}
             Consultar enviados
+          </Button>
+        )}
+
+        {casos.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={reiniciarCorridaLocal}
+            disabled={running || consultingAll}
+            className="border-amber-300 text-amber-700 hover:bg-amber-50"
+          >
+            <RotateCcw className="w-4 h-4 mr-2" />
+            Reiniciar corrida
           </Button>
         )}
 

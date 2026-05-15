@@ -169,7 +169,6 @@ function buildTotalesXml(t) {
       ${t.monto_exento ? `<MontoExento>${fmtMoney(t.monto_exento)}</MontoExento>` : ""}
       ${t.itbis_total != null ? `<ITBIS1>18</ITBIS1>` : ""}
       ${t.total_itbis_18 ? `<TotalITBIS1>${fmtMoney(t.total_itbis_18)}</TotalITBIS1>` : ""}
-      ${t.itbis_total ? `<TotalITBIS>${fmtMoney(t.itbis_total)}</TotalITBIS>` : ""}
       <MontoTotal>${fmtMoney(t.monto_total)}</MontoTotal>
     </Totales>`;
 }

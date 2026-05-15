@@ -1092,6 +1092,7 @@ Deno.serve(async (req) => {
       //    SignatureValue del ECF original, ambos comparten el mismo codigo
       //    y DGII los matchea correctamente.
       let codigoSegRfce = null;
+      let manualEcfForRfce = null;
       if (sheetKind === "RFCE") {
         if (!ecf_row) {
           return new Response(JSON.stringify({
@@ -1109,6 +1110,16 @@ Deno.serve(async (req) => {
           if (!codigoSegRfce || codigoSegRfce.length !== 6) {
             throw new Error(`No se pudo extraer codigo de seguridad valido (got: '${codigoSegRfce}')`);
           }
+          const rncManual = String(ecf_row.RNCEmisor || integ.config.rnc_emisor || "").replace(/\D/g, "");
+          const encfManual = String(ecf_row.ENCF || encf).trim();
+          manualEcfForRfce = {
+            xml_firmado: signedEcf.xmlFirmado,
+            xml_firmado_length: signedEcf.xmlFirmado.length,
+            signature_prefix: codigoSegRfce,
+            rnc_emisor: rncManual,
+            encf: encfManual,
+            file_name: `${rncManual}${encfManual}.xml`,
+          };
         } catch (e) {
           return new Response(JSON.stringify({
             ok: false,
@@ -1167,6 +1178,7 @@ Deno.serve(async (req) => {
           response_payload: recepcion,
           xml_firmado_length: xmlFirmado.length,
           codigo_seguridad: codigoSegDebug,
+          manual_ecf: manualEcfForRfce,
         }), { status: 200, headers: corsHeaders });
       } catch (e) {
         return new Response(JSON.stringify({
@@ -1200,14 +1212,19 @@ Deno.serve(async (req) => {
       const xmlSinFirmar = buildEcfFromTestRow(row);
       const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
       const signed = await signEcfXml(xmlSinFirmar, cert, privateKey);
+      const encf = String(row.ENCF || "").trim();
+      const rncEmisor = String(row.RNCEmisor || integ.config.rnc_emisor || "").replace(/\D/g, "");
+      const fileName = `${rncEmisor}${encf}.xml`;
 
       return new Response(JSON.stringify({
         ok: true,
         xml_firmado: signed.xmlFirmado,
         xml_firmado_length: signed.xmlFirmado.length,
-        encf: row.ENCF,
+        encf,
         tipo_ecf: String(row.TipoeCF),
         ambiente: "CerteCF",
+        rnc_emisor: rncEmisor,
+        file_name: fileName,
       }), { status: 200, headers: corsHeaders });
     }
 
