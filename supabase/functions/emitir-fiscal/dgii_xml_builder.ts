@@ -53,6 +53,23 @@ const fmtDate = (d) => {
   return `${day}-${month}-${year}`;
 };
 
+const fmtDateTime = (d) => {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (isNaN(dt.getTime())) return String(d || "");
+  const day = String(dt.getDate()).padStart(2, "0");
+  const month = String(dt.getMonth() + 1).padStart(2, "0");
+  const year = dt.getFullYear();
+  const hours = String(dt.getHours()).padStart(2, "0");
+  const minutes = String(dt.getMinutes()).padStart(2, "0");
+  const seconds = String(dt.getSeconds()).padStart(2, "0");
+  return `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;
+};
+
+const fmtAcecfDate = (d) => {
+  if (typeof d === "string" && /^\d{2}-\d{2}-\d{4}$/.test(d.trim())) return d.trim();
+  return fmtDate(d);
+};
+
 const tag = (name, value, opts = {}) => {
   // Genera <Name>value</Name>. Si value es null/undefined/'', omite el tag
   // a menos que opts.always=true.
@@ -65,6 +82,51 @@ const tag = (name, value, opts = {}) => {
 // ────────────────────────────────────────────────
 // Validaciones previas al XML — fail fast
 // ────────────────────────────────────────────────
+function validarAcecf(input) {
+  const errs = [];
+  if (!input.rnc_emisor) errs.push("rnc_emisor requerido");
+  if (!input.encf) errs.push("encf requerido");
+  if (!input.fecha_emision) errs.push("fecha_emision requerida");
+  if (input.monto_total == null || input.monto_total === "") errs.push("monto_total requerido");
+  if (!input.rnc_comprador) errs.push("rnc_comprador requerido");
+  if (!input.estado) errs.push("estado requerido (1 aceptado, 2 rechazado)");
+  if (String(input.estado) === "2" && !input.detalle_motivo_rechazo) {
+    errs.push("detalle_motivo_rechazo requerido cuando estado=2");
+  }
+  if (!input.fecha_hora_aprobacion_comercial) {
+    errs.push("fecha_hora_aprobacion_comercial requerida");
+  }
+  if (errs.length) {
+    const e = new Error("Validacion fallida (ACECF): " + errs.join("; "));
+    e.validation_errors = errs;
+    throw e;
+  }
+}
+
+export function buildAcecfXml(input) {
+  validarAcecf(input);
+
+  const estado = String(input.estado).trim();
+  const motivo = estado === "2"
+    ? `<DetalleMotivoRechazo>${xmlEscape(input.detalle_motivo_rechazo)}</DetalleMotivoRechazo>`
+    : "";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ACECF xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="ACECF.xsd">
+  <DetalleAprobacionComercial>
+    <Version>1.0</Version>
+    <RNCEmisor>${xmlEscape(input.rnc_emisor)}</RNCEmisor>
+    <eNCF>${xmlEscape(input.encf)}</eNCF>
+    <FechaEmision>${xmlEscape(fmtAcecfDate(input.fecha_emision))}</FechaEmision>
+    <MontoTotal>${fmtMoney(input.monto_total)}</MontoTotal>
+    <RNCComprador>${xmlEscape(input.rnc_comprador)}</RNCComprador>
+    <Estado>${xmlEscape(estado)}</Estado>
+    ${motivo}
+    <FechaHoraAprobacionComercial>${xmlEscape(fmtDateTime(input.fecha_hora_aprobacion_comercial))}</FechaHoraAprobacionComercial>
+  </DetalleAprobacionComercial>
+</ACECF>`.trim();
+}
+
 function validarTipo32(input) {
   const errs = [];
   if (!input.encf) errs.push("encf es requerido");

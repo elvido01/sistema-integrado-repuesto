@@ -229,3 +229,26 @@ export async function enviarRfce(rfceFirmado, token, ambiente, fileName) {
   }
   return data;
 }
+
+export async function enviarAprobacionComercial(acecfFirmado, token, ambiente, fileName) {
+  const url = `${baseUrl(ambiente)}/aprobacioncomercial/api/aprobacioncomercial`;
+  const fName = fileName || "acecf.xml";
+  const form = new FormData();
+  form.append("xml", new Blob([acecfFirmado], { type: "application/xml" }), fName);
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Accept": "application/json",
+    },
+    body: form,
+  });
+  const text = await resp.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = { raw: text }; }
+  if (!resp.ok) {
+    throw new Error(`DGII AprobacionComercial ${resp.status}: ${JSON.stringify(data).slice(0, 400)}`);
+  }
+  return data;
+}

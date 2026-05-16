@@ -3,10 +3,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import forge from "https://esm.sh/node-forge@1.3.1";
-import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml } from "./dgii_xml_builder.ts";
+import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml } from "./dgii_xml_builder.ts";
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
-import { authenticate, enviarEcf, consultarEstado, enviarAnulacion, enviarRfce } from "./dgii_client.ts";
+import { authenticate, enviarEcf, consultarEstado, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1226,6 +1226,81 @@ Deno.serve(async (req) => {
         rnc_emisor: rncEmisor,
         file_name: fileName,
       }), { status: 200, headers: corsHeaders });
+    }
+
+    // Paso 3 certificacion: genera, firma y envia una Aprobacion Comercial (ACECF).
+    if (action === "dgii_certif_send_acecf_row") {
+      const { row } = body;
+      if (!row) throw new Error("row requerido");
+
+      const pick = (...keys) => {
+        for (const key of keys) {
+          if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== "") return row[key];
+        }
+        return "";
+      };
+      const cleanRnc = (v) => String(v || "").replace(/\D/g, "");
+      const normalizeDate = (v) => {
+        if (v instanceof Date) return v;
+        if (typeof v === "number") {
+          const epoch = new Date(Date.UTC(1899, 11, 30));
+          return new Date(epoch.getTime() + v * 86400000);
+        }
+        return v;
+      };
+      const normalizeMonto = (v) => Number(String(v || "0").replace(/,/g, "")) || 0;
+
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("Config DGII directo ausente. Sube tu .p12 primero.");
+
+      const input = {
+        rnc_emisor: cleanRnc(pick("RNCEmisor", "RNC Emisor", "RNC del Emisor", "RncEmisor")),
+        encf: String(pick("eNCF", "ENCF", "NCFElectronico", "NCF Electronico")).trim(),
+        fecha_emision: pick("FechaEmision", "Fecha Emision"),
+        monto_total: normalizeMonto(pick("MontoTotal", "Monto Total")),
+        rnc_comprador: cleanRnc(pick("RNCComprador", "RNC Comprador", "RNC del Comprador", "RncComprador") || integ.config.rnc_emisor),
+        estado: String(pick("Estado", "EstadoAprobacion", "Estado Aprobacion") || "1").trim(),
+        detalle_motivo_rechazo: pick("DetalleMotivoRechazo", "Detalle Motivo Rechazo", "MotivoRechazo", "Motivo Rechazo"),
+        fecha_hora_aprobacion_comercial: normalizeDate(
+          pick("FechaHoraAprobacionComercial", "Fecha Hora Aprobacion Comercial") || new Date()
+        ),
+      };
+
+      let xmlSinFirmar;
+      let xmlFirmado;
+      try {
+        xmlSinFirmar = buildAcecfXml(input);
+        const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+        const signed = await signXmlGenerico(xmlSinFirmar, cert, privateKey);
+        xmlFirmado = signed.xmlFirmado;
+
+        const ambiente = "CerteCF";
+        const auth = await authenticate(cert, privateKey, ambiente);
+        const fileName = `${input.rnc_comprador}${input.encf}.xml`;
+        const recepcion = await enviarAprobacionComercial(xmlFirmado, auth.token, ambiente, fileName);
+
+        return new Response(JSON.stringify({
+          ok: true,
+          encf: input.encf,
+          ambiente,
+          estado_aprobacion: input.estado,
+          response_payload: recepcion,
+          xml_firmado_length: xmlFirmado.length,
+        }), { status: 200, headers: corsHeaders });
+      } catch (e) {
+        return new Response(JSON.stringify({
+          ok: false,
+          step: xmlSinFirmar ? "send" : "build",
+          error: e.message,
+          encf: input.encf,
+          xml_firmado_length: xmlFirmado?.length || 0,
+        }), { status: 200, headers: corsHeaders });
+      }
     }
 
     // ── ACTION: dgii_certif_check_status ──

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ShieldCheck, Upload, Loader2, FileLock2, Eye, EyeOff, Trash2, BadgeCheck, AlertTriangle, FileCode2, X, Send, FileSignature } from 'lucide-react';
 import DgiiCertificacionRunner from './DgiiCertificacionRunner';
+import DgiiAprobacionComercialRunner from './DgiiAprobacionComercialRunner';
 
 // Tamano maximo permitido para el .p12 (10 MB; reales son <50KB).
 const MAX_P12_BYTES = 10 * 1024 * 1024;
@@ -644,6 +645,12 @@ const DgiiCertificadoUploader = () => {
       {info?.configured && (
         <div className="border-t pt-6 mt-2">
           <DgiiCertificacionRunner />
+        </div>
+      )}
+
+      {info?.configured && (
+        <div className="border-t pt-6 mt-2">
+          <DgiiAprobacionComercialRunner />
         </div>
       )}
 
