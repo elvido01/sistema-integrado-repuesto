@@ -1303,6 +1303,163 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Paso 4 certificacion: genera comprobantes simulados "reales" por tipo
+    // y los envia a CerteCF. Para Tipo 32 < 250K envia RFCE y devuelve el
+    // e-CF completo firmado para subirlo manualmente en el portal.
+    if (action === "dgii_simulacion_send_case") {
+      const { caso } = body;
+      if (!caso?.tipo || !caso?.encf) throw new Error("caso.tipo y caso.encf son requeridos");
+
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("Config DGII directo ausente. Sube tu .p12 primero.");
+
+      const cfg = integ.config || {};
+      const ambiente = "CerteCF";
+      const today = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const fechaEmision = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+      const fechaDgii = `${pad(today.getDate())}-${pad(today.getMonth() + 1)}-${today.getFullYear()}`;
+      const emisor = {
+        rnc: String(cfg.rnc_emisor || "").replace(/\D/g, ""),
+        razon_social: cfg.nombre_emisor || "EMPRESA CERTIFICACION",
+        nombre_comercial: cfg.nombre_comercial || cfg.nombre_emisor || "EMPRESA CERTIFICACION",
+        direccion: cfg.direccion || "DIRECCION CERTIFICACION",
+        municipio: cfg.municipio || "010100",
+        provincia: cfg.provincia || "010000",
+        telefono: cfg.telefono ? [cfg.telefono] : [],
+        email: cfg.email || null,
+      };
+      const compradorB2B = {
+        rnc: "131880681",
+        razon_social: "COMPRADOR CERTIFICACION SRL",
+        direccion: "AVENIDA PRUEBA 1",
+        email: "comprador@example.com",
+      };
+      const item = (descripcion, monto, gravado = true) => ({
+        descripcion,
+        cantidad: 1,
+        precio_unitario: Number((monto / (gravado ? 1.18 : 1)).toFixed(2)),
+        indicador_facturacion: gravado ? "1" : "4",
+        monto_item: monto,
+        unidad_medida: "43",
+      });
+      const totals = (monto, gravado = true) => ({
+        monto_gravado_total: gravado ? Number((monto / 1.18).toFixed(2)) : 0,
+        monto_gravado_18: gravado ? Number((monto / 1.18).toFixed(2)) : 0,
+        monto_exento: gravado ? 0 : monto,
+        itbis_total: gravado ? Number((monto - monto / 1.18).toFixed(2)) : null,
+        total_itbis_18: gravado ? Number((monto - monto / 1.18).toFixed(2)) : 0,
+        monto_total: monto,
+      });
+      const baseInput = (tipo, monto, comprador, opts = {}) => ({
+        tipo_ecf: tipo,
+        encf: caso.encf,
+        fecha_emision: fechaEmision,
+        emisor,
+        comprador,
+        items: [item(`SIMULACION E-CF TIPO ${tipo}`, monto, opts.gravado !== false)],
+        totales: totals(monto, opts.gravado !== false),
+        forma_pago: "01",
+        referencia: opts.referencia || null,
+      });
+
+      const { cert, privateKey } = await loadAndParseP12(supabase, cfg);
+      const auth = await authenticate(cert, privateKey, ambiente);
+
+      try {
+        let xmlSinFirmar;
+        let sendKind = "ECF";
+        let manualEcf = null;
+        const tipo = String(caso.tipo);
+        if (caso.rfce) {
+          const ecfInput = baseInput("32", Number(caso.monto || 1180), null);
+          const xmlEcf = buildEcfXml("32", ecfInput);
+          const signedEcf = await signEcfXml(xmlEcf, cert, privateKey);
+          const codigoSeg = (signedEcf.signatureValue || "").slice(0, 6);
+          const fileNameEcf = `${emisor.rnc}${caso.encf}.xml`;
+          manualEcf = {
+            xml_firmado: signedEcf.xmlFirmado,
+            xml_firmado_length: signedEcf.xmlFirmado.length,
+            file_name: fileNameEcf,
+            encf: caso.encf,
+            rnc_emisor: emisor.rnc,
+            signature_prefix: codigoSeg,
+          };
+          xmlSinFirmar = buildRfceFromTestRow({
+            TipoeCF: "32",
+            ENCF: caso.encf,
+            TipoIngresos: "01",
+            TipoPago: "1",
+            RNCEmisor: emisor.rnc,
+            RazonSocialEmisor: emisor.razon_social,
+            FechaEmision: fechaDgii,
+            MontoGravadoTotal: ecfInput.totales.monto_gravado_total,
+            MontoGravadoI1: ecfInput.totales.monto_gravado_18,
+            ITBIS1: "18",
+            TotalITBIS: ecfInput.totales.itbis_total,
+            TotalITBIS1: ecfInput.totales.total_itbis_18,
+            MontoTotal: ecfInput.totales.monto_total,
+            CodigoSeguridadeCF: codigoSeg,
+          });
+          sendKind = "RFCE";
+        } else if (tipo === "33" || tipo === "34") {
+          if (!caso.referencia?.encf) throw new Error(`Tipo ${tipo} requiere referencia.encf`);
+          xmlSinFirmar = buildEcfXml(tipo, baseInput(tipo, Number(caso.monto || 590), compradorB2B, {
+            referencia: {
+              encf_modificado: caso.referencia.encf,
+              fecha_ncf_modificado: caso.referencia.fecha || fechaDgii,
+              codigo_modificacion: tipo === "33" ? "5" : "3",
+              razon_modificacion: tipo === "33" ? "Cargo posterior de simulacion" : "Descuento de simulacion",
+            },
+          }));
+        } else {
+          const comprador = ["31", "44", "45"].includes(tipo)
+            ? compradorB2B
+            : tipo === "41"
+              ? { rnc: "131880681", razon_social: "VENDEDOR SIMULACION SRL", direccion: "DIRECCION VENDEDOR" }
+              : ["46", "47"].includes(tipo)
+                ? { id_extranjero: "EXT12345", razon_social: "FOREIGN CUSTOMER LLC", pais_destino: "US", direccion: "FOREIGN ADDRESS" }
+                : null;
+          const gravado = !["46", "47"].includes(tipo);
+          xmlSinFirmar = buildEcfXml(tipo, baseInput(tipo, Number(caso.monto || (tipo === "32" ? 300000 : 1180)), comprador, { gravado }));
+        }
+
+        const signed = sendKind === "RFCE"
+          ? await signEcfXml(xmlSinFirmar, cert, privateKey)
+          : await signEcfXml(xmlSinFirmar, cert, privateKey);
+        const fileName = `${emisor.rnc}${caso.encf}.xml`;
+        const recepcion = sendKind === "RFCE"
+          ? await enviarRfce(signed.xmlFirmado, auth.token, ambiente, fileName)
+          : await enviarEcf(signed.xmlFirmado, auth.token, ambiente, fileName);
+
+        return new Response(JSON.stringify({
+          ok: true,
+          tipo,
+          encf: caso.encf,
+          ambiente,
+          kind: sendKind,
+          track_id: recepcion.trackId || recepcion.TrackId || null,
+          estado_dgii: recepcion.estado || recepcion.Estado || "enviado",
+          response_payload: recepcion,
+          xml_firmado_length: signed.xmlFirmado.length,
+          manual_ecf: manualEcf,
+        }), { status: 200, headers: corsHeaders });
+      } catch (e) {
+        return new Response(JSON.stringify({
+          ok: false,
+          step: "send",
+          error: e.message,
+          tipo: caso.tipo,
+          encf: caso.encf,
+        }), { status: 200, headers: corsHeaders });
+      }
+    }
+
     // ── ACTION: dgii_certif_check_status ──
     // Consulta el estado en DGII de un TrackId previamente enviado.
     if (action === "dgii_certif_check_status") {
