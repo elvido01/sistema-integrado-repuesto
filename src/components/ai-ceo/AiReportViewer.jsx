@@ -5,6 +5,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Loader2, FileText, Sparkles, RefreshCw, TrendingDown, TrendingUp, AlertTriangle, Share2, Printer } from 'lucide-react';
 import AiPriorityBadge from './AiPriorityBadge';
+import { buildAiCeoWhatsAppUrl } from '@/lib/aiCeoShare';
 
 const TIPO_ALERTA_ICON = {
     margen_negativo: { icon: TrendingDown, color: 'text-red-600' },
@@ -65,25 +66,9 @@ export default function AiReportViewer({ reportType = 'daily', maxItems = 1 }) {
     };
 
     const compartirWhatsApp = () => {
-        if (!r) return;
-        const acciones = r.detalles?.parsed?.top_acciones || [];
-        const lines = [
-            `📊 *${r.titulo}*`,
-            '',
-            r.resumen || '',
-            '',
-        ];
-        if (acciones.length > 0) {
-            lines.push('*Top acciones:*');
-            acciones.forEach((a, i) => {
-                lines.push(`${i + 1}. [${a.area}] ${a.accion}`);
-                lines.push(`   _${a.porque}_`);
-            });
-            lines.push('');
-        }
-        lines.push(`_Reporte IA · ${new Date(r.fecha + 'T00:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'long' })} · MORLA AI CEO_`);
-        const text = encodeURIComponent(lines.join('\n'));
-        window.open(`https://wa.me/?text=${text}`, '_blank');
+        const url = buildAiCeoWhatsAppUrl(r);
+        if (!url) return;
+        window.open(url, '_blank');
     };
 
     const imprimir = () => {

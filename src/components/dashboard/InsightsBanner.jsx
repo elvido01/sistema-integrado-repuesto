@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, ChevronDown, ChevronUp, X, Sparkles, TrendingDown, TrendingUp, Eye, Share2 } from 'lucide-react';
+import { buildAiCeoWhatsAppUrl } from '@/lib/aiCeoShare';
 
 const PRIORIDAD_STYLE = {
     alta: {
@@ -115,8 +116,7 @@ export default function InsightsBanner() {
     const alertasLegacy = insight.detalles?.alertas || [];   // formato viejo (Fase 1)
     const tieneContenidoExpandible = topAcciones.length > 0 || alertasLegacy.length > 0;
     const fechaStr = new Date(insight.fecha + 'T00:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'long', year: 'numeric' });
-    const whatsappUrl = insight.detalles?.whatsapp_url;
-    const esDeHoy = insight.fecha === new Date().toISOString().slice(0, 10);
+    const whatsappUrl = buildAiCeoWhatsAppUrl(insight);
 
     return (
         <motion.div
@@ -152,14 +152,14 @@ export default function InsightsBanner() {
                         )}
                     </div>
                     <div className="flex-shrink-0 flex items-center gap-1">
-                        {esDeHoy && whatsappUrl && (
+                        {whatsappUrl && (
                             <a
                                 href={whatsappUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#25d366] hover:bg-[#22c55e] text-white text-xs font-bold rounded shadow-sm transition-colors"
-                                title="Compartir resumen del día al equipo por WhatsApp"
+                                title="Compartir resumen al equipo por WhatsApp"
                             >
                                 <Share2 className="h-3.5 w-3.5" />
                                 Enviar al equipo
