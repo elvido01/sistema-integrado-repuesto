@@ -129,6 +129,30 @@ Deno.serve(async (req: Request) => {
                 // 4. AI CEO Principal sintetiza
                 const ceoReport = await runCEOPrincipal(tid, subReports);
 
+                // 4.B Generar resumen para WhatsApp + URL wa.me
+                const fechaFmt = new Date().toLocaleDateString('es-DO', { weekday: 'long', day: '2-digit', month: 'long' });
+                const acciones = ceoReport.parsed.top_acciones || [];
+                const waLines = [
+                    `📊 *${ceoReport.parsed.titulo || 'Resumen Ejecutivo'}*`,
+                    '',
+                    ceoReport.parsed.resumen || '',
+                    '',
+                ];
+                if (acciones.length > 0) {
+                    waLines.push('*Top acciones:*');
+                    acciones.slice(0, 5).forEach((a: any, i: number) => {
+                        const emoji = a.area === 'finanzas' ? '💰' : a.area === 'inventario' ? '📦' : a.area === 'credito' ? '💳' : a.area === 'ventas' ? '📈' : a.area === 'compras' ? '🛒' : a.area === 'marketing' ? '📣' : '⚡';
+                        waLines.push(`${i + 1}. ${emoji} ${a.accion}`);
+                    });
+                    waLines.push('');
+                }
+                if (snapshotResumen?.score != null) {
+                    waLines.push(`📈 Salud del negocio: *${snapshotResumen.score}/100*`);
+                }
+                waLines.push(`_Reporte IA · ${fechaFmt} · MORLA AI CEO_`);
+                const whatsappSummary = waLines.join('\n');
+                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(whatsappSummary)}`;
+
                 // 5. Guardar todos los sub-reportes + reporte CEO
                 const fecha = new Date().toISOString().slice(0, 10);
                 const allReports = [...subReports, ceoReport];
@@ -147,6 +171,8 @@ Deno.serve(async (req: Request) => {
                             raw_summary: r.raw ?? null,
                             alertas_sql: r.agent_key === CEO_TEAM_KEY ? alertasResumen : null,
                             snapshot: r.agent_key === CEO_TEAM_KEY ? snapshotResumen : null,
+                            whatsapp_summary: r.agent_key === CEO_TEAM_KEY ? whatsappSummary : null,
+                            whatsapp_url: r.agent_key === CEO_TEAM_KEY ? whatsappUrl : null,
                         },
                         total_alertas: r.parsed.alertas?.length || r.parsed.hallazgos?.length || r.parsed.clientes_riesgo?.length || 0,
                         provider: r.llm?.provider || null,
@@ -175,6 +201,77 @@ Deno.serve(async (req: Request) => {
                         duration_ms: r.llm?.duration_ms,
                         metadata: { source: 'daily_pipeline', report_type },
                     });
+                }
+
+                // 5.B (OPCIONAL) Enviar email vía Resend si está configurado
+                let emailEnviado = false;
+                try {
+                    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+                    if (RESEND_API_KEY && report_type === 'daily') {
+                        const { data: settingsArr } = await supabase
+                            .from('ai_settings')
+                            .select('key, value')
+                            .eq('tenant_id', tid)
+                            .in('key', ['email_resumen_enabled', 'email_resumen_recipients', 'email_from']);
+                        const settings: Record<string, any> = {};
+                        for (const s of settingsArr || []) settings[s.key] = s.value;
+
+                        const enabled = settings.email_resumen_enabled === true || settings.email_resumen_enabled === 'true';
+                        const recipientsRaw = settings.email_resumen_recipients;
+                        const recipients = typeof recipientsRaw === 'string'
+                            ? recipientsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+                            : [];
+                        const from = (settings.email_from || 'MORLA AI CEO <onboarding@resend.dev>').toString();
+
+                        if (enabled && recipients.length > 0) {
+                            const priColor = ceoReport.parsed.prioridad === 'alta' ? '#dc2626'
+                                : ceoReport.parsed.prioridad === 'media' ? '#d97706'
+                                : '#059669';
+                            const accionesHtml = acciones.slice(0, 5).map((a: any) => `
+                                <div style="background:#f8fafc;border-left:4px solid #7c3aed;padding:10px 12px;margin:8px 0;border-radius:0 4px 4px 0;">
+                                    <div style="font-size:10px;text-transform:uppercase;color:#7c3aed;font-weight:bold;letter-spacing:0.05em;">${a.area || ''}</div>
+                                    <div style="font-weight:bold;font-size:14px;color:#1e293b;">${a.accion || ''}</div>
+                                    <div style="font-size:12px;color:#64748b;margin-top:4px;"><b>Por qué:</b> ${a.porque || ''}</div>
+                                </div>
+                            `).join('');
+
+                            const html = `<!DOCTYPE html><html><body style="font-family:'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b;background:#f1f5f9;">
+                                <div style="background:white;border-radius:8px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+                                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                                        <span style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:white;padding:8px 10px;border-radius:6px;font-weight:bold;">🧠 AI CEO</span>
+                                        <span style="background:${priColor}20;color:${priColor};font-size:11px;font-weight:bold;text-transform:uppercase;padding:3px 8px;border-radius:4px;">${ceoReport.parsed.prioridad || 'media'}</span>
+                                    </div>
+                                    <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">${fechaFmt}</div>
+                                    <h1 style="color:#1e293b;font-size:20px;margin:0 0 8px 0;line-height:1.3;">${ceoReport.parsed.titulo || ''}</h1>
+                                    <p style="font-size:13px;color:#475569;border-left:3px solid #7c3aed;padding-left:12px;margin:12px 0;line-height:1.5;">${ceoReport.parsed.resumen || ''}</p>
+                                    ${snapshotResumen?.score != null ? `<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:10px;margin:12px 0;text-align:center;"><div style="font-size:10px;text-transform:uppercase;color:#4338ca;font-weight:bold;">Business Health Score</div><div style="font-size:32px;font-weight:bold;color:#1e293b;">${snapshotResumen.score}<span style="font-size:14px;color:#94a3b8;">/100</span></div></div>` : ''}
+                                    ${accionesHtml ? `<h3 style="font-size:14px;color:#475569;margin-top:20px;">Top acciones de hoy</h3>${accionesHtml}` : ''}
+                                    <div style="margin:24px 0;text-align:center;">
+                                        <a href="${whatsappUrl}" style="display:inline-block;background:#25d366;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px;">📱 Compartir por WhatsApp</a>
+                                    </div>
+                                    <p style="font-size:10px;color:#94a3b8;text-align:center;margin-top:20px;border-top:1px solid #e2e8f0;padding-top:12px;">Reporte generado por MORLA AI CEO · ${allReports.length} agentes IA · costo ${(allReports.reduce((s: number, r: any) => s + (r.llm?.cost_usd || 0), 0)).toFixed(4)} USD</p>
+                                </div>
+                            </body></html>`;
+
+                            const emailResp = await fetch('https://api.resend.com/emails', {
+                                method: 'POST',
+                                headers: {
+                                    Authorization: `Bearer ${RESEND_API_KEY}`,
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    from,
+                                    to: recipients,
+                                    subject: `🧠 ${ceoReport.parsed.titulo} · ${fechaFmt}`,
+                                    html,
+                                }),
+                            });
+                            if (emailResp.ok) emailEnviado = true;
+                            else console.warn(`[email] resend ${emailResp.status}:`, (await emailResp.text()).slice(0, 200));
+                        }
+                    }
+                } catch (eEmail: any) {
+                    console.warn(`[${tid}] email opcional falló:`, eEmail.message);
                 }
 
                 // 6. Crear decisiones recomendadas (solo desde CEO Principal para evitar duplicados)
@@ -214,6 +311,8 @@ Deno.serve(async (req: Request) => {
                     snapshot_score: snapshotResumen?.score,
                     cost_usd: Number(totalCost.toFixed(4)),
                     duracion_subs_ms: subDuration,
+                    email_enviado: emailEnviado,
+                    whatsapp_url: whatsappUrl,
                 });
             } catch (errT: any) {
                 console.error(`[daily-insights] tenant ${tid}:`, errT);

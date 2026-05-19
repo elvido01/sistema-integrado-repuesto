@@ -24,6 +24,9 @@ const SETTING_META = {
     mora_dias_critica:       { label: 'Días vencidos = mora crítica',    help: 'Eleva severidad a critical',                 tipo: 'number' },
     mora_dias_high:          { label: 'Días vencidos = mora alta',       help: 'Eleva severidad a high',                     tipo: 'number' },
     llm_model:               { label: 'Modelo LLM por defecto',          help: 'gpt-4o-mini / gpt-4o / claude-haiku',        tipo: 'string' },
+    email_resumen_enabled:   { label: 'Email diario habilitado',          help: 'Requiere RESEND_API_KEY como Supabase secret. true/false', tipo: 'string' },
+    email_resumen_recipients:{ label: 'Email recipients (separar con ,)', help: 'Ej: dueño@morla.com, admin@morla.com',       tipo: 'string' },
+    email_from:              { label: 'Email "From"',                     help: 'Default: MORLA AI CEO <onboarding@resend.dev>', tipo: 'string' },
 };
 
 export default function AiSettingsPanel() {
