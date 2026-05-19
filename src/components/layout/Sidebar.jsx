@@ -27,6 +27,8 @@ import {
   Shield,
   ChevronDown,
   Warehouse,
+  BellRing,
+  Brain,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -34,8 +36,16 @@ import { canAccess } from '@/lib/permissionsHelper';
 import Logo from '@/components/common/Logo';
 import { useTheme } from '@/contexts/ThemeContext';
 import NotificationBell from '@/components/layout/NotificationBell';
+import AiCeoBell from '@/components/layout/AiCeoBell';
 
 const navItems = [
+  {
+    title: 'MORLA AI CEO',
+    icon: Brain,
+    subItems: [
+      { title: 'Dashboard IA', id: 'ai-ceo', icon: Brain, tenantOnly: '00000000-0000-0000-0000-000000000001' },
+    ],
+  },
   {
     title: 'Transacciones',
     icon: ShoppingCart,
@@ -83,6 +93,13 @@ const navItems = [
       { title: 'Inventario Físico', id: 'inventario-fisico', icon: Archive },
       { title: 'Reportes DGII (606/607/608)', id: 'reportes-dgii', icon: FileText },
       { title: 'Libros Contables', id: 'libros-contables', icon: FileText },
+      { title: 'Estado de Resultado', id: 'estado-resultados', icon: DollarSign },
+      { title: 'Alertas Gerenciales', id: 'alertas-gerenciales', icon: BellRing },
+      { title: 'Rentabilidad Diaria', id: 'rentabilidad-diaria', icon: DollarSign },
+      { title: 'Inventario Inteligente', id: 'inventario-inteligente', icon: Warehouse },
+      { title: 'Flujo de Caja', id: 'flujo-caja', icon: DollarSign },
+      { title: 'Cartera de Clientes', id: 'cartera-clientes', icon: Users },
+      { title: 'Recomendador de Precios', id: 'recomendador-precios', icon: DollarSign },
     ],
   },
   {
@@ -373,6 +390,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 <User className="w-3.5 h-3.5 flex-shrink-0 text-blue-500" />
                 <span className="truncate">{user?.email}</span>
               </div>
+              <AiCeoBell />
               <NotificationBell />
             </div>
 

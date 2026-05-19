@@ -13,6 +13,7 @@ import CommitmentFormModal from '@/components/dashboard/CommitmentFormModal';
 import PayCommitmentModal from '@/components/dashboard/PayCommitmentModal';
 import PaySupplierCommitmentModal from '@/components/dashboard/PaySupplierCommitmentModal';
 import SuscripcionStatusCard from '@/components/dashboard/SuscripcionStatusCard';
+import InsightsBanner from '@/components/dashboard/InsightsBanner';
 
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -428,6 +429,9 @@ const HomePage = () => {
             </h2>
           </motion.div>
         </div>
+
+        {/* Banner insights diarios (agente IA) */}
+        <InsightsBanner />
 
         {/* Panel Administrativo Financiero */}
         {isAdmin && (

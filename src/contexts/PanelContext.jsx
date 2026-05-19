@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext } from 'react';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -33,11 +33,19 @@ import SolicitudesComprasPage from '@/pages/SolicitudesComprasPage';
 import CartaRutaPage from '@/pages/CartaRutaPage';
 import ReportesDGIIPage from '@/pages/ReportesDGIIPage';
 import LibrosContablesPage from '@/pages/LibrosContablesPage';
+import EstadoResultadosPage from '@/pages/EstadoResultadosPage';
+import AlertasGerencialesPage from '@/pages/AlertasGerencialesPage';
+import RentabilidadDiariaPage from '@/pages/RentabilidadDiariaPage';
+import InventarioInteligentePage from '@/pages/InventarioInteligentePage';
+import FlujoCajaPage from '@/pages/FlujoCajaPage';
+import CarteraClientesPage from '@/pages/CarteraClientesPage';
+import RecomendadorPreciosPage from '@/pages/RecomendadorPreciosPage';
 import CotizacionesMagnaPage from '@/pages/CotizacionesMagnaPage';
 import PerfilEmpresa from '@/pages/Configuracion/PerfilEmpresa';
 import ComprobantesPage from '@/pages/Configuracion/ComprobantesPage';
 import DgiiMonitorPage from '@/pages/Configuracion/DgiiMonitorPage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
+import AICeoPage from '@/pages/AICeoPage';
 import PlanesPage from '@/pages/PlanesPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
@@ -84,12 +92,20 @@ const componentMapping = {
   'carta-ruta': { component: () => <Protected module="carta-ruta"><CartaRutaPage /></Protected>, icon: FileText, name: 'Carta de Ruta' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },
   'libros-contables': { component: () => <Protected module="libros-contables"><LibrosContablesPage /></Protected>, icon: FileText, name: 'Libros Contables' },
+  'estado-resultados': { component: () => <Protected module="estado-resultados"><EstadoResultadosPage /></Protected>, icon: DollarSign, name: 'Estado de Resultado' },
+  'alertas-gerenciales': { component: () => <Protected module="alertas-gerenciales"><AlertasGerencialesPage /></Protected>, icon: BellRing, name: 'Alertas Gerenciales' },
+  'rentabilidad-diaria': { component: () => <Protected module="rentabilidad-diaria"><RentabilidadDiariaPage /></Protected>, icon: DollarSign, name: 'Rentabilidad Diaria' },
+  'inventario-inteligente': { component: () => <Protected module="inventario-inteligente"><InventarioInteligentePage /></Protected>, icon: Warehouse, name: 'Inventario Inteligente' },
+  'flujo-caja': { component: () => <Protected module="flujo-caja"><FlujoCajaPage /></Protected>, icon: DollarSign, name: 'Flujo de Caja' },
+  'cartera-clientes': { component: () => <Protected module="cartera-clientes"><CarteraClientesPage /></Protected>, icon: Users, name: 'Cartera de Clientes' },
+  'recomendador-precios': { component: () => <Protected module="recomendador-precios"><RecomendadorPreciosPage /></Protected>, icon: DollarSign, name: 'Recomendador de Precios' },
   'cierre-caja': { component: () => <Protected module="cierre-caja"><CierreCajaPage /></Protected>, icon: Settings, name: 'Cierre de Caja' },
   'config_sistema': { component: () => <Protected module="config_sistema"><ConfiguracionSistemaPage /></Protected>, icon: Settings, name: 'Configuracion del Sistema' },
   'perfil-empresa': { component: () => <Protected module="perfil-empresa"><PerfilEmpresa /></Protected>, icon: Building2, name: 'Perfil Empresa' },
   'comprobantes-fiscales': { component: () => <Protected module="comprobantes-fiscales"><ComprobantesPage /></Protected>, icon: FileText, name: 'Comprobantes Fiscales' },
   'dgii-monitor': { component: () => <Protected module="dgii-monitor"><DgiiMonitorPage /></Protected>, icon: FileText, name: 'Monitor e-CF DGII' },
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
+  'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MORLA AI CEO' },
   'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
 };
 

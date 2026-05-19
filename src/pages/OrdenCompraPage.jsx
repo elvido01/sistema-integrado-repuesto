@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart } from 'lucide-react';
+import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +20,9 @@ import { usePanels } from '@/contexts/PanelContext';
 import { useCompras } from '@/contexts/ComprasContext';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
+// import AgenteCambioSuplidor from '@/components/compras/AgenteCambioSuplidor'; // desactivado temporalmente
+import SuplidorVirtualMenu from '@/components/compras/SuplidorVirtualMenu';
+import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -27,6 +30,19 @@ import { loadDraft, useAutoDraft, clearDraft } from '@/lib/drafts';
 import { useCatalogData } from '@/hooks/useSupabase';
 
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
+
+const normalizeTaxRate = (value) => {
+  const raw = parseFloat(value) || 0;
+  return raw > 1 ? raw / 100 : raw;
+};
+
+const getDetalleBase = (detalle) => {
+  const cantidad = parseFloat(detalle.cantidad) || 0;
+  const precio = parseFloat(detalle.precio) || 0;
+  const descuento = parseFloat(detalle.descuento_pct) || 0;
+  const subtotal = cantidad * precio;
+  return subtotal - (subtotal * (descuento / 100));
+};
 
 const formatDateForTable = (dateStr) => {
   if (!dateStr) return '---';
@@ -47,7 +63,8 @@ const OrdenCompraPage = () => {
   const { marcas: catalogMarcas = [], modelos: catalogModelos = [] } = useCatalogData() ?? {};
 
   // --- VIEW STATE ---
-  const [view, setView] = useState('list'); // 'list' or 'form'
+  const [view, setView] = useState('list'); // 'list' | 'form' | 'suplidor-virtual'
+  const [supVirtPendingCount, setSupVirtPendingCount] = useState(0);
   const [orders, setOrders] = useState([]);
   const [selectedOrderID, setSelectedOrderID] = useState(null);
   const [isLoadingList, setIsLoadingList] = useState(false);
@@ -67,6 +84,8 @@ const OrdenCompraPage = () => {
   // --- FORM STATES (Existing) ---
   const [proveedores, setProveedores] = useState([]);
   const [selectedProveedor, setSelectedProveedor] = useState(null);
+  // Menú contextual "Suplidor Virtual" (clic derecho en línea de detalle)
+  const [supVirtMenu, setSupVirtMenu] = useState(null);
   const [orden, setOrden] = useState({
     numero: '',
     fecha_orden: getCurrentDateInTimeZone(),
@@ -138,6 +157,22 @@ const OrdenCompraPage = () => {
       fetchOrders();
     }
   }, [view, fetchOrders]);
+
+  // Contador de items pendientes en Suplidor Virtual (badge en toolbar)
+  useEffect(() => {
+    if (!tenantId || view !== 'list') return;
+    let cancelled = false;
+    (async () => {
+      const { count } = await supabase
+        .from('suplidor_virtual_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('estado', 'pendiente')
+        .gt('expira_at', new Date().toISOString());
+      if (!cancelled) setSupVirtPendingCount(count || 0);
+    })();
+    return () => { cancelled = true; };
+  }, [tenantId, view]);
 
   // --- PREVIEW DETAILS (List) ---
   const [previewDetails, setPreviewDetails] = useState([]);
@@ -383,15 +418,9 @@ const OrdenCompraPage = () => {
   };
 
   const calculateImporte = (detalle) => {
-    const cantidad = parseFloat(detalle.cantidad) || 0;
-    const precio = parseFloat(detalle.precio) || 0;
-    const descuento = parseFloat(detalle.descuento_pct) || 0;
-    const itbis_pct = parseFloat(detalle.itbis_pct) || 0;
-
-    const subtotal = cantidad * precio;
-    const montoDescuento = subtotal * (descuento / 100);
-    const baseItbis = subtotal - montoDescuento;
-    const montoItbis = orden.aplicar_itbis ? baseItbis * (itbis_pct / 100) : 0;
+    const itbisPct = normalizeTaxRate(detalle.itbis_pct);
+    const baseItbis = getDetalleBase(detalle);
+    const montoItbis = orden.aplicar_itbis ? baseItbis * itbisPct : 0;
 
     return baseItbis + montoItbis;
   };
@@ -575,7 +604,7 @@ const OrdenCompraPage = () => {
       const cantidad = parseFloat(d.cantidad) || 0;
       const precio = parseFloat(d.precio) || 0;
       const descPct = (parseFloat(d.descuento_pct) || 0) / 100;
-      const itbisPct = (parseFloat(d.itbis_pct) || 0) / 100;
+      const itbisPct = normalizeTaxRate(d.itbis_pct);
 
       const subtotal = cantidad * precio;
       const descMonto = subtotal * descPct;
@@ -756,6 +785,8 @@ const OrdenCompraPage = () => {
         direccion_entrega: '',
       });
       setDetalles([]);
+      setSelectedOrderID(savedOrden.id);
+      setView('list');
     }
 
     setIsSaving(false);
@@ -803,6 +834,20 @@ const OrdenCompraPage = () => {
           <Button variant="ghost" className="h-10 flex flex-col items-center px-2 py-1 text-[10px]" disabled={!selectedOrderID} onClick={handleProcessToCompra}>
             <ShoppingCart className="h-5 w-5 mb-0.5 text-orange-600" />
             FACTURAR
+          </Button>
+          <Button
+            variant="ghost"
+            className="h-10 flex flex-col items-center px-2 py-1 text-[10px] relative"
+            onClick={() => setView('suplidor-virtual')}
+            title="Productos enviados al Suplidor Virtual (agotados al suplidor original)"
+          >
+            <PackageX className="h-5 w-5 mb-0.5 text-amber-600" />
+            SUPLIDOR VIRTUAL
+            {supVirtPendingCount > 0 && (
+              <span className="absolute top-0 right-1 bg-amber-500 text-white text-[9px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                {supVirtPendingCount > 99 ? '99+' : supVirtPendingCount}
+              </span>
+            )}
           </Button>
         </div>
         <div className="text-morla-blue font-bold text-lg mr-4">Lista de Ordenes Realizadas</div>
@@ -1215,6 +1260,12 @@ const OrdenCompraPage = () => {
                     key={d.id}
                     className="h-7 border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors group"
                     onDoubleClick={() => handleEditDetalle(d)}
+                    onContextMenu={(e) => {
+                      // Clic derecho → menú "Enviar a Suplidor Virtual"
+                      if (!d.producto_id) return;
+                      e.preventDefault();
+                      setSupVirtMenu({ detalle: d, x: e.clientX, y: e.clientY });
+                    }}
                   >
                     {isVehicleDealer ? (
                       /* ── FILA DEALER VEHÍCULOS ── */
@@ -1226,7 +1277,7 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 text-center text-blue-700 font-bold">{d.cantidad}</TableCell>
                         <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-mono">{d.precio?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{((d.itbis_pct / 100) * d.precio * d.cantidad).toFixed(2)}</TableCell>
+                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{d.importe?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                       </>
                     ) : (
@@ -1238,7 +1289,7 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-mono">{d.precio?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
-                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{((d.itbis_pct / 100) * d.precio * d.cantidad).toFixed(2)}</TableCell>
+                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{d.importe?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                       </>
                     )}
@@ -1365,8 +1416,25 @@ const OrdenCompraPage = () => {
         animate={{ opacity: 1, y: 0 }}
         className="p-3 bg-slate-100 min-h-screen font-sans selection:bg-blue-100"
       >
-        {(view === 'list') ? renderListView() : renderFormView()}
+        {view === 'list' && renderListView()}
+        {view === 'form' && renderFormView()}
+        {view === 'suplidor-virtual' && (
+          <SuplidorVirtualPage onBack={() => setView('list')} />
+        )}
       </motion.div>
+
+      {/* Suplidor Virtual: clic derecho en una línea del detalle */}
+      <SuplidorVirtualMenu
+        contextMenu={supVirtMenu}
+        suplidor_actual_id={selectedProveedor?.id || null}
+        orden_compra_id={selectedOrderID || null}
+        onClose={() => setSupVirtMenu(null)}
+        onSent={(detalleOriginal) => {
+          // Saca la línea de la OC en curso
+          removeDetalle(detalleOriginal.id);
+          setSupVirtMenu(null);
+        }}
+      />
     </>
   );
 };
