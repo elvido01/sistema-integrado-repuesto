@@ -274,6 +274,48 @@ Deno.serve(async (req: Request) => {
                     console.warn(`[${tid}] email opcional falló:`, eEmail.message);
                 }
 
+                // 5.C Insertar notificación in-app para admins/owners del tenant
+                let notificacionesCreadas = 0;
+                try {
+                    const { data: admins } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('tenant_id', tid)
+                        .in('role', ['owner', 'admin']);
+
+                    if (admins && admins.length > 0) {
+                        const priEmoji = ceoReport.parsed.prioridad === 'alta' ? '🔴'
+                            : ceoReport.parsed.prioridad === 'media' ? '🟡' : '🟢';
+                        const titulo = `${priEmoji} ${ceoReport.parsed.titulo || 'Resumen ejecutivo IA'}`.slice(0, 200);
+                        const accionesShort = (acciones.slice(0, 3) as any[])
+                            .map((a: any) => `• ${a.accion}`)
+                            .join('\n');
+                        const mensaje = [
+                            ceoReport.parsed.resumen || '',
+                            '',
+                            accionesShort,
+                            '',
+                            snapshotResumen?.score != null ? `Salud del negocio: ${snapshotResumen.score}/100` : '',
+                        ].filter(Boolean).join('\n').slice(0, 1000);
+
+                        const notifRows = admins.map((a: any) => ({
+                            tenant_id: tid,
+                            user_id: a.id,
+                            tipo: 'resumen_ai_ceo',
+                            titulo,
+                            mensaje,
+                        }));
+
+                        const { data: insNotifs } = await supabase
+                            .from('notificaciones')
+                            .insert(notifRows)
+                            .select('id');
+                        notificacionesCreadas = insNotifs?.length || 0;
+                    }
+                } catch (eNotif: any) {
+                    console.warn(`[${tid}] notificaciones falló:`, eNotif.message);
+                }
+
                 // 6. Crear decisiones recomendadas (solo desde CEO Principal para evitar duplicados)
                 let decisionesCreadas = 0;
                 const decisiones = ceoReport.parsed.decisiones_recomendadas || [];
@@ -313,6 +355,7 @@ Deno.serve(async (req: Request) => {
                     duracion_subs_ms: subDuration,
                     email_enviado: emailEnviado,
                     whatsapp_url: whatsappUrl,
+                    notificaciones_creadas: notificacionesCreadas,
                 });
             } catch (errT: any) {
                 console.error(`[daily-insights] tenant ${tid}:`, errT);

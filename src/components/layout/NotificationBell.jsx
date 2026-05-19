@@ -20,6 +20,9 @@ const NotificationBell = () => {
         } else if (notif.tipo === 'resumen_diario' || notif.tipo === 'stock_disponible') {
             openPanel('solicitudes');
             setPanelOpen(false);
+        } else if (notif.tipo === 'resumen_ai_ceo') {
+            openPanel('ai-ceo');
+            setPanelOpen(false);
         }
     };
     const panelRef = useRef(null);
@@ -111,8 +114,20 @@ const NotificationBell = () => {
                                             <div
                                                 key={n.id}
                                                 onDoubleClick={() => handleDoubleClick(n)}
-                                                title={n.tipo === 'credito_vencido' ? 'Doble clic para abrir Recibo de Ingreso' : 'Doble clic para ir al módulo'}
-                                                className={`px-4 py-3.5 hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer select-none ${!n.visto_at ? (n.tipo === 'credito_vencido' ? 'bg-red-50/40 dark:bg-red-900/10 border-l-4 border-l-red-500' : 'bg-blue-50/30 dark:bg-blue-900/10 border-l-4 border-l-morla-blue') : 'pl-[19px]'}`}
+                                                title={
+                                                    n.tipo === 'credito_vencido' ? 'Doble clic para abrir Recibo de Ingreso'
+                                                    : n.tipo === 'resumen_ai_ceo' ? 'Doble clic para abrir MORLA AI CEO'
+                                                    : 'Doble clic para ir al módulo'
+                                                }
+                                                className={`px-4 py-3.5 hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer select-none ${
+                                                    !n.visto_at
+                                                        ? (n.tipo === 'credito_vencido'
+                                                            ? 'bg-red-50/40 dark:bg-red-900/10 border-l-4 border-l-red-500'
+                                                            : n.tipo === 'resumen_ai_ceo'
+                                                            ? 'bg-violet-50/40 dark:bg-violet-900/10 border-l-4 border-l-violet-500'
+                                                            : 'bg-blue-50/30 dark:bg-blue-900/10 border-l-4 border-l-morla-blue')
+                                                        : 'pl-[19px]'
+                                                }`}
                                             >
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="flex-1 min-w-0">
