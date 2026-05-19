@@ -5,8 +5,17 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { RefreshCw, Loader2, AlertCircle } from 'lucide-react';
+import { RefreshCw, Loader2, AlertCircle, CheckCheck } from 'lucide-react';
 import AiAlertCard from './AiAlertCard';
+
+const ALERT_TYPES = [
+    { value: 'all', label: 'Todos los tipos' },
+    { value: 'stock_bajo', label: 'Stock bajo' },
+    { value: 'existencia_negativa', label: 'Existencia negativa' },
+    { value: 'sin_ubicacion', label: 'Sin ubicación' },
+    { value: 'producto_lento', label: 'Producto lento' },
+    { value: 'factura_vencida', label: 'Factura vencida' },
+];
 
 export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
     const { tenantId } = useAuth();
@@ -17,6 +26,7 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
     const [filtroStatus, setFiltroStatus] = useState(defaultFilter.status || 'pending');
     const [filtroSeverity, setFiltroSeverity] = useState(defaultFilter.severity || 'all');
     const [filtroArea, setFiltroArea] = useState(defaultFilter.area || 'all');
+    const [filtroTipo, setFiltroTipo] = useState('all');
 
     const cargar = useCallback(async () => {
         if (!tenantId) return;
@@ -32,6 +42,7 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
             if (filtroStatus !== 'all') q = q.eq('status', filtroStatus);
             if (filtroSeverity !== 'all') q = q.eq('severity', filtroSeverity);
             if (filtroArea !== 'all') q = q.eq('area', filtroArea);
+            if (filtroTipo !== 'all') q = q.eq('alert_type', filtroTipo);
 
             const { data, error } = await q;
             if (error) throw error;
@@ -41,7 +52,7 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
         } finally {
             setLoading(false);
         }
-    }, [tenantId, filtroStatus, filtroSeverity, filtroArea, toast]);
+    }, [tenantId, filtroStatus, filtroSeverity, filtroArea, filtroTipo, toast]);
 
     useEffect(() => { cargar(); }, [cargar]);
 
@@ -58,6 +69,30 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
             setItems((prev) => prev.filter((a) => a.id !== id)); // saca del listado actual
         } catch (err) {
             toast({ variant: 'destructive', title: 'Error', description: err.message });
+        } finally {
+            setUpdating(false);
+        }
+    };
+
+    const bulkResolver = async (nuevo) => {
+        if (filtroTipo === 'all') {
+            toast({ variant: 'destructive', title: 'Filtra primero', description: 'Selecciona un tipo de alerta específico para hacer bulk.' });
+            return;
+        }
+        if (items.length === 0) return;
+        const ok = window.confirm(`¿${nuevo === 'resolved' ? 'Resolver' : 'Ignorar'} las ${items.length} alertas de tipo "${filtroTipo}" mostradas?`);
+        if (!ok) return;
+        setUpdating(true);
+        try {
+            const ids = items.map((a) => a.id);
+            const patch = { status: nuevo };
+            if (nuevo === 'resolved') patch.resolved_at = new Date().toISOString();
+            const { error } = await supabase.from('ai_alerts').update(patch).in('id', ids);
+            if (error) throw error;
+            toast({ title: '✓ Bulk actualizado', description: `${ids.length} alertas → ${nuevo}` });
+            cargar();
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error bulk', description: err.message });
         } finally {
             setUpdating(false);
         }
@@ -123,10 +158,36 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
                     </Select>
                 </div>
 
+                <div>
+                    <Label className="text-[10px] uppercase font-bold text-slate-500">Tipo</Label>
+                    <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+                        <SelectTrigger className="h-8 w-44 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            {ALERT_TYPES.map((t) => (
+                                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
                 <Button variant="outline" size="sm" className="h-8" onClick={cargar} disabled={loading}>
                     <RefreshCw className={`h-3 w-3 mr-1 ${loading ? 'animate-spin' : ''}`} />
                     Refrescar
                 </Button>
+
+                {filtroTipo !== 'all' && filtroStatus === 'pending' && items.length > 0 && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                        onClick={() => bulkResolver('resolved')}
+                        disabled={updating}
+                        title={`Resolver las ${items.length} alertas mostradas`}
+                    >
+                        <CheckCheck className="h-3 w-3 mr-1" />
+                        Resolver {items.length}
+                    </Button>
+                )}
             </div>
 
             {/* Counts banner */}

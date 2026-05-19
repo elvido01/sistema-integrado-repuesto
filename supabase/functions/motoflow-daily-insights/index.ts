@@ -20,7 +20,7 @@
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { runCFO, runInventario, runCredito, runVentas, runCompras, runMarketing, runEstrategia, runCEOPrincipal } from './agents.ts';
+import { runCFO, runInventario, runCredito, runVentas, runCompras, runMarketing, runOperaciones, runEstrategia, runCEOPrincipal } from './agents.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -118,6 +118,7 @@ Deno.serve(async (req: Request) => {
                     runVentas(supabase, tid, diasVentas),
                     runCompras(supabase, tid),
                     runMarketing(supabase, tid),
+                    runOperaciones(supabase, tid),
                 ];
                 if (report_type === 'quarterly') {
                     agentPromises.push(runEstrategia(supabase, tid));

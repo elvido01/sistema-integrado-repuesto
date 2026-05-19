@@ -1,7 +1,16 @@
 import React from 'react';
-import { Package, CreditCard, Wrench, ShoppingCart, TrendingUp, BarChart2, Activity, Eye, X, CheckCircle2 } from 'lucide-react';
+import { Package, CreditCard, Wrench, ShoppingCart, TrendingUp, BarChart2, Activity, Eye, X, CheckCircle2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { usePanels } from '@/contexts/PanelContext';
 import AiRiskBadge from './AiRiskBadge';
+
+const ALERT_TYPE_TO_PANEL = {
+    stock_bajo:           'mercancias',
+    existencia_negativa:  'mercancias',
+    sin_ubicacion:        'actualizar-ubicacion',
+    producto_lento:       'mercancias',
+    factura_vencida:      'recibo-ingreso',
+};
 
 const AREA_ICONS = {
     inventario:  { icon: Package,      color: 'text-blue-600 bg-blue-50' },
@@ -14,9 +23,19 @@ const AREA_ICONS = {
 };
 
 export default function AiAlertCard({ alert, onChangeStatus, updating }) {
+    const { openPanel } = usePanels();
     const areaInfo = AREA_ICONS[alert.area] || AREA_ICONS.default;
     const Icon = areaInfo.icon;
     const created = new Date(alert.created_at).toLocaleString('es-DO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const targetPanel = ALERT_TYPE_TO_PANEL[alert.alert_type];
+
+    const irAlModulo = () => {
+        if (!targetPanel) return;
+        const extra = {};
+        if (alert.related_table === 'productos' && alert.related_id) extra.productoId = alert.related_id;
+        if (alert.related_table === 'facturas' && alert.metadata?.cliente_id) extra.clienteId = alert.metadata.cliente_id;
+        openPanel(targetPanel, extra);
+    };
 
     return (
         <div className="bg-white border border-slate-200 rounded-md p-3 hover:shadow-sm transition-shadow flex gap-3">
@@ -41,6 +60,17 @@ export default function AiAlertCard({ alert, onChangeStatus, updating }) {
                 )}
             </div>
             <div className="flex-shrink-0 flex flex-col gap-1">
+                {targetPanel && (
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-[10px] text-blue-700 border-blue-300 hover:bg-blue-50"
+                        onClick={irAlModulo}
+                        title={`Abrir ${targetPanel} para corregir`}
+                    >
+                        <ExternalLink className="h-3 w-3 mr-1" /> Ir a módulo
+                    </Button>
+                )}
                 {alert.status === 'pending' && (
                     <>
                         <Button

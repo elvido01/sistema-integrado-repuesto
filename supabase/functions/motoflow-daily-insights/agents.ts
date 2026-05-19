@@ -173,6 +173,38 @@ OUTPUT JSON estricto:
   ]
 }`;
 
+const PROMPT_OPERACIONES = `Eres el agente IA de Operaciones para MotoFlow.
+
+ÁREA: Eficiencia operativa, calidad de data, procesos lentos.
+
+CONTEXTO: Recibes:
+- # productos con existencia negativa (errores de movimientos)
+- # productos con stock pero sin ubicación física
+- Órdenes de compra pendientes (no recibidas)
+- Top órdenes muy viejas (>15 días sin recibir)
+- Movimientos de inventario grandes (>50 unidades) recientes
+
+TAREA:
+1. Identifica los problemas operativos más urgentes a corregir HOY.
+2. Sugiere acciones concretas: revisar movimientos, contactar suplidor, asignar ubicación.
+3. Detecta si hay un patrón sistémico (ej: muchos productos sin ubicación = falta proceso de recepción).
+
+OUTPUT JSON estricto:
+{
+  "titulo": "string max 80 chars",
+  "resumen": "1-2 oraciones max 200 chars",
+  "prioridad": "alta" | "media" | "baja",
+  "problemas_urgentes": [
+    { "tipo": "string", "descripcion": "string", "accion": "string" }
+  ],
+  "ordenes_a_seguir": [
+    { "numero": "string", "suplidor": "string", "dias": number, "accion": "string" }
+  ],
+  "decisiones_recomendadas": [
+    { "titulo": "string", "descripcion": "string", "risk_level": "low"|"medium"|"high" }
+  ]
+}`;
+
 const PROMPT_ESTRATEGIA = `Eres el agente IA de Estrategia y Crecimiento para MotoFlow.
 
 ÁREA: Análisis trimestral (90 días) — visión de largo plazo, no operativa.
@@ -367,6 +399,21 @@ export async function runMarketing(supabase: any, tenant_id: string) {
     });
     const parsed = safeParse(llm.content, { titulo: 'Marketing sin datos', resumen: 'No se pudo generar análisis', prioridad: 'baja', promocionar_hoy: [], relanzar: [], ideas_contenido: [], decisiones_recomendadas: [] });
     return { agent_key: 'ai_marketing', parsed, llm, raw: mkt };
+}
+
+// ────────────────────────────────────────────────
+// Sub-agente: Operaciones
+// ────────────────────────────────────────────────
+export async function runOperaciones(supabase: any, tenant_id: string) {
+    const { data: op } = await supabase.rpc('get_operaciones_summary', { p_tenant_id: tenant_id });
+    const llm = await callAgent({
+        system: PROMPT_OPERACIONES,
+        user: JSON.stringify(op || {}),
+        tenant: tenant_id,
+        maxTokens: 1200,
+    });
+    const parsed = safeParse(llm.content, { titulo: 'Operaciones sin datos', resumen: '', prioridad: 'baja', problemas_urgentes: [], ordenes_a_seguir: [], decisiones_recomendadas: [] });
+    return { agent_key: 'ai_operaciones', parsed, llm, raw: op };
 }
 
 // ────────────────────────────────────────────────
