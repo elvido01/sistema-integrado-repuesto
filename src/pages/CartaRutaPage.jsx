@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, Printer, Save, RefreshCw, FileText, Edit, Loader2, X, RotateCw } from 'lucide-react';
+import { Search, Printer, Save, RefreshCw, FileText, Edit, Loader2, X, RotateCw, Image as ImageIcon, Upload, Trash2 } from 'lucide-react';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -19,6 +19,22 @@ const CLAUSULAS_DEFAULT = [
   '3RO. TIENE SOLO 1,000 KILOMETRO DE GARANTIA EN LA MAQUINA.',
   '4TO. NO SE PUEDE ATRASAR CON UN MES Y TRES DIAS. PUEDE SER LLAMADO O ENVIADO A BUSCAR, EL COSTO DE COBRADOR ES CARGADO A SU CUENTA AUTOMATICAMENTE.',
 ];
+
+const normalizeDocument = (value) => String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+
+const getDocumentSearchVariants = (term) => {
+  const clean = normalizeDocument(term);
+  const variants = new Set([String(term || '').trim()]);
+  if (clean) variants.add(clean);
+  if (/^\d{11}$/.test(clean)) {
+    variants.add(`${clean.slice(0, 3)}-${clean.slice(3, 10)}-${clean.slice(10)}`);
+  }
+  return [...variants].filter(Boolean);
+};
+
+const buildIlikeOr = (column, values) => values
+  .map((value) => `${column}.ilike.%${String(value).replace(/[%*,]/g, '')}%`)
+  .join(',');
 
 const CartaRutaPage = () => {
   const { empresa, tenantId } = useAuth();
@@ -33,6 +49,8 @@ const CartaRutaPage = () => {
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isUploadingImg, setIsUploadingImg] = useState(false);
+  const imgInputRef = useRef(null);
 
   // ── Form State ──
   const [form, setForm] = useState({
@@ -63,6 +81,8 @@ const CartaRutaPage = () => {
     descripcion_factura: '',
     // Cláusulas
     clausulas: CLAUSULAS_DEFAULT.join('\n'),
+    // Imagen adjunta (foto moto / documento)
+    imagen_url: '',
   });
 
   const searchRef = useRef(null);
@@ -100,19 +120,28 @@ const CartaRutaPage = () => {
 
     try {
       const isNumeric = /^\d+$/.test(term);
-      const cedulaClean = term.replace(/-/g, '').replace(/\s/g, '');
+      const cedulaClean = normalizeDocument(term);
       const isCedula = /^\d{11}$/.test(cedulaClean);
       const hasSpace = /\s/.test(term);
+      const isDocumentLike = !hasSpace && cedulaClean.length >= 5 && /[0-9]/.test(cedulaClean);
       // Formato estándar RD cuando llegan 11 dígitos puros: XXX-XXXXXXX-X
       const cedulaFormatted = isCedula
         ? `${cedulaClean.slice(0,3)}-${cedulaClean.slice(3,10)}-${cedulaClean.slice(10)}`
         : '';
+      const documentVariants = getDocumentSearchVariants(term);
       const results = [];
 
       // 1) Buscar en cartas existentes primero (para renovaciones)
       let cartasQuery = supabase.from('cartas_ruta').select('*');
 
-      if (isCedula) {
+      if (isDocumentLike) {
+        const identityFilters = buildIlikeOr('cliente_cedula', documentVariants);
+        if (isNumeric) {
+          cartasQuery = cartasQuery.or(`numero.eq.${term},venta_numero.eq.${term},solicitud_numero.eq.${term},${identityFilters}`);
+        } else {
+          cartasQuery = cartasQuery.or(`${identityFilters},chasis.ilike.%${term}%`);
+        }
+      } else if (isCedula) {
         // Cubre: término tal cual, limpio sin guiones, y re-formateado con guiones
         const variants = [
           `cliente_cedula.ilike.%${term}%`,
@@ -144,10 +173,39 @@ const CartaRutaPage = () => {
           .maybeSingle();
         if (facturaData) results.push({ ...facturaData, _tipo: 'venta' });
       }
+      if (isDocumentLike) {
+        const { data: clientesByDoc } = await supabase
+          .from('clientes')
+          .select('id')
+          .or(buildIlikeOr('rnc', documentVariants))
+          .limit(25);
+
+        const clienteIds = (clientesByDoc || []).map(c => c.id).filter(Boolean);
+        if (clienteIds.length) {
+          const { data: facturasByDoc } = await supabase
+            .from('facturas')
+            .select('*, clientes(*), facturas_detalle(*, productos(*))')
+            .in('cliente_id', clienteIds)
+            .neq('estado', 'ANULADA')
+            .order('fecha', { ascending: false })
+            .limit(10);
+          facturasByDoc?.forEach(f => results.push({ ...f, _tipo: 'venta' }));
+        }
+      }
 
       // 3) Buscar en solicitudes por # solicitud o chasis
       let solQuery = supabase.from('solicitudes_compras').select('*, clientes(nombre, rnc)');
-      if (isNumeric) {
+      if (isDocumentLike) {
+        const docFilters = [
+          buildIlikeOr('cliente_rnc', documentVariants),
+          buildIlikeOr('cliente_nombre', documentVariants),
+        ].filter(Boolean).join(',');
+        if (isNumeric) {
+          solQuery = solQuery.or(`numero.eq.${parseInt(term) || 0},${docFilters}`);
+        } else {
+          solQuery = solQuery.or(`${docFilters},chasis.ilike.%${term}%`);
+        }
+      } else if (isNumeric) {
         solQuery = solQuery.eq('numero', parseInt(term) || 0);
       } else if (!hasSpace) {
         solQuery = solQuery.ilike('chasis', `%${term}%`);
@@ -159,18 +217,22 @@ const CartaRutaPage = () => {
         solData.forEach(s => results.push({ ...s, _tipo: 'solicitud' }));
       }
 
-      if (results.length === 0) {
+      const uniqueResults = results.filter((item, index, self) =>
+        index === self.findIndex(x => x._tipo === item._tipo && x.id === item.id)
+      );
+
+      if (uniqueResults.length === 0) {
         toast({ title: 'Sin resultados', description: `No se encontró información con "${term}".` });
         return;
       }
 
-      if (results.length === 1) {
-        const r = results[0];
+      if (uniqueResults.length === 1) {
+        const r = uniqueResults[0];
         if (r._tipo === 'carta') loadCarta(r);
         else if (r._tipo === 'venta') loadFromVenta(r);
         else if (r._tipo === 'solicitud') loadFromSolicitud(r);
       } else {
-        setSearchResults(results);
+        setSearchResults(uniqueResults);
       }
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error', description: error.message });
@@ -242,7 +304,7 @@ const CartaRutaPage = () => {
   // ── Cargar datos de una solicitud al formulario ──
   const loadFromSolicitud = (sol) => {
     const clienteNombre = sol.cliente_nombre || sol.clientes?.nombre || '';
-    const clienteCedula = sol.clientes?.rnc || '';
+    const clienteCedula = sol.cliente_rnc || sol.clientes?.rnc || '';
     const inicial = parseFloat(sol.inicial) || 0;
     const cuota = parseFloat(sol.cuota_mensual) || 0;
     const meses = parseInt(sol.tiempo_meses) || 0;
@@ -336,6 +398,7 @@ const CartaRutaPage = () => {
       valor_contado: form.valor_contado,
       descripcion_factura: form.descripcion_factura,
       clausulas: form.clausulas,
+      imagen_url: form.imagen_url || null,
     };
 
     try {
@@ -397,6 +460,7 @@ const CartaRutaPage = () => {
       tipo: 'MOTOCICLETA', marca: '', modelo: '', color: '', anio: '', chasis: '', motor: '', placa: 'TRAMITE', condicion: 'NUEVA',
       inicial: 0, cuota_mensual: 0, tiempo_meses: 0, valor_contado: 0, descripcion_factura: '',
       clausulas: CLAUSULAS_DEFAULT.join('\n'),
+      imagen_url: '',
     });
     setSelectedCarta(null);
     setSearchResults([]);
@@ -545,6 +609,75 @@ const CartaRutaPage = () => {
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
+  // ── Subir imagen adjunta ──
+  const handleImagenUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast({ variant: 'destructive', title: 'Archivo inválido', description: 'Selecciona una imagen (JPG, PNG, etc.).' });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast({ variant: 'destructive', title: 'Imagen muy grande', description: 'Máximo 8 MB.' });
+      return;
+    }
+    setIsUploadingImg(true);
+    try {
+      const ext = file.name.split('.').pop();
+      const fileName = `cartas-ruta/${tenantId}/carta_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('product-images')
+        .upload(fileName, file, { upsert: true, contentType: file.type });
+      if (upErr) throw upErr;
+      const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(fileName);
+      updateField('imagen_url', urlData.publicUrl);
+      toast({ title: 'Imagen cargada', description: 'Recuerda guardar la carta para conservarla.' });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error al subir', description: err.message });
+    } finally {
+      setIsUploadingImg(false);
+      if (imgInputRef.current) imgInputRef.current.value = '';
+    }
+  };
+
+  // ── Quitar imagen ──
+  const handleRemoveImagen = () => {
+    updateField('imagen_url', '');
+    toast({ title: 'Imagen quitada', description: 'Guarda la carta para aplicar el cambio.' });
+  };
+
+  // ── Imprimir SOLO la imagen (individual) ──
+  const handlePrintImagen = () => {
+    if (!form.imagen_url) {
+      toast({ variant: 'destructive', title: 'Sin imagen', description: 'No hay imagen para imprimir.' });
+      return;
+    }
+    const titulo = `Imagen — Carta ${selectedCarta?.numero ? `Nº ${String(selectedCarta.numero).padStart(5, '0')}` : ''} ${form.cliente_nombre || ''}`.trim();
+    const w = window.open('', '_blank', 'width=816,height=1056');
+    w.document.write(`
+      <!DOCTYPE html><html><head><meta charset="utf-8"/><title>${titulo}</title>
+      <style>
+        @page { size: letter; margin: 10mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Times New Roman', serif; text-align: center; padding: 10px; }
+        .cap { font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #000; }
+        .meta { font-size: 11px; color: #333; margin-bottom: 12px; }
+        img { max-width: 100%; max-height: 90vh; object-fit: contain; border: 1px solid #ccc; }
+        @media print { body { padding: 0; } .meta { color:#000; } }
+      </style></head><body>
+        <div class="cap">${(form.cliente_nombre || '').toUpperCase()}${form.chasis ? ` — CHASIS: ${form.chasis}` : ''}</div>
+        <div class="meta">${form.marca || ''} ${form.modelo || ''} ${form.color || ''} ${form.placa ? `· Placa: ${form.placa}` : ''}</div>
+        <img src="${form.imagen_url}" alt="Imagen carta" crossorigin="anonymous" />
+        <script>
+          var img = document.querySelector('img');
+          if (img.complete) { window.print(); }
+          else { img.onload = function(){ window.print(); }; img.onerror = function(){ window.print(); }; }
+        </script>
+      </body></html>
+    `);
+    w.document.close();
+  };
+
   return (
     <>
       <Helmet><title>Carta de Ruta — {empresa?.nombre || 'Sistema'}</title></Helmet>
@@ -560,7 +693,7 @@ const CartaRutaPage = () => {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 ref={searchRef}
-                placeholder="# Solicitud, # Venta, Chasis, Cédula o Nombre..."
+                placeholder="# Solicitud, # Venta, Chasis, Cédula, RNC, Pasaporte o Nombre..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
@@ -675,7 +808,7 @@ const CartaRutaPage = () => {
                 <Input value={form.cliente_nombre} onChange={e => updateField('cliente_nombre', e.target.value.toUpperCase())} className="h-8 text-sm font-bold" placeholder="NOMBRE COMPLETO" />
               </div>
               <div>
-                <Label className="text-[10px] font-bold text-slate-500 uppercase">Cédula</Label>
+                <Label className="text-[10px] font-bold text-slate-500 uppercase">Cédula / Pasaporte</Label>
                 <Input value={form.cliente_cedula} onChange={e => updateField('cliente_cedula', e.target.value)} className="h-8 text-sm" placeholder="000-0000000-0" />
               </div>
             </div>
@@ -729,6 +862,79 @@ const CartaRutaPage = () => {
             <div>
               <Label className="text-[10px] font-bold text-slate-500 uppercase">Cláusulas / Condiciones</Label>
               <Textarea value={form.clausulas} onChange={e => updateField('clausulas', e.target.value)} rows={5} className="text-xs leading-relaxed" />
+            </div>
+
+            {/* Imagen adjunta */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wide flex items-center gap-1">
+                  <ImageIcon className="h-3.5 w-3.5" /> Imagen adjunta (foto moto / documento)
+                </Label>
+                <input
+                  ref={imgInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImagenUpload}
+                />
+                {!form.imagen_url ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => imgInputRef.current?.click()}
+                    disabled={isUploadingImg}
+                  >
+                    {isUploadingImg ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+                    Subir imagen
+                  </Button>
+                ) : (
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => imgInputRef.current?.click()}
+                      disabled={isUploadingImg}
+                    >
+                      {isUploadingImg ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                      Cambiar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs text-rose-600 border-rose-300 hover:bg-rose-50"
+                      onClick={handleRemoveImagen}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {form.imagen_url ? (
+                <div className="flex flex-col items-center gap-2">
+                  <img
+                    src={form.imagen_url}
+                    alt="Imagen de la carta"
+                    className="max-h-64 max-w-full object-contain rounded border border-slate-300 bg-white"
+                  />
+                  <Button
+                    type="button"
+                    className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold w-full"
+                    onClick={handlePrintImagen}
+                  >
+                    <Printer className="h-4 w-4 mr-2" /> IMPRIMIR IMAGEN (INDIVIDUAL)
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 italic text-center py-3">
+                  Sin imagen. Sube una foto de la moto o un documento para verla aquí e imprimirla por separado.
+                </p>
+              )}
             </div>
           </div>
 
