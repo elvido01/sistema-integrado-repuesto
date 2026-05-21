@@ -15,6 +15,9 @@ import PaySupplierCommitmentModal from '@/components/dashboard/PaySupplierCommit
 import SuscripcionStatusCard from '@/components/dashboard/SuscripcionStatusCard';
 import InsightsBanner from '@/components/dashboard/InsightsBanner';
 
+import { generatePagoCompromisoPDF } from '@/components/common/pdf/pagoCompromisoPDF';
+import { generatePagoSuplidorPDF } from '@/components/common/pdf/pagoSuplidorPDF';
+
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -25,7 +28,7 @@ const HomePage = () => {
   const { toast } = useToast();
   const { profile, empresa, tenantId } = useAuth();
   const { openPanel } = usePanels();
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'owner';
+  const isAdmin = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
 
   // UI Stats (Originales)
   const [stats, setStats] = useState({
@@ -309,6 +312,22 @@ const HomePage = () => {
           : `Compromiso pagado (${forma_pago}).`,
       });
 
+      // Comprobante de pago (se abre en una ventana para imprimir).
+      try {
+        generatePagoCompromisoPDF({
+          nombre: c.nombre,
+          monto: c.monto,
+          fecha_pago: new Date().toISOString(),
+          forma_pago,
+          referencia_pago,
+          tipo: c.tipo,
+          recurrente: c.recurrente,
+          frecuencia: c.frecuencia,
+        }, empresa || {});
+      } catch (pdfErr) {
+        console.warn('No se pudo generar el comprobante de pago:', pdfErr);
+      }
+
       setPayCommitmentTarget(null);
       fetchDashboardData(true);
     } catch (error) {
@@ -360,6 +379,24 @@ const HomePage = () => {
         title: "Pago a suplidor registrado",
         description: `Pago ${data} aplicado a factura ${c.numero || c.referencia} (${forma_pago}).`,
       });
+
+      // Comprobante de pago a suplidor (se abre en una ventana para imprimir).
+      try {
+        generatePagoSuplidorPDF(
+          { numero: data, fecha: pagoData.fecha, total_pagado: monto_abonado },
+          c.suplidor_nombre || c.proveedores?.nombre,
+          [{
+            fecha_emision: c.fecha,
+            referencia: c.numero || c.referencia,
+            monto_pendiente: c.monto_pendiente,
+            monto_abonado: monto_abonado,
+          }],
+          [{ forma: forma_pago, referencia: referencia_pago, monto: monto_abonado }],
+          empresa || {}
+        );
+      } catch (pdfErr) {
+        console.warn('No se pudo generar el comprobante de pago a suplidor:', pdfErr);
+      }
 
       setPaySupplierTarget(null);
       fetchDashboardData(true);
@@ -431,7 +468,7 @@ const HomePage = () => {
         </div>
 
         {/* Banner insights diarios (agente IA) */}
-        <InsightsBanner />
+        {isAdmin && <InsightsBanner />}
 
         {/* Panel Administrativo Financiero */}
         {isAdmin && (
