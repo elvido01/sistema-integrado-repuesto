@@ -957,6 +957,137 @@ export const printRecibo4Pulgadas = (reciboData) => {
   setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
 };
 
+// ── Helper interno: imprime un HTML POS en un iframe oculto ──
+const _printPosHTML = (html) => {
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+  iframe.contentWindow.document.open();
+  iframe.contentWindow.document.write(html);
+  iframe.contentWindow.document.close();
+  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+};
+
+// ── Plantilla compartida del comprobante de pago (ticket POS) ──
+// data: { titulo, numero, fecha, partyLabel, partyName, lineas:[{label,value}],
+//         formasPago:[{forma,referencia,monto}], total, nota }
+const _comprobantePagoHTML = (data, paperSize) => {
+  const { titulo = 'COMPROBANTE DE PAGO', numero, fecha, partyLabel = 'BENEFICIARIO',
+          partyName = 'N/A', lineas = [], formasPago = [], total = 0, nota = '' } = data;
+
+  const fechaStr = formatInTimeZone(new Date(fecha || Date.now()), 'd/L/yyyy');
+  const horaStr = formatInTimeZone(new Date(), 'hh:mm a');
+
+  const is4inch = paperSize !== '80mm';
+  const pageWidth = is4inch ? '101.6mm' : '80mm';
+  const bodyWidth = is4inch ? '96mm' : '74mm';
+  const baseFont = is4inch ? '13px' : '11px';
+  const headFont = is4inch ? '18px' : '15px';
+  const totalFont = is4inch ? '16px' : '14px';
+  const smallFont = is4inch ? '11px' : '10px';
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        @page { margin: 0; size: ${pageWidth} auto; }
+        html, body { margin: 0; padding: 0; background:#fff; }
+        body {
+          width: ${bodyWidth}; margin: 0 auto; padding: 3mm 4mm;
+          box-sizing: border-box; font-family: Arial, Helvetica, sans-serif;
+          font-size: ${baseFont}; line-height: 1.3; color:#000;
+          -webkit-print-color-adjust: exact;
+        }
+        .text-center { text-align:center; }
+        .text-right { text-align:right; }
+        .bold { font-weight:bold; }
+        .header { margin-bottom: 8px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+        .header h1 { font-size:${headFont}; margin:0; font-weight:900; }
+        .header p { margin: 1px 0; font-size: ${smallFont}; }
+        .titulo { margin-top:6px; font-weight:bold; font-size:${is4inch ? '13px' : '12px'}; letter-spacing:0.5px; }
+        .row { display:flex; justify-content:space-between; margin-bottom:2px; }
+        .separator { border-top:1px dashed #000; margin:6px 0; }
+        table { width:100%; border-collapse:collapse; }
+        td { font-size:${baseFont}; padding:2px 0; vertical-align:top; }
+        .total-row { font-weight:bold; font-size:${totalFont}; margin-top:8px; display:flex; justify-content:space-between; border-top:2px solid #000; padding-top:4px; }
+        .sign { margin-top:30px; display:flex; justify-content:space-between; gap:12px; }
+        .sign div { flex:1; border-top:1px solid #000; text-align:center; padding-top:3px; font-size:${smallFont}; }
+        .footer { margin-top:14px; text-align:center; font-size:${smallFont}; }
+      </style>
+    </head>
+    <body onload="window.print()">
+      <div class="header text-center">
+        ${getHeaderHTML()}
+        <div class="titulo">${titulo}</div>
+      </div>
+
+      <div style="margin-bottom:6px;">
+        <div class="row">
+          <span>Numero: <span class="bold">${numero || 'N/A'}</span></span>
+          <span>${horaStr}</span>
+        </div>
+        <div class="row"><span>Fecha: ${fechaStr}</span></div>
+        <div style="margin-top:4px;"><span class="bold">${partyLabel}:</span> ${(partyName || 'N/A').toUpperCase()}</div>
+      </div>
+
+      ${lineas.length ? `
+      <div class="separator"></div>
+      <table><tbody>
+        ${lineas.map(l => `<tr><td>${l.label}</td><td class="text-right bold">${l.value}</td></tr>`).join('')}
+      </tbody></table>` : ''}
+
+      <div class="separator"></div>
+      <div class="bold" style="margin-bottom:2px;">DETALLE DE PAGO:</div>
+      <table><tbody>
+        ${formasPago.map(f => `<tr><td>${(f.forma || '').toUpperCase()} ${f.referencia ? `(${f.referencia})` : ''}</td><td class="text-right">${formatCurrency(f.monto)}</td></tr>`).join('')}
+      </tbody></table>
+
+      <div class="total-row">
+        <span>TOTAL PAGADO:</span>
+        <span>${formatCurrency(total)}</span>
+      </div>
+
+      ${nota ? `<p style="margin-top:6px; font-size:${smallFont};">${nota}</p>` : ''}
+
+      <div class="sign">
+        <div>Entregado por</div>
+        <div>Recibido por</div>
+      </div>
+
+      <div class="footer">
+        <p>*** COMPROBANTE DE PAGO ***</p>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
+// Comprobante de pago de un compromiso general (luz, nómina, préstamo...).
+export const printPagoCompromisoPOS = (pago, paperSize = '4inch') => {
+  const numero = pago.numero || formatInTimeZone(new Date(pago.fecha_pago || Date.now()), 'yyyyMMdd-HHmmss');
+  _printPosHTML(_comprobantePagoHTML({
+    titulo: 'COMPROBANTE DE PAGO',
+    numero,
+    fecha: pago.fecha_pago,
+    partyLabel: 'CONCEPTO',
+    partyName: pago.nombre,
+    lineas: pago.tipo ? [{ label: 'Tipo', value: String(pago.tipo).toUpperCase() }] : [],
+    formasPago: [{ forma: pago.forma_pago || 'Efectivo', referencia: pago.referencia_pago, monto: pago.monto }],
+    total: pago.monto,
+    nota: pago.recurrente ? `* Compromiso recurrente (${pago.frecuencia || 'mensual'}). Se renueva al pagarlo.` : '',
+  }, paperSize));
+};
+
+// Nota: el comprobante POS de pago a suplidor ya existe más abajo como
+// printPagoSuplidorPOS(pago, suplidorNombre, detalles, formasPago, paperSize).
+
 export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') => {
   const fechaStr = cotizacion.fecha_cotizacion
     ? formatInTimeZone(new Date(cotizacion.fecha_cotizacion), 'd/L/yyyy')
@@ -1599,13 +1730,13 @@ const RECEIPT_PRINTER_NAMES = [
 export const printFacturaQZ = async (factura) => {
   try {
     const { buildFacturaEscPos } = await import('@/services/escposReceipt');
-    const { qzFindReceiptPrinter, qzPrintRawEscPos } = await import('@/services/qzTrayService');
+    const { findReceiptPrinter, printRawEscPos } = await import('@/services/printerAdapter');
 
-    const printerName = await qzFindReceiptPrinter(RECEIPT_PRINTER_NAMES);
+    const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
     const escpos = buildFacturaEscPos(factura);
 
     console.log("[QZ-POS] Imprimiendo factura via ESC/POS...");
-    await qzPrintRawEscPos(printerName, escpos);
+    await printRawEscPos(printerName, escpos);
     console.log("[QZ-POS] Factura enviada exitosamente.");
     return true;
   } catch (err) {
@@ -1620,13 +1751,13 @@ export const printFacturaQZ = async (factura) => {
 export const printReciboIngresoQZ = async (reciboData) => {
   try {
     const { buildReciboIngresoEscPos } = await import('@/services/escposReceipt');
-    const { qzFindReceiptPrinter, qzPrintRawEscPos } = await import('@/services/qzTrayService');
+    const { findReceiptPrinter, printRawEscPos } = await import('@/services/printerAdapter');
 
-    const printerName = await qzFindReceiptPrinter(RECEIPT_PRINTER_NAMES);
+    const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
     const escpos = buildReciboIngresoEscPos(reciboData, _empresaConfig);
 
     console.log("[QZ-POS] Imprimiendo recibo de ingreso via ESC/POS...");
-    await qzPrintRawEscPos(printerName, escpos);
+    await printRawEscPos(printerName, escpos);
     console.log("[QZ-POS] Recibo enviado exitosamente.");
     return true;
   } catch (err) {
@@ -1641,13 +1772,13 @@ export const printReciboIngresoQZ = async (reciboData) => {
 export const printCotizacionQZ = async (cotizacion, detalles) => {
   try {
     const { buildCotizacionEscPos } = await import('@/services/escposReceipt');
-    const { qzFindReceiptPrinter, qzPrintRawEscPos } = await import('@/services/qzTrayService');
+    const { findReceiptPrinter, printRawEscPos } = await import('@/services/printerAdapter');
 
-    const printerName = await qzFindReceiptPrinter(RECEIPT_PRINTER_NAMES);
+    const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
     const escpos = buildCotizacionEscPos(cotizacion, detalles);
 
     console.log("[QZ-POS] Imprimiendo cotización via ESC/POS...");
-    await qzPrintRawEscPos(printerName, escpos);
+    await printRawEscPos(printerName, escpos);
     console.log("[QZ-POS] Cotización enviada exitosamente.");
     return true;
   } catch (err) {

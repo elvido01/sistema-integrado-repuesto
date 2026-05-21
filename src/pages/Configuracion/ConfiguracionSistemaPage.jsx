@@ -42,7 +42,10 @@ const ConfiguracionSistemaPage = () => {
         limpiar_ordenes_compra_auto: true,
         modo_limpieza_orden: 'agresivo',
         formato_factura: 'pos_4inch',
-        formato_precio_etiqueta: 'alpha'
+        formato_precio_etiqueta: 'alpha',
+        formato_comprobante_pago: 'pdf',
+        precio2_descuento_pct: 10,
+        precio3_descuento_pct: 15
     });
 
     const [originalGoalData, setOriginalGoalData] = useState({
@@ -85,7 +88,10 @@ const ConfiguracionSistemaPage = () => {
                     limpiar_ordenes_compra_auto: data.limpiar_ordenes_compra_auto ?? true,
                     modo_limpieza_orden: data.modo_limpieza_orden || 'agresivo',
                     formato_factura: data.formato_factura || 'pos_4inch',
-                    formato_precio_etiqueta: data.formato_precio_etiqueta || 'alpha'
+                    formato_precio_etiqueta: data.formato_precio_etiqueta || 'alpha',
+                    formato_comprobante_pago: data.formato_comprobante_pago || 'pdf',
+                    precio2_descuento_pct: data.precio2_descuento_pct ?? 10,
+                    precio3_descuento_pct: data.precio3_descuento_pct ?? 15
                 });
                 
                 setOriginalGoalData({
@@ -352,6 +358,36 @@ const ConfiguracionSistemaPage = () => {
                         </div>
                     </div>
 
+                    {/* Configuración de precios automáticos */}
+                    <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
+                        <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
+                           <Percent className="w-4 h-4" /> Configuración de Precios 2 y 3
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-1.5">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Descuento Automático P2</Label>
+                                <div className="flex items-center">
+                                    <Input id="precio2_descuento_pct" type="number" min="0" max="100" step="0.01" value={formData.precio2_descuento_pct} onChange={handleNumberChange} className="h-10 rounded-r-none font-bold text-right" />
+                                    <div className="bg-blue-50 border border-l-0 border-blue-200 h-10 px-3 flex items-center justify-center rounded-r-md text-xs font-bold text-blue-700">%</div>
+                                </div>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    P2 se calcula restando este porcentaje a P1. Si queda con pérdida real, el cotejo se desactiva.
+                                </p>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Descuento Automático P3</Label>
+                                <div className="flex items-center">
+                                    <Input id="precio3_descuento_pct" type="number" min="0" max="100" step="0.01" value={formData.precio3_descuento_pct} onChange={handleNumberChange} className="h-10 rounded-r-none font-bold text-right" />
+                                    <div className="bg-blue-50 border border-l-0 border-blue-200 h-10 px-3 flex items-center justify-center rounded-r-md text-xs font-bold text-blue-700">%</div>
+                                </div>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Útil para mayoristas: una empresa puede usar P2 -5% y P3 -8%, otra P2 -10% y P3 -15%.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Dynamic Goals Settings Section */}
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
                         <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
@@ -475,6 +511,21 @@ const ConfiguracionSistemaPage = () => {
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">
                                     Formato por defecto del precio en Impresión de Etiquetas Masivas. El usuario puede cambiarlo temporalmente desde el módulo.
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Formato de Comprobante de Pago</Label>
+                                <Select value={formData.formato_comprobante_pago} onValueChange={(v) => handleSelectChange('formato_comprobante_pago', v)}>
+                                    <SelectTrigger className="h-10 border-indigo-200 bg-indigo-50/30 text-indigo-700 font-bold"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="pdf">PDF (Carta 8.5 x 11)</SelectItem>
+                                        <SelectItem value="pos_4inch">Ticket 4 Pulgadas (POS)</SelectItem>
+                                        <SelectItem value="pos_80mm">Ticket 80mm (POS)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Formato del comprobante que se imprime al pagar compromisos y suplidores desde el Inicio.
                                 </p>
                             </div>
                         </div>

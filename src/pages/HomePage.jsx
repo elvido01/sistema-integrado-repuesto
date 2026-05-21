@@ -17,6 +17,7 @@ import InsightsBanner from '@/components/dashboard/InsightsBanner';
 
 import { generatePagoCompromisoPDF } from '@/components/common/pdf/pagoCompromisoPDF';
 import { generatePagoSuplidorPDF } from '@/components/common/pdf/pagoSuplidorPDF';
+import { printPagoCompromisoPOS, printPagoSuplidorPOS } from '@/lib/printPOS';
 
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -62,6 +63,8 @@ const HomePage = () => {
   const [selectedCommitment, setSelectedCommitment] = useState(null);
   const [payCommitmentTarget, setPayCommitmentTarget] = useState(null);
   const [paySupplierTarget, setPaySupplierTarget] = useState(null);
+  // Formato del comprobante de pago (config_empresa.formato_comprobante_pago).
+  const [formatoComprobante, setFormatoComprobante] = useState('pdf');
 
   const fetchDashboardData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -69,13 +72,16 @@ const HomePage = () => {
 
     try {
       // 0. Configuración de la Empresa (para meta dinámica + nombre)
+      // select('*') para tolerar que formato_comprobante_pago aún no exista en la BD
+      // (si no se ha corrido la migración SQL, simplemente cae al default 'pdf').
       const { data: configEmpresa } = await supabase
         .from('config_empresa')
-        .select('nombre, meta_ventas, incremento_meta_pct, intervalo_meta, fecha_inicio_meta')
+        .select('*')
         .eq('tenant_id', tenantId)
         .maybeSingle();
 
       if (configEmpresa?.nombre) setNombreEmpresa(configEmpresa.nombre);
+      if (configEmpresa?.formato_comprobante_pago) setFormatoComprobante(configEmpresa.formato_comprobante_pago);
 
       const calculateCurrentMeta = (config) => {
         if (!config || !config.meta_ventas) return 150000;
@@ -312,9 +318,9 @@ const HomePage = () => {
           : `Compromiso pagado (${forma_pago}).`,
       });
 
-      // Comprobante de pago (se abre en una ventana para imprimir).
+      // Comprobante de pago (PDF o ticket POS según configuración del sistema).
       try {
-        generatePagoCompromisoPDF({
+        const pago = {
           nombre: c.nombre,
           monto: c.monto,
           fecha_pago: new Date().toISOString(),
@@ -323,7 +329,12 @@ const HomePage = () => {
           tipo: c.tipo,
           recurrente: c.recurrente,
           frecuencia: c.frecuencia,
-        }, empresa || {});
+        };
+        if (formatoComprobante === 'pdf') {
+          generatePagoCompromisoPDF(pago, empresa || {});
+        } else {
+          printPagoCompromisoPOS(pago, formatoComprobante === 'pos_80mm' ? '80mm' : '4inch');
+        }
       } catch (pdfErr) {
         console.warn('No se pudo generar el comprobante de pago:', pdfErr);
       }
@@ -380,20 +391,23 @@ const HomePage = () => {
         description: `Pago ${data} aplicado a factura ${c.numero || c.referencia} (${forma_pago}).`,
       });
 
-      // Comprobante de pago a suplidor (se abre en una ventana para imprimir).
+      // Comprobante de pago a suplidor (PDF o ticket POS según configuración).
       try {
-        generatePagoSuplidorPDF(
-          { numero: data, fecha: pagoData.fecha, total_pagado: monto_abonado },
-          c.suplidor_nombre || c.proveedores?.nombre,
-          [{
-            fecha_emision: c.fecha,
-            referencia: c.numero || c.referencia,
-            monto_pendiente: c.monto_pendiente,
-            monto_abonado: monto_abonado,
-          }],
-          [{ forma: forma_pago, referencia: referencia_pago, monto: monto_abonado }],
-          empresa || {}
-        );
+        const nombreSuplidor = c.suplidor_nombre || c.proveedores?.nombre;
+        const pagoComprobante = { numero: data, fecha: pagoData.fecha, total_pagado: monto_abonado };
+        const detallesComprobante = [{
+          fecha_emision: c.fecha,
+          referencia: c.numero || c.referencia,
+          monto_pendiente: c.monto_pendiente,
+          monto_abonado: monto_abonado,
+        }];
+        const formasComprobante = [{ forma: forma_pago, referencia: referencia_pago, monto: monto_abonado }];
+
+        if (formatoComprobante === 'pdf') {
+          generatePagoSuplidorPDF(pagoComprobante, nombreSuplidor, detallesComprobante, formasComprobante, empresa || {});
+        } else {
+          printPagoSuplidorPOS(pagoComprobante, nombreSuplidor, detallesComprobante, formasComprobante, formatoComprobante === 'pos_80mm' ? '80mm' : '4inch');
+        }
       } catch (pdfErr) {
         console.warn('No se pudo generar el comprobante de pago a suplidor:', pdfErr);
       }
