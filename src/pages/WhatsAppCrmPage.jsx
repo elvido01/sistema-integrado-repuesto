@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { MessageCircle, Search, Send, Bot, UserRound, Loader2, FileText, UserPlus, RefreshCw, Power, PowerOff, CheckCircle2 } from 'lucide-react';
+import { MessageCircle, Search, Send, Bot, UserRound, Loader2, FileText, UserPlus, RefreshCw, Power, PowerOff, CheckCircle2, QrCode, Smartphone, X, Wifi, WifiOff } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -29,6 +29,10 @@ const scoreLabels = {
 
 const genericClientId = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
 
+// URL del servicio del canal manual (WhatsApp Web / Baileys).
+// En local apunta al servidor que corre en tu PC; en produccion al VPS.
+const WA_WEB_URL = import.meta.env.VITE_WHATSAPP_WEB_URL || 'http://localhost:3899';
+
 const WhatsAppCrmPage = () => {
   const { empresa } = useAuth();
   const { toast } = useToast();
@@ -43,6 +47,9 @@ const WhatsAppCrmPage = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [creatingQuote, setCreatingQuote] = useState(false);
+  // Estado del canal manual (WhatsApp Web / Baileys)
+  const [waStatus, setWaStatus] = useState({ connected: false, qr: null, offline: true });
+  const [showQR, setShowQR] = useState(false);
 
   const fetchConversations = useCallback(async () => {
     setLoading(true);
@@ -93,6 +100,41 @@ const WhatsAppCrmPage = () => {
   useEffect(() => {
     fetchDetail(selected?.id);
   }, [selected?.id, fetchDetail]);
+
+  // Sondea el estado del canal manual (WhatsApp Web) cada 3s para mostrar
+  // el QR / estado de conexion en la pantalla.
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const r = await fetch(`${WA_WEB_URL}/status`);
+        const d = await r.json();
+        if (!active) return;
+        setWaStatus({ connected: !!d.connected, qr: d.qr || null, offline: false });
+        if (d.connected) setShowQR(false); // al conectar, cerrar el QR
+      } catch {
+        if (active) setWaStatus({ connected: false, qr: null, offline: true });
+      }
+    };
+    poll();
+    const id = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+
+  const handleConnectWhatsApp = async () => {
+    setShowQR(true);
+    try {
+      await fetch(`${WA_WEB_URL}/connect`, { method: 'POST' });
+    } catch {
+      toast({ variant: 'destructive', title: 'Servicio apagado', description: 'El canal de WhatsApp Web no esta corriendo. Inicia el servicio e intenta de nuevo.' });
+    }
+  };
+
+  const handleLogoutWhatsApp = async () => {
+    try { await fetch(`${WA_WEB_URL}/logout`, { method: 'POST' }); } catch {}
+    setWaStatus(s => ({ ...s, connected: false, qr: null }));
+    toast({ title: 'WhatsApp desconectado', description: 'Se cerro la sesion del canal manual.' });
+  };
 
   const filteredConversations = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -146,18 +188,31 @@ const WhatsAppCrmPage = () => {
     const content = reply.trim();
     setReply('');
 
-    const { data, error } = await supabase.functions.invoke('whatsapp-crm-webhook', {
-      body: { action: 'send_message', conversation_id: selected.id, content },
-    });
-
-    if (error || data?.ok === false) {
-      toast({ variant: 'destructive', title: 'No se envio', description: data?.error || error?.message || 'Revise la configuracion de WhatsApp.' });
-      setReply(content);
-    } else {
+    try {
+      if (waStatus.connected) {
+        // Canal manual: enviar por tu WhatsApp Web (Baileys)
+        const r = await fetch(`${WA_WEB_URL}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: selected.phone, text: content }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d?.error) throw new Error(d?.error || 'No se pudo enviar por WhatsApp Web.');
+      } else {
+        // Respaldo: canal oficial (Cloud API) via Edge Function
+        const { data, error } = await supabase.functions.invoke('whatsapp-crm-webhook', {
+          body: { action: 'send_message', conversation_id: selected.id, content },
+        });
+        if (error || data?.ok === false) throw new Error(data?.error || error?.message || 'Revise la configuracion de WhatsApp.');
+      }
       await fetchDetail(selected.id);
       await fetchConversations();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se envio', description: e.message });
+      setReply(content);
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   };
 
   const ensureCliente = async () => {
@@ -282,6 +337,33 @@ const WhatsAppCrmPage = () => {
                   <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
+
+              {/* Canal manual: estado y conexion por QR (tu WhatsApp) */}
+              <button
+                type="button"
+                onClick={waStatus.connected ? handleLogoutWhatsApp : handleConnectWhatsApp}
+                disabled={waStatus.offline}
+                className={`w-full mb-3 flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+                  waStatus.connected
+                    ? 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100'
+                    : waStatus.offline
+                      ? 'border-slate-200 bg-slate-50 opacity-70 cursor-not-allowed'
+                      : 'border-amber-200 bg-amber-50 hover:bg-amber-100'
+                }`}
+                title={waStatus.offline ? 'El servicio del canal manual no esta corriendo' : ''}
+              >
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  {waStatus.connected
+                    ? <><Wifi className="h-4 w-4 text-emerald-600" /> Mi WhatsApp conectado</>
+                    : waStatus.offline
+                      ? <><WifiOff className="h-4 w-4 text-slate-400" /> Servicio apagado</>
+                      : <><QrCode className="h-4 w-4 text-amber-600" /> Conectar mi WhatsApp</>}
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  {waStatus.connected ? 'Desconectar' : waStatus.offline ? '' : 'QR'}
+                </span>
+              </button>
+
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
                 <Input className="pl-8" placeholder="Buscar cliente, telefono o mensaje" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -441,6 +523,40 @@ const WhatsAppCrmPage = () => {
           </main>
         </div>
       </div>
+
+      {showQR && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowQR(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-black text-slate-900 flex items-center gap-2">
+                <Smartphone className="h-5 w-5 text-emerald-600" /> Conectar mi WhatsApp
+              </h3>
+              <button onClick={() => setShowQR(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {waStatus.connected ? (
+              <div className="py-8">
+                <CheckCircle2 className="h-12 w-12 text-emerald-600 mx-auto mb-3" />
+                <p className="font-bold text-slate-900">Conectado correctamente</p>
+              </div>
+            ) : waStatus.qr ? (
+              <>
+                <img src={waStatus.qr} alt="QR de WhatsApp" className="w-56 h-56 mx-auto" />
+                <p className="text-sm text-slate-600 mt-4">
+                  En tu celular: <strong>WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo</strong> y escanea este codigo.
+                </p>
+              </>
+            ) : (
+              <div className="py-10">
+                <Loader2 className="h-8 w-8 animate-spin text-slate-400 mx-auto mb-3" />
+                <p className="text-sm text-slate-500">Generando codigo QR...</p>
+                <p className="text-[11px] text-slate-400 mt-1">Si tarda, verifica que el servicio del canal manual este corriendo.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 };
