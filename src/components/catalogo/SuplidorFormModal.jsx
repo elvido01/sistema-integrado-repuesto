@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
+import { emitProveedoresActualizado } from '@/lib/catalogEvents';
 
 const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
   const { toast } = useToast();
@@ -80,6 +81,7 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
         title: 'Éxito',
         description: `Suplidor ${suplidor ? 'actualizado' : 'creado'} correctamente.`,
       });
+      emitProveedoresActualizado(); // refresca selectores en Mercancía/Compras/Orden de Compra
       onClose(true); // pass true to indicate success and trigger refresh
     }
     setIsSubmitting(false);

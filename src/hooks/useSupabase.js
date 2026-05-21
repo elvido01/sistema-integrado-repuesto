@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { onProveedoresActualizado, onCatalogoActualizado } from '@/lib/catalogEvents';
 
 export const useProducts = () => {
   const [products, setProducts] = useState([]);
@@ -262,6 +263,11 @@ export const useCatalogData = () => {
   useEffect(() => {
     fetchCatalogs();
   }, [fetchCatalogs]);
+
+  // Refrescar cuando otro módulo cambia un suplidor o un catálogo (marcas, modelos,
+  // tipos...), sin necesidad de remontar el panel.
+  useEffect(() => onProveedoresActualizado(fetchCatalogs), [fetchCatalogs]);
+  useEffect(() => onCatalogoActualizado(fetchCatalogs), [fetchCatalogs]);
 
   return { tipos, marcas, modelos, proveedores, almacenes, ubicaciones, tiposPresentacion, fetchCatalogs };
 };

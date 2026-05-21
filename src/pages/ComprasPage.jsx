@@ -21,12 +21,18 @@ import { usePanels } from '@/contexts/PanelContext';
 import { ImagePlus, Printer } from 'lucide-react';
 import { generateCompraPDF } from '@/components/common/PDFGenerator';
 import { printCompraPOS } from '@/lib/printPOS';
+import { onProveedoresActualizado } from '@/lib/catalogEvents';
 
 const ComprasPage = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const { user, empresa } = useAuth();
+  const precio2DescuentoPct = Math.max(0, Math.min(100, parseFloat(empresa?.precio2_descuento_pct) || 10));
+  const precio3DescuentoPct = Math.max(0, Math.min(100, parseFloat(empresa?.precio3_descuento_pct) || 15));
+  const precioCubreCostoReal = (precio, costo) => {
+    return (parseFloat(precio) || 0) >= (parseFloat(costo) || 0);
+  };
   const { ordenParaFacturar, setOrdenParaFacturar } = useCompras();
   const { panels, activePanel, closePanel } = usePanels();
   const currentPanel = panels.find(p => p.id === activePanel);
@@ -34,6 +40,7 @@ const ComprasPage = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [proveedores, setProveedores] = useState([]);
   const [almacenes, setAlmacenes] = useState([]);
+  const [catalogTipos, setCatalogTipos] = useState([]);
   const [catalogMarcas, setCatalogMarcas] = useState([]);
   const [catalogModelos, setCatalogModelos] = useState([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
@@ -103,6 +110,9 @@ const ComprasPage = () => {
     }
 
     // Cargar catálogos de marcas y modelos para auto-detección OCR
+    const { data: tiposData } = await supabase.from('tipos_producto').select('id, nombre').order('nombre');
+    if (tiposData) setCatalogTipos(tiposData);
+
     const { data: marcasData } = await supabase.from('marcas').select('id, nombre').order('nombre');
     if (marcasData) setCatalogMarcas(marcasData);
 
@@ -118,6 +128,13 @@ const ComprasPage = () => {
   useEffect(() => {
     fetchInitialData();
   }, [fetchInitialData]);
+
+  // Refrescar la lista de proveedores cuando otro módulo crea/edita/elimina un
+  // suplidor, sin reiniciar el resto del formulario de compra en curso.
+  useEffect(() => onProveedoresActualizado(async () => {
+    const { data } = await supabase.from('proveedores').select('*');
+    if (data) setProveedores(data);
+  }), []);
 
   const resetForm = useCallback(async () => {
     setCompra(initialState);
@@ -364,25 +381,152 @@ const ComprasPage = () => {
     return foundIds;
   }, [catalogModelos]);
 
-  const handleCreateProductFromLine = (line) => {
-    setActiveLineId(line.id);
+  const detectTipoFromDescription = useCallback((descripcion) => {
+    if (!descripcion || catalogTipos.length === 0) return null;
+    const desc = descripcion.toUpperCase();
+    const sortedTipos = [...catalogTipos].sort((a, b) => b.nombre.length - a.nombre.length);
+    for (const tipo of sortedTipos) {
+      const nombreUpper = tipo.nombre.toUpperCase();
+      if (nombreUpper.length < 3) continue;
+      const regex = new RegExp(`\\b${nombreUpper.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`);
+      if (regex.test(desc)) return tipo.id;
+    }
+    return null;
+  }, [catalogTipos]);
 
-    // Auto-detectar marca y modelos desde la descripción
-    const autoMarcaId = detectMarcaFromDescription(line.descripcion);
-    const autoModelosIds = detectModelosFromDescription(line.descripcion);
+  const normalizeSuggestionText = useCallback((value = '') => (
+    value
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  ), []);
 
-    setTempProductData({
+  const getSuggestionTokens = useCallback((descripcion = '') => {
+    const stopWords = new Set(['DEL', 'DE', 'LA', 'EL', 'LOS', 'LAS', 'PARA', 'POR', 'CON', 'SIN', 'UN', 'UNA', 'Y', 'O', 'EN', 'A', 'AL', 'UNIVERSAL', 'PRODUCTO']);
+    return normalizeSuggestionText(descripcion)
+      .split(' ')
+      .filter(token => token.length >= 2 && !stopWords.has(token) && !/^\d+$/.test(token));
+  }, [normalizeSuggestionText]);
+
+  const pickWeightedValue = useCallback((matches, selector) => {
+    const scoreByValue = new Map();
+    matches.forEach(match => {
+      const value = selector(match.product);
+      if (value === null || value === undefined || value === '') return;
+      scoreByValue.set(String(value), (scoreByValue.get(String(value)) || 0) + match.score);
+    });
+    return [...scoreByValue.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  }, []);
+
+  const pickWeightedArrayValues = useCallback((matches, selector, max = 4) => {
+    const scoreByValue = new Map();
+    matches.forEach(match => {
+      const values = selector(match.product) || [];
+      values.forEach(value => {
+        if (!value) return;
+        scoreByValue.set(String(value), (scoreByValue.get(String(value)) || 0) + match.score);
+      });
+    });
+    return [...scoreByValue.entries()].sort((a, b) => b[1] - a[1]).slice(0, max).map(([value]) => value);
+  }, []);
+
+  const buildSuggestedProductFromLine = useCallback(async (line) => {
+    const descripcion = line.descripcion || '';
+    const tokens = getSuggestionTokens(descripcion);
+    const tokenSet = new Set(tokens);
+    const autoMarcaId = detectMarcaFromDescription(descripcion);
+    const autoModelosIds = detectModelosFromDescription(descripcion).map(String);
+    const autoTipoId = detectTipoFromDescription(descripcion);
+    const fallbackCost = parseFloat(line.costo_unitario) || 0;
+    const fallbackDiscount = 3;
+    let matches = [];
+
+    if (tokens.length > 0) {
+      try {
+        const { data: candidates, error } = await supabase
+          .from('productos')
+          .select('id, codigo, descripcion, ubicacion, tipo_id, marca_id, modelos_ids, suplidor_id, itbis_pct, costo, precio, presentaciones(*)')
+          .eq('activo', true)
+          .limit(300);
+
+        if (error) throw error;
+
+        matches = (candidates || [])
+          .map(product => {
+            const candidateTokens = new Set(getSuggestionTokens(product.descripcion || ''));
+            const shared = [...tokenSet].filter(token => candidateTokens.has(token));
+            let score = shared.reduce((sum, token) => sum + Math.min(4, token.length / 2), 0);
+
+            if (autoMarcaId && String(product.marca_id) === String(autoMarcaId)) score += 3;
+            if (autoTipoId && String(product.tipo_id) === String(autoTipoId)) score += 2;
+            if (compra.suplidor_id && String(product.suplidor_id) === String(compra.suplidor_id)) score += 1.5;
+            if (autoModelosIds.length > 0 && (product.modelos_ids || []).some(id => autoModelosIds.includes(String(id)))) score += 3;
+
+            return { product, score, sharedCount: shared.length };
+          })
+          .filter(match => match.score >= 3 && match.sharedCount > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 25);
+      } catch (error) {
+        console.error('Error calculando sugerencias de mercancia:', error);
+      }
+    }
+
+    const suggestedTipoId = autoTipoId ? String(autoTipoId) : pickWeightedValue(matches, product => product.tipo_id);
+    const suggestedMarcaId = autoMarcaId ? String(autoMarcaId) : pickWeightedValue(matches, product => product.marca_id);
+    const suggestedModelosIds = autoModelosIds.length > 0 ? autoModelosIds : pickWeightedArrayValues(matches, product => product.modelos_ids || []);
+    const suggestedUbicacion = pickWeightedValue(matches, product => product.ubicacion);
+    const suggestedItbis = pickWeightedValue(matches, product => product.itbis_pct);
+    const similarPresentations = matches
+      .flatMap(match => (match.product.presentaciones || []).map(presentation => ({ presentation, score: match.score })))
+      .filter(({ presentation }) => (parseFloat(presentation.margen_pct) || 0) > 0);
+    const marginSum = similarPresentations.reduce((sum, item) => sum + ((parseFloat(item.presentation.margen_pct) || 0) * item.score), 0);
+    const marginWeight = similarPresentations.reduce((sum, item) => sum + item.score, 0);
+    const suggestedMargin = marginWeight > 0 ? Math.round((marginSum / marginWeight) * 100) / 100 : 0;
+    const suggestedPrice = suggestedMargin > 0 && fallbackCost > 0 ? Number((fallbackCost * (1 + suggestedMargin / 100)).toFixed(2)) : 0;
+
+    return {
       codigo: line.codigo || '',
       referencia: line.referencia || '',
-      descripcion: line.descripcion || '',
-      costo: line.costo_unitario || 0,
-      // Auto-llenar suplidor con el seleccionado en la compra
+      descripcion,
+      costo: fallbackCost,
       suplidor_id: compra.suplidor_id || null,
-      // Auto-llenar marca si se detecta en la descripción
-      marca_id: autoMarcaId,
-      // Auto-llenar modelos si se detectan en la descripción
-      modelos_ids: autoModelosIds,
-    });
+      tipo_id: suggestedTipoId,
+      marca_id: suggestedMarcaId,
+      modelos_ids: suggestedModelosIds,
+      ubicacion: suggestedUbicacion || '',
+      itbis_pct: suggestedItbis !== null && suggestedItbis !== undefined ? parseFloat(suggestedItbis) : (line.itbis_pct ?? 0.18),
+      presentaciones: [{
+        id: `new-${Date.now()}`,
+        tipo: line.unidad === 'UND' ? 'UND - Unidad' : (line.unidad || 'UND - Unidad'),
+        cantidad: '1',
+        costo: fallbackCost.toFixed(2),
+        margen_pct: suggestedMargin ? String(suggestedMargin) : '0',
+        precio1: suggestedPrice ? suggestedPrice.toFixed(2) : '0.00',
+        precio2: suggestedPrice ? (suggestedPrice * (1 - precio2DescuentoPct / 100)).toFixed(2) : '0.00',
+        precio3: suggestedPrice ? (suggestedPrice * (1 - precio3DescuentoPct / 100)).toFixed(2) : '0.00',
+        auto_precio2: true,
+        auto_precio3: true,
+        descuento_pct: String(fallbackDiscount),
+        precio_final: suggestedPrice ? (suggestedPrice * (1 - fallbackDiscount / 100)).toFixed(2) : '0.00',
+        afecta_ft: true,
+        afecta_inv: true,
+      }],
+      suggestion_info: {
+        similar_count: matches.length,
+        descuento_maximo_pct: fallbackDiscount,
+      },
+    };
+  }, [compra.suplidor_id, detectMarcaFromDescription, detectModelosFromDescription, detectTipoFromDescription, getSuggestionTokens, pickWeightedArrayValues, pickWeightedValue, precio2DescuentoPct, precio3DescuentoPct]);
+
+  const handleCreateProductFromLine = async (line) => {
+    setActiveLineId(line.id);
+    const suggestedProduct = await buildSuggestedProductFromLine(line);
+    setTempProductData(suggestedProduct);
     setIsProductModalOpen(true);
   };
 
@@ -965,10 +1109,22 @@ const ComprasPage = () => {
               };
 
               if (pres.auto_precio2) {
-                updateObj.precio2 = Number((newPresPrecio * 0.90).toFixed(2));
+                const precio2 = Number((newPresPrecio * (1 - precio2DescuentoPct / 100)).toFixed(2));
+                if (precioCubreCostoReal(precio2, newPresCosto)) {
+                  updateObj.precio2 = precio2;
+                } else {
+                  updateObj.precio2 = 0;
+                  updateObj.auto_precio2 = false;
+                }
               }
               if (pres.auto_precio3) {
-                updateObj.precio3 = Number((newPresPrecio * 0.85).toFixed(2));
+                const precio3 = Number((newPresPrecio * (1 - precio3DescuentoPct / 100)).toFixed(2));
+                if (precioCubreCostoReal(precio3, newPresCosto)) {
+                  updateObj.precio3 = precio3;
+                } else {
+                  updateObj.precio3 = 0;
+                  updateObj.auto_precio3 = false;
+                }
               }
 
               // Update this specific presentation

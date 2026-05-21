@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -28,6 +28,7 @@ import { printOrdenCompraPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { loadDraft, useAutoDraft, clearDraft } from '@/lib/drafts';
 import { useCatalogData } from '@/hooks/useSupabase';
+import { onProveedoresActualizado, onInventarioActualizado } from '@/lib/catalogEvents';
 
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
@@ -208,6 +209,28 @@ const OrdenCompraPage = () => {
   useEffect(() => {
     fetchProveedores();
   }, [fetchProveedores]);
+
+  // Refrescar cuando otro módulo crea/edita/elimina un suplidor, sin remontar el panel.
+  useEffect(() => onProveedoresActualizado(fetchProveedores), [fetchProveedores]);
+
+  // Mantener una referencia a los detalles actuales para el listener de inventario,
+  // que se registra una sola vez y no debe quedar atado a un closure viejo.
+  const detallesRef = useRef(detalles);
+  useEffect(() => { detallesRef.current = detalles; }, [detalles]);
+
+  // Cuando se registra una venta en otro panel (baja el stock), re-consultar la
+  // existencia real de los productos ya cargados en la orden para que la columna
+  // "Existencia" no quede desactualizada.
+  useEffect(() => onInventarioActualizado(async () => {
+    const current = detallesRef.current;
+    if (!current || current.length === 0) return;
+    const refreshed = await Promise.all(current.map(async (d) => {
+      if (!d.producto_id) return d;
+      const { data: stockVal } = await supabase.rpc('get_stock_actual', { producto_uuid: d.producto_id });
+      return { ...d, existencia: stockVal ?? 0 };
+    }));
+    setDetalles(refreshed);
+  }), []);
 
   const fetchNextNumber = useCallback(async () => {
     const { data, error } = await supabase.rpc('get_next_orden_compra_numero');

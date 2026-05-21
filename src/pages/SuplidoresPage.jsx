@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { MoreHorizontal, PlusCircle, Search, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { emitProveedoresActualizado } from '@/lib/catalogEvents';
 
 const emptyForm = { nombre: '', rnc: '', telefono: '', email: '', activo: true, dias_credito: 0, vende_a_credito: false };
 
@@ -91,6 +92,7 @@ const SuplidoresPage = () => {
             toast({ title: editingId ? 'Suplidor actualizado' : 'Suplidor creado', description: `${form.nombre} guardado correctamente.` });
             setModalOpen(false);
             fetchSuplidores();
+            emitProveedoresActualizado(); // refresca selectores en Mercancía/Compras/Orden de Compra
         }
         setSaving(false);
     };
@@ -103,6 +105,7 @@ const SuplidoresPage = () => {
         } else {
             toast({ title: 'Eliminado', description: `${suplidor.nombre} fue eliminado.` });
             fetchSuplidores();
+            emitProveedoresActualizado(); // refresca selectores en Mercancía/Compras/Orden de Compra
         }
     };
 

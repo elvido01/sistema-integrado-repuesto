@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
+import { emitCatalogoActualizado } from '@/lib/catalogEvents';
 
 const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOpenOnSave = false }) => {
   // =================================================================
@@ -122,6 +123,7 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
       toast({ title: 'Éxito', description: `${title} guardado correctamente.` });
       fetchData();
       resetForm();
+      emitCatalogoActualizado(); // refresca selectores en otros paneles abiertos
       if (onSaveSuccess) onSaveSuccess(response.data);
       // Cuando el modal se abre desde el menú principal, dejarlo abierto
       // para crear varias entradas seguidas. Solo cerrar cuando se invoca
@@ -141,6 +143,7 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
       toast({ title: 'Éxito', description: `${title} eliminado.` });
       fetchData();
       resetForm();
+      emitCatalogoActualizado(); // refresca selectores en otros paneles abiertos
     }
   };
 

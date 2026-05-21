@@ -3,6 +3,8 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { generateFacturaPDF } from '@/components/common/PDFGenerator';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
+import { emitInventarioActualizado } from '@/lib/catalogEvents';
 
 const CLIENTE_GENERICO = {
   id: '00000000-0000-0000-0000-000000000000',
@@ -18,6 +20,7 @@ const CLIENTE_GENERICO = {
 export const useVentas = () => {
   const { toast } = useToast();
   const { user, empresa } = useAuth();
+  const hasSuplidoresLocales = !!empresa?.feat_suplidores_locales;
   const [date, setDate] = useState(new Date());
   const [paymentType, setPaymentType] = useState('contado');
   const [diasCredito, setDiasCredito] = useState(0);
@@ -135,6 +138,46 @@ export const useVentas = () => {
     setItemCode('');
   }, []);
 
+  const refreshLocalSupplierSuggestion = useCallback(async (item) => {
+    if (!hasSuplidoresLocales || !item?.producto_id) return;
+
+    try {
+      const requestedCantidad = Number(item.cantidad || 1);
+      const requestedPrecio = Number(item.precio || 0);
+      const { data, error } = await supabase.rpc('get_mejor_suplidor_local', {
+        p_producto_id: item.producto_id,
+        p_cantidad: requestedCantidad,
+        p_precio_venta: requestedPrecio,
+      });
+
+      if (error) throw error;
+
+      setCurrentItem(prev => {
+        if (!prev || prev.producto_id !== item.producto_id) return prev;
+        if (Number(prev.cantidad || 1) !== requestedCantidad || Number(prev.precio || 0) !== requestedPrecio) return prev;
+
+        return {
+          ...prev,
+          existencia_morla: Number(data?.existencia_morla ?? prev.existencia_morla ?? 0),
+          local_suplidor_sugerido: data?.hay_opcion ? data : null,
+        };
+      });
+    } catch (error) {
+      console.warn('[Ventas] No se pudo consultar suplidor local:', error.message);
+    }
+  }, [hasSuplidoresLocales]);
+
+  useEffect(() => {
+    if (!currentItem || !hasSuplidoresLocales) return;
+    refreshLocalSupplierSuggestion(currentItem);
+  }, [
+    currentItem?.producto_id,
+    currentItem?.cantidad,
+    currentItem?.precio,
+    hasSuplidoresLocales,
+    refreshLocalSupplierSuggestion,
+  ]);
+
   /* Double-click: copy item to staging row for in-place editing (item stays in list) */
   const editItem = useCallback((item) => {
     // Find the index of this item in the list
@@ -163,6 +206,41 @@ export const useVentas = () => {
     }, 100);
   }, [items, currentItem, editingItemIndex]);
 
+  const loadNcfPreview = useCallback(async (tipoNcf = '02') => {
+    if (!tipoNcf || tipoNcf === '00') {
+      setNcfPreview(null);
+      return;
+    }
+    try {
+      const { data: seq } = await supabase
+        .from('secuencias_ncf')
+        .select('serie, tipo_ncf, secuencia_desde, ultimo_emitido')
+        .eq('tipo_ncf', tipoNcf)
+        .eq('activo', true)
+        .gte('fecha_vencimiento', new Date().toISOString().split('T')[0])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (seq) {
+        const siguiente = (!seq.ultimo_emitido || seq.ultimo_emitido < seq.secuencia_desde)
+          ? seq.secuencia_desde
+          : seq.ultimo_emitido + 1;
+        const ncfCompleto = `${seq.serie}${seq.tipo_ncf}${String(siguiente).padStart(8, '0')}`;
+        setNcfPreview({ ncf: ncfCompleto, tipo_ncf: tipoNcf });
+      } else {
+        setNcfPreview(null);
+      }
+    } catch (err) {
+      console.warn('No se pudo obtener preview NCF:', err.message);
+      setNcfPreview(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNcfPreview(CLIENTE_GENERICO.tipo_ncf);
+  }, [loadNcfPreview]);
+
   const resetVenta = useCallback(() => {
     setDate(new Date());
     setPaymentType('contado');
@@ -184,8 +262,8 @@ export const useVentas = () => {
     setEditingFacturaNumero(null);
     setPedidoId(null);
     setManualClienteNombre('');
-    setNcfPreview(null);
-  }, []);
+    loadNcfPreview(CLIENTE_GENERICO.tipo_ncf);
+  }, [loadNcfPreview]);
 
   const handleSelectCliente = useCallback(async (selected) => {
     const finalCliente = selected || CLIENTE_GENERICO;
@@ -202,34 +280,7 @@ export const useVentas = () => {
 
     // === Preview NCF: mostrar el próximo NCF sin consumirlo ===
     const tipoNcf = finalCliente.tipo_ncf || '02';
-    if (tipoNcf && tipoNcf !== '00') {
-      try {
-        const { data: seq } = await supabase
-          .from('secuencias_ncf')
-          .select('serie, tipo_ncf, secuencia_desde, ultimo_emitido')
-          .eq('tipo_ncf', tipoNcf)
-          .eq('activo', true)
-          .gte('fecha_vencimiento', new Date().toISOString().split('T')[0])
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (seq) {
-          const siguiente = (!seq.ultimo_emitido || seq.ultimo_emitido < seq.secuencia_desde)
-            ? seq.secuencia_desde
-            : seq.ultimo_emitido + 1;
-          const ncfCompleto = `${seq.serie}${seq.tipo_ncf}${String(siguiente).padStart(8, '0')}`;
-          setNcfPreview({ ncf: ncfCompleto, tipo_ncf: tipoNcf });
-        } else {
-          setNcfPreview(null);
-        }
-      } catch (err) {
-        console.warn('No se pudo obtener preview NCF:', err.message);
-        setNcfPreview(null);
-      }
-    } else {
-      setNcfPreview(null);
-    }
+    await loadNcfPreview(tipoNcf);
 
     // Re-apply price level to existing items when client changes
     const currentItems = itemsRef.current;
@@ -279,10 +330,11 @@ export const useVentas = () => {
         itbis_pct,
         itbis: montoItbis,
         importe: importeNeto,
+        costo_unitario: Number(product.costo || item.costo_unitario || 0),
         max_descuento: maxDesc,
       };
     }));
-  }, []);
+  }, [loadNcfPreview]);
 
   useEffect(() => {
     // Calcular totales desde precio + cantidad + descuento de cada item
@@ -387,7 +439,10 @@ export const useVentas = () => {
       itbis_pct: itbis_pct,
       itbis: itbis,
       importe: priceToUse,
+      costo_unitario: Number(product.costo || 0),
       max_descuento: maxDesc,
+      existencia_morla: product.existencia ?? product.existencia_morla ?? null,
+      local_suplidor_sugerido: product.local_suplidor_sugerido || null,
     };
 
     setCurrentItem(newItem);
@@ -481,6 +536,79 @@ export const useVentas = () => {
   const handleDeleteItem = useCallback((id) => {
     setItems(prevItems => prevItems.filter(item => item.id !== id));
   }, []);
+
+  const enviarReposicionAutomatica = useCallback(async (facturaItems) => {
+    const vendidosPorProducto = facturaItems.reduce((acc, item) => {
+      if (!item.producto_id) return acc;
+      acc[item.producto_id] = (acc[item.producto_id] || 0) + Number(item.cantidad || 0);
+      return acc;
+    }, {});
+
+    const productIds = Object.keys(vendidosPorProducto);
+    if (productIds.length === 0) return;
+
+    const { data: productos, error } = await supabase
+      .from('productos')
+      .select('id, codigo, descripcion, min_stock, max_stock, suplidor_id, activo')
+      .in('id', productIds);
+
+    if (error || !productos?.length) {
+      console.warn('[Ventas] No se pudo verificar reposicion automatica:', error?.message);
+      return;
+    }
+
+    const enviados = [];
+    const sinSuplidor = [];
+
+    for (const producto of productos) {
+      const minStock = Number(producto.min_stock || 0);
+      if (!producto.activo || minStock <= 0) continue;
+
+      const { data: existenciaData, error: stockError } = await supabase.rpc('get_stock_actual', {
+        producto_uuid: producto.id,
+      });
+
+      if (stockError) {
+        console.warn('[Ventas] No se pudo calcular existencia para reposicion:', producto.codigo, stockError.message);
+        continue;
+      }
+
+      const existenciaFinal = Number(existenciaData || 0);
+      if (existenciaFinal > minStock) continue;
+
+      if (!producto.suplidor_id) {
+        sinSuplidor.push(producto.codigo);
+        continue;
+      }
+
+      const objetivo = Math.max(Number(producto.max_stock || 0), minStock);
+      const cantidadSugerida = Math.max(1, Math.ceil(objetivo - existenciaFinal));
+      const result = await sendProductToOrdenCompra(producto, { quantity: cantidadSugerida });
+
+      if (result.success) {
+        enviados.push(producto.codigo);
+      } else {
+        console.warn('[Ventas] Reposicion automatica no enviada:', producto.codigo, result.message);
+      }
+    }
+
+    if (enviados.length > 0) {
+      toast({
+        title: 'Reposicion automatica',
+        description: `${enviados.length} producto(s) enviados a Orden de Compra: ${enviados.slice(0, 5).join(', ')}${enviados.length > 5 ? '...' : ''}`,
+        duration: 5000,
+      });
+    }
+
+    if (sinSuplidor.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Reposicion pendiente',
+        description: `${sinSuplidor.length} producto(s) llegaron al minimo pero no tienen suplidor asignado: ${sinSuplidor.slice(0, 5).join(', ')}${sinSuplidor.length > 5 ? '...' : ''}`,
+        duration: 7000,
+      });
+    }
+  }, [toast]);
 
   const handleSave = async (onSuccess, selectedVendedorName = null, selectedVendedorId = null) => {
     if (items.length === 0) {
@@ -646,6 +774,7 @@ export const useVentas = () => {
           descuento: montoDescuento,
           itbis: montoItbis,
           importe: importeNeto,
+          costo_unitario: Number(item.costo_unitario || 0),
         };
       });
 
@@ -656,11 +785,20 @@ export const useVentas = () => {
         producto_id: item.producto_id,
         tipo: 'SALIDA',
         cantidad: -item.cantidad,
+        costo_unitario: Number(item.costo_unitario || 0),
         referencia_doc: `FT-${activeFactura.numero}`,
         usuario_id: authUser.id,
         fecha: new Date(),
       }));
       await supabase.from('inventario_movimientos').insert(inventarioMovimientos);
+
+      if (!editingFacturaId) {
+        try {
+          await enviarReposicionAutomatica(items);
+        } catch (repoError) {
+          console.warn('[Ventas] Error en reposicion automatica:', repoError.message);
+        }
+      }
 
       if (cotizacionId && !editingFacturaId) {
         await supabase.from('cotizaciones').update({ estado: 'Facturada' }).eq('id', cotizacionId);
@@ -736,6 +874,9 @@ export const useVentas = () => {
         }
         onSuccess(facturaForPrint);
       }
+      // Avisar a otros paneles abiertos (ej. Orden de Compra) que el stock bajó,
+      // antes de resetVenta() que limpia los items.
+      emitInventarioActualizado(items.map(i => i.producto_id).filter(Boolean));
       resetVenta();
     } catch (error) {
       console.error('Error saving invoice:', error);
@@ -803,6 +944,7 @@ export const useVentas = () => {
           itbis_pct: itbis_pct,
           itbis: itbisLine,
           importe: totalLine,
+          costo_unitario: Number(d.costo_unitario || d.productos?.costo || 0),
           max_descuento: d.productos?.max_descuento || 0,
         };
       });
@@ -856,6 +998,7 @@ export const useVentas = () => {
           itbis_pct: itbis_pct,
           itbis: itbisMonto,
           importe: importeNeto,
+          costo_unitario: Number(d.productos?.costo || 0),
           max_descuento: d.productos?.max_descuento || d.descuento_pct || 0,
         };
       });
@@ -900,6 +1043,7 @@ export const useVentas = () => {
           itbis_pct: itbis_pct,
           itbis: d.itbis,
           importe: d.importe,
+          costo_unitario: Number(d.productos?.costo || 0),
         };
       });
 
