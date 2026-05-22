@@ -110,6 +110,7 @@ interface FacturaData {
     itbis?: number;
     total?: number;
     monto_recibido?: number;
+    monto_pendiente?: number;
     cambio?: number;
     vendedor?: string;
     manual_cliente_nombre?: string;
@@ -207,11 +208,21 @@ export function buildFacturaEscPos(factura: FacturaData): string {
     lines.push(padR('Valores en', W - 12) + padL('============', 12));
     lines.push(padR('DOP', 10) + CMD.BOLD_ON + padL('TOTAL :', W - 10 - 12) + padL(fmt(factura.total || 0), 12) + CMD.BOLD_OFF);
 
-    // ── Payment (contado) ──
+    // ── Payment ──
     if (factura.forma_pago === 'CONTADO') {
         lines.push(dashLine());
         lines.push(totalsRow('PAGADO:', fmt(factura.monto_recibido || 0)));
         lines.push(totalsRow('CAMBIO:', fmt(factura.cambio || 0)));
+    } else {
+        // Credito: mostrar el abono (si hubo) y el saldo pendiente.
+        lines.push(dashLine());
+        if ((factura.monto_recibido || 0) > 0) {
+            lines.push(totalsRow('ABONO:', fmt(factura.monto_recibido || 0)));
+        }
+        const pendiente = factura.monto_pendiente != null
+            ? factura.monto_pendiente
+            : (factura.total || 0) - (factura.monto_recibido || 0);
+        lines.push(CMD.BOLD_ON + totalsRow('PENDIENTE:', fmt(pendiente)) + CMD.BOLD_OFF);
     }
 
     // ── Footer ──
