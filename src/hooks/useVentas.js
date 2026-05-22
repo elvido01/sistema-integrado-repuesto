@@ -808,22 +808,24 @@ export const useVentas = () => {
       // Uses the same RPC as the Recibo de Ingreso module to keep data consistent
       if (paymentType === 'credito' && abonoCredito > 0 && !editingFacturaId) {
         try {
+          // IMPORTANTE: pasar arrays/objetos DIRECTOS (no JSON.stringify). El RPC
+          // recibe jsonb y hace jsonb_array_elements(p_abonos_data). Si se envia
+          // como texto, el RPC falla y la factura queda con el pendiente sin
+          // reducir y SIN recibo de ingreso (bug historico FT-1691/1723/1850).
           const reciboRpcData = {
             cliente_id: safeCliente.id,
             fecha: localISO.split('T')[0],
             monto_pagado: abonoCredito,
             concepto: `Abono parcial al momento de la venta - FT-${activeFactura.numero}`,
-            formas_pago: JSON.stringify(
-              pagos.length > 0
-                ? pagos.map(p => ({ forma: p.tipo, monto: p.monto, referencia: p.ref || '' }))
-                : [{ forma: tipoPago, monto: abonoCredito, referencia: '' }]
-            ),
+            formas_pago: pagos.length > 0
+              ? pagos.map(p => ({ forma: p.tipo, monto: p.monto, referencia: p.ref || '' }))
+              : [{ forma: tipoPago, monto: abonoCredito, referencia: '' }],
           };
 
-          const abonosRpcData = JSON.stringify([{
+          const abonosRpcData = [{
             factura_id: activeFactura.id,
             monto_abono: abonoCredito,
-          }]);
+          }];
 
           const { data: reciboNumero, error: reciboError } = await supabase.rpc(
             'crear_recibo_ingreso_y_actualizar_facturas',
@@ -834,12 +836,25 @@ export const useVentas = () => {
           );
 
           if (reciboError) {
-            console.warn('Warning: Could not auto-create recibo de ingreso:', reciboError.message);
+            // Fallback: aunque falle el recibo, dejar el pendiente consistente y avisar.
+            console.error('Error al crear recibo de ingreso del abono:', reciboError.message);
+            await supabase.from('facturas')
+              .update({ monto_pendiente: Math.max(0, totals.totalFactura - abonoCredito) })
+              .eq('id', activeFactura.id);
+            toast({
+              variant: 'destructive',
+              title: 'Abono aplicado, recibo no generado',
+              description: `Se descont\u00f3 el abono del pendiente, pero no se cre\u00f3 el recibo de ingreso (${reciboError.message}). Reg\u00edstrelo manualmente en Recibos de Ingreso.`,
+            });
           } else {
             toast({ title: '\ud83d\udcc4 Recibo Generado', description: `Recibo de Ingreso ${reciboNumero} creado autom\u00e1ticamente por el abono de RD$ ${abonoCredito.toFixed(2)}` });
           }
         } catch (reciboErr) {
-          console.warn('Warning: recibo creation failed:', reciboErr.message);
+          console.error('Error en creacion de recibo:', reciboErr.message);
+          await supabase.from('facturas')
+            .update({ monto_pendiente: Math.max(0, totals.totalFactura - abonoCredito) })
+            .eq('id', activeFactura.id);
+          toast({ variant: 'destructive', title: 'Abono aplicado, recibo no generado', description: 'Se descont\u00f3 el abono del pendiente, pero no se cre\u00f3 el recibo. Reg\u00edstrelo manualmente.' });
         }
       }
 
