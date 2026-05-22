@@ -45,10 +45,10 @@ let connected = false;
 let starting = false;
 
 // ── Guardar mensaje ENTRANTE (del cliente) ──
-async function guardarEntrante(phone, name, text, waId) {
+async function guardarEntrante(phone, name, text, waId, remoteJid) {
   const { data: contact, error: cErr } = await supabase
     .from('crm_whatsapp_contacts')
-    .upsert({ tenant_id: TENANT_ID, phone, wa_id: phone, name, updated_at: new Date().toISOString() }, { onConflict: 'tenant_id,phone' })
+    .upsert({ tenant_id: TENANT_ID, phone, wa_id: remoteJid || phone, name, updated_at: new Date().toISOString() }, { onConflict: 'tenant_id,phone' })
     .select('*').single();
   if (cErr) return console.error('   ⚠️ contacto:', cErr.message);
 
@@ -125,17 +125,22 @@ async function startSock() {
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-      if (type !== 'notify') return;
       for (const m of messages) {
+        const jid = m.key?.remoteJid || '';
         if (m.key.fromMe) continue;
-        const jid = m.key.remoteJid || '';
-        if (!jid.endsWith('@s.whatsapp.net')) continue;
+        // Solo chats individuales: numeros (@s.whatsapp.net) y el nuevo LID (@lid).
+        // Ignorar estados (status@broadcast) y grupos (@g.us).
+        if (!jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@lid')) continue;
         const phone = jid.split('@')[0];
         const name = m.pushName || phone;
-        const text = m.message?.conversation || m.message?.extendedTextMessage?.text || '';
+        const text = m.message?.conversation
+          || m.message?.extendedTextMessage?.text
+          || m.message?.imageMessage?.caption
+          || m.message?.videoMessage?.caption
+          || '';
         if (!text.trim()) continue;
-        console.log(`📩 ${name} (${phone}): ${text}`);
-        await guardarEntrante(phone, name, text.trim(), m.key.id);
+        console.log(`📩 ${name} (${phone}) [${jid}]: ${text}`);
+        await guardarEntrante(phone, name, text.trim(), m.key.id, jid);
       }
     });
   } finally {
@@ -145,6 +150,12 @@ async function startSock() {
 
 // ── API HTTP para el CRM ──
 const app = express();
+// Permite que la web (https://tudominio) hable con este servicio en localhost.
+// El header de "Private Network Access" evita que Chrome bloquee web -> localhost.
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  next();
+});
 app.use(cors());
 app.use(express.json());
 
@@ -157,7 +168,13 @@ app.post('/connect', async (req, res) => {
 
 app.post('/logout', async (req, res) => {
   try { await sock?.logout(); } catch (_) {}
-  connected = false; currentQR = null; sock = null;
+  try { sock?.end?.(undefined); } catch (_) {}
+  sock = null; connected = false; currentQR = null;
+  // Borrar credenciales para poder re-vincular con un QR limpio.
+  try { require('fs').rmSync(require('path').join(__dirname, 'auth_session'), { recursive: true, force: true }); } catch (_) {}
+  // Reiniciar la sesion para generar un QR nuevo.
+  starting = false;
+  startSock();
   res.json({ ok: true });
 });
 
@@ -166,10 +183,14 @@ app.post('/send', async (req, res) => {
   if (!connected || !sock) return res.status(400).json({ error: 'WhatsApp no conectado' });
   if (!to || !text) return res.status(400).json({ error: 'Faltan datos (to, text)' });
   try {
-    const phone = String(to).replace(/\D/g, '');
-    const jid = phone + '@s.whatsapp.net';
+    // Buscar el jid real del contacto (puede ser @lid o @s.whatsapp.net).
+    let jid;
+    const { data: contact } = await supabase.from('crm_whatsapp_contacts')
+      .select('wa_id').eq('tenant_id', TENANT_ID).eq('phone', String(to)).maybeSingle();
+    if (contact?.wa_id && contact.wa_id.includes('@')) jid = contact.wa_id;
+    else jid = String(to).replace(/\D/g, '') + '@s.whatsapp.net';
     const sent = await sock.sendMessage(jid, { text: String(text) });
-    await guardarSaliente(phone, String(text), sent?.key?.id);
+    await guardarSaliente(String(to), String(text), sent?.key?.id);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
