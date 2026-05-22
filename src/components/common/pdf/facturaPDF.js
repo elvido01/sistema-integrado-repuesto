@@ -225,6 +225,21 @@ export const generateFacturaPDF = (factura, empresa = {}) => {
       doc.text(formatCurrency(factura.cambio), totValuesX, currentY, { align: 'right' });
       doc.setFont('helvetica', 'normal');
       currentY += 12;
+    } else {
+      // Credito: mostrar el abono (si hubo) y el saldo pendiente.
+      doc.setFont('helvetica', 'bold');
+      if ((factura.monto_recibido || 0) > 0) {
+        doc.text("ABONO:", totLabelsX, currentY, { align: 'right' });
+        doc.text(formatCurrency(factura.monto_recibido), totValuesX, currentY, { align: 'right' });
+        currentY += 10;
+      }
+      const pendiente = factura.monto_pendiente != null
+        ? factura.monto_pendiente
+        : (factura.total || 0) - (factura.monto_recibido || 0);
+      doc.text("PENDIENTE:", totLabelsX, currentY, { align: 'right' });
+      doc.text(formatCurrency(pendiente), totValuesX, currentY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      currentY += 12;
     }
 
     // --- Separator ---
