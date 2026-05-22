@@ -235,7 +235,7 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
         <div class="totals-container">
           ${factura.monto_recibido > 0 ? `
           <div class="totals-row">
-            <div class="totals-label">PAGADO:</div>
+            <div class="totals-label">ABONO:</div>
             <div class="totals-value">${formatCurrency(factura.monto_recibido)}</div>
           </div>
           ` : ''}
