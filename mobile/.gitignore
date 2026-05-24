@@ -18,6 +18,10 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Google Play service account (secreto — nunca subir a git)
+play-service-account.json
+*service-account*.json
+
 # Metro
 .metro-health-check*
 

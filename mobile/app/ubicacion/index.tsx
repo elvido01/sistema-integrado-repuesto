@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, Modal, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, Modal, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Camera, CameraView } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, CheckCircle2, Loader2, MapPin, ScanLine, Search, X } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle2, Loader2, MapPin, Plus, ScanLine, Search, X } from 'lucide-react-native';
 import { supabase } from '@/src/supabase/client';
 
 type Ubicacion = {
@@ -32,6 +32,9 @@ export default function ActualizarUbicacionScreen() {
   const [scannerField, setScannerField] = useState<ScannerField>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [creatingUbicacion, setCreatingUbicacion] = useState(false);
 
   useEffect(() => {
     const fetchUbicaciones = async () => {
@@ -48,7 +51,22 @@ export default function ActualizarUbicacionScreen() {
       setUbicaciones((data || []) as Ubicacion[]);
     };
 
+    const fetchPermisos = async () => {
+      try {
+        const [{ data: rol }, { data: tenant }] = await Promise.all([
+          supabase.rpc('get_my_role'),
+          supabase.rpc('get_user_tenant'),
+        ]);
+        const rolNormalizado = String(rol || '').toLowerCase();
+        setIsAdmin(['administrador', 'admin', 'owner', 'propietario'].includes(rolNormalizado));
+        if (tenant) setTenantId(tenant as string);
+      } catch {
+        setIsAdmin(false);
+      }
+    };
+
     fetchUbicaciones();
+    fetchPermisos();
   }, []);
 
   const filteredUbicaciones = useMemo(() => {
@@ -144,6 +162,43 @@ export default function ActualizarUbicacionScreen() {
     }
   };
 
+  const handleCrearUbicacion = async (nombreNueva: string) => {
+    const nombre = nombreNueva.trim().toUpperCase();
+    if (!nombre) return;
+    if (ubicaciones.some((u) => u.nombre?.toUpperCase() === nombre)) {
+      // Ya existe, solo seleccionarla
+      setUbicacion(nombre);
+      setUbicacionSearch(nombre);
+      return;
+    }
+
+    setCreatingUbicacion(true);
+    try {
+      const payload: Record<string, any> = { nombre, codigo: nombre, activo: true };
+      if (tenantId) payload.tenant_id = tenantId;
+
+      const { data, error } = await supabase
+        .from('ubicaciones')
+        .insert(payload)
+        .select('id, nombre, codigo')
+        .single();
+
+      if (error) throw error;
+
+      const nueva = data as Ubicacion;
+      setUbicaciones((prev) =>
+        [...prev, nueva].sort((a, b) => a.nombre.localeCompare(b.nombre))
+      );
+      setUbicacion(nueva.nombre);
+      setUbicacionSearch(nueva.nombre);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudo crear la ubicacion.');
+    } finally {
+      setCreatingUbicacion(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!product?.id) {
       Alert.alert('Producto no seleccionado', 'Primero debe buscar y encontrar un producto valido.');
@@ -182,7 +237,15 @@ export default function ActualizarUbicacionScreen() {
         <Text className="text-white text-xl font-bold">Actualizar Ubicacion</Text>
       </View>
 
-      <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <ScrollView
+        className="flex-1 p-4"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 120 }}
+      >
         <View className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
           <View className="items-center mb-6">
             <View className="bg-blue-100 p-4 rounded-full mb-3">
@@ -270,6 +333,29 @@ export default function ActualizarUbicacionScreen() {
                     </TouchableOpacity>
                   );
                 })}
+
+                {isAdmin &&
+                ubicacionSearch.trim() &&
+                !ubicaciones.some(
+                  (u) => u.nombre?.toUpperCase() === ubicacionSearch.trim().toUpperCase()
+                ) ? (
+                  <TouchableOpacity
+                    className="px-3 py-3 flex-row items-center bg-blue-50 border-t border-blue-100"
+                    onPress={() => handleCrearUbicacion(ubicacionSearch)}
+                    disabled={creatingUbicacion}
+                  >
+                    {creatingUbicacion ? (
+                      <ActivityIndicator color="#1d4ed8" size="small" />
+                    ) : (
+                      <Plus color="#1d4ed8" size={20} />
+                    )}
+                    <Text className="text-brand font-bold ml-2">
+                      {creatingUbicacion
+                        ? 'Creando...'
+                        : `Crear ubicacion "${ubicacionSearch.trim().toUpperCase()}"`}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </ScrollView>
             </View>
           ) : null}
@@ -288,6 +374,7 @@ export default function ActualizarUbicacionScreen() {
           </View>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <Modal visible={scannerField !== null} animationType="fade" onRequestClose={closeScanner}>
         <View className="flex-1 bg-black">
