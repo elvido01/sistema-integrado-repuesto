@@ -43,20 +43,39 @@ Deno.serve(async (req: Request) => {
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const CRON_SECRET = Deno.env.get('DAILY_INSIGHTS_CRON_SECRET') || '';
 
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+            auth: { autoRefreshToken: false, persistSession: false },
+        });
+
         const authHeader = req.headers.get('Authorization') || '';
         const cronSecretHeader = req.headers.get('x-cron-secret') || '';
         const isServiceRole = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
         const isCronSecret = CRON_SECRET && cronSecretHeader === CRON_SECRET;
-        if (!isServiceRole && !isCronSecret) return json({ ok: false, error: 'unauthorized' }, 401);
 
         const body = await req.json().catch(() => ({}));
-        const tenant_id_filter: string | null = body?.tenant_id || null;
+        let tenant_id_filter: string | null = body?.tenant_id || null;
         const force: boolean = !!body?.force;
         const report_type: string = body?.report_type || 'daily';
 
-        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-            auth: { autoRefreshToken: false, persistSession: false },
-        });
+        // Autorización: cron/service-role (procesa todos los tenants) o un
+        // usuario admin/owner autenticado (limitado a su propio tenant).
+        if (!isServiceRole && !isCronSecret) {
+            const token = authHeader.replace(/^Bearer\s+/i, '');
+            const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+            if (userErr || !userData?.user) {
+                return json({ ok: false, error: 'unauthorized' }, 401);
+            }
+            const { data: prof } = await supabase
+                .from('profiles')
+                .select('role, tenant_id')
+                .eq('id', userData.user.id)
+                .single();
+            if (!prof || !['owner', 'admin'].includes(prof.role)) {
+                return json({ ok: false, error: 'forbidden', mensaje: 'Solo administradores pueden ejecutar el análisis.' }, 403);
+            }
+            // Seguridad multi-tenant: ignora cualquier tenant_id del body y usa el del usuario.
+            tenant_id_filter = prof.tenant_id;
+        }
 
         // Tenants a procesar
         let tenantQuery = supabase
@@ -96,6 +115,7 @@ Deno.serve(async (req: Request) => {
                 try {
                     const { data: aRes } = await supabase.rpc('ai_run_deterministic_alerts', { p_tenant_id: tid });
                     alertasResumen = aRes;
+                    await supabase.rpc('ai_resolve_stale_inventory_alerts', { p_tenant_id: tid });
                 } catch (e) { console.warn(`[${tid}] alertas SQL falló:`, e); }
 
                 // 2. Snapshot de métricas
