@@ -14,7 +14,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp } from 'lucide-react';
+import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp, Megaphone } from 'lucide-react';
 
 import BusinessHealthCard from '@/components/ai-ceo/BusinessHealthCard';
 import AiAlertsList from '@/components/ai-ceo/AiAlertsList';
@@ -25,6 +25,7 @@ import AiCeoChat from '@/components/ai-ceo/AiCeoChat';
 import AiForecastCard from '@/components/ai-ceo/AiForecastCard';
 import AiSettingsPanel from '@/components/ai-ceo/AiSettingsPanel';
 import AiTrendsChart from '@/components/ai-ceo/AiTrendsChart';
+import MarketingAI from '@/pages/MorlaAICEO/MarketingAI';
 
 const TABS = [
     { key: 'dashboard',   label: 'Dashboard',    icon: LayoutDashboard },
@@ -32,6 +33,7 @@ const TABS = [
     { key: 'alertas',     label: 'Alertas',      icon: AlertCircle },
     { key: 'decisiones',  label: 'Decisiones',   icon: Gavel },
     { key: 'forecast',    label: 'Predicciones', icon: TrendingUp },
+    { key: 'marketing',   label: 'Marketing IA', icon: Megaphone },
     { key: 'reportes',    label: 'Reportes',     icon: FileText },
     { key: 'config',      label: 'Configuración', icon: Settings },
 ];
@@ -239,6 +241,10 @@ export default function AICeoPage() {
                         <AiForecastCard />
                         <AiTrendsChart days={14} />
                     </div>
+                )}
+
+                {tab === 'marketing' && (
+                    <MarketingAI />
                 )}
 
                 {tab === 'reportes' && (
