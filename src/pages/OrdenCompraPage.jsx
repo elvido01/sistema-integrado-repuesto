@@ -106,6 +106,7 @@ const OrdenCompraPage = () => {
   const [detalles, setDetalles] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [mostrarInteligente, setMostrarInteligente] = useState(false);
   const [sugerenciaCompra, setSugerenciaCompra] = useState(null);
   const [prioridadMap, setPrioridadMap] = useState({});
   const [analisisItems, setAnalisisItems] = useState([]);
@@ -722,7 +723,7 @@ const OrdenCompraPage = () => {
     let cancel = false;
     const calc = async () => {
       const conProd = (detalles || []).filter(d => d.producto_id);
-      if (!selectedProveedor?.id || !tenantId || conProd.length === 0) {
+      if (!mostrarInteligente || !selectedProveedor?.id || !tenantId || conProd.length === 0) {
         setSugerenciaCompra(null);
         setPrioridadMap({});
         setAnalisisItems([]);
@@ -760,7 +761,7 @@ const OrdenCompraPage = () => {
     };
     calc();
     return () => { cancel = true; };
-  }, [selectedProveedor?.id, detalles.length, tenantId]);
+  }, [mostrarInteligente, selectedProveedor?.id, detalles.length, tenantId]);
 
   // Asesor IA de caja: analiza la orden actual y devuelve recomendaciones.
   const pedirAsesorCaja = async () => {
@@ -1150,6 +1151,12 @@ const OrdenCompraPage = () => {
         {/* Asesor IA de caja (reemplaza Dirección de Entrega, sin uso) */}
         <div className="h-full flex flex-col p-3 border border-gray-300 rounded-sm bg-white space-y-2 relative [&_label]:text-[11px] min-h-[140px]">
           <Label className="absolute -top-2 left-3 bg-white px-1 text-violet-600 font-bold text-[10px] uppercase">Asesor IA de caja</Label>
+          {!mostrarInteligente ? (
+            <div className="flex-1 flex items-center justify-center text-center text-slate-400 text-[12px] px-2">
+              Activa <b className="mx-1 text-violet-600">Compra Inteligente</b> (botón abajo) para ver el análisis de caja.
+            </div>
+          ) : (
+          <>
           <Button
             size="sm"
             onClick={pedirAsesorCaja}
@@ -1180,6 +1187,8 @@ const OrdenCompraPage = () => {
               <p className="text-slate-400">Presiona "Pedir análisis" para que la IA evalúe tu orden y la caja (riesgos, qué priorizar y pagos).</p>
             )}
           </div>
+          </>
+          )}
         </div>
 
         {/* Detalles de la Orden */}
@@ -1371,7 +1380,7 @@ const OrdenCompraPage = () => {
                   <TableHead className="w-20 text-right">Desc.</TableHead>
                   <TableHead className="w-24 text-right">ITBIS</TableHead>
                   <TableHead className="w-32 text-right">Importe</TableHead>
-                  <TableHead className="w-24 text-center">Prioridad</TableHead>
+                  {mostrarInteligente && <TableHead className="w-24 text-center">Prioridad</TableHead>}
                   <TableHead className="w-10" />
                 </TableRow>
               )}
@@ -1380,7 +1389,7 @@ const OrdenCompraPage = () => {
               {detalles.length === 0 ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i} className="h-7 border-b border-slate-100">
-                    {Array.from({ length: 10 }).map((_, j) => (
+                    {Array.from({ length: isVehicleDealer ? 10 : (mostrarInteligente ? 10 : 9) }).map((_, j) => (
                       <TableCell key={j} className="p-0 border-r border-slate-50 last:border-r-0 h-7" />
                     ))}
                   </TableRow>
@@ -1422,11 +1431,13 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                        <TableCell className="py-0 px-2 text-center">
-                          {d.producto_id && prioridadMap[d.producto_id] ? (
-                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${PRIO_BADGE[prioridadMap[d.producto_id]].cls}`}>{PRIO_BADGE[prioridadMap[d.producto_id]].txt}</span>
-                          ) : null}
-                        </TableCell>
+                        {mostrarInteligente && (
+                          <TableCell className="py-0 px-2 text-center">
+                            {d.producto_id && prioridadMap[d.producto_id] ? (
+                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${PRIO_BADGE[prioridadMap[d.producto_id]].cls}`}>{PRIO_BADGE[prioridadMap[d.producto_id]].txt}</span>
+                            ) : null}
+                          </TableCell>
+                        )}
                       </>
                     )}
                     <TableCell className="py-0 px-1 text-center">
@@ -1454,7 +1465,15 @@ const OrdenCompraPage = () => {
               {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4 text-green-400" />}
               ORDEN AUTOMATICA
             </Button>
-            {sugerenciaCompra && (
+            <Button
+              className={`text-white ${mostrarInteligente ? 'bg-violet-800 hover:bg-violet-900' : 'bg-violet-600 hover:bg-violet-700'}`}
+              onClick={() => setMostrarInteligente(v => !v)}
+              disabled={!selectedProveedor}
+            >
+              <Wallet className="mr-2 h-4 w-4" />
+              COMPRA INTELIGENTE {mostrarInteligente ? '✓' : ''}
+            </Button>
+            {mostrarInteligente && sugerenciaCompra && (
               <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${sugerenciaCompra.totalUrgente > 0 ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
                 {sugerenciaCompra.totalUrgente > 0 ? (
                   <>
@@ -1469,7 +1488,7 @@ const OrdenCompraPage = () => {
           </div>
 
           {/* Franja de análisis de caja (inline, sin ventana aparte) */}
-          {sugerenciaCompra && (
+          {mostrarInteligente && sugerenciaCompra && (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                 <p className="text-[10px] uppercase text-slate-400 font-bold">Total orden</p>
