@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX } from 'lucide-react';
+import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
@@ -22,6 +22,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 // import AgenteCambioSuplidor from '@/components/compras/AgenteCambioSuplidor'; // desactivado temporalmente
 import SuplidorVirtualMenu from '@/components/compras/SuplidorVirtualMenu';
+import CompraInteligentePanel from '@/components/compras/CompraInteligentePanel';
 import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
@@ -99,6 +100,7 @@ const OrdenCompraPage = () => {
   const [detalles, setDetalles] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showInteligente, setShowInteligente] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -702,6 +704,28 @@ const OrdenCompraPage = () => {
 
     const totalVentas90d = uniqueData.reduce((sum, p) => sum + (p.ventas_90d || 0), 0);
     toast({ title: 'Orden Automática Generada', description: `${newDetalles.length} productos bajo stock añadidos. Ventas 90d del suplidor: ${totalVentas90d} unidades.` });
+  };
+
+  // Aplica las cantidades recomendadas por el panel de Compra Inteligente (ajustadas a la caja)
+  const aplicarCompraInteligente = (items) => {
+    const nuevos = items
+      .filter(p => !detalles.find(d => d.producto_id === p.id || d.codigo === p.codigo))
+      .map((p) => ({
+        id: Date.now() + Math.random(),
+        producto_id: p.id,
+        codigo: p.codigo,
+        descripcion: p.descripcion,
+        cantidad: p.cantidad_recomendada,
+        sugerida: p.cantidad_ideal,
+        unidad: 'UND',
+        precio: p.costo || p.precio || 0,
+        descuento_pct: 0,
+        itbis_pct: p.itbis_pct || 0,
+        importe: 0,
+        existencia: p.existencia ?? 0,
+      }));
+    setDetalles(prev => calculateAllImportes([...prev, ...nuevos]));
+    toast({ title: 'Compra inteligente aplicada', description: `${nuevos.length} productos añadidos según tu presupuesto de caja.` });
   };
 
   const handleSave = async () => {
@@ -1336,10 +1360,14 @@ const OrdenCompraPage = () => {
             <Label className="absolute -top-2 left-3 bg-white px-1 text-slate-500 font-bold text-[10px] uppercase">Notas / Comentario</Label>
             <Textarea value={orden.notas} onChange={(e) => setOrden({ ...orden, notas: e.target.value })} rows={4} className="border-slate-300 shadow-inner" />
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button className="bg-slate-800 text-white hover:bg-slate-700" onClick={handleOrdenAutomatica} disabled={!selectedProveedor || isGenerating}>
               {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4 text-green-400" />}
               ORDEN AUTOMATICA
+            </Button>
+            <Button className="bg-violet-600 text-white hover:bg-violet-700" onClick={() => setShowInteligente(true)} disabled={!selectedProveedor}>
+              <Wallet className="mr-2 h-4 w-4" />
+              COMPRA INTELIGENTE
             </Button>
           </div>
         </div>
@@ -1457,6 +1485,13 @@ const OrdenCompraPage = () => {
           removeDetalle(detalleOriginal.id);
           setSupVirtMenu(null);
         }}
+      />
+
+      <CompraInteligentePanel
+        open={showInteligente}
+        onClose={() => setShowInteligente(false)}
+        suplidor={selectedProveedor}
+        onApply={aplicarCompraInteligente}
       />
     </>
   );
