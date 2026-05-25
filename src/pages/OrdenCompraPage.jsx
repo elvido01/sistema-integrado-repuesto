@@ -1048,7 +1048,7 @@ const OrdenCompraPage = () => {
                   <TableCell className="py-0 px-2 h-7 font-mono text-slate-600">{o.proveedores?.rnc || ''}</TableCell>
                   <TableCell className="py-0 px-2 h-7 font-semibold truncate">{o.proveedores?.nombre || ''}</TableCell>
                   <TableCell className="py-0 px-2 h-7 italic text-slate-500 truncate">{o.notas}</TableCell>
-                  <TableCell className="py-0 px-2 h-7 text-right font-bold">{o.total_orden?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                  <TableCell className="py-0 px-2 h-7 text-right font-bold">{Number(o.total_orden || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                   <TableCell className="py-0 px-2 h-7 text-center text-[10px] font-bold">
                     <span className={`px-2 py-0.5 rounded-full ${o.estado === 'Recibida' ? 'bg-green-100 text-green-700' : o.estado === 'Anulada' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                       {o.estado?.toUpperCase() || 'PENDIENTE'}
@@ -1407,9 +1407,9 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 uppercase">{d.color || '—'}</TableCell>
                         <TableCell className="py-0 px-2 text-center text-blue-700 font-bold">{d.cantidad}</TableCell>
                         <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
-                        <TableCell className="py-0 px-2 text-right font-mono">{d.precio?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-0 px-2 text-right font-mono">{Number(d.precio || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
-                        <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{d.importe?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                       </>
                     ) : (
                       /* ── FILA ORIGINAL ── */
@@ -1418,10 +1418,10 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 uppercase truncate max-w-[300px]">{d.descripcion}</TableCell>
                         <TableCell className="py-0 px-2 text-center text-blue-700 font-bold select-none">{d.cantidad} {d.unidad}</TableCell>
                         <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
-                        <TableCell className="py-0 px-2 text-right font-mono">{d.precio?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-0 px-2 text-right font-mono">{Number(d.precio || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
-                        <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{d.importe?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-0 px-2 text-center">
                           {d.producto_id && prioridadMap[d.producto_id] ? (
                             <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${PRIO_BADGE[prioridadMap[d.producto_id]].cls}`}>{PRIO_BADGE[prioridadMap[d.producto_id]].txt}</span>
@@ -1514,13 +1514,13 @@ const OrdenCompraPage = () => {
           </div>
 
           <div className="flex flex-col space-y-0.5 text-[12px]">
-            <div className="flex justify-between text-slate-600"><span>Total Exento</span><span className="font-bold">{totals.total_exento.toLocaleString()}</span></div>
-            <div className="flex justify-between text-slate-600"><span>Total Gravado</span><span className="font-bold">{totals.total_gravado.toLocaleString()}</span></div>
-            <div className="flex justify-between text-slate-600"><span>Descuento</span><span className="font-bold text-red-600">{totals.descuento_total.toLocaleString()}</span></div>
-            <div className="flex justify-between text-slate-600 border-b border-slate-200 pb-1.5"><span>ITBIS</span><span className="font-bold">{totals.itbis_total.toLocaleString()}</span></div>
+            <div className="flex justify-between text-slate-600"><span>Total Exento</span><span className="font-bold">{Number(totals.total_exento || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+            <div className="flex justify-between text-slate-600"><span>Total Gravado</span><span className="font-bold">{Number(totals.total_gravado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+            <div className="flex justify-between text-slate-600"><span>Descuento</span><span className="font-bold text-red-600">{Number(totals.descuento_total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+            <div className="flex justify-between text-slate-600 border-b border-slate-200 pb-1.5"><span>ITBIS</span><span className="font-bold">{Number(totals.itbis_total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
             <div className="flex justify-between items-center bg-yellow-50 p-2 mt-1 border border-yellow-200 rounded-sm">
               <span className="text-morla-blue font-bold text-xl">TOTAL</span>
-              <span className="text-red-700 font-bold text-2xl tracking-tighter">{totals.total_orden.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-red-700 font-bold text-2xl tracking-tighter">{Number(totals.total_orden || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           </div>
 
