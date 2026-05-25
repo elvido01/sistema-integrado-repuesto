@@ -2,25 +2,49 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { addDays } from 'date-fns';
 import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 
+const normalizeTaxRate = (value) => {
+    const raw = parseFloat(value) || 0;
+    return raw > 1 ? raw / 100 : raw;
+};
+
+const calculateDetailImporte = (detalle, aplicarItbis = true) => {
+    const cantidad = parseFloat(detalle.cantidad) || 0;
+    const precio = parseFloat(detalle.precio) || 0;
+    const descPct = (parseFloat(detalle.descuento_pct) || 0) / 100;
+    const itbisPct = normalizeTaxRate(detalle.itbis_pct);
+    const subtotal = cantidad * precio;
+    const base = subtotal - (subtotal * descPct);
+    return base + (aplicarItbis ? base * itbisPct : 0);
+};
+
 /**
  * Envía un producto a una orden de compra pendiente del suplidor.
  * - Si ya existe una orden pendiente para ese suplidor → agrega el producto (o suma cantidad).
  * - Si no existe → crea una nueva orden con vencimiento a 15 días.
  *
  * @param {Object} product - El producto con al menos { id, codigo, descripcion }
+ * @param {Object} options
+ * @param {number} options.quantity - Cantidad a agregar o sumar en la orden.
  * @returns {Promise<{success: boolean, message: string, orderNumero?: string, isNew?: boolean}>}
  */
-export async function sendProductToOrdenCompra(product) {
+export async function sendProductToOrdenCompra(product, options = {}) {
     try {
+        const quantity = Math.max(1, Math.ceil(Number(options.quantity || product.cantidad_sugerida || 1)));
+
         // 1. Fetch product details including suplidor_id and costo
         const { data: productData, error: productError } = await supabase
             .from('productos')
-            .select('id, codigo, descripcion, suplidor_id, costo, itbis_pct')
+            .select('id, codigo, descripcion, suplidor_id, costo, itbis_pct, activo')
             .eq('id', product.id)
             .single();
 
         if (productError || !productData) {
             return { success: false, message: 'No se pudo obtener la información del producto.' };
+        }
+
+        // No enviar productos desactivados a compra (inventario depurado / descontinuados)
+        if (productData.activo === false) {
+            return { success: false, skipped: true, message: `El producto ${productData.codigo} está desactivado y no se envió a compra.` };
         }
 
         if (!productData.suplidor_id) {
@@ -76,21 +100,30 @@ export async function sendProductToOrdenCompra(product) {
             await supabase.from('ordenes_compra').update(updatePayload).eq('id', orderId);
 
             // Check if product already exists in this order
-            const { data: existingDetail, error: detailCheckError } = await supabase
+            const { data: existingDetails, error: detailCheckError } = await supabase
                 .from('ordenes_compra_detalle')
                 .select('id, cantidad')
                 .eq('orden_compra_id', orderId)
                 .eq('producto_id', productData.id)
-                .maybeSingle();
+                .order('id', { ascending: true });
 
             if (detailCheckError) {
                 return { success: false, message: 'Error al verificar detalles de la orden.' };
             }
 
+            const existingDetail = existingDetails?.[0] || null;
+
             if (existingDetail) {
                 // Product already in order → increment quantity
-                const newQty = (existingDetail.cantidad || 0) + 1;
-                const newImporte = newQty * costo;
+                const currentQty = (existingDetails || []).reduce((sum, detail) => sum + (parseFloat(detail.cantidad) || 0), 0);
+                const newQty = currentQty + quantity;
+                const newImporte = calculateDetailImporte({
+                    ...existingDetail,
+                    cantidad: newQty,
+                    precio: costo,
+                    descuento_pct: 0,
+                    itbis_pct: itbisPct,
+                }, false);
 
                 const { error: updateError } = await supabase
                     .from('ordenes_compra_detalle')
@@ -99,6 +132,14 @@ export async function sendProductToOrdenCompra(product) {
 
                 if (updateError) {
                     return { success: false, message: 'Error al actualizar la cantidad en la orden.' };
+                }
+
+                const duplicateIds = (existingDetails || []).slice(1).map(detail => detail.id);
+                if (duplicateIds.length > 0) {
+                    await supabase
+                        .from('ordenes_compra_detalle')
+                        .delete()
+                        .in('id', duplicateIds);
                 }
             } else {
                 // Add new detail to existing order
@@ -109,12 +150,12 @@ export async function sendProductToOrdenCompra(product) {
                         producto_id: productData.id,
                         codigo: productData.codigo,
                         descripcion: productData.descripcion,
-                        cantidad: 1,
+                        cantidad: quantity,
                         unidad: 'UND',
                         precio: costo,
                         descuento_pct: 0,
                         itbis_pct: itbisPct,
-                        importe: costo,
+                        importe: costo * quantity,
                     });
 
                 if (insertDetailError) {
@@ -147,11 +188,11 @@ export async function sendProductToOrdenCompra(product) {
                 itbis_incluido: true,
                 suplidor_id: suplidorId,
                 estado: 'Pendiente',
-                total_exento: costo,
+                total_exento: costo * quantity,
                 total_gravado: 0,
                 descuento_total: 0,
                 itbis_total: 0,
-                total_orden: costo,
+                total_orden: costo * quantity,
             };
 
             const { data: savedOrden, error: ordenError } = await supabase
@@ -174,12 +215,12 @@ export async function sendProductToOrdenCompra(product) {
                     producto_id: productData.id,
                     codigo: productData.codigo,
                     descripcion: productData.descripcion,
-                    cantidad: 1,
+                    cantidad: quantity,
                     unidad: 'UND',
                     precio: costo,
                     descuento_pct: 0,
                     itbis_pct: itbisPct,
-                    importe: costo,
+                    importe: costo * quantity,
                 });
 
             if (insertDetailError) {
@@ -206,6 +247,14 @@ export async function sendProductToOrdenCompra(product) {
  * Recalculates the totals for an order based on its details.
  */
 async function recalculateOrderTotals(orderId) {
+    const { data: orden } = await supabase
+        .from('ordenes_compra')
+        .select('aplicar_itbis')
+        .eq('id', orderId)
+        .maybeSingle();
+
+    const aplicarItbis = orden?.aplicar_itbis !== false;
+
     const { data: detalles, error } = await supabase
         .from('ordenes_compra_detalle')
         .select('*')
@@ -222,7 +271,7 @@ async function recalculateOrderTotals(orderId) {
         const cantidad = parseFloat(d.cantidad) || 0;
         const precio = parseFloat(d.precio) || 0;
         const descPct = (parseFloat(d.descuento_pct) || 0) / 100;
-        const itbisPct = (parseFloat(d.itbis_pct) || 0) / 100;
+        const itbisPct = normalizeTaxRate(d.itbis_pct);
 
         const subtotal = cantidad * precio;
         const descMonto = subtotal * descPct;
@@ -230,7 +279,7 @@ async function recalculateOrderTotals(orderId) {
 
         descuento_total += descMonto;
 
-        if (itbisPct > 0) {
+        if (itbisPct > 0 && aplicarItbis) {
             total_gravado += base;
             itbis_total += base * itbisPct;
         } else {
