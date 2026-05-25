@@ -33,6 +33,7 @@ import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import { loadDraft, useAutoDraft, clearDraft } from '@/lib/drafts';
 import { useCatalogData } from '@/hooks/useSupabase';
 import { onProveedoresActualizado, onInventarioActualizado } from '@/lib/catalogEvents';
@@ -63,7 +64,10 @@ const formatDateForTable = (dateStr) => {
 
 const OrdenCompraPage = () => {
   const { toast } = useToast();
-  const { empresa, tenantId } = useAuth();
+  const { empresa, tenantId, isSuperAdmin } = useAuth();
+  const { planActual } = useSuscripcion();
+  // Compra Inteligente = función Plus: solo planes PRO y ENTERPRISE (y super admin).
+  const puedeCompraInteligente = isSuperAdmin || ['PRO', 'ENTERPRISE'].includes((planActual || '').toUpperCase());
   const navigate = useNavigate();
   const { openPanel } = usePanels();
   const { setOrdenParaFacturar } = useCompras();
@@ -1153,7 +1157,9 @@ const OrdenCompraPage = () => {
           <Label className="absolute -top-2 left-3 bg-white px-1 text-violet-600 font-bold text-[10px] uppercase">Asesor IA de caja</Label>
           {!mostrarInteligente ? (
             <div className="flex-1 flex items-center justify-center text-center text-slate-400 text-[12px] px-2">
-              Activa <b className="mx-1 text-violet-600">Compra Inteligente</b> (botón abajo) para ver el análisis de caja.
+              {puedeCompraInteligente
+                ? <span>Activa <b className="mx-1 text-violet-600">Compra Inteligente</b> (botón abajo) para ver el análisis de caja.</span>
+                : <span>🔒 <b className="mx-1 text-violet-600">Asesor IA de caja</b> — disponible en los planes <b>PRO</b> y <b>Enterprise</b>.</span>}
             </div>
           ) : (
           <>
@@ -1465,14 +1471,16 @@ const OrdenCompraPage = () => {
               {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4 text-green-400" />}
               ORDEN AUTOMATICA
             </Button>
-            <Button
-              className={`text-white ${mostrarInteligente ? 'bg-violet-800 hover:bg-violet-900' : 'bg-violet-600 hover:bg-violet-700'}`}
-              onClick={() => setMostrarInteligente(v => !v)}
-              disabled={!selectedProveedor}
-            >
-              <Wallet className="mr-2 h-4 w-4" />
-              COMPRA INTELIGENTE {mostrarInteligente ? '✓' : ''}
-            </Button>
+            {puedeCompraInteligente && (
+              <Button
+                className={`text-white ${mostrarInteligente ? 'bg-violet-800 hover:bg-violet-900' : 'bg-violet-600 hover:bg-violet-700'}`}
+                onClick={() => setMostrarInteligente(v => !v)}
+                disabled={!selectedProveedor}
+              >
+                <Wallet className="mr-2 h-4 w-4" />
+                COMPRA INTELIGENTE {mostrarInteligente ? '✓' : ''}
+              </Button>
+            )}
             {mostrarInteligente && sugerenciaCompra && (
               <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${sugerenciaCompra.totalUrgente > 0 ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
                 {sugerenciaCompra.totalUrgente > 0 ? (
