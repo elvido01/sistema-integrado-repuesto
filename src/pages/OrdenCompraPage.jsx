@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet } from 'lucide-react';
+import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
@@ -22,7 +22,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 // import AgenteCambioSuplidor from '@/components/compras/AgenteCambioSuplidor'; // desactivado temporalmente
 import SuplidorVirtualMenu from '@/components/compras/SuplidorVirtualMenu';
-import { getPresupuestoCompras, analizarOrdenActual } from '@/services/comprasInteligentesService';
+import { getPresupuestoCompras, analizarOrdenActual, asesorCompras } from '@/services/comprasInteligentesService';
 
 const PRIO_BADGE = {
   urgente: { txt: 'URGENTE', cls: 'bg-red-100 text-red-700' },
@@ -108,6 +108,10 @@ const OrdenCompraPage = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [sugerenciaCompra, setSugerenciaCompra] = useState(null);
   const [prioridadMap, setPrioridadMap] = useState({});
+  const [analisisItems, setAnalisisItems] = useState([]);
+  const [presData, setPresData] = useState(null);
+  const [asesor, setAsesor] = useState(null);
+  const [asesorLoading, setAsesorLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -721,6 +725,9 @@ const OrdenCompraPage = () => {
       if (!selectedProveedor?.id || !tenantId || conProd.length === 0) {
         setSugerenciaCompra(null);
         setPrioridadMap({});
+        setAnalisisItems([]);
+        setPresData(null);
+        setAsesor(null);
         return;
       }
       try {
@@ -730,7 +737,12 @@ const OrdenCompraPage = () => {
         ]);
         const map = {};
         for (const it of analisis.items || []) map[it.producto_id] = it.urgencia;
-        if (!cancel) setPrioridadMap(map);
+        if (!cancel) {
+          setPrioridadMap(map);
+          setAnalisisItems(analisis.items || []);
+          setPresData(pres);
+          setAsesor(null);
+        }
         if (!cancel) setSugerenciaCompra({
           totalOrden: analisis.totalOrden,
           totalUrgente: analisis.totalUrgente,
@@ -749,6 +761,31 @@ const OrdenCompraPage = () => {
     calc();
     return () => { cancel = true; };
   }, [selectedProveedor?.id, detalles.length, tenantId]);
+
+  // Asesor IA de caja: analiza la orden actual y devuelve recomendaciones.
+  const pedirAsesorCaja = async () => {
+    if (analisisItems.length === 0) {
+      toast({ title: 'Sin productos', description: 'La orden no tiene productos para analizar.' });
+      return;
+    }
+    setAsesorLoading(true);
+    try {
+      const itemsParaIA = analisisItems.map((it) => ({
+        codigo: it.codigo, descripcion: it.descripcion,
+        cantidad_ideal: it.cantidad,
+        cantidad_recomendada: it.urgencia === 'urgente' ? it.cantidad : 0,
+        costo: it.costo, margen_pct: it.margen_pct, ventas_90d: it.ventas_90d,
+        existencia: it.existencia, costo_ideal: it.subtotal,
+        costo_recomendado: it.urgencia === 'urgente' ? it.subtotal : 0,
+      }));
+      const res = await asesorCompras(Number(presData?.presupuesto_sugerido || 0), presData, itemsParaIA);
+      setAsesor(res.analisis);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    } finally {
+      setAsesorLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (isSaving) return;
@@ -1110,15 +1147,39 @@ const OrdenCompraPage = () => {
           </div>
         </div>
 
-        {/* Dirección de Entrega */}
-        <div className="h-full flex flex-col p-3 border border-gray-300 rounded-sm bg-white space-y-2 relative [&_label]:text-[11px]">
-          <Label className="absolute -top-2 left-3 bg-white px-1 text-slate-500 font-bold text-[10px] uppercase">Direccion de Entrega</Label>
-          <Textarea
-            rows={4}
-            className="w-full flex-1 resize-none text-[12px] border-slate-300"
-            value={orden.direccion_entrega}
-            onChange={(e) => setOrden({ ...orden, direccion_entrega: e.target.value })}
-          />
+        {/* Asesor IA de caja (reemplaza Dirección de Entrega, sin uso) */}
+        <div className="h-full flex flex-col p-3 border border-gray-300 rounded-sm bg-white space-y-2 relative [&_label]:text-[11px] min-h-[140px]">
+          <Label className="absolute -top-2 left-3 bg-white px-1 text-violet-600 font-bold text-[10px] uppercase">Asesor IA de caja</Label>
+          <Button
+            size="sm"
+            onClick={pedirAsesorCaja}
+            disabled={asesorLoading || analisisItems.length === 0}
+            className="bg-violet-600 hover:bg-violet-700 text-white self-start"
+          >
+            {asesorLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Analizando...</> : <><Brain className="h-4 w-4 mr-1" /> Pedir análisis</>}
+          </Button>
+          <div className="flex-1 overflow-y-auto text-[12px] pr-1">
+            {asesor ? (
+              <div className="space-y-1.5">
+                <p className="text-slate-700">{asesor.resumen}</p>
+                {asesor.riesgos?.length > 0 && (
+                  <div>
+                    <p className="font-bold text-red-600 text-[11px]">Riesgos</p>
+                    <ul className="list-disc ml-4 text-slate-600">{asesor.riesgos.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                  </div>
+                )}
+                {asesor.recomendaciones?.length > 0 && (
+                  <div>
+                    <p className="font-bold text-emerald-700 text-[11px]">Recomendaciones</p>
+                    <ul className="list-disc ml-4 text-slate-600">{asesor.recomendaciones.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                  </div>
+                )}
+                {asesor.prioridad_pago && <p className="text-slate-500 italic">💸 {asesor.prioridad_pago}</p>}
+              </div>
+            ) : (
+              <p className="text-slate-400">Presiona "Pedir análisis" para que la IA evalúe tu orden y la caja (riesgos, qué priorizar y pagos).</p>
+            )}
+          </div>
         </div>
 
         {/* Detalles de la Orden */}
