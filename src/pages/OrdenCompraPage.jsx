@@ -23,6 +23,7 @@ import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 // import AgenteCambioSuplidor from '@/components/compras/AgenteCambioSuplidor'; // desactivado temporalmente
 import SuplidorVirtualMenu from '@/components/compras/SuplidorVirtualMenu';
 import CompraInteligentePanel from '@/components/compras/CompraInteligentePanel';
+import { getPresupuestoCompras, analizarOrdenActual } from '@/services/comprasInteligentesService';
 import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
@@ -101,6 +102,7 @@ const OrdenCompraPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showInteligente, setShowInteligente] = useState(false);
+  const [sugerenciaCompra, setSugerenciaCompra] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -727,6 +729,34 @@ const OrdenCompraPage = () => {
     setDetalles(prev => calculateAllImportes([...prev, ...nuevos]));
     toast({ title: 'Compra inteligente aplicada', description: `${nuevos.length} productos añadidos según tu presupuesto de caja.` });
   };
+
+  // Calcula el monto de compra sugerido (lo urgente) para el aviso junto a los botones.
+  useEffect(() => {
+    let cancel = false;
+    const calc = async () => {
+      const conProd = (detalles || []).filter(d => d.producto_id);
+      if (!selectedProveedor?.id || !tenantId || conProd.length === 0) {
+        setSugerenciaCompra(null);
+        return;
+      }
+      try {
+        const [pres, analisis] = await Promise.all([
+          getPresupuestoCompras(tenantId, 15, 0),
+          analizarOrdenActual(conProd),
+        ]);
+        if (!cancel) setSugerenciaCompra({
+          totalUrgente: analisis.totalUrgente,
+          totalOrden: analisis.totalOrden,
+          presupuesto: Number(pres?.presupuesto_sugerido || 0),
+          salud: pres?.salud_caja,
+        });
+      } catch {
+        if (!cancel) setSugerenciaCompra(null);
+      }
+    };
+    calc();
+    return () => { cancel = true; };
+  }, [selectedProveedor?.id, detalles.length, tenantId]);
 
   const handleSave = async () => {
     if (isSaving) return;
@@ -1369,6 +1399,19 @@ const OrdenCompraPage = () => {
               <Wallet className="mr-2 h-4 w-4" />
               COMPRA INTELIGENTE
             </Button>
+            {sugerenciaCompra && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-violet-200 bg-violet-50">
+                {sugerenciaCompra.totalUrgente > 0 ? (
+                  <>
+                    <span className="text-xs text-slate-500">💡 Compra urgente sugerida:</span>
+                    <span className="font-bold text-violet-700">RD$ {sugerenciaCompra.totalUrgente.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-[11px] text-slate-400">de RD$ {sugerenciaCompra.totalOrden.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                  </>
+                ) : (
+                  <span className="text-xs text-slate-500">💡 Sin compras urgentes por ahora · orden RD$ {sugerenciaCompra.totalOrden.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
