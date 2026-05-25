@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home,
@@ -29,6 +29,10 @@ import {
   Warehouse,
   BellRing,
   Brain,
+  FileImage,
+  MessageCircle,
+  RadioTower,
+  MapPinned,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -37,13 +41,36 @@ import Logo from '@/components/common/Logo';
 import { useTheme } from '@/contexts/ThemeContext';
 import NotificationBell from '@/components/layout/NotificationBell';
 import AiCeoBell from '@/components/layout/AiCeoBell';
+import { supabase } from '@/lib/customSupabaseClient';
+import { useWhatsAppNotifications } from '@/contexts/WhatsAppNotificationContext';
+import { useSuscripcion } from '@/contexts/SuscripcionContext';
 
 const navItems = [
+  {
+    title: 'GPS',
+    icon: RadioTower,
+    subItems: [
+      { title: 'Dashboard GPS', id: 'gps-dashboard', icon: RadioTower, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Dispositivos', id: 'gps-dispositivos', icon: RadioTower, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Mapa GPS', id: 'gps-mapa', icon: MapPinned, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Alertas GPS', id: 'gps-alertas', icon: BellRing, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Financiamiento', id: 'gps-financiamiento', icon: DollarSign, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+    ],
+  },
   {
     title: 'MORLA AI CEO',
     icon: Brain,
     subItems: [
       { title: 'Dashboard IA', id: 'ai-ceo', icon: Brain, tenantOnly: '00000000-0000-0000-0000-000000000001' },
+    ],
+  },
+  {
+    title: 'CRM',
+    icon: MessageCircle,
+    subItems: [
+      { title: 'Sales Hub', id: 'whatsapp-crm', icon: MessageCircle },
+      { title: 'Clientes', id: 'clientes', icon: Users },
+      { title: 'Cartera de Clientes', id: 'cartera-clientes', icon: Users },
     ],
   },
   {
@@ -56,6 +83,7 @@ const navItems = [
       { title: 'Pedidos', id: 'pedidos', tenantExclude: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Solicitudes de Compras', id: 'solicitudes-compras', icon: ClipboardList, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Carta de Ruta', id: 'carta-ruta', icon: FileText, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Documentación Cliente', id: 'documentacion-cliente', icon: FileImage, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Cotizaciones', id: 'cotizaciones' },
       { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, tenantOnly: '00000000-0000-0000-0000-000000000001' },
       { title: 'Orden de Compra', id: 'orden-compra' },
@@ -161,19 +189,78 @@ const listVariants = {
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const { openPanel, activePanel } = usePanels();
   const { profile, permissions, user, signOut, isSuperAdmin, tenantId } = useAuth();
+  const { planActual } = useSuscripcion();
+  // Funciones Plus: solo planes PRO/ENTERPRISE (y super admin).
+  const puedePlus = isSuperAdmin || ['PRO', 'ENTERPRISE'].includes((planActual || '').toUpperCase());
   const { theme, toggleTheme } = useTheme();
+  const { totalUnread } = useWhatsAppNotifications();
   const [expandedGroup, setExpandedGroup] = useState(null);
+  const [adminAlertCount, setAdminAlertCount] = useState(0);
+
+  const fetchAdminAlerts = useCallback(async () => {
+    if (!isSuperAdmin) {
+      setAdminAlertCount(0);
+      return;
+    }
+
+    try {
+      const [pagosRes, tenantsRes] = await Promise.all([
+        supabase.rpc('admin_get_pagos_pendientes'),
+        supabase.rpc('admin_get_tenants_detalle'),
+      ]);
+
+      const pagosCount = !pagosRes.error && Array.isArray(pagosRes.data) ? pagosRes.data.length : 0;
+      const tenantsData = !tenantsRes.error && Array.isArray(tenantsRes.data) ? tenantsRes.data : [];
+      const membresiasUrgentes = tenantsData.filter((tenant) => {
+        const sub = tenant.suscripcion || {};
+        const estado = sub.estado || 'sin_suscripcion';
+        const dias = Number(sub.dias_restantes || 0);
+        return estado === 'vencido' || estado === 'sin_suscripcion' || (['activo', 'trial'].includes(estado) && dias > 0 && dias <= 3);
+      }).length;
+
+      setAdminAlertCount(pagosCount + membresiasUrgentes);
+    } catch (err) {
+      console.warn('[Sidebar] No se pudieron cargar alertas admin:', err.message);
+      setAdminAlertCount(0);
+    }
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     const group = findGroupForPanel(activePanel);
     if (group) setExpandedGroup(group);
   }, [activePanel]);
 
+  useEffect(() => {
+    fetchAdminAlerts();
+    if (!isSuperAdmin) return undefined;
+
+    const interval = setInterval(fetchAdminAlerts, 2 * 60 * 1000);
+    const onFocus = () => fetchAdminAlerts();
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [fetchAdminAlerts, isSuperAdmin]);
+
   const toggleGroup = (title) => {
     setExpandedGroup(prev => prev === title ? null : title);
   };
 
+  const handleGroupClick = (title) => {
+    if (!sidebarOpen) {
+      setSidebarOpen(true);
+      setExpandedGroup(title);
+      return;
+    }
+    toggleGroup(title);
+  };
+
   const handleNavClick = (id) => {
+    if (!sidebarOpen && window.innerWidth >= 768) {
+      setSidebarOpen(true);
+    }
     openPanel(id);
     if (window.innerWidth < 768) setSidebarOpen(false);
   };
@@ -252,6 +339,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           const allowedSubItems = item.subItems.filter(sub => {
             if (sub.tenantOnly && sub.tenantOnly !== tenantId) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
+            if (sub.id === 'whatsapp-crm' && !puedePlus) return false; // Sales Hub = función Plus (PRO/ENTERPRISE)
             return canAccess(profile, permissions, sub.id);
           });
           if (allowedSubItems.length === 0) return null;
@@ -259,6 +347,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           const isExpanded = expandedGroup === item.title;
           const hasActiveChild = isGroupActive(item);
           const Icon = item.icon;
+          const groupUnread = item.title === 'CRM' ? totalUnread : 0;
 
           return (
             <div key={item.title} className="relative">
@@ -274,7 +363,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
               {/* Group trigger */}
               <button
-                onClick={() => sidebarOpen ? toggleGroup(item.title) : null}
+                onClick={() => handleGroupClick(item.title)}
                 className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-200 ${
                   isExpanded && sidebarOpen
                     ? 'bg-blue-50/80 text-blue-700'
@@ -283,7 +372,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                       : 'text-slate-500 hover:bg-blue-50/60 hover:text-slate-700'
                 }`}
               >
-                <div className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 ${
+                <div className={`relative flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 ${
                   hasActiveChild
                     ? 'bg-blue-100 text-blue-600'
                     : isExpanded
@@ -291,10 +380,20 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                       : 'bg-slate-100 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500'
                 }`}>
                   <Icon className="w-[18px] h-[18px]" />
+                  {!sidebarOpen && groupUnread > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full text-[9px] font-black flex items-center justify-center bg-emerald-500 text-white">
+                      {groupUnread > 9 ? '9+' : groupUnread}
+                    </span>
+                  )}
                 </div>
                 {sidebarOpen && (
                   <>
                     <span className="flex-1 text-left truncate">{item.title}</span>
+                    {groupUnread > 0 && (
+                      <span className="min-w-5 h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center bg-emerald-500 text-white shadow-sm shadow-emerald-200">
+                        {groupUnread > 99 ? '99+' : groupUnread}
+                      </span>
+                    )}
                     <motion.div
                       animate={{ rotate: isExpanded ? 180 : 0 }}
                       transition={{ duration: 0.2 }}
@@ -323,6 +422,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                       {allowedSubItems.map((subItem) => {
                         const isSubActive = activePanel === subItem.id;
                         const SubIcon = subItem.icon;
+                        const subUnread = subItem.id === 'whatsapp-crm' ? totalUnread : 0;
                         return (
                           <button
                             key={subItem.id}
@@ -342,7 +442,14 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                                 isSubActive ? 'bg-white scale-125' : 'bg-slate-300 group-hover/sub:bg-blue-400'
                               }`} />
                             )}
-                            <span className="truncate">{subItem.title}</span>
+                            <span className="truncate flex-1">{subItem.title}</span>
+                            {subUnread > 0 && (
+                              <span className={`min-w-5 h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center ${
+                                isSubActive ? 'bg-white text-emerald-600' : 'bg-emerald-500 text-white'
+                              }`}>
+                                {subUnread > 99 ? '99+' : subUnread}
+                              </span>
+                            )}
                           </button>
                         );
                       })}
@@ -373,7 +480,19 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
               }`}>
                 <Shield className="w-[18px] h-[18px]" />
               </div>
-              <span>Admin Dashboard</span>
+              <span className="flex-1 text-left">Admin Dashboard</span>
+              {adminAlertCount > 0 && (
+                <span
+                  className={`min-w-5 h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center ${
+                    activePanel === 'master-panel'
+                      ? 'bg-white text-red-600'
+                      : 'bg-red-600 text-white shadow-sm shadow-red-200'
+                  }`}
+                  title={`${adminAlertCount} alerta${adminAlertCount === 1 ? '' : 's'} de pagos o membresias`}
+                >
+                  {adminAlertCount > 99 ? '99+' : adminAlertCount}
+                </span>
+              )}
             </button>
           </div>
         )}

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext } from 'react';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -31,6 +31,7 @@ import ReporteMovimientosPage from '@/pages/ReporteMovimientosPage';
 import SolicitudesPage from '@/pages/SolicitudesPage';
 import SolicitudesComprasPage from '@/pages/SolicitudesComprasPage';
 import CartaRutaPage from '@/pages/CartaRutaPage';
+import DocumentacionClientePage from '@/pages/DocumentacionClientePage';
 import ReportesDGIIPage from '@/pages/ReportesDGIIPage';
 import LibrosContablesPage from '@/pages/LibrosContablesPage';
 import EstadoResultadosPage from '@/pages/EstadoResultadosPage';
@@ -47,8 +48,16 @@ import DgiiMonitorPage from '@/pages/Configuracion/DgiiMonitorPage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
 import AICeoPage from '@/pages/AICeoPage';
 import PlanesPage from '@/pages/PlanesPage';
+import WhatsAppCrmPage from '@/pages/WhatsAppCrmPage';
+import GpsDashboardPage from '@/pages/gps/GpsDashboardPage';
+import GpsDevicesPage from '@/pages/gps/GpsDevicesPage';
+import GpsMapPage from '@/pages/gps/GpsMapPage';
+import GpsAlertsPage from '@/pages/gps/GpsAlertsPage';
+import GpsFinancingPage from '@/pages/gps/GpsFinancingPage';
+import GpsDeviceDetailPage from '@/pages/gps/GpsDeviceDetailPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
+import PlanGate from '@/components/auth/PlanGate';
 
 const Protected = ({ module, children }) => (
   <RouteGuard moduleKey={module}>
@@ -90,6 +99,7 @@ const componentMapping = {
   'solicitudes': { component: () => <Protected module="solicitudes"><SolicitudesPage /></Protected>, icon: ClipboardList, name: 'Solicitudes Agotados' },
   'solicitudes-compras': { component: () => <Protected module="solicitudes-compras"><SolicitudesComprasPage /></Protected>, icon: ClipboardList, name: 'Solicitudes de Compras' },
   'carta-ruta': { component: () => <Protected module="carta-ruta"><CartaRutaPage /></Protected>, icon: FileText, name: 'Carta de Ruta' },
+  'documentacion-cliente': { component: () => <Protected module="documentacion-cliente"><DocumentacionClientePage /></Protected>, icon: FileImage, name: 'Documentación Cliente' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },
   'libros-contables': { component: () => <Protected module="libros-contables"><LibrosContablesPage /></Protected>, icon: FileText, name: 'Libros Contables' },
   'estado-resultados': { component: () => <Protected module="estado-resultados"><EstadoResultadosPage /></Protected>, icon: DollarSign, name: 'Estado de Resultado' },
@@ -106,6 +116,13 @@ const componentMapping = {
   'dgii-monitor': { component: () => <Protected module="dgii-monitor"><DgiiMonitorPage /></Protected>, icon: FileText, name: 'Monitor e-CF DGII' },
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
   'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MORLA AI CEO' },
+  'whatsapp-crm': { component: () => <Protected module="whatsapp-crm"><PlanGate nombre="Sales Hub / CRM"><WhatsAppCrmPage /></PlanGate></Protected>, icon: MessageCircle, name: 'Sales Hub' },
+  'gps-dashboard': { component: () => <Protected module="gps-dashboard"><GpsDashboardPage /></Protected>, icon: RadioTower, name: 'GPS Dashboard' },
+  'gps-dispositivos': { component: () => <Protected module="gps-dispositivos"><GpsDevicesPage /></Protected>, icon: RadioTower, name: 'GPS Dispositivos' },
+  'gps-mapa': { component: () => <Protected module="gps-mapa"><GpsMapPage /></Protected>, icon: MapPin, name: 'GPS Mapa' },
+  'gps-alertas': { component: () => <Protected module="gps-alertas"><GpsAlertsPage /></Protected>, icon: BellRing, name: 'GPS Alertas' },
+  'gps-financiamiento': { component: () => <Protected module="gps-financiamiento"><GpsFinancingPage /></Protected>, icon: DollarSign, name: 'GPS Financiamiento' },
+  'gps-dispositivo-detalle': { component: ({ extraData }) => <Protected module="gps-dispositivos"><GpsDeviceDetailPage extraData={extraData} /></Protected>, icon: RadioTower, name: 'GPS Detalle' },
   'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
 };
 
