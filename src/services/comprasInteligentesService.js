@@ -117,9 +117,18 @@ export async function analizarOrdenActual(orderLines) {
         };
     }).sort((a, b) => URGENCIA[a.urgencia].orden - URGENCIA[b.urgencia].orden || b.ventas_30d - a.ventas_30d);
 
+    const sum = (u) => Math.round(items.filter((i) => i.urgencia === u).reduce((s, i) => s + i.subtotal, 0) * 100) / 100;
+    const count = (u) => items.filter((i) => i.urgencia === u).length;
     const totalOrden = Math.round(items.reduce((s, i) => s + i.subtotal, 0) * 100) / 100;
-    const totalUrgente = Math.round(items.filter((i) => i.urgencia === 'urgente').reduce((s, i) => s + i.subtotal, 0) * 100) / 100;
-    return { items, totalOrden, totalUrgente };
+    return {
+        items, totalOrden,
+        totalUrgente: sum('urgente'),
+        totalProxima: sum('proxima'),
+        totalEsperar: sum('puede_esperar'),
+        countUrgente: count('urgente'),
+        countProxima: count('proxima'),
+        countEsperar: count('puede_esperar'),
+    };
 }
 
 // ── Asesor IA (Edge Function) ──

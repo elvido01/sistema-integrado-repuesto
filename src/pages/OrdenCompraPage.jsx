@@ -745,8 +745,13 @@ const OrdenCompraPage = () => {
           analizarOrdenActual(conProd),
         ]);
         if (!cancel) setSugerenciaCompra({
-          totalUrgente: analisis.totalUrgente,
           totalOrden: analisis.totalOrden,
+          totalUrgente: analisis.totalUrgente,
+          totalProxima: analisis.totalProxima,
+          totalEsperar: analisis.totalEsperar,
+          countUrgente: analisis.countUrgente,
+          countProxima: analisis.countProxima,
+          countEsperar: analisis.countEsperar,
           presupuesto: Number(pres?.presupuesto_sugerido || 0),
           salud: pres?.salud_caja,
         });
@@ -1400,19 +1405,50 @@ const OrdenCompraPage = () => {
               COMPRA INTELIGENTE
             </Button>
             {sugerenciaCompra && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-violet-200 bg-violet-50">
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${sugerenciaCompra.totalUrgente > 0 ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
                 {sugerenciaCompra.totalUrgente > 0 ? (
                   <>
                     <span className="text-xs text-slate-500">💡 Compra urgente sugerida:</span>
-                    <span className="font-bold text-violet-700">RD$ {sugerenciaCompra.totalUrgente.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
-                    <span className="text-[11px] text-slate-400">de RD$ {sugerenciaCompra.totalOrden.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold text-red-600">RD$ {sugerenciaCompra.totalUrgente.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
                   </>
                 ) : (
-                  <span className="text-xs text-slate-500">💡 Sin compras urgentes por ahora · orden RD$ {sugerenciaCompra.totalOrden.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-xs text-slate-500">💡 Sin compras urgentes por ahora</span>
                 )}
               </div>
             )}
           </div>
+
+          {/* Franja de análisis de caja (inline, sin ventana aparte) */}
+          {sugerenciaCompra && (
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <p className="text-[10px] uppercase text-slate-400 font-bold">Total orden</p>
+                <p className="font-bold text-slate-800 text-sm">RD$ {sugerenciaCompra.totalOrden.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <p className="text-[10px] uppercase text-red-500 font-bold">🔴 Urgente {sugerenciaCompra.countUrgente ? `(${sugerenciaCompra.countUrgente})` : ''}</p>
+                <p className="font-bold text-red-700 text-sm">RD$ {sugerenciaCompra.totalUrgente.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-[10px] uppercase text-amber-600 font-bold">🟡 Próxima {sugerenciaCompra.countProxima ? `(${sugerenciaCompra.countProxima})` : ''}</p>
+                <p className="font-bold text-amber-700 text-sm">RD$ {sugerenciaCompra.totalProxima.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-[10px] uppercase text-slate-400 font-bold">⚪ Puede esperar {sugerenciaCompra.countEsperar ? `(${sugerenciaCompra.countEsperar})` : ''}</p>
+                <p className="font-bold text-slate-600 text-sm">RD$ {sugerenciaCompra.totalEsperar.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
+                <p className="text-[10px] uppercase text-violet-500 font-bold">Presupuesto caja</p>
+                <p className="font-bold text-violet-700 text-sm">RD$ {sugerenciaCompra.presupuesto.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 flex flex-col justify-center">
+                <p className="text-[10px] uppercase text-slate-400 font-bold">Salud de caja</p>
+                <p className={`font-bold text-sm ${sugerenciaCompra.salud === 'tension' ? 'text-red-600' : sugerenciaCompra.salud === 'ajustada' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {sugerenciaCompra.salud === 'tension' ? 'En tensión' : sugerenciaCompra.salud === 'ajustada' ? 'Ajustada' : 'Sana'}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-3 border border-slate-300 rounded-sm bg-slate-50/50 space-y-2 relative shadow-md">
