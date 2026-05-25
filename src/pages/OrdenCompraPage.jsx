@@ -22,8 +22,13 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 // import AgenteCambioSuplidor from '@/components/compras/AgenteCambioSuplidor'; // desactivado temporalmente
 import SuplidorVirtualMenu from '@/components/compras/SuplidorVirtualMenu';
-import CompraInteligentePanel from '@/components/compras/CompraInteligentePanel';
 import { getPresupuestoCompras, analizarOrdenActual } from '@/services/comprasInteligentesService';
+
+const PRIO_BADGE = {
+  urgente: { txt: 'URGENTE', cls: 'bg-red-100 text-red-700' },
+  proxima: { txt: 'PRÓXIMA', cls: 'bg-amber-100 text-amber-700' },
+  puede_esperar: { txt: 'ESPERAR', cls: 'bg-slate-200 text-slate-600' },
+};
 import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
@@ -101,8 +106,8 @@ const OrdenCompraPage = () => {
   const [detalles, setDetalles] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showInteligente, setShowInteligente] = useState(false);
   const [sugerenciaCompra, setSugerenciaCompra] = useState(null);
+  const [prioridadMap, setPrioridadMap] = useState({});
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -708,28 +713,6 @@ const OrdenCompraPage = () => {
     toast({ title: 'Orden Automática Generada', description: `${newDetalles.length} productos bajo stock añadidos. Ventas 90d del suplidor: ${totalVentas90d} unidades.` });
   };
 
-  // Aplica las cantidades recomendadas por el panel de Compra Inteligente (ajustadas a la caja)
-  const aplicarCompraInteligente = (items) => {
-    const nuevos = items
-      .filter(p => !detalles.find(d => d.producto_id === p.id || d.codigo === p.codigo))
-      .map((p) => ({
-        id: Date.now() + Math.random(),
-        producto_id: p.id,
-        codigo: p.codigo,
-        descripcion: p.descripcion,
-        cantidad: p.cantidad_recomendada,
-        sugerida: p.cantidad_ideal,
-        unidad: 'UND',
-        precio: p.costo || p.precio || 0,
-        descuento_pct: 0,
-        itbis_pct: p.itbis_pct || 0,
-        importe: 0,
-        existencia: p.existencia ?? 0,
-      }));
-    setDetalles(prev => calculateAllImportes([...prev, ...nuevos]));
-    toast({ title: 'Compra inteligente aplicada', description: `${nuevos.length} productos añadidos según tu presupuesto de caja.` });
-  };
-
   // Calcula el monto de compra sugerido (lo urgente) para el aviso junto a los botones.
   useEffect(() => {
     let cancel = false;
@@ -737,6 +720,7 @@ const OrdenCompraPage = () => {
       const conProd = (detalles || []).filter(d => d.producto_id);
       if (!selectedProveedor?.id || !tenantId || conProd.length === 0) {
         setSugerenciaCompra(null);
+        setPrioridadMap({});
         return;
       }
       try {
@@ -744,6 +728,9 @@ const OrdenCompraPage = () => {
           getPresupuestoCompras(tenantId, 15, 0),
           analizarOrdenActual(conProd),
         ]);
+        const map = {};
+        for (const it of analisis.items || []) map[it.producto_id] = it.urgencia;
+        if (!cancel) setPrioridadMap(map);
         if (!cancel) setSugerenciaCompra({
           totalOrden: analisis.totalOrden,
           totalUrgente: analisis.totalUrgente,
@@ -1323,6 +1310,7 @@ const OrdenCompraPage = () => {
                   <TableHead className="w-20 text-right">Desc.</TableHead>
                   <TableHead className="w-24 text-right">ITBIS</TableHead>
                   <TableHead className="w-32 text-right">Importe</TableHead>
+                  <TableHead className="w-24 text-center">Prioridad</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               )}
@@ -1331,7 +1319,7 @@ const OrdenCompraPage = () => {
               {detalles.length === 0 ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i} className="h-7 border-b border-slate-100">
-                    {Array.from({ length: isVehicleDealer ? 10 : 9 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <TableCell key={j} className="p-0 border-r border-slate-50 last:border-r-0 h-7" />
                     ))}
                   </TableRow>
@@ -1373,6 +1361,11 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{d.importe?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-0 px-2 text-center">
+                          {d.producto_id && prioridadMap[d.producto_id] ? (
+                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${PRIO_BADGE[prioridadMap[d.producto_id]].cls}`}>{PRIO_BADGE[prioridadMap[d.producto_id]].txt}</span>
+                          ) : null}
+                        </TableCell>
                       </>
                     )}
                     <TableCell className="py-0 px-1 text-center">
@@ -1399,10 +1392,6 @@ const OrdenCompraPage = () => {
             <Button className="bg-slate-800 text-white hover:bg-slate-700" onClick={handleOrdenAutomatica} disabled={!selectedProveedor || isGenerating}>
               {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4 text-green-400" />}
               ORDEN AUTOMATICA
-            </Button>
-            <Button className="bg-violet-600 text-white hover:bg-violet-700" onClick={() => setShowInteligente(true)} disabled={!selectedProveedor}>
-              <Wallet className="mr-2 h-4 w-4" />
-              COMPRA INTELIGENTE
             </Button>
             {sugerenciaCompra && (
               <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${sugerenciaCompra.totalUrgente > 0 ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
@@ -1566,13 +1555,6 @@ const OrdenCompraPage = () => {
         }}
       />
 
-      <CompraInteligentePanel
-        open={showInteligente}
-        onClose={() => setShowInteligente(false)}
-        suplidor={selectedProveedor}
-        orderLines={detalles}
-        onApply={aplicarCompraInteligente}
-      />
     </>
   );
 };
