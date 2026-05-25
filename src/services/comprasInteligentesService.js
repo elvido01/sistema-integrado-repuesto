@@ -73,6 +73,55 @@ export function reallocate(enriched, presupuesto = 0) {
     return { items, totalIdeal, totalRecomendado };
 }
 
+// ── Análisis de la orden ACTUAL: urgencia por movimiento ──
+const URGENCIA = {
+    urgente: { label: 'URGENTE', orden: 0 },
+    proxima: { label: 'PRÓXIMA', orden: 1 },
+    puede_esperar: { label: 'PUEDE ESPERAR', orden: 2 },
+};
+
+function clasificarUrgencia(rot30, rot90, existencia) {
+    if (rot90 <= 0) return 'puede_esperar';                 // sin rotación en 90d
+    if (existencia <= 0 && (rot30 >= 1 || rot90 >= 3)) return 'urgente'; // agotado y se vende
+    return 'proxima';                                       // se vende pero no es urgente
+}
+
+// Analiza las líneas de la orden actual y les pone urgencia + ajuste a presupuesto.
+export async function analizarOrdenActual(orderLines) {
+    const conProd = (orderLines || []).filter((l) => l.producto_id);
+    if (conProd.length === 0) return { items: [], totalOrden: 0, totalUrgente: 0 };
+
+    const ids = [...new Set(conProd.map((l) => l.producto_id))];
+    const { data, error } = await supabase.rpc('get_productos_movimiento', { p_ids: ids });
+    if (error) throw error;
+    const mov = {};
+    for (const m of data || []) mov[m.producto_id] = m;
+
+    const items = conProd.map((l) => {
+        const m = mov[l.producto_id] || {};
+        const rot30 = Number(m.ventas_30d || 0);
+        const rot90 = Number(m.ventas_90d || 0);
+        const existencia = Number(m.existencia ?? l.existencia ?? 0);
+        const costo = Number(m.costo || l.precio || 0);
+        const cantidad = Number(l.cantidad || 0);
+        const urgencia = clasificarUrgencia(rot30, rot90, existencia);
+        return {
+            producto_id: l.producto_id,
+            codigo: l.codigo,
+            descripcion: l.descripcion,
+            cantidad, costo,
+            subtotal: Math.round(cantidad * costo * 100) / 100,
+            existencia, ventas_30d: rot30, ventas_90d: rot90,
+            margen_pct: Number(m.margen_pct || 0),
+            urgencia, urgencia_label: URGENCIA[urgencia].label,
+        };
+    }).sort((a, b) => URGENCIA[a.urgencia].orden - URGENCIA[b.urgencia].orden || b.ventas_30d - a.ventas_30d);
+
+    const totalOrden = Math.round(items.reduce((s, i) => s + i.subtotal, 0) * 100) / 100;
+    const totalUrgente = Math.round(items.filter((i) => i.urgencia === 'urgente').reduce((s, i) => s + i.subtotal, 0) * 100) / 100;
+    return { items, totalOrden, totalUrgente };
+}
+
 // ── Asesor IA (Edge Function) ──
 export async function asesorCompras(presupuesto, financials, items) {
     const compact = items.slice(0, 40).map((it) => ({

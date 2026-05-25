@@ -70,4 +70,46 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_presupuesto_compras(UUID, INT, NUMERIC) TO authenticated, service_role;
 
-SELECT 'rpc creada' AS check, proname FROM pg_proc WHERE proname = 'get_presupuesto_compras';
+-- ────────────────────────────────────────────────
+-- RPC: get_productos_movimiento — rotación/existencia de una lista
+-- ────────────────────────────────────────────────
+-- Para analizar y priorizar (urgencia) los productos que YA están
+-- en una orden de compra. SQL puro, sin costo.
+-- ────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.get_productos_movimiento(p_ids UUID[])
+RETURNS TABLE(
+  producto_id UUID,
+  existencia  NUMERIC,
+  ventas_30d  NUMERIC,
+  ventas_90d  NUMERIC,
+  costo       NUMERIC,
+  precio      NUMERIC,
+  margen_pct  NUMERIC
+)
+LANGUAGE plpgsql SECURITY DEFINER STABLE AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    p.id,
+    public.get_stock_actual(p.id)::NUMERIC,
+    COALESCE((SELECT SUM(fd.cantidad) FROM public.facturas_detalle fd
+      JOIN public.facturas f ON f.id = fd.factura_id
+      WHERE fd.producto_id = p.id AND f.fecha >= NOW() - INTERVAL '30 days'
+        AND f.estado <> 'Anulada'), 0)::NUMERIC,
+    COALESCE((SELECT SUM(fd.cantidad) FROM public.facturas_detalle fd
+      JOIN public.facturas f ON f.id = fd.factura_id
+      WHERE fd.producto_id = p.id AND f.fecha >= NOW() - INTERVAL '90 days'
+        AND f.estado <> 'Anulada'), 0)::NUMERIC,
+    COALESCE(p.costo, 0)::NUMERIC,
+    COALESCE(p.precio, 0)::NUMERIC,
+    CASE WHEN p.precio > 0 AND p.costo > 0 AND p.precio > p.costo
+         THEN ROUND(((p.precio - p.costo) / p.precio * 100)::NUMERIC, 1) ELSE 0 END
+  FROM public.productos p
+  WHERE p.id = ANY(p_ids);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_productos_movimiento(UUID[]) TO authenticated, service_role;
+
+SELECT 'rpcs creadas' AS check, count(*) AS n FROM pg_proc
+WHERE proname IN ('get_presupuesto_compras','get_productos_movimiento');

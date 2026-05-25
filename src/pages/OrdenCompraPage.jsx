@@ -1491,6 +1491,7 @@ const OrdenCompraPage = () => {
         open={showInteligente}
         onClose={() => setShowInteligente(false)}
         suplidor={selectedProveedor}
+        orderLines={detalles}
         onApply={aplicarCompraInteligente}
       />
     </>
