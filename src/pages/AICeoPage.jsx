@@ -12,6 +12,7 @@ import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp, Megaphone } from 'lucide-react';
@@ -39,7 +40,10 @@ const TABS = [
 ];
 
 export default function AICeoPage() {
-    const { tenantId } = useAuth();
+    const { tenantId, isSuperAdmin } = useAuth();
+    const { planActual } = useSuscripcion();
+    // Marketing IA = función Plus: solo planes PRO y ENTERPRISE (y super admin).
+    const puedeMarketing = isSuperAdmin || ['PRO', 'ENTERPRISE'].includes((planActual || '').toUpperCase());
     const { toast } = useToast();
     const [tab, setTab] = useState('dashboard');
     const [health, setHealth] = useState(null);
@@ -172,7 +176,7 @@ export default function AICeoPage() {
 
                 {/* Tabs */}
                 <div className="flex gap-1 mb-3 border-b border-slate-200">
-                    {TABS.map((t) => {
+                    {TABS.filter((t) => t.key !== 'marketing' || puedeMarketing).map((t) => {
                         const Icon = t.icon;
                         const active = tab === t.key;
                         let badgeCount = 0;
@@ -243,7 +247,7 @@ export default function AICeoPage() {
                     </div>
                 )}
 
-                {tab === 'marketing' && (
+                {tab === 'marketing' && puedeMarketing && (
                     <MarketingAI />
                 )}
 
