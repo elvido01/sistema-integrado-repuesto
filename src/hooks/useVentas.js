@@ -561,8 +561,8 @@ export const useVentas = () => {
     const sinSuplidor = [];
 
     for (const producto of productos) {
+      if (!producto.activo) continue;
       const minStock = Number(producto.min_stock || 0);
-      if (!producto.activo || minStock <= 0) continue;
 
       const { data: existenciaData, error: stockError } = await supabase.rpc('get_stock_actual', {
         producto_uuid: producto.id,
@@ -574,14 +574,24 @@ export const useVentas = () => {
       }
 
       const existenciaFinal = Number(existenciaData || 0);
-      if (existenciaFinal > minStock) continue;
+      // Saltar si el producto aun tiene stock suficiente:
+      //  - Con min_stock configurado: skip si existencia > min_stock.
+      //  - Sin min_stock: solo repone cuando llega a 0 o negativo (el producto
+      //    se acaba de vender, asi que sabemos que tiene rotacion real).
+      if (minStock > 0) {
+        if (existenciaFinal > minStock) continue;
+      } else {
+        if (existenciaFinal > 0) continue;
+      }
 
       if (!producto.suplidor_id) {
         sinSuplidor.push(producto.codigo);
         continue;
       }
 
-      const objetivo = Math.max(Number(producto.max_stock || 0), minStock);
+      // Objetivo: max_stock, min_stock, o al menos 1 (si nada esta configurado).
+      const objetivoBase = Math.max(minStock, 1);
+      const objetivo = Math.max(Number(producto.max_stock || 0), objetivoBase);
       const cantidadSugerida = Math.max(1, Math.ceil(objetivo - existenciaFinal));
       const result = await sendProductToOrdenCompra(producto, { quantity: cantidadSugerida });
 
