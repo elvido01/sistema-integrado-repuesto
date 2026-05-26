@@ -705,6 +705,8 @@ export const useVentas = () => {
         if (ncfError) throw ncfError;
         if (ncfResult && ncfResult.success) {
           facturaData.ncf = ncfResult.ncf;
+          // Persistir el nombre del emisor en la factura para que la reimpresion lo muestre.
+          facturaData.nombre_emisor_ncf = ncfResult.nombre_emisor || null;
           ncfData = ncfResult;
         } else if (ncfResult && !ncfResult.success) {
           toast({
@@ -801,7 +803,26 @@ export const useVentas = () => {
       }
 
       if (cotizacionId && !editingFacturaId) {
-        await supabase.from('cotizaciones').update({ estado: 'Facturada' }).eq('id', cotizacionId);
+        await supabase
+          .from('cotizaciones')
+          .update({ estado: 'Facturada' })
+          .eq('id', cotizacionId);
+
+        try {
+          const { error: cotizacionComercialError } = await supabase
+            .from('cotizaciones')
+            .update({ estado_comercial: 'convertida' })
+            .eq('id', cotizacionId);
+          if (cotizacionComercialError) throw cotizacionComercialError;
+
+          const { error: crmConversationError } = await supabase
+            .from('crm_whatsapp_conversations')
+            .update({ status: 'venta_cerrada' })
+            .eq('cotizacion_id', cotizacionId);
+          if (crmConversationError) throw crmConversationError;
+        } catch (crmUpdateError) {
+          console.warn('[Ventas] No se pudo sincronizar estado comercial CRM:', crmUpdateError.message);
+        }
       }
 
       // AUTO-CREATE Recibo de Ingreso for partial credit payment (abono)
