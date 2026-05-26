@@ -20,7 +20,7 @@ export const generateFacturaPDF = (factura, empresa = {}) => {
     // --- Header ---
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(empresa.nombre || 'Mi Empresa', pageWidth / 2, currentY, { align: 'center' });
+    doc.text(factura.nombre_emisor_ncf || empresa.nombre || 'Mi Empresa', pageWidth / 2, currentY, { align: 'center' });
     currentY += 12;
 
     doc.setFont('helvetica', 'normal');
@@ -59,6 +59,15 @@ export const generateFacturaPDF = (factura, empresa = {}) => {
     const horaStr = formatInTimeZone(new Date(factura.fecha), 'hh:mm a');
     doc.text(horaStr, rightX, currentY, { align: 'right' });
     currentY += 12;
+
+    // NCF (si aplica)
+    if (factura.ncf) {
+      doc.text("NCF :", labelX, currentY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(String(factura.ncf), valueX, currentY);
+      doc.setFont('helvetica', 'normal');
+      currentY += 12;
+    }
 
     // Fecha
     const fechaStr = formatInTimeZone(new Date(factura.fecha), 'd/L/yyyy');

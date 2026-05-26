@@ -71,11 +71,12 @@ interface EmpresaConfig {
     direccion?: string;
     ciudad?: string;
     telefono?: string;
+    rnc?: string;
 }
 
-function buildHeader(empresa?: EmpresaConfig): string {
+function buildHeader(empresa?: EmpresaConfig, overrideName?: string): string {
     const lines: string[] = [];
-    const nombre = (empresa?.nombre || 'MotoFlow').toUpperCase();
+    const nombre = (overrideName || empresa?.nombre || 'MotoFlow').toUpperCase();
     lines.push(CMD.BOLD_ON + centerLine(nombre) + CMD.BOLD_OFF);
     if (empresa?.direccion) {
         lines.push(centerLine(empresa.direccion));
@@ -92,6 +93,9 @@ function buildHeader(empresa?: EmpresaConfig): string {
     } else {
         lines.push(centerLine('809-390-5965'));
     }
+    if (empresa?.rnc) {
+        lines.push(centerLine(`RNC: ${empresa.rnc}`));
+    }
     lines.push('');
     return lines.join(CMD.LF);
 }
@@ -102,6 +106,8 @@ function buildHeader(empresa?: EmpresaConfig): string {
 
 interface FacturaData {
     numero?: number | string;
+    ncf?: string;
+    nombre_emisor_ncf?: string;
     fecha?: string;
     forma_pago?: string;
     dias_credito?: number;
@@ -133,7 +139,7 @@ interface FacturaData {
     }>;
 }
 
-export function buildFacturaEscPos(factura: FacturaData): string {
+export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig): string {
     const details = factura.facturas_detalle || [];
     const client = factura.clientes || {};
 
@@ -158,12 +164,15 @@ export function buildFacturaEscPos(factura: FacturaData): string {
 
     // ── Init + Header ──
     lines.push(CMD.INIT);
-    lines.push(buildHeader());
+    lines.push(buildHeader(empresa, factura.nombre_emisor_ncf));
     lines.push(CMD.BOLD_ON + centerLine('FACTURA') + CMD.BOLD_OFF);
     lines.push('');
 
     // ── Info ──
     lines.push(leftRight(`Numero : ${numeroStr}`, horaStr));
+    if (factura.ncf) {
+        lines.push(`NCF    : ${CMD.BOLD_ON}${factura.ncf}${CMD.BOLD_OFF}`);
+    }
     lines.push(`Fecha  : ${fechaStr}`);
     lines.push(`Vence  : ${CMD.BOLD_ON}${vence}${CMD.BOLD_OFF}`);
     lines.push(`${CMD.BOLD_ON}Cliente : ${clientName}${CMD.BOLD_OFF}`);

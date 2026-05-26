@@ -28,6 +28,7 @@ const getHeaderHTML = (overrideName) => {
   if (_empresaConfig.direccion) lines.push(`<p>${_empresaConfig.direccion}</p>`);
   if (_empresaConfig.ciudad) lines.push(`<p>${_empresaConfig.ciudad}</p>`);
   if (_empresaConfig.telefono) lines.push(`<p class="num">${_empresaConfig.telefono}</p>`);
+  if (_empresaConfig.rnc) lines.push(`<p class="num"><strong>RNC:</strong> ${_empresaConfig.rnc}</p>`);
   return lines.join('\n        ');
 };
 
@@ -1733,7 +1734,7 @@ export const printFacturaQZ = async (factura) => {
     const { findReceiptPrinter, printRawEscPos } = await import('@/services/printerAdapter');
 
     const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
-    const escpos = buildFacturaEscPos(factura);
+    const escpos = buildFacturaEscPos(factura, _empresaConfig);
 
     console.log("[QZ-POS] Imprimiendo factura via ESC/POS...");
     await printRawEscPos(printerName, escpos);
@@ -2297,7 +2298,7 @@ export const printPagoSuplidorPOS = (pago, suplidorNombre, detalles, formasPago,
 export const printFacturaWebUsb = async (factura) => {
   const { buildFacturaEscPos } = await import('@/services/escposReceipt');
   const { webUsbPrintEscPos } = await import('@/services/webUsbPrintService');
-  const escpos = buildFacturaEscPos(factura);
+  const escpos = buildFacturaEscPos(factura, _empresaConfig);
   await webUsbPrintEscPos(escpos);
 };
 
