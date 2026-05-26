@@ -76,13 +76,13 @@ const ComprobantesPage = () => {
   useEffect(() => { fetchSecuencias(); }, [fetchSecuencias]);
 
   const resetForm = () => {
-    setForm({ ...emptyForm, nombre_emisor: empresa?.nombre || '' });
+    setForm({ ...emptyForm, nombre_emisor: empresa?.razon_social || empresa?.nombre || '' });
     setEditingId(null);
   };
 
   useEffect(() => {
-    if (empresa?.nombre && !editingId) {
-      setForm(prev => ({ ...prev, nombre_emisor: prev.nombre_emisor || empresa.nombre }));
+    if ((empresa?.razon_social || empresa?.nombre) && !editingId) {
+      setForm(prev => ({ ...prev, nombre_emisor: prev.nombre_emisor || empresa.razon_social || empresa.nombre }));
     }
   }, [empresa, editingId]);
 
