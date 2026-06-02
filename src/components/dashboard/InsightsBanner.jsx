@@ -49,15 +49,16 @@ const TIPO_ALERTA_LABEL = {
 };
 
 export default function InsightsBanner() {
-    const { tenantId, user } = useAuth();
+    const { tenantId, user, profile } = useAuth();
     const { toast } = useToast();
+    const isGerencial = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
     const [insight, setInsight] = useState(null);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(false);
     const [updating, setUpdating] = useState(false);
 
     const cargar = useCallback(async () => {
-        if (!tenantId) return;
+        if (!tenantId || !isGerencial) return;
         setLoading(true);
         try {
             const { data, error } = await supabase
@@ -77,7 +78,7 @@ export default function InsightsBanner() {
         } finally {
             setLoading(false);
         }
-    }, [tenantId]);
+    }, [tenantId, isGerencial]);
 
     useEffect(() => { cargar(); }, [cargar]);
 
@@ -108,7 +109,7 @@ export default function InsightsBanner() {
         }
     };
 
-    if (loading || !insight) return null;
+    if (!isGerencial || loading || !insight) return null;
 
     const style = PRIORIDAD_STYLE[insight.prioridad] || PRIORIDAD_STYLE.media;
     const parsed = insight.detalles?.parsed || {};

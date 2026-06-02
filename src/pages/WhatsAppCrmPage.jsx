@@ -339,6 +339,9 @@ const WhatsAppCrmPage = () => {
   const [conversations, setConversations] = useState([]);
   const [showNewManualConv, setShowNewManualConv] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [savingRename, setSavingRename] = useState(false);
   const [messages, setMessages] = useState([]);
   const [quoteItems, setQuoteItems] = useState([]);
   const [search, setSearch] = useState('');
@@ -941,6 +944,46 @@ const WhatsAppCrmPage = () => {
   const updateConversationLocal = (conversationId, patch) => {
     setSelected(prev => prev?.id === conversationId ? { ...prev, ...patch } : prev);
     setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, ...patch } : c));
+  };
+
+  const openRenameModal = () => {
+    if (!selected) return;
+    setRenameValue(selected.cliente_nombre || selected.contact_name || '');
+    setShowRenameModal(true);
+  };
+
+  const handleRenameContact = async () => {
+    if (!selected) return;
+    const nuevoNombre = renameValue.trim();
+    if (!nuevoNombre) {
+      toast({ variant: 'destructive', title: 'Nombre vacio', description: 'Escribe un nombre para el contacto.' });
+      return;
+    }
+    setSavingRename(true);
+    try {
+      let error;
+      if (selected.source_table === 'sales' && !isWhatsAppConversation(selected)) {
+        ({ error } = await supabase
+          .from('sales_conversations')
+          .update({ customer_name: nuevoNombre })
+          .eq('id', selected.id));
+      } else if (selected.contact_id) {
+        ({ error } = await supabase
+          .from('crm_whatsapp_contacts')
+          .update({ name: nuevoNombre, updated_at: new Date().toISOString() })
+          .eq('id', selected.contact_id));
+      } else {
+        error = { message: 'La conversacion no tiene un contacto asociado.' };
+      }
+      if (error) throw error;
+      updateConversationLocal(selected.id, { contact_name: nuevoNombre, cliente_nombre: nuevoNombre });
+      setShowRenameModal(false);
+      toast({ title: 'Nombre actualizado', description: `El contacto ahora se llama "${nuevoNombre}".` });
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message || 'No se pudo cambiar el nombre.' });
+    } finally {
+      setSavingRename(false);
+    }
   };
 
   const handleSetConversationStatus = async (status, { conversation = selected, toastTitle } = {}) => {
@@ -2081,6 +2124,14 @@ const WhatsAppCrmPage = () => {
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                         <h2 className="max-w-full truncate font-semibold text-slate-950">{renderConversationName(selected)}</h2>
+                        <button
+                          type="button"
+                          onClick={openRenameModal}
+                          title="Editar nombre del contacto"
+                          className="shrink-0 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
                         <Badge className={`shrink-0 border ${selectedChannelMeta.className}`} title={`Canal: ${selectedChannelMeta.label}`}>
                           <SelectedChannelIcon className="h-3 w-3 mr-1" />
                           {selectedChannelMeta.label}
@@ -2774,6 +2825,38 @@ const WhatsAppCrmPage = () => {
         onClose={() => setShowNewManualConv(false)}
         onCreate={handleCreateManualConversation}
       />
+
+      <Dialog open={showRenameModal} onOpenChange={(v) => { if (!v) setShowRenameModal(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Editar nombre del contacto</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-xs font-bold text-slate-600">Nombre</Label>
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="Nombre del cliente"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter' && !savingRename && renameValue.trim()) handleRenameContact(); }}
+            />
+            <p className="text-[10px] text-slate-400 italic">
+              Este nombre se guarda en el contacto del CRM y reemplaza el que WhatsApp trae por defecto.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowRenameModal(false)}>Cancelar</Button>
+            <Button
+              onClick={handleRenameContact}
+              disabled={savingRename || !renameValue.trim()}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {savingRename ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

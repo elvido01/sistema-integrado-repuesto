@@ -14,9 +14,22 @@ const formatNumber = (value) => {
   return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, onNotImplemented }) => {
+const PresentationsTab = ({
+  presentations,
+  setPresentations,
+  tiposPresentacion,
+  onNotImplemented,
+  itbisPct = 0.18,
+  precio2DescuentoPct = 10,
+  precio3DescuentoPct = 15,
+}) => {
   // Track which field is currently focused so we show raw value for editing
   const [focusedField, setFocusedField] = useState(null);
+  const taxRate = Number(itbisPct || 0);
+  const minAutoMarginPct = 0;
+
+  const p2Discount = Math.max(0, Math.min(100, parseFloat(precio2DescuentoPct) || 10));
+  const p3Discount = Math.max(0, Math.min(100, parseFloat(precio3DescuentoPct) || 15));
 
   const calculatePrice = (costo, margenPct) => {
     const costoNum = parseFloat(costo) || 0;
@@ -24,11 +37,44 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
     return (costoNum * (1 + margenNum / 100)).toFixed(2);
   };
 
+  const calculateMarkupFromGrossPrice = (grossPrice, costo) => {
+    const precioNum = parseFloat(grossPrice) || 0;
+    const costoNum = parseFloat(costo) || 0;
+    if (costoNum <= 0) return 0;
+    return ((precioNum / costoNum) - 1) * 100;
+  };
+
+  const calculatePriceMetrics = (grossPrice, costo, descuentoPct = 0) => {
+    const costoNum = parseFloat(costo) || 0;
+    const precioNum = parseFloat(grossPrice) || 0;
+    const descuentoNum = parseFloat(descuentoPct) || 0;
+    const precioNeto = precioNum * (1 - descuentoNum / 100);
+    const utilidad = precioNeto - costoNum;
+    const margenReal = precioNeto > 0 ? (utilidad / precioNeto) * 100 : 0;
+
+    return { utilidad, margenReal };
+  };
+
+  const calculateProfitMetrics = (presentation) => (
+    calculatePriceMetrics(presentation.precio1, presentation.costo, presentation.descuento_pct)
+  );
+
+  const isAutoPriceAllowed = (grossPrice, costo) => {
+    if ((parseFloat(grossPrice) || 0) <= 0) return true;
+    return calculatePriceMetrics(grossPrice, costo).margenReal >= minAutoMarginPct;
+  };
+
+  const getMarginTone = (margenReal) => {
+    if (margenReal < 15) return 'text-red-700 bg-red-50 border-red-100';
+    if (margenReal < 25) return 'text-amber-700 bg-amber-50 border-amber-100';
+    return 'text-emerald-700 bg-emerald-50 border-emerald-100';
+  };
+
   const calculateAutoPrices = (precio1, auto2, auto3) => {
     const p1 = parseFloat(precio1) || 0;
     return {
-      precio2: auto2 ? (p1 * 0.90).toFixed(2) : undefined,
-      precio3: auto3 ? (p1 * 0.85).toFixed(2) : undefined,
+      precio2: auto2 ? (p1 * (1 - p2Discount / 100)).toFixed(2) : undefined,
+      precio3: auto3 ? (p1 * (1 - p3Discount / 100)).toFixed(2) : undefined,
     };
   };
 
@@ -88,23 +134,30 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
     }
 
     // Ensure P2/P3 are calculated if they are 0 but auto is on
-    const needsSync = presentations.some(p =>
-      (p.auto_precio2 && (parseFloat(p.precio2) === 0 || !p.precio2) && parseFloat(p.precio1) > 0) ||
-      (p.auto_precio3 && (parseFloat(p.precio3) === 0 || !p.precio3) && parseFloat(p.precio1) > 0)
-    );
+    const needsSync = presentations.some(p => {
+      const precio1Num = parseFloat(p.precio1) || 0;
+      const costoNum = parseFloat(p.costo) || 0;
+      const autos = calculateAutoPrices(p.precio1, p.auto_precio2, p.auto_precio3);
+      const p2NeedsValue = p.auto_precio2 && (parseFloat(p.precio2) === 0 || !p.precio2) && precio1Num > 0;
+      const p3NeedsValue = p.auto_precio3 && (parseFloat(p.precio3) === 0 || !p.precio3) && precio1Num > 0;
+      const p2Loses = p.auto_precio2 && precio1Num > 0 && !isAutoPriceAllowed(p.precio2, costoNum);
+      const p3Loses = p.auto_precio3 && precio1Num > 0 && !isAutoPriceAllowed(p.precio3, costoNum);
+      const p2OutOfSync = p.auto_precio2 && precio1Num > 0 && parseFloat(p.precio2) !== parseFloat(autos.precio2);
+      const p3OutOfSync = p.auto_precio3 && precio1Num > 0 && parseFloat(p.precio3) !== parseFloat(autos.precio3);
+
+      return p2NeedsValue || p3NeedsValue || p2Loses || p3Loses || p2OutOfSync || p3OutOfSync;
+    });
 
     if (needsSync) {
       const synced = presentations.map(p => {
         const costoNum = parseFloat(p.costo) || 0;
         const precio1Num = parseFloat(p.precio1) || 0;
-        const margenActual = costoNum > 0 ? ((precio1Num / costoNum) - 1) * 100 : 0;
-        const eps = 0.001;
 
         const autos = calculateAutoPrices(p.precio1, p.auto_precio2, p.auto_precio3);
         const updated = { ...p };
 
-        if (p.auto_precio2 && (parseFloat(p.precio2) === 0 || !p.precio2)) {
-          if (precio1Num > 0 && (margenActual <= 15 + eps || (parseFloat(autos.precio2) > 0 && parseFloat(autos.precio2) < costoNum))) {
+        if (p.auto_precio2) {
+          if (precio1Num > 0 && !isAutoPriceAllowed(autos.precio2, costoNum)) {
             updated.auto_precio2 = false;
             updated.precio2 = '0.00';
           } else {
@@ -112,8 +165,8 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
           }
         }
 
-        if (p.auto_precio3 && (parseFloat(p.precio3) === 0 || !p.precio3)) {
-          if (precio1Num > 0 && (margenActual <= 20 + eps || (parseFloat(autos.precio3) > 0 && parseFloat(autos.precio3) < costoNum))) {
+        if (p.auto_precio3) {
+          if (precio1Num > 0 && !isAutoPriceAllowed(autos.precio3, costoNum)) {
             updated.auto_precio3 = false;
             updated.precio3 = '0.00';
           } else {
@@ -159,15 +212,13 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
           // Enforce margin rules and below-cost rules on blur
           const costoNum = parseFloat(newP.costo) || 0;
           const precio1Num = parseFloat(newP.precio1) || 0;
-          const margenActual = costoNum > 0 ? ((precio1Num / costoNum) - 1) * 100 : 0;
-          const eps = 0.001;
 
-          if (precio1Num > 0 && (margenActual <= 15 + eps || (parseFloat(newP.precio2) > 0 && parseFloat(newP.precio2) < costoNum))) {
+          if (precio1Num > 0 && !isAutoPriceAllowed(newP.precio2, costoNum)) {
             newP.auto_precio2 = false;
             newP.precio2 = '0.00';
           }
 
-          if (precio1Num > 0 && (margenActual <= 20 + eps || (parseFloat(newP.precio3) > 0 && parseFloat(newP.precio3) < costoNum))) {
+          if (precio1Num > 0 && !isAutoPriceAllowed(newP.precio3, costoNum)) {
             newP.auto_precio3 = false;
             newP.precio3 = '0.00';
           }
@@ -196,7 +247,7 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
           const costoNum = parseFloat(updated.costo) || 0;
           const precioNum = parseFloat(value) || 0;
           if (costoNum > 0) {
-            updated.margen_pct = (((precioNum / costoNum) - 1) * 100).toFixed(2);
+            updated.margen_pct = calculateMarkupFromGrossPrice(precioNum, costoNum).toFixed(2);
           }
         }
 
@@ -205,19 +256,17 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
 
         const costoNum = parseFloat(updated.costo) || 0;
         const precio1Num = parseFloat(updated.precio1) || 0;
-        const margenActual = costoNum > 0 ? ((precio1Num / costoNum) - 1) * 100 : 0;
-        const eps = 0.001;
 
         // Force temp calculation to check conditions mathematically
-        const p2Calc = (precio1Num * 0.90).toFixed(2);
-        const p3Calc = (precio1Num * 0.85).toFixed(2);
+        const p2Calc = (precio1Num * (1 - p2Discount / 100)).toFixed(2);
+        const p3Calc = (precio1Num * (1 - p3Discount / 100)).toFixed(2);
 
         // Auto-restore flags if they were disabled (0.00) and now comply, when changing base values
         if (field === 'precio1' || field === 'costo' || field === 'margen_pct') {
-          if (!updated.auto_precio2 && (parseFloat(updated.precio2) === 0 || !updated.precio2) && precio1Num > 0 && margenActual > 15 + eps && parseFloat(p2Calc) >= costoNum) {
+          if (!updated.auto_precio2 && (parseFloat(updated.precio2) === 0 || !updated.precio2) && precio1Num > 0 && isAutoPriceAllowed(p2Calc, costoNum)) {
             updated.auto_precio2 = true;
           }
-          if (!updated.auto_precio3 && (parseFloat(updated.precio3) === 0 || !updated.precio3) && precio1Num > 0 && margenActual > 20 + eps && parseFloat(p3Calc) >= costoNum) {
+          if (!updated.auto_precio3 && (parseFloat(updated.precio3) === 0 || !updated.precio3) && precio1Num > 0 && isAutoPriceAllowed(p3Calc, costoNum)) {
             updated.auto_precio3 = true;
           }
         }
@@ -227,7 +276,7 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
         if (field === 'auto_precio3' && value === true) updated.auto_precio3 = true;
 
         if (updated.auto_precio2) {
-          if (precio1Num > 0 && (margenActual <= 15 + eps || parseFloat(p2Calc) < costoNum)) {
+          if (precio1Num > 0 && !isAutoPriceAllowed(p2Calc, costoNum)) {
             updated.auto_precio2 = false;
             updated.precio2 = '0.00';
           } else {
@@ -236,7 +285,7 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
         }
 
         if (updated.auto_precio3) {
-          if (precio1Num > 0 && (margenActual <= 20 + eps || parseFloat(p3Calc) < costoNum)) {
+          if (precio1Num > 0 && !isAutoPriceAllowed(p3Calc, costoNum)) {
             updated.auto_precio3 = false;
             updated.precio3 = '0.00';
           } else {
@@ -299,17 +348,27 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-[120px]">Tipo/Unidad</TableHead>
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-[50px] text-right">Cant.</TableHead>
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-[80px] text-right">Costo</TableHead>
-              <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-[50px] text-right">% Mar.</TableHead>
+              <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-[50px] text-right" title="Aumento sobre el costo usado para calcular P1">% Mar.</TableHead>
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-[60px] text-right">% Desc.</TableHead>
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-40 text-center">Precios de Lista (1, 2, 3)</TableHead>
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-24 text-right">P. Final (P1)</TableHead>
+              <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-28 text-right" title="Utilidad y margen sobre el precio antes de ITBIS">Ganancia Real</TableHead>
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-8 text-center">F</TableHead>
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-8 text-center">I</TableHead>
               <TableHead className="h-8 text-[10px] font-bold text-blue-900 uppercase px-2 w-8 text-center"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {presentations.map((presentation) => (
+            {presentations.map((presentation) => {
+              const profitMetrics = calculateProfitMetrics(presentation);
+              const p2Metrics = calculatePriceMetrics(presentation.precio2, presentation.costo);
+              const p3Metrics = calculatePriceMetrics(presentation.precio3, presentation.costo);
+              const p2HasPrice = (parseFloat(presentation.precio2) || 0) > 0;
+              const p3HasPrice = (parseFloat(presentation.precio3) || 0) > 0;
+              const p2Loses = p2HasPrice && p2Metrics.utilidad < 0;
+              const p3Loses = p3HasPrice && p3Metrics.utilidad < 0;
+
+              return (
               <TableRow key={presentation.id} className="h-auto hover:bg-gray-50/50 border-b border-gray-200">
                 <TableCell className="p-1 align-top pt-2">
                   <Select
@@ -398,15 +457,23 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
 
                     <div className="flex items-center gap-1 group">
                       <span className="text-[9px] font-bold text-gray-400 w-4">P2</span>
-                      <Input
-                        type="text"
-                        disabled={presentation.auto_precio2}
-                        value={getDisplayValue(presentation.id, 'precio2', presentation.precio2)}
-                        onChange={(e) => updatePresentation(presentation.id, 'precio2', e.target.value)}
-                        onFocus={(e) => handleFocus(presentation.id, 'precio2', e)}
-                        onBlur={() => handleBlur(presentation.id, 'precio2')}
-                        className={`h-6 text-[11px] text-right bg-white border-gray-200 px-1 focus:ring-0 flex-grow font-semibold text-black ${presentation.auto_precio2 ? 'bg-gray-50/50' : ''}`}
-                      />
+                      <div className="flex-grow">
+                        <Input
+                          type="text"
+                          disabled={presentation.auto_precio2}
+                          value={getDisplayValue(presentation.id, 'precio2', presentation.precio2)}
+                          onChange={(e) => updatePresentation(presentation.id, 'precio2', e.target.value)}
+                          onFocus={(e) => handleFocus(presentation.id, 'precio2', e)}
+                          onBlur={() => handleBlur(presentation.id, 'precio2')}
+                          className={`h-6 text-[11px] text-right bg-white px-1 focus:ring-0 font-semibold ${p2Loses ? 'border-red-200 text-red-700 bg-red-50/70' : 'border-gray-200 text-black'} ${presentation.auto_precio2 ? 'bg-gray-50/50' : ''}`}
+                          title={p2HasPrice ? `Utilidad P2: ${formatNumber(p2Metrics.utilidad)} | Margen: ${p2Metrics.margenReal.toFixed(2)}%` : ''}
+                        />
+                        {p2HasPrice && (
+                          <div className={`text-[9px] leading-none mt-0.5 text-right font-bold ${p2Loses ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {formatNumber(p2Metrics.utilidad)} | {p2Metrics.margenReal.toFixed(2)}%
+                          </div>
+                        )}
+                      </div>
                       <Checkbox
                         checked={presentation.auto_precio2}
                         onCheckedChange={(val) => updatePresentation(presentation.id, 'auto_precio2', val)}
@@ -416,15 +483,23 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
 
                     <div className="flex items-center gap-1 group">
                       <span className="text-[9px] font-bold text-gray-400 w-4">P3</span>
-                      <Input
-                        type="text"
-                        disabled={presentation.auto_precio3}
-                        value={getDisplayValue(presentation.id, 'precio3', presentation.precio3)}
-                        onChange={(e) => updatePresentation(presentation.id, 'precio3', e.target.value)}
-                        onFocus={(e) => handleFocus(presentation.id, 'precio3', e)}
-                        onBlur={() => handleBlur(presentation.id, 'precio3')}
-                        className={`h-6 text-[11px] text-right bg-white border-gray-200 px-1 focus:ring-0 flex-grow font-semibold text-black ${presentation.auto_precio3 ? 'bg-gray-50/50' : ''}`}
-                      />
+                      <div className="flex-grow">
+                        <Input
+                          type="text"
+                          disabled={presentation.auto_precio3}
+                          value={getDisplayValue(presentation.id, 'precio3', presentation.precio3)}
+                          onChange={(e) => updatePresentation(presentation.id, 'precio3', e.target.value)}
+                          onFocus={(e) => handleFocus(presentation.id, 'precio3', e)}
+                          onBlur={() => handleBlur(presentation.id, 'precio3')}
+                          className={`h-6 text-[11px] text-right bg-white px-1 focus:ring-0 font-semibold ${p3Loses ? 'border-red-200 text-red-700 bg-red-50/70' : 'border-gray-200 text-black'} ${presentation.auto_precio3 ? 'bg-gray-50/50' : ''}`}
+                          title={p3HasPrice ? `Utilidad P3: ${formatNumber(p3Metrics.utilidad)} | Margen: ${p3Metrics.margenReal.toFixed(2)}%` : ''}
+                        />
+                        {p3HasPrice && (
+                          <div className={`text-[9px] leading-none mt-0.5 text-right font-bold ${p3Loses ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {formatNumber(p3Metrics.utilidad)} | {p3Metrics.margenReal.toFixed(2)}%
+                          </div>
+                        )}
+                      </div>
                       <Checkbox
                         checked={presentation.auto_precio3}
                         onCheckedChange={(val) => updatePresentation(presentation.id, 'auto_precio3', val)}
@@ -437,6 +512,15 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
                 <TableCell className="p-1 align-top pt-2">
                   <div className="h-6 flex items-center justify-end px-2 bg-gray-50 border border-gray-200 rounded text-[11px] font-bold text-gray-700">
                     {formatNumber(presentation.precio_final)}
+                  </div>
+                </TableCell>
+                <TableCell className="p-1 align-top pt-2">
+                  <div
+                    className={`min-h-6 flex flex-col items-end justify-center px-2 py-0.5 border rounded text-[10px] font-bold leading-tight ${getMarginTone(profitMetrics.margenReal)}`}
+                    title="Calculado como: precio final antes de ITBIS - costo. El porcentaje es utilidad / precio final antes de ITBIS."
+                  >
+                    <span>{formatNumber(profitMetrics.utilidad)}</span>
+                    <span className="text-[9px] opacity-80">{profitMetrics.margenReal.toFixed(2)}%</span>
                   </div>
                 </TableCell>
                 <TableCell className="p-1 text-center align-top pt-3">
@@ -466,19 +550,20 @@ const PresentationsTab = ({ presentations, setPresentations, tiposPresentacion, 
                   )}
                 </TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mt-2">
         <div className="text-[10px] text-gray-500 bg-gray-50 border border-gray-200 p-2 rounded flex flex-col justify-center">
-          <p className="font-bold text-gray-600 mb-1 uppercase tracking-tighter text-[9px]">Leyenda: <strong>F:</strong> Fac. POS | <strong>I:</strong> Inv. | Cotejo: Automático</p>
+          <p className="font-bold text-gray-600 mb-1 uppercase tracking-tighter text-[9px]">Leyenda: <strong>F:</strong> Fac. POS | <strong>I:</strong> Inv. | % Mar.: aumento sobre costo | Ganancia real: utilidad antes de gastos</p>
         </div>
         <div className="text-[10px] text-blue-700 bg-blue-50 border border-blue-100 p-2 rounded flex items-center gap-2">
           <Upload className="w-4 h-4 opacity-50 flex-shrink-0" />
           <p className="leading-tight">
-            Use el cotejo para activar cálculo automático: <strong>P2 (-10%)</strong> y <strong>P3 (-15%)</strong> basado en P1.
+            Use el cotejo para activar cálculo automático: <strong>P2 (-{p2Discount}%)</strong> y <strong>P3 (-{p3Discount}%)</strong> basado en P1.
           </p>
         </div>
       </div>

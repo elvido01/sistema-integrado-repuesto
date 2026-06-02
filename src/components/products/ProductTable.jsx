@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from '@/components/ui/context-menu';
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
 import { useToast } from '@/components/ui/use-toast';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 
@@ -13,6 +13,7 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selec
   const [sendingToOrder, setSendingToOrder] = useState(null);
 
   const handleSendToOrden = async (product) => {
+    if (sendingToOrder) return;
     setSendingToOrder(product.id);
     try {
       const result = await sendProductToOrdenCompra(product);
@@ -127,15 +128,16 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selec
                   <ContextMenuContent className="w-56" style={{ zIndex: 10000 }}>
                     <ContextMenuItem
                       className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onSelect={(e) => {
+                        e.preventDefault();
                         handleSendToOrden(product);
                       }}
-                      disabled={sendingToOrder === product.id}
+                      disabled={!!sendingToOrder}
                     >
                       {sendingToOrder === product.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
                       Enviar a Orden de Compra
                     </ContextMenuItem>
+                    <ContextMenuSeparator />
                     <ContextMenuItem
                       className="font-bold text-gray-700 cursor-pointer flex items-center gap-2 py-2"
                       onSelect={(e) => {

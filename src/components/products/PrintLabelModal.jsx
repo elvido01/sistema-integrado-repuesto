@@ -8,7 +8,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Printer, MapPin } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { qzEnsureConnection, qzFindBestPrinter, qzPrintRawEpl } from "@/services/qzTrayService";
+import { findLabelPrinter, printRawEpl, setPreferredBackend, getPreferredBackend } from "@/services/printerAdapter";
 import { buildEplLabel } from "@/services/eplLabel";
 import { webUsbPrintEpl, isWebUsbSupported } from "@/services/webUsbPrintService";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
@@ -42,8 +42,7 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
     const [priceType, setPriceType] = useState('alpha');
     const [showLocation, setShowLocation] = useState(true);
     const [isPrintingSingle, setIsPrintingSingle] = useState(false);
-    const [labelPrintMethod, setLabelPrintMethod] = useState(() => localStorage.getItem('label_print_method') || 'qz');
-
+    const [labelPrintMethod, setLabelPrintMethod] = useState(() => localStorage.getItem('label_print_method') || 'auto');
     useEffect(() => {
         if (isOpen) {
             setIndividualQty(1);
@@ -64,7 +63,22 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
         if (!product || isPrintingSingle) return;
         const qty = parseInt(individualQty) || 1;
         setIsPrintingSingle(true);
-        toast({ title: 'Preparando impresión', description: labelPrintMethod === 'webusb' ? 'Conectando via WebUSB...' : 'Conectando con QZ Tray...' });
+
+        // Mensaje de "preparando" según método elegido
+        const methodLabel = {
+            auto: 'el motor configurado',
+            agent: 'Motoflow Print Agent',
+            qz: 'QZ Tray',
+            webusb: 'WebUSB',
+        }[labelPrintMethod] || 'la impresora';
+        toast({ title: 'Preparando impresión', description: `Conectando con ${methodLabel}...` });
+
+        // Si el método NO es 'auto' ni 'webusb', forzamos el backend específico
+        // en el adapter, ejecutamos, y luego restauramos la preferencia.
+        const previousBackend = getPreferredBackend();
+        if (labelPrintMethod === 'agent') setPreferredBackend('agent');
+        else if (labelPrintMethod === 'qz') setPreferredBackend('qz');
+
         try {
             const displayPrice = priceType === 'numeric'
                 ? product.precio
@@ -83,9 +97,9 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
             if (labelPrintMethod === 'webusb') {
                 await webUsbPrintEpl(epl);
             } else {
-                await qzEnsureConnection();
-                const printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
-                await qzPrintRawEpl(printerName, epl);
+                // auto / agent / qz — todos pasan por el adapter
+                const printerName = await findLabelPrinter(PREFERRED_PRINTERS);
+                await printRawEpl(printerName, epl);
             }
 
             toast({ title: 'Impresión completada', description: `Se imprimieron ${qty} etiquetas de ${product.codigo}.` });
@@ -94,6 +108,8 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
             console.error(`[${labelPrintMethod}] Error printing single:`, err);
             toast({ variant: 'destructive', title: 'Error de impresión', description: err?.message || 'No se pudo imprimir.' });
         } finally {
+            // Restaurar preferencia global del adapter
+            setPreferredBackend(previousBackend);
             setIsPrintingSingle(false);
         }
     };
@@ -172,7 +188,11 @@ const PrintLabelModal = ({ isOpen, onClose, product }) => {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="qz">QZ Tray (Nativo)</SelectItem>
+                                    <SelectItem value="auto">🔄 Auto (recomendado)</SelectItem>
+                                    <SelectItem value="agent">
+                                        ⚡ Motoflow Print Agent
+                                    </SelectItem>
+                                    <SelectItem value="qz">🖨️ QZ Tray (Nativo)</SelectItem>
                                     <SelectItem value="webusb" disabled={!isWebUsbSupported()}>WebUSB (Sin Instalar)</SelectItem>
                                 </SelectContent>
                             </Select>

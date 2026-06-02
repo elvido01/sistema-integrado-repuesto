@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Motoflow Cotizador WhatsApp",
+  "description": "Panel manual de cotizaciones de Motoflow dentro de WhatsApp Web.",
+  "version": "0.1.0",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://*.supabase.co/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

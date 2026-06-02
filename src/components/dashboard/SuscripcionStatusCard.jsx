@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Crown, Clock, AlertTriangle, XOctagon, Zap,
   Calendar, Users, Package, ChevronRight, Shield,
-  Sparkles, RefreshCw, Loader2
+  Sparkles, Loader2, CreditCard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
@@ -15,6 +15,7 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
   } = useSuscripcion();
 
   const isEnRevision = suscripcion?.estado === 'en_revision' || suscripcion?.pago_pendiente;
+  const isSinVerificar = suscripcion?.estado === 'sin_verificar';
 
   if (loading || !suscripcion) return null;
 
@@ -28,6 +29,7 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
 
   const style = planStyles[planActual] || planStyles.TRIAL;
   const PlanIcon = style.icon;
+  const planTitle = planActual ? style.text : 'Sin plan';
 
   // Status config
   const getStatusConfig = () => {
@@ -47,6 +49,15 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
       label: 'VENCIDO',
       labelBg: 'bg-red-100 text-red-700',
       icon: XOctagon,
+      progressPct: 0
+    };
+    if (isSinVerificar) return {
+      color: 'text-gray-600',
+      bgColor: 'bg-gray-50 border-gray-200',
+      barColor: 'bg-gray-400',
+      label: 'SIN VERIFICAR',
+      labelBg: 'bg-gray-100 text-gray-700',
+      icon: AlertTriangle,
       progressPct: 0
     };
     if (porVencer) return {
@@ -71,6 +82,7 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
 
   const status = getStatusConfig();
   const StatusIcon = status.icon;
+  const shouldShowPay = isVencida || porVencer;
 
   // ── compact mode (for header/sidebar) ──
   if (compact) {
@@ -111,7 +123,7 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
           </div>
           <div>
             <p className="text-white/80 text-[10px] font-bold uppercase tracking-widest">Plan Actual</p>
-            <h3 className="text-white font-black text-lg tracking-wide">{style.text}</h3>
+            <h3 className="text-white font-black text-lg tracking-wide">{planTitle}</h3>
           </div>
         </div>
         <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${status.labelBg}`}>
@@ -239,8 +251,8 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
                 : `bg-gradient-to-r ${style.gradient} hover:opacity-90 text-white`
             }`}
           >
-            {isVencida ? <RefreshCw className="w-4 h-4 mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
-            {isVencida ? 'Renovar Ahora' : isTrial ? 'Actualizar Plan' : planActual === 'ENTERPRISE' ? 'Renovar Plan' : 'Upgrade de Plan'}
+            {shouldShowPay ? <CreditCard className="w-4 h-4 mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
+            {shouldShowPay ? 'Pagar' : isTrial ? 'Actualizar Plan' : planActual === 'ENTERPRISE' ? 'Renovar Plan' : 'Upgrade de Plan'}
             <ChevronRight className="w-4 h-4 ml-2" />
           </Button>
         )}

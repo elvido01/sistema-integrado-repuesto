@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { Barcode, ShoppingCart, FileText, Search, MapPin, ListOrdered, ClipboardList } from 'lucide-react-native';
+import { Barcode, ShoppingCart, FileText, Search, MapPin, ListOrdered, ClipboardList, Boxes } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 export default function DashboardScreen() {
@@ -50,6 +50,17 @@ export default function DashboardScreen() {
           <Text className="text-gray-500">Cambiar ubicacion por codigo</Text>
         </View>
         <MapPin color="#1d4ed8" size={32} />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        className="mt-4 bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex-row items-center justify-between"
+        onPress={() => router.push('/existencia' as any)}
+      >
+        <View>
+          <Text className="text-lg font-bold text-gray-900">Actualizar Existencia</Text>
+          <Text className="text-gray-500">Ajustar existencia por conteo fisico</Text>
+        </View>
+        <Boxes color="#b45309" size={32} />
       </TouchableOpacity>
     </ScrollView>
   );

@@ -124,7 +124,18 @@ const ClientesPage = () => {
                                     filteredClientes.map(cliente => (
                                         <TableRow key={cliente.id}>
                                             <TableCell className="font-mono text-sm">{cliente.codigo || '—'}</TableCell>
-                                            <TableCell className="font-medium">{cliente.nombre}</TableCell>
+                                            <TableCell className="font-medium">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full border bg-slate-100 flex items-center justify-center text-xs font-black text-slate-600">
+                                                        {cliente.logo_url ? (
+                                                            <img src={cliente.logo_url} alt={cliente.nombre} className="h-full w-full object-cover" />
+                                                        ) : (
+                                                            cliente.nombre?.trim()?.charAt(0)?.toUpperCase() || '?'
+                                                        )}
+                                                    </div>
+                                                    <span>{cliente.nombre}</span>
+                                                </div>
+                                            </TableCell>
                                             <TableCell>{cliente.rnc}</TableCell>
                                             <TableCell>{cliente.telefono}</TableCell>
                                             <TableCell>{cliente.email}</TableCell>

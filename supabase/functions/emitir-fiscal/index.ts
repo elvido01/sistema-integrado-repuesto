@@ -14,6 +14,18 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
+const normalizeDgiiDate = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const raw = String(value).trim();
+  let m = raw.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-20${m[3]}`;
+  m = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (m) return raw;
+  m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return raw;
+};
+
 // ============================================================
 // CONTRATO EmisorAdapter
 // ============================================================
@@ -672,6 +684,13 @@ Deno.serve(async (req) => {
           .update(updatePayload)
           .eq("id", docFiscal.id);
 
+        if (resultado.ncf) {
+          await supabase
+            .from("facturas")
+            .update({ ncf: resultado.ncf })
+            .eq("id", factura.id);
+        }
+
         return new Response(JSON.stringify({
           ok: true,
           factura_id: factura.id,
@@ -701,7 +720,7 @@ Deno.serve(async (req) => {
     // (path: <tenant_id>/certificado.p12). Recibe el password en plaintext,
     // lo cifra con la master key y lo guarda en integraciones_fiscales.config.
     if (action === "dgii_save_certificate_meta") {
-      const { rnc_emisor, nombre_emisor, ambiente, callback_url, certificado_password, storage_path } = body;
+      const { rnc_emisor, nombre_emisor, ambiente, callback_url, fecha_vencimiento_secuencia, certificado_password, storage_path } = body;
 
       if (!certificado_password) throw new Error("certificado_password es requerido");
       if (!storage_path) throw new Error("storage_path es requerido");
@@ -714,6 +733,7 @@ Deno.serve(async (req) => {
         nombre_emisor: nombre_emisor || null,
         ambiente: ambiente || "TesteCF",
         callback_url: callback_url || null,
+        fecha_vencimiento_secuencia: normalizeDgiiDate(fecha_vencimiento_secuencia),
         certificado_storage_path: storage_path,
         certificado_password_enc: ciphertext,
         certificado_password_iv: iv,
@@ -755,6 +775,36 @@ Deno.serve(async (req) => {
     // que se enviaria a DGII (sin firmar, sin enviar). Util para
     // inspeccionar visualmente que el XML tiene la forma correcta
     // antes de avanzar con firma y envio.
+    if (action === "dgii_update_config_meta") {
+      const { rnc_emisor, nombre_emisor, ambiente, callback_url, fecha_vencimiento_secuencia } = body;
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("id, config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.id) throw new Error("No hay configuracion DGII directo para este tenant");
+
+      const config = {
+        ...(integ.config || {}),
+        rnc_emisor: rnc_emisor || integ.config?.rnc_emisor || null,
+        nombre_emisor: nombre_emisor || integ.config?.nombre_emisor || null,
+        ambiente: ambiente || integ.config?.ambiente || "TesteCF",
+        callback_url: callback_url || null,
+        fecha_vencimiento_secuencia: normalizeDgiiDate(fecha_vencimiento_secuencia),
+      };
+
+      const { error: updErr } = await supabase
+        .from("integraciones_fiscales")
+        .update({ config, activo: true, updated_at: new Date().toISOString() })
+        .eq("id", integ.id);
+      if (updErr) throw new Error(`Error guardando config: ${updErr.message}`);
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200, headers: corsHeaders,
+      });
+    }
+
     if (action === "dgii_test_xml_generation") {
       const { factura_id, encf_override } = body;
       if (!factura_id) throw new Error("factura_id requerido");
@@ -1320,17 +1370,25 @@ Deno.serve(async (req) => {
 
       const cfg = integ.config || {};
       const ambiente = "CerteCF";
-      const today = new Date();
       const pad = (n) => String(n).padStart(2, "0");
+      const today = new Date();
       const fechaEmision = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
       const fechaDgii = `${pad(today.getDate())}-${pad(today.getMonth() + 1)}-${today.getFullYear()}`;
+      // FechaVencimientoSecuencia es OBLIGATORIO en el XSD DGII. Prioridad:
+      //   1) la del caso (viene del xlsx oficial DGII del Paso 4 — la correcta)
+      //   2) la configurada por el tenant
+      //   3) fallback a 5 años futuro (no recomendado — DGII puede rechazar)
+      const fechaVencimientoSecuencia = normalizeDgiiDate(caso.fecha_vencimiento_secuencia
+        || cfg.fecha_vencimiento_secuencia
+        || cfg.fecha_vencimiento_ecf
+        || `31-12-${today.getFullYear() + 5}`);
       const emisor = {
         rnc: String(cfg.rnc_emisor || "").replace(/\D/g, ""),
         razon_social: cfg.nombre_emisor || "EMPRESA CERTIFICACION",
         nombre_comercial: cfg.nombre_comercial || cfg.nombre_emisor || "EMPRESA CERTIFICACION",
         direccion: cfg.direccion || "DIRECCION CERTIFICACION",
-        municipio: cfg.municipio || "010100",
-        provincia: cfg.provincia || "010000",
+        municipio: "010100",
+        provincia: "010000",
         telefono: cfg.telefono ? [cfg.telefono] : [],
         email: cfg.email || null,
       };
@@ -1340,33 +1398,58 @@ Deno.serve(async (req) => {
         direccion: "AVENIDA PRUEBA 1",
         email: "comprador@example.com",
       };
-      const item = (descripcion, monto, gravado = true) => ({
-        descripcion,
-        cantidad: 1,
-        precio_unitario: Number((monto / (gravado ? 1.18 : 1)).toFixed(2)),
-        indicador_facturacion: gravado ? "1" : "4",
-        monto_item: monto,
-        unidad_medida: "43",
+      const resolveAmounts = (casoActual, tipoActual, gravado = true) => {
+        const fallbackBase = tipoActual === "32" ? 250000 : 1000;
+        const explicitBase = Number(casoActual.monto_base || 0);
+        const explicitTotal = Number(casoActual.monto || casoActual.monto_total || 0);
+        const explicitItbis = Number(casoActual.total_itbis || casoActual.itbis_total || 0);
+
+        if (!gravado) {
+          const total = explicitTotal || explicitBase || fallbackBase;
+          return { base: total, itbis: 0, total };
+        }
+
+        const base = explicitBase || (explicitTotal ? Number((explicitTotal / 1.18).toFixed(2)) : fallbackBase);
+        const itbis = explicitItbis || Number((base * 0.18).toFixed(2));
+        const total = explicitTotal || Number((base + itbis).toFixed(2));
+        return { base, itbis, total };
+      };
+      const item = (descripcion, amounts, gravado = true) => {
+        // En e-CF, MontoItem es base sin ITBIS. El ITBIS vive en Totales.
+        const base = Number(amounts.base || 0);
+        return {
+          descripcion,
+          cantidad: 1,
+          precio_unitario: base,
+          indicador_facturacion: gravado ? "1" : "4",
+          monto_item: base,
+          unidad_medida: "43",
+        };
+      };
+      const totals = (amounts, gravado = true) => ({
+        monto_gravado_total: gravado ? amounts.base : 0,
+        monto_gravado_18: gravado ? amounts.base : 0,
+        monto_exento: gravado ? 0 : amounts.total,
+        itbis_total: gravado ? amounts.itbis : null,
+        total_itbis_18: gravado ? amounts.itbis : 0,
+        monto_total: amounts.total,
       });
-      const totals = (monto, gravado = true) => ({
-        monto_gravado_total: gravado ? Number((monto / 1.18).toFixed(2)) : 0,
-        monto_gravado_18: gravado ? Number((monto / 1.18).toFixed(2)) : 0,
-        monto_exento: gravado ? 0 : monto,
-        itbis_total: gravado ? Number((monto - monto / 1.18).toFixed(2)) : null,
-        total_itbis_18: gravado ? Number((monto - monto / 1.18).toFixed(2)) : 0,
-        monto_total: monto,
-      });
-      const baseInput = (tipo, monto, comprador, opts = {}) => ({
+      const baseInput = (tipo, casoActual, comprador, opts = {}) => {
+        const gravado = opts.gravado !== false;
+        const amounts = resolveAmounts(casoActual, tipo, gravado);
+        return ({
         tipo_ecf: tipo,
         encf: caso.encf,
         fecha_emision: fechaEmision,
+        fecha_vencimiento_secuencia: fechaVencimientoSecuencia,
         emisor,
         comprador,
-        items: [item(`SIMULACION E-CF TIPO ${tipo}`, monto, opts.gravado !== false)],
-        totales: totals(monto, opts.gravado !== false),
+        items: [item(`SIMULACION E-CF TIPO ${tipo}`, amounts, gravado)],
+        totales: totals(amounts, gravado),
         forma_pago: "01",
         referencia: opts.referencia || null,
-      });
+        });
+      };
 
       const { cert, privateKey } = await loadAndParseP12(supabase, cfg);
       const auth = await authenticate(cert, privateKey, ambiente);
@@ -1377,7 +1460,7 @@ Deno.serve(async (req) => {
         let manualEcf = null;
         const tipo = String(caso.tipo);
         if (caso.rfce) {
-          const ecfInput = baseInput("32", Number(caso.monto || 1180), null);
+          const ecfInput = baseInput("32", caso, null);
           const xmlEcf = buildEcfXml("32", ecfInput);
           const signedEcf = await signEcfXml(xmlEcf, cert, privateKey);
           const codigoSeg = (signedEcf.signatureValue || "").slice(0, 6);
@@ -1400,7 +1483,6 @@ Deno.serve(async (req) => {
             FechaEmision: fechaDgii,
             MontoGravadoTotal: ecfInput.totales.monto_gravado_total,
             MontoGravadoI1: ecfInput.totales.monto_gravado_18,
-            ITBIS1: "18",
             TotalITBIS: ecfInput.totales.itbis_total,
             TotalITBIS1: ecfInput.totales.total_itbis_18,
             MontoTotal: ecfInput.totales.monto_total,
@@ -1409,30 +1491,105 @@ Deno.serve(async (req) => {
           sendKind = "RFCE";
         } else if (tipo === "33" || tipo === "34") {
           if (!caso.referencia?.encf) throw new Error(`Tipo ${tipo} requiere referencia.encf`);
-          xmlSinFirmar = buildEcfXml(tipo, baseInput(tipo, Number(caso.monto || 590), compradorB2B, {
+          xmlSinFirmar = buildEcfXml(tipo, baseInput(tipo, caso, compradorB2B, {
             referencia: {
               encf_modificado: caso.referencia.encf,
               fecha_ncf_modificado: caso.referencia.fecha || fechaDgii,
-              codigo_modificacion: tipo === "33" ? "5" : "3",
+              codigo_modificacion: "3",
               razon_modificacion: tipo === "33" ? "Cargo posterior de simulacion" : "Descuento de simulacion",
             },
           }));
         } else {
           const comprador = ["31", "44", "45"].includes(tipo)
             ? compradorB2B
+            : tipo === "32"
+              ? compradorB2B
             : tipo === "41"
               ? { rnc: "131880681", razon_social: "VENDEDOR SIMULACION SRL", direccion: "DIRECCION VENDEDOR" }
               : ["46", "47"].includes(tipo)
                 ? { id_extranjero: "EXT12345", razon_social: "FOREIGN CUSTOMER LLC", pais_destino: "US", direccion: "FOREIGN ADDRESS" }
                 : null;
-          const gravado = !["46", "47"].includes(tipo);
-          xmlSinFirmar = buildEcfXml(tipo, baseInput(tipo, Number(caso.monto || (tipo === "32" ? 300000 : 1180)), comprador, { gravado }));
+          const gravado = !["43", "44", "46", "47"].includes(tipo);
+          const input = baseInput(tipo, caso, comprador, { gravado });
+          if (tipo === "46") {
+            const monto = Number(input.totales.monto_total || 0);
+            input.items = input.items.map((it) => ({
+              ...it,
+              indicador_facturacion: "3",
+              monto_item: monto,
+              precio_unitario: monto,
+            }));
+            input.totales = {
+              monto_gravado_total: monto,
+              monto_gravado_0: monto,
+              itbis_total: 0,
+              total_itbis_0: 0,
+              monto_total: monto,
+              monto_periodo: monto,
+              valor_pagar: monto,
+            };
+          }
+          if (tipo === "44") {
+            input.totales.monto_periodo = input.totales.monto_total;
+            input.totales.valor_pagar = input.totales.monto_total;
+          }
+          if (tipo === "41") {
+            const baseRetencion = Number(input.totales.monto_gravado_18 || input.totales.monto_gravado_total || 0);
+            const itbisRetenido = Number((baseRetencion * 0.18).toFixed(2));
+            const isrRetenido = Number((baseRetencion * 0.10).toFixed(2));
+            input.items = input.items.map((it) => ({
+              ...it,
+              indicador_bien_servicio: "2",
+              indicador_agente_retencion: "1",
+              monto_itbis_retenido: itbisRetenido,
+              monto_isr_retenido: isrRetenido,
+            }));
+            input.totales.total_itbis_retenido = itbisRetenido;
+            input.totales.total_isr_retencion = isrRetenido;
+          }
+          if (tipo === "47") {
+            const monto = Number(input.totales.monto_total || 0);
+            const isrRetenido = Number((monto * 0.27).toFixed(2));
+            input.items = input.items.map((it) => ({
+              ...it,
+              indicador_bien_servicio: "2",
+              indicador_agente_retencion: "1",
+              monto_itbis_retenido: "0.00",
+              monto_isr_retenido: isrRetenido,
+            }));
+            input.totales.monto_periodo = monto;
+            input.totales.valor_pagar = input.totales.monto_total;
+            input.totales.total_isr_retencion = isrRetenido;
+          }
+          xmlSinFirmar = buildEcfXml(tipo, input);
         }
 
         const signed = sendKind === "RFCE"
           ? await signEcfXml(xmlSinFirmar, cert, privateKey)
           : await signEcfXml(xmlSinFirmar, cert, privateKey);
         const fileName = `${emisor.rnc}${caso.encf}.xml`;
+
+        // Modo "solo firmar" (sign_only): genera y firma el XML pero NO lo
+        // envía a DGII. Útil cuando el Paso 4 ya está cerrado en DGII pero
+        // necesitamos el XML para subirlo manualmente al Paso 5 (RI).
+        if (caso.sign_only === true) {
+          return new Response(JSON.stringify({
+            ok: true,
+            tipo,
+            encf: caso.encf,
+            ambiente,
+            kind: sendKind,
+            track_id: null,
+            estado_dgii: "sign_only",
+            sign_only: true,
+            response_payload: { mode: "sign_only", note: "XML firmado sin enviar a DGII" },
+            xml_firmado_length: signed.xmlFirmado.length,
+            xml_firmado: signed.xmlFirmado,
+            file_name: fileName,
+            manual_ecf: manualEcf,
+          }), { status: 200, headers: corsHeaders });
+        }
+
         const recepcion = sendKind === "RFCE"
           ? await enviarRfce(signed.xmlFirmado, auth.token, ambiente, fileName)
           : await enviarEcf(signed.xmlFirmado, auth.token, ambiente, fileName);
@@ -1447,6 +1604,8 @@ Deno.serve(async (req) => {
           estado_dgii: recepcion.estado || recepcion.Estado || "enviado",
           response_payload: recepcion,
           xml_firmado_length: signed.xmlFirmado.length,
+          xml_firmado: signed.xmlFirmado,
+          file_name: fileName,
           manual_ecf: manualEcf,
         }), { status: 200, headers: corsHeaders });
       } catch (e) {
@@ -1732,6 +1891,7 @@ Deno.serve(async (req) => {
         nombre_emisor: cfg.nombre_emisor,
         ambiente: cfg.ambiente,
         callback_url: cfg.callback_url,
+        fecha_vencimiento_secuencia: cfg.fecha_vencimiento_secuencia || null,
         storage_path: cfg.certificado_storage_path,
         metadata: cfg.metadata || null,
         activo: integ.activo,

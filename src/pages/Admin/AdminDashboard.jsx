@@ -14,14 +14,47 @@ import AdminCuentasBancarias from '@/components/suscripcion/AdminCuentasBancaria
 import {
   Shield, Loader2, Building2, Calendar, Zap, RefreshCw, Users, Activity,
   DollarSign, TrendingUp, Eye, Power, PowerOff, Clock, ArrowUpRight,
-  Package, CreditCard, Search, ChevronDown, ChevronUp, Plus, Link, Copy, Check
+  Package, CreditCard, Search, ChevronDown, ChevronUp, Plus, Link, Copy, Check,
+  BellRing, AlertTriangle
 } from 'lucide-react';
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+const getDiasRestantes = (fechaFin) => {
+  if (!fechaFin) return 0;
+  const fin = new Date(fechaFin);
+  if (Number.isNaN(fin.getTime())) return 0;
+  return Math.max(0, Math.ceil((fin - new Date()) / MS_PER_DAY));
+};
+
+const normalizeSuscripcion = (sub) => {
+  if (!sub) return null;
+  const diasRestantes = getDiasRestantes(sub.fecha_fin);
+  const estadoGuardado = sub.estado || 'sin_suscripcion';
+  const estadoReal = diasRestantes > 0 && estadoGuardado === 'vencido'
+    ? 'activo'
+    : diasRestantes <= 0 && ['activo', 'trial'].includes(estadoGuardado)
+      ? 'vencido'
+      : estadoGuardado;
+
+  return {
+    ...sub,
+    estado: estadoReal,
+    dias_restantes: diasRestantes,
+  };
+};
+
+const normalizeTenant = (tenant) => ({
+  ...tenant,
+  suscripcion: normalizeSuscripcion(tenant?.suscripcion),
+});
 
 const AdminDashboard = () => {
   const { toast } = useToast();
   const [stats, setStats] = useState(null);
   const [tenants, setTenants] = useState([]);
   const [planes, setPlanes] = useState([]);
+  const [pagosPendientesCount, setPagosPendientesCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -51,6 +84,9 @@ const AdminDashboard = () => {
       const planesRes = await supabase.from('planes').select('*').eq('activo', true).order('precio', { ascending: true });
       if (!planesRes.error) setPlanes(planesRes.data || []);
 
+      const pagosRes = await supabase.rpc('admin_get_pagos_pendientes');
+      setPagosPendientesCount(!pagosRes.error && Array.isArray(pagosRes.data) ? pagosRes.data.length : 0);
+
       // 2. Intentar RPCs primero
       const statsRes = await supabase.rpc('admin_get_dashboard_stats');
       const tenantsRes = await supabase.rpc('admin_get_tenants_detalle');
@@ -60,8 +96,16 @@ const AdminDashboard = () => {
 
       if (!statsRes.error && !tenantsRes.error && statsRes.data && tenantsRes.data) {
         console.log('[AdminDash] Usando RPCs. Stats:', statsRes.data, 'Tenants:', tenantsRes.data);
-        setStats(statsRes.data);
-        setTenants(Array.isArray(tenantsRes.data) ? tenantsRes.data : []);
+        const normalizedTenants = (Array.isArray(tenantsRes.data) ? tenantsRes.data : []).map(normalizeTenant);
+        const trialCount = normalizedTenants.filter(t => t.suscripcion?.estado === 'trial').length;
+        const vencidoCount = normalizedTenants.filter(t => !t.suscripcion || t.suscripcion?.estado === 'vencido').length;
+
+        setStats({
+          ...statsRes.data,
+          empresas_trial: trialCount,
+          empresas_vencidas: vencidoCount,
+        });
+        setTenants(normalizedTenants);
       } else {
         // 3. Fallback: queries directas a tablas
         console.warn('[AdminDash] RPCs fallaron, usando queries directas. statsErr:', statsRes.error, 'tenantsErr:', tenantsRes.error);
@@ -103,10 +147,7 @@ const AdminDashboard = () => {
         // Mapear tenants con su suscripción más reciente
         const tenantsConSub = allTenants.map(t => {
           const sub = suscripcionesData.find(s => s.tenant_id === t.id);
-          const diasRestantes = sub?.fecha_fin
-            ? Math.max(0, Math.ceil((new Date(sub.fecha_fin) - new Date()) / (1000 * 60 * 60 * 24)))
-            : 0;
-          const estadoReal = sub ? (new Date(sub.fecha_fin) > new Date() ? sub.estado : 'vencido') : null;
+          const normalizedSub = normalizeSuscripcion(sub);
 
           const tenantUsers  = profiles.filter(p => p.tenant_id === t.id).length;
           const tenantVentas = ventas
@@ -117,12 +158,12 @@ const AdminDashboard = () => {
             ...t,
             suscripcion: sub ? {
               id: sub.id,
-              estado: estadoReal,
+              estado: normalizedSub.estado,
               plan_nombre: sub.planes?.nombre || t.plan || '—',
               plan_precio: sub.planes?.precio || 0,
               fecha_inicio: sub.fecha_inicio,
               fecha_fin: sub.fecha_fin,
-              dias_restantes: diasRestantes,
+              dias_restantes: normalizedSub.dias_restantes,
             } : null,
             total_usuarios: tenantUsers,
             total_ventas_mes: tenantVentas,
@@ -301,6 +342,21 @@ const AdminDashboard = () => {
 
   const formatCurrency = (v) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP', maximumFractionDigits: 0 }).format(v || 0);
 
+  const empresasPorVencer = tenants
+    .filter(t => {
+      const estado = t.suscripcion?.estado;
+      const dias = Number(t.suscripcion?.dias_restantes || 0);
+      return ['activo', 'trial'].includes(estado) && dias > 0 && dias <= 3;
+    })
+    .sort((a, b) => (a.suscripcion?.dias_restantes || 0) - (b.suscripcion?.dias_restantes || 0));
+
+  const empresasVencidas = tenants
+    .filter(t => {
+      const estado = t.suscripcion?.estado || 'sin_suscripcion';
+      return estado === 'vencido' || estado === 'sin_suscripcion';
+    })
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
   const statusBadge = (estado) => {
     const map = {
       activo:     { bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', label: 'Activo' },
@@ -382,6 +438,14 @@ const AdminDashboard = () => {
                 <MetricCard icon={TrendingUp} label="Ventas Mes (Global)" value={formatCurrency(stats?.total_ventas_mes)} color="indigo" />
               </div>
 
+              <AdminAlertBell
+                pagosPendientes={pagosPendientesCount}
+                empresasPorVencer={empresasPorVencer}
+                empresasVencidas={empresasVencidas}
+                onRefresh={fetchAll}
+                onShowVencidas={() => setFilterEstado('vencido')}
+              />
+
               {/* Plan breakdown */}
               <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
                 <PlanBadge plan="TRIAL" count={stats?.empresas_trial || 0} color="amber" />
@@ -398,7 +462,7 @@ const AdminDashboard = () => {
               </div>
 
               {/* ── PAGOS PENDIENTES ── */}
-              <AdminPagosReview />
+              <AdminPagosReview onChanged={fetchAll} />
 
               {/* ── CUENTAS BANCARIAS ── */}
               <AdminCuentasBancarias />
@@ -653,6 +717,109 @@ const MetricCard = ({ icon: Icon, label, value, color = 'blue', large = false })
       </div>
       <p className={`${large ? 'text-xl' : 'text-lg'} font-black ${c.text}`}>{value}</p>
     </motion.div>
+  );
+};
+
+const AdminAlertBell = ({ pagosPendientes, empresasPorVencer, empresasVencidas, onRefresh, onShowVencidas }) => {
+  const totalAlertas = pagosPendientes + empresasPorVencer.length + empresasVencidas.length;
+  const hasAlertas = totalAlertas > 0;
+  const proximas = empresasPorVencer.slice(0, 4);
+  const vencidas = empresasVencidas.slice(0, 4);
+
+  return (
+    <div className={`rounded-xl border shadow-sm overflow-hidden ${hasAlertas ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+      <div className={`px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 ${hasAlertas ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white' : 'bg-gray-50 text-gray-700'}`}>
+        <div className="flex items-center gap-3">
+          <div className={`relative h-10 w-10 rounded-lg flex items-center justify-center ${hasAlertas ? 'bg-white/20' : 'bg-white border border-gray-200'}`}>
+            <BellRing className={`h-5 w-5 ${hasAlertas ? 'text-white' : 'text-gray-500'}`} />
+            {hasAlertas && (
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white">
+                {totalAlertas}
+              </span>
+            )}
+          </div>
+          <div>
+            <p className="text-sm font-black uppercase tracking-wider">Campana de Administracion</p>
+            <p className={`text-xs ${hasAlertas ? 'text-white/85' : 'text-gray-500'}`}>
+              {hasAlertas ? 'Hay movimientos que requieren seguimiento.' : 'Sin pagos pendientes ni membresias urgentes.'}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRefresh}
+          className={`h-8 text-xs font-bold ${hasAlertas ? 'text-white hover:bg-white/20' : 'text-gray-600 hover:bg-gray-100'}`}
+        >
+          <RefreshCw className="w-3.5 h-3.5 mr-1" />
+          Actualizar
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-amber-100">
+        <AlertSummary
+          icon={CreditCard}
+          title="Pagos por revisar"
+          value={pagosPendientes}
+          tone={pagosPendientes > 0 ? 'amber' : 'gray'}
+          detail={pagosPendientes > 0 ? 'Comprobantes enviados por clientes.' : 'No hay pagos nuevos.'}
+        />
+        <AlertSummary
+          icon={Clock}
+          title="Por vencer"
+          value={empresasPorVencer.length}
+          tone={empresasPorVencer.length > 0 ? 'orange' : 'gray'}
+          detail={
+            proximas.length > 0
+              ? proximas.map(t => `${t.nombre}: ${t.suscripcion?.dias_restantes || 0}d`).join(' | ')
+              : 'Ninguna membresia vence en 3 dias.'
+          }
+        />
+        <AlertSummary
+          icon={AlertTriangle}
+          title="Vencidas"
+          value={empresasVencidas.length}
+          tone={empresasVencidas.length > 0 ? 'red' : 'gray'}
+          detail={
+            vencidas.length > 0
+              ? vencidas.map(t => t.nombre).join(' | ')
+              : 'No hay empresas vencidas.'
+          }
+          onClick={empresasVencidas.length > 0 ? onShowVencidas : undefined}
+        />
+      </div>
+    </div>
+  );
+};
+
+const AlertSummary = ({ icon: Icon, title, value, detail, tone = 'gray', onClick }) => {
+  const tones = {
+    amber: 'text-amber-700 bg-amber-100',
+    orange: 'text-orange-700 bg-orange-100',
+    red: 'text-red-700 bg-red-100',
+    gray: 'text-gray-500 bg-gray-100',
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`text-left p-4 bg-white ${onClick ? 'hover:bg-red-50 transition-colors cursor-pointer' : 'cursor-default'}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${tones[tone] || tones.gray}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">{title}</p>
+            <span className="text-xl font-black text-gray-900">{value}</span>
+          </div>
+          <p className="mt-1 text-xs text-gray-500 truncate">{detail}</p>
+        </div>
+      </div>
+    </button>
   );
 };
 

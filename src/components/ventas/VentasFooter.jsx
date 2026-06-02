@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { agentIsAvailable } from '@/services/motoflowPrintAgent';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,6 +50,13 @@ const VentasFooter = ({
   const [currentRef, setCurrentRef] = useState('');
   const [showNotas, setShowNotas] = useState(false);
   const [showPrintOptions, setShowPrintOptions] = useState(false);
+  const [hasAgent, setHasAgent] = useState(false);
+
+  useEffect(() => {
+    if (showPrintOptions) {
+      agentIsAvailable().then(setHasAgent).catch(() => setHasAgent(false));
+    }
+  }, [showPrintOptions]);
 
   const pairedReceiptPrinterName = useMemo(() => {
     try {
@@ -132,6 +140,9 @@ const VentasFooter = ({
               </SelectTrigger>
               <SelectContent className="bg-white border border-gray-500">
                 <SelectItem value="browser" className="text-[11px] font-bold">Navegador (HTML)</SelectItem>
+                <SelectItem value="agent" className="text-[11px] font-bold" disabled={!hasAgent}>
+                  ⚡ Motoflow Print Agent {hasAgent ? '' : '(No detectado)'}
+                </SelectItem>
                 <SelectItem value="qz" className="text-[11px] font-bold">QZ Tray (Nativo)</SelectItem>
                 <SelectItem value="webusb" className="text-[11px] font-bold" disabled={!navigator.usb}>
                   {pairedReceiptPrinterName ? `WebUSB — ${pairedReceiptPrinterName}` : 'WebUSB (Sin Instalar)'}

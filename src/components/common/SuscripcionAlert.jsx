@@ -50,7 +50,7 @@ const SuscripcionAlert = ({ onRenovar }) => {
                   <Clock className="w-3 h-3 inline mr-1" />
                   {isTrial ? 'Tu período de prueba' : 'Tu suscripción'} vence en{' '}
                   <strong className="text-yellow-100">{diasRestantes} día{diasRestantes !== 1 ? 's' : ''}</strong>.
-                  {' '}Renueva para no perder el acceso.
+                  {' '}Paga ahora para no perder el acceso.
                 </>
               )}
             </p>
@@ -62,7 +62,7 @@ const SuscripcionAlert = ({ onRenovar }) => {
                 onClick={onRenovar}
                 className="flex items-center gap-1 bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors"
               >
-                Renovar <ChevronRight className="w-3 h-3" />
+                Pagar <ChevronRight className="w-3 h-3" />
               </button>
             )}
             {!isVencida && (

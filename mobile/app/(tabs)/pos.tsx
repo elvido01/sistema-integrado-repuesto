@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Platform } from 'react-native';
 import { useCartStore } from '@/src/store/useCartStore';
-import { Trash2, Plus, Minus, Search, User, CreditCard, ShoppingCart, PlusCircle, Share2, X } from 'lucide-react-native';
+import { Trash2, Plus, Minus, Search, User, CreditCard, ShoppingCart, PlusCircle, Share2, X, Printer } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { supabase } from '@/src/supabase/client';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import { getSavedPrinter } from '@/services/bluetoothPrinter';
+import { printFacturaPos } from '@/services/printFactura';
 
 export default function POSScreen() {
   const router = useRouter();
@@ -30,6 +32,35 @@ export default function POSScreen() {
   const [facturaModal, setFacturaModal] = useState<any | null>(null);
   const ticketRef = useRef<ViewShot>(null);
   const [compartiendo, setCompartiendo] = useState(false);
+  const [imprimiendo, setImprimiendo] = useState(false);
+
+  // Imprime la factura activa en la impresora Bluetooth vinculada.
+  const imprimirEnBluetooth = async () => {
+    if (!facturaModal) return;
+    setImprimiendo(true);
+    try {
+      const saved = await getSavedPrinter();
+      if (!saved) {
+        Alert.alert(
+          'Sin impresora',
+          'Aún no has vinculado una impresora Bluetooth. Ve a Más → Impresora para configurarla.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Configurar', onPress: () => router.push('/configuracion/impresora') },
+          ]
+        );
+        return;
+      }
+      await printFacturaPos(facturaModal);
+    } catch (e: any) {
+      Alert.alert(
+        'No se pudo imprimir',
+        e?.message || 'Verifica que la impresora esté encendida y cerca.'
+      );
+    } finally {
+      setImprimiendo(false);
+    }
+  };
 
   const subtotal = getSubtotal();
   const total = getTotal();
@@ -483,9 +514,20 @@ export default function POSScreen() {
               </TouchableOpacity>
               <View className="w-px bg-gray-200" />
               <TouchableOpacity
+                className={`flex-1 py-4 items-center justify-center flex-row bg-emerald-600 active:opacity-80 ${imprimiendo ? 'opacity-60' : ''}`}
+                onPress={imprimirEnBluetooth}
+                disabled={imprimiendo || compartiendo}
+              >
+                <Printer color="white" size={18} />
+                <Text className="text-white font-bold ml-2">
+                  {imprimiendo ? 'Imprimiendo...' : 'Imprimir'}
+                </Text>
+              </TouchableOpacity>
+              <View className="w-px bg-gray-200" />
+              <TouchableOpacity
                 className={`flex-1 py-4 items-center justify-center flex-row bg-brand active:opacity-80 ${compartiendo ? 'opacity-60' : ''}`}
                 onPress={compartirFactura}
-                disabled={compartiendo}
+                disabled={compartiendo || imprimiendo}
               >
                 <Share2 color="white" size={18} />
                 <Text className="text-white font-bold ml-2">

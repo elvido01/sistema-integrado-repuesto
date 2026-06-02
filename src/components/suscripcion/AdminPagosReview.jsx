@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 
-const AdminPagosReview = () => {
+const AdminPagosReview = ({ onChanged }) => {
   const { toast } = useToast();
   const [pagos, setPagos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +45,7 @@ const AdminPagosReview = () => {
       if (error) throw error;
       toast({ title: 'Pago Aprobado', description: 'El plan ha sido activado para la empresa.' });
       await fetchPagos();
+      onChanged?.();
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
@@ -64,6 +65,7 @@ const AdminPagosReview = () => {
       toast({ title: 'Pago Rechazado', description: 'La empresa ha sido notificada.' });
       setShowRejectForm(null);
       await fetchPagos();
+      onChanged?.();
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {

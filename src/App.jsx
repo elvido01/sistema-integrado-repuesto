@@ -7,6 +7,7 @@ import { PanelProvider } from '@/contexts/PanelContext';
 import { FacturacionProvider } from '@/contexts/FacturacionContext';
 import { ComprasProvider } from '@/contexts/ComprasContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { WhatsAppNotificationProvider } from '@/contexts/WhatsAppNotificationContext';
 import MainLayout from '@/components/layout/MainLayout';
 import SuscripcionBlocker from '@/components/common/SuscripcionBlocker';
 import LoginForm from '@/components/auth/LoginForm';
@@ -58,6 +59,7 @@ function AppContent() {
   return (
     <SuscripcionProvider>
       <PanelProvider>
+        <WhatsAppNotificationProvider>
         <Helmet>
           <title>{nombreSaaS} — Sistema de Gestión</title>
           <meta
@@ -67,6 +69,7 @@ function AppContent() {
         </Helmet>
         <SuscripcionBlocker />
         <MainLayout />
+        </WhatsAppNotificationProvider>
       </PanelProvider>
     </SuscripcionProvider>
   );

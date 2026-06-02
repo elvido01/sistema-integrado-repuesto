@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Trash2, Loader2, Package } from 'lucide-react';
+import { Search, Trash2, Loader2, Package, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -26,6 +26,7 @@ const VentasTable = ({
   const [sendingToOrder, setSendingToOrder] = useState(null);
 
   const handleSendToOrden = async (item) => {
+    if (sendingToOrder) return;
     setSendingToOrder(item.id);
     try {
       const result = await sendProductToOrdenCompra(item);
@@ -53,7 +54,6 @@ const VentasTable = ({
       setSendingToOrder(null);
     }
   };
-
   console.log('VentasTable Render Check:', { itemsCount: items?.length, currentItemExists: !!currentItem });
   const emptyRowsCount = Math.max(0, 12 - items.length);
 
@@ -74,6 +74,25 @@ const VentasTable = ({
   const handleInputDoubleClick = (e) => {
     e.currentTarget.focus();
     e.currentTarget.select();
+  };
+
+  const shouldShowLocalSupplier = (item) => {
+    if (!item?.local_suplidor_sugerido) return false;
+    return Number(item.existencia_morla || 0) < Number(item.cantidad || 1);
+  };
+
+  const LocalSupplierHint = ({ item }) => {
+    if (!shouldShowLocalSupplier(item)) return null;
+    const option = item.local_suplidor_sugerido;
+    return (
+      <span
+        className="inline-flex flex-shrink-0 items-center gap-1 rounded border border-emerald-500 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black leading-none text-emerald-800"
+        title={`Disponible localmente: ${option.suplidor}. Codigo suplidor: ${option.codigo_suplidor || 'N/A'}`}
+      >
+        <Truck className="h-3 w-3" />
+        {option.suplidor} {option.entrega_min_minutos}-{option.entrega_max_minutos}m
+      </span>
+    );
   };
 
   return (
@@ -118,8 +137,11 @@ const VentasTable = ({
                 />
               </TableCell>
               <TableCell className="p-1 border-r border-gray-500">
-                <div className="text-[14px] font-black text-blue-900 leading-tight uppercase truncate max-w-[400px]" title={currentItem?.descripcion}>
-                  {currentItem ? currentItem.descripcion : <span className="text-gray-500 italic">... BUSQUE POR CODIGO O F3</span>}
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="text-[14px] font-black text-blue-900 leading-tight uppercase truncate max-w-[400px]" title={currentItem?.descripcion}>
+                    {currentItem ? currentItem.descripcion : <span className="text-gray-500 italic">... BUSQUE POR CODIGO O F3</span>}
+                  </div>
+                  <LocalSupplierHint item={currentItem} />
                 </div>
               </TableCell>
               <TableCell className="p-1 border-r border-gray-500 text-center">
@@ -203,7 +225,12 @@ const VentasTable = ({
                       onDoubleClick={() => onEditItem && onEditItem(item)}
                     >
                       <TableCell className="p-1 text-[14px] font-bold border-r border-gray-400 text-[#0a1e3a]">{item.codigo}</TableCell>
-                  <TableCell className="p-1 text-[13px] font-semibold text-gray-800 border-r border-gray-400 uppercase truncate max-w-[400px]">{item.descripcion}</TableCell>
+                  <TableCell className="p-1 text-[13px] font-semibold text-gray-800 border-r border-gray-400 uppercase max-w-[400px]">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate">{item.descripcion}</span>
+                      <LocalSupplierHint item={item} />
+                    </div>
+                  </TableCell>
                   <TableCell className="p-1 text-[13px] text-gray-600 border-r border-gray-400 text-center font-medium">{item.ubicacion}</TableCell>
                   <TableCell className="p-1 text-center text-[14px] font-bold border-r border-gray-400">
                     {item.cantidad}
@@ -231,11 +258,11 @@ const VentasTable = ({
                   <ContextMenuContent className="w-56" style={{ zIndex: 10000 }}>
                     <ContextMenuItem
                       className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onSelect={(e) => {
+                        e.preventDefault();
                         handleSendToOrden(item);
                       }}
-                      disabled={sendingToOrder === item.id}
+                      disabled={!!sendingToOrder}
                     >
                       {sendingToOrder === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
                       Enviar a Orden de Compra

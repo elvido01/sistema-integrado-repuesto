@@ -21,6 +21,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     rnc: '',
     telefono: '',
     email: '',
+    logo_url: '',
     direccion: '',
     activo: true,
     // Credit Info
@@ -40,6 +41,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
           rnc: cliente.rnc || '',
           telefono: cliente.telefono || '',
           email: cliente.email || '',
+          logo_url: cliente.logo_url || '',
           direccion: cliente.direccion || '',
           activo: cliente.activo ?? true,
           autorizar_credito: cliente.autorizar_credito ?? false,
@@ -56,6 +58,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
           rnc: '',
           telefono: '',
           email: '',
+          logo_url: '',
           direccion: '',
           activo: true,
           autorizar_credito: false,
@@ -170,6 +173,10 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
                   <Label htmlFor="email">Email</Label>
                   <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="logo_url">Logo / foto URL</Label>
+                <Input id="logo_url" name="logo_url" value={formData.logo_url} onChange={handleChange} placeholder="https://..." />
               </div>
               <div className="flex items-center space-x-2 pt-2">
                 <Checkbox id="activo" checked={formData.activo} onCheckedChange={(checked) => handleCheckedChange('activo', checked)} />

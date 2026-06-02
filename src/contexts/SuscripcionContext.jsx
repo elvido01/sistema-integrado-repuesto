@@ -4,12 +4,109 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const SuscripcionContext = createContext(undefined);
 
+const DAY_MS = 1000 * 60 * 60 * 24;
+
+const getDiasRestantes = (fechaFin) => {
+  if (!fechaFin) return 0;
+  return Math.max(0, Math.ceil((new Date(fechaFin) - new Date()) / DAY_MS));
+};
+
+const getEstadoReal = (sub, pagoPendiente = false) => {
+  if (pagoPendiente && (!sub || new Date(sub.fecha_fin) <= new Date())) return 'en_revision';
+  if (!sub) return 'sin_suscripcion';
+  if (sub.estado === 'cancelado' || sub.estado === 'suspendido') return sub.estado;
+  return new Date(sub.fecha_fin) > new Date() ? sub.estado : 'vencido';
+};
+
 export const SuscripcionProvider = ({ children }) => {
   const { user, tenantId, isSuperAdmin } = useAuth();
 
   const [suscripcion, setSuscripcion] = useState(null);
   const [loading, setLoading] = useState(true);
   const [planes, setPlanes] = useState([]);
+
+  const fetchSuscripcionDirecta = useCallback(async () => {
+    let pagoPendiente = false;
+
+    const { data: pagosData, error: pagosError } = await supabase
+      .from('pagos_suscripcion')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('estado', 'pendiente')
+      .limit(1);
+
+    if (!pagosError) {
+      pagoPendiente = (pagosData || []).length > 0;
+    }
+
+    const { data: subsData, error: subsError } = await supabase
+      .from('suscripciones')
+      .select(`
+        *,
+        planes (
+          nombre,
+          descripcion,
+          precio,
+          limite_usuarios,
+          limite_productos,
+          limite_facturas,
+          limite_almacenes,
+          feat_cotizaciones_magna,
+          feat_carta_ruta,
+          feat_cobranzas,
+          feat_reportes_avanzados,
+          feat_ocr_facturas,
+          feat_api_access
+        )
+      `)
+      .eq('tenant_id', tenantId)
+      .order('fecha_fin', { ascending: false })
+      .limit(1);
+
+    if (subsError) throw subsError;
+
+    const sub = subsData?.[0] || null;
+    const plan = sub?.planes || {};
+    const estado = getEstadoReal(sub, pagoPendiente);
+    const activa = (sub && new Date(sub.fecha_fin) > new Date() && ['trial', 'activo'].includes(sub.estado)) || pagoPendiente;
+    const diasRestantesLocal = sub ? getDiasRestantes(sub.fecha_fin) : 0;
+
+    return {
+      activa,
+      suscripcion_id: sub?.id || null,
+      estado,
+      pago_pendiente: pagoPendiente,
+      plan: plan.nombre || null,
+      plan_id: sub?.plan_id || null,
+      plan_descripcion: plan.descripcion || null,
+      plan_precio: plan.precio || 0,
+      fecha_inicio: sub?.fecha_inicio || null,
+      fecha_fin: sub?.fecha_fin || null,
+      dias_restantes: pagoPendiente && !sub ? 30 : diasRestantesLocal,
+      auto_renovar: sub?.auto_renovar || false,
+      limites: plan.nombre ? {
+        usuarios: plan.limite_usuarios,
+        productos: plan.limite_productos,
+        facturas: plan.limite_facturas,
+        almacenes: plan.limite_almacenes
+      } : {},
+      features: plan.nombre ? {
+        cotizaciones_magna: plan.feat_cotizaciones_magna,
+        carta_ruta: plan.feat_carta_ruta,
+        cobranzas: plan.feat_cobranzas,
+        reportes_avanzados: plan.feat_reportes_avanzados,
+        ocr_facturas: plan.feat_ocr_facturas,
+        api_access: plan.feat_api_access
+      } : {},
+      mensaje: pagoPendiente
+        ? 'Su pago esta siendo verificado. Recibira confirmacion en las proximas 24 horas.'
+        : estado === 'vencido'
+          ? 'Su suscripcion ha vencido. Renueve para continuar.'
+          : estado === 'sin_suscripcion'
+            ? 'No tiene suscripcion activa. Por favor, contrate un plan.'
+            : 'Suscripcion activa.'
+    };
+  }, [tenantId]);
 
   const fetchSuscripcion = useCallback(async () => {
     if (!user || !tenantId) {
@@ -24,32 +121,26 @@ export const SuscripcionProvider = ({ children }) => {
       });
 
       if (error) {
-        // Si la función no existe aún, no bloquear el sistema
-        console.warn('[Suscripcion] RPC no disponible, permitiendo acceso:', error.message);
-        setSuscripcion({
-          activa: true,
-          estado: 'sin_verificar',
-          dias_restantes: 999,
-          plan: 'pendiente',
-          mensaje: 'Sistema de suscripciones no configurado — acceso permitido'
-        });
+        console.warn('[Suscripcion] RPC no disponible, usando consulta directa:', error.message);
+        const fallback = await fetchSuscripcionDirecta();
+        setSuscripcion(fallback);
         return;
       }
+
       setSuscripcion(data);
     } catch (err) {
       console.error('[Suscripcion] Error fetching:', err);
-      // En caso de error de red u otro, no bloquear
       setSuscripcion({
-        activa: true,
+        activa: false,
         estado: 'sin_verificar',
-        dias_restantes: 999,
+        dias_restantes: 0,
         plan: 'pendiente',
-        mensaje: 'No se pudo verificar suscripción — acceso permitido'
+        mensaje: 'No se pudo verificar la suscripcion. Revise la configuracion de planes.'
       });
     } finally {
       setLoading(false);
     }
-  }, [user, tenantId]);
+  }, [user, tenantId, fetchSuscripcionDirecta]);
 
   const fetchPlanes = useCallback(async () => {
     try {
@@ -66,22 +157,19 @@ export const SuscripcionProvider = ({ children }) => {
     }
   }, []);
 
-  // Fetch on mount & when user/tenant changes
   useEffect(() => {
     fetchSuscripcion();
     fetchPlanes();
   }, [fetchSuscripcion, fetchPlanes]);
 
-  // Auto-refresh every 5 minutes
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(fetchSuscripcion, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [user, fetchSuscripcion]);
 
-  // Derived state
   const isActiva = suscripcion?.activa === true;
-  const isVencida = (suscripcion?.estado === 'vencido' || suscripcion?.estado === 'cancelado') && !suscripcion?.pago_pendiente;
+  const isVencida = ['vencido', 'cancelado', 'sin_suscripcion'].includes(suscripcion?.estado) && !suscripcion?.pago_pendiente;
   const isTrial = suscripcion?.estado === 'trial';
   const diasRestantes = suscripcion?.dias_restantes || 0;
   const porVencer = isActiva && diasRestantes <= 3 && diasRestantes > 0;
@@ -89,43 +177,34 @@ export const SuscripcionProvider = ({ children }) => {
   const limites = suscripcion?.limites || {};
   const features = suscripcion?.features || {};
 
-  /**
-   * Validates if an action is allowed based on subscription status.
-   * Returns { allowed: boolean, reason: string }
-   */
   const validarAccion = useCallback((accion = 'general') => {
-    // SuperAdmins bypass all restrictions
     if (isSuperAdmin) {
       return { allowed: true, reason: null };
     }
 
-    // No subscription data yet (still loading)
     if (loading) {
       return { allowed: true, reason: null };
     }
 
-    // If payment is pending review, allow access
     if (suscripcion?.pago_pendiente) {
       return { allowed: true, reason: null };
     }
 
-    // Subscription expired or not found
     if (isVencida) {
       return {
         allowed: false,
-        reason: `Sistema bloqueado: ${suscripcion?.mensaje || 'Su suscripción ha vencido. Renueve su plan para continuar usando el sistema.'}`
+        reason: `Sistema bloqueado: ${suscripcion?.mensaje || 'Su suscripcion ha vencido. Renueve su plan para continuar usando el sistema.'}`
       };
     }
 
-    // Feature-specific checks
     if (accion === 'cotizaciones_magna' && !features.cotizaciones_magna) {
-      return { allowed: false, reason: 'Esta función requiere el plan PRO o superior.' };
+      return { allowed: false, reason: 'Esta funcion requiere el plan PRO o superior.' };
     }
     if (accion === 'carta_ruta' && !features.carta_ruta) {
       return { allowed: false, reason: 'Las cartas de ruta requieren el plan PRO o superior.' };
     }
     if (accion === 'cobranzas' && !features.cobranzas) {
-      return { allowed: false, reason: 'El módulo de cobranzas requiere el plan PRO o superior.' };
+      return { allowed: false, reason: 'El modulo de cobranzas requiere el plan PRO o superior.' };
     }
     if (accion === 'reportes_avanzados' && !features.reportes_avanzados) {
       return { allowed: false, reason: 'Los reportes avanzados requieren el plan PRO o superior.' };
@@ -137,9 +216,6 @@ export const SuscripcionProvider = ({ children }) => {
     return { allowed: true, reason: null };
   }, [isSuperAdmin, loading, isVencida, features, suscripcion]);
 
-  /**
-   * Renovar suscripción (llamar RPC)
-   */
   const renovarPlan = useCallback(async (planNombre, metodoPago = null, referenciaPago = null, montoPagado = 0) => {
     if (!tenantId) throw new Error('No hay tenant activo');
 
@@ -153,18 +229,14 @@ export const SuscripcionProvider = ({ children }) => {
 
     if (error) throw error;
 
-    // Re-fetch subscription status
     await fetchSuscripcion();
     return data;
   }, [tenantId, fetchSuscripcion]);
 
   const value = useMemo(() => ({
-    // Estado
     suscripcion,
     loading,
     planes,
-    
-    // Flags derivados
     isActiva,
     isVencida,
     isTrial,
@@ -173,8 +245,6 @@ export const SuscripcionProvider = ({ children }) => {
     planActual,
     limites,
     features,
-    
-    // Acciones
     validarAccion,
     renovarPlan,
     refetch: fetchSuscripcion

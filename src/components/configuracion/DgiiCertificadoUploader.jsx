@@ -6,13 +6,27 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ShieldCheck, Upload, Loader2, FileLock2, Eye, EyeOff, Trash2, BadgeCheck, AlertTriangle, FileCode2, X, Send, FileSignature } from 'lucide-react';
+import { ShieldCheck, Upload, Loader2, FileLock2, Eye, EyeOff, Trash2, BadgeCheck, AlertTriangle, FileCode2, X, Send, FileSignature, Download, FileText } from 'lucide-react';
+import { downloadRepresentacionImpresa } from '@/lib/dgiiRepresentacionImpresa';
 import DgiiCertificacionRunner from './DgiiCertificacionRunner';
 import DgiiAprobacionComercialRunner from './DgiiAprobacionComercialRunner';
 import DgiiSimulacionRunner from './DgiiSimulacionRunner';
+import DgiiRepresentacionImpresaRunner from './DgiiRepresentacionImpresaRunner';
 
 // Tamano maximo permitido para el .p12 (10 MB; reales son <50KB).
 const MAX_P12_BYTES = 10 * 1024 * 1024;
+
+const downloadTextFile = (content, fileName, type = 'application/xml') => {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 const AMBIENTES = [
   { value: 'TesteCF',    label: 'TesteCF — Pruebas iniciales' },
@@ -35,6 +49,7 @@ const DgiiCertificadoUploader = () => {
   const [nombre, setNombre] = useState('');
   const [ambiente, setAmbiente] = useState('CerteCF');
   const [callbackUrl, setCallbackUrl] = useState('');
+  const [fechaVencimientoSecuencia, setFechaVencimientoSecuencia] = useState('');
   const fileInputRef = useRef(null);
 
   const fetchInfo = useCallback(async () => {
@@ -51,6 +66,7 @@ const DgiiCertificadoUploader = () => {
       setNombre(data.nombre_emisor || '');
       setAmbiente(data.ambiente || 'CerteCF');
       setCallbackUrl(data.callback_url || '');
+      setFechaVencimientoSecuencia(data.fecha_vencimiento_secuencia || '');
     } catch (err) {
       // No es bloqueante: el tenant puede que aun no haya configurado nada
       console.warn('[DgiiUploader] info:', err.message);
@@ -65,6 +81,23 @@ const DgiiCertificadoUploader = () => {
   // Estado para el visor de XML de prueba
   const [xmlPreview, setXmlPreview] = useState(null); // { xml, encf, tipo_ecf, factura }
   const [generatingXml, setGeneratingXml] = useState(false);
+
+  const downloadXmlPreview = () => {
+    if (!xmlPreview?.xml) return;
+    const suffix = xmlPreview.firmado ? '_firmado' : '';
+    const fileName = `${xmlPreview.encf || 'ecf'}${suffix}.xml`;
+    downloadTextFile(xmlPreview.xml, fileName);
+  };
+
+  const downloadRiPreview = async () => {
+    if (!xmlPreview?.firmado || !xmlPreview?.xml) return;
+    try {
+      await downloadRepresentacionImpresa(xmlPreview.xml, { fileName: `${xmlPreview.encf || 'ecf'}_RI.pdf`, ambiente: info?.ambiente });
+      toast({ title: 'RI generada', description: 'Representacion impresa descargada.' });
+    } catch (err) {
+      toast({ title: 'No se pudo generar la RI', description: err.message, variant: 'destructive' });
+    }
+  };
 
   const handleGenerateTestXml = async (opts = {}) => {
     const sign = !!opts.sign;
@@ -127,6 +160,14 @@ const DgiiCertificadoUploader = () => {
         digest_value: data.digest_value,
         signature_value_preview: data.signature_value_preview,
       });
+
+      if (sign && data.xml_firmado) {
+        downloadTextFile(data.xml_firmado, `${data.encf || 'ecf'}_firmado.xml`);
+        toast({
+          title: 'XML firmado descargado',
+          description: `${data.encf || 'e-CF'} se descargo como archivo .xml.`,
+        });
+      }
     } catch (err) {
       console.error('[DgiiUploader] handleGenerateTestXml error:', err);
       toast({ title: 'Error generando XML', description: err.message || 'Error desconocido', variant: 'destructive' });
@@ -278,7 +319,7 @@ const DgiiCertificadoUploader = () => {
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error || 'No se pudo eliminar');
       toast({ title: 'Certificado eliminado', description: 'Configuracion DGII directo limpia.' });
-      setRnc(''); setNombre(''); setAmbiente('CerteCF'); setCallbackUrl('');
+      setRnc(''); setNombre(''); setAmbiente('CerteCF'); setCallbackUrl(''); setFechaVencimientoSecuencia('');
       setFile(null); setPassword('');
       await fetchInfo();
     } catch (err) {
@@ -352,6 +393,7 @@ const DgiiCertificadoUploader = () => {
           nombre_emisor: nombre,
           ambiente,
           callback_url: callbackUrl,
+          fecha_vencimiento_secuencia: fechaVencimientoSecuencia,
           certificado_password: password,
           storage_path: storagePath,
         },
@@ -372,6 +414,31 @@ const DgiiCertificadoUploader = () => {
     } catch (err) {
       console.error('[DgiiUploader] handleUpload error:', err);
       toast({ title: 'Error al guardar', description: err.message || 'No se pudo guardar el certificado. Revisa la consola para mas detalles.', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!info?.configured) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
+        body: {
+          action: 'dgii_update_config_meta',
+          rnc_emisor: rnc,
+          nombre_emisor: nombre,
+          ambiente,
+          callback_url: callbackUrl,
+          fecha_vencimiento_secuencia: fechaVencimientoSecuencia,
+        },
+      });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error || 'No se pudo guardar la configuracion');
+      toast({ title: 'Configuracion guardada', description: 'Datos DGII actualizados sin reemplazar el certificado.' });
+      await fetchInfo();
+    } catch (err) {
+      toast({ title: 'Error', description: err.message || 'No se pudo guardar la configuracion.', variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -540,13 +607,23 @@ const DgiiCertificadoUploader = () => {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[10px] text-amber-700">
-            El set oficial del portal de certificacion se envia siempre por CerteCF.
+          <p className={`text-[10px] ${ambiente === 'CerteCF' ? 'text-amber-700' : 'text-red-600 font-semibold'}`}>
+            El set oficial del portal de certificacion se envia siempre por CerteCF. Si estas en Paso 4, guarda Ambiente = CerteCF.
           </p>
         </div>
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Callback URL (DGII envia ARECF/AECF)</Label>
           <Input value={callbackUrl} onChange={(e) => setCallbackUrl(e.target.value)} placeholder="https://tu-dominio.com/api/dgii-callback" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-[11px] font-bold text-gray-700 uppercase">Vencimiento secuencia e-CF</Label>
+          <Input value={fechaVencimientoSecuencia} onChange={(e) => setFechaVencimientoSecuencia(e.target.value)} placeholder="31-12-2028" />
+          <p className="text-[10px] text-gray-500">Usado en simulacion para los tipos que DGII exige. Debe coincidir exactamente con el vencimiento autorizado en DGII.</p>
+          {fechaVencimientoSecuencia && fechaVencimientoSecuencia !== '31-12-2028' && (
+            <p className="text-[10px] text-orange-700 font-semibold">
+              Aviso: para esta certificacion nos indicaste que DGII marca 31-12-2028 como fecha correcta.
+            </p>
+          )}
         </div>
       </div>
 
@@ -631,6 +708,18 @@ const DgiiCertificadoUploader = () => {
           {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
           {saving ? 'Subiendo...' : (info?.configured ? 'Reemplazar certificado' : 'Guardar certificado')}
         </Button>
+        {info?.configured && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSaveSettings}
+            disabled={saving}
+            className="ml-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            Guardar datos
+          </Button>
+        )}
         {(!file || !password.trim()) && (
           <p className="text-[11px] text-amber-600 mt-1">
             {!file && !password.trim()
@@ -658,6 +747,12 @@ const DgiiCertificadoUploader = () => {
       {info?.configured && (
         <div className="border-t pt-6 mt-2">
           <DgiiSimulacionRunner />
+        </div>
+      )}
+
+      {info?.configured && (
+        <div className="border-t pt-6 mt-2">
+          <DgiiRepresentacionImpresaRunner configInfo={info} />
         </div>
       )}
 
@@ -701,16 +796,36 @@ const DgiiCertificadoUploader = () => {
                   ? '✅ Firmado XAdES-BES con tu .p12. Envio a DGII pendiente (Fase 3e).'
                   : '⚠ XML SIN FIRMAR. Use el boton "XML firmado" para firmarlo con tu .p12.'}
               </span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  navigator.clipboard?.writeText(xmlPreview.xml);
-                  toast({ title: 'Copiado', description: 'XML al portapapeles' });
-                }}
-              >
-                Copiar
-              </Button>
+              <div className="flex items-center gap-2">
+                {xmlPreview.firmado && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={downloadRiPreview}
+                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  >
+                    <FileText className="w-3.5 h-3.5 mr-1" /> RI PDF
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={downloadXmlPreview}
+                  className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" /> Descargar XML
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(xmlPreview.xml);
+                    toast({ title: 'Copiado', description: 'XML al portapapeles' });
+                  }}
+                >
+                  Copiar
+                </Button>
+              </div>
             </div>
           </div>
         </div>

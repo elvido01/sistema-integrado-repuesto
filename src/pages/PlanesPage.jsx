@@ -10,7 +10,7 @@ import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import PagoTransferenciaModal from '@/components/suscripcion/PagoTransferenciaModal';
 
 const PlanesPage = () => {
-  const { planes, planActual, suscripcion } = useSuscripcion();
+  const { planes, planActual, suscripcion, porVencer, isVencida } = useSuscripcion();
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [showPagoModal, setShowPagoModal] = useState(false);
 
@@ -92,6 +92,7 @@ const PlanesPage = () => {
             const meta = planMeta[plan.nombre] || planMeta.BASICO;
             const PlanIcon = meta.icon;
             const isCurrent = isCurrentPlan(plan.nombre);
+            const canPayCurrent = isCurrent && (porVencer || isVencida);
 
             return (
               <motion.div
@@ -176,16 +177,21 @@ const PlanesPage = () => {
                 <div className="px-6 pb-6 pt-2 bg-white">
                   <Button
                     onClick={() => handleSelectPlan(plan)}
-                    disabled={isCurrent || pagoPendiente}
+                    disabled={(isCurrent && !canPayCurrent) || pagoPendiente}
                     className={`w-full h-11 font-black uppercase tracking-wider text-xs shadow-md transition-all ${
-                      isCurrent
+                      isCurrent && !canPayCurrent
                         ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                         : pagoPendiente
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           : `bg-gradient-to-r ${meta.gradient} hover:opacity-90 text-white`
                     }`}
                   >
-                    {isCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en RevisiÃ³n' : (
+                    {isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisión' : canPayCurrent ? (
+                      <>
+                        Pagar Plan Actual
+                        <ChevronRight className="w-4 h-4 ml-2" />
+                      </>
+                    ) : (
                       <>
                         Seleccionar Plan
                         <ChevronRight className="w-4 h-4 ml-2" />

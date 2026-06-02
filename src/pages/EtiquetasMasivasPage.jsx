@@ -13,7 +13,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Services
-import { qzEnsureConnection, qzFindBestPrinter, qzPrintRawEpl } from "@/services/qzTrayService";
+import { findLabelPrinter, printRawEpl, setPreferredBackend, getPreferredBackend } from "@/services/printerAdapter";
 import { buildEplLabel } from "@/services/eplLabel";
 import { webUsbPrintEpl, isWebUsbSupported } from "@/services/webUsbPrintService";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
@@ -43,6 +43,11 @@ const EtiquetasMasivasPage = ({ extraData }) => {
     const { toast } = useToast();
     const { empresa } = useAuth();
     const empresaNombre = empresa?.nombre || 'Sistema';
+    const precio2DescuentoPct = Math.max(0, Math.min(100, parseFloat(empresa?.precio2_descuento_pct) || 10));
+    const precio3DescuentoPct = Math.max(0, Math.min(100, parseFloat(empresa?.precio3_descuento_pct) || 15));
+    const precioCubreCostoReal = (precio, costo) => {
+        return (parseFloat(precio) || 0) >= (parseFloat(costo) || 0);
+    };
     const [purchaseNumber, setPurchaseNumber] = useState('');
     const [loading, setLoading] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
@@ -68,9 +73,8 @@ const EtiquetasMasivasPage = ({ extraData }) => {
         const saved = localStorage.getItem('label_print_method');
         if (saved) return saved;
         if (isWebUsbSupported() && localStorage.getItem('webusb_label_printer')) return 'webusb';
-        return 'qz';
+        return 'auto';
     });
-
     const pairedLabelPrinterName = useMemo(() => {
         try {
             const saved = localStorage.getItem('webusb_label_printer');
@@ -342,10 +346,22 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 };
 
                 if (presentacion.auto_precio2) {
-                    updateObj.precio2 = parseFloat((newPrice * 0.90).toFixed(2));
+                    const precio2 = parseFloat((newPrice * (1 - precio2DescuentoPct / 100)).toFixed(2));
+                    if (precioCubreCostoReal(precio2, presentacion.costo)) {
+                        updateObj.precio2 = precio2;
+                    } else {
+                        updateObj.precio2 = 0;
+                        updateObj.auto_precio2 = false;
+                    }
                 }
                 if (presentacion.auto_precio3) {
-                    updateObj.precio3 = parseFloat((newPrice * 0.85).toFixed(2));
+                    const precio3 = parseFloat((newPrice * (1 - precio3DescuentoPct / 100)).toFixed(2));
+                    if (precioCubreCostoReal(precio3, presentacion.costo)) {
+                        updateObj.precio3 = precio3;
+                    } else {
+                        updateObj.precio3 = 0;
+                        updateObj.auto_precio3 = false;
+                    }
                 }
 
                 // Actualizar presentación
@@ -471,7 +487,13 @@ const EtiquetasMasivasPage = ({ extraData }) => {
         if (!individualProduct || isPrintingSingle) return;
         const qty = parseInt(individualQty) || 1;
         setIsPrintingSingle(true);
-        toast({ title: 'Preparando impresión', description: labelPrintMethod === 'webusb' ? 'Conectando via WebUSB...' : 'Conectando con QZ Tray...' });
+        const methodLabel = { auto: 'el motor configurado', agent: 'Motoflow Print Agent', qz: 'QZ Tray', webusb: 'WebUSB' }[labelPrintMethod] || 'la impresora';
+        toast({ title: 'Preparando impresión', description: `Conectando con ${methodLabel}...` });
+
+        const previousBackend = getPreferredBackend();
+        if (labelPrintMethod === 'agent') setPreferredBackend('agent');
+        else if (labelPrintMethod === 'qz') setPreferredBackend('qz');
+
         try {
             const displayPrice = priceType === 'numeric'
                 ? individualProduct.precio
@@ -490,9 +512,8 @@ const EtiquetasMasivasPage = ({ extraData }) => {
             if (labelPrintMethod === 'webusb') {
                 await webUsbPrintEpl(epl);
             } else {
-                await qzEnsureConnection();
-                const printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
-                await qzPrintRawEpl(printerName, epl);
+                const printerName = await findLabelPrinter(PREFERRED_PRINTERS);
+                await printRawEpl(printerName, epl);
             }
 
             toast({ title: 'Impresión completada', description: `Se imprimieron ${qty} etiquetas de ${individualProduct.codigo}.` });
@@ -500,6 +521,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
             console.error(`[${labelPrintMethod}] Error printing single:`, err);
             toast({ variant: 'destructive', title: 'Error de impresión', description: err?.message || 'No se pudo imprimir.' });
         } finally {
+            setPreferredBackend(previousBackend);
             setIsPrintingSingle(false);
         }
     }, [individualProduct, individualQty, priceType, showLocation, toast, labelPrintMethod]);
@@ -548,14 +570,18 @@ const EtiquetasMasivasPage = ({ extraData }) => {
         if (import.meta.env.DEV) {
             console.log(`[${labelPrintMethod}] Items seleccionados para imprimir:`, selectedItems.length);
         }
-        toast({ title: "Preparando impresión", description: labelPrintMethod === 'webusb' ? "Conectando via WebUSB..." : "Conectando con QZ Tray..." });
+        const batchMethodLabel = { auto: 'el motor configurado', agent: 'Motoflow Print Agent', qz: 'QZ Tray', webusb: 'WebUSB' }[labelPrintMethod] || 'la impresora';
+        toast({ title: "Preparando impresión", description: `Conectando con ${batchMethodLabel}...` });
+
+        const previousBatchBackend = getPreferredBackend();
+        if (labelPrintMethod === 'agent') setPreferredBackend('agent');
+        else if (labelPrintMethod === 'qz') setPreferredBackend('qz');
 
         try {
             let printerName = null;
             if (labelPrintMethod !== 'webusb') {
-                await qzEnsureConnection();
-                printerName = await qzFindBestPrinter(PREFERRED_PRINTERS);
-                console.log("[QZ] Printer seleccionado:", printerName);
+                printerName = await findLabelPrinter(PREFERRED_PRINTERS);
+                console.log("[Adapter] Printer seleccionado:", printerName);
             }
 
             let printedCount = 0;
@@ -590,7 +616,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 if (labelPrintMethod === 'webusb') {
                     await webUsbPrintEpl(epl);
                 } else {
-                    await qzPrintRawEpl(printerName, epl);
+                    await printRawEpl(printerName, epl);
                 }
                 printedCount++;
             }
@@ -609,13 +635,14 @@ const EtiquetasMasivasPage = ({ extraData }) => {
             }
 
         } catch (err) {
-            console.error("[QZ] Fallo crítico en batch:", err);
+            console.error("[Adapter] Fallo crítico en batch:", err);
             toast({
                 variant: 'destructive',
                 title: 'Error de impresión',
                 description: err?.message || "No se pudo completar la impresión masiva."
             });
         } finally {
+            setPreferredBackend(previousBatchBackend);
             setIsPrinting(false);
         }
     };
@@ -675,7 +702,11 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="qz">QZ Tray (Nativo)</SelectItem>
+                                                <SelectItem value="auto">🔄 Auto (recomendado)</SelectItem>
+                                                <SelectItem value="agent">
+                                                    ⚡ Motoflow Print Agent
+                                                </SelectItem>
+                                                <SelectItem value="qz">🖨️ QZ Tray (Nativo)</SelectItem>
                                                 <SelectItem value="webusb" disabled={!isWebUsbSupported()}>
                                                     {pairedLabelPrinterName ? `WebUSB — ${pairedLabelPrinterName}` : 'WebUSB (Sin Instalar)'}
                                                 </SelectItem>

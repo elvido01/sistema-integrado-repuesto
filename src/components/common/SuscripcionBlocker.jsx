@@ -9,12 +9,12 @@ import { usePanels } from '@/contexts/PanelContext';
 const SuscripcionBlocker = () => {
   const { isVencida, loading, planActual, suscripcion } = useSuscripcion();
   const { isSuperAdmin, signOut } = useAuth();
-  const { openPanel } = usePanels();
+  const { openPanel, activePanel } = usePanels();
 
   const isEnRevision = suscripcion?.pago_pendiente;
 
   // Never block: superadmins, loading, not expired, or payment under review (client keeps working)
-  if (isSuperAdmin || loading || !isVencida || isEnRevision) return null;
+  if (isSuperAdmin || loading || !isVencida || isEnRevision || activePanel === 'planes') return null;
 
   // Standard expired blocker (only when NO pending payment)
   return (

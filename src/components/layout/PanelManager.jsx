@@ -63,7 +63,8 @@ const PanelManager = () => {
             <div
               key={panel.id}
               className={cn(
-                "absolute inset-0 w-full h-full p-4 overflow-auto transition-opacity duration-200 bg-slate-100 dark:bg-gray-900",
+                "absolute inset-0 w-full h-full min-w-0 transition-opacity duration-200 bg-slate-100 dark:bg-gray-900",
+                panel.id === 'whatsapp-crm' ? 'p-0 overflow-hidden' : 'p-4 overflow-auto',
                 isActive
                   ? "opacity-100 z-10 pointer-events-auto shadow-sm"
                   : "opacity-0 z-0 pointer-events-none"

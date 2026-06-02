@@ -5,19 +5,22 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Loader2, Search, X, Package } from 'lucide-react';
+import { Loader2, Search, X, Package, PackageX } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import useDebounce from '@/hooks/useDebounce';
 import { orNull } from '@/lib/rpc-helpers';
-import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from '@/components/ui/context-menu';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
+import { sendNotaToSuplidorVirtual } from '@/services/sendToSuplidorVirtual';
 
 const PAGE_LIMIT = 20;
 
 // ✅ firma corregida (no ejecutar hooks en default params)
 const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sessionKey = null }) => {
   const { toast } = useToast();
+  const { tenantId, user } = useAuth();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -28,6 +31,8 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
   const [modeloFilter, setModeloFilter] = useState('');
   const [includeZeroStock, setIncludeZeroStock] = useState(true);
   const [sendingToOrder, setSendingToOrder] = useState(null); // product id being sent
+  const [sendingNote, setSendingNote] = useState(false);
+  const [quickNote, setQuickNote] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -180,6 +185,7 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
     new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP', minimumFractionDigits: 2 }).format(price || 0);
 
   const handleSendToOrden = async (product) => {
+    if (sendingToOrder) return;
     setSendingToOrder(product.id);
     try {
       const result = await sendProductToOrdenCompra(product);
@@ -207,6 +213,28 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
       setSendingToOrder(null);
     }
   };
+
+  const handleSendNotaToSuplidorVirtual = async () => {
+    setSendingNote(true);
+    try {
+      const result = await sendNotaToSuplidorVirtual({
+        nota: quickNote,
+        tenantId,
+        userId: user?.id,
+      });
+      toast({
+        variant: result.success ? 'default' : 'destructive',
+        title: result.success ? 'Enviado a Suplidor Virtual' : 'Error',
+        description: result.message,
+      });
+      if (result.success) setQuickNote('');
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error inesperado', description: err.message });
+    } finally {
+      setSendingNote(false);
+    }
+  };
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -345,28 +373,40 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
                               )}
                             </TableRow>
                           </ContextMenuTrigger>
-                          <ContextMenuContent className="w-56" style={{ zIndex: 10000 }}>
+                          <ContextMenuContent className="w-64" style={{ zIndex: 10000 }}>
                             <ContextMenuItem
                               className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
-                              onClick={(e) => {
-                                e.stopPropagation();
+                              onSelect={(e) => {
+                                e.preventDefault();
                                 handleSendToOrden(product);
                               }}
-                              disabled={sendingToOrder === product.id}
+                              disabled={!!sendingToOrder}
                             >
                               {sendingToOrder === product.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
                               Enviar a Orden de Compra
                             </ContextMenuItem>
-                            <ContextMenuSeparator />
-                            <ContextMenuItem
-                              className="cursor-pointer"
-                              onClick={() => {
-                                onSelectProduct(product);
-                                onClose();
-                              }}
+                            <div
+                              className="border-t border-slate-100 px-2 py-2 space-y-2"
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
                             >
-                              ✅ Seleccionar Producto
-                            </ContextMenuItem>
+                              <Input
+                                value={quickNote}
+                                maxLength={50}
+                                placeholder="Nota de producto faltante"
+                                className="h-8 text-xs"
+                                onChange={(e) => setQuickNote(e.target.value)}
+                              />
+                              <button
+                                type="button"
+                                disabled={sendingNote || !quickNote.trim()}
+                                onClick={handleSendNotaToSuplidorVirtual}
+                                className="w-full text-left px-2 py-1.5 rounded text-sm font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                              >
+                                {sendingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageX className="w-4 h-4" />}
+                                Enviar nota a Suplidor Virtual
+                              </button>
+                            </div>
                           </ContextMenuContent>
                         </ContextMenu>
                       ))}
@@ -377,7 +417,29 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
                     {!loading && !hasMore && products.length > 0 && (
                       <p className="text-xs text-muted-foreground italic">No hay más resultados.</p>
                     )}
-                    {!loading && products.length === 0 && <p className="text-sm text-muted-foreground py-10">No se encontraron productos.</p>}
+                    {!loading && products.length === 0 && (
+                      <div className="py-8 px-4 flex flex-col items-center gap-2">
+                        <p className="text-sm text-muted-foreground">No se encontraron productos.</p>
+                        <div className="flex w-full max-w-md gap-2">
+                          <Input
+                            value={quickNote}
+                            maxLength={50}
+                            placeholder="Nota de producto faltante"
+                            className="h-9 text-xs"
+                            onChange={(e) => setQuickNote(e.target.value)}
+                          />
+                          <Button
+                            size="sm"
+                            disabled={sendingNote || !quickNote.trim()}
+                            onClick={handleSendNotaToSuplidorVirtual}
+                            className="h-9 bg-amber-600 hover:bg-amber-700 text-white"
+                          >
+                            {sendingNote ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <PackageX className="w-4 h-4 mr-1" />}
+                            Enviar
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

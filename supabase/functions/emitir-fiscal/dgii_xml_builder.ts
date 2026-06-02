@@ -53,6 +53,18 @@ const fmtDate = (d) => {
   return `${day}-${month}-${year}`;
 };
 
+const normalizeDgiiDate = (d) => {
+  if (d === null || d === undefined || d === "") return "";
+  const raw = String(d).trim();
+  let m = raw.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-20${m[3]}`;
+  m = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (m) return raw;
+  m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return fmtDate(d);
+};
+
 const fmtDateTime = (d) => {
   const dt = d instanceof Date ? d : new Date(d);
   if (isNaN(dt.getTime())) return String(d || "");
@@ -70,6 +82,22 @@ const fmtAcecfDate = (d) => {
   return fmtDate(d);
 };
 
+const nowDgiiDateTime = () => {
+  const now = new Date();
+  const rd = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+  const day = String(rd.getUTCDate()).padStart(2, "0");
+  const month = String(rd.getUTCMonth() + 1).padStart(2, "0");
+  const year = rd.getUTCFullYear();
+  const hours = String(rd.getUTCHours()).padStart(2, "0");
+  const minutes = String(rd.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(rd.getUTCSeconds()).padStart(2, "0");
+  return `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;
+};
+const fechaVencimientoSecuenciaXml = (input) =>
+  input.fecha_vencimiento_secuencia
+    ? `<FechaVencimientoSecuencia>${xmlEscape(normalizeDgiiDate(input.fecha_vencimiento_secuencia))}</FechaVencimientoSecuencia>`
+    : "";
+
 const tag = (name, value, opts = {}) => {
   // Genera <Name>value</Name>. Si value es null/undefined/'', omite el tag
   // a menos que opts.always=true.
@@ -78,6 +106,49 @@ const tag = (name, value, opts = {}) => {
   }
   return `<${name}>${xmlEscape(value)}</${name}>`;
 };
+
+const isPositiveAmount = (value) => Number(value) > 0;
+
+const retencionXml = (it) => {
+  const hasItbis = isPositiveAmount(it.monto_itbis_retenido);
+  const hasIsr = isPositiveAmount(it.monto_isr_retenido);
+  if (!hasItbis && !hasIsr) return "";
+  return `<Retencion>` +
+    tag("IndicadorAgenteRetencionoPercepcion", it.indicador_agente_retencion) +
+    (hasItbis ? tag("MontoITBISRetenido", it.monto_itbis_retenido) : "") +
+    (hasIsr ? tag("MontoISRRetenido", it.monto_isr_retenido) : "") +
+  `</Retencion>`;
+};
+
+const itemMontoBase = (it) => {
+  if (it.monto_item != null) return Number(it.monto_item) || 0;
+  const cantidad = Number(it.cantidad) || 0;
+  const precio = Number(it.precio_unitario) || 0;
+  const descuento = Number(it.descuento_monto) || 0;
+  return Number((cantidad * precio - descuento).toFixed(2));
+};
+
+const reconcileTotalesWithItems = (totales, items) => {
+  if (!Array.isArray(items) || !items.length) return totales || {};
+  const next = { ...(totales || {}) };
+  const montoGravado18 = items.reduce((sum, it) =>
+    String(it.indicador_facturacion || "1") === "1" ? sum + itemMontoBase(it) : sum, 0);
+  const montoExento = items.reduce((sum, it) =>
+    String(it.indicador_facturacion || "1") === "4" ? sum + itemMontoBase(it) : sum, 0);
+  const itbis18 = Number((montoGravado18 * 0.18).toFixed(2));
+  next.monto_gravado_total = Number(montoGravado18.toFixed(2));
+  next.monto_gravado_18 = Number(montoGravado18.toFixed(2));
+  next.monto_exento = Number(montoExento.toFixed(2));
+  next.itbis_total = montoGravado18 > 0 ? itbis18 : null;
+  next.total_itbis_18 = montoGravado18 > 0 ? itbis18 : 0;
+  next.monto_total = Number((montoGravado18 + montoExento + itbis18).toFixed(2));
+  return next;
+};
+
+const indicadorMontoGravado = () => "0";
+
+const tipoIngresosXml = (input, fallback = "01") =>
+  tag("TipoIngresos", input.tipo_ingresos || fallback);
 
 // ────────────────────────────────────────────────
 // Validaciones previas al XML — fail fast
@@ -213,7 +284,9 @@ function buildItemsXml(items) {
     <Item>
       <NumeroLinea>${numeroLinea}</NumeroLinea>
       ${tag("IndicadorFacturacion", it.indicador_facturacion || "1")}
+      ${retencionXml(it)}
       ${tag("NombreItem", it.descripcion)}
+      ${tag("IndicadorBienoServicio", it.indicador_bien_servicio || "1")}
       <CantidadItem>${cantidad}</CantidadItem>
       ${tag("UnidadMedida", it.unidad_medida || "43")}
       <PrecioUnitarioItem>${fmtMoney(precio)}</PrecioUnitarioItem>
@@ -230,20 +303,30 @@ function buildTotalesXml(t) {
       ${t.monto_gravado_18 ? `<MontoGravadoI1>${fmtMoney(t.monto_gravado_18)}</MontoGravadoI1>` : ""}
       ${t.monto_exento ? `<MontoExento>${fmtMoney(t.monto_exento)}</MontoExento>` : ""}
       ${t.itbis_total != null ? `<ITBIS1>18</ITBIS1>` : ""}
+      ${t.itbis_total != null ? `<TotalITBIS>${fmtMoney(t.itbis_total)}</TotalITBIS>` : ""}
       ${t.total_itbis_18 ? `<TotalITBIS1>${fmtMoney(t.total_itbis_18)}</TotalITBIS1>` : ""}
       <MontoTotal>${fmtMoney(t.monto_total)}</MontoTotal>
+      ${t.monto_periodo != null ? `<MontoPeriodo>${fmtMoney(t.monto_periodo)}</MontoPeriodo>` : ""}
+      ${t.valor_pagar != null ? `<ValorPagar>${fmtMoney(t.valor_pagar)}</ValorPagar>` : ""}
+      ${t.total_itbis_retenido ? `<TotalITBISRetenido>${fmtMoney(t.total_itbis_retenido)}</TotalITBISRetenido>` : ""}
+      ${t.total_isr_retencion ? `<TotalISRRetencion>${fmtMoney(t.total_isr_retencion)}</TotalISRRetencion>` : ""}
     </Totales>`;
 }
 
 // Helper compartido: genera el bloque <Emisor>
 function buildEmisorXml(e, fechaEmision) {
+  const sucursal = e.direccion_sucursal || e.municipio_sucursal || e.provincia_sucursal
+    ? `<Sucursal>
+        ${tag("DireccionSucursal", e.direccion_sucursal)}
+        ${tag("MunicipioSucursal", e.municipio_sucursal)}
+        ${tag("ProvinciaSucursal", e.provincia_sucursal)}
+      </Sucursal>`
+    : "";
   return `<Emisor>
       <RNCEmisor>${xmlEscape(e.rnc)}</RNCEmisor>
       <RazonSocialEmisor>${xmlEscape(e.razon_social)}</RazonSocialEmisor>
       ${tag("NombreComercial", e.nombre_comercial)}
-      <Sucursal>
-        ${tag("DireccionSucursal", e.direccion)}
-      </Sucursal>
+      ${sucursal}
       ${tag("DireccionEmisor", e.direccion)}
       ${tag("Municipio", e.municipio)}
       ${tag("Provincia", e.provincia)}
@@ -258,7 +341,7 @@ function buildXmlTipo32(input) {
 
   const e = input.emisor;
   const c = input.comprador || {};
-  const t = input.totales || {};
+  const t = reconcileTotalesWithItems(input.totales, input.items);
   const itemsXml = buildItemsXml(input.items || []);
 
   // Tipo 32 NO va a DGII fila a fila — va en RFCE batch (resumen).
@@ -272,14 +355,14 @@ function buildXmlTipo32(input) {
     <IdDoc>
       <TipoeCF>32</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      ${tag("IndicadorMontoGravado", t.monto_gravado_total > 0 ? "1" : "0")}
-      <TipoIngresos>05</TipoIngresos>
+      ${tag("IndicadorMontoGravado", indicadorMontoGravado(input))}
+      ${tipoIngresosXml(input)}
       <TipoPago>${input.forma_pago === "04" ? "2" : "1"}</TipoPago>
       ${input.forma_pago === "04" ? `<FechaLimitePago>${fmtDate(input.fecha_limite_pago || input.fecha_emision)}</FechaLimitePago>` : ""}
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
-    ${c.razon_social ? `<Comprador>
+    ${(c.rnc || c.razon_social) ? `<Comprador>
+      ${tag("RNCComprador", c.rnc)}
       ${tag("RazonSocialComprador", c.razon_social)}
     </Comprador>` : ""}
     ${buildTotalesXml(t)}
@@ -287,6 +370,7 @@ function buildXmlTipo32(input) {
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -336,7 +420,7 @@ function buildXmlTipo31(input) {
 
   const e = input.emisor;
   const c = input.comprador || {};
-  const t = input.totales || {};
+  const t = reconcileTotalesWithItems(input.totales, input.items);
   const itemsXml = buildItemsXml(input.items || []);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -346,9 +430,9 @@ function buildXmlTipo31(input) {
     <IdDoc>
       <TipoeCF>31</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      ${tag("IndicadorMontoGravado", t.monto_gravado_total > 0 ? "1" : "0")}
-      <TipoIngresos>05</TipoIngresos>
+      ${fechaVencimientoSecuenciaXml(input)}
+      ${tag("IndicadorMontoGravado", indicadorMontoGravado(input))}
+      ${tipoIngresosXml(input)}
       <TipoPago>${input.forma_pago === "04" ? "2" : "1"}</TipoPago>
       ${input.forma_pago === "04" ? `<FechaLimitePago>${fmtDate(input.fecha_limite_pago || input.fecha_emision)}</FechaLimitePago>` : ""}
     </IdDoc>
@@ -365,6 +449,7 @@ function buildXmlTipo31(input) {
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -448,7 +533,7 @@ function buildXmlNota(input, tipo) {
 
   const e = input.emisor;
   const c = input.comprador || {};
-  const t = input.totales || {};
+  const t = reconcileTotalesWithItems(input.totales, input.items);
   const itemsXml = buildItemsXml(input.items || []);
   const refXml = buildInformacionReferenciaXml(input.referencia);
 
@@ -469,20 +554,22 @@ function buildXmlNota(input, tipo) {
     <IdDoc>
       <TipoeCF>${tipo}</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      ${tag("IndicadorMontoGravado", t.monto_gravado_total > 0 ? "1" : "0")}
-      <TipoIngresos>05</TipoIngresos>
+      ${tipo === "34" ? "" : fechaVencimientoSecuenciaXml(input)}
+      ${tipo === "34" ? tag("IndicadorNotaCredito", input.indicador_nota_credito ?? "0") : ""}
+      ${tag("IndicadorMontoGravado", indicadorMontoGravado(input))}
+      ${tipoIngresosXml(input)}
       <TipoPago>${input.forma_pago === "04" ? "2" : "1"}</TipoPago>
       ${input.forma_pago === "04" ? `<FechaLimitePago>${fmtDate(input.fecha_limite_pago || input.fecha_emision)}</FechaLimitePago>` : ""}
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
     ${compradorXml}
-    ${refXml}
     ${buildTotalesXml(t)}
   </Encabezado>
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  ${refXml}
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -519,7 +606,7 @@ function buildXmlTipo41(input) {
   validarTipo41(input);
   const e = input.emisor;
   const c = input.comprador || {};
-  const t = input.totales || {};
+  const t = reconcileTotalesWithItems(input.totales, input.items);
   const itemsXml = buildItemsXml(input.items || []);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -529,9 +616,8 @@ function buildXmlTipo41(input) {
     <IdDoc>
       <TipoeCF>41</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      ${tag("IndicadorMontoGravado", t.monto_gravado_total > 0 ? "1" : "0")}
-      <TipoIngresos>05</TipoIngresos>
+      ${fechaVencimientoSecuenciaXml(input)}
+      ${tag("IndicadorMontoGravado", indicadorMontoGravado(input))}
       <TipoPago>${input.forma_pago === "04" ? "2" : "1"}</TipoPago>
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
@@ -541,13 +627,13 @@ function buildXmlTipo41(input) {
       <RazonSocialComprador>${xmlEscape(c.razon_social)}</RazonSocialComprador>
       ${tag("ContactoComprador", c.contacto)}
       ${tag("CorreoComprador", c.email)}
-      ${tag("DireccionComprador", c.direccion)}
     </Comprador>
     ${buildTotalesXml(t)}
   </Encabezado>
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -576,7 +662,7 @@ function validarTipo43(input) {
 function buildXmlTipo43(input) {
   validarTipo43(input);
   const e = input.emisor;
-  const t = input.totales || {};
+  const t = reconcileTotalesWithItems(input.totales, input.items);
   const itemsXml = buildItemsXml(input.items || []);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -586,17 +672,19 @@ function buildXmlTipo43(input) {
     <IdDoc>
       <TipoeCF>43</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      ${tag("IndicadorMontoGravado", t.monto_gravado_total > 0 ? "1" : "0")}
-      <TipoIngresos>05</TipoIngresos>
+      ${fechaVencimientoSecuenciaXml(input)}
       <TipoPago>1</TipoPago>
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
-    ${buildTotalesXml(t)}
+    <Totales>
+      ${t.monto_exento ? `<MontoExento>${fmtMoney(t.monto_exento)}</MontoExento>` : ""}
+      <MontoTotal>${fmtMoney(t.monto_total)}</MontoTotal>
+    </Totales>
   </Encabezado>
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -629,7 +717,7 @@ function buildXmlTipo44(input) {
   validarTipo44(input);
   const e = input.emisor;
   const c = input.comprador || {};
-  const t = input.totales || {};
+  const t = reconcileTotalesWithItems(input.totales, input.items);
   const itemsXml = buildItemsXml(input.items || []);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -639,10 +727,8 @@ function buildXmlTipo44(input) {
     <IdDoc>
       <TipoeCF>44</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      ${tag("IndicadorMontoGravado", t.monto_gravado_total > 0 ? "1" : "0")}
-      ${tag("IndicadorEnvioDiferido", "1")}
-      <TipoIngresos>05</TipoIngresos>
+      ${fechaVencimientoSecuenciaXml(input)}
+      ${tipoIngresosXml(input)}
       <TipoPago>${input.forma_pago === "04" ? "2" : "1"}</TipoPago>
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
@@ -658,6 +744,7 @@ function buildXmlTipo44(input) {
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -690,7 +777,7 @@ function buildXmlTipo45(input) {
   validarTipo45(input);
   const e = input.emisor;
   const c = input.comprador || {};
-  const t = input.totales || {};
+  const t = reconcileTotalesWithItems(input.totales, input.items);
   const itemsXml = buildItemsXml(input.items || []);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -700,9 +787,9 @@ function buildXmlTipo45(input) {
     <IdDoc>
       <TipoeCF>45</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      ${tag("IndicadorMontoGravado", t.monto_gravado_total > 0 ? "1" : "0")}
-      <TipoIngresos>05</TipoIngresos>
+      ${fechaVencimientoSecuenciaXml(input)}
+      ${tag("IndicadorMontoGravado", indicadorMontoGravado(input))}
+      ${tipoIngresosXml(input)}
       <TipoPago>${input.forma_pago === "04" ? "2" : "1"}</TipoPago>
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
@@ -718,6 +805,7 @@ function buildXmlTipo45(input) {
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -752,6 +840,8 @@ function buildXmlTipo46(input) {
   const c = input.comprador || {};
   const t = input.totales || {};
   const itemsXml = buildItemsXml(input.items || []);
+  const montoGravadoI3 = Number(t.monto_gravado_0 || t.monto_gravado_i3 || t.monto_gravado_total || t.monto_total || 0);
+  const montoTotal = Number(t.monto_total || montoGravadoI3 || 0);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <ECF xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="e-CF.xsd">
@@ -760,25 +850,33 @@ function buildXmlTipo46(input) {
     <IdDoc>
       <TipoeCF>46</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      <IndicadorMontoGravado>0</IndicadorMontoGravado>
-      <TipoIngresos>06</TipoIngresos>
+      ${fechaVencimientoSecuenciaXml(input)}
+      ${tipoIngresosXml(input)}
       <TipoPago>${input.forma_pago === "04" ? "2" : "1"}</TipoPago>
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
     <Comprador>
       ${tag("IdentificadorExtranjero", c.id_extranjero || c.rnc)}
       <RazonSocialComprador>${xmlEscape(c.razon_social)}</RazonSocialComprador>
-      ${tag("PaisDestino", c.pais_destino)}
       ${tag("ContactoComprador", c.contacto)}
       ${tag("CorreoComprador", c.email)}
       ${tag("DireccionComprador", c.direccion)}
     </Comprador>
-    ${buildTotalesXml({ ...t, itbis_total: 0, total_itbis_18: 0, monto_gravado_total: 0, monto_exento: t.monto_total })}
+    <Totales>
+      <MontoGravadoTotal>${fmtMoney(montoGravadoI3)}</MontoGravadoTotal>
+      <MontoGravadoI3>${fmtMoney(montoGravadoI3)}</MontoGravadoI3>
+      <ITBIS3>0</ITBIS3>
+      <TotalITBIS>0.00</TotalITBIS>
+      <TotalITBIS3>0.00</TotalITBIS3>
+      <MontoTotal>${fmtMoney(montoTotal)}</MontoTotal>
+      <MontoPeriodo>${fmtMoney(montoTotal)}</MontoPeriodo>
+      <ValorPagar>${fmtMoney(montoTotal)}</ValorPagar>
+    </Totales>
   </Encabezado>
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -809,7 +907,7 @@ function buildXmlTipo47(input) {
   validarTipo47(input);
   const e = input.emisor;
   const c = input.comprador || {};
-  const t = input.totales || {};
+  const t = reconcileTotalesWithItems(input.totales, input.items);
   const itemsXml = buildItemsXml(input.items || []);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -819,25 +917,22 @@ function buildXmlTipo47(input) {
     <IdDoc>
       <TipoeCF>47</TipoeCF>
       <eNCF>${xmlEscape(input.encf)}</eNCF>
-      ${tag("FechaVencimientoSecuencia", input.fecha_vencimiento_secuencia)}
-      ${tag("IndicadorMontoGravado", t.monto_gravado_total > 0 ? "1" : "0")}
-      <TipoIngresos>05</TipoIngresos>
+      ${fechaVencimientoSecuenciaXml(input)}
       <TipoPago>${input.forma_pago === "04" ? "2" : "1"}</TipoPago>
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
     <Comprador>
       ${tag("IdentificadorExtranjero", c.id_extranjero || c.rnc)}
       <RazonSocialComprador>${xmlEscape(c.razon_social)}</RazonSocialComprador>
-      ${tag("PaisDestino", c.pais_destino)}
       ${tag("ContactoComprador", c.contacto)}
       ${tag("CorreoComprador", c.email)}
-      ${tag("DireccionComprador", c.direccion)}
     </Comprador>
     ${buildTotalesXml(t)}
   </Encabezado>
   <DetallesItems>
     ${itemsXml}
   </DetallesItems>
+  <FechaHoraFirma>${nowDgiiDateTime()}</FechaHoraFirma>
 </ECF>`.trim();
 
   return xml;
@@ -909,14 +1004,8 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
     // d.precio = precio base sin ITBIS (como lo guarda useVentas.js)
     // d.precio_unitario = fallback por si viene de otro origen
     const precioBase = Number(d.precio) || Number(d.precio_unitario) || 0;
-    const descuento = Number(d.descuento) || Number(d.descuento_monto) || 0;
-    const importe = Number(d.importe);
-
-    // importe en la BD ya es el neto con ITBIS incluido (cantidad*precioConItbis - descuento)
-    // Si importe existe y es válido, usarlo directamente
-    const monto = isFinite(importe) && importe > 0
-      ? importe
-      : Number((cantidad * precioBase - descuento).toFixed(2));
+    const descuento = 0;
+    const monto = Number((cantidad * precioBase).toFixed(2));
 
     // Determinar si aplica ITBIS: si hay campo itbis_pct, usar ese.
     // Si no, revisar si d.itbis > 0 como indicador de que es gravado.
@@ -939,12 +1028,12 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
 
   // Totales — si el importe en BD ya incluye ITBIS, extraerlo al 18%
   const totalGravado = items.reduce((s, it) =>
-    it.indicador_facturacion === "1" ? s + (it.monto_item / 1.18) : s, 0);
+    it.indicador_facturacion === "1" ? s + it.monto_item : s, 0);
   const totalExento = items.reduce((s, it) =>
     it.indicador_facturacion === "4" ? s + it.monto_item : s, 0);
   const totalItbis = items.reduce((s, it) =>
-    it.indicador_facturacion === "1" ? s + (it.monto_item - it.monto_item / 1.18) : s, 0);
-  const total = items.reduce((s, it) => s + it.monto_item, 0);
+    it.indicador_facturacion === "1" ? s + Number((it.monto_item * 0.18).toFixed(2)) : s, 0);
+  const total = totalGravado + totalExento + totalItbis;
 
   console.log("[facturaToEcfInput] Calculated totals:", { totalGravado, totalExento, totalItbis, total });
 
@@ -1025,11 +1114,8 @@ export function notaToEcfInput(nota, facturaOriginal, cliente, configEmisor, enc
   const items = (nota.items || []).map((d, idx) => {
     const cantidad = Number(d.cantidad) || 0;
     const precio = Number(d.precio) || 0;
-    const descuento = Number(d.descuento) || 0;
-    const importe = Number(d.importe);
-    const monto = isFinite(importe) && importe > 0
-      ? importe
-      : Number((cantidad * precio - descuento).toFixed(2));
+    const descuento = 0;
+    const monto = Number((cantidad * precio).toFixed(2));
     const itbisPct = Number(d.itbis_pct);
     const aplicaItbis = isFinite(itbisPct) ? itbisPct > 0 : true;
     return {
@@ -1044,12 +1130,12 @@ export function notaToEcfInput(nota, facturaOriginal, cliente, configEmisor, enc
   });
 
   const totalGravado = items.reduce((s, it) =>
-    it.indicador_facturacion === "1" ? s + (it.monto_item / 1.18) : s, 0);
+    it.indicador_facturacion === "1" ? s + it.monto_item : s, 0);
   const totalExento = items.reduce((s, it) =>
     it.indicador_facturacion === "4" ? s + it.monto_item : s, 0);
   const totalItbis = items.reduce((s, it) =>
-    it.indicador_facturacion === "1" ? s + (it.monto_item - it.monto_item / 1.18) : s, 0);
-  const total = items.reduce((s, it) => s + it.monto_item, 0);
+    it.indicador_facturacion === "1" ? s + Number((it.monto_item * 0.18).toFixed(2)) : s, 0);
+  const total = totalGravado + totalExento + totalItbis;
 
   // Formato de fecha del NCF original: DD-MM-YYYY (lo que pide DGII)
   const fechaNcfMod = (() => {

@@ -50,7 +50,7 @@ const initialFormData = {
 
 const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   const { toast } = useToast();
-  const { tenantId } = useAuth();
+  const { tenantId, empresa } = useAuth();
   const hasVehicleFields = tenantId === CAMINERO_MOTORS_TENANT;
 
   // Check if tenant has tienda feature enabled
@@ -443,6 +443,9 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
                         setPresentations={setPresentations}
                         tiposPresentacion={tiposPresentacion}
                         onNotImplemented={handleNotImplemented}
+                        itbisPct={formData.itbis_pct}
+                        precio2DescuentoPct={empresa?.precio2_descuento_pct ?? 10}
+                        precio3DescuentoPct={empresa?.precio3_descuento_pct ?? 15}
                       />
                     </TabsContent>
 

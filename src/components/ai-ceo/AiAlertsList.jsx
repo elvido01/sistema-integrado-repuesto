@@ -34,7 +34,7 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
         try {
             let q = supabase
                 .from('ai_alerts')
-                .select('id, alert_type, area, severity, title, description, recommendation, status, created_at, metadata')
+                .select('id, alert_type, area, severity, title, description, recommendation, related_table, related_id, status, created_at, metadata')
                 .eq('tenant_id', tenantId)
                 .order('created_at', { ascending: false })
                 .limit(300);

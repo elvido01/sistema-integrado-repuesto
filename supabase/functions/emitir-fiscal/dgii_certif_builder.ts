@@ -38,6 +38,19 @@ const t = (name, val) => {
 // Lo mismo pero siempre emite (incluso vacio)
 const tAlways = (name, val) => `<${name}>${xmlEscape(val ?? "")}</${name}>`;
 
+const isPositiveAmount = (val) => Number(val) > 0;
+
+const retencionXml = (item) => {
+  const hasItbis = isPositiveAmount(item("MontoITBISRetenido"));
+  const hasIsr = isPositiveAmount(item("MontoISRRetenido"));
+  if (!hasItbis && !hasIsr) return "";
+  return `<Retencion>` +
+    t("IndicadorAgenteRetencionoPercepcion", item("IndicadorAgenteRetencionoPercepcion")) +
+    (hasItbis ? t("MontoITBISRetenido", item("MontoITBISRetenido")) : "") +
+    (hasIsr ? t("MontoISRRetenido", item("MontoISRRetenido")) : "") +
+  `</Retencion>`;
+};
+
 // ────────────────────────────────────────────────
 // Reagrupa columnas con sufijo [N] en arrays
 // ────────────────────────────────────────────────
@@ -164,13 +177,7 @@ function buildItemsXml(row) {
         t("NumeroLinea", item("NumeroLinea")) +
         codigosXml +
         t("IndicadorFacturacion", item("IndicadorFacturacion")) +
-        ((item("MontoITBISRetenido") || item("MontoISRRetenido") || item("IndicadorAgenteRetencionoPercepcion"))
-          ? `<Retencion>` +
-              t("IndicadorAgenteRetencionoPercepcion", item("IndicadorAgenteRetencionoPercepcion")) +
-              t("MontoITBISRetenido", item("MontoITBISRetenido")) +
-              t("MontoISRRetenido", item("MontoISRRetenido")) +
-            `</Retencion>`
-          : "") +
+        retencionXml(item) +
         t("NombreItem", item("NombreItem")) +
         t("IndicadorBienoServicio", item("IndicadorBienoServicio")) +
         t("DescripcionItem", item("DescripcionItem")) +
@@ -461,11 +468,11 @@ export function buildEcfFromTestRow(rawRow) {
   // </ECF>
   //
   // FechaHoraFirma: timestamp del momento de firmar, formato dd-MM-yyyy HH:mm:ss
-  const ahora = new Date();
+  const ahora = new Date(Date.now() - 4 * 60 * 60 * 1000);
   const pad = (n) => String(n).padStart(2, "0");
   const fechaHoraFirma =
-    `${pad(ahora.getDate())}-${pad(ahora.getMonth() + 1)}-${ahora.getFullYear()} ` +
-    `${pad(ahora.getHours())}:${pad(ahora.getMinutes())}:${pad(ahora.getSeconds())}`;
+    `${pad(ahora.getUTCDate())}-${pad(ahora.getUTCMonth() + 1)}-${ahora.getUTCFullYear()} ` +
+    `${pad(ahora.getUTCHours())}:${pad(ahora.getUTCMinutes())}:${pad(ahora.getUTCSeconds())}`;
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>` +
     `<ECF xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="e-CF.xsd">` +

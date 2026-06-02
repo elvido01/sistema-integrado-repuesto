@@ -21,9 +21,10 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, PackageX, RotateCcw, CheckCircle2, X, RefreshCw, Search, ArrowLeft } from 'lucide-react';
+import { Loader2, PackageX, RotateCcw, CheckCircle2, X, RefreshCw, Search, ArrowLeft, Trash2 } from 'lucide-react';
 
 const ESTADO_LABELS = {
     pendiente: { label: 'Pendiente', color: 'bg-amber-100 text-amber-800 border-amber-300' },
@@ -47,6 +48,11 @@ export default function SuplidorVirtualPage({ onBack = null }) {
     const [filtroSuplidor, setFiltroSuplidor] = useState('');
     const [busqueda, setBusqueda] = useState('');
     const [suplidores, setSuplidores] = useState([]);
+    const [notaGeneral, setNotaGeneral] = useState('');
+    const notaStorageKey = useMemo(
+        () => `suplidor_virtual_nota_general_${tenantId || 'local'}`,
+        [tenantId]
+    );
 
     const cargar = useCallback(async () => {
         if (!tenantId) return;
@@ -57,7 +63,7 @@ export default function SuplidorVirtualPage({ onBack = null }) {
                 .select(`
                     id, producto_id, suplidor_original_id, codigo, descripcion,
                     cantidad_sugerida, precio_referencia, estado,
-                    marcado_at, expira_at, comprado_a_suplidor_id, notas,
+                    marcado_at, expira_at, comprado_a_suplidor_id,
                     suplidor_original:proveedores!suplidor_virtual_items_suplidor_original_id_fkey(id, nombre)
                 `)
                 .eq('tenant_id', tenantId)
@@ -93,6 +99,22 @@ export default function SuplidorVirtualPage({ onBack = null }) {
     }, [tenantId]);
 
     useEffect(() => { cargar(); }, [cargar]);
+
+    useEffect(() => {
+        setNotaGeneral(localStorage.getItem(notaStorageKey) || '');
+    }, [notaStorageKey]);
+
+    const handleNotaGeneralChange = (value) => {
+        const next = value.slice(0, 50);
+        setNotaGeneral(next);
+        localStorage.setItem(notaStorageKey, next);
+    };
+
+    const borrarNotaGeneral = () => {
+        setNotaGeneral('');
+        localStorage.removeItem(notaStorageKey);
+        toast({ title: 'Nota borrada' });
+    };
 
     const itemsFiltrados = useMemo(() => {
         if (!busqueda.trim()) return items;
@@ -209,6 +231,30 @@ export default function SuplidorVirtualPage({ onBack = null }) {
                     </div>
                 </div>
 
+                <div className="bg-white border border-slate-200 rounded p-3 mb-3 flex items-end gap-2">
+                    <div className="flex-1">
+                        <Label className="text-[10px] uppercase font-bold text-slate-500">Notas</Label>
+                        <Textarea
+                            value={notaGeneral}
+                            onChange={(e) => handleNotaGeneralChange(e.target.value)}
+                            maxLength={50}
+                            rows={2}
+                            placeholder="Nota rápida..."
+                            className="mt-1 min-h-[46px] text-xs resize-none"
+                        />
+                    </div>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={borrarNotaGeneral}
+                        disabled={!notaGeneral}
+                        className="h-9 text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Borrar
+                    </Button>
+                </div>
+
                 {/* Tabla */}
                 <div className="bg-white border border-slate-200 rounded overflow-hidden">
                     <Table>
@@ -240,7 +286,10 @@ export default function SuplidorVirtualPage({ onBack = null }) {
                                     const estadoStyle = ESTADO_LABELS[it.estado] || ESTADO_LABELS.pendiente;
                                     const isPendiente = it.estado === 'pendiente';
                                     return (
-                                        <TableRow key={it.id} className="hover:bg-slate-50 [&_td]:py-1.5 [&_td]:text-xs">
+                                        <TableRow
+                                            key={it.id}
+                                            className="hover:bg-slate-50 [&_td]:py-1.5 [&_td]:text-xs"
+                                        >
                                             <TableCell className="font-mono font-semibold text-slate-700">{it.codigo || '—'}</TableCell>
                                             <TableCell className="uppercase truncate max-w-[300px]">{it.descripcion || '—'}</TableCell>
                                             <TableCell className="text-slate-600 truncate max-w-[160px]">{it.suplidor_original?.nombre || '—'}</TableCell>

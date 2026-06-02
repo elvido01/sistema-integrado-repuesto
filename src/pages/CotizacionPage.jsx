@@ -11,6 +11,8 @@ import { Loader2, Search, PlusCircle, Send, Edit, Trash2, X, Printer, Share2, Ch
 import CotizacionFormModal from '@/components/cotizaciones/CotizacionFormModal';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { printCotizacionPOS, printCotizacionQZ, printCotizacionWebUsb } from '@/lib/printPOS';
+import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
+import { agentIsAvailable } from '@/services/motoflowPrintAgent';
 import { usePanels } from '@/contexts/PanelContext';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -25,6 +27,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+
+const COTIZACION_VISIBILITY_DAYS = 15;
+
+const getCotizacionCutoffDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() - COTIZACION_VISIBILITY_DAYS);
+  return date.toISOString().slice(0, 10);
+};
 
 const CotizacionPage = () => {
   const { empresa } = useAuth();
@@ -42,6 +52,10 @@ const CotizacionPage = () => {
   const [editingCotizacion, setEditingCotizacion] = useState(null);
   const [paperSize, setPaperSize] = useState(() => localStorage.getItem('cot_paper_size') || '4inch');
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('cot_print_method') || 'qz');
+  const [hasAgent, setHasAgent] = useState(false);
+  useEffect(() => {
+    agentIsAvailable().then(setHasAgent).catch(() => setHasAgent(false));
+  }, []);
   const [isPrinting, setIsPrinting] = useState(false);
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [sharingImageId, setSharingImageId] = useState(null);
@@ -60,10 +74,13 @@ const CotizacionPage = () => {
   const handlePrint = async () => {
     if (!selectedCotizacion || !detalles.length || isPrinting) return;
     setIsPrinting(true);
+    const previousBackend = getPreferredBackend();
+    if (printMethod === 'agent') setPreferredBackend('agent');
+    else if (printMethod === 'qz') setPreferredBackend('qz');
     try {
-      if (printMethod === 'qz') {
+      if (printMethod === 'qz' || printMethod === 'agent') {
         await printCotizacionQZ(selectedCotizacion, detalles, paperSize);
-        toast({ title: 'Impresión enviada', description: 'Cotización enviada a la impresora via QZ Tray.' });
+        toast({ title: 'Impresión enviada', description: `Cotización enviada via ${printMethod === 'agent' ? 'Motoflow Print Agent' : 'QZ Tray'}.` });
       } else if (printMethod === 'webusb') {
         await printCotizacionWebUsb(selectedCotizacion, detalles);
         toast({ title: 'Impresión enviada', description: 'Cotización enviada via WebUSB.' });
@@ -78,16 +95,27 @@ const CotizacionPage = () => {
         description: err?.message || 'No se pudo imprimir. Verifique QZ Tray.'
       });
     } finally {
+      setPreferredBackend(previousBackend);
       setIsPrinting(false);
     }
   };
 
   const fetchCotizaciones = useCallback(async () => {
     setLoading(true);
+    const cutoffDate = getCotizacionCutoffDate();
+
+    const { error: purgeError } = await supabase.rpc('purge_expired_cotizaciones', {
+      p_days: COTIZACION_VISIBILITY_DAYS,
+    });
+    if (purgeError) {
+      console.warn('[Cotizaciones] No se pudo purgar cotizaciones vencidas:', purgeError.message);
+    }
+
     const { data, error } = await supabase
       .from('cotizaciones_list_view')
       .select('*')
       .eq('estado', 'Pendiente')
+      .gt('fecha_cotizacion', cutoffDate)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -280,7 +308,10 @@ const CotizacionPage = () => {
 
           {/* Header */}
           <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <h1 className="text-2xl font-bold text-morla-blue">Gestión de Cotizaciones</h1>
+            <div>
+              <h1 className="text-2xl font-bold text-morla-blue">Gestión de Cotizaciones</h1>
+              <p className="text-xs text-slate-500 mt-1">Solo visibles por {COTIZACION_VISIBILITY_DAYS} días; luego se eliminan automáticamente.</p>
+            </div>
             <div className="relative w-full sm:w-auto">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Buscar por cliente o número..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-full sm:w-64 h-9" />
@@ -461,7 +492,10 @@ const CotizacionPage = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="qz">QZ Tray (Nativo)</SelectItem>
+                    <SelectItem value="agent" disabled={!hasAgent}>
+                      ⚡ Motoflow Print Agent {hasAgent ? '' : '(No detectado)'}
+                    </SelectItem>
+                    <SelectItem value="qz">🖨️ QZ Tray (Nativo)</SelectItem>
                     <SelectItem value="browser">Navegador (HTML)</SelectItem>
                     <SelectItem value="webusb" disabled={!navigator.usb}>WebUSB (Sin Instalar)</SelectItem>
                   </SelectContent>

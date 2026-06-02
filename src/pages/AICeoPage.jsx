@@ -15,7 +15,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp, Megaphone } from 'lucide-react';
+import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp, Megaphone, Palette, Film } from 'lucide-react';
 
 import BusinessHealthCard from '@/components/ai-ceo/BusinessHealthCard';
 import AiAlertsList from '@/components/ai-ceo/AiAlertsList';
@@ -27,6 +27,8 @@ import AiForecastCard from '@/components/ai-ceo/AiForecastCard';
 import AiSettingsPanel from '@/components/ai-ceo/AiSettingsPanel';
 import AiTrendsChart from '@/components/ai-ceo/AiTrendsChart';
 import MarketingAI from '@/pages/MorlaAICEO/MarketingAI';
+import DesignProPage from '@/pages/MorlaAICEO/DesignProPage';
+import CaptutPro from '@/pages/MorlaAICEO/CaptutPro';
 
 const TABS = [
     { key: 'dashboard',   label: 'Dashboard',    icon: LayoutDashboard },
@@ -35,6 +37,8 @@ const TABS = [
     { key: 'decisiones',  label: 'Decisiones',   icon: Gavel },
     { key: 'forecast',    label: 'Predicciones', icon: TrendingUp },
     { key: 'marketing',   label: 'Marketing IA', icon: Megaphone },
+    { key: 'diseno',      label: 'Diseño Pro',   icon: Palette },
+    { key: 'captut-pro',  label: 'Captut Pro',   icon: Film },
     { key: 'reportes',    label: 'Reportes',     icon: FileText },
     { key: 'config',      label: 'Configuración', icon: Settings },
 ];
@@ -44,6 +48,9 @@ export default function AICeoPage() {
     const { planActual } = useSuscripcion();
     // Marketing IA = función Plus: solo planes PRO y ENTERPRISE (y super admin).
     const puedeMarketing = isSuperAdmin || ['PRO', 'ENTERPRISE'].includes((planActual || '').toUpperCase());
+    // Diseño Pro (Canva-like) = solo ENTERPRISE (upsell premium).
+    const puedeDiseno = isSuperAdmin || (planActual || '').toUpperCase() === 'ENTERPRISE';
+    const puedeCaptut = isSuperAdmin || (planActual || '').toUpperCase() === 'ENTERPRISE';
     const { toast } = useToast();
     const [tab, setTab] = useState('dashboard');
     const [health, setHealth] = useState(null);
@@ -176,7 +183,11 @@ export default function AICeoPage() {
 
                 {/* Tabs */}
                 <div className="flex gap-1 mb-3 border-b border-slate-200">
-                    {TABS.filter((t) => t.key !== 'marketing' || puedeMarketing).map((t) => {
+                    {TABS
+                        .filter((t) => t.key !== 'marketing' || puedeMarketing)
+                        .filter((t) => t.key !== 'diseno' || puedeDiseno)
+                        .filter((t) => t.key !== 'captut-pro' || puedeCaptut)
+                        .map((t) => {
                         const Icon = t.icon;
                         const active = tab === t.key;
                         let badgeCount = 0;
@@ -249,6 +260,14 @@ export default function AICeoPage() {
 
                 {tab === 'marketing' && puedeMarketing && (
                     <MarketingAI />
+                )}
+
+                {tab === 'diseno' && puedeDiseno && (
+                    <DesignProPage />
+                )}
+
+                {tab === 'captut-pro' && puedeCaptut && (
+                    <CaptutPro />
                 )}
 
                 {tab === 'reportes' && (

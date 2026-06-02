@@ -16,6 +16,9 @@ type ProductHit = {
   existencia: number;
 };
 
+const MEDIA_BUCKET = 'whatsapp-media';
+const BETA_GENERIC_REPLY = 'Gracias por escribirnos. Un vendedor verificara disponibilidad, precio y compatibilidad y te respondera en breve.';
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
 
@@ -89,12 +92,12 @@ async function updateStatuses(supabase: any, tenantId: string, statuses: any[]) 
 }
 
 async function handleInboundMessage(supabase: any, settings: any, metaContact: any, message: any) {
-  const text = extractText(message);
-  if (!text) return;
-
   const phone = normalizePhone(message.from || metaContact?.wa_id);
   const name = metaContact?.profile?.name || null;
   const tenantId = settings.tenant_id;
+  const media = await extractAndStoreMedia(supabase, tenantId, message);
+  const text = extractText(message) || media?.label || '';
+  if (!text && !media?.url) return;
 
   const { data: contact } = await supabase
     .from('crm_whatsapp_contacts')
@@ -129,13 +132,21 @@ async function handleInboundMessage(supabase: any, settings: any, metaContact: a
       content: text,
       whatsapp_message_id: message.id,
       status: 'received',
-      metadata: { raw_type: message.type },
+      metadata: {
+        raw_type: message.type,
+        media_url: media?.url || null,
+        media_type: media?.type || null,
+        media_mime: media?.mime || null,
+        media_id: media?.id || null,
+        media_filename: media?.filename || null,
+      },
     })
     .select('*')
     .single();
 
-  const productHits = await findProducts(supabase, tenantId, text);
-  if (productHits.length) {
+  const betaMode = settings.sales_hub_beta_mode !== false;
+  const productHits = betaMode ? [] : await findProducts(supabase, tenantId, text);
+  if (!betaMode && productHits.length) {
     await saveQuoteItems(supabase, tenantId, conversation.id, savedMessage.id, productHits);
   }
 
@@ -143,7 +154,9 @@ async function handleInboundMessage(supabase: any, settings: any, metaContact: a
 
   if (!settings.bot_enabled || !conversation.bot_enabled || contact.blocked) return;
 
-  const reply = buildAssistantReply(text, productHits);
+  const reply = betaMode
+    ? buildBetaReply(text, settings.sales_hub_generic_reply)
+    : buildAssistantReply(text, productHits);
   if (!reply) return;
 
   const sent = await sendWhatsAppText(settings.phone_number_id, phone, reply);
@@ -155,7 +168,12 @@ async function handleInboundMessage(supabase: any, settings: any, metaContact: a
     content: reply,
     whatsapp_message_id: sent?.messages?.[0]?.id || null,
     status: sent?.messages?.[0]?.id ? 'sent' : 'failed',
-    metadata: { provider_response: sent || null, product_hits: productHits.map(p => p.id) },
+    metadata: {
+      provider_response: sent || null,
+      product_hits: productHits.map(p => p.id),
+      sales_hub_beta_mode: betaMode,
+      detected_intent: detectBasicIntent(text),
+    },
   });
 }
 
@@ -298,6 +316,25 @@ function buildAssistantReply(text: string, products: ProductHit[]) {
   return `${p.codigo} - ${p.descripcion}. ${stockText} ${priceText} Te puedo preparar una cotizacion.`;
 }
 
+function buildBetaReply(text: string, configuredReply?: string) {
+  const normalized = String(text || '').trim();
+  if (!normalized) return null;
+  if (!/precio|cu[aá]nto|tiene|tienes|busco|necesito|cotiza|cotizaci[oó]n|disponible|stock|existencia|compatible|sirve|modelo|pieza|repuesto/i.test(normalized)) {
+    return null;
+  }
+  return String(configuredReply || BETA_GENERIC_REPLY).slice(0, 1000);
+}
+
+function detectBasicIntent(text: string) {
+  const t = String(text || '').toLowerCase();
+  if (/precio|cu[aá]nto|cotiza|cotizaci[oó]n/.test(t)) return 'precio_cotizacion';
+  if (/disponible|tiene|tienes|hay|existencia|stock/.test(t)) return 'disponibilidad';
+  if (/compatible|le cae|sirve|modelo|a[nñ]o/.test(t)) return 'compatibilidad';
+  if (/env[ií]o|delivery|mandar|ubicaci[oó]n|direcci[oó]n/.test(t)) return 'envio_ubicacion';
+  if (/garant[ií]a|cambio|devoluci[oó]n/.test(t)) return 'garantia';
+  return 'general';
+}
+
 async function sendWhatsAppText(phoneNumberId: string, to: string, text: string) {
   const token = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
   if (!token) throw new Error('WHATSAPP_ACCESS_TOKEN no configurado');
@@ -324,13 +361,105 @@ async function sendWhatsAppText(phoneNumberId: string, to: string, text: string)
 
 function extractText(message: any) {
   if (message?.type === 'text') return String(message.text?.body || '').trim();
+  if (message?.type === 'image') return String(message.image?.caption || '').trim();
+  if (message?.type === 'video') return String(message.video?.caption || '').trim();
+  if (message?.type === 'document') return String(message.document?.caption || message.document?.filename || '').trim();
   if (message?.type === 'button') return String(message.button?.text || '').trim();
   if (message?.type === 'interactive') return String(message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || '').trim();
   return '';
 }
 
+async function extractAndStoreMedia(supabase: any, tenantId: string, message: any) {
+  const type = message?.type;
+  const source = message?.[type];
+  if (!source?.id || !['audio', 'image', 'video', 'document', 'sticker'].includes(type)) return null;
+
+  const labels: Record<string, string> = {
+    audio: '[Nota de voz]',
+    image: '[Imagen]',
+    video: '[Video]',
+    document: '[Documento]',
+    sticker: '[Sticker]',
+  };
+
+  try {
+    const stored = await downloadWhatsAppMedia(supabase, tenantId, source.id, type, source.mime_type);
+    return {
+      id: source.id,
+      type,
+      url: stored?.url || null,
+      mime: stored?.mime || source.mime_type || null,
+      filename: source.filename || null,
+      label: labels[type] || '[Archivo]',
+    };
+  } catch (error) {
+    console.error('[whatsapp-crm-webhook] media', error);
+    return {
+      id: source.id,
+      type,
+      url: null,
+      mime: source.mime_type || null,
+      filename: source.filename || null,
+      label: labels[type] || '[Archivo]',
+    };
+  }
+}
+
+async function downloadWhatsAppMedia(supabase: any, tenantId: string, mediaId: string, mediaType: string, fallbackMime?: string) {
+  const token = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+  if (!token) throw new Error('WHATSAPP_ACCESS_TOKEN no configurado');
+
+  const metaResponse = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const meta = await metaResponse.json().catch(() => null);
+  if (!metaResponse.ok || !meta?.url) throw new Error(`No se pudo obtener media ${mediaId}`);
+
+  const fileResponse = await fetch(meta.url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!fileResponse.ok) throw new Error(`No se pudo descargar media ${mediaId}`);
+
+  await ensureMediaBucket(supabase);
+  const mime = meta.mime_type || fallbackMime || fileResponse.headers.get('content-type') || 'application/octet-stream';
+  const ext = extensionFromMime(mime, mediaType);
+  const path = `${tenantId}/${Date.now()}_${mediaId}.${ext}`;
+  const bytes = new Uint8Array(await fileResponse.arrayBuffer());
+
+  const { error } = await supabase.storage
+    .from(MEDIA_BUCKET)
+    .upload(path, bytes, { contentType: mime, upsert: true });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+  return { url: data?.publicUrl || null, mime };
+}
+
+async function ensureMediaBucket(supabase: any) {
+  const { data } = await supabase.storage.getBucket(MEDIA_BUCKET);
+  if (data) return;
+  const { error } = await supabase.storage.createBucket(MEDIA_BUCKET, { public: true });
+  if (error && !String(error.message || '').toLowerCase().includes('already')) throw error;
+}
+
+function extensionFromMime(mime: string, mediaType: string) {
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('mpeg')) return 'mp3';
+  if (mime.includes('webm')) return 'webm';
+  if (mime.includes('mp4')) return mediaType === 'audio' ? 'm4a' : 'mp4';
+  if (mime.includes('jpeg')) return 'jpg';
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('webp')) return 'webp';
+  if (mime.includes('pdf')) return 'pdf';
+  const subtype = mime.split('/')[1]?.split(';')[0];
+  return subtype || 'bin';
+}
+
 function normalizePhone(phone: string) {
-  return String(phone || '').replace(/[^\d]/g, '');
+  const digits = String(phone || '').replace(/[^\d]/g, '');
+  if (digits.length === 10) return `1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return digits;
+  return digits;
 }
 
 function normalizeStatus(status: string) {

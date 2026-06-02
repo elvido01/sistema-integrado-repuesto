@@ -40,7 +40,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
   const [cliente, setCliente] = useState(CLIENTE_GENERICO);
   const [vendedorId, setVendedorId] = useState('');
   const [fechaCotizacion, setFechaCotizacion] = useState(new Date());
-  const [fechaVencimiento, setFechaVencimiento] = useState(addDays(new Date(), 7));
+  const [fechaVencimiento, setFechaVencimiento] = useState(addDays(new Date(), 15));
   const [articulos, setArticulos] = useState([]);
   const [notas, setNotas] = useState('');
   const [manualClienteNombre, setManualClienteNombre] = useState('');
@@ -69,7 +69,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
     });
     setVendedorId(cot.vendedor_id || '');
     setFechaCotizacion(cot.fecha_cotizacion ? new Date(cot.fecha_cotizacion + "T12:00:00") : new Date());
-    setFechaVencimiento(cot.fecha_vencimiento ? new Date(cot.fecha_vencimiento + "T12:00:00") : addDays(new Date(), 7));
+    setFechaVencimiento(cot.fecha_vencimiento ? new Date(cot.fecha_vencimiento + "T12:00:00") : addDays(new Date(), 15));
     setNotas(cot.notas || '');
     setManualClienteNombre(cot.manual_cliente_nombre || '');
 
@@ -101,7 +101,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
     setCliente(CLIENTE_GENERICO);
     setVendedorId(vendedores.length > 0 ? vendedores[0].id : '');
     setFechaCotizacion(new Date());
-    setFechaVencimiento(addDays(new Date(), 7));
+    setFechaVencimiento(addDays(new Date(), 15));
     setArticulos([]);
     setNotas('');
     setManualClienteNombre('');

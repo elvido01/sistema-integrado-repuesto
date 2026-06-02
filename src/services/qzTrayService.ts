@@ -260,6 +260,33 @@ export async function qzEnsureConnection() {
 /**
  * Busca la mejor impresora disponible basado en nombres preferidos.
  */
+/**
+ * Lista TODAS las impresoras instaladas en el sistema (Windows / macOS / Linux).
+ * Devuelve array de strings con los nombres.
+ * Útil para mostrar un dropdown al usuario y dejarle elegir.
+ */
+export async function qzListAllPrinters(): Promise<string[]> {
+    await qzEnsureConnection();
+    const printers: any = await qz.printers.find();
+    if (!printers) return [];
+    const list = Array.isArray(printers) ? printers : [printers];
+    return list.map((p: any) => (typeof p === 'string' ? p : p.name || String(p))).filter(Boolean);
+}
+
+/**
+ * Verifica rápido si QZ Tray está disponible (websocket conectable).
+ * No lanza error — devuelve true/false.
+ */
+export async function qzIsAvailable(): Promise<boolean> {
+    if (typeof qz === "undefined") return false;
+    try {
+        await qzEnsureConnection();
+        return qz.websocket.isActive();
+    } catch (_) {
+        return false;
+    }
+}
+
 export async function qzFindBestPrinter(preferred: string[] = []) {
     await qzEnsureConnection();
 

@@ -10,6 +10,7 @@ import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
 import { generateFacturaPDF } from '@/components/common/PDFGenerator';
 import { printFacturaPOS, printFacturaQZ, printFacturaWebUsb } from '@/lib/printPOS';
+import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { findAlmacenPrincipal } from '@/lib/almacenUtils';
@@ -208,12 +209,15 @@ const VentasPage = () => {
       const result = await resp.json();
       if (result.ok) {
         toast({ title: 'e-CF Emitido', description: `Factura #${facturaNumero} emitida fiscalmente. NCF: ${result.ncf || result.proveedor_number || 'OK'}` });
+        return result;
       } else {
         toast({ variant: 'destructive', title: 'Error e-CF', description: result.error || 'No se pudo emitir el e-CF. Puede reintentarlo desde el historial.', duration: 8000 });
+        return null;
       }
     } catch (err) {
       console.error('[e-CF] Error:', err);
       toast({ variant: 'destructive', title: 'Error e-CF', description: 'Error de conexión al emitir e-CF. La factura fue guardada correctamente.', duration: 8000 });
+      return null;
     }
   };
 
@@ -221,23 +225,45 @@ const VentasPage = () => {
     const activeVendedor = vendedores.find(v => v.id === selectedVendedor);
     handleSave(async (facturaData) => {
       if (facturaData) {
+        let facturaParaImprimir = facturaData;
+
+        // Emitir e-CF antes de imprimir para que el comprobante salga con e-NCF.
+        if (fiscalActivo && facturaData.id) {
+          const fiscal = await emitirECF(facturaData.id, facturaData.numero);
+          if (fiscal?.ncf || fiscal?.proveedor_number) {
+            facturaParaImprimir = {
+              ...facturaData,
+              ncf: fiscal.ncf || fiscal.proveedor_number,
+              encf: fiscal.ncf || fiscal.proveedor_number,
+              track_id: fiscal.proveedor_invoice_id || fiscal.trackId || fiscal.track_id || null,
+            };
+          }
+        }
+
         // Route printing based on selected method
-        if (printMethod === 'qz') {
+        if (printMethod === 'qz' || printMethod === 'agent') {
+          // Forzar backend según método elegido. printFacturaQZ usa el adapter
+          // que respeta la preferencia global (setPreferredBackend).
+          const previousBackend = getPreferredBackend();
+          if (printMethod === 'agent') setPreferredBackend('agent');
+          else setPreferredBackend('qz');
           try {
-            await printFacturaQZ(facturaData);
+            await printFacturaQZ(facturaParaImprimir);
           } catch (err) {
-            console.error('[QZ] Error, falling back to browser:', err);
+            console.error(`[${printMethod}] Error, falling back to browser:`, err);
             toast({
               variant: "destructive",
-              title: "Error de conexión QZ Tray",
-              description: `Fallo QZ: ${err.message || String(err)}. Usando impresión navegador.`,
+              title: printMethod === 'agent' ? 'Error con Motoflow Print Agent' : 'Error de conexión QZ Tray',
+              description: `${err.message || String(err)}. Usando impresión navegador.`,
               duration: 5000,
             });
-            printFacturaPOS(facturaData);
+            printFacturaPOS(facturaParaImprimir);
+          } finally {
+            setPreferredBackend(previousBackend);
           }
         } else if (printMethod === 'webusb') {
           try {
-            await printFacturaWebUsb(facturaData);
+            await printFacturaWebUsb(facturaParaImprimir);
           } catch (err) {
             console.error('[WebUSB] Error, falling back to browser:', err);
             toast({
@@ -246,18 +272,13 @@ const VentasPage = () => {
               description: `${err.message || String(err)}. Usando impresión navegador.`,
               duration: 5000,
             });
-            printFacturaPOS(facturaData, printFormat);
+            printFacturaPOS(facturaParaImprimir, printFormat);
           }
         } else {
-          printFacturaPOS(facturaData, printFormat);
+          printFacturaPOS(facturaParaImprimir, printFormat);
         }
 
         toast({ title: 'Factura Guardada', description: `La factura #${facturaData.numero} ha sido generada y guardada.` });
-
-        // Emitir e-CF automáticamente si tiene integración fiscal activa
-        if (fiscalActivo && facturaData.id) {
-          emitirECF(facturaData.id, facturaData.numero);
-        }
 
         resetVenta();
         setModalSessionKey(k => k + 1);
