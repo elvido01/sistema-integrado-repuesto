@@ -10,6 +10,7 @@ import React from 'react';
 // CSS requerido por Polotno (Blueprint.js + iconos)
 import '@blueprintjs/core/lib/css/blueprint.css';
 import '@blueprintjs/icons/lib/css/blueprint-icons.css';
+import './polotnoCustom.css';
 
 // Componentes Polotno
 import { PolotnoContainer, SidePanelWrap, WorkspaceWrap } from 'polotno';
@@ -18,6 +19,21 @@ import { Toolbar } from 'polotno/toolbar/toolbar';
 import { ZoomButtons } from 'polotno/toolbar/zoom-buttons';
 import { SidePanel } from 'polotno/side-panel';
 import { PagesTimeline } from 'polotno/pages-timeline';
+import { setTranslations } from 'polotno/config';
+import { POLOTNO_ES } from './polotnoEsTranslations';
+
+// Aplicar traducciones al modulo Polotno (una sola vez).
+let _translationsApplied = false;
+function applyEsTranslationsOnce() {
+    if (_translationsApplied) return;
+    try {
+        setTranslations(POLOTNO_ES);
+        _translationsApplied = true;
+    } catch (e) {
+        console.warn('[Polotno] no se pudieron aplicar traducciones ES:', e?.message);
+    }
+}
+applyEsTranslationsOnce();
 
 export { createStore } from 'polotno/model/store';
 

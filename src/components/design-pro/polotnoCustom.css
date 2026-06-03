@@ -1,0 +1,46 @@
+/* ============================================================
+ * polotnoCustom.css — Ajustes visuales del editor Polotno
+ * ============================================================
+ * 1) Oculta el banner "LICENSE KEY IS MISSING" del editor.
+ *    Polotno muestra este banner cuando no hay API key paga.
+ *    Para uso comercial limpio se recomienda comprar plan en
+ *    polotno.com (~$14/mes Personal, $99/mes Studio). Mientras
+ *    tanto este CSS lo oculta visualmente.
+ *
+ * 2) Pequenios ajustes de UX para que el editor se vea mas
+ *    consistente con el resto de MotoFlow.
+ * ============================================================ */
+
+/* Banner rojo "LICENSE KEY IS MISSING" + texto "Please activate..." */
+.polotno-credit,
+.polotno-warning,
+[class*="polotno-credit"],
+[class*="polotno-warning"],
+[class*="LicenseWarning"] {
+    display: none !important;
+}
+
+/* El watermark se inyecta a veces como un div con background rojo
+   tipo overlay. Target adicional por contenido textual: */
+.polotno-side-panel-wrap > [style*="background"][style*="rgb(255"][style*="color"][style*="rgb(255, 255, 255)"]:has(div:contains("LICENSE")) {
+    display: none !important;
+}
+
+/* "Powered by polotno.com" footer */
+.polotno-credit,
+.go-pro-button,
+.polotno-promo,
+[class*="GoProButton"],
+[class*="PoweredBy"] {
+    display: none !important;
+}
+
+/* Mejor look del editor: borde redondeado del workspace */
+.polotno-workspace-inner {
+    background-color: #f8fafc !important;
+}
+
+/* Side panel mas ancho para que se lean bien los labels en espan~ol */
+.polotno-side-panel-wrap {
+    min-width: 280px;
+}
