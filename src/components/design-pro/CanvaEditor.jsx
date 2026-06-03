@@ -12,12 +12,13 @@
 // El editor funciona perfectamente sin la key (con el watermark).
 // ============================================================
 import React, { useEffect, useRef, useState, Suspense } from 'react';
-import { ArrowLeft, Save, Download, Loader2, Send } from 'lucide-react';
+import { ArrowLeft, Save, Download, Loader2, Send, Palette, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { updateDesign, saveRendered, saveThumbnail } from '@/services/designProService';
 import { injectAiCopy } from '@/data/design-templates';
+import BrandKitPanel from './BrandKitPanel';
 
 // Lazy-load Polotno + Blueprint CSS (solo se descarga al abrir editor)
 const PolotnoEditorImpl = React.lazy(() => import('./PolotnoEditorImpl'));
@@ -34,6 +35,8 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
     const [exporting, setExporting] = useState(false);
     const [publishing, setPublishing] = useState(false);
     const [name, setName] = useState(design?.name || '');
+    const [showBrandKit, setShowBrandKit] = useState(false);
+    const [removingBg, setRemovingBg] = useState(false);
 
     // Inicializa el store de Polotno una sola vez por disen~o.
     useEffect(() => {
@@ -151,6 +154,37 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
         }
     };
 
+    // Quita el fondo de la imagen seleccionada usando @imgly/background-removal
+    // Es 100% gratis, corre en el navegador (sin enviar imagenes a servidor externo).
+    const handleRemoveBg = async () => {
+        if (!storeRef.current) return;
+        const selected = storeRef.current.selectedElements || [];
+        const imageEl = selected.find(e => e.type === 'image');
+        if (!imageEl) {
+            toast({ variant: 'destructive', title: 'Sin imagen seleccionada', description: 'Toca primero una imagen del canvas.' });
+            return;
+        }
+        setRemovingBg(true);
+        try {
+            const { removeBackground } = await import('@imgly/background-removal');
+            // src puede ser URL https o data URL
+            const resultBlob = await removeBackground(imageEl.src);
+            const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(resultBlob);
+            });
+            imageEl.set({ src: dataUrl });
+            toast({ title: 'Fondo eliminado', description: 'Listo. Puedes seguir editando.' });
+        } catch (e) {
+            console.error('[removeBg]', e);
+            toast({ variant: 'destructive', title: 'Error al quitar fondo', description: e?.message || 'Reintenta con una imagen mas pequen~a.' });
+        } finally {
+            setRemovingBg(false);
+        }
+    };
+
     const handlePublish = async () => {
         if (!storeRef.current || !onRequestPublish) return;
         setPublishing(true);
@@ -182,6 +216,13 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
                     placeholder="Nombre del disen~o"
                 />
                 <div className="text-xs text-slate-400">{design.width}×{design.height}</div>
+                <Button variant="outline" size="sm" onClick={() => setShowBrandKit(true)} disabled={!storeReady} title="Kit de marca">
+                    <Palette className="h-4 w-4 mr-1" /> Kit
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleRemoveBg} disabled={removingBg || !storeReady} title="Quita el fondo de la imagen seleccionada (gratis, en este navegador)">
+                    {removingBg ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Wand2 className="h-4 w-4 mr-1" />}
+                    Quitar fondo
+                </Button>
                 <Button variant="outline" size="sm" onClick={handleSave} disabled={saving || !storeReady}>
                     {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
                     Guardar
@@ -223,6 +264,12 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
                     </Suspense>
                 )}
             </div>
+
+            <BrandKitPanel
+                open={showBrandKit}
+                onClose={() => setShowBrandKit(false)}
+                store={storeRef.current}
+            />
         </div>
     );
 }

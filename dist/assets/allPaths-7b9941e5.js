@@ -1,1 +1,0 @@
-import{I as n}from"./index-d42a26c6.js";import{I as e}from"./index-f3349ad8.js";import{p as t,I as s}from"./PolotnoEditorImpl-8a33f61d.js";import"./index-72a48476.js";function I(o,a){var r=t(o);return a===s.STANDARD?n[r]:e[r]}function f(o){return t(o)}export{n as IconSvgPaths16,e as IconSvgPaths20,I as getIconPaths,f as iconNameToPathsRecordKey};
