@@ -139,13 +139,24 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
         try {
             const content = storeRef.current.toJSON();
             const finalBlob = await storeRef.current.toBlob({ mimeType: 'image/png', pixelRatio: 2 });
-            await updateDesign(design.id, { content, name });
-            const url = await saveRendered(tenantId, design.id, finalBlob, { markReady: true });
+
+            // 1) Descarga LOCAL inmediata via Blob URL (fuerza guardar archivo)
+            const safeName = (name || 'disen~o').replace(/[^a-z0-9_-]/gi, '_') || 'disen~o';
+            const blobUrl = URL.createObjectURL(finalBlob);
             const link = document.createElement('a');
-            link.href = url;
-            link.download = `${name.replace(/[^a-z0-9_-]/gi, '_')}.png`;
+            link.href = blobUrl;
+            link.download = `${safeName}.png`;
+            document.body.appendChild(link);
             link.click();
-            toast({ title: 'Exportado', description: 'PNG generado y descargado.' });
+            document.body.removeChild(link);
+            // Liberar el objeto URL al rato (no inmediato, da tiempo al navegador)
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+
+            // 2) Guardar en cloud + BD (asincrono, no bloquea la descarga)
+            await updateDesign(design.id, { content, name });
+            await saveRendered(tenantId, design.id, finalBlob, { markReady: true });
+
+            toast({ title: 'Descargado', description: 'PNG guardado en tu carpeta de descargas.' });
             onSaved?.();
         } catch (e) {
             toast({ variant: 'destructive', title: 'Error', description: e.message });
