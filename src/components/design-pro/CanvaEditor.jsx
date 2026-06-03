@@ -32,21 +32,19 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
     const [publishing, setPublishing] = useState(false);
     const [name, setName] = useState(design?.name || '');
 
-    // Lazy-import Polotno para que el build no se rompa si no esta instalado.
-    // El comentario /* @vite-ignore */ evita que Vite intente resolver el
-    // modulo en build time. El import solo ocurre en runtime, en el navegador.
+    // Lazy-import Polotno: Vite los empaqueta en chunks separados, asi
+    // el editor no carga sino cuando el usuario abre un disen~o concreto.
     useEffect(() => {
         let cancelled = false;
         (async () => {
             try {
-                const polotnoBase = 'polotno';
                 const [storeMod, sidePanelMod, toolbarMod, workspaceMod, zoomMod, pagesMod] = await Promise.all([
-                    import(/* @vite-ignore */ `${polotnoBase}/model/store`),
-                    import(/* @vite-ignore */ `${polotnoBase}/side-panel`),
-                    import(/* @vite-ignore */ `${polotnoBase}/toolbar/toolbar`),
-                    import(/* @vite-ignore */ `${polotnoBase}/canvas/workspace`),
-                    import(/* @vite-ignore */ `${polotnoBase}/toolbar/zoom-buttons`),
-                    import(/* @vite-ignore */ `${polotnoBase}/pages-timeline`),
+                    import('polotno/model/store'),
+                    import('polotno/side-panel'),
+                    import('polotno/toolbar/toolbar'),
+                    import('polotno/canvas/workspace'),
+                    import('polotno/toolbar/zoom-buttons'),
+                    import('polotno/pages-timeline'),
                 ]);
                 if (cancelled) return;
                 const store = storeMod.createStore({ key: 'motoflow-design-pro', showCredit: false });
