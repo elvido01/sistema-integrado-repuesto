@@ -42,16 +42,36 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
             try {
                 const { createStore } = await import('./PolotnoEditorImpl');
                 if (cancelled) return;
+
+                const W = Number(design?.width) || 1080;
+                const H = Number(design?.height) || 1080;
+
                 const store = createStore({
                     key: POLOTNO_KEY,
                     showCredit: false,
                 });
+                // Tamaño del lienzo (importante para que el canvas se renderice).
+                store.setSize(W, H);
 
-                let docToLoad = design?.content || {
-                    width: design?.width || 1080,
-                    height: design?.height || 1080,
-                    pages: [{ children: [] }],
+                // Documento base con la estructura completa que Polotno espera.
+                const blank = {
+                    width: W,
+                    height: H,
+                    fonts: [],
+                    pages: [{
+                        id: 'p1',
+                        children: [],
+                        background: 'white',
+                        width: 'auto',
+                        height: 'auto',
+                        duration: 5000,
+                    }],
                 };
+
+                let docToLoad = (design?.content && design.content.pages?.length)
+                    ? design.content
+                    : blank;
+
                 const meta = design?.metadata || {};
                 if (meta?.ai_copy && !meta?.ai_copy_applied) {
                     const producto = meta.producto || {};
@@ -71,7 +91,17 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
                     }).catch((err) => console.warn('[CanvaEditor] no se pudo marcar ai_copy_applied:', err?.message));
                 }
 
-                store.loadJSON(docToLoad);
+                try {
+                    store.loadJSON(docToLoad);
+                } catch (loadErr) {
+                    console.warn('[CanvaEditor] loadJSON fallo, creando documento en blanco:', loadErr?.message);
+                }
+
+                // Garantia: si despues de cargar no hay pages, creamos una.
+                if (!store.pages || store.pages.length === 0) {
+                    store.addPage();
+                }
+
                 storeRef.current = store;
                 setStoreReady(true);
             } catch (e) {
