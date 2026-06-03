@@ -67,6 +67,35 @@ export async function deleteCaptutProject(id) {
     if (error) throw error;
 }
 
+export async function duplicateCaptutProject(id, { userId = null } = {}) {
+    const original = await getCaptutProject(id);
+    const {
+        id: _id,
+        rendered_url: _renderedUrl,
+        status: _status,
+        created_at: _createdAt,
+        updated_at: _updatedAt,
+        ...copy
+    } = original;
+
+    const payload = {
+        ...copy,
+        user_id: userId || original.user_id,
+        name: `${original.name || 'Video sin nombre'} (copia)`,
+        status: 'borrador',
+        rendered_url: null,
+        metadata: {
+            ...(original.metadata || {}),
+            duplicated_from: original.id,
+            duplicated_at: new Date().toISOString(),
+        },
+    };
+
+    const { data, error } = await supabase.from(TABLE).insert(payload).select('*').single();
+    if (error) throw error;
+    return data;
+}
+
 async function uploadCaptutBlob(tenantId, projectId, blob, filename) {
     const path = `${tenantId}/${projectId}/${filename}`;
     const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {

@@ -1,14 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     BadgePlus,
+    ArrowDown,
+    ArrowUp,
     Captions,
     Copy,
     Download,
+    Eye,
+    EyeOff,
     Film,
     FolderOpen,
     Gauge,
     Image as ImageIcon,
     Layers,
+    Lock,
     Loader2,
     Monitor,
     Music,
@@ -16,6 +21,7 @@ import {
     Play,
     Plus,
     RotateCw,
+    Redo2,
     Save,
     Scissors,
     Smile,
@@ -24,6 +30,8 @@ import {
     Square,
     Trash2,
     Type,
+    Unlock,
+    Undo2,
     Upload,
     Volume2,
     Wand2,
@@ -36,6 +44,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
     createCaptutProject,
+    deleteCaptutProject,
+    duplicateCaptutProject,
     getCaptutProject,
     listCaptutProjects,
     saveCaptutAudioTrack,
@@ -89,6 +99,8 @@ const DEFAULT_TEXT = {
     start: 0,
     end: 9999,
     animation: 'pop',
+    visible: true,
+    locked: false,
 };
 
 const STICKER_PRESETS = ['🔥', '⚡', '⭐', '💥', '✅', '💰', '🏍️', '📍'];
@@ -168,6 +180,8 @@ const createSticker = (emoji = '🔥') => ({
     start: 0,
     end: 9999,
     animation: 'pop',
+    visible: true,
+    locked: false,
 });
 
 const formatTime = (seconds) => {
@@ -333,6 +347,7 @@ const drawEditedFrame = ({ canvas, video, texts, stickers = [], captions = [], c
     ctx.restore();
 
     texts.forEach((item) => {
+        if (item.visible === false) return;
         const motion = getLayerMotion(item, currentTime, { distance: height * 0.05 });
         if (!motion.visible) return;
         const x = (item.x / 100) * width + motion.dx;
@@ -360,6 +375,7 @@ const drawEditedFrame = ({ canvas, video, texts, stickers = [], captions = [], c
     });
 
     stickers.forEach((item) => {
+        if (item.visible === false) return;
         const motion = getLayerMotion(item, currentTime, { distance: height * 0.05 });
         if (!motion.visible) return;
         const x = (item.x / 100) * width + motion.dx;
@@ -435,6 +451,11 @@ export default function CaptutPro() {
     const bgAudioRef = useRef(null);
     const srtInputRef = useRef(null);
     const renderFrameRef = useRef(null);
+    const historyBaseRef = useRef('');
+    const historyApplyingRef = useRef(false);
+    const historyTimerRef = useRef(null);
+    const mediaStateRef = useRef(null);
+    const audioTrackStateRef = useRef(null);
     const { toast } = useToast();
     const { tenantId, user } = useAuth();
 
@@ -466,6 +487,11 @@ export default function CaptutPro() {
     const [rendering, setRendering] = useState(false);
     const [renderProgress, setRenderProgress] = useState(0);
     const [savingProject, setSavingProject] = useState(false);
+    const [autoSaveStatus, setAutoSaveStatus] = useState('idle');
+    const [lastSavedFingerprint, setLastSavedFingerprint] = useState('');
+    const autoSaveTimerRef = useRef(null);
+    const [undoHistory, setUndoHistory] = useState([]);
+    const [redoHistory, setRedoHistory] = useState([]);
     const [loadingProjects, setLoadingProjects] = useState(false);
     const [savedProjects, setSavedProjects] = useState([]);
     const [scriptBrief, setScriptBrief] = useState({
@@ -524,6 +550,9 @@ export default function CaptutPro() {
         tracks,
     }), [projectName, media, sourceMediaName, sourceUrl, duration, trim, aspect, filter, colorAdjust, videoTransform, speed, volume, audioTrack, texts, stickers, captions, transcriptDraft, tracks]);
 
+    const projectFingerprint = useMemo(() => JSON.stringify(buildProjectContent()), [buildProjectContent]);
+    const hasUnsavedChanges = projectFingerprint !== lastSavedFingerprint;
+
     const loadProjects = useCallback(async () => {
         if (!tenantId) return;
         setLoadingProjects(true);
@@ -540,6 +569,60 @@ export default function CaptutPro() {
     useEffect(() => {
         loadProjects();
     }, [loadProjects]);
+
+    useEffect(() => {
+        mediaStateRef.current = media;
+    }, [media]);
+
+    useEffect(() => {
+        audioTrackStateRef.current = audioTrack;
+    }, [audioTrack]);
+
+    const applyEditorContent = useCallback((content = {}, record = {}) => {
+        const loadedSourceUrl = record.source_url || content.source?.url || '';
+        const loadedSourceName = record.source_name || content.source?.name || '';
+        const nextDuration = Number(record.duration || content.duration || 0);
+        const currentMedia = mediaStateRef.current;
+        const currentAudio = audioTrackStateRef.current;
+
+        setProjectName(record.name || content.name || 'Captut Pro - Proyecto');
+        setMedia(loadedSourceUrl ? {
+            url: loadedSourceUrl,
+            name: loadedSourceName || 'Video fuente',
+            size: content.source?.size || 0,
+            type: content.source?.type || 'video/mp4',
+            remote: true,
+        } : (currentMedia?.file && currentMedia.name === loadedSourceName ? currentMedia : null));
+        setSourceMediaName(loadedSourceName);
+        setSourceUrl(loadedSourceUrl);
+        setRenderedUrl(record.rendered_url || '');
+        setDuration(nextDuration);
+        setCurrentTime(0);
+        setPlaying(false);
+        setAspect(content.aspect || record.aspect || 'vertical');
+        setFilter(content.filter || 'cinema');
+        setColorAdjust(content.colorAdjust || DEFAULT_COLOR_ADJUST);
+        setVideoTransform(content.videoTransform || { fit: 'cover', zoom: 1, x: 0, y: 0 });
+        setSpeed(Number(content.speed || 1));
+        setVolume(Number(content.volume ?? 0.85));
+        setAudioTrack(content.audio?.url ? {
+            url: content.audio.url,
+            name: content.audio.name || 'Audio de fondo',
+            size: content.audio.size || 0,
+            type: content.audio.type || 'audio/mpeg',
+            volume: Number(content.audio.volume ?? 0.45),
+            remote: true,
+        } : (currentAudio?.file && currentAudio.name === content.audio?.name ? currentAudio : null));
+        setTrim(content.trim || { start: 0, end: nextDuration });
+        setTracks(content.tracks?.length ? content.tracks : createDefaultTracks(nextDuration));
+        setTexts(content.texts?.length ? content.texts : [DEFAULT_TEXT]);
+        setSelectedTextId(content.texts?.[0]?.id || DEFAULT_TEXT.id);
+        setStickers(content.stickers?.length ? content.stickers : []);
+        setSelectedStickerId(content.stickers?.[0]?.id || null);
+        setCaptions(content.captions?.length ? content.captions : []);
+        setSelectedCaptionId(content.captions?.[0]?.id || null);
+        setTranscriptDraft(content.transcriptDraft || '');
+    }, []);
 
     const handleFile = (file) => {
         if (!file) return;
@@ -629,7 +712,21 @@ export default function CaptutPro() {
         window.setTimeout(syncBackgroundAudio, 0);
     };
 
+    const reorderLayer = (kind, id, direction) => {
+        const move = (items) => {
+            const index = items.findIndex((item) => item.id === id);
+            const nextIndex = index + direction;
+            if (index < 0 || nextIndex < 0 || nextIndex >= items.length) return items;
+            const next = [...items];
+            [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+            return next;
+        };
+        if (kind === 'text') setTexts(move);
+        if (kind === 'sticker') setStickers(move);
+    };
+
     const updateSelectedText = (patch) => {
+        if (selectedText?.locked) return;
         setTexts((items) => items.map((item) => item.id === selectedTextId ? { ...item, ...patch } : item));
     };
 
@@ -656,6 +753,7 @@ export default function CaptutPro() {
     };
 
     const removeTextLayer = () => {
+        if (selectedText?.locked) return;
         setTexts((items) => {
             const next = items.filter((item) => item.id !== selectedTextId);
             setSelectedTextId(next[0]?.id || null);
@@ -785,10 +883,12 @@ export default function CaptutPro() {
     };
 
     const updateSelectedSticker = (patch) => {
+        if (selectedSticker?.locked) return;
         setStickers((items) => items.map((item) => item.id === selectedStickerId ? { ...item, ...patch } : item));
     };
 
     const removeSelectedSticker = () => {
+        if (selectedSticker?.locked) return;
         setStickers((items) => {
             const next = items.filter((item) => item.id !== selectedStickerId);
             setSelectedStickerId(next[0]?.id || null);
@@ -882,6 +982,8 @@ export default function CaptutPro() {
         localStorage.setItem('motoflow:captut-pro:last-project', JSON.stringify({ ...content, saved_at: new Date().toISOString() }));
 
         if (!tenantId) {
+            setLastSavedFingerprint(JSON.stringify(content));
+            setAutoSaveStatus('local');
             return null;
         }
 
@@ -938,19 +1040,20 @@ export default function CaptutPro() {
                 remote: true,
                 file: undefined,
             };
+            contentForUpdates = {
+                ...contentForUpdates,
+                audio: {
+                    name: audioTrack.name,
+                    size: audioTrack.size,
+                    type: audioTrack.type,
+                    url: uploadedAudio.url,
+                    volume: audioTrack.volume,
+                    remote: true,
+                },
+            };
             setAudioTrack(updatedAudio);
             savedForReturn = await updateCaptutProject(saved.id, {
-                content: {
-                    ...contentForUpdates,
-                    audio: {
-                        name: audioTrack.name,
-                        size: audioTrack.size,
-                        type: audioTrack.type,
-                        url: uploadedAudio.url,
-                        volume: audioTrack.volume,
-                        remote: true,
-                    },
-                },
+                content: contentForUpdates,
             });
         }
 
@@ -961,7 +1064,94 @@ export default function CaptutPro() {
         }
 
         await loadProjects();
+        setLastSavedFingerprint(JSON.stringify(contentForUpdates));
+        setAutoSaveStatus('saved');
         return savedForReturn;
+    };
+
+    useEffect(() => {
+        const snapshot = JSON.parse(projectFingerprint);
+        localStorage.setItem('motoflow:captut-pro:last-project', JSON.stringify({ ...snapshot, saved_at: new Date().toISOString() }));
+
+        if (!hasUnsavedChanges) {
+            setAutoSaveStatus(projectId ? 'saved' : 'local');
+            return undefined;
+        }
+
+        if (!projectId || !tenantId) {
+            setAutoSaveStatus('local');
+            return undefined;
+        }
+
+        if (savingProject || rendering) {
+            setAutoSaveStatus('pending');
+            return undefined;
+        }
+
+        setAutoSaveStatus('pending');
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+        autoSaveTimerRef.current = setTimeout(async () => {
+            try {
+                setAutoSaveStatus('saving');
+                await persistProject({ uploadThumbnail: false });
+            } catch (e) {
+                setAutoSaveStatus('error');
+            }
+        }, 2500);
+
+        return () => {
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+        };
+    }, [hasUnsavedChanges, projectFingerprint, projectId, tenantId, savingProject, rendering]);
+
+    useEffect(() => {
+        if (!historyBaseRef.current) {
+            historyBaseRef.current = projectFingerprint;
+            return undefined;
+        }
+
+        if (historyApplyingRef.current) {
+            historyApplyingRef.current = false;
+            return undefined;
+        }
+
+        if (historyBaseRef.current === projectFingerprint) return undefined;
+
+        if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+        historyTimerRef.current = setTimeout(() => {
+            const previous = historyBaseRef.current;
+            setUndoHistory((items) => [...items, previous].slice(-30));
+            setRedoHistory([]);
+            historyBaseRef.current = projectFingerprint;
+        }, 700);
+
+        return () => {
+            if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+        };
+    }, [projectFingerprint]);
+
+    const restoreHistorySnapshot = (fingerprint) => {
+        const content = JSON.parse(fingerprint);
+        historyApplyingRef.current = true;
+        applyEditorContent(content);
+        historyBaseRef.current = fingerprint;
+    };
+
+    const undoEdit = () => {
+        if (!undoHistory.length) return;
+        const previous = undoHistory[undoHistory.length - 1];
+        setUndoHistory((items) => items.slice(0, -1));
+        setRedoHistory((items) => [projectFingerprint, ...items].slice(0, 30));
+        restoreHistorySnapshot(previous);
+    };
+
+    const redoEdit = () => {
+        if (!redoHistory.length) return;
+        const next = redoHistory[0];
+        setRedoHistory((items) => items.slice(1));
+        setUndoHistory((items) => [...items, projectFingerprint].slice(-30));
+        restoreHistorySnapshot(next);
     };
 
     const saveProject = async () => {
@@ -993,49 +1183,16 @@ export default function CaptutPro() {
         try {
             const full = await getCaptutProject(project.id);
             const content = full.content || {};
-            const loadedSourceUrl = full.source_url || content.source?.url || '';
-            const loadedSourceName = full.source_name || content.source?.name || '';
             setProjectId(full.id);
-            setProjectName(full.name || content.name || 'Captut Pro - Proyecto');
-            setMedia(loadedSourceUrl ? {
-                url: loadedSourceUrl,
-                name: loadedSourceName || 'Video fuente',
-                size: content.source?.size || 0,
-                type: content.source?.type || 'video/mp4',
-                remote: true,
-            } : null);
-            setSourceMediaName(loadedSourceName);
-            setSourceUrl(loadedSourceUrl);
-            setRenderedUrl(full.rendered_url || '');
-            setDuration(Number(full.duration || content.duration || 0));
-            setCurrentTime(0);
-            setPlaying(false);
-            setAspect(content.aspect || full.aspect || 'vertical');
-            setFilter(content.filter || 'cinema');
-            setColorAdjust(content.colorAdjust || DEFAULT_COLOR_ADJUST);
-            setVideoTransform(content.videoTransform || { fit: 'cover', zoom: 1, x: 0, y: 0 });
-            setSpeed(Number(content.speed || 1));
-            setVolume(Number(content.volume ?? 0.85));
-            setAudioTrack(content.audio?.url ? {
-                url: content.audio.url,
-                name: content.audio.name || 'Audio de fondo',
-                size: content.audio.size || 0,
-                type: content.audio.type || 'audio/mpeg',
-                volume: Number(content.audio.volume ?? 0.45),
-                remote: true,
-            } : null);
-            setTrim(content.trim || { start: 0, end: Number(full.duration || content.duration || 0) });
-            setTracks(content.tracks?.length ? content.tracks : createDefaultTracks(Number(full.duration || content.duration || 0)));
-            setTexts(content.texts?.length ? content.texts : [DEFAULT_TEXT]);
-            setSelectedTextId(content.texts?.[0]?.id || DEFAULT_TEXT.id);
-            setStickers(content.stickers?.length ? content.stickers : []);
-            setSelectedStickerId(content.stickers?.[0]?.id || null);
-            setCaptions(content.captions?.length ? content.captions : []);
-            setSelectedCaptionId(content.captions?.[0]?.id || null);
-            setTranscriptDraft(content.transcriptDraft || '');
+            applyEditorContent(content, full);
+            historyBaseRef.current = '';
+            setUndoHistory([]);
+            setRedoHistory([]);
+            setLastSavedFingerprint(JSON.stringify(content));
+            setAutoSaveStatus('saved');
             toast({
                 title: 'Proyecto cargado',
-                description: loadedSourceUrl ? 'Video fuente cargado desde Storage.' : 'Reimporta el video fuente para previsualizar y exportar.',
+                description: full.source_url || content.source?.url ? 'Video fuente cargado desde Storage.' : 'Reimporta el video fuente para previsualizar y exportar.',
             });
         } catch (e) {
             toast({ variant: 'destructive', title: 'Error', description: e.message });
@@ -1068,6 +1225,41 @@ export default function CaptutPro() {
         setCaptions([]);
         setSelectedCaptionId(null);
         setTranscriptDraft('');
+        setLastSavedFingerprint('');
+        setAutoSaveStatus('idle');
+        historyBaseRef.current = '';
+        setUndoHistory([]);
+        setRedoHistory([]);
+    };
+
+    const duplicateSavedProject = async (project) => {
+        try {
+            const duplicated = await duplicateCaptutProject(project.id, { userId: user?.id || null });
+            await loadProjects();
+            toast({
+                title: 'Proyecto duplicado',
+                description: `${duplicated.name} quedo listo como borrador.`,
+            });
+        } catch (e) {
+            toast({ variant: 'destructive', title: 'No se pudo duplicar', description: e.message });
+        }
+    };
+
+    const deleteSavedProject = async (project) => {
+        const ok = window.confirm(`Eliminar "${project.name}"? Esta accion borra el proyecto guardado.`);
+        if (!ok) return;
+
+        try {
+            await deleteCaptutProject(project.id);
+            await loadProjects();
+            if (projectId === project.id) newProject();
+            toast({
+                title: 'Proyecto eliminado',
+                description: 'La biblioteca de Captut Pro fue actualizada.',
+            });
+        } catch (e) {
+            toast({ variant: 'destructive', title: 'No se pudo eliminar', description: e.message });
+        }
     };
 
     const captureFrame = () => {
@@ -1210,6 +1402,24 @@ export default function CaptutPro() {
         }
     };
 
+    const saveStateLabel = {
+        idle: projectId ? 'Guardado' : 'Nuevo proyecto',
+        local: projectId ? 'Respaldo local' : 'Respaldo local',
+        pending: 'Cambios pendientes',
+        saving: 'Autoguardando...',
+        saved: 'Guardado',
+        error: 'Error al autoguardar',
+    }[autoSaveStatus] || 'Guardado';
+
+    const saveStateClass = {
+        idle: 'border-slate-700 text-slate-400',
+        local: 'border-amber-500/40 text-amber-300',
+        pending: 'border-cyan-500/40 text-cyan-300',
+        saving: 'border-cyan-500/40 text-cyan-300',
+        saved: 'border-emerald-500/40 text-emerald-300',
+        error: 'border-rose-500/40 text-rose-300',
+    }[autoSaveStatus] || 'border-slate-700 text-slate-400';
+
     return (
         <div className="bg-slate-950 text-slate-100 border border-slate-800 rounded-lg overflow-hidden shadow-xl">
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900">
@@ -1223,7 +1433,13 @@ export default function CaptutPro() {
                             onChange={(e) => setProjectName(e.target.value)}
                             className="h-8 bg-transparent border-slate-700 text-slate-50 font-bold"
                         />
-                        <p className="text-[11px] text-slate-400 mt-1 truncate">{media?.name || sourceMediaName || 'Importa un video para empezar a editar'}</p>
+                        <div className="mt-1 flex items-center gap-2 min-w-0">
+                            <p className="text-[11px] text-slate-400 truncate">{media?.name || sourceMediaName || 'Importa un video para empezar a editar'}</p>
+                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${saveStateClass}`}>
+                                {autoSaveStatus === 'saving' && <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />}
+                                {saveStateLabel}
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1237,6 +1453,12 @@ export default function CaptutPro() {
                     <Button size="sm" variant="outline" className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800" onClick={newProject}>
                         <Plus className="h-4 w-4 mr-2" />
                         Nuevo
+                    </Button>
+                    <Button size="sm" variant="outline" title="Deshacer" className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800" onClick={undoEdit} disabled={!undoHistory.length}>
+                        <Undo2 className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="outline" title="Rehacer" className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800" onClick={redoEdit} disabled={!redoHistory.length}>
+                        <Redo2 className="h-4 w-4" />
                     </Button>
                     <Button size="sm" variant="outline" className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800" onClick={saveProject} disabled={savingProject}>
                         {savingProject ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
@@ -1305,12 +1527,11 @@ export default function CaptutPro() {
                                 <p className="text-xs text-slate-500 px-2 py-3">No hay proyectos guardados.</p>
                             )}
                             {savedProjects.map((project) => (
-                                <button
+                                <div
                                     key={project.id}
-                                    onClick={() => openSavedProject(project)}
-                                    className={`w-full rounded-md border p-2 text-left hover:border-cyan-400 ${projectId === project.id ? 'border-cyan-400 bg-cyan-400/10' : 'border-slate-800 bg-slate-950'}`}
+                                    className={`w-full rounded-md border p-2 hover:border-cyan-400 ${projectId === project.id ? 'border-cyan-400 bg-cyan-400/10' : 'border-slate-800 bg-slate-950'}`}
                                 >
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 items-start">
                                         <div className="h-10 w-10 rounded bg-slate-900 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
                                             {project.thumbnail_url ? (
                                                 <img src={project.thumbnail_url} alt="" className="h-full w-full object-cover" />
@@ -1318,7 +1539,11 @@ export default function CaptutPro() {
                                                 <Film className="h-4 w-4 text-slate-600" />
                                             )}
                                         </div>
-                                        <div className="min-w-0 flex-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => openSavedProject(project)}
+                                            className="min-w-0 flex-1 text-left"
+                                        >
                                             <div className="flex items-center gap-1">
                                                 <p className="text-xs font-semibold text-slate-100 truncate">{project.name}</p>
                                                 {project.rendered_url && (
@@ -1328,9 +1553,27 @@ export default function CaptutPro() {
                                             <p className="text-[10px] text-slate-500 mt-0.5 truncate">
                                                 {project.source_name || 'Sin video fuente'} - {formatTime(Number(project.duration || 0))}
                                             </p>
+                                        </button>
+                                        <div className="flex shrink-0 gap-1">
+                                            <button
+                                                type="button"
+                                                title="Duplicar proyecto"
+                                                onClick={() => duplicateSavedProject(project)}
+                                                className="h-7 w-7 rounded border border-slate-800 bg-slate-900 text-slate-300 hover:border-cyan-400 hover:text-cyan-200 flex items-center justify-center"
+                                            >
+                                                <Copy className="h-3.5 w-3.5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                title="Eliminar proyecto"
+                                                onClick={() => deleteSavedProject(project)}
+                                                className="h-7 w-7 rounded border border-slate-800 bg-slate-900 text-slate-400 hover:border-rose-400 hover:text-rose-300 flex items-center justify-center"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
                                         </div>
                                     </div>
-                                </button>
+                                </div>
                             ))}
                         </div>
                     </ToolSection>
@@ -1405,15 +1648,28 @@ export default function CaptutPro() {
                             </Button>
                         </div>
                         <div className="space-y-1">
-                            {texts.map((item) => (
-                                <button
+                            {texts.map((item, index) => (
+                                <div
                                     key={item.id}
-                                    onClick={() => setSelectedTextId(item.id)}
-                                    className={`w-full text-left px-3 py-2 rounded-md border text-xs ${selectedTextId === item.id ? 'border-cyan-400 bg-cyan-400/10 text-cyan-100' : 'border-slate-800 bg-slate-950 text-slate-300'}`}
+                                    className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs ${selectedTextId === item.id ? 'border-cyan-400 bg-cyan-400/10 text-cyan-100' : 'border-slate-800 bg-slate-950 text-slate-300'}`}
                                 >
-                                    <Captions className="inline h-3.5 w-3.5 mr-2" />
-                                    {item.text || 'Texto vacio'}
-                                </button>
+                                    <button type="button" onClick={() => setSelectedTextId(item.id)} className="min-w-0 flex-1 text-left">
+                                        <Captions className="inline h-3.5 w-3.5 mr-2" />
+                                        <span className={`truncate ${item.visible === false ? 'text-slate-600 line-through' : ''}`}>{item.text || 'Texto vacio'}</span>
+                                    </button>
+                                    <button type="button" title="Mostrar/ocultar" onClick={() => setTexts((items) => items.map((layer) => layer.id === item.id ? { ...layer, visible: layer.visible === false } : layer))} className="h-6 w-6 rounded hover:bg-slate-800 inline-flex items-center justify-center">
+                                        {item.visible === false ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                    </button>
+                                    <button type="button" title="Bloquear/desbloquear" onClick={() => setTexts((items) => items.map((layer) => layer.id === item.id ? { ...layer, locked: !layer.locked } : layer))} className="h-6 w-6 rounded hover:bg-slate-800 inline-flex items-center justify-center">
+                                        {item.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                                    </button>
+                                    <button type="button" title="Bajar capa" disabled={index === 0} onClick={() => reorderLayer('text', item.id, -1)} className="h-6 w-6 rounded hover:bg-slate-800 disabled:opacity-30 inline-flex items-center justify-center">
+                                        <ArrowDown className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button type="button" title="Subir capa" disabled={index === texts.length - 1} onClick={() => reorderLayer('text', item.id, 1)} className="h-6 w-6 rounded hover:bg-slate-800 disabled:opacity-30 inline-flex items-center justify-center">
+                                        <ArrowUp className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
                             ))}
                         </div>
                     </ToolSection>
@@ -1477,15 +1733,28 @@ export default function CaptutPro() {
                             {stickers.length === 0 && (
                                 <p className="text-xs text-slate-500 px-2 py-2">Sin stickers.</p>
                             )}
-                            {stickers.map((sticker) => (
-                                <button
+                            {stickers.map((sticker, index) => (
+                                <div
                                     key={sticker.id}
-                                    onClick={() => setSelectedStickerId(sticker.id)}
-                                    className={`w-full text-left px-2 py-2 rounded-md border text-xs ${selectedStickerId === sticker.id ? 'border-cyan-400 bg-cyan-400/10 text-cyan-100' : 'border-slate-800 bg-slate-950 text-slate-300'}`}
+                                    className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs ${selectedStickerId === sticker.id ? 'border-cyan-400 bg-cyan-400/10 text-cyan-100' : 'border-slate-800 bg-slate-950 text-slate-300'}`}
                                 >
-                                    <span className="mr-2 text-base">{sticker.emoji}</span>
-                                    <span>Sticker {Math.round(sticker.x)}%, {Math.round(sticker.y)}%</span>
-                                </button>
+                                    <button type="button" onClick={() => setSelectedStickerId(sticker.id)} className="min-w-0 flex-1 text-left">
+                                        <span className={`mr-2 text-base ${sticker.visible === false ? 'opacity-30' : ''}`}>{sticker.emoji}</span>
+                                        <span className={sticker.visible === false ? 'text-slate-600 line-through' : ''}>Sticker {Math.round(sticker.x)}%, {Math.round(sticker.y)}%</span>
+                                    </button>
+                                    <button type="button" title="Mostrar/ocultar" onClick={() => setStickers((items) => items.map((layer) => layer.id === sticker.id ? { ...layer, visible: layer.visible === false } : layer))} className="h-6 w-6 rounded hover:bg-slate-800 inline-flex items-center justify-center">
+                                        {sticker.visible === false ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                    </button>
+                                    <button type="button" title="Bloquear/desbloquear" onClick={() => setStickers((items) => items.map((layer) => layer.id === sticker.id ? { ...layer, locked: !layer.locked } : layer))} className="h-6 w-6 rounded hover:bg-slate-800 inline-flex items-center justify-center">
+                                        {sticker.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                                    </button>
+                                    <button type="button" title="Bajar capa" disabled={index === 0} onClick={() => reorderLayer('sticker', sticker.id, -1)} className="h-6 w-6 rounded hover:bg-slate-800 disabled:opacity-30 inline-flex items-center justify-center">
+                                        <ArrowDown className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button type="button" title="Subir capa" disabled={index === stickers.length - 1} onClick={() => reorderLayer('sticker', sticker.id, 1)} className="h-6 w-6 rounded hover:bg-slate-800 disabled:opacity-30 inline-flex items-center justify-center">
+                                        <ArrowUp className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
                             ))}
                         </div>
                     </ToolSection>
@@ -1555,11 +1824,12 @@ export default function CaptutPro() {
                                     <p className="text-sm font-semibold">Preview del video</p>
                                 </div>
                             )}
-                            {texts.map((item) => (
+                            {texts.filter((item) => item.visible !== false).map((item) => (
                                 <button
                                     key={item.id}
+                                    disabled={item.locked}
                                     onClick={() => setSelectedTextId(item.id)}
-                                    className={`absolute -translate-x-1/2 -translate-y-1/2 px-4 py-2 text-center leading-tight shadow-lg ${selectedTextId === item.id ? 'ring-2 ring-cyan-300' : ''}`}
+                                    className={`absolute -translate-x-1/2 -translate-y-1/2 px-4 py-2 text-center leading-tight shadow-lg ${item.locked ? 'cursor-default' : ''} ${selectedTextId === item.id ? 'ring-2 ring-cyan-300' : ''}`}
                                     style={{
                                         left: `${item.x}%`,
                                         top: `${item.y}%`,
@@ -1573,11 +1843,12 @@ export default function CaptutPro() {
                                     {item.text}
                                 </button>
                             ))}
-                            {stickers.map((item) => (
+                            {stickers.filter((item) => item.visible !== false).map((item) => (
                                 <button
                                     key={item.id}
+                                    disabled={item.locked}
                                     onClick={() => setSelectedStickerId(item.id)}
-                                    className={`absolute -translate-x-1/2 -translate-y-1/2 drop-shadow-2xl ${selectedStickerId === item.id ? 'ring-2 ring-cyan-300 rounded-md' : ''}`}
+                                    className={`absolute -translate-x-1/2 -translate-y-1/2 drop-shadow-2xl ${item.locked ? 'cursor-default' : ''} ${selectedStickerId === item.id ? 'ring-2 ring-cyan-300 rounded-md' : ''}`}
                                     style={{
                                         left: `${item.x}%`,
                                         top: `${item.y}%`,
@@ -1858,10 +2129,21 @@ export default function CaptutPro() {
                     <ToolSection title="Propiedades sticker" icon={Smile}>
                         {selectedSticker ? (
                             <div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Button size="sm" variant="outline" className="border-slate-700 bg-slate-950 text-slate-100" onClick={() => setStickers((items) => items.map((item) => item.id === selectedSticker.id ? { ...item, visible: item.visible === false } : item))}>
+                                        {selectedSticker.visible === false ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
+                                        Visible
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="border-slate-700 bg-slate-950 text-slate-100" onClick={() => setStickers((items) => items.map((item) => item.id === selectedSticker.id ? { ...item, locked: !item.locked } : item))}>
+                                        {selectedSticker.locked ? <Lock className="h-4 w-4 mr-1" /> : <Unlock className="h-4 w-4 mr-1" />}
+                                        Bloqueo
+                                    </Button>
+                                </div>
                                 <div>
                                     <Label className="text-xs text-slate-400">Sticker</Label>
                                     <Input
                                         value={selectedSticker.emoji}
+                                        disabled={selectedSticker.locked}
                                         onChange={(e) => updateSelectedSticker({ emoji: e.target.value.slice(0, 4) || '⭐' })}
                                         className="mt-1 bg-slate-950 border-slate-700 text-slate-100 text-center text-lg"
                                     />
@@ -1873,7 +2155,7 @@ export default function CaptutPro() {
                                 <RangeField label="Inicio" min={0} max={Math.max(duration || 0, Number(selectedSticker.end ?? 0))} step={0.05} value={Number(selectedSticker.start ?? 0)} onChange={(value) => updateSelectedSticker({ start: Math.min(value, Number(selectedSticker.end ?? (duration || 9999)) - 0.05) })} />
                                 <RangeField label="Final" min={0} max={Math.max(duration || 0, Number(selectedSticker.end ?? 0))} step={0.05} value={Number(selectedSticker.end ?? (duration || 0))} onChange={(value) => updateSelectedSticker({ end: Math.max(value, Number(selectedSticker.start ?? 0) + 0.05) })} />
                                 <AnimationPicker value={selectedSticker.animation || 'none'} onChange={(value) => updateSelectedSticker({ animation: value })} />
-                                <Button variant="outline" size="sm" className="w-full border-red-800 bg-red-950/30 text-red-200 hover:bg-red-950" onClick={removeSelectedSticker}>
+                                <Button variant="outline" size="sm" className="w-full border-red-800 bg-red-950/30 text-red-200 hover:bg-red-950" onClick={removeSelectedSticker} disabled={selectedSticker.locked}>
                                     <Trash2 className="h-4 w-4 mr-2" />
                                     Eliminar sticker
                                 </Button>
@@ -1886,9 +2168,19 @@ export default function CaptutPro() {
                     <ToolSection title="Propiedades de texto" icon={Type}>
                         {selectedText ? (
                             <div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Button size="sm" variant="outline" className="border-slate-700 bg-slate-950 text-slate-100" onClick={() => setTexts((items) => items.map((item) => item.id === selectedText.id ? { ...item, visible: item.visible === false } : item))}>
+                                        {selectedText.visible === false ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
+                                        Visible
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="border-slate-700 bg-slate-950 text-slate-100" onClick={() => setTexts((items) => items.map((item) => item.id === selectedText.id ? { ...item, locked: !item.locked } : item))}>
+                                        {selectedText.locked ? <Lock className="h-4 w-4 mr-1" /> : <Unlock className="h-4 w-4 mr-1" />}
+                                        Bloqueo
+                                    </Button>
+                                </div>
                                 <div>
                                     <Label className="text-xs text-slate-400">Contenido</Label>
-                                    <Textarea value={selectedText.text} onChange={(e) => updateSelectedText({ text: e.target.value })} className="mt-1 bg-slate-950 border-slate-700 text-slate-100 min-h-[74px]" />
+                                    <Textarea value={selectedText.text} disabled={selectedText.locked} onChange={(e) => updateSelectedText({ text: e.target.value })} className="mt-1 bg-slate-950 border-slate-700 text-slate-100 min-h-[74px]" />
                                 </div>
                                 <RangeField label="X" min={5} max={95} value={selectedText.x} onChange={(value) => updateSelectedText({ x: value })} display={`${selectedText.x}%`} />
                                 <RangeField label="Y" min={5} max={95} value={selectedText.y} onChange={(value) => updateSelectedText({ y: value })} display={`${selectedText.y}%`} />
@@ -1900,7 +2192,7 @@ export default function CaptutPro() {
                                     <ColorField label="Texto" value={selectedText.color} onChange={(value) => updateSelectedText({ color: value })} />
                                     <ColorField label="Fondo" value={selectedText.bg} onChange={(value) => updateSelectedText({ bg: value })} />
                                 </div>
-                                <Button variant="outline" size="sm" className="w-full border-red-800 bg-red-950/30 text-red-200 hover:bg-red-950" onClick={removeTextLayer}>
+                                <Button variant="outline" size="sm" className="w-full border-red-800 bg-red-950/30 text-red-200 hover:bg-red-950" onClick={removeTextLayer} disabled={selectedText.locked}>
                                     <Trash2 className="h-4 w-4 mr-2" />
                                     Eliminar capa
                                 </Button>

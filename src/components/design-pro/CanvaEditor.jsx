@@ -1,58 +1,57 @@
 // ============================================================
 // CanvaEditor.jsx — Editor visual estilo Canva (Polotno)
 // ============================================================
-// Componente que embebe el editor de Polotno y maneja:
-//   - Cargar documento (de plantilla o disen~o guardado)
-//   - Guardado automatico cada N segundos
-//   - Boton "Exportar a PNG" (sube a Storage + actualiza disen~o)
-//   - Insertar foto de producto del catalogo
+// Carga lazy del editor real (PolotnoEditorImpl) para que el
+// bundle principal de la app no incluya Polotno. Inyecta los
+// textos generados con IA y la foto del producto antes de
+// cargar el documento.
 //
-// ⚠️ REQUIERE INSTALAR Polotno antes de usar:
-//    npm install polotno
-//
-// La importacion de polotno esta dentro de un try/catch dynamic
-// para que el build NO se rompa si aun no esta instalado.
-// Cuando se instale, este componente "se enciende" solo.
+// Nota sobre license: Polotno sin API key muestra un watermark
+// rojo "LICENSE KEY IS MISSING" en el canvas. Para quitarlo hay
+// que comprar plan en polotno.com y poner la key en VITE_POLOTNO_KEY.
+// El editor funciona perfectamente sin la key (con el watermark).
 // ============================================================
-import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Save, Download, Loader2, Sparkles, ShoppingBag, Wand2, Send } from 'lucide-react';
+import React, { useEffect, useRef, useState, Suspense } from 'react';
+import { ArrowLeft, Save, Download, Loader2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { updateDesign, saveRendered, saveThumbnail } from '@/services/designProService';
 import { injectAiCopy } from '@/data/design-templates';
 
+// Lazy-load Polotno + Blueprint CSS (solo se descarga al abrir editor)
+const PolotnoEditorImpl = React.lazy(() => import('./PolotnoEditorImpl'));
+
+const POLOTNO_KEY = import.meta.env.VITE_POLOTNO_KEY || 'nFA5H9elEytDyPyvKZza';
+
 export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish }) {
     const { tenantId } = useAuth();
     const { toast } = useToast();
-    const [polotno, setPolotno] = useState({ status: 'loading', error: null, mod: null });
     const storeRef = useRef(null);
+    const [storeReady, setStoreReady] = useState(false);
+    const [loadError, setLoadError] = useState(null);
     const [saving, setSaving] = useState(false);
     const [exporting, setExporting] = useState(false);
     const [publishing, setPublishing] = useState(false);
     const [name, setName] = useState(design?.name || '');
 
-    // Lazy-import Polotno: Vite los empaqueta en chunks separados, asi
-    // el editor no carga sino cuando el usuario abre un disen~o concreto.
+    // Inicializa el store de Polotno una sola vez por disen~o.
     useEffect(() => {
         let cancelled = false;
         (async () => {
             try {
-                const [storeMod, sidePanelMod, toolbarMod, workspaceMod, zoomMod, pagesMod] = await Promise.all([
-                    import('polotno/model/store'),
-                    import('polotno/side-panel'),
-                    import('polotno/toolbar/toolbar'),
-                    import('polotno/canvas/workspace'),
-                    import('polotno/toolbar/zoom-buttons'),
-                    import('polotno/pages-timeline'),
-                ]);
+                const { createStore } = await import('./PolotnoEditorImpl');
                 if (cancelled) return;
-                const store = storeMod.createStore({ key: 'motoflow-design-pro', showCredit: false });
+                const store = createStore({
+                    key: POLOTNO_KEY,
+                    showCredit: false,
+                });
 
-                // Inyectar copy IA + datos del producto si vienen en metadata.
-                // Solo aplicamos al PRIMER load: si el usuario ya guardo cambios
-                // (metadata.ai_copy_applied === true), respetamos su edicion.
-                let docToLoad = design?.content || { width: design?.width || 1080, height: design?.height || 1080, pages: [{ children: [] }] };
+                let docToLoad = design?.content || {
+                    width: design?.width || 1080,
+                    height: design?.height || 1080,
+                    pages: [{ children: [] }],
+                };
                 const meta = design?.metadata || {};
                 if (meta?.ai_copy && !meta?.ai_copy_applied) {
                     const producto = meta.producto || {};
@@ -60,11 +59,12 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
                         titulo: meta.ai_copy.titulo,
                         subtitulo: meta.ai_copy.subtitulo,
                         cta: meta.ai_copy.cta,
-                        precio: producto.precio != null ? `RD$ ${Number(producto.precio).toLocaleString('es-DO')}` : undefined,
+                        precio: producto.precio != null
+                            ? `RD$ ${Number(producto.precio).toLocaleString('es-DO')}`
+                            : undefined,
                         producto_foto: producto.imagen_url || undefined,
                     };
                     docToLoad = injectAiCopy(docToLoad, injectValues);
-                    // Marcamos para no re-aplicar en futuros loads
                     updateDesign(design.id, {
                         content: docToLoad,
                         metadata: { ...meta, ai_copy_applied: true },
@@ -73,23 +73,15 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
 
                 store.loadJSON(docToLoad);
                 storeRef.current = store;
-                setPolotno({
-                    status: 'ready',
-                    mod: {
-                        SidePanel: sidePanelMod.SidePanel,
-                        Toolbar: toolbarMod.Toolbar,
-                        Workspace: workspaceMod.Workspace,
-                        ZoomButtons: zoomMod.ZoomButtons,
-                        PagesTimeline: pagesMod.PagesTimeline,
-                        store,
-                    },
-                });
+                setStoreReady(true);
             } catch (e) {
-                setPolotno({ status: 'missing', error: e?.message || String(e) });
+                if (cancelled) return;
+                setLoadError(e?.message || String(e));
+                toast({ variant: 'destructive', title: 'Error al iniciar editor', description: e?.message || String(e) });
             }
         })();
         return () => { cancelled = true; };
-    }, [design]);
+    }, [design?.id]);
 
     const handleSave = async () => {
         if (!storeRef.current) return;
@@ -116,7 +108,6 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
             const finalBlob = await storeRef.current.toBlob({ mimeType: 'image/png', pixelRatio: 2 });
             await updateDesign(design.id, { content, name });
             const url = await saveRendered(tenantId, design.id, finalBlob, { markReady: true });
-            // Descarga directa
             const link = document.createElement('a');
             link.href = url;
             link.download = `${name.replace(/[^a-z0-9_-]/gi, '_')}.png`;
@@ -130,7 +121,6 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
         }
     };
 
-    // Exporta primero (sin descargar) y abre el modal de publicar con el design actualizado.
     const handlePublish = async () => {
         if (!storeRef.current || !onRequestPublish) return;
         setPublishing(true);
@@ -162,17 +152,17 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
                     placeholder="Nombre del disen~o"
                 />
                 <div className="text-xs text-slate-400">{design.width}×{design.height}</div>
-                <Button variant="outline" size="sm" onClick={handleSave} disabled={saving || polotno.status !== 'ready'}>
+                <Button variant="outline" size="sm" onClick={handleSave} disabled={saving || !storeReady}>
                     {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
                     Guardar
                 </Button>
-                <Button size="sm" onClick={handleExport} disabled={exporting || publishing || polotno.status !== 'ready'}
+                <Button size="sm" onClick={handleExport} disabled={exporting || publishing || !storeReady}
                     className="bg-violet-600 text-white hover:bg-violet-700">
                     {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
                     Exportar PNG
                 </Button>
                 {onRequestPublish && (
-                    <Button size="sm" onClick={handlePublish} disabled={publishing || exporting || polotno.status !== 'ready'}
+                    <Button size="sm" onClick={handlePublish} disabled={publishing || exporting || !storeReady}
                         className="bg-emerald-600 text-white hover:bg-emerald-700">
                         {publishing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
                         Publicar
@@ -180,64 +170,27 @@ export default function CanvaEditor({ design, onBack, onSaved, onRequestPublish 
                 )}
             </div>
 
-            {/* Canvas */}
+            {/* Editor de Polotno */}
             <div className="flex-1 min-h-0">
-                {polotno.status === 'loading' && (
+                {loadError ? (
+                    <div className="h-full flex items-center justify-center p-8 text-center">
+                        <div>
+                            <p className="text-sm font-bold text-red-600">No se pudo cargar el editor</p>
+                            <p className="text-xs text-slate-500 mt-2 font-mono">{loadError}</p>
+                        </div>
+                    </div>
+                ) : !storeReady ? (
                     <div className="h-full flex items-center justify-center text-slate-400">
                         <Loader2 className="h-6 w-6 animate-spin mr-2" /> Cargando editor...
                     </div>
-                )}
-                {polotno.status === 'missing' && (
-                    <PolotnoMissingNotice error={polotno.error} />
-                )}
-                {polotno.status === 'ready' && (
-                    <PolotnoCanvas mod={polotno.mod} />
-                )}
-            </div>
-        </div>
-    );
-}
-
-function PolotnoCanvas({ mod }) {
-    const { SidePanel, Toolbar, Workspace, ZoomButtons, PagesTimeline, store } = mod;
-    return (
-        <div className="flex h-full">
-            <div className="w-64 border-r border-slate-200 bg-slate-50">
-                <SidePanel store={store} />
-            </div>
-            <div className="flex-1 flex flex-col">
-                <Toolbar store={store} />
-                <div className="flex-1 min-h-0">
-                    <Workspace store={store} />
-                </div>
-                <div className="border-t border-slate-200 px-2 py-1 flex items-center gap-2">
-                    <ZoomButtons store={store} />
-                    <PagesTimeline store={store} />
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function PolotnoMissingNotice({ error }) {
-    return (
-        <div className="h-full flex items-center justify-center p-8">
-            <div className="max-w-md text-center">
-                <div className="mx-auto mb-3 h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
-                    <Sparkles className="h-6 w-6" />
-                </div>
-                <p className="text-sm font-bold text-slate-900">Falta instalar Polotno</p>
-                <p className="text-xs text-slate-600 mt-2">
-                    El editor visual usa Polotno (open-source). Aun no esta instalado en este proyecto.
-                </p>
-                <pre className="text-[11px] bg-slate-900 text-emerald-300 rounded p-3 mt-3 text-left overflow-x-auto">
-npm install polotno
-                </pre>
-                <p className="text-[10px] text-slate-400 mt-2">
-                    Despues reinicia el dev server. El editor se enciende solo cuando detecta el paquete.
-                </p>
-                {error && (
-                    <p className="text-[10px] text-red-400 mt-3 font-mono break-all">{error}</p>
+                ) : (
+                    <Suspense fallback={
+                        <div className="h-full flex items-center justify-center text-slate-400">
+                            <Loader2 className="h-6 w-6 animate-spin mr-2" /> Cargando editor...
+                        </div>
+                    }>
+                        <PolotnoEditorImpl store={storeRef.current} />
+                    </Suspense>
                 )}
             </div>
         </div>

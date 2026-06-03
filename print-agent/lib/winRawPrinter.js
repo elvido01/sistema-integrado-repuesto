@@ -229,7 +229,15 @@ function listPrinters() {
         const ps = spawn('powershell.exe', [
             '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
             '-Command',
-            'Get-Printer | Select-Object Name,PrinterStatus,DriverName,PortName | ConvertTo-Json -Compress',
+            `$ErrorActionPreference = 'Stop';
+try {
+  Get-Printer | Select-Object Name,PrinterStatus,DriverName,PortName | ConvertTo-Json -Compress
+} catch {
+  Add-Type -AssemblyName System.Drawing;
+  [System.Drawing.Printing.PrinterSettings]::InstalledPrinters |
+    ForEach-Object { [pscustomobject]@{ Name = $_; PrinterStatus = 0; DriverName = $null; PortName = $null } } |
+    ConvertTo-Json -Compress
+}`,
         ]);
         const timer = setTimeout(() => {
             ps.kill('SIGKILL');

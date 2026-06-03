@@ -75,14 +75,41 @@ function matchPrinter(printers: string[], preferred: string[] = []): string | nu
  * Lista todas las impresoras disponibles del backend activo.
  */
 export async function listPrinters(): Promise<{ source: 'agent' | 'qz'; names: string[] }> {
+    const pref = getPreferredBackend();
     const backend = await pickBackend();
     if (backend === 'agent') {
-        const list: AgentPrinter[] = await agentListPrinters();
-        return { source: 'agent', names: list.map((p) => p.name) };
+        try {
+            const list: AgentPrinter[] = await agentListPrinters();
+            return { source: 'agent', names: list.map((p) => p.name) };
+        } catch (err) {
+            if (pref === 'agent') throw err;
+            console.warn('[PrinterAdapter] Agent /printers fallo; usando QZ Tray:', err);
+        }
     }
     const { qzListAllPrinters } = await import('./qzTrayService');
     const list = await qzListAllPrinters();
     return { source: 'qz', names: list };
+}
+
+async function listPrintersForKind(
+    kind: 'receipt' | 'label',
+    preferred: string[] = [],
+): Promise<{ source: 'agent' | 'qz'; names: string[] }> {
+    try {
+        return await listPrinters();
+    } catch (err) {
+        if (getPreferredBackend() !== 'agent') throw err;
+
+        const savedKey = kind === 'label' ? QZ_LABEL_KEY : QZ_RECEIPT_KEY;
+        const saved = localStorage.getItem(savedKey);
+        const fallbackNames = [saved, ...preferred].filter((name): name is string => Boolean(name));
+        if (fallbackNames.length > 0) {
+            console.warn('[PrinterAdapter] Agent /printers fallo; probando impresora conocida:', err);
+            return { source: 'agent', names: fallbackNames };
+        }
+
+        throw err;
+    }
 }
 
 /**
@@ -93,7 +120,7 @@ export async function listPrinters(): Promise<{ source: 'agent' | 'qz'; names: s
  *   3. Heurísticas (POS/thermal/receipt)
  */
 export async function findReceiptPrinter(preferred: string[] = []): Promise<string> {
-    const { source, names } = await listPrinters();
+    const { source, names } = await listPrintersForKind('receipt', preferred);
 
     // 1. localStorage (la que eligió el usuario en Configuración)
     const saved = localStorage.getItem(QZ_RECEIPT_KEY);
@@ -122,7 +149,7 @@ export async function findReceiptPrinter(preferred: string[] = []): Promise<stri
  * Encuentra la impresora de etiquetas (EPL2/ZPL).
  */
 export async function findLabelPrinter(preferred: string[] = []): Promise<string> {
-    const { source, names } = await listPrinters();
+    const { source, names } = await listPrintersForKind('label', preferred);
 
     const saved = localStorage.getItem(QZ_LABEL_KEY);
     if (saved && names.includes(saved)) return saved;
@@ -149,10 +176,16 @@ export async function printRaw(
     data: string,
     opts: { format?: 'escpos' | 'epl' | 'zpl' | 'raw' } = {},
 ): Promise<{ ok: boolean; backend: 'agent' | 'qz' }> {
+    const pref = getPreferredBackend();
     const backend = await pickBackend();
     if (backend === 'agent') {
-        await agentPrintRaw(printerName, data, { format: opts.format });
-        return { ok: true, backend: 'agent' };
+        try {
+            await agentPrintRaw(printerName, data, { format: opts.format });
+            return { ok: true, backend: 'agent' };
+        } catch (err) {
+            if (pref === 'agent') throw err;
+            console.warn('[PrinterAdapter] Agent print fallo; usando QZ Tray:', err);
+        }
     }
     const { qzPrintRawEscPos, qzPrintRawEpl } = await import('./qzTrayService');
     if (opts.format === 'epl' || opts.format === 'zpl') {
