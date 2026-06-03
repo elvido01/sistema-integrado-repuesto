@@ -33,8 +33,14 @@ ALTER TABLE public.brand_kit ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS brand_kit_tenant_rw ON public.brand_kit;
 CREATE POLICY brand_kit_tenant_rw ON public.brand_kit
   FOR ALL TO authenticated
-  USING (tenant_id = public.get_user_tenant())
-  WITH CHECK (tenant_id = public.get_user_tenant());
+  USING (
+    tenant_id = public.get_user_tenant()
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND is_superadmin = true)
+  )
+  WITH CHECK (
+    tenant_id = public.get_user_tenant()
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND is_superadmin = true)
+  );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.brand_kit TO authenticated;
 GRANT ALL ON public.brand_kit TO service_role;
