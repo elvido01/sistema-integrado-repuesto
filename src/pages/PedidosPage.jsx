@@ -598,22 +598,18 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
               </div>
             </div>
 
-            {/* Fila 2: TOTAL FACTURA gigante + botones */}
-            <div className="grid grid-cols-12 bg-slate-50">
-              <div className="col-span-7 border-r border-slate-200 px-3 py-2.5 flex items-center gap-3">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Recibido</span>
-                <span className="font-mono font-bold text-slate-700">RD$ 0.00</span>
-                <span className="text-[10px] font-bold text-red-600 uppercase ml-4">Cambio</span>
-                <span className="font-mono font-bold text-red-600">RD$ {(0 - montoTotal).toFixed(2)}</span>
+            {/* Fila 2: TOTAL FACTURA + botones grandes */}
+            <div className="grid grid-cols-12 bg-slate-50 items-center px-3 py-3 gap-3">
+              <div className="col-span-7 flex items-center gap-4">
+                <span className="text-base font-black text-red-600 uppercase tracking-wider">Total Factura</span>
+                <span className="font-mono font-black text-red-600 text-3xl tracking-tight">{montoTotal.toFixed(2)}</span>
               </div>
-              <div className="col-span-5 grid grid-cols-12 gap-2 px-3 py-2 items-center">
-                <span className="col-span-5 font-black text-red-600 uppercase text-sm tracking-wider">Total Factura</span>
-                <span className="col-span-3 text-right font-mono font-black text-red-600 text-xl">{montoTotal.toFixed(2)}</span>
-                <Button variant="outline" onClick={onClose} className="col-span-2 h-8 border-slate-300 text-slate-600 font-bold text-[11px]">
-                  <X className="w-3.5 h-3.5 mr-1" /> ESC
+              <div className="col-span-5 flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={onClose} className="h-10 px-5 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-100">
+                  <X className="w-4 h-4 mr-2" /> ESC - Salir
                 </Button>
-                <Button onClick={handleSave} disabled={isSubmitting} className="col-span-2 h-8 bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px]">
-                  {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><FileDown className="w-3.5 h-3.5 mr-1" /> F10</>}
+                <Button onClick={handleSave} disabled={isSubmitting} className="h-10 px-5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileDown className="w-4 h-4 mr-2" /> F10 - Grabar</>}
                 </Button>
               </div>
             </div>
