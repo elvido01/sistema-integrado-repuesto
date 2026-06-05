@@ -575,41 +575,51 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
               </div>
           </div>
 
-          {/* Footer compacto estilo Facturacion */}
-          <div className="border-t-2 border-slate-300">
-            {/* Fila 1: notas + sub-total, descuento, total ITBIS */}
-            <div className="grid grid-cols-12 bg-white border-b border-slate-200">
-              <div className="col-span-7 border-r border-slate-200 p-1.5 flex items-center gap-2">
-                <Tags className="w-3.5 h-3.5 text-slate-400" />
+          {/* Footer: notas a la izquierda + resumen amplio a la derecha */}
+          <div className="border-t-2 border-slate-300 bg-white">
+            <div className="grid grid-cols-12 px-3 py-2 gap-3 items-start">
+              {/* Notas: lado izquierdo */}
+              <div className="col-span-5 flex items-center gap-2">
+                <Tags className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <Input
                   value={currentPedido.notas}
                   onChange={e => setCurrentPedido(p => ({ ...p, notas: e.target.value }))}
-                  className="h-7 text-xs border-slate-200 flex-1"
+                  className="h-9 text-xs border-slate-200 flex-1"
                   placeholder="Notas y comentarios (opcional)..."
                 />
               </div>
-              <div className="col-span-5 grid grid-cols-2 gap-x-3 px-3 py-1.5 text-xs">
-                <span className="font-bold text-emerald-700 uppercase text-[11px]">Sub-total</span>
-                <span className="text-right font-mono font-bold text-emerald-700">{totals.subtotal.toFixed(2)}</span>
-                <span className="font-bold text-slate-600 uppercase text-[11px]">Descuento</span>
-                <span className="text-right font-mono text-red-600">{totals.descuento_total.toFixed(2)}</span>
-                <span className="font-bold text-slate-600 uppercase text-[11px]">Total ITBIS</span>
-                <span className="text-right font-mono">{totals.itbis_total.toFixed(2)}</span>
+
+              {/* Resumen: cada lınea con etiqueta a la izquierda + valor a la derecha (ancho completo) */}
+              <div className="col-span-7 space-y-0.5 text-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 py-0.5">
+                  <span className="font-bold text-emerald-700 uppercase tracking-wider text-xs">Sub-total</span>
+                  <span className="font-mono font-bold text-emerald-700">{totals.subtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-slate-100 py-0.5">
+                  <span className="font-bold text-slate-600 uppercase tracking-wider text-xs">Descuento</span>
+                  <span className="font-mono text-red-600">{totals.descuento_total.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between py-0.5">
+                  <span className="font-bold text-slate-600 uppercase tracking-wider text-xs">Total ITBIS</span>
+                  <span className="font-mono">{totals.itbis_total.toFixed(2)}</span>
+                </div>
               </div>
             </div>
 
-            {/* Fila 2: TOTAL FACTURA + botones a la derecha */}
-            <div className="bg-slate-50 px-3 py-3 flex items-center justify-end gap-4">
-              <div className="flex items-center gap-3">
-                <span className="text-base font-black text-red-600 uppercase tracking-wider">Total Factura</span>
-                <span className="font-mono font-black text-red-600 text-3xl tracking-tight">{montoTotal.toFixed(2)}</span>
+            {/* Lınea grande: TOTAL FACTURA + monto + botones (todo a lo largo) */}
+            <div className="bg-slate-100 border-t border-slate-300 px-3 py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <span className="text-lg font-black text-red-600 uppercase tracking-wider">Total Factura</span>
+                <span className="font-mono font-black text-red-600 text-4xl tracking-tight">{montoTotal.toFixed(2)}</span>
               </div>
-              <Button variant="outline" onClick={onClose} className="h-10 px-5 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-100">
-                <X className="w-4 h-4 mr-2" /> ESC - Salir
-              </Button>
-              <Button onClick={handleSave} disabled={isSubmitting} className="h-10 px-5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
-                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileDown className="w-4 h-4 mr-2" /> F10 - Grabar</>}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={onClose} className="h-11 px-5 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-200">
+                  <X className="w-4 h-4 mr-2" /> ESC - Salir
+                </Button>
+                <Button onClick={handleSave} disabled={isSubmitting} className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileDown className="w-4 h-4 mr-2" /> F10 - Grabar</>}
+                </Button>
+              </div>
             </div>
           </div>
 
