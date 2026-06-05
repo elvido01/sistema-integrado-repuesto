@@ -166,7 +166,7 @@ export default function AICeoPage() {
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => { cargarHealth(); cargarConteoAlertas(); }}>
+                        <Button variant="outline" size="sm" onClick={() => { cargarHealth(); cargarConteoAlertas(); cargarConteoDecisiones(); }}>
                             <RefreshCw className={`h-4 w-4 mr-1 ${healthLoading ? 'animate-spin' : ''}`} />
                             Refrescar
                         </Button>
@@ -248,7 +248,7 @@ export default function AICeoPage() {
                 )}
 
                 {tab === 'decisiones' && (
-                    <AiDecisionsList />
+                    <AiDecisionsList onCountChange={setDecisionCount} />
                 )}
 
                 {tab === 'forecast' && (

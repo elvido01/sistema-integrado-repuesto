@@ -1,4 +1,4 @@
-import { Plus, X, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Plus, X, RefreshCw, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -13,7 +13,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
-const ProductHeader = ({ onAdd, onDelete, onChangeCode, hasSelection }) => {
+const ProductHeader = ({ onAdd, onDelete, onChangeCode, onImageStudio, hasSelection }) => {
   return (
     <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-2 gap-4">
       <div>
@@ -80,8 +80,33 @@ const ProductHeader = ({ onAdd, onDelete, onChangeCode, hasSelection }) => {
               </TooltipTrigger>
               <TooltipContent><p className="text-xs">Cambiar Código</p></TooltipContent>
             </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-violet-600 hover:bg-violet-50 hover:text-violet-700 transition-all active:scale-90"
+                  onClick={onImageStudio}
+                  disabled={!hasSelection}
+                >
+                  <ImageIcon className="h-5 w-5 stroke-[3]" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent><p className="text-xs">Producto Studio</p></TooltipContent>
+            </Tooltip>
           </div>
         </TooltipProvider>
+
+        <Button
+          onClick={onImageStudio}
+          disabled={!hasSelection}
+          variant="outline"
+          className="h-10 px-4 border-violet-200 bg-white text-violet-700 hover:bg-violet-50 font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95 flex items-center gap-2"
+          title={hasSelection ? 'Limpiar imagen del producto seleccionado' : 'Selecciona un articulo para limpiar su imagen'}
+        >
+          <ImageIcon className="h-5 w-5" />
+          <span>Producto Studio</span>
+        </Button>
 
         <Button
           onClick={onAdd}

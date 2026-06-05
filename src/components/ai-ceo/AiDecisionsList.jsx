@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { RefreshCw, Loader2, Gavel } from 'lucide-react';
 import AiDecisionCard from './AiDecisionCard';
 
-export default function AiDecisionsList() {
+export default function AiDecisionsList({ onCountChange }) {
     const { tenantId, user } = useAuth();
     const { toast } = useToast();
     const [items, setItems] = useState([]);
@@ -31,12 +31,13 @@ export default function AiDecisionsList() {
             const { data, error } = await q;
             if (error) throw error;
             setItems(data || []);
+            if (filtroStatus === 'pending') onCountChange?.((data || []).length);
         } catch (err) {
             toast({ variant: 'destructive', title: 'Error cargando decisiones', description: err.message });
         } finally {
             setLoading(false);
         }
-    }, [tenantId, filtroStatus, toast]);
+    }, [tenantId, filtroStatus, toast, onCountChange]);
 
     useEffect(() => { cargar(); }, [cargar]);
 

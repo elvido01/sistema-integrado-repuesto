@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal, Lock, Info, Zap, Settings, Loader2, Upload, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Lock, Info, Zap, Settings, Loader2, Upload, Trash2, Sparkles } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -15,6 +15,7 @@ import SearchableSelect from '@/components/common/SearchableSelect';
 import MultiSearchableSelect from '@/components/common/MultiSearchableSelect';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import ProductImageStudioModal from '@/components/products/ProductImageStudioModal';
 
 const NULL_VALUE = 'null_value';
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
@@ -28,6 +29,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
   const [isProveedorModalOpen, setIsProveedorModalOpen] = useState(false);
   const [isUbicacionModalOpen, setIsUbicacionModalOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [isImageStudioOpen, setIsImageStudioOpen] = useState(false);
   const [isCalculatingStock, setIsCalculatingStock] = useState(false);
   const [suggestedUbicacion, setSuggestedUbicacion] = useState(null);
   const [isFetchingSuggestion, setIsFetchingSuggestion] = useState(false);
@@ -785,6 +787,17 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                 Quitar Foto
               </Button>
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full h-7 text-[10px] font-bold uppercase bg-violet-50 hover:bg-violet-100 border-violet-200 text-violet-700"
+              onClick={() => setIsImageStudioOpen(true)}
+              disabled={isUploadingImage}
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-1" />
+              Producto Studio
+            </Button>
           </div>
 
           {/* Stock Mínimo/Máximo */}
@@ -909,6 +922,14 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
         isOpen={isSearchModalOpen}
         onClose={closeModal(setIsSearchModalOpen)}
         onSelectProduct={handleProductSelection}
+      />
+      <ProductImageStudioModal
+        open={isImageStudioOpen}
+        onClose={() => setIsImageStudioOpen(false)}
+        product={formData}
+        initialImageUrl={formData.imagen_url || ''}
+        saveDirect={false}
+        onSaved={({ url }) => setFormData(prev => ({ ...prev, imagen_url: url }))}
       />
     </>
   );

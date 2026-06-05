@@ -77,7 +77,7 @@ const componentMapping = {
   'cotizaciones-magna': { component: () => <Protected module="cotizaciones-magna"><CotizacionesMagnaPage /></Protected>, icon: FileText, name: 'Cot. Facturas Magna' },
   'orden-compra': { component: () => <Protected module="orden-compra"><OrdenCompraPage /></Protected>, icon: FileText, name: 'Orden de Compra' },
   'devoluciones': { component: () => <Protected module="devoluciones"><DevolucionesPage /></Protected>, icon: CornerUpLeft, name: 'Devoluciones' },
-  'mercancias': { component: () => <Protected module="mercancias"><ProductsPage /></Protected>, icon: Package, name: 'Mercancías' },
+  'mercancias': { component: ({ extraData }) => <Protected module="mercancias"><ProductsPage extraData={extraData} /></Protected>, icon: Package, name: 'Mercancías' },
   'entrada-mercancia': { component: () => <Protected module="entrada-mercancia"><EntradaMercanciaPage /></Protected>, icon: Download, name: 'Entrada Mercancía' },
   'salida-mercancia': { component: () => <Protected module="salida-mercancia"><SalidaMercanciaPage /></Protected>, icon: Upload, name: 'Salida Mercancía' },
   'actualizar-ubicacion': { component: () => <Protected module="actualizar-ubicacion"><UpdateLocationPage /></Protected>, icon: MapPin, name: 'Actualizar Ubicación' },
@@ -194,3 +194,4 @@ export const usePanels = () => {
   }
   return context;
 };
+

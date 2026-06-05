@@ -749,20 +749,22 @@ export const printReciboPOS = (reciboData) => {
       <style>
         @page { margin: 0; size: 80mm auto; }
         body {
-          width: 78mm; margin: 0 auto; padding: 2mm 3mm;
-          font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1.2; color: #000;
+          width: 78mm; margin: 0 auto; padding: 2mm 4mm;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: 14px; font-weight: 700; line-height: 1.2; color: #000;
+          letter-spacing: 0.2px;
         }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
-        .bold { font-weight: bold; }
-        .header { margin-bottom: 8px; }
-        .header h1 { font-size: 15px; margin: 0; font-weight: 800; }
-        .header p { margin: 1px 0; font-size: 10px; color: #333; }
+        .bold { font-weight: 900; }
+        .header { margin-bottom: 4px; }
+        .header h1 { font-size: 20px; margin: 0; font-weight: 900; letter-spacing: 0.5px; }
+        .header p { margin: 1px 0; font-size: 13px; color: #000; }
         .separator { border-top: 1px dashed #000; margin: 4px 0; }
         table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-        th { text-align: left; font-size: 10px; border-bottom: 1px solid #000; }
-        td { font-size: 10px; padding: 2px 0; }
-        .total-row { font-weight: bold; font-size: 12px; margin-top: 6px; display: flex; justify-content: space-between; }
+        th { text-align: left; font-size: 13px; padding-bottom: 2px; border-bottom: 1px solid #000; }
+        td { font-size: 14px; padding: 2px 0; }
+        .total-row { font-weight: 900; font-size: 17px; margin-top: 6px; padding-top: 4px; border-top: 2px solid #000; display: flex; justify-content: space-between; }
       </style>
     </head>
     <body onload="window.print()">
@@ -781,7 +783,7 @@ export const printReciboPOS = (reciboData) => {
       </div>
 
       <div class="separator"></div>
-      <div class="bold" style="font-size: 10px; margin-bottom: 2px;">FACTURAS ABONADAS:</div>
+      <div class="bold" style="font-size: 14px; margin-bottom: 2px;">FACTURAS ABONADAS:</div>
       <table>
         <thead>
           <tr>
@@ -800,7 +802,7 @@ export const printReciboPOS = (reciboData) => {
       </table>
 
       <div class="separator"></div>
-      <div class="bold" style="font-size: 10px; margin-bottom: 2px;">DETALLE DE PAGO:</div>
+      <div class="bold" style="font-size: 14px; margin-bottom: 2px;">DETALLE DE PAGO:</div>
       <table>
         <tbody>
           ${formasPago.map(f => `
@@ -814,7 +816,7 @@ export const printReciboPOS = (reciboData) => {
 
       <div class="separator"></div>
       <div style="margin-top: 4px;">
-        <div style="display: flex; justify-content: space-between; font-size: 10px;">
+        <div style="display: flex; justify-content: space-between; font-size: 14px;">
           <span>Balance Anterior:</span>
           <span>${formatCurrency(balanceAnterior)}</span>
         </div>
@@ -822,13 +824,13 @@ export const printReciboPOS = (reciboData) => {
           <span>TOTAL PAGADO:</span>
           <span>${formatCurrency(totalPagado)}</span>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; margin-top: 2px;">
           <span>Balance Actual:</span>
           <span class="bold">${formatCurrency(balanceActual)}</span>
         </div>
       </div>
 
-      <div class="text-center" style="margin-top: 15px; font-size: 10px;">
+      <div class="text-center" style="margin-top: 15px; font-size: 13px;">
         <p>*** GRACIAS POR SU PAGO ***</p>
         <p>Le Atendio: ${_empresaConfig.nombre}</p>
       </div>

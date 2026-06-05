@@ -56,6 +56,23 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
 
     useEffect(() => { cargar(); }, [cargar]);
 
+    const actualizarAlerta = async (id, patch) => {
+        const { error } = await supabase.from('ai_alerts').update(patch).eq('id', id);
+        if (!error) return;
+
+        const isDuplicateStatus = error.code === '23505'
+            && String(error.message || '').includes('ai_alerts_tenant_id_alert_type_related_id_status_key');
+        if (!isDuplicateStatus) throw error;
+
+        const fallbackPatch = {
+            ...patch,
+            related_id: null,
+            resolution_notes: 'Actualizada sin relacion directa para evitar duplicado historico.',
+        };
+        const { error: fallbackError } = await supabase.from('ai_alerts').update(fallbackPatch).eq('id', id);
+        if (fallbackError) throw fallbackError;
+    };
+
     const cambiarStatus = async (id, nuevo) => {
         setUpdating(true);
         try {
@@ -63,8 +80,7 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
             if (nuevo === 'resolved') {
                 patch.resolved_at = new Date().toISOString();
             }
-            const { error } = await supabase.from('ai_alerts').update(patch).eq('id', id);
-            if (error) throw error;
+            await actualizarAlerta(id, patch);
             toast({ title: 'Alerta actualizada', description: `Estado: ${nuevo}` });
             setItems((prev) => prev.filter((a) => a.id !== id)); // saca del listado actual
         } catch (err) {
@@ -87,8 +103,9 @@ export default function AiAlertsList({ defaultFilter = {}, height = 'auto' }) {
             const ids = items.map((a) => a.id);
             const patch = { status: nuevo };
             if (nuevo === 'resolved') patch.resolved_at = new Date().toISOString();
-            const { error } = await supabase.from('ai_alerts').update(patch).in('id', ids);
-            if (error) throw error;
+            for (const id of ids) {
+                await actualizarAlerta(id, patch);
+            }
             toast({ title: '✓ Bulk actualizado', description: `${ids.length} alertas → ${nuevo}` });
             cargar();
         } catch (err) {

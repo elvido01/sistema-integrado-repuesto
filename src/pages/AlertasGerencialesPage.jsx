@@ -36,6 +36,28 @@ const toDateOnly = (value) => {
 };
 
 const severityRank = { critica: 0, alta: 1, media: 2, baja: 3 };
+const MOVIMIENTOS_PAGE_SIZE = 1000;
+
+const cargarMovimientosInventario = async () => {
+  const rows = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + MOVIMIENTOS_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from('inventario_movimientos')
+      .select('producto_id, cantidad, fecha, tipo')
+      .order('fecha', { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < MOVIMIENTOS_PAGE_SIZE) break;
+    from += MOVIMIENTOS_PAGE_SIZE;
+  }
+
+  return rows;
+};
 
 const AlertasGerencialesPage = () => {
   const { empresa, tenantId } = useAuth();
@@ -57,18 +79,15 @@ const AlertasGerencialesPage = () => {
     if (!tenantId) return;
     setLoading(true);
     try {
-      const [productosRes, movRes, facturasRes, comprasRes, pagosDetalleRes, pagosRes] = await Promise.all([
+      const movimientosPromise = cargarMovimientosInventario();
+      const [productosRes, movimientosData, facturasRes, comprasRes, pagosDetalleRes, pagosRes] = await Promise.all([
         supabase
           .from('productos')
           .select('id, codigo, descripcion, costo, precio, min_stock, max_stock, activo, presentaciones(*)')
           .eq('activo', true)
           .order('codigo', { ascending: true })
           .limit(2500),
-        supabase
-          .from('inventario_movimientos')
-          .select('producto_id, cantidad, fecha, tipo')
-          .order('fecha', { ascending: false })
-          .limit(50000),
+        movimientosPromise,
         supabase
           .from('facturas')
           .select('id, numero, fecha, dias_credito, total, monto_pendiente, clientes(nombre)')
@@ -95,14 +114,13 @@ const AlertasGerencialesPage = () => {
       ]);
 
       if (productosRes.error) throw productosRes.error;
-      if (movRes.error) throw movRes.error;
       if (facturasRes.error) throw facturasRes.error;
       if (comprasRes.error) throw comprasRes.error;
       if (pagosDetalleRes.error) throw pagosDetalleRes.error;
       if (pagosRes.error) throw pagosRes.error;
 
       setProductos(productosRes.data || []);
-      setMovimientos(movRes.data || []);
+      setMovimientos(movimientosData || []);
       setFacturasPendientes(facturasRes.data || []);
       setComprasPendientes(comprasRes.data || []);
       setPagosSuplidoresDetalle(pagosDetalleRes.data || []);

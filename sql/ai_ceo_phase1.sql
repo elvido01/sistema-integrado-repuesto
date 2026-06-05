@@ -160,13 +160,14 @@ CREATE TABLE IF NOT EXISTS public.ai_alerts (
   resolved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   resolved_at TIMESTAMPTZ,
   resolution_notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-
-  UNIQUE (tenant_id, alert_type, related_id, status) -- evita duplicar misma alerta abierta
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_alerts_tenant_status ON public.ai_alerts(tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_alerts_area_severity ON public.ai_alerts(tenant_id, area, severity);
+CREATE UNIQUE INDEX IF NOT EXISTS ai_alerts_pending_unique_idx
+  ON public.ai_alerts(tenant_id, alert_type, related_id)
+  WHERE status = 'pending';
 
 ALTER TABLE public.ai_alerts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "alerts_select_tenant" ON public.ai_alerts;
@@ -313,23 +314,33 @@ CREATE POLICY "chat_messages_all_tenant" ON public.ai_chat_messages
 CREATE OR REPLACE FUNCTION public.ai_detect_stock_bajo(p_tenant_id UUID)
 RETURNS TABLE (producto_id UUID, codigo TEXT, descripcion TEXT, existencia NUMERIC, min_stock NUMERIC, severity TEXT)
 LANGUAGE sql SECURITY DEFINER STABLE AS $$
+  WITH stock AS (
+    SELECT
+      p.id,
+      p.codigo,
+      p.descripcion,
+      p.min_stock,
+      public.get_stock_actual(p.id) AS existencia
+    FROM public.productos p
+    WHERE p.tenant_id = p_tenant_id
+      AND COALESCE(p.activo, true) = true
+      AND p.min_stock > 0
+  )
   SELECT
-    p.id,
-    p.codigo,
-    p.descripcion,
-    public.get_stock_actual(p.id) AS existencia,
-    p.min_stock,
+    s.id,
+    s.codigo,
+    s.descripcion,
+    s.existencia,
+    s.min_stock,
     CASE
-      WHEN public.get_stock_actual(p.id) <= 0 THEN 'critical'
-      WHEN public.get_stock_actual(p.id) < (p.min_stock * 0.5) THEN 'high'
+      WHEN s.existencia = 0 THEN 'critical'
+      WHEN s.existencia < (s.min_stock * 0.5) THEN 'high'
       ELSE 'medium'
     END AS severity
-  FROM public.productos p
-  WHERE p.tenant_id = p_tenant_id
-    AND COALESCE(p.activo, true) = true
-    AND p.min_stock > 0
-    AND public.get_stock_actual(p.id) < p.min_stock
-  ORDER BY public.get_stock_actual(p.id) ASC
+  FROM stock s
+  WHERE s.existencia >= 0
+    AND s.existencia < s.min_stock
+  ORDER BY s.existencia ASC
   LIMIT 200;
 $$;
 
@@ -433,7 +444,7 @@ BEGIN
       sb.producto_id,
       jsonb_build_object('existencia', sb.existencia, 'min_stock', sb.min_stock, 'codigo', sb.codigo)
     FROM public.ai_detect_stock_bajo(p_tenant_id) sb
-    ON CONFLICT (tenant_id, alert_type, related_id, status) DO NOTHING
+    ON CONFLICT (tenant_id, alert_type, related_id) WHERE status = 'pending' DO NOTHING
     RETURNING 1
   )
   SELECT COUNT(*) INTO v_stock_bajo FROM ins;
@@ -445,7 +456,7 @@ BEGIN
       p_tenant_id,
       'existencia_negativa',
       'inventario',
-      'high',
+      'critical',
       'Existencia negativa: ' || en.codigo,
       en.descripcion || ' — existencia ' || en.existencia,
       'Revisar movimientos: probablemente falta una entrada o sobra una salida.',
@@ -453,7 +464,7 @@ BEGIN
       en.producto_id,
       jsonb_build_object('existencia', en.existencia, 'codigo', en.codigo)
     FROM public.ai_detect_existencia_negativa(p_tenant_id) en
-    ON CONFLICT (tenant_id, alert_type, related_id, status) DO NOTHING
+    ON CONFLICT (tenant_id, alert_type, related_id) WHERE status = 'pending' DO NOTHING
     RETURNING 1
   )
   SELECT COUNT(*) INTO v_existencia_neg FROM ins;
@@ -473,7 +484,7 @@ BEGIN
       su.producto_id,
       jsonb_build_object('codigo', su.codigo)
     FROM public.ai_detect_sin_ubicacion(p_tenant_id) su
-    ON CONFLICT (tenant_id, alert_type, related_id, status) DO NOTHING
+    ON CONFLICT (tenant_id, alert_type, related_id) WHERE status = 'pending' DO NOTHING
     RETURNING 1
   )
   SELECT COUNT(*) INTO v_sin_ubicacion FROM ins;
@@ -501,7 +512,7 @@ BEGIN
         'dias_vencidos', fv.dias_vencidos
       )
     FROM public.ai_detect_facturas_vencidas(p_tenant_id) fv
-    ON CONFLICT (tenant_id, alert_type, related_id, status) DO NOTHING
+    ON CONFLICT (tenant_id, alert_type, related_id) WHERE status = 'pending' DO NOTHING
     RETURNING 1
   )
   SELECT COUNT(*) INTO v_facturas_vencidas FROM ins;
@@ -525,7 +536,7 @@ BEGIN
         'codigo', pl.codigo
       )
     FROM public.ai_detect_productos_lentos(p_tenant_id, 90) pl
-    ON CONFLICT (tenant_id, alert_type, related_id, status) DO NOTHING
+    ON CONFLICT (tenant_id, alert_type, related_id) WHERE status = 'pending' DO NOTHING
     RETURNING 1
   )
   SELECT COUNT(*) INTO v_productos_lentos FROM ins;

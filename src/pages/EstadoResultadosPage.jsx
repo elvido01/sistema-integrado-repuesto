@@ -160,8 +160,10 @@ const EstadoResultadosPage = () => {
       subtotal: n(v.subtotal),
       descuento: n(v.descuento),
       recargo: n(v.recargo),
+      itbis: n(v.itbis),
       costo,
       total: n(v.total),
+      ventaNeta: Math.max(0, n(v.total) - n(v.itbis)),
     };
   }), [ventas]);
 
@@ -176,8 +178,10 @@ const EstadoResultadosPage = () => {
       cliente: d.clientes?.nombre || '',
       subtotal: n(d.subtotal),
       descuento: n(d.descuento_total),
+      itbis: n(d.itbis_total),
       costo,
       total: n(d.total_devolucion),
+      ventaNeta: Math.max(0, n(d.total_devolucion) - n(d.itbis_total)),
     };
   }), [devoluciones]);
 
@@ -193,8 +197,10 @@ const EstadoResultadosPage = () => {
     const ventasBrutas = ventasDetalle.reduce((sum, v) => sum + v.subtotal, 0);
     const descuentosVentas = ventasDetalle.reduce((sum, v) => sum + v.descuento, 0);
     const recargos = ventasDetalle.reduce((sum, v) => sum + v.recargo, 0);
-    const devolucionesVentas = devolucionesDetalle.reduce((sum, d) => sum + Math.max(0, d.subtotal - d.descuento), 0);
-    const ventasNetas = ventasBrutas - descuentosVentas + recargos - devolucionesVentas;
+    const ventasNetasFacturadas = ventasDetalle.reduce((sum, v) => sum + v.ventaNeta, 0);
+    const devolucionesVentas = devolucionesDetalle.reduce((sum, d) => sum + d.ventaNeta, 0);
+    const ajusteFacturas = ventasNetasFacturadas - (ventasBrutas - descuentosVentas + recargos);
+    const ventasNetas = ventasNetasFacturadas - devolucionesVentas;
     const costoVentas = ventasDetalle.reduce((sum, v) => sum + v.costo, 0) - devolucionesDetalle.reduce((sum, d) => sum + d.costo, 0);
     const utilidadBruta = ventasNetas - costoVentas;
     const gastosOperativos = gastosDetalle.reduce((sum, g) => sum + g.monto, 0);
@@ -206,6 +212,7 @@ const EstadoResultadosPage = () => {
       ventasBrutas,
       descuentosVentas,
       recargos,
+      ajusteFacturas,
       devolucionesVentas,
       ventasNetas,
       costoVentas,
@@ -235,6 +242,11 @@ const EstadoResultadosPage = () => {
     { concepto: 'Ventas brutas', monto: totales.ventasBrutas, porcentaje: pct(totales.ventasNetas ? (totales.ventasBrutas / totales.ventasNetas) * 100 : 0) },
     { concepto: 'Descuentos sobre ventas', monto: -totales.descuentosVentas, porcentaje: pct(totales.ventasNetas ? (-totales.descuentosVentas / totales.ventasNetas) * 100 : 0) },
     { concepto: 'Recargos', monto: totales.recargos, porcentaje: pct(totales.ventasNetas ? (totales.recargos / totales.ventasNetas) * 100 : 0) },
+    ...(Math.abs(totales.ajusteFacturas) > 0.01 ? [{
+      concepto: 'Ajuste facturas / redondeo',
+      monto: totales.ajusteFacturas,
+      porcentaje: pct(totales.ventasNetas ? (totales.ajusteFacturas / totales.ventasNetas) * 100 : 0),
+    }] : []),
     { concepto: 'Devoluciones', monto: -totales.devolucionesVentas, porcentaje: pct(totales.ventasNetas ? (-totales.devolucionesVentas / totales.ventasNetas) * 100 : 0) },
     { concepto: 'Ventas netas', monto: totales.ventasNetas, porcentaje: '100.0%' },
     { concepto: 'Costo de ventas', monto: -totales.costoVentas, porcentaje: pct(totales.ventasNetas ? (-totales.costoVentas / totales.ventasNetas) * 100 : 0) },
@@ -386,7 +398,7 @@ const EstadoResultadosPage = () => {
                 {ventasDetalle.length === 0 ? (
                   <TableRow><TableCell colSpan={6} className="text-center text-slate-400 py-6">Sin ventas en el periodo</TableCell></TableRow>
                 ) : ventasDetalle.map(v => {
-                  const ventaNeta = v.subtotal - v.descuento + v.recargo;
+                  const ventaNeta = v.ventaNeta;
                   return (
                     <TableRow key={v.id}>
                       <TableCell>{v.fecha}</TableCell>

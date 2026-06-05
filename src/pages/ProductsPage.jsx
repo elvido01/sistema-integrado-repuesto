@@ -13,6 +13,7 @@ import ProductTableFooter from '@/components/products/ProductTableFooter';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ChangeProductCodeModal from '@/components/products/ChangeProductCodeModal';
 import PrintLabelModal from '@/components/products/PrintLabelModal';
+import ProductImageStudioModal from '@/components/products/ProductImageStudioModal';
 
 import Papa from 'papaparse';
 import { exportToExcel } from '@/lib/excelExport';
@@ -22,7 +23,7 @@ import { useCatalogData } from '@/hooks/useSupabase';
 import { orNull, nombreById } from '@/lib/rpc-helpers';
 import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 
-const ProductsPage = () => {
+const ProductsPage = ({ extraData }) => {
   const { toast } = useToast();
   const { openPanel } = usePanels();
   const { empresa, tenantId } = useAuth();
@@ -52,6 +53,8 @@ const ProductsPage = () => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isChangeCodeModalOpen, setIsChangeCodeModalOpen] = useState(false);
   const [isPrintLabelModalOpen, setIsPrintLabelModalOpen] = useState(false);
+  const [isImageStudioOpen, setIsImageStudioOpen] = useState(false);
+  const [productForImageStudio, setProductForImageStudio] = useState(null);
   // Estado independiente para impresión: evita que abrir la etiqueta con clic
   // derecho mientras el modal de edición está abierto deje los dos modales
   // peleando por el mismo `selectedProduct` y bloquee la UI con un backdrop residual.
@@ -64,10 +67,23 @@ const ProductsPage = () => {
   const searchTermRef = useRef(searchTerm);
   const filtersRef = useRef(filters);
   const paginationRef = useRef(pagination);
+  const lastRoutedSearchRef = useRef('');
 
   useEffect(() => { searchTermRef.current = searchTerm; }, [searchTerm]);
   useEffect(() => { filtersRef.current = filters; }, [filters]);
   useEffect(() => { paginationRef.current = pagination; }, [pagination]);
+
+  useEffect(() => {
+    const productCode = String(extraData?.productCode || '').trim();
+    const routeKey = `${productCode}:${extraData?.openedAt || ''}`;
+    if (!productCode || routeKey === lastRoutedSearchRef.current) return;
+
+    lastRoutedSearchRef.current = routeKey;
+    setSelectedProduct(null);
+    setFilters({ marca_id: null, modelo_id: null, tipo_id: null });
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    setSearchTerm(productCode);
+  }, [extraData]);
 
   const fetchProducts = useCallback(
     async (isNewSearch = false) => {
@@ -483,6 +499,20 @@ const ProductsPage = () => {
     setIsChangeCodeModalOpen(true);
   };
 
+  const handleOpenImageStudio = (product = selectedProduct) => {
+    if (!product) return;
+    setIsFormModalOpen(false);
+    setIsChangeCodeModalOpen(false);
+    setProductForImageStudio(product);
+    setIsImageStudioOpen(true);
+  };
+
+  const handleImageStudioSaved = ({ product }) => {
+    if (!product?.id) return;
+    setProducts(prev => prev.map(p => p.id === product.id ? { ...p, imagen_url: product.imagen_url } : p));
+    setSelectedProduct(prev => prev?.id === product.id ? { ...prev, imagen_url: product.imagen_url } : prev);
+  };
+
   const handleExport = async () => {
     try {
       setLoading(true);
@@ -561,6 +591,7 @@ const ProductsPage = () => {
             onAdd={() => handleOpenFormModal()}
             onDelete={() => selectedProduct && handleDeleteProduct(selectedProduct.id)}
             onChangeCode={() => selectedProduct && handleOpenChangeCodeModal(selectedProduct)}
+            onImageStudio={() => handleOpenImageStudio(selectedProduct)}
             hasSelection={!!selectedProduct}
           />
         </div>
@@ -599,6 +630,7 @@ const ProductsPage = () => {
               setProductForPrint(prod);
               setIsPrintLabelModalOpen(true);
             }}
+            onImageStudio={handleOpenImageStudio}
             onToggleEcommerce={hasTienda ? handleToggleEcommerce : undefined}
           />
 
@@ -633,6 +665,18 @@ const ProductsPage = () => {
           setProductForPrint(null);
         }}
         product={productForPrint}
+      />
+
+      <ProductImageStudioModal
+        open={isImageStudioOpen}
+        onClose={() => {
+          setIsImageStudioOpen(false);
+          setProductForImageStudio(null);
+        }}
+        product={productForImageStudio}
+        initialImageUrl={productForImageStudio?.imagen_url || ''}
+        saveDirect
+        onSaved={handleImageStudioSaved}
       />
     </>
   );

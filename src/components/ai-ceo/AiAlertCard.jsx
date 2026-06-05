@@ -32,7 +32,12 @@ export default function AiAlertCard({ alert, onChangeStatus, updating }) {
     const irAlModulo = () => {
         if (!targetPanel) return;
         const extra = {};
-        if (alert.related_table === 'productos' && alert.related_id) extra.productoId = alert.related_id;
+        if (alert.related_table === 'productos' && alert.related_id) {
+            const titleCode = String(alert.title || '').split(':').pop()?.trim();
+            extra.productoId = alert.related_id;
+            extra.productCode = alert.metadata?.codigo || titleCode || '';
+            extra.openedAt = Date.now();
+        }
         if (alert.related_table === 'facturas' && alert.metadata?.cliente_id) extra.clienteId = alert.metadata.cliente_id;
         openPanel(targetPanel, extra);
     };

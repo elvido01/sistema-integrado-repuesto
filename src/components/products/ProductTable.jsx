@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Edit, Trash2, Loader2, RefreshCw, Package, Barcode, Store, Eye, EyeOff } from 'lucide-react';
+import { Edit, Trash2, Loader2, RefreshCw, Package, Barcode, Store, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, C
 import { useToast } from '@/components/ui/use-toast';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 
-const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selectedProduct, onSelectProduct, onPrintLabel, onToggleEcommerce }) => {
+const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selectedProduct, onSelectProduct, onPrintLabel, onImageStudio, onToggleEcommerce }) => {
   const { toast } = useToast();
   const [sendingToOrder, setSendingToOrder] = useState(null);
 
@@ -149,6 +149,18 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selec
                     >
                       <Barcode className="w-4 h-4 text-emerald-600" />
                       Imprimir Etiqueta
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      className="font-bold text-violet-700 cursor-pointer flex items-center gap-2 py-2"
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        setTimeout(() => {
+                          onImageStudio && onImageStudio(product);
+                        }, 0);
+                      }}
+                    >
+                      <ImageIcon className="w-4 h-4" />
+                      Producto Studio
                     </ContextMenuItem>
                     {onToggleEcommerce && (
                       <ContextMenuItem
