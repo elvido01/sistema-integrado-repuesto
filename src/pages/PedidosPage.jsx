@@ -322,70 +322,137 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
     <>
       <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleAddProduct} sessionKey={modalSessionKey} />
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-[95vw] w-[1400px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl">
+        <DialogContent className="max-w-[98vw] w-[1500px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl">
 
-          {/* Custom Header matching Image 2 Title Bar */}
-          <div className="bg-[#a3c2f0] py-1 px-4 flex justify-between items-center border-b border-blue-300">
-            <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-              <ListOrdered className="w-5 h-5" /> PEDIDOS / PRE-FACTURA
-            </h2>
-            <div className="flex items-center gap-4">
-              <div className="bg-white/80 backdrop-blur px-3 py-0.5 rounded border border-blue-400 flex items-center gap-2 shadow-sm">
-                <span className="text-xs font-bold text-slate-500 uppercase">Número:</span>
-                <span className="text-sm font-mono font-bold text-blue-700">{pedido?.numero || 'NUEVO'}</span>
+          {/* Header dark estilo Facturacion */}
+          <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between border-b border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1.5">
+                <button className="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300" title="Nuevo">
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button className="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300" title="Guardar">
+                  <FileDown className="w-3.5 h-3.5" />
+                </button>
+                <button className="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300" title="Listar">
+                  <ListOrdered className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <div className="bg-white/80 backdrop-blur px-3 py-0.5 rounded border border-blue-400 flex items-center gap-2 shadow-sm">
-                <span className="text-xs font-bold text-slate-500 uppercase">Fecha:</span>
-                <span className="text-sm font-bold text-slate-700">{format(new Date(currentPedido.fecha), 'dd/MM/yyyy')}</span>
+              <h2 className="text-lg font-bold tracking-tight flex items-center gap-3">
+                <span className="text-amber-400">{empresa?.nombre?.toUpperCase() || 'REPUESTOS MORLA'}</span>
+                <span className="text-slate-500">|</span>
+                <span className="uppercase tracking-widest text-sm">Pedido / Pre-Factura</span>
+              </h2>
+            </div>
+            <div className="bg-red-600 px-2.5 py-0.5 rounded text-xs font-black tracking-wider">V2.0 PRO</div>
+          </div>
+
+          {/* Datos del cliente + Detalles compactos (estilo Facturacion) */}
+          <div className="bg-white border-b border-slate-200 grid grid-cols-12">
+            {/* Izq: datos cliente */}
+            <div className="col-span-8 p-2.5 border-r border-slate-200">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">Datos del cliente</span>
+                <span className="text-[10px] text-slate-400 italic">TECLA F3 PARA BUSCAR</span>
+              </div>
+              <div className="grid grid-cols-12 gap-x-3 gap-y-1.5 items-center text-xs">
+                <Label className="col-span-2 text-[11px] font-bold text-slate-500 uppercase text-right">Cliente ID:</Label>
+                <div className="col-span-4">
+                  <Select value={currentPedido.cliente_id} onValueChange={val => setCurrentPedido(p => ({ ...p, cliente_id: val }))}>
+                    <SelectTrigger className="h-7 border-slate-300 text-xs"><SelectValue placeholder="CÓDIGO DEL CLIENTE..." /></SelectTrigger>
+                    <SelectContent>{clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <Label className="col-span-1 text-[11px] font-bold text-slate-500 uppercase text-right">RNC:</Label>
+                <div className="col-span-5">
+                  <Input readOnly value={selectedCliente?.rnc || '000000000'} className="h-7 bg-slate-50 border-slate-300 text-xs font-mono" />
+                </div>
+
+                <Label className="col-span-2 text-[11px] font-bold text-slate-500 uppercase text-right">Nombre:</Label>
+                <div className="col-span-10">
+                  <Input
+                    value={currentPedido.manual_cliente_nombre || ''}
+                    onChange={e => setCurrentPedido(p => ({ ...p, manual_cliente_nombre: e.target.value }))}
+                    className={`h-7 text-xs border-slate-300 uppercase ${isGenericClient ? 'bg-yellow-50' : 'bg-slate-50 opacity-70'}`}
+                    placeholder={isGenericClient ? 'ESCRIBA NOMBRE O VEHICULO DEL CLIENTE...' : 'SOLO PARA CLIENTE GENERICO'}
+                    disabled={!isGenericClient}
+                  />
+                </div>
+
+                <Label className="col-span-2 text-[11px] font-bold text-slate-500 uppercase text-right">Dirección:</Label>
+                <div className="col-span-7">
+                  <Input readOnly value={selectedCliente?.direccion || 'N/A'} className="h-7 bg-slate-50 border-slate-300 text-xs" />
+                </div>
+                <Label className="col-span-1 text-[11px] font-bold text-slate-500 uppercase text-right">Tel:</Label>
+                <div className="col-span-2">
+                  <Input readOnly value={selectedCliente?.telefono || 'N/A'} className="h-7 bg-slate-50 border-slate-300 text-xs" />
+                </div>
+              </div>
+            </div>
+
+            {/* Der: detalles pedido */}
+            <div className="col-span-4 p-2.5 bg-slate-50/50">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">Detalles Pedido</span>
+                <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded font-black">Nº {pedido?.numero || 'NUEVO'}</span>
+              </div>
+              <div className="grid grid-cols-12 gap-x-2 gap-y-1.5 items-center">
+                <Label className="col-span-3 text-[11px] font-bold text-slate-500 uppercase text-right">Fecha:</Label>
+                <div className="col-span-9">
+                  <Input
+                    value={format(new Date(currentPedido.fecha), 'dd/MM/yyyy')}
+                    readOnly
+                    className="h-7 bg-white border-slate-300 text-xs font-bold"
+                  />
+                </div>
+                <Label className="col-span-3 text-[11px] font-bold text-slate-500 uppercase text-right">Vendedor:</Label>
+                <div className="col-span-9">
+                  <Select value={currentPedido.vendedor_id} onValueChange={val => setCurrentPedido(p => ({ ...p, vendedor_id: val }))}>
+                    <SelectTrigger className="h-7 border-slate-300 text-xs"><SelectValue placeholder="Seleccione..." /></SelectTrigger>
+                    <SelectContent>{vendedores.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <Label className="col-span-3 text-[11px] font-bold text-slate-500 uppercase text-right">Placa:</Label>
+                <div className="col-span-9">
+                  <Input
+                    value={currentPedido.placa_vehiculo || ''}
+                    onChange={e => setCurrentPedido(p => ({ ...p, placa_vehiculo: e.target.value }))}
+                    className="h-7 border-slate-300 text-xs uppercase"
+                    placeholder="Placa / Vehículo"
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Quick Info Bar */}
-          <div className="bg-white border-b px-4 py-2 flex gap-6 items-center shadow-sm z-10">
-            <div className="flex items-center gap-2 min-w-[250px]">
-              <Label className="text-[10px] font-bold text-slate-400 uppercase">Vendedor</Label>
-              <Select value={currentPedido.vendedor_id} onValueChange={val => setCurrentPedido(p => ({ ...p, vendedor_id: val }))}>
-                <SelectTrigger className="h-8 border-slate-200 bg-slate-50/50 focus:ring-blue-500"><SelectValue placeholder="Seleccione..." /></SelectTrigger>
-                <SelectContent>{vendedores.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="h-6 w-px bg-slate-200" />
-            <div className="flex items-center gap-4 flex-grow">
-              <span className="text-[10px] text-slate-400 animate-pulse font-medium italic">F10 para guardar • ESC para salir • INS para buscar artículos</span>
-            </div>
-          </div>
-
-          {/* Main Table Container */}
-          <div className="flex-grow overflow-hidden p-4">
-            <div className="h-full bg-white rounded-xl shadow-inner border border-slate-200 flex flex-col overflow-hidden">
-              <div className="overflow-y-auto flex-grow scrollbar-thin scrollbar-thumb-slate-200">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-slate-100/95 backdrop-blur z-20 shadow-sm">
-                    <TableRow className="border-b border-slate-200 hover:bg-transparent">
-                      <TableHead className="text-xs font-bold uppercase text-slate-600 py-3">
-                        <div className="flex items-center gap-2">
+          {/* Tabla compacta */}
+          <div className="flex-grow overflow-hidden bg-white">
+            <div className="h-full overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-slate-100 z-20 shadow-sm">
+                    <TableRow className="border-b-2 border-slate-300 hover:bg-transparent">
+                      <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 h-8">
+                        <div className="flex items-center gap-1.5">
                           Código
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => setIsProductSearchOpen(true)}
-                            className="h-6 w-6 text-blue-600 hover:bg-blue-100 border border-blue-200 shadow-sm"
+                            className="h-5 w-5 text-blue-600 hover:bg-blue-100"
                             title="Añadir Artículo [INS]"
                           >
-                            <Search className="h-3.5 w-3.5" />
+                            <Search className="h-3 w-3" />
                           </Button>
                         </div>
                       </TableHead>
-                      <TableHead className="text-xs font-bold uppercase text-slate-600">Descripción</TableHead>
-                      <TableHead className="text-xs font-bold uppercase text-slate-600">Ubicación</TableHead>
-                      <TableHead className="text-[11px] font-bold uppercase text-slate-600 text-center w-20">Cant.</TableHead>
-                      <TableHead className="text-[11px] font-bold uppercase text-slate-600 text-center w-20">Unidad</TableHead>
-                      <TableHead className="text-[11px] font-bold uppercase text-slate-600 text-right w-28">Precio</TableHead>
-                      <TableHead className="text-[11px] font-bold uppercase text-slate-600 text-right w-24">Desc. %</TableHead>
-                      <TableHead className="text-[11px] font-bold uppercase text-slate-600 text-right w-24">ITBIS</TableHead>
-                      <TableHead className="text-[11px] font-bold uppercase text-slate-600 text-right w-32 bg-blue-50/50">Importe</TableHead>
-                      <TableHead className="w-10" />
+                      <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2">Descripción</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2">Ubicación</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-center w-16">Cant.</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-right w-20">Precio</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-right w-20">Desc.</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-right w-20">ITBIS</TableHead>
+                      <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-right w-24">Importe</TableHead>
+                      <TableHead className="w-8 py-1.5" />
                     </TableRow>
                     {/* Staging Row */}
                     <TableRow className="bg-[#ffffbf] border-b-2 border-gray-600 shadow-md h-10 group">
@@ -422,7 +489,6 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                           }}
                         />
                       </TableCell>
-                      <TableCell className="p-1 font-bold text-center text-[10px] text-slate-400 border-r border-gray-300">{stagingItem?.unidad || '---'}</TableCell>
                       <TableCell className="p-1 border-r border-gray-300">
                         <Input
                           id="ped-input-precio"
@@ -465,7 +531,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                   <TableBody>
                     {detalles.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="h-64 text-center">
+                        <TableCell colSpan={9} className="h-64 text-center">
                           <div className="flex flex-col items-center justify-center text-slate-300 gap-2">
                             <ShoppingCart className="w-12 h-12 opacity-20" />
                             <p className="text-sm italic">No hay productos en este pedido</p>
@@ -473,34 +539,33 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                         </TableCell>
                       </TableRow>
                     ) : detalles.map((d, idx) => (
-                      <TableRow key={d.producto_id} className={`group hover:bg-slate-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
-                        <TableCell className="font-mono text-xs font-bold text-slate-700">{d.codigo}</TableCell>
-                        <TableCell className="text-xs font-medium text-slate-600">{d.descripcion}</TableCell>
-                        <TableCell className="text-[10px] text-slate-400 italic">{d.ubicacion}</TableCell>
-                        <TableCell><Input type="number" value={d.cantidad} onChange={e => handleUpdateDetail(d.producto_id, 'cantidad', e.target.value)} className="w-20 h-7 text-xs text-center border-slate-200 focus:border-blue-400" /></TableCell>
-                        <TableCell className="text-center font-bold text-slate-500 text-[10px]">{d.unidad}</TableCell>
-                        <TableCell>
+                      <TableRow key={d.producto_id} className={`group hover:bg-blue-50/40 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                        <TableCell className="font-mono text-xs font-bold text-slate-800 py-1 px-2">{d.codigo}</TableCell>
+                        <TableCell className="text-xs font-medium text-slate-700 py-1 px-2">{d.descripcion}</TableCell>
+                        <TableCell className="text-[11px] text-slate-500 py-1 px-2">{d.ubicacion}</TableCell>
+                        <TableCell className="py-1 px-1"><Input type="number" value={d.cantidad} onChange={e => handleUpdateDetail(d.producto_id, 'cantidad', e.target.value)} className="h-6 text-xs text-center border-slate-200 focus:border-blue-400 font-bold px-1" /></TableCell>
+                        <TableCell className="py-1 px-1">
                           <Input
                             type="number"
                             value={d.precio}
                             onChange={e => handleUpdateDetail(d.producto_id, 'precio', e.target.value)}
-                            className="w-24 h-7 text-xs text-right border-slate-200 focus:border-blue-400 font-bold"
+                            className="h-6 text-xs text-right border-slate-200 focus:border-blue-400 font-bold px-1"
                             disabled={profile?.role !== 'admin' && profile?.role !== 'owner'}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="py-1 px-1">
                           <Input
                             type="number"
                             value={d.descuento}
                             onChange={e => handleUpdateDetail(d.producto_id, 'descuento', e.target.value)}
-                            className="w-24 h-7 text-xs text-right border-slate-200 focus:border-blue-400 font-bold text-red-600"
+                            className="h-6 text-xs text-right border-slate-200 focus:border-blue-400 font-bold text-red-600 px-1"
                           />
                         </TableCell>
-                        <TableCell className="text-right text-[10px] text-slate-500 font-medium">RD$ {d.itbis.toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-bold text-blue-800 bg-blue-50/30">RD$ {d.importe?.toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600" onClick={() => handleRemoveDetail(d.producto_id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
+                        <TableCell className="text-right text-[11px] text-slate-600 font-medium py-1 px-2">{Number(d.itbis || 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-bold text-blue-700 py-1 px-2">{Number(d.importe || 0).toFixed(2)}</TableCell>
+                        <TableCell className="py-1 px-1">
+                          <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleRemoveDetail(d.producto_id)}>
+                            <Trash2 className="h-3 w-3" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -508,117 +573,50 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                   </TableBody>
                 </Table>
               </div>
-            </div>
           </div>
 
-          {/* Bottom Panels - Legacy Structure with Modern Style */}
-          <div className="bg-[#f0f4f8] p-4 grid grid-cols-12 gap-4 border-t border-slate-200 shadow-[0_-4px_10px_-5px_rgba(0,0,0,0.1)]">
-
-            {/* Left Column: Data Cliente & Vehicle & Notes */}
-            <div className="col-span-8 flex flex-col gap-3">
-              <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                <h3 className="text-[10px] font-extrabold text-blue-800 uppercase mb-3 flex items-center gap-1.5 opacity-70 border-b pb-1.5">
-                  <User className="w-3 h-3" /> Datos del Cliente
-                </h3>
-                <div className="grid grid-cols-12 gap-3 items-start">
-                  <div className="col-span-12 md:col-span-5 space-y-3">
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-bold text-slate-500 uppercase">Cliente [F3]</Label>
-                      <Select value={currentPedido.cliente_id} onValueChange={val => setCurrentPedido(p => ({ ...p, cliente_id: val }))}>
-                        <SelectTrigger className="h-8 border-slate-200 focus:border-blue-500"><SelectValue placeholder="Presione F3 para buscar cliente..." /></SelectTrigger>
-                        <SelectContent>{clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-bold text-slate-500 uppercase">Nombre de Cliente / Vehículo</Label>
-                      <Input
-                        value={currentPedido.manual_cliente_nombre || ''}
-                        onChange={e => setCurrentPedido(p => ({ ...p, manual_cliente_nombre: e.target.value }))}
-                        className={`h-8 border-slate-200 text-xs transition-all ${isGenericClient ? 'bg-yellow-50/50 border-yellow-200' : 'bg-slate-50 opacity-50'}`}
-                        placeholder={isGenericClient ? "Escriba nombre del cliente o motocicleta..." : "Solo para Cliente Genérico"}
-                        disabled={!isGenericClient}
-                      />
-                    </div>
-                  </div>
-                  <div className="col-span-12 md:col-span-7 flex flex-col gap-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold text-slate-500 uppercase">RNC / Cédula</Label>
-                        <Input readOnly value={selectedCliente?.rnc || ''} className="h-8 bg-slate-50 border-slate-200 text-xs font-mono" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold text-slate-500 uppercase">Placa / Vehículo</Label>
-                        <Input value={currentPedido.placa_vehiculo || ''} onChange={e => setCurrentPedido(p => ({ ...p, placa_vehiculo: e.target.value }))} className="h-8 border-slate-200 text-xs" />
-                      </div>
-                    </div>
-                    <div className="flex gap-3 overflow-x-auto">
-                      <div className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500 flex-grow"><span className="font-bold">DIR:</span> {selectedCliente?.direccion || '---'}</div>
-                      <div className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500"><span className="font-bold">TEL:</span> {selectedCliente?.telefono || '---'}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex-grow">
-                  <h3 className="text-[10px] font-extrabold text-blue-800 uppercase mb-1 flex items-center gap-1.5 opacity-70">
-                    <Tags className="w-3 h-3" /> Notas y Comentarios
-                  </h3>
-                  <Textarea
-                    value={currentPedido.notas}
-                    onChange={e => setCurrentPedido(p => ({ ...p, notas: e.target.value }))}
-                    className="min-h-[60px] text-xs border-slate-200 focus:border-blue-400 resize-none h-full"
-                    placeholder="Escriba aquí notas internas o condiciones especiales..."
-                  />
-                </div>
+          {/* Footer compacto estilo Facturacion */}
+          <div className="border-t-2 border-slate-300">
+            {/* Fila 1: notas + sub-total, descuento, total ITBIS */}
+            <div className="grid grid-cols-12 bg-white border-b border-slate-200">
+              <div className="col-span-7 border-r border-slate-200 p-1.5 flex items-center gap-2">
+                <Tags className="w-3.5 h-3.5 text-slate-400" />
+                <Input
+                  value={currentPedido.notas}
+                  onChange={e => setCurrentPedido(p => ({ ...p, notas: e.target.value }))}
+                  className="h-7 text-xs border-slate-200 flex-1"
+                  placeholder="Notas y comentarios (opcional)..."
+                />
+              </div>
+              <div className="col-span-5 grid grid-cols-2 gap-x-3 px-3 py-1.5 text-xs">
+                <span className="font-bold text-emerald-700 uppercase text-[11px]">Sub-total</span>
+                <span className="text-right font-mono font-bold text-emerald-700">{totals.subtotal.toFixed(2)}</span>
+                <span className="font-bold text-slate-600 uppercase text-[11px]">Descuento</span>
+                <span className="text-right font-mono text-red-600">{totals.descuento_total.toFixed(2)}</span>
+                <span className="font-bold text-slate-600 uppercase text-[11px]">Total ITBIS</span>
+                <span className="text-right font-mono">{totals.itbis_total.toFixed(2)}</span>
               </div>
             </div>
 
-            {/* Right Column: Totals & Final Actions */}
-            <div className="col-span-4 flex flex-col gap-3">
-              <div className="bg-[#fffbe6]/80 backdrop-blur rounded-lg border border-yellow-200 p-4 shadow-sm relative overflow-hidden flex-grow flex flex-col justify-center">
-                <div className="absolute top-0 right-0 p-4 opacity-5"><BarChart2 className="w-16 h-16" /></div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-xs text-slate-600">
-                    <span className="font-medium">Total Exento:</span>
-                    <span className="font-mono">RD$ 0.00</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs text-slate-600">
-                    <span className="font-medium">Subtotal (Gravado):</span>
-                    <span className="font-mono">RD$ {totals.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs text-red-500">
-                    <span className="font-medium">Descuento aplicado:</span>
-                    <span className="font-mono">- RD$ {totals.descuento_total.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs text-slate-600">
-                    <span className="font-medium uppercase tracking-tighter">ITBIS (Incluido):</span>
-                    <span className="font-mono">RD$ {totals.itbis_total.toFixed(2)}</span>
-                  </div>
-
-                  <div className="h-px bg-yellow-300/30 my-2" />
-
-                  <div className="flex justify-between items-end">
-                    <span className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">TOTAL FACTURADO</span>
-                    <div className="text-right">
-                      <span className="text-[10px] block text-red-500 font-bold -mb-1">RD$ TRANSACCIONAL</span>
-                      <span className="text-3xl font-black text-red-600 drop-shadow-sm font-mono tracking-tighter">
-                        {montoTotal.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+            {/* Fila 2: TOTAL FACTURA gigante + botones */}
+            <div className="grid grid-cols-12 bg-slate-50">
+              <div className="col-span-7 border-r border-slate-200 px-3 py-2.5 flex items-center gap-3">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Recibido</span>
+                <span className="font-mono font-bold text-slate-700">RD$ 0.00</span>
+                <span className="text-[10px] font-bold text-red-600 uppercase ml-4">Cambio</span>
+                <span className="font-mono font-bold text-red-600">RD$ {(0 - montoTotal).toFixed(2)}</span>
               </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={onClose} className="h-10 border-slate-300 hover:bg-slate-100 text-slate-600 font-bold uppercase text-[11px] tracking-widest shadow-sm">
-                  <X className="w-4 h-4 mr-2" /> Cancelar [ESC]
+              <div className="col-span-5 grid grid-cols-12 gap-2 px-3 py-2 items-center">
+                <span className="col-span-5 font-black text-red-600 uppercase text-sm tracking-wider">Total Factura</span>
+                <span className="col-span-3 text-right font-mono font-black text-red-600 text-xl">{montoTotal.toFixed(2)}</span>
+                <Button variant="outline" onClick={onClose} className="col-span-2 h-8 border-slate-300 text-slate-600 font-bold text-[11px]">
+                  <X className="w-3.5 h-3.5 mr-1" /> ESC
                 </Button>
-                <Button onClick={handleSave} disabled={isSubmitting} className="h-10 bg-blue-900 hover:bg-blue-950 text-white font-bold uppercase text-[11px] tracking-widest shadow-md active:translate-y-0.5 transition-all">
-                  {isSubmitting ? <Loader2 className="animate-spin" /> : <><Send className="w-4 h-4 mr-2" /> Guardar [F10]</>}
+                <Button onClick={handleSave} disabled={isSubmitting} className="col-span-2 h-8 bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px]">
+                  {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><FileDown className="w-3.5 h-3.5 mr-1" /> F10</>}
                 </Button>
               </div>
             </div>
-
           </div>
 
         </DialogContent>
