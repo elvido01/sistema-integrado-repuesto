@@ -598,20 +598,18 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
               </div>
             </div>
 
-            {/* Fila 2: TOTAL FACTURA + botones grandes */}
-            <div className="grid grid-cols-12 bg-slate-50 items-center px-3 py-3 gap-3">
-              <div className="col-span-7 flex items-center gap-4">
+            {/* Fila 2: TOTAL FACTURA + botones a la derecha */}
+            <div className="bg-slate-50 px-3 py-3 flex items-center justify-end gap-4">
+              <div className="flex items-center gap-3">
                 <span className="text-base font-black text-red-600 uppercase tracking-wider">Total Factura</span>
                 <span className="font-mono font-black text-red-600 text-3xl tracking-tight">{montoTotal.toFixed(2)}</span>
               </div>
-              <div className="col-span-5 flex items-center justify-end gap-2">
-                <Button variant="outline" onClick={onClose} className="h-10 px-5 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-100">
-                  <X className="w-4 h-4 mr-2" /> ESC - Salir
-                </Button>
-                <Button onClick={handleSave} disabled={isSubmitting} className="h-10 px-5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileDown className="w-4 h-4 mr-2" /> F10 - Grabar</>}
-                </Button>
-              </div>
+              <Button variant="outline" onClick={onClose} className="h-10 px-5 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-100">
+                <X className="w-4 h-4 mr-2" /> ESC - Salir
+              </Button>
+              <Button onClick={handleSave} disabled={isSubmitting} className="h-10 px-5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileDown className="w-4 h-4 mr-2" /> F10 - Grabar</>}
+              </Button>
             </div>
           </div>
 
