@@ -100,7 +100,7 @@ const ReporteComprasPage = () => {
 
   // Totales para el header de cada tab
   const totalCompras = compras.reduce((sum, c) => sum + Number(c.total_compra || 0), 0);
-  const totalPagos = pagos.reduce((sum, p) => sum + Number(p.total_pagado || p.monto || 0), 0);
+  const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto_pagado || 0), 0);
 
   return (
     <>
@@ -268,12 +268,12 @@ const ReporteComprasPage = () => {
                     <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-400 italic">No se encontraron pagos en el rango seleccionado.</TableCell></TableRow>
                   ) : (
                     pagos.map(pago => (
-                      <TableRow key={pago.id}>
+                      <TableRow key={pago.id} className={pago.anulado ? 'opacity-50 line-through' : ''}>
                         <TableCell>{formatInTimeZone(new Date(pago.fecha), 'dd/MM/yyyy')}</TableCell>
-                        <TableCell className="font-mono">{String(pago.numero || '').padStart(7, '0')}</TableCell>
+                        <TableCell className="font-mono">{pago.numero}</TableCell>
                         <TableCell>{pago.proveedores?.nombre || 'N/A'}</TableCell>
-                        <TableCell className="text-right font-bold text-emerald-700">RD$ {fmt(pago.total_pagado || pago.monto)}</TableCell>
-                        <TableCell className="text-xs text-slate-500 truncate max-w-[260px]" title={pago.notas}>{pago.notas || pago.referencia || '—'}</TableCell>
+                        <TableCell className="text-right font-bold text-emerald-700">RD$ {fmt(pago.monto_pagado)}</TableCell>
+                        <TableCell className="text-xs text-slate-500 truncate max-w-[260px]" title={pago.concepto}>{pago.concepto || '—'}</TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
                             <Button
@@ -284,7 +284,7 @@ const ReporteComprasPage = () => {
                               onClick={() => {
                                 try {
                                   generatePagoSuplidorPDF(
-                                    pago,
+                                    { ...pago, total_pagado: pago.monto_pagado },
                                     pago.proveedores?.nombre || 'Suplidor',
                                     pago.pagos_suplidores_detalle || [],
                                     pago.formas_pago || [],
