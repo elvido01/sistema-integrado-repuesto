@@ -575,51 +575,58 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
               </div>
           </div>
 
-          {/* Footer: notas a la izquierda + resumen amplio a la derecha */}
+          {/* Footer: 3 columnas (notas | resumen | total) + fila de botones */}
           <div className="border-t-2 border-slate-300 bg-white">
-            <div className="grid grid-cols-12 px-3 py-2 gap-3 items-start">
-              {/* Notas: lado izquierdo */}
-              <div className="col-span-5 flex items-center gap-2">
-                <Tags className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <Input
-                  value={currentPedido.notas}
-                  onChange={e => setCurrentPedido(p => ({ ...p, notas: e.target.value }))}
-                  className="h-9 text-xs border-slate-200 flex-1"
-                  placeholder="Notas y comentarios (opcional)..."
-                />
+            {/* Fila superior: 3 columnas alineadas */}
+            <div className="grid grid-cols-12 divide-x divide-slate-200">
+              {/* Col 1: Notas */}
+              <div className="col-span-5 p-3 flex items-start gap-2">
+                <Tags className="w-4 h-4 text-slate-400 shrink-0 mt-1" />
+                <div className="flex-1">
+                  <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Notas y comentarios</Label>
+                  <Textarea
+                    value={currentPedido.notas}
+                    onChange={e => setCurrentPedido(p => ({ ...p, notas: e.target.value }))}
+                    className="mt-1 min-h-[68px] text-xs border-slate-200 resize-none"
+                    placeholder="Notas u observaciones del pedido..."
+                  />
+                </div>
               </div>
 
-              {/* Resumen: cada lınea con etiqueta a la izquierda + valor a la derecha (ancho completo) */}
-              <div className="col-span-7 space-y-0.5 text-sm">
-                <div className="flex items-center justify-between border-b border-slate-100 py-0.5">
-                  <span className="font-bold text-emerald-700 uppercase tracking-wider text-xs">Sub-total</span>
-                  <span className="font-mono font-bold text-emerald-700">{totals.subtotal.toFixed(2)}</span>
+              {/* Col 2: Resumen (Sub-total / Descuento / Total ITBIS) */}
+              <div className="col-span-4 p-3 bg-slate-50/40">
+                <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2 block">Resumen</Label>
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-700 uppercase tracking-wide text-xs">Sub-total</span>
+                    <span className="font-mono font-bold text-emerald-700">{totals.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-600 uppercase tracking-wide text-xs">Descuento</span>
+                    <span className="font-mono text-red-600">{totals.descuento_total.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-600 uppercase tracking-wide text-xs">Total ITBIS</span>
+                    <span className="font-mono">{totals.itbis_total.toFixed(2)}</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between border-b border-slate-100 py-0.5">
-                  <span className="font-bold text-slate-600 uppercase tracking-wider text-xs">Descuento</span>
-                  <span className="font-mono text-red-600">{totals.descuento_total.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between py-0.5">
-                  <span className="font-bold text-slate-600 uppercase tracking-wider text-xs">Total ITBIS</span>
-                  <span className="font-mono">{totals.itbis_total.toFixed(2)}</span>
-                </div>
+              </div>
+
+              {/* Col 3: TOTAL FACTURA grande */}
+              <div className="col-span-3 p-3 bg-red-50/30 flex flex-col items-end justify-center">
+                <span className="text-xs font-black text-red-600 uppercase tracking-widest">Total Factura</span>
+                <span className="font-mono font-black text-red-600 text-3xl tracking-tight leading-none mt-1">{montoTotal.toFixed(2)}</span>
               </div>
             </div>
 
-            {/* Lınea grande: TOTAL FACTURA + monto + botones (todo a lo largo) */}
-            <div className="bg-slate-100 border-t border-slate-300 px-3 py-3 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <span className="text-lg font-black text-red-600 uppercase tracking-wider">Total Factura</span>
-                <span className="font-mono font-black text-red-600 text-4xl tracking-tight">{montoTotal.toFixed(2)}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={onClose} className="h-11 px-5 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-200">
-                  <X className="w-4 h-4 mr-2" /> ESC - Salir
-                </Button>
-                <Button onClick={handleSave} disabled={isSubmitting} className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileDown className="w-4 h-4 mr-2" /> F10 - Grabar</>}
-                </Button>
-              </div>
+            {/* Fila inferior: botones a la derecha */}
+            <div className="bg-slate-100 border-t border-slate-300 px-3 py-2 flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={onClose} className="h-10 px-5 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-200">
+                <X className="w-4 h-4 mr-2" /> ESC - Salir
+              </Button>
+              <Button onClick={handleSave} disabled={isSubmitting} className="h-10 px-5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileDown className="w-4 h-4 mr-2" /> F10 - Grabar</>}
+              </Button>
             </div>
           </div>
 
