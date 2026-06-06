@@ -12,12 +12,39 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { X, CalendarPlus as CalendarIcon, Search, Loader2, AlertTriangle, UserX, PlusCircle, Share2 } from 'lucide-react';
+import { X, CalendarPlus as CalendarIcon, Search, Loader2, AlertTriangle, UserX, PlusCircle, Share2, Plus, FileDown, ListOrdered, Tags } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { generateCotizacionPDF } from '@/components/common/PDFGenerator';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
+
+// Input con formato de miles es-DO (oculta la coma al editar)
+const MoneyInput = React.forwardRef(({ value, onChange, className = '', ...rest }, ref) => {
+    const [focused, setFocused] = React.useState(false);
+    const [draft, setDraft] = React.useState('');
+    const display = focused
+        ? draft
+        : Number(value || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (
+        <Input
+            ref={ref}
+            type="text"
+            inputMode="decimal"
+            value={display}
+            onFocus={(e) => { setFocused(true); setDraft(String(value ?? '')); setTimeout(() => e.target.select?.(), 0); }}
+            onChange={(e) => {
+                const cleaned = e.target.value.replace(/[^0-9.,]/g, '').replace(/,/g, '');
+                setDraft(cleaned);
+                onChange?.({ target: { value: cleaned } });
+            }}
+            onBlur={() => setFocused(false)}
+            className={className}
+            {...rest}
+        />
+    );
+});
+MoneyInput.displayName = 'MoneyInput';
 
 const CLIENTE_GENERICO = {
   id: '00000000-0000-0000-0000-000000000000',
@@ -453,124 +480,174 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
     }
   };
 
+  const { empresa } = useAuth();
+  const isGenericClient = (() => {
+    const genericIds = ['2749fa36-3d7c-4bdf-ad61-df88eda8365a', '00000000-0000-0000-0000-000000000000'];
+    return !cliente?.id || genericIds.includes(cliente.id) || cliente.nombre?.toUpperCase().includes('GENERICO');
+  })();
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-w-6xl w-[95vw] md:w-full max-h-[95vh] overflow-y-auto flex flex-col p-4 md:p-6">
-          <DialogHeader>
-            <DialogTitle>{editingCotizacion ? `Modificando Cotización ${editingCotizacion.numero}` : 'Crear Nueva Cotización'}</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-[98vw] w-[1500px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl">
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b">
-            <div className="md:col-span-2 space-y-2">
-              <Label htmlFor="cliente-search">Cliente <span className="text-morla-blue font-bold">[F3]</span></Label>
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-grow justify-start text-left font-normal" onClick={() => setIsClienteSearchOpen(true)}>
-                  <Search className="mr-2 h-4 w-4" />
-                  {cliente?.nombre || "Seleccionar Cliente"}
-                </Button>
-                {cliente?.id !== CLIENTE_GENERICO.id && (
-                  <Button variant="ghost" size="icon" onClick={handleClearCliente}>
-                    <UserX className="h-4 w-4 text-red-500" />
+          {/* Header dark estilo Facturacion */}
+          <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between border-b border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1.5">
+                <button className="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300" title="Nuevo">
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button className="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300" title="Guardar">
+                  <FileDown className="w-3.5 h-3.5" />
+                </button>
+                <button className="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300" title="Listar">
+                  <ListOrdered className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <h2 className="text-lg font-bold tracking-tight flex items-center gap-3">
+                <span className="text-amber-400">{empresa?.nombre?.toUpperCase() || 'REPUESTOS MORLA'}</span>
+                <span className="text-slate-500">|</span>
+                <span className="uppercase tracking-widest text-sm text-sky-300 font-black">
+                  {editingCotizacion ? `Cotización ${editingCotizacion.numero}` : 'Cotización'}
+                </span>
+              </h2>
+            </div>
+            <div className="bg-red-600 px-2.5 py-0.5 rounded text-xs font-black tracking-wider">V2.0 PRO</div>
+          </div>
+
+          {/* Datos del cliente + Detalles cotización */}
+          <div className="bg-white border-b border-slate-200 grid grid-cols-12">
+            {/* Izq: cliente */}
+            <div className="col-span-8 p-2.5 border-r border-slate-200">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">Datos del cliente</span>
+                <span className="text-[10px] text-slate-400 italic">TECLA F3 PARA BUSCAR</span>
+              </div>
+              <div className="grid grid-cols-12 gap-x-3 gap-y-1.5 items-center text-xs">
+                <Label className="col-span-2 text-[11px] font-bold text-slate-500 uppercase text-right">Cliente:</Label>
+                <div className="col-span-7">
+                  <Button variant="outline" className="w-full h-7 justify-start text-left font-normal text-xs border-slate-300" onClick={() => setIsClienteSearchOpen(true)}>
+                    <Search className="mr-2 h-3 w-3" />
+                    {cliente?.nombre || "Seleccionar Cliente"}
                   </Button>
-                )}
-              </div>
-              {(() => {
-                const genericIds = ['2749fa36-3d7c-4bdf-ad61-df88eda8365a', '00000000-0000-0000-0000-000000000000'];
-                const isGeneric = !cliente?.id || genericIds.includes(cliente.id) || cliente.nombre?.toUpperCase().includes('GENERICO');
+                </div>
+                <div className="col-span-3">
+                  {cliente?.id !== CLIENTE_GENERICO.id && (
+                    <Button variant="ghost" size="sm" onClick={handleClearCliente} className="h-7 text-xs text-red-600 hover:text-red-700">
+                      <UserX className="h-3 w-3 mr-1" /> Quitar
+                    </Button>
+                  )}
+                </div>
 
-                if (isGeneric) {
-                  return (
-                    <div className="mt-2 space-y-1">
-                      <Label className="text-[10px] font-bold text-slate-500 uppercase">Nombre de Cliente / Vehículo</Label>
-                      <Input
-                        value={manualClienteNombre}
-                        onChange={e => setManualClienteNombre(e.target.value)}
-                        className="h-8 border-yellow-400 bg-yellow-50 text-xs text-[#0a1e3a] font-bold uppercase ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        placeholder="ESCRIBA NOMBRE O VEHICULO..."
-                      />
-                    </div>
-                  );
-                }
-                return null;
-              })()}
+                <Label className="col-span-2 text-[11px] font-bold text-slate-500 uppercase text-right">Nombre:</Label>
+                <div className="col-span-10">
+                  <Input
+                    value={manualClienteNombre}
+                    onChange={e => setManualClienteNombre(e.target.value)}
+                    className={`h-7 text-xs border-slate-300 uppercase ${isGenericClient ? 'bg-yellow-50' : 'bg-slate-50 opacity-70'}`}
+                    placeholder={isGenericClient ? 'ESCRIBA NOMBRE O VEHICULO DEL CLIENTE...' : 'SOLO PARA CLIENTE GENERICO'}
+                    disabled={!isGenericClient}
+                  />
+                </div>
+
+                <Label className="col-span-2 text-[11px] font-bold text-slate-500 uppercase text-right">RNC:</Label>
+                <div className="col-span-10">
+                  <Input readOnly value={cliente?.rnc || '000000000'} className="h-7 bg-slate-50 border-slate-300 text-xs font-mono" />
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Vendedor</Label>
-              <select
-                value={vendedorId}
-                onChange={e => setVendedorId(e.target.value)}
-                className="w-full h-10 px-3 py-2 text-sm border rounded-md"
-              >
-                <option value="">Seleccione...</option>
-                {vendedores.map(v => (
-                  <option key={v.id} value={v.id}>{v.nombre}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>Fecha</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start text-left font-normal p-2 h-10 text-xs">
-                      {format(fechaCotizacion, 'dd/MM/yy')}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={fechaCotizacion} onSelect={setFechaCotizacion} initialFocus />
-                  </PopoverContent>
-                </Popover>
+            {/* Der: detalles cotización */}
+            <div className="col-span-4 p-2.5 bg-slate-50/50">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">Detalles Cotización</span>
+                <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded font-black">Nº {editingCotizacion?.numero || 'NUEVA'}</span>
               </div>
-              <div>
-                <Label>Vence</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start text-left font-normal p-2 h-10 text-xs">
-                      {format(fechaVencimiento, 'dd/MM/yy')}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={fechaVencimiento} onSelect={setFechaVencimiento} initialFocus />
-                  </PopoverContent>
-                </Popover>
+              <div className="grid grid-cols-12 gap-x-2 gap-y-1.5 items-center">
+                <Label className="col-span-3 text-[11px] font-bold text-slate-500 uppercase text-right">Vendedor:</Label>
+                <div className="col-span-9">
+                  <select
+                    value={vendedorId}
+                    onChange={e => setVendedorId(e.target.value)}
+                    className="w-full h-7 px-2 text-xs border border-slate-300 rounded-md"
+                  >
+                    <option value="">Seleccione...</option>
+                    {vendedores.map(v => (
+                      <option key={v.id} value={v.id}>{v.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <Label className="col-span-3 text-[11px] font-bold text-slate-500 uppercase text-right">Fecha:</Label>
+                <div className="col-span-9">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full h-7 justify-start text-left font-normal text-xs border-slate-300">
+                        {format(fechaCotizacion, 'dd/MM/yyyy')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={fechaCotizacion} onSelect={setFechaCotizacion} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <Label className="col-span-3 text-[11px] font-bold text-slate-500 uppercase text-right">Vence:</Label>
+                <div className="col-span-9">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full h-7 justify-start text-left font-normal text-xs border-slate-300">
+                        {format(fechaVencimiento, 'dd/MM/yyyy')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={fechaVencimiento} onSelect={setFechaVencimiento} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="flex-grow py-4 min-h-[350px] flex flex-col">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-semibold">Artículos</h3>
-              <Button size="sm" onClick={() => setIsProductSearchOpen(true)}>Agregar Artículo</Button>
-            </div>
-            <div className="flex-grow border rounded-md overflow-x-auto overflow-y-auto max-h-[50vh] md:max-h-none">
-              <Table className="min-w-[800px]">
-                <TableHeader className="sticky top-0 bg-gray-50 z-10 text-xs">
-                  <TableRow className="bg-[#ffffbf] hover:bg-[#ffffbf] border-b-2 border-gray-600 shadow-md h-10 group">
-                    <TableCell className="p-1 border-r border-gray-400">
-                      <div className="flex items-center">
-                        <Input
-                          id="cot-input-codigo"
-                          placeholder="F9..."
-                          value={itemCode}
-                          onChange={e => setItemCode(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') handleAddByCode(itemCode);
-                            if (e.key === 'F9') setIsProductSearchOpen(true);
-                          }}
-                          className="h-7 text-xs font-black border-blue-600 focus:ring-0 bg-white uppercase"
-                        />
-                        <Button size="sm" variant="outline" className="h-7 px-1 rounded-none border-gray-400 bg-gray-100" onClick={() => setIsProductSearchOpen(true)} tabIndex="-1">
-                          <Search className="w-3 h-3 text-blue-800" />
+          {/* Tabla compacta */}
+          <div className="flex-grow overflow-hidden bg-white">
+            <div className="h-full overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-slate-100 z-20 shadow-sm">
+                  <TableRow className="border-b-2 border-slate-300 hover:bg-transparent">
+                    <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 h-8 w-[140px]">
+                      <div className="flex items-center gap-1.5">
+                        Código
+                        <Button variant="ghost" size="icon" onClick={() => setIsProductSearchOpen(true)} className="h-5 w-5 text-blue-600 hover:bg-blue-100" title="Buscar">
+                          <Search className="h-3 w-3" />
                         </Button>
                       </div>
+                    </TableHead>
+                    <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2">Descripción</TableHead>
+                    <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-center w-16">Cant.</TableHead>
+                    <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-right w-24">Precio</TableHead>
+                    <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-right w-20">Desc. $</TableHead>
+                    <TableHead className="text-[11px] font-black uppercase text-slate-700 py-1.5 px-2 text-right w-24">Importe</TableHead>
+                    <TableHead className="w-12 py-1.5" />
+                  </TableRow>
+                  {/* Staging row */}
+                  <TableRow className="bg-[#ffffbf] border-b-2 border-gray-600 shadow-md h-10 group">
+                    <TableCell className="p-1 border-r border-gray-300">
+                      <Input
+                        id="cot-input-codigo"
+                        placeholder="F9..."
+                        value={itemCode}
+                        onChange={e => setItemCode(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleAddByCode(itemCode);
+                          if (e.key === 'F9') setIsProductSearchOpen(true);
+                        }}
+                        className="h-7 text-[11px] font-black border-blue-600 focus:ring-0 bg-white uppercase"
+                      />
                     </TableCell>
-                    <TableCell className="p-1 border-r border-gray-400 font-bold text-blue-900 uppercase truncate max-w-[300px]" title={currentItem?.descripcion}>
-                      {currentItem?.descripcion || <span className="text-gray-400 italic">... BUSQUE POR CODIGO</span>}
+                    <TableCell className="p-1 border-r border-gray-300 font-bold text-blue-900 uppercase truncate max-w-[300px] text-xs" title={currentItem?.descripcion}>
+                      {currentItem?.descripcion || <span className="text-gray-400 italic">... busque por código</span>}
                     </TableCell>
-                    <TableCell className="p-1 border-r border-gray-400">
+                    <TableCell className="p-1 border-r border-gray-300">
                       <Input
                         id="cot-input-cantidad"
                         type="number"
@@ -588,10 +665,9 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                         }}
                       />
                     </TableCell>
-                    <TableCell className="p-1 border-r border-gray-400">
-                      <Input
+                    <TableCell className="p-1 border-r border-gray-300">
+                      <MoneyInput
                         id="cot-input-precio"
-                        type="number"
                         value={currentItem?.precio_unitario || ''}
                         onChange={e => updateCurrentItem('precio_unitario', e.target.value)}
                         className="h-7 text-xs text-right font-black text-blue-900 border-blue-600 focus:ring-0 bg-white"
@@ -599,7 +675,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                         disabled={profile?.role !== 'admin' && profile?.role !== 'owner'}
                       />
                     </TableCell>
-                    <TableCell className="p-1 border-r border-gray-400">
+                    <TableCell className="p-1 border-r border-gray-300">
                       <Input
                         id="cot-input-descuento"
                         type="number"
@@ -609,21 +685,12 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                         className="h-7 text-xs text-center font-black text-red-600 border-blue-600 focus:ring-0 bg-white"
                       />
                     </TableCell>
-                    <TableCell className="p-1 text-right font-black text-blue-800 bg-blue-50/30 border-r border-gray-400">
-                      {currentItem ? (Number((currentItem.cantidad * currentItem.precio_unitario) * (1 - currentItem.descuento_pct / 100))).toFixed(2) : '0.00'}
+                    <TableCell className="p-1 text-right font-black text-blue-800 bg-blue-50/30 border-r border-gray-300">
+                      {currentItem ? Number((currentItem.cantidad * currentItem.precio_unitario) * (1 - (currentItem.descuento_pct || 0) / 100)).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
                     </TableCell>
                     <TableCell className="p-1 text-center">
-                      <Button size="sm" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50" onClick={commitCurrentItem}><PlusCircle className="h-5 w-5" /></Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50" onClick={commitCurrentItem}><PlusCircle className="h-4 w-4" /></Button>
                     </TableCell>
-                  </TableRow>
-                  <TableRow className="bg-gray-100">
-                    <TableHead className="w-[150px] font-bold text-gray-700">Código</TableHead>
-                    <TableHead className="font-bold text-gray-700">Descripción</TableHead>
-                    <TableHead className="w-[80px] text-center font-bold text-gray-700">Cant.</TableHead>
-                    <TableHead className="w-[110px] text-right font-bold text-gray-700">Precio</TableHead>
-                    <TableHead className="w-[100px] text-right font-bold text-gray-700">Desc. $</TableHead>
-                    <TableHead className="w-[110px] text-right font-bold text-gray-700">Importe</TableHead>
-                    <TableHead className="w-[40px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody className="text-xs">
@@ -632,44 +699,41 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                     const itemDescuento = importeBruto * ((item.descuento_pct || 0) / 100);
                     const importeFinal = importeBruto - itemDescuento;
                     return (
-                      <TableRow key={index} className="hover:bg-gray-50">
-                        <TableCell className="font-bold">{item.codigo}</TableCell>
-                        <TableCell>{item.descripcion}</TableCell>
-                        <TableCell>
-                          <Input type="number" value={item.cantidad || 0} onChange={e => handleUpdateArticle(index, 'cantidad', e.target.value)} className="h-7 text-xs text-center border-gray-300" />
+                      <TableRow key={index} className={`group hover:bg-blue-50/40 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                        <TableCell className="font-mono text-xs font-bold text-slate-800 py-1 px-2">{item.codigo}</TableCell>
+                        <TableCell className="text-xs font-medium text-slate-700 py-1 px-2">{item.descripcion}</TableCell>
+                        <TableCell className="py-1 px-1">
+                          <Input type="number" value={item.cantidad || 0} onChange={e => handleUpdateArticle(index, 'cantidad', e.target.value)} className="h-6 text-xs text-center border-slate-200 focus:border-blue-400 font-bold px-1" />
                         </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
+                        <TableCell className="py-1 px-1">
+                          <MoneyInput
                             value={item.precio_unitario || 0}
                             onChange={e => handleUpdateArticle(index, 'precio_unitario', e.target.value)}
-                            className="h-7 text-xs text-right border-gray-300"
+                            className="h-6 text-xs text-right border-slate-200 focus:border-blue-400 font-bold px-1"
                             disabled={profile?.role !== 'admin' && profile?.role !== 'owner'}
                           />
                         </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={Number(itemDescuento || 0).toFixed(2)}
+                        <TableCell className="py-1 px-1">
+                          <MoneyInput
+                            value={Number(itemDescuento || 0)}
                             onChange={e => handleUpdateArticle(index, 'descuento_valor', e.target.value)}
-                            className="h-7 text-xs text-right border-gray-300 font-bold text-red-600"
+                            className="h-6 text-xs text-right border-slate-200 focus:border-blue-400 font-bold text-red-600 px-1"
                           />
                         </TableCell>
-                        <TableCell className="text-right font-black text-blue-900 bg-blue-50/20">{Number(importeFinal || 0).toFixed(2)}</TableCell>
-                        <TableCell>
+                        <TableCell className="text-right font-bold text-blue-700 py-1 px-2">{Number(importeFinal || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-1 px-1">
                           <div className="flex justify-end gap-1">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 text-morla-blue disabled:opacity-30 disabled:text-gray-400 group relative"
+                              className="h-5 w-5 text-blue-600 disabled:opacity-30 disabled:text-gray-400"
                               disabled={!item.imagen_url}
                               title={item.imagen_url ? "Compartir Imagen" : "Sin imagen"}
                               onClick={() => handleShareImage(item)}
                             >
-                              <Share2 className="h-4 w-4" />
+                              <Share2 className="h-3 w-3" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleRemoveArticle(index)}>
+                            <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleRemoveArticle(index)}>
                               <X className="h-3 w-3" />
                             </Button>
                           </div>
@@ -678,7 +742,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                     );
                   }) : (
                     <TableRow>
-                      <TableCell colSpan="7" className="text-center h-24 text-muted-foreground">
+                      <TableCell colSpan="7" className="text-center h-32 text-muted-foreground italic">
                         Agregue artículos a la cotización.
                       </TableCell>
                     </TableRow>
@@ -688,34 +752,67 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-t pt-4">
-            <div>
-              <Label htmlFor="notas">Notas y Comentarios</Label>
-              <Textarea id="notas" value={notas} onChange={e => setNotas(e.target.value)} placeholder="Condiciones de pago, tiempo de entrega, etc." className="h-20" />
+          {/* Footer 3 columnas: Notas | Resumen | Total */}
+          <div className="border-t-2 border-slate-300 bg-white">
+            <div className="grid grid-cols-12 divide-x divide-slate-200">
+              {/* Col 1: Notas */}
+              <div className="col-span-5 px-2 py-1.5 flex items-start gap-1.5">
+                <Tags className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-1" />
+                <div className="flex-1">
+                  <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Notas y comentarios</Label>
+                  <Textarea
+                    value={notas}
+                    onChange={e => setNotas(e.target.value)}
+                    className="mt-0.5 h-[52px] min-h-0 text-xs border-slate-200 resize-none py-1"
+                    placeholder="Condiciones de pago, tiempo de entrega, etc."
+                  />
+                </div>
+              </div>
+
+              {/* Col 2: Resumen */}
+              <div className="col-span-4 px-3 py-1.5 bg-slate-50/40">
+                <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">Resumen</Label>
+                <div className="space-y-0.5 text-sm mt-0.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-700 uppercase tracking-wide text-xs">Sub-total</span>
+                    <span className="font-mono font-bold text-emerald-700">{Number(totals.subtotal || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-600 uppercase tracking-wide text-xs">Descuento</span>
+                    <span className="font-mono text-red-600">{Number(totals.descuento_total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-600 uppercase tracking-wide text-xs">Total ITBIS</span>
+                    <span className="font-mono">{Number(totals.itbis_total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Col 3: TOTAL */}
+              <div className="col-span-3 px-2 py-1.5 bg-red-50/30 flex flex-col items-center justify-center">
+                <span className="text-xs font-black text-red-600 uppercase tracking-widest">Total Cotización</span>
+                <span className="font-mono font-black text-red-600 text-3xl tracking-tight leading-none mt-0.5">
+                  {Number(totals.total_cotizacion || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col items-end">
-              <div className="w-full max-w-xs space-y-1 text-xs">
-                <div className="flex justify-between"><span>Subtotal:</span><span>{Number(totals.subtotal || 0).toFixed(2)}</span></div>
-                <div className="flex justify-between"><span>Descuento:</span><span>- {Number(totals.descuento_total || 0).toFixed(2)}</span></div>
-                <div className="flex justify-between"><span>ITBIS:</span><span>+ {Number(totals.itbis_total || 0).toFixed(2)}</span></div>
-                <div className="flex justify-between font-bold text-base border-t pt-1 mt-1"><span>TOTAL:</span><span>DOP {Number(totals.total_cotizacion || 0).toFixed(2)}</span></div>
+
+            {/* Fila botones */}
+            <div className="bg-slate-100 border-t border-slate-300 px-3 py-1.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Checkbox id="imprimir" checked={imprimir} onCheckedChange={setImprimir} />
+                <Label htmlFor="imprimir" className="text-xs">Imprimir al guardar</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={onClose} className="h-9 px-4 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-200">
+                  <X className="w-4 h-4 mr-1.5" /> ESC - Salir
+                </Button>
+                <Button onClick={handleSubmit} disabled={isSubmitting} className="h-9 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileDown className="w-4 h-4 mr-1.5" /> F10 - {editingCotizacion ? 'Actualizar' : 'Guardar'}</>}
+                </Button>
               </div>
             </div>
           </div>
-
-          <DialogFooter className="p-4 border-t">
-            <div className="flex items-center space-x-2 mr-auto">
-              <Checkbox id="imprimir" checked={imprimir} onCheckedChange={setImprimir} />
-              <Label htmlFor="imprimir" className="text-xs">Imprimir al guardar</Label>
-            </div>
-            <DialogClose asChild>
-              <Button variant="outline">Cancelar</Button>
-            </DialogClose>
-            <Button onClick={handleSubmit} disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {editingCotizacion ? 'Actualizar Cotización' : 'Guardar Cotización'}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
       <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleSelectProduct} sessionKey={modalSessionKey} />
