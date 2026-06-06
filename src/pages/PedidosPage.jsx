@@ -21,6 +21,39 @@ import { generatePedidoPDF } from '@/components/common/PDFGenerator';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { usePanels } from '@/contexts/PanelContext';
 
+// Input numerico con formato de miles (es-DO).
+// Cuando NO esta focuseado muestra "1,561.39"; al editar elimina las comas
+// para permitir escribir libremente. Al perder foco vuelve a formatear.
+const MoneyInput = React.forwardRef(({ value, onChange, className = '', ...rest }, ref) => {
+    const [focused, setFocused] = React.useState(false);
+    const [draft, setDraft] = React.useState('');
+    const display = focused
+        ? draft
+        : Number(value || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (
+        <Input
+            ref={ref}
+            type="text"
+            inputMode="decimal"
+            value={display}
+            onFocus={(e) => {
+                setFocused(true);
+                setDraft(String(value ?? ''));
+                setTimeout(() => e.target.select?.(), 0);
+            }}
+            onChange={(e) => {
+                const cleaned = e.target.value.replace(/[^0-9.,]/g, '').replace(/,/g, '');
+                setDraft(cleaned);
+                onChange?.({ target: { value: cleaned } });
+            }}
+            onBlur={() => setFocused(false)}
+            className={className}
+            {...rest}
+        />
+    );
+});
+MoneyInput.displayName = 'MoneyInput';
+
 const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores }) => {
   const { toast } = useToast();
   const { profile , empresa} = useAuth();
@@ -490,9 +523,8 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                         />
                       </TableCell>
                       <TableCell className="p-1 border-r border-gray-300">
-                        <Input
+                        <MoneyInput
                           id="ped-input-precio"
-                          type="number"
                           value={stagingItem?.precio || ''}
                           onChange={e => updateStagingItem('precio', e.target.value)}
                           className="h-7 text-xs text-right font-black text-blue-900 border-blue-600 focus:ring-0 bg-white"
@@ -545,8 +577,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                         <TableCell className="text-[11px] text-slate-500 py-1 px-2">{d.ubicacion}</TableCell>
                         <TableCell className="py-1 px-1"><Input type="number" value={d.cantidad} onChange={e => handleUpdateDetail(d.producto_id, 'cantidad', e.target.value)} className="h-6 text-xs text-center border-slate-200 focus:border-blue-400 font-bold px-1" /></TableCell>
                         <TableCell className="py-1 px-1">
-                          <Input
-                            type="number"
+                          <MoneyInput
                             value={d.precio}
                             onChange={e => handleUpdateDetail(d.producto_id, 'precio', e.target.value)}
                             className="h-6 text-xs text-right border-slate-200 focus:border-blue-400 font-bold px-1"
