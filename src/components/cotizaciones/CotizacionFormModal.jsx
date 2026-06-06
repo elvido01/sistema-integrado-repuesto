@@ -489,7 +489,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-w-[98vw] w-[1500px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl">
+        <DialogContent className="max-w-[98vw] w-[1500px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl [&>button]:text-white [&>button]:opacity-80 [&>button]:hover:opacity-100 [&>button]:top-3 [&>button]:right-3 [&>button]:z-50">
 
           {/* Header dark estilo Facturacion */}
           <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between border-b border-slate-700">
@@ -513,7 +513,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                 </span>
               </h2>
             </div>
-            <div className="bg-red-600 px-2.5 py-0.5 rounded text-xs font-black tracking-wider">V2.0 PRO</div>
+            <div className="bg-red-600 px-2.5 py-0.5 rounded text-xs font-black tracking-wider mr-8">V2.0 PRO</div>
           </div>
 
           {/* Datos del cliente + Detalles cotización */}
