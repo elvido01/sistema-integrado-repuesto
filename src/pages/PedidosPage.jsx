@@ -854,7 +854,7 @@ const PedidosPage = () => {
                           <TableCell>{p.usuario_email}</TableCell>
                           <TableCell>{p.vendedor_nombre}</TableCell>
                           <TableCell>{p.cliente_nombre}</TableCell>
-                          <TableCell className="text-right font-semibold">{Number(p.monto_total || 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-semibold">{Number(p.monto_total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                           <TableCell>{p.estado}</TableCell>
                         </TableRow>
                       ))}

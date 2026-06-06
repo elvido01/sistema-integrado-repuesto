@@ -397,8 +397,8 @@ const CotizacionPage = () => {
                       <TableCell className="py-1 text-xs">{d.codigo}</TableCell>
                       <TableCell className="py-1 text-xs">{d.descripcion}</TableCell>
                       <TableCell className="py-1 text-xs text-right">{d.cantidad || 0}</TableCell>
-                      <TableCell className="py-1 text-xs text-right">{Number(d.precio_unitario || 0).toFixed(2)}</TableCell>
-                      <TableCell className="py-1 text-xs text-right font-medium">{Number(d.importe || 0).toFixed(2)}</TableCell>
+                      <TableCell className="py-1 text-xs text-right">{Number(d.precio_unitario || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="py-1 text-xs text-right font-medium">{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                       <TableCell className="py-1 text-center">
                         {d.productos?.imagen_url ? (
                           <Button
