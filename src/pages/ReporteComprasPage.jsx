@@ -67,7 +67,14 @@ const ReporteComprasPage = () => {
     // Trae los pagos con su suplidor y detalles para reimpresion.
     let query = supabase
       .from('pagos_suplidores')
-      .select(`*, proveedores (id, nombre), pagos_suplidores_detalle (*)`)
+      .select(`
+        *,
+        proveedores (id, nombre),
+        pagos_suplidores_detalle (
+          id, compra_id, monto_abonado,
+          compras (id, numero, fecha, referencia, monto_pendiente, total_compra)
+        )
+      `)
       .order('fecha', { ascending: false });
     if (filters.dateRange.from) query = query.gte('fecha', formatDateForSupabase(filters.dateRange.from));
     if (filters.dateRange.to)   query = query.lte('fecha', formatDateForSupabase(filters.dateRange.to));
@@ -283,10 +290,17 @@ const ReporteComprasPage = () => {
                               title="Reimprimir Recibo de Pago"
                               onClick={() => {
                                 try {
+                                  // Mapear cada detalle con la info de su compra (fecha, referencia, etc.)
+                                  const detallesParaPDF = (pago.pagos_suplidores_detalle || []).map(d => ({
+                                    ...d,
+                                    fecha_emision: d.compras?.fecha,
+                                    referencia: d.compras?.referencia || d.compras?.numero,
+                                    monto_pendiente: d.compras?.monto_pendiente || 0,
+                                  }));
                                   generatePagoSuplidorPDF(
                                     { ...pago, total_pagado: pago.monto_pagado },
                                     pago.proveedores?.nombre || 'Suplidor',
-                                    pago.pagos_suplidores_detalle || [],
+                                    detallesParaPDF,
                                     pago.formas_pago || [],
                                     empresa
                                   );
