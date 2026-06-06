@@ -341,7 +341,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
               <h2 className="text-lg font-bold tracking-tight flex items-center gap-3">
                 <span className="text-amber-400">{empresa?.nombre?.toUpperCase() || 'REPUESTOS MORLA'}</span>
                 <span className="text-slate-500">|</span>
-                <span className="uppercase tracking-widest text-sm">Pedido / Pre-Factura</span>
+                <span className="uppercase tracking-widest text-sm text-sky-300 font-black">PEDIDO / PRE-FACTURA</span>
               </h2>
             </div>
             <div className="bg-red-600 px-2.5 py-0.5 rounded text-xs font-black tracking-wider">V2.0 PRO</div>
@@ -515,11 +515,11 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                           const itbis_pct = (stagingItem.itbis_pct || 18) > 1 ? (stagingItem.itbis_pct / 100) : (stagingItem.itbis_pct || 0.18);
                           const net = (stagingItem.precio * stagingItem.cantidad) - (stagingItem.descuento || 0);
                           const itbis = net - (net / (1 + itbis_pct));
-                          return itbis.toFixed(2);
+                          return itbis.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                         })() : '0.00'}
                       </TableCell>
                       <TableCell className="p-1 text-right font-black text-blue-900 bg-blue-100/30 border-r border-gray-300">
-                        {stagingItem ? ((stagingItem.precio * stagingItem.cantidad) - (stagingItem.descuento || 0)).toFixed(2) : '0.00'}
+                        {stagingItem ? ((stagingItem.precio * stagingItem.cantidad) - (stagingItem.descuento || 0)).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
                       </TableCell>
                       <TableCell className="p-1 text-center">
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50" onClick={commitStagingItem}>
@@ -561,8 +561,8 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                             className="h-6 text-xs text-right border-slate-200 focus:border-blue-400 font-bold text-red-600 px-1"
                           />
                         </TableCell>
-                        <TableCell className="text-right text-[11px] text-slate-600 font-medium py-1 px-2">{Number(d.itbis || 0).toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-bold text-blue-700 py-1 px-2">{Number(d.importe || 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right text-[11px] text-slate-600 font-medium py-1 px-2">{Number(d.itbis || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right font-bold text-blue-700 py-1 px-2">{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-1 px-1">
                           <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleRemoveDetail(d.producto_id)}>
                             <Trash2 className="h-3 w-3" />
