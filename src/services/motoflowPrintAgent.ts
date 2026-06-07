@@ -117,6 +117,62 @@ export function agentPrintEscPos(printerName: string, escpos: string) {
 }
 
 /**
+ * Stats del agente (uptime, prints OK/fallidos, ultimo error, etc.)
+ * Util para mostrar estado en UI de configuración.
+ */
+export async function agentGetHealth(): Promise<any | null> {
+    try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), AGENT_TIMEOUT);
+        const r = await fetch(`${AGENT_URL}/health`, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!r.ok) return null;
+        return await r.json();
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Reinicia el servicio "Print Spooler" de Windows. Resuelve el 90% de
+ * los casos donde la impresion se cuelga despues de muchos trabajos
+ * sin necesidad de reiniciar la PC.
+ * Puede requerir admin si el agente no corre como admin.
+ */
+export async function agentRestartSpooler(): Promise<{ ok: boolean; message?: string; error?: string; hint?: string }> {
+    if (!(await agentIsAvailable())) {
+        throw new AgentNotAvailableError('Motoflow Print Agent no detectado');
+    }
+    const r = await fetch(`${AGENT_URL}/spooler/restart`, { method: 'POST' });
+    const json = await r.json();
+    if (!r.ok || !json.ok) {
+        return { ok: false, error: json.error || `HTTP ${r.status}`, hint: json.hint };
+    }
+    return json;
+}
+
+/**
+ * Reinicia el agente. Si esta corriendo con start.bat (wrapper),
+ * el wrapper lo relanza automaticamente. Si no, hay que reabrirlo manual.
+ */
+export async function agentRestartSelf(): Promise<{ ok: boolean; message?: string; error?: string }> {
+    if (!(await agentIsAvailable())) {
+        throw new AgentNotAvailableError('Motoflow Print Agent no detectado');
+    }
+    try {
+        const r = await fetch(`${AGENT_URL}/restart-self`, { method: 'POST' });
+        const json = await r.json();
+        // Limpiamos el cache para que la proxima llamada a agentIsAvailable
+        // verifique de verdad si volvio a estar arriba.
+        availabilityCache = null;
+        return json;
+    } catch (e: any) {
+        availabilityCache = null;
+        return { ok: false, error: e?.message || 'Error desconocido' };
+    }
+}
+
+/**
  * Invalida el cache de disponibilidad (útil después de instalar el agente).
  */
 export function agentInvalidateCache() {

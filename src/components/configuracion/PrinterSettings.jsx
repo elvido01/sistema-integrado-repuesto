@@ -10,7 +10,14 @@ import {
   webUsbForgetPrinter
 } from '@/services/webUsbPrintService';
 import { qzListAllPrinters, qzIsAvailable } from '@/services/qzTrayService';
-import { agentIsAvailable, agentListPrinters, agentInvalidateCache } from '@/services/motoflowPrintAgent';
+import {
+  agentIsAvailable,
+  agentListPrinters,
+  agentInvalidateCache,
+  agentGetHealth,
+  agentRestartSpooler,
+  agentRestartSelf,
+} from '@/services/motoflowPrintAgent';
 import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
 
 // localStorage keys para impresoras QZ Tray (todas las Windows)
@@ -36,6 +43,9 @@ const PrinterSettings = () => {
   const [agentAvailable, setAgentAvailable] = useState(false);
   const [agentPrintersCount, setAgentPrintersCount] = useState(0);
   const [agentChecking, setAgentChecking] = useState(false);
+  const [agentHealth, setAgentHealth] = useState(null);
+  const [restartingSpooler, setRestartingSpooler] = useState(false);
+  const [restartingAgent, setRestartingAgent] = useState(false);
 
   // Selector de backend activo
   const [backend, setBackend] = useState(() => getPreferredBackend());
@@ -93,18 +103,20 @@ const PrinterSettings = () => {
       setAgentAvailable(ok);
       console.log('[Agent] /health respondió:', ok);
       if (ok) {
-        // El agente responde — intentamos listar impresoras pero si falla
-        // NO marcamos el agente como no disponible (solo el conteo a 0).
-        try {
-          const list = await agentListPrinters();
-          setAgentPrintersCount(list.length);
-          console.log('[Agent] impresoras:', list.length, list);
-        } catch (printersErr) {
-          console.warn('[Agent] /printers falló pero /health OK:', printersErr.message);
-          setAgentPrintersCount(0);
-        }
+        // El agente responde — traemos health (stats) e impresoras en paralelo
+        const [health, list] = await Promise.all([
+          agentGetHealth().catch(() => null),
+          agentListPrinters().catch((e) => {
+            console.warn('[Agent] /printers falló pero /health OK:', e.message);
+            return [];
+          }),
+        ]);
+        setAgentHealth(health);
+        setAgentPrintersCount(list?.length || 0);
+        console.log('[Agent] health:', health);
       } else {
         setAgentPrintersCount(0);
+        setAgentHealth(null);
       }
     } catch (err) {
       console.warn('[Agent] no disponible:', err.message);
@@ -214,13 +226,111 @@ const PrinterSettings = () => {
           <div className="text-xs text-emerald-900 space-y-2">
             <p>
               ✅ Agente corriendo en <code className="bg-white px-1 rounded">127.0.0.1:9123</code> · <b>{agentPrintersCount}</b> impresoras detectadas.
+              {agentHealth?.version && <span className="ml-1 text-[10px] text-emerald-700">v{agentHealth.version}</span>}
             </p>
+
+            {/* Stats del agente */}
+            {agentHealth?.stats && (
+              <div className="grid grid-cols-4 gap-2 bg-white rounded p-2 border border-emerald-100">
+                <div className="text-center">
+                  <p className="text-[9px] uppercase text-slate-500 font-bold">Uptime</p>
+                  <p className="text-sm font-mono font-bold text-slate-700">
+                    {agentHealth.uptimeSeconds < 3600
+                      ? `${Math.round(agentHealth.uptimeSeconds / 60)}m`
+                      : `${Math.round(agentHealth.uptimeSeconds / 3600)}h`}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-[9px] uppercase text-slate-500 font-bold">Prints OK</p>
+                  <p className="text-sm font-mono font-bold text-emerald-700">{agentHealth.stats.printsOk}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-[9px] uppercase text-slate-500 font-bold">Fallidos</p>
+                  <p className={`text-sm font-mono font-bold ${agentHealth.stats.printsFailed > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                    {agentHealth.stats.printsFailed}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-[9px] uppercase text-slate-500 font-bold">En cola</p>
+                  <p className={`text-sm font-mono font-bold ${agentHealth.stats.queueLength > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                    {agentHealth.stats.queueLength}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {agentHealth?.stats?.lastError && (
+              <div className="text-[10px] bg-red-50 border border-red-200 rounded p-2 text-red-700">
+                <span className="font-bold">Último error:</span> {agentHealth.stats.lastError}
+              </div>
+            )}
+
             <p className="text-[11px]">
               Imprime sin popups, sin licencias QZ Tray. Cubre todas las impresoras Windows automáticamente.
             </p>
-            <Button size="sm" variant="ghost" className="h-7 text-[11px] text-emerald-700" onClick={refreshAgent} disabled={agentChecking}>
-              <RefreshCw className={`w-3 h-3 mr-1 ${agentChecking ? 'animate-spin' : ''}`} /> Reconectar
-            </Button>
+
+            {/* Botones de mantenimiento (solo en v0.4+) */}
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-emerald-200">
+              <Button size="sm" variant="ghost" className="h-7 text-[11px] text-emerald-700" onClick={refreshAgent} disabled={agentChecking}>
+                <RefreshCw className={`w-3 h-3 mr-1 ${agentChecking ? 'animate-spin' : ''}`} /> Reconectar
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] border-amber-300 text-amber-700 hover:bg-amber-50"
+                disabled={restartingSpooler}
+                onClick={async () => {
+                  if (!window.confirm('Reiniciar el servicio "Print Spooler" de Windows? Resuelve la mayoria de cuelgues de impresion sin reiniciar la PC.')) return;
+                  setRestartingSpooler(true);
+                  try {
+                    const r = await agentRestartSpooler();
+                    if (r.ok) {
+                      toast({ title: 'Spooler reiniciado', description: 'El servicio de impresion de Windows se reinicio correctamente.' });
+                      setTimeout(refreshAgent, 1000);
+                    } else {
+                      toast({
+                        variant: 'destructive',
+                        title: 'No se pudo reiniciar',
+                        description: (r.error || '') + (r.hint ? `\n${r.hint}` : ''),
+                      });
+                    }
+                  } catch (e) {
+                    toast({ variant: 'destructive', title: 'Error', description: e.message });
+                  } finally {
+                    setRestartingSpooler(false);
+                  }
+                }}
+              >
+                <RefreshCw className={`w-3 h-3 mr-1 ${restartingSpooler ? 'animate-spin' : ''}`} />
+                Reiniciar Spooler de Windows
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] border-red-300 text-red-700 hover:bg-red-50"
+                disabled={restartingAgent}
+                onClick={async () => {
+                  if (!window.confirm('Reiniciar el Print Agent? Si lo instalaste con start.bat se relanza solo en 2 segundos.')) return;
+                  setRestartingAgent(true);
+                  try {
+                    await agentRestartSelf();
+                    toast({ title: 'Agente reiniciandose', description: 'Esperando 3 segundos a que vuelva a arrancar...' });
+                    setTimeout(() => { refreshAgent(); setRestartingAgent(false); }, 3500);
+                  } catch (e) {
+                    toast({ variant: 'destructive', title: 'Error', description: e.message });
+                    setRestartingAgent(false);
+                  }
+                }}
+              >
+                <RefreshCw className={`w-3 h-3 mr-1 ${restartingAgent ? 'animate-spin' : ''}`} />
+                Reiniciar Agente
+              </Button>
+            </div>
+            <p className="text-[10px] text-slate-500 italic">
+              💡 Si la impresion se cuelga: primero "Reiniciar Spooler". Si persiste, "Reiniciar Agente". Solo si ambos fallan, reiniciar la PC.
+            </p>
           </div>
         ) : (
           <div className="text-xs text-slate-800 space-y-2">
