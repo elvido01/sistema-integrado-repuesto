@@ -191,9 +191,17 @@ async function rawPrint(printerName, bytes) {
         ps.stderr.on('data', (d) => (stderr += d.toString()));
 
         const timer = setTimeout(() => {
-            try { ps.kill(); } catch (_) { /* ignore */ }
+            // Tree-kill: en Windows ps.kill() a veces NO mata bien el proceso
+            // (queda zombie consumiendo recursos). taskkill /T /F mata el
+            // proceso y todos sus hijos por PID.
+            try {
+                if (ps.pid) {
+                    spawn('taskkill', ['/PID', String(ps.pid), '/T', '/F'], { detached: true, stdio: 'ignore' }).unref();
+                }
+            } catch (_) { /* ignore */ }
+            try { ps.kill('SIGKILL'); } catch (_) { /* ignore */ }
             try { fs.unlinkSync(tempFile); } catch (_) { /* ignore */ }
-            resolve({ ok: false, error: 'Timeout (20s) esperando respuesta de PowerShell' });
+            resolve({ ok: false, error: 'Timeout (20s) esperando respuesta de PowerShell. Si persiste, llama a /spooler/restart o /restart-self.' });
         }, 20000);
 
         ps.on('close', (code) => {
