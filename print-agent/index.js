@@ -21,10 +21,12 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { rawPrint, listPrinters } = require('./lib/winRawPrinter');
+const { rawPrint, listPrinters, getPrinterStatus } = require('./lib/winRawPrinter');
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const PORT = Number(process.env.PORT) || 9123;
+const MAX_PRINT_BYTES = 5 * 1024 * 1024;
+const MAX_RECENT_JOBS = 100;
 
 // Log persistente a archivo para diagnosticar cuelgues sin tener la consola abierta.
 const LOG_DIR = path.join(os.tmpdir(), 'motoflow-print-agent');
@@ -45,6 +47,33 @@ const stats = {
   lastError: null,
   queueLength: 0,
 };
+
+let nextJobId = 1;
+const recentJobs = new Map();
+
+function rememberJob(job) {
+  recentJobs.set(job.jobID, job);
+  while (recentJobs.size > MAX_RECENT_JOBS) {
+    const oldest = recentJobs.keys().next().value;
+    recentJobs.delete(oldest);
+  }
+}
+
+function publicJob(job) {
+  if (!job) return null;
+  return {
+    jobID: job.jobID,
+    printer: job.printerName,
+    bytes: job.bytes,
+    status: job.status,
+    ok: job.ok,
+    error: job.error,
+    createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    windowsBytes: job.windowsBytes,
+  };
+}
 
 // Patrones de orígenes permitidos. Soporta subdominios dinámicos
 // de Cloudflare Pages (ej: ed5cb1ad.repuestos-morla.pages.dev) y
@@ -100,7 +129,9 @@ async function processQueue() {
     stats.queueLength = printQueue.length;
     const job = printQueue.shift();
     try {
+      flog(`[queue] start job=${job.jobID} printer="${job.printerName}" bytes=${job.buffer.length}`);
       const result = await rawPrint(job.printerName, job.buffer);
+      flog(`[queue] done job=${job.jobID} ok=${!!result.ok} bytes=${result.bytes || 0}${result.error ? ' error=' + result.error : ''}`);
       job.resolve(result);
     } catch (err) {
       job.resolve({ ok: false, error: err.message });
@@ -111,8 +142,9 @@ async function processQueue() {
 }
 
 function enqueuePrint(printerName, buffer) {
+  const jobID = `mf-${Date.now()}-${nextJobId++}`;
   return new Promise((resolve) => {
-    printQueue.push({ printerName, buffer, resolve });
+    printQueue.push({ jobID, printerName, buffer, resolve: (result) => resolve({ ...result, jobID }) });
     stats.queueLength = printQueue.length;
     processQueue();
   });
@@ -149,8 +181,14 @@ app.post('/print/raw', async (req, res) => {
     const body = req.body || {};
     const { printer: printerName, data, format, encoding } = body;
 
-    if (!printerName) return res.status(400).json({ ok: false, error: 'printer requerido' });
-    if (!data) return res.status(400).json({ ok: false, error: 'data requerido' });
+    if (!printerName || typeof printerName !== 'string') return res.status(400).json({ ok: false, error: 'printer requerido' });
+    if (!data || typeof data !== 'string') return res.status(400).json({ ok: false, error: 'data requerido' });
+    if (encoding && !['base64', 'binary'].includes(encoding)) {
+      return res.status(400).json({ ok: false, error: 'encoding debe ser base64 o binary' });
+    }
+    if (format && !['escpos', 'epl', 'zpl', 'raw'].includes(format)) {
+      return res.status(400).json({ ok: false, error: 'format debe ser escpos, epl, zpl o raw' });
+    }
 
     let buffer;
     try {
@@ -159,18 +197,23 @@ app.post('/print/raw', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'data inválido: ' + err.message });
     }
 
+    if (!buffer.length) return res.status(400).json({ ok: false, error: 'data vacio' });
+    if (buffer.length > MAX_PRINT_BYTES) {
+      return res.status(413).json({ ok: false, error: `Trabajo demasiado grande (${buffer.length} bytes)` });
+    }
+
     flog(`[print] ${printerName} ${buffer.length} bytes (format=${format || 'raw'}) [cola=${printQueue.length}]`);
 
     const result = await enqueuePrint(printerName, buffer);
     stats.lastPrintAt = new Date().toISOString();
     if (result.ok) {
       stats.printsOk++;
-      res.json({ ok: true, bytes: buffer.length, printer: printerName });
+      res.json({ ok: true, jobID: result.jobID, bytes: buffer.length, printer: printerName });
     } else {
       stats.printsFailed++;
       stats.lastError = result.error;
       flog('[print] FAILED: ' + result.error);
-      res.status(500).json({ ok: false, error: result.error });
+      res.status(500).json({ ok: false, jobID: result.jobID, error: result.error });
     }
   } catch (err) {
     flog('[print] EXCEPTION: ' + err.message);

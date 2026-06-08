@@ -11,6 +11,7 @@
 
 const AGENT_URL = 'http://127.0.0.1:9123';
 const AGENT_PRINTERS_TIMEOUT = 5000;
+const AGENT_PRINT_TIMEOUT = 30000;
 const AGENT_TIMEOUT = 800; // ms — el agente es local, debería responder en <50ms
 
 export interface AgentPrinter {
@@ -88,21 +89,47 @@ export async function agentPrintRaw(
     if (!(await agentIsAvailable())) {
         throw new AgentNotAvailableError('Motoflow Print Agent no detectado');
     }
-    const r = await fetch(`${AGENT_URL}/print/raw`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            printer: printerName,
-            data,
-            format: opts.format || 'raw',
-            encoding: opts.encoding || 'binary',
-        }),
-    });
-    const json = await r.json();
-    if (!r.ok || !json.ok) {
-        throw new Error(json.error || `Agent /print/raw HTTP ${r.status}`);
+    const payloadData = opts.encoding === 'base64' ? data : binaryStringToBase64(data);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), AGENT_PRINT_TIMEOUT);
+
+    try {
+        const r = await fetch(`${AGENT_URL}/print/raw`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: ctrl.signal,
+            body: JSON.stringify({
+                printer: printerName,
+                data: payloadData,
+                format: opts.format || 'raw',
+                encoding: 'base64',
+            }),
+        });
+        const json = await r.json();
+        if (!r.ok || !json.ok) {
+            throw new Error(json.error || `Agent /print/raw HTTP ${r.status}`);
+        }
+        return json;
+    } catch (err: any) {
+        if (err?.name === 'AbortError') {
+            throw new Error('Motoflow Print Agent no respondio a tiempo al imprimir.');
+        }
+        throw err;
+    } finally {
+        clearTimeout(timer);
     }
-    return json;
+}
+
+function binaryStringToBase64(data: string): string {
+    const bytes = new Uint8Array(data.length);
+    for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
+
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
 }
 
 /**

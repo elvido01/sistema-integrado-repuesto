@@ -90,7 +90,8 @@ echo [3/5] Creando arrancador...
   echo @echo off
   echo setlocal
   echo cd /d "%AGENT_DIR%"
-  echo set "LOGFILE=%LOGDIR%\agent-%%date:~6,4%%%%date:~3,2%%%%date:~0,2%%.log"
+  echo for /f %%%%I in ^('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"'^) do set "TODAY=%%%%I"
+  echo set "LOGFILE=%LOGDIR%\agent-%%TODAY%%.log"
   echo REM Si ya hay algo escuchando en 9123 salimos limpio.
   echo powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" ^>nul
   echo if %%errorlevel%% EQU 0 exit /b 0

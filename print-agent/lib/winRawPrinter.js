@@ -79,6 +79,20 @@ public static class RawPrinter {
             if (hPrinter != IntPtr.Zero) ClosePrinter(hPrinter);
         }
     }
+    public static int Main(string[] args) {
+        try {
+            if (args.Length < 2) {
+                Console.WriteLine("ERR:Uso: rawprinter.exe <printerName> <bytesFile>");
+                return 2;
+            }
+            int written = SendFile(args[0], args[1]);
+            Console.WriteLine("OK:" + written);
+            return 0;
+        } catch (Exception ex) {
+            Console.WriteLine("ERR:" + ex.Message);
+            return 1;
+        }
+    }
 }
 `;
 
@@ -87,10 +101,12 @@ public static class RawPrinter {
 // ────────────────────────────────────────────────
 const DLL_DIR = path.join(os.tmpdir(), 'motoflow-print-agent');
 const DLL_PATH = path.join(DLL_DIR, 'rawprinter.dll');
+const EXE_PATH = path.join(DLL_DIR, 'rawprinter.exe');
 const CS_PATH = path.join(DLL_DIR, 'rawprinter.cs');
 
 let setupPromise = null;
 let setupOk = false;
+let setupExeOk = false;
 
 function findCscExe() {
     // Buscar csc.exe en .NET Framework v4 (incluido por defecto en Windows)
@@ -115,9 +131,11 @@ async function setupDll() {
             if (fs.existsSync(DLL_PATH)) {
                 const dllMtime = fs.statSync(DLL_PATH).mtimeMs;
                 const csMtime = fs.statSync(CS_PATH).mtimeMs;
-                if (dllMtime >= csMtime) {
-                    console.log('[PrintAgent] DLL ya existe, no recompilo.');
+                const exeMtime = fs.existsSync(EXE_PATH) ? fs.statSync(EXE_PATH).mtimeMs : 0;
+                if (dllMtime >= csMtime && exeMtime >= csMtime) {
+                    console.log('[PrintAgent] DLL y worker EXE ya existen, no recompilo.');
                     setupOk = true;
+                    setupExeOk = true;
                     return;
                 }
             }
@@ -135,6 +153,14 @@ async function setupDll() {
             });
             setupOk = true;
             console.log('[PrintAgent] DLL compilado:', DLL_PATH);
+
+            console.log('[PrintAgent] Compilando worker EXE con csc.exe...');
+            execSync(`"${csc}" /target:exe /out:"${EXE_PATH}" "${CS_PATH}"`, {
+                stdio: ['ignore', 'pipe', 'pipe'],
+                timeout: 30000,
+            });
+            setupExeOk = true;
+            console.log('[PrintAgent] Worker EXE compilado:', EXE_PATH);
         } catch (err) {
             console.warn('[PrintAgent] Compilación de DLL falló:', err.message);
             console.warn('[PrintAgent] Usando fallback (Add-Type por print, más lento).');
@@ -162,6 +188,10 @@ async function rawPrint(printerName, bytes) {
         fs.writeFileSync(tempFile, bytes);
     } catch (err) {
         return { ok: false, error: `No se pudo escribir archivo temp: ${err.message}` };
+    }
+
+    if (setupExeOk && fs.existsSync(EXE_PATH)) {
+        return runRawWorker(printerName, tempFile);
     }
 
     const printerEsc = escapePsString(printerName);
@@ -232,6 +262,50 @@ async function rawPrint(printerName, bytes) {
 // listPrinters: lista impresoras Windows
 // ────────────────────────────────────────────────
 
+function runRawWorker(printerName, tempFile) {
+    return new Promise((resolve) => {
+        const worker = spawn(EXE_PATH, [printerName, tempFile], { windowsHide: true });
+
+        let stdout = '';
+        let stderr = '';
+        worker.stdout.on('data', (d) => (stdout += d.toString()));
+        worker.stderr.on('data', (d) => (stderr += d.toString()));
+
+        const timer = setTimeout(() => {
+            try {
+                if (worker.pid) {
+                    spawn('taskkill', ['/PID', String(worker.pid), '/T', '/F'], { detached: true, stdio: 'ignore' }).unref();
+                }
+            } catch (_) { /* ignore */ }
+            try { worker.kill('SIGKILL'); } catch (_) { /* ignore */ }
+            try { fs.unlinkSync(tempFile); } catch (_) { /* ignore */ }
+            resolve({ ok: false, error: 'Timeout (20s) esperando respuesta del worker de impresion. Si persiste, llama a /spooler/restart o /restart-self.' });
+        }, 20000);
+
+        worker.on('close', (code) => {
+            clearTimeout(timer);
+            try { fs.unlinkSync(tempFile); } catch (_) { /* ignore */ }
+            const out = stdout.trim();
+            const okLine = out.split(/\r?\n/).reverse().find((l) => l.startsWith('OK:') || l.startsWith('ERR:'));
+            if (okLine?.startsWith('OK:')) {
+                resolve({ ok: true, bytes: parseInt(okLine.slice(3), 10) || 0 });
+            } else if (okLine?.startsWith('ERR:')) {
+                resolve({ ok: false, error: okLine.slice(4) });
+            } else if (code !== 0) {
+                resolve({ ok: false, error: stderr.trim() || `Worker exit code ${code}` });
+            } else {
+                resolve({ ok: false, error: 'Respuesta inesperada del worker: ' + out });
+            }
+        });
+
+        worker.on('error', (err) => {
+            clearTimeout(timer);
+            try { fs.unlinkSync(tempFile); } catch (_) { /* ignore */ }
+            resolve({ ok: false, error: 'No se pudo iniciar worker de impresion: ' + err.message });
+        });
+    });
+}
+
 function listPrinters() {
     return new Promise((resolve, reject) => {
         const ps = spawn('powershell.exe', [
@@ -284,4 +358,58 @@ try {
 // Pre-arrancar la compilación del DLL al cargar el módulo
 setupDll().catch((err) => console.warn('[PrintAgent] setupDll error:', err.message));
 
-module.exports = { rawPrint, listPrinters };
+function getPrinterStatus(printerName = '') {
+    return new Promise((resolve, reject) => {
+        const ps = spawn('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-Command',
+            `$ErrorActionPreference = 'Stop';
+$name = $env:MF_PRINTER_NAME;
+$printers = if ($name) { @(Get-Printer -Name $name) } else { @(Get-Printer) };
+$result = foreach ($p in $printers) {
+  $jobs = @();
+  try {
+    $jobs = @(Get-PrintJob -PrinterName $p.Name | Select-Object ID,DocumentName,JobStatus,SubmittedTime,Size);
+  } catch {}
+  [pscustomobject]@{
+    name = $p.Name;
+    status = $p.PrinterStatus;
+    workOffline = $p.WorkOffline;
+    isDefault = $p.Default;
+    driver = $p.DriverName;
+    portName = $p.PortName;
+    jobs = $jobs;
+  }
+}
+$result | ConvertTo-Json -Compress -Depth 5`,
+        ], {
+            env: { ...process.env, MF_PRINTER_NAME: printerName || '' },
+        });
+        const timer = setTimeout(() => {
+            ps.kill('SIGKILL');
+            reject(new Error('Timeout consultando estado de impresoras de Windows'));
+        }, 5000);
+        let stdout = '';
+        let stderr = '';
+        ps.stdout.on('data', (d) => (stdout += d.toString()));
+        ps.stderr.on('data', (d) => (stderr += d.toString()));
+        ps.on('close', (code) => {
+            clearTimeout(timer);
+            if (code !== 0) return reject(new Error(stderr || `PowerShell exit code ${code}`));
+            try {
+                const trimmed = stdout.trim();
+                if (!trimmed) return resolve([]);
+                const parsed = JSON.parse(trimmed);
+                resolve(Array.isArray(parsed) ? parsed : [parsed]);
+            } catch (err) {
+                reject(new Error('No se pudo parsear estado: ' + err.message));
+            }
+        });
+        ps.on('error', (err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+    });
+}
+
+module.exports = { rawPrint, listPrinters, getPrinterStatus };
