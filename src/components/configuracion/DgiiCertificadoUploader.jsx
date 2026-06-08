@@ -47,6 +47,9 @@ const DgiiCertificadoUploader = () => {
   const [showPwd, setShowPwd] = useState(false);
   const [rnc, setRnc] = useState('');
   const [nombre, setNombre] = useState('');
+  const [nombreComercial, setNombreComercial] = useState('');
+  const [municipio, setMunicipio] = useState('');
+  const [provincia, setProvincia] = useState('');
   const [ambiente, setAmbiente] = useState('CerteCF');
   const [callbackUrl, setCallbackUrl] = useState('');
   const [fechaVencimientoSecuencia, setFechaVencimientoSecuencia] = useState('');
@@ -64,6 +67,9 @@ const DgiiCertificadoUploader = () => {
       // Pre-rellenar formulario con valores actuales
       setRnc(data.rnc_emisor || '');
       setNombre(data.nombre_emisor || '');
+      setNombreComercial(data.nombre_comercial || '');
+      setMunicipio(data.municipio || '');
+      setProvincia(data.provincia || '');
       setAmbiente(data.ambiente || 'CerteCF');
       setCallbackUrl(data.callback_url || '');
       setFechaVencimientoSecuencia(data.fecha_vencimiento_secuencia || '');
@@ -391,6 +397,9 @@ const DgiiCertificadoUploader = () => {
           action: 'dgii_save_certificate_meta',
           rnc_emisor: rnc,
           nombre_emisor: nombre,
+          nombre_comercial: nombreComercial,
+          municipio,
+          provincia,
           ambiente,
           callback_url: callbackUrl,
           fecha_vencimiento_secuencia: fechaVencimientoSecuencia,
@@ -428,6 +437,9 @@ const DgiiCertificadoUploader = () => {
           action: 'dgii_update_config_meta',
           rnc_emisor: rnc,
           nombre_emisor: nombre,
+          nombre_comercial: nombreComercial,
+          municipio,
+          provincia,
           ambiente,
           callback_url: callbackUrl,
           fecha_vencimiento_secuencia: fechaVencimientoSecuencia,
@@ -596,6 +608,21 @@ const DgiiCertificadoUploader = () => {
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Razon social</Label>
           <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="NOMBRE COMERCIAL SRL" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-[11px] font-bold text-gray-700 uppercase">Nombre comercial</Label>
+          <Input value={nombreComercial} onChange={(e) => setNombreComercial(e.target.value)} placeholder="Repuestos Morla" />
+          <p className="text-[10px] text-gray-500">Como aparecera en la representacion impresa (RI) del e-CF. Si lo dejas vacio se usa la razon social.</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-[11px] font-bold text-gray-700 uppercase">Municipio</Label>
+          <Input value={municipio} onChange={(e) => setMunicipio(e.target.value)} placeholder="Santiago" />
+          <p className="text-[10px] text-gray-500">REQUERIDO por DGII. Sin esto rechaza con "400 DireccionEmisor".</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-[11px] font-bold text-gray-700 uppercase">Provincia</Label>
+          <Input value={provincia} onChange={(e) => setProvincia(e.target.value)} placeholder="Santiago" />
+          <p className="text-[10px] text-gray-500">REQUERIDO por DGII. Ej: Santo Domingo, Santiago, La Vega.</p>
         </div>
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Ambiente</Label>

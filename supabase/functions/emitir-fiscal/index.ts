@@ -771,7 +771,11 @@ Deno.serve(async (req) => {
     // (path: <tenant_id>/certificado.p12). Recibe el password en plaintext,
     // lo cifra con la master key y lo guarda en integraciones_fiscales.config.
     if (action === "dgii_save_certificate_meta") {
-      const { rnc_emisor, nombre_emisor, ambiente, callback_url, fecha_vencimiento_secuencia, certificado_password, storage_path } = body;
+      const {
+        rnc_emisor, nombre_emisor, ambiente, callback_url,
+        fecha_vencimiento_secuencia, certificado_password, storage_path,
+        municipio, provincia, nombre_comercial,
+      } = body;
 
       if (!certificado_password) throw new Error("certificado_password es requerido");
       if (!storage_path) throw new Error("storage_path es requerido");
@@ -782,6 +786,9 @@ Deno.serve(async (req) => {
       const config = {
         rnc_emisor: rnc_emisor || null,
         nombre_emisor: nombre_emisor || null,
+        nombre_comercial: nombre_comercial || null,
+        municipio: municipio || null,
+        provincia: provincia || null,
         ambiente: ambiente || "TesteCF",
         callback_url: callback_url || null,
         fecha_vencimiento_secuencia: normalizeDgiiDate(fecha_vencimiento_secuencia),
@@ -827,7 +834,10 @@ Deno.serve(async (req) => {
     // inspeccionar visualmente que el XML tiene la forma correcta
     // antes de avanzar con firma y envio.
     if (action === "dgii_update_config_meta") {
-      const { rnc_emisor, nombre_emisor, ambiente, callback_url, fecha_vencimiento_secuencia } = body;
+      const {
+        rnc_emisor, nombre_emisor, ambiente, callback_url, fecha_vencimiento_secuencia,
+        municipio, provincia, nombre_comercial,
+      } = body;
       const { data: integ } = await supabase
         .from("integraciones_fiscales")
         .select("id, config")
@@ -840,6 +850,9 @@ Deno.serve(async (req) => {
         ...(integ.config || {}),
         rnc_emisor: rnc_emisor || integ.config?.rnc_emisor || null,
         nombre_emisor: nombre_emisor || integ.config?.nombre_emisor || null,
+        nombre_comercial: nombre_comercial || integ.config?.nombre_comercial || null,
+        municipio: municipio || integ.config?.municipio || null,
+        provincia: provincia || integ.config?.provincia || null,
         ambiente: ambiente || integ.config?.ambiente || "TesteCF",
         callback_url: callback_url || null,
         fecha_vencimiento_secuencia: normalizeDgiiDate(fecha_vencimiento_secuencia),
@@ -1944,6 +1957,9 @@ Deno.serve(async (req) => {
         configured: !!cfg.certificado_storage_path,
         rnc_emisor: cfg.rnc_emisor,
         nombre_emisor: cfg.nombre_emisor,
+        nombre_comercial: cfg.nombre_comercial || null,
+        municipio: cfg.municipio || null,
+        provincia: cfg.provincia || null,
         ambiente: cfg.ambiente,
         callback_url: cfg.callback_url,
         fecha_vencimiento_secuencia: cfg.fecha_vencimiento_secuencia || null,
