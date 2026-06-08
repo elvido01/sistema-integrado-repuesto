@@ -1799,6 +1799,180 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── ACTION: dgii_emitir_nota_credito ──
+    // FLUJO COMPLETO Tipo 34: devolucion -> factura original -> XML Tipo 34
+    // -> firma -> auth DGII -> envio -> TrackId. Persiste en documentos_fiscales.
+    //
+    // Body: { devolucion_id, codigo_modificacion?, razon_modificacion? }
+    // Default codigo_modificacion = "1" (anulacion total / devolucion).
+    if (action === "dgii_emitir_nota_credito") {
+      const { devolucion_id, codigo_modificacion, razon_modificacion } = body;
+      if (!devolucion_id) throw new Error("devolucion_id requerido");
+
+      // 1. Cargar config DGII
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo. Configura el certificado primero.");
+      const ambiente = integ.config.ambiente || "TesteCF";
+
+      // 2. Cargar devolucion + detalles
+      const { data: devolucion, error: devErr } = await supabase
+        .from("devoluciones")
+        .select("*")
+        .eq("id", devolucion_id)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (devErr || !devolucion) throw new Error("Devolucion no encontrada");
+
+      const { data: devDetalles } = await supabase
+        .from("devoluciones_detalle")
+        .select("*")
+        .eq("devolucion_id", devolucion_id);
+      if (!devDetalles?.length) throw new Error("Devolucion sin detalle");
+
+      // 3. Cargar factura original
+      const { data: facturaOrig, error: fOrigErr } = await supabase
+        .from("facturas")
+        .select("*")
+        .eq("id", devolucion.factura_id)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (fOrigErr || !facturaOrig) throw new Error("Factura original no encontrada");
+
+      // 4. Buscar e-NCF original (puede estar en facturas.ncf o documentos_fiscales)
+      let encfOriginal = facturaOrig.ncf;
+      if (!encfOriginal || !encfOriginal.match(/^E\d{12}$/)) {
+        const { data: docOrig } = await supabase
+          .from("documentos_fiscales")
+          .select("encf, tipo_ecf")
+          .eq("factura_id", devolucion.factura_id)
+          .eq("tenant_id", tenantId)
+          .eq("estado", "emitido")
+          .not("encf", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        encfOriginal = docOrig?.encf;
+      }
+      if (!encfOriginal || !encfOriginal.match(/^E\d{12}$/)) {
+        throw new Error(
+          `La factura original (${facturaOrig.numero}) no tiene e-NCF DGII. Solo se pueden emitir Notas de Credito sobre facturas que se emitieron antes con e-CF.`
+        );
+      }
+
+      // 5. Cargar cliente
+      let cliente = null;
+      if (facturaOrig.cliente_id) {
+        const { data: c } = await supabase
+          .from("clientes")
+          .select("*")
+          .eq("id", facturaOrig.cliente_id)
+          .maybeSingle();
+        cliente = c;
+      }
+
+      // 6. Asignar e-NCF Tipo 34 (correlativo)
+      const tipoEcf = "34";
+      const { data: encfNuevo, error: encfErr } = await supabase.rpc("get_next_encf", {
+        p_tipo_ecf: tipoEcf,
+        p_ambiente: ambiente,
+      });
+      if (encfErr || !encfNuevo) {
+        throw new Error(
+          `No se pudo asignar e-NCF Tipo 34 (${ambiente}): ${encfErr?.message || "secuencia agotada o no configurada en ecf_secuencias"}`
+        );
+      }
+
+      // 7. Iniciar log
+      const docFiscal = await logEcfStart(supabase, {
+        tenantId,
+        factura_id: devolucion.factura_id,
+        tipo_ecf: tipoEcf,
+        encf: encfNuevo,
+        ambiente,
+      });
+
+      try {
+        // 8. Mapear devoluciones_detalle -> items para notaToEcfInput
+        const itemsNota = devDetalles.map((d) => ({
+          descripcion: d.descripcion || d.producto_descripcion || "Item devuelto",
+          cantidad: Number(d.cantidad) || 0,
+          precio: Number(d.precio) || 0,
+          descuento: Number(d.descuento) || 0,
+          itbis_pct: d.itbis_pct,
+          importe: Number(d.importe) || 0,
+        }));
+
+        // 9. Build XML + firma + envio
+        const configEmisor = await resolveEmisorConfig(supabase, tenantId, integ.config);
+        const input = notaToEcfInput(
+          {
+            fecha: devolucion.fecha_devolucion || new Date().toISOString(),
+            items: itemsNota,
+            tipo: "credito",
+          },
+          {
+            ncf: encfOriginal,
+            fecha: facturaOrig.fecha,
+            numero: facturaOrig.numero,
+            cliente_id: facturaOrig.cliente_id,
+          },
+          cliente,
+          configEmisor,
+          encfNuevo,
+          {
+            codigo_modificacion: codigo_modificacion || "1",
+            razon_modificacion: razon_modificacion || devolucion.notas || "Devolucion de mercancia",
+          }
+        );
+        const xmlSinFirmar = buildEcfXml(input.tipo_ecf, input);
+
+        const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+        const { xmlFirmado } = await signEcfXml(xmlSinFirmar, cert, privateKey);
+
+        const xmlPath = await uploadSignedXml(supabase, tenantId, encfNuevo, xmlFirmado);
+        await logEcfXmlGenerated(supabase, docFiscal.id, xmlPath, { input });
+
+        const auth = await authenticate(cert, privateKey, ambiente);
+        const recepcion = await enviarEcf(xmlFirmado, auth.token, ambiente);
+        const trackId = recepcion.trackId || recepcion.TrackId || recepcion.trackid;
+        if (!trackId) {
+          throw new Error(`DGII no devolvio TrackId. Respuesta: ${JSON.stringify(recepcion).slice(0, 300)}`);
+        }
+
+        await logEcfSent(supabase, docFiscal.id, trackId);
+
+        // 10. Linkear la devolucion con el documento fiscal (si hay columna)
+        try {
+          await supabase
+            .from("devoluciones")
+            .update({ documento_fiscal_id: docFiscal.id, encf: encfNuevo })
+            .eq("id", devolucion_id);
+        } catch (linkErr) {
+          // No bloquear si las columnas no existen — solo loguear
+          console.warn("[dgii_emitir_nota_credito] no se pudo linkear devolucion:", linkErr.message);
+        }
+
+        return new Response(JSON.stringify({
+          ok: true,
+          encf: encfNuevo,
+          tipo_ecf: tipoEcf,
+          encf_modificado: encfOriginal,
+          ambiente,
+          trackId,
+          xml_path: xmlPath,
+          documento_id: docFiscal.id,
+        }), { status: 200, headers: corsHeaders });
+      } catch (err) {
+        await logEcfError(supabase, docFiscal.id, err.message || String(err));
+        throw err;
+      }
+    }
+
     // ── ACTION: dgii_consultar_estado ──
     // Dado un TrackId, consulta a DGII el estado actual del e-CF.
     if (action === "dgii_consultar_estado") {

@@ -57,6 +57,8 @@ const DevolucionesPage = () => {
   });
   const [notas, setNotas] = useState('');
   const [imprimir, setImprimir] = useState(false);
+  const [emitirDgii, setEmitirDgii] = useState(false);
+  const [emitiendoDgii, setEmitiendoDgii] = useState(false);
 
   const handleSearchFactura = async () => {
     if (!facturaNumero) {
@@ -267,6 +269,45 @@ const DevolucionesPage = () => {
         printDevolucionPOS(devolucion, factura, cliente, detallesDevolucion);
       }
 
+      // Emitir Nota de Credito DGII (Tipo 34) si el checkbox esta activo y la
+      // factura original tuvo e-NCF. Sin e-NCF original no hay nada que modificar.
+      if (emitirDgii) {
+        const facturaTeniaEcf = !!(factura.ncf && /^E\d{12}$/.test(factura.ncf));
+        if (!facturaTeniaEcf) {
+          toast({
+            variant: 'destructive',
+            title: 'Sin e-NCF original',
+            description: 'La factura original no se emitio con e-CF DGII, no se puede generar Nota de Credito Tipo 34.',
+          });
+        } else {
+          setEmitiendoDgii(true);
+          try {
+            const { data: dgiiData, error: dgiiErr } = await supabase.functions.invoke('emitir-fiscal', {
+              body: {
+                action: 'dgii_emitir_nota_credito',
+                devolucion_id: devolucion.id,
+                codigo_modificacion: '1', // 1 = Anulacion total/parcial por devolucion
+                razon_modificacion: notas || 'Devolucion de mercancia',
+              },
+            });
+            if (dgiiErr) throw dgiiErr;
+            if (!dgiiData?.ok) throw new Error(dgiiData?.error || 'DGII no acepto la nota');
+            toast({
+              title: '🧾 Nota de Credito enviada a DGII',
+              description: `e-NCF ${dgiiData.encf} · TrackId ${dgiiData.trackId}`,
+            });
+          } catch (dgiiErr) {
+            toast({
+              variant: 'destructive',
+              title: 'Error emitiendo Nota a DGII',
+              description: dgiiErr.message || 'Revisa la configuracion DGII.',
+            });
+          } finally {
+            setEmitiendoDgii(false);
+          }
+        }
+      }
+
       resetForm(true);
 
     } catch (error) {
@@ -288,6 +329,7 @@ const DevolucionesPage = () => {
     setNotas('');
     setFecha(getCurrentDateInTimeZone());
     setImprimir(false);
+    setEmitirDgii(false);
   };
 
   const handleKeyDown = useCallback((e) => {
@@ -554,6 +596,28 @@ const DevolucionesPage = () => {
               <Checkbox id="imprimir" checked={imprimir} onCheckedChange={setImprimir} className="border-slate-400" />
               <Label htmlFor="imprimir" className="text-[10px] font-bold text-slate-600 uppercase cursor-pointer">Imprimir comprobante al grabar</Label>
             </div>
+
+            {/* Emitir Nota de Credito DGII */}
+            <div className="flex items-center gap-2 px-1">
+              <Checkbox
+                id="emitir-dgii"
+                checked={emitirDgii}
+                onCheckedChange={setEmitirDgii}
+                disabled={!factura || !(factura.ncf && /^E\d{12}$/.test(factura.ncf))}
+                className="border-slate-400"
+              />
+              <Label
+                htmlFor="emitir-dgii"
+                className={`text-[10px] font-bold uppercase cursor-pointer ${(!factura || !(factura.ncf && /^E\d{12}$/.test(factura.ncf))) ? 'text-slate-400' : 'text-emerald-700'}`}
+              >
+                Emitir Nota de Crédito DGII (Tipo 34) {emitiendoDgii && <Loader2 className="inline w-3 h-3 animate-spin ml-1" />}
+              </Label>
+            </div>
+            {factura && !(factura.ncf && /^E\d{12}$/.test(factura.ncf)) && (
+              <p className="text-[10px] text-amber-600 italic px-1">
+                La factura original no tiene e-NCF DGII — no se puede emitir Nota Tipo 34.
+              </p>
+            )}
 
             {/* Actions */}
             <div className="flex gap-2">
