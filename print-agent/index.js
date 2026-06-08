@@ -129,11 +129,22 @@ async function processQueue() {
     stats.queueLength = printQueue.length;
     const job = printQueue.shift();
     try {
+      job.status = 'printing';
+      job.startedAt = new Date().toISOString();
       flog(`[queue] start job=${job.jobID} printer="${job.printerName}" bytes=${job.buffer.length}`);
       const result = await rawPrint(job.printerName, job.buffer);
+      job.finishedAt = new Date().toISOString();
+      job.ok = !!result.ok;
+      job.status = result.ok ? 'complete' : 'failed';
+      job.error = result.error || null;
+      job.windowsBytes = result.bytes || 0;
       flog(`[queue] done job=${job.jobID} ok=${!!result.ok} bytes=${result.bytes || 0}${result.error ? ' error=' + result.error : ''}`);
       job.resolve(result);
     } catch (err) {
+      job.finishedAt = new Date().toISOString();
+      job.ok = false;
+      job.status = 'failed';
+      job.error = err.message;
       job.resolve({ ok: false, error: err.message });
     }
   }
@@ -144,7 +155,22 @@ async function processQueue() {
 function enqueuePrint(printerName, buffer) {
   const jobID = `mf-${Date.now()}-${nextJobId++}`;
   return new Promise((resolve) => {
-    printQueue.push({ jobID, printerName, buffer, resolve: (result) => resolve({ ...result, jobID }) });
+    const job = {
+      jobID,
+      printerName,
+      buffer,
+      bytes: buffer.length,
+      status: 'queued',
+      ok: null,
+      error: null,
+      windowsBytes: 0,
+      createdAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null,
+      resolve: (result) => resolve({ ...result, jobID }),
+    };
+    rememberJob(job);
+    printQueue.push(job);
     stats.queueLength = printQueue.length;
     processQueue();
   });
@@ -174,6 +200,31 @@ app.get('/printers', async (req, res) => {
     flog('[printers] error: ' + err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+app.get('/printers/status', async (req, res) => {
+  try {
+    const printerName = typeof req.query.printer === 'string' ? req.query.printer : '';
+    const status = await getPrinterStatus(printerName);
+    res.json({ ok: true, printers: status });
+  } catch (err) {
+    flog('[printers/status] error: ' + err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/jobs', (req, res) => {
+  res.json({
+    ok: true,
+    jobs: Array.from(recentJobs.values()).map(publicJob).reverse(),
+    queueLength: printQueue.length,
+  });
+});
+
+app.get('/jobs/:jobID', (req, res) => {
+  const job = recentJobs.get(req.params.jobID);
+  if (!job) return res.status(404).json({ ok: false, error: 'job no encontrado' });
+  res.json({ ok: true, job: publicJob(job) });
 });
 
 app.post('/print/raw', async (req, res) => {
@@ -302,6 +353,9 @@ app.listen(PORT, '127.0.0.1', () => {
   flog('  Endpoints:');
   flog('    GET  /health');
   flog('    GET  /printers');
+  flog('    GET  /printers/status');
+  flog('    GET  /jobs');
+  flog('    GET  /jobs/:jobID');
   flog('    POST /print/raw');
   flog('    POST /spooler/restart');
   flog('    POST /restart-self');

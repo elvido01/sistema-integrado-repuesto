@@ -22,6 +22,19 @@ export interface AgentPrinter {
     portName?: string;
 }
 
+export interface AgentJob {
+    jobID: string;
+    printer: string;
+    bytes: number;
+    status: 'queued' | 'printing' | 'complete' | 'failed';
+    ok: boolean | null;
+    error?: string | null;
+    createdAt: string;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+    windowsBytes?: number;
+}
+
 class AgentNotAvailableError extends Error {
     agentNotAvailable = true;
     constructor(message: string) {
@@ -157,6 +170,56 @@ export async function agentGetHealth(): Promise<any | null> {
         return await r.json();
     } catch (_) {
         return null;
+    }
+}
+
+export async function agentGetPrinterStatus(printerName?: string): Promise<any[]> {
+    if (!(await agentIsAvailable())) {
+        throw new AgentNotAvailableError('Motoflow Print Agent no detectado');
+    }
+    const qs = printerName ? `?printer=${encodeURIComponent(printerName)}` : '';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), AGENT_PRINTERS_TIMEOUT);
+    try {
+        const r = await fetch(`${AGENT_URL}/printers/status${qs}`, { signal: ctrl.signal });
+        const json = await r.json();
+        if (!r.ok || !json.ok) throw new Error(json.error || `Agent /printers/status HTTP ${r.status}`);
+        return json.printers || [];
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+export async function agentGetJobs(): Promise<AgentJob[]> {
+    if (!(await agentIsAvailable())) {
+        throw new AgentNotAvailableError('Motoflow Print Agent no detectado');
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), AGENT_TIMEOUT);
+    try {
+        const r = await fetch(`${AGENT_URL}/jobs`, { signal: ctrl.signal });
+        const json = await r.json();
+        if (!r.ok || !json.ok) throw new Error(json.error || `Agent /jobs HTTP ${r.status}`);
+        return json.jobs || [];
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+export async function agentGetJob(jobID: string): Promise<AgentJob | null> {
+    if (!(await agentIsAvailable())) {
+        throw new AgentNotAvailableError('Motoflow Print Agent no detectado');
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), AGENT_TIMEOUT);
+    try {
+        const r = await fetch(`${AGENT_URL}/jobs/${encodeURIComponent(jobID)}`, { signal: ctrl.signal });
+        if (r.status === 404) return null;
+        const json = await r.json();
+        if (!r.ok || !json.ok) throw new Error(json.error || `Agent /jobs/${jobID} HTTP ${r.status}`);
+        return json.job || null;
+    } finally {
+        clearTimeout(timer);
     }
 }
 

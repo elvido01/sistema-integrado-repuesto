@@ -15,6 +15,8 @@ import {
   agentListPrinters,
   agentInvalidateCache,
   agentGetHealth,
+  agentGetJobs,
+  agentGetPrinterStatus,
   agentRestartSpooler,
   agentRestartSelf,
 } from '@/services/motoflowPrintAgent';
@@ -44,6 +46,8 @@ const PrinterSettings = () => {
   const [agentPrintersCount, setAgentPrintersCount] = useState(0);
   const [agentChecking, setAgentChecking] = useState(false);
   const [agentHealth, setAgentHealth] = useState(null);
+  const [agentJobs, setAgentJobs] = useState([]);
+  const [agentPrinterStatus, setAgentPrinterStatus] = useState([]);
   const [restartingSpooler, setRestartingSpooler] = useState(false);
   const [restartingAgent, setRestartingAgent] = useState(false);
 
@@ -104,24 +108,32 @@ const PrinterSettings = () => {
       console.log('[Agent] /health respondió:', ok);
       if (ok) {
         // El agente responde — traemos health (stats) e impresoras en paralelo
-        const [health, list] = await Promise.all([
+        const [health, list, jobs, status] = await Promise.all([
           agentGetHealth().catch(() => null),
           agentListPrinters().catch((e) => {
             console.warn('[Agent] /printers falló pero /health OK:', e.message);
             return [];
           }),
+          agentGetJobs().catch(() => []),
+          agentGetPrinterStatus().catch(() => []),
         ]);
         setAgentHealth(health);
         setAgentPrintersCount(list?.length || 0);
+        setAgentJobs(jobs || []);
+        setAgentPrinterStatus(status || []);
         console.log('[Agent] health:', health);
       } else {
         setAgentPrintersCount(0);
         setAgentHealth(null);
+        setAgentJobs([]);
+        setAgentPrinterStatus([]);
       }
     } catch (err) {
       console.warn('[Agent] no disponible:', err.message);
       setAgentAvailable(false);
       setAgentPrintersCount(0);
+      setAgentJobs([]);
+      setAgentPrinterStatus([]);
     } finally {
       setAgentChecking(false);
     }
