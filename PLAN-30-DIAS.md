@@ -43,10 +43,13 @@ Marca con `[x]` lo que vayas completando.
 > Lo que realmente falta para que un cliente nuevo facture en produccion:
 
 ### Desarrollo (foco maximo)
-- [ ] **Auto-fallback config_empresa**: el handler en `index.ts` debe leer direccion/municipio/provincia/email desde `config_empresa` cuando `integraciones_fiscales.config` no los tenga. Sin esto, cada tenant nuevo requiere UPDATE manual de SQL.
+- [x] **Auto-fallback config_empresa** (commit 9719842f): `resolveEmisorConfig` rellena los campos desde `config_empresa` automaticamente.
+- [x] **Uploader extendido** (commit c120a0c0): `DgiiCertificadoUploader` pide municipio + provincia + nombre_comercial. Onboarding queda 100% sin SQL.
+- [x] **Tipo 34 Nota de Credito** (commit 29e335ae): action backend + checkbox en `DevolucionesPage` para emitir Nota de Credito a DGII cuando se hace una devolucion sobre factura con e-NCF.
+- [x] **Fase 3f callbacks ARECF/AECF**: edge function `dgii-callback` + SQL `dgii_callbacks_log` listas en repo. Solo falta deployar con `--no-verify-jwt` y correr SQL.
+- [ ] **Deploy en PROD**: redeploy `emitir-fiscal`, deploy nuevo `dgii-callback --no-verify-jwt`, correr SQLs `dgii_devoluciones_link.sql` + `dgii_callbacks_log.sql`.
 - [ ] **Set de certificacion CerteCF**: correr las 25 pruebas oficiales DGII con `DgiiCertificacionRunner` para que tenants nuevos puedan pasar a produccion legal.
-- [ ] **Fase 3f**: endpoint publico que reciba callbacks ARECF/AECF de DGII (necesita URL con SSL — puede ser ruta nueva en `emitir-fiscal` o Edge Function separada).
-- [ ] **Tipos pendientes**: completar 34 (Nota de Credito) que es el mas pedido; 33 (Nota de Debito) y anulacion. Los demas (41/43/44/45/46/47) cuando aparezca un cliente que los necesite.
+- [ ] **Tipos pendientes**: 33 (Nota de Debito) y anulacion. Los demas (41/43/44/45/46/47) cuando aparezca un cliente que los necesite.
 
 ### Ventas
 - [ ] Iniciar App Review de Meta para WhatsApp modo Live (toma 1-2 semanas Meta).
