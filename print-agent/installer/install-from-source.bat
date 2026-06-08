@@ -92,16 +92,19 @@ echo [3/5] Creando arrancador...
   echo cd /d "%AGENT_DIR%"
   echo for /f %%%%I in ^('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"'^) do set "TODAY=%%%%I"
   echo set "LOGFILE=%LOGDIR%\agent-%%TODAY%%.log"
-  echo REM Si ya hay algo escuchando en 9123 salimos limpio.
+  echo REM Si ya hay algo escuchando en 9123 salimos limpio ^(no duplicamos^).
   echo powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" ^>nul
   echo if %%errorlevel%% EQU 0 exit /b 0
   echo :loop
   echo echo [%%date%% %%time%%] Arrancando agente... ^>^> "%%LOGFILE%%"
   echo node "%INDEX_JS%" ^>^> "%%LOGFILE%%" 2^>^&1
   echo set CODE=%%errorlevel%%
-  echo echo [%%date%% %%time%%] Agente termino con codigo: %%CODE%% ^>^> "%%LOGFILE%%"
-  echo REM Cualquier salida no-0 ^(crash^) o 42 ^(restart-self^) relanza.
-  echo if "%%CODE%%"=="0" exit /b 0
+  echo echo [%%date%% %%time%%] Agente termino con codigo: %%CODE%% — relanzando en 3s ^>^> "%%LOGFILE%%"
+  echo REM CRITICO: relanzamos SIEMPRE, incluido exit 0. El agente solo debe
+  echo REM detenerse via schtasks /End, no por salir limpio. Si termina con 0
+  echo REM es porque Windows mato la sesion ^(logoff RDP, sleep, etc.^) y
+  echo REM queremos que vuelva. v0.6.1: el agente ahora sale con 1 en
+  echo REM cualquier excepcion/senal, asi que exit 0 es muy raro.
   echo timeout /t 3 /nobreak ^>nul
   echo goto loop
 ) > "%STARTER%"

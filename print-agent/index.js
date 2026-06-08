@@ -23,7 +23,7 @@ const path = require('path');
 const os = require('os');
 const { rawPrint, listPrinters, getPrinterStatus } = require('./lib/winRawPrinter');
 
-const VERSION = '0.5.0';
+const VERSION = '0.6.1';
 const PORT = Number(process.env.PORT) || 9123;
 const MAX_PRINT_BYTES = 5 * 1024 * 1024;
 const MAX_RECENT_JOBS = 100;
@@ -336,13 +336,35 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: err.message });
 });
 
-// Captura cualquier excepción no manejada para que el proceso NO muera silenciosamente
+// Captura cualquier excepción no manejada. Loguea y sale con exit code 1
+// para que el wrapper start-as-service.bat lo relance.
+// (Si solo logueamos sin salir, Node sigue con estado posiblemente corrupto.)
 process.on('uncaughtException', (err) => {
   flog('[uncaughtException] ' + (err.stack || err.message));
+  flog('[exit] saliendo con code 1 para que el wrapper relance');
+  setTimeout(() => process.exit(1), 100);
 });
 process.on('unhandledRejection', (reason) => {
   flog('[unhandledRejection] ' + (reason?.stack || reason));
+  flog('[exit] saliendo con code 1 para que el wrapper relance');
+  setTimeout(() => process.exit(1), 100);
 });
+
+// Handlers de señales para diagnosticar QUE mato el agente cuando
+// "se cae solo". Loguea y sale con exit 1 (el wrapper relanza).
+// SIGBREAK lo manda Windows al cerrar sesion RDP / logoff.
+['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'].forEach((sig) => {
+  process.on(sig, () => {
+    flog(`[signal] recibido ${sig}, saliendo con code 1 para relanzar`);
+    setTimeout(() => process.exit(1), 100);
+  });
+});
+
+// Heartbeat: cada 60s loguea que sigue vivo. Sirve para distinguir
+// "el agente murio en silencio" vs "esta vivo pero no responde".
+setInterval(() => {
+  flog(`[heartbeat] uptime=${Math.round(process.uptime())}s prints=${stats.printsOk}/${stats.printsFailed} queue=${printQueue.length}`);
+}, 60000).unref();
 
 app.listen(PORT, '127.0.0.1', () => {
   flog('═══════════════════════════════════════════════════');
