@@ -27,6 +27,56 @@ const normalizeDgiiDate = (value) => {
 };
 
 // ============================================================
+// resolveEmisorConfig
+// ============================================================
+// Devuelve el config del emisor con fallback automatico a config_empresa.
+// Sin esto, cada tenant nuevo requeria UPDATE manual de SQL para meter
+// direccion/email/telefono (sino DGII rechaza con "400 DireccionEmisor").
+//
+// Mapping config_empresa -> emisor:
+//   rnc          -> rnc_emisor       (si falta en integ.config)
+//   nombre       -> nombre_emisor    (si falta en integ.config)
+//   direccion1   -> direccion        (si falta)
+//   telefono     -> telefono         (si falta)
+//   email        -> email            (si falta)
+//
+// Los campos municipio/provincia/nombre_comercial NO estan en
+// config_empresa todavia — siguen requiriendo seteo manual en
+// integraciones_fiscales.config hasta que el uploader los pida.
+//
+// integ.config SIEMPRE gana sobre config_empresa (es el origen
+// "fiscal", mas autoritativo).
+async function resolveEmisorConfig(supabase, tenantId, integConfig) {
+  if (!tenantId) return integConfig || {};
+  const cfg = { ...(integConfig || {}) };
+
+  // Si ya tiene todos los campos criticos, no hace falta tocar nada.
+  const needsFallback =
+    !cfg.direccion || !cfg.email || !cfg.telefono ||
+    !cfg.rnc_emisor || !cfg.nombre_emisor;
+  if (!needsFallback) return cfg;
+
+  try {
+    const { data: empresa } = await supabase
+      .from("config_empresa")
+      .select("rnc, nombre, direccion1, email, telefono")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (!empresa) return cfg;
+
+    if (!cfg.rnc_emisor && empresa.rnc) cfg.rnc_emisor = empresa.rnc;
+    if (!cfg.nombre_emisor && empresa.nombre) cfg.nombre_emisor = empresa.nombre;
+    if (!cfg.direccion && empresa.direccion1) cfg.direccion = empresa.direccion1;
+    if (!cfg.telefono && empresa.telefono) cfg.telefono = empresa.telefono;
+    if (!cfg.email && empresa.email) cfg.email = empresa.email;
+    if (!cfg.nombre_comercial && empresa.nombre) cfg.nombre_comercial = empresa.nombre;
+  } catch (err) {
+    console.warn("[resolveEmisorConfig] fallback config_empresa fallo:", err.message);
+  }
+  return cfg;
+}
+
+// ============================================================
 // CONTRATO EmisorAdapter
 // ============================================================
 // Cada proveedor de facturación electrónica implementa este contrato.
@@ -655,8 +705,9 @@ Deno.serve(async (req) => {
 
       // 7. Emitir via adaptador
       try {
+        const configEmisor = await resolveEmisorConfig(supabase, tenantId, integ.config);
         const resultado = await adaptador.emitirFactura(
-          supabase, integ.config, factura, detalles, cliente
+          supabase, configEmisor, factura, detalles, cliente
         );
 
         // 8. Actualizar como emitido
@@ -851,7 +902,8 @@ Deno.serve(async (req) => {
 
       let xml, input;
       try {
-        input = facturaToEcfInput(factura, detalles, cliente, integ.config, encf);
+        const configEmisor = await resolveEmisorConfig(supabase, tenantId, integ.config);
+        input = facturaToEcfInput(factura, detalles, cliente, configEmisor, encf);
         xml = buildEcfXml(input.tipo_ecf, input);
       } catch (xmlErr) {
         // Error con contexto: que datos teniamos
@@ -918,7 +970,8 @@ Deno.serve(async (req) => {
 
       let xml, input;
       try {
-        input = facturaToEcfInput(factura, detalles, cliente, integ.config, encf);
+        const configEmisor = await resolveEmisorConfig(supabase, tenantId, integ.config);
+        input = facturaToEcfInput(factura, detalles, cliente, configEmisor, encf);
         xml = buildEcfXml(input.tipo_ecf, input);
       } catch (xmlErr) {
         throw new Error(
@@ -1041,11 +1094,12 @@ Deno.serve(async (req) => {
       // 7. Generar input + XML
       let xml, input;
       try {
+        const configEmisor = await resolveEmisorConfig(supabase, tenantId, integ.config);
         input = notaToEcfInput(
           { fecha: new Date().toISOString(), items: itemsNota, tipo: tipo === "33" ? "debito" : "credito" },
           { ncf: encfOriginal, fecha: facturaOrig.fecha, numero: facturaOrig.numero, cliente_id: facturaOrig.cliente_id },
           cliente,
-          integ.config,
+          configEmisor,
           encf,
           { codigo_modificacion: codigo_modificacion || "3", razon_modificacion: razon_modificacion || null }
         );
@@ -1691,7 +1745,8 @@ Deno.serve(async (req) => {
 
       try {
         // 5. Generar XML
-        const input = facturaToEcfInput(factura, detalles, cliente, integ.config, encf);
+        const configEmisor = await resolveEmisorConfig(supabase, tenantId, integ.config);
+        const input = facturaToEcfInput(factura, detalles, cliente, configEmisor, encf);
         const xmlSinFirmar = buildEcfXml(input.tipo_ecf, input);
 
         // 6. Cargar .p12 y firmar
