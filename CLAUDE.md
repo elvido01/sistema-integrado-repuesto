@@ -71,4 +71,3 @@ Located in `supabase/functions/`:
 - All DB access goes through `src/lib/customSupabaseClient.js` — the single `supabase` export
 - Paginated product search uses the `get_productos_paginados` RPC function — it returns `costo`, `precio`, `itbis_pct`, `existencia`, etc.
 - `itbis_pct` is stored as a decimal (0.18), not a percentage (18)
-- Placeholder pages (`ReporteMovimientosPage`, `ComprobantesPage`, `PlanesPage`) exist only as stubs — they need to be implemented
