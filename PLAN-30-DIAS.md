@@ -36,12 +36,17 @@ Marca con `[x]` lo que vayas completando.
 
 ---
 
-## SEMANA 2 — 15 al 21 jun (DGII e-CF)
+## SEMANA 2 — 15 al 21 jun (DGII certificacion)
+
+> NOTA (revisado 2026-06-08): Fase 3d (firma XAdES) y 3e (envio a DGII)
+> YA estaban completadas. Primer e-CF aceptado por CerteCF el 2026-05-15.
+> Lo que realmente falta para que un cliente nuevo facture en produccion:
 
 ### Desarrollo (foco maximo)
-- [ ] Fase 3d: Firma XAdES-BES del XML e-CF. Esto es lo unico que falta para emitir a produccion DGII.
-- [ ] Test end-to-end: emitir 1 e-CF de prueba contra TesteCF, validar respuesta.
-- [ ] Hookear el boton "Emitir e-CF" en FacturacionPage al flujo real (no mock).
+- [ ] **Auto-fallback config_empresa**: el handler en `index.ts` debe leer direccion/municipio/provincia/email desde `config_empresa` cuando `integraciones_fiscales.config` no los tenga. Sin esto, cada tenant nuevo requiere UPDATE manual de SQL.
+- [ ] **Set de certificacion CerteCF**: correr las 25 pruebas oficiales DGII con `DgiiCertificacionRunner` para que tenants nuevos puedan pasar a produccion legal.
+- [ ] **Fase 3f**: endpoint publico que reciba callbacks ARECF/AECF de DGII (necesita URL con SSL — puede ser ruta nueva en `emitir-fiscal` o Edge Function separada).
+- [ ] **Tipos pendientes**: completar 34 (Nota de Credito) que es el mas pedido; 33 (Nota de Debito) y anulacion. Los demas (41/43/44/45/46/47) cuando aparezca un cliente que los necesite.
 
 ### Ventas
 - [ ] Iniciar App Review de Meta para WhatsApp modo Live (toma 1-2 semanas Meta).
