@@ -1,14 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Crown, Clock, AlertTriangle, XOctagon, Zap,
   Calendar, Users, Package, ChevronRight, Shield,
-  Sparkles, Loader2, CreditCard
+  Sparkles, Loader2, CreditCard, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 
+const STORAGE_KEY = 'suscripcion_card_expanded';
+
 const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
+  // Por defecto minimizado. El usuario puede expandir; queda persistido.
+  const [expanded, setExpanded] = useState(() => {
+    try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch (_) { return false; }
+  });
+  const toggleExpanded = () => {
+    setExpanded((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(STORAGE_KEY, next ? '1' : '0'); } catch (_) {}
+      return next;
+    });
+  };
   const {
     suscripcion, loading, isActiva, isVencida, isTrial,
     diasRestantes, porVencer, planActual
@@ -107,6 +120,68 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
     );
   }
 
+  // ── minimized mode (default) — UNA sola fila: plan + bar + dias ──
+  if (!expanded) {
+    return (
+      <motion.div
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.3 }}
+        className={`rounded-lg border shadow-sm overflow-hidden bg-gradient-to-r ${style.gradient}`}
+      >
+        <div className="flex items-center gap-3 px-4 py-2">
+          {/* Plan icon + nombre */}
+          <div className="flex items-center gap-2 shrink-0 min-w-[140px]">
+            <div className="p-1.5 bg-white/20 rounded-md backdrop-blur-sm">
+              <PlanIcon className="w-4 h-4 text-white" />
+            </div>
+            <div className="leading-tight">
+              <p className="text-white/70 text-[8px] font-bold uppercase tracking-wider">Plan</p>
+              <h3 className="text-white font-black text-sm tracking-wide -mt-0.5">{planTitle}</h3>
+            </div>
+          </div>
+
+          {/* Progress bar (flex-1) */}
+          <div className="flex-1 min-w-0">
+            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${status.progressPct}%` }}
+                transition={{ duration: 1, ease: 'easeOut' }}
+                className="h-full rounded-full bg-white/90"
+              />
+            </div>
+          </div>
+
+          {/* Dias restantes */}
+          <div className="shrink-0 text-right leading-tight">
+            <p className="text-white/70 text-[8px] font-bold uppercase tracking-wider">Restantes</p>
+            <p className="text-white font-black text-sm -mt-0.5">
+              {diasRestantes}d
+            </p>
+          </div>
+
+          {/* Estado badge */}
+          <div className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${status.labelBg}`}>
+            <span className="flex items-center gap-1">
+              <StatusIcon className="w-2.5 h-2.5" />
+              {status.label}
+            </span>
+          </div>
+
+          {/* Toggle expandir */}
+          <button
+            onClick={toggleExpanded}
+            className="shrink-0 p-1 rounded-full hover:bg-white/20 transition-colors"
+            title="Ver detalle"
+          >
+            <ChevronDown className="w-4 h-4 text-white" />
+          </button>
+        </div>
+      </motion.div>
+    );
+  }
+
   // ── full card mode ──
   return (
     <motion.div
@@ -126,11 +201,20 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
             <h3 className="text-white font-black text-lg tracking-wide">{planTitle}</h3>
           </div>
         </div>
-        <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${status.labelBg}`}>
-          <span className="flex items-center gap-1">
-            <StatusIcon className="w-3 h-3" />
-            {status.label}
-          </span>
+        <div className="flex items-center gap-2">
+          <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${status.labelBg}`}>
+            <span className="flex items-center gap-1">
+              <StatusIcon className="w-3 h-3" />
+              {status.label}
+            </span>
+          </div>
+          <button
+            onClick={toggleExpanded}
+            className="p-1 rounded-full hover:bg-white/20 transition-colors"
+            title="Minimizar"
+          >
+            <ChevronUp className="w-4 h-4 text-white" />
+          </button>
         </div>
       </div>
 
