@@ -185,17 +185,19 @@ BEGIN
     v_saldo_cier := 0;
   END IF;
 
-  -- Recibos desde el ultimo cierre
-  SELECT COALESCE(SUM(monto), 0) INTO v_recibos
+  -- Recibos desde el ultimo cierre (monto_pagado, no monto)
+  SELECT COALESCE(SUM(monto_pagado), 0) INTO v_recibos
   FROM public.recibos_ingreso
   WHERE tenant_id = v_tenant
-    AND fecha BETWEEN v_ultimo_cier AND p_hasta;
+    AND fecha BETWEEN v_ultimo_cier AND p_hasta
+    AND COALESCE(anulado, false) = false;
 
   -- Pagos a suplidores desde el ultimo cierre
   SELECT COALESCE(SUM(monto_pagado), 0) INTO v_pagos
   FROM public.pagos_suplidores
   WHERE tenant_id = v_tenant
-    AND fecha BETWEEN v_ultimo_cier AND p_hasta;
+    AND fecha BETWEEN v_ultimo_cier AND p_hasta
+    AND COALESCE(anulado, false) = false;
 
   v_disponible := v_saldo_cier + v_recibos - v_pagos;
 
