@@ -126,6 +126,11 @@ const OrdenCompraPage = () => {
   const [pinReason, setPinReason] = useState('');
   const [pinVerifying, setPinVerifying] = useState(false);
   const [pinGateInfo, setPinGateInfo] = useState(null);        // { motivo, exceso, monto_orden, disponible, limite }
+
+  // Fase B v2: Optimizar Compra
+  const [optimizando, setOptimizando] = useState(false);
+  const [previewOptim, setPreviewOptim] = useState(null);      // { items: [{ producto_id, accion, cantidad_nueva, ... }], total_antes, total_despues, ahorro }
+  const [optimModalOpen, setOptimModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -796,6 +801,76 @@ const OrdenCompraPage = () => {
   }, [tenantId]);
 
   useEffect(() => { refreshPresupuestoV2(); }, [refreshPresupuestoV2]);
+
+  // Fase B v2: pedir sugerencia de optimizacion. Llama el RPC que
+  // decide que recortar (sin tocar urgentes) para entrar en el
+  // presupuesto disponible. Abre modal de preview antes de aplicar.
+  const handleOptimizarOrden = async () => {
+    if (!presupuestoV2 || !detalles?.length) return;
+    const objetivo = Number(presupuestoV2.disponible) || 0;
+    if (objetivo <= 0) {
+      toast({ variant: 'destructive', title: 'Sin presupuesto', description: 'No queda disponible este mes para optimizar.' });
+      return;
+    }
+    setOptimizando(true);
+    try {
+      const items = detalles
+        .filter(d => d.producto_id && Number(d.cantidad) > 0)
+        .map(d => {
+          const cant = Number(d.cantidad) || 0;
+          const precio = Number(d.precio) || 0;
+          const descPct = (Number(d.descuento_pct) || 0) / 100;
+          const subtotal = cant * precio * (1 - descPct);
+          return {
+            producto_id: d.producto_id,
+            cantidad: cant,
+            subtotal: Number(subtotal.toFixed(2)),
+          };
+        });
+      const { data, error } = await supabase.rpc('optimizar_orden_compra', {
+        p_tenant_id: tenantId,
+        p_items: items,
+        p_presupuesto: objetivo,
+      });
+      if (error) throw error;
+      if (!data?.optimizada) {
+        toast({ title: 'Sin recortes', description: 'La orden ya entra en el presupuesto disponible.' });
+        return;
+      }
+      setPreviewOptim(data);
+      setOptimModalOpen(true);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error optimizando', description: err.message });
+    } finally {
+      setOptimizando(false);
+    }
+  };
+
+  // Aplica el preview de optimizacion a los detalles de la orden.
+  const aplicarOptimizacion = () => {
+    if (!previewOptim?.items) return;
+    const mapAcciones = new Map();
+    for (const it of previewOptim.items) {
+      mapAcciones.set(it.producto_id, it);
+    }
+    setDetalles(prev => prev.flatMap(d => {
+      const acc = mapAcciones.get(d.producto_id);
+      if (!acc) return [d]; // no estaba en el analisis -> lo dejamos
+      if (acc.accion === 'quitar') return [];
+      if (acc.accion === 'reducir' || acc.accion === 'mantener') {
+        const cantidadNueva = Number(acc.cantidad_nueva) || 0;
+        if (cantidadNueva <= 0) return [];
+        return [{ ...d, cantidad: cantidadNueva }];
+      }
+      return [d];
+    }));
+    setOptimModalOpen(false);
+    setPreviewOptim(null);
+    toast({
+      title: '✨ Orden optimizada',
+      description: `Ahorro estimado: RD$ ${Number(previewOptim.ahorro).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`,
+    });
+  };
 
   // Verifica el PIN del supervisor y dispara el guardado de la orden
   // bypaseando el gate. Si el PIN es incorrecto, queda el modal abierto
@@ -1597,6 +1672,20 @@ const OrdenCompraPage = () => {
                 )}
               </div>
             )}
+
+            {/* Boton Optimizar Compra (Fase B v2) — aparece cuando la orden excede el presupuesto disponible */}
+            {presupuestoV2 && Number(totals.total_orden) > Number(presupuestoV2.disponible || 0) && Number(presupuestoV2.disponible || 0) > 0 && (
+              <Button
+                onClick={handleOptimizarOrden}
+                disabled={optimizando || !detalles?.length}
+                className="bg-amber-500 hover:bg-amber-600 text-white font-bold"
+                title={`Tu orden de RD$ ${Number(totals.total_orden).toLocaleString('es-DO', { minimumFractionDigits: 2 })} excede el presupuesto disponible de RD$ ${Number(presupuestoV2.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}. Hacé click para recortar items sin rotación.`}
+              >
+                {optimizando
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Optimizando...</>
+                  : <>✨ Optimizar Compra</>}
+              </Button>
+            )}
           </div>
 
           {/* Franja de análisis de caja (inline, sin ventana aparte) */}
@@ -1850,6 +1939,109 @@ const OrdenCompraPage = () => {
               {pinVerifying
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verificando...</>
                 : <><Lock className="w-4 h-4 mr-2" /> Autorizar y grabar</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════ */}
+      {/* Modal Optimizar Compra — Fase B v2                   */}
+      {/* ════════════════════════════════════════════════════ */}
+      <Dialog open={optimModalOpen} onOpenChange={(open) => { if (!open) { setOptimModalOpen(false); setPreviewOptim(null); } }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              ✨ Vista previa de optimización
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              El sistema redujo o quitó items sin rotación para entrar en el presupuesto disponible. Los items URGENTES se mantienen aunque excedan.
+            </DialogDescription>
+          </DialogHeader>
+
+          {previewOptim && (
+            <>
+              <div className="grid grid-cols-3 gap-2 my-2">
+                <div className="bg-slate-50 border border-slate-200 rounded-md p-2 text-center">
+                  <p className="text-[10px] uppercase font-bold text-slate-500">Antes</p>
+                  <p className="text-sm font-mono font-black text-slate-700">RD$ {Number(previewOptim.total_antes).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-md p-2 text-center">
+                  <p className="text-[10px] uppercase font-bold text-emerald-600">Después</p>
+                  <p className="text-sm font-mono font-black text-emerald-700">RD$ {Number(previewOptim.total_despues).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-center">
+                  <p className="text-[10px] uppercase font-bold text-amber-600">Ahorro</p>
+                  <p className="text-sm font-mono font-black text-amber-700">RD$ {Number(previewOptim.ahorro).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+
+              <div className="max-h-[40vh] overflow-y-auto border border-slate-200 rounded-md">
+                <Table>
+                  <TableHeader className="bg-slate-100 sticky top-0">
+                    <TableRow>
+                      <TableHead className="text-[10px] uppercase">Producto</TableHead>
+                      <TableHead className="text-[10px] uppercase">Urgencia</TableHead>
+                      <TableHead className="text-[10px] uppercase">Acción</TableHead>
+                      <TableHead className="text-right text-[10px] uppercase">Cant.</TableHead>
+                      <TableHead className="text-right text-[10px] uppercase">Subtotal</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewOptim.items.map((it, idx) => {
+                      const orig = detalles.find(d => d.producto_id === it.producto_id);
+                      const accClr = it.accion === 'mantener' ? 'text-emerald-700 bg-emerald-50'
+                                     : it.accion === 'reducir' ? 'text-amber-700 bg-amber-50'
+                                     : 'text-red-700 bg-red-50';
+                      const urgClr = it.urgencia === 'urgente' ? 'text-red-700'
+                                     : it.urgencia === 'proxima' ? 'text-amber-700'
+                                     : 'text-slate-500';
+                      return (
+                        <TableRow key={`${it.producto_id}-${idx}`}>
+                          <TableCell className="text-xs">
+                            <p className="font-bold">{orig?.codigo || '—'}</p>
+                            <p className="text-[10px] text-slate-500 truncate max-w-[200px]">{orig?.descripcion}</p>
+                          </TableCell>
+                          <TableCell className={`text-[10px] uppercase font-bold ${urgClr}`}>
+                            {it.urgencia}
+                          </TableCell>
+                          <TableCell>
+                            <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded ${accClr}`}>
+                              {it.accion}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            {orig?.cantidad || 0} → <b>{Number(it.cantidad_nueva).toLocaleString('es-DO')}</b>
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            RD$ {Number(it.subtotal_nuevo).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <p className="text-[10px] text-slate-500 italic">
+                💡 Los items URGENTE (sin stock + ventas recientes) se mantienen aunque hagan exceder el presupuesto.
+              </p>
+            </>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setOptimModalOpen(false); setPreviewOptim(null); }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={aplicarOptimizacion}
+              className="bg-amber-500 hover:bg-amber-600 text-white font-bold"
+            >
+              Aplicar a la orden
             </Button>
           </DialogFooter>
         </DialogContent>
