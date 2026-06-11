@@ -141,6 +141,89 @@ const OrdenCompraPage = () => {
   const [workflowModalOpen, setWorkflowModalOpen] = useState(false);
   const [enviandoCola, setEnviandoCola] = useState(false);
 
+  // Nuevo Producto Rapido (sin salir de la OC)
+  const [quickProdModalOpen, setQuickProdModalOpen] = useState(false);
+  const [quickProd, setQuickProd] = useState({
+    codigo: '',
+    descripcion: '',
+    costo: 0,
+    itbis_pct: 0,
+    unidad: 'UND',
+    cantidad: 1,
+  });
+  const [creandoProducto, setCreandoProducto] = useState(false);
+
+  const abrirNuevoProducto = () => {
+    setQuickProd({
+      codigo: stagingItem.codigo || '',
+      descripcion: '',
+      costo: 0,
+      itbis_pct: 0,
+      unidad: 'UND',
+      cantidad: 1,
+    });
+    setQuickProdModalOpen(true);
+  };
+
+  const crearProductoYAgregar = async () => {
+    if (!quickProd.codigo?.trim() || !quickProd.descripcion?.trim()) {
+      toast({ variant: 'destructive', title: 'Datos incompletos', description: 'Código y descripción son obligatorios.' });
+      return;
+    }
+    setCreandoProducto(true);
+    try {
+      // 1. Crear el producto
+      const { data: nuevo, error: prodErr } = await supabase
+        .from('productos')
+        .insert({
+          tenant_id: tenantId,
+          codigo: quickProd.codigo.trim().toUpperCase(),
+          descripcion: quickProd.descripcion.trim().toUpperCase(),
+          costo: Number(quickProd.costo) || 0,
+          precio: Number(quickProd.costo) || 0,  // precio default = costo (se ajusta despues)
+          itbis_pct: Number(quickProd.itbis_pct) || 0,
+          unidad: quickProd.unidad || 'UND',
+          existencia: 0,
+          activo: true,
+          suplidor_id: selectedProveedor?.id || null,
+        })
+        .select()
+        .single();
+      if (prodErr) throw prodErr;
+
+      // 2. Agregar como linea a la OC actual
+      const cant = Number(quickProd.cantidad) || 1;
+      const itbisPct = Number(quickProd.itbis_pct) || 0;
+      const precio = Number(quickProd.costo) || 0;
+      setDetalles(prev => [...prev, {
+        id: `new-${Date.now()}`,
+        producto_id: nuevo.id,
+        codigo: nuevo.codigo,
+        descripcion: nuevo.descripcion,
+        cantidad: cant,
+        unidad: nuevo.unidad,
+        precio,
+        descuento_pct: 0,
+        itbis_pct: itbisPct,
+        importe: cant * precio,
+        existencia: 0,
+        _is_new_product: true,
+      }]);
+
+      toast({
+        title: '✅ Producto creado y agregado',
+        description: `${nuevo.codigo} — ${nuevo.descripcion}`,
+      });
+      setQuickProdModalOpen(false);
+      // Focus de vuelta al codigo input para seguir dictando
+      setTimeout(() => document.getElementById('staging-codigo-input')?.focus(), 100);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    } finally {
+      setCreandoProducto(false);
+    }
+  };
+
   // Fase A v2: modal inline de configuracion del presupuesto
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [configForm, setConfigForm] = useState({
@@ -1788,6 +1871,14 @@ const OrdenCompraPage = () => {
         ) : (
           /* ── STAGING ROW ORIGINAL (REPUESTOS) ── */
           <div className="bg-yellow-100/80 p-1 flex items-center gap-1 border-b border-slate-200 shadow-sm">
+            <Button
+              variant="outline"
+              className="h-7 w-7 p-0 border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+              onClick={abrirNuevoProducto}
+              title="Crear producto nuevo y agregarlo a esta orden"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
             <div className="relative">
               <Input
                 id="staging-codigo-input"
@@ -2037,26 +2128,58 @@ const OrdenCompraPage = () => {
                 <p className="text-[10px] uppercase text-slate-400 font-bold">⚪ Puede esperar {sugerenciaCompra.countEsperar ? `(${sugerenciaCompra.countEsperar})` : ''}</p>
                 <p className="font-bold text-slate-600 text-sm">RD$ {sugerenciaCompra.totalEsperar.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
               </div>
-              <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
-                <p className="text-[10px] uppercase text-violet-500 font-bold leading-tight">
-                  {sugerenciaCompra.modo_distribucion
-                    ? `Presup. ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}${sugerenciaCompra.share_pct ? ` (${sugerenciaCompra.share_pct}%)` : ''}`
-                    : `Presupuesto mes ${sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}`}
-                </p>
-                <p className="font-bold text-violet-700 text-sm">
-                  RD$ {sugerenciaCompra.presupuesto.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
-                </p>
-                <p className="text-[9px] text-violet-500 leading-tight mt-0.5">
-                  Disp: <span className={`font-bold ${sugerenciaCompra.disponible <= 0 ? 'text-red-600' : sugerenciaCompra.disponible / Math.max(1, sugerenciaCompra.presupuesto) < 0.25 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    RD$ {Number(sugerenciaCompra.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
-                  </span>
-                </p>
-                {sugerenciaCompra.modo_distribucion && (
-                  <p className="text-[9px] text-slate-500 italic leading-tight">
-                    Total tenant: RD$ {Number(sugerenciaCompra.presupuesto_total || 0).toLocaleString('es-DO')}
-                  </p>
-                )}
-              </div>
+              {(() => {
+                const presup = Number(sugerenciaCompra.presupuesto) || 0;
+                const dispOriginal = Number(sugerenciaCompra.disponible) || 0;
+                const ordenActual = Number(totals.total_orden) || 0;
+                const dispDespues = dispOriginal - ordenActual;
+                const ratioOrden = presup > 0 ? ordenActual / presup : 0;
+                const ratioDisp = presup > 0 ? Math.max(0, dispDespues) / presup : 0;
+                const colorDispDespues = dispDespues < 0 ? 'text-red-600' : dispDespues / Math.max(1, presup) < 0.10 ? 'text-amber-600' : 'text-emerald-600';
+                return (
+                  <div className={`rounded-lg border-2 px-3 py-2 ${dispDespues < 0 ? 'border-red-400 bg-red-50 animate-pulse' : dispDespues / Math.max(1, presup) < 0.10 ? 'border-amber-300 bg-amber-50' : 'border-violet-200 bg-violet-50'}`}>
+                    <p className="text-[10px] uppercase text-violet-500 font-bold leading-tight">
+                      {sugerenciaCompra.modo_distribucion
+                        ? `Presup. ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}${sugerenciaCompra.share_pct ? ` (${sugerenciaCompra.share_pct}%)` : ''}`
+                        : `Presupuesto mes ${sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}`}
+                    </p>
+                    <p className="font-bold text-violet-700 text-sm">
+                      RD$ {presup.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                    </p>
+
+                    {/* Barra visual del progreso disponible */}
+                    <div className="h-1.5 w-full bg-slate-200 rounded-full mt-1 overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${dispDespues < 0 ? 'bg-red-500' : dispDespues / Math.max(1, presup) < 0.10 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                        style={{ width: `${Math.min(100, Math.max(0, ratioDisp * 100))}%` }}
+                      />
+                    </div>
+
+                    <div className="text-[9px] mt-1 leading-tight space-y-0.5">
+                      <p className="text-violet-600">
+                        Disp ahora: <span className="font-bold">RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                      </p>
+                      {ordenActual > 0 && (
+                        <>
+                          <p className="text-slate-500">
+                            − Esta orden: <span className="font-mono">RD$ {ordenActual.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                          </p>
+                          <p className={`font-bold ${colorDispDespues}`}>
+                            = Quedaría: RD$ {dispDespues.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                            {dispDespues < 0 && ' ⚠️'}
+                          </p>
+                        </>
+                      )}
+                    </div>
+
+                    {sugerenciaCompra.modo_distribucion && (
+                      <p className="text-[9px] text-slate-400 italic leading-tight mt-1">
+                        Total tenant: RD$ {Number(sugerenciaCompra.presupuesto_total || 0).toLocaleString('es-DO')}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 flex flex-col justify-center">
                 <p className="text-[10px] uppercase text-slate-400 font-bold">Salud de caja</p>
                 <p className={`font-bold text-sm ${sugerenciaCompra.salud_caja === 'tension' ? 'text-red-600' : sugerenciaCompra.salud_caja === 'ajustada' ? 'text-amber-600' : 'text-emerald-600'}`}>
@@ -2304,6 +2427,92 @@ const OrdenCompraPage = () => {
               {pinVerifying
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verificando...</>
                 : <><Lock className="w-4 h-4 mr-2" /> Autorizar y grabar</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════ */}
+      {/* Modal Quick Product: crear producto sin salir de la OC */}
+      {/* ════════════════════════════════════════════════════ */}
+      <Dialog open={quickProdModalOpen} onOpenChange={(open) => { if (!open) setQuickProdModalOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-700">
+              <Plus className="w-5 h-5" /> Producto Nuevo Rápido
+            </DialogTitle>
+            <DialogDescription className="text-slate-600 text-xs">
+              Creá el producto y agregalo a esta orden en un solo paso. Después podés afinar precio/categoría desde Mercancías.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-1 space-y-1">
+                <Label className="text-[11px] uppercase font-bold text-slate-700">Código *</Label>
+                <Input
+                  value={quickProd.codigo}
+                  onChange={(e) => setQuickProd(p => ({ ...p, codigo: e.target.value.toUpperCase() }))}
+                  placeholder="Ej: GAX-099"
+                  autoFocus
+                />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-[11px] uppercase font-bold text-slate-700">Descripción *</Label>
+                <Input
+                  value={quickProd.descripcion}
+                  onChange={(e) => setQuickProd(p => ({ ...p, descripcion: e.target.value }))}
+                  placeholder="Ej: FILTRO ACEITE GTS"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] uppercase font-bold text-slate-700">Costo (RD$)</Label>
+                <Input
+                  type="number" step="0.01" min={0}
+                  value={quickProd.costo || ''}
+                  onChange={(e) => setQuickProd(p => ({ ...p, costo: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] uppercase font-bold text-slate-700">ITBIS %</Label>
+                <Input
+                  type="number" step="0.01" min={0} max={100}
+                  value={quickProd.itbis_pct || ''}
+                  onChange={(e) => setQuickProd(p => ({ ...p, itbis_pct: e.target.value }))}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] uppercase font-bold text-slate-700">Cantidad</Label>
+                <Input
+                  type="number" min={1}
+                  value={quickProd.cantidad || ''}
+                  onChange={(e) => setQuickProd(p => ({ ...p, cantidad: e.target.value }))}
+                  placeholder="1"
+                />
+              </div>
+            </div>
+
+            <p className="text-[10px] text-slate-500 italic">
+              💡 El producto se crea con costo = precio (igual). Cuando llegue la compra, el OCR puede ajustar el costo real y vos podés definir el precio de venta en el módulo Mercancías.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setQuickProdModalOpen(false)} disabled={creandoProducto}>
+              Cancelar (ESC)
+            </Button>
+            <Button
+              onClick={crearProductoYAgregar}
+              disabled={creandoProducto || !quickProd.codigo?.trim() || !quickProd.descripcion?.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {creandoProducto ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              Crear y agregar a la orden
             </Button>
           </DialogFooter>
         </DialogContent>
