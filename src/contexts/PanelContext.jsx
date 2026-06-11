@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext } from 'react';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -45,6 +45,7 @@ import CotizacionesMagnaPage from '@/pages/CotizacionesMagnaPage';
 import PerfilEmpresa from '@/pages/Configuracion/PerfilEmpresa';
 import ComprobantesPage from '@/pages/Configuracion/ComprobantesPage';
 import DgiiMonitorPage from '@/pages/Configuracion/DgiiMonitorPage';
+import PresupuestoInteligentePage from '@/pages/Configuracion/PresupuestoInteligentePage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
 import AICeoPage from '@/pages/AICeoPage';
 import PlanesPage from '@/pages/PlanesPage';
@@ -114,6 +115,7 @@ const componentMapping = {
   'perfil-empresa': { component: () => <Protected module="perfil-empresa"><PerfilEmpresa /></Protected>, icon: Building2, name: 'Perfil Empresa' },
   'comprobantes-fiscales': { component: () => <Protected module="comprobantes-fiscales"><ComprobantesPage /></Protected>, icon: FileText, name: 'Comprobantes Fiscales' },
   'dgii-monitor': { component: () => <Protected module="dgii-monitor"><DgiiMonitorPage /></Protected>, icon: FileText, name: 'Monitor e-CF DGII' },
+  'presupuesto-inteligente': { component: () => <Protected module="presupuesto-inteligente"><PresupuestoInteligentePage /></Protected>, icon: Sparkles, name: 'Presupuesto Inteligente' },
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
   'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MORLA AI CEO' },
   'whatsapp-crm': { component: () => <Protected module="whatsapp-crm"><PlanGate nombre="Sales Hub / CRM"><WhatsAppCrmPage /></PlanGate></Protected>, icon: MessageCircle, name: 'Sales Hub' },
