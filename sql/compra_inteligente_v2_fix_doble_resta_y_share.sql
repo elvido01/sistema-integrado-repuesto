@@ -96,7 +96,8 @@ BEGIN
     v_monto_base := (v_legacy->>'presupuesto_sugerido')::NUMERIC;
   END IF;
 
-  SELECT COALESCE(SUM(total), 0) INTO v_comprado_mes
+  -- compras.total_compra es la columna (no 'total')
+  SELECT COALESCE(SUM(total_compra), 0) INTO v_comprado_mes
   FROM public.compras
   WHERE tenant_id = v_tenant
     AND fecha >= p_mes
@@ -196,12 +197,12 @@ BEGIN
     v_modo_distribucion := 'manual';
   ELSE
     -- 3. Distribucion automatica por movimiento 90d
-    SELECT COALESCE(SUM(total), 0) INTO v_total_compras_90d
+    SELECT COALESCE(SUM(total_compra), 0) INTO v_total_compras_90d
     FROM public.compras
     WHERE tenant_id = v_tenant
       AND fecha >= CURRENT_DATE - 90;
 
-    SELECT COALESCE(SUM(total), 0) INTO v_compras_sup_90d
+    SELECT COALESCE(SUM(total_compra), 0) INTO v_compras_sup_90d
     FROM public.compras
     WHERE tenant_id = v_tenant
       AND suplidor_id = p_suplidor_id
@@ -223,7 +224,7 @@ BEGIN
   END IF;
 
   -- 4. Comprado a este suplidor este mes
-  SELECT COALESCE(SUM(total), 0) INTO v_comprado_sup_mes
+  SELECT COALESCE(SUM(total_compra), 0) INTO v_comprado_sup_mes
   FROM public.compras
   WHERE tenant_id = v_tenant
     AND suplidor_id = p_suplidor_id
