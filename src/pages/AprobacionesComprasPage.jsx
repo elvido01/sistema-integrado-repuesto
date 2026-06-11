@@ -85,7 +85,7 @@ export default function AprobacionesComprasPage() {
             id, orden_id, monto, presupuesto_dispo, motivo_gate, razon_solicitante,
             estado, comentario_supervisor, created_at, resuelta_at,
             solicitante_id, supervisor_id,
-            orden:ordenes_compra(numero, fecha_orden, suplidor_id, total, suplidor:proveedores(nombre))
+            orden:ordenes_compra(numero, fecha_orden, suplidor_id, total_orden, suplidor:proveedores(nombre))
           `)
           .eq('tenant_id', tenantId)
           .eq('estado', tab)
