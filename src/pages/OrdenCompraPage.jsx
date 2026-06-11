@@ -131,6 +131,9 @@ const OrdenCompraPage = () => {
   const [optimizando, setOptimizando] = useState(false);
   const [previewOptim, setPreviewOptim] = useState(null);      // { items: [{ producto_id, accion, cantidad_nueva, ... }], total_antes, total_despues, ahorro }
   const [optimModalOpen, setOptimModalOpen] = useState(false);
+
+  // Fase B v2: Info por suplidor (cuando distribuir_por = 'suplidor' o 'mixto')
+  const [infoSuplidor, setInfoSuplidor] = useState(null);     // { tiene_asignacion, asignado, comprado, disponible, color }
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -802,6 +805,35 @@ const OrdenCompraPage = () => {
 
   useEffect(() => { refreshPresupuestoV2(); }, [refreshPresupuestoV2]);
 
+  // Fase B v2: cargar info presupuesto del suplidor al cambiar seleccion.
+  // Solo si la config distribuir_por incluye 'suplidor'.
+  useEffect(() => {
+    let cancel = false;
+    const fetch = async () => {
+      const distrib = presupuestoV2?.distribuir_por;
+      if (!selectedProveedor?.id || !tenantId || !distrib || (distrib !== 'suplidor' && distrib !== 'mixto')) {
+        setInfoSuplidor(null);
+        return;
+      }
+      try {
+        const { data, error } = await supabase.rpc('get_presupuesto_por_suplidor', {
+          p_tenant_id: tenantId,
+          p_suplidor_id: selectedProveedor.id,
+        });
+        if (error) {
+          console.warn('[OrdenCompra] info suplidor:', error.message);
+          if (!cancel) setInfoSuplidor(null);
+          return;
+        }
+        if (!cancel) setInfoSuplidor(data || null);
+      } catch (e) {
+        if (!cancel) setInfoSuplidor(null);
+      }
+    };
+    fetch();
+    return () => { cancel = true; };
+  }, [selectedProveedor?.id, tenantId, presupuestoV2?.distribuir_por]);
+
   // Fase B v2: pedir sugerencia de optimizacion. Llama el RPC que
   // decide que recortar (sin tocar urgentes) para entrar en el
   // presupuesto disponible. Abre modal de preview antes de aplicar.
@@ -1329,6 +1361,51 @@ const OrdenCompraPage = () => {
             <Label className="text-gray-500 w-16 text-right">Teléfono</Label>
             <Input value={selectedProveedor?.telefono || ''} readOnly className="bg-slate-50 flex-1" />
           </div>
+
+          {/* Card Info Suplidor (Fase B v2) — solo si hay distribución por suplidor */}
+          {selectedProveedor && infoSuplidor && infoSuplidor.tiene_asignacion && (
+            <div className={`mt-2 rounded-md border-2 p-2 ${
+              infoSuplidor.color === 'verde' ? 'border-emerald-300 bg-emerald-50' :
+              infoSuplidor.color === 'amarillo' ? 'border-amber-300 bg-amber-50' :
+              infoSuplidor.color === 'rojo' ? 'border-red-300 bg-red-50' :
+              'border-slate-300 bg-slate-50'
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[10px] uppercase font-bold text-slate-600">Presupuesto este mes para este suplidor</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-[9px] uppercase text-slate-500">Asignado</p>
+                  <p className="text-xs font-mono font-black text-slate-800">
+                    RD$ {Number(infoSuplidor.asignado).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-slate-500">Comprado</p>
+                  <p className="text-xs font-mono font-black text-blue-700">
+                    RD$ {Number(infoSuplidor.comprado).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-slate-500">Disponible</p>
+                  <p className={`text-xs font-mono font-black ${
+                    infoSuplidor.color === 'verde' ? 'text-emerald-700' :
+                    infoSuplidor.color === 'amarillo' ? 'text-amber-700' :
+                    'text-red-700'
+                  }`}>
+                    RD$ {Number(infoSuplidor.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          {selectedProveedor && infoSuplidor && !infoSuplidor.tiene_asignacion && (presupuestoV2?.distribuir_por === 'suplidor' || presupuestoV2?.distribuir_por === 'mixto') && (
+            <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+              <p className="text-[10px] text-slate-500 italic">
+                Este suplidor no tiene asignación. Sin límite por proveedor — solo aplica el presupuesto total.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Asesor IA de caja (reemplaza Dirección de Entrega, sin uso) */}
