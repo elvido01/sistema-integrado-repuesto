@@ -33,6 +33,7 @@ import {
   MessageCircle,
   RadioTower,
   MapPinned,
+  Sparkles,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -87,6 +88,7 @@ const navItems = [
       { title: 'Cotizaciones', id: 'cotizaciones' },
       { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, tenantOnly: '00000000-0000-0000-0000-000000000001' },
       { title: 'Orden de Compra', id: 'orden-compra' },
+      { title: 'Aprobaciones de Compras', id: 'aprobaciones-compras', icon: ClipboardList },
       { title: 'Devoluciones', id: 'devoluciones' },
     ],
   },
@@ -154,6 +156,7 @@ const navItems = [
       { title: 'Cierre de Caja', id: 'cierre-caja', icon: Settings },
       { title: 'Comprobantes Fiscales', id: 'comprobantes-fiscales', icon: FileText },
       { title: 'Monitor e-CF DGII', id: 'dgii-monitor', icon: FileText },
+      { title: 'Presupuesto Inteligente', id: 'presupuesto-inteligente', icon: Sparkles },
     ],
   },
 ];
