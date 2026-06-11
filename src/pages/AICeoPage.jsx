@@ -15,9 +15,10 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp, Megaphone, Palette, Film } from 'lucide-react';
+import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp, Megaphone, Palette, Film, Wallet } from 'lucide-react';
 
 import BusinessHealthCard from '@/components/ai-ceo/BusinessHealthCard';
+import PresupuestoAnalisisCard from '@/components/ai-ceo/PresupuestoAnalisisCard';
 import AiAlertsList from '@/components/ai-ceo/AiAlertsList';
 import AiReportViewer from '@/components/ai-ceo/AiReportViewer';
 import AiDecisionsList from '@/components/ai-ceo/AiDecisionsList';
@@ -36,6 +37,7 @@ const TABS = [
     { key: 'alertas',     label: 'Alertas',      icon: AlertCircle },
     { key: 'decisiones',  label: 'Decisiones',   icon: Gavel },
     { key: 'forecast',    label: 'Predicciones', icon: TrendingUp },
+    { key: 'presupuesto', label: 'Presupuesto',  icon: Wallet },
     { key: 'marketing',   label: 'Marketing IA', icon: Megaphone },
     { key: 'diseno',      label: 'Diseño Pro',   icon: Palette },
     { key: 'captut-pro',  label: 'Captut Pro',   icon: Film },
@@ -256,6 +258,10 @@ export default function AICeoPage() {
                         <AiForecastCard />
                         <AiTrendsChart days={14} />
                     </div>
+                )}
+
+                {tab === 'presupuesto' && (
+                    <PresupuestoAnalisisCard />
                 )}
 
                 {tab === 'marketing' && puedeMarketing && (

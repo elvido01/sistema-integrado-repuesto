@@ -18,6 +18,7 @@
 // @ts-nocheck — Deno runtime
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { ejecutarCambioSuplidor } from './agents/cambio_suplidor.ts';
+import { ejecutarAnalisisPresupuesto } from './agents/analisis_presupuesto.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -123,6 +124,10 @@ Deno.serve(async (req: Request) => {
         try {
             if (agent_key === 'cambio_suplidor') {
                 const out = await ejecutarCambioSuplidor(supabase, tenant_id, payload || {});
+                agentResult = out.result;
+                llmInfo = out.llm;
+            } else if (agent_key === 'analisis_presupuesto') {
+                const out = await ejecutarAnalisisPresupuesto(supabase, tenant_id, payload || {});
                 agentResult = out.result;
                 llmInfo = out.llm;
             } else {
