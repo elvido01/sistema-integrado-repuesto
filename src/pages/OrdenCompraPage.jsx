@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
@@ -117,6 +118,14 @@ const OrdenCompraPage = () => {
   const [presData, setPresData] = useState(null);
   const [asesor, setAsesor] = useState(null);
   const [asesorLoading, setAsesorLoading] = useState(false);
+
+  // Fase A v2: bloqueo F10 + PIN supervisor
+  const [presupuestoV2, setPresupuestoV2] = useState(null);   // { control_estricto, disponible, limite_aprobacion, ... }
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinReason, setPinReason] = useState('');
+  const [pinVerifying, setPinVerifying] = useState(false);
+  const [pinGateInfo, setPinGateInfo] = useState(null);        // { motivo, exceso, monto_orden, disponible, limite }
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -767,6 +776,58 @@ const OrdenCompraPage = () => {
     return () => { cancel = true; };
   }, [mostrarInteligente, selectedProveedor?.id, detalles.length, tenantId]);
 
+  // Fase A v2: cargar presupuesto_compras_v2 (control estricto, disponible, limite)
+  // Se carga al montar y cuando cambia tenant. Se refresca tras guardar una orden.
+  const refreshPresupuestoV2 = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const { data, error } = await supabase.rpc('get_presupuesto_compras_v2');
+      if (error) {
+        // Si el SQL Fase A no esta corrido todavia, el gate queda inactivo (no rompemos nada).
+        console.warn('[OrdenCompra] presupuesto_v2 no disponible:', error.message);
+        setPresupuestoV2(null);
+        return;
+      }
+      setPresupuestoV2(data || null);
+    } catch (err) {
+      console.warn('[OrdenCompra] presupuesto_v2 error:', err.message);
+      setPresupuestoV2(null);
+    }
+  }, [tenantId]);
+
+  useEffect(() => { refreshPresupuestoV2(); }, [refreshPresupuestoV2]);
+
+  // Verifica el PIN del supervisor y dispara el guardado de la orden
+  // bypaseando el gate. Si el PIN es incorrecto, queda el modal abierto
+  // y el usuario puede reintentar o cancelar.
+  const onPinConfirm = async () => {
+    if (!pinInput) return;
+    setPinVerifying(true);
+    try {
+      const { data, error } = await supabase.rpc('verificar_pin_supervisor', { p_pin: pinInput });
+      if (error) throw error;
+      if (data !== true) {
+        toast({
+          variant: 'destructive',
+          title: 'PIN incorrecto',
+          description: 'Verificá el PIN con el supervisor e intentá de nuevo.',
+        });
+        setPinInput('');
+        return;
+      }
+      // PIN OK — cerramos el modal y disparamos el guardado bypaseando el gate.
+      setPinModalOpen(false);
+      setPinInput('');
+      // pinGateInfo y pinReason se mantienen hasta despues del save para
+      // que el handler los persista en presupuesto_excepciones.
+      await handleSave(true);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error verificando PIN', description: err.message });
+    } finally {
+      setPinVerifying(false);
+    }
+  };
+
   // Asesor IA de caja: analiza la orden actual y devuelve recomendaciones.
   const pedirAsesorCaja = async () => {
     if (analisisItems.length === 0) {
@@ -792,16 +853,40 @@ const OrdenCompraPage = () => {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (bypassGate = false) => {
     if (isSaving) return;
     if (!selectedProveedor || detalles.length === 0) {
       toast({
         variant: 'destructive',
         title: 'Datos incompletos',
-        description: 'Debe seleccionar un suplidor y aÃ±adir al menos un producto.',
+        description: 'Debe seleccionar un suplidor y añadir al menos un producto.',
       });
       return;
     }
+
+    // ── Gate Fase A v2: control estricto + PIN supervisor ──
+    if (!bypassGate && presupuestoV2?.control_estricto) {
+      const total = Number(totals.total_orden) || 0;
+      const dispo = Number(presupuestoV2.disponible) || 0;
+      const limite = Number(presupuestoV2.limite_aprobacion) || 0;
+      let motivo = null;
+      if (total > dispo) motivo = 'EXCEDE_PRESUPUESTO_DISPONIBLE';
+      else if (limite > 0 && total > limite) motivo = 'EXCEDE_LIMITE_APROBACION';
+      if (motivo) {
+        setPinGateInfo({
+          motivo,
+          monto_orden: total,
+          disponible: dispo,
+          limite,
+          exceso: Math.max(0, total - dispo),
+        });
+        setPinInput('');
+        setPinReason('');
+        setPinModalOpen(true);
+        return; // espera al PIN
+      }
+    }
+
     setIsSaving(true);
 
     const ordenData = {
@@ -872,7 +957,24 @@ const OrdenCompraPage = () => {
     if (detallesError) {
       toast({ variant: 'destructive', title: 'Error al guardar detalles', description: detallesError.message });
     } else {
-      toast({ title: 'Ã‰xito', description: 'Orden de compra guardada correctamente.' });
+      // Si esta orden paso el gate v2 con PIN, registrar excepcion para auditoria
+      if (pinGateInfo) {
+        try {
+          const { data: userRes } = await supabase.auth.getUser();
+          await supabase.from('presupuesto_excepciones').insert({
+            tenant_id: tenantId,
+            orden_compra_id: savedOrden.id,
+            usuario_id: userRes?.user?.id || null,
+            monto_orden: pinGateInfo.monto_orden,
+            presupuesto_dispo: pinGateInfo.disponible,
+            razon: pinReason || `Override (${pinGateInfo.motivo})`,
+          });
+        } catch (excErr) {
+          console.warn('[OrdenCompra] no se pudo loguear excepcion:', excErr.message);
+        }
+        setPinGateInfo(null);
+        setPinReason('');
+      }
 
       toast({ title: 'Éxito', description: 'Orden de compra guardada correctamente.' });
 
@@ -882,6 +984,8 @@ const OrdenCompraPage = () => {
         generateOrderPDF(savedOrden, selectedProveedor, detallesData, empresa);
       }
 
+      // Refrescar presupuesto v2 para reflejar comprado_mes actualizado
+      refreshPresupuestoV2();
       clearDraft(DRAFT_KEY);
       // Reset
       setSelectedProveedor(null);
@@ -1643,6 +1747,113 @@ const OrdenCompraPage = () => {
         }}
       />
 
+      {/* ════════════════════════════════════════════════════ */}
+      {/* Modal PIN supervisor — Compra Inteligente v2 Fase A  */}
+      {/* ════════════════════════════════════════════════════ */}
+      <Dialog open={pinModalOpen} onOpenChange={(open) => { if (!open) { setPinModalOpen(false); setPinInput(''); setPinReason(''); setPinGateInfo(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <Lock className="w-5 h-5" />
+              Autorización requerida
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Esta orden requiere el PIN del supervisor para grabarse.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pinGateInfo && (
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs space-y-1">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <p className="font-bold text-amber-900">
+                    {pinGateInfo.motivo === 'EXCEDE_PRESUPUESTO_DISPONIBLE'
+                      ? 'La orden excede el presupuesto disponible del mes.'
+                      : 'La orden supera el límite de aprobación manual.'}
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-amber-800">
+                    <span>Total de la orden:</span>
+                    <span className="text-right font-mono font-bold">
+                      RD$ {Number(pinGateInfo.monto_orden).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                    </span>
+                    {pinGateInfo.motivo === 'EXCEDE_PRESUPUESTO_DISPONIBLE' ? (
+                      <>
+                        <span>Disponible este mes:</span>
+                        <span className="text-right font-mono">
+                          RD$ {Number(pinGateInfo.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-red-700 font-bold">Exceso:</span>
+                        <span className="text-right font-mono text-red-700 font-bold">
+                          RD$ {Number(pinGateInfo.exceso).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Límite aprobación:</span>
+                        <span className="text-right font-mono">
+                          RD$ {Number(pinGateInfo.limite).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3 pt-2">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-bold uppercase text-slate-700 flex items-center gap-1">
+                <KeyRound className="w-3 h-3" /> PIN del supervisor
+              </Label>
+              <Input
+                type="password"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                placeholder="• • • •"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && pinInput && !pinVerifying) {
+                    onPinConfirm();
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-bold uppercase text-slate-700">Razón (opcional)</Label>
+              <Textarea
+                rows={2}
+                value={pinReason}
+                onChange={(e) => setPinReason(e.target.value)}
+                placeholder="Ej: Stock crítico, suplidor exclusivo, oferta limitada..."
+              />
+              <p className="text-[10px] text-slate-500 italic">Queda guardada en el log de excepciones.</p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setPinModalOpen(false); setPinInput(''); setPinReason(''); setPinGateInfo(null); }}
+              disabled={pinVerifying}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={onPinConfirm}
+              disabled={pinVerifying || !pinInput}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold"
+            >
+              {pinVerifying
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verificando...</>
+                : <><Lock className="w-4 h-4 mr-2" /> Autorizar y grabar</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
