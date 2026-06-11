@@ -30,6 +30,7 @@ const PresupuestoInteligentePage = () => {
     dias_credito_promedio: 30,
     limite_aprobacion_manual: 0,
     control_estricto: false,
+    workflow_aprobacion: false,
     distribuir_por: 'total',
     fecha_base: new Date().toISOString().slice(0, 10),
     notas: '',
@@ -61,6 +62,7 @@ const PresupuestoInteligentePage = () => {
           dias_credito_promedio: cfgRes.data.dias_credito_promedio ?? 30,
           limite_aprobacion_manual: cfgRes.data.limite_aprobacion_manual ?? 0,
           control_estricto: !!cfgRes.data.control_estricto,
+          workflow_aprobacion: !!cfgRes.data.workflow_aprobacion,
           distribuir_por: cfgRes.data.distribuir_por ?? 'total',
           fecha_base: cfgRes.data.fecha_base?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
           notas: cfgRes.data.notas ?? '',
@@ -89,6 +91,7 @@ const PresupuestoInteligentePage = () => {
         dias_credito_promedio: parseInt(config.dias_credito_promedio) || 30,
         limite_aprobacion_manual: Number(config.limite_aprobacion_manual) || 0,
         control_estricto: !!config.control_estricto,
+        workflow_aprobacion: !!config.workflow_aprobacion,
         distribuir_por: config.distribuir_por,
         fecha_base: config.fecha_base || new Date().toISOString().slice(0, 10),
         notas: config.notas || null,
@@ -305,8 +308,31 @@ const PresupuestoInteligentePage = () => {
             </div>
             <p className="text-[10px] text-slate-500">
               {config.control_estricto
-                ? 'Bloquea grabado de órdenes que excedan el presupuesto. Pide PIN supervisor para autorizar.'
+                ? 'Bloquea grabado de órdenes que excedan el presupuesto.'
                 : 'Solo muestra alerta visual. Permite grabar igual.'}
+            </p>
+          </div>
+
+          {/* Workflow de aprobación (Fase C) */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold uppercase text-slate-700">Método de autorización</Label>
+            <div className={`flex items-center gap-2 p-3 rounded-md border ${config.control_estricto ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-slate-50 opacity-60'}`}>
+              <Checkbox
+                id="workflow-aprob"
+                checked={config.workflow_aprobacion}
+                onCheckedChange={(v) => setConfig(p => ({ ...p, workflow_aprobacion: !!v }))}
+                disabled={!config.control_estricto}
+              />
+              <Label htmlFor="workflow-aprob" className="text-xs font-bold text-blue-900 cursor-pointer flex items-center gap-1">
+                Workflow de aprobación (cola asincrónica)
+              </Label>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              {!config.control_estricto
+                ? 'Activá primero el Control Estricto para elegir el método.'
+                : config.workflow_aprobacion
+                  ? 'Las órdenes que exceden entran a Cola de Aprobaciones. Un supervisor aprueba/rechaza con su login.'
+                  : 'Por defecto pide PIN del supervisor en el momento (autorización sincrónica).'}
             </p>
           </div>
 

@@ -46,6 +46,7 @@ import PerfilEmpresa from '@/pages/Configuracion/PerfilEmpresa';
 import ComprobantesPage from '@/pages/Configuracion/ComprobantesPage';
 import DgiiMonitorPage from '@/pages/Configuracion/DgiiMonitorPage';
 import PresupuestoInteligentePage from '@/pages/Configuracion/PresupuestoInteligentePage';
+import AprobacionesComprasPage from '@/pages/AprobacionesComprasPage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
 import AICeoPage from '@/pages/AICeoPage';
 import PlanesPage from '@/pages/PlanesPage';
@@ -116,6 +117,7 @@ const componentMapping = {
   'comprobantes-fiscales': { component: () => <Protected module="comprobantes-fiscales"><ComprobantesPage /></Protected>, icon: FileText, name: 'Comprobantes Fiscales' },
   'dgii-monitor': { component: () => <Protected module="dgii-monitor"><DgiiMonitorPage /></Protected>, icon: FileText, name: 'Monitor e-CF DGII' },
   'presupuesto-inteligente': { component: () => <Protected module="presupuesto-inteligente"><PresupuestoInteligentePage /></Protected>, icon: Sparkles, name: 'Presupuesto Inteligente' },
+  'aprobaciones-compras': { component: () => <Protected module="aprobaciones-compras"><AprobacionesComprasPage /></Protected>, icon: ClipboardList, name: 'Aprobaciones de Compras' },
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
   'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MORLA AI CEO' },
   'whatsapp-crm': { component: () => <Protected module="whatsapp-crm"><PlanGate nombre="Sales Hub / CRM"><WhatsAppCrmPage /></PlanGate></Protected>, icon: MessageCircle, name: 'Sales Hub' },

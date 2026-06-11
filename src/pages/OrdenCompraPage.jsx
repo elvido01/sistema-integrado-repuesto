@@ -134,6 +134,10 @@ const OrdenCompraPage = () => {
 
   // Fase B v2: Info por suplidor (cuando distribuir_por = 'suplidor' o 'mixto')
   const [infoSuplidor, setInfoSuplidor] = useState(null);     // { tiene_asignacion, asignado, comprado, disponible, color }
+
+  // Fase C v2: Workflow modal (envia a cola en vez de PIN)
+  const [workflowModalOpen, setWorkflowModalOpen] = useState(false);
+  const [enviandoCola, setEnviandoCola] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -904,6 +908,24 @@ const OrdenCompraPage = () => {
     });
   };
 
+  // Fase C v2: enviar orden a cola de aprobaciones en vez de grabar directo.
+  // Setea flag via_workflow en pinGateInfo y llama handleSave(true).
+  // El handler detecta el flag y, en vez de loguear excepcion, llama el RPC
+  // solicitar_aprobacion_orden que marca la orden pendiente.
+  const enviarACola = async () => {
+    if (!pinGateInfo) return;
+    setEnviandoCola(true);
+    try {
+      setPinGateInfo({ ...pinGateInfo, via_workflow: true });
+      setWorkflowModalOpen(false);
+      await handleSave(true);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    } finally {
+      setEnviandoCola(false);
+    }
+  };
+
   // Verifica el PIN del supervisor y dispara el guardado de la orden
   // bypaseando el gate. Si el PIN es incorrecto, queda el modal abierto
   // y el usuario puede reintentar o cancelar.
@@ -971,7 +993,7 @@ const OrdenCompraPage = () => {
       return;
     }
 
-    // ── Gate Fase A v2: control estricto + PIN supervisor ──
+    // ── Gate Fase A v2: control estricto + PIN supervisor o workflow ──
     if (!bypassGate && presupuestoV2?.control_estricto) {
       const total = Number(totals.total_orden) || 0;
       const dispo = Number(presupuestoV2.disponible) || 0;
@@ -980,6 +1002,20 @@ const OrdenCompraPage = () => {
       if (total > dispo) motivo = 'EXCEDE_PRESUPUESTO_DISPONIBLE';
       else if (limite > 0 && total > limite) motivo = 'EXCEDE_LIMITE_APROBACION';
       if (motivo) {
+        // Fase C: si workflow_aprobacion=true, abre modal de razon + envia a cola.
+        if (presupuestoV2.workflow_aprobacion) {
+          setPinGateInfo({
+            motivo,
+            monto_orden: total,
+            disponible: dispo,
+            limite,
+            exceso: Math.max(0, total - dispo),
+          });
+          setPinReason('');
+          setWorkflowModalOpen(true);
+          return;
+        }
+        // Fase A: PIN supervisor sincronico
         setPinGateInfo({
           motivo,
           monto_orden: total,
@@ -1064,8 +1100,29 @@ const OrdenCompraPage = () => {
     if (detallesError) {
       toast({ variant: 'destructive', title: 'Error al guardar detalles', description: detallesError.message });
     } else {
-      // Si esta orden paso el gate v2 con PIN, registrar excepcion para auditoria
-      if (pinGateInfo) {
+      // Manejo post-save segun como se llego aqui
+      if (pinGateInfo?.via_workflow) {
+        // Fase C: enviar a cola de aprobaciones (no grabar directo)
+        try {
+          const { error: solErr } = await supabase.rpc('solicitar_aprobacion_orden', {
+            p_orden_id: savedOrden.id,
+            p_motivo_gate: pinGateInfo.motivo,
+            p_monto: pinGateInfo.monto_orden,
+            p_presupuesto_dispo: pinGateInfo.disponible,
+            p_razon: pinReason || null,
+          });
+          if (solErr) throw solErr;
+          toast({
+            title: '📋 Enviada a Cola de Aprobaciones',
+            description: `Orden ${savedOrden.numero} quedó pendiente. Un supervisor recibirá la solicitud.`,
+          });
+        } catch (solErr) {
+          toast({ variant: 'destructive', title: 'Error enviando a cola', description: solErr.message });
+        }
+        setPinGateInfo(null);
+        setPinReason('');
+      } else if (pinGateInfo) {
+        // Fase A: PIN supervisor — loguear excepcion para auditoria
         try {
           const { data: userRes } = await supabase.auth.getUser();
           await supabase.from('presupuesto_excepciones').insert({
@@ -1081,9 +1138,10 @@ const OrdenCompraPage = () => {
         }
         setPinGateInfo(null);
         setPinReason('');
+        toast({ title: 'Éxito', description: 'Orden de compra guardada correctamente.' });
+      } else {
+        toast({ title: 'Éxito', description: 'Orden de compra guardada correctamente.' });
       }
-
-      toast({ title: 'Éxito', description: 'Orden de compra guardada correctamente.' });
 
       if (printMethod === 'pos') {
         printOrdenCompraPOS(savedOrden, selectedProveedor, detallesData, paperSize);
@@ -2016,6 +2074,73 @@ const OrdenCompraPage = () => {
               {pinVerifying
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verificando...</>
                 : <><Lock className="w-4 h-4 mr-2" /> Autorizar y grabar</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════ */}
+      {/* Modal Workflow (envia a Cola de Aprobaciones) — Fase C */}
+      {/* ════════════════════════════════════════════════════ */}
+      <Dialog open={workflowModalOpen} onOpenChange={(open) => { if (!open) { setWorkflowModalOpen(false); setPinReason(''); setPinGateInfo(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-blue-700">
+              📋 Enviar a Cola de Aprobaciones
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Esta orden excede el presupuesto. Como el modo workflow está activo, no se graba inmediatamente — entra a la cola y un supervisor la aprueba o rechaza.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pinGateInfo && (
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs space-y-1">
+              <div className="grid grid-cols-2 gap-1 text-[11px] text-amber-800">
+                <span>Total orden:</span>
+                <span className="text-right font-mono font-bold">
+                  RD$ {Number(pinGateInfo.monto_orden).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                </span>
+                <span>Disponible:</span>
+                <span className="text-right font-mono">
+                  RD$ {Number(pinGateInfo.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-red-700 font-bold">Exceso:</span>
+                <span className="text-right font-mono text-red-700 font-bold">
+                  RD$ {Number(pinGateInfo.exceso).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <Label className="text-[11px] font-bold uppercase text-slate-700">Razón para el supervisor</Label>
+            <Textarea
+              rows={3}
+              value={pinReason}
+              onChange={(e) => setPinReason(e.target.value)}
+              placeholder="Ej: Stock crítico de filtros, cierre de mes apretado, oferta exclusiva..."
+            />
+            <p className="text-[10px] text-slate-500 italic">El supervisor verá esto al revisar.</p>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setWorkflowModalOpen(false); setPinReason(''); setPinGateInfo(null); }}
+              disabled={enviandoCola}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={enviarACola}
+              disabled={enviandoCola}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
+            >
+              {enviandoCola
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Enviando...</>
+                : <>📋 Enviar a aprobación</>}
             </Button>
           </DialogFooter>
         </DialogContent>
