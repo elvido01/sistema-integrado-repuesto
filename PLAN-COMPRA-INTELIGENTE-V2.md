@@ -103,24 +103,53 @@ Nueva action en el agente CEO:
 
 ## FASE C — Workflow + Categoria + Reasignacion (3-4 semanas)
 
-### C.1 Workflow de aprobacion
-- Tabla `compras_aprobaciones (id, orden_id, solicitante, monto, estado, aprobador, fecha)`
-- Rol nuevo "supervisor" en `user_module_permissions`
-- UI cola de pendientes
-- Email/notificacion al supervisor
-- Cuando control_estricto=true y orden > limite_aprobacion_manual: orden entra a cola en vez de grabar directo
+### C.1 Workflow de aprobacion — ✅ HECHO 2026-06-08
+- ✅ Tabla `compras_aprobaciones` (id, orden_id, solicitante, supervisor,
+  monto, estado pendiente/aprobada/rechazada/cancelada, comentario,
+  timestamps)
+- ✅ Columna `ordenes_compra.estado_aprobacion`
+- ✅ Toggle `workflow_aprobacion` en presupuesto_config (alternativa a PIN)
+- ✅ RPCs: solicitar_aprobacion_orden / aprobar_orden_compra /
+  rechazar_orden_compra (con validacion: solicitante != supervisor)
+- ✅ Nueva pagina AprobacionesComprasPage con tabs Pendientes/Aprobadas/
+  Rechazadas, acciones Aprobar (verde) / Rechazar (rojo + comentario obligatorio)
+- ✅ OrdenCompraPage: modal AZUL "Enviar a Cola" cuando workflow_aprobacion=true.
+  La orden se graba con estado_aprobacion='pendiente' y entra a la cola.
+- ⏳ Pendiente: rol "supervisor" en user_module_permissions (proteger acceso
+  a AprobacionesComprasPage por permiso). Por ahora cualquier usuario con
+  permiso al modulo puede aprobar.
+- ⏳ Pendiente: notificacion al supervisor (email/push). Hoy debe entrar al
+  panel y ver la cola.
 
-### C.2 Distribucion por categoria
-- Prerequisito: verificar que `productos.categoria` esta poblado en al menos 80%
-- Tabla `presupuesto_asignaciones_categoria`
-- UI drag-and-drop para mover presupuesto entre categorias
-- Engine "comprado vs disponible" por bucket
+### C.2 Distribucion por categoria — ⏳ FOLLOW-UP
+NO IMPLEMENTADA en este sprint. Razones:
+- Prerequisito: verificar que `productos.categoria` esta poblado en al
+  menos 80%. Sin esto, los buckets quedan vacios y la feature es dead code.
+- Recomendacion: validar primero el estado de tagueo (query:
+  `SELECT COUNT(*) FILTER (WHERE categoria IS NOT NULL) * 100.0 / COUNT(*) AS pct_categorizado FROM productos`).
+- Si pct < 70%, hay que armar un workflow de categorizacion masiva primero.
 
-### C.3 Reasignacion dinamica
-- Cron semanal o on-demand
-- Si suplidor X uso solo 60% de su presupuesto → reasignar 40% a suplidor Y con mas demanda
-- Algoritmo: priorizar por margen × rotacion del suplidor
-- Logging obligatorio en `presupuesto_reasignaciones`
+Cuando se implemente:
+- Tabla `presupuesto_asignaciones_categoria` (similar a la de suplidor)
+- RPC `get_presupuesto_por_categoria`
+- UI drag-and-drop (libreria react-dnd) para mover presupuesto entre buckets
+- Card "Info por categoria" en OrdenCompraPage segun lineas
+
+### C.3 Reasignacion dinamica — ✅ HECHO 2026-06-08
+- ✅ Tabla `presupuesto_reasignaciones` (log con desde/hacia suplidor,
+  monto_movido, razon, algoritmo)
+- ✅ RPC `aplicar_reasignacion_dinamica(mes)`:
+  * Solo corre si quedan >=7 dias del mes (no movido si ya casi termina)
+  * Detecta subutilizado (comprado/asignado < 0.5)
+  * Detecta sobreutilizado (comprado/asignado > 0.9)
+  * Mueve hasta 30% del cap restante del subutilizado hacia el
+    sobreutilizado, sin pasar de 1.2x lo comprado
+  * Movimiento minimo RD$100 (no migajas)
+- ✅ Edge fn `cron-presupuesto-reasignacion`:
+  * Schedule "0 7 * * 1" (lunes 07:00 UTC)
+  * Body opcional { mes } para backfill manual
+- ⏳ Pendiente: UI para revisar log de reasignaciones (puede ir en
+  AprobacionesComprasPage como tab extra)
 
 ---
 
