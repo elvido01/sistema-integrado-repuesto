@@ -171,8 +171,8 @@ BEGIN
     RAISE EXCEPTION 'Sin tenant';
   END IF;
 
-  -- Ultimo cierre de caja
-  SELECT created_at, COALESCE(saldo_final, 0)
+  -- Ultimo cierre de caja (la columna es efectivo_en_caja, no saldo_final)
+  SELECT created_at, COALESCE(efectivo_en_caja, 0)
     INTO v_ultimo_cier, v_saldo_cier
   FROM public.cierres_caja
   WHERE tenant_id = v_tenant AND created_at <= p_hasta
