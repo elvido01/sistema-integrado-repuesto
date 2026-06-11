@@ -822,16 +822,30 @@ const OrdenCompraPage = () => {
         return;
       }
       try {
-        const [pres, analisis] = await Promise.all([
-          getPresupuestoCompras(tenantId, 15, 0),
+        // ÚNICA FUENTE DE VERDAD: el RPC v2 es el mismo que usa el gate
+        // de aprobaciones. Las cards y el modal de Workflow van a mostrar
+        // EL MISMO numero, sin duplicar calculos.
+        const [presV2Res, analisis] = await Promise.all([
+          supabase.rpc('get_presupuesto_compras_v2'),
           analizarOrdenActual(conProd),
         ]);
+        const presV2 = presV2Res.data || {};
         const map = {};
         for (const it of analisis.items || []) map[it.producto_id] = it.urgencia;
+        // Mantenemos presData para el asesor IA (necesita formato v1)
+        const presParaAsesor = {
+          presupuesto_sugerido: Number(presV2.monto_base_mensual || 0),
+          ventas_recientes: Number(presV2.legacy_calculo?.ventas_recientes || 0),
+          cxp_pendiente: Number(presV2.legacy_calculo?.cxp_pendiente || 0),
+          cxc_pendiente: Number(presV2.legacy_calculo?.cxc_pendiente || 0),
+          salud_caja: presV2.legacy_calculo?.salud_caja || presV2.salud,
+          factor_reinversion: Number(presV2.legacy_calculo?.factor_reinversion || 0),
+          dias: 30,
+        };
         if (!cancel) {
           setPrioridadMap(map);
           setAnalisisItems(analisis.items || []);
-          setPresData(pres);
+          setPresData(presParaAsesor);
           setAsesor(null);
         }
         if (!cancel) setSugerenciaCompra({
@@ -842,8 +856,19 @@ const OrdenCompraPage = () => {
           countUrgente: analisis.countUrgente,
           countProxima: analisis.countProxima,
           countEsperar: analisis.countEsperar,
-          presupuesto: Number(pres?.presupuesto_sugerido || 0),
-          salud: pres?.salud_caja,
+          // Datos UNIFICADOS del v2:
+          presupuesto:  Number(presV2.monto_base_mensual || 0),  // tope mensual
+          comprado:     Number(presV2.comprado_mes || 0),
+          disponible:   Number(presV2.disponible || 0),
+          modo:         presV2.modo || 'auto',
+          color:        presV2.color,
+          salud:        presV2.salud,
+          // El "salud_caja" estilo v1 (sana/ajustada/tension) sale del factor_salud:
+          salud_caja: (presV2.factor_salud === undefined)
+            ? presV2.legacy_calculo?.salud_caja
+            : presV2.factor_salud >= 1.0 ? 'sana'
+            : presV2.factor_salud >= 0.7 ? 'ajustada'
+            : 'tension',
         });
       } catch {
         if (!cancel) setSugerenciaCompra(null);
@@ -1990,13 +2015,22 @@ const OrdenCompraPage = () => {
                 <p className="font-bold text-slate-600 text-sm">RD$ {sugerenciaCompra.totalEsperar.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
               </div>
               <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
-                <p className="text-[10px] uppercase text-violet-500 font-bold">Presupuesto caja</p>
-                <p className="font-bold text-violet-700 text-sm">RD$ {sugerenciaCompra.presupuesto.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                <p className="text-[10px] uppercase text-violet-500 font-bold">
+                  Presupuesto mes {sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}
+                </p>
+                <p className="font-bold text-violet-700 text-sm">
+                  RD$ {sugerenciaCompra.presupuesto.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-[9px] text-violet-500 leading-tight mt-0.5">
+                  Disp: <span className={`font-bold ${sugerenciaCompra.disponible <= 0 ? 'text-red-600' : sugerenciaCompra.disponible / sugerenciaCompra.presupuesto < 0.25 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    RD$ {Number(sugerenciaCompra.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                  </span>
+                </p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 flex flex-col justify-center">
                 <p className="text-[10px] uppercase text-slate-400 font-bold">Salud de caja</p>
-                <p className={`font-bold text-sm ${sugerenciaCompra.salud === 'tension' ? 'text-red-600' : sugerenciaCompra.salud === 'ajustada' ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {sugerenciaCompra.salud === 'tension' ? 'En tensión' : sugerenciaCompra.salud === 'ajustada' ? 'Ajustada' : 'Sana'}
+                <p className={`font-bold text-sm ${sugerenciaCompra.salud_caja === 'tension' ? 'text-red-600' : sugerenciaCompra.salud_caja === 'ajustada' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {sugerenciaCompra.salud_caja === 'tension' ? 'En tensión' : sugerenciaCompra.salud_caja === 'ajustada' ? 'Ajustada' : 'Sana'}
                 </p>
               </div>
             </div>
