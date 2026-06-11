@@ -576,9 +576,6 @@ const HomePage = () => {
                   />
                 </motion.div>
 
-                {/* 0.1 APROBACIONES PENDIENTES DE COMPRAS */}
-                <AprobacionesPendientesAlert />
-
                 {/* 1. ANÁLISIS PROFUNDO Y ESTRATÉGICO (Grid Principal de 3) */}
                 <motion.div 
                   initial={{ y: 20, opacity: 0 }}

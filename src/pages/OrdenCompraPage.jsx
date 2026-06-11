@@ -31,6 +31,7 @@ const PRIO_BADGE = {
   puede_esperar: { txt: 'ESPERAR', cls: 'bg-slate-200 text-slate-600' },
 };
 import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
+import AprobacionesComprasPage from '@/pages/AprobacionesComprasPage';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -78,6 +79,7 @@ const OrdenCompraPage = () => {
   // --- VIEW STATE ---
   const [view, setView] = useState('list'); // 'list' | 'form' | 'suplidor-virtual'
   const [supVirtPendingCount, setSupVirtPendingCount] = useState(0);
+  const [aprobacionesPendCount, setAprobacionesPendCount] = useState(0);
   const [orders, setOrders] = useState([]);
   const [selectedOrderID, setSelectedOrderID] = useState(null);
   const [isLoadingList, setIsLoadingList] = useState(false);
@@ -872,6 +874,26 @@ const OrdenCompraPage = () => {
 
   useEffect(() => { refreshPresupuestoV2(); }, [refreshPresupuestoV2]);
 
+  // Contador de aprobaciones pendientes (para el badge del boton APROBACIONES)
+  useEffect(() => {
+    if (!tenantId) return;
+    let cancel = false;
+    const fetch = async () => {
+      try {
+        const { count } = await supabase
+          .from('compras_aprobaciones')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('estado', 'pendiente');
+        if (!cancel) setAprobacionesPendCount(count || 0);
+      } catch (_) {
+        if (!cancel) setAprobacionesPendCount(0);
+      }
+    };
+    fetch();
+    return () => { cancel = true; };
+  }, [tenantId, view]);
+
   // Fase B v2: cargar info presupuesto del suplidor al cambiar seleccion.
   // Solo si la config distribuir_por incluye 'suplidor'.
   useEffect(() => {
@@ -1289,6 +1311,20 @@ const OrdenCompraPage = () => {
             {supVirtPendingCount > 0 && (
               <span className="absolute top-0 right-1 bg-amber-500 text-white text-[9px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
                 {supVirtPendingCount > 99 ? '99+' : supVirtPendingCount}
+              </span>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            className="h-10 flex flex-col items-center px-2 py-1 text-[10px] relative"
+            onClick={() => setView('aprobaciones')}
+            title="Cola de Aprobaciones de Compras (Control Inteligente)"
+          >
+            <Cog className="h-5 w-5 mb-0.5 text-violet-600" />
+            APROBACIONES
+            {aprobacionesPendCount > 0 && (
+              <span className="absolute top-0 right-1 bg-red-500 text-white text-[9px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center animate-pulse">
+                {aprobacionesPendCount > 99 ? '99+' : aprobacionesPendCount}
               </span>
             )}
           </Button>
@@ -2028,6 +2064,16 @@ const OrdenCompraPage = () => {
         {view === 'form' && renderFormView()}
         {view === 'suplidor-virtual' && (
           <SuplidorVirtualPage onBack={() => setView('list')} />
+        )}
+        {view === 'aprobaciones' && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 px-1 mt-2">
+              <Button variant="outline" size="sm" onClick={() => setView('list')}>
+                ← Volver a Órdenes
+              </Button>
+            </div>
+            <AprobacionesComprasPage />
+          </div>
         )}
       </motion.div>
 
