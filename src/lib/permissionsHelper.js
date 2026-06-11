@@ -83,6 +83,8 @@ export const MODULES = [
     { key: 'config_sistema', label: 'Configuración - Sistema' },
     { key: 'perfil-empresa', label: 'Configuración - Perfil Empresa' },
     { key: 'comprobantes-fiscales', label: 'Configuración - Comprobantes Fiscales' },
+    { key: 'presupuesto-inteligente', label: 'Configuración - Presupuesto Inteligente' },
+    { key: 'aprobaciones-compras', label: 'Compras - Aprobaciones (supervisor)' },
     { key: 'vendedores', label: 'Catálogo - Vendedores' },
     { key: 'cambio-codigo', label: 'Inventario - Cambio de Código' },
 ];

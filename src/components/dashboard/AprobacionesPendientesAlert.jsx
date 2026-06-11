@@ -3,15 +3,19 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
+import { canAccess } from '@/lib/permissionsHelper';
 import { ClipboardList, ChevronRight } from 'lucide-react';
 
 export default function AprobacionesPendientesAlert() {
-  const { tenantId } = useAuth();
+  const { tenantId, profile, permissions } = useAuth();
   const { openPanel } = usePanels();
   const [count, setCount] = useState(0);
 
+  // Solo mostrar a usuarios con permiso al modulo (supervisores/admins)
+  const puedeAprobar = canAccess(profile, permissions, 'aprobaciones-compras');
+
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !puedeAprobar) return;
     let cancel = false;
     const fetch = async () => {
       try {
@@ -27,9 +31,9 @@ export default function AprobacionesPendientesAlert() {
     };
     fetch();
     return () => { cancel = true; };
-  }, [tenantId]);
+  }, [tenantId, puedeAprobar]);
 
-  if (count === 0) return null;
+  if (!puedeAprobar || count === 0) return null;
 
   return (
     <motion.button
