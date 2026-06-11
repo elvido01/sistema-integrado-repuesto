@@ -145,13 +145,15 @@ GRANT EXECUTE ON FUNCTION public.set_pin_supervisor(TEXT) TO authenticated;
 -- ────────────────────────────────────────────────
 -- 5) RPC get_caja_disponible
 -- ────────────────────────────────────────────────
--- El sistema NO tiene una "caja viva" persistente. Esta RPC calcula
--- el saldo disponible a partir de:
---   + Ultimo cierre de caja (saldo final)
---   + Recibos de ingreso desde ese cierre
---   - Pagos a suplidores desde ese cierre
+-- IMPORTANTE: NO usa cierres_caja como base. Muchos clientes hacen el
+-- cierre manual fuera del sistema o se olvidan. Si usaramos cierre como
+-- baseline, la caja quedaria contaminada.
 --
--- Si no hay cierres, usa el monto total recibos - pagos hasta la fecha.
+-- En su lugar: flujo operacional de los ultimos 30 dias.
+--   + Ventas al CONTADO (entra cash directo)
+--   + Recibos de ingreso (cobranzas de credito)
+--   - Pagos a suplidores
+--   - Compromisos pagados (si existen)
 CREATE OR REPLACE FUNCTION public.get_caja_disponible(
   p_tenant_id UUID DEFAULT NULL,
   p_hasta     TIMESTAMPTZ DEFAULT NOW()
@@ -159,55 +161,59 @@ CREATE OR REPLACE FUNCTION public.get_caja_disponible(
 RETURNS JSON
 LANGUAGE plpgsql SECURITY DEFINER STABLE AS $$
 DECLARE
-  v_tenant      UUID;
-  v_ultimo_cier TIMESTAMPTZ;
-  v_saldo_cier  NUMERIC := 0;
-  v_recibos     NUMERIC := 0;
-  v_pagos       NUMERIC := 0;
-  v_disponible  NUMERIC;
+  v_tenant         UUID;
+  v_desde          TIMESTAMPTZ;
+  v_ventas_contado NUMERIC := 0;
+  v_recibos        NUMERIC := 0;
+  v_pagos          NUMERIC := 0;
+  v_compromisos    NUMERIC := 0;
+  v_disponible     NUMERIC;
 BEGIN
   v_tenant := COALESCE(p_tenant_id, public.get_user_tenant());
-  IF v_tenant IS NULL THEN
-    RAISE EXCEPTION 'Sin tenant';
-  END IF;
+  IF v_tenant IS NULL THEN RAISE EXCEPTION 'Sin tenant'; END IF;
 
-  -- Ultimo cierre de caja (la columna es efectivo_en_caja, no saldo_final)
-  SELECT created_at, COALESCE(efectivo_en_caja, 0)
-    INTO v_ultimo_cier, v_saldo_cier
-  FROM public.cierres_caja
-  WHERE tenant_id = v_tenant AND created_at <= p_hasta
-  ORDER BY created_at DESC
-  LIMIT 1;
+  v_desde := p_hasta - INTERVAL '30 days';
 
-  -- Si no hay cierre, agregamos TODO el historial
-  IF v_ultimo_cier IS NULL THEN
-    v_ultimo_cier := '-infinity'::timestamptz;
-    v_saldo_cier := 0;
-  END IF;
+  SELECT COALESCE(SUM(total), 0) INTO v_ventas_contado
+  FROM public.facturas
+  WHERE tenant_id = v_tenant
+    AND estado <> 'Anulada'
+    AND UPPER(COALESCE(forma_pago, '')) = 'CONTADO'
+    AND fecha::timestamptz BETWEEN v_desde AND p_hasta;
 
-  -- Recibos desde el ultimo cierre (monto_pagado, no monto)
   SELECT COALESCE(SUM(monto_pagado), 0) INTO v_recibos
   FROM public.recibos_ingreso
   WHERE tenant_id = v_tenant
-    AND fecha BETWEEN v_ultimo_cier AND p_hasta
-    AND COALESCE(anulado, false) = false;
+    AND COALESCE(anulado, false) = false
+    AND fecha::timestamptz BETWEEN v_desde AND p_hasta;
 
-  -- Pagos a suplidores desde el ultimo cierre
   SELECT COALESCE(SUM(monto_pagado), 0) INTO v_pagos
   FROM public.pagos_suplidores
   WHERE tenant_id = v_tenant
-    AND fecha BETWEEN v_ultimo_cier AND p_hasta
-    AND COALESCE(anulado, false) = false;
+    AND COALESCE(anulado, false) = false
+    AND fecha::timestamptz BETWEEN v_desde AND p_hasta;
 
-  v_disponible := v_saldo_cier + v_recibos - v_pagos;
+  BEGIN
+    SELECT COALESCE(SUM(monto_pagado), 0) INTO v_compromisos
+    FROM public.compromisos
+    WHERE tenant_id = v_tenant
+      AND COALESCE(estado, '') ILIKE '%pag%'
+      AND COALESCE(fecha_pago, fecha)::timestamptz BETWEEN v_desde AND p_hasta;
+  EXCEPTION WHEN OTHERS THEN
+    v_compromisos := 0;
+  END;
+
+  v_disponible := v_ventas_contado + v_recibos - v_pagos - v_compromisos;
 
   RETURN json_build_object(
-    'caja_disponible',   ROUND(v_disponible, 2),
-    'saldo_ultimo_cierre', ROUND(v_saldo_cier, 2),
-    'recibos_desde_cierre', ROUND(v_recibos, 2),
-    'pagos_desde_cierre',   ROUND(v_pagos, 2),
-    'ultimo_cierre',     v_ultimo_cier,
-    'calculado_hasta',   p_hasta
+    'caja_disponible',      ROUND(v_disponible, 2),
+    'ventas_contado_30d',   ROUND(v_ventas_contado, 2),
+    'recibos_30d',          ROUND(v_recibos, 2),
+    'pagos_suplidores_30d', ROUND(v_pagos, 2),
+    'compromisos_30d',      ROUND(v_compromisos, 2),
+    'ventana_desde',        v_desde,
+    'ventana_hasta',        p_hasta,
+    'metodo',               'flujo_operacional_30d'
   );
 END;
 $$;
