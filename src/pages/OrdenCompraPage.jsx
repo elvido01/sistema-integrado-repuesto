@@ -2179,14 +2179,16 @@ const OrdenCompraPage = () => {
                 <p className="text-[10px] text-slate-500">Vacío = automático según ventas.</p>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] uppercase font-bold text-slate-700">Incremento mensual (%)</Label>
+                <Label className="text-[11px] uppercase font-bold text-slate-700">Incremento MÁXIMO mensual (%)</Label>
                 <Input
                   type="number" min={0} max={100} step="0.5"
                   value={configForm.incremento_mensual_pct}
                   onChange={(e) => setConfigForm(p => ({ ...p, incremento_mensual_pct: e.target.value }))}
                   placeholder="Ej: 5"
                 />
-                <p className="text-[10px] text-slate-500">5 = +5%/mes acumulativo.</p>
+                <p className="text-[10px] text-slate-500">
+                  Tope. El sistema aplica menos si la deuda es alta. Solo se setea 1 vez.
+                </p>
               </div>
             </div>
 

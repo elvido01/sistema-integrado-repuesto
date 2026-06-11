@@ -195,10 +195,17 @@ const PresupuestoInteligentePage = () => {
           <p className="text-xs text-slate-700">
             <strong>Modo {modo === 'manual' ? 'manual' : 'automático'}:</strong>{' '}
             {modo === 'manual'
-              ? `usás un monto fijo de ${formatRD(config.monto_base_mensual)}/mes con ${config.incremento_mensual_pct}% de incremento mensual.`
+              ? `tu monto base es ${formatRD(config.monto_base_mensual)}/mes. El sistema lo puede incrementar hasta un MÁXIMO de ${config.incremento_mensual_pct}%/mes — el % real aplicado depende de la salud de tu negocio (ventas vs deuda).`
               : 'el sistema calcula el presupuesto automáticamente desde tus ventas (ventas × factor de salud de caja).'}
             {modo === 'auto' && ' Para usar modo manual, ingresá un Monto Base abajo.'}
           </p>
+          {modo === 'manual' && presupuestoActual?.factor_salud !== undefined && (
+            <p className="text-[11px] text-slate-600 mt-2">
+              <strong>Aplicado este mes:</strong> {((presupuestoActual.incremento_aplicado_pct ?? 0)).toFixed(2)}% de un máximo de {((presupuestoActual.incremento_maximo_pct ?? 0)).toFixed(2)}%
+              {' '}— factor salud: <span className="font-mono">{(presupuestoActual.factor_salud * 100).toFixed(0)}%</span>
+              {' '}(ratio CxP/ventas30d: <span className="font-mono">{(presupuestoActual.ratio_cxp_ventas ?? 0).toFixed(2)}</span>)
+            </p>
+          )}
         </div>
 
         {/* Form principal */}
@@ -217,17 +224,20 @@ const PresupuestoInteligentePage = () => {
             <p className="text-[10px] text-slate-500">Dejá vacío para que el sistema calcule según tus ventas.</p>
           </div>
 
-          {/* Incremento mensual */}
+          {/* Incremento maximo */}
           <div className="space-y-1.5">
             <Label className="text-xs font-bold uppercase text-slate-700 flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5" /> Incremento mensual (%)
+              <TrendingUp className="w-3.5 h-3.5" /> Incremento MÁXIMO permitido (%)
             </Label>
             <Input
               type="number" min={0} max={100} step="0.5"
               value={config.incremento_mensual_pct}
               onChange={(e) => setConfig(p => ({ ...p, incremento_mensual_pct: e.target.value }))}
             />
-            <p className="text-[10px] text-slate-500">Cada mes el monto base se incrementa por este %. Ej: 5% = 5%/mes.</p>
+            <p className="text-[10px] text-slate-500">
+              Tope de crecimiento mensual. El sistema aplica menos si la empresa no está sana
+              (deuda alta → reduce; deuda crítica → no incrementa).
+            </p>
           </div>
 
           {/* Fecha base */}
