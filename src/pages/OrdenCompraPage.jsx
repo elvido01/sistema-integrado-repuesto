@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle } from 'lucide-react';
+import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
@@ -138,6 +138,69 @@ const OrdenCompraPage = () => {
   // Fase C v2: Workflow modal (envia a cola en vez de PIN)
   const [workflowModalOpen, setWorkflowModalOpen] = useState(false);
   const [enviandoCola, setEnviandoCola] = useState(false);
+
+  // Fase A v2: modal inline de configuracion del presupuesto
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [configForm, setConfigForm] = useState({
+    monto_base_mensual: '',
+    incremento_mensual_pct: 0,
+    caja_minima: 0,
+    control_estricto: false,
+    workflow_aprobacion: false,
+  });
+  const [configPinNuevo, setConfigPinNuevo] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  // Cuando se abre el modal, precargamos el config actual
+  const abrirConfigModal = async () => {
+    setConfigModalOpen(true);
+    try {
+      const { data } = await supabase
+        .from('presupuesto_config')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (data) {
+        setConfigForm({
+          monto_base_mensual: data.monto_base_mensual ?? '',
+          incremento_mensual_pct: data.incremento_mensual_pct ?? 0,
+          caja_minima: data.caja_minima ?? 0,
+          control_estricto: !!data.control_estricto,
+          workflow_aprobacion: !!data.workflow_aprobacion,
+        });
+      }
+    } catch (_) { /* tabla puede no existir si SQL no corrido */ }
+  };
+
+  const guardarConfig = async () => {
+    if (!tenantId) return;
+    setSavingConfig(true);
+    try {
+      const payload = {
+        tenant_id: tenantId,
+        monto_base_mensual: configForm.monto_base_mensual === '' ? null : Number(configForm.monto_base_mensual),
+        incremento_mensual_pct: Number(configForm.incremento_mensual_pct) || 0,
+        caja_minima: Number(configForm.caja_minima) || 0,
+        control_estricto: !!configForm.control_estricto,
+        workflow_aprobacion: !!configForm.workflow_aprobacion,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from('presupuesto_config').upsert(payload, { onConflict: 'tenant_id' });
+      if (error) throw error;
+      // Setear PIN si lo ingreso
+      if (configPinNuevo && configPinNuevo.length >= 4) {
+        await supabase.rpc('set_pin_supervisor', { p_pin: configPinNuevo });
+        setConfigPinNuevo('');
+      }
+      toast({ title: '✅ Presupuesto configurado', description: 'Se aplicará a las próximas órdenes.' });
+      setConfigModalOpen(false);
+      refreshPresupuestoV2();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    } finally {
+      setSavingConfig(false);
+    }
+  };
   const [isEditMode, setIsEditMode] = useState(false); // Flag to skip draft clobbering
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
@@ -1795,6 +1858,16 @@ const OrdenCompraPage = () => {
                 COMPRA INTELIGENTE {mostrarInteligente ? '✓' : ''}
               </Button>
             )}
+            {puedeCompraInteligente && (
+              <Button
+                variant="outline"
+                className="border-violet-300 text-violet-700 hover:bg-violet-50"
+                onClick={abrirConfigModal}
+                title="Configurar presupuesto mensual, incremento automático y control estricto"
+              >
+                <Cog className="h-4 w-4" />
+              </Button>
+            )}
             {mostrarInteligente && sugerenciaCompra && (
               <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${sugerenciaCompra.totalUrgente > 0 ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
                 {sugerenciaCompra.totalUrgente > 0 ? (
@@ -2074,6 +2147,108 @@ const OrdenCompraPage = () => {
               {pinVerifying
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verificando...</>
                 : <><Lock className="w-4 h-4 mr-2" /> Autorizar y grabar</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════ */}
+      {/* Modal Config Presupuesto (inline, sin modulo aparte) */}
+      {/* ════════════════════════════════════════════════════ */}
+      <Dialog open={configModalOpen} onOpenChange={(open) => { if (!open) setConfigModalOpen(false); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-violet-700">
+              <Cog className="w-5 h-5" /> Configurar Presupuesto Inteligente
+            </DialogTitle>
+            <DialogDescription className="text-slate-600 text-xs">
+              Definí cuánto podés gastar en compras al mes. Si lo dejás vacío, el sistema lo calcula automático según tus ventas.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] uppercase font-bold text-slate-700">Monto base mensual (RD$)</Label>
+                <Input
+                  type="number" min={0} step="0.01"
+                  value={configForm.monto_base_mensual}
+                  onChange={(e) => setConfigForm(p => ({ ...p, monto_base_mensual: e.target.value }))}
+                  placeholder="Ej: 300000"
+                />
+                <p className="text-[10px] text-slate-500">Vacío = automático según ventas.</p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] uppercase font-bold text-slate-700">Incremento mensual (%)</Label>
+                <Input
+                  type="number" min={0} max={100} step="0.5"
+                  value={configForm.incremento_mensual_pct}
+                  onChange={(e) => setConfigForm(p => ({ ...p, incremento_mensual_pct: e.target.value }))}
+                  placeholder="Ej: 5"
+                />
+                <p className="text-[10px] text-slate-500">5 = +5%/mes acumulativo.</p>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[11px] uppercase font-bold text-slate-700">Caja mínima de seguridad (RD$)</Label>
+              <Input
+                type="number" min={0} step="0.01"
+                value={configForm.caja_minima}
+                onChange={(e) => setConfigForm(p => ({ ...p, caja_minima: e.target.value }))}
+                placeholder="Ej: 50000"
+              />
+              <p className="text-[10px] text-slate-500">Monto que SIEMPRE debe quedar en caja, no se compromete.</p>
+            </div>
+
+            <div className="border-t pt-3 space-y-2">
+              <div className="flex items-center gap-2 p-2 rounded-md border border-amber-200 bg-amber-50">
+                <Checkbox
+                  id="cfg-estricto"
+                  checked={configForm.control_estricto}
+                  onCheckedChange={(v) => setConfigForm(p => ({ ...p, control_estricto: !!v }))}
+                />
+                <Label htmlFor="cfg-estricto" className="text-xs font-bold text-amber-900 cursor-pointer flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> Control estricto (bloquea F10 si excede presupuesto)
+                </Label>
+              </div>
+
+              <div className={`flex items-center gap-2 p-2 rounded-md border ${configForm.control_estricto ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-slate-50 opacity-50'}`}>
+                <Checkbox
+                  id="cfg-workflow"
+                  checked={configForm.workflow_aprobacion}
+                  onCheckedChange={(v) => setConfigForm(p => ({ ...p, workflow_aprobacion: !!v }))}
+                  disabled={!configForm.control_estricto}
+                />
+                <Label htmlFor="cfg-workflow" className="text-xs font-bold text-blue-900 cursor-pointer">
+                  Usar Cola de Aprobaciones en lugar de PIN supervisor
+                </Label>
+              </div>
+            </div>
+
+            {configForm.control_estricto && (
+              <div className="border-t pt-3 space-y-1">
+                <Label className="text-[11px] uppercase font-bold text-slate-700 flex items-center gap-1">
+                  <KeyRound className="w-3 h-3" /> PIN supervisor (opcional)
+                </Label>
+                <Input
+                  type="password"
+                  value={configPinNuevo}
+                  onChange={(e) => setConfigPinNuevo(e.target.value)}
+                  placeholder="Ingresá un nuevo PIN para cambiarlo (vacío = mantener actual)"
+                />
+                <p className="text-[10px] text-slate-500">Mínimo 4 caracteres. Solo se actualiza si ingresás uno nuevo.</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfigModalOpen(false)} disabled={savingConfig}>
+              Cancelar
+            </Button>
+            <Button onClick={guardarConfig} disabled={savingConfig} className="bg-violet-600 hover:bg-violet-700 text-white">
+              {savingConfig ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Guardar configuración
             </Button>
           </DialogFooter>
         </DialogContent>
