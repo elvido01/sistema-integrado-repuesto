@@ -822,14 +822,37 @@ const OrdenCompraPage = () => {
         return;
       }
       try {
-        // ÚNICA FUENTE DE VERDAD: el RPC v2 es el mismo que usa el gate
-        // de aprobaciones. Las cards y el modal de Workflow van a mostrar
-        // EL MISMO numero, sin duplicar calculos.
-        const [presV2Res, analisis] = await Promise.all([
-          supabase.rpc('get_presupuesto_compras_v2'),
+        // FUENTE UNICA: si hay suplidor seleccionado, usamos el RPC
+        // por-suplidor (con share automatico segun movimiento 90d).
+        // Si no, usamos el total del tenant.
+        const presPromise = selectedProveedor?.id
+          ? supabase.rpc('get_presupuesto_suplidor_auto', { p_suplidor_id: selectedProveedor.id })
+          : supabase.rpc('get_presupuesto_compras_v2');
+
+        const [presRes, analisis] = await Promise.all([
+          presPromise,
           analizarOrdenActual(conProd),
         ]);
-        const presV2 = presV2Res.data || {};
+        const presRaw = presRes.data || {};
+        // Normalizamos para que las cards y el gate usen el mismo shape:
+        const esPorSuplidor = !!presRaw.suplidor_id;
+        const presV2 = esPorSuplidor
+          ? {
+              modo:                    presRaw.modo_distribucion,   // 'manual' | 'auto_movimiento' | 'auto_minimo'
+              monto_base_mensual:      presRaw.presupuesto_suplidor,
+              comprado_mes:            presRaw.comprado_suplidor,
+              disponible:              presRaw.disponible_suplidor,
+              color:                   presRaw.color,
+              salud:                   presRaw.color === 'rojo' ? 'agotado' : presRaw.color === 'amarillo' ? 'limite_cerca' : 'sano',
+              factor_salud:            presRaw.presupuesto_total_json?.factor_salud,
+              ratio_cxp_ventas:        presRaw.presupuesto_total_json?.ratio_cxp_ventas,
+              legacy_calculo:          presRaw.presupuesto_total_json?.legacy_calculo,
+              // datos extra del suplidor:
+              share_pct:               presRaw.share_pct,
+              presupuesto_total:       presRaw.presupuesto_total,
+              modo_distribucion:       presRaw.modo_distribucion,
+            }
+          : presRaw;
         const map = {};
         for (const it of analisis.items || []) map[it.producto_id] = it.urgencia;
         // Mantenemos presData para el asesor IA (necesita formato v1)
@@ -2015,17 +2038,24 @@ const OrdenCompraPage = () => {
                 <p className="font-bold text-slate-600 text-sm">RD$ {sugerenciaCompra.totalEsperar.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
               </div>
               <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
-                <p className="text-[10px] uppercase text-violet-500 font-bold">
-                  Presupuesto mes {sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}
+                <p className="text-[10px] uppercase text-violet-500 font-bold leading-tight">
+                  {sugerenciaCompra.modo_distribucion
+                    ? `Presup. ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}${sugerenciaCompra.share_pct ? ` (${sugerenciaCompra.share_pct}%)` : ''}`
+                    : `Presupuesto mes ${sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}`}
                 </p>
                 <p className="font-bold text-violet-700 text-sm">
                   RD$ {sugerenciaCompra.presupuesto.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
                 </p>
                 <p className="text-[9px] text-violet-500 leading-tight mt-0.5">
-                  Disp: <span className={`font-bold ${sugerenciaCompra.disponible <= 0 ? 'text-red-600' : sugerenciaCompra.disponible / sugerenciaCompra.presupuesto < 0.25 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  Disp: <span className={`font-bold ${sugerenciaCompra.disponible <= 0 ? 'text-red-600' : sugerenciaCompra.disponible / Math.max(1, sugerenciaCompra.presupuesto) < 0.25 ? 'text-amber-600' : 'text-emerald-600'}`}>
                     RD$ {Number(sugerenciaCompra.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
                   </span>
                 </p>
+                {sugerenciaCompra.modo_distribucion && (
+                  <p className="text-[9px] text-slate-500 italic leading-tight">
+                    Total tenant: RD$ {Number(sugerenciaCompra.presupuesto_total || 0).toLocaleString('es-DO')}
+                  </p>
+                )}
               </div>
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 flex flex-col justify-center">
                 <p className="text-[10px] uppercase text-slate-400 font-bold">Salud de caja</p>
