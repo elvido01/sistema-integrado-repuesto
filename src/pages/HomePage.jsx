@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { AlertTriangle, TrendingUp, Users, Package, Loader2 } from 'lucide-react';
@@ -13,6 +13,7 @@ import CommitmentFormModal from '@/components/dashboard/CommitmentFormModal';
 import PayCommitmentModal from '@/components/dashboard/PayCommitmentModal';
 import PaySupplierCommitmentModal from '@/components/dashboard/PaySupplierCommitmentModal';
 import SuscripcionStatusCard from '@/components/dashboard/SuscripcionStatusCard';
+import AprobacionesPendientesAlert from '@/components/dashboard/AprobacionesPendientesAlert';
 import InsightsBanner from '@/components/dashboard/InsightsBanner';
 
 import { generatePagoCompromisoPDF } from '@/components/common/pdf/pagoCompromisoPDF';
@@ -24,6 +25,19 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { isSameWeek, addDays, isBefore, startOfToday, differenceInMonths, differenceInYears, addWeeks, addMonths, addYears } from 'date-fns';
+
+const parseLocalDate = (value) => {
+  if (!value) return null;
+  const dateStr = String(value).split('T')[0];
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day, 12, 0, 0);
+};
+
+const isDueThisWeekOrOverdue = (date, today = new Date()) => {
+  if (!date) return false;
+  return isBefore(date, startOfToday()) || isSameWeek(date, today, { weekStartsOn: 1 });
+};
 
 const HomePage = () => {
   const { toast } = useToast();
@@ -58,6 +72,7 @@ const HomePage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [nombreEmpresa, setNombreEmpresa] = useState('');
+  const realtimeRefreshRef = useRef(null);
 
   const [isCommitmentModalOpen, setIsCommitmentModalOpen] = useState(false);
   const [selectedCommitment, setSelectedCommitment] = useState(null);
@@ -135,6 +150,7 @@ const HomePage = () => {
       const { data: suplidorRawData, error: suplidorErr } = await supabase
         .from('compras')
         .select('id, numero, referencia, fecha, dias_credito, monto_pendiente, total_compra, monto_pagado, suplidor_id, proveedores(nombre)')
+        .eq('tenant_id', tenantId)
         .ilike('forma_pago', 'CREDITO')
         .eq('estado', 'PENDIENTE')
         .order('fecha', { ascending: true });
@@ -168,30 +184,40 @@ const HomePage = () => {
       // 4. Intento de obtener balance de caja (o cálculo de hoy)
       const inicioCierreHoy = new Date();
       inicioCierreHoy.setHours(0,0,0,0);
+      let cajaDesde = inicioCierreHoy.toISOString();
+      const { data: ultimoCierre } = await supabase
+        .from('cierres_caja')
+        .select('created_at')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (ultimoCierre?.created_at && new Date(ultimoCierre.created_at) > inicioCierreHoy) {
+        cajaDesde = ultimoCierre.created_at;
+      }
 
       // 4. Cálculo de Balance Acumulado (Caja Actual)
       // El sistema empieza en cero y suma ventas día tras día.
       // Solo suma: Ventas Contado y Recibos de Ingreso.
       // Solo resta: Compromisos a pagar, Compromisos a Suplidores y Compras al Contado.
-      const [vContado, rIngreso, cPagados, pSuplidores, cContado] = await Promise.all([
-        supabase.from('facturas').select('total').ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
-        supabase.from('recibos_ingreso').select('monto_pagado').eq('anulado', false),
-        supabase.from('compromisos').select('monto').eq('activo', false),
-        supabase.from('pagos_suplidores').select('monto_pagado, formas_pago').eq('anulado', false),
-        supabase.from('compras').select('total_compra').ilike('forma_pago', 'contado').neq('estado', 'ANULADA')
+      const [vContado, rIngreso, devolucionesContado, cPagados, pSuplidores, cContado] = await Promise.all([
+        supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', cajaDesde).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
+        supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId).gte('created_at', cajaDesde).eq('anulado', false),
+        supabase.from('devoluciones').select('total_devolucion, facturas!inner(forma_pago)').eq('tenant_id', tenantId).gte('created_at', cajaDesde).ilike('facturas.forma_pago', 'contado'),
+        supabase.from('compromisos').select('monto').eq('tenant_id', tenantId).gte('fecha_pago', cajaDesde).eq('activo', false),
+        supabase.from('pagos_suplidores').select('monto_pagado, formas_pago').eq('tenant_id', tenantId).gte('created_at', cajaDesde).eq('anulado', false),
+        supabase.from('compras').select('total_compra').eq('tenant_id', tenantId).gte('created_at', cajaDesde).ilike('forma_pago', 'contado').neq('estado', 'ANULADA')
       ]);
 
       const tVentasContado = (vContado.data || []).reduce((acc, v) => acc + Number(v.total), 0);
       const tRecibosIngreso = (rIngreso.data || []).reduce((acc, r) => acc + Number(r.monto_pagado), 0);
+      const tDevolucionesContado = (devolucionesContado.data || []).reduce((acc, d) => acc + Number(d.total_devolucion), 0);
       const tCompromisosPagados = (cPagados.data || []).reduce((acc, c) => acc + Number(c.monto), 0);
-      const tPagosSuplidores = (pSuplidores.data || []).reduce((acc, p) => {
-        const efectivo = (p.formas_pago || []).filter(fp => fp.forma === 'Efectivo')
-          .reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0);
-        return acc + efectivo;
-      }, 0);
+      const tPagosSuplidores = (pSuplidores.data || []).reduce((acc, p) => acc + Number(p.monto_pagado || 0), 0);
       const tComprasContado = (cContado.data || []).reduce((acc, c) => acc + Number(c.total_compra), 0);
 
-      const realCaja = tVentasContado + tRecibosIngreso - tCompromisosPagados - tPagosSuplidores - tComprasContado;
+      const realCaja = tVentasContado + tRecibosIngreso - tDevolucionesContado - tCompromisosPagados - tPagosSuplidores - tComprasContado;
 
       if (!salesRes?.error && !comRes?.error) {
 
@@ -244,6 +270,42 @@ const HomePage = () => {
     }, 5 * 60 * 1000); 
     return () => clearInterval(interval);
   }, [isAdmin, fetchDashboardData]);
+
+  // Refresco inmediato de caja/dashboard cuando cambian movimientos financieros.
+  useEffect(() => {
+    if (!isAdmin || !tenantId) return;
+
+    const scheduleRefresh = () => {
+      if (realtimeRefreshRef.current) clearTimeout(realtimeRefreshRef.current);
+      realtimeRefreshRef.current = setTimeout(() => {
+        fetchDashboardData(true);
+      }, 500);
+    };
+
+    const tenantFilter = `tenant_id=eq.${tenantId}`;
+    const channel = supabase
+      .channel(`dashboard-finanzas-${tenantId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'facturas', filter: tenantFilter }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recibos_ingreso', filter: tenantFilter }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'devoluciones', filter: tenantFilter }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'compromisos', filter: tenantFilter }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos_suplidores', filter: tenantFilter }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'compras', filter: tenantFilter }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cierres_caja', filter: tenantFilter }, scheduleRefresh)
+      .subscribe();
+
+    const onFocus = () => fetchDashboardData(true);
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      if (realtimeRefreshRef.current) {
+        clearTimeout(realtimeRefreshRef.current);
+        realtimeRefreshRef.current = null;
+      }
+      window.removeEventListener('focus', onFocus);
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin, tenantId, fetchDashboardData]);
 
   const handleAddCommitment = () => {
     setSelectedCommitment(null);
@@ -426,8 +488,14 @@ const HomePage = () => {
   // ----------------------------------------------------
   // TOTAL FALTANTE Y CÁLCULOS (Usando solo datos de la semana)
   // ----------------------------------------------------
-  const totalCompromisosPagarSemana = finanzas.finanzasSemanales?.total_compromisos_semana || 0;
-  const totalPagosSuplidoresSemana = finanzas.finanzasSemanales?.total_pagos_suplidores_semana || 0;
+  const totalCompromisosPagarSemana = finanzas.compromisos.reduce((sum, c) => {
+    const fecha = parseLocalDate(c.fecha);
+    return isDueThisWeekOrOverdue(fecha) ? sum + (Number(c.monto) || 0) : sum;
+  }, 0);
+  const totalPagosSuplidoresSemana = finanzas.suplidorCompromisos.reduce((sum, c) => {
+    const fecha = parseLocalDate(c.fecha_vencimiento);
+    return isDueThisWeekOrOverdue(fecha) ? sum + (Number(c.monto_pendiente) || 0) : sum;
+  }, 0);
   const totalDeudaSemanal = totalCompromisosPagarSemana + totalPagosSuplidoresSemana;
   const faltanteAcumulado = Math.max(totalDeudaSemanal - finanzas.caja, 0);
 
@@ -507,6 +575,9 @@ const HomePage = () => {
                     onRenovar={() => openPanel('planes')}
                   />
                 </motion.div>
+
+                {/* 0.1 APROBACIONES PENDIENTES DE COMPRAS */}
+                <AprobacionesPendientesAlert />
 
                 {/* 1. ANÁLISIS PROFUNDO Y ESTRATÉGICO (Grid Principal de 3) */}
                 <motion.div 

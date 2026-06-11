@@ -12,9 +12,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, RefreshCw, FileText, User } from 'lucide-react';
 
 const TABS = [
-  { key: 'pendiente',  label: 'Pendientes',  color: 'bg-amber-100 text-amber-800 border-amber-300' },
-  { key: 'aprobada',   label: 'Aprobadas',   color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-  { key: 'rechazada',  label: 'Rechazadas',  color: 'bg-red-100 text-red-800 border-red-300' },
+  { key: 'pendiente',     label: 'Pendientes',     color: 'bg-amber-100 text-amber-800 border-amber-300' },
+  { key: 'aprobada',      label: 'Aprobadas',      color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  { key: 'rechazada',     label: 'Rechazadas',     color: 'bg-red-100 text-red-800 border-red-300' },
+  { key: 'reasignaciones', label: 'Reasignaciones', color: 'bg-blue-100 text-blue-800 border-blue-300' },
 ];
 
 const formatRD = (n) => `RD$ ${(Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -26,28 +27,72 @@ export default function AprobacionesComprasPage() {
   const [tab, setTab] = useState('pendiente');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [conteos, setConteos] = useState({ pendiente: 0, aprobada: 0, rechazada: 0 });
 
   const [accionModal, setAccionModal] = useState(null);    // { tipo: 'aprobar'|'rechazar', row }
   const [comentario, setComentario] = useState('');
   const [procesando, setProcesando] = useState(false);
 
+  // Cargar conteos por estado (para badges en tabs)
+  const fetchConteos = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const [p, a, r] = await Promise.all([
+        supabase.from('compras_aprobaciones').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('estado', 'pendiente'),
+        supabase.from('compras_aprobaciones').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('estado', 'aprobada'),
+        supabase.from('compras_aprobaciones').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('estado', 'rechazada'),
+      ]);
+      setConteos({ pendiente: p.count || 0, aprobada: a.count || 0, rechazada: r.count || 0 });
+    } catch (_) { /* silencioso */ }
+  }, [tenantId]);
+
+  useEffect(() => { fetchConteos(); }, [fetchConteos]);
+
   const fetchData = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('compras_aprobaciones')
-        .select(`
-          id, orden_id, monto, presupuesto_dispo, motivo_gate, razon_solicitante,
-          estado, comentario_supervisor, created_at, resuelta_at,
-          solicitante_id, supervisor_id,
-          orden:ordenes_compra(numero, fecha_orden, suplidor_id, total, suplidor:proveedores(nombre))
-        `)
-        .eq('tenant_id', tenantId)
-        .eq('estado', tab)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setRows(data || []);
+      if (tab === 'reasignaciones') {
+        // Cargamos la tabla y los nombres de suplidores en paralelo
+        const { data: reasigData, error } = await supabase
+          .from('presupuesto_reasignaciones')
+          .select('id, mes, monto_movido, razon, algoritmo, created_at, desde_suplidor, hacia_suplidor')
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) throw error;
+
+        // Mapear ids -> nombres
+        const ids = new Set();
+        (reasigData || []).forEach(r => { if (r.desde_suplidor) ids.add(r.desde_suplidor); if (r.hacia_suplidor) ids.add(r.hacia_suplidor); });
+        let nombreMap = new Map();
+        if (ids.size > 0) {
+          const { data: provs } = await supabase
+            .from('proveedores')
+            .select('id, nombre')
+            .in('id', Array.from(ids));
+          (provs || []).forEach(p => nombreMap.set(p.id, p.nombre));
+        }
+        setRows((reasigData || []).map(r => ({
+          ...r,
+          desde: { nombre: nombreMap.get(r.desde_suplidor) || '—' },
+          hacia: { nombre: nombreMap.get(r.hacia_suplidor) || '—' },
+        })));
+      } else {
+        const { data, error } = await supabase
+          .from('compras_aprobaciones')
+          .select(`
+            id, orden_id, monto, presupuesto_dispo, motivo_gate, razon_solicitante,
+            estado, comentario_supervisor, created_at, resuelta_at,
+            solicitante_id, supervisor_id,
+            orden:ordenes_compra(numero, fecha_orden, suplidor_id, total, suplidor:proveedores(nombre))
+          `)
+          .eq('tenant_id', tenantId)
+          .eq('estado', tab)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        setRows(data || []);
+      }
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
@@ -78,6 +123,7 @@ export default function AprobacionesComprasPage() {
       setAccionModal(null);
       setComentario('');
       fetchData();
+      fetchConteos();
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
@@ -113,15 +159,24 @@ export default function AprobacionesComprasPage() {
         <div className="flex gap-1 mb-3 border-b border-slate-200">
           {TABS.map((t) => {
             const active = tab === t.key;
+            const count = conteos[t.key];
+            const badgeCls = t.key === 'pendiente' && count > 0
+              ? 'bg-amber-500 text-white animate-pulse'
+              : 'bg-slate-200 text-slate-700';
             return (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-3 py-1.5 text-xs font-bold border-b-2 transition-colors ${
+                className={`px-3 py-1.5 text-xs font-bold border-b-2 transition-colors flex items-center gap-1.5 ${
                   active ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >
                 {t.label.toUpperCase()}
+                {count !== undefined && count > 0 && (
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${badgeCls}`}>
+                    {count}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -132,7 +187,44 @@ export default function AprobacionesComprasPage() {
           {loading ? (
             <div className="p-8 text-center text-slate-500"><Loader2 className="w-6 h-6 mx-auto animate-spin" /></div>
           ) : rows.length === 0 ? (
-            <div className="p-8 text-center text-slate-500 text-sm">No hay órdenes en estado <b>{tab}</b>.</div>
+            <div className="p-8 text-center text-slate-500 text-sm">
+              {tab === 'reasignaciones'
+                ? 'Sin reasignaciones aún. El cron semanal mueve presupuesto entre suplidores subutilizados/sobreutilizados.'
+                : <>No hay órdenes en estado <b>{tab}</b>.</>}
+            </div>
+          ) : tab === 'reasignaciones' ? (
+            <Table>
+              <TableHeader className="bg-slate-100">
+                <TableRow>
+                  <TableHead className="text-[10px] uppercase">Fecha</TableHead>
+                  <TableHead className="text-[10px] uppercase">Mes</TableHead>
+                  <TableHead className="text-[10px] uppercase">Desde suplidor</TableHead>
+                  <TableHead className="text-[10px] uppercase">Hacia suplidor</TableHead>
+                  <TableHead className="text-right text-[10px] uppercase">Monto movido</TableHead>
+                  <TableHead className="text-[10px] uppercase">Razón</TableHead>
+                  <TableHead className="text-[10px] uppercase">Algoritmo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="text-[11px] text-slate-500">{formatDate(r.created_at)}</TableCell>
+                    <TableCell className="text-xs font-mono">{r.mes?.slice(0, 7)}</TableCell>
+                    <TableCell className="text-xs">
+                      <span className="text-red-700">↓</span> {r.desde?.nombre || '—'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <span className="text-emerald-700">↑</span> {r.hacia?.nombre || '—'}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs font-black text-blue-700">
+                      {formatRD(r.monto_movido)}
+                    </TableCell>
+                    <TableCell className="text-[11px] text-slate-600 italic">{r.razon}</TableCell>
+                    <TableCell className="text-[9px] uppercase text-slate-400 font-mono">{r.algoritmo}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           ) : (
             <Table>
               <TableHeader className="bg-slate-100">
