@@ -993,6 +993,29 @@ const OrdenCompraPage = () => {
     });
   };
 
+  // Solicita aprobacion MANUAL (sin que el gate haya disparado). Util para
+  // ordenes que aunque no excedan presupuesto el operador quiere revisar
+  // con un supervisor antes de grabarse en firme.
+  const solicitarAprobacionManual = () => {
+    if (!selectedProveedor || detalles.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Datos incompletos',
+        description: 'Debe seleccionar un suplidor y añadir al menos un producto.',
+      });
+      return;
+    }
+    setPinGateInfo({
+      motivo: 'SOLICITADO_POR_OPERADOR',
+      monto_orden: Number(totals.total_orden) || 0,
+      disponible: Number(presupuestoV2?.disponible) || 0,
+      limite: Number(presupuestoV2?.limite_aprobacion) || 0,
+      exceso: 0,
+    });
+    setPinReason('');
+    setWorkflowModalOpen(true);
+  };
+
   // Fase C v2: enviar orden a cola de aprobaciones en vez de grabar directo.
   // Setea flag via_workflow en pinGateInfo y llama handleSave(true).
   // El handler detecta el flag y, en vez de loguear excepcion, llama el RPC
@@ -1423,9 +1446,24 @@ const OrdenCompraPage = () => {
                   <TableCell className="py-0 px-2 h-7 italic text-slate-500 truncate">{o.notas}</TableCell>
                   <TableCell className="py-0 px-2 h-7 text-right font-bold">{Number(o.total_orden || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                   <TableCell className="py-0 px-2 h-7 text-center text-[10px] font-bold">
-                    <span className={`px-2 py-0.5 rounded-full ${o.estado === 'Recibida' ? 'bg-green-100 text-green-700' : o.estado === 'Anulada' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                      {o.estado?.toUpperCase() || 'PENDIENTE'}
-                    </span>
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span className={`px-2 py-0.5 rounded-full ${o.estado === 'Recibida' ? 'bg-green-100 text-green-700' : o.estado === 'Anulada' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {o.estado?.toUpperCase() || 'PENDIENTE'}
+                      </span>
+                      {o.estado_aprobacion && o.estado_aprobacion !== 'no_requerida' && (
+                        <span className={`px-1.5 py-0 rounded-full text-[9px] ${
+                          o.estado_aprobacion === 'pendiente' ? 'bg-amber-100 text-amber-800 animate-pulse' :
+                          o.estado_aprobacion === 'aprobada' ? 'bg-emerald-100 text-emerald-800' :
+                          o.estado_aprobacion === 'rechazada' ? 'bg-red-200 text-red-900' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
+                          {o.estado_aprobacion === 'pendiente' ? '⏳ ESPERA SUP.' :
+                           o.estado_aprobacion === 'aprobada' ? '✅ APROBADA' :
+                           o.estado_aprobacion === 'rechazada' ? '🚫 RECHAZADA' :
+                           o.estado_aprobacion.toUpperCase()}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="py-0 px-2 h-7 text-center w-10">
                     <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleDeleteOrder(o.id); }}>
@@ -2024,6 +2062,15 @@ const OrdenCompraPage = () => {
         <div className="flex items-end gap-3">
           <Button variant="outline" className="h-9 px-6 text-xs uppercase font-bold border-slate-400 hover:bg-slate-50" onClick={() => clearDraft(DRAFT_KEY)}>F12 - Limpiar</Button>
           <Button variant="outline" className="h-9 px-6 text-xs uppercase font-bold border-slate-400 hover:bg-slate-50" onClick={() => setView('list')} disabled={isSaving}>ESC - Retornar</Button>
+          <Button
+            variant="outline"
+            className="h-9 px-5 text-xs uppercase font-bold border-blue-400 text-blue-700 hover:bg-blue-50"
+            onClick={solicitarAprobacionManual}
+            disabled={isSaving || !selectedProveedor || detalles.length === 0}
+            title="Mandar la orden a Cola de Aprobaciones sin importar si excede o no el presupuesto"
+          >
+            📋 Pedir Aprobación
+          </Button>
           <Button className="h-9 px-8 bg-morla-blue hover:bg-morla-blue/90 text-white text-xs uppercase font-bold shadow-lg" onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} F10 - Continuar
           </Button>
