@@ -8,7 +8,11 @@ import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, C
 import { useToast } from '@/components/ui/use-toast';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 
-const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selectedProduct, onSelectProduct, onPrintLabel, onImageStudio, onToggleEcommerce }) => {
+const ProductTable = ({
+  products, loading, onEdit, onDelete, onChangeCode,
+  selectedProduct, onSelectProduct, onPrintLabel, onImageStudio, onToggleEcommerce,
+  agrupandoMode = false, seleccionados, onToggleSeleccion,
+}) => {
   const { toast } = useToast();
   const [sendingToOrder, setSendingToOrder] = useState(null);
 
@@ -61,6 +65,7 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selec
         <Table>
           <TableHeader className="sticky top-[var(--filters-h,0px)] bg-gray-50 z-10">
             <TableRow>
+              {agrupandoMode && <TableHead className="w-[40px]"></TableHead>}
               <TableHead className="w-[120px]">Código</TableHead>
               <TableHead className="w-[120px]">Referencia</TableHead>
               <TableHead>Descripción</TableHead>
@@ -89,13 +94,33 @@ const ProductTable = ({ products, loading, onEdit, onDelete, onChangeCode, selec
                 <ContextMenu key={product.id}>
                   <ContextMenuTrigger asChild>
                     <TableRow
-                      onClick={() => onSelectProduct(product)}
-                      onDoubleClick={() => onEdit(product)}
-                      className={`cursor-pointer transition-colors relative ${selectedProduct?.id === product.id
-                          ? 'bg-blue-100 hover:bg-blue-100 border-l-4 border-l-blue-600'
-                          : 'hover:bg-gray-50'
+                      onClick={() => {
+                        if (agrupandoMode && onToggleSeleccion) {
+                          onToggleSeleccion(product.id);
+                        } else {
+                          onSelectProduct(product);
+                        }
+                      }}
+                      onDoubleClick={() => !agrupandoMode && onEdit(product)}
+                      className={`cursor-pointer transition-colors relative ${
+                        agrupandoMode && seleccionados?.has(product.id)
+                          ? 'bg-purple-100 hover:bg-purple-100 border-l-4 border-l-purple-600'
+                          : selectedProduct?.id === product.id
+                            ? 'bg-blue-100 hover:bg-blue-100 border-l-4 border-l-blue-600'
+                            : 'hover:bg-gray-50'
                         }`}
                     >
+                      {agrupandoMode && (
+                        <TableCell className="text-center">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-purple-600 cursor-pointer"
+                            checked={!!seleccionados?.has(product.id)}
+                            onChange={(e) => { e.stopPropagation(); onToggleSeleccion?.(product.id); }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-mono text-sm">{product.codigo}</TableCell>
                       <TableCell className="text-sm">{product.referencia || '-'}</TableCell>
                       <TableCell className="text-sm">{product.descripcion}</TableCell>

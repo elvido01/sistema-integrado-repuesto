@@ -14,6 +14,7 @@ import ProductFormModal from '@/components/products/ProductFormModal';
 import ChangeProductCodeModal from '@/components/products/ChangeProductCodeModal';
 import PrintLabelModal from '@/components/products/PrintLabelModal';
 import ProductImageStudioModal from '@/components/products/ProductImageStudioModal';
+import EquivalentesPanel from '@/components/products/EquivalentesPanel';
 
 import Papa from 'papaparse';
 import { exportToExcel } from '@/lib/excelExport';
@@ -41,6 +42,24 @@ const ProductsPage = ({ extraData }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({ marca_id: null, modelo_id: null, tipo_id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0 });
+
+  // Equivalentes (Fase 1+2 integrada)
+  const [agrupandoMode, setAgrupandoMode] = useState(false);
+  const [seleccionados, setSeleccionados] = useState(() => new Set());  // Set<producto_id>
+  const [sugerenciasOpen, setSugerenciasOpen] = useState(false);
+
+  const toggleSeleccionado = (id) => {
+    setSeleccionados(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const limpiarSeleccion = () => setSeleccionados(new Set());
+  const toggleAgrupar = () => {
+    setAgrupandoMode(v => !v);
+    if (agrupandoMode) limpiarSeleccion();
+  };
 
   const {
     marcas: catalogMarcas = [],
@@ -593,6 +612,9 @@ const ProductsPage = ({ extraData }) => {
             onChangeCode={() => selectedProduct && handleOpenChangeCodeModal(selectedProduct)}
             onImageStudio={() => handleOpenImageStudio(selectedProduct)}
             hasSelection={!!selectedProduct}
+            agrupandoMode={agrupandoMode}
+            onToggleAgrupar={toggleAgrupar}
+            onSugerencias={() => setSugerenciasOpen(true)}
           />
         </div>
 
@@ -632,6 +654,9 @@ const ProductsPage = ({ extraData }) => {
             }}
             onImageStudio={handleOpenImageStudio}
             onToggleEcommerce={hasTienda ? handleToggleEcommerce : undefined}
+            agrupandoMode={agrupandoMode}
+            seleccionados={seleccionados}
+            onToggleSeleccion={toggleSeleccionado}
           />
 
           <ProductTableFooter
@@ -642,6 +667,17 @@ const ProductsPage = ({ extraData }) => {
           />
         </div>
       </motion.div>
+
+      {/* Panel de Equivalentes (barra flotante + modales) */}
+      <EquivalentesPanel
+        agrupandoMode={agrupandoMode}
+        seleccionados={seleccionados}
+        productos={products}
+        onCancelar={() => { setAgrupandoMode(false); limpiarSeleccion(); }}
+        onGrupoCreado={() => { limpiarSeleccion(); /* recargar productos por si cambia algo */ }}
+        sugerenciasOpen={sugerenciasOpen}
+        onCloseSugerencias={() => setSugerenciasOpen(false)}
+      />
 
       {/* Modal principal */}
       <ProductFormModal

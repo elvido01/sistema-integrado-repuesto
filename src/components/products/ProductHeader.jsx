@@ -1,4 +1,4 @@
-import { Plus, X, RefreshCw, AlertTriangle, Image as ImageIcon } from 'lucide-react';
+import { Plus, X, RefreshCw, AlertTriangle, Image as ImageIcon, Link2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -13,7 +13,13 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
-const ProductHeader = ({ onAdd, onDelete, onChangeCode, onImageStudio, hasSelection }) => {
+const ProductHeader = ({
+  onAdd, onDelete, onChangeCode, onImageStudio, hasSelection,
+  // Equivalentes (props opcionales)
+  agrupandoMode = false,
+  onToggleAgrupar,
+  onSugerencias,
+}) => {
   return (
     <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-2 gap-4">
       <div>
@@ -96,6 +102,36 @@ const ProductHeader = ({ onAdd, onDelete, onChangeCode, onImageStudio, hasSelect
             </Tooltip>
           </div>
         </TooltipProvider>
+
+        {onSugerencias && (
+          <Button
+            onClick={onSugerencias}
+            variant="outline"
+            className="h-10 px-3 border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95 flex items-center gap-2"
+            title="Sugerencias automáticas de productos equivalentes (similitud de texto)"
+          >
+            <Sparkles className="h-5 w-5" />
+            <span className="hidden md:inline">Sugerencias IA</span>
+          </Button>
+        )}
+
+        {onToggleAgrupar && (
+          <Button
+            onClick={onToggleAgrupar}
+            variant="outline"
+            className={`h-10 px-3 font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95 flex items-center gap-2 ${
+              agrupandoMode
+                ? 'border-purple-500 bg-purple-100 text-purple-700 ring-2 ring-purple-300'
+                : 'border-purple-200 bg-white text-purple-700 hover:bg-purple-50'
+            }`}
+            title="Activar selección múltiple para formar grupos de productos equivalentes"
+          >
+            <Link2 className="h-5 w-5" />
+            <span className="hidden md:inline">
+              {agrupandoMode ? 'Agrupando…' : 'Agrupar'}
+            </span>
+          </Button>
+        )}
 
         <Button
           onClick={onImageStudio}
