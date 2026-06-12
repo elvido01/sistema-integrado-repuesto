@@ -144,6 +144,27 @@ const OrdenCompraPage = () => {
   // Equivalentes por producto (mostrados debajo de cada linea)
   const [equivalentesMap, setEquivalentesMap] = useState({});  // { producto_id: [{...}, ...] }
 
+  // Detectar pares de productos equivalentes EN LA MISMA ORDEN
+  // (potencial duplicacion de stock)
+  const equivalentesDuplicados = useMemo(() => {
+    if (!detalles?.length || !equivalentesMap) return [];
+    const ids = new Set(detalles.filter(d => d.producto_id).map(d => d.producto_id));
+    const pares = [];
+    detalles.forEach(d => {
+      if (!d.producto_id || !equivalentesMap[d.producto_id]) return;
+      equivalentesMap[d.producto_id].forEach(eq => {
+        if (ids.has(eq.producto_id) && eq.producto_id !== d.producto_id) {
+          const a = d.producto_id < eq.producto_id ? d.producto_id : eq.producto_id;
+          const b = d.producto_id < eq.producto_id ? eq.producto_id : d.producto_id;
+          if (!pares.some(p => p.a === a && p.b === b)) {
+            pares.push({ a, b, grupo_nombre: eq.grupo_nombre });
+          }
+        }
+      });
+    });
+    return pares;
+  }, [detalles, equivalentesMap]);
+
   // Cargar equivalentes de los productos en la orden
   useEffect(() => {
     let cancel = false;
@@ -2151,6 +2172,20 @@ const OrdenCompraPage = () => {
               >
                 <Cog className="h-4 w-4" />
               </Button>
+            )}
+            {/* Alerta de equivalentes en la misma orden (potencial duplicacion) */}
+            {equivalentesDuplicados.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-amber-300 bg-amber-50 animate-pulse">
+                <AlertTriangle className="h-4 w-4 text-amber-700 flex-shrink-0" />
+                <div className="text-[11px] leading-tight">
+                  <p className="font-bold text-amber-900">
+                    ⚠️ {equivalentesDuplicados.length} par{equivalentesDuplicados.length !== 1 ? 'es' : ''} equivalente{equivalentesDuplicados.length !== 1 ? 's' : ''} en esta orden
+                  </p>
+                  <p className="text-amber-700 text-[10px]">
+                    Posible duplicación de stock. Revisá los códigos con 🔗 violeta.
+                  </p>
+                </div>
+              </div>
             )}
             {mostrarInteligente && sugerenciaCompra && (
               <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${sugerenciaCompra.totalUrgente > 0 ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
