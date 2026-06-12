@@ -124,6 +124,12 @@ BEGIN
     END IF;
 
     v_nueva_orden_id := v_orden_destino.id;
+
+    -- Refrescar fechas de la orden reutilizada (consistente con sendProductToOrdenCompra)
+    UPDATE public.ordenes_compra
+       SET fecha_orden       = CURRENT_DATE,
+           fecha_vencimiento = CURRENT_DATE + INTERVAL '15 days'
+     WHERE id = v_nueva_orden_id;
   END IF;
 
   -- 4. Recalcular totales de ambas ordenes
