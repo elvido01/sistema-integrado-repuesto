@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog } from 'lucide-react';
+import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog, Shuffle } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
@@ -837,6 +837,43 @@ const OrdenCompraPage = () => {
     }
   };
 
+  const handleReorganizarPorSuplidor = async () => {
+    if (!confirm(
+      'Esto va a revisar TODAS las ordenes Pendiente y mover cada producto a la orden de su suplidor correcto.\n\n' +
+      'Si el suplidor correcto no tiene orden Pendiente, se creara una nueva.\n\n' +
+      '¿Continuar?'
+    )) return;
+
+    setIsLoadingList(true);
+    try {
+      const { data, error } = await supabase.rpc('reorganizar_ordenes_pendientes_por_suplidor');
+      if (error) throw error;
+
+      const movidas = data?.lineas_movidas || 0;
+      if (movidas === 0) {
+        toast({
+          title: '✓ Todo en orden',
+          description: 'No se encontraron lineas mal asignadas.',
+        });
+      } else {
+        toast({
+          title: '🔀 Reorganizacion completa',
+          description: `${movidas} linea(s) movida(s) a sus suplidores correctos.`,
+          duration: 6000,
+        });
+        await fetchOrders();
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'No se pudo reorganizar las ordenes.',
+      });
+    } finally {
+      setIsLoadingList(false);
+    }
+  };
+
   useEffect(() => {
     setDetalles((prev) => calculateAllImportes(prev));
   }, [orden.aplicar_itbis]);
@@ -1573,6 +1610,16 @@ const OrdenCompraPage = () => {
                 {aprobacionesPendCount > 99 ? '99+' : aprobacionesPendCount}
               </span>
             )}
+          </Button>
+          <Button
+            variant="ghost"
+            className="h-10 flex flex-col items-center px-2 py-1 text-[10px]"
+            onClick={handleReorganizarPorSuplidor}
+            disabled={isLoadingList}
+            title="Mueve cada producto a la orden Pendiente de su suplidor correcto"
+          >
+            <Shuffle className="h-5 w-5 mb-0.5 text-cyan-600" />
+            REORGANIZAR
           </Button>
         </div>
         <div className="text-morla-blue font-bold text-lg mr-4">Lista de Ordenes Realizadas</div>
