@@ -44,7 +44,7 @@ export default function EquivalentesPanel({
       .select(`
         id, nombre, descripcion, created_at,
         producto_grupo_miembros(
-          producto_id, prioridad,
+          producto_id, prioridad, prioridad_manual, score_ultimo,
           productos(codigo, descripcion, precio)
         )
       `)
@@ -61,6 +61,77 @@ export default function EquivalentesPanel({
       toast({ title: 'Grupo eliminado' });
       setGrupos(prev => prev.filter(g => g.id !== grupoId));
       onGrupoCreado?.();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    }
+  };
+
+  // Recargar grupos
+  const recargarGrupos = async () => {
+    setLoadingGrupos(true);
+    try {
+      const { data } = await supabase.from('producto_grupos')
+        .select(`
+          id, nombre, descripcion, created_at,
+          producto_grupo_miembros(
+            producto_id, prioridad, prioridad_manual, score_ultimo,
+            productos(codigo, descripcion, precio)
+          )
+        `)
+        .order('created_at', { ascending: false });
+      setGrupos(data || []);
+    } finally {
+      setLoadingGrupos(false);
+    }
+  };
+
+  // Recalcular automáticamente los preferidos de TODOS los grupos
+  const [recalculando, setRecalculando] = useState(false);
+  const recalcularTodos = async () => {
+    if (!window.confirm(
+      'El sistema va a recalcular los preferidos según margen, rotación, confiabilidad de stock y demanda.\n\n' +
+      'Solo se cambia un preferido si la diferencia de score es >= 5 puntos.\n' +
+      'Los grupos con preferido FIJADO MANUAL no se tocan.\n\n¿Continuar?'
+    )) return;
+    setRecalculando(true);
+    try {
+      const { data, error } = await supabase.rpc('recalcular_preferidos_todos');
+      if (error) throw error;
+      toast({
+        title: '✨ Recalculo completo',
+        description: `${data?.cambiados || 0} grupos cambiaron · ${data?.omitidos_por_manual || 0} respetados (manual) · ${data?.sin_cambio || 0} sin cambio`,
+      });
+      recargarGrupos();
+      onGrupoCreado?.();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    } finally {
+      setRecalculando(false);
+    }
+  };
+
+  // Fijar preferido manualmente (click en la estrella)
+  const fijarPreferidoManual = async (grupoId, productoId) => {
+    try {
+      const { error } = await supabase.rpc('set_preferido_manual', {
+        p_grupo_id: grupoId,
+        p_producto_id: productoId,
+      });
+      if (error) throw error;
+      toast({ title: '⭐ Preferido fijado manual' });
+      recargarGrupos();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    }
+  };
+
+  // Liberar override manual (volver a modo automático)
+  const liberarManual = async (grupoId) => {
+    try {
+      const { error } = await supabase.rpc('limpiar_manual_grupo', { p_grupo_id: grupoId });
+      if (error) throw error;
+      toast({ title: '🔄 Modo automático', description: 'El sistema decidirá el preferido en el próximo recalculo' });
+      recargarGrupos();
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     }
@@ -370,9 +441,30 @@ export default function EquivalentesPanel({
               <Link2 className="w-5 h-5" /> Mis grupos de equivalentes
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Productos agrupados como equivalentes. ⭐ = preferido. Cliqueá un grupo para ver sus miembros.
+              ⭐ = preferido del grupo. Click en ☆ de un sustituto para fijarlo manual. Click en "Recalcular" para que el sistema decida según margen + rotación + confiabilidad.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Toolbar: Recalcular automático */}
+          {grupos.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
+              <Star className="w-5 h-5 text-amber-600 fill-amber-400" />
+              <div className="flex-1">
+                <p className="text-xs font-bold text-amber-900">Recalcular preferidos automáticamente</p>
+                <p className="text-[10px] text-amber-700">
+                  Fórmula: 45% margen + 30% rotación + 15% confiabilidad stock + 10% demanda relativa
+                </p>
+              </div>
+              <Button
+                onClick={recalcularTodos}
+                disabled={recalculando}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {recalculando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+                Recalcular
+              </Button>
+            </div>
+          )}
 
           <div className="max-h-[60vh] overflow-y-auto">
             {loadingGrupos ? (
@@ -387,37 +479,83 @@ export default function EquivalentesPanel({
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {grupos.map(g => (
+                {grupos.map(g => {
+                  const tieneManual = (g.producto_grupo_miembros || []).some(m => m.prioridad_manual);
+                  return (
                   <div key={g.id} className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-sm text-slate-800 truncate">{g.nombre}</h3>
+                        <h3 className="font-bold text-sm text-slate-800 truncate flex items-center gap-1">
+                          {g.nombre}
+                          {tieneManual && (
+                            <span className="text-[9px] uppercase font-bold bg-blue-100 text-blue-700 px-1.5 py-0 rounded-full" title="Preferido fijado manualmente. El recálculo automático lo respeta.">
+                              MANUAL
+                            </span>
+                          )}
+                        </h3>
                         {g.descripcion && (
                           <p className="text-[11px] text-slate-500 italic truncate">{g.descripcion}</p>
                         )}
                       </div>
-                      <Button
-                        size="icon" variant="ghost"
-                        className="h-7 w-7 text-red-500 hover:bg-red-50 flex-shrink-0"
-                        onClick={() => borrarGrupo(g.id)}
-                        title="Eliminar grupo"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
+                      <div className="flex gap-1 flex-shrink-0">
+                        {tieneManual && (
+                          <Button
+                            size="icon" variant="ghost"
+                            className="h-7 w-7 text-blue-600 hover:bg-blue-50"
+                            onClick={() => liberarManual(g.id)}
+                            title="Liberar override manual (volver a modo automático)"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                          </Button>
+                        )}
+                        <Button
+                          size="icon" variant="ghost"
+                          className="h-7 w-7 text-red-500 hover:bg-red-50"
+                          onClick={() => borrarGrupo(g.id)}
+                          title="Eliminar grupo"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
                     <div className="space-y-1">
-                      {(g.producto_grupo_miembros || []).sort((a, b) => a.prioridad - b.prioridad).map(m => (
-                        <div key={m.producto_id} className="flex items-center gap-2 text-[11px] bg-slate-50 rounded px-2 py-1">
-                          {m.prioridad === 1
-                            ? <Star className="w-3 h-3 text-amber-500 fill-amber-500 flex-shrink-0" />
-                            : <ChevronRight className="w-3 h-3 text-slate-400 flex-shrink-0" />}
+                      {(g.producto_grupo_miembros || []).sort((a, b) => a.prioridad - b.prioridad).map(m => {
+                        const isPreferido = m.prioridad === 1;
+                        return (
+                        <div key={m.producto_id} className="flex items-center gap-2 text-[11px] bg-slate-50 rounded px-2 py-1 group">
+                          <button
+                            onClick={() => !isPreferido && fijarPreferidoManual(g.id, m.producto_id)}
+                            disabled={isPreferido}
+                            className={`flex-shrink-0 transition-transform ${isPreferido ? '' : 'hover:scale-125 cursor-pointer'}`}
+                            title={isPreferido
+                              ? (m.prioridad_manual ? '⭐ Preferido (manual)' : '⭐ Preferido (automático)')
+                              : 'Click para fijar este como preferido (manual)'}
+                          >
+                            <Star
+                              className={`w-3 h-3 ${
+                                isPreferido
+                                  ? 'text-amber-500 fill-amber-500'
+                                  : 'text-slate-300 hover:text-amber-400 hover:fill-amber-200'
+                              }`}
+                            />
+                          </button>
                           <span className="font-mono font-bold text-slate-700">{m.productos?.codigo}</span>
                           <span className="flex-1 truncate text-slate-600">{m.productos?.descripcion}</span>
+                          {m.score_ultimo > 0 && (
+                            <span
+                              className="text-[9px] text-slate-400 font-mono"
+                              title={`Score último cálculo: ${m.score_ultimo}`}
+                            >
+                              {Number(m.score_ultimo).toFixed(0)}
+                            </span>
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
