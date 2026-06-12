@@ -887,14 +887,32 @@ const OrdenCompraPage = () => {
       toast({
         variant: 'destructive',
         title: 'Seleccione un suplidor',
-        description: 'Debe seleccionar un suplidor para generar una orden automÃ¡tica.',
+        description: 'Debe seleccionar un suplidor para generar una orden automática.',
       });
       return;
     }
     setIsGenerating(true);
-    const { data, error } = await supabase.rpc('get_productos_para_orden_automatica', {
-      p_suplidor_id: selectedProveedor.id,
-    });
+
+    // Intentar v2 primero (con conciencia de grupos), fallback al v1 si no existe
+    let data, error;
+    let usedV2 = false;
+    try {
+      const v2Res = await supabase.rpc('get_productos_para_orden_automatica_v2', {
+        p_suplidor_id: selectedProveedor.id,
+      });
+      if (!v2Res.error) {
+        data = v2Res.data;
+        usedV2 = true;
+      } else {
+        throw v2Res.error;
+      }
+    } catch (_) {
+      const v1Res = await supabase.rpc('get_productos_para_orden_automatica', {
+        p_suplidor_id: selectedProveedor.id,
+      });
+      data = v1Res.data;
+      error = v1Res.error;
+    }
     setIsGenerating(false);
 
     if (error) {
@@ -902,7 +920,7 @@ const OrdenCompraPage = () => {
       return;
     }
     if (!data || data.length === 0) {
-      toast({ title: 'Sin productos', description: 'No hay productos bajo el stock mÃ­nimo para este suplidor.' });
+      toast({ title: 'Sin productos', description: 'No hay productos bajo el stock mínimo para este suplidor.' });
       return;
     }
 
@@ -911,32 +929,58 @@ const OrdenCompraPage = () => {
       index === self.findIndex(x => x.id === p.id)
     );
 
+    // Contadores de ajustes por grupos
+    let ajustesAumentados = 0;
+    let ajustesReducidos = 0;
+    let ajustesEliminados = 0;
+
     const newDetalles = uniqueData
       .filter(p => !detalles.find(d => d.producto_id === p.id || d.codigo === p.codigo))
       .map((p) => {
-        // Usar la cantidad sugerida calculada por el backend (max_stock - existencia)
-        const sugerida = p.cantidad_sugerida || Math.max(1, Math.ceil((p.max_stock || p.min_stock || 0) - (p.existencia || 0)));
+        const sugeridaOriginal = p.cantidad_sugerida || Math.max(1, Math.ceil((p.max_stock || p.min_stock || 0) - (p.existencia || 0)));
+        // En v2: usar cantidad_ajustada si vino, sino la sugerida normal
+        const cantidadFinal = (usedV2 && p.cantidad_ajustada !== null && p.cantidad_ajustada !== undefined)
+          ? p.cantidad_ajustada
+          : sugeridaOriginal;
+        // Contar ajustes
+        if (usedV2 && p.razon_ajuste) {
+          if (cantidadFinal === 0) ajustesEliminados++;
+          else if (cantidadFinal > sugeridaOriginal) ajustesAumentados++;
+          else if (cantidadFinal < sugeridaOriginal) ajustesReducidos++;
+        }
         return {
           id: Date.now() + Math.random(),
           producto_id: p.id,
           codigo: p.codigo,
           descripcion: p.descripcion,
-          cantidad: sugerida,
-          sugerida,
+          cantidad: cantidadFinal,
+          sugerida: sugeridaOriginal,
           unidad: 'UND',
-          precio: p.costo || p.precio || 0,  // Usar COSTO del producto, no precio de venta
+          precio: p.costo || p.precio || 0,
           descuento_pct: 0,
           itbis_pct: p.itbis_pct || 0,
           importe: 0,
           existencia: p.existencia ?? 0,
+          // Metadata de grupo (si v2)
+          _grupo_id: p.grupo_id || null,
+          _grupo_nombre: p.grupo_nombre || null,
+          _es_preferido: p.es_preferido,
+          _razon_ajuste: p.razon_ajuste || null,
+          _cantidad_original: sugeridaOriginal,
         };
-      });
+      })
+      .filter(d => d.cantidad > 0);  // No mostrar las que el sistema decidio NO comprar
 
-    // Merge con los existentes en lugar de reemplazar
     setDetalles(prev => calculateAllImportes([...prev, ...newDetalles]));
 
     const totalVentas90d = uniqueData.reduce((sum, p) => sum + (p.ventas_90d || 0), 0);
-    toast({ title: 'Orden Automática Generada', description: `${newDetalles.length} productos bajo stock añadidos. Ventas 90d del suplidor: ${totalVentas90d} unidades.` });
+
+    // Toast con resumen de ajustes
+    let desc = `${newDetalles.length} productos agregados. Ventas 90d: ${totalVentas90d} und.`;
+    if (usedV2 && (ajustesAumentados + ajustesReducidos + ajustesEliminados) > 0) {
+      desc += `\n🔗 Ajustes por grupos: ${ajustesAumentados} aumentados, ${ajustesReducidos} reducidos, ${ajustesEliminados} eliminados (preferido cubre).`;
+    }
+    toast({ title: 'Orden Automática Generada', description: desc, duration: 7000 });
   };
 
   // Calcula el monto de compra sugerido (lo urgente) para el aviso junto a los botones.
@@ -2113,7 +2157,35 @@ const OrdenCompraPage = () => {
                           </div>
                         </TableCell>
                         <TableCell className="py-0 px-2 uppercase truncate max-w-[300px]">{d.descripcion}</TableCell>
-                        <TableCell className="py-0 px-2 text-center text-blue-700 font-bold select-none">{d.cantidad} {d.unidad}</TableCell>
+                        <TableCell className="py-0 px-2 text-center text-blue-700 font-bold select-none">
+                          <div className="flex items-center justify-center gap-1">
+                            <span>{d.cantidad} {d.unidad}</span>
+                            {d._razon_ajuste && (
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-[9px] px-1 py-0 rounded-full bg-amber-100 text-amber-700 font-bold hover:bg-amber-200"
+                                    title={d._razon_ajuste}
+                                  >
+                                    🔗
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-72 p-2" align="center" onClick={(e) => e.stopPropagation()}>
+                                  <p className="text-[11px] font-bold text-amber-800 mb-1">⚙️ Ajustado por grupo</p>
+                                  <p className="text-[10px] text-slate-600 mb-1">
+                                    Grupo: <b>{d._grupo_nombre}</b>
+                                    {d._es_preferido && <span className="ml-1 text-amber-600">⭐ Preferido</span>}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 mb-1">
+                                    Original sugerido: <s>{d._cantidad_original}</s> · Ajustado: <b className="text-blue-700">{d.cantidad}</b>
+                                  </p>
+                                  <p className="text-[10px] text-slate-700 italic">{d._razon_ajuste}</p>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-mono">{Number(d.precio || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
