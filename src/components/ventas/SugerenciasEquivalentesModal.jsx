@@ -1,0 +1,115 @@
+import React from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Package, PackageX, Star, AlertTriangle } from 'lucide-react';
+
+const SugerenciasEquivalentesModal = ({
+  isOpen,
+  onClose,
+  productoOriginal,   // { codigo, descripcion, existencia }
+  sugerencias,        // array de { id, codigo, descripcion, existencia, precio, costo, itbis_pct, es_preferido, margen_pct, grupo_nombre }
+  onSelectSugerencia, // (producto) => void  -- reemplaza el item actual
+}) => {
+  if (!isOpen) return null;
+
+  const grupoNombre = sugerencias?.[0]?.grupo_nombre || '';
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            Producto agotado — hay equivalentes con stock
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {/* Producto original */}
+          <div className="bg-red-50 border border-red-200 rounded p-2">
+            <div className="flex items-center gap-2">
+              <PackageX className="h-4 w-4 text-red-600" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-red-800 truncate">
+                  {productoOriginal?.codigo} — {productoOriginal?.descripcion}
+                </p>
+                <p className="text-[10px] text-red-600">
+                  Existencia: {productoOriginal?.existencia ?? 0}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {grupoNombre && (
+            <p className="text-xs text-slate-600">
+              Grupo: <b>{grupoNombre}</b> · Estos equivalentes están disponibles:
+            </p>
+          )}
+
+          {/* Sugerencias */}
+          <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+            {sugerencias?.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => {
+                  onSelectSugerencia(s);
+                  onClose();
+                }}
+                className={`w-full text-left p-2 rounded border-2 transition-all hover:shadow-md ${
+                  s.es_preferido
+                    ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <Package className={`h-5 w-5 flex-shrink-0 mt-0.5 ${s.es_preferido ? 'text-amber-600' : 'text-slate-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-xs font-bold text-slate-800 truncate">
+                        {s.codigo}
+                      </span>
+                      {s.es_preferido && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-full font-bold">
+                          <Star className="h-2.5 w-2.5 fill-amber-700" />
+                          PREFERIDO
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-700 truncate">{s.descripcion}</p>
+                    <div className="flex items-center gap-3 mt-1 text-[10px]">
+                      <span className="text-green-700 font-semibold">
+                        📦 {Number(s.existencia).toFixed(0)} und.
+                      </span>
+                      <span className="text-blue-700 font-semibold">
+                        ${Number(s.precio).toFixed(2)}
+                      </span>
+                      {s.margen_pct > 0 && (
+                        <span className="text-slate-500">
+                          margen {Number(s.margen_pct).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-blue-600 font-semibold whitespace-nowrap">
+                    Usar →
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex justify-between pt-1">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              No, mantener original
+            </Button>
+            <p className="text-[10px] text-slate-400 self-center">
+              Esc para cerrar
+            </p>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export default SugerenciasEquivalentesModal;

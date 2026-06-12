@@ -8,6 +8,7 @@ import VentasFooter from '@/components/ventas/VentasFooter';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
+import SugerenciasEquivalentesModal from '@/components/ventas/SugerenciasEquivalentesModal';
 import { generateFacturaPDF } from '@/components/common/PDFGenerator';
 import { printFacturaPOS, printFacturaQZ, printFacturaWebUsb } from '@/lib/printPOS';
 import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
@@ -26,7 +27,6 @@ const VentasPage = () => {
   const [isEditingNumero, setIsEditingNumero] = useState(false);
   const [editNumero, setEditNumero] = useState('');
   const [clienteCodigoInput, setClienteCodigoInput] = useState('');
-  const [notasFactura, setNotasFactura] = useState('');
 
   const {
     date, setDate,
@@ -59,6 +59,7 @@ const VentasPage = () => {
     recargo, setRecargo,
     tipoPago, setTipoPago,
     pagos, setPagos,
+    notas, setNotas,
     editingFacturaId,
     editingFacturaNumero,
     loadInvoiceByNumero,
@@ -114,6 +115,63 @@ const VentasPage = () => {
   const [modalSessionKey, setModalSessionKey] = useState(0);
   const [isCotizacionModalOpen, setIsCotizacionModalOpen] = useState(false);
   const [isPedidoModalOpen, setIsPedidoModalOpen] = useState(false);
+
+  // Fase 4: Sugerir equivalente al vender producto agotado
+  const [sugerenciasEquiv, setSugerenciasEquiv] = useState({ open: false, original: null, lista: [] });
+
+  const checkAndSuggestEquivalentes = useCallback(async (product) => {
+    const exist = Number(product?.existencia ?? product?.existencia_morla ?? 0);
+    if (exist > 0) return;  // tiene stock, no sugerir nada
+    if (!product?.id) return;
+    try {
+      const { data, error } = await supabase.rpc('sugerir_equivalentes_disponibles', {
+        p_producto_id: product.id,
+      });
+      if (error || !data || data.length === 0) return;
+      setSugerenciasEquiv({
+        open: true,
+        original: { codigo: product.codigo, descripcion: product.descripcion, existencia: exist },
+        lista: data,
+      });
+    } catch (_) { /* silencioso */ }
+  }, []);
+
+  // Vigila currentItem para detectar cuando se agrega via codigo+Enter con stock 0
+  const lastCheckedItemIdRef = useRef(null);
+  useEffect(() => {
+    if (!currentItem || !currentItem.producto_id) return;
+    if (lastCheckedItemIdRef.current === currentItem.producto_id) return;
+    lastCheckedItemIdRef.current = currentItem.producto_id;
+    const exist = Number(currentItem.existencia_morla ?? 0);
+    if (exist > 0) return;
+    checkAndSuggestEquivalentes({
+      id: currentItem.producto_id,
+      codigo: currentItem.codigo,
+      descripcion: currentItem.descripcion,
+      existencia: exist,
+    });
+  }, [currentItem, checkAndSuggestEquivalentes]);
+
+  const handleSelectSugerencia = useCallback(async (sug) => {
+    // Reemplazar el currentItem por el equivalente: trae presentaciones tambien
+    try {
+      const { data: producto } = await supabase
+        .from('productos')
+        .select('*, presentaciones(*)')
+        .eq('id', sug.id)
+        .maybeSingle();
+      if (producto) {
+        clearCurrentItem();
+        addProductToInvoice({ ...producto, existencia: sug.existencia });
+        toast({
+          title: '✅ Equivalente aplicado',
+          description: `${sug.codigo} ${sug.es_preferido ? '⭐' : ''} - Stock: ${sug.existencia}`,
+        });
+      }
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Error', description: 'No se pudo aplicar el equivalente.' });
+    }
+  }, [addProductToInvoice, clearCurrentItem, toast]);
   const { pedidoParaFacturar, setPedidoParaFacturar } = useFacturacion();
 
   const [loadingInitialData, setLoadingInitialData] = useState(true);
@@ -324,9 +382,11 @@ const VentasPage = () => {
         }
       }
       addProductToInvoice(processedProduct);
+      checkAndSuggestEquivalentes(processedProduct);
     } catch (e) {
       console.error("Error fetching presentations", e);
       addProductToInvoice(product);
+      checkAndSuggestEquivalentes(product);
     } finally {
       setIsProductSearchModalOpen(false);
       // Focus will return to Cantidad via VentasTable useEffect
@@ -426,8 +486,8 @@ const VentasPage = () => {
         setRecargo={setRecargo}
         resetVenta={resetVenta}
         grabarBtnRef={grabarBtnRef}
-        notas={notasFactura}
-        setNotas={setNotasFactura}
+        notas={notas}
+        setNotas={setNotas}
       />
 
       <ProductSearchModal
@@ -461,6 +521,14 @@ const VentasPage = () => {
         type="pedido"
         vendedores={vendedores}
         onSelect={handleSelectPedido}
+      />
+
+      <SugerenciasEquivalentesModal
+        isOpen={sugerenciasEquiv.open}
+        onClose={() => setSugerenciasEquiv({ open: false, original: null, lista: [] })}
+        productoOriginal={sugerenciasEquiv.original}
+        sugerencias={sugerenciasEquiv.lista}
+        onSelectSugerencia={handleSelectSugerencia}
       />
     </div>
   );
