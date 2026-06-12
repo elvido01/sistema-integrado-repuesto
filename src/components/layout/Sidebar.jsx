@@ -143,6 +143,7 @@ const navItems = [
       { title: 'Marcas', id: 'marcas' },
       { title: 'Modelos', id: 'modelos' },
       { title: 'Ubicaciones', id: 'ubicaciones' },
+      { title: 'Productos Equivalentes', id: 'grupos-equivalentes', icon: Sparkles },
     ],
   },
   {

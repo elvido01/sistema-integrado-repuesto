@@ -141,6 +141,33 @@ const OrdenCompraPage = () => {
   const [workflowModalOpen, setWorkflowModalOpen] = useState(false);
   const [enviandoCola, setEnviandoCola] = useState(false);
 
+  // Equivalentes por producto (mostrados debajo de cada linea)
+  const [equivalentesMap, setEquivalentesMap] = useState({});  // { producto_id: [{...}, ...] }
+
+  // Cargar equivalentes de los productos en la orden
+  useEffect(() => {
+    let cancel = false;
+    const cargarEquiv = async () => {
+      const ids = Array.from(new Set(detalles.map(d => d.producto_id).filter(Boolean)));
+      if (ids.length === 0) { setEquivalentesMap({}); return; }
+      try {
+        const results = await Promise.all(ids.map(id =>
+          supabase.rpc('get_equivalentes_producto', { p_producto_id: id }).then(r => ({ id, data: r.data || [] }))
+        ));
+        if (cancel) return;
+        const map = {};
+        for (const r of results) {
+          if (r.data && r.data.length > 0) map[r.id] = r.data;
+        }
+        setEquivalentesMap(map);
+      } catch (_) {
+        if (!cancel) setEquivalentesMap({});
+      }
+    };
+    cargarEquiv();
+    return () => { cancel = true; };
+  }, [detalles.map(d => d.producto_id).filter(Boolean).sort().join(',')]);
+
   // Nuevo Producto Rapido (sin salir de la OC)
   const [quickProdModalOpen, setQuickProdModalOpen] = useState(false);
   const [quickProd, setQuickProd] = useState({
@@ -2019,7 +2046,51 @@ const OrdenCompraPage = () => {
                     ) : (
                       /* ── FILA ORIGINAL ── */
                       <>
-                        <TableCell className="py-0 px-2 text-slate-700 font-medium">{d.codigo}</TableCell>
+                        <TableCell className="py-0 px-2 text-slate-700 font-medium">
+                          <div className="flex items-center gap-1">
+                            {d.codigo}
+                            {equivalentesMap[d.producto_id] && (
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-1 py-0 rounded text-[9px] font-bold bg-purple-100 text-purple-700 hover:bg-purple-200 flex items-center gap-0.5"
+                                    title="Productos equivalentes disponibles"
+                                  >
+                                    🔗 {equivalentesMap[d.producto_id].length}
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80 p-2" align="start" onClick={(e) => e.stopPropagation()}>
+                                  <p className="text-[11px] font-bold text-purple-700 mb-1 pb-1 border-b border-purple-100">
+                                    🔗 Equivalentes del mismo grupo
+                                  </p>
+                                  <div className="space-y-1">
+                                    {equivalentesMap[d.producto_id].map(eq => (
+                                      <div key={eq.producto_id} className="text-[10px] bg-slate-50 rounded p-1.5">
+                                        <div className="flex items-center gap-1">
+                                          <span className="font-mono font-bold text-slate-700">{eq.codigo}</span>
+                                          {eq.prioridad === 1 && <span className="text-amber-500" title="Preferido">⭐</span>}
+                                          <span className="ml-auto font-mono text-[9px] text-slate-500">RD$ {Number(eq.precio).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                                        </div>
+                                        <p className="text-slate-600 truncate">{eq.descripcion}</p>
+                                        <div className="flex items-center gap-3 mt-0.5 text-[9px]">
+                                          <span className={eq.existencia > 0 ? 'text-emerald-700 font-bold' : 'text-red-600'}>
+                                            Stock: {eq.existencia}
+                                          </span>
+                                          <span className="text-slate-500">Vendió 30d: <b>{eq.ventas_30d}</b></span>
+                                          {eq.margen_pct > 0 && <span className="text-slate-500">Mg: {eq.margen_pct}%</span>}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <p className="text-[9px] text-slate-400 italic mt-2">
+                                    💡 Considerá la rotación combinada al definir cantidad
+                                  </p>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="py-0 px-2 uppercase truncate max-w-[300px]">{d.descripcion}</TableCell>
                         <TableCell className="py-0 px-2 text-center text-blue-700 font-bold select-none">{d.cantidad} {d.unidad}</TableCell>
                         <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
