@@ -1,6 +1,10 @@
-import { Plus, X, RefreshCw, AlertTriangle, Image as ImageIcon, Link2, Sparkles } from 'lucide-react';
+import { Plus, X, RefreshCw, AlertTriangle, Image as ImageIcon, Link2, Sparkles, ChevronDown, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +23,7 @@ const ProductHeader = ({
   agrupandoMode = false,
   onToggleAgrupar,
   onSugerencias,
+  onVerGrupos,
 }) => {
   return (
     <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-2 gap-4">
@@ -103,34 +108,50 @@ const ProductHeader = ({
           </div>
         </TooltipProvider>
 
-        {onSugerencias && (
-          <Button
-            onClick={onSugerencias}
-            variant="outline"
-            className="h-10 px-3 border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95 flex items-center gap-2"
-            title="Sugerencias automáticas de productos equivalentes (similitud de texto)"
-          >
-            <Sparkles className="h-5 w-5" />
-            <span className="hidden md:inline">Sugerencias IA</span>
-          </Button>
-        )}
-
-        {onToggleAgrupar && (
-          <Button
-            onClick={onToggleAgrupar}
-            variant="outline"
-            className={`h-10 px-3 font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95 flex items-center gap-2 ${
-              agrupandoMode
-                ? 'border-purple-500 bg-purple-100 text-purple-700 ring-2 ring-purple-300'
-                : 'border-purple-200 bg-white text-purple-700 hover:bg-purple-50'
-            }`}
-            title="Activar selección múltiple para formar grupos de productos equivalentes"
-          >
-            <Link2 className="h-5 w-5" />
-            <span className="hidden md:inline">
-              {agrupandoMode ? 'Agrupando…' : 'Agrupar'}
-            </span>
-          </Button>
+        {(onToggleAgrupar || onSugerencias || onVerGrupos) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className={`h-10 px-3 font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95 flex items-center gap-2 ${
+                  agrupandoMode
+                    ? 'border-purple-500 bg-purple-100 text-purple-700 ring-2 ring-purple-300'
+                    : 'border-purple-200 bg-white text-purple-700 hover:bg-purple-50'
+                }`}
+                title="Productos Equivalentes"
+              >
+                <Link2 className="h-5 w-5" />
+                <span className="hidden md:inline">
+                  {agrupandoMode ? `Agrupando (${agrupandoMode === true ? '' : agrupandoMode})` : 'Equivalentes'}
+                </span>
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="text-[10px] uppercase text-slate-500 font-bold">
+                Productos Equivalentes
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {onToggleAgrupar && (
+                <DropdownMenuItem onClick={onToggleAgrupar} className="cursor-pointer">
+                  <Link2 className={`mr-2 h-4 w-4 ${agrupandoMode ? 'text-purple-700' : 'text-slate-500'}`} />
+                  <span className="text-sm">{agrupandoMode ? '✓ Modo Agrupar activo' : 'Activar Modo Agrupar'}</span>
+                </DropdownMenuItem>
+              )}
+              {onSugerencias && (
+                <DropdownMenuItem onClick={onSugerencias} className="cursor-pointer">
+                  <Sparkles className="mr-2 h-4 w-4 text-emerald-600" />
+                  <span className="text-sm">Sugerencias IA</span>
+                </DropdownMenuItem>
+              )}
+              {onVerGrupos && (
+                <DropdownMenuItem onClick={onVerGrupos} className="cursor-pointer">
+                  <List className="mr-2 h-4 w-4 text-blue-600" />
+                  <span className="text-sm">Ver mis grupos</span>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
 
         <Button

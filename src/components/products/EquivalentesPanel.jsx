@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Link2, X, Loader2, CheckCircle2, RefreshCw, Sparkles, Star } from 'lucide-react';
+import { Link2, X, Loader2, CheckCircle2, RefreshCw, Sparkles, Star, Trash2, ChevronRight } from 'lucide-react';
 
 export default function EquivalentesPanel({
   agrupandoMode,
@@ -18,6 +18,8 @@ export default function EquivalentesPanel({
   onGrupoCreado,
   sugerenciasOpen,
   onCloseSugerencias,
+  verGruposOpen,
+  onCloseVerGrupos,
 }) {
   const { toast } = useToast();
   const [crearModalOpen, setCrearModalOpen] = useState(false);
@@ -29,6 +31,40 @@ export default function EquivalentesPanel({
   const [minSimilitud, setMinSimilitud] = useState(0.4);
   const [sugerencias, setSugerencias] = useState([]);
   const [loadingSug, setLoadingSug] = useState(false);
+
+  // Ver mis grupos
+  const [grupos, setGrupos] = useState([]);
+  const [loadingGrupos, setLoadingGrupos] = useState(false);
+
+  // Cargar grupos cuando se abre el modal
+  React.useEffect(() => {
+    if (!verGruposOpen) return;
+    setLoadingGrupos(true);
+    supabase.from('producto_grupos')
+      .select(`
+        id, nombre, descripcion, created_at,
+        producto_grupo_miembros(
+          producto_id, prioridad,
+          productos(codigo, descripcion, precio)
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setGrupos(data || []); setLoadingGrupos(false); })
+      .catch(() => setLoadingGrupos(false));
+  }, [verGruposOpen]);
+
+  const borrarGrupo = async (grupoId) => {
+    if (!window.confirm('¿Eliminar este grupo? Los productos quedan sueltos pero no se borran.')) return;
+    try {
+      const { error } = await supabase.from('producto_grupos').delete().eq('id', grupoId);
+      if (error) throw error;
+      toast({ title: 'Grupo eliminado' });
+      setGrupos(prev => prev.filter(g => g.id !== grupoId));
+      onGrupoCreado?.();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    }
+  };
 
   const productosSeleccionados = React.useMemo(() => {
     if (!productos || !seleccionados) return [];
@@ -320,6 +356,77 @@ export default function EquivalentesPanel({
 
           <DialogFooter>
             <Button variant="outline" onClick={onCloseSugerencias}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════ */}
+      {/* Modal: Ver mis grupos                                */}
+      {/* ════════════════════════════════════════════════════ */}
+      <Dialog open={verGruposOpen} onOpenChange={(open) => { if (!open) onCloseVerGrupos?.(); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-blue-700 flex items-center gap-2">
+              <Link2 className="w-5 h-5" /> Mis grupos de equivalentes
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Productos agrupados como equivalentes. ⭐ = preferido. Cliqueá un grupo para ver sus miembros.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto">
+            {loadingGrupos ? (
+              <div className="p-8 text-center"><Loader2 className="w-6 h-6 mx-auto animate-spin" /></div>
+            ) : grupos.length === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-500">
+                <Link2 className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                <p>No tenés grupos creados todavía.</p>
+                <p className="text-[11px] mt-1">
+                  Probá <b>Sugerencias IA</b> o activá el <b>Modo Agrupar</b> en la barra superior.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {grupos.map(g => (
+                  <div key={g.id} className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-sm text-slate-800 truncate">{g.nombre}</h3>
+                        {g.descripcion && (
+                          <p className="text-[11px] text-slate-500 italic truncate">{g.descripcion}</p>
+                        )}
+                      </div>
+                      <Button
+                        size="icon" variant="ghost"
+                        className="h-7 w-7 text-red-500 hover:bg-red-50 flex-shrink-0"
+                        onClick={() => borrarGrupo(g.id)}
+                        title="Eliminar grupo"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    <div className="space-y-1">
+                      {(g.producto_grupo_miembros || []).sort((a, b) => a.prioridad - b.prioridad).map(m => (
+                        <div key={m.producto_id} className="flex items-center gap-2 text-[11px] bg-slate-50 rounded px-2 py-1">
+                          {m.prioridad === 1
+                            ? <Star className="w-3 h-3 text-amber-500 fill-amber-500 flex-shrink-0" />
+                            : <ChevronRight className="w-3 h-3 text-slate-400 flex-shrink-0" />}
+                          <span className="font-mono font-bold text-slate-700">{m.productos?.codigo}</span>
+                          <span className="flex-1 truncate text-slate-600">{m.productos?.descripcion}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <p className="text-[10px] text-slate-500 mr-auto">
+              Total grupos: <span className="font-bold">{grupos.length}</span>
+            </p>
+            <Button variant="outline" onClick={onCloseVerGrupos}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

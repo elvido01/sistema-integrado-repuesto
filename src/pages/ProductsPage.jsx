@@ -47,6 +47,9 @@ const ProductsPage = ({ extraData }) => {
   const [agrupandoMode, setAgrupandoMode] = useState(false);
   const [seleccionados, setSeleccionados] = useState(() => new Set());  // Set<producto_id>
   const [sugerenciasOpen, setSugerenciasOpen] = useState(false);
+  const [verGruposOpen, setVerGruposOpen] = useState(false);
+  // Mapa { producto_id -> { grupo_id, grupo_nombre, total_miembros } } para badges
+  const [gruposMap, setGruposMap] = useState({});
 
   const toggleSeleccionado = (id) => {
     setSeleccionados(prev => {
@@ -60,6 +63,50 @@ const ProductsPage = ({ extraData }) => {
     setAgrupandoMode(v => !v);
     if (agrupandoMode) limpiarSeleccion();
   };
+
+  // Cargar membresías de grupo para los productos visibles
+  useEffect(() => {
+    if (!products || products.length === 0) { setGruposMap({}); return; }
+    const ids = products.map(p => p.id);
+    let cancel = false;
+    (async () => {
+      try {
+        // 1. Encontrar todas las membresias de estos productos
+        const { data: memberships, error } = await supabase
+          .from('producto_grupo_miembros')
+          .select('producto_id, grupo_id, prioridad')
+          .in('producto_id', ids);
+        if (error || cancel) return;
+        if (!memberships || memberships.length === 0) {
+          setGruposMap({});
+          return;
+        }
+
+        // 2. Cargar los nombres de los grupos involucrados + total de miembros por grupo
+        const grupoIds = Array.from(new Set(memberships.map(m => m.grupo_id)));
+        const [{ data: grupos }, { data: counts }] = await Promise.all([
+          supabase.from('producto_grupos').select('id, nombre').in('id', grupoIds),
+          supabase.from('producto_grupo_miembros').select('grupo_id').in('grupo_id', grupoIds),
+        ]);
+        const totalPorGrupo = {};
+        (counts || []).forEach(r => { totalPorGrupo[r.grupo_id] = (totalPorGrupo[r.grupo_id] || 0) + 1; });
+        const grupoNombre = {};
+        (grupos || []).forEach(g => { grupoNombre[g.id] = g.nombre; });
+
+        const map = {};
+        memberships.forEach(m => {
+          map[m.producto_id] = {
+            grupo_id:        m.grupo_id,
+            grupo_nombre:    grupoNombre[m.grupo_id] || 'Grupo',
+            prioridad:       m.prioridad,
+            total_miembros:  totalPorGrupo[m.grupo_id] || 1,
+          };
+        });
+        if (!cancel) setGruposMap(map);
+      } catch (_) { /* silencioso */ }
+    })();
+    return () => { cancel = true; };
+  }, [products]);
 
   const {
     marcas: catalogMarcas = [],
@@ -615,6 +662,7 @@ const ProductsPage = ({ extraData }) => {
             agrupandoMode={agrupandoMode}
             onToggleAgrupar={toggleAgrupar}
             onSugerencias={() => setSugerenciasOpen(true)}
+            onVerGrupos={() => setVerGruposOpen(true)}
           />
         </div>
 
@@ -657,6 +705,7 @@ const ProductsPage = ({ extraData }) => {
             agrupandoMode={agrupandoMode}
             seleccionados={seleccionados}
             onToggleSeleccion={toggleSeleccionado}
+            gruposMap={gruposMap}
           />
 
           <ProductTableFooter
@@ -674,9 +723,11 @@ const ProductsPage = ({ extraData }) => {
         seleccionados={seleccionados}
         productos={products}
         onCancelar={() => { setAgrupandoMode(false); limpiarSeleccion(); }}
-        onGrupoCreado={() => { limpiarSeleccion(); /* recargar productos por si cambia algo */ }}
+        onGrupoCreado={() => { limpiarSeleccion(); fetchProducts?.(); /* refrescar gruposMap */ }}
         sugerenciasOpen={sugerenciasOpen}
         onCloseSugerencias={() => setSugerenciasOpen(false)}
+        verGruposOpen={verGruposOpen}
+        onCloseVerGrupos={() => setVerGruposOpen(false)}
       />
 
       {/* Modal principal */}

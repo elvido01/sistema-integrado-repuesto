@@ -12,6 +12,7 @@ const ProductTable = ({
   products, loading, onEdit, onDelete, onChangeCode,
   selectedProduct, onSelectProduct, onPrintLabel, onImageStudio, onToggleEcommerce,
   agrupandoMode = false, seleccionados, onToggleSeleccion,
+  gruposMap = {},
 }) => {
   const { toast } = useToast();
   const [sendingToOrder, setSendingToOrder] = useState(null);
@@ -121,7 +122,30 @@ const ProductTable = ({
                           />
                         </TableCell>
                       )}
-                      <TableCell className="font-mono text-sm">{product.codigo}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        <div className="flex items-center gap-1.5">
+                          <span>{product.codigo}</span>
+                          {gruposMap[product.id] && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full bg-purple-100 text-purple-700 text-[9px] font-bold whitespace-nowrap cursor-help"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  🔗 {gruposMap[product.id].total_miembros}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs font-bold">{gruposMap[product.id].grupo_nombre}</p>
+                                <p className="text-[10px] text-slate-500">
+                                  {gruposMap[product.id].total_miembros} equivalentes
+                                  {gruposMap[product.id].prioridad === 1 && ' · ⭐ Preferido'}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-sm">{product.referencia || '-'}</TableCell>
                       <TableCell className="text-sm">{product.descripcion}</TableCell>
                       <TableCell className="text-right font-mono text-sm font-semibold text-green-600">
