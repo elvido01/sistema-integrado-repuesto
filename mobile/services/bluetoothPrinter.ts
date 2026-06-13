@@ -273,7 +273,7 @@ function strToBytes(s: string): number[] {
             'Á':0xb5,'É':0x90,'Í':0xd6,'Ó':0xe0,'Ú':0xe9,
             'ñ':0xa4,'Ñ':0xa5,
             'ü':0x81,'Ü':0x9a,
-            '¿':0xa8,'¡':0xad,'°':0xf8,'°':0xf8,
+            '¿':0xa8,'¡':0xad,'°':0xf8,
         };
         out.push(map[ch] ?? 0x3f); // ? si no esta en el map
     }

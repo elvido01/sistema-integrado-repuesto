@@ -121,6 +121,8 @@ type ReciboGuardado = {
   cliente: ClienteRecibo | null;
   empresa: EmpresaRecibo | null;
   facturas: FacturaPendiente[];
+  balanceAnterior: number;
+  balanceActual: number;
   totalBalance: number;
   totalPago: number;
   formaPago: {
@@ -321,24 +323,32 @@ export default function ReciboIngresoMobileScreen() {
       const pad = Math.max(0, Math.floor((W - text.length) / 2));
       return ' '.repeat(pad) + text;
     };
-    const padRight = (s: string, n: number) => {
-      const text = clean(s);
-      return text.length >= n ? text.slice(0, n) : text + ' '.repeat(n - text.length);
+    const leftRight = (left: string, right: string) => {
+      const l = clean(left);
+      const r = clean(right);
+      const spaces = Math.max(1, W - l.length - r.length);
+      return l + ' '.repeat(spaces) + r;
     };
-    const padLeft = (s: string, n: number) => {
-      const text = clean(s);
-      return text.length >= n ? text.slice(0, n) : ' '.repeat(n - text.length) + text;
+    const padRight = (value: string, width: number) => {
+      const text = clean(value);
+      return text.length >= width ? text.slice(0, width) : text + ' '.repeat(width - text.length);
     };
+    const padLeft = (value: string, width: number) => {
+      const text = clean(value);
+      return text.length >= width ? text.slice(0, width) : ' '.repeat(width - text.length) + text;
+    };
+    const docRow = (ref: string, balance: string, paid: string) =>
+      padRight(ref, 9) + padLeft(balance, 10) + padLeft(paid, W - 19);
     const empresaNombre = clean(recibo.empresa?.razon_social || recibo.empresa?.nombre || 'REPUESTOS MORLA');
     const dir1 = clean(recibo.empresa?.direccion1);
     const dir2 = clean(recibo.empresa?.direccion2);
     const tel = clean(recibo.empresa?.telefono);
     const rnc = clean(recibo.empresa?.rnc);
     const docs = recibo.facturas.filter((f) => Number(f.abono || 0) > 0);
-    const balanceActualTicket = Math.max(0, Number(recibo.totalBalance || 0) - Number(recibo.totalPago || 0));
-    const idW = 10;
-    const balW = 11;
-    const payW = W - idW - balW;
+    const balanceAnteriorTicket = Number(recibo.balanceAnterior ?? recibo.totalBalance ?? 0);
+    const balanceActualTicket = Number(
+      recibo.balanceActual ?? Math.max(0, balanceAnteriorTicket - Number(recibo.totalPago || 0))
+    );
 
     let t = '```\n';
     t += center(empresaNombre) + '\n';
@@ -346,40 +356,44 @@ export default function ReciboIngresoMobileScreen() {
     if (dir2) t += center(dir2) + '\n';
     if (tel) t += center(tel) + '\n';
     if (rnc) t += center(`RNC: ${rnc}`) + '\n';
-    t += center(`Recibo #${clean(recibo.numero)}`) + '\n';
-    t += center(`Fecha:${recibo.fecha}  Valido`) + '\n';
-    t += center(clean(recibo.cliente?.nombre || 'CLIENTE')) + '\n';
-    t += `Monto:${fmt(recibo.totalPago)}\n`;
+    t += center('RECIBO DE INGRESO') + '\n\n';
+    t += leftRight(`No. Recibo: ${clean(recibo.numero)}`, recibo.fecha) + '\n';
+    t += `CLIENTE: ${clean(recibo.cliente?.nombre || 'CLIENTE').toUpperCase()}\n`;
     t += '-'.repeat(W) + '\n';
-    t += padRight('ID Doc.', idW) + padLeft('Balance', balW) + padLeft('Monto Pago', payW) + '\n';
-    t += '-'.repeat(W) + '\n';
+    t += 'FACTURAS ABONADAS:\n';
+    t += docRow('REFER.', 'BALANCE', 'MONTO PAGADO') + '\n';
     docs.forEach((f) => {
-      t += padRight(f.numero || f.referencia || 'DOC', idW)
-        + padLeft(fmt(f.monto_pendiente), balW)
-        + padLeft(fmt(f.abono), payW)
-        + '\n';
+      t += docRow(f.numero || f.referencia || 'DOC', fmt(f.monto_pendiente), fmt(f.abono)) + '\n';
     });
     t += '-'.repeat(W) + '\n';
-    t += padRight('Totales:', idW)
-      + padLeft(fmt(recibo.totalBalance), balW)
-      + padLeft(fmt(recibo.totalPago), payW)
-      + '\n';
-    t += 'FORMA DE PAGO:\n';
-    t += `${clean(recibo.formaPago.forma).toUpperCase()}\n`;
+    t += 'DETALLE DE PAGO:\n';
     if (recibo.formaPago.forma === 'Tarjeta') {
-      t += `MONTO TC:${fmt(recibo.formaPago.monto)} NUM:${clean(recibo.formaPago.referencia)}\n`;
+      t += leftRight(
+        clean(recibo.formaPago.referencia)
+          ? `TARJETA (${clean(recibo.formaPago.referencia)})`
+          : 'TARJETA',
+        fmt(recibo.formaPago.monto)
+      ) + '\n';
     } else if (recibo.formaPago.forma === 'Transferencia') {
-      t += `TRANSF:${fmt(recibo.formaPago.monto)} REF:${clean(recibo.formaPago.referencia)}\n`;
+      t += leftRight(
+        clean(recibo.formaPago.referencia)
+          ? `TRANSFERENCIA (${clean(recibo.formaPago.referencia)})`
+          : 'TRANSFERENCIA',
+        fmt(recibo.formaPago.monto)
+      ) + '\n';
     } else {
-      t += `EFECTIVO:${fmt(recibo.formaPago.monto)}\n`;
+      t += leftRight('EFECTIVO', fmt(recibo.formaPago.monto)) + '\n';
     }
     if (recibo.formaPago.banco) t += `BANCO: ${clean(recibo.formaPago.banco)}\n`;
     if (recibo.formaPago.observaciones) t += `${clean(recibo.formaPago.observaciones)}\n`;
-    t += `Balance actual: ${fmt(balanceActualTicket)}\n`;
+    t += '-'.repeat(W) + '\n';
+    t += leftRight('Balance Anterior:', fmt(balanceAnteriorTicket)) + '\n';
+    t += leftRight('TOTAL PAGADO:', fmt(recibo.totalPago)) + '\n';
+    t += leftRight('Balance Actual:', fmt(balanceActualTicket)) + '\n';
     t += '\n\n';
     t += center('________________________') + '\n';
     t += center('Firma') + '\n';
-    t += center('Gracias por su compra') + '\n';
+    t += center('*** GRACIAS POR SU PAGO ***') + '\n';
     t += center('Motoflow Mobile') + '\n';
     t += '```';
     return t;
@@ -530,7 +544,9 @@ export default function ReciboIngresoMobileScreen() {
         cliente,
         empresa,
         facturas: facturas.map((f) => ({ ...f })),
-        totalBalance: totalBalanceSeleccionado,
+        balanceAnterior,
+        balanceActual,
+        totalBalance: balanceAnterior,
         totalPago: totalAbonos,
         formaPago: {
           id: 1,
@@ -804,14 +820,30 @@ export default function ReciboIngresoMobileScreen() {
           selected: true,
         };
       });
+      let currentClientBalance = 0;
+      const receiptClientId = row.clientes?.id || cliente?.id;
+      if (receiptClientId) {
+        try {
+          const datos = await fetchDatosClienteRecibo(receiptClientId);
+          currentClientBalance = Number(datos.balance_anterior || 0);
+        } catch {
+          currentClientBalance = Math.max(
+            0,
+            facturasRecibo.reduce((sum, f) => sum + Number(f.monto_pendiente || 0), 0) - Number(row.monto_pagado || 0)
+          );
+        }
+      }
+      const totalPagoRecibo = Number(row.monto_pagado || 0);
       setReciboPreview({
         numero: row.numero || '',
         fecha: compactDate(row.fecha),
         cliente: row.clientes || cliente,
         empresa,
         facturas: facturasRecibo,
-        totalBalance: facturasRecibo.reduce((sum, f) => sum + Number(f.monto_pendiente || 0), 0),
-        totalPago: Number(row.monto_pagado || 0),
+        balanceAnterior: currentClientBalance + totalPagoRecibo,
+        balanceActual: currentClientBalance,
+        totalBalance: currentClientBalance + totalPagoRecibo,
+        totalPago: totalPagoRecibo,
         formaPago: {
           id: Number(forma.id || 1),
           forma: forma.forma || 'Efectivo',
