@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer } from 'lucide-react-native';
+import { LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 export default function MasScreen() {
@@ -10,6 +10,7 @@ export default function MasScreen() {
 
   const menuItems = [
     { title: 'Scanner', icon: Barcode, route: '/scanner', color: '#8b5cf6' },
+    { title: 'Recibo de Ingreso', icon: Receipt, route: '/recibo-ingreso', color: '#1d4ed8' },
     { title: 'Orden de Compra', icon: FileText, route: '/(tabs)/orden-compra', color: '#1f2937' },
     { title: 'Ubicación de Productos', icon: MapPin, route: '/ubicacion', color: '#10b981' },
     { title: 'Actualizar Existencia', icon: Boxes, route: '/existencia', color: '#b45309' },

@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { Barcode, ShoppingCart, FileText, Search, MapPin, ListOrdered, ClipboardList, Boxes } from 'lucide-react-native';
+import { Barcode, ShoppingCart, FileText, Search, MapPin, ListOrdered, ClipboardList, Boxes, Receipt } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 export default function DashboardScreen() {
@@ -12,6 +12,7 @@ export default function DashboardScreen() {
     { title: 'Catalogo', icon: Search, route: '/(tabs)/catalogo', color: 'bg-accent-green' },
     { title: 'Cotizar', icon: FileText, route: '/(tabs)/cotizaciones', color: 'bg-orange-500' },
     { title: 'Pedido', icon: ListOrdered, route: '/(tabs)/pedidos', color: 'bg-emerald-600' },
+    { title: 'Recibo Ingreso', icon: Receipt, route: '/recibo-ingreso', color: 'bg-blue-700' },
     { title: 'Orden Compra', icon: ClipboardList, route: '/(tabs)/orden-compra', color: 'bg-slate-800' },
     { title: 'Escanear', icon: Barcode, route: '/scanner', color: 'bg-purple-500' },
   ];
