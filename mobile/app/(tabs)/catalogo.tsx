@@ -310,6 +310,10 @@ export default function CatalogoScreen() {
 
   const first6 = (s?: string | null) => (s ? String(s).slice(0, 6) : '');
   const last6 = (s?: string | null) => (s ? String(s).slice(-6) : '');
+  const shortLocation = (s?: string | null) => {
+    const value = String(s || '').trim();
+    return value || '-';
+  };
 
   const renderItem = useCallback(({ item }: { item: any }) => {
     const exist = Number(item.existencia) || 0;
@@ -334,22 +338,29 @@ export default function CatalogoScreen() {
           </Text>
         </View>
 
-        {/* Fila 2: referencia (ultimos 6) | existencia | precio1 | precio2 */}
+        {/* Fila 2: referencia | ubicacion | existencia | precio1 | precio2 */}
         <View className="flex-row items-center mt-0.5">
           <Text
-            className="text-gray-600 text-[12px] flex-[1.4]"
+            className="text-gray-600 text-[12px] flex-[1.15]"
             numberOfLines={1}
             ellipsizeMode="tail"
           >
             {last6(item.referencia)}
           </Text>
-          <Text className={`font-bold text-[14px] text-right flex-1 ${exist > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+          <Text
+            className="text-gray-500 font-semibold text-[12px] flex-[1.15] pl-1"
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {shortLocation(item.ubicacion)}
+          </Text>
+          <Text className={`font-bold text-[14px] text-center flex-[0.55] ${exist > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
             {exist}
           </Text>
-          <Text className="font-bold text-[14px] text-right flex-[1.3] text-emerald-600">
+          <Text className="font-bold text-[14px] text-right flex-[1.2] text-emerald-600">
             {fmtMoney(item.precio_venta_1)}
           </Text>
-          <Text className="font-bold text-[14px] text-right flex-[1.3] text-emerald-600">
+          <Text className="font-bold text-[14px] text-right flex-[1.2] text-emerald-600">
             {fmtMoney(item.precio_venta_2 || item.precio_venta_1)}
           </Text>
         </View>

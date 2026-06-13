@@ -6,6 +6,7 @@ export interface Producto {
   codigo: string;
   descripcion: string;
   referencia: string | null;
+  ubicacion?: string | null;
   existencia: number;
   precio_venta_1: number;
   precio_venta_2: number;
@@ -61,6 +62,7 @@ export async function fetchProductos(
       codigo: p.codigo,
       descripcion: p.descripcion,
       referencia: p.referencia,
+      ubicacion: p.ubicacion || null,
       existencia: Number(p.existencia) || 0,
       precio_venta_1: precio1,
       precio_venta_2: precio2,
