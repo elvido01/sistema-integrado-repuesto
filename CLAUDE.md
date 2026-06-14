@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **For deep context** (architecture, DB schema, modules, business rules, RLS, integrations) read [`docs/`](docs/). Especially [`docs/README.md`](docs/README.md) as index. ADRs in [`docs/DECISIONS/`](docs/DECISIONS/).
+
 ## Commands
 
 ```bash
