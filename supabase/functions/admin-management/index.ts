@@ -71,8 +71,51 @@ Deno.serve(async (req) => {
                 });
             }
 
-            // Use caller's tenant_id, or the explicitly provided one (for superadmin creating in another tenant)
-            const callerTenantId = profile?.tenant_id || requestedTenantId || null;
+            // Fase 0.3: bloquear tenant override no autorizado.
+            // - admin normal: solo puede crear usuarios en su propio tenant
+            // - superadmin: puede crear en otro tenant pero se audita
+            const isSuperadmin = !!profile?.is_superadmin;
+            const requestsOtherTenant =
+                requestedTenantId &&
+                profile?.tenant_id &&
+                requestedTenantId !== profile.tenant_id;
+
+            if (requestsOtherTenant && !isSuperadmin) {
+                return new Response(
+                    JSON.stringify({
+                        error: 'Forbidden: solo super admin puede crear usuarios en otro tenant',
+                    }),
+                    {
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        status: 403,
+                    }
+                );
+            }
+
+            // Resolucion del tenant destino:
+            //  - admin: siempre profile.tenant_id (ignora cualquier requestedTenantId)
+            //  - superadmin sin tenant propio: usa requestedTenantId (caso onboarding)
+            //  - superadmin con tenant propio: usa requestedTenantId si vino, sino su tenant
+            const callerTenantId = isSuperadmin
+                ? requestedTenantId || profile?.tenant_id || null
+                : profile?.tenant_id || null;
+
+            if (!callerTenantId) {
+                return new Response(
+                    JSON.stringify({ error: 'No se pudo resolver tenant destino para el nuevo usuario' }),
+                    {
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        status: 400,
+                    }
+                );
+            }
+
+            // Audit log cuando superadmin opera cross-tenant
+            if (isSuperadmin && requestsOtherTenant) {
+                console.log(
+                    `[admin-management][AUDIT] superadmin ${user.id} (tenant ${profile?.tenant_id ?? 'none'}) crea usuario en tenant ${callerTenantId}`
+                );
+            }
 
             // Create user via admin API → auto-confirms email, no email sent
             const { data: newUser, error: createError } = await supabaseClient.auth.admin.createUser({
