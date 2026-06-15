@@ -1,21 +1,10 @@
 import { supabase } from '@/lib/customSupabaseClient';
 import { addDays } from 'date-fns';
 import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { normalizeTaxRate, calculateLineAmount } from '@/lib/taxUtils';
 
-const normalizeTaxRate = (value) => {
-    const raw = parseFloat(value) || 0;
-    return raw > 1 ? raw / 100 : raw;
-};
-
-const calculateDetailImporte = (detalle, aplicarItbis = true) => {
-    const cantidad = parseFloat(detalle.cantidad) || 0;
-    const precio = parseFloat(detalle.precio) || 0;
-    const descPct = (parseFloat(detalle.descuento_pct) || 0) / 100;
-    const itbisPct = normalizeTaxRate(detalle.itbis_pct);
-    const subtotal = cantidad * precio;
-    const base = subtotal - (subtotal * descPct);
-    return base + (aplicarItbis ? base * itbisPct : 0);
-};
+const calculateDetailImporte = (detalle, aplicarItbis = true) =>
+    calculateLineAmount(detalle, aplicarItbis);
 
 /**
  * Envía un producto a una orden de compra pendiente del suplidor.

@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog, Shuffle } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { normalizeTaxRate } from '@/lib/taxUtils';
 import { useNavigate } from 'react-router-dom';
 import { usePanels } from '@/contexts/PanelContext';
 import { useCompras } from '@/contexts/ComprasContext';
@@ -41,11 +42,6 @@ import { useCatalogData } from '@/hooks/useSupabase';
 import { onProveedoresActualizado, onInventarioActualizado } from '@/lib/catalogEvents';
 
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
-
-const normalizeTaxRate = (value) => {
-  const raw = parseFloat(value) || 0;
-  return raw > 1 ? raw / 100 : raw;
-};
 
 const getDetalleBase = (detalle) => {
   const cantidad = parseFloat(detalle.cantidad) || 0;
