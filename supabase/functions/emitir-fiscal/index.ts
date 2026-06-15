@@ -2178,8 +2178,10 @@ Deno.serve(async (req) => {
       const respuesta = await enviarAnulacion(xmlFirmado, auth.token, ambiente);
 
       // 4. Marcar las filas en documentos_fiscales como anuladas
-      // (todos los e-NCF en el rango)
-      await supabase
+      // Fase 0.7: NO sobreescribir filas en estados terminales DGII
+      // (aceptado / aceptado_condicional). Anular un e-CF ya aceptado
+      // por DGII tiene implicaciones legales y no debe pasar silencioso.
+      const { data: anuladas, error: updErr } = await supabase
         .from("documentos_fiscales")
         .update({
           estado: "anulado",
@@ -2188,7 +2190,29 @@ Deno.serve(async (req) => {
         })
         .eq("tenant_id", tenantId)
         .gte("encf", ncf_inicial)
-        .lte("encf", ncf_final || ncf_inicial);
+        .lte("encf", ncf_final || ncf_inicial)
+        .not("estado_dgii", "in", "(aceptado,aceptado_condicional)")
+        .select("id, encf, estado_dgii");
+
+      if (updErr) {
+        console.error("[dgii_anular_ecf] error actualizando documentos_fiscales:", updErr);
+      }
+
+      // Recolectar e-NCFs que NO se actualizaron (ya estaban aceptados)
+      const { data: bloqueados } = await supabase
+        .from("documentos_fiscales")
+        .select("encf, estado_dgii")
+        .eq("tenant_id", tenantId)
+        .gte("encf", ncf_inicial)
+        .lte("encf", ncf_final || ncf_inicial)
+        .in("estado_dgii", ["aceptado", "aceptado_condicional"]);
+
+      if (bloqueados && bloqueados.length > 0) {
+        console.warn(
+          `[dgii_anular_ecf] AVISO: ${bloqueados.length} e-CF ya aceptados por DGII NO fueron anulados localmente. Anulacion sigue valida en DGII; revisar manualmente:`,
+          bloqueados.map(b => b.encf).join(", ")
+        );
+      }
 
       return new Response(JSON.stringify({
         ok: true,
@@ -2196,6 +2220,9 @@ Deno.serve(async (req) => {
         ncf_inicial,
         ncf_final: ncf_final || ncf_inicial,
         respuesta,
+        anuladas_localmente: anuladas?.length ?? 0,
+        ya_aceptadas_dgii_no_modificadas: bloqueados?.length ?? 0,
+        bloqueados: bloqueados?.map(b => b.encf) ?? [],
       }), { status: 200, headers: corsHeaders });
     }
 
