@@ -1,4 +1,5 @@
-import React, { createContext, useState, useContext } from 'react';
+import React, { useState } from 'react';
+import { PanelContext, usePanels } from './panelCore';
 import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
@@ -132,7 +133,7 @@ const componentMapping = {
   'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
 };
 
-const PanelContext = createContext();
+export { PanelContext, usePanels };  // re-export desde panelCore para no romper imports
 
 export const PanelProvider = ({ children }) => {
   const [panels, setPanels] = useState([{ id: 'inicio', ...componentMapping['inicio'] }]);
@@ -193,11 +194,5 @@ export const PanelProvider = ({ children }) => {
   );
 };
 
-export const usePanels = () => {
-  const context = useContext(PanelContext);
-  if (!context) {
-    throw new Error('usePanels must be used within a PanelProvider');
-  }
-  return context;
-};
+// usePanels viene re-exportado desde panelCore.js arriba.
 

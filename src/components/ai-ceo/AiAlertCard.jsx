@@ -1,7 +1,7 @@
 import React from 'react';
 import { Package, CreditCard, Wrench, ShoppingCart, TrendingUp, BarChart2, Activity, Eye, X, CheckCircle2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { usePanels } from '@/contexts/PanelContext';
+import { usePanels } from '@/contexts/panelCore';
 import AiRiskBadge from './AiRiskBadge';
 
 const ALERT_TYPE_TO_PANEL = {

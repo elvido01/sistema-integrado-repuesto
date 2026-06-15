@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { usePanels } from '@/contexts/PanelContext';
+import { usePanels } from '@/contexts/panelCore';
 import { canAccess } from '@/lib/permissionsHelper';
 import { ClipboardList, ChevronRight } from 'lucide-react';
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Activity, BellRing, Bike, LayoutDashboard, MapPinned, RadioTower, WalletCards } from 'lucide-react';
-import { usePanels } from '@/contexts/PanelContext';
+import { usePanels } from '@/contexts/panelCore';
 
 const tabs = [
   { id: 'gps-dashboard', label: 'Dashboard', icon: LayoutDashboard },
