@@ -113,7 +113,9 @@ BEGIN
 END $$;
 
 -- === TEST 6: Funciones SECURITY DEFINER que no mencionan tenant ===
--- Excluye: get_user_tenant misma, helpers de cron, endpoints publicos
+-- Excluimos falsos positivos legítimos confirmados en auditoria 2026-06-15
+-- (ver docs/architecture-analysis/AUDIT-2026-06-15.md y memoria de smoke tests).
+-- Si una funcion aparece aqui, es alerta REAL — revisar y agregar tenant check.
 SELECT
   '[TEST 6] SECURITY DEFINER sin tenant check (revisar)' AS test,
   p.proname AS func_name,
@@ -124,8 +126,23 @@ WHERE n.nspname = 'public'
   AND p.prosecdef = true
   AND position('tenant_id' IN pg_get_functiondef(p.oid)) = 0
   AND position('get_user_tenant' IN pg_get_functiondef(p.oid)) = 0
+  -- Prefijos seguros
   AND p.proname NOT LIKE 'get_user_tenant%'
   AND p.proname NOT LIKE 'cron_%'
   AND p.proname NOT LIKE 'get_store_%'
   AND p.proname NOT LIKE 'get_tenant_por_dominio%'
+  AND p.proname NOT LIKE 'trg_%'                  -- triggers operan sobre NEW
+  AND p.proname NOT LIKE 'fn_%_notify'            -- triggers de notificacion
+  AND p.proname NOT LIKE 'ai_resolve_%'           -- triggers AI
+  -- Whitelist explicita (cada una con razon):
+  AND p.proname NOT IN (
+    'admin_rechazar_pago',                 -- valida is_superadmin (pagos globales SaaS)
+    'admin_aprobar_pago',                  -- idem
+    'admin_get_pagos_pendientes',          -- idem
+    'get_my_role',                         -- basada en auth.uid()
+    'is_admin',                            -- basada en auth.uid()
+    'is_superadmin',                       -- basada en auth.uid()
+    'get_nombres_modelos',                 -- modelos es catalogo global sin tenant_id
+    'suplidor_virtual_expirar_vencidos'    -- cron, GRANT solo a service_role
+  )
 ORDER BY p.proname;
