@@ -93,7 +93,7 @@ export const generateOrderPDF = (order, supplier, details, empresa = {}) => {
     (item.descripcion || '').toUpperCase(),
     formatCurrency(item.precio),
     formatCurrency((item.descuento_pct / 100) * item.precio * item.cantidad),
-    formatCurrency((item.itbis_pct / 100) * (item.precio * item.cantidad * (1 - item.descuento_pct / 100))),
+    formatCurrency(item.itbis_pct * (item.precio * item.cantidad * (1 - item.descuento_pct / 100))),
     formatCurrency(item.importe)
   ]);
 
