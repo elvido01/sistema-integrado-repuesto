@@ -125,3 +125,9 @@ No hay tabla de auditoría general por ahora. Algunos módulos tienen `created_a
 2. **NUNCA** usar `SECURITY DEFINER` sin filtrar por `tenant_id`
 3. **NUNCA** commitear secretos. Si pasa, rotar la credencial inmediatamente
 4. **NUNCA** desactivar RLS en una tabla del dominio aunque sea "temporalmente para una migración" — usar `SECURITY DEFINER` en una RPC controlada
+5. **SIEMPRE** después de `CREATE OR REPLACE FUNCTION ... SECURITY DEFINER`, agregar:
+   ```sql
+   REVOKE EXECUTE ON FUNCTION public.<nombre>(<args>) FROM PUBLIC, anon;
+   GRANT EXECUTE ON FUNCTION public.<nombre>(<args>) TO authenticated;  -- o service_role según uso
+   ```
+   Postgres por default concede a PUBLIC, lo que expone la función a `anon` (cualquier internet). Esto fue la causa del incidente Fase 0.10 (fuga PII en `get_usuarios_panel`, `get_perfiles_con_email`).
