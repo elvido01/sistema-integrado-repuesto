@@ -41,3 +41,9 @@ test_key.pem
 .claude/
 supabase/.temp/
 schema_prod.sql
+
+# graphify-out — knowledge graph (generated, local only)
+graphify-out/
+src/graphify-out/
+graphify-run.log
+graphify-cluster.log
