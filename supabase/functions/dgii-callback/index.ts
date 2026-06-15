@@ -124,6 +124,28 @@ async function procesarArecf(supabase, payload, rawBody) {
 
   const estadoNormalizado = normalizarEstado(estado);
 
+  // Fase 0.9: UPDATE solo si el documento aun NO tiene estado terminal.
+  // Estados terminales (aceptado / aceptado_condicional / rechazado) no
+  // deben sobreescribirse si DGII envia un callback duplicado: preservamos
+  // el arecf_payload y arecf_recibido_at del PRIMER callback (audit trail).
+  const ESTADOS_TERMINALES = ["aceptado", "aceptado_condicional", "rechazado"];
+  const yaTerminal = doc.estado_dgii && ESTADOS_TERMINALES.includes(doc.estado_dgii);
+
+  if (yaTerminal) {
+    console.log(
+      `[dgii-callback] ARECF duplicado para TrackId ${trackId} — doc ya en estado terminal '${doc.estado_dgii}'. NO se sobreescribe.`
+    );
+    return {
+      ok: true,
+      tipo: "ARECF",
+      documento_id: doc.id,
+      trackId,
+      estado: doc.estado_dgii,
+      encf: encf || doc.encf,
+      duplicate_callback_ignored: true,
+    };
+  }
+
   const { error: updErr } = await supabase
     .from("documentos_fiscales")
     .update({
