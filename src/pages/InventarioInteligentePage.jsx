@@ -18,6 +18,7 @@ const InventarioInteligentePage = () => {
   const [loading, setLoading] = useState(false);
   const [productos, setProductos] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
+  const [resumenBd, setResumenBd] = useState(null);
   const [lastSync, setLastSync] = useState(null);
 
   const cargar = useCallback(async () => {
@@ -25,27 +26,55 @@ const InventarioInteligentePage = () => {
     setLoading(true);
     try {
       const desde = subDays(new Date(), 180).toISOString();
-      const [productosRes, movRes] = await Promise.all([
-        supabase.rpc('get_productos_paginados', {
-          p_limit: 5000,
-          p_offset: 0,
-          p_search_term: null,
-          p_marca_filter: null,
-          p_modelo_filter: null,
-          p_include_zero_stock: true,
-        }),
+      const fetchProductos = async () => {
+        const batchSize = 5000;
+        const allProducts = [];
+        let offset = 0;
+        let totalCount = null;
+
+        while (totalCount === null || allProducts.length < totalCount) {
+          const { data, error } = await supabase.rpc('get_productos_paginados', {
+            p_limit: batchSize,
+            p_offset: offset,
+            p_search_term: null,
+            p_marca_filter: null,
+            p_modelo_filter: null,
+            p_include_zero_stock: true,
+          });
+
+          if (error) throw error;
+
+          const page = data || [];
+          allProducts.push(...page);
+          totalCount = page[0]?.total_count ?? allProducts.length;
+
+          if (page.length < batchSize) break;
+          offset += batchSize;
+        }
+
+        return allProducts;
+      };
+
+      const [productosData, movRes, resumenRes] = await Promise.all([
+        fetchProductos(),
         supabase
           .from('inventario_movimientos')
           .select('producto_id, cantidad, costo_unitario, fecha, tipo')
           .gte('fecha', desde)
           .order('fecha', { ascending: false })
           .limit(50000),
+        supabase.rpc('get_inventario_inteligente_resumen'),
       ]);
 
-      if (productosRes.error) throw productosRes.error;
       if (movRes.error) throw movRes.error;
+      if (resumenRes.error) {
+        console.warn('[InventarioInteligente] No se pudo cargar resumen BD:', resumenRes.error.message);
+        setResumenBd(null);
+      } else {
+        setResumenBd((resumenRes.data || [])[0] || null);
+      }
 
-      setProductos((productosRes.data || []).filter(producto => producto.activo !== false));
+      setProductos(productosData.filter(producto => producto.activo !== false));
       setMovimientos(movRes.data || []);
       setLastSync(new Date());
     } catch (error) {
@@ -96,7 +125,7 @@ const InventarioInteligentePage = () => {
     const rows = productos.map(producto => {
       const mov = porProducto[producto.id] || {};
       const stock = n(producto.existencia);
-      const costo = n(mov.ultimoCosto) || n(producto.costo);
+      const costo = n(producto.costo);
       const valorInventario = Math.max(0, stock) * costo;
       const ventaPromedio30 = n(mov.salidas30) / 30;
       const coberturaDias = stock > 0 && ventaPromedio30 > 0 ? stock / ventaPromedio30 : null;
@@ -161,11 +190,11 @@ const InventarioInteligentePage = () => {
     .slice(0, 30), [analisis]);
 
   const resumen = useMemo(() => ({
-    valor: analisis.reduce((sum, p) => sum + p.valorInventario, 0),
+    valor: resumenBd?.valor_real_inventario_actual ?? analisis.reduce((sum, p) => sum + p.valorInventario, 0),
     agotados: analisis.filter(p => p.estado === 'Agotado').length,
     reponer: reponer.length,
     lentos: lentos.length,
-  }), [analisis, reponer.length, lentos.length]);
+  }), [analisis, reponer.length, lentos.length, resumenBd?.valor_real_inventario_actual]);
 
   return (
     <>

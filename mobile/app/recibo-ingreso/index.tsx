@@ -647,6 +647,8 @@ export default function ReciboIngresoMobileScreen() {
               fecha: hydrated?.fecha || f.fecha,
               created_at: hydrated?.created_at || f.fecha,
               total: hydrated?.total || f.total || f.monto_pendiente,
+              monto_pendiente: hydrated?.monto_pendiente ?? f.monto_pendiente ?? 0,
+              monto_pagado: hydrated?.monto_pagado ?? Math.max(0, Number(hydrated?.total || f.total || f.monto_pendiente || 0) - Number(hydrated?.monto_pendiente ?? f.monto_pendiente ?? 0)),
               clientes: hydrated?.clientes || cliente,
               facturas_detalle: hydrated?.facturas_detalle || [],
             };

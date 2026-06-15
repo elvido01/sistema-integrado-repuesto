@@ -32,6 +32,7 @@ export type FacturaEmitidaRecibo = {
   forma_pago?: string | null;
   tipo_pago?: string | null;
   monto_pagado?: number | null;
+  monto_pendiente?: number | null;
   manual_cliente_nombre?: string | null;
   clientes?: ClienteRecibo | null;
   facturas_detalle?: {
@@ -92,6 +93,17 @@ export type EmpresaRecibo = {
 };
 
 const toNumber = (value: unknown) => Number(value || 0);
+
+const normalizeFacturaEmitida = (factura: any): FacturaEmitidaRecibo => {
+  const total = toNumber(factura?.total);
+  const montoPendiente = toNumber(factura?.monto_pendiente ?? factura?.balance);
+  return {
+    ...factura,
+    total,
+    monto_pendiente: montoPendiente,
+    monto_pagado: Math.max(0, total - montoPendiente),
+  } as FacturaEmitidaRecibo;
+};
 
 const nextISODate = (date: string) => {
   const d = new Date(`${String(date || '').slice(0, 10)}T12:00:00`);
@@ -210,7 +222,7 @@ export async function fetchFacturasEmitidasCliente(
     .from('facturas')
     .select(`
       id, numero, fecha, created_at, subtotal, descuento, recargo, itbis, total, forma_pago, tipo_pago,
-      monto_pagado, manual_cliente_nombre,
+      monto_pendiente, manual_cliente_nombre,
       clientes(id, nombre, rnc, telefono, direccion),
       facturas_detalle(id, codigo, descripcion, cantidad, precio, itbis, importe)
     `)
@@ -219,7 +231,7 @@ export async function fetchFacturasEmitidasCliente(
     .order('fecha', { ascending: false });
 
   if (error) throw error;
-  return (data || []) as unknown as FacturaEmitidaRecibo[];
+  return (data || []).map(normalizeFacturaEmitida);
 }
 
 export async function fetchFacturasEmitidasPorIds(ids: string[]): Promise<FacturaEmitidaRecibo[]> {
@@ -229,14 +241,14 @@ export async function fetchFacturasEmitidasPorIds(ids: string[]): Promise<Factur
     .from('facturas')
     .select(`
       id, numero, fecha, created_at, subtotal, descuento, recargo, itbis, total, forma_pago, tipo_pago,
-      monto_pagado, manual_cliente_nombre,
+      monto_pendiente, manual_cliente_nombre,
       clientes(id, nombre, rnc, telefono, direccion),
       facturas_detalle(id, codigo, descripcion, cantidad, precio, itbis, importe)
     `)
     .in('id', ids);
 
   if (error) throw error;
-  return (data || []) as unknown as FacturaEmitidaRecibo[];
+  return (data || []).map(normalizeFacturaEmitida);
 }
 
 export async function fetchRecibosEmitidosCliente(
