@@ -126,6 +126,44 @@ AI CEO ──► motoflow-daily-insights / motoflow-agent / motoflow-compras-adv
               └──► Recomendaciones que se muestran en HomePage
 ```
 
+## Máquinas de estado formalizadas (Fase 3.2 + 3.3)
+
+### `ordenes_compra.estado` — CHECK aplicado
+
+```
+Pendiente ─► Recibida   (al procesar a Compra: ComprasPage)
+Pendiente ─► Anulada    (cancelación manual)
+Recibida  ─► Anulada    (solo admin, raro)
+```
+
+Transiciones NO permitidas: `Pendiente → Pendiente`, `Anulada → *`, `Recibida → Pendiente`.
+
+### `documentos_fiscales.estado` (interno) — CHECK aplicado
+
+```
+procesando ─► emitido         (envío exitoso a DGII, recibe TrackId)
+procesando ─► error           (excepción en cualquier paso)
+emitido    ─► anulado         (dgii_anular_ecf — Fase 0.7 valida estado_dgii)
+error      ─► procesando      (retry)
+```
+
+### `documentos_fiscales.estado_dgii` (respuesta DGII) — CHECK aplicado
+
+```
+NULL          ─► enviado                (al emitir)
+enviado       ─► aceptado | aceptado_condicional | rechazado   (dgii-callback)
+aceptado*     ─► [TERMINAL]             (no se modifica más — Fase 0.9 lo blinda)
+rechazado     ─► [TERMINAL]
+*             ─► anulado                (anular_ecf, respeta terminales — Fase 0.7)
+*             ─► enviado_rfce           (batch RFCE nocturno)
+```
+
+### `documentos_fiscales.emitido_por` (Fase 3.3)
+
+`uuid REFERENCES auth.users(id) ON DELETE SET NULL` — cumple art. 38 NES DGII (trazabilidad user → e-CF).
+
+Filas previas a Fase 3.3 quedan con `NULL` (sin migración retroactiva). Nuevas emisiones lo guardan automáticamente desde `emitir-fiscal` (excepto cron/service_role).
+
 ## Módulos en flujo activo (06/2026)
 
 - **Compra Inteligente v2** (fase A, B, C aplicadas) + Reorganizar por suplidor (recién agregado)

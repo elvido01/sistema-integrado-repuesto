@@ -593,6 +593,9 @@ Deno.serve(async (req) => {
     const isServiceRole = serviceKey && token === serviceKey;
 
     let tenantId;
+    // Fase 3.3: ID del caller para trazabilidad (emitido_por).
+    // En modo service_role queda NULL (cron / system).
+    let callerUserId: string | null = null;
     if (isServiceRole) {
       // Modo cron/system: confiar en body.service_tenant_id o header X-Tenant-Id
       tenantId = body.service_tenant_id || req.headers.get("X-Tenant-Id");
@@ -603,6 +606,7 @@ Deno.serve(async (req) => {
       // Modo usuario normal: validar JWT y leer profile
       const { data: { user }, error: userError } = await supabase.auth.getUser(token);
       if (userError || !user) throw new Error("Token inválido");
+      callerUserId = user.id;
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -689,6 +693,8 @@ Deno.serve(async (req) => {
       }
 
       // 6. Crear registro pendiente
+      // Fase 3.3: guardar emitido_por para trazabilidad (art. 38 NES DGII).
+      // El user.id viene del JWT validado al inicio del request.
       const { data: docFiscal, error: docError } = await supabase
         .from("documentos_fiscales")
         .insert({
@@ -697,6 +703,7 @@ Deno.serve(async (req) => {
           proveedor: integ.proveedor,
           tipo_documento: "factura",
           estado: "procesando",
+          emitido_por: callerUserId,
         })
         .select()
         .single();
