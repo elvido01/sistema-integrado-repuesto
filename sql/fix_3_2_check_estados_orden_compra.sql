@@ -60,12 +60,7 @@ END $$;
 
 -- 5) Documentar transiciones permitidas en comentarios de la columna
 COMMENT ON COLUMN public.ordenes_compra.estado IS
-  'Estados validos (CHECK): Pendiente | Recibida | Anulada. ' ||
-  'Transiciones validas: ' ||
-  'Pendiente -> Recibida (al procesar a Compra), ' ||
-  'Pendiente -> Anulada (cancelacion), ' ||
-  'Recibida -> Anulada (raro, solo via admin). ' ||
-  'NO existen: Pendiente -> Pendiente, Anulada -> *, Recibida -> Pendiente.';
+  'Estados validos (CHECK): Pendiente | Recibida | Anulada. Transiciones: Pendiente->Recibida (procesar a Compra), Pendiente->Anulada (cancelar), Recibida->Anulada (solo admin). NO: Pendiente->Pendiente, Anulada->*, Recibida->Pendiente.';
 
 NOTIFY pgrst, 'reload schema';
 

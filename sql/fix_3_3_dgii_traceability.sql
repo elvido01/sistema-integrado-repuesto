@@ -97,12 +97,10 @@ END $$;
 
 -- 5) Documentar maquina de estados en comentarios de columna
 COMMENT ON COLUMN public.documentos_fiscales.estado IS
-  'Estado interno (CHECK): procesando | emitido | error | anulado. ' ||
-  'Transiciones: procesando -> (emitido | error); emitido -> anulado.';
+  'Estado interno (CHECK): procesando | emitido | error | anulado. Transiciones: procesando -> (emitido | error); emitido -> anulado.';
 
 COMMENT ON COLUMN public.documentos_fiscales.estado_dgii IS
-  'Estado segun DGII (CHECK): enviado | aceptado | aceptado_condicional | rechazado | enviado_rfce | anulado. ' ||
-  'NULL cuando aun no se ha enviado. Solo dgii-callback lo modifica (Fase 0.9).';
+  'Estado segun DGII (CHECK): enviado | aceptado | aceptado_condicional | rechazado | enviado_rfce | anulado. NULL cuando aun no se ha enviado. Solo dgii-callback lo modifica (Fase 0.9).';
 
 NOTIFY pgrst, 'reload schema';
 
