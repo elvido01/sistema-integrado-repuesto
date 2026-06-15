@@ -30,7 +30,10 @@
 -- no existen; la funcion lanza error "relation does not exist" en cualquier llamada)
 DROP FUNCTION IF EXISTS public.bulk_upsert_products(jsonb);
 
--- A.2 REPLACE get_perfiles_con_email — leer de profiles con tenant filter
+-- A.2 REPLACE get_perfiles_con_email — leer de profiles con tenant filter.
+-- Schema real de profiles: id, full_name, role, email, tenant_id, is_superadmin.
+-- 'nombre_completo'/'rol'/'activo' eran nombres de la tabla legacy 'perfiles'.
+-- Mantenemos la signature original para no romper consumidores.
 CREATE OR REPLACE FUNCTION public.get_perfiles_con_email()
 RETURNS TABLE(id uuid, email varchar, nombre_completo text, rol text, activo boolean)
 LANGUAGE sql
@@ -39,12 +42,12 @@ SET search_path TO 'public'
 AS $$
   SELECT
     p.id,
-    u.email::varchar,
-    COALESCE(p.full_name, p.nombre_completo)::text  AS nombre_completo,
-    COALESCE(p.role,      p.rol)::text              AS rol,
-    COALESCE(p.activo, true)                        AS activo
+    COALESCE(p.email, u.email)::varchar AS email,
+    p.full_name::text                   AS nombre_completo,
+    p.role::text                        AS rol,
+    true                                AS activo  -- profiles no tiene flag activo; default true
   FROM public.profiles p
-  JOIN auth.users u ON u.id = p.id
+  LEFT JOIN auth.users u ON u.id = p.id
   WHERE p.tenant_id = public.get_user_tenant()
 $$;
 REVOKE EXECUTE ON FUNCTION public.get_perfiles_con_email() FROM PUBLIC;
@@ -61,14 +64,14 @@ AS $$
   SELECT
     p.id,
     COALESCE(
-      NULLIF(TRIM(COALESCE(p.full_name, p.nombre_completo)), ''),
-      split_part(u.email, '@', 1)
-    )                                                  AS display_name,
-    u.email::text                                      AS email,
-    COALESCE(p.role, p.rol)::text                      AS rol,
-    COALESCE(p.activo, true)                           AS activo
+      NULLIF(TRIM(p.full_name), ''),
+      split_part(COALESCE(p.email, u.email), '@', 1)
+    )::text                                AS display_name,
+    COALESCE(p.email, u.email)::text       AS email,
+    p.role::text                           AS rol,
+    true                                   AS activo
   FROM public.profiles p
-  JOIN auth.users u ON u.id = p.id
+  LEFT JOIN auth.users u ON u.id = p.id
   WHERE p.tenant_id = public.get_user_tenant()
 $$;
 REVOKE EXECUTE ON FUNCTION public.get_usuarios_panel() FROM PUBLIC;
