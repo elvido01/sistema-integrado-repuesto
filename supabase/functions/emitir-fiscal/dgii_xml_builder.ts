@@ -128,20 +128,46 @@ const itemMontoBase = (it) => {
   return Number((cantidad * precio - descuento).toFixed(2));
 };
 
+// Normaliza itbis_pct: acepta 0.18 (decimal) o 18 (porcentaje), siempre retorna decimal
+const normalizeRateTo01 = (value) => {
+  const raw = Number(value);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return raw > 1 ? raw / 100 : raw;
+};
+
 const reconcileTotalesWithItems = (totales, items) => {
   if (!Array.isArray(items) || !items.length) return totales || {};
   const next = { ...(totales || {}) };
-  const montoGravado18 = items.reduce((sum, it) =>
-    String(it.indicador_facturacion || "1") === "1" ? sum + itemMontoBase(it) : sum, 0);
-  const montoExento = items.reduce((sum, it) =>
-    String(it.indicador_facturacion || "1") === "4" ? sum + itemMontoBase(it) : sum, 0);
-  const itbis18 = Number((montoGravado18 * 0.18).toFixed(2));
+
+  // Fase 0.4: calcular el ITBIS sumando item por item con su itbis_pct real,
+  // en lugar de hardcodear 0.18 sobre el gravado total. Esto:
+  //  1) Respeta tasas mixtas (8% / 16% / 18%) si llegan
+  //  2) Calcula igual al 18% cuando todos son 18% (caso actual)
+  //  3) Evita drift de redondeo respecto al detalle linea por linea
+  let montoGravado18 = 0;
+  let itbis18 = 0;
+  let montoExento = 0;
+
+  for (const it of items) {
+    const indicador = String(it.indicador_facturacion || "1");
+    const base = itemMontoBase(it);
+    if (indicador === "1") {
+      const rate = normalizeRateTo01(it.itbis_pct ?? it.itbis_porcentaje ?? 0.18);
+      montoGravado18 += base;
+      itbis18 += Number((base * rate).toFixed(2));
+    } else if (indicador === "4") {
+      montoExento += base;
+    }
+  }
+
+  itbis18 = Number(itbis18.toFixed(2));
+
   next.monto_gravado_total = Number(montoGravado18.toFixed(2));
   next.monto_gravado_18 = Number(montoGravado18.toFixed(2));
   next.monto_exento = Number(montoExento.toFixed(2));
-  next.itbis_total = montoGravado18 > 0 ? itbis18 : null;
   next.total_itbis_18 = montoGravado18 > 0 ? itbis18 : 0;
   next.monto_total = Number((montoGravado18 + montoExento + itbis18).toFixed(2));
+  // itbis_total sin sufijo se elimina: DGII solo acepta TotalITBIS1 dentro de <Totales>
   return next;
 };
 
@@ -302,8 +328,7 @@ function buildTotalesXml(t) {
       ${t.monto_gravado_total ? `<MontoGravadoTotal>${fmtMoney(t.monto_gravado_total)}</MontoGravadoTotal>` : ""}
       ${t.monto_gravado_18 ? `<MontoGravadoI1>${fmtMoney(t.monto_gravado_18)}</MontoGravadoI1>` : ""}
       ${t.monto_exento ? `<MontoExento>${fmtMoney(t.monto_exento)}</MontoExento>` : ""}
-      ${t.itbis_total != null ? `<ITBIS1>18</ITBIS1>` : ""}
-      ${t.itbis_total != null ? `<TotalITBIS>${fmtMoney(t.itbis_total)}</TotalITBIS>` : ""}
+      ${t.total_itbis_18 ? `<ITBIS1>18</ITBIS1>` : ""}
       ${t.total_itbis_18 ? `<TotalITBIS1>${fmtMoney(t.total_itbis_18)}</TotalITBIS1>` : ""}
       <MontoTotal>${fmtMoney(t.monto_total)}</MontoTotal>
       ${t.monto_periodo != null ? `<MontoPeriodo>${fmtMoney(t.monto_periodo)}</MontoPeriodo>` : ""}
@@ -866,7 +891,6 @@ function buildXmlTipo46(input) {
       <MontoGravadoTotal>${fmtMoney(montoGravadoI3)}</MontoGravadoTotal>
       <MontoGravadoI3>${fmtMoney(montoGravadoI3)}</MontoGravadoI3>
       <ITBIS3>0</ITBIS3>
-      <TotalITBIS>0.00</TotalITBIS>
       <TotalITBIS3>0.00</TotalITBIS3>
       <MontoTotal>${fmtMoney(montoTotal)}</MontoTotal>
       <MontoPeriodo>${fmtMoney(montoTotal)}</MontoPeriodo>
@@ -1020,19 +1044,23 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
       cantidad: cantidad,
       precio_unitario: precioBase,
       descuento_monto: descuento,
-      indicador_facturacion: aplicaItbis ? "1" : "4", // 1=gravado 18%, 4=exento
+      indicador_facturacion: aplicaItbis ? "1" : "4", // 1=gravado, 4=exento
       monto_item: Number(monto.toFixed(2)),
+      itbis_pct: aplicaItbis ? (isFinite(itbisPct) && itbisPct > 0 ? itbisPct : 0.18) : 0,
       unidad_medida: "43", // unidad por defecto
     };
   });
 
-  // Totales — si el importe en BD ya incluye ITBIS, extraerlo al 18%
+  // Fase 0.4: respetar itbis_pct por item en lugar de hardcoded 0.18
   const totalGravado = items.reduce((s, it) =>
     it.indicador_facturacion === "1" ? s + it.monto_item : s, 0);
   const totalExento = items.reduce((s, it) =>
     it.indicador_facturacion === "4" ? s + it.monto_item : s, 0);
-  const totalItbis = items.reduce((s, it) =>
-    it.indicador_facturacion === "1" ? s + Number((it.monto_item * 0.18).toFixed(2)) : s, 0);
+  const totalItbis = items.reduce((s, it) => {
+    if (it.indicador_facturacion !== "1") return s;
+    const rate = it.itbis_pct > 1 ? it.itbis_pct / 100 : it.itbis_pct;
+    return s + Number((it.monto_item * rate).toFixed(2));
+  }, 0);
   const total = totalGravado + totalExento + totalItbis;
 
   console.log("[facturaToEcfInput] Calculated totals:", { totalGravado, totalExento, totalItbis, total });
@@ -1125,16 +1153,21 @@ export function notaToEcfInput(nota, facturaOriginal, cliente, configEmisor, enc
       descuento_monto: descuento,
       indicador_facturacion: aplicaItbis ? "1" : "4",
       monto_item: Number(monto.toFixed(2)),
+      itbis_pct: aplicaItbis ? (isFinite(itbisPct) && itbisPct > 0 ? itbisPct : 0.18) : 0,
       unidad_medida: "43",
     };
   });
 
+  // Fase 0.4: respetar itbis_pct por item
   const totalGravado = items.reduce((s, it) =>
     it.indicador_facturacion === "1" ? s + it.monto_item : s, 0);
   const totalExento = items.reduce((s, it) =>
     it.indicador_facturacion === "4" ? s + it.monto_item : s, 0);
-  const totalItbis = items.reduce((s, it) =>
-    it.indicador_facturacion === "1" ? s + Number((it.monto_item * 0.18).toFixed(2)) : s, 0);
+  const totalItbis = items.reduce((s, it) => {
+    if (it.indicador_facturacion !== "1") return s;
+    const rate = it.itbis_pct > 1 ? it.itbis_pct / 100 : it.itbis_pct;
+    return s + Number((it.monto_item * rate).toFixed(2));
+  }, 0);
   const total = totalGravado + totalExento + totalItbis;
 
   // Formato de fecha del NCF original: DD-MM-YYYY (lo que pide DGII)
