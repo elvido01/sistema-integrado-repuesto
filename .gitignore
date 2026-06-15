@@ -47,3 +47,7 @@ graphify-out/
 src/graphify-out/
 graphify-run.log
 graphify-cluster.log
+
+# Obsidian — workspace local del vault
+vault/.obsidian/workspace*
+vault/.obsidian/cache

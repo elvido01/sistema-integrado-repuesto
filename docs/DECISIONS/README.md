@@ -26,3 +26,4 @@ Qué se gana, qué se pierde, qué queda por hacer.
 | Fecha | Título |
 |---|---|
 | 2026-06-14 | [Equivalentes con scoring + orden automática + reorganización por suplidor](2026-06-14-equivalentes-orden-automatica.md) |
+| 2026-06-15 | [Auditoría de seguridad y arquitectura (Fase 0-3)](2026-06-15-auditoria-seguridad-arquitectura.md) |

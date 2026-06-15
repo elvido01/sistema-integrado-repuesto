@@ -26,3 +26,13 @@ Esta carpeta es el **contexto curado** del proyecto: lo que no se deriva trivial
 ## Para agentes (Claude/Codex/GPT)
 
 Lee estos archivos como contexto inicial antes de hacer cambios grandes. Si una nota aquí contradice el código actual, **gana el código** — y por favor actualiza el doc.
+
+## ¿Y `vault/`?
+
+[`vault/`](../vault/) es el vault de **Obsidian** — notas de estrategia, visión, decisiones de producto, prompts. No es documentación técnica.
+
+Diferencia:
+- `docs/` = lo que le sirve a un agente para tocar código
+- `vault/` = lo que te sirve a ti para pensar / recordar / planear
+
+Los agentes pueden leer `vault/` si el usuario los dirige ahí, pero no es el primer lugar al que ir.

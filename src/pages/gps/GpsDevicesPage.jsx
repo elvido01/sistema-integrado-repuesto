@@ -4,7 +4,7 @@ import GpsDeviceCard from '@/components/gps/GpsDeviceCard';
 import GpsDeviceForm from '@/components/gps/GpsDeviceForm';
 import { useGpsData } from '@/hooks/gps/useGpsData';
 import { getGpsDevices } from '@/services/gps/gpsService';
-import { usePanels } from '@/contexts/PanelContext';
+import { usePanels } from '@/contexts/panelCore';
 import GpsPageShell from './GpsPageShell';
 
 const GpsDevicesPage = () => {
