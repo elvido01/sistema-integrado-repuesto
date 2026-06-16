@@ -6,6 +6,30 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+// Definido FUERA del padre: si estuviera dentro, React lo recrearia
+// en cada render del parent y el input perderia foco en cada keystroke.
+const FilterInput = ({ placeholder, value, onChange }) => (
+  <div className="relative flex-1">
+    <Input
+      placeholder={placeholder}
+      value={value || ''}
+      onChange={(e) => onChange(e.target.value)}
+      className="pr-7"
+    />
+    {value && (
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => onChange('')}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+        aria-label={`Limpiar ${placeholder}`}
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    )}
+  </div>
+);
+
 const ProductFilters = ({
   searchTerm,
   setSearchTerm,
@@ -32,29 +56,6 @@ const ProductFilters = ({
   }, [handleKeyDown]);
 
   const handleImportClick = () => fileInputRef.current?.click();
-
-  // Helper para mostrar el botón "X" que limpia el input
-  const FilterInput = ({ placeholder, value, onChange }) => (
-    <div className="relative flex-1">
-      <Input
-        placeholder={placeholder}
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-        className="pr-7"
-      />
-      {value && (
-        <button
-          type="button"
-          tabIndex={-1}
-          onClick={() => onChange('')}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-          aria-label={`Limpiar ${placeholder}`}
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      )}
-    </div>
-  );
 
   return (
     <div className="p-4 border-b space-y-4">
