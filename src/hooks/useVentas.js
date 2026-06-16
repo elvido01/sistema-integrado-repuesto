@@ -19,7 +19,7 @@ const CLIENTE_GENERICO = {
 
 export const useVentas = () => {
   const { toast } = useToast();
-  const { user, empresa } = useAuth();
+  const { user, empresa, tenantId } = useAuth();
   const hasSuplidoresLocales = !!empresa?.feat_suplidores_locales;
   const [date, setDate] = useState(new Date());
   const [paymentType, setPaymentType] = useState('contado');
@@ -39,6 +39,7 @@ export const useVentas = () => {
   const [recargo, setRecargo] = useState(0);
   const [tipoPago, setTipoPago] = useState('EFECTIVO'); // EFECTIVO, TARJETA
   const [pagos, setPagos] = useState([]); // [{ tipo, ref, monto }]
+  const [notas, setNotas] = useState('');
   const [ncfPreview, setNcfPreview] = useState(null); // { ncf: 'B0100000334', tipo_ncf: '01' }
 
   /* Edit Mode State */
@@ -262,6 +263,7 @@ export const useVentas = () => {
     setEditingFacturaNumero(null);
     setPedidoId(null);
     setManualClienteNombre('');
+    setNotas('');
     loadNcfPreview(CLIENTE_GENERICO.tipo_ncf);
   }, [loadNcfPreview]);
 
@@ -673,6 +675,7 @@ export const useVentas = () => {
       const abonoCredito = paymentType === 'credito' ? totalPagosRegistrados : 0;
 
       const facturaData = {
+        tenant_id: tenantId,
         fecha: localISO,
         cliente_id: safeCliente.id,
         manual_cliente_nombre: isGeneric ? manualClienteNombre : null,
@@ -702,7 +705,8 @@ export const useVentas = () => {
           ? totals.totalFactura
           : 0,
         estado: paymentType === 'credito' ? 'PENDIENTE' : 'PAGADA',
-        usuario_id: safeUsuarioId
+        usuario_id: safeUsuarioId,
+        notas: notas.trim() || null
       };
 
       // === Asignar NCF automático según tipo_ncf del cliente (01, 02, 31, 32...) ===
@@ -777,6 +781,7 @@ export const useVentas = () => {
         const montoItbis = importeNeto - baseImponible;
 
         return {
+          tenant_id: tenantId,
           factura_id: activeFactura.id,
           producto_id: item.producto_id,
           codigo: item.codigo,
@@ -794,6 +799,7 @@ export const useVentas = () => {
       if (detallesError) throw detallesError;
 
       const inventarioMovimientos = items.map(item => ({
+        tenant_id: tenantId,
         producto_id: item.producto_id,
         tipo: 'SALIDA',
         cantidad: -item.cantidad,
@@ -809,6 +815,22 @@ export const useVentas = () => {
           await enviarReposicionAutomatica(items);
         } catch (repoError) {
           console.warn('[Ventas] Error en reposicion automatica:', repoError.message);
+        }
+      }
+
+      // Marcar pedido como Facturado si la venta vino de un pedido
+      // (independiente de si quien factura es el mismo vendedor que lo creo).
+      if (pedidoId && !editingFacturaId) {
+        try {
+          const { error: pedidoUpdErr } = await supabase
+            .from('pedidos')
+            .update({ estado: 'Facturado' })
+            .eq('id', pedidoId);
+          if (pedidoUpdErr) {
+            console.warn('[Ventas] No se pudo marcar el pedido como Facturado:', pedidoUpdErr.message);
+          }
+        } catch (e) {
+          console.warn('[Ventas] Error inesperado actualizando pedido:', e.message);
         }
       }
 
@@ -844,6 +866,7 @@ export const useVentas = () => {
           // como texto, el RPC falla y la factura queda con el pendiente sin
           // reducir y SIN recibo de ingreso (bug historico FT-1691/1723/1850).
           const reciboRpcData = {
+            tenant_id: tenantId,
             cliente_id: safeCliente.id,
             fecha: localISO.split('T')[0],
             monto_pagado: abonoCredito,
@@ -964,6 +987,7 @@ export const useVentas = () => {
       setMontoRecibido(factura.monto_recibido?.toString() || '');
       setRecargo(factura.recargo || 0);
       setManualClienteNombre(factura.manual_cliente_nombre || '');
+      setNotas(factura.notas || '');
 
       const mappedItems = detalles.map(d => {
         const itbis_pct = d.productos?.itbis_pct || 0.18;
@@ -1071,6 +1095,7 @@ export const useVentas = () => {
       }
 
       setManualClienteNombre(pedido.manual_cliente_nombre || '');
+      setNotas(pedido.notas || '');
 
       const { data: detallesData, error: detallesError } = await supabase.from('pedidos_detalle').select(`*, productos(*)`).eq('pedido_id', pedido.id);
       if (detallesError) throw detallesError;
@@ -1125,6 +1150,7 @@ export const useVentas = () => {
     handleSelectCotizacion,
     recargo, setRecargo,
     tipoPago, setTipoPago,
+    notas, setNotas,
     pedidoId, setPedidoId,
     handleSelectPedido,
     printFormat, setPrintFormat,
