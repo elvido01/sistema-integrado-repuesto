@@ -20,7 +20,7 @@ const PAGE_LIMIT = 20;
 // ✅ firma corregida (no ejecutar hooks en default params)
 const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sessionKey = null }) => {
   const { toast } = useToast();
-  const { tenantId, user } = useAuth();
+  const { tenantId, user, empresa } = useAuth();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -29,7 +29,10 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
   const [searchTerm, setSearchTerm] = useState('');
   const [marcaFilter, setMarcaFilter] = useState('');
   const [modeloFilter, setModeloFilter] = useState('');
-  const [includeZeroStock, setIncludeZeroStock] = useState(true);
+  // Default configurable desde Configuración del Sistema (config_empresa).
+  // Cae a true si no hay sesión empresa cargada todavía.
+  const includeZeroStockDefault = empresa?.incluir_existencias_cero_default ?? true;
+  const [includeZeroStock, setIncludeZeroStock] = useState(includeZeroStockDefault);
   const [sendingToOrder, setSendingToOrder] = useState(null); // product id being sent
   const [sendingNote, setSendingNote] = useState(false);
   const [quickNote, setQuickNote] = useState('');
@@ -90,7 +93,8 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
   );
   const loaderRef = useRef(null);
 
-  // Reset search term on open, but keep marca/modelo filters
+  // Reset search term on open, but keep marca/modelo filters.
+  // Tambien resetea includeZeroStock al default configurado por el tenant.
   useEffect(() => {
     if (isOpen) {
       setSearchTerm('');
@@ -98,8 +102,9 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
       setHasMore(true);
       setProducts([]);
       setSelectedIndex(-1);
+      setIncludeZeroStock(includeZeroStockDefault);
     }
-  }, [isOpen]);
+  }, [isOpen, includeZeroStockDefault]);
 
   // Reset ALL filters (including marca/modelo) when sessionKey changes (e.g. new invoice)
   const prevSessionKeyRef = useRef(sessionKey);
@@ -109,8 +114,9 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
       setSearchTerm('');
       setMarcaFilter('');
       setModeloFilter('');
+      setIncludeZeroStock(includeZeroStockDefault);
     }
-  }, [sessionKey]);
+  }, [sessionKey, includeZeroStockDefault]);
 
   // Selected index reset on new search (handled in fetchProducts)
 

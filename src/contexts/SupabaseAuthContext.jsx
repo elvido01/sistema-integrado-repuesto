@@ -50,16 +50,18 @@ export const AuthProvider = ({ children }) => {
       if (profileData?.tenant_id) {
         let { data: empresaData, error: empresaError } = await supabase
           .from('config_empresa')
-          .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct, feat_suplidores_locales')
+          .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct, feat_suplidores_locales, incluir_existencias_cero_default')
           .eq('tenant_id', profileData.tenant_id)
           .maybeSingle();
-        if (empresaError && String(empresaError.message || '').includes('feat_suplidores_locales')) {
+        if (empresaError && String(empresaError.message || '').match(/(feat_suplidores_locales|incluir_existencias_cero_default)/)) {
           const fallback = await supabase
             .from('config_empresa')
             .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct')
             .eq('tenant_id', profileData.tenant_id)
             .maybeSingle();
-          empresaData = fallback.data ? { ...fallback.data, feat_suplidores_locales: false } : null;
+          empresaData = fallback.data
+            ? { ...fallback.data, feat_suplidores_locales: false, incluir_existencias_cero_default: true }
+            : null;
           empresaError = fallback.error;
         }
         if (empresaError) throw empresaError;

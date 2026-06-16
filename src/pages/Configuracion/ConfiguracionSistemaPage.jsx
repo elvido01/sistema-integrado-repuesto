@@ -44,8 +44,11 @@ const ConfiguracionSistemaPage = () => {
         formato_factura: 'pos_4inch',
         formato_precio_etiqueta: 'alpha',
         formato_comprobante_pago: 'pdf',
+        saldo_inicial_caja: 0,
+        caja_historial_desde: '1970-01-01',
         precio2_descuento_pct: 10,
-        precio3_descuento_pct: 15
+        precio3_descuento_pct: 15,
+        incluir_existencias_cero_default: true
     });
 
     const [originalGoalData, setOriginalGoalData] = useState({
@@ -90,8 +93,11 @@ const ConfiguracionSistemaPage = () => {
                     formato_factura: data.formato_factura || 'pos_4inch',
                     formato_precio_etiqueta: data.formato_precio_etiqueta || 'alpha',
                     formato_comprobante_pago: data.formato_comprobante_pago || 'pdf',
+                    saldo_inicial_caja: data.saldo_inicial_caja ?? 0,
+                    caja_historial_desde: data.caja_historial_desde || '1970-01-01',
                     precio2_descuento_pct: data.precio2_descuento_pct ?? 10,
-                    precio3_descuento_pct: data.precio3_descuento_pct ?? 15
+                    precio3_descuento_pct: data.precio3_descuento_pct ?? 15,
+                    incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true
                 });
                 
                 setOriginalGoalData({
@@ -155,7 +161,8 @@ const ConfiguracionSistemaPage = () => {
                     ...dataToSave,
                     tenant_id: tenantId,
                     // Asegurar que si es nulo o vacío se vaya como null para evitar errores de timestamp
-                    fecha_inicio_meta: dataToSave.fecha_inicio_meta || null
+                    fecha_inicio_meta: dataToSave.fecha_inicio_meta || null,
+                    caja_historial_desde: dataToSave.caja_historial_desde || '1970-01-01'
                 }, { onConflict: 'tenant_id' });
 
             if (saveError) throw saveError;
@@ -393,13 +400,38 @@ const ConfiguracionSistemaPage = () => {
                         <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
                            <Target className="w-4 h-4" /> Configuración de Objetivos de Ventas (Auto-Escalable)
                         </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             <div className="space-y-1.5">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Meta Original Mensual</Label>
                                 <div className="flex items-center">
                                     <div className="bg-gray-200 border border-r-0 h-10 px-3 flex items-center justify-center rounded-l-md text-xs font-bold text-gray-500">RD$</div>
                                     <Input id="meta_ventas" type="number" value={formData.meta_ventas} onChange={handleNumberChange} className="h-10 rounded-l-none font-bold text-indigo-700 text-lg" />
                                 </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Saldo Inicial Caja (Dashboard)</Label>
+                                <div className="flex items-center">
+                                    <div className="bg-gray-200 border border-r-0 h-10 px-3 flex items-center justify-center rounded-l-md text-xs font-bold text-gray-500">RD$</div>
+                                    <Input id="saldo_inicial_caja" type="number" step="0.001" value={formData.saldo_inicial_caja} onChange={handleNumberChange} className="h-10 rounded-l-none font-bold text-emerald-700" />
+                                </div>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Base usada para el campo Excedente en Inicio; luego se ajusta con entradas y salidas reales.
+                                </p>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Historial Caja Desde</Label>
+                                <Input
+                                    id="caja_historial_desde"
+                                    type="date"
+                                    value={formData.caja_historial_desde || '1970-01-01'}
+                                    onChange={handleInputChange}
+                                    className="h-10 font-bold text-emerald-700"
+                                />
+                                <p className="text-[10px] text-gray-500 italic">
+                                    El Dashboard ignora movimientos anteriores a esta fecha para reconstruir la caja.
+                                </p>
                             </div>
                             
                             <div className="space-y-1.5">
@@ -460,8 +492,8 @@ const ConfiguracionSistemaPage = () => {
 
                             <div className="space-y-1.5 pt-1">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Modo de Limpieza</Label>
-                                <Select 
-                                    value={formData.modo_limpieza_orden} 
+                                <Select
+                                    value={formData.modo_limpieza_orden}
                                     onValueChange={(v) => handleSelectChange('modo_limpieza_orden', v)}
                                     disabled={!formData.limpiar_ordenes_compra_auto}
                                 >
@@ -476,6 +508,32 @@ const ConfiguracionSistemaPage = () => {
                                     <b>Proporcional:</b> Solo borra si la cantidad comprada es igual o mayor a la pedida.
                                 </p>
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Búsqueda de Productos */}
+                    <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
+                        <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
+                            <FileText className="w-4 h-4" /> Búsqueda de Productos
+                        </h3>
+                        <div className="space-y-3">
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    id="incluir_existencias_cero_default"
+                                    checked={formData.incluir_existencias_cero_default}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, incluir_existencias_cero_default: e.target.checked }))}
+                                    className="h-4 w-4 rounded border-gray-300 text-morla-blue focus:ring-morla-blue"
+                                />
+                                <Label htmlFor="incluir_existencias_cero_default" className="text-[11px] font-bold text-gray-700 uppercase">
+                                    Incluir productos sin existencia por defecto al buscar
+                                </Label>
+                            </div>
+                            <p className="text-[10px] text-gray-500 italic pl-6">
+                                Cuando el cajero abre el modal de búsqueda de productos (F2), el checkbox "Incluir Existencias en cero"
+                                aparece <b>marcado</b> si esta opción está activa. Si está desactivada, el modal abre mostrando solo productos
+                                con stock disponible (el cajero puede activar el checkbox manualmente si necesita ver todos).
+                            </p>
                         </div>
                     </div>
 
@@ -562,3 +620,4 @@ const ConfiguracionSistemaPage = () => {
 };
 
 export default ConfiguracionSistemaPage;
+
