@@ -40,7 +40,8 @@ const ProductsPage = ({ extraData }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ marca_id: null, modelo_id: null, tipo_id: null });
+  // Filtros tipo texto (ILIKE en BD). Reemplazan los antiguos marca_id/tipo_id/modelo_id.
+  const [filters, setFilters] = useState({ marca: '', modelo: '', tipo: '' });
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0 });
 
   // Equivalentes (Fase 1+2 integrada)
@@ -146,7 +147,7 @@ const ProductsPage = ({ extraData }) => {
 
     lastRoutedSearchRef.current = routeKey;
     setSelectedProduct(null);
-    setFilters({ marca_id: null, modelo_id: null, tipo_id: null });
+    setFilters({ marca: '', modelo: '', tipo: '' });
     setPagination((prev) => ({ ...prev, page: 1 }));
     setSearchTerm(productCode);
   }, [extraData]);
@@ -159,16 +160,19 @@ const ProductsPage = ({ extraData }) => {
         const currentLimit = paginationRef.current.limit;
         const offset = (currentPage - 1) * currentLimit;
 
-        const marcaNombre = nombreById(catalogMarcas, filtersRef.current?.marca_id ?? filtersRef.current?.marcaId);
-        const modeloNombre = nombreById(catalogModelos, filtersRef.current?.modelo_id ?? filtersRef.current?.modeloId);
+        // Filtros vienen como string libre (input texto). RPC hace ILIKE.
+        const marcaTexto  = (filtersRef.current?.marca  || '').trim();
+        const modeloTexto = (filtersRef.current?.modelo || '').trim();
+        const tipoTexto   = (filtersRef.current?.tipo   || '').trim();
 
         const { data, error } = await supabase.rpc('get_productos_paginados', {
           p_limit: currentLimit,
           p_offset: offset,
           p_search_term: orNull(searchTermRef.current),
-          p_marca_filter: orNull(marcaNombre),
-          p_modelo_filter: orNull(modeloNombre),
+          p_marca_filter: orNull(marcaTexto),
+          p_modelo_filter: orNull(modeloTexto),
           p_include_zero_stock: true,
+          p_tipo_filter: orNull(tipoTexto),
         });
 
         if (error) throw error;
