@@ -276,6 +276,7 @@ const OrdenCompraPage = () => {
     caja_minima: 0,
     control_estricto: false,
     workflow_aprobacion: false,
+    factor_recuperacion: 0.85,
   });
   const [configPinNuevo, setConfigPinNuevo] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
@@ -296,6 +297,7 @@ const OrdenCompraPage = () => {
           caja_minima: data.caja_minima ?? 0,
           control_estricto: !!data.control_estricto,
           workflow_aprobacion: !!data.workflow_aprobacion,
+          factor_recuperacion: data.factor_recuperacion ?? 0.85,
         });
       }
     } catch (_) { /* tabla puede no existir si SQL no corrido */ }
@@ -312,6 +314,7 @@ const OrdenCompraPage = () => {
         caja_minima: Number(configForm.caja_minima) || 0,
         control_estricto: !!configForm.control_estricto,
         workflow_aprobacion: !!configForm.workflow_aprobacion,
+        factor_recuperacion: Number(configForm.factor_recuperacion) || 0.85,
         updated_at: new Date().toISOString(),
       };
       const { error } = await supabase.from('presupuesto_config').upsert(payload, { onConflict: 'tenant_id' });
@@ -2812,6 +2815,39 @@ const OrdenCompraPage = () => {
                 placeholder="Ej: 50000"
               />
               <p className="text-[10px] text-slate-500">Monto que SIEMPRE debe quedar en caja, no se compromete.</p>
+            </div>
+
+            {/* Velocidad de recuperacion (payment-driven v3) */}
+            <div className="space-y-1">
+              <Label className="text-[11px] uppercase font-bold text-slate-700">Velocidad de recuperación por suplidor</Label>
+              <Select
+                value={String(configForm.factor_recuperacion ?? 0.85)}
+                onValueChange={(v) => setConfigForm(p => ({ ...p, factor_recuperacion: Number(v) }))}
+              >
+                <SelectTrigger className="h-9"><SelectValue placeholder="Elige la velocidad" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0.95">95% — Muy lento (deuda baja 5%)</SelectItem>
+                  <SelectItem value="0.90">90% — Lento (deuda baja 10%)</SelectItem>
+                  <SelectItem value="0.85">85% — Moderado ⭐ Recomendado (deuda baja 15%)</SelectItem>
+                  <SelectItem value="0.80">80% — Moderado-fuerte (deuda baja 20%)</SelectItem>
+                  <SelectItem value="0.75">75% — Agresivo (deuda baja 25%)</SelectItem>
+                  <SelectItem value="0.70">70% — Muy agresivo (deuda baja 30%)</SelectItem>
+                </SelectContent>
+              </Select>
+              {(() => {
+                const f = Number(configForm.factor_recuperacion ?? 0.85);
+                const reduce = Math.round((1 - f) * 100);
+                const nivel = f >= 0.90 ? { txt: 'LENTO', cls: 'text-blue-600' }
+                            : f >= 0.85 ? { txt: 'MODERADO', cls: 'text-emerald-600' }
+                            : f >= 0.80 ? { txt: 'MODERADO-FUERTE', cls: 'text-amber-600' }
+                            : { txt: 'AGRESIVO', cls: 'text-red-600' };
+                return (
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    <span className={`font-bold ${nivel.cls}`}>{nivel.txt}</span> — si le pagas RD$100 a un suplidor,
+                    puedes comprarle RD$ {Math.round(f * 100)} y tu deuda con él baja {reduce}% por ciclo.
+                  </p>
+                );
+              })()}
             </div>
 
             <div className="border-t pt-3 space-y-2">
