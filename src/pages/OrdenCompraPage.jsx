@@ -1059,6 +1059,11 @@ const OrdenCompraPage = () => {
               share_pct:               presRaw.share_pct,
               presupuesto_total:       presRaw.presupuesto_total,
               modo_distribucion:       presRaw.modo_distribucion,
+              // payment-driven (v3):
+              deuda_suplidor:          presRaw.deuda_suplidor,
+              pagos_suplidor_30d:      presRaw.pagos_suplidor_30d,
+              fondo_liberado:          presRaw.fondo_liberado,
+              factor_recuperacion:     presRaw.factor_recuperacion,
             }
           : presRaw;
         const map = {};
@@ -1092,8 +1097,16 @@ const OrdenCompraPage = () => {
           comprado:     Number(presV2.comprado_mes || 0),
           disponible:   Number(presV2.disponible || 0),
           modo:         presV2.modo || 'auto',
+          modo_distribucion: presV2.modo_distribucion,
           color:        presV2.color,
           salud:        presV2.salud,
+          share_pct:    presV2.share_pct,
+          presupuesto_total: presV2.presupuesto_total,
+          // payment-driven (v3): para el desglido en el panel
+          deuda_suplidor:      Number(presV2.deuda_suplidor || 0),
+          pagos_suplidor_30d:  Number(presV2.pagos_suplidor_30d || 0),
+          fondo_liberado:      Number(presV2.fondo_liberado || 0),
+          factor_recuperacion: Number(presV2.factor_recuperacion || 0.85),
           // El "salud_caja" estilo v1 (sana/ajustada/tension) sale del factor_salud:
           salud_caja: (presV2.factor_salud === undefined)
             ? presV2.legacy_calculo?.salud_caja
@@ -2360,8 +2373,12 @@ const OrdenCompraPage = () => {
                 return (
                   <div className={`rounded-lg border-2 px-3 py-2 ${dispDespues < 0 ? 'border-red-400 bg-red-50 animate-pulse' : dispDespues / Math.max(1, presup) < 0.10 ? 'border-amber-300 bg-amber-50' : 'border-violet-200 bg-violet-50'}`}>
                     <p className="text-[10px] uppercase text-violet-500 font-bold leading-tight">
-                      {sugerenciaCompra.modo_distribucion
-                        ? `Presup. ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}${sugerenciaCompra.share_pct ? ` (${sugerenciaCompra.share_pct}%)` : ''}`
+                      {sugerenciaCompra.modo_distribucion === 'recuperacion'
+                        ? `Recuperacion ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}`
+                        : sugerenciaCompra.modo_distribucion === 'sin_deuda'
+                        ? `${selectedProveedor?.nombre?.slice(0, 14) || 'suplidor'} (al dia)`
+                        : sugerenciaCompra.modo_distribucion
+                        ? `Presup. ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}`
                         : `Presupuesto mes ${sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}`}
                     </p>
                     <p className="font-bold text-violet-700 text-sm">
@@ -2393,9 +2410,16 @@ const OrdenCompraPage = () => {
                       )}
                     </div>
 
-                    {sugerenciaCompra.modo_distribucion && (
-                      <p className="text-[9px] text-slate-400 italic leading-tight mt-1">
-                        Total tenant: RD$ {Number(sugerenciaCompra.presupuesto_total || 0).toLocaleString('es-DO')}
+                    {sugerenciaCompra.modo_distribucion === 'recuperacion' && (
+                      <div className="text-[9px] text-slate-500 leading-tight mt-1 border-t border-violet-200 pt-1 space-y-0.5">
+                        <p>Le pagaste (30d): <span className="font-bold text-emerald-700">RD$ {Number(sugerenciaCompra.pagos_suplidor_30d || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
+                        <p>× factor {Number(sugerenciaCompra.factor_recuperacion || 0.85).toFixed(2)} = libera <span className="font-bold text-violet-700">RD$ {Number(sugerenciaCompra.fondo_liberado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
+                        <p className="text-amber-700">Aun le debes: RD$ {Number(sugerenciaCompra.deuda_suplidor || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                      </div>
+                    )}
+                    {sugerenciaCompra.modo_distribucion === 'sin_deuda' && (
+                      <p className="text-[9px] text-emerald-600 italic leading-tight mt-1">
+                        Estas al dia con este suplidor. Limite = caja global.
                       </p>
                     )}
                   </div>

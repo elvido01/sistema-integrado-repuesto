@@ -32,6 +32,7 @@ const PresupuestoInteligentePage = () => {
     control_estricto: false,
     workflow_aprobacion: false,
     distribuir_por: 'total',
+    factor_recuperacion: 0.85,
     fecha_base: new Date().toISOString().slice(0, 10),
     notas: '',
   });
@@ -64,6 +65,7 @@ const PresupuestoInteligentePage = () => {
           control_estricto: !!cfgRes.data.control_estricto,
           workflow_aprobacion: !!cfgRes.data.workflow_aprobacion,
           distribuir_por: cfgRes.data.distribuir_por ?? 'total',
+          factor_recuperacion: cfgRes.data.factor_recuperacion ?? 0.85,
           fecha_base: cfgRes.data.fecha_base?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
           notas: cfgRes.data.notas ?? '',
         });
@@ -93,6 +95,7 @@ const PresupuestoInteligentePage = () => {
         control_estricto: !!config.control_estricto,
         workflow_aprobacion: !!config.workflow_aprobacion,
         distribuir_por: config.distribuir_por,
+        factor_recuperacion: Math.min(1, Math.max(0.5, Number(config.factor_recuperacion) || 0.85)),
         fecha_base: config.fecha_base || new Date().toISOString().slice(0, 10),
         notas: config.notas || null,
         updated_at: new Date().toISOString(),
@@ -275,6 +278,23 @@ const PresupuestoInteligentePage = () => {
               onChange={(e) => setConfig(p => ({ ...p, dias_credito_promedio: e.target.value }))}
             />
             <p className="text-[10px] text-slate-500">Plazo típico de tus suplidores. Usado para proyectar vencimientos.</p>
+          </div>
+
+          {/* Factor de recuperacion (payment-driven) */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold uppercase text-slate-700 flex items-center gap-1">
+              <Shield className="w-3.5 h-3.5" /> Factor de recuperación por suplidor
+            </Label>
+            <Input
+              type="number" min={0.5} max={1} step="0.05"
+              value={config.factor_recuperacion}
+              onChange={(e) => setConfig(p => ({ ...p, factor_recuperacion: e.target.value }))}
+            />
+            <p className="text-[10px] text-slate-500">
+              Cuánto puedes volver a comprarle a un suplidor según lo que le pagaste (30 días).
+              <b> 0.85</b> = si le pagas RD$100, puedes comprarle RD$85 → tu deuda baja 15% por ciclo.
+              Más bajo = recuperas más rápido pero compras menos.
+            </p>
           </div>
 
           {/* Límite aprobación */}
