@@ -283,18 +283,39 @@ const PresupuestoInteligentePage = () => {
           {/* Factor de recuperacion (payment-driven) */}
           <div className="space-y-1.5">
             <Label className="text-xs font-bold uppercase text-slate-700 flex items-center gap-1">
-              <Shield className="w-3.5 h-3.5" /> Factor de recuperación por suplidor
+              <Shield className="w-3.5 h-3.5" /> Velocidad de recuperación por suplidor
             </Label>
-            <Input
-              type="number" min={0.5} max={1} step="0.05"
-              value={config.factor_recuperacion}
-              onChange={(e) => setConfig(p => ({ ...p, factor_recuperacion: e.target.value }))}
-            />
-            <p className="text-[10px] text-slate-500">
-              Cuánto puedes volver a comprarle a un suplidor según lo que le pagaste (30 días).
-              <b> 0.85</b> = si le pagas RD$100, puedes comprarle RD$85 → tu deuda baja 15% por ciclo.
-              Más bajo = recuperas más rápido pero compras menos.
-            </p>
+            <Select
+              value={String(config.factor_recuperacion ?? 0.85)}
+              onValueChange={(v) => setConfig(p => ({ ...p, factor_recuperacion: Number(v) }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Elige la velocidad" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0.95">95% — Muy lento (deuda baja 5% por ciclo)</SelectItem>
+                <SelectItem value="0.90">90% — Lento (deuda baja 10% por ciclo)</SelectItem>
+                <SelectItem value="0.85">85% — Moderado ⭐ Recomendado (deuda baja 15%)</SelectItem>
+                <SelectItem value="0.80">80% — Moderado-fuerte (deuda baja 20%)</SelectItem>
+                <SelectItem value="0.75">75% — Agresivo (deuda baja 25%)</SelectItem>
+                <SelectItem value="0.70">70% — Muy agresivo (deuda baja 30%)</SelectItem>
+              </SelectContent>
+            </Select>
+            {(() => {
+              const f = Number(config.factor_recuperacion ?? 0.85);
+              const reduce = Math.round((1 - f) * 100);
+              const nivel = f >= 0.90 ? { txt: 'LENTO', cls: 'text-blue-600', desc: 'compras casi todo lo que pagas; te recuperas despacio pero mantienes mucho inventario.' }
+                          : f >= 0.85 ? { txt: 'MODERADO', cls: 'text-emerald-600', desc: 'equilibrio recomendado: repones bien y bajas la deuda de forma sostenible.' }
+                          : f >= 0.80 ? { txt: 'MODERADO-FUERTE', cls: 'text-amber-600', desc: 'priorizas bajar deuda; compras algo menos.' }
+                          : { txt: 'AGRESIVO', cls: 'text-red-600', desc: 'recuperas rapido pero compras poco; usar solo si la caja aprieta mucho.' };
+              return (
+                <p className="text-[10px] text-slate-600 leading-tight">
+                  <span className={`font-bold ${nivel.cls}`}>{nivel.txt}</span> — si le pagas RD$100 a un suplidor,
+                  puedes volver a comprarle RD$ {Math.round(f * 100)} y tu deuda con él baja {reduce}% por ciclo.
+                  <br />{nivel.desc}
+                </p>
+              );
+            })()}
           </div>
 
           {/* Límite aprobación */}
