@@ -2417,7 +2417,9 @@ const OrdenCompraPage = () => {
                       <div className="text-[9px] text-slate-500 leading-tight mt-1 border-t border-violet-200 pt-1 space-y-0.5">
                         <p>Le pagaste (30d): <span className="font-bold text-emerald-700">RD$ {Number(sugerenciaCompra.pagos_suplidor_30d || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
                         <p>× factor {Number(sugerenciaCompra.factor_recuperacion || 0.85).toFixed(2)} = libera <span className="font-bold text-violet-700">RD$ {Number(sugerenciaCompra.fondo_liberado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
-                        <p className="text-amber-700">Aun le debes: RD$ {Number(sugerenciaCompra.deuda_suplidor || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                        <p>− Ya compraste (30d): <span className="font-mono text-slate-600">RD$ {Number(sugerenciaCompra.comprado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
+                        <p className="font-bold text-violet-700">= Disp ahora: RD$ {Number(sugerenciaCompra.disponible || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                        <p className="text-amber-700 mt-0.5">Aun le debes: RD$ {Number(sugerenciaCompra.deuda_suplidor || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
                       </div>
                     )}
                     {sugerenciaCompra.modo_distribucion === 'sin_deuda' && (
