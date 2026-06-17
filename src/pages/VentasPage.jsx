@@ -495,6 +495,7 @@ const VentasPage = () => {
         onClose={() => setIsProductSearchModalOpen(false)}
         onSelectProduct={handleProductSearchSelect}
         sessionKey={modalSessionKey}
+        useConfigDefault={true}
       />
 
       <ClienteSearchModal

@@ -18,7 +18,16 @@ import { sendNotaToSuplidorVirtual } from '@/services/sendToSuplidorVirtual';
 const PAGE_LIMIT = 20;
 
 // ✅ firma corregida (no ejecutar hooks en default params)
-const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sessionKey = null }) => {
+// useConfigDefault: si true, respeta empresa.incluir_existencias_cero_default
+//   (configurable por tenant en Configuración del Sistema).
+//   Solo Ventas lo activa — Compras/Mercancías/etc siempre arrancan en true.
+const ProductSearchModal = ({
+  isOpen,
+  onClose,
+  onSelectProduct = () => { },
+  sessionKey = null,
+  useConfigDefault = false,
+}) => {
   const { toast } = useToast();
   const { tenantId, user, empresa } = useAuth();
   const [products, setProducts] = useState([]);
@@ -29,9 +38,12 @@ const ProductSearchModal = ({ isOpen, onClose, onSelectProduct = () => { }, sess
   const [searchTerm, setSearchTerm] = useState('');
   const [marcaFilter, setMarcaFilter] = useState('');
   const [modeloFilter, setModeloFilter] = useState('');
-  // Default configurable desde Configuración del Sistema (config_empresa).
-  // Cae a true si no hay sesión empresa cargada todavía.
-  const includeZeroStockDefault = empresa?.incluir_existencias_cero_default ?? true;
+  // Si el caller habilita useConfigDefault, leemos el flag del tenant.
+  // Cuando NO lo habilita (la mayoría: Compras, Mercancías, Cotizaciones,
+  // Solicitudes, etc.) siempre arranca en true.
+  const includeZeroStockDefault = useConfigDefault
+    ? (empresa?.incluir_existencias_cero_default ?? true)
+    : true;
   const [includeZeroStock, setIncludeZeroStock] = useState(includeZeroStockDefault);
   const [sendingToOrder, setSendingToOrder] = useState(null); // product id being sent
   const [sendingNote, setSendingNote] = useState(false);
