@@ -56,6 +56,7 @@ const DevolucionesPage = () => {
     ubicacion: ''
   });
   const [notas, setNotas] = useState('');
+  const [motivo, setMotivo] = useState('');
   const [imprimir, setImprimir] = useState(false);
   const [emitirDgii, setEmitirDgii] = useState(false);
   const [emitiendoDgii, setEmitiendoDgii] = useState(false);
@@ -235,7 +236,8 @@ const DevolucionesPage = () => {
         descuento_total: totals.descuento,
         itbis_total: totals.itbis,
         total_devolucion: totalDevolucion,
-        notas: notas,
+        // El motivo se guarda como prefijo de notas para no requerir migracion.
+        notas: motivo ? `[Motivo: ${motivo}]${notas ? ' ' + notas : ''}` : notas,
         usuario_id: user?.id
       }).select().single();
       if (devError) throw devError;
@@ -364,6 +366,7 @@ const DevolucionesPage = () => {
     setItemsADevolver([]);
     resetStaging();
     setNotas('');
+    setMotivo('');
     setFecha(getCurrentDateInTimeZone());
     setImprimir(false);
     setEmitirDgii(false);
@@ -416,7 +419,7 @@ const DevolucionesPage = () => {
                 </div>
               </div>
 
-              <div className="space-y-3 pt-2">
+              <div className="space-y-2 pt-1">
                 <RadioGroup defaultValue="factura" className="flex gap-4">
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="factura" id="t-ft" className="w-3 h-3 border-slate-500 text-blue-600" />
@@ -446,11 +449,10 @@ const DevolucionesPage = () => {
                   </span>
                 </div>
 
-                <div className="pt-2 border-t border-dashed border-slate-300">
-                  <div className="flex flex-col gap-1">
-                    <Label className="text-[10px] font-bold text-red-600 uppercase text-center w-full">NCF</Label>
-                    <Input readOnly value={factura?.ncf || ''} className="h-7 border-slate-400 text-center font-mono text-xs bg-slate-50" />
-                    <Label className="text-[10px] font-bold text-slate-500 uppercase text-xs mt-1">NCF Modificado</Label>
+                <div className="pt-1 border-t border-dashed border-slate-300">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] font-bold text-red-600 uppercase whitespace-nowrap">NCF</Label>
+                    <Input readOnly value={factura?.ncf || ''} className="h-7 flex-grow border-slate-400 text-center font-mono text-xs bg-slate-50" />
                   </div>
                 </div>
               </div>
@@ -458,9 +460,9 @@ const DevolucionesPage = () => {
           </div>
 
           {/* Box 2: Datos de Cliente */}
-          <div className="col-span-8 bg-[#f8f9fa] border-2 border-slate-300 rounded p-3 relative shadow-sm h-full flex flex-col justify-between">
+          <div className="col-span-8 bg-[#f8f9fa] border-2 border-slate-300 rounded p-3 relative shadow-sm flex flex-col justify-start">
             <span className="absolute -top-3 left-3 bg-[#f8f9fa] px-2 text-[10px] font-black text-slate-500 uppercase">Datos de Cliente</span>
-            <div className="grid grid-cols-12 gap-x-4 gap-y-2">
+            <div className="grid grid-cols-12 gap-x-4 gap-y-1.5">
               <div className="col-span-7 flex items-center gap-3">
                 <Label className="text-[10px] font-bold text-slate-600 uppercase w-16 text-right">Cliente</Label>
                 <Input readOnly value={cliente?.id || ''} className="h-7 flex-grow font-mono text-[11px] bg-slate-50 border-slate-300" />
@@ -477,7 +479,7 @@ const DevolucionesPage = () => {
 
               <div className="col-span-12 flex items-start gap-3">
                 <Label className="text-[10px] font-bold text-slate-600 uppercase w-16 text-right mt-1.5">Direccion</Label>
-                <Textarea readOnly value={cliente?.direccion || ''} className="min-h-[40px] flex-grow text-[11px] bg-slate-50 border-slate-300 resize-none p-2" />
+                <Textarea readOnly value={cliente?.direccion || ''} className="min-h-[32px] h-8 flex-grow text-[11px] bg-slate-50 border-slate-300 resize-none p-1.5" />
               </div>
 
               <div className="col-span-12 flex items-center gap-3">
@@ -587,20 +589,41 @@ const DevolucionesPage = () => {
         </div>
 
         {/* Footer Area */}
-        <div className="grid grid-cols-12 gap-2 h-36 shrink-0">
+        <div className="grid grid-cols-12 gap-2 shrink-0">
 
-          {/* Notes Box */}
-          <div className="col-span-8 bg-[#f8f9fa] border-2 border-slate-300 rounded p-3 relative shadow-sm">
-            <span className="absolute -top-3 left-3 bg-[#f8f9fa] px-2 text-[10px] font-black text-slate-500 uppercase">Notas y Comentarios</span>
-            <Textarea
-              value={notas}
-              onChange={e => setNotas(e.target.value)}
-              className="w-full h-full text-[11px] bg-white border-slate-300 resize-none"
-              placeholder="Ingrese notas sobre la devolución aquí..."
-            />
+          {/* Left: Notas + Motivo */}
+          <div className="col-span-8 flex flex-col gap-2">
+            {/* Notes Box */}
+            <div className="bg-[#f8f9fa] border-2 border-slate-300 rounded p-3 relative shadow-sm flex-grow">
+              <span className="absolute -top-3 left-3 bg-[#f8f9fa] px-2 text-[10px] font-black text-slate-500 uppercase">Notas y Comentarios</span>
+              <Textarea
+                value={notas}
+                onChange={e => setNotas(e.target.value)}
+                className="w-full h-20 text-[11px] bg-white border-slate-300 resize-none"
+                placeholder="Ingrese notas sobre la devolución aquí..."
+              />
+            </div>
+
+            {/* Motivo de devolución (campo nuevo) */}
+            <div className="bg-[#f8f9fa] border-2 border-slate-300 rounded p-3 relative shadow-sm">
+              <span className="absolute -top-3 left-3 bg-[#f8f9fa] px-2 text-[10px] font-black text-slate-500 uppercase">Motivo de la Devolución</span>
+              <Select value={motivo} onValueChange={setMotivo}>
+                <SelectTrigger className="h-8 bg-white border-slate-400 text-xs">
+                  <SelectValue placeholder="Seleccione el motivo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Defectuoso">Producto defectuoso</SelectItem>
+                  <SelectItem value="Equivocado">Producto equivocado</SelectItem>
+                  <SelectItem value="Garantia">Garantía</SelectItem>
+                  <SelectItem value="No le sirvio">No le sirvió al cliente</SelectItem>
+                  <SelectItem value="Cliente desistio">Cliente desistió de la compra</SelectItem>
+                  <SelectItem value="Otro">Otro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Totals and Buttons */}
+          {/* Totals and checkboxes */}
           <div className="col-span-4 flex flex-col gap-2">
 
             {/* Totals Box */}
@@ -655,41 +678,41 @@ const DevolucionesPage = () => {
                 La factura original no tiene e-NCF DGII — no se puede emitir Nota Tipo 34.
               </p>
             )}
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => navigate(-1)}
-                className="flex-grow h-9 bg-slate-100 hover:bg-slate-200 border-slate-400 text-[11px] font-black uppercase text-slate-700 shadow-sm"
-              >
-                <X className="w-4 h-4 mr-2" /> ESC - Retornar
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    id="save-trigger"
-                    className="flex-grow h-9 bg-[#a3c2f0] hover:bg-[#92b1e0] border-2 border-blue-400 text-[11px] font-black uppercase text-slate-800 shadow-md"
-                    disabled={isSaving || !factura}
-                  >
-                    {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} F10 - Grabar
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="flex items-center gap-2"><AlertTriangle className="text-yellow-500 h-5 w-5" /> ¿Confirmar Devolución?</AlertDialogTitle>
-                    <AlertDialogDescription className="text-sm">
-                      ¿Está seguro que desea grabar esta devolución? Esta acción reintegrará los artículos al inventario.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="text-xs uppercase font-bold">Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-xs uppercase font-bold text-white">Confirmar</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
           </div>
+        </div>
+
+        {/* Barra de acciones — ancho completo abajo */}
+        <div className="flex gap-3 shrink-0 pt-1">
+          <Button
+            variant="outline"
+            onClick={() => navigate(-1)}
+            className="flex-1 h-11 bg-slate-100 hover:bg-slate-200 border-slate-400 text-xs font-black uppercase text-slate-700 shadow-sm"
+          >
+            <X className="w-4 h-4 mr-2" /> ESC - Retornar
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                id="save-trigger"
+                className="flex-1 h-11 bg-[#a3c2f0] hover:bg-[#92b1e0] border-2 border-blue-400 text-xs font-black uppercase text-slate-800 shadow-md"
+                disabled={isSaving || !factura}
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} F10 - Grabar
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2"><AlertTriangle className="text-yellow-500 h-5 w-5" /> ¿Confirmar Devolución?</AlertDialogTitle>
+                <AlertDialogDescription className="text-sm">
+                  ¿Está seguro que desea grabar esta devolución? Esta acción reintegrará los artículos al inventario.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="text-xs uppercase font-bold">Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-xs uppercase font-bold text-white">Confirmar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </>
