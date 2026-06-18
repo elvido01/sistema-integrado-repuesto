@@ -183,10 +183,13 @@ export const AuthProvider = ({ children }) => {
     });
 
     if (error) {
+      const msg = /invalid login credentials/i.test(error.message || '')
+        ? 'Correo o contraseña incorrectos.'
+        : (error.message || 'Ocurrió un error al iniciar sesión.');
       toast({
         variant: "destructive",
-        title: "Sign in Failed",
-        description: error.message || "Something went wrong",
+        title: "No se pudo iniciar sesión",
+        description: msg,
       });
     } else {
       handleSession(data.session);

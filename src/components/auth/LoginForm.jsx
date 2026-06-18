@@ -49,7 +49,15 @@ const LoginForm = ({ onRegistrar }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    await signIn(email, password);
+    try {
+      const { error } = await signIn(email, password);
+      // Si hubo error (ej. contraseña incorrecta), reactivar el boton.
+      // Si fue exitoso, la sesion cambia y el componente se desmonta solo.
+      if (error) setLoading(false);
+    } catch (err) {
+      console.error('[LoginForm] signIn error:', err);
+      setLoading(false);
+    }
   };
 
   const nombreMostrado = tenantBranding?.nombre || 'MotoFlow';
