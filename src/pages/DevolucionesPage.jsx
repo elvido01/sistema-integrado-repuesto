@@ -32,7 +32,7 @@ import { printDevolucionPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const DevolucionesPage = () => {
-  const { empresa } = useAuth();
+  const { empresa, tenantId } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isSaving, setIsSaving] = useState(false);
@@ -73,7 +73,8 @@ const DevolucionesPage = () => {
       const { data: existingReturn, error: checkError } = await supabase
         .from('devoluciones')
         .select('id, numero')
-        .eq('factura_id', (await supabase.from('facturas').select('id').eq('numero', facturaNumero).single()).data?.id)
+        .eq('tenant_id', tenantId)
+        .eq('factura_id', (await supabase.from('facturas').select('id').eq('tenant_id', tenantId).eq('numero', facturaNumero).single()).data?.id)
         .maybeSingle();
 
       if (existingReturn) {
@@ -88,6 +89,7 @@ const DevolucionesPage = () => {
       const { data: facturaData, error: facturaError } = await supabase
         .from('facturas')
         .select('*, cliente:clientes(*)')
+        .eq('tenant_id', tenantId)
         .eq('numero', facturaNumero)
         .single();
 
@@ -99,6 +101,7 @@ const DevolucionesPage = () => {
       const { data: detallesData, error: detallesError } = await supabase
         .from('facturas_detalle')
         .select('*, producto:productos(ubicacion)')
+        .eq('tenant_id', tenantId)
         .eq('factura_id', facturaData.id);
 
       if (detallesError) throw detallesError;
@@ -223,6 +226,7 @@ const DevolucionesPage = () => {
 
       // 1. Insertar en devoluciones
       const { data: devolucion, error: devError } = await supabase.from('devoluciones').insert({
+        tenant_id: tenantId,
         fecha_devolucion: formatDateForSupabase(fecha),
         factura_id: factura.id,
         cliente_id: cliente.id,
@@ -240,6 +244,7 @@ const DevolucionesPage = () => {
       const detallesDevolucion = itemsADevolver.filter(i => i.cantidad_devuelta > 0).map(d => {
         const ratio = d.cantidad_devuelta / d.cantidad;
         return {
+          tenant_id: tenantId,
           devolucion_id: devolucion.id,
           producto_id: d.producto_id,
           cantidad: d.cantidad_devuelta,
@@ -254,14 +259,46 @@ const DevolucionesPage = () => {
 
       // 3. Actualizar inventario
       const movimientosInventario = itemsADevolver.map(d => ({
+        tenant_id: tenantId,
         producto_id: d.producto_id,
         tipo: 'ENTRADA',
         cantidad: d.cantidad_devuelta,
         referencia_doc: `DEVOLUCION-${devolucion.numero}`,
-        fecha: formatDateForSupabase(fecha)
+        fecha: formatDateForSupabase(fecha),
+        usuario_id: user?.id
       }));
       const { error: invError } = await supabase.from('inventario_movimientos').insert(movimientosInventario);
       if (invError) throw invError;
+
+      const facturaEsCredito = String(factura.forma_pago || '').toUpperCase() === 'CREDITO';
+      if (facturaEsCredito) {
+        const pendienteNuevo = Math.max(0, Number(factura.monto_pendiente || 0) - totalDevolucion);
+        const { error: facturaUpdateError } = await supabase
+          .from('facturas')
+          .update({
+            monto_pendiente: pendienteNuevo,
+            estado: pendienteNuevo <= 0.01 ? 'PAGADA' : factura.estado
+          })
+          .eq('tenant_id', tenantId)
+          .eq('id', factura.id);
+        if (facturaUpdateError) throw facturaUpdateError;
+
+        const { data: pendientesCliente, error: balanceError } = await supabase
+          .from('facturas')
+          .select('monto_pendiente')
+          .eq('tenant_id', tenantId)
+          .eq('cliente_id', cliente.id)
+          .eq('estado', 'PENDIENTE');
+        if (balanceError) throw balanceError;
+
+        const balance = (pendientesCliente || []).reduce((sum, f) => sum + (Number(f.monto_pendiente) || 0), 0);
+        const { error: clienteUpdateError } = await supabase
+          .from('clientes')
+          .update({ balance })
+          .eq('tenant_id', tenantId)
+          .eq('id', cliente.id);
+        if (clienteUpdateError) throw clienteUpdateError;
+      }
 
       toast({ title: '✅ Éxito', description: 'Devolución guardada y artículos reintegrados al inventario.' });
 
@@ -345,7 +382,7 @@ const DevolucionesPage = () => {
   return (
     <>
       <Helmet><title>Devoluciones — {empresa?.nombre || 'Sistema'}</title></Helmet>
-      <div className="h-full flex flex-col p-4 bg-gray-100 space-y-4 overflow-hidden">
+      <div className="h-full flex flex-col p-4 bg-gray-100 space-y-4 overflow-y-auto">
 
         {/* Title Bar */}
         <div className="bg-[#a3c2f0] py-1 px-4 flex justify-center items-center border-b border-blue-400 shadow-sm">
