@@ -382,22 +382,22 @@ const DevolucionesPage = () => {
   return (
     <>
       <Helmet><title>Devoluciones — {empresa?.nombre || 'Sistema'}</title></Helmet>
-      <div className="h-full flex flex-col p-4 bg-gray-100 space-y-4 overflow-y-auto">
+      <div className="h-full flex flex-col p-2 bg-gray-100 space-y-2 overflow-y-auto">
 
         {/* Title Bar */}
-        <div className="bg-[#a3c2f0] py-1 px-4 flex justify-center items-center border-b border-blue-400 shadow-sm">
-          <h2 className="text-xl font-bold text-slate-800 tracking-widest uppercase flex items-center gap-4">
+        <div className="bg-[#a3c2f0] py-0.5 px-4 flex justify-center items-center border-b border-blue-400 shadow-sm shrink-0">
+          <h2 className="text-base font-bold text-slate-800 tracking-widest uppercase flex items-center gap-4">
             DEVOLUCION
           </h2>
         </div>
 
         {/* Top Section: Split Header */}
-        <div className="grid grid-cols-12 gap-4">
+        <div className="grid grid-cols-12 gap-2 shrink-0">
 
           {/* Box 1: Detalles de la Devolución */}
-          <div className="col-span-4 bg-[#f8f9fa] border-2 border-slate-300 rounded p-4 relative shadow-sm">
+          <div className="col-span-4 bg-[#f8f9fa] border-2 border-slate-300 rounded p-3 relative shadow-sm">
             <span className="absolute -top-3 left-3 bg-[#f8f9fa] px-2 text-[10px] font-black text-slate-500 uppercase">Detalles de la Devolución</span>
-            <div className="space-y-4">
+            <div className="space-y-2">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <Label className="text-[10px] font-bold text-slate-600 uppercase w-16">NUMERO</Label>
@@ -458,9 +458,9 @@ const DevolucionesPage = () => {
           </div>
 
           {/* Box 2: Datos de Cliente */}
-          <div className="col-span-8 bg-[#f8f9fa] border-2 border-slate-300 rounded p-4 relative shadow-sm h-full flex flex-col justify-between">
+          <div className="col-span-8 bg-[#f8f9fa] border-2 border-slate-300 rounded p-3 relative shadow-sm h-full flex flex-col justify-between">
             <span className="absolute -top-3 left-3 bg-[#f8f9fa] px-2 text-[10px] font-black text-slate-500 uppercase">Datos de Cliente</span>
-            <div className="grid grid-cols-12 gap-x-6 gap-y-3">
+            <div className="grid grid-cols-12 gap-x-4 gap-y-2">
               <div className="col-span-7 flex items-center gap-3">
                 <Label className="text-[10px] font-bold text-slate-600 uppercase w-16 text-right">Cliente</Label>
                 <Input readOnly value={cliente?.id || ''} className="h-7 flex-grow font-mono text-[11px] bg-slate-50 border-slate-300" />
@@ -543,7 +543,7 @@ const DevolucionesPage = () => {
               </TableHeader>
               <TableBody>
                 {itemsADevolver.length === 0 ? (
-                  Array.from({ length: 15 }).map((_, i) => (
+                  Array.from({ length: 8 }).map((_, i) => (
                     <TableRow key={i} className="h-7 border-b border-slate-200">
                       {Array.from({ length: 9 }).map((_, j) => (
                         <TableCell key={j} className="p-0 border-r border-slate-100 last:border-r-0 h-7" />
@@ -572,7 +572,7 @@ const DevolucionesPage = () => {
                         <TableCell className="py-1 text-right text-[11px] font-bold font-mono">{(d.precio * d.cantidad_devuelta).toFixed(2)}</TableCell>
                       </TableRow>
                     ))}
-                    {Array.from({ length: Math.max(0, 15 - itemsADevolver.length) }).map((_, i) => (
+                    {Array.from({ length: Math.max(0, 8 - itemsADevolver.length) }).map((_, i) => (
                       <TableRow key={`empty-${i}`} className="h-7 border-b border-slate-200">
                         {Array.from({ length: 9 }).map((_, j) => (
                           <TableCell key={j} className="p-0 border-r border-slate-100 last:border-r-0 h-7" />
@@ -587,10 +587,10 @@ const DevolucionesPage = () => {
         </div>
 
         {/* Footer Area */}
-        <div className="grid grid-cols-12 gap-4 h-48">
+        <div className="grid grid-cols-12 gap-2 h-36 shrink-0">
 
           {/* Notes Box */}
-          <div className="col-span-8 bg-[#f8f9fa] border-2 border-slate-300 rounded p-4 relative shadow-sm">
+          <div className="col-span-8 bg-[#f8f9fa] border-2 border-slate-300 rounded p-3 relative shadow-sm">
             <span className="absolute -top-3 left-3 bg-[#f8f9fa] px-2 text-[10px] font-black text-slate-500 uppercase">Notas y Comentarios</span>
             <Textarea
               value={notas}
@@ -601,7 +601,7 @@ const DevolucionesPage = () => {
           </div>
 
           {/* Totals and Buttons */}
-          <div className="col-span-4 flex flex-col gap-3">
+          <div className="col-span-4 flex flex-col gap-2">
 
             {/* Totals Box */}
             <div className="bg-white border-2 border-slate-300 rounded shadow-sm p-3 space-y-1">
