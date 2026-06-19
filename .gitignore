@@ -51,3 +51,11 @@ graphify-cluster.log
 # Obsidian — workspace local del vault
 vault/.obsidian/workspace*
 vault/.obsidian/cache
+
+# Archivos temporales / basura local que NO se versiona
+.gquery*.txt
+mobile/.expo-web.*.log
+mobile/*.log
+
+# Artefactos de build de la extension de WhatsApp (se regeneran con npm run build)
+whatsapp-quote-extension/motoflow-whatsapp-extension.zip
