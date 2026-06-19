@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS cierres_caja (
   total_descuento NUMERIC(12,2) DEFAULT 0,
   total_devoluciones NUMERIC(12,2) DEFAULT 0,
   total_recibos NUMERIC(12,2) DEFAULT 0,
+  total_gastos_diarios NUMERIC(12,2) DEFAULT 0,
   cambio_entregado NUMERIC(12,2) DEFAULT 0,
   efectivo_en_caja NUMERIC(12,2) DEFAULT 0,
   total_desglose NUMERIC(12,2) DEFAULT 0,

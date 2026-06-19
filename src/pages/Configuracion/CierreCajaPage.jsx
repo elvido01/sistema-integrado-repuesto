@@ -42,7 +42,7 @@ const formatCurrency = (v) =>
 /* ─────────────────────────────────────────────────────────── */
 const CierreCajaPage = () => {
   const { toast } = useToast();
-  const { user, profile , empresa} = useAuth();
+  const { user, profile, empresa, tenantId } = useAuth();
   const { closePanel } = usePanels();
 
   /* ── State ── */
@@ -92,12 +92,14 @@ const CierreCajaPage = () => {
     let devoluciones = [];
     let recibos = [];
     let pagosSuplidores = [];
+    let gastosDiarios = [];
 
     try {
       // Ventas del día
       let ventasQuery = supabase
         .from('facturas')
         .select('total, itbis, subtotal, descuento, forma_pago, monto_recibido, cambio')
+        .eq('tenant_id', tenantId)
         .gte('fecha', startOfDay)
         .lte('fecha', endOfDay);
 
@@ -119,7 +121,9 @@ const CierreCajaPage = () => {
       // Devoluciones del día (sin filtro de usuario)
       const { data: devData, error: devErr } = await supabase
         .from('devoluciones')
-        .select('total_devolucion')
+        .select('total_devolucion, facturas!inner(forma_pago)')
+        .eq('tenant_id', tenantId)
+        .ilike('facturas.forma_pago', 'contado')
         .gte('fecha_devolucion', startOfDay)
         .lte('fecha_devolucion', endOfDay);
 
@@ -139,6 +143,7 @@ const CierreCajaPage = () => {
       const { data: recibosData, error: recibosErr } = await supabase
         .from('recibos_ingreso')
         .select('monto_pagado, fecha, created_at')
+        .eq('tenant_id', tenantId)
         .eq('fecha', fechaStr);
 
       if (recibosErr) {
@@ -147,6 +152,7 @@ const CierreCajaPage = () => {
         const { data: recibosCreatedData, error: recibosCreatedErr } = await supabase
           .from('recibos_ingreso')
           .select('monto_pagado, created_at')
+          .eq('tenant_id', tenantId)
           .gte('created_at', startOfDay)
           .lte('created_at', endOfDay);
 
@@ -169,6 +175,7 @@ const CierreCajaPage = () => {
       const { data: pagosData, error: pagosErr } = await supabase
         .from('pagos_suplidores')
         .select('monto_pagado, formas_pago')
+        .eq('tenant_id', tenantId)
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay);
 
@@ -179,6 +186,23 @@ const CierreCajaPage = () => {
       }
     } catch (e) {
       console.warn('Exception cargando pagos suplidores:', e);
+    }
+
+    try {
+      const { data: gastosData, error: gastosErr } = await supabase
+        .from('gastos_diarios')
+        .select('monto, descripcion')
+        .eq('tenant_id', tenantId)
+        .eq('fecha', fechaStr)
+        .eq('anulado', false);
+
+      if (gastosErr) {
+        console.warn('Error cargando gastos diarios:', gastosErr.message);
+      } else {
+        gastosDiarios = gastosData || [];
+      }
+    } catch (e) {
+      console.warn('Exception cargando gastos diarios:', e);
     }
 
     const totalVentasContado = ventas
@@ -194,6 +218,7 @@ const CierreCajaPage = () => {
     const totalDescuento = ventas.reduce((sum, v) => sum + (parseFloat(v.descuento) || 0), 0);
     const totalDevoluciones = devoluciones.reduce((sum, d) => sum + (parseFloat(d.total_devolucion) || 0), 0);
     const totalRecibos = recibos.reduce((sum, r) => sum + (parseFloat(r.monto_pagado) || 0), 0);
+    const totalGastosDiarios = gastosDiarios.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
     const totalPagosSuplidoresEfectivo = pagosSuplidores.reduce((sum, p) => {
       const efectivo = (p.formas_pago || []).filter(fp => fp.forma === 'Efectivo')
         .reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0);
@@ -214,15 +239,16 @@ const CierreCajaPage = () => {
       totalDescuento,
       totalDevoluciones,
       totalRecibos,
+      totalGastosDiarios,
       totalPagosSuplidores: totalPagosSuplidoresEfectivo,
       cambioEntregado,
       cantFacturas,
       // Fórmula final: Efectivo en Caja = Ventas Contado + Recibos de Ingreso - Devoluciones - Pagos Suplidores (Efectivo)
-      efectivoEnCaja: totalVentasContado + totalRecibos - totalDevoluciones - totalPagosSuplidoresEfectivo,
+      efectivoEnCaja: totalVentasContado + totalRecibos - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios,
     });
 
     setLoadingResumen(false);
-  }, [fecha, selectedCajero]);
+  }, [fecha, selectedCajero, tenantId]);
 
   useEffect(() => {
     fetchResumen();
@@ -251,6 +277,7 @@ const CierreCajaPage = () => {
         : (cajeros.find(c => c.id === selectedCajero)?.nombre_completo || 'N/A');
 
       const cierre = {
+        tenant_id: tenantId,
         fecha: formatDateForSupabase(fecha),
         turno,
         cajero_id: selectedCajero === 'ALL' ? user?.id : selectedCajero,
@@ -262,6 +289,7 @@ const CierreCajaPage = () => {
         total_descuento: resumen?.totalDescuento || 0,
         total_devoluciones: resumen?.totalDevoluciones || 0,
         total_recibos: resumen?.totalRecibos || 0,
+        total_gastos_diarios: resumen?.totalGastosDiarios || 0,
         cambio_entregado: resumen?.cambioEntregado || 0,
         efectivo_en_caja: resumen?.efectivoEnCaja || 0,
         total_desglose: desgloseTotal,
@@ -330,6 +358,7 @@ const CierreCajaPage = () => {
         <div class="row"><span>Devoluciones:</span><span>${formatCurrency(resumen?.totalDevoluciones)}</span></div>
         <div class="row"><span>Recibos Ingreso:</span><span>${formatCurrency(resumen?.totalRecibos)}</span></div>
         <div class="row"><span>Pagos Suplidores:</span><span>${formatCurrency(resumen?.totalPagosSuplidores)}</span></div>
+        <div class="row"><span>Gastos Diarios:</span><span>${formatCurrency(resumen?.totalGastosDiarios)}</span></div>
         <div class="row total-row"><span>Efectivo en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE MONEDAS</div>
@@ -471,6 +500,7 @@ const CierreCajaPage = () => {
                     ['Devoluciones', resumen.totalDevoluciones],
                     ['Recibos de Ingreso', resumen.totalRecibos],
                     ['Pagos a Suplidores (Efectivo)', resumen.totalPagosSuplidores],
+                    ['Gastos Diarios', resumen.totalGastosDiarios],
                   ].map(([label, value, bold, isCount]) => (
                     <div key={label} className={`flex justify-between items-center py-1 ${bold ? 'border-t-2 border-morla-blue pt-2' : ''}`}>
                       <span className={`text-sm ${bold ? 'font-bold text-morla-blue' : 'text-gray-600'}`}>{label}</span>

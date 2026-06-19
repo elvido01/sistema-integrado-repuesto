@@ -58,6 +58,7 @@ const FlujoCajaPage = () => {
         supabase
           .from('facturas')
           .select('id, numero, fecha, dias_credito, total, monto_pendiente, cliente_id, clientes(nombre)')
+          .eq('tenant_id', tenantId)
           .eq('estado', 'PENDIENTE')
           .gt('monto_pendiente', 0)
           .order('fecha', { ascending: true })
@@ -65,17 +66,20 @@ const FlujoCajaPage = () => {
         supabase
           .from('compras')
           .select('id, numero, referencia, fecha, dias_credito, total_compra, monto_pendiente, monto_pagado, estado, suplidor_id, proveedores(nombre)')
+          .eq('tenant_id', tenantId)
           .ilike('forma_pago', 'CREDITO')
           .order('fecha', { ascending: true })
           .limit(1000),
         supabase
           .from('pagos_suplidores_detalle')
           .select('pago_id, compra_id, monto_abonado, pagos_suplidores!inner(anulado)')
+          .eq('tenant_id', tenantId)
           .eq('pagos_suplidores.anulado', false)
           .limit(20000),
         supabase
           .from('pagos_suplidores')
           .select('id, suplidor_id, monto_pagado, anulado')
+          .eq('tenant_id', tenantId)
           .eq('anulado', false)
           .limit(20000),
       ]);
