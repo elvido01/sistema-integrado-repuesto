@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog, Shuffle } from 'lucide-react';
+import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog, Shuffle, Send } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { normalizeTaxRate } from '@/lib/taxUtils';
@@ -49,6 +49,17 @@ const getDetalleBase = (detalle) => {
   const descuento = parseFloat(detalle.descuento_pct) || 0;
   const subtotal = cantidad * precio;
   return subtotal - (subtotal * (descuento / 100));
+};
+
+const stripReceptionFields = (detalle) => {
+  const {
+    cantidad_pedida,
+    cantidad_recibida,
+    cantidad_pendiente,
+    estado_linea,
+    ...legacyDetalle
+  } = detalle;
+  return legacyDetalle;
 };
 
 const formatDateForTable = (dateStr) => {
@@ -367,8 +378,9 @@ const OrdenCompraPage = () => {
     if (filters.estado && filters.estado !== 'Todos') {
       query = query.eq('estado', filters.estado);
     } else {
-      // Por defecto no mostrar las Recibidas
+      // Por defecto no mostrar las recibidas/anuladas
       query = query.neq('estado', 'Recibida');
+      query = query.neq('estado', 'Anulada');
     }
 
     // Mostrar solo las últimas 6 órdenes guardadas (las más recientes).
@@ -701,6 +713,32 @@ const OrdenCompraPage = () => {
     setDetalles((prev) => prev.filter((d) => d.id !== id));
   };
 
+  const handleNoSuplidoDetalle = async (detalle) => {
+    if (!detalle?.id) return;
+    if (!confirm(`Marcar ${detalle.codigo || ''} como no suplido?\n\nDejara de contar como mercancia en camino y podra recomendarse nuevamente.`)) return;
+
+    try {
+      const { error } = await supabase.rpc('cancelar_linea_orden_compra_no_suplida', {
+        p_detalle_id: detalle.id,
+      });
+
+      if (error) throw error;
+
+      setDetalles((prev) => prev.filter((d) => d.id !== detalle.id));
+      toast({
+        title: 'Linea marcada como no suplida',
+        description: 'Ya no cuenta como mercancia en camino y podra volver a recomendarse.',
+      });
+      fetchOrders();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo cancelar la linea',
+        description: error.message || 'Verifica que la migracion SQL este aplicada.',
+      });
+    }
+  };
+
   const handleEditDetalle = (detalle) => {
     // If there's already an item being edited, commit it back first
     if (editingDetalleId && stagingItem.producto_id) {
@@ -805,32 +843,75 @@ const OrdenCompraPage = () => {
     try {
       setIsLoadingList(true);
       // Fetch fresh details for the transfer
-      const { data: detailsData, error: detailsError } = await supabase
+      let { data: detailsData, error: detailsError } = await supabase
         .from('ordenes_compra_detalle')
         .select('*')
-        .eq('orden_compra_id', selectedOrderID);
+        .eq('orden_compra_id', selectedOrderID)
+        .neq('estado_linea', 'recibida');
+
+      if (
+        detailsError
+        && (detailsError.message?.includes('estado_linea') || detailsError.code === 'PGRST204')
+      ) {
+        const legacyResult = await supabase
+          .from('ordenes_compra_detalle')
+          .select('*')
+          .eq('orden_compra_id', selectedOrderID);
+        detailsData = legacyResult.data;
+        detailsError = legacyResult.error;
+      }
 
       if (detailsError) throw detailsError;
+
+      const detallesPendientes = (detailsData || [])
+        .map((detail) => ({
+          ...detail,
+          cantidad: Number(detail.cantidad_pendiente ?? detail.cantidad ?? 0),
+        }))
+        .filter((detail) => Number(detail.cantidad || 0) > 0);
+
+      if (detallesPendientes.length === 0) {
+        toast({ title: 'Orden completa', description: 'Esta orden no tiene articulos pendientes de recibir.' });
+        return;
+      }
 
       // We pass the data through context and open panel
       setOrdenParaFacturar({
         orderData: selected,
-        details: detailsData
+        details: detallesPendientes
       });
-
-      // Automatically mark as Recibida so it leaves the pending list
-      await supabase
-        .from('ordenes_compra')
-        .update({ estado: 'Recibida' })
-        .eq('id', selectedOrderID);
-
-      // Immediately remove from the current list view to confirm it's "no longer pending"
-      setOrders(prev => prev.filter(o => o.id !== selectedOrderID));
-      setSelectedOrderID(null);
 
       openPanel('compras');
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudo procesar la orden para facturar.' });
+    } finally {
+      setIsLoadingList(false);
+    }
+  };
+
+  const handleConfirmarEnviada = async () => {
+    const selected = orders.find(o => o.id === selectedOrderID);
+    if (!selected) return;
+    if (!confirm(`Confirmar que la orden ${selected.numero || ''} fue enviada al suplidor?\n\nDesde este momento contara como mercancia en camino.`)) return;
+
+    setIsLoadingList(true);
+    try {
+      const { error } = await supabase.rpc('confirmar_orden_compra_enviada', {
+        p_orden_id: selectedOrderID,
+      });
+      if (error) throw error;
+
+      toast({
+        title: 'Pedido enviado al suplidor',
+        description: 'La orden ahora cuenta como mercancia solicitada pendiente de recibir.',
+      });
+      await fetchOrders();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo confirmar',
+        description: error.message || 'Verifica que la migracion de estados este aplicada.',
+      });
     } finally {
       setIsLoadingList(false);
     }
@@ -1426,8 +1507,15 @@ const OrdenCompraPage = () => {
 
     let savedOrden;
     let ordenError;
+    let previousDetailIds = [];
 
     if (isEditMode && orden.id) {
+      const { data: previousDetails } = await supabase
+        .from('ordenes_compra_detalle')
+        .select('id')
+        .eq('orden_compra_id', orden.id);
+      previousDetailIds = (previousDetails || []).map((d) => d.id).filter(Boolean);
+
       const { data: updated, error: updateErr } = await supabase
         .from('ordenes_compra')
         .update(ordenData)
@@ -1436,11 +1524,6 @@ const OrdenCompraPage = () => {
         .single();
       savedOrden = updated;
       ordenError = updateErr;
-
-      if (!ordenError) {
-        // Delete old details because we will re-insert them 
-        await supabase.from('ordenes_compra_detalle').delete().eq('orden_compra_id', orden.id);
-      }
     } else {
       let finalData = { ...ordenData };
       if (!finalData.numero) {
@@ -1468,6 +1551,10 @@ const OrdenCompraPage = () => {
       codigo: d.codigo,
       descripcion: d.descripcion,
       cantidad: d.cantidad,
+      cantidad_pedida: d.cantidad_pedida ?? d.cantidad,
+      cantidad_recibida: d.cantidad_recibida ?? 0,
+      cantidad_pendiente: Number(d.cantidad_pendiente ?? Math.max(0, Number(d.cantidad_pedida ?? d.cantidad ?? 0) - Number(d.cantidad_recibida ?? 0))),
+      estado_linea: d.estado_linea || 'pendiente',
       unidad: d.unidad,
       precio: d.precio,
       descuento_pct: d.descuento_pct,
@@ -1475,11 +1562,42 @@ const OrdenCompraPage = () => {
       importe: d.importe,
     }));
 
-    const { error: detallesError } = await supabase.from('ordenes_compra_detalle').insert(detallesData);
+    let { error: detallesError } = await supabase.from('ordenes_compra_detalle').insert(detallesData);
+
+    if (
+      detallesError
+      && (
+        detallesError.message?.includes('cantidad_pedida')
+        || detallesError.message?.includes('cantidad_recibida')
+        || detallesError.message?.includes('cantidad_pendiente')
+        || detallesError.message?.includes('estado_linea')
+        || detallesError.code === 'PGRST204'
+      )
+    ) {
+      const legacyResult = await supabase
+        .from('ordenes_compra_detalle')
+        .insert(detallesData.map(stripReceptionFields));
+      detallesError = legacyResult.error;
+    }
 
     if (detallesError) {
       toast({ variant: 'destructive', title: 'Error al guardar detalles', description: detallesError.message });
     } else {
+      if (previousDetailIds.length > 0) {
+        const { error: deleteOldDetailsError } = await supabase
+          .from('ordenes_compra_detalle')
+          .delete()
+          .in('id', previousDetailIds);
+
+        if (deleteOldDetailsError) {
+          toast({
+            variant: 'destructive',
+            title: 'Advertencia',
+            description: 'La orden se guardo, pero no se pudieron limpiar los detalles anteriores. Revise si hay lineas duplicadas.',
+          });
+        }
+      }
+
       // Manejo post-save segun como se llego aqui
       if (pinGateInfo?.via_workflow) {
         // Fase C: enviar a cola de aprobaciones (no grabar directo)
@@ -1597,6 +1715,16 @@ const OrdenCompraPage = () => {
           </Button>
           <Button
             variant="ghost"
+            className="h-10 flex flex-col items-center px-2 py-1 text-[10px]"
+            disabled={!selectedOrderID}
+            onClick={handleConfirmarEnviada}
+            title="Marca la orden como pedida al suplidor. Cuenta como mercancia en camino."
+          >
+            <Send className="h-5 w-5 mb-0.5 text-emerald-600" />
+            ENVIAR
+          </Button>
+          <Button
+            variant="ghost"
             className="h-10 flex flex-col items-center px-2 py-1 text-[10px] relative"
             onClick={() => setView('suplidor-virtual')}
             title="Productos enviados al Suplidor Virtual (agotados al suplidor original)"
@@ -1680,6 +1808,8 @@ const OrdenCompraPage = () => {
             <SelectContent>
               <SelectItem value="Todos">Todos</SelectItem>
               <SelectItem value="Pendiente">Pendiente</SelectItem>
+              <SelectItem value="Enviada">Enviada</SelectItem>
+              <SelectItem value="Parcial">Parcial</SelectItem>
               <SelectItem value="Recibida">Recibida</SelectItem>
               <SelectItem value="Anulada">Anulada</SelectItem>
             </SelectContent>
@@ -1729,7 +1859,13 @@ const OrdenCompraPage = () => {
                   <TableCell className="py-0 px-2 h-7 text-right font-bold">{Number(o.total_orden || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                   <TableCell className="py-0 px-2 h-7 text-center text-[10px] font-bold">
                     <div className="flex flex-col items-center gap-0.5">
-                      <span className={`px-2 py-0.5 rounded-full ${o.estado === 'Recibida' ? 'bg-green-100 text-green-700' : o.estado === 'Anulada' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                      <span className={`px-2 py-0.5 rounded-full ${
+                        o.estado === 'Recibida' ? 'bg-green-100 text-green-700'
+                          : o.estado === 'Anulada' ? 'bg-red-100 text-red-700'
+                          : o.estado === 'Enviada' ? 'bg-emerald-100 text-emerald-700'
+                          : o.estado === 'Parcial' ? 'bg-amber-100 text-amber-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
                         {o.estado?.toUpperCase() || 'PENDIENTE'}
                       </span>
                       {o.estado_aprobacion && o.estado_aprobacion !== 'no_requerida' && (
@@ -2142,7 +2278,10 @@ const OrdenCompraPage = () => {
                   </TableRow>
                 ))
               ) : (
-                detalles.map((d) => (
+                detalles.map((d) => {
+                  const puedeMarcarNoSuplido = ['Enviada', 'Parcial'].includes(orden.estado)
+                    && !['recibida', 'cancelada'].includes(d.estado_linea || '');
+                  return (
                   <TableRow
                     key={d.id}
                     className="h-7 border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors group"
@@ -2260,12 +2399,23 @@ const OrdenCompraPage = () => {
                       </>
                     )}
                     <TableCell className="py-0 px-1 text-center">
-                      <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => removeDetalle(d.id)}>
-                        <Trash2 className="h-3 w-3 text-red-500" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title={puedeMarcarNoSuplido ? 'No suplido: cancela el pendiente para recomendarlo nuevamente' : 'Eliminar linea'}
+                        onClick={() => (puedeMarcarNoSuplido ? handleNoSuplidoDetalle(d) : removeDetalle(d.id))}
+                      >
+                        {puedeMarcarNoSuplido ? (
+                          <PackageX className="h-3 w-3 text-amber-600" />
+                        ) : (
+                          <Trash2 className="h-3 w-3 text-red-500" />
+                        )}
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

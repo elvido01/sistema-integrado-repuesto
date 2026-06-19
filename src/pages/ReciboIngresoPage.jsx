@@ -31,7 +31,7 @@ const initialState = {
 
 const ReciboIngresoPage = ({ extraData }) => {
   const { toast } = useToast();
-  const { empresa } = useAuth();
+  const { empresa, tenantId } = useAuth();
   const { closePanel } = usePanels();
   const [recibo, setRecibo] = useState(initialState);
   const [clientes, setClientes] = useState([]);
@@ -42,6 +42,7 @@ const ReciboIngresoPage = ({ extraData }) => {
   const [datosCliente, setDatosCliente] = useState({ balance_anterior: 0, ultimo_pago: null });
   const [isClienteSearchModalOpen, setIsClienteSearchModalOpen] = useState(false);
   const [tipoPapel, setTipoPapel] = useState('4 Pulgadas');
+  const [metodoImpresion, setMetodoImpresion] = useState(() => localStorage.getItem('recibo_ingreso_print_method') || 'browser');
 
   // Info del cliente seleccionado (para mostrar teléfono, dirección, etc.)
   const selectedClientInfo = useMemo(() => {
@@ -211,6 +212,7 @@ const ReciboIngresoPage = ({ extraData }) => {
 
     setIsSaving(true);
     const reciboData = {
+      tenant_id: tenantId,
       cliente_id: recibo.clienteId,
       fecha: formatDateForSupabase(recibo.fecha),
       monto_pagado: totalAbonos,
@@ -221,6 +223,7 @@ const ReciboIngresoPage = ({ extraData }) => {
     const abonosData = facturas
       .filter(f => f.abono > 0)
       .map(f => ({
+        tenant_id: tenantId,
         factura_id: f.id,
         monto_abono: f.abono,
       }));
@@ -253,14 +256,22 @@ const ReciboIngresoPage = ({ extraData }) => {
         };
 
         if (tipoPapel === '80mm' || tipoPapel === '4 Pulgadas') {
-          try {
-            await printReciboIngresoQZ(dataForPrint);
-          } catch (err) {
-            console.error('[QZ] Fallback a HTML:', err);
+          if (metodoImpresion === 'browser') {
             if (tipoPapel === '80mm') {
               printReciboPOS(dataForPrint);
             } else {
               printRecibo4Pulgadas(dataForPrint);
+            }
+          } else {
+            try {
+              await printReciboIngresoQZ(dataForPrint);
+            } catch (err) {
+              console.error('[QZ] Fallback a HTML:', err);
+              if (tipoPapel === '80mm') {
+                printReciboPOS(dataForPrint);
+              } else {
+                printRecibo4Pulgadas(dataForPrint);
+              }
             }
           }
         } else {
@@ -562,6 +573,21 @@ const ReciboIngresoPage = ({ extraData }) => {
                       <SelectItem value="8.5 x 11 Pulgadas">8.5 x 11 Pulgadas (Papel Normal)</SelectItem>
                       <SelectItem value="4 Pulgadas">4 Pulgadas (Recibo Compacto)</SelectItem>
                       <SelectItem value="80mm">80mm (Ticket Térmico)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={metodoImpresion}
+                    onValueChange={(value) => {
+                      setMetodoImpresion(value);
+                      localStorage.setItem('recibo_ingreso_print_method', value);
+                    }}
+                  >
+                    <SelectTrigger className="h-6 w-36 text-[10px] font-bold border-gray-300 bg-gray-50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="browser">Web / Navegador</SelectItem>
+                      <SelectItem value="native">QZ / Agente</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

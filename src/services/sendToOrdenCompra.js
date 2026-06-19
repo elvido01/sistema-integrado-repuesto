@@ -6,6 +6,28 @@ import { normalizeTaxRate, calculateLineAmount } from '@/lib/taxUtils';
 const calculateDetailImporte = (detalle, aplicarItbis = true) =>
     calculateLineAmount(detalle, aplicarItbis);
 
+const stripReceptionFields = (detalle) => {
+    const {
+        cantidad_pedida,
+        cantidad_recibida,
+        cantidad_pendiente,
+        estado_linea,
+        ...legacyDetalle
+    } = detalle;
+    return legacyDetalle;
+};
+
+const isReceptionSchemaMissing = (error) => Boolean(
+    error
+    && (
+        error.code === 'PGRST204'
+        || error.message?.includes('cantidad_pedida')
+        || error.message?.includes('cantidad_recibida')
+        || error.message?.includes('cantidad_pendiente')
+        || error.message?.includes('estado_linea')
+    )
+);
+
 /**
  * Envía un producto a una orden de compra pendiente del suplidor.
  * - Si ya existe una orden pendiente para ese suplidor → agrega el producto (o suma cantidad).
@@ -89,12 +111,23 @@ export async function sendProductToOrdenCompra(product, options = {}) {
             await supabase.from('ordenes_compra').update(updatePayload).eq('id', orderId);
 
             // Check if product already exists in this order
-            const { data: existingDetails, error: detailCheckError } = await supabase
+            let { data: existingDetails, error: detailCheckError } = await supabase
                 .from('ordenes_compra_detalle')
-                .select('id, cantidad')
+                .select('id, cantidad, cantidad_pedida, cantidad_recibida')
                 .eq('orden_compra_id', orderId)
                 .eq('producto_id', productData.id)
                 .order('id', { ascending: true });
+
+            if (isReceptionSchemaMissing(detailCheckError)) {
+                const legacyResult = await supabase
+                    .from('ordenes_compra_detalle')
+                    .select('id, cantidad')
+                    .eq('orden_compra_id', orderId)
+                    .eq('producto_id', productData.id)
+                    .order('id', { ascending: true });
+                existingDetails = legacyResult.data;
+                detailCheckError = legacyResult.error;
+            }
 
             if (detailCheckError) {
                 return { success: false, message: 'Error al verificar detalles de la orden.' };
@@ -105,7 +138,9 @@ export async function sendProductToOrdenCompra(product, options = {}) {
             if (existingDetail) {
                 // Product already in order → increment quantity
                 const currentQty = (existingDetails || []).reduce((sum, detail) => sum + (parseFloat(detail.cantidad) || 0), 0);
+                const receivedQty = parseFloat(existingDetail.cantidad_recibida) || 0;
                 const newQty = currentQty + quantity;
+                const newPendingQty = Math.max(0, newQty - receivedQty);
                 const newImporte = calculateDetailImporte({
                     ...existingDetail,
                     cantidad: newQty,
@@ -114,10 +149,25 @@ export async function sendProductToOrdenCompra(product, options = {}) {
                     itbis_pct: itbisPct,
                 }, false);
 
-                const { error: updateError } = await supabase
+                let { error: updateError } = await supabase
                     .from('ordenes_compra_detalle')
-                    .update({ cantidad: newQty, importe: newImporte })
+                    .update({
+                        cantidad: newQty,
+                        cantidad_pedida: newQty,
+                        cantidad_recibida: receivedQty,
+                        cantidad_pendiente: newPendingQty,
+                        estado_linea: newPendingQty <= 0 ? 'recibida' : (receivedQty > 0 ? 'parcial' : 'pendiente'),
+                        importe: newImporte,
+                    })
                     .eq('id', existingDetail.id);
+
+                if (isReceptionSchemaMissing(updateError)) {
+                    const legacyResult = await supabase
+                        .from('ordenes_compra_detalle')
+                        .update({ cantidad: newQty, importe: newImporte })
+                        .eq('id', existingDetail.id);
+                    updateError = legacyResult.error;
+                }
 
                 if (updateError) {
                     return { success: false, message: 'Error al actualizar la cantidad en la orden.' };
@@ -132,7 +182,7 @@ export async function sendProductToOrdenCompra(product, options = {}) {
                 }
             } else {
                 // Add new detail to existing order
-                const { error: insertDetailError } = await supabase
+                let { error: insertDetailError } = await supabase
                     .from('ordenes_compra_detalle')
                     .insert({
                         orden_compra_id: orderId,
@@ -140,12 +190,34 @@ export async function sendProductToOrdenCompra(product, options = {}) {
                         codigo: productData.codigo,
                         descripcion: productData.descripcion,
                         cantidad: quantity,
+                        cantidad_pedida: quantity,
+                        cantidad_recibida: 0,
+                        cantidad_pendiente: quantity,
+                        estado_linea: 'pendiente',
                         unidad: 'UND',
                         precio: costo,
                         descuento_pct: 0,
                         itbis_pct: itbisPct,
                         importe: costo * quantity,
                     });
+
+                if (isReceptionSchemaMissing(insertDetailError)) {
+                    const legacyResult = await supabase
+                        .from('ordenes_compra_detalle')
+                        .insert({
+                            orden_compra_id: orderId,
+                            producto_id: productData.id,
+                            codigo: productData.codigo,
+                            descripcion: productData.descripcion,
+                            cantidad: quantity,
+                            unidad: 'UND',
+                            precio: costo,
+                            descuento_pct: 0,
+                            itbis_pct: itbisPct,
+                            importe: costo * quantity,
+                        });
+                    insertDetailError = legacyResult.error;
+                }
 
                 if (insertDetailError) {
                     return { success: false, message: 'Error al agregar producto a la orden existente.' };
@@ -197,7 +269,7 @@ export async function sendProductToOrdenCompra(product, options = {}) {
             orderId = savedOrden.id;
 
             // Insert the product detail
-            const { error: insertDetailError } = await supabase
+            let { error: insertDetailError } = await supabase
                 .from('ordenes_compra_detalle')
                 .insert({
                     orden_compra_id: orderId,
@@ -205,12 +277,34 @@ export async function sendProductToOrdenCompra(product, options = {}) {
                     codigo: productData.codigo,
                     descripcion: productData.descripcion,
                     cantidad: quantity,
+                    cantidad_pedida: quantity,
+                    cantidad_recibida: 0,
+                    cantidad_pendiente: quantity,
+                    estado_linea: 'pendiente',
                     unidad: 'UND',
                     precio: costo,
                     descuento_pct: 0,
                     itbis_pct: itbisPct,
                     importe: costo * quantity,
                 });
+
+            if (isReceptionSchemaMissing(insertDetailError)) {
+                const legacyResult = await supabase
+                    .from('ordenes_compra_detalle')
+                    .insert({
+                        orden_compra_id: orderId,
+                        producto_id: productData.id,
+                        codigo: productData.codigo,
+                        descripcion: productData.descripcion,
+                        cantidad: quantity,
+                        unidad: 'UND',
+                        precio: costo,
+                        descuento_pct: 0,
+                        itbis_pct: itbisPct,
+                        importe: costo * quantity,
+                    });
+                insertDetailError = legacyResult.error;
+            }
 
             if (insertDetailError) {
                 return { success: false, message: 'Error al agregar producto a la nueva orden.' };

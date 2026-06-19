@@ -704,7 +704,12 @@ const PedidosPage = () => {
   }, [fetchData]);
 
   const handleSelectPedido = async (pedido) => {
-    setSelectedPedido(pedido);
+    const { data: pedidoCompleto } = await supabase
+      .from('pedidos')
+      .select('*')
+      .eq('id', pedido.id)
+      .maybeSingle();
+    setSelectedPedido({ ...pedido, ...(pedidoCompleto || {}) });
     const { data } = await supabase.from('pedidos_detalle').select('*, productos(ubicacion, itbis_pct)').eq('pedido_id', pedido.id);
     const detailsWithLocation = data.map(d => ({ ...d, ubicacion: d.productos?.ubicacion || '' }));
     setDetalles(detailsWithLocation || []);
@@ -755,13 +760,18 @@ const PedidosPage = () => {
       if (error) throw error;
 
       // 2. Preparar datos para facturación
-      const cliente = clientes.find(c => c.id === selectedPedido.cliente_id);
+      const { data: pedidoCompletoDb, error: pedidoError } = await supabase.from('pedidos').select('*').eq('id', selectedPedido.id).maybeSingle();
+      if (pedidoError) throw pedidoError;
+      const pedidoBase = { ...selectedPedido, ...(pedidoCompletoDb || {}) };
+      const cliente = clientes.find(c => c.id === pedidoBase.cliente_id);
       const pedidoCompleto = {
         type: 'pedido',
-        ...selectedPedido,
+        ...pedidoBase,
         cliente,
         detalles,
       };
+      setPedidoParaFacturar(pedidoCompleto);
+      openPanel('ventas');
 
       toast({ title: "Preparado", description: "Pedido listo en el módulo de Ventas." });
       fetchData();

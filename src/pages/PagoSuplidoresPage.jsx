@@ -28,6 +28,14 @@ const initialState = {
   imprimir: true,
 };
 
+const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+const getCompraOldestTime = (compra) => {
+  const rawDate = compra.fecha_emision || compra.fecha_vencimiento;
+  const time = rawDate ? new Date(rawDate).getTime() : Infinity;
+  return Number.isNaN(time) ? Infinity : time;
+};
+
 const PagoSuplidoresPage = () => {
   const { toast } = useToast();
   const { empresa } = useAuth();
@@ -82,14 +90,10 @@ const PagoSuplidoresPage = () => {
       const { data, error } = await supabase.rpc('get_compras_pendientes_suplidor', { p_suplidor_id: suplidorId });
       if (error) throw error;
 
-      // Ordenar por fecha de vencimiento ascendente: la más próxima a vencer primero.
+      // Ordenar por fecha de emision ascendente: la factura mas vieja primero.
       const comprasConAbono = data
         .map(c => ({ ...c, abono: 0 }))
-        .sort((a, b) => {
-          const da = a.fecha_vencimiento ? new Date(a.fecha_vencimiento).getTime() : Infinity;
-          const db = b.fecha_vencimiento ? new Date(b.fecha_vencimiento).getTime() : Infinity;
-          return da - db;
-        });
+        .sort((a, b) => getCompraOldestTime(a) - getCompraOldestTime(b));
       const balanceAnterior = comprasConAbono.reduce((sum, c) => sum + Number(c.monto_pendiente), 0);
 
       setCompras(comprasConAbono);
@@ -112,12 +116,34 @@ const PagoSuplidoresPage = () => {
     setCompras(compras.map(c => {
       if (c.id === compraId) {
         const montoPendiente = parseFloat(c.monto_pendiente);
-        const newAbono = abonoValue > montoPendiente ? montoPendiente : abonoValue;
+        const newAbono = Math.min(Math.max(0, abonoValue), montoPendiente);
         return { ...c, abono: newAbono };
       }
       return c;
     }));
   };
+
+  const distribuirPagoEnCompras = useCallback((montoTotal) => {
+    const totalDisponible = Math.max(0, toMoney(montoTotal));
+
+    setCompras(prevCompras => {
+      let restante = totalDisponible;
+      const abonosPorCompra = new Map();
+      const ordenadas = [...prevCompras].sort((a, b) => getCompraOldestTime(a) - getCompraOldestTime(b));
+
+      ordenadas.forEach((compra) => {
+        const pendiente = Math.max(0, Number(compra.monto_pendiente) || 0);
+        const abono = Math.min(pendiente, restante);
+        abonosPorCompra.set(compra.id, toMoney(abono));
+        restante = toMoney(restante - abono);
+      });
+
+      return prevCompras.map(compra => ({
+        ...compra,
+        abono: abonosPorCompra.get(compra.id) || 0,
+      }));
+    });
+  }, []);
 
   const totalAbonos = useMemo(() => {
     return compras.reduce((sum, c) => sum + Number(c.abono), 0);
@@ -132,7 +158,13 @@ const PagoSuplidoresPage = () => {
   }, [totalAbonos, pago.balanceAnterior]);
 
   const handleFormaPagoChange = (id, field, value) => {
-    setFormasPago(formasPago.map(p => p.id === id ? { ...p, [field]: value } : p));
+    const nextFormasPago = formasPago.map(p => p.id === id ? { ...p, [field]: value } : p);
+    setFormasPago(nextFormasPago);
+
+    if (field === 'monto') {
+      const totalFormas = nextFormasPago.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
+      distribuirPagoEnCompras(totalFormas);
+    }
   };
 
   const addFormaPago = () => {
@@ -141,7 +173,10 @@ const PagoSuplidoresPage = () => {
 
   const removeFormaPago = (id) => {
     if (formasPago.length > 1) {
-      setFormasPago(formasPago.filter(p => p.id !== id));
+      const nextFormasPago = formasPago.filter(p => p.id !== id);
+      setFormasPago(nextFormasPago);
+      const totalFormas = nextFormasPago.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
+      distribuirPagoEnCompras(totalFormas);
     }
   };
 

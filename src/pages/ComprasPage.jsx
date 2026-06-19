@@ -878,6 +878,81 @@ const ComprasPage = () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
     setIsSaving(true);
 
+    const aplicarRecepcionOrdenes = async (savedCompra) => {
+      const pendientesCompra = detalles
+        .filter((d) => d.producto_id || d.codigo)
+        .map((d) => ({
+          producto_id: d.producto_id,
+          codigo: d.codigo,
+          cantidad_restante: Number(d.cantidad || 0),
+        }));
+
+      const aplicarEnOrden = async (ordenId) => {
+        const { data: ordenDetalles, error: ordenDetallesError } = await supabase
+          .from('ordenes_compra_detalle')
+          .select('*')
+          .eq('orden_compra_id', ordenId)
+          .neq('estado_linea', 'recibida')
+          .order('id', { ascending: true });
+
+        if (ordenDetallesError) throw ordenDetallesError;
+
+        for (const od of ordenDetalles || []) {
+          const pendienteOrden = Number(od.cantidad_pendiente ?? Math.max(0, Number(od.cantidad_pedida ?? od.cantidad ?? 0) - Number(od.cantidad_recibida ?? 0)));
+          if (pendienteOrden <= 0) continue;
+
+          const lineaCompra = pendientesCompra.find((d) => (
+            d.cantidad_restante > 0
+            && (
+              (d.producto_id && od.producto_id && String(d.producto_id) === String(od.producto_id))
+              || (d.codigo && od.codigo && String(d.codigo).toUpperCase() === String(od.codigo).toUpperCase())
+            )
+          ));
+
+          if (!lineaCompra) continue;
+
+          const recibidoAhora = Math.min(pendienteOrden, Number(lineaCompra.cantidad_restante || 0));
+          const cantidadPedida = Number(od.cantidad_pedida ?? od.cantidad ?? 0);
+          const totalRecibido = Number(od.cantidad_recibida || 0) + recibidoAhora;
+          const pendienteNuevo = Math.max(0, cantidadPedida - totalRecibido);
+
+          await supabase
+            .from('ordenes_compra_detalle')
+            .update({
+              cantidad_pedida: cantidadPedida,
+              cantidad_recibida: totalRecibido,
+              cantidad_pendiente: pendienteNuevo,
+              estado_linea: pendienteNuevo <= 0 ? 'recibida' : 'parcial',
+            })
+            .eq('id', od.id);
+
+          lineaCompra.cantidad_restante -= recibidoAhora;
+        }
+
+        await supabase.rpc('recalcular_estado_recepcion_orden', { p_orden_id: ordenId });
+      };
+
+      if (savedCompra.id_orden_origen) {
+        await aplicarEnOrden(savedCompra.id_orden_origen);
+        return;
+      }
+
+      const { data: ordenesEnCamino, error: ordenesError } = await supabase
+        .from('ordenes_compra')
+        .select('id, numero')
+        .eq('suplidor_id', savedCompra.suplidor_id)
+        .in('estado', ['Enviada', 'Parcial'])
+        .order('fecha_enviada', { ascending: true, nullsFirst: false })
+        .limit(10);
+
+      if (ordenesError) throw ordenesError;
+
+      for (const ordenPendiente of ordenesEnCamino || []) {
+        if (!pendientesCompra.some((d) => d.cantidad_restante > 0)) break;
+        await aplicarEnOrden(ordenPendiente.id);
+      }
+    };
+
     // Validación de duplicidad (Mismo Suplidor con misma Referencia o NCF)
     let queryVal = supabase.from('compras').select('id, referencia, ncf').eq('suplidor_id', compra.suplidor_id);
     const orConds = [];
@@ -994,70 +1069,17 @@ const ComprasPage = () => {
       toast({ variant: "destructive", title: "Error al guardar detalles de la compra", description: detallesError.message });
     } else {
       // ============================================
-      // LIMPIEZA AUTOMÁTICA DE ÓRDENES PENDIENTES
+      // RECEPCION CONTRA ORDENES ENVIADAS/PARCIALES
       // ============================================
       try {
-        const CONFIG_ID = '00000000-0000-0000-0000-000000000001';
-        const { data: config } = await supabase.from('config_empresa').select('limpiar_ordenes_compra_auto, modo_limpieza_orden').eq('id', CONFIG_ID).single();
-
-        if (config?.limpiar_ordenes_compra_auto) {
-          // Buscar todas las órdenes pendientes del mismo suplidor
-          const { data: ordenesPendientes } = await supabase
-            .from('ordenes_compra')
-            .select('id, numero')
-            .eq('suplidor_id', savedCompra.suplidor_id)
-            .eq('estado', 'Pendiente');
-
-          if (ordenesPendientes && ordenesPendientes.length > 0) {
-            for (const orden of ordenesPendientes) {
-              const { data: ordenDetalles } = await supabase
-                .from('ordenes_compra_detalle')
-                .select('*')
-                .eq('orden_compra_id', orden.id);
-
-              if (ordenDetalles) {
-                for (const d of detalles) {
-                  const match = ordenDetalles.find(od => od.codigo === d.codigo);
-                  if (match) {
-                    if (config.modo_limpieza_orden === 'agresivo') {
-                      // Borrado agresivo: cualquier cantidad recibida elimina la línea de la orden
-                      await supabase.from('ordenes_compra_detalle').delete().eq('id', match.id);
-                    } else {
-                      // Proporcional: restar cantidad
-                      if (d.cantidad >= match.cantidad) {
-                        await supabase.from('ordenes_compra_detalle').delete().eq('id', match.id);
-                      } else {
-                        await supabase.from('ordenes_compra_detalle').update({ 
-                          cantidad: match.cantidad - d.cantidad 
-                        }).eq('id', match.id);
-                      }
-                    }
-                  }
-                }
-
-                // Verificar si la orden se quedó sin detalles
-                const { data: remainDetalles } = await supabase
-                  .from('ordenes_compra_detalle')
-                  .select('id', { count: 'exact' })
-                  .eq('orden_compra_id', orden.id);
-                
-                if (!remainDetalles || remainDetalles.length === 0) {
-                   await supabase.from('ordenes_compra').update({ estado: 'Recibida' }).eq('id', orden.id);
-                }
-              }
-            }
-          }
-        }
+        await aplicarRecepcionOrdenes(savedCompra);
       } catch (err) {
-        console.error("Error en limpieza automática de órdenes:", err);
-      }
-
-      // Update source order status to Recibida (si vino de flujo formal)
-      if (savedCompra.id_orden_origen) {
-        await supabase
-          .from('ordenes_compra')
-          .update({ estado: 'Recibida' })
-          .eq('id', savedCompra.id_orden_origen);
+        console.error("Error aplicando recepcion de ordenes:", err);
+        toast({
+          variant: 'destructive',
+          title: 'Advertencia',
+          description: 'La compra se guardo, pero no se pudo actualizar la recepcion de la orden.',
+        });
       }
 
       const movimientos = detalles.map(d => ({
