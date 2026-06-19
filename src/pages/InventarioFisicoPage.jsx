@@ -391,6 +391,7 @@ const InventarioFisicoPage = () => {
                             </Label>
                             <SearchableSelect
                                 placeholder="--- BUSCAR UBICACIÓN ---"
+                                allowCustomValue
                                 options={[
                                     { value: 'none', label: '--- SELECCIONE UBICACIÓN ---' },
                                     { value: 'all', label: '--- TODAS LAS UBICACIONES ---' },

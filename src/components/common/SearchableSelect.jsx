@@ -9,6 +9,7 @@ export default function SearchableSelect({
   className = '',
   disabled = false,
   clearable = true,
+  allowCustomValue = false,
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -26,6 +27,8 @@ export default function SearchableSelect({
     [list, value]
   );
 
+  const displayValue = selected?.label || (allowCustomValue && value ? String(value) : placeholder);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return list;
@@ -35,10 +38,14 @@ export default function SearchableSelect({
   const openMenu = useCallback(() => {
     if (disabled) return;
     setOpen(true);
+    setQuery(allowCustomValue && value && value !== 'none' ? String(selected?.label || value) : '');
     setFocusIndex(-1);
     // se enfoca el input un tick después para que esté montado
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }, [disabled]);
+    setTimeout(() => {
+      inputRef.current?.focus();
+      if (allowCustomValue) inputRef.current?.select();
+    }, 0);
+  }, [allowCustomValue, disabled, selected, value]);
 
   const closeMenu = useCallback(() => {
     setOpen(false);
@@ -53,6 +60,15 @@ export default function SearchableSelect({
     onChange(item.value);
     closeMenu();
   }, [filtered, onChange, closeMenu]);
+
+  const selectCustomValue = useCallback(() => {
+    if (!allowCustomValue) return false;
+    const customValue = query.trim();
+    if (!customValue) return false;
+    onChange(customValue);
+    closeMenu();
+    return true;
+  }, [allowCustomValue, closeMenu, onChange, query]);
 
   const onButtonKeyDown = (e) => {
     if (disabled) return;
@@ -77,6 +93,7 @@ export default function SearchableSelect({
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (focusIndex >= 0) selectByIndex(focusIndex);
+      else selectCustomValue();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setFocusIndex((i) => Math.min(i + 1, filtered.length - 1));
@@ -132,8 +149,8 @@ export default function SearchableSelect({
         onKeyDown={onButtonKeyDown}
         disabled={disabled}
       >
-        <span className={`truncate ${selected ? '' : 'text-neutral-400'}`}>
-          {selected ? selected.label : placeholder}
+        <span className={`truncate ${selected || (allowCustomValue && value) ? '' : 'text-neutral-400'}`}>
+          {displayValue}
         </span>
 
         {/* Clear / caret */}
@@ -198,35 +215,60 @@ export default function SearchableSelect({
             className="max-h-56 overflow-auto py-1"
           >
             {filtered.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-neutral-500">Sin resultados</li>
+              allowCustomValue && query.trim() ? (
+                <li
+                  className="px-3 py-2 text-sm cursor-pointer select-none text-morla-blue font-semibold"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    selectCustomValue();
+                  }}
+                >
+                  Usar "{query.trim()}"
+                </li>
+              ) : (
+                <li className="px-3 py-2 text-sm text-neutral-500">Sin resultados</li>
+              )
             ) : (
-              filtered.map((o, idx) => {
-                const active = idx === focusIndex;
-                const selectedItem = selected && String(o.value) === String(selected.value);
-                return (
+              <>
+                {filtered.map((o, idx) => {
+                  const active = idx === focusIndex;
+                  const selectedItem = selected && String(o.value) === String(selected.value);
+                  return (
+                    <li
+                      key={String(o.value)}
+                      role="option"
+                      aria-selected={selectedItem}
+                      className={`px-3 py-2 text-sm cursor-pointer select-none flex items-center justify-between
+                        ${active ? 'bg-neutral-100 dark:bg-neutral-800' : ''}
+                      `}
+                      onMouseEnter={() => setFocusIndex(idx)}
+                      onMouseDown={(e) => {
+                        // evita blur antes del click
+                        e.preventDefault();
+                        selectByIndex(idx);
+                      }}
+                    >
+                      <span className="truncate">{o.label}</span>
+                      {selectedItem ? (
+                        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M20 6L9 17l-5-5" fill="none" stroke="currentColor" strokeWidth="2" />
+                        </svg>
+                      ) : null}
+                    </li>
+                  );
+                })}
+                {allowCustomValue && query.trim() && !list.some((o) => String(o.value).toLowerCase() === query.trim().toLowerCase()) ? (
                   <li
-                    key={String(o.value)}
-                    role="option"
-                    aria-selected={selectedItem}
-                    className={`px-3 py-2 text-sm cursor-pointer select-none flex items-center justify-between
-                      ${active ? 'bg-neutral-100 dark:bg-neutral-800' : ''}
-                    `}
-                    onMouseEnter={() => setFocusIndex(idx)}
+                    className="px-3 py-2 text-sm cursor-pointer select-none text-morla-blue font-semibold border-t"
                     onMouseDown={(e) => {
-                      // evita blur antes del click
                       e.preventDefault();
-                      selectByIndex(idx);
+                      selectCustomValue();
                     }}
                   >
-                    <span className="truncate">{o.label}</span>
-                    {selectedItem ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M20 6L9 17l-5-5" fill="none" stroke="currentColor" strokeWidth="2" />
-                      </svg>
-                    ) : null}
+                    Usar "{query.trim()}"
                   </li>
-                );
-              })
+                ) : null}
+              </>
             )}
           </ul>
         </div>
