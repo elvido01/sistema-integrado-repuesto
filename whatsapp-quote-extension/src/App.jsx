@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { createQuote, getStoredSession, getVendors, logConversationEvent, searchCustomers, searchProducts, signInWithPassword, signOut } from './services/apiClient.js';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createQuote, getClientesMorosos, getStoredSession, getVendors, logConversationEvent, searchCustomers, searchProducts, setClienteTelefono, setCobranzaSeguimiento, signInWithPassword, signOut } from './services/apiClient.js';
 import { getCurrentChat, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
 
 const money = new Intl.NumberFormat('es-DO', {
@@ -7,6 +7,57 @@ const money = new Intl.NumberFormat('es-DO', {
   currency: 'DOP',
   minimumFractionDigits: 2
 });
+
+// Monto sin simbolo (para el texto del recordatorio: "1,606.94")
+const plainAmount = new Intl.NumberFormat('es-DO', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
+const DEFAULT_COBRO_TEMPLATE =
+  'Hola {NOMBRE}. El estado de su cuenta en {EMPRESA} es el siguiente: ' +
+  'cuotas atrasadas: {N} FACTURA: {FACTURAS}, MONTO ATRASADO: {MONTO} - ' +
+  'Favor pagar a mas tardar entre las proximas 48 horas y evitar cargos ' +
+  'adicionales, este es un mensaje automatico del sistema. Gracias.';
+
+function buildCobroMessage(estado) {
+  const plantilla = (estado?.plantilla && estado.plantilla.trim()) || DEFAULT_COBRO_TEMPLATE;
+  const facturas = (estado?.facturas || []).map((f) => f.numero).join(', ');
+  const map = {
+    '{NOMBRE}': estado?.cliente_nombre || '',
+    '{EMPRESA}': estado?.empresa_nombre || 'la empresa',
+    '{N}': String(estado?.cuotas_atrasadas ?? 0),
+    '{FACTURAS}': facturas,
+    '{MONTO}': plainAmount.format(Number(estado?.total_atrasado) || 0)
+  };
+  return plantilla.replace(/\{NOMBRE\}|\{EMPRESA\}|\{N\}|\{FACTURAS\}|\{MONTO\}/g, (token) => map[token] ?? token);
+}
+
+function buildCobroMessageFor(cliente, empresaNombre, plantilla) {
+  return buildCobroMessage({
+    plantilla,
+    empresa_nombre: empresaNombre,
+    cliente_nombre: cliente.cliente_nombre,
+    cuotas_atrasadas: cliente.cuotas_atrasadas,
+    total_atrasado: cliente.total_atrasado,
+    facturas: cliente.facturas
+  });
+}
+
+const PENDING_COBRO_KEY = 'motoflow_pending_cobro';
+
+const COBRO_ESTADOS = [
+  { key: 'ir_a_buscar', label: 'Ir a buscar' },
+  { key: 'cliente_vendra', label: 'Cliente vendra' }
+];
+
+// Normaliza un telefono dominicano al formato de wa.me (1 + 10 digitos)
+function normalizePhone(raw) {
+  let digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) digits = '1' + digits;
+  return digits;
+}
 
 const STORAGE_PREFIX = 'motoflow_quote_draft:';
 const LAST_QUOTE_PREFIX = 'motoflow_quote_last_sent:';
@@ -124,6 +175,7 @@ function serializeLines(lines) {
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
+  const [mode, setMode] = useState('cotizar'); // 'cotizar' | 'cobranza'
   const [chat, setChat] = useState(() => getCurrentChat());
   const [lines, setLines] = useState([]);
   const [query, setQuery] = useState('');
@@ -154,6 +206,12 @@ export default function App() {
   const [quoteStatus, setQuoteStatus] = useState(() => readMeta(chat).quoteStatus || 'cotizado');
   const [quoteHistory, setQuoteHistory] = useState(() => readHistory(chat));
   const [motoflowDetailsOpen, setMotoflowDetailsOpen] = useState(false);
+  const [morosos, setMorosos] = useState(null);   // { empresa_nombre, plantilla, clientes: [] }
+  const [morososLoading, setMorososLoading] = useState(false);
+  const [cobroMsg, setCobroMsg] = useState('');
+  const [cobroFilter, setCobroFilter] = useState('');
+  const [sendingId, setSendingId] = useState(null);  // cliente_id que se esta enviando
+  const phoneFocusRef = useRef('');                  // telefono al entrar al campo (para detectar cambios)
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -162,6 +220,55 @@ export default function App() {
     }, 900);
 
     return () => window.clearInterval(interval);
+  }, []);
+
+  // Al abrir el chat de un cliente desde la lista de cobranza, WhatsApp
+  // recarga la pagina; aqui recuperamos el mensaje pendiente y lo pegamos.
+  useEffect(() => {
+    let raw;
+    try {
+      raw = window.localStorage.getItem(PENDING_COBRO_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+
+    let pending;
+    try {
+      pending = JSON.parse(raw);
+    } catch {
+      window.localStorage.removeItem(PENDING_COBRO_KEY);
+      return;
+    }
+
+    if (!pending?.text || (Date.now() - (pending.ts || 0)) > 90000) {
+      window.localStorage.removeItem(PENDING_COBRO_KEY);
+      return;
+    }
+
+    setMode('cobranza');
+    let attempts = 0;
+    let cancelled = false;
+
+    const tryPaste = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      const ok = await pasteTextIntoWhatsApp(pending.text);
+      if (ok) {
+        window.localStorage.removeItem(PENDING_COBRO_KEY);
+        setCobroMsg('Recordatorio pegado en el chat. Revisa y presiona Enter para enviar.');
+      } else if (attempts < 25) {
+        window.setTimeout(tryPaste, 700);
+      } else {
+        window.localStorage.removeItem(PENDING_COBRO_KEY);
+      }
+    };
+
+    const timer = window.setTimeout(tryPaste, 1800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -366,7 +473,8 @@ export default function App() {
         ...overrides.metadata
       }
     }).catch((error) => {
-      console.warn('[Motoflow WhatsApp] No se pudo guardar evento:', error.message);
+      // Registro de analitica best-effort: si falla no debe molestar al usuario
+      console.debug('[Motoflow WhatsApp] No se pudo guardar evento:', error.message);
     });
   }
 
@@ -568,6 +676,154 @@ export default function App() {
     setCustomerResults([]);
   }
 
+  function handleGoCobranza() {
+    setMode('cobranza');
+    loadMorosos();
+  }
+
+  async function loadMorosos() {
+    setMorososLoading(true);
+    setCobroMsg('');
+    try {
+      const data = await getClientesMorosos();
+      setMorosos(data);
+      if (!data?.clientes?.length) {
+        setCobroMsg('No hay clientes con facturas vencidas. Todo al dia.');
+      }
+    } catch (error) {
+      setCobroMsg(error.message || 'No se pudo cargar la lista de cobranza.');
+      setMorosos(null);
+    } finally {
+      setMorososLoading(false);
+    }
+  }
+
+  // Guarda el seguimiento de un cliente en la BD
+  function saveSeg(cliente) {
+    return setCobranzaSeguimiento({
+      clienteId: cliente.cliente_id,
+      estado: cliente.seg_estado || 'pendiente',
+      fecha: cliente.seg_fecha || null,
+      nota: cliente.seg_nota || null
+    }).catch((error) => {
+      console.warn('[Motoflow] No se pudo guardar seguimiento:', error.message);
+      setCobroMsg('No se pudo guardar el seguimiento. Reintenta.');
+    });
+  }
+
+  // Telefono editable: actualiza en pantalla y guarda en clientes.telefono
+  function updatePhoneLocal(clienteId, telefono) {
+    setMorosos((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        clientes: current.clientes.map((c) =>
+          c.cliente_id === clienteId ? { ...c, cliente_telefono: telefono } : c
+        )
+      };
+    });
+  }
+
+  async function savePhone(cliente) {
+    try {
+      await setClienteTelefono({
+        clienteId: cliente.cliente_id,
+        telefono: (cliente.cliente_telefono || '').trim() || null
+      });
+      setCobroMsg(`Telefono de ${cliente.cliente_nombre} actualizado.`);
+    } catch (error) {
+      console.warn('[Motoflow] No se pudo guardar telefono:', error.message);
+      setCobroMsg('No se pudo guardar el telefono. Reintenta.');
+    }
+  }
+
+  // Solo actualiza en pantalla (sin guardar todavia) — para escribir la nota
+  function updateSegLocal(clienteId, patch) {
+    setMorosos((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        clientes: current.clientes.map((c) =>
+          c.cliente_id === clienteId ? { ...c, ...patch } : c
+        )
+      };
+    });
+  }
+
+  // Actualiza en pantalla y guarda (para botones de estado y la fecha)
+  function handleSegChange(clienteId, patch) {
+    setMorosos((current) => {
+      if (!current) return current;
+      const clientes = current.clientes.map((c) =>
+        c.cliente_id === clienteId ? { ...c, ...patch } : c
+      );
+      const updated = clientes.find((c) => c.cliente_id === clienteId);
+      if (updated) saveSeg(updated);
+      return { ...current, clientes };
+    });
+  }
+
+  function toggleSegEstado(cliente, estadoKey) {
+    const next = cliente.seg_estado === estadoKey ? 'pendiente' : estadoKey;
+    const patch = { seg_estado: next };
+    if (next !== 'cliente_vendra') patch.seg_fecha = null;
+    handleSegChange(cliente.cliente_id, patch);
+  }
+
+  // "Guardar" cuando el cliente prometio venir: guarda y lo pospone (sale
+  // de la lista hasta el dia de la fecha prometida)
+  async function handleGuardarSeguimiento(cliente) {
+    await saveSeg(cliente);
+    const fecha = cliente.seg_fecha;
+    const hoy = new Date().toISOString().slice(0, 10);
+    if (fecha && fecha > hoy) {
+      setMorosos((current) =>
+        current
+          ? { ...current, clientes: current.clientes.filter((c) => c.cliente_id !== cliente.cliente_id) }
+          : current
+      );
+      setCobroMsg(`${cliente.cliente_nombre} pospuesto. Reaparecera el ${fecha}.`);
+    } else {
+      setCobroMsg('Indica una fecha futura para posponer al cliente.');
+    }
+  }
+
+  async function handleEnviarMsj(cliente) {
+    if (sendingId) return;
+    const phone = normalizePhone(cliente.cliente_telefono);
+    const text = buildCobroMessageFor(cliente, morosos?.empresa_nombre, morosos?.plantilla);
+
+    if (!phone) {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCobroMsg(`${cliente.cliente_nombre} no tiene telefono. Mensaje copiado al portapapeles.`);
+      } catch {
+        setCobroMsg(`${cliente.cliente_nombre} no tiene telefono registrado.`);
+      }
+      return;
+    }
+
+    setSendingId(cliente.cliente_id);
+    try {
+      window.localStorage.setItem(PENDING_COBRO_KEY, JSON.stringify({ phone, text, ts: Date.now() }));
+    } catch {
+      // si localStorage esta bloqueado, igual abrimos el chat
+    }
+    safeLogEvent('cobro_reminder_pasted', {
+      cliente_id: cliente.cliente_id,
+      customer_name: cliente.cliente_nombre,
+      customer_phone: cliente.cliente_telefono,
+      metadata: {
+        cuotas_atrasadas: cliente.cuotas_atrasadas,
+        total_atrasado: cliente.total_atrasado,
+        facturas: (cliente.facturas || []).map((f) => f.numero),
+        via: 'lista_morosos'
+      }
+    });
+    // Abre el chat del cliente; al recargar, el efecto de "pendiente" pega el texto
+    window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
+  }
+
   if (collapsed) {
     return (
       <button className="mf-floating-button" type="button" onClick={() => setCollapsed(false)}>
@@ -600,6 +856,25 @@ export default function App() {
         </button>
       </header>
 
+      {session && (
+        <nav className="mf-tabs">
+          <button
+            className={`mf-tab-quote${mode === 'cotizar' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => setMode('cotizar')}
+          >
+            Cotizar
+          </button>
+          <button
+            className={`mf-tab-cobro${mode === 'cobranza' ? ' is-active' : ''}`}
+            type="button"
+            onClick={handleGoCobranza}
+          >
+            Ver deuda
+          </button>
+        </nav>
+      )}
+
       {!session && (
         <form className="mf-login" onSubmit={handleLogin}>
           <strong>Conectar con Motoflow</strong>
@@ -626,7 +901,7 @@ export default function App() {
         </form>
       )}
 
-      {session && (
+      {session && mode === 'cotizar' && (
         <section className="mf-motoflow-box">
           <button className="mf-motoflow-toggle" type="button" onClick={() => setMotoflowDetailsOpen((open) => !open)}>
             <span>
@@ -710,6 +985,127 @@ export default function App() {
         </section>
       )}
 
+      {session && mode === 'cobranza' && (() => {
+        const clientes = morosos?.clientes || [];
+        const filtro = cobroFilter.trim().toLowerCase();
+        const visibles = filtro
+          ? clientes.filter((c) =>
+              (c.cliente_nombre || '').toLowerCase().includes(filtro) ||
+              (c.cliente_telefono || '').toLowerCase().includes(filtro))
+          : clientes;
+        const totalGeneral = clientes.reduce((sum, c) => sum + (Number(c.total_atrasado) || 0), 0);
+
+        return (
+          <section className="mf-cobranza">
+            <div className="mf-cobranza-head">
+              <input
+                className="mf-cobranza-filter"
+                value={cobroFilter}
+                onChange={(event) => setCobroFilter(event.target.value)}
+                placeholder="Buscar cliente..."
+              />
+              <button type="button" onClick={loadMorosos} disabled={morososLoading} title="Actualizar">
+                {morososLoading ? '...' : '↻'}
+              </button>
+            </div>
+
+            {clientes.length > 0 && (
+              <div className="mf-cobranza-summary">
+                <span>{clientes.length} cliente(s) con deuda vencida</span>
+                <b>{money.format(totalGeneral)}</b>
+              </div>
+            )}
+
+            {cobroMsg && <p className="mf-cobro-msg">{cobroMsg}</p>}
+            {morososLoading && !clientes.length && <p className="mf-muted">Cargando lista de cobranza...</p>}
+
+            <div className="mf-cobranza-list">
+              {visibles.map((cliente) => (
+                <article className="mf-cob-card" key={cliente.cliente_id}>
+                  <header className="mf-cob-card-head">
+                    <strong>{cliente.cliente_nombre}</strong>
+                    <span className={`mf-cob-badge${cliente.dias_mas_vencido >= 30 ? ' is-red' : ''}`}>
+                      {cliente.dias_mas_vencido}d
+                    </span>
+                  </header>
+
+                  <div className="mf-cob-card-info">
+                    <input
+                      className="mf-cob-phone"
+                      type="tel"
+                      value={cliente.cliente_telefono || ''}
+                      onChange={(event) => updatePhoneLocal(cliente.cliente_id, event.target.value)}
+                      onFocus={(event) => { phoneFocusRef.current = event.target.value; }}
+                      onBlur={(event) => { if (event.target.value !== phoneFocusRef.current) savePhone(cliente); }}
+                      placeholder="Agregar telefono"
+                    />
+                    <b>{money.format(cliente.total_atrasado)}</b>
+                  </div>
+                  <div className="mf-cob-card-facts">
+                    {cliente.cuotas_atrasadas} cuota(s): {(cliente.facturas || []).map((f) => f.numero).join(', ')}
+                  </div>
+
+                  <div className="mf-cob-seg">
+                    {COBRO_ESTADOS.map((est) => (
+                      <button
+                        key={est.key}
+                        type="button"
+                        className={cliente.seg_estado === est.key ? 'is-active' : ''}
+                        onClick={() => toggleSegEstado(cliente, est.key)}
+                      >
+                        {est.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {cliente.seg_estado === 'cliente_vendra' && (
+                    <input
+                      type="date"
+                      className="mf-cob-date"
+                      value={cliente.seg_fecha || ''}
+                      onChange={(event) => handleSegChange(cliente.cliente_id, { seg_fecha: event.target.value || null })}
+                    />
+                  )}
+
+                  <input
+                    className="mf-cob-nota"
+                    value={cliente.seg_nota || ''}
+                    onChange={(event) => updateSegLocal(cliente.cliente_id, { seg_nota: event.target.value })}
+                    onBlur={() => saveSeg(cliente)}
+                    placeholder="Nota interna..."
+                  />
+
+                  {cliente.seg_estado === 'cliente_vendra' ? (
+                    <button
+                      className="mf-cob-send mf-cob-save"
+                      type="button"
+                      onClick={() => handleGuardarSeguimiento(cliente)}
+                    >
+                      Guardar
+                    </button>
+                  ) : (
+                    <button
+                      className="mf-cob-send"
+                      type="button"
+                      onClick={() => handleEnviarMsj(cliente)}
+                      disabled={sendingId === cliente.cliente_id}
+                    >
+                      {sendingId === cliente.cliente_id ? 'Abriendo chat...' : 'Enviar msj'}
+                    </button>
+                  )}
+                </article>
+              ))}
+
+              {!morososLoading && clientes.length > 0 && visibles.length === 0 && (
+                <p className="mf-muted">Ningun cliente coincide con "{cobroFilter}".</p>
+              )}
+            </div>
+          </section>
+        );
+      })()}
+
+      {mode === 'cotizar' && (
+      <>
       <section className="mf-search">
         <label htmlFor="mf-product-search">Buscar producto</label>
         <input
@@ -815,6 +1211,8 @@ export default function App() {
           {pastingQuote ? 'Pegando cotizacion...' : 'Crear y pegar cotizacion'}
         </button>
       </footer>
+      </>
+      )}
 
       {advancedOpen && (
         <div className="mf-modal-backdrop" role="dialog" aria-modal="true" aria-label="Buscar producto">

@@ -12,16 +12,9 @@ CREATE TABLE IF NOT EXISTS public.crm_whatsapp_conversation_events (
   vendedor_id UUID REFERENCES public.vendedores(id) ON DELETE SET NULL,
   cotizacion_id UUID REFERENCES public.cotizaciones(id) ON DELETE SET NULL,
   source TEXT NOT NULL DEFAULT 'whatsapp_web_extension',
-  event_type TEXT NOT NULL CHECK (event_type IN (
-    'quote_created',
-    'quote_pasted',
-    'quote_restored',
-    'quote_sent_to_invoice',
-    'status_changed',
-    'internal_note_saved',
-    'product_added',
-    'product_removed'
-  )),
+  -- event_type es texto libre (la app controla los valores). Antes tenia
+  -- un CHECK enumerado que rompia al agregar eventos nuevos (cobranza).
+  event_type TEXT NOT NULL,
   chat_id TEXT,
   chat_name TEXT,
   customer_name TEXT,
@@ -33,6 +26,11 @@ CREATE TABLE IF NOT EXISTS public.crm_whatsapp_conversation_events (
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Si la tabla ya existia con el CHECK viejo (p.ej. en DEV), lo quitamos
+-- para permitir los event_type nuevos de cobranza.
+ALTER TABLE public.crm_whatsapp_conversation_events
+  DROP CONSTRAINT IF EXISTS crm_whatsapp_conversation_events_event_type_check;
 
 CREATE INDEX IF NOT EXISTS idx_crm_wa_events_tenant_created
   ON public.crm_whatsapp_conversation_events (tenant_id, created_at DESC);
@@ -52,3 +50,7 @@ CREATE POLICY crm_wa_events_tenant ON public.crm_whatsapp_conversation_events
   WITH CHECK (tenant_id = public.get_user_tenant());
 
 GRANT SELECT, INSERT, UPDATE ON public.crm_whatsapp_conversation_events TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
+
+SELECT 'crm_whatsapp_conversation_events listo (event_type sin CHECK)' AS status;

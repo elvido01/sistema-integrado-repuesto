@@ -150,6 +150,61 @@ export async function getVendors() {
   return fetchJson(url.toString(), { headers });
 }
 
+// Estado de cuenta (cobranza): cuotas atrasadas del cliente + plantilla
+export async function getEstadoCuenta(clienteId) {
+  if (!clienteId) throw new Error('Selecciona un cliente para ver su estado de cuenta.');
+  const headers = getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_estado_cuenta_cliente`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_cliente_id: clienteId })
+  });
+}
+
+// Lista de cobranza: TODOS los clientes con facturas vencidas + su seguimiento
+export async function getClientesMorosos() {
+  const headers = getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_clientes_morosos`, {
+    method: 'POST',
+    headers,
+    body: '{}'
+  });
+}
+
+// Actualizar el telefono de un cliente desde la lista de cobranza
+export async function setClienteTelefono({ clienteId, telefono }) {
+  if (!clienteId) throw new Error('cliente_id es requerido.');
+  const headers = getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/set_cliente_telefono`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_cliente_id: clienteId,
+      p_telefono: telefono || null
+    })
+  });
+}
+
+// Guardar el seguimiento (estado / fecha promesa / nota) de un cliente
+export async function setCobranzaSeguimiento({ clienteId, estado, fecha, nota }) {
+  if (!clienteId) throw new Error('cliente_id es requerido.');
+  const headers = getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/set_cobranza_seguimiento`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_cliente_id: clienteId,
+      p_estado: estado || 'pendiente',
+      p_fecha: fecha || null,
+      p_nota: nota || null
+    })
+  });
+}
+
 export async function createQuote(data) {
   if (API_BASE_URL) {
     return fetchJson(new URL('/quotes', API_BASE_URL).toString(), {

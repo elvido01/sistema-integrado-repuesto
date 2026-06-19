@@ -197,6 +197,38 @@ export const styles = `
     cursor: pointer;
   }
 
+  .mf-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #ffffff;
+    border-bottom: 1px solid #dbe7e1;
+  }
+
+  .mf-tabs button {
+    height: 40px;
+    border: 1px solid #cfdcd6;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #4d5c54;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mf-tab-quote.is-active {
+    border-color: #128c7e;
+    background: #128c7e;
+    color: #ffffff;
+  }
+
+  .mf-tab-cobro.is-active {
+    border-color: #ea7d23;
+    background: #ea7d23;
+    color: #ffffff;
+  }
+
   .mf-motoflow-box {
     position: relative;
     background: #ffffff;
@@ -378,6 +410,342 @@ export const styles = `
     background: #ffffff;
     color: #13211a;
     outline: none;
+  }
+
+  .mf-cobro-box {
+    display: grid;
+    gap: 8px;
+    padding: 10px 14px 12px;
+    background: #fff8f1;
+    border-bottom: 1px solid #f0e0cd;
+  }
+
+  .mf-cobro-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .mf-cobro-head strong {
+    color: #9a4a12;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .mf-cobro-head button {
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid #e3b483;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #9a4a12;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mf-cobro-head button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .mf-cobro-ok {
+    margin: 0;
+    color: #0f766a;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .mf-cobro-msg {
+    margin: 0 14px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    background: #fdeede;
+    color: #9a4a12;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  /* ===== Lista de cobranza (morosos) ===== */
+  .mf-cobranza {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff8f1;
+  }
+
+  .mf-cobranza-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #ffffff;
+    border-bottom: 1px solid #f0e0cd;
+  }
+
+  .mf-cobranza-filter {
+    height: 34px;
+    min-width: 0;
+    padding: 0 10px;
+    border: 1px solid #e3b483;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #13211a;
+    outline: none;
+  }
+
+  .mf-cobranza-head button {
+    width: 38px;
+    height: 34px;
+    border: 1px solid #e3b483;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #9a4a12;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mf-cobranza-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px;
+    background: #fdeede;
+    border-bottom: 1px solid #f0e0cd;
+    color: #9a4a12;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .mf-cobranza-summary b {
+    color: #c2410c;
+    font-size: 14px;
+  }
+
+  .mf-cobranza-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    display: grid;
+    gap: 9px;
+    padding: 10px 14px 14px;
+  }
+
+  .mf-cob-card {
+    display: grid;
+    gap: 7px;
+    padding: 10px;
+    border: 1px solid #f0ddc6;
+    border-radius: 8px;
+    background: #ffffff;
+  }
+
+  .mf-cob-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .mf-cob-card-head strong {
+    font-size: 13px;
+    color: #13211a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mf-cob-badge {
+    flex: none;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #fde9c7;
+    color: #9a4a12;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .mf-cob-badge.is-red {
+    background: #fde0db;
+    color: #c2410c;
+  }
+
+  .mf-cob-card-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: #5a4632;
+  }
+
+  .mf-cob-card-info b {
+    color: #c2410c;
+    font-size: 14px;
+    font-weight: 800;
+    flex: none;
+  }
+
+  .mf-cob-phone {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    padding: 0 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #5a4632;
+    font-size: 12px;
+    outline: none;
+  }
+
+  .mf-cob-phone:hover {
+    border-color: #f0ddc6;
+    background: #fffdf9;
+  }
+
+  .mf-cob-phone:focus {
+    border-color: #ea7d23;
+    background: #ffffff;
+  }
+
+  .mf-cob-phone::placeholder {
+    color: #b9a98f;
+  }
+
+  .mf-cob-card-facts {
+    color: #8a7a66;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .mf-cob-seg {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .mf-cob-seg button {
+    min-height: 30px;
+    padding: 0 8px;
+    border: 1px solid #e3cfb4;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #6b5840;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mf-cob-seg button.is-active {
+    border-color: #ea7d23;
+    background: #fde9c7;
+    color: #9a4a12;
+  }
+
+  .mf-cob-date,
+  .mf-cob-nota {
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    padding: 0 9px;
+    border: 1px solid #e3cfb4;
+    border-radius: 6px;
+    background: #fffdf9;
+    color: #13211a;
+    outline: none;
+    font-size: 12px;
+  }
+
+  .mf-cob-send {
+    height: 36px;
+    border: 0;
+    border-radius: 7px;
+    background: #ea7d23;
+    color: #ffffff;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mf-cob-send:hover {
+    background: #d96f17;
+  }
+
+  .mf-cob-send:disabled {
+    cursor: wait;
+    opacity: 0.7;
+  }
+
+  .mf-cob-save {
+    background: #128c7e;
+  }
+
+  .mf-cob-save:hover {
+    background: #0f786d;
+  }
+
+  .mf-cobro-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #9a4a12;
+  }
+
+  .mf-cobro-summary b {
+    color: #c2410c;
+    font-size: 14px;
+  }
+
+  .mf-cobro-list {
+    display: grid;
+    gap: 5px;
+    max-height: 132px;
+    overflow: auto;
+  }
+
+  .mf-cobro-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 8px;
+    border: 1px solid #f0ddc6;
+    border-radius: 6px;
+    background: #ffffff;
+    font-size: 12px;
+    color: #5a4632;
+  }
+
+  .mf-cobro-row b {
+    color: #c2410c;
+    font-weight: 800;
+  }
+
+  .mf-cobro-paste {
+    width: 100%;
+    height: 38px;
+    border: 0;
+    border-radius: 7px;
+    background: #ea7d23;
+    color: #ffffff;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mf-cobro-paste:hover {
+    background: #d96f17;
+  }
+
+  .mf-cobro-paste:disabled {
+    cursor: wait;
+    opacity: 0.7;
   }
 
   .mf-search label {
