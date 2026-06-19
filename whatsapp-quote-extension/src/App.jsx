@@ -222,6 +222,14 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, []);
 
+  // Encoge WhatsApp Web mientras el panel esta abierto, para ver la
+  // conversacion completa al lado (no tapada por el panel).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('mf-panel-open', !collapsed);
+    return () => root.classList.remove('mf-panel-open');
+  }, [collapsed]);
+
   // Al abrir el chat de un cliente desde la lista de cobranza, WhatsApp
   // recarga la pagina; aqui recuperamos el mensaje pendiente y lo pegamos.
   useEffect(() => {
