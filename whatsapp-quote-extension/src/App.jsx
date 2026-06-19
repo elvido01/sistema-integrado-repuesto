@@ -247,6 +247,7 @@ export default function App() {
     }
 
     setMode('cobranza');
+    loadMorosos(); // recarga la lista para que no quede vacia tras abrir el chat
     let attempts = 0;
     let cancelled = false;
 
