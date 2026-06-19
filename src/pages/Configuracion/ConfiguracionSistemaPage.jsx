@@ -4,7 +4,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Save, Upload, Trash2, Building2, Globe, Phone, Mail, FileText, Coins, Percent, Calendar as CalendarIcon, Image as ImageIcon, Target, Printer, Zap } from 'lucide-react';
+import { Loader2, Save, Upload, Trash2, Building2, Globe, Phone, Mail, FileText, Coins, Percent, Calendar as CalendarIcon, Image as ImageIcon, Target, Printer, Zap, Download, MessageCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -39,8 +39,8 @@ const ConfiguracionSistemaPage = () => {
         intervalo_meta: 'Ninguno',
         fecha_inicio_meta: null,
         tenant_id: null,
-        limpiar_ordenes_compra_auto: true,
-        modo_limpieza_orden: 'agresivo',
+        limpiar_ordenes_compra_auto: false,
+        modo_limpieza_orden: 'restar',
         formato_factura: 'pos_4inch',
         formato_precio_etiqueta: 'alpha',
         formato_comprobante_pago: 'pdf',
@@ -88,8 +88,8 @@ const ConfiguracionSistemaPage = () => {
                     intervalo_meta: data.intervalo_meta || 'Ninguno',
                     fecha_inicio_meta: data.fecha_inicio_meta || null,
                     tenant_id: data.tenant_id || tenantId,
-                    limpiar_ordenes_compra_auto: data.limpiar_ordenes_compra_auto ?? true,
-                    modo_limpieza_orden: data.modo_limpieza_orden || 'agresivo',
+                    limpiar_ordenes_compra_auto: false,
+                    modo_limpieza_orden: 'restar',
                     formato_factura: data.formato_factura || 'pos_4inch',
                     formato_precio_etiqueta: data.formato_precio_etiqueta || 'alpha',
                     formato_comprobante_pago: data.formato_comprobante_pago || 'pdf',
@@ -139,7 +139,12 @@ const ConfiguracionSistemaPage = () => {
     const handleSave = async () => {
         setSaving(true);
         try {
-            let dataToSave = { ...formData, updated_at: new Date().toISOString() };
+            let dataToSave = {
+                ...formData,
+                limpiar_ordenes_compra_auto: false,
+                modo_limpieza_orden: 'restar',
+                updated_at: new Date().toISOString()
+            };
             
             // Si cambian los parámetros de la meta, reiniciar la fecha base de cálculo del interés compuesto
             if (
@@ -267,9 +272,9 @@ const ConfiguracionSistemaPage = () => {
                                             <span className="text-[10px] text-gray-400 font-bold uppercase">Click para subir logo</span>
                                         </div>
                                     )}
-                                    <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
-                                </div>
-                            </div>
+	                                    <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+	                                </div>
+	                            </div>
 
                             {/* Main Info Section */}
                             <div className="md:col-span-9 space-y-4">
@@ -370,7 +375,7 @@ const ConfiguracionSistemaPage = () => {
                         <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
                            <Percent className="w-4 h-4" /> Configuración de Precios 2 y 3
                         </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+	                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-1.5">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Descuento Automático P2</Label>
                                 <div className="flex items-center">
@@ -471,7 +476,7 @@ const ConfiguracionSistemaPage = () => {
                         <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
                            <FileText className="w-4 h-4" /> Configuración de Órdenes de Compra
                         </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="hidden">
                             <div className="space-y-4">
                                 <div className="flex items-center space-x-2">
                                     <input 
@@ -509,6 +514,14 @@ const ConfiguracionSistemaPage = () => {
                                 </p>
                             </div>
                         </div>
+	                        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3">
+	                            <p className="text-xs font-semibold text-emerald-800">
+	                                La recepcion de compras descuenta cantidades contra ordenes enviadas y mantiene pendiente lo que no llego.
+	                            </p>
+	                            <p className="mt-1 text-[11px] text-emerald-700">
+	                                El modo anterior de cerrar o limpiar ordenes automaticamente queda desactivado para proteger la rotacion y evitar perder visibilidad de mercancia solicitada.
+	                            </p>
+	                        </div>
                     </div>
 
                     {/* Búsqueda de Productos */}
@@ -604,6 +617,38 @@ const ConfiguracionSistemaPage = () => {
                             Cada empresa configura su propio proveedor de forma independiente.
                         </p>
                         <IntegracionFiscalSettings />
+                    </div>
+
+                    {/* Sección de Extensión de WhatsApp (Cotización + Cobranza) */}
+                    <div className="border rounded-md p-6 bg-white shadow-inner space-y-3">
+                        <h3 className="text-sm font-bold text-emerald-700 uppercase border-b pb-2 mb-2 flex items-center gap-2">
+                           <MessageCircle className="w-4 h-4" /> Extensión de WhatsApp (Cotización y Cobranza)
+                        </h3>
+                        <p className="text-xs text-slate-700">
+                            Panel dentro de <b>WhatsApp Web</b> para cotizar y enviar recordatorios de cobro a clientes con facturas vencidas.
+                            Cada usuario entra con su correo y clave de MotoFlow y ve solo los datos de su empresa.
+                        </p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <a
+                                href="/downloads/motoflow-whatsapp-extension.zip"
+                                download
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
+                            >
+                                <Download className="w-3 h-3" /> Descargar extensión (ZIP)
+                            </a>
+                        </div>
+                        <details className="text-[11px] text-slate-600">
+                            <summary className="cursor-pointer hover:text-emerald-700 font-bold">Instrucciones de instalación</summary>
+                            <ol className="list-decimal ml-5 mt-2 space-y-1">
+                                <li>Descarga el ZIP y descomprímelo en una carpeta fija (que no se borre), ej. <code className="bg-gray-100 px-1 rounded">Documentos\MotoFlow</code></li>
+                                <li>Abre Google Chrome y entra a <code className="bg-gray-100 px-1 rounded">chrome://extensions</code></li>
+                                <li>Activa arriba a la derecha el <b>Modo de desarrollador</b></li>
+                                <li>Clic en <b>Cargar descomprimida</b> y selecciona la carpeta descomprimida</li>
+                                <li>Abre <code className="bg-gray-100 px-1 rounded">web.whatsapp.com</code> con el teléfono de la empresa</li>
+                                <li>En el panel MotoFlow toca <b>Conectar</b> e inicia sesión con tu correo y clave de MotoFlow</li>
+                            </ol>
+                            <p className="mt-2 italic">⚠️ No borres ni muevas la carpeta de la extensión. Para actualizar: descarga el ZIP nuevo, reemplaza la carpeta y toca ↻ en chrome://extensions.</p>
+                        </details>
                     </div>
 
                 </CardContent>
