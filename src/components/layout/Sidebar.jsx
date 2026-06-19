@@ -117,7 +117,7 @@ const navItems = [
     icon: BarChart2,
     subItems: [
       { title: 'Reporte de Compras', id: 'reporte-compras' },
-      { title: 'Entradas y Salidas', id: 'reporte-movimientos' },
+      { title: 'Movimiento de Mercancías', id: 'reporte-movimientos' },
       { title: 'Transacciones Diarias', id: 'reporte-transacciones-diarias', icon: ListChecks },
       { title: 'Inventario Físico', id: 'inventario-fisico', icon: Archive },
       { title: 'Reportes DGII (606/607/608)', id: 'reportes-dgii', icon: FileText },
