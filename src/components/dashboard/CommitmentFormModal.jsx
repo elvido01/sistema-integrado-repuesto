@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const CommitmentFormModal = ({ compromiso, isOpen, onClose }) => {
+const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -66,6 +66,14 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!compromiso && !tenantId) {
+      toast({
+        title: 'Error',
+        description: 'No se encontro el tenant de la empresa.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsSubmitting(true);
 
     let result;
@@ -74,7 +82,7 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose }) => {
       result = await supabase.from('compromisos').update(formData).eq('id', compromiso.id).select();
     } else {
       // Insert
-      result = await supabase.from('compromisos').insert(formData).select();
+      result = await supabase.from('compromisos').insert({ ...formData, tenant_id: tenantId }).select();
     }
 
     const { error } = result;

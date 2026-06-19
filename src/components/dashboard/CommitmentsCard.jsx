@@ -3,35 +3,30 @@ import { Plus, Edit2, Wallet, CreditCard, ArrowRight, RefreshCw } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { isBefore, startOfToday, isAfter, endOfWeek, isSameWeek } from 'date-fns';
 
-const CommitmentsCard = ({ compromisos = [], caja = 0, onAdd, onEdit, onPay, customTotal = null }) => {
+const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, onEdit, onPay, customTotal = null }) => {
   const totalCompromisos = compromisos.reduce((sum, c) => sum + (c.monto || 0), 0);
-  const effectiveDebt = customTotal !== null ? customTotal : totalCompromisos;
-  
-  let faltante = 0;
-  let excedente = caja;
-  
-  if (effectiveDebt > 0) {
-    faltante = Math.max(effectiveDebt - caja, 0);
-    excedente = Math.max(caja - effectiveDebt, 0);
-  }
+  const hasNegativeExcedente = excedente < 0;
+  const balanceIsShort = hasNegativeExcedente;
+  const balanceLabel = hasNegativeExcedente ? 'Caja negativa' : 'Excedente';
+  const balanceAmount = Math.abs(excedente);
 
 
   const formatCurrency = (val) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(val);
 
   return (
-    <div className="bg-white border rounded-xl shadow-sm p-4 md:p-5 flex flex-col h-[340px] hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+    <div className="bg-white border rounded-xl shadow-sm p-4 flex flex-col h-[374px] hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-3 mb-4 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
             <Wallet className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Compromisos a Pagar</h3>
-            <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalCompromisos)}</p>
+          <div className="min-w-0">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider leading-tight">Compromisos a Pagar</h3>
+            <p className="text-xl font-bold text-gray-900 leading-tight">{formatCurrency(totalCompromisos)}</p>
           </div>
         </div>
         {onAdd && (
-          <Button variant="outline" size="sm" onClick={onAdd} className="h-8 bg-white border-indigo-100 text-indigo-700 hover:bg-indigo-50">
+          <Button variant="outline" size="sm" onClick={onAdd} className="h-8 bg-white border-indigo-100 text-indigo-700 hover:bg-indigo-50 shrink-0 px-3">
             <Plus className="w-4 h-4 mr-1" /> Nuevo
           </Button>
         )}
@@ -99,15 +94,15 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, onAdd, onEdit, onPay, cus
           <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Caja Actual</p>
           <p className="text-sm font-bold text-gray-800">{formatCurrency(caja)}</p>
         </div>
-        <div className={`rounded-lg p-2 border ${faltante > 0 ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
+        <div className={`rounded-lg p-2 border ${balanceIsShort ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
           <p className="text-[10px] font-medium uppercase tracking-wide flex items-center justify-between">
-            <span className={faltante > 0 ? 'text-red-600' : 'text-green-600'}>
-              {faltante > 0 ? 'Faltante Caja' : 'Excedente'}
+            <span className={balanceIsShort ? 'text-red-600' : 'text-green-600'}>
+              {balanceLabel}
             </span>
-            <ArrowRight className={`w-3.5 h-3.5 ${faltante > 0 ? 'text-red-400' : 'text-green-400'}`} />
+            <ArrowRight className={`w-3.5 h-3.5 ${balanceIsShort ? 'text-red-400' : 'text-green-400'}`} />
           </p>
-          <p className={`text-sm font-bold ${faltante > 0 ? 'text-red-700' : 'text-green-700'}`}>
-            {formatCurrency(faltante > 0 ? faltante : excedente)}
+          <p className={`text-sm font-bold ${balanceIsShort ? 'text-red-700' : 'text-green-700'}`}>
+            {formatCurrency(balanceAmount)}
           </p>
         </div>
       </div>

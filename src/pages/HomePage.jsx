@@ -10,6 +10,8 @@ import HybridFinancialOverviewCard from '@/components/dashboard/HybridFinancialO
 import CommitmentsCard from '@/components/dashboard/CommitmentsCard';
 import SupplierCommitmentsCard from '@/components/dashboard/SupplierCommitmentsCard';
 import CommitmentFormModal from '@/components/dashboard/CommitmentFormModal';
+import DailyExpensesCard from '@/components/dashboard/DailyExpensesCard';
+import DailyExpenseModal from '@/components/dashboard/DailyExpenseModal';
 import PayCommitmentModal from '@/components/dashboard/PayCommitmentModal';
 import PaySupplierCommitmentModal from '@/components/dashboard/PaySupplierCommitmentModal';
 import SuscripcionStatusCard from '@/components/dashboard/SuscripcionStatusCard';
@@ -39,6 +41,21 @@ const isDueThisWeekOrOverdue = (date, today = new Date()) => {
   return isBefore(date, startOfToday()) || isSameWeek(date, today, { weekStartsOn: 1 });
 };
 
+const DEFAULT_CASH_BALANCE_INITIAL_SEED = 0;
+
+const getStartOfTodayISO = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.toISOString();
+};
+
+const getCashHistoryAnchorISO = (value) => {
+  if (!value) return '1970-01-01T00:00:00.000Z';
+  const [year, month, day] = String(value).split('T')[0].split('-').map(Number);
+  if (!year || !month || !day) return '1970-01-01T00:00:00.000Z';
+  return new Date(year, month - 1, day, 0, 0, 0, 0).toISOString();
+};
+
 const HomePage = () => {
   const { toast } = useToast();
   const { profile, empresa, tenantId } = useAuth();
@@ -61,7 +78,9 @@ const HomePage = () => {
     ventasCredito: 0,
     diasTranscurridos: Math.max(new Date().getDay(), 1), 
     diasRestantes: 7 - (new Date().getDay()),     
-    caja: 0,          
+    caja: 0,
+    cajaActualContadoHoy: 0,
+    gastosDiariosHoy: [],
     compromisos: [],
     suplidorCompromisos: [],
     ventasMetricas: null,
@@ -75,6 +94,7 @@ const HomePage = () => {
   const realtimeRefreshRef = useRef(null);
 
   const [isCommitmentModalOpen, setIsCommitmentModalOpen] = useState(false);
+  const [isDailyExpenseModalOpen, setIsDailyExpenseModalOpen] = useState(false);
   const [selectedCommitment, setSelectedCommitment] = useState(null);
   const [payCommitmentTarget, setPayCommitmentTarget] = useState(null);
   const [paySupplierTarget, setPaySupplierTarget] = useState(null);
@@ -97,6 +117,11 @@ const HomePage = () => {
 
       if (configEmpresa?.nombre) setNombreEmpresa(configEmpresa.nombre);
       if (configEmpresa?.formato_comprobante_pago) setFormatoComprobante(configEmpresa.formato_comprobante_pago);
+
+      const configuredCashSeed = Number(configEmpresa?.saldo_inicial_caja);
+      const cashBalanceInitialSeed = Number.isFinite(configuredCashSeed)
+        ? configuredCashSeed
+        : DEFAULT_CASH_BALANCE_INITIAL_SEED;
 
       const calculateCurrentMeta = (config) => {
         if (!config || !config.meta_ventas) return 150000;
@@ -181,43 +206,38 @@ const HomePage = () => {
 
       if (suplidorErr) throw suplidorErr;
 
-      // 4. Intento de obtener balance de caja (o cálculo de hoy)
-      const inicioCierreHoy = new Date();
-      inicioCierreHoy.setHours(0,0,0,0);
-      let cajaDesde = inicioCierreHoy.toISOString();
-      const { data: ultimoCierre } = await supabase
-        .from('cierres_caja')
-        .select('created_at')
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // 4. Caja Actual y Excedente (independientes de cierres de caja)
+      // Caja Actual: ventas de contado del dia.
+      // Excedente: saldo inicial + historial acumulado de entradas/salidas de efectivo.
+      const todayStart = getStartOfTodayISO();
+      const historyAnchor = getCashHistoryAnchorISO(configEmpresa?.caja_historial_desde);
 
-      if (ultimoCierre?.created_at && new Date(ultimoCierre.created_at) > inicioCierreHoy) {
-        cajaDesde = ultimoCierre.created_at;
-      }
+      const todayDate = todayStart.split('T')[0];
 
-      // 4. Cálculo de Balance Acumulado (Caja Actual)
-      // El sistema empieza en cero y suma ventas día tras día.
-      // Solo suma: Ventas Contado y Recibos de Ingreso.
-      // Solo resta: Compromisos a pagar, Compromisos a Suplidores y Compras al Contado.
-      const [vContado, rIngreso, devolucionesContado, cPagados, pSuplidores, cContado] = await Promise.all([
-        supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', cajaDesde).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
-        supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId).gte('created_at', cajaDesde).eq('anulado', false),
-        supabase.from('devoluciones').select('total_devolucion, facturas!inner(forma_pago)').eq('tenant_id', tenantId).gte('created_at', cajaDesde).ilike('facturas.forma_pago', 'contado'),
-        supabase.from('compromisos').select('monto').eq('tenant_id', tenantId).gte('fecha_pago', cajaDesde).eq('activo', false),
-        supabase.from('pagos_suplidores').select('monto_pagado, formas_pago').eq('tenant_id', tenantId).gte('created_at', cajaDesde).eq('anulado', false),
-        supabase.from('compras').select('total_compra').eq('tenant_id', tenantId).gte('created_at', cajaDesde).ilike('forma_pago', 'contado').neq('estado', 'ANULADA')
+      const [vContadoHoy, rIngresoHoy, gDiariosHoy, vContadoHist, rIngresoHist, cPagadosHist, pSuplidoresHist, cContadoHist, gDiariosHist] = await Promise.all([
+        supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', todayStart).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
+        supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId).gte('created_at', todayStart).eq('anulado', false),
+        supabase.from('gastos_diarios').select('id, fecha, tipo_gasto, monto, descripcion').eq('tenant_id', tenantId).eq('fecha', todayDate).eq('anulado', false).order('created_at', { ascending: false }),
+        supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', historyAnchor).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
+        supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId).gte('created_at', historyAnchor).eq('anulado', false),
+        supabase.from('compromisos').select('monto').eq('tenant_id', tenantId).gte('fecha_pago', historyAnchor).eq('activo', false),
+        supabase.from('pagos_suplidores').select('monto_pagado, formas_pago').eq('tenant_id', tenantId).gte('created_at', historyAnchor).eq('anulado', false),
+        supabase.from('compras').select('total_compra').eq('tenant_id', tenantId).gte('created_at', historyAnchor).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
+        supabase.from('gastos_diarios').select('monto').eq('tenant_id', tenantId).gte('fecha', historyAnchor.split('T')[0]).eq('anulado', false)
       ]);
 
-      const tVentasContado = (vContado.data || []).reduce((acc, v) => acc + Number(v.total), 0);
-      const tRecibosIngreso = (rIngreso.data || []).reduce((acc, r) => acc + Number(r.monto_pagado), 0);
-      const tDevolucionesContado = (devolucionesContado.data || []).reduce((acc, d) => acc + Number(d.total_devolucion), 0);
-      const tCompromisosPagados = (cPagados.data || []).reduce((acc, c) => acc + Number(c.monto), 0);
-      const tPagosSuplidores = (pSuplidores.data || []).reduce((acc, p) => acc + Number(p.monto_pagado || 0), 0);
-      const tComprasContado = (cContado.data || []).reduce((acc, c) => acc + Number(c.total_compra), 0);
+      const tVentasContadoHoy = (vContadoHoy.data || []).reduce((acc, v) => acc + Number(v.total), 0);
+      const tRecibosIngresoHoy = (rIngresoHoy.data || []).reduce((acc, r) => acc + Number(r.monto_pagado), 0);
+      const tGastosDiariosHoy = (gDiariosHoy.data || []).reduce((acc, g) => acc + Number(g.monto), 0);
+      const tVentasContadoHist = (vContadoHist.data || []).reduce((acc, v) => acc + Number(v.total), 0);
+      const tRecibosIngresoHist = (rIngresoHist.data || []).reduce((acc, r) => acc + Number(r.monto_pagado), 0);
+      const tCompromisosPagadosHist = (cPagadosHist.data || []).reduce((acc, c) => acc + Number(c.monto), 0);
+      const tPagosSuplidoresHist = (pSuplidoresHist.data || []).reduce((acc, p) => acc + Number(p.monto_pagado || 0), 0);
+      const tComprasContadoHist = (cContadoHist.data || []).reduce((acc, c) => acc + Number(c.total_compra), 0);
+      const tGastosDiariosHist = (gDiariosHist.data || []).reduce((acc, g) => acc + Number(g.monto), 0);
 
-      const realCaja = tVentasContado + tRecibosIngreso - tDevolucionesContado - tCompromisosPagados - tPagosSuplidores - tComprasContado;
+      const cajaActualContadoHoy = tVentasContadoHoy + tRecibosIngresoHoy - tGastosDiariosHoy;
+      const excedenteCaja = cashBalanceInitialSeed + tVentasContadoHist + tRecibosIngresoHist - tCompromisosPagadosHist - tPagosSuplidoresHist - tComprasContadoHist - tGastosDiariosHist;
 
       if (!salesRes?.error && !comRes?.error) {
 
@@ -232,7 +252,9 @@ const HomePage = () => {
             ...s,
             suplidor_nombre: s.proveedores?.nombre
           })),
-          caja: realCaja,
+          caja: excedenteCaja,
+          cajaActualContadoHoy,
+          gastosDiariosHoy: gDiariosHoy.data || [],
           ventasMetricas: metricsRes?.data || null,
           crecimientoData: growthRes?.data || null,
           finanzasSemanales: weeklyRes?.data || null
@@ -289,6 +311,7 @@ const HomePage = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recibos_ingreso', filter: tenantFilter }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'devoluciones', filter: tenantFilter }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'compromisos', filter: tenantFilter }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gastos_diarios', filter: tenantFilter }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos_suplidores', filter: tenantFilter }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'compras', filter: tenantFilter }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cierres_caja', filter: tenantFilter }, scheduleRefresh)
@@ -310,6 +333,10 @@ const HomePage = () => {
   const handleAddCommitment = () => {
     setSelectedCommitment(null);
     setIsCommitmentModalOpen(true);
+  };
+
+  const handleAddDailyExpense = () => {
+    setIsDailyExpenseModalOpen(true);
   };
 
   const handleEditCommitment = (c) => {
@@ -353,6 +380,7 @@ const HomePage = () => {
         }
 
         const { error: insErr } = await supabase.from('compromisos').insert({
+          tenant_id: tenantId,
           nombre: c.nombre,
           monto: c.monto,
           fecha: nextDate.toISOString().split('T')[0],
@@ -581,15 +609,22 @@ const HomePage = () => {
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.3, duration: 0.4 }}
-                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                  className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4"
                 >
                   <CommitmentsCard 
                     compromisos={finanzas.compromisos} 
-                    caja={finanzas.caja} 
+                    caja={finanzas.cajaActualContadoHoy}
+                    excedente={finanzas.caja}
                     onAdd={handleAddCommitment}
                     onEdit={handleEditCommitment}
                     onPay={handlePayCommitment}
                     customTotal={totalCompromisosPagarSemana}
+                  />
+
+                  <DailyExpensesCard
+                    gastos={finanzas.gastosDiariosHoy}
+                    caja={finanzas.cajaActualContadoHoy}
+                    onAdd={handleAddDailyExpense}
                   />
                   
                   {/* Compromisos Suplidores (Nuevo) */}
@@ -663,6 +698,17 @@ const HomePage = () => {
             if (success) fetchDashboardData();
           }}
           compromiso={selectedCommitment}
+          tenantId={tenantId}
+        />
+      )}
+
+      {isAdmin && (
+        <DailyExpenseModal
+          isOpen={isDailyExpenseModalOpen}
+          onClose={(success) => {
+            setIsDailyExpenseModalOpen(false);
+            if (success) fetchDashboardData(true);
+          }}
         />
       )}
 

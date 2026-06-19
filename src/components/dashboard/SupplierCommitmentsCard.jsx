@@ -10,21 +10,25 @@ const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = nul
   if (effectiveDebt > 0) {
     faltante = Math.max(effectiveDebt - caja, 0);
   }
+  const hasNegativeCash = effectiveDebt === 0 && caja < 0;
+  const balanceIsShort = caja < effectiveDebt || hasNegativeCash;
+  const balanceAmount = hasNegativeCash ? Math.abs(caja) : Math.abs(caja - effectiveDebt);
+  const balanceLabel = hasNegativeCash ? 'Caja negativa' : (caja >= effectiveDebt ? 'Sobrante' : 'Faltante');
   const formatCurrency = (val) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(val);
 
   return (
-    <div className="bg-white border rounded-xl shadow-sm p-4 md:p-5 flex flex-col h-[340px] hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+    <div className="bg-white border rounded-xl shadow-sm p-4 flex flex-col h-[374px] hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-3 mb-4 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-2 bg-amber-50 text-amber-600 rounded-lg shrink-0">
             <Truck className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Compromisos Suplidores</h3>
-            <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalCommitments)}</p>
+          <div className="min-w-0">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider leading-tight">Compromisos Suplidores</h3>
+            <p className="text-xl font-bold text-gray-900 leading-tight">{formatCurrency(totalCommitments)}</p>
           </div>
         </div>
-        <div className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-full uppercase">
+        <div className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-full uppercase shrink-0">
           Semanal
         </div>
       </div>
@@ -72,11 +76,11 @@ const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = nul
       <div className="mt-auto pt-3 border-t border-gray-100 flex items-center justify-between shrink-0">
          <div className="flex flex-col">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Caja vs Deuda Suplidor (Semanal)</span>
-            {effectiveDebt === 0 ? (
+            {effectiveDebt === 0 && !hasNegativeCash ? (
                <span className="text-sm font-black text-emerald-600">Libre de pagos</span>
             ) : (
-               <span className={`text-sm font-black ${caja >= effectiveDebt ? 'text-emerald-600' : 'text-rose-600'}`}>
-                 {formatCurrency(Math.abs(caja - effectiveDebt))} {caja >= effectiveDebt ? 'Sobrante' : 'Faltante'}
+               <span className={`text-sm font-black ${balanceIsShort ? 'text-rose-600' : 'text-emerald-600'}`}>
+                 {formatCurrency(balanceAmount)} {balanceLabel}
                </span>
             )}
          </div>
