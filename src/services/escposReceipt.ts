@@ -54,6 +54,36 @@ const leftRight = (left: string, right: string) => {
     return left + ' '.repeat(Math.max(1, space)) + right;
 };
 
+const wrapLines = (text: string, width = W): string[] => {
+    const words = String(text || '').replace(/\r/g, '').split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let line = '';
+
+    for (const word of words) {
+        if (word.length > width) {
+            if (line) {
+                lines.push(line);
+                line = '';
+            }
+            for (let i = 0; i < word.length; i += width) {
+                lines.push(word.slice(i, i + width));
+            }
+            continue;
+        }
+
+        const next = line ? `${line} ${word}` : word;
+        if (next.length > width) {
+            lines.push(line);
+            line = word;
+        } else {
+            line = next;
+        }
+    }
+
+    if (line) lines.push(line);
+    return lines;
+};
+
 /** Build an item detail row: CANT  PRECIO  ITBIS  MONTO */
 const itemRow = (cant: string, precio: string, itbis: string, monto: string) =>
     padR(cant, COL_CANT) + padL(precio, COL_PRECIO) + padL(itbis, COL_ITBIS) + padL(monto, COL_MONTO);
@@ -119,6 +149,7 @@ interface FacturaData {
     monto_pendiente?: number;
     cambio?: number;
     vendedor?: string;
+    notas?: string;
     manual_cliente_nombre?: string;
     clientes?: {
         id?: string;
@@ -236,6 +267,11 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
 
     // ── Footer ──
     lines.push(dashLine());
+    if (factura.notas) {
+        lines.push(CMD.BOLD_ON + 'Notas:' + CMD.BOLD_OFF);
+        lines.push(...wrapLines(factura.notas));
+        lines.push(dashLine());
+    }
     lines.push(`Vendedor : ${factura.vendedor || 'MotoFlow'}`);
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
     lines.push(CMD.FEED_3);
@@ -386,6 +422,7 @@ export function buildReciboIngresoEscPos(
 
     lines.push(CMD.INIT);
     lines.push(buildHeader(empresa));
+    lines.push(CMD.DOUBLE_H);
     lines.push(CMD.BOLD_ON + centerLine('RECIBO DE INGRESO') + CMD.BOLD_OFF);
     lines.push('');
 
@@ -422,6 +459,7 @@ export function buildReciboIngresoEscPos(
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU PAGO ***') + CMD.BOLD_OFF);
     lines.push('');
     lines.push('Recibido por: ____________________________');
+    lines.push(CMD.NORMAL);
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 

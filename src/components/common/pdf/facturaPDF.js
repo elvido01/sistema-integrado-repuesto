@@ -256,6 +256,19 @@ export const generateFacturaPDF = (factura, empresa = {}) => {
     doc.line(marginLeft, currentY, rightX, currentY);
     currentY += 10;
 
+    if (factura.notas) {
+      doc.setFont('helvetica', 'bold');
+      doc.text("Notas:", marginLeft, currentY);
+      doc.setFont('helvetica', 'normal');
+      currentY += 11;
+      const noteLines = doc.splitTextToSize(String(factura.notas), contentWidth);
+      doc.text(noteLines, marginLeft, currentY);
+      currentY += (noteLines.length * 11) + 4;
+      doc.setLineDashPattern([2, 2], 0);
+      doc.line(marginLeft, currentY, rightX, currentY);
+      currentY += 10;
+    }
+
     // --- Footer ---
     doc.setFontSize(10);
     doc.text(`Le Atendio : ${vendedor?.email?.split('@')[0] || 'N/A'}`, marginLeft, currentY);

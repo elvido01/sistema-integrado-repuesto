@@ -277,6 +277,43 @@ const PrinterSettings = () => {
               </div>
             )}
 
+            {(agentPrinterStatus.length > 0 || agentJobs.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-white rounded p-2 border border-emerald-100">
+                <div>
+                  <p className="text-[9px] uppercase text-slate-500 font-bold mb-1">Estado Windows</p>
+                  <div className="space-y-1 max-h-24 overflow-auto">
+                    {agentPrinterStatus.slice(0, 5).map((p) => {
+                      const hasJobs = Array.isArray(p.jobs) && p.jobs.length > 0;
+                      const offline = p.workOffline || String(p.status).toLowerCase().includes('offline');
+                      return (
+                        <div key={p.name} className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="truncate text-slate-700">{p.name}</span>
+                          <span className={`font-bold ${offline ? 'text-red-600' : hasJobs ? 'text-amber-600' : 'text-emerald-700'}`}>
+                            {offline ? 'OFFLINE' : hasJobs ? `${p.jobs.length} en cola` : 'OK'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {agentPrinterStatus.length === 0 && <p className="text-[10px] text-slate-400">Sin datos de estado.</p>}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-slate-500 font-bold mb-1">Ultimos trabajos</p>
+                  <div className="space-y-1 max-h-24 overflow-auto">
+                    {agentJobs.slice(0, 5).map((job) => (
+                      <div key={job.jobID} className="flex items-center justify-between gap-2 text-[10px]">
+                        <span className="truncate text-slate-700">{job.printer}</span>
+                        <span className={`font-bold ${job.status === 'failed' ? 'text-red-600' : job.status === 'complete' ? 'text-emerald-700' : 'text-amber-600'}`}>
+                          {job.status}
+                        </span>
+                      </div>
+                    ))}
+                    {agentJobs.length === 0 && <p className="text-[10px] text-slate-400">Sin trabajos recientes.</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <p className="text-[11px]">
               Imprime sin popups, sin licencias QZ Tray. Cubre todas las impresoras Windows automáticamente.
             </p>
@@ -366,7 +403,8 @@ const PrinterSettings = () => {
               <ol className="list-decimal ml-5 mt-2 space-y-1">
                 <li>Descarga el ZIP del agente</li>
                 <li>Descomprime en cualquier carpeta</li>
-                <li>Doble clic en <code className="bg-white px-1 rounded">installer/install.bat</code> → <b>Ejecutar como administrador</b></li>
+                <li>Doble clic en <code className="bg-white px-1 rounded">install-user.bat</code> si no tienes permisos de administrador</li>
+                <li>Si puedes usar administrador: doble clic en <code className="bg-white px-1 rounded">install.bat</code> → <b>Ejecutar como administrador</b></li>
                 <li>Recarga esta página (Ctrl+Shift+R)</li>
                 <li>El badge cambiará a "ACTIVO"</li>
               </ol>

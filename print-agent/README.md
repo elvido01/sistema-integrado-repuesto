@@ -18,6 +18,9 @@ Impresora Star / Zebra / EPSON / etc.
 |---|---|---|---|
 | `GET` | `/health` | — | `{ ok, agent, version, platform, node }` |
 | `GET` | `/printers` | — | `[{ name, status, isDefault, driver, portName }, ...]` |
+| `GET` | `/printers/status` | `?printer=Nombre` opcional | `{ ok, printers: [{ name, status, jobs, ... }] }` |
+| `GET` | `/jobs` | — | `{ ok, jobs, queueLength }` |
+| `GET` | `/jobs/:jobID` | — | `{ ok, job }` |
 | `POST` | `/print/raw` | `{ printer, data, format?, encoding? }` | `{ ok, jobID, bytes, printer }` |
 
 ### Ejemplo de impresión
@@ -64,14 +67,15 @@ npm run build
 # Output: dist/motoflow-print-agent.exe (~30-40 MB, no requiere Node instalado)
 ```
 
-⚠️ El paquete `@thiagoelg/node-printer` tiene módulo nativo (`.node`). `pkg` debe incluirlo en el bundle. La config en `package.json` ya tiene la entrada `pkg.assets` que lo cubre.
+Nota: el agente no usa `node-printer`; compila un worker C# temporal (`rawprinter.exe`) contra Winspool. Si esa compilacion falla, cae a PowerShell/Add-Type para mantener compatibilidad.
 
 ## Instalar como servicio Windows (autostart)
 
-Pendiente para v0.2. Plan:
-- Usar `node-windows` para registrar como servicio
-- Script `installer.bat` que: copia exe a `C:\Program Files\Motoflow\PrintAgent\`, registra servicio, lo arranca
-- Tray icon (electron-tray o systray-portable) con menú "Configurar impresoras / Salir"
+Estado actual:
+- `installer.bat` copia el exe a `C:\Program Files\Motoflow\PrintAgent\`
+- Autostart por Task Scheduler, HKLM/HKCU Run y carpeta Startup
+- `install-user.bat` instala sin administrador en `%LOCALAPPDATA%\Motoflow\PrintAgent\` y registra HKCU\Run
+- Pendiente: servicio Windows real y tray icon con menu de diagnostico
 
 ## Integración con Motoflow Web
 
@@ -93,10 +97,12 @@ async function isAgentAvailable() {
 ## Roadmap
 
 - [x] v0.1 — POC: HTTP local + listar impresoras + RAW print
-- [ ] v0.2 — Servicio Windows + autostart + tray icon
-- [ ] v0.3 — Instalador `.msi` con certificado de firma
-- [ ] v0.4 — UI de configuración (mapeo de impresoras por tipo)
-- [ ] v0.5 — Auto-actualización (descarga nuevas versiones del agente)
+- [x] v0.2 — Autostart con Task Scheduler/Run/Startup
+- [x] v0.4 — UI de configuracion + diagnostico del agente
+- [x] v0.6 — Worker C# rapido, RAW base64, jobID e historial de trabajos
+- [ ] v0.7 — Servicio Windows real + tray icon
+- [ ] v0.8 — Instalador `.msi` con certificado de firma
+- [ ] v0.9 — Auto-actualizacion (descarga nuevas versiones del agente)
 - [ ] v1.0 — Soporte multi-tenant (cada empresa con su token)
 
 ## ¿Por qué no QZ Tray?

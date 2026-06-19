@@ -365,7 +365,23 @@ function getPrinterStatus(printerName = '') {
             '-Command',
             `$ErrorActionPreference = 'Stop';
 $name = $env:MF_PRINTER_NAME;
-$printers = if ($name) { @(Get-Printer -Name $name) } else { @(Get-Printer) };
+try {
+  $printers = if ($name) { @(Get-Printer -Name $name) } else { @(Get-Printer) };
+} catch {
+  Add-Type -AssemblyName System.Drawing;
+  $all = [System.Drawing.Printing.PrinterSettings]::InstalledPrinters;
+  if ($name) { $all = @($all | Where-Object { $_ -eq $name }) }
+  $printers = @($all | ForEach-Object {
+    [pscustomobject]@{
+      Name = $_;
+      PrinterStatus = 0;
+      WorkOffline = $false;
+      Default = $false;
+      DriverName = $null;
+      PortName = $null;
+    }
+  });
+}
 $result = foreach ($p in $printers) {
   $jobs = @();
   try {
