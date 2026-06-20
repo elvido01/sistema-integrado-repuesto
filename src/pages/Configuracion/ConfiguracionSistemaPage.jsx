@@ -48,7 +48,8 @@ const ConfiguracionSistemaPage = () => {
         caja_historial_desde: '1970-01-01',
         precio2_descuento_pct: 10,
         precio3_descuento_pct: 15,
-        incluir_existencias_cero_default: true
+        incluir_existencias_cero_default: true,
+        cobranza_hora_corte: '17:50'
     });
 
     const [originalGoalData, setOriginalGoalData] = useState({
@@ -97,7 +98,8 @@ const ConfiguracionSistemaPage = () => {
                     caja_historial_desde: data.caja_historial_desde || '1970-01-01',
                     precio2_descuento_pct: data.precio2_descuento_pct ?? 10,
                     precio3_descuento_pct: data.precio3_descuento_pct ?? 15,
-                    incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true
+                    incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true,
+                    cobranza_hora_corte: (data.cobranza_hora_corte || '17:50').slice(0, 5)
                 });
                 
                 setOriginalGoalData({
@@ -637,6 +639,23 @@ const ConfiguracionSistemaPage = () => {
                                 <Download className="w-3 h-3" /> Descargar extensión (ZIP)
                             </a>
                         </div>
+
+                        <div className="flex items-center gap-3 flex-wrap pt-2 border-t mt-1">
+                            <Label htmlFor="cobranza_hora_corte" className="text-xs font-bold text-slate-700">
+                                Hora de corte para "Para reenviar"
+                            </Label>
+                            <Input
+                                id="cobranza_hora_corte"
+                                type="time"
+                                value={formData.cobranza_hora_corte}
+                                onChange={handleInputChange}
+                                className="w-32 h-8 text-sm"
+                            />
+                        </div>
+                        <p className="text-[10px] text-gray-500 italic">
+                            Un cliente que prometió venir hoy aparece en la lista "Para reenviar" solo después de esta hora
+                            (ej. 10 min antes del cierre). Así le das chance de llegar antes de volver a contactarlo.
+                        </p>
                         <details className="text-[11px] text-slate-600">
                             <summary className="cursor-pointer hover:text-emerald-700 font-bold">Instrucciones de instalación</summary>
                             <ol className="list-decimal ml-5 mt-2 space-y-1">
