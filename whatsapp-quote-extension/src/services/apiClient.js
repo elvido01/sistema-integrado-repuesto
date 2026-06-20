@@ -15,16 +15,46 @@ async function fetchJson(url, options) {
   return payload;
 }
 
-function getAuthHeaders() {
+// Renueva el access_token usando el refresh_token (los tokens de Supabase
+// expiran en ~1h). Si el refresh falla, limpia la sesion guardada.
+async function refreshSession(session) {
+  try {
+    const payload = await fetchJson(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    return payload;
+  } catch {
+    window.localStorage.removeItem(SESSION_KEY);
+    throw new Error('Tu sesion expiro. Toca "Salir" y conecta de nuevo tu usuario de Motoflow.');
+  }
+}
+
+// Devuelve una sesion con access_token vigente, renovando si esta por expirar.
+async function getValidSession() {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error('Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
   }
-
   const session = getStoredSession();
   if (!session?.access_token) {
     throw new Error('Conecta tu usuario de Motoflow.');
   }
+  // Renueva si ya expiro o le quedan menos de 60 segundos
+  const expMs = (session.expires_at || 0) * 1000;
+  if (expMs && expMs - Date.now() < 60000) {
+    if (!session.refresh_token) {
+      window.localStorage.removeItem(SESSION_KEY);
+      throw new Error('Tu sesion expiro. Conecta de nuevo tu usuario de Motoflow.');
+    }
+    return refreshSession(session);
+  }
+  return session;
+}
 
+async function getAuthHeaders() {
+  const session = await getValidSession();
   return {
     apikey: SUPABASE_ANON_KEY,
     Authorization: `Bearer ${session.access_token}`,
@@ -57,8 +87,12 @@ export async function searchProducts(queryOrFilters) {
     throw new Error('Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY para buscar productos.');
   }
 
-  const session = getStoredSession();
-  const token = session?.access_token || SUPABASE_ANON_KEY;
+  let token = SUPABASE_ANON_KEY;
+  try {
+    token = (await getValidSession()).access_token;
+  } catch {
+    // sin sesion vigente: la busqueda usara anon (no devuelve datos del tenant)
+  }
 
   return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_productos_paginados`, {
     method: 'POST',
@@ -85,11 +119,7 @@ export function getStoredSession() {
 
     const session = JSON.parse(raw);
     if (!session?.access_token) return null;
-    if (session.expires_at && session.expires_at * 1000 < Date.now()) {
-      window.localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-
+    // No se borra por expiracion: el refresh_token permite renovarla (ver getValidSession).
     return session;
   } catch {
     return null;
@@ -119,7 +149,7 @@ export function signOut() {
 }
 
 export async function searchCustomers(query) {
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
   const cleanQuery = String(query || '').trim();
   if (!cleanQuery) return [];
 
@@ -141,7 +171,7 @@ export async function searchCustomers(query) {
 }
 
 export async function getVendors() {
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/vendedores`);
   url.searchParams.set('select', 'id,nombre');
   url.searchParams.set('activo', 'eq.true');
@@ -153,7 +183,7 @@ export async function getVendors() {
 // Estado de cuenta (cobranza): cuotas atrasadas del cliente + plantilla
 export async function getEstadoCuenta(clienteId) {
   if (!clienteId) throw new Error('Selecciona un cliente para ver su estado de cuenta.');
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
 
   return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_estado_cuenta_cliente`, {
     method: 'POST',
@@ -164,7 +194,7 @@ export async function getEstadoCuenta(clienteId) {
 
 // Lista de cobranza: TODOS los clientes con facturas vencidas + su seguimiento
 export async function getClientesMorosos() {
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
 
   return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_clientes_morosos`, {
     method: 'POST',
@@ -176,7 +206,7 @@ export async function getClientesMorosos() {
 // Actualizar el telefono de un cliente desde la lista de cobranza
 export async function setClienteTelefono({ clienteId, telefono }) {
   if (!clienteId) throw new Error('cliente_id es requerido.');
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
 
   return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/set_cliente_telefono`, {
     method: 'POST',
@@ -191,7 +221,7 @@ export async function setClienteTelefono({ clienteId, telefono }) {
 // Marcar que se le envio un recordatorio a un cliente (para detectar "no vino")
 export async function marcarEnvioCobranza(clienteId) {
   if (!clienteId) return null;
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
 
   return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/marcar_envio_cobranza`, {
     method: 'POST',
@@ -203,7 +233,7 @@ export async function marcarEnvioCobranza(clienteId) {
 // Guardar el seguimiento (estado / fecha promesa / nota) de un cliente
 export async function setCobranzaSeguimiento({ clienteId, estado, fecha, nota }) {
   if (!clienteId) throw new Error('cliente_id es requerido.');
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
 
   return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/set_cobranza_seguimiento`, {
     method: 'POST',
@@ -227,7 +257,7 @@ export async function createQuote(data) {
     });
   }
 
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
 
   const numero = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_next_cotizacion_numero`, {
     method: 'POST',
@@ -282,7 +312,7 @@ export async function logConversationEvent(event) {
     });
   }
 
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
   const payload = {
     source: 'whatsapp_web_extension',
     event_type: event.event_type,
