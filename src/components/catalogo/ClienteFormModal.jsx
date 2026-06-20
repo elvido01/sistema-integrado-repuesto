@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -11,8 +12,49 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from '@/components/ui/textarea';
 
+// Ficha extendida (formulario fisico "DATOS DE CLIENTE") — solo empresas dealer.
+const emptyFicha = () => ({
+  apodo: '',
+  // Direccion desglosada
+  numero: '',
+  barrio: '',
+  ciudad: '',
+  casa_propia: false,
+  color_casa: '',
+  apartamento: '',
+  cerca_de: '',
+  telefono_casa: '',
+  // Trabajo
+  cargo: '',
+  lugar_trabajo: '',
+  lugar_trabajo_tel: '',
+  nombre_jefe: '',
+  direccion_trabajo: '',
+  telefono_trabajo: '',
+  // Conyuge / familia
+  conyuge_nombre: '',
+  conyuge_tel: '',
+  papa_nombre: '',
+  papa_tel: '',
+  papa_direccion: '',
+  mama_nombre: '',
+  mama_tel: '',
+  mama_direccion: '',
+  // Referencias
+  ref1_nombre: '',
+  ref1_tel: '',
+  ref1_direccion: '',
+  ref2_nombre: '',
+  ref2_tel: '',
+  ref2_direccion: '',
+  // Otros
+  observaciones: '',
+});
+
 const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
+  const isDealer = !!empresa?.feat_cliente_dealer;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     // Personal Info
@@ -31,6 +73,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     tipo_ncf: '02', // Consumidor Final
     precio_nivel: 1,
   });
+  const [ficha, setFicha] = useState(emptyFicha());
 
   useEffect(() => {
     if (isOpen) {
@@ -50,6 +93,8 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
           tipo_ncf: cliente.tipo_ncf || '02',
           precio_nivel: cliente.precio_nivel || 1,
         });
+        // Mezcla con la ficha vacia para garantizar todas las llaves
+        setFicha({ ...emptyFicha(), ...(cliente.ficha_dealer || {}) });
       } else {
         // Reset for new client
         setFormData({
@@ -67,6 +112,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
           tipo_ncf: '02',
           precio_nivel: 1,
         });
+        setFicha(emptyFicha());
       }
     }
   }, [cliente, isOpen]);
@@ -85,6 +131,24 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleFicha = (e) => {
+    const { name, value } = e.target;
+    setFicha((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleFichaChecked = (name, checked) => {
+    setFicha((prev) => ({ ...prev, [name]: checked }));
+  };
+
+  // Helper para renderizar un campo de la ficha (funcion, NO componente:
+  // llamarla inline no remonta el input ni pierde el foco al teclear).
+  const fField = (name, label, props = {}) => (
+    <div className="space-y-2" key={name}>
+      <Label htmlFor={`f_${name}`}>{label}</Label>
+      <Input id={`f_${name}`} name={name} value={ficha[name] || ''} onChange={handleFicha} {...props} />
+    </div>
+  );
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -94,6 +158,9 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
       limite_credito: formData.autorizar_credito ? formData.limite_credito : 0,
       dias_credito: formData.autorizar_credito ? formData.dias_credito : 0,
     };
+    if (isDealer) {
+      dataToSubmit.ficha_dealer = ficha;
+    }
 
     let result;
     if (cliente) {
@@ -132,7 +199,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{cliente ? 'Editar Cliente' : 'Crear Cliente'}</DialogTitle>
           <DialogDescription>
@@ -141,8 +208,9 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <Tabs defaultValue="personal" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className={`grid w-full ${isDealer ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <TabsTrigger value="personal">Información Personal</TabsTrigger>
+              {isDealer && <TabsTrigger value="dealer">Trabajo y Referencias</TabsTrigger>}
               <TabsTrigger value="credito">Crédito y Facturación</TabsTrigger>
             </TabsList>
             <TabsContent value="personal" className="py-4 space-y-4">
@@ -160,13 +228,33 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
                   <Input id="rnc" name="rnc" value={formData.rnc} onChange={handleChange} />
                 </div>
               </div>
+              {isDealer && (
+                <div className="grid grid-cols-3 gap-4">
+                  {fField('apodo', 'Apodo')}
+                </div>
+              )}
               <div className="space-y-2">
-                <Label htmlFor="direccion">Dirección</Label>
+                <Label htmlFor="direccion">Dirección (calle)</Label>
                 <Textarea id="direccion" name="direccion" value={formData.direccion} onChange={handleChange} />
               </div>
+              {isDealer && (
+                <div className="grid grid-cols-3 gap-4 p-3 border rounded-md bg-gray-50">
+                  {fField('numero', 'No. de casa')}
+                  {fField('barrio', 'Barrio / Sector')}
+                  {fField('ciudad', 'Ciudad')}
+                  {fField('color_casa', 'Color de la casa')}
+                  {fField('apartamento', 'Apartamento (nombre y color)')}
+                  {fField('cerca_de', 'Cerca de')}
+                  {fField('telefono_casa', 'Teléfono de casa')}
+                  <div className="flex items-center space-x-2 pt-7">
+                    <Checkbox id="casa_propia" checked={!!ficha.casa_propia} onCheckedChange={(checked) => handleFichaChecked('casa_propia', checked)} />
+                    <Label htmlFor="casa_propia">Casa propia</Label>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="telefono">Teléfono</Label>
+                  <Label htmlFor="telefono">Teléfono / Celular</Label>
                   <Input id="telefono" name="telefono" value={formData.telefono} onChange={handleChange} />
                 </div>
                 <div className="space-y-2">
@@ -183,6 +271,50 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
                 <Label htmlFor="activo">Cliente Activo</Label>
               </div>
             </TabsContent>
+            {isDealer && (
+              <TabsContent value="dealer" className="py-4 space-y-5">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Trabajo</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    {fField('cargo', 'Cargo / Ocupación')}
+                    {fField('lugar_trabajo', 'Lugar de trabajo')}
+                    {fField('lugar_trabajo_tel', 'Tel. lugar de trabajo')}
+                    {fField('nombre_jefe', 'Nombre del jefe')}
+                    {fField('direccion_trabajo', 'Dirección del trabajo')}
+                    {fField('telefono_trabajo', 'Teléfono del trabajo')}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Cónyuge / Familia</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    {fField('conyuge_nombre', 'Nombre cónyuge (esposo/a)')}
+                    {fField('conyuge_tel', 'Tel. cónyuge')}
+                    <div />
+                    {fField('papa_nombre', 'Nombre del papá')}
+                    {fField('papa_tel', 'Tel. papá')}
+                    {fField('papa_direccion', 'Dirección del papá')}
+                    {fField('mama_nombre', 'Nombre de la mamá')}
+                    {fField('mama_tel', 'Tel. mamá')}
+                    {fField('mama_direccion', 'Dirección de la mamá')}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Referencias</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    {fField('ref1_nombre', 'Referente 1')}
+                    {fField('ref1_tel', 'Tel. referente 1')}
+                    {fField('ref1_direccion', 'Dirección referente 1')}
+                    {fField('ref2_nombre', 'Referente 2')}
+                    {fField('ref2_tel', 'Tel. referente 2')}
+                    {fField('ref2_direccion', 'Dirección referente 2')}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="f_observaciones">Observaciones</Label>
+                  <Textarea id="f_observaciones" name="observaciones" value={ficha.observaciones || ''} onChange={handleFicha} />
+                </div>
+              </TabsContent>
+            )}
             <TabsContent value="credito" className="py-4 space-y-4">
               <div className="flex items-center space-x-2">
                 <Checkbox id="autorizar_credito" checked={formData.autorizar_credito} onCheckedChange={(checked) => handleCheckedChange('autorizar_credito', checked)} />
