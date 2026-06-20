@@ -732,6 +732,14 @@ export const styles = `
     background: #0f786d;
   }
 
+  .mf-cob-buscar {
+    background: #2563eb;
+  }
+
+  .mf-cob-buscar:hover {
+    background: #1d4ed8;
+  }
+
   .mf-cobro-summary {
     display: flex;
     align-items: center;

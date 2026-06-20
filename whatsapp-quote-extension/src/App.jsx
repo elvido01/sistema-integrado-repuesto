@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createQuote, getClientesMorosos, getStoredSession, getVendors, logConversationEvent, marcarEnvioCobranza, searchCustomers, searchProducts, setClienteTelefono, setCobranzaSeguimiento, signInWithPassword, signOut } from './services/apiClient.js';
-import { getCurrentChat, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
+import { createQuote, getClienteFicha, getClientesMorosos, getStoredSession, getVendors, logConversationEvent, marcarEnvioCobranza, searchCustomers, searchProducts, setClienteTelefono, setCobranzaSeguimiento, signInWithPassword, signOut } from './services/apiClient.js';
+import { attachFileToWhatsApp, getCurrentChat, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
+import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 
 const money = new Intl.NumberFormat('es-DO', {
   style: 'currency',
@@ -45,6 +46,7 @@ function buildCobroMessageFor(cliente, empresaNombre, plantilla) {
 }
 
 const PENDING_COBRO_KEY = 'motoflow_pending_cobro';
+const PENDING_BUSCADOR_KEY = 'motoflow_pending_buscador';
 
 const COBRO_ESTADOS = [
   { key: 'ir_a_buscar', label: 'Ir a buscar' },
@@ -275,6 +277,68 @@ export default function App() {
     };
 
     const timer = window.setTimeout(tryPaste, 1800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  // Al abrir el chat del buscador, regenera el PDF de la ficha y lo adjunta.
+  // El File no sobrevive la recarga, por eso guardamos los DATOS y aqui
+  // reconstruimos el PDF. Si no se puede adjuntar, lo descarga (respaldo).
+  useEffect(() => {
+    let raw;
+    try {
+      raw = window.localStorage.getItem(PENDING_BUSCADOR_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+
+    let pending;
+    try {
+      pending = JSON.parse(raw);
+    } catch {
+      window.localStorage.removeItem(PENDING_BUSCADOR_KEY);
+      return;
+    }
+
+    if (!pending?.data || (Date.now() - (pending.ts || 0)) > 90000) {
+      window.localStorage.removeItem(PENDING_BUSCADOR_KEY);
+      return;
+    }
+
+    setMode('cobranza');
+    loadMorosos();
+
+    let file;
+    try {
+      file = buildFichaPdf(pending.data);
+    } catch {
+      window.localStorage.removeItem(PENDING_BUSCADOR_KEY);
+      return;
+    }
+
+    let attempts = 0;
+    let cancelled = false;
+
+    const tryAttach = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      const ok = await attachFileToWhatsApp(file);
+      if (ok) {
+        window.localStorage.removeItem(PENDING_BUSCADOR_KEY);
+        setCobroMsg('PDF adjuntado al chat del buscador. Revisa y presiona Enviar.');
+      } else if (attempts < 25) {
+        window.setTimeout(tryAttach, 700);
+      } else {
+        window.localStorage.removeItem(PENDING_BUSCADOR_KEY);
+        downloadPdf(file);
+        setCobroMsg('No pude adjuntar el PDF automaticamente. Lo descargue: arrastralo al chat del buscador.');
+      }
+    };
+
+    const timer = window.setTimeout(tryAttach, 1800);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -837,6 +901,49 @@ export default function App() {
     window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
   }
 
+  // "Ir a buscar": manda el PDF con la ficha del cliente al WhatsApp del
+  // encargado de localizar a la gente (sin la parte de credito/facturacion).
+  async function handleEnviarBuscador(cliente) {
+    if (sendingId) return;
+    setSendingId(cliente.cliente_id);
+    try {
+      const ficha = await getClienteFicha(cliente.cliente_id);
+      const phone = normalizePhone(ficha?.buscador_telefono);
+      if (!phone) {
+        setCobroMsg('Configura el "Telefono del buscador" en Configuracion del Sistema.');
+        setSendingId(null);
+        return;
+      }
+
+      const data = {
+        empresa_nombre: ficha.empresa_nombre,
+        cliente: ficha.cliente,
+        deuda: {
+          total: cliente.total_atrasado,
+          cuotas: cliente.cuotas_atrasadas,
+          facturas: (cliente.facturas || []).map((f) => f.numero)
+        }
+      };
+
+      try {
+        window.localStorage.setItem(PENDING_BUSCADOR_KEY, JSON.stringify({ phone, data, ts: Date.now() }));
+      } catch {
+        // si localStorage falla, igual abrimos el chat (sin adjunto automatico)
+      }
+
+      safeLogEvent('cobro_ficha_buscador', {
+        cliente_id: cliente.cliente_id,
+        customer_name: cliente.cliente_nombre,
+        metadata: { buscador_phone: phone, via: 'lista_morosos' }
+      });
+
+      window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
+    } catch (error) {
+      setCobroMsg(`No se pudo preparar el envio al buscador: ${error.message || 'error'}`);
+      setSendingId(null);
+    }
+  }
+
   if (collapsed) {
     return (
       <button className="mf-floating-button" type="button" onClick={() => setCollapsed(false)}>
@@ -1119,6 +1226,15 @@ export default function App() {
                       onClick={() => handleGuardarSeguimiento(cliente)}
                     >
                       Guardar
+                    </button>
+                  ) : cliente.seg_estado === 'ir_a_buscar' ? (
+                    <button
+                      className="mf-cob-send mf-cob-buscar"
+                      type="button"
+                      onClick={() => handleEnviarBuscador(cliente)}
+                      disabled={sendingId === cliente.cliente_id}
+                    >
+                      {sendingId === cliente.cliente_id ? 'Abriendo chat...' : '📄 Enviar al buscador'}
                     </button>
                   ) : (
                     <button

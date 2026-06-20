@@ -32,6 +32,44 @@ function findMessageBox() {
   );
 }
 
+// Adjunta un archivo (PDF) en el chat abierto de WhatsApp Web.
+// Devuelve true si encontro el chat + un input de documentos y le inyecto
+// el archivo (aparece el preview para revisar y enviar). Si el chat aun no
+// carga o no hay input adecuado, devuelve false (para reintentar / respaldo).
+export async function attachFileToWhatsApp(file) {
+  // El footer del chat solo existe cuando hay una conversacion abierta.
+  if (!findMessageBox()) return false;
+
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+  if (!inputs.length) return false;
+
+  // Preferimos el input de DOCUMENTOS (acepta cualquier archivo), no el de
+  // solo imagenes/videos.
+  const isDocInput = (inp) => {
+    const accept = (inp.getAttribute('accept') || '').toLowerCase();
+    if (!accept) return true;
+    if (accept.includes('*')) return true;
+    return !(accept.includes('image') || accept.includes('video'));
+  };
+
+  const input = inputs.find(isDocInput) || inputs[inputs.length - 1];
+  if (!input) return false;
+
+  try {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  } catch {
+    return false;
+  }
+
+  // Espera a que aparezca el preview del adjunto (boton de enviar).
+  await wait(400);
+  return true;
+}
+
 export async function pasteTextIntoWhatsApp(text) {
   const box = findMessageBox();
   if (!box) return false;

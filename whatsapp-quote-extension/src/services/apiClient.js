@@ -203,6 +203,18 @@ export async function getClientesMorosos() {
   });
 }
 
+// Ficha completa del cliente (para el PDF que se manda al buscador)
+export async function getClienteFicha(clienteId) {
+  if (!clienteId) throw new Error('cliente_id es requerido.');
+  const headers = await getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_cliente_ficha`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_cliente_id: clienteId })
+  });
+}
+
 // Actualizar el telefono de un cliente desde la lista de cobranza
 export async function setClienteTelefono({ clienteId, telefono }) {
   if (!clienteId) throw new Error('cliente_id es requerido.');
