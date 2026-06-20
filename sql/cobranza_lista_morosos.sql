@@ -41,6 +41,11 @@ GRANT SELECT, INSERT, UPDATE ON public.cobranza_seguimiento TO authenticated;
 ALTER TABLE public.cobranza_seguimiento
   ADD COLUMN IF NOT EXISTS ultimo_envio timestamptz;
 
+-- Hora de corte para "Para reenviar" (p.ej. 10 min antes del cierre).
+-- El cliente que prometio venir HOY solo aparece en reenviar despues de esta hora.
+ALTER TABLE public.config_empresa
+  ADD COLUMN IF NOT EXISTS cobranza_hora_corte time NOT NULL DEFAULT '17:50';
+
 
 -- 2) RPC: lista de clientes con facturas vencidas + su seguimiento
 CREATE OR REPLACE FUNCTION public.get_clientes_morosos()
@@ -52,6 +57,7 @@ DECLARE
   v_tenant     uuid;
   v_empresa    text;
   v_plantilla  text;
+  v_corte      time := '17:50';
   v_clientes   json;
 BEGIN
   v_tenant := public.get_user_tenant();
@@ -59,8 +65,8 @@ BEGIN
     RAISE EXCEPTION 'No se pudo determinar el tenant del usuario';
   END IF;
 
-  SELECT nombre, plantilla_cobro
-    INTO v_empresa, v_plantilla
+  SELECT nombre, plantilla_cobro, COALESCE(cobranza_hora_corte, '17:50')
+    INTO v_empresa, v_plantilla, v_corte
   FROM public.config_empresa
   WHERE tenant_id = v_tenant
   LIMIT 1;
@@ -108,7 +114,8 @@ BEGIN
       'seg_fecha',        s.fecha_promesa,
       'seg_nota',         s.nota,
       'ultimo_envio',     s.ultimo_envio,
-      -- "Para reenviar": ya le enviaste recordatorio y NO ha pagado desde entonces
+      -- "Para reenviar": le enviaste recordatorio, NO ha pagado, y ya paso el
+      -- momento de esperar (el dia prometido vencio, o es hoy y ya paso la hora de corte)
       'por_reenviar',     (
         s.ultimo_envio IS NOT NULL
         AND NOT EXISTS (
@@ -116,6 +123,13 @@ BEGIN
           WHERE r.cliente_id = a.cliente_id
             AND COALESCE(r.anulado, false) = false
             AND r.created_at >= s.ultimo_envio
+        )
+        AND (
+          COALESCE(s.fecha_promesa, s.ultimo_envio::date) < CURRENT_DATE
+          OR (
+            COALESCE(s.fecha_promesa, s.ultimo_envio::date) = CURRENT_DATE
+            AND (now() AT TIME ZONE 'America/Santo_Domingo')::time >= v_corte
+          )
         )
       )
     ) ORDER BY a.dias_max DESC

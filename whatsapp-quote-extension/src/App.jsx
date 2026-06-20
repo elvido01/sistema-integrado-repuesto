@@ -717,7 +717,7 @@ export default function App() {
       nota: cliente.seg_nota || null
     }).catch((error) => {
       console.warn('[Motoflow] No se pudo guardar seguimiento:', error.message);
-      setCobroMsg('No se pudo guardar el seguimiento. Reintenta.');
+      setCobroMsg(`No se pudo guardar el seguimiento: ${error.message || 'error'}`);
     });
   }
 
@@ -743,7 +743,7 @@ export default function App() {
       setCobroMsg(`Telefono de ${cliente.cliente_nombre} actualizado.`);
     } catch (error) {
       console.warn('[Motoflow] No se pudo guardar telefono:', error.message);
-      setCobroMsg('No se pudo guardar el telefono. Reintenta.');
+      setCobroMsg(`No se pudo guardar el telefono: ${error.message || 'error'}`);
     }
   }
 
