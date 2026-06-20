@@ -574,6 +574,50 @@ export const styles = `
     color: #c2410c;
   }
 
+  .mf-cobranza-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 8px 14px;
+    background: #ffffff;
+    border-bottom: 1px solid #f0e0cd;
+  }
+
+  .mf-cobranza-tabs button {
+    min-height: 32px;
+    border: 1px solid #e3cfb4;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #6b5840;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mf-cobranza-tabs button.is-active {
+    border-color: #ea7d23;
+    background: #fde9c7;
+    color: #9a4a12;
+  }
+
+  .mf-cobranza-tabs .mf-tab-reenviar.is-active {
+    border-color: #c2410c;
+    background: #c2410c;
+    color: #ffffff;
+  }
+
+  .mf-cob-head-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+  }
+
+  .mf-cob-badge.is-reenviar {
+    background: #c2410c;
+    color: #ffffff;
+  }
+
   .mf-cob-card-info {
     display: flex;
     align-items: center;

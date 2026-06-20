@@ -37,6 +37,10 @@ CREATE POLICY cobranza_seg_tenant ON public.cobranza_seguimiento
 
 GRANT SELECT, INSERT, UPDATE ON public.cobranza_seguimiento TO authenticated;
 
+-- Marca de ultimo recordatorio enviado (para detectar "no vino / reenviar")
+ALTER TABLE public.cobranza_seguimiento
+  ADD COLUMN IF NOT EXISTS ultimo_envio timestamptz;
+
 
 -- 2) RPC: lista de clientes con facturas vencidas + su seguimiento
 CREATE OR REPLACE FUNCTION public.get_clientes_morosos()
@@ -102,7 +106,19 @@ BEGIN
       'facturas',         a.facturas,
       'seg_estado',       COALESCE(s.estado, 'pendiente'),
       'seg_fecha',        s.fecha_promesa,
-      'seg_nota',         s.nota
+      'seg_nota',         s.nota,
+      'ultimo_envio',     s.ultimo_envio,
+      -- "Para reenviar": ya le enviaste recordatorio y NO ha pagado desde entonces
+      'por_reenviar',     (
+        s.ultimo_envio IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM public.recibos_ingreso r
+          WHERE r.cliente_id = a.cliente_id
+            AND r.tenant_id = v_tenant
+            AND COALESCE(r.anulado, false) = false
+            AND r.created_at >= s.ultimo_envio
+        )
+      )
     ) ORDER BY a.dias_max DESC
   )
   INTO v_clientes
@@ -214,6 +230,46 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.set_cliente_telefono(UUID, TEXT) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.set_cliente_telefono(UUID, TEXT) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.set_cliente_telefono(UUID, TEXT) TO authenticated, service_role;
+
+
+-- 5) RPC: marcar que se le envio recordatorio a un cliente (para detectar "no vino")
+CREATE OR REPLACE FUNCTION public.marcar_envio_cobranza(
+  p_cliente_id UUID
+)
+RETURNS JSON
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_tenant uuid;
+BEGIN
+  v_tenant := public.get_user_tenant();
+  IF v_tenant IS NULL THEN
+    RAISE EXCEPTION 'No se pudo determinar el tenant del usuario';
+  END IF;
+  IF p_cliente_id IS NULL THEN
+    RAISE EXCEPTION 'cliente_id es requerido';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.clientes WHERE id = p_cliente_id AND tenant_id = v_tenant
+  ) THEN
+    RAISE EXCEPTION 'Cliente no encontrado en este tenant';
+  END IF;
+
+  INSERT INTO public.cobranza_seguimiento (tenant_id, cliente_id, ultimo_envio, updated_by, updated_at)
+  VALUES (v_tenant, p_cliente_id, now(), auth.uid(), now())
+  ON CONFLICT (tenant_id, cliente_id) DO UPDATE
+    SET ultimo_envio = now(),
+        updated_by   = auth.uid(),
+        updated_at   = now();
+
+  RETURN json_build_object('ok', true);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.marcar_envio_cobranza(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.marcar_envio_cobranza(UUID) FROM anon;
+GRANT  EXECUTE ON FUNCTION public.marcar_envio_cobranza(UUID) TO authenticated, service_role;
 
 NOTIFY pgrst, 'reload schema';
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createQuote, getClientesMorosos, getStoredSession, getVendors, logConversationEvent, searchCustomers, searchProducts, setClienteTelefono, setCobranzaSeguimiento, signInWithPassword, signOut } from './services/apiClient.js';
+import { createQuote, getClientesMorosos, getStoredSession, getVendors, logConversationEvent, marcarEnvioCobranza, searchCustomers, searchProducts, setClienteTelefono, setCobranzaSeguimiento, signInWithPassword, signOut } from './services/apiClient.js';
 import { getCurrentChat, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
 
 const money = new Intl.NumberFormat('es-DO', {
@@ -210,6 +210,7 @@ export default function App() {
   const [morososLoading, setMorososLoading] = useState(false);
   const [cobroMsg, setCobroMsg] = useState('');
   const [cobroFilter, setCobroFilter] = useState('');
+  const [cobroView, setCobroView] = useState('todos'); // 'todos' | 'reenviar'
   const [sendingId, setSendingId] = useState(null);  // cliente_id que se esta enviando
   const phoneFocusRef = useRef('');                  // telefono al entrar al campo (para detectar cambios)
 
@@ -805,6 +806,7 @@ export default function App() {
     if (!phone) {
       try {
         await navigator.clipboard.writeText(text);
+        await marcarEnvioCobranza(cliente.cliente_id).catch(() => {});
         setCobroMsg(`${cliente.cliente_nombre} no tiene telefono. Mensaje copiado al portapapeles.`);
       } catch {
         setCobroMsg(`${cliente.cliente_nombre} no tiene telefono registrado.`);
@@ -813,6 +815,8 @@ export default function App() {
     }
 
     setSendingId(cliente.cliente_id);
+    // Registrar el envio (para la lista "Para reenviar" si no paga)
+    await marcarEnvioCobranza(cliente.cliente_id).catch(() => {});
     try {
       window.localStorage.setItem(PENDING_COBRO_KEY, JSON.stringify({ phone, text, ts: Date.now() }));
     } catch {
@@ -997,11 +1001,13 @@ export default function App() {
       {session && mode === 'cobranza' && (() => {
         const clientes = morosos?.clientes || [];
         const filtro = cobroFilter.trim().toLowerCase();
-        const visibles = filtro
-          ? clientes.filter((c) =>
-              (c.cliente_nombre || '').toLowerCase().includes(filtro) ||
-              (c.cliente_telefono || '').toLowerCase().includes(filtro))
-          : clientes;
+        const reenviarCount = clientes.filter((c) => c.por_reenviar).length;
+        let visibles = cobroView === 'reenviar' ? clientes.filter((c) => c.por_reenviar) : clientes;
+        if (filtro) {
+          visibles = visibles.filter((c) =>
+            (c.cliente_nombre || '').toLowerCase().includes(filtro) ||
+            (c.cliente_telefono || '').toLowerCase().includes(filtro));
+        }
         const totalGeneral = clientes.reduce((sum, c) => sum + (Number(c.total_atrasado) || 0), 0);
 
         return (
@@ -1019,6 +1025,25 @@ export default function App() {
             </div>
 
             {clientes.length > 0 && (
+              <div className="mf-cobranza-tabs">
+                <button
+                  type="button"
+                  className={cobroView === 'todos' ? 'is-active' : ''}
+                  onClick={() => setCobroView('todos')}
+                >
+                  Todos ({clientes.length})
+                </button>
+                <button
+                  type="button"
+                  className={`mf-tab-reenviar${cobroView === 'reenviar' ? ' is-active' : ''}`}
+                  onClick={() => setCobroView('reenviar')}
+                >
+                  Para reenviar ({reenviarCount})
+                </button>
+              </div>
+            )}
+
+            {clientes.length > 0 && (
               <div className="mf-cobranza-summary">
                 <span>{clientes.length} cliente(s) con deuda vencida</span>
                 <b>{money.format(totalGeneral)}</b>
@@ -1033,8 +1058,11 @@ export default function App() {
                 <article className="mf-cob-card" key={cliente.cliente_id}>
                   <header className="mf-cob-card-head">
                     <strong>{cliente.cliente_nombre}</strong>
-                    <span className={`mf-cob-badge${cliente.dias_mas_vencido >= 30 ? ' is-red' : ''}`}>
-                      {cliente.dias_mas_vencido}d
+                    <span className="mf-cob-head-badges">
+                      {cliente.por_reenviar && <span className="mf-cob-badge is-reenviar">Reenviar</span>}
+                      <span className={`mf-cob-badge${cliente.dias_mas_vencido >= 30 ? ' is-red' : ''}`}>
+                        {cliente.dias_mas_vencido}d
+                      </span>
                     </span>
                   </header>
 
@@ -1106,7 +1134,11 @@ export default function App() {
               ))}
 
               {!morososLoading && clientes.length > 0 && visibles.length === 0 && (
-                <p className="mf-muted">Ningun cliente coincide con "{cobroFilter}".</p>
+                <p className="mf-muted">
+                  {cobroView === 'reenviar'
+                    ? 'No hay clientes para reenviar (los que recibieron mensaje ya pagaron, o aun no les has enviado).'
+                    : `Ningun cliente coincide con "${cobroFilter}".`}
+                </p>
               )}
             </div>
           </section>

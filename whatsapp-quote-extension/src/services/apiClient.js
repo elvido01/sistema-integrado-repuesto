@@ -188,6 +188,18 @@ export async function setClienteTelefono({ clienteId, telefono }) {
   });
 }
 
+// Marcar que se le envio un recordatorio a un cliente (para detectar "no vino")
+export async function marcarEnvioCobranza(clienteId) {
+  if (!clienteId) return null;
+  const headers = getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/marcar_envio_cobranza`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_cliente_id: clienteId })
+  });
+}
+
 // Guardar el seguimiento (estado / fecha promesa / nota) de un cliente
 export async function setCobranzaSeguimiento({ clienteId, estado, fecha, nota }) {
   if (!clienteId) throw new Error('cliente_id es requerido.');
