@@ -74,9 +74,16 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     precio_nivel: 1,
   });
   const [ficha, setFicha] = useState(emptyFicha());
+  const [activeTab, setActiveTab] = useState('personal');
+
+  // Orden de las pestañas (el flujo "Siguiente" las recorre en este orden)
+  const tabOrder = isDealer ? ['personal', 'dealer', 'credito'] : ['personal', 'credito'];
+  const currentTabIndex = tabOrder.indexOf(activeTab);
+  const isLastTab = currentTabIndex >= tabOrder.length - 1;
 
   useEffect(() => {
     if (isOpen) {
+      setActiveTab('personal');
       if (cliente) {
         setFormData({
           codigo: cliente.codigo || '',
@@ -207,7 +214,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <Tabs defaultValue="personal" className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className={`grid w-full ${isDealer ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <TabsTrigger value="personal">Información Personal</TabsTrigger>
               {isDealer && <TabsTrigger value="dealer">Trabajo y Referencias</TabsTrigger>}
@@ -383,10 +390,16 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
             <DialogClose asChild>
               <Button type="button" variant="secondary">Cancelar</Button>
             </DialogClose>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {cliente ? 'Guardar Cambios' : 'Crear Cliente'}
-            </Button>
+            {isLastTab ? (
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {cliente ? 'Guardar Cambios' : 'Crear Cliente'}
+              </Button>
+            ) : (
+              <Button type="button" onClick={() => setActiveTab(tabOrder[currentTabIndex + 1])}>
+                Siguiente
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
