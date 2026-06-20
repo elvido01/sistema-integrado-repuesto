@@ -156,8 +156,41 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
     </div>
   );
 
+  // Campos obligatorios (todos en la pestaña "Información Personal")
+  const validatePersonal = () => {
+    const missing = [];
+    if (!String(formData.codigo || '').trim()) missing.push('Código');
+    if (!String(formData.nombre || '').trim()) missing.push('Nombre/Razón Social');
+    if (!String(formData.rnc || '').trim()) missing.push('RNC/Cédula');
+    if (!String(formData.telefono || '').trim()) missing.push('Teléfono / Celular');
+    if (missing.length) {
+      setActiveTab('personal');
+      toast({
+        title: 'Faltan datos obligatorios',
+        description: `Completa: ${missing.join(', ')}.`,
+        variant: 'destructive',
+      });
+      return false;
+    }
+    return true;
+  };
+
+  // Evita que Enter cierre/envíe el formulario desde un input
+  // (en textarea Enter sigue funcionando para saltar de línea).
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+      e.preventDefault();
+    }
+  };
+
+  const handleNext = () => {
+    if (activeTab === 'personal' && !validatePersonal()) return;
+    setActiveTab(tabOrder[currentTabIndex + 1]);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validatePersonal()) return;
     setIsSubmitting(true);
 
     const dataToSubmit = {
@@ -213,7 +246,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
             {cliente ? 'Actualiza la información de este cliente.' : 'Crea un nuevo cliente en el sistema.'}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className={`grid w-full ${isDealer ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <TabsTrigger value="personal">Información Personal</TabsTrigger>
@@ -396,7 +429,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
                 {cliente ? 'Guardar Cambios' : 'Crear Cliente'}
               </Button>
             ) : (
-              <Button type="button" onClick={() => setActiveTab(tabOrder[currentTabIndex + 1])}>
+              <Button type="button" onClick={handleNext}>
                 Siguiente
               </Button>
             )}
