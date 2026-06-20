@@ -114,7 +114,6 @@ BEGIN
         AND NOT EXISTS (
           SELECT 1 FROM public.recibos_ingreso r
           WHERE r.cliente_id = a.cliente_id
-            AND r.tenant_id = v_tenant
             AND COALESCE(r.anulado, false) = false
             AND r.created_at >= s.ultimo_envio
         )
