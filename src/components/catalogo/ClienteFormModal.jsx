@@ -216,20 +216,20 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
             <TabsContent value="personal" className="py-4 space-y-4">
               {isDealer ? (
                 <>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-[11rem_1fr] gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="codigo">Código</Label>
-                      <Input id="codigo" name="codigo" value={formData.codigo} onChange={handleChange} placeholder="Ej: C001" />
+                      <Input id="codigo" name="codigo" value={formData.codigo} onChange={handleChange} maxLength={14} placeholder="Ej: C001" />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="nombre">Nombre/Razón Social</Label>
                       <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleChange} required />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-[11rem_1fr] gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="rnc">RNC/Cédula</Label>
-                      <Input id="rnc" name="rnc" value={formData.rnc} onChange={handleChange} />
+                      <Input id="rnc" name="rnc" value={formData.rnc} onChange={handleChange} maxLength={14} />
                     </div>
                     {fField('apodo', 'Apodo')}
                   </div>
