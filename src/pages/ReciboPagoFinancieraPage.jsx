@@ -140,6 +140,22 @@ const ReciboPagoFinancieraPage = () => {
   const montoNum = round2(Number(monto) || 0);
   const balanceActual = Math.max(round2(balanceAnterior - montoNum), 0);
 
+  // Monto Pagado con separador de miles (,) y decimales (.) mientras se escribe
+  const displayMonto = (() => {
+    if (monto === '' || monto == null) return '';
+    const [ip, dp] = String(monto).split('.');
+    const intFmt = ip ? Number(ip).toLocaleString('en-US') : '0';
+    return dp !== undefined ? `${intFmt}.${dp}` : intFmt;
+  })();
+  const handleMontoChange = (e) => {
+    let v = e.target.value.replace(/,/g, '').replace(/[^\d.]/g, '');
+    const parts = v.split('.');
+    if (parts.length > 2) v = `${parts[0]}.${parts.slice(1).join('')}`;
+    const [ip, dp] = v.split('.');
+    v = dp !== undefined ? `${ip}.${dp.slice(0, 2)}` : ip;
+    setMonto(v);
+  };
+
   const cuotasConAbono = useMemo(() => distribuirAbono(cuotasFiltradas, montoNum), [cuotasFiltradas, montoNum]);
 
   // Filas a mostrar (MORA como línea aparte, igual a la foto)
@@ -254,20 +270,16 @@ const ReciboPagoFinancieraPage = () => {
                   <span className="font-bold">{hoy()}</span>
                 </div>
               </div>
-              <div className="border-t pt-2 grid grid-cols-2 gap-2 items-center">
-                <div className="flex items-center gap-2">
-                  <Label className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Forma de Pago</Label>
-                  <Select value={forma} onValueChange={setForma}>
-                    <SelectTrigger className="h-9 text-sm flex-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Monto Pagado</Label>
-                  <Input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1" />
-                </div>
+              <div className="border-t pt-2 flex items-center gap-2">
+                <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none">Forma de<br />Pago</Label>
+                <Select value={forma} onValueChange={setForma}>
+                  <SelectTrigger className="h-9 text-sm w-[100px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap">Monto<br />Pagado</Label>
+                <Input type="text" inputMode="decimal" value={displayMonto} onChange={handleMontoChange} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1" />
               </div>
               {forma !== 'Efectivo' && (
                 <div className="grid grid-cols-2 gap-2">
