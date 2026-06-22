@@ -329,7 +329,7 @@ const ReciboPagoFinancieraPage = () => {
 
             <div className="border rounded-md p-2 lg:col-start-1 lg:col-span-2 lg:row-start-2">
               <Label className="text-xs font-bold">Comentarios</Label>
-              <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-16 text-sm resize-none" />
+              <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-12 text-sm resize-none" />
             </div>
 
             <div className="border rounded-md p-2 text-sm space-y-1 lg:col-start-3 lg:row-start-2">
