@@ -89,4 +89,5 @@ export const MODULES = [
     { key: 'grupos-equivalentes', label: 'Catálogo - Productos Equivalentes' },
     { key: 'vendedores', label: 'Catálogo - Vendedores' },
     { key: 'cambio-codigo', label: 'Inventario - Cambio de Código' },
+    { key: 'prestamos', label: 'Financiera - Préstamos' },
 ];

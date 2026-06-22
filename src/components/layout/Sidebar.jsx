@@ -100,6 +100,13 @@ const navItems = [
     ],
   },
   {
+    title: 'Financiera',
+    icon: DollarSign,
+    subItems: [
+      { title: 'Préstamos', id: 'prestamos', icon: DollarSign, featFlag: 'feat_financiera' },
+    ],
+  },
+  {
     title: 'Inventario',
     icon: Package,
     subItems: [
@@ -189,7 +196,7 @@ const listVariants = {
 
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const { openPanel, activePanel } = usePanels();
-  const { profile, permissions, user, signOut, isSuperAdmin, tenantId } = useAuth();
+  const { profile, permissions, user, signOut, isSuperAdmin, tenantId, empresa } = useAuth();
   const { planActual } = useSuscripcion();
   // Funciones Plus: solo planes PRO/ENTERPRISE (y super admin).
   const puedePlus = isSuperAdmin || ['PRO', 'ENTERPRISE'].includes((planActual || '').toUpperCase());
@@ -340,6 +347,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           const allowedSubItems = item.subItems.filter(sub => {
             if (sub.tenantOnly && sub.tenantOnly !== tenantId) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
+            if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
             if (sub.id === 'whatsapp-crm' && !puedePlus) return false; // Sales Hub = función Plus (PRO/ENTERPRISE)
             return canAccess(profile, permissions, sub.id);
           });
