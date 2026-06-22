@@ -222,14 +222,14 @@ const ReciboPagoFinancieraPage = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
             {/* Cliente */}
             <div className="border rounded-md p-2">
-              <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Cliente</div>
-              <div className="flex gap-2 items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Cliente</span>
                 <Input
                   value={codigoInput}
                   onChange={(e) => setCodigoInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarPorCodigo(); } }}
                   placeholder="Código o cédula"
-                  className="w-48 h-8 text-sm"
+                  className="flex-1 h-8 text-sm"
                 />
                 <Button type="button" variant="outline" size="sm" onClick={() => setBuscarOpen(true)}>
                   <Search className="w-3.5 h-3.5 mr-1" />F3
