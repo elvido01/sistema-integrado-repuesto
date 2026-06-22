@@ -248,12 +248,20 @@ const ReciboPagoFinancieraPage = () => {
                 <div><div className="text-[10px] font-bold text-slate-400 uppercase">Número</div><div className="font-mono font-bold">{numero}</div></div>
                 <div className="text-right"><div className="text-[10px] font-bold text-slate-400 uppercase">Fecha</div><div className="font-bold">{hoy()}</div></div>
               </div>
-              <div className="flex flex-wrap gap-3 text-sm border-t pt-2">
-                {FORMAS.map((f) => (
-                  <label key={f} className="flex items-center gap-1 cursor-pointer">
-                    <input type="radio" name="forma" checked={forma === f} onChange={() => setForma(f)} />{f}
-                  </label>
-                ))}
+              <div className="border-t pt-2 grid grid-cols-2 gap-2 items-end">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-slate-400 uppercase">Forma de pago</Label>
+                  <Select value={forma} onValueChange={setForma}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-slate-400 uppercase">Monto Pagado</Label>
+                  <Input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="text-right font-bold text-lg h-9" />
+                </div>
               </div>
               {forma !== 'Efectivo' && (
                 <div className="grid grid-cols-2 gap-2">
@@ -261,10 +269,6 @@ const ReciboPagoFinancieraPage = () => {
                   <Input value={banco} onChange={(e) => setBanco(e.target.value)} placeholder="Banco" className="h-8 text-xs" />
                 </div>
               )}
-              <div className="border-t pt-2 flex items-center gap-2">
-                <Label className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Monto Pagado</Label>
-                <Input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1" />
-              </div>
             </div>
           </div>
 
