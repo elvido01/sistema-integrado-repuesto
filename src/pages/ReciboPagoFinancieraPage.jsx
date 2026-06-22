@@ -177,9 +177,9 @@ const ReciboPagoFinancieraPage = () => {
         if (dias > maxDias) maxDias = dias;
       }
     });
-    if (!hayVencida) return { txt: 'AL DÍA', cls: 'bg-emerald-100 text-emerald-700' };
-    if (maxDias <= 30) return { txt: 'SEGUIMIENTO', cls: 'bg-amber-100 text-amber-700' };
-    return { txt: 'SE BUSCA', cls: 'bg-red-100 text-red-700' };
+    if (!hayVencida) return { txt: 'AL DÍA', cls: 'text-emerald-600' };
+    if (maxDias <= 30) return { txt: 'SEGUIMIENTO', cls: 'text-amber-600' };
+    return { txt: 'SE BUSCA', cls: 'text-red-600' };
   })();
 
   const cuotasConAbono = useMemo(() => distribuirAbono(cuotasFiltradas, montoNum), [cuotasFiltradas, montoNum]);
@@ -250,7 +250,7 @@ const ReciboPagoFinancieraPage = () => {
 
         <div className="p-3 space-y-2">
           {/* Fila superior: cliente / cobrador-prestamo / numero-fecha */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 [&>*]:min-w-0">
             {/* Cliente */}
             <div className="border rounded-md p-2">
               <div className="flex items-center gap-2">
@@ -279,16 +279,16 @@ const ReciboPagoFinancieraPage = () => {
                 <Label className="text-xs w-20">Cobrador</Label>
                 <Input value={cobrador} onChange={(e) => setCobrador(e.target.value)} className="h-8 text-sm" />
               </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Estado<br />Cliente</span>
                   {estadoCliente
-                    ? <span className={`text-xs font-bold px-2 py-1 rounded ${estadoCliente.cls}`}>{estadoCliente.txt}</span>
-                    : <span className="text-xs text-slate-400 px-2">—</span>}
+                    ? <span className={`text-[11px] font-bold whitespace-nowrap ${estadoCliente.cls}`}>{estadoCliente.txt}</span>
+                    : <span className="text-xs text-slate-400">—</span>}
                 </div>
-                <Label className="text-xs w-20 text-right">Préstamo</Label>
+                <Label className="text-xs w-20 text-right shrink-0">Préstamo</Label>
                 <Select value={prestamoFiltro} onValueChange={setPrestamoFiltro}>
-                  <SelectTrigger className="h-8 text-sm flex-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-sm flex-1 min-w-0"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos…</SelectItem>
                     {prestamosUnicos.map((p) => <SelectItem key={p.id} value={p.id}>{p.num}</SelectItem>)}
@@ -309,16 +309,16 @@ const ReciboPagoFinancieraPage = () => {
                   <span className="font-bold">{hoy()}</span>
                 </div>
               </div>
-              <div className="border-t pt-2 flex items-center gap-2">
+              <div className="border-t pt-2 flex items-center gap-2 min-w-0">
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none shrink-0">Forma de<br />Pago</Label>
                 <Select value={forma} onValueChange={setForma}>
-                  <SelectTrigger className="h-9 text-sm w-[105px] min-w-[60px] shrink"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-sm w-[105px] min-w-[52px] shrink"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap shrink-0">Monto<br />Pagado</Label>
-                <Input type="text" inputMode="decimal" value={displayMonto} onChange={handleMontoChange} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1 min-w-[110px]" />
+                <Input type="text" inputMode="decimal" value={displayMonto} onChange={handleMontoChange} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1 min-w-0" />
               </div>
               {forma !== 'Efectivo' && (
                 <div className="grid grid-cols-2 gap-2">
@@ -367,7 +367,7 @@ const ReciboPagoFinancieraPage = () => {
           </div>
 
           {/* Otras Informaciones (col1) · Último Pago (col3) · Comentarios (col1-2) · Balances (col3) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 [&>*]:min-w-0 items-start">
             <div className="border rounded-md p-2 text-xs space-y-1 bg-slate-50 lg:col-start-1 lg:row-start-1">
               <div className="font-bold text-slate-500 mb-1">Otras Informaciones</div>
               <div className="flex justify-between"><span>Capital Pendiente</span><b>{fmt(capitalPend)}</b></div>
