@@ -242,13 +242,13 @@ const ReciboPagoFinancieraPage = () => {
     <div className="p-2 bg-slate-100">
       <Helmet><title>Recibo de Pago — Financiera</title></Helmet>
 
-      <div className="bg-white rounded-lg shadow border max-w-6xl mx-auto overflow-hidden">
+      <div className="bg-white rounded-lg shadow border w-full overflow-hidden">
         {/* Título */}
-        <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-1.5 font-extrabold tracking-wide text-base">
+        <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-1 font-extrabold tracking-wide text-base">
           RECIBO DE PAGO
         </div>
 
-        <div className="p-3 space-y-2">
+        <div className="p-2 space-y-1.5">
           {/* Fila superior: cliente / cobrador-prestamo / numero-fecha */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 [&>*]:min-w-0">
             {/* Cliente */}
@@ -331,18 +331,18 @@ const ReciboPagoFinancieraPage = () => {
 
           {/* Grid de cuotas (altura fija: ~6 filas visibles, scroll si hay mas) */}
           <div className="border rounded-md overflow-hidden">
-            <div className="overflow-y-auto h-[240px]">
+            <div className="overflow-y-auto h-[200px]">
             <table className="w-full text-xs">
               <thead className="bg-slate-100 text-slate-500 border-b sticky top-0">
                 <tr>
-                  <th className="text-left p-2">Fecha</th>
-                  <th className="text-left p-2">Vence</th>
-                  <th className="text-left p-2">Origen</th>
-                  <th className="text-left p-2">Referencia</th>
-                  <th className="text-left p-2">Descripción</th>
-                  <th className="text-right p-2">Monto</th>
-                  <th className="text-right p-2">Pendiente</th>
-                  <th className="text-right p-2 bg-red-50">Abono</th>
+                  <th className="text-left px-2 py-1">Fecha</th>
+                  <th className="text-left px-2 py-1">Vence</th>
+                  <th className="text-left px-2 py-1">Origen</th>
+                  <th className="text-left px-2 py-1">Referencia</th>
+                  <th className="text-left px-2 py-1">Descripción</th>
+                  <th className="text-right px-2 py-1">Monto</th>
+                  <th className="text-right px-2 py-1">Pendiente</th>
+                  <th className="text-right px-2 py-1 bg-red-50">Abono</th>
                 </tr>
               </thead>
               <tbody>
@@ -351,14 +351,14 @@ const ReciboPagoFinancieraPage = () => {
                 {!loading && cliente && filas.length === 0 && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">Sin cuotas pendientes.</td></tr>}
                 {filas.map((r, i) => (
                   <tr key={r.key} className={`${i % 2 === 1 ? 'bg-emerald-50/60' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
-                    <td className="p-2">{r.fecha}</td>
-                    <td className="p-2">{r.vence}</td>
-                    <td className="p-2">{r.origen}</td>
-                    <td className="p-2">{r.referencia}</td>
-                    <td className="p-2">{r.descripcion}</td>
-                    <td className="p-2 text-right">{fmt(r.monto)}</td>
-                    <td className="p-2 text-right">{fmt(r.pendiente)}</td>
-                    <td className="p-2 text-right font-bold text-emerald-700">{fmt(r.abono)}</td>
+                    <td className="px-2 py-1">{r.fecha}</td>
+                    <td className="px-2 py-1">{r.vence}</td>
+                    <td className="px-2 py-1">{r.origen}</td>
+                    <td className="px-2 py-1">{r.referencia}</td>
+                    <td className="px-2 py-1">{r.descripcion}</td>
+                    <td className="px-2 py-1 text-right">{fmt(r.monto)}</td>
+                    <td className="px-2 py-1 text-right">{fmt(r.pendiente)}</td>
+                    <td className="px-2 py-1 text-right font-bold text-emerald-700">{fmt(r.abono)}</td>
                   </tr>
                 ))}
               </tbody>
