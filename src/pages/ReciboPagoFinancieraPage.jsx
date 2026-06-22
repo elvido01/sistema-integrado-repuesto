@@ -156,6 +156,27 @@ const ReciboPagoFinancieraPage = () => {
     setMonto(v);
   };
 
+  // Estado del cliente segun su condicion (no se elige a mano):
+  //  verde AL DIA (sin cuotas vencidas) · amarillo SEGUIMIENTO (atraso <=30d) · rojo SE BUSCA (>30d)
+  const estadoCliente = (() => {
+    if (!cliente) return null;
+    const cuotasP = estado?.cuotas || [];
+    const hoy = new Date();
+    let maxDias = 0;
+    let hayVencida = false;
+    cuotasP.forEach((c) => {
+      if (c.vencida) {
+        hayVencida = true;
+        const fv = new Date(`${c.fecha_vencimiento}T00:00:00`);
+        const dias = Math.floor((hoy - fv) / 86400000);
+        if (dias > maxDias) maxDias = dias;
+      }
+    });
+    if (!hayVencida) return { txt: 'AL DÍA', cls: 'bg-emerald-100 text-emerald-700' };
+    if (maxDias <= 30) return { txt: 'SEGUIMIENTO', cls: 'bg-amber-100 text-amber-700' };
+    return { txt: 'SE BUSCA', cls: 'bg-red-100 text-red-700' };
+  })();
+
   const cuotasConAbono = useMemo(() => distribuirAbono(cuotasFiltradas, montoNum), [cuotasFiltradas, montoNum]);
 
   // Filas a mostrar (MORA como línea aparte, igual a la foto)
@@ -249,9 +270,15 @@ const ReciboPagoFinancieraPage = () => {
                 <Input value={cobrador} onChange={(e) => setCobrador(e.target.value)} className="h-8 text-sm" />
               </div>
               <div className="flex items-center gap-2">
-                <Label className="text-xs w-20">Préstamo</Label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Estado<br />Cliente</span>
+                  {estadoCliente
+                    ? <span className={`text-xs font-bold px-2 py-1 rounded ${estadoCliente.cls}`}>{estadoCliente.txt}</span>
+                    : <span className="text-xs text-slate-400 px-2">—</span>}
+                </div>
+                <Label className="text-xs w-20 text-right">Préstamo</Label>
                 <Select value={prestamoFiltro} onValueChange={setPrestamoFiltro}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-sm flex-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos…</SelectItem>
                     {prestamosUnicos.map((p) => <SelectItem key={p.id} value={p.id}>{p.num}</SelectItem>)}
