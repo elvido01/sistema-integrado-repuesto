@@ -345,12 +345,12 @@ const ReciboPagoFinancieraPage = () => {
                   <th className="text-right p-2 bg-red-50">Abono</th>
                 </tr>
               </thead>
-              <tbody className="bg-emerald-50/30">
+              <tbody>
                 {loading && <tr><td colSpan={8} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
                 {!loading && !cliente && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">--- SELECCIONE UN CLIENTE PARA VER REGISTROS ---</td></tr>}
                 {!loading && cliente && filas.length === 0 && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">Sin cuotas pendientes.</td></tr>}
-                {filas.map((r) => (
-                  <tr key={r.key} className={`border-b last:border-0 ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
+                {filas.map((r, i) => (
+                  <tr key={r.key} className={`${i % 2 === 1 ? 'bg-emerald-50/60' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
                     <td className="p-2">{r.fecha}</td>
                     <td className="p-2">{r.vence}</td>
                     <td className="p-2">{r.origen}</td>
