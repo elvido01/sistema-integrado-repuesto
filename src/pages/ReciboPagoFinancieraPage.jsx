@@ -192,20 +192,20 @@ const ReciboPagoFinancieraPage = () => {
   };
 
   return (
-    <div className="p-3 md:p-4 bg-slate-100 min-h-full">
+    <div className="p-2 bg-slate-100">
       <Helmet><title>Recibo de Pago — Financiera</title></Helmet>
 
-      <div className="bg-white rounded-lg shadow border max-w-6xl mx-auto overflow-hidden flex flex-col min-h-[calc(100vh-80px)]">
+      <div className="bg-white rounded-lg shadow border max-w-6xl mx-auto overflow-hidden flex flex-col h-[calc(100vh-56px)]">
         {/* Título */}
-        <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-2 font-extrabold tracking-wide text-lg">
+        <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-1.5 font-extrabold tracking-wide text-base">
           RECIBO DE PAGO
         </div>
 
-        <div className="p-4 space-y-3 flex flex-col flex-1 min-h-0">
+        <div className="p-3 space-y-2 flex flex-col flex-1 min-h-0">
           {/* Fila superior: cliente / cobrador-prestamo / numero-fecha */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
             {/* Cliente */}
-            <div className="border rounded-md p-3">
+            <div className="border rounded-md p-2">
               <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Cliente</div>
               <div className="flex gap-2 items-center">
                 <Input
@@ -225,7 +225,7 @@ const ReciboPagoFinancieraPage = () => {
             </div>
 
             {/* Cobrador / Préstamo / Último pago */}
-            <div className="border rounded-md p-3 space-y-2">
+            <div className="border rounded-md p-2 space-y-2">
               <div className="flex items-center gap-2">
                 <Label className="text-xs w-20">Cobrador</Label>
                 <Input value={cobrador} onChange={(e) => setCobrador(e.target.value)} className="h-8 text-sm" />
@@ -243,7 +243,7 @@ const ReciboPagoFinancieraPage = () => {
             </div>
 
             {/* Numero / Fecha / Forma de pago */}
-            <div className="border rounded-md p-3 space-y-2">
+            <div className="border rounded-md p-2 space-y-2">
               <div className="flex justify-between text-sm">
                 <div><div className="text-[10px] font-bold text-slate-400 uppercase">Número</div><div className="font-mono font-bold">{numero}</div></div>
                 <div className="text-right"><div className="text-[10px] font-bold text-slate-400 uppercase">Fecha</div><div className="font-bold">{hoy()}</div></div>
@@ -306,15 +306,15 @@ const ReciboPagoFinancieraPage = () => {
           </div>
 
           {/* Otras Informaciones (col1) · Último Pago (col3) · Comentarios (col1-2) · Balances (col3) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
-            <div className="border rounded-md p-3 text-xs space-y-1 bg-slate-50 lg:col-start-1 lg:row-start-1">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 items-start">
+            <div className="border rounded-md p-2 text-xs space-y-1 bg-slate-50 lg:col-start-1 lg:row-start-1">
               <div className="font-bold text-slate-500 mb-1">Otras Informaciones</div>
               <div className="flex justify-between"><span>Capital Pendiente</span><b>{fmt(capitalPend)}</b></div>
               <div className="flex justify-between"><span>Intereses Pendientes</span><b>{fmt(interesPend)}</b></div>
               <div className="flex justify-between"><span>Mora Pendiente</span><b className="text-red-600">{fmt(moraPend)}</b></div>
             </div>
 
-            <div className="border-2 border-blue-200 rounded-md p-3 text-xs lg:col-start-3 lg:row-start-1">
+            <div className="border-2 border-blue-200 rounded-md p-2 text-xs lg:col-start-3 lg:row-start-1">
               <div className="text-blue-600 font-bold text-center mb-1">
                 Último Pago → {ultimoPago?.fecha || 'N/A'}
               </div>
@@ -323,12 +323,12 @@ const ReciboPagoFinancieraPage = () => {
               <div className="flex justify-between"><span>Mora</span><b>{fmt(ultimoPago?.mora)}</b></div>
             </div>
 
-            <div className="border rounded-md p-3 lg:col-start-1 lg:col-span-2 lg:row-start-2">
+            <div className="border rounded-md p-2 lg:col-start-1 lg:col-span-2 lg:row-start-2">
               <Label className="text-xs font-bold">Comentarios</Label>
               <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-16 text-sm resize-none" />
             </div>
 
-            <div className="border rounded-md p-3 text-sm space-y-1 lg:col-start-3 lg:row-start-2">
+            <div className="border rounded-md p-2 text-sm space-y-1 lg:col-start-3 lg:row-start-2">
               <div className="flex justify-between text-slate-500"><span>Balance Anterior</span><b className="text-slate-700">{fmt(balanceAnterior)}</b></div>
               <div className="flex justify-between font-bold border-t pt-1"><span>Total Pagado</span><span>{fmt(montoNum)}</span></div>
               <div className="flex justify-between text-red-600 font-bold border-t pt-1"><span>Balance Actual</span><span>{fmt(balanceActual)}</span></div>
@@ -336,7 +336,7 @@ const ReciboPagoFinancieraPage = () => {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between flex-wrap gap-3 border-t pt-3">
+          <div className="flex items-center justify-between flex-wrap gap-3 border-t pt-2">
             <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={imprimir} onCheckedChange={(c) => setImprimir(!!c)} /> Imprimir
             </label>
