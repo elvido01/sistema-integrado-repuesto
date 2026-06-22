@@ -231,6 +231,10 @@ const ReciboPagoFinancieraPage = () => {
                   <Input value={banco} onChange={(e) => setBanco(e.target.value)} placeholder="Banco" className="h-8 text-xs" />
                 </div>
               )}
+              <div className="border-t pt-2">
+                <Label className="text-[10px] font-bold text-slate-400 uppercase">Monto Pagado</Label>
+                <Input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="text-right font-bold text-lg h-10 mt-1" />
+              </div>
             </div>
           </div>
 
@@ -269,43 +273,33 @@ const ReciboPagoFinancieraPage = () => {
             </table>
           </div>
 
-          {/* Otras informaciones+Comentarios / Monto / Último pago+Balances */}
+          {/* Otras Informaciones (col1) · Último Pago (col3) · Comentarios (col1-2) · Balances (col3) */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
-            {/* Columna 1: Otras Informaciones + Comentarios */}
-            <div className="space-y-3">
-              <div className="border rounded-md p-3 text-xs space-y-1 bg-slate-50">
-                <div className="font-bold text-slate-500 mb-1">Otras Informaciones</div>
-                <div className="flex justify-between"><span>Capital Pendiente</span><b>{fmt(capitalPend)}</b></div>
-                <div className="flex justify-between"><span>Intereses Pendientes</span><b>{fmt(interesPend)}</b></div>
-                <div className="flex justify-between"><span>Mora Pendiente</span><b className="text-red-600">{fmt(moraPend)}</b></div>
-              </div>
-              <div className="border rounded-md p-3">
-                <Label className="text-xs font-bold">Comentarios</Label>
-                <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-20 text-sm resize-none" />
-              </div>
+            <div className="border rounded-md p-3 text-xs space-y-1 bg-slate-50 lg:col-start-1 lg:row-start-1">
+              <div className="font-bold text-slate-500 mb-1">Otras Informaciones</div>
+              <div className="flex justify-between"><span>Capital Pendiente</span><b>{fmt(capitalPend)}</b></div>
+              <div className="flex justify-between"><span>Intereses Pendientes</span><b>{fmt(interesPend)}</b></div>
+              <div className="flex justify-between"><span>Mora Pendiente</span><b className="text-red-600">{fmt(moraPend)}</b></div>
             </div>
 
-            {/* Columna 2: Monto Pagado */}
-            <div className="border rounded-md p-3">
-              <Label className="text-xs font-bold">Monto Pagado</Label>
-              <Input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="text-right font-bold text-xl h-11 mt-1" />
+            <div className="border-2 border-blue-200 rounded-md p-3 text-xs lg:col-start-3 lg:row-start-1">
+              <div className="text-blue-600 font-bold text-center mb-1">
+                Último Pago → {ultimoPago?.fecha || 'N/A'}
+              </div>
+              <div className="flex justify-between"><span>Capital</span><b>{fmt(ultimoPago?.cap)}</b></div>
+              <div className="flex justify-between"><span>Intereses</span><b>{fmt(ultimoPago?.int)}</b></div>
+              <div className="flex justify-between"><span>Mora</span><b>{fmt(ultimoPago?.mora)}</b></div>
             </div>
 
-            {/* Columna 3: Último Pago + Balances */}
-            <div className="space-y-3">
-              <div className="border-2 border-blue-200 rounded-md p-3 text-xs">
-                <div className="text-blue-600 font-bold text-center mb-1">
-                  Último Pago → {ultimoPago?.fecha || 'N/A'}
-                </div>
-                <div className="flex justify-between"><span>Capital</span><b>{fmt(ultimoPago?.cap)}</b></div>
-                <div className="flex justify-between"><span>Intereses</span><b>{fmt(ultimoPago?.int)}</b></div>
-                <div className="flex justify-between"><span>Mora</span><b>{fmt(ultimoPago?.mora)}</b></div>
-              </div>
-              <div className="border rounded-md p-3 text-sm space-y-1">
-                <div className="flex justify-between text-slate-500"><span>Balance Anterior</span><b className="text-slate-700">{fmt(balanceAnterior)}</b></div>
-                <div className="flex justify-between font-bold border-t pt-1"><span>Total Pagado</span><span>{fmt(montoNum)}</span></div>
-                <div className="flex justify-between text-red-600 font-bold border-t pt-1"><span>Balance Actual</span><span>{fmt(balanceActual)}</span></div>
-              </div>
+            <div className="border rounded-md p-3 lg:col-start-1 lg:col-span-2 lg:row-start-2">
+              <Label className="text-xs font-bold">Comentarios</Label>
+              <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-24 text-sm resize-none" />
+            </div>
+
+            <div className="border rounded-md p-3 text-sm space-y-1 lg:col-start-3 lg:row-start-2">
+              <div className="flex justify-between text-slate-500"><span>Balance Anterior</span><b className="text-slate-700">{fmt(balanceAnterior)}</b></div>
+              <div className="flex justify-between font-bold border-t pt-1"><span>Total Pagado</span><span>{fmt(montoNum)}</span></div>
+              <div className="flex justify-between text-red-600 font-bold border-t pt-1"><span>Balance Actual</span><span>{fmt(balanceActual)}</span></div>
             </div>
           </div>
 
