@@ -195,13 +195,13 @@ const ReciboPagoFinancieraPage = () => {
     <div className="p-2 bg-slate-100">
       <Helmet><title>Recibo de Pago — Financiera</title></Helmet>
 
-      <div className="bg-white rounded-lg shadow border max-w-6xl mx-auto overflow-hidden flex flex-col h-[calc(100vh-56px)]">
+      <div className="bg-white rounded-lg shadow border max-w-6xl mx-auto overflow-hidden">
         {/* Título */}
         <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-1.5 font-extrabold tracking-wide text-base">
           RECIBO DE PAGO
         </div>
 
-        <div className="p-3 space-y-2 flex flex-col flex-1 min-h-0">
+        <div className="p-3 space-y-2">
           {/* Fila superior: cliente / cobrador-prestamo / numero-fecha */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
             {/* Cliente */}
@@ -272,9 +272,9 @@ const ReciboPagoFinancieraPage = () => {
             </div>
           </div>
 
-          {/* Grid de cuotas (crece para llenar el espacio disponible) */}
-          <div className="border rounded-md overflow-hidden flex-1 min-h-0 flex flex-col">
-            <div className="overflow-y-auto flex-1">
+          {/* Grid de cuotas (altura fija: ~6 filas visibles, scroll si hay mas) */}
+          <div className="border rounded-md overflow-hidden">
+            <div className="overflow-y-auto h-[240px]">
             <table className="w-full text-xs">
               <thead className="bg-slate-100 text-slate-500 border-b sticky top-0">
                 <tr>
