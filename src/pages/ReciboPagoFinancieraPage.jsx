@@ -4,6 +4,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
+import { useLayout } from '@/contexts/LayoutContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +23,10 @@ const ReciboPagoFinancieraPage = () => {
   const { toast } = useToast();
   const { empresa } = useAuth();
   const { closePanel, activePanel } = usePanels();
+  const { setSidebarOpen } = useLayout();
+
+  // Al abrir el Recibo de Pago, cerrar el menu lateral para ganar espacio
+  useEffect(() => { setSidebarOpen(false); }, [setSidebarOpen]);
 
   const [cliente, setCliente] = useState(null);
   const [codigoInput, setCodigoInput] = useState('');
@@ -305,15 +310,15 @@ const ReciboPagoFinancieraPage = () => {
                 </div>
               </div>
               <div className="border-t pt-2 flex items-center gap-2">
-                <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none">Forma de<br />Pago</Label>
+                <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none shrink-0">Forma de<br />Pago</Label>
                 <Select value={forma} onValueChange={setForma}>
-                  <SelectTrigger className="h-9 text-sm w-[100px]"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-sm w-[105px] min-w-[60px] shrink"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap">Monto<br />Pagado</Label>
-                <Input type="text" inputMode="decimal" value={displayMonto} onChange={handleMontoChange} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1" />
+                <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap shrink-0">Monto<br />Pagado</Label>
+                <Input type="text" inputMode="decimal" value={displayMonto} onChange={handleMontoChange} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1 min-w-[110px]" />
               </div>
               {forma !== 'Efectivo' && (
                 <div className="grid grid-cols-2 gap-2">
