@@ -171,13 +171,13 @@ const ReciboPagoFinancieraPage = () => {
     <div className="p-3 md:p-4 bg-slate-100 min-h-full">
       <Helmet><title>Recibo de Pago — Financiera</title></Helmet>
 
-      <div className="bg-white rounded-lg shadow border max-w-6xl mx-auto overflow-hidden">
+      <div className="bg-white rounded-lg shadow border max-w-6xl mx-auto overflow-hidden flex flex-col min-h-[calc(100vh-80px)]">
         {/* Título */}
         <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-2 font-extrabold tracking-wide text-lg">
           RECIBO DE PAGO
         </div>
 
-        <div className="p-4 space-y-3">
+        <div className="p-4 space-y-3 flex flex-col flex-1 min-h-0">
           {/* Fila superior: cliente / cobrador-prestamo / numero-fecha */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             {/* Cliente */}
@@ -231,17 +231,18 @@ const ReciboPagoFinancieraPage = () => {
                   <Input value={banco} onChange={(e) => setBanco(e.target.value)} placeholder="Banco" className="h-8 text-xs" />
                 </div>
               )}
-              <div className="border-t pt-2">
-                <Label className="text-[10px] font-bold text-slate-400 uppercase">Monto Pagado</Label>
-                <Input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="text-right font-bold text-lg h-10 mt-1" />
+              <div className="border-t pt-2 flex items-center gap-2">
+                <Label className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Monto Pagado</Label>
+                <Input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1" />
               </div>
             </div>
           </div>
 
-          {/* Grid de cuotas */}
-          <div className="border rounded-md overflow-hidden">
+          {/* Grid de cuotas (crece para llenar el espacio disponible) */}
+          <div className="border rounded-md overflow-hidden flex-1 min-h-0 flex flex-col">
+            <div className="overflow-y-auto flex-1">
             <table className="w-full text-xs">
-              <thead className="bg-slate-100 text-slate-500 border-b">
+              <thead className="bg-slate-100 text-slate-500 border-b sticky top-0">
                 <tr>
                   <th className="text-left p-2">Fecha</th>
                   <th className="text-left p-2">Vence</th>
@@ -271,6 +272,7 @@ const ReciboPagoFinancieraPage = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Otras Informaciones (col1) · Último Pago (col3) · Comentarios (col1-2) · Balances (col3) */}
@@ -293,7 +295,7 @@ const ReciboPagoFinancieraPage = () => {
 
             <div className="border rounded-md p-3 lg:col-start-1 lg:col-span-2 lg:row-start-2">
               <Label className="text-xs font-bold">Comentarios</Label>
-              <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-24 text-sm resize-none" />
+              <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-16 text-sm resize-none" />
             </div>
 
             <div className="border rounded-md p-3 text-sm space-y-1 lg:col-start-3 lg:row-start-2">
