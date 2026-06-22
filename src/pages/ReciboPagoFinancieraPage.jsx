@@ -179,6 +179,11 @@ const ReciboPagoFinancieraPage = () => {
 
   const cuotasConAbono = useMemo(() => distribuirAbono(cuotasFiltradas, montoNum), [cuotasFiltradas, montoNum]);
 
+  // Desglose del monto que se esta abonando ahora (capital / interes / mora)
+  const abonoCapital = cuotasConAbono.reduce((a, c) => a + Number(c.ab_cap || 0), 0);
+  const abonoInteres = cuotasConAbono.reduce((a, c) => a + Number(c.ab_int || 0), 0);
+  const abonoMora = cuotasConAbono.reduce((a, c) => a + Number(c.ab_mora || 0), 0);
+
   // Filas a mostrar (MORA como línea aparte, igual a la foto)
   const filas = useMemo(() => {
     const out = [];
@@ -363,6 +368,13 @@ const ReciboPagoFinancieraPage = () => {
               <div className="flex justify-between"><span>Capital Pendiente</span><b>{fmt(capitalPend)}</b></div>
               <div className="flex justify-between"><span>Intereses Pendientes</span><b>{fmt(interesPend)}</b></div>
               <div className="flex justify-between"><span>Mora Pendiente</span><b className="text-red-600">{fmt(moraPend)}</b></div>
+            </div>
+
+            <div className="border-2 border-emerald-200 rounded-md p-2 text-xs lg:col-start-2 lg:row-start-1">
+              <div className="text-emerald-700 font-bold text-center mb-1">Desglose del pago</div>
+              <div className="flex justify-between"><span>Capital</span><b>{fmt(abonoCapital)}</b></div>
+              <div className="flex justify-between"><span>Intereses</span><b>{fmt(abonoInteres)}</b></div>
+              <div className="flex justify-between"><span>Mora</span><b className="text-red-600">{fmt(abonoMora)}</b></div>
             </div>
 
             <div className="border-2 border-blue-200 rounded-md p-2 text-xs lg:col-start-3 lg:row-start-1">
