@@ -24,6 +24,7 @@ const ReciboPagoFinancieraPage = () => {
   const { closePanel, activePanel } = usePanels();
 
   const [cliente, setCliente] = useState(null);
+  const [codigoInput, setCodigoInput] = useState('');
   const [buscarOpen, setBuscarOpen] = useState(false);
   const [estado, setEstado] = useState(null);
   const [ultimoPago, setUltimoPago] = useState(null);
@@ -89,12 +90,35 @@ const ReciboPagoFinancieraPage = () => {
 
   const seleccionarCliente = (c) => {
     setCliente(c); setBuscarOpen(false);
+    setCodigoInput(c.codigo || c.rnc || '');
     setMonto(''); setComentarios(''); setPrestamoFiltro('todos');
     cargarEstado(c.id);
   };
 
+  // Buscar cliente escribiendo el código o la cédula y presionando Enter
+  const buscarPorCodigo = async () => {
+    const q = codigoInput.trim();
+    if (!q) return;
+    try {
+      const { data, error } = await supabase
+        .from('clientes')
+        .select('id, nombre, codigo, rnc, direccion, telefono')
+        .or(`codigo.eq.${q},rnc.eq.${q}`)
+        .eq('activo', true)
+        .limit(1);
+      if (error) throw error;
+      if (data && data.length) {
+        seleccionarCliente(data[0]);
+      } else {
+        toast({ variant: 'destructive', title: 'Cliente no encontrado', description: `No hay cliente con código/cédula ${q}.` });
+      }
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Error al buscar', description: e.message });
+    }
+  };
+
   const nuevo = () => {
-    setCliente(null); setEstado(null); setUltimoPago(null);
+    setCliente(null); setEstado(null); setUltimoPago(null); setCodigoInput('');
     setMonto(''); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
     setPrestamoFiltro('todos'); cargarProximoNumero();
   };
@@ -184,7 +208,13 @@ const ReciboPagoFinancieraPage = () => {
             <div className="border rounded-md p-3">
               <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Cliente</div>
               <div className="flex gap-2 items-center">
-                <Input readOnly value={cliente?.codigo || ''} placeholder="Código" className="w-28 h-8 text-sm" />
+                <Input
+                  value={codigoInput}
+                  onChange={(e) => setCodigoInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarPorCodigo(); } }}
+                  placeholder="Código o cédula"
+                  className="w-48 h-8 text-sm"
+                />
                 <Button type="button" variant="outline" size="sm" onClick={() => setBuscarOpen(true)}>
                   <Search className="w-3.5 h-3.5 mr-1" />F3
                 </Button>
