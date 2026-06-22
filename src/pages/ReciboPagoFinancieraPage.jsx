@@ -312,13 +312,13 @@ const ReciboPagoFinancieraPage = () => {
               <div className="border-t pt-2 flex items-center gap-2 min-w-0">
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none shrink-0">Forma de<br />Pago</Label>
                 <Select value={forma} onValueChange={setForma}>
-                  <SelectTrigger className="h-9 text-sm w-[105px] min-w-[52px] shrink"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-sm w-[100px] min-w-[44px] shrink"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap shrink-0">Monto<br />Pagado</Label>
-                <Input type="text" inputMode="decimal" value={displayMonto} onChange={handleMontoChange} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1 min-w-0" />
+                <Input type="text" inputMode="decimal" value={displayMonto} onChange={handleMontoChange} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1 min-w-[96px] shrink-0" />
               </div>
               {forma !== 'Efectivo' && (
                 <div className="grid grid-cols-2 gap-2">
