@@ -327,7 +327,7 @@ const ReciboPagoFinancieraPage = () => {
               <div className="flex justify-between"><span>Mora</span><b>{fmt(ultimoPago?.mora)}</b></div>
             </div>
 
-            <div className="border rounded-md p-2 lg:col-start-1 lg:col-span-2 lg:row-start-2">
+            <div className="border rounded-md p-2 lg:col-start-2 lg:row-start-1">
               <Label className="text-xs font-bold">Comentarios</Label>
               <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-9 text-sm resize-none" />
             </div>
