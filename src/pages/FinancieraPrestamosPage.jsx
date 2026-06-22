@@ -5,7 +5,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Loader2, Plus, Receipt, DollarSign, RefreshCw } from 'lucide-react';
 import NuevoPrestamoModal from '@/components/financiera/NuevoPrestamoModal';
-import ReciboPagoPrestamoModal from '@/components/financiera/ReciboPagoPrestamoModal';
+import { usePanels } from '@/contexts/PanelContext';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 
@@ -15,12 +15,12 @@ const ESTADO_BADGE = {
   anulado: 'bg-red-100 text-red-700',
 };
 
-const FinancieraPrestamosPage = ({ extraData }) => {
+const FinancieraPrestamosPage = () => {
   const { toast } = useToast();
+  const { openPanel } = usePanels();
   const [prestamos, setPrestamos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [nuevoOpen, setNuevoOpen] = useState(false);
-  const [reciboOpen, setReciboOpen] = useState(extraData?.view === 'recibo');
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -59,7 +59,7 @@ const FinancieraPrestamosPage = ({ extraData }) => {
           <Button variant="outline" onClick={cargar} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Actualizar
           </Button>
-          <Button variant="outline" onClick={() => setReciboOpen(true)}>
+          <Button variant="outline" onClick={() => openPanel('recibo-pago')}>
             <Receipt className="w-4 h-4 mr-1" /> Recibo de Pago
           </Button>
           <Button onClick={() => setNuevoOpen(true)}>
@@ -106,10 +106,6 @@ const FinancieraPrestamosPage = ({ extraData }) => {
       <NuevoPrestamoModal
         isOpen={nuevoOpen}
         onClose={(created) => { setNuevoOpen(false); if (created) cargar(); }}
-      />
-      <ReciboPagoPrestamoModal
-        isOpen={reciboOpen}
-        onClose={() => setReciboOpen(false)}
       />
     </div>
   );

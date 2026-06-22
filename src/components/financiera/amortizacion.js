@@ -74,6 +74,6 @@ export function distribuirAbono(cuotas, monto) {
     const ab_mora = take(c.mora_pend);
     const ab_int = take(c.interes_pend);
     const ab_cap = take(c.capital_pend);
-    return { ...c, abono: round2(ab_mora + ab_int + ab_cap) };
+    return { ...c, ab_mora, ab_int, ab_cap, abono: round2(ab_mora + ab_int + ab_cap) };
   });
 }

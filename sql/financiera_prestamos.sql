@@ -283,6 +283,7 @@ BEGIN
   WITH cu AS (
     SELECT
       q.id, q.prestamo_id, p.numero AS prestamo_numero, q.numero_cuota, p.plazo_cuotas,
+      p.fecha_inicio,
       q.fecha_vencimiento,
       q.capital, q.interes, q.monto_cuota,
       q.capital_pagado, q.interes_pagado, q.mora_pagada,
@@ -316,6 +317,7 @@ BEGIN
       'prestamo_id',       prestamo_id,
       'prestamo_numero',   prestamo_numero,
       'referencia',        lpad(numero_cuota::text,3,'0') || '/' || lpad(plazo_cuotas::text,3,'0'),
+      'fecha',             fecha_inicio,
       'fecha_vencimiento', fecha_vencimiento,
       'monto_cuota',       monto_cuota,
       'capital_pend',      capital_pend,

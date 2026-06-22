@@ -60,6 +60,7 @@ import GpsAlertsPage from '@/pages/gps/GpsAlertsPage';
 import GpsFinancingPage from '@/pages/gps/GpsFinancingPage';
 import GpsDeviceDetailPage from '@/pages/gps/GpsDeviceDetailPage';
 import FinancieraPrestamosPage from '@/pages/FinancieraPrestamosPage';
+import ReciboPagoFinancieraPage from '@/pages/ReciboPagoFinancieraPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
 import PlanGate from '@/components/auth/PlanGate';
@@ -133,6 +134,7 @@ const componentMapping = {
   'gps-dispositivo-detalle': { component: ({ extraData }) => <Protected module="gps-dispositivos"><GpsDeviceDetailPage extraData={extraData} /></Protected>, icon: RadioTower, name: 'GPS Detalle' },
   'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
   'prestamos': { component: ({ extraData }) => <Protected module="prestamos"><FinancieraPrestamosPage extraData={extraData} /></Protected>, icon: DollarSign, name: 'Préstamos' },
+  'recibo-pago': { component: () => <Protected module="prestamos"><ReciboPagoFinancieraPage /></Protected>, icon: Receipt, name: 'Recibo de Pago' },
 };
 
 export { PanelContext, usePanels };  // re-export desde panelCore para no romper imports

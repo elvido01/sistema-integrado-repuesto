@@ -104,6 +104,7 @@ const navItems = [
     icon: DollarSign,
     subItems: [
       { title: 'Préstamos', id: 'prestamos', icon: DollarSign, featFlag: 'feat_financiera' },
+      { title: 'Recibo de Pago', id: 'recibo-pago', icon: Receipt, featFlag: 'feat_financiera' },
     ],
   },
   {
