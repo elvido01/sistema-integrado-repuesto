@@ -375,20 +375,13 @@ const ReciboPagoFinancieraPage = () => {
               <div className="flex justify-between"><span>Mora Pendiente</span><b className="text-red-600">{fmt(moraPend)}</b></div>
             </div>
 
-            <div className="border-2 border-emerald-200 rounded-md p-2 text-xs lg:col-start-2 lg:row-start-1">
-              <div className="text-emerald-700 font-bold text-center mb-1">Desglose del pago</div>
-              <div className="flex justify-between"><span>Capital</span><b>{fmt(abonoCapital)}</b></div>
-              <div className="flex justify-between"><span>Intereses</span><b>{fmt(abonoInteres)}</b></div>
-              <div className="flex justify-between"><span>Mora</span><b className="text-red-600">{fmt(abonoMora)}</b></div>
-            </div>
-
             <div className="border-2 border-blue-200 rounded-md p-2 text-xs lg:col-start-3 lg:row-start-1">
               <div className="text-blue-600 font-bold text-center mb-1">
                 Último Pago → {ultimoPago?.fecha || 'N/A'}
               </div>
-              <div className="flex justify-between"><span>Capital</span><b>{fmt(ultimoPago?.cap)}</b></div>
-              <div className="flex justify-between"><span>Intereses</span><b>{fmt(ultimoPago?.int)}</b></div>
-              <div className="flex justify-between"><span>Mora</span><b>{fmt(ultimoPago?.mora)}</b></div>
+              <div className="flex justify-between"><span>Capital</span><b>{fmt(abonoCapital)}</b></div>
+              <div className="flex justify-between"><span>Intereses</span><b>{fmt(abonoInteres)}</b></div>
+              <div className="flex justify-between"><span>Mora</span><b className="text-red-600">{fmt(abonoMora)}</b></div>
             </div>
 
             <div className="border rounded-md p-2 lg:col-start-1 lg:col-span-2 lg:row-start-2 max-h-[94px] overflow-hidden">
