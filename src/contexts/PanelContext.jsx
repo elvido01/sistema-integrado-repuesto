@@ -64,6 +64,7 @@ import ReciboPagoFinancieraPage from '@/pages/ReciboPagoFinancieraPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
 import PlanGate from '@/components/auth/PlanGate';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const Protected = ({ module, children }) => (
   <RouteGuard moduleKey={module}>
@@ -71,10 +72,19 @@ const Protected = ({ module, children }) => (
   </RouteGuard>
 );
 
+// "Recibo de Ingreso": en empresas tipo financiera muestra el recibo de
+// pago de prestamos (igual al sistema viejo); en el resto, el normal.
+const ReciboIngresoRouter = ({ extraData }) => {
+  const { empresa } = useAuth();
+  return empresa?.feat_financiera
+    ? <ReciboPagoFinancieraPage />
+    : <ReciboIngresoPage extraData={extraData} />;
+};
+
 const componentMapping = {
   'inicio': { component: HomePage, icon: Home, name: 'Inicio' },
   'ventas': { component: () => <Protected module="ventas"><VentasPage /></Protected>, icon: ShoppingCart, name: 'Ventas' },
-  'recibo-ingreso': { component: ({ extraData }) => <Protected module="recibo-ingreso"><ReciboIngresoPage extraData={extraData} /></Protected>, icon: Receipt, name: 'Recibo de Ingreso' },
+  'recibo-ingreso': { component: ({ extraData }) => <Protected module="recibo-ingreso"><ReciboIngresoRouter extraData={extraData} /></Protected>, icon: Receipt, name: 'Recibo de Ingreso' },
   'pago-suplidores': { component: () => <Protected module="pago-suplidores"><PagoSuplidoresPage /></Protected>, icon: Truck, name: 'Pago a Suplidores' },
   'pago-comisiones-vendedor': { component: () => <Protected module="pago-comisiones-vendedor"><PagoComisionesPage /></Protected>, icon: Users, name: 'Pago Comisiones' },
   'compras': { component: () => <Protected module="compras"><ComprasPage /></Protected>, icon: Truck, name: 'Compras' },

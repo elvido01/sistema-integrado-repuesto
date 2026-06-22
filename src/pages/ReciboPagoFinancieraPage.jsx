@@ -20,7 +20,7 @@ const FORMAS = ['Efectivo', 'Cheque', 'Tarjeta'];
 const ReciboPagoFinancieraPage = () => {
   const { toast } = useToast();
   const { empresa } = useAuth();
-  const { closePanel } = usePanels();
+  const { closePanel, activePanel } = usePanels();
 
   const [cliente, setCliente] = useState(null);
   const [buscarOpen, setBuscarOpen] = useState(false);
@@ -302,7 +302,7 @@ const ReciboPagoFinancieraPage = () => {
             </label>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={nuevo}><FilePlus className="w-4 h-4 mr-1" />Nuevo</Button>
-              <Button type="button" variant="secondary" onClick={() => closePanel('recibo-pago')}><X className="w-4 h-4 mr-1" />Retornar</Button>
+              <Button type="button" variant="secondary" onClick={() => closePanel(activePanel)}><X className="w-4 h-4 mr-1" />Retornar</Button>
               <Button type="button" onClick={handleGrabar} disabled={saving || !cliente}>
                 {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}F10 - Grabar
               </Button>
