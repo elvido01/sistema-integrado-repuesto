@@ -235,9 +235,11 @@ const ReciboPagoFinancieraPage = () => {
                   <Search className="w-3.5 h-3.5 mr-1" />F3
                 </Button>
               </div>
-              <div className="mt-2 text-sm font-bold text-blue-700 leading-tight">{cliente?.nombre || '—'}</div>
-              <div className="text-xs text-slate-500">{cliente?.direccion || '—'}</div>
-              <div className="text-xs text-emerald-600">{cliente?.telefono || '—'}</div>
+              <div className="mt-2 text-sm font-bold text-blue-700 leading-tight truncate" title={cliente?.nombre || ''}>{cliente?.nombre || '—'}</div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-500 truncate flex-1 min-w-0" title={cliente?.direccion || ''}>{cliente?.direccion || '—'}</span>
+                <span className="text-emerald-600 whitespace-nowrap font-semibold">{cliente?.telefono || '—'}</span>
+              </div>
             </div>
 
             {/* Cobrador / Préstamo / Último pago */}
