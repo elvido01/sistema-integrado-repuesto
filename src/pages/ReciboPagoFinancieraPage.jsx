@@ -161,6 +161,14 @@ const ReciboPagoFinancieraPage = () => {
     setMonto(v);
   };
 
+  // Doble clic en una fila: suma su pendiente al Monto Pagado (tope: balance)
+  const sumarAbono = (r) => {
+    const add = Number(r.pendiente) || 0;
+    if (add <= 0) return;
+    const nuevo = Math.min(round2(montoNum + add), balanceAnterior);
+    setMonto(String(nuevo));
+  };
+
   // Estado del cliente segun su condicion (no se elige a mano):
   //  verde AL DIA (sin cuotas vencidas) · amarillo SEGUIMIENTO (atraso <=30d) · rojo SE BUSCA (>30d)
   const estadoCliente = (() => {
@@ -350,7 +358,10 @@ const ReciboPagoFinancieraPage = () => {
                 {!loading && !cliente && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">--- SELECCIONE UN CLIENTE PARA VER REGISTROS ---</td></tr>}
                 {!loading && cliente && filas.length === 0 && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">Sin cuotas pendientes.</td></tr>}
                 {filas.map((r, i) => (
-                  <tr key={r.key} className={`${i % 2 === 1 ? 'bg-emerald-50/60' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
+                  <tr key={r.key}
+                      onDoubleClick={() => sumarAbono(r)}
+                      title="Doble clic para abonar esta cuota"
+                      className={`cursor-pointer select-none ${i % 2 === 1 ? 'bg-emerald-50/60' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
                     <td className="px-2 py-1">{r.fecha}</td>
                     <td className="px-2 py-1">{r.vence}</td>
                     <td className="px-2 py-1">{r.origen}</td>

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { ScanLine, Loader2 } from 'lucide-react';
+import { Search, ScanLine, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import BarcodeScanner from '@/components/common/BarcodeScanner';
 import SearchableSelect from '@/components/common/SearchableSelect';
+import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 
 const UpdateLocationForm = () => {
   const { toast } = useToast();
@@ -17,6 +18,7 @@ const UpdateLocationForm = () => {
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
   const [scanningField, setScanningField] = useState(null);
   const [ubicaciones, setUbicaciones] = useState([]);
 
@@ -92,6 +94,23 @@ const UpdateLocationForm = () => {
     } finally {
       setLoading(false);
     }
+  }, [toast]);
+
+  const handleSelectProductFromCatalog = useCallback((selectedProduct) => {
+    if (!selectedProduct) return;
+
+    setCodigo(selectedProduct.codigo || selectedProduct.referencia || '');
+    setProduct({
+      id: selectedProduct.id,
+      descripcion: selectedProduct.descripcion,
+      ubicacion: selectedProduct.ubicacion,
+    });
+    setUbicacion(selectedProduct.ubicacion || '');
+    setIsProductSearchOpen(false);
+    toast({
+      title: 'Producto seleccionado',
+      description: selectedProduct.descripcion,
+    });
   }, [toast]);
 
   const handleSubmit = async (e) => {
@@ -196,6 +215,11 @@ const UpdateLocationForm = () => {
         title={`Escanear Código de ${scanningField === 'product' ? 'Producto' : 'Ubicación'}`}
         description={`Apunta la cámara al código de barras del ${scanningField === 'product' ? 'producto' : 'la nueva ubicación'}.`}
       />
+      <ProductSearchModal
+        isOpen={isProductSearchOpen}
+        onClose={() => setIsProductSearchOpen(false)}
+        onSelectProduct={handleSelectProductFromCatalog}
+      />
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -219,9 +243,23 @@ const UpdateLocationForm = () => {
                 onBlur={() => codigo && handleProductSearch(codigo)}
                 onKeyDown={handleCodigoKeyDown}
                 placeholder="Ingrese o escanee el código"
-                className="pr-10"
+                className="pr-20"
                 disabled={loading || isSaving}
               />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute right-10 top-1/2 -translate-y-1/2 h-8 w-8 p-0 text-morla-blue hover:text-morla-blue hover:bg-blue-50"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsProductSearchOpen(true);
+                }}
+                disabled={loading || isSaving}
+                title="Buscar en catalogo"
+              >
+                <Search className="w-5 h-5" />
+              </Button>
               <Button
                 type="button"
                 variant="ghost"

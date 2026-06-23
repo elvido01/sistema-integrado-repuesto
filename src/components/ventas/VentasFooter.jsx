@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { agentIsAvailable } from '@/services/motoflowPrintAgent';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,12 +51,52 @@ const VentasFooter = ({
   const [showNotas, setShowNotas] = useState(false);
   const [showPrintOptions, setShowPrintOptions] = useState(false);
   const [hasAgent, setHasAgent] = useState(false);
+  const [isMontoFocused, setIsMontoFocused] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const montoInputRef = useRef(null);
 
   useEffect(() => {
     if (showPrintOptions) {
       agentIsAvailable().then(setHasAgent).catch(() => setHasAgent(false));
     }
   }, [showPrintOptions]);
+
+  useEffect(() => {
+    if (!isMontoFocused) {
+      setKeyboardInset(0);
+      return;
+    }
+
+    const updateKeyboardInset = () => {
+      if (window.innerWidth > 768 || !window.visualViewport) {
+        setKeyboardInset(0);
+        return;
+      }
+
+      const viewport = window.visualViewport;
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setKeyboardInset(inset);
+    };
+
+    updateKeyboardInset();
+    window.visualViewport?.addEventListener('resize', updateKeyboardInset);
+    window.visualViewport?.addEventListener('scroll', updateKeyboardInset);
+    window.addEventListener('orientationchange', updateKeyboardInset);
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateKeyboardInset);
+      window.visualViewport?.removeEventListener('scroll', updateKeyboardInset);
+      window.removeEventListener('orientationchange', updateKeyboardInset);
+    };
+  }, [isMontoFocused]);
+
+  const handleMontoFocus = () => {
+    setIsMontoFocused(true);
+    setTimeout(() => {
+      montoInputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      montoInputRef.current?.select();
+    }, 80);
+  };
 
   const pairedReceiptPrinterName = useMemo(() => {
     try {
@@ -98,7 +138,12 @@ const VentasFooter = ({
   const printLabel = printFormat === 'pos_4inch' ? '4 Pulgadas' : printFormat === 'half_page' ? '8.5 X 5.5' : '8.5 X 11';
 
   return (
-    <div className="flex-shrink-0 border-t-2 border-gray-500 bg-[#f0efe8] relative">
+    <div
+      className={`flex-shrink-0 border-t-2 border-gray-500 bg-[#f0efe8] relative ${
+        isMontoFocused ? 'max-md:fixed max-md:left-0 max-md:right-0 max-md:z-[70] max-md:shadow-2xl' : ''
+      }`}
+      style={isMontoFocused ? { bottom: `${keyboardInset}px` } : undefined}
+    >
 
       {/* Popup panel: Notas - opens UPWARD from the bar */}
       {showNotas && (
@@ -196,12 +241,16 @@ const VentasFooter = ({
               onChange={e => setCurrentRef(e.target.value)}
             />
             <Input
+              ref={montoInputRef}
               id="input-monto-pago"
               type="number"
+              inputMode="decimal"
               className="h-7 w-[100px] text-right text-[14px] font-black text-green-700 border-gray-300 rounded-none bg-white focus:ring-green-500 shadow-inner"
               placeholder={isCredit ? 'Abono...' : '0.00'}
               value={montoRecibido}
               onChange={e => setMontoRecibido(e.target.value)}
+              onFocus={handleMontoFocus}
+              onBlur={() => setTimeout(() => setIsMontoFocused(false), 120)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();

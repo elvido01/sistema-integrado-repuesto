@@ -17,6 +17,14 @@ const CLIENTE_GENERICO = {
   tipo_ncf: '02',
 };
 
+const DEFAULT_ITBIS_PCT = 0.18;
+
+const normalizeItbisPct = (value) => {
+  if (value === null || value === undefined || value === '') return DEFAULT_ITBIS_PCT;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_ITBIS_PCT;
+};
+
 export const useVentas = () => {
   const { toast } = useToast();
   const { user, empresa, tenantId } = useAuth();
@@ -65,7 +73,7 @@ export const useVentas = () => {
     const cantidad = item.cantidad || 0;
     const precioConItbis = item.precio || 0;
     const descuentoPct = item.descuento || 0;
-    const itbis_pct = item.itbis_pct || 0.18;
+    const itbis_pct = normalizeItbisPct(item.itbis_pct);
 
     const importeBruto = cantidad * precioConItbis;
     const descuentoMonto = importeBruto * (descuentoPct / 100);
@@ -320,7 +328,7 @@ export const useVentas = () => {
       }
 
       const maxDesc = (nivel === 2 || nivel === 3) ? 0 : parseFloat(mainPres.descuento_pct || 0);
-      const itbis_pct = product.itbis_pct || 0.18;
+      const itbis_pct = normalizeItbisPct(product.itbis_pct);
       const importeNeto = item.cantidad * priceToUse;
       const baseImponible = importeNeto / (1 + itbis_pct);
       const montoItbis = importeNeto - baseImponible;
@@ -345,7 +353,7 @@ export const useVentas = () => {
     // Convencion: precio incluye ITBIS. Sub-Total = base pre-tax pre-descuento;
     // ITBIS = sobre la base pre-descuento; TOTAL = SubTotal - Descuento + ITBIS.
     const calculated = items.reduce((acc, item) => {
-      const itbis_pct = Number(item.itbis_pct || 0.18);
+      const itbis_pct = normalizeItbisPct(item.itbis_pct);
       const precio = Number(item.precio || 0);
       const cantidad = Number(item.cantidad || 0);
       const descuentoPct = Number(item.descuento || 0);
@@ -386,7 +394,7 @@ export const useVentas = () => {
   const addProductToInvoice = useCallback((product) => {
     let priceToUse = product.precio || 0;
     let maxDesc = product.max_descuento || 0;
-    const itbis_pct = product.itbis_pct || 0.18;
+    const itbis_pct = normalizeItbisPct(product.itbis_pct);
 
     if (product.presentaciones && product.presentaciones.length > 0) {
       const mainPres = product.presentaciones.find(p => p.afecta_ft) || product.presentaciones[0];
@@ -773,7 +781,7 @@ export const useVentas = () => {
       const detallesData = items.map(item => {
         const cantidad = item.cantidad || 0;
         const precioConItbis = item.precio || 0;
-        const itbisPct = item.itbis_pct || 0;
+        const itbisPct = normalizeItbisPct(item.itbis_pct);
         const importeBruto = cantidad * precioConItbis;
         const montoDescuento = importeBruto * ((item.descuento || 0) / 100);
         const importeNeto = importeBruto - montoDescuento;
@@ -929,7 +937,7 @@ export const useVentas = () => {
       if (onSuccess) {
         const { data: fullFacturaData } = await supabase
           .from('facturas')
-          .select('*, facturas_detalle(*), clientes(*), perfiles:usuario_id(email, nombre_completo)')
+          .select('*, facturas_detalle(*, productos(itbis_pct)), clientes(*), perfiles:usuario_id(email, nombre_completo)')
           .eq('id', activeFactura.id)
           .single();
         const facturaForPrint = fullFacturaData || activeFactura;
@@ -990,7 +998,7 @@ export const useVentas = () => {
       setNotas(factura.notas || '');
 
       const mappedItems = detalles.map(d => {
-        const itbis_pct = d.productos?.itbis_pct || 0.18;
+        const itbis_pct = normalizeItbisPct(d.productos?.itbis_pct);
         const totalLine = d.importe || 0;
         const baseLine = totalLine / (1 + itbis_pct);
         const itbisLine = totalLine - baseLine;
@@ -1046,7 +1054,7 @@ export const useVentas = () => {
       if (detallesError) throw detallesError;
 
       const newItems = detallesData.map(d => {
-        const itbis_pct = d.productos?.itbis_pct || 0.18;
+        const itbis_pct = normalizeItbisPct(d.productos?.itbis_pct);
         const precioConItbis = parseFloat(d.precio_unitario || 0);
 
         const importeBruto = d.cantidad * precioConItbis;
@@ -1101,7 +1109,7 @@ export const useVentas = () => {
       if (detallesError) throw detallesError;
 
       const newItems = detallesData.map(d => {
-        const itbis_pct = d.productos?.itbis_pct || 0.18;
+        const itbis_pct = normalizeItbisPct(d.productos?.itbis_pct);
         return {
           id: d.producto_id,
           producto_id: d.producto_id,

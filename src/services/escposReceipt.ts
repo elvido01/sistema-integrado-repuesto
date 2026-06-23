@@ -37,6 +37,27 @@ const COL_MONTO = W - COL_CANT - COL_PRECIO - COL_ITBIS; // 16 remaining
 const fmt = (val: number): string =>
     (val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const normalizeTaxRate = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+type FacturaDetalle = NonNullable<FacturaData['facturas_detalle']>[number];
+
+const lineItbis = (item: FacturaDetalle): number => {
+    const saved = Number(item.itbis || 0);
+    if (saved > 0) return saved;
+
+    const rate = normalizeTaxRate(item.productos?.itbis_pct);
+    const importe = Number(item.importe || 0);
+    if (!rate || importe <= 0) return 0;
+
+    return importe - (importe / (1 + rate));
+};
+
+const lineSubtotal = (item: FacturaDetalle): number => Math.max(0, Number(item.importe || 0) - lineItbis(item));
+
 const padR = (s: string, w: number) => s.slice(0, w).padEnd(w);
 const padL = (s: string, w: number) => s.slice(0, w).padStart(w);
 const dashLine = () => '-'.repeat(W);
@@ -167,12 +188,21 @@ interface FacturaData {
         itbis?: number;
         importe?: number;
         descuento?: number;
+        productos?: {
+            itbis_pct?: number | null;
+        };
     }>;
 }
 
 export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig): string {
     const details = factura.facturas_detalle || [];
     const client = factura.clientes || {};
+    const formaPago = String(factura.forma_pago || '').toUpperCase();
+    const totalItbis = Number(factura.itbis || 0) || details.reduce((sum, item) => sum + lineItbis(item), 0);
+    const subtotal = Number(factura.subtotal || 0) || details.reduce((sum, item) => sum + lineSubtotal(item), 0);
+    const cambio = factura.cambio != null
+        ? Number(factura.cambio || 0)
+        : Math.max(0, Number(factura.monto_recibido || 0) - Number(factura.total || 0));
 
     const fechaStr = factura.fecha
         ? new Date(factura.fecha).toLocaleDateString('es-DO', { day: 'numeric', month: 'numeric', year: 'numeric' })
@@ -187,7 +217,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
         ? factura.manual_cliente_nombre.toUpperCase()
         : (client.nombre || 'CLIENTE GENERICO').toUpperCase();
 
-    const vence = factura.forma_pago === 'CREDITO'
+    const vence = formaPago === 'CREDITO'
         ? `Credito ${factura.dias_credito} dias`
         : 'CONTADO';
 
@@ -218,6 +248,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
 
     for (const item of details) {
         const desc = (item.descripcion || '').toUpperCase();
+        const itemItbis = lineItbis(item);
         // Description on full line(s)
         for (let i = 0; i < desc.length; i += W) {
             lines.push(desc.slice(i, i + W));
@@ -226,8 +257,8 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
         lines.push(itemRow(
             `  ${item.cantidad || 0} UND`,
             fmt(item.precio || 0),
-            fmt(item.itbis || 0),
-            fmt(item.importe || 0)
+            fmt(itemItbis),
+            `${fmt(item.importe || 0)}${itemItbis < 0.01 ? ' E' : ''}`
         ));
         // Discount line if applicable
         if ((item.descuento || 0) > 0) {
@@ -242,17 +273,17 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
 
     // ── Totals ──
     lines.push(dashLine());
-    lines.push(totalsRow('Sub-Total :', fmt(factura.subtotal || 0)));
+    lines.push(totalsRow('Sub-Total :', fmt(subtotal)));
     lines.push(totalsRow('Descuento en Items:', fmt(factura.descuento || 0)));
-    lines.push(totalsRow('ITBIS :', fmt(factura.itbis || 0)));
+    lines.push(totalsRow('ITBIS :', fmt(totalItbis)));
     lines.push(padR('Valores en', W - 12) + padL('============', 12));
     lines.push(padR('DOP', 10) + CMD.BOLD_ON + padL('TOTAL :', W - 10 - 12) + padL(fmt(factura.total || 0), 12) + CMD.BOLD_OFF);
 
     // ── Payment ──
-    if (factura.forma_pago === 'CONTADO') {
+    if (formaPago === 'CONTADO') {
         lines.push(dashLine());
         lines.push(totalsRow('PAGADO:', fmt(factura.monto_recibido || 0)));
-        lines.push(totalsRow('CAMBIO:', fmt(factura.cambio || 0)));
+        lines.push(totalsRow('CAMBIO:', fmt(cambio)));
     } else {
         // Credito: mostrar el abono (si hubo) y el saldo pendiente.
         lines.push(dashLine());
