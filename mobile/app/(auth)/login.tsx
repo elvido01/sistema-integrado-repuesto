@@ -2,16 +2,23 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, Image } from 'react-native';
 import { supabase } from '@/src/supabase/client';
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function signInWithEmail() {
-    setLoading(true);
     const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert('Datos requeridos', 'Digite el correo y la contrasena.');
+      return;
+    }
+
+    setLoading(true);
     console.log('Intento de login para:', trimmedEmail);
     
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -24,6 +31,7 @@ export default function LoginScreen() {
       Alert.alert('Error de Login', error.message);
     } else {
       console.log('Login exitoso para:', data.user?.email);
+      router.replace('/(tabs)');
     }
     setLoading(false);
   }

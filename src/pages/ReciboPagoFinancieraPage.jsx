@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Save, X, Search, FilePlus } from 'lucide-react';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
-import { distribuirAbono, round2 } from '@/components/financiera/amortizacion';
+import { round2 } from '@/components/financiera/amortizacion';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -38,7 +38,8 @@ const ReciboPagoFinancieraPage = () => {
   const [saving, setSaving] = useState(false);
 
   const [prestamoFiltro, setPrestamoFiltro] = useState('todos');
-  const [monto, setMonto] = useState('');
+  const [abonos, setAbonos] = useState({}); // { rowKey: monto abonado }
+  const [editKey, setEditKey] = useState(null); // fila cuyo abono se esta editando
   const [forma, setForma] = useState('Efectivo');
   const [cuenta, setCuenta] = useState('');
   const [banco, setBanco] = useState('');
@@ -96,7 +97,7 @@ const ReciboPagoFinancieraPage = () => {
   const seleccionarCliente = (c) => {
     setCliente(c); setBuscarOpen(false);
     setCodigoInput(c.codigo || c.rnc || '');
-    setMonto(''); setComentarios(''); setPrestamoFiltro('todos');
+    setAbonos({}); setEditKey(null); setComentarios(''); setPrestamoFiltro('todos');
     cargarEstado(c.id);
   };
 
@@ -124,7 +125,7 @@ const ReciboPagoFinancieraPage = () => {
 
   const nuevo = () => {
     setCliente(null); setEstado(null); setUltimoPago(null); setCodigoInput('');
-    setMonto(''); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
+    setAbonos({}); setEditKey(null); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
     setPrestamoFiltro('todos'); cargarProximoNumero();
   };
 
@@ -142,31 +143,53 @@ const ReciboPagoFinancieraPage = () => {
   const interesPend = cuotasFiltradas.reduce((a, c) => a + Number(c.interes_pend || 0), 0);
   const moraPend = cuotasFiltradas.reduce((a, c) => a + Number(c.mora_pend || 0), 0);
   const balanceAnterior = round2(capitalPend + interesPend + moraPend);
-  const montoNum = round2(Number(monto) || 0);
+  // Filas de la tabla (MORA como linea aparte). El abono se marca por fila.
+  const filas = useMemo(() => {
+    const out = [];
+    cuotasFiltradas.forEach((c) => {
+      if (Number(c.mora_pend) > 0) {
+        out.push({
+          key: `${c.cuota_id}-mora`, cuota_id: c.cuota_id, esMora: true,
+          fecha: '', vence: c.fecha_vencimiento, origen: '>>MORA<<',
+          referencia: c.referencia, descripcion: 'Cargos por Atrasos (MORA)',
+          monto: round2(c.mora_pend), pendiente: round2(c.mora_pend),
+          capital_pend: 0, interes_pend: 0, mora_pend: round2(c.mora_pend),
+        });
+      }
+      out.push({
+        key: `${c.cuota_id}-fin`, cuota_id: c.cuota_id, esMora: false,
+        fecha: c.fecha || '', vence: c.fecha_vencimiento, origen: c.prestamo_numero,
+        referencia: c.referencia, descripcion: 'Financiamiento',
+        monto: round2(c.monto_cuota), pendiente: round2(Number(c.capital_pend) + Number(c.interes_pend)),
+        capital_pend: round2(c.capital_pend), interes_pend: round2(c.interes_pend), mora_pend: 0,
+      });
+    });
+    return out;
+  }, [cuotasFiltradas]);
+
+  const montoNum = round2(filas.reduce((a, r) => a + (Number(abonos[r.key]) || 0), 0));
   const balanceActual = Math.max(round2(balanceAnterior - montoNum), 0);
 
-  // Monto Pagado con separador de miles (,) y decimales (.) mientras se escribe
-  const displayMonto = (() => {
-    if (monto === '' || monto == null) return '';
-    const [ip, dp] = String(monto).split('.');
-    const intFmt = ip ? Number(ip).toLocaleString('en-US') : '0';
-    return dp !== undefined ? `${intFmt}.${dp}` : intFmt;
-  })();
-  const handleMontoChange = (e) => {
-    let v = e.target.value.replace(/,/g, '').replace(/[^\d.]/g, '');
-    const parts = v.split('.');
-    if (parts.length > 2) v = `${parts[0]}.${parts.slice(1).join('')}`;
-    const [ip, dp] = v.split('.');
-    v = dp !== undefined ? `${ip}.${dp.slice(0, 2)}` : ip;
-    setMonto(v);
-  };
+  // Desglose del abono actual (capital / interes / mora): el abono de cada
+  // cuota cubre primero interes y luego capital; la mora va en su propia fila.
+  const desglose = useMemo(() => {
+    let cap = 0, int = 0, mora = 0;
+    filas.forEach((r) => {
+      const ab = Number(abonos[r.key]) || 0;
+      if (ab <= 0) return;
+      if (r.esMora) { mora += ab; }
+      else { const i = Math.min(ab, r.interes_pend); int += i; cap += round2(ab - i); }
+    });
+    return { cap: round2(cap), int: round2(int), mora: round2(mora) };
+  }, [filas, abonos]);
+  const abonoCapital = desglose.cap;
+  const abonoInteres = desglose.int;
+  const abonoMora = desglose.mora;
 
-  // Doble clic en una fila: suma su pendiente al Monto Pagado (tope: balance)
-  const sumarAbono = (r) => {
-    const add = Number(r.pendiente) || 0;
-    if (add <= 0) return;
-    const nuevo = Math.min(round2(montoNum + add), balanceAnterior);
-    setMonto(String(nuevo));
+  // Fija el abono de una fila (tope: su pendiente)
+  const setAbonoFila = (r, val) => {
+    const n = Math.min(Math.max(round2(Number(val) || 0), 0), round2(r.pendiente));
+    setAbonos((prev) => ({ ...prev, [r.key]: n }));
   };
 
   // Estado del cliente segun su condicion (no se elige a mano):
@@ -190,38 +213,27 @@ const ReciboPagoFinancieraPage = () => {
     return { txt: 'SE BUSCA', cls: 'text-red-600' };
   })();
 
-  const cuotasConAbono = useMemo(() => distribuirAbono(cuotasFiltradas, montoNum), [cuotasFiltradas, montoNum]);
-
-  // Desglose del monto que se esta abonando ahora (capital / interes / mora)
-  const abonoCapital = cuotasConAbono.reduce((a, c) => a + Number(c.ab_cap || 0), 0);
-  const abonoInteres = cuotasConAbono.reduce((a, c) => a + Number(c.ab_int || 0), 0);
-  const abonoMora = cuotasConAbono.reduce((a, c) => a + Number(c.ab_mora || 0), 0);
-
-  // Filas a mostrar (MORA como línea aparte, igual a la foto)
-  const filas = useMemo(() => {
-    const out = [];
-    cuotasConAbono.forEach((c) => {
-      if (Number(c.mora_pend) > 0) {
-        out.push({
-          key: `${c.cuota_id}-mora`, fecha: '', vence: c.fecha_vencimiento, origen: '>>MORA<<',
-          referencia: c.referencia, descripcion: 'Cargos por Atrasos (MORA)',
-          monto: c.mora_pend, pendiente: c.mora_pend, abono: c.ab_mora, esMora: true,
-        });
-      }
-      out.push({
-        key: `${c.cuota_id}-fin`, fecha: c.fecha || '', vence: c.fecha_vencimiento, origen: c.prestamo_numero,
-        referencia: c.referencia, descripcion: 'Financiamiento',
-        monto: c.monto_cuota, pendiente: round2(Number(c.capital_pend) + Number(c.interes_pend)),
-        abono: round2(Number(c.ab_int) + Number(c.ab_cap)), esMora: false,
-      });
-    });
-    return out;
-  }, [cuotasConAbono]);
-
   const handleGrabar = async () => {
     if (!cliente?.id) { toast({ variant: 'destructive', title: 'Selecciona un cliente' }); return; }
-    if (!(montoNum > 0)) { toast({ variant: 'destructive', title: 'Ingresa el monto a pagar' }); return; }
+    if (!(montoNum > 0)) { toast({ variant: 'destructive', title: 'Marca el abono de al menos una cuota' }); return; }
     if (montoNum > balanceAnterior + 0.01) { toast({ variant: 'destructive', title: 'El monto excede el balance pendiente' }); return; }
+
+    // Abonos exactos por cuota (interes antes que capital; mora en su fila)
+    const map = {};
+    filas.forEach((r) => {
+      const ab = Number(abonos[r.key]) || 0;
+      if (ab <= 0) return;
+      if (!map[r.cuota_id]) map[r.cuota_id] = { cuota_id: r.cuota_id, capital: 0, interes: 0, mora: 0 };
+      if (r.esMora) {
+        map[r.cuota_id].mora = round2(map[r.cuota_id].mora + ab);
+      } else {
+        const i = Math.min(ab, r.interes_pend);
+        map[r.cuota_id].interes = round2(map[r.cuota_id].interes + i);
+        map[r.cuota_id].capital = round2(map[r.cuota_id].capital + (ab - i));
+      }
+    });
+    const allocations = Object.values(map);
+
     setSaving(true);
     try {
       const { data, error } = await supabase.rpc('registrar_pago_prestamo', {
@@ -234,10 +246,11 @@ const ReciboPagoFinancieraPage = () => {
         p_cobrador: cobrador || null,
         p_fecha: null,
         p_prestamo_id: prestamoFiltro === 'todos' ? null : prestamoFiltro,
+        p_abonos: allocations,
       });
       if (error) throw error;
       toast({ title: 'Pago registrado', description: `Recibo ${data?.numero} · Total ${fmt(data?.total_pagado)}` });
-      setMonto(''); setComentarios('');
+      setAbonos({}); setEditKey(null); setComentarios('');
       await cargarEstado(cliente.id);
       await cargarProximoNumero();
     } catch (e) {
@@ -326,7 +339,7 @@ const ReciboPagoFinancieraPage = () => {
                   </SelectContent>
                 </Select>
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap shrink-0">Monto<br />Pagado</Label>
-                <Input type="text" inputMode="decimal" value={displayMonto} onChange={handleMontoChange} placeholder="0.00" className="text-right font-bold text-lg h-9 flex-1 min-w-[96px] shrink-0" />
+                <div className="text-right font-bold text-lg h-9 flex-1 min-w-[96px] shrink-0 flex items-center justify-end px-2 border rounded bg-slate-50">{fmt(montoNum)}</div>
               </div>
               {forma !== 'Efectivo' && (
                 <div className="grid grid-cols-2 gap-2">
@@ -359,17 +372,34 @@ const ReciboPagoFinancieraPage = () => {
                 {!loading && cliente && filas.length === 0 && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">Sin cuotas pendientes.</td></tr>}
                 {filas.map((r, i) => (
                   <tr key={r.key}
-                      onDoubleClick={() => sumarAbono(r)}
-                      title="Doble clic para abonar esta cuota"
-                      className={`cursor-pointer select-none ${i % 2 === 1 ? 'bg-emerald-50/60' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
+                      className={`select-none ${i % 2 === 1 ? 'bg-emerald-50/60' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
                     <td className="px-2 py-1">{r.fecha}</td>
                     <td className="px-2 py-1">{r.vence}</td>
                     <td className="px-2 py-1">{r.origen}</td>
                     <td className="px-2 py-1">{r.referencia}</td>
                     <td className="px-2 py-1">{r.descripcion}</td>
                     <td className="px-2 py-1 text-right">{fmt(r.monto)}</td>
-                    <td className="px-2 py-1 text-right">{fmt(r.pendiente)}</td>
-                    <td className="px-2 py-1 text-right font-bold text-emerald-700">{fmt(r.abono)}</td>
+                    <td className="px-2 py-1 text-right cursor-pointer hover:underline"
+                        onDoubleClick={() => setAbonoFila(r, r.pendiente)}
+                        title="Doble clic: abonar todo el pendiente">{fmt(r.pendiente)}</td>
+                    <td className="px-2 py-1 text-right cursor-pointer"
+                        onDoubleClick={() => setEditKey(r.key)}
+                        title="Doble clic: editar abono">
+                      {editKey === r.key ? (
+                        <input
+                          type="number" autoFocus
+                          defaultValue={(Number(abonos[r.key]) || 0) || ''}
+                          onBlur={(e) => { setAbonoFila(r, e.target.value); setEditKey(null); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { setAbonoFila(r, e.target.value); setEditKey(null); }
+                            if (e.key === 'Escape') setEditKey(null);
+                          }}
+                          className="w-24 text-right border rounded px-1 py-0.5 text-xs"
+                        />
+                      ) : (
+                        <span className="font-bold text-emerald-700">{fmt(Number(abonos[r.key]) || 0)}</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
