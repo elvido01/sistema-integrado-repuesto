@@ -354,7 +354,7 @@ const ReciboPagoFinancieraPage = () => {
           <div className="border rounded-md overflow-hidden">
             <div className="overflow-y-auto h-[180px]">
             <table className="w-full text-xs">
-              <thead className="bg-slate-100 text-slate-500 border-b sticky top-0">
+              <thead className="bg-gray-100 text-gray-700 font-bold border-b sticky top-0">
                 <tr>
                   <th className="text-left px-2 py-1">Fecha</th>
                   <th className="text-left px-2 py-1">Vence</th>
@@ -372,10 +372,10 @@ const ReciboPagoFinancieraPage = () => {
                 {!loading && cliente && filas.length === 0 && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">Sin cuotas pendientes.</td></tr>}
                 {filas.map((r, i) => (
                   <tr key={r.key}
-                      className={`select-none ${i % 2 === 1 ? 'bg-emerald-50/60' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
+                      className={`select-none border-b last:border-0 ${i % 2 === 1 ? 'bg-[#e0fadd]' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
                     <td className="px-2 py-1">{r.fecha}</td>
                     <td className="px-2 py-1">{r.vence}</td>
-                    <td className="px-2 py-1">{r.origen}</td>
+                    <td className={`px-2 py-1 ${r.esMora ? '' : 'font-bold text-blue-900'}`}>{r.origen}</td>
                     <td className="px-2 py-1">{r.referencia}</td>
                     <td className="px-2 py-1">{r.descripcion}</td>
                     <td className="px-2 py-1 text-right">{fmt(r.monto)}</td>
