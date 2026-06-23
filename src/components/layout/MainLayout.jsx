@@ -7,11 +7,17 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { setEmpresaPrintConfig } from '@/lib/printPOS';
 import { LayoutProvider } from '@/contexts/LayoutContext';
 import JarvisAdminAssistant from '@/components/jarvis/JarvisAdminAssistant';
+import { usePanels } from '@/contexts/PanelContext';
+
+// El asistente de voz (microfono) solo se muestra en estos modulos
+const JARVIS_PANELS = ['inicio', 'whatsapp-crm', 'ai-ceo'];
 
 const MainLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { empresa } = useAuth();
+  const { activePanel } = usePanels();
   const nombreEmpresa = empresa?.nombre || 'Sistema';
+  const showJarvis = JARVIS_PANELS.includes(activePanel);
 
   useEffect(() => {
     if (empresa) setEmpresaPrintConfig(empresa);
@@ -45,7 +51,7 @@ const MainLayout = () => {
         <footer className="text-center py-2 text-[10px] text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
           © {new Date().getFullYear()} {nombreEmpresa} — Sistema de Gestión Integral
         </footer>
-        <JarvisAdminAssistant />
+        {showJarvis && <JarvisAdminAssistant />}
       </div>
     </div>
   );
