@@ -331,7 +331,7 @@ const ReciboPagoFinancieraPage = () => {
 
           {/* Grid de cuotas (altura fija: ~6 filas visibles, scroll si hay mas) */}
           <div className="border rounded-md overflow-hidden">
-            <div className="overflow-y-auto h-[160px]">
+            <div className="overflow-y-auto h-[180px]">
             <table className="w-full text-xs">
               <thead className="bg-slate-100 text-slate-500 border-b sticky top-0">
                 <tr>
