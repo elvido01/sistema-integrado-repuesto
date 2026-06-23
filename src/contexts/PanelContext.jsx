@@ -114,7 +114,7 @@ const componentMapping = {
   'inventario-fisico': { component: () => <Protected module="inventario-fisico"><InventarioFisicoPage /></Protected>, icon: Archive, name: 'Inventario Físico' },
   'solicitudes': { component: () => <Protected module="solicitudes"><SolicitudesPage /></Protected>, icon: ClipboardList, name: 'Solicitudes Agotados' },
   'solicitudes-compras': { component: () => <Protected module="solicitudes-compras"><SolicitudesComprasPage /></Protected>, icon: ClipboardList, name: 'Solicitudes de Compras' },
-  'carta-ruta': { component: () => <Protected module="carta-ruta"><CartaRutaPage /></Protected>, icon: FileText, name: 'Carta de Ruta' },
+  'carta-ruta': { component: ({ extraData }) => <Protected module="carta-ruta"><CartaRutaPage extraData={extraData} /></Protected>, icon: FileText, name: 'Carta de Ruta' },
   'documentacion-cliente': { component: () => <Protected module="documentacion-cliente"><DocumentacionClientePage /></Protected>, icon: FileImage, name: 'Documentación Cliente' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },
   'libros-contables': { component: () => <Protected module="libros-contables"><LibrosContablesPage /></Protected>, icon: FileText, name: 'Libros Contables' },

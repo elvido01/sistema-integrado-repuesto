@@ -545,7 +545,7 @@ const SolicitudesComprasPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSolicitud, setEditingSolicitud] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const { activePanel } = usePanels();
+  const { activePanel, openPanel } = usePanels();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -929,6 +929,14 @@ const SolicitudesComprasPage = () => {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+
+            <Button
+              disabled={!selectedSolicitud}
+              className="w-full justify-between bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={() => { if (selectedSolicitud) openPanel('carta-ruta', { solicitudId: selectedSolicitud.id }); }}
+            >
+              <span>Enviar a Carta de Ruta</span><Send />
+            </Button>
 
             <div className="flex-grow" />
 

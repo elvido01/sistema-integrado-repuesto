@@ -36,7 +36,7 @@ const buildIlikeOr = (column, values) => values
   .map((value) => `${column}.ilike.%${String(value).replace(/[%*,]/g, '')}%`)
   .join(',');
 
-const CartaRutaPage = () => {
+const CartaRutaPage = ({ extraData }) => {
   const { empresa, tenantId } = useAuth();
   const { toast } = useToast();
 
@@ -347,6 +347,20 @@ const CartaRutaPage = () => {
     setSearchResults([]);
     toast({ title: 'Solicitud cargada', description: `Solicitud #${sol.numero} — ${clienteNombre}` });
   };
+
+  // Al abrir desde "Enviar a Carta de Ruta" (Solicitudes), precargar la solicitud
+  useEffect(() => {
+    if (!extraData?.solicitudId) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from('solicitudes_compras')
+        .select('*, clientes(nombre, rnc)')
+        .eq('id', extraData.solicitudId)
+        .maybeSingle();
+      if (!error && data) loadFromSolicitud(data);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraData?.solicitudId]);
 
   // ── Cargar carta existente para editar ──
   const loadCarta = (carta) => {
