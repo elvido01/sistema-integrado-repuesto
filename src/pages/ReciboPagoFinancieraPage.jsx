@@ -19,6 +19,14 @@ const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, ma
 const hoy = () => new Date().toISOString().slice(0, 10);
 const FORMAS = ['Efectivo', 'Cheque', 'Tarjeta'];
 
+// Formatea el texto del Monto Pagado con separador de miles y decimales
+const fmtMontoInput = (raw) => {
+  if (raw === '' || raw == null) return '';
+  const [ip, dp] = String(raw).split('.');
+  const intFmt = ip ? Number(ip).toLocaleString('en-US') : '0';
+  return dp !== undefined ? `${intFmt}.${dp}` : intFmt;
+};
+
 const ReciboPagoFinancieraPage = () => {
   const { toast } = useToast();
   const { empresa } = useAuth();
@@ -360,8 +368,16 @@ const ReciboPagoFinancieraPage = () => {
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap shrink-0">Monto<br />Pagado</Label>
                 <Input
                   type="text" inputMode="decimal"
-                  value={montoText}
-                  onChange={(e) => { const raw = e.target.value.replace(/[^\d.]/g, ''); setMontoText(raw); distribuirTotal(raw); }}
+                  value={fmtMontoInput(montoText)}
+                  onChange={(e) => {
+                    let raw = e.target.value.replace(/,/g, '').replace(/[^\d.]/g, '');
+                    const parts = raw.split('.');
+                    if (parts.length > 2) raw = `${parts[0]}.${parts.slice(1).join('')}`;
+                    const [ip, dp] = raw.split('.');
+                    raw = dp !== undefined ? `${ip}.${dp.slice(0, 2)}` : ip;
+                    setMontoText(raw);
+                    distribuirTotal(raw);
+                  }}
                   placeholder="0.00"
                   className="text-right font-bold text-lg h-9 flex-1 min-w-[96px] shrink-0"
                 />
