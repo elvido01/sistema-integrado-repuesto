@@ -818,7 +818,12 @@ const SolicitudesComprasPage = () => {
                         </TableCell>
                         <TableCell className="text-right font-semibold">{Number(s.valor_contado || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
                         <TableCell>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">{s.estado}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            s.estado === 'Aprobada' ? 'bg-green-100 text-green-700'
+                            : s.estado === 'Anulada' ? 'bg-red-100 text-red-700'
+                            : s.estado === 'C/RUTA' ? 'bg-indigo-100 text-indigo-700'
+                            : 'bg-yellow-100 text-yellow-700'
+                          }`}>{s.estado}</span>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -933,7 +938,15 @@ const SolicitudesComprasPage = () => {
             <Button
               disabled={!selectedSolicitud}
               className="w-full justify-between bg-indigo-600 hover:bg-indigo-700 text-white"
-              onClick={() => { if (selectedSolicitud) openPanel('carta-ruta', { solicitudId: selectedSolicitud.id }); }}
+              onClick={async () => {
+                if (!selectedSolicitud) return;
+                const id = selectedSolicitud.id;
+                try {
+                  await supabase.from('solicitudes_compras').update({ estado: 'C/RUTA' }).eq('id', id);
+                } catch (e) { /* si falla el update, igual abrimos la carta */ }
+                openPanel('carta-ruta', { solicitudId: id });
+                fetchData();
+              }}
             >
               <span>Enviar a Carta de Ruta</span><Send />
             </Button>
