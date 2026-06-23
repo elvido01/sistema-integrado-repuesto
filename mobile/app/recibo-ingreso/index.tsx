@@ -141,7 +141,7 @@ export default function ReciboIngresoMobileScreen() {
   const insets = useSafeAreaInsets();
   const ticketRef = useRef<ViewShot>(null);
   const facturaTicketRef = useRef<ViewShot>(null);
-  const { empresaId } = useAuthStore();
+  const { tenantId } = useAuthStore();
   const [numero, setNumero] = useState('');
   const [fecha, setFecha] = useState(todayISO());
   const [empresa, setEmpresa] = useState<EmpresaRecibo | null>(null);
@@ -214,7 +214,7 @@ export default function ReciboIngresoMobileScreen() {
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([getNextReciboNumero(), fetchClientesRecibo(), fetchEmpresaRecibo(empresaId)])
+    Promise.all([getNextReciboNumero(), fetchClientesRecibo(), fetchEmpresaRecibo(tenantId)])
       .then(([num, rows, empresaData]) => {
         if (!mounted) return;
         setNumero(num);
@@ -226,7 +226,7 @@ export default function ReciboIngresoMobileScreen() {
     return () => {
       mounted = false;
     };
-  }, [empresaId]);
+  }, [tenantId]);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -339,7 +339,7 @@ export default function ReciboIngresoMobileScreen() {
     };
     const docRow = (ref: string, balance: string, paid: string) =>
       padRight(ref, 9) + padLeft(balance, 10) + padLeft(paid, W - 19);
-    const empresaNombre = clean(recibo.empresa?.razon_social || recibo.empresa?.nombre || 'REPUESTOS MORLA');
+    const empresaNombre = clean(recibo.empresa?.razon_social || recibo.empresa?.nombre || 'MotoFlow');
     const dir1 = clean(recibo.empresa?.direccion1);
     const dir2 = clean(recibo.empresa?.direccion2);
     const tel = clean(recibo.empresa?.telefono);
@@ -418,7 +418,7 @@ export default function ReciboIngresoMobileScreen() {
     const fechaStr = Number.isNaN(fecha.getTime()) ? todayISO() : fecha.toLocaleDateString('es-DO');
     const horaStr = Number.isNaN(fecha.getTime()) ? '' : fecha.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
     const numStr = f.numero ? `FT-${String(f.numero).padStart(7, '0').slice(-7)}` : `FT-${String(f.id || '0').replace(/[^0-9]/g, '').padStart(7, '0').slice(-7)}`;
-    const empresaNombre = clean(empresa?.razon_social || empresa?.nombre || 'REPUESTOS MORLA');
+    const empresaNombre = clean(empresa?.razon_social || empresa?.nombre || 'MotoFlow');
     const dir1 = clean(empresa?.direccion1 || 'Av. Duarte , esq. Baldemiro Rijo,');
     const dir2 = clean(empresa?.direccion2 || 'Higuey, Rep. Dom.');
     const tel = clean(empresa?.telefono || '809-390-5965');
@@ -519,7 +519,7 @@ export default function ReciboIngresoMobileScreen() {
     setSaving(true);
     try {
       const savedNumber = await crearReciboIngreso({
-        tenantId: null,
+        tenantId,
         clienteId: cliente.id,
         fecha,
         totalAbonos,

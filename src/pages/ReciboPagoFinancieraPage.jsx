@@ -363,7 +363,7 @@ const ReciboPagoFinancieraPage = () => {
                   <th className="text-left px-2 py-1">Descripción</th>
                   <th className="text-right px-2 py-1">Monto</th>
                   <th className="text-right px-2 py-1">Pendiente</th>
-                  <th className="text-right px-2 py-1 bg-red-50">Abono</th>
+                  <th className="text-right px-2 py-1 bg-red-50 w-28">Abono</th>
                 </tr>
               </thead>
               <tbody>

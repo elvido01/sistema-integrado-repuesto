@@ -136,14 +136,14 @@ export async function getNextReciboNumero() {
   return String(data || '');
 }
 
-export async function fetchEmpresaRecibo(empresaId?: string | null): Promise<EmpresaRecibo | null> {
+export async function fetchEmpresaRecibo(tenantId?: string | null): Promise<EmpresaRecibo | null> {
   let query = supabase
     .from('config_empresa')
     .select('nombre, razon_social, rnc, direccion1, direccion2, telefono')
     .limit(1);
 
-  if (empresaId) {
-    query = query.eq('id', empresaId);
+  if (tenantId) {
+    query = query.eq('tenant_id', tenantId);
   }
 
   const { data, error } = await query.maybeSingle();

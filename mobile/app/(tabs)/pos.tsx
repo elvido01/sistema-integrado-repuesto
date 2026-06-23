@@ -12,7 +12,7 @@ import { printFacturaPos } from '@/services/printFactura';
 
 export default function POSScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, empresa } = useAuthStore();
   const {
     items,
     getSubtotal,
@@ -152,6 +152,7 @@ export default function POSScreen() {
       const numeroFactura = venta.numero || String(venta.id).slice(0, 8).toUpperCase();
       setFacturaModal({
         numero: numeroFactura,
+        empresa,
         cotizacionNumero: cotizacionOrigenNumero,
         pedidoNumero: pedidoOrigenNumero,
         fecha: new Date(),
@@ -178,10 +179,11 @@ export default function POSScreen() {
   // Se envuelve en ``` para que WhatsApp/Telegram/Discord lo rendericen
   // como bloque monospace y se vea como el ticket impreso.
   const EMPRESA = {
-    nombre: 'REPUESTOS MORLA',
-    direccion: 'Av. Duarte , esq. Baldemiro Rijo,',
-    direccion2: 'Higuey, Rep. Dom.',
-    telefono: '809-390-5965',
+    nombre: empresa?.razon_social || empresa?.nombre || 'MotoFlow',
+    direccion: empresa?.direccion1 || '',
+    direccion2: empresa?.direccion2 || '',
+    telefono: empresa?.telefono || '',
+    rnc: empresa?.rnc || '',
   };
 
   const buildFacturaTexto = (f: any) => {
@@ -218,9 +220,10 @@ export default function POSScreen() {
 
     let t = '```\n';
     t += center(EMPRESA.nombre) + '\n';
-    t += center(EMPRESA.direccion) + '\n';
-    t += center(EMPRESA.direccion2) + '\n';
-    t += center(EMPRESA.telefono) + '\n';
+    if (EMPRESA.direccion) t += center(EMPRESA.direccion) + '\n';
+    if (EMPRESA.direccion2) t += center(EMPRESA.direccion2) + '\n';
+    if (EMPRESA.telefono) t += center(EMPRESA.telefono) + '\n';
+    if (EMPRESA.rnc) t += center(`RNC: ${EMPRESA.rnc}`) + '\n';
     t += '\n';
     t += center('FACTURA') + '\n';
     if (f.cotizacionNumero) t += center(`Desde cotizacion #${f.cotizacionNumero}`) + '\n';

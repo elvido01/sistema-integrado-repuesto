@@ -37,7 +37,7 @@ const dateOnly = (date: Date) => {
 
 export default function CotizacionesScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, empresa } = useAuthStore();
   const {
     items,
     clienteId,
@@ -152,12 +152,15 @@ export default function CotizacionesScreen() {
     const fechaStr = fecha.toLocaleDateString('es-DO');
     const horaStr = fecha.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
     const numero = cotizacion.numero ? `CT-${String(cotizacion.numero).padStart(7, '0').slice(-7)}` : 'CT-N/A';
+    const empresaNombre = empresa?.razon_social || empresa?.nombre || 'MotoFlow';
 
     let t = '';
-    t += center('REPUESTOS MORLA') + '\n';
-    t += center('Av. Duarte , esq. Baldemiro Rijo,') + '\n';
-    t += center('Higuey, Rep. Dom.') + '\n';
-    t += center('809-390-5965') + '\n\n';
+    t += center(empresaNombre) + '\n';
+    if (empresa?.direccion1) t += center(empresa.direccion1) + '\n';
+    if (empresa?.direccion2) t += center(empresa.direccion2) + '\n';
+    if (empresa?.telefono) t += center(empresa.telefono) + '\n';
+    if (empresa?.rnc) t += center(`RNC: ${empresa.rnc}`) + '\n';
+    t += '\n';
     t += center('COTIZACION') + '\n';
     t += labelVal(`Numero  : ${numero}`, horaStr) + '\n';
     t += `Fecha   : ${fechaStr}\n`;

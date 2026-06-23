@@ -11,13 +11,6 @@ const W = 32; // 58mm impresora térmica estándar
 // Para 80mm (576 dots) usar W = 48. La 2C-P80-C dice "Printing width 72mm"
 // asi que 48 columnas es seguro. La dejamos como parametro.
 
-const EMPRESA = {
-    nombre: 'REPUESTOS MORLA',
-    direccion: 'Av. Duarte , esq. Baldemiro Rijo,',
-    direccion2: 'Higuey, Rep. Dom.',
-    telefono: '809-390-5965',
-};
-
 const fmt = (n: number) => Number(n || 0).toFixed(2);
 
 function padLeft(s: string, n: number) { return s.length >= n ? s.slice(0, n) : ' '.repeat(n - s.length) + s; }
@@ -31,6 +24,14 @@ function labelVal(label: string, value: string, width: number): string {
 
 export async function printFacturaPos(f: any, { width = 32 } = {}) {
     const lines: TicketLine[] = [];
+    const empresa = f?.empresa || {};
+    const EMPRESA = {
+        nombre: empresa.razon_social || empresa.nombre || 'MotoFlow',
+        direccion: empresa.direccion1 || empresa.direccion || '',
+        direccion2: empresa.direccion2 || '',
+        telefono: empresa.telefono || '',
+        rnc: empresa.rnc || f.rnc || '',
+    };
 
     const fecha = f.fecha instanceof Date ? f.fecha : new Date(f.fecha);
     const fechaStr = fecha.toLocaleDateString('es-DO');
@@ -41,10 +42,10 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
 
     // Header
     lines.push({ type: 'text', text: EMPRESA.nombre, align: 'center', bold: true, double: true });
-    lines.push({ type: 'text', text: EMPRESA.direccion, align: 'center' });
-    lines.push({ type: 'text', text: EMPRESA.direccion2, align: 'center' });
-    lines.push({ type: 'text', text: `Tel: ${EMPRESA.telefono}`, align: 'center' });
-    if (f.rnc) lines.push({ type: 'text', text: `RNC: ${f.rnc}`, align: 'center' });
+    if (EMPRESA.direccion) lines.push({ type: 'text', text: EMPRESA.direccion, align: 'center' });
+    if (EMPRESA.direccion2) lines.push({ type: 'text', text: EMPRESA.direccion2, align: 'center' });
+    if (EMPRESA.telefono) lines.push({ type: 'text', text: `Tel: ${EMPRESA.telefono}`, align: 'center' });
+    if (EMPRESA.rnc) lines.push({ type: 'text', text: `RNC: ${EMPRESA.rnc}`, align: 'center' });
     lines.push({ type: 'feed', lines: 1 });
     lines.push({ type: 'text', text: 'FACTURA', align: 'center', bold: true });
     if (f.ncf) lines.push({ type: 'text', text: `NCF: ${f.ncf}`, align: 'center' });

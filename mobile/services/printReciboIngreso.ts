@@ -48,7 +48,7 @@ export async function printReciboIngreso(
 ) {
   const lines: TicketLine[] = [];
   const empresa = recibo.empresa || {};
-  const nombre = clean(empresa.razon_social || empresa.nombre || 'REPUESTOS MORLA');
+  const nombre = clean(empresa.razon_social || empresa.nombre || 'MotoFlow');
   const dir1 = clean(empresa.direccion1);
   const dir2 = clean(empresa.direccion2);
   const tel = clean(empresa.telefono);

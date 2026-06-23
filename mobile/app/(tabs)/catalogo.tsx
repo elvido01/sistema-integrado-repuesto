@@ -15,7 +15,7 @@ import ViewShot, { captureRef } from 'react-native-view-shot';
 import { supabase } from '@/src/supabase/client';
 
 export default function CatalogoScreen() {
-  const { empresaId } = useAuthStore();
+  const { tenantId } = useAuthStore();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [marca, setMarca] = useState('');
@@ -248,12 +248,12 @@ export default function CatalogoScreen() {
     refetch,
     isRefetching
   } = useInfiniteQuery({
-    queryKey: ['productos', empresaId, debouncedSearch, debouncedMarca, debouncedModelo],
+    queryKey: ['productos', tenantId, debouncedSearch, debouncedMarca, debouncedModelo],
     initialPageParam: 1,
     queryFn: ({ pageParam = 1 }: { pageParam: number }) =>
       fetchProductos(pageParam, 20, debouncedSearch, debouncedMarca, debouncedModelo),
     getNextPageParam: (lastPage, pages) => lastPage.hasMore ? pages.length + 1 : undefined,
-    enabled: !!empresaId,
+    enabled: !!tenantId,
   });
 
   const updateSearch = useCallback(
