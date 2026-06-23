@@ -164,17 +164,39 @@ const ConfiguracionSistemaPage = () => {
                 });
             }
 
-            const { error: saveError } = await supabase
-                .from('config_empresa')
-                .upsert({
-                    ...dataToSave,
-                    tenant_id: tenantId,
-                    // Asegurar que si es nulo o vacío se vaya como null para evitar errores de timestamp
-                    fecha_inicio_meta: dataToSave.fecha_inicio_meta || null,
-                    caja_historial_desde: dataToSave.caja_historial_desde || '1970-01-01'
-                }, { onConflict: 'tenant_id' });
+            // Payload de guardado. Algunas columnas (features nuevas) pueden no
+            // existir aún en la BD de una empresa si falta correr su migración;
+            // si el upsert falla por una columna inexistente, la quitamos y
+            // reintentamos para no bloquear el resto de la configuración.
+            let payload = {
+                ...dataToSave,
+                tenant_id: tenantId,
+                fecha_inicio_meta: dataToSave.fecha_inicio_meta || null,
+                caja_historial_desde: dataToSave.caja_historial_desde || '1970-01-01'
+            };
+
+            let saveError = null;
+            const omitidas = [];
+            for (let intento = 0; intento < 8; intento++) {
+                const res = await supabase
+                    .from('config_empresa')
+                    .upsert(payload, { onConflict: 'tenant_id' });
+                saveError = res.error;
+                if (!saveError) break;
+                const m = String(saveError.message || '').match(/Could not find the '([^']+)' column/i);
+                if (m && m[1] && Object.prototype.hasOwnProperty.call(payload, m[1])) {
+                    omitidas.push(m[1]);
+                    const { [m[1]]: _omit, ...rest } = payload;
+                    payload = rest;
+                    continue;
+                }
+                break;
+            }
 
             if (saveError) throw saveError;
+            if (omitidas.length) {
+                console.warn('Columnas omitidas al guardar config (faltan migraciones):', omitidas);
+            }
             toast({ title: 'Éxito', description: 'Configuración actualizada correctamente.' });
         } catch (error) {
             console.error('CRITICAL Error saving config:', error);
