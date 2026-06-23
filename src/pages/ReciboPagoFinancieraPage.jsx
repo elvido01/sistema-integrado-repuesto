@@ -379,7 +379,7 @@ const ReciboPagoFinancieraPage = () => {
                     <td className="px-2 py-1">{r.referencia}</td>
                     <td className="px-2 py-1">{r.descripcion}</td>
                     <td className="px-2 py-1 text-right">{fmt(r.monto)}</td>
-                    <td className="px-2 py-1 text-right cursor-pointer hover:underline"
+                    <td className="px-2 py-1 text-right cursor-pointer"
                         onDoubleClick={() => setAbonoFila(r, r.pendiente)}
                         title="Doble clic: abonar todo el pendiente">{fmt(r.pendiente)}</td>
                     <td className="px-2 py-1 text-right cursor-pointer"
@@ -387,14 +387,14 @@ const ReciboPagoFinancieraPage = () => {
                         title="Doble clic: editar abono">
                       {editKey === r.key ? (
                         <input
-                          type="number" autoFocus
+                          type="text" inputMode="decimal" autoFocus
                           defaultValue={(Number(abonos[r.key]) || 0) || ''}
                           onBlur={(e) => { setAbonoFila(r, e.target.value); setEditKey(null); }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') { setAbonoFila(r, e.target.value); setEditKey(null); }
                             if (e.key === 'Escape') setEditKey(null);
                           }}
-                          className="w-24 text-right border rounded px-1 py-0.5 text-xs"
+                          className="w-full text-right border rounded px-1 py-0.5 text-xs font-bold text-emerald-700 box-border"
                         />
                       ) : (
                         <span className="font-bold text-emerald-700">{fmt(Number(abonos[r.key]) || 0)}</span>

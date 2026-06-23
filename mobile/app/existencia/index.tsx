@@ -1,10 +1,11 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, Modal, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Alert, Modal, StyleSheet, ScrollView, ActivityIndicator, FlatList } from 'react-native';
 import { Camera, CameraView } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Boxes, Calculator, Loader2, ScanLine, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Boxes, Calculator, Loader2, ScanBarcode, ScanLine, Search, X } from 'lucide-react-native';
 import { supabase } from '@/src/supabase/client';
+import { fetchProductos, Producto } from '@/src/services/productService';
 
 type ProductoEncontrado = {
   id: string;
@@ -22,6 +23,12 @@ export default function ActualizarExistenciaScreen() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogMarca, setCatalogMarca] = useState('');
+  const [catalogModelo, setCatalogModelo] = useState('');
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogProducts, setCatalogProducts] = useState<Producto[]>([]);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
 
@@ -86,6 +93,55 @@ export default function ActualizarExistenciaScreen() {
       setLoading(false);
     }
   }, []);
+
+  const loadCatalogProducts = useCallback(async (searchText = '', marcaText = '', modeloText = '') => {
+    setCatalogLoading(true);
+    try {
+      const result = await fetchProductos(1, 60, searchText.trim(), marcaText.trim(), modeloText.trim());
+      setCatalogProducts(result.productos);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo cargar el catalogo.');
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
+
+  const openCatalog = () => {
+    setCatalogOpen(true);
+    loadCatalogProducts(catalogSearch, catalogMarca, catalogModelo);
+  };
+
+  useEffect(() => {
+    if (!catalogOpen) return;
+    const timer = setTimeout(() => {
+      loadCatalogProducts(catalogSearch, catalogMarca, catalogModelo);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [catalogOpen, catalogSearch, catalogMarca, catalogModelo, loadCatalogProducts]);
+
+  const selectProductFromCatalog = (item: Producto) => {
+    const existencia = Number(item.existencia || 0);
+    setCodigo(item.codigo || '');
+    setProduct({
+      id: item.id,
+      codigo: item.codigo,
+      descripcion: item.descripcion,
+      costo: Number(item.costo || 0),
+      existencia,
+    });
+    setNuevaExistencia(String(existencia));
+    setCatalogOpen(false);
+  };
+
+  const fmtMoney = (n: number) =>
+    `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const first6 = (s?: string | null) => (s ? String(s).slice(0, 6) : '');
+  const last6 = (s?: string | null) => (s ? String(s).slice(-6) : '');
+  const shortLocation = (s?: string | null) => {
+    const value = String(s || '').trim();
+    return value || '-';
+  };
 
   const requestScanner = async () => {
     const { status } = await Camera.requestCameraPermissionsAsync();
@@ -235,7 +291,7 @@ export default function ActualizarExistenciaScreen() {
               autoCapitalize="characters"
               returnKeyType="search"
             />
-            <TouchableOpacity className="p-2" onPress={() => handleProductSearch(codigo)} disabled={loading || saving}>
+            <TouchableOpacity className="p-2" onPress={openCatalog} disabled={loading || saving}>
               {loading ? <ActivityIndicator color="#1d4ed8" /> : <Search color="#1d4ed8" size={21} />}
             </TouchableOpacity>
             <TouchableOpacity className="p-2" onPress={requestScanner} disabled={loading || saving}>
@@ -321,6 +377,166 @@ export default function ActualizarExistenciaScreen() {
               <Text className="text-white text-lg font-medium">Escanear producto</Text>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      <Modal visible={catalogOpen} animationType="slide" onRequestClose={() => setCatalogOpen(false)}>
+        <View className="flex-1 bg-gray-50">
+          <View className="bg-brand pt-12 pb-4 px-4">
+            <Text className="text-white text-xl font-bold">Catalogo</Text>
+          </View>
+
+          <TouchableOpacity
+            className="bg-emerald-600 px-4 py-2 flex-row items-center justify-between active:bg-emerald-700"
+            onPress={() => setCatalogOpen(false)}
+          >
+            <View className="flex-row items-center">
+              <ArrowLeft color="white" size={20} />
+              <Text className="text-white font-bold text-[15px] ml-2">Volver a existencia</Text>
+            </View>
+            <View className="bg-white/20 px-3 py-1 rounded-full">
+              <Text className="text-white font-bold text-[13px]">Seleccionar</Text>
+            </View>
+          </TouchableOpacity>
+
+          <View className="bg-brand p-4 pb-3 shadow-sm">
+            <View className="flex-row items-center">
+              <View className="flex-1 bg-white rounded-xl flex-row items-center px-3 py-2">
+                <Search color="#9ca3af" size={20} />
+                <TextInput
+                  className="flex-1 ml-2 text-base text-gray-900"
+                  placeholder="Buscar articulo, codigo o ref..."
+                  placeholderTextColor="#9ca3af"
+                  value={catalogSearch}
+                  onChangeText={setCatalogSearch}
+                  onSubmitEditing={() => loadCatalogProducts(catalogSearch, catalogMarca, catalogModelo)}
+                  returnKeyType="search"
+                  autoCapitalize="characters"
+                />
+                {catalogSearch ? (
+                  <TouchableOpacity onPress={() => setCatalogSearch('')} className="p-1">
+                    <X color="#9ca3af" size={16} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                className="ml-3 bg-white p-2.5 rounded-xl"
+                onPress={() => {
+                  setCatalogOpen(false);
+                  requestScanner();
+                }}
+              >
+                <ScanBarcode color="#1d4ed8" size={24} />
+              </TouchableOpacity>
+            </View>
+
+            <View className="flex-row mt-2 gap-2">
+              <View className="flex-1 bg-white rounded-lg flex-row items-center px-3" style={{ minHeight: 40 }}>
+                <TextInput
+                  className="flex-1 text-[14px] text-gray-900"
+                  style={{ paddingVertical: 0, includeFontPadding: false } as any}
+                  placeholder="Marca"
+                  placeholderTextColor="#9ca3af"
+                  value={catalogMarca}
+                  onChangeText={setCatalogMarca}
+                  returnKeyType="search"
+                  onSubmitEditing={() => loadCatalogProducts(catalogSearch, catalogMarca, catalogModelo)}
+                />
+                {catalogMarca ? (
+                  <TouchableOpacity onPress={() => setCatalogMarca('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} className="ml-1">
+                    <X color="#9ca3af" size={14} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <View className="flex-1 bg-white rounded-lg flex-row items-center px-3" style={{ minHeight: 40 }}>
+                <TextInput
+                  className="flex-1 text-[14px] text-gray-900"
+                  style={{ paddingVertical: 0, includeFontPadding: false } as any}
+                  placeholder="Modelo"
+                  placeholderTextColor="#9ca3af"
+                  value={catalogModelo}
+                  onChangeText={setCatalogModelo}
+                  returnKeyType="search"
+                  onSubmitEditing={() => loadCatalogProducts(catalogSearch, catalogMarca, catalogModelo)}
+                />
+                {catalogModelo ? (
+                  <TouchableOpacity onPress={() => setCatalogModelo('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} className="ml-1">
+                    <X color="#9ca3af" size={14} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          </View>
+
+          {catalogLoading ? (
+            <View className="flex-row items-center justify-center py-2 bg-white border-b border-gray-200">
+              <ActivityIndicator size="small" color="#1d4ed8" />
+              <Text className="text-gray-500 text-xs ml-2">Buscando...</Text>
+            </View>
+          ) : null}
+
+          <FlatList
+            data={catalogProducts}
+            keyExtractor={(item) => item.id}
+            keyboardShouldPersistTaps="handled"
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 20 }}
+            ListEmptyComponent={
+              catalogLoading ? null : (
+                <View className="p-8 items-center">
+                  <Text className="text-gray-500 text-center">No se encontraron productos.</Text>
+                </View>
+              )
+            }
+            renderItem={({ item }) => {
+              const exist = Number(item.existencia) || 0;
+              return (
+                <TouchableOpacity
+                  className="bg-white border-b border-gray-200 px-3 py-2 active:bg-blue-50"
+                  onPress={() => selectProductFromCatalog(item)}
+                >
+                  <View className="flex-row items-start">
+                    <Text className="text-emerald-700 font-bold text-[13px] flex-[1.4]">
+                      {first6(item.codigo)}
+                    </Text>
+                    <Text
+                      className="text-blue-700 font-bold text-[13px] flex-[3.6] pl-1 leading-tight"
+                      numberOfLines={2}
+                      ellipsizeMode="tail"
+                    >
+                      {item.descripcion}
+                    </Text>
+                  </View>
+
+                  <View className="flex-row items-center mt-0.5">
+                    <Text
+                      className="text-gray-600 text-[12px] flex-[1.15]"
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {last6(item.referencia)}
+                    </Text>
+                    <Text
+                      className="text-gray-500 font-semibold text-[12px] flex-[1.15] pl-1"
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {shortLocation(item.ubicacion)}
+                    </Text>
+                    <Text className={`font-bold text-[14px] text-center flex-[0.55] ${exist > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {exist}
+                    </Text>
+                    <Text className="font-bold text-[14px] text-right flex-[1.2] text-emerald-600">
+                      {fmtMoney(item.precio_venta_1)}
+                    </Text>
+                    <Text className="font-bold text-[14px] text-right flex-[1.2] text-emerald-600">
+                      {fmtMoney(item.precio_venta_2 || item.precio_venta_1)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
         </View>
       </Modal>
     </View>
