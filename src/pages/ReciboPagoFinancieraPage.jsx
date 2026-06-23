@@ -40,6 +40,7 @@ const ReciboPagoFinancieraPage = () => {
   const [prestamoFiltro, setPrestamoFiltro] = useState('todos');
   const [abonos, setAbonos] = useState({}); // { rowKey: monto abonado }
   const [editKey, setEditKey] = useState(null); // fila cuyo abono se esta editando
+  const [selKey, setSelKey] = useState(null); // fila seleccionada (resaltado azul)
   const [forma, setForma] = useState('Efectivo');
   const [cuenta, setCuenta] = useState('');
   const [banco, setBanco] = useState('');
@@ -370,19 +371,22 @@ const ReciboPagoFinancieraPage = () => {
                 {loading && <tr><td colSpan={8} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
                 {!loading && !cliente && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">--- SELECCIONE UN CLIENTE PARA VER REGISTROS ---</td></tr>}
                 {!loading && cliente && filas.length === 0 && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">Sin cuotas pendientes.</td></tr>}
-                {filas.map((r, i) => (
+                {filas.map((r, i) => {
+                  const isSel = selKey === r.key;
+                  return (
                   <tr key={r.key}
-                      className={`select-none border-b last:border-0 ${i % 2 === 1 ? 'bg-[#e0fadd]' : 'bg-white'} ${r.esMora ? 'text-red-600 font-semibold' : ''}`}>
+                      onClick={() => setSelKey(r.key)}
+                      className={`select-none border-b last:border-0 cursor-pointer ${isSel ? 'bg-blue-500 text-white' : (i % 2 === 1 ? 'bg-[#e0fadd]' : 'bg-white')} ${r.esMora && !isSel ? 'text-red-600 font-semibold' : ''}`}>
                     <td className="px-2 py-1">{r.fecha}</td>
                     <td className="px-2 py-1">{r.vence}</td>
-                    <td className={`px-2 py-1 ${r.esMora ? '' : 'font-bold text-blue-900'}`}>{r.origen}</td>
+                    <td className={`px-2 py-1 ${isSel ? 'text-white' : (r.esMora ? '' : 'font-bold text-blue-900')}`}>{r.origen}</td>
                     <td className="px-2 py-1">{r.referencia}</td>
                     <td className="px-2 py-1">{r.descripcion}</td>
                     <td className="px-2 py-1 text-right">{fmt(r.monto)}</td>
-                    <td className="px-2 py-1 text-right cursor-pointer"
+                    <td className="px-2 py-1 text-right"
                         onDoubleClick={() => setAbonoFila(r, r.pendiente)}
                         title="Doble clic: abonar todo el pendiente">{fmt(r.pendiente)}</td>
-                    <td className="px-2 py-1 text-right cursor-pointer"
+                    <td className="px-2 py-1 text-right"
                         onDoubleClick={() => setEditKey(r.key)}
                         title="Doble clic: editar abono">
                       {editKey === r.key ? (
@@ -397,11 +401,12 @@ const ReciboPagoFinancieraPage = () => {
                           className="w-full text-right border rounded px-1 py-0.5 text-xs font-bold text-emerald-700 box-border"
                         />
                       ) : (
-                        <span className="font-bold text-emerald-700">{fmt(Number(abonos[r.key]) || 0)}</span>
+                        <span className={`font-bold ${isSel ? 'text-white' : 'text-emerald-700'}`}>{fmt(Number(abonos[r.key]) || 0)}</span>
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             </div>

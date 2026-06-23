@@ -1,17 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  BadgeDollarSign,
-  CalendarClock,
-  ReceiptText,
-  Target,
-  TrendingUp,
-  Truck,
-  Wallet,
-} from 'lucide-react-native';
+import Feather from '@expo/vector-icons/Feather';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { fetchMobileDashboard, MobileDashboardData } from '@/src/services/dashboardService';
 
@@ -48,7 +38,7 @@ type MetricCardProps = {
   value: string;
   subtitle: string;
   tone: 'blue' | 'green' | 'orange' | 'red' | 'slate' | 'amber';
-  icon: React.ComponentType<{ color?: string; size?: number }>;
+  icon: keyof typeof Feather.glyphMap;
   onPress?: () => void;
 };
 
@@ -61,28 +51,33 @@ const toneMap = {
   amber: { bg: 'bg-amber-50', text: 'text-amber-700', icon: '#d97706' },
 };
 
-function MetricCard({ title, value, subtitle, tone, icon: Icon, onPress }: MetricCardProps) {
+function MetricCard({ title, value, subtitle, tone, icon, onPress }: MetricCardProps) {
   const colors = toneMap[tone];
   const Wrapper = onPress ? TouchableOpacity : View;
 
   return (
     <Wrapper
-      className="w-[48.5%] bg-white border border-gray-200 rounded-xl p-3 mb-3 shadow-sm"
+      className="w-[48.5%] bg-white border border-gray-200 rounded-xl p-2.5 mb-3 shadow-sm"
       onPress={onPress}
       activeOpacity={0.85}
     >
       <View className="flex-row items-start">
-        <View className={`${colors.bg} w-11 h-11 rounded-full items-center justify-center mr-3`}>
-          <Icon color={colors.icon} size={22} />
+        <View className={`${colors.bg} w-8 h-8 rounded-full items-center justify-center mr-2`}>
+          <Feather name={icon} color={colors.icon} size={17} />
         </View>
-        <View className="flex-1">
-          <Text className="text-gray-500 font-black text-[10px] uppercase tracking-wider" numberOfLines={2}>
+        <View className="flex-1 min-w-0">
+          <Text className="text-gray-500 font-black text-[9px] uppercase tracking-wider" numberOfLines={2}>
             {title}
           </Text>
-          <Text className={`${colors.text} text-xl font-black mt-0.5`} numberOfLines={1} adjustsFontSizeToFit>
+          <Text
+            className={`${colors.text} text-[19px] font-black mt-0.5`}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+          >
             {value}
           </Text>
-          <Text className="text-gray-500 text-[11px] mt-1" numberOfLines={2}>
+          <Text className="text-gray-500 text-[10px] mt-1" numberOfLines={2}>
             {subtitle}
           </Text>
         </View>
@@ -157,7 +152,7 @@ export default function DashboardScreen() {
         <View className="flex-row items-start justify-between">
           <View className="flex-row items-center flex-1 pr-3">
             <View className="bg-blue-50 w-11 h-11 rounded-xl items-center justify-center mr-3">
-              <Target color="#1d4ed8" size={24} />
+              <Feather name="target" color="#1d4ed8" size={24} />
             </View>
             <View className="flex-1">
               <Text className="text-gray-500 text-[10px] font-black uppercase tracking-wider">Metas y Proyecciones</Text>
@@ -195,7 +190,7 @@ export default function DashboardScreen() {
             Proyeccion: {money(data.proyeccionCierre)}
           </Text>
           <View className="flex-row items-center justify-center mt-1">
-            {proyeccionOk ? <TrendingUp color="#059669" size={15} /> : <AlertTriangle color="#ef4444" size={15} />}
+            <Feather name={proyeccionOk ? 'trending-up' : 'alert-triangle'} color={proyeccionOk ? '#059669' : '#ef4444'} size={15} />
             <Text className={`${proyeccionOk ? 'text-emerald-700' : 'text-red-600'} text-xs font-bold ml-1`}>
               {projectionLabel}
             </Text>
@@ -209,7 +204,7 @@ export default function DashboardScreen() {
           value={shortMoney(data.ventasDia)}
           subtitle="ingresos de hoy"
           tone="orange"
-          icon={ArrowUpRight}
+          icon="arrow-up-right"
           onPress={() => router.push('/(tabs)/pos')}
         />
         <MetricCard
@@ -217,35 +212,35 @@ export default function DashboardScreen() {
           value={money(data.cajaActual)}
           subtitle="contado + recibos - gastos"
           tone="blue"
-          icon={Wallet}
+          icon="credit-card"
         />
         <MetricCard
           title="Excedente"
           value={money(data.excedente)}
           subtitle={cajaVsCompromisos >= 0 ? 'caja cubre compromisos' : `faltan ${money(Math.abs(cajaVsCompromisos))}`}
           tone={cajaVsCompromisos >= 0 ? 'green' : 'red'}
-          icon={BadgeDollarSign}
+          icon="dollar-sign"
         />
         <MetricCard
           title="Gastos del dia"
           value={money(data.gastosDia)}
           subtitle="gastos registrados hoy"
           tone={data.gastosDia > 0 ? 'red' : 'slate'}
-          icon={ReceiptText}
+          icon="file-text"
         />
         <MetricCard
           title="Compromisos a pagar"
           value={money(data.compromisosPagar)}
           subtitle={`${data.compromisoSemanaCount} pendientes al cierre semanal`}
           tone={data.compromisosPagar > 0 ? 'amber' : 'green'}
-          icon={CalendarClock}
+          icon="clock"
         />
         <MetricCard
           title="Compromisos suplidores"
           value={money(data.compromisosSuplidores)}
           subtitle={`${data.suplidorSemanaCount} compras a credito vencen`}
           tone={data.compromisosSuplidores > 0 ? 'amber' : 'green'}
-          icon={Truck}
+          icon="truck"
         />
       </View>
 
