@@ -41,6 +41,7 @@ const ReciboPagoFinancieraPage = () => {
   const [abonos, setAbonos] = useState({}); // { rowKey: monto abonado }
   const [editKey, setEditKey] = useState(null); // fila cuyo abono se esta editando
   const [selKey, setSelKey] = useState(null); // fila seleccionada (resaltado azul)
+  const [montoText, setMontoText] = useState(''); // texto del campo Monto Pagado
   const [forma, setForma] = useState('Efectivo');
   const [cuenta, setCuenta] = useState('');
   const [banco, setBanco] = useState('');
@@ -98,7 +99,7 @@ const ReciboPagoFinancieraPage = () => {
   const seleccionarCliente = (c) => {
     setCliente(c); setBuscarOpen(false);
     setCodigoInput(c.codigo || c.rnc || '');
-    setAbonos({}); setEditKey(null); setComentarios(''); setPrestamoFiltro('todos');
+    setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setPrestamoFiltro('todos');
     cargarEstado(c.id);
   };
 
@@ -126,7 +127,7 @@ const ReciboPagoFinancieraPage = () => {
 
   const nuevo = () => {
     setCliente(null); setEstado(null); setUltimoPago(null); setCodigoInput('');
-    setAbonos({}); setEditKey(null); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
+    setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
     setPrestamoFiltro('todos'); cargarProximoNumero();
   };
 
@@ -187,10 +188,27 @@ const ReciboPagoFinancieraPage = () => {
   const abonoInteres = desglose.int;
   const abonoMora = desglose.mora;
 
-  // Fija el abono de una fila (tope: su pendiente)
+  const sumaAbonos = (mapa) => round2(filas.reduce((a, f) => a + (Number(mapa[f.key]) || 0), 0));
+
+  // Fija el abono de una fila (tope: su pendiente) y sincroniza el Monto Pagado
   const setAbonoFila = (r, val) => {
     const n = Math.min(Math.max(round2(Number(val) || 0), 0), round2(r.pendiente));
-    setAbonos((prev) => ({ ...prev, [r.key]: n }));
+    const next = { ...abonos, [r.key]: n };
+    setAbonos(next);
+    const s = sumaAbonos(next);
+    setMontoText(s ? String(s) : '');
+  };
+
+  // Teclear un total en Monto Pagado -> repartir entre cuotas (mas vieja primero)
+  const distribuirTotal = (total) => {
+    let rest = round2(Number(total) || 0);
+    const next = {};
+    filas.forEach((r) => {
+      const ab = Math.min(rest, r.pendiente);
+      if (ab > 0) next[r.key] = round2(ab);
+      rest = round2(rest - ab);
+    });
+    setAbonos(next);
   };
 
   // Estado del cliente segun su condicion (no se elige a mano):
@@ -251,7 +269,7 @@ const ReciboPagoFinancieraPage = () => {
       });
       if (error) throw error;
       toast({ title: 'Pago registrado', description: `Recibo ${data?.numero} · Total ${fmt(data?.total_pagado)}` });
-      setAbonos({}); setEditKey(null); setComentarios('');
+      setAbonos({}); setEditKey(null); setMontoText(''); setComentarios('');
       await cargarEstado(cliente.id);
       await cargarProximoNumero();
     } catch (e) {
@@ -340,7 +358,13 @@ const ReciboPagoFinancieraPage = () => {
                   </SelectContent>
                 </Select>
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap shrink-0">Monto<br />Pagado</Label>
-                <div className="text-right font-bold text-lg h-9 flex-1 min-w-[96px] shrink-0 flex items-center justify-end px-2 border rounded bg-slate-50">{fmt(montoNum)}</div>
+                <Input
+                  type="text" inputMode="decimal"
+                  value={montoText}
+                  onChange={(e) => { const raw = e.target.value.replace(/[^\d.]/g, ''); setMontoText(raw); distribuirTotal(raw); }}
+                  placeholder="0.00"
+                  className="text-right font-bold text-lg h-9 flex-1 min-w-[96px] shrink-0"
+                />
               </div>
               {forma !== 'Efectivo' && (
                 <div className="grid grid-cols-2 gap-2">
