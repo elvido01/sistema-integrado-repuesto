@@ -1111,6 +1111,22 @@ export const printPagoCompromisoPOS = (pago, paperSize = '4inch') => {
   }, paperSize));
 };
 
+// Comprobante POS de un Gasto Diario (ticket 80mm / 4 pulgadas)
+export const printGastoDiarioPOS = (gasto, paperSize = '4inch') => {
+  const numero = gasto.numero || formatInTimeZone(new Date(Date.now()), 'yyyyMMdd-HHmmss');
+  _printPosHTML(_comprobantePagoHTML({
+    titulo: 'COMPROBANTE DE GASTO',
+    numero,
+    fecha: gasto.fecha,
+    partyLabel: 'TIPO DE GASTO',
+    partyName: gasto.tipo_gasto,
+    lineas: gasto.descripcion ? [{ label: 'Descripcion', value: gasto.descripcion }] : [],
+    formasPago: [],
+    total: gasto.monto,
+    nota: '',
+  }, paperSize));
+};
+
 // Nota: el comprobante POS de pago a suplidor ya existe más abajo como
 // printPagoSuplidorPOS(pago, suplidorNombre, detalles, formasPago, paperSize).
 

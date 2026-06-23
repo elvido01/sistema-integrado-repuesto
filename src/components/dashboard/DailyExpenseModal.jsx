@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { generateGastoDiarioPDF } from '@/components/common/pdf/gastoDiarioPDF';
+import { printGastoDiarioPOS } from '@/lib/printPOS';
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
@@ -94,14 +95,22 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
         description: 'El gasto fue descontado de caja.',
       });
 
-      // Comprobante de gasto (PDF con espacio para firma)
+      // Comprobante de gasto segun el formato configurado (Config. del Sistema)
       try {
-        generateGastoDiarioPDF({
+        const gastoComprobante = {
           fecha: formData.fecha,
           tipo_gasto: formData.tipo_gasto,
           monto,
           descripcion: formData.descripcion.trim(),
-        }, empresa || {});
+        };
+        const formato = empresa?.formato_comprobante_pago || 'pdf';
+        if (formato === 'pos_80mm') {
+          printGastoDiarioPOS(gastoComprobante, '80mm');
+        } else if (formato === 'pos_4inch') {
+          printGastoDiarioPOS(gastoComprobante, '4inch');
+        } else {
+          generateGastoDiarioPDF(gastoComprobante, empresa || {});
+        }
       } catch (pdfErr) {
         console.warn('No se pudo generar el comprobante de gasto:', pdfErr);
       }

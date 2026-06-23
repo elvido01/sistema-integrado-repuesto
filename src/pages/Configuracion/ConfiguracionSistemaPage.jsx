@@ -600,7 +600,7 @@ const ConfiguracionSistemaPage = () => {
                                     </SelectContent>
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">
-                                    Formato del comprobante que se imprime al pagar compromisos y suplidores desde el Inicio.
+                                    Formato del comprobante que se imprime al pagar compromisos, suplidores y gastos diarios desde el Inicio.
                                 </p>
                             </div>
                         </div>
