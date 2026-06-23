@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { generateGastoDiarioPDF } from '@/components/common/pdf/gastoDiarioPDF';
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
@@ -27,7 +28,7 @@ const TIPOS_GASTO = [
 
 const DailyExpenseModal = ({ isOpen, onClose }) => {
   const { toast } = useToast();
-  const { user, tenantId } = useAuth();
+  const { user, tenantId, empresa } = useAuth();
   const montoInputRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -92,6 +93,19 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
         title: 'Gasto diario registrado',
         description: 'El gasto fue descontado de caja.',
       });
+
+      // Comprobante de gasto (PDF con espacio para firma)
+      try {
+        generateGastoDiarioPDF({
+          fecha: formData.fecha,
+          tipo_gasto: formData.tipo_gasto,
+          monto,
+          descripcion: formData.descripcion.trim(),
+        }, empresa || {});
+      } catch (pdfErr) {
+        console.warn('No se pudo generar el comprobante de gasto:', pdfErr);
+      }
+
       onClose(true);
     } catch (error) {
       toast({
