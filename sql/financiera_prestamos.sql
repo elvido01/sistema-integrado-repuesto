@@ -439,6 +439,24 @@ BEGIN
        WHERE q.prestamo_id = p.id AND q.estado <> 'pagada'
      );
 
+  -- CONTABILIDAD: registrar tambien como Recibo de Ingreso (caja/transacciones)
+  INSERT INTO public.recibos_ingreso (
+    tenant_id, numero, cliente_id, fecha, monto_pagado, concepto, formas_pago, usuario_id
+  ) VALUES (
+    v_tenant,
+    public.get_next_recibo_ingreso_numero(),
+    p_cliente_id,
+    COALESCE(p_fecha, current_date),
+    v_total,
+    'Pago de prestamo (financiera)',
+    jsonb_build_array(jsonb_build_object(
+      'forma', COALESCE(p_forma_pago, 'Efectivo'),
+      'monto', v_total,
+      'referencia', COALESCE(NULLIF(btrim(p_cuenta), ''), v_numero)
+    )),
+    auth.uid()
+  );
+
   -- balance actual
   v_bal_act := COALESCE((public.get_prestamos_cliente(p_cliente_id)->>'balance_total')::numeric, 0);
   UPDATE public.prestamo_pagos SET balance_actual = v_bal_act WHERE id = v_pago_id;
