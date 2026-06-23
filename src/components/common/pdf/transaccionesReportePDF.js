@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 
@@ -88,5 +89,5 @@ export const generateTransaccionesReportePDF = (transactions, filters, totals, e
     doc.text(formatCurrency(totals.debitos), pageWidth - margin - 35, finalY + 7, { align: 'right' });
     doc.text(formatCurrency(totals.creditos), pageWidth - margin, finalY + 7, { align: 'right' });
 
-    doc.output('dataurlnewwindow', { filename: `ReporteTransacciones-${fDesde}.pdf` });
+    openPdf(doc, `ReporteTransacciones-${fDesde}.pdf`);
 };

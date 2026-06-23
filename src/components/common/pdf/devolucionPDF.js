@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { generateHeader, formatCurrency, formatDate } from './pdfUtils';
 
@@ -86,5 +87,5 @@ export const generateDevolucionPDF = (devolucion, factura, cliente, details) => 
     doc.text(splitNotes, 14, totalsY + 15);
   }
 
-  doc.output('dataurlnewwindow', { filename: `Devolucion_${devolucion.numero || 'N_A'}.pdf` });
+  openPdf(doc, `Devolucion_${devolucion.numero || 'N_A'}.pdf`);
 };

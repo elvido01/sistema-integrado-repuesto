@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 
@@ -81,5 +82,5 @@ export const generateGastoDiarioPDF = (gasto, empresa = {}) => {
   doc.line(130, signatureY, 190, signatureY);
   doc.text('Recibido por', 145, signatureY + 5);
 
-  doc.output('dataurlnewwindow', { filename: `Gasto-${numero}.pdf` });
+  openPdf(doc, `Gasto-${numero}.pdf`);
 };

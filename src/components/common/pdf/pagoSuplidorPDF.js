@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 
@@ -118,5 +119,5 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
     doc.line(130, signatureY, 190, signatureY);
     doc.text("Recibido por (Suplidor)", 140, signatureY + 5);
 
-    doc.output('dataurlnewwindow', { filename: `PagoSuplidor-${pago.numero}.pdf` });
+    openPdf(doc, `PagoSuplidor-${pago.numero}.pdf`);
 };

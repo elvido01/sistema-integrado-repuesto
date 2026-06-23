@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { generateHeader, formatCurrency, formatDate, PAGE_WIDTH, MARGIN } from './pdfUtils';
 
@@ -106,5 +107,5 @@ export const generateReciboPDF = (recibo, client, abonos, formasPago) => {
     doc.line(130, signatureY, 190, signatureY);
     doc.text("Cajero / Cobrador", 145, signatureY + 5);
 
-    doc.output('dataurlnewwindow', { filename: `Recibo_${recibo.numero || 'N_A'}.pdf` });
+    openPdf(doc, `Recibo_${recibo.numero || 'N_A'}.pdf`);
 };

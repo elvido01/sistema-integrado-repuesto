@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 
@@ -111,5 +112,5 @@ export const generateSalidaPDF = (salida, almacen, detalles, empresa = {}) => {
     doc.setFont('helvetica', 'normal');
     doc.text("Autorizado por", margin + 18, signatureY + 5);
 
-    doc.output('dataurlnewwindow', { filename: `Salida-${salida.numero}.pdf` });
+    openPdf(doc, `Salida-${salida.numero}.pdf`);
 };
