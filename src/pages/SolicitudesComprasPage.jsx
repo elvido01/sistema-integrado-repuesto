@@ -802,7 +802,7 @@ const SolicitudesComprasPage = () => {
                       <TableRow
                         key={s.id}
                         onClick={() => setSelectedSolicitud(s)}
-                        onDoubleClick={() => { if (s.estado === 'Pendiente') { setEditingSolicitud(s); setIsModalOpen(true); } }}
+                        onDoubleClick={() => { if (['Pendiente', 'C/RUTA'].includes(s.estado)) { setEditingSolicitud(s); setIsModalOpen(true); } }}
                         className={`cursor-pointer ${selectedSolicitud?.id === s.id ? 'bg-blue-100' : ''}`}
                       >
                         <TableCell>{s.fecha ? formatInTimeZone(new Date(s.fecha), 'dd/MM/yyyy') : '---'}</TableCell>
@@ -904,14 +904,14 @@ const SolicitudesComprasPage = () => {
             </Button>
             <Button
               onClick={() => { if (selectedSolicitud) { setEditingSolicitud(selectedSolicitud); setIsModalOpen(true); } }}
-              disabled={!selectedSolicitud || selectedSolicitud.estado !== 'Pendiente'}
+              disabled={!selectedSolicitud || !['Pendiente', 'C/RUTA'].includes(selectedSolicitud.estado)}
               className="w-full justify-between"
             >
               <span>ENTER - Modificar</span><Edit />
             </Button>
             <Button
               onClick={handleAprobar}
-              disabled={!selectedSolicitud || selectedSolicitud.estado !== 'Pendiente'}
+              disabled={!selectedSolicitud || !['Pendiente', 'C/RUTA'].includes(selectedSolicitud.estado)}
               className="w-full justify-between bg-green-600 hover:bg-green-700"
             >
               <span>F5 - Aprobar Solicitud</span><Send />
@@ -919,7 +919,7 @@ const SolicitudesComprasPage = () => {
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button id="sol-delete-trigger" variant="destructive" disabled={!selectedSolicitud || selectedSolicitud.estado !== 'Pendiente'} className="w-full justify-between">
+                <Button id="sol-delete-trigger" variant="destructive" disabled={!selectedSolicitud || !['Pendiente', 'C/RUTA'].includes(selectedSolicitud.estado)} className="w-full justify-between">
                   <span>DEL - Anular</span><Trash2 />
                 </Button>
               </AlertDialogTrigger>
@@ -941,9 +941,8 @@ const SolicitudesComprasPage = () => {
               onClick={async () => {
                 if (!selectedSolicitud) return;
                 const id = selectedSolicitud.id;
-                try {
-                  await supabase.from('solicitudes_compras').update({ estado: 'C/RUTA' }).eq('id', id);
-                } catch (e) { /* si falla el update, igual abrimos la carta */ }
+                const { error } = await supabase.from('solicitudes_compras').update({ estado: 'C/RUTA' }).eq('id', id);
+                if (error) toast({ variant: 'destructive', title: 'No se pudo cambiar el estado', description: error.message });
                 openPanel('carta-ruta', { solicitudId: id });
                 fetchData();
               }}
