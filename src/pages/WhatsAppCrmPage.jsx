@@ -447,11 +447,13 @@ const WhatsAppCrmPage = () => {
       supabase
         .from('crm_whatsapp_conversations_view')
         .select('*')
+        .eq('tenant_id', tenantId)
         .order('last_message_at', { ascending: false })
         .limit(80),
       supabase
         .from('sales_conversations_view')
         .select('*')
+        .eq('tenant_id', tenantId)
         .neq('platform', 'whatsapp')
         .order('last_message_at', { ascending: false })
         .limit(80),

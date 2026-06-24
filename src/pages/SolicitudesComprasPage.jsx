@@ -160,7 +160,11 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
 
   // ── Vencimiento de la 1ra cuota = fecha + 1 período según la frecuencia ──
   useEffect(() => {
-    const base = form.fecha ? new Date(`${form.fecha}T00:00:00`) : new Date();
+    // form.fecha puede venir como 'YYYY-MM-DD' o como timestamp completo (al cargar
+    // una solicitud). Tomamos solo la parte de fecha para evitar "Invalid time value".
+    const soloFecha = form.fecha ? String(form.fecha).slice(0, 10) : '';
+    const base = soloFecha ? new Date(`${soloFecha}T00:00:00`) : new Date();
+    if (isNaN(base.getTime())) return; // fecha inválida: no calcular
     switch (form.frecuencia) {
       case 'diario': base.setDate(base.getDate() + 1); break;
       case 'semanal': base.setDate(base.getDate() + 7); break;
@@ -328,7 +332,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
               </div>
               <div className="bg-white/80 backdrop-blur px-3 py-0.5 rounded border border-blue-400 flex items-center gap-2 shadow-sm">
                 <span className="text-xs font-bold text-slate-500 uppercase">Fecha:</span>
-                <span className="text-sm font-bold text-slate-700">{format(new Date(form.fecha), 'dd/MM/yyyy')}</span>
+                <span className="text-sm font-bold text-slate-700">{(() => { const d = form.fecha ? new Date(`${String(form.fecha).slice(0, 10)}T00:00:00`) : new Date(); return isNaN(d.getTime()) ? '---' : format(d, 'dd/MM/yyyy'); })()}</span>
               </div>
               <Button variant="ghost" size="icon" onClick={onClose} className="h-6 w-6 hover:bg-red-500 hover:text-white transition-colors">
                 <X className="h-4 w-4" />
