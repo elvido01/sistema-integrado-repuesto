@@ -553,7 +553,7 @@ const SolicitudesComprasPage = () => {
       supabase
         .from('solicitudes_compras')
         .select('*')
-        .eq('estado', 'Pendiente')
+        .in('estado', ['Pendiente', 'C/RUTA'])
         .order('fecha', { ascending: false }),
       supabase.from('clientes').select('*').eq('activo', true),
       supabase.from('vendedores').select('id, nombre').eq('activo', true).order('nombre'),
