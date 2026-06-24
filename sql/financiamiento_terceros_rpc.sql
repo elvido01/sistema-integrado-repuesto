@@ -103,15 +103,25 @@ BEGIN
               || ' [FT:' || p_factura_id::text || ']';
 
   -- ================= FINANCIERA =================
-  -- 1) Cliente comprador
+  -- 1) Cliente comprador (robusto a duplicados: si choca por unique, re-selecciona)
   SELECT id INTO v_cli_fin FROM public.clientes
    WHERE tenant_id = v_fin
      AND (codigo = buyer_codigo OR rnc = buyer_codigo)
    LIMIT 1;
   IF v_cli_fin IS NULL THEN
-    INSERT INTO public.clientes (tenant_id, codigo, nombre, rnc, autorizar_credito, limite_credito, activo)
-    VALUES (v_fin, buyer_codigo, buyer_nombre, buyer_codigo, true, COALESCE(sol.total_pagares,0), true)
-    RETURNING id INTO v_cli_fin;
+    BEGIN
+      INSERT INTO public.clientes (tenant_id, codigo, nombre, rnc, autorizar_credito, limite_credito, activo)
+      VALUES (v_fin, buyer_codigo, buyer_nombre, buyer_codigo, true, COALESCE(sol.total_pagares,0), true)
+      RETURNING id INTO v_cli_fin;
+    EXCEPTION WHEN unique_violation THEN
+      SELECT id INTO v_cli_fin FROM public.clientes
+       WHERE tenant_id = v_fin
+         AND (codigo = buyer_codigo OR rnc = buyer_codigo)
+       LIMIT 1;
+    END;
+  END IF;
+  IF v_cli_fin IS NULL THEN
+    RAISE EXCEPTION 'No se pudo crear/encontrar el cliente comprador en la financiera (codigo=%, nombre=%)', buyer_codigo, buyer_nombre;
   END IF;
 
   -- 2) Prestamo + cuotas
@@ -170,9 +180,19 @@ BEGIN
   SELECT id INTO v_cli_dealerfin FROM public.clientes
    WHERE tenant_id = v_dealer AND nombre ILIKE v_fin_nombre LIMIT 1;
   IF v_cli_dealerfin IS NULL THEN
-    INSERT INTO public.clientes (tenant_id, codigo, nombre, autorizar_credito, limite_credito, activo)
-    VALUES (v_dealer, 'FIN-' || left(replace(v_fin::text,'-',''), 10), v_fin_nombre, true, 0, true)
-    RETURNING id INTO v_cli_dealerfin;
+    BEGIN
+      INSERT INTO public.clientes (tenant_id, codigo, nombre, autorizar_credito, limite_credito, activo)
+      VALUES (v_dealer, 'FIN-' || left(replace(v_fin::text,'-',''), 10), v_fin_nombre, true, 0, true)
+      RETURNING id INTO v_cli_dealerfin;
+    EXCEPTION WHEN unique_violation THEN
+      SELECT id INTO v_cli_dealerfin FROM public.clientes
+       WHERE tenant_id = v_dealer
+         AND (nombre ILIKE v_fin_nombre OR codigo = 'FIN-' || left(replace(v_fin::text,'-',''), 10))
+       LIMIT 1;
+    END;
+  END IF;
+  IF v_cli_dealerfin IS NULL THEN
+    RAISE EXCEPTION 'No se pudo crear/encontrar el cliente financiera en el dealer (%, %)', v_fin_nombre, v_dealer;
   END IF;
 
   UPDATE public.facturas SET cliente_id = v_cli_dealerfin WHERE id = p_factura_id AND tenant_id = v_dealer;
