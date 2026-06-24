@@ -13,9 +13,9 @@
 --        "Caminero Motors" por el capital (unico pago).
 --
 --   En el DEALER (Caminero):
---     4. Reasigna la factura al cliente "<Financiera>" (la financiera es
---        quien le paga al dealer) -> una sola Cuenta por Cobrar, sin
---        duplicar. El comprador real queda en la descripcion de la linea.
+--     La factura NO se reasigna: queda a nombre del CLIENTE (comprador real),
+--     porque Caminero le vende al cliente y usa la financiera como su financiera
+--     privada. El financiamiento (prestamo + CxP) vive en la financiera.
 --
 -- Seguridad: SECURITY DEFINER (escribe en el tenant de la financiera).
 -- Autorizacion estricta: el que llama debe ser un tenant con
@@ -176,38 +176,17 @@ BEGIN
   );
 
   -- ================= DEALER (Caminero) =================
-  -- 4) Reasignar la factura al cliente "<Financiera>" (CxC a la financiera)
-  SELECT id INTO v_cli_dealerfin FROM public.clientes
-   WHERE tenant_id = v_dealer AND nombre ILIKE v_fin_nombre LIMIT 1;
-  IF v_cli_dealerfin IS NULL THEN
-    BEGIN
-      INSERT INTO public.clientes (tenant_id, codigo, nombre, autorizar_credito, limite_credito, activo)
-      VALUES (v_dealer, 'FIN-' || left(replace(v_fin::text,'-',''), 10), v_fin_nombre, true, 0, true)
-      RETURNING id INTO v_cli_dealerfin;
-    EXCEPTION WHEN unique_violation THEN
-      SELECT id INTO v_cli_dealerfin FROM public.clientes
-       WHERE tenant_id = v_dealer
-         AND (nombre ILIKE v_fin_nombre OR codigo = 'FIN-' || left(replace(v_fin::text,'-',''), 10))
-       LIMIT 1;
-    END;
-  END IF;
-  IF v_cli_dealerfin IS NULL THEN
-    RAISE EXCEPTION 'No se pudo crear/encontrar el cliente financiera en el dealer (%, %)', v_fin_nombre, v_dealer;
-  END IF;
-
-  UPDATE public.facturas SET cliente_id = v_cli_dealerfin WHERE id = p_factura_id AND tenant_id = v_dealer;
-  -- El comprador real queda en la descripcion (facturas no tiene columna notas)
-  UPDATE public.facturas_detalle
-     SET descripcion = COALESCE(descripcion,'') || ' | COMPRADOR: ' || buyer_nombre
-   WHERE factura_id = p_factura_id;
+  -- La factura NO se reasigna: Caminero le vende al CLIENTE (comprador real) y
+  -- usa la financiera como financiera privada. La factura/CxC queda a nombre del
+  -- comprador. El financiamiento (prestamo + CxP a Caminero) ya quedo en la
+  -- financiera (arriba).
 
   RETURN json_build_object(
     'ok', true,
     'prestamo_numero', v_numero,
     'capital', v_capital,
     'cxp_numero', v_compra_num,
-    'cliente_financiera', v_cli_fin,
-    'factura_reasignada_a', v_fin_nombre
+    'cliente_financiera', v_cli_fin
   );
 END;
 $$;

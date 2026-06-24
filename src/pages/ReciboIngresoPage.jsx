@@ -532,7 +532,7 @@ const ReciboIngresoPage = ({ extraData }) => {
                           <TableCell className="text-[11px] font-bold px-2 py-0 border-r border-gray-300 text-gray-500">{f.fecha_vencimiento ? formatInTimeZone(new Date(f.fecha_vencimiento), 'd/L/yyyy') : '---'}</TableCell>
                           <TableCell className="text-[11px] font-black px-2 py-0 border-r border-gray-300 text-blue-700 uppercase">{f.origen}</TableCell>
                           <TableCell className="text-[11px] font-black px-2 py-0 border-r border-gray-300 uppercase">{f.referencia}</TableCell>
-                          <TableCell className="text-[11px] font-medium px-2 py-0 border-r border-gray-300 italic text-gray-400">---</TableCell>
+                          <TableCell className="text-[11px] font-medium px-2 py-0 border-r border-gray-300 text-gray-600">{f.descripcion || '---'}</TableCell>
                           <TableCell className="text-[11px] font-bold px-2 py-0 border-r border-gray-300 text-right text-blue-600 bg-blue-50/10 font-mono">{formatCurrency(f.monto_total)}</TableCell>
                           <TableCell className={`text-[11px] font-black px-2 py-0 border-r border-gray-300 text-right font-mono ${parseFloat(f.monto_pendiente) < 0 ? 'text-orange-600 bg-orange-100 line-through' : 'text-red-600 bg-red-50/10'}`}>
                             {formatCurrency(f.monto_pendiente)}
