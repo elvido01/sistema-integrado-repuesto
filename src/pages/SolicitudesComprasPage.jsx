@@ -94,6 +94,31 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
 
   const [form, setForm] = useState(empty);
   const [addonPrices, setAddonPrices] = useState({ placa: 0, gps: 0, casco: 0, seguro: 0 });
+  // Control cédula↔nombre: cliente existente con esa cédula pero OTRO nombre
+  const [cedulaCheck, setCedulaCheck] = useState(null); // { id, nombre } | null
+
+  // Al salir del campo cédula: si ya existe un cliente con esa cédula, coincide
+  // el nombre -> autocompletar/vincular; nombre distinto -> avisar (otra persona).
+  const verificarCedula = async () => {
+    const ced = (form.cliente_rnc || '').trim();
+    if (!ced || !tenantId) { setCedulaCheck(null); return; }
+    const { data } = await supabase
+      .from('clientes')
+      .select('id, nombre')
+      .eq('tenant_id', tenantId)
+      .or(`rnc.eq.${ced},codigo.eq.${ced}`)
+      .limit(1)
+      .maybeSingle();
+    if (!data) { setCedulaCheck(null); return; }
+    const nombreActual = (form.cliente_nombre || '').trim().toLowerCase();
+    const nombreExist = (data.nombre || '').trim().toLowerCase();
+    if (!nombreActual || nombreActual === nombreExist) {
+      setForm(prev => ({ ...prev, cliente_nombre: data.nombre || prev.cliente_nombre, cliente_id: data.id }));
+      setCedulaCheck(null);
+    } else {
+      setCedulaCheck({ id: data.id, nombre: data.nombre });
+    }
+  };
 
   // Cargar precios de add-ons desde config_empresa del tenant
   useEffect(() => {
@@ -281,6 +306,16 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
       toast({ variant: 'destructive', title: 'Datos incompletos', description: 'Debe seleccionar un cliente o escribir un nombre.' });
       return;
     }
+    // Control cédula↔nombre: si la cédula pertenece a otra persona, confirmar.
+    if (cedulaCheck) {
+      const ok = window.confirm(
+        `La cédula ${form.cliente_rnc} ya está registrada a nombre de «${cedulaCheck.nombre}», ` +
+        `pero escribiste «${form.cliente_nombre}».\n\n` +
+        `Si es la misma persona, mejor usa el nombre registrado. ` +
+        `¿Guardar de todos modos con el nombre que escribiste?`
+      );
+      if (!ok) return;
+    }
     if (!form.vendedor_id) {
       toast({ variant: 'destructive', title: 'Datos incompletos', description: 'Debe seleccionar un vendedor.' });
       return;
@@ -408,12 +443,29 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                   <Label className="text-[10px] font-bold text-slate-500 uppercase">RNC / Cédula</Label>
                   <Input
                     value={form.cliente_rnc}
-                    onChange={e => updateField('cliente_rnc', e.target.value)}
+                    onChange={e => { updateField('cliente_rnc', e.target.value); if (cedulaCheck) setCedulaCheck(null); }}
+                    onBlur={verificarCedula}
                     className="h-8 text-xs font-mono"
                     placeholder="000-0000000-0"
                   />
                 </div>
               </div>
+
+              {cedulaCheck && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <span className="font-bold">⚠️ Esta cédula ya pertenece a «{cedulaCheck.nombre}».</span>
+                  <span>Si es la misma persona usa ese nombre; si no, corrige la cédula.</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-[10px] ml-auto border-red-400 text-red-700 hover:bg-red-100"
+                    onClick={() => { setForm(prev => ({ ...prev, cliente_nombre: cedulaCheck.nombre, cliente_id: cedulaCheck.id })); setCedulaCheck(null); }}
+                  >
+                    Usar «{cedulaCheck.nombre}»
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Datos del Vehículo */}
