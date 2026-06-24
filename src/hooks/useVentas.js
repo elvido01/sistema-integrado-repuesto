@@ -42,6 +42,7 @@ export const useVentas = () => {
   const [totals, setTotals] = useState({ subTotal: 0, totalDescuento: 0, totalItbis: 0, totalFactura: 0 });
   const [cambio, setCambio] = useState(0);
   const [cotizacionId, setCotizacionId] = useState(null);
+  const [solicitudCompraId, setSolicitudCompraId] = useState(null); // origen financiado (terceros)
   const [printFormat, setPrintFormat] = useState(() => localStorage.getItem('ventas_printFormat') || empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser');
   const [recargo, setRecargo] = useState(0);
@@ -261,6 +262,7 @@ export const useVentas = () => {
     setCliente(CLIENTE_GENERICO);
     setVendedor(null);
     setCotizacionId(null);
+    setSolicitudCompraId(null);
     setCurrentItem(null);
     setEditingItemIndex(null);
     setRecargo(0);
@@ -920,6 +922,33 @@ export const useVentas = () => {
         }
       }
 
+      // FINANCIAMIENTO TERCEROS: si la empresa financia con terceros y esta
+      // venta vino de una solicitud financiada, crear el prestamo + cuentas en
+      // la financiera y reasignar la CxC. Se hace al grabar (una sola vez).
+      if (
+        !editingFacturaId &&
+        paymentType === 'credito' &&
+        solicitudCompraId &&
+        empresa?.financiamiento_tipo === 'terceros' &&
+        empresa?.financiera_tenant_id
+      ) {
+        try {
+          const { data: ftRes, error: ftErr } = await supabase.rpc('procesar_financiamiento_terceros', {
+            p_factura_id: activeFactura.id,
+            p_solicitud_id: solicitudCompraId,
+            p_financiera_tenant_id: empresa.financiera_tenant_id,
+          });
+          if (ftErr) {
+            toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: `La factura se grabó, pero no se creó el préstamo en la financiera: ${ftErr.message}` });
+          } else if (ftRes?.ok) {
+            toast({ title: '🏦 Financiamiento creado', description: `Préstamo ${ftRes.prestamo_numero} en la financiera y cuentas registradas.` });
+          }
+        } catch (ftCatch) {
+          console.error('Error en financiamiento terceros:', ftCatch.message);
+          toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: ftCatch.message });
+        }
+      }
+
       // Alerta NCF: notificar si quedan pocos comprobantes
       if (ncfData && ncfData.restantes <= ncfData.alerta_cuando_queden) {
         try {
@@ -1137,6 +1166,7 @@ export const useVentas = () => {
         .eq('id', pedido.id)
         .maybeSingle();
       if (pedRow?.solicitud_compra_id) {
+        setSolicitudCompraId(pedRow.solicitud_compra_id);
         const { data: sol } = await supabase
           .from('solicitudes_compras')
           .select('inicial, frecuencia, tiempo_meses')
