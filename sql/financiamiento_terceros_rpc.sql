@@ -13,9 +13,10 @@
 --        "Caminero Motors" por el capital (unico pago).
 --
 --   En el DEALER (Caminero):
---     La factura NO se reasigna: queda a nombre del CLIENTE (comprador real),
---     porque Caminero le vende al cliente y usa la financiera como su financiera
---     privada. El financiamiento (prestamo + CxP) vive en la financiera.
+--     La CUENTA POR COBRAR se reasigna a la FINANCIERA (MotoPrestamos), que es
+--     quien le paga al dealer. El COMPRADOR real (Angel) NO aparece en la CxC;
+--     se preserva en manual_cliente_nombre + descripcion de la linea para el
+--     historico/datos de la venta.
 --
 -- Seguridad: SECURITY DEFINER (escribe en el tenant de la financiera).
 -- Autorizacion estricta: el que llama debe ser un tenant con
@@ -176,17 +177,47 @@ BEGIN
   );
 
   -- ================= DEALER (Caminero) =================
-  -- La factura NO se reasigna: Caminero le vende al CLIENTE (comprador real) y
-  -- usa la financiera como financiera privada. La factura/CxC queda a nombre del
-  -- comprador. El financiamiento (prestamo + CxP a Caminero) ya quedo en la
-  -- financiera (arriba).
+  -- La CUENTA POR COBRAR queda a nombre de la FINANCIERA (MotoPrestamos), que es
+  -- quien le paga al dealer. El COMPRADOR real (Angel) se preserva en la venta:
+  -- manual_cliente_nombre + en la descripcion de la linea (chasis ya esta).
+  SELECT id INTO v_cli_dealerfin FROM public.clientes
+   WHERE tenant_id = v_dealer AND nombre ILIKE v_fin_nombre LIMIT 1;
+  IF v_cli_dealerfin IS NULL THEN
+    BEGIN
+      INSERT INTO public.clientes (tenant_id, codigo, nombre, autorizar_credito, limite_credito, activo)
+      VALUES (v_dealer, 'FIN-' || left(replace(v_fin::text,'-',''), 10), v_fin_nombre, true, 0, true)
+      RETURNING id INTO v_cli_dealerfin;
+    EXCEPTION WHEN unique_violation THEN
+      SELECT id INTO v_cli_dealerfin FROM public.clientes
+       WHERE tenant_id = v_dealer
+         AND (nombre ILIKE v_fin_nombre OR codigo = 'FIN-' || left(replace(v_fin::text,'-',''), 10))
+       LIMIT 1;
+    END;
+  END IF;
+  IF v_cli_dealerfin IS NULL THEN
+    RAISE EXCEPTION 'No se pudo crear/encontrar el cliente financiera en el dealer (%, %)', v_fin_nombre, v_dealer;
+  END IF;
+
+  -- Reasignar la CxC a la financiera; el comprador real queda en manual_cliente_nombre
+  UPDATE public.facturas
+     SET cliente_id = v_cli_dealerfin,
+         manual_cliente_nombre = buyer_nombre
+   WHERE id = p_factura_id AND tenant_id = v_dealer;
+
+  -- Comprador + cedula en la descripcion de la linea (para el recibo/historico)
+  UPDATE public.facturas_detalle
+     SET descripcion = COALESCE(descripcion,'') || ' | COMPRADOR: ' || buyer_nombre
+                       || CASE WHEN buyer_codigo IS NOT NULL THEN ' (' || buyer_codigo || ')' ELSE '' END
+   WHERE factura_id = p_factura_id;
 
   RETURN json_build_object(
     'ok', true,
     'prestamo_numero', v_numero,
     'capital', v_capital,
     'cxp_numero', v_compra_num,
-    'cliente_financiera', v_cli_fin
+    'cliente_financiera', v_cli_fin,
+    'cxc_a', v_fin_nombre,
+    'comprador', buyer_nombre
   );
 END;
 $$;

@@ -41,8 +41,15 @@ BEGIN
                    AND NULLIF(btrim(fd.codigo), '') IS NOT NULL),
                 ''
               )
-              || CASE WHEN COALESCE(btrim(cl.codigo), '') <> ''
-                      THEN ' | COD CLI: ' || cl.codigo ELSE '' END
+              -- Si la CxC es de la financiera, mostrar el COMPRADOR real
+              -- (manual_cliente_nombre); si no, el codigo del cliente.
+              || CASE
+                   WHEN COALESCE(btrim(f.manual_cliente_nombre), '') <> ''
+                     THEN ' | COMPRADOR: ' || f.manual_cliente_nombre
+                   WHEN COALESCE(btrim(cl.codigo), '') <> ''
+                     THEN ' | COD CLI: ' || cl.codigo
+                   ELSE ''
+                 END
             ),
             'monto_total', f.total,
             'monto_pendiente', f.monto_pendiente
