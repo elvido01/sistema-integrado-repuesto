@@ -4,7 +4,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Save, Upload, Trash2, Building2, Globe, Phone, Mail, FileText, Coins, Percent, Calendar as CalendarIcon, Image as ImageIcon, Target, Printer, Zap, Download, MessageCircle } from 'lucide-react';
+import { Loader2, Save, Upload, Trash2, Building2, Globe, Phone, Mail, FileText, Coins, Percent, Calendar as CalendarIcon, Image as ImageIcon, Target, Printer, Zap, Download, MessageCircle, Banknote } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -50,8 +50,12 @@ const ConfiguracionSistemaPage = () => {
         precio3_descuento_pct: 15,
         incluir_existencias_cero_default: true,
         cobranza_hora_corte: '17:50',
-        cobranza_buscador_telefono: ''
+        cobranza_buscador_telefono: '',
+        financiamiento_tipo: 'propio',
+        financiera_tenant_id: null
     });
+
+    const [financieras, setFinancieras] = useState([]);
 
     const [originalGoalData, setOriginalGoalData] = useState({
         meta_ventas: 150000,
@@ -101,7 +105,9 @@ const ConfiguracionSistemaPage = () => {
                     precio3_descuento_pct: data.precio3_descuento_pct ?? 15,
                     incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true,
                     cobranza_hora_corte: (data.cobranza_hora_corte || '17:50').slice(0, 5),
-                    cobranza_buscador_telefono: data.cobranza_buscador_telefono || ''
+                    cobranza_buscador_telefono: data.cobranza_buscador_telefono || '',
+                    financiamiento_tipo: data.financiamiento_tipo || 'propio',
+                    financiera_tenant_id: data.financiera_tenant_id || null
                 });
                 
                 setOriginalGoalData({
@@ -121,6 +127,14 @@ const ConfiguracionSistemaPage = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Lista de empresas financieras (para seleccionar como "tercero")
+    useEffect(() => {
+        (async () => {
+            const { data, error } = await supabase.rpc('get_financiera_tenants');
+            if (!error && Array.isArray(data)) setFinancieras(data);
+        })();
+    }, []);
 
     const handleInputChange = (e) => {
         const { id, value } = e.target;
@@ -625,6 +639,46 @@ const ConfiguracionSistemaPage = () => {
                                     Formato del comprobante que se imprime al pagar compromisos, suplidores y gastos diarios desde el Inicio.
                                 </p>
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Sección de Financiamiento (Propio / Terceros) */}
+                    <div className="border rounded-md p-6 bg-white shadow-inner space-y-4">
+                        <h3 className="text-sm font-bold text-emerald-700 uppercase border-b pb-2 mb-4 flex items-center gap-2">
+                            <Banknote className="w-4 h-4" /> Financiamiento
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Tipo de Financiamiento</Label>
+                                <Select value={formData.financiamiento_tipo} onValueChange={(v) => handleSelectChange('financiamiento_tipo', v)}>
+                                    <SelectTrigger className="h-10 border-emerald-200 bg-emerald-50/30 text-emerald-700 font-bold"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="propio">Propio (la empresa financia y cobra)</SelectItem>
+                                        <SelectItem value="terceros">Terceros (financiera externa)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    En <b>Propio</b> las cuentas por cobrar quedan en esta empresa. En <b>Terceros</b>, al facturar una solicitud financiada se crean automáticamente el préstamo y las cuentas en la empresa financiera seleccionada.
+                                </p>
+                            </div>
+
+                            {formData.financiamiento_tipo === 'terceros' && (
+                                <div className="space-y-2">
+                                    <Label className="text-[11px] font-bold text-gray-700 uppercase">Empresa Financiera</Label>
+                                    <Select value={formData.financiera_tenant_id || ''} onValueChange={(v) => handleSelectChange('financiera_tenant_id', v || null)}>
+                                        <SelectTrigger className="h-10 border-emerald-200 bg-emerald-50/30 text-emerald-700 font-bold"><SelectValue placeholder="Seleccione la financiera..." /></SelectTrigger>
+                                        <SelectContent>
+                                            {financieras.length === 0 && <SelectItem value="__none__" disabled>No hay empresas financieras</SelectItem>}
+                                            {financieras.map(f => (
+                                                <SelectItem key={f.tenant_id} value={f.tenant_id}>{f.nombre}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-[10px] text-gray-500 italic">
+                                        La financiera que asumirá las cuentas por cobrar del cliente (ej. MotoPréstamos Los Naranjos).
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
 
