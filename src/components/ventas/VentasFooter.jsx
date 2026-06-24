@@ -217,7 +217,7 @@ const VentasFooter = ({
             {paymentType === 'credito' && (
               <div className="flex items-center gap-1 border-l border-[#0a1e3a]/20 pl-2 ml-auto">
                 <Label className="text-[10px] font-black text-gray-500 uppercase">DÍAS:</Label>
-                <Input type="number" className="h-5 w-16 text-[11px] font-black border-gray-300 rounded-none bg-white text-center text-[#0a1e3a]" value={diasCredito} onChange={(e) => setDiasCredito(e.target.value)} />
+                <Input type="number" className="h-5 w-20 text-[11px] font-black border-gray-300 rounded-none bg-white text-center text-[#0a1e3a] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value={diasCredito} onChange={(e) => setDiasCredito(e.target.value)} />
               </div>
             )}
             <div className={`w-2 h-2 rounded-full ml-auto ${paymentType === 'contado' ? 'bg-green-500' : 'bg-blue-500'}`}></div>

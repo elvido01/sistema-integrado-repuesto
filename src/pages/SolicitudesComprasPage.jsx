@@ -75,7 +75,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     financiamiento: 0,
     adicional: 0,
     tiempo_meses: 12,
-    tasa_interes: 0,
+    tasa_interes: 3,
     total_pagares: 0,
     cuota_mensual: 0,
     fecha_vencimiento: '',
@@ -711,11 +711,14 @@ const SolicitudesComprasPage = () => {
       // El código del cliente DEBE ser su cédula/RNC: backfill si está vacío
       // (cubre tanto el cliente recién creado como uno ya vinculado sin código).
       if (clienteId && rncCli) {
-        await supabase
+        const { data: cliRow } = await supabase
           .from('clientes')
-          .update({ codigo: rncCli })
+          .select('codigo')
           .eq('id', clienteId)
-          .or('codigo.is.null,codigo.eq.');
+          .maybeSingle();
+        if (cliRow && (!cliRow.codigo || String(cliRow.codigo).trim() === '')) {
+          await supabase.from('clientes').update({ codigo: rncCli }).eq('id', clienteId);
+        }
       }
 
       // 1. Factura solo el valor de contado del vehículo.

@@ -253,6 +253,17 @@ const VentasPage = () => {
     }
   }, [pedidoParaFacturar, handleSelectCotizacion, handleSelectPedido, setPedidoParaFacturar]);
 
+  // Sincronizar el campo "CÓDIGO DEL CLIENTE" cuando cambia el cliente (al cargar
+  // un pedido/cotización desde solicitud). Fallback a RNC/cédula si no hay código.
+  useEffect(() => {
+    const GENERIC = '00000000-0000-0000-0000-000000000000';
+    if (!cliente || cliente.id === GENERIC) {
+      setClienteCodigoInput('');
+    } else {
+      setClienteCodigoInput(cliente.codigo || cliente.rnc || '');
+    }
+  }, [cliente]);
+
   const emitirECF = async (facturaId, facturaNumero) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
