@@ -37,7 +37,7 @@ const getCotizacionCutoffDate = () => {
 };
 
 const CotizacionPage = () => {
-  const { empresa } = useAuth();
+  const { empresa, profile } = useAuth();
   const { toast } = useToast();
   const { openPanel } = usePanels();
   const { setPedidoParaFacturar } = useFacturacion();
@@ -103,6 +103,7 @@ const CotizacionPage = () => {
   const fetchCotizaciones = useCallback(async () => {
     setLoading(true);
     const cutoffDate = getCotizacionCutoffDate();
+    const tenantId = profile?.tenant_id;
 
     const { error: purgeError } = await supabase.rpc('purge_expired_cotizaciones', {
       p_days: COTIZACION_VISIBILITY_DAYS,
@@ -111,9 +112,12 @@ const CotizacionPage = () => {
       console.warn('[Cotizaciones] No se pudo purgar cotizaciones vencidas:', purgeError.message);
     }
 
+    if (!tenantId) { setCotizaciones([]); setLoading(false); return; }
+
     const { data, error } = await supabase
       .from('cotizaciones_list_view')
       .select('*')
+      .eq('tenant_id', tenantId)
       .eq('estado', 'Pendiente')
       .gt('fecha_cotizacion', cutoffDate)
       .order('created_at', { ascending: false });
@@ -122,11 +126,10 @@ const CotizacionPage = () => {
       console.error('FETCH COTIZACIONES ERROR:', error);
       toast({ title: 'Error', description: 'No se pudieron cargar las cotizaciones.', variant: 'destructive' });
     } else {
-      console.log('FETCH COTIZACIONES SUCCESS:', data);
       setCotizaciones(data || []);
     }
     setLoading(false);
-  }, [toast]);
+  }, [toast, profile?.tenant_id]);
 
   const fetchDetalles = useCallback(async (cotId) => {
     const { data, error } = await supabase
@@ -180,6 +183,41 @@ const CotizacionPage = () => {
     console.log('ALIVE: CotizacionPage mounted');
     fetchCotizaciones();
   }, [fetchCotizaciones]);
+
+  // Una cotizacion puede crearse desde Sales Hub mientras este panel sigue
+  // montado. Mantener la bandeja sincronizada evita que se quede mostrando el
+  // ultimo numero que existia cuando el usuario entro a la pantalla.
+  useEffect(() => {
+    const tenantId = profile?.tenant_id;
+    if (!tenantId) return undefined;
+
+    const channel = supabase
+      .channel(`cotizaciones-list-${tenantId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'cotizaciones',
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => fetchCotizaciones()
+      )
+      .subscribe();
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') fetchCotizaciones();
+    };
+
+    window.addEventListener('focus', fetchCotizaciones);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      window.removeEventListener('focus', fetchCotizaciones);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.tenant_id, fetchCotizaciones]);
 
   useEffect(() => {
     if (selectedCotizacion) {
