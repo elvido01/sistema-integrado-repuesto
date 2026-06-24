@@ -681,7 +681,7 @@ const SolicitudesComprasPage = () => {
       if (!clienteId && rncCli) {
         const { data: existentes } = await supabase
           .from('clientes')
-          .select('id')
+          .select('id, codigo')
           .eq('tenant_id', tenantId)
           .or(`rnc.eq.${rncCli},codigo.eq.${rncCli}`)
           .limit(1);
@@ -706,6 +706,16 @@ const SolicitudesComprasPage = () => {
         }
         // Vincular la solicitud al cliente creado/encontrado
         await supabase.from('solicitudes_compras').update({ cliente_id: clienteId }).eq('id', s.id);
+      }
+
+      // El código del cliente DEBE ser su cédula/RNC: backfill si está vacío
+      // (cubre tanto el cliente recién creado como uno ya vinculado sin código).
+      if (clienteId && rncCli) {
+        await supabase
+          .from('clientes')
+          .update({ codigo: rncCli })
+          .eq('id', clienteId)
+          .or('codigo.is.null,codigo.eq.');
       }
 
       // 1. Factura solo el valor de contado del vehículo.

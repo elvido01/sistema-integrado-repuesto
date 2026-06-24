@@ -1128,6 +1128,32 @@ export const useVentas = () => {
 
       setItems(newItems);
       setPedidoId(pedido.id);
+
+      // Si el pedido proviene de una solicitud de compra financiada, precargar
+      // crédito + días (según frecuencia/nº de cuotas) + ABONO = inicial.
+      const { data: pedRow } = await supabase
+        .from('pedidos')
+        .select('solicitud_compra_id')
+        .eq('id', pedido.id)
+        .maybeSingle();
+      if (pedRow?.solicitud_compra_id) {
+        const { data: sol } = await supabase
+          .from('solicitudes_compras')
+          .select('inicial, frecuencia, tiempo_meses')
+          .eq('id', pedRow.solicitud_compra_id)
+          .maybeSingle();
+        if (sol) {
+          const inicial = parseFloat(sol.inicial) || 0;
+          const nCuotas = parseInt(sol.tiempo_meses) || 0;
+          const diasPorPeriodo = { diario: 1, semanal: 7, quincenal: 15, mensual: 30 }[sol.frecuencia] || 30;
+          if (nCuotas > 0) {
+            setPaymentType('credito');
+            setDiasCredito(nCuotas * diasPorPeriodo);
+            if (inicial > 0) setMontoRecibido(String(inicial));
+          }
+        }
+      }
+
       toast({ title: 'Pedido cargado', description: `Se cargaron los datos del pedido ${pedido.numero}.` });
     } catch (error) {
       console.error(error);
