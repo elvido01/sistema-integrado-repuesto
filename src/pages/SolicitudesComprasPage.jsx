@@ -31,6 +31,24 @@ const toLocalMidnight = (value) => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+// Formatea un valor monetario para mostrarlo con separador de miles y decimales
+// mientras se escribe (acepta number o string crudo 'YYYY.dd').
+const fmtMontoInput = (raw) => {
+  if (raw === '' || raw == null) return '';
+  const [ip, dp] = String(raw).split('.');
+  const intFmt = ip ? Number(ip).toLocaleString('en-US') : '0';
+  return dp !== undefined ? `${intFmt}.${dp}` : intFmt;
+};
+
+// Limpia lo tecleado a un crudo 'entero.decimales(2)' sin comas
+const parseMontoInput = (value) => {
+  let raw = String(value).replace(/,/g, '').replace(/[^\d.]/g, '');
+  const parts = raw.split('.');
+  if (parts.length > 2) raw = `${parts[0]}.${parts.slice(1).join('')}`;
+  const [ip, dp] = raw.split('.');
+  return dp !== undefined ? `${ip}.${dp.slice(0, 2)}` : ip;
+};
+
 // ── Formulario de Solicitud ──
 const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vendedores }) => {
   const { toast } = useToast();
@@ -464,15 +482,15 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                 <div className="col-span-7 grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">Valor al Contado RD$</Label>
-                    <Input type="number" value={form.valor_contado} onChange={e => updateField('valor_contado', e.target.value)} className="h-9 text-sm font-bold text-green-800 bg-green-50 border-green-300" />
+                    <Input type="text" inputMode="decimal" value={fmtMontoInput(form.valor_contado)} onChange={e => updateField('valor_contado', parseMontoInput(e.target.value))} className="h-9 text-sm font-bold text-green-800 bg-green-50 border-green-300" />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">Inicial RD$</Label>
-                    <Input type="number" value={form.inicial} onChange={e => updateField('inicial', e.target.value)} className="h-9 text-sm font-bold" />
+                    <Input type="text" inputMode="decimal" value={fmtMontoInput(form.inicial)} onChange={e => updateField('inicial', parseMontoInput(e.target.value))} className="h-9 text-sm font-bold" />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">Adicional RD$</Label>
-                    <Input type="number" value={form.adicional} onChange={e => updateField('adicional', e.target.value)} className="h-9 text-sm" />
+                    <Input type="text" inputMode="decimal" value={fmtMontoInput(form.adicional)} onChange={e => updateField('adicional', parseMontoInput(e.target.value))} className="h-9 text-sm" />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">N° de Cuotas</Label>
