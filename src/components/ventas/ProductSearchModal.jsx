@@ -27,6 +27,7 @@ const ProductSearchModal = ({
   onSelectProduct = () => { },
   sessionKey = null,
   useConfigDefault = false,
+  onlyWithStock = false, // si true: solo productos con existencia > 0 y oculta el checkbox
 }) => {
   const { toast } = useToast();
   const { tenantId, user, empresa } = useAuth();
@@ -41,9 +42,11 @@ const ProductSearchModal = ({
   // Si el caller habilita useConfigDefault, leemos el flag del tenant.
   // Cuando NO lo habilita (la mayoría: Compras, Mercancías, Cotizaciones,
   // Solicitudes, etc.) siempre arranca en true.
-  const includeZeroStockDefault = useConfigDefault
-    ? (empresa?.incluir_existencias_cero_default ?? true)
-    : true;
+  const includeZeroStockDefault = onlyWithStock
+    ? false
+    : useConfigDefault
+      ? (empresa?.incluir_existencias_cero_default ?? true)
+      : true;
   const [includeZeroStock, setIncludeZeroStock] = useState(includeZeroStockDefault);
   const [sendingToOrder, setSendingToOrder] = useState(null); // product id being sent
   const [sendingNote, setSendingNote] = useState(false);
@@ -313,10 +316,12 @@ const ProductSearchModal = ({
                   )}
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="include-zero-stock" checked={includeZeroStock} onCheckedChange={setIncludeZeroStock} />
-                <Label htmlFor="include-zero-stock" className="text-sm font-medium text-gray-700">Incluir Existencias en cero</Label>
-              </div>
+              {!onlyWithStock && (
+                <div className="flex items-center space-x-2">
+                  <Checkbox id="include-zero-stock" checked={includeZeroStock} onCheckedChange={setIncludeZeroStock} />
+                  <Label htmlFor="include-zero-stock" className="text-sm font-medium text-gray-700">Incluir Existencias en cero</Label>
+                </div>
+              )}
             </div>
           </div>
 
