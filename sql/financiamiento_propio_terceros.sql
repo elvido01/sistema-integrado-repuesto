@@ -35,10 +35,16 @@ RETURNS TABLE (tenant_id uuid, nombre text)
 LANGUAGE sql SECURITY DEFINER STABLE
 SET search_path TO 'public'
 AS $$
-  SELECT ce.tenant_id, ce.nombre
-  FROM public.config_empresa ce
-  WHERE COALESCE(ce.feat_financiera, false) = true
-  ORDER BY ce.nombre;
+  -- DISTINCT ON (tenant_id): una sola fila por empresa aunque config_empresa
+  -- tenga filas duplicadas para el mismo tenant.
+  SELECT t.tenant_id, t.nombre
+  FROM (
+    SELECT DISTINCT ON (ce.tenant_id) ce.tenant_id, ce.nombre
+    FROM public.config_empresa ce
+    WHERE COALESCE(ce.feat_financiera, false) = true
+    ORDER BY ce.tenant_id, ce.nombre
+  ) t
+  ORDER BY t.nombre;
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_financiera_tenants() FROM PUBLIC, anon;
