@@ -58,6 +58,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     monto_casco: 0,
     monto_seguro: 0,
     tipo_financiamiento: 'simple',
+    frecuencia: 'mensual',
     notas: '',
   };
 
@@ -156,6 +157,19 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     form.monto_placa, form.monto_gps, form.monto_casco, form.monto_seguro,
     form.tipo_financiamiento,
   ]);
+
+  // ── Vencimiento de la 1ra cuota = fecha + 1 período según la frecuencia ──
+  useEffect(() => {
+    const base = form.fecha ? new Date(`${form.fecha}T00:00:00`) : new Date();
+    switch (form.frecuencia) {
+      case 'diario': base.setDate(base.getDate() + 1); break;
+      case 'semanal': base.setDate(base.getDate() + 7); break;
+      case 'quincenal': base.setDate(base.getDate() + 15); break;
+      default: base.setMonth(base.getMonth() + 1); break; // mensual
+    }
+    const venc = base.toISOString().slice(0, 10);
+    setForm(prev => (prev.fecha_vencimiento === venc ? prev : { ...prev, fecha_vencimiento: venc }));
+  }, [form.fecha, form.frecuencia]);
 
   // ── Seleccionar producto (motocicleta) ──
   const handleSelectProduct = async (product) => {
@@ -275,6 +289,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
       monto_casco: parseFloat(form.monto_casco) || 0,
       monto_seguro: parseFloat(form.monto_seguro) || 0,
       tipo_financiamiento: form.tipo_financiamiento || 'simple',
+      frecuencia: form.frecuencia || 'mensual',
       notas: form.notas || '',
     });
     setIsSubmitting(false);
@@ -443,8 +458,20 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                     <Input type="number" value={form.adicional} onChange={e => updateField('adicional', e.target.value)} className="h-9 text-sm" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Tiempo (Meses)</Label>
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase">N° de Cuotas</Label>
                     <Input type="number" value={form.tiempo_meses} onChange={e => updateField('tiempo_meses', e.target.value)} className="h-9 text-sm" min="1" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Frecuencia</Label>
+                    <Select value={form.frecuencia} onValueChange={val => updateField('frecuencia', val)}>
+                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="diario">Diario</SelectItem>
+                        <SelectItem value="semanal">Semanal</SelectItem>
+                        <SelectItem value="quincenal">Quincenal</SelectItem>
+                        <SelectItem value="mensual">Mensual</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">Tasa de Interés %</Label>
@@ -497,7 +524,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                   </div>
                   <div className="h-px bg-green-200" />
                   <div className="flex justify-between items-end pt-1">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Cuota Mensual</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Cuota {form.frecuencia === 'diario' ? 'Diaria' : form.frecuencia === 'semanal' ? 'Semanal' : form.frecuencia === 'quincenal' ? 'Quincenal' : 'Mensual'}</span>
                     <div className="text-right">
                       <span className="text-[10px] block text-green-600 font-bold -mb-1">A RD$</span>
                       <span className="text-2xl font-black text-green-700 font-mono tracking-tighter">
