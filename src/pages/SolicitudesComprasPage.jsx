@@ -19,6 +19,18 @@ import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } fro
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { usePanels } from '@/contexts/PanelContext';
 
+// Normaliza una fecha (Date, 'YYYY-MM-DD' o timestamp ISO) al inicio del día local.
+// Devuelve null si es inválida. Evita el "Invalid time value" y desfases de zona.
+const toLocalMidnight = (value) => {
+  if (!value) return new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  const datePart = String(value).slice(0, 10); // 'YYYY-MM-DD' de un string o ISO timestamp
+  const d = new Date(`${datePart}T00:00:00`);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 // ── Formulario de Solicitud ──
 const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vendedores }) => {
   const { toast } = useToast();
@@ -160,18 +172,19 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
 
   // ── Vencimiento de la 1ra cuota = fecha + 1 período según la frecuencia ──
   useEffect(() => {
-    // form.fecha puede venir como 'YYYY-MM-DD' o como timestamp completo (al cargar
-    // una solicitud). Tomamos solo la parte de fecha para evitar "Invalid time value".
-    const soloFecha = form.fecha ? String(form.fecha).slice(0, 10) : '';
-    const base = soloFecha ? new Date(`${soloFecha}T00:00:00`) : new Date();
-    if (isNaN(base.getTime())) return; // fecha inválida: no calcular
+    // form.fecha puede ser un objeto Date (nuevo, getCurrentDateInTimeZone) o un
+    // string 'YYYY-MM-DD'/timestamp (al cargar una solicitud). normalizamos a un
+    // Date al inicio del dia local para evitar "Invalid time value" y desfases TZ.
+    const base = toLocalMidnight(form.fecha);
+    if (!base) return; // fecha inválida: no calcular
     switch (form.frecuencia) {
       case 'diario': base.setDate(base.getDate() + 1); break;
       case 'semanal': base.setDate(base.getDate() + 7); break;
       case 'quincenal': base.setDate(base.getDate() + 15); break;
       default: base.setMonth(base.getMonth() + 1); break; // mensual
     }
-    const venc = base.toISOString().slice(0, 10);
+    // Formato YYYY-MM-DD con partes locales (no toISOString, que pasa a UTC)
+    const venc = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
     setForm(prev => (prev.fecha_vencimiento === venc ? prev : { ...prev, fecha_vencimiento: venc }));
   }, [form.fecha, form.frecuencia]);
 
@@ -332,7 +345,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
               </div>
               <div className="bg-white/80 backdrop-blur px-3 py-0.5 rounded border border-blue-400 flex items-center gap-2 shadow-sm">
                 <span className="text-xs font-bold text-slate-500 uppercase">Fecha:</span>
-                <span className="text-sm font-bold text-slate-700">{(() => { const d = form.fecha ? new Date(`${String(form.fecha).slice(0, 10)}T00:00:00`) : new Date(); return isNaN(d.getTime()) ? '---' : format(d, 'dd/MM/yyyy'); })()}</span>
+                <span className="text-sm font-bold text-slate-700">{(() => { const d = toLocalMidnight(form.fecha); return d ? format(d, 'dd/MM/yyyy') : '---'; })()}</span>
               </div>
               <Button variant="ghost" size="icon" onClick={onClose} className="h-6 w-6 hover:bg-red-500 hover:text-white transition-colors">
                 <X className="h-4 w-4" />
