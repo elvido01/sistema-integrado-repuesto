@@ -610,6 +610,42 @@ const SolicitudesComprasPage = () => {
     try {
       const s = selectedSolicitud;
 
+      // 0. Asegurar el cliente: si la solicitud no tiene cliente vinculado,
+      //    buscar por cédula/RNC; si no existe, crearlo con el nombre manual,
+      //    crédito = total pagarés y SIN teléfono (se salta la validación del alta normal).
+      let clienteId = s.cliente_id || null;
+      const rncCli = (s.cliente_rnc || '').trim();
+      const nombreManual = (s.cliente_nombre || '').trim();
+      if (!clienteId && rncCli) {
+        const { data: existentes } = await supabase
+          .from('clientes')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .or(`rnc.eq.${rncCli},codigo.eq.${rncCli}`)
+          .limit(1);
+        if (existentes && existentes.length) {
+          clienteId = existentes[0].id;
+        } else {
+          const { data: nuevoCli, error: cErr } = await supabase
+            .from('clientes')
+            .insert({
+              tenant_id: tenantId,
+              codigo: rncCli,
+              nombre: nombreManual || 'CLIENTE',
+              rnc: rncCli,
+              autorizar_credito: true,
+              limite_credito: parseFloat(s.total_pagares) || 0,
+              activo: true,
+            })
+            .select('id')
+            .single();
+          if (cErr) throw new Error('No se pudo crear el cliente: ' + cErr.message);
+          clienteId = nuevoCli.id;
+        }
+        // Vincular la solicitud al cliente creado/encontrado
+        await supabase.from('solicitudes_compras').update({ cliente_id: clienteId }).eq('id', s.id);
+      }
+
       // 1. Factura solo el valor de contado del vehículo.
       //    Los add-ons y el financiamiento van como comentarios (Caminero pasa
       //    el financiamiento a otra empresa que se incorporará más adelante).
@@ -661,7 +697,7 @@ const SolicitudesComprasPage = () => {
 
       const FINAL_GENERIC_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
       const pedidoData = {
-        cliente_id: s.cliente_id || FINAL_GENERIC_ID,
+        cliente_id: clienteId || FINAL_GENERIC_ID,
         manual_cliente_nombre: s.cliente_nombre || null,
         fecha: new Date().toISOString().split('T')[0],
         vendedor_id: s.vendedor_id || null,
