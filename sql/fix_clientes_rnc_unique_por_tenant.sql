@@ -1,28 +1,59 @@
 -- =====================================================================
 -- FIX multi-tenant: clientes.rnc debe ser unico POR EMPRESA, no global
 -- ---------------------------------------------------------------------
--- La tabla clientes tenia clientes_rnc_key UNIQUE (rnc) GLOBAL. En un
--- sistema multi-tenant eso impide que el mismo cliente (misma cedula/RNC)
--- exista en dos empresas distintas -> rompia el financiamiento de terceros
--- (crear el comprador en la financiera fallaba con 409 unique_violation)
--- y tambien el alta de clientes cuando el RNC ya existia en otro tenant.
+-- La tabla clientes tenia uno (o varios) unique GLOBAL sobre rnc
+-- (clientes_rnc_key, clientes_rnc_unique, ...). En multi-tenant eso impide
+-- que el mismo cliente (misma cedula/RNC) exista en dos empresas -> rompia
+-- el alta de clientes y el financiamiento de terceros (409 unique_violation).
 --
--- Se reemplaza por un indice unico parcial por (tenant_id, rnc), que:
---   - permite el mismo RNC en empresas distintas,
---   - sigue evitando duplicados dentro de la misma empresa,
---   - permite multiples filas con rnc NULL/'' (clientes sin RNC).
--- Re-ejecutable.
+-- Se eliminan TODOS los unique global sobre (rnc) — por constraint y por
+-- indice, sin importar el nombre — y se deja un unico indice parcial por
+-- (tenant_id, rnc). Re-ejecutable.
 -- =====================================================================
 
-ALTER TABLE public.clientes DROP CONSTRAINT IF EXISTS clientes_rnc_key;
+-- 1) Quitar cualquier CONSTRAINT unique cuya definicion sea exactamente UNIQUE (rnc)
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'public.clientes'::regclass
+      AND contype = 'u'
+      AND pg_get_constraintdef(oid) ILIKE 'UNIQUE (rnc)%'
+  LOOP
+    EXECUTE format('ALTER TABLE public.clientes DROP CONSTRAINT %I', r.conname);
+    RAISE NOTICE 'Drop constraint %', r.conname;
+  END LOOP;
+END $$;
 
--- por si una corrida previa lo dejo como indice
-DROP INDEX IF EXISTS public.clientes_rnc_key;
+-- 2) Quitar cualquier INDICE unique solo sobre (rnc) que no sea el por-tenant
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT indexname
+    FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'clientes'
+      AND indexdef ILIKE '%UNIQUE%'
+      AND indexdef ILIKE '%(rnc)%'
+      AND indexdef NOT ILIKE '%tenant_id%'
+      AND indexname <> 'clientes_tenant_rnc_key'
+  LOOP
+    EXECUTE format('DROP INDEX IF EXISTS public.%I', r.indexname);
+    RAISE NOTICE 'Drop index %', r.indexname;
+  END LOOP;
+END $$;
 
+-- 3) Unico por (tenant_id, rnc), permitiendo rnc NULL/'' repetidos
 CREATE UNIQUE INDEX IF NOT EXISTS clientes_tenant_rnc_key
   ON public.clientes (tenant_id, rnc)
   WHERE rnc IS NOT NULL AND btrim(rnc) <> '';
 
 NOTIFY pgrst, 'reload schema';
 
-SELECT 'clientes.rnc ahora es unico por (tenant_id, rnc)' AS status;
+-- 4) Verificacion: que NO quede ningun unique global sobre rnc
+SELECT conname AS constraint_global_rnc, pg_get_constraintdef(oid) AS def
+FROM pg_constraint
+WHERE conrelid = 'public.clientes'::regclass AND contype = 'u'
+  AND pg_get_constraintdef(oid) ILIKE 'UNIQUE (rnc)%';
