@@ -330,11 +330,11 @@ const ProductSearchModal = ({
             <div className="h-full bg-white border rounded-md shadow-sm overflow-hidden flex flex-col">
               {/* Single Horizontal Scroll Container */}
               <div className="flex-grow overflow-auto scrollbar-thin scrollbar-thumb-slate-300">
-                <div className="min-w-[1250px]">
+                <div className="min-w-[1320px]">
                   <Table className="w-full table-fixed overflow-visible">
                     <TableHeader className="sticky top-0 bg-gray-100 z-10 shadow-sm">
                       <TableRow className="hover:bg-transparent border-b">
-                        <TableHead className="font-bold text-gray-700 w-[130px]">Código</TableHead>
+                        <TableHead className="font-bold text-gray-700 w-[200px]">Código</TableHead>
                         <TableHead className="font-bold text-gray-700 w-[110px]">Referencia</TableHead>
                         <TableHead className="font-bold text-gray-700 w-[350px]">Descripción</TableHead>
                         <TableHead className="font-bold text-gray-700 w-[130px]">Ubicación</TableHead>
@@ -365,7 +365,7 @@ const ProductSearchModal = ({
                                     : 'bg-[#e0fadd] hover:bg-[#e0fadd]'
                               }`}
                             >
-                                <TableCell className={`text-sm py-2 whitespace-nowrap overflow-hidden text-ellipsis font-bold ${idx === selectedIndex ? 'text-white' : 'text-blue-900'}`}>
+                                <TableCell className={`text-sm py-2 whitespace-nowrap font-bold ${idx === selectedIndex ? 'text-white' : 'text-blue-900'}`}>
                                   {product.codigo}
                                 </TableCell>
                               <TableCell className={`font-medium py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-600'}`}>
