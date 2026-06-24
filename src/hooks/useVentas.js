@@ -925,6 +925,26 @@ export const useVentas = () => {
       // FINANCIAMIENTO TERCEROS: si la empresa financia con terceros y esta
       // venta vino de una solicitud financiada, crear el prestamo + cuentas en
       // la financiera y reasignar la CxC. Se hace al grabar (una sola vez).
+      // DIAGNOSTICO: log de las condiciones que activan el financiamiento.
+      const ftGating = {
+        editingFacturaId: !!editingFacturaId,
+        paymentType,
+        solicitudCompraId,
+        financiamiento_tipo: empresa?.financiamiento_tipo,
+        financiera_tenant_id: empresa?.financiera_tenant_id,
+      };
+      console.log('[Terceros] gating:', ftGating);
+      // Si la venta viene de una solicitud financiada pero NO se cumplen las
+      // condiciones de terceros, avisar por que (alert no lo tapa la impresora).
+      if (!editingFacturaId && solicitudCompraId && paymentType === 'credito' &&
+          (empresa?.financiamiento_tipo !== 'terceros' || !empresa?.financiera_tenant_id)) {
+        window.alert(
+          'Financiamiento terceros NO disparado.\n' +
+          'financiamiento_tipo = ' + (empresa?.financiamiento_tipo || '(vacío)') + '\n' +
+          'financiera_tenant_id = ' + (empresa?.financiera_tenant_id || '(vacío)') + '\n\n' +
+          'Si esto debería ser Terceros: cierra sesión y vuelve a entrar para recargar la configuración.'
+        );
+      }
       if (
         !editingFacturaId &&
         paymentType === 'credito' &&
@@ -939,12 +959,16 @@ export const useVentas = () => {
             p_financiera_tenant_id: empresa.financiera_tenant_id,
           });
           if (ftErr) {
+            window.alert('FINANCIAMIENTO NO REGISTRADO\n\n' + (ftErr.message || '') + '\n\n' + (ftErr.details || '') + '\n' + (ftErr.hint || ''));
             toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: `La factura se grabó, pero no se creó el préstamo en la financiera: ${ftErr.message}` });
           } else if (ftRes?.ok) {
             toast({ title: '🏦 Financiamiento creado', description: `Préstamo ${ftRes.prestamo_numero} en la financiera y cuentas registradas.` });
+          } else if (ftRes && ftRes.ok === false) {
+            window.alert('Financiamiento no creado: ' + (ftRes.motivo || 'motivo desconocido'));
           }
         } catch (ftCatch) {
           console.error('Error en financiamiento terceros:', ftCatch.message);
+          window.alert('FINANCIAMIENTO NO REGISTRADO (excepción)\n\n' + ftCatch.message);
           toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: ftCatch.message });
         }
       }
