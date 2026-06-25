@@ -71,6 +71,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     limite_credito: 0,
     dias_credito: 0,
     mora_pct: 0,
+    generar_mora: true, // cotejo "Generar Cargos por Atrasos (MORA)?"
     tipo_ncf: '02', // Consumidor Final
     precio_nivel: 1,
   });
@@ -100,6 +101,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           limite_credito: cliente.limite_credito || 0,
           dias_credito: cliente.dias_credito || 0,
           mora_pct: cliente.mora_pct || 0,
+          generar_mora: cliente.generar_mora ?? true,
           tipo_ncf: cliente.tipo_ncf || '02',
           precio_nivel: cliente.precio_nivel || 1,
         });
@@ -121,6 +123,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           limite_credito: prefill?.limite_credito || 0,
           dias_credito: prefill?.dias_credito || 0,
           mora_pct: prefill?.mora_pct || 0,
+          generar_mora: prefill?.generar_mora ?? true,
           tipo_ncf: '02',
           precio_nivel: 1,
         });
@@ -203,11 +206,13 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
       limite_credito: formData.autorizar_credito ? formData.limite_credito : 0,
       dias_credito: formData.autorizar_credito ? formData.dias_credito : 0,
     };
-    // mora_pct solo para empresas dealer/financiera (evita romper donde no existe la columna)
+    // mora_pct / generar_mora solo para empresas dealer/financiera (evita romper donde no existe la columna)
     if (!showMora) {
       delete dataToSubmit.mora_pct;
+      delete dataToSubmit.generar_mora;
     } else {
       dataToSubmit.mora_pct = parseFloat(formData.mora_pct) || 0;
+      dataToSubmit.generar_mora = !!formData.generar_mora;
     }
     if (isDealer) {
       dataToSubmit.ficha_dealer = ficha;
@@ -404,6 +409,12 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
                       <Input id="mora_pct" name="mora_pct" type="number" step="0.01" placeholder="Ej: 5" value={formData.mora_pct} onChange={handleChange} />
                     </div>
                   )}
+                </div>
+              )}
+              {showMora && (
+                <div className="flex items-center space-x-2 px-1">
+                  <Checkbox id="generar_mora" checked={formData.generar_mora} onCheckedChange={(checked) => handleCheckedChange('generar_mora', checked)} />
+                  <Label htmlFor="generar_mora" className="cursor-pointer">Generar Cargos por Atrasos (MORA)</Label>
                 </div>
               )}
               <div className="space-y-2">
