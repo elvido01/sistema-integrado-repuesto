@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Save, X, Search, FilePlus } from 'lucide-react';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
@@ -37,6 +38,8 @@ const ReciboPagoFinancieraPage = () => {
   useEffect(() => { setSidebarOpen(false); }, [setSidebarOpen]);
 
   const [cliente, setCliente] = useState(null);
+  const [moraOn, setMoraOn] = useState(true);      // cotejo Generar Cargos por Atrasos (MORA)
+  const [moraPctText, setMoraPctText] = useState('0'); // tasa de mora del cliente
   const [codigoInput, setCodigoInput] = useState('');
   const [buscarOpen, setBuscarOpen] = useState(false);
   const [estado, setEstado] = useState(null);
@@ -76,6 +79,14 @@ const ReciboPagoFinancieraPage = () => {
       if (error) throw error;
       setEstado(data);
 
+      // Estado de la mora del cliente (para el switch en tiempo real)
+      const { data: cliMora } = await supabase
+        .from('clientes').select('generar_mora, mora_pct').eq('id', clienteId).maybeSingle();
+      if (cliMora) {
+        setMoraOn(cliMora.generar_mora ?? true);
+        setMoraPctText(String(cliMora.mora_pct ?? 0));
+      }
+
       // Último pago (capital/interés/mora) — best effort
       const { data: pago } = await supabase
         .from('prestamo_pagos')
@@ -103,6 +114,24 @@ const ReciboPagoFinancieraPage = () => {
     }
     setLoading(false);
   }, [toast]);
+
+  // Switch de mora en tiempo real: actualiza el cliente y recalcula el estado.
+  const toggleMora = async (checked) => {
+    if (!cliente) return;
+    setMoraOn(checked);
+    const { error } = await supabase.from('clientes').update({ generar_mora: checked }).eq('id', cliente.id);
+    if (error) { toast({ variant: 'destructive', title: 'No se pudo cambiar la mora', description: error.message }); return; }
+    setAbonos({}); setMontoText('');
+    cargarEstado(cliente.id);
+  };
+  const guardarMoraPct = async () => {
+    if (!cliente) return;
+    const val = parseFloat(moraPctText) || 0;
+    const { error } = await supabase.from('clientes').update({ mora_pct: val }).eq('id', cliente.id);
+    if (error) { toast({ variant: 'destructive', title: 'No se pudo cambiar la tasa', description: error.message }); return; }
+    setAbonos({}); setMontoText('');
+    cargarEstado(cliente.id);
+  };
 
   const seleccionarCliente = (c) => {
     setCliente(c); setBuscarOpen(false);
@@ -459,6 +488,25 @@ const ReciboPagoFinancieraPage = () => {
               <div className="flex justify-between"><span>Capital Pendiente</span><b>{fmt(capitalPend)}</b></div>
               <div className="flex justify-between"><span>Intereses Pendientes</span><b>{fmt(interesPend)}</b></div>
               <div className="flex justify-between"><span>Mora Pendiente</span><b className="text-red-600">{fmt(moraPend)}</b></div>
+            </div>
+
+            {/* Mora en tiempo real (mismo cotejo + tasa del catálogo del cliente) */}
+            <div className="border rounded-md p-2 text-xs space-y-2 bg-amber-50/50 lg:col-start-2 lg:row-start-1">
+              <div className="flex items-center justify-between">
+                <Label className="font-bold text-slate-600 cursor-pointer">Generar Cargos por Atrasos (MORA)</Label>
+                <Switch checked={moraOn} onCheckedChange={toggleMora} disabled={!cliente} />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-slate-500 whitespace-nowrap">Mora % (por mes)</Label>
+                <Input
+                  type="number" step="0.01" value={moraPctText}
+                  disabled={!cliente || !moraOn}
+                  onChange={(e) => setMoraPctText(e.target.value)}
+                  onBlur={guardarMoraPct}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); guardarMoraPct(); } }}
+                  className="h-7 text-sm flex-1"
+                />
+              </div>
             </div>
 
             <div className="border-2 border-blue-200 rounded-md p-2 text-xs lg:col-start-3 lg:row-start-1">
