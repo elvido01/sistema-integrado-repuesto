@@ -70,9 +70,11 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     autorizar_credito: false,
     limite_credito: 0,
     dias_credito: 0,
+    mora_pct: 0,
     tipo_ncf: '02', // Consumidor Final
     precio_nivel: 1,
   });
+  const showMora = isDealer || !!empresa?.feat_financiera;
   const [ficha, setFicha] = useState(emptyFicha());
   const [activeTab, setActiveTab] = useState('personal');
 
@@ -97,6 +99,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           autorizar_credito: cliente.autorizar_credito ?? false,
           limite_credito: cliente.limite_credito || 0,
           dias_credito: cliente.dias_credito || 0,
+          mora_pct: cliente.mora_pct || 0,
           tipo_ncf: cliente.tipo_ncf || '02',
           precio_nivel: cliente.precio_nivel || 1,
         });
@@ -117,6 +120,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           autorizar_credito: prefill?.autorizar_credito ?? false,
           limite_credito: prefill?.limite_credito || 0,
           dias_credito: prefill?.dias_credito || 0,
+          mora_pct: prefill?.mora_pct || 0,
           tipo_ncf: '02',
           precio_nivel: 1,
         });
@@ -199,6 +203,12 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
       limite_credito: formData.autorizar_credito ? formData.limite_credito : 0,
       dias_credito: formData.autorizar_credito ? formData.dias_credito : 0,
     };
+    // mora_pct solo para empresas dealer/financiera (evita romper donde no existe la columna)
+    if (!showMora) {
+      delete dataToSubmit.mora_pct;
+    } else {
+      dataToSubmit.mora_pct = parseFloat(formData.mora_pct) || 0;
+    }
     if (isDealer) {
       dataToSubmit.ficha_dealer = ficha;
     }
@@ -379,7 +389,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
                 <Label htmlFor="autorizar_credito">Autorizar Crédito</Label>
               </div>
               {formData.autorizar_credito && (
-                <div className="grid grid-cols-2 gap-4 p-4 border rounded-md bg-gray-50">
+                <div className={`grid ${showMora ? 'grid-cols-3' : 'grid-cols-2'} gap-4 p-4 border rounded-md bg-gray-50`}>
                   <div className="space-y-2">
                     <Label htmlFor="dias_credito">Días de Crédito</Label>
                     <Input id="dias_credito" name="dias_credito" type="number" value={formData.dias_credito} onChange={handleChange} />
@@ -388,6 +398,12 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
                     <Label htmlFor="limite_credito">Límite de Crédito</Label>
                     <Input id="limite_credito" name="limite_credito" type="number" value={formData.limite_credito} onChange={handleChange} />
                   </div>
+                  {showMora && (
+                    <div className="space-y-2">
+                      <Label htmlFor="mora_pct">Mora % (por mes atraso)</Label>
+                      <Input id="mora_pct" name="mora_pct" type="number" step="0.01" placeholder="Ej: 5" value={formData.mora_pct} onChange={handleChange} />
+                    </div>
+                  )}
                 </div>
               )}
               <div className="space-y-2">

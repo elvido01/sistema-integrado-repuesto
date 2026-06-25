@@ -60,6 +60,7 @@ DECLARE
   v_compra_num    text;
   v_cseq          int;
   v_fecha1        date;
+  v_mora          numeric := 0;
 BEGIN
   IF v_dealer IS NULL THEN RAISE EXCEPTION 'No se pudo determinar el tenant'; END IF;
   IF v_fin IS NULL THEN RAISE EXCEPTION 'financiera_tenant_id es requerido'; END IF;
@@ -98,6 +99,15 @@ BEGIN
 
   buyer_codigo := NULLIF(btrim(COALESCE(sol.cliente_rnc, '')), '');
   buyer_nombre := COALESCE(NULLIF(btrim(COALESCE(sol.cliente_nombre, '')), ''), 'CLIENTE');
+
+  -- Mora % del cliente comprador (capturada en el catalogo del dealer)
+  SELECT COALESCE(mora_pct, 0) INTO v_mora
+  FROM public.clientes
+  WHERE tenant_id = v_dealer
+    AND (id = sol.cliente_id OR codigo = buyer_codigo OR rnc = buyer_codigo)
+  ORDER BY (id = sol.cliente_id) DESC
+  LIMIT 1;
+  v_mora := COALESCE(v_mora, 0);
   v_metodo := CASE WHEN sol.tipo_financiamiento = 'frances' THEN 'frances' ELSE 'simple' END;
   v_fecha1 := COALESCE(sol.fecha_vencimiento, (current_date + interval '1 month')::date);
   v_origen := 'Origen: factura #' || fac.numero || ' (' || v_dealer_nombre || ') | Comprador: ' || buyer_nombre
@@ -111,8 +121,8 @@ BEGIN
    LIMIT 1;
   IF v_cli_fin IS NULL THEN
     BEGIN
-      INSERT INTO public.clientes (tenant_id, codigo, nombre, rnc, autorizar_credito, limite_credito, activo)
-      VALUES (v_fin, buyer_codigo, buyer_nombre, buyer_codigo, true, COALESCE(sol.total_pagares,0), true)
+      INSERT INTO public.clientes (tenant_id, codigo, nombre, rnc, autorizar_credito, limite_credito, mora_pct, activo)
+      VALUES (v_fin, buyer_codigo, buyer_nombre, buyer_codigo, true, COALESCE(sol.total_pagares,0), v_mora, true)
       RETURNING id INTO v_cli_fin;
     EXCEPTION WHEN unique_violation THEN
       SELECT id INTO v_cli_fin FROM public.clientes
@@ -136,7 +146,7 @@ BEGIN
   ) VALUES (
     v_fin, v_numero, v_cli_fin, 'financiamiento', v_metodo, v_capital,
     COALESCE(sol.tasa_interes,0), GREATEST(COALESCE(sol.tiempo_meses,1),1),
-    COALESCE(sol.frecuencia,'mensual'), 0, v_fecha1,
+    COALESCE(sol.frecuencia,'mensual'), v_mora, v_fecha1,
     NULLIF(btrim(COALESCE(sol.chasis,'')),''), v_origen
   ) RETURNING id INTO v_prestamo_id;
 
