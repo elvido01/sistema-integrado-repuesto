@@ -51,7 +51,7 @@ const emptyFicha = () => ({
   observaciones: '',
 });
 
-const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
+const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
   const { toast } = useToast();
   const { empresa } = useAuth();
   const isDealer = !!empresa?.feat_cliente_dealer;
@@ -103,18 +103,19 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
         // Mezcla con la ficha vacia para garantizar todas las llaves
         setFicha({ ...emptyFicha(), ...(cliente.ficha_dealer || {}) });
       } else {
-        // Reset for new client
+        // Cliente nuevo. Si viene prefill (ej. desde Solicitudes), precargar
+        // nombre + cedula/RNC (codigo = cedula) manteniendo modo INSERTAR.
         setFormData({
-          codigo: '',
-          nombre: '',
-          rnc: '',
-          telefono: '',
+          codigo: prefill?.codigo || prefill?.rnc || '',
+          nombre: prefill?.nombre || '',
+          rnc: prefill?.rnc || '',
+          telefono: prefill?.telefono || '',
           email: '',
           logo_url: '',
           direccion: '',
           activo: true,
-          autorizar_credito: false,
-          limite_credito: 0,
+          autorizar_credito: prefill?.autorizar_credito ?? false,
+          limite_credito: prefill?.limite_credito || 0,
           dias_credito: 0,
           tipo_ncf: '02',
           precio_nivel: 1,
@@ -122,7 +123,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose }) => {
         setFicha(emptyFicha());
       }
     }
-  }, [cliente, isOpen]);
+  }, [cliente, isOpen, prefill]);
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;

@@ -17,6 +17,7 @@ import { Plus, Edit, Trash2, Send, FileDown, RefreshCw, X, Loader2, Search, User
 import { format } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
+import ClienteFormModal from '@/components/catalogo/ClienteFormModal';
 import { usePanels } from '@/contexts/PanelContext';
 
 // Normaliza una fecha (Date, 'YYYY-MM-DD' o timestamp ISO) al inicio del día local.
@@ -659,6 +660,8 @@ const SolicitudesComprasPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSolicitud, setEditingSolicitud] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [clienteModalOpen, setClienteModalOpen] = useState(false);
+  const [clientePrefill, setClientePrefill] = useState(null);
   const { activePanel, openPanel } = usePanels();
 
   const fetchData = useCallback(async () => {
@@ -919,6 +922,13 @@ const SolicitudesComprasPage = () => {
         vendedores={vendedores}
       />
 
+      {/* Completar datos del cliente (precargado desde la solicitud) */}
+      <ClienteFormModal
+        isOpen={clienteModalOpen}
+        onClose={() => { setClienteModalOpen(false); setClientePrefill(null); fetchData(); }}
+        prefill={clientePrefill}
+      />
+
       <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">
         {/* Header */}
         <div className="bg-white p-4 rounded-lg shadow-sm border flex justify-between items-center">
@@ -1111,6 +1121,26 @@ const SolicitudesComprasPage = () => {
               }}
             >
               <span>Enviar a Carta de Ruta</span><Send />
+            </Button>
+
+            <Button
+              variant="outline"
+              disabled={!selectedSolicitud}
+              className="w-full justify-between border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+              onClick={() => {
+                if (!selectedSolicitud) return;
+                const ced = (selectedSolicitud.cliente_rnc || '').trim();
+                setClientePrefill({
+                  nombre: selectedSolicitud.cliente_nombre || '',
+                  rnc: ced,
+                  codigo: ced,
+                  autorizar_credito: true,
+                  limite_credito: parseFloat(selectedSolicitud.total_pagares) || 0,
+                });
+                setClienteModalOpen(true);
+              }}
+            >
+              <span>Completar Datos del Cliente</span><User />
             </Button>
 
             <div className="flex-grow" />
