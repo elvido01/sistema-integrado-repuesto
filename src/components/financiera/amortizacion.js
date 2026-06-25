@@ -11,11 +11,15 @@ function addPeriodo(baseDate, k, frecuencia) {
   return d.toISOString().slice(0, 10);
 }
 
-export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fechaPrimera }) {
+export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fechaPrimera, cuotaAjustada }) {
   const P = Number(monto) || 0;
   const i = (Number(tasa) || 0) / 100;
   const n = parseInt(plazo, 10) || 0;
   if (P <= 0 || n <= 0) return [];
+
+  // Cuota ajustada (redondeo manual como el sistema viejo): si se especifica,
+  // la cuota es fija = cuotaAjustada; capital = P/n e interes = cuota - capital.
+  const adj = round2(cuotaAjustada);
 
   const base = fechaPrimera ? new Date(`${fechaPrimera}T00:00:00`) : null;
   let saldo = P;
@@ -28,7 +32,12 @@ export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fecha
   const rows = [];
   for (let k = 1; k <= n; k++) {
     let cap; let interes; let cuota;
-    if (metodo === 'frances') {
+    if (adj > 0) {
+      // Cuota fija ajustada por el operador
+      cap = round2(P / n);
+      cuota = adj;
+      interes = round2(adj - cap);
+    } else if (metodo === 'frances') {
       if (i > 0) {
         interes = round2(saldo * i);
         cuota = cuotaFija;
@@ -46,7 +55,8 @@ export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fecha
     }
     if (k === n) {
       cap = round2(P - sumCap);
-      cuota = round2(cap + interes);
+      cuota = adj > 0 ? adj : round2(cap + interes);
+      if (adj > 0) interes = round2(adj - cap);
     }
     sumCap = round2(sumCap + cap);
     saldo = round2(saldo - cap);
