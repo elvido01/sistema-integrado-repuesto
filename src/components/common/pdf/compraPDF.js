@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { openPdf } from '@/components/common/pdf/openPdf';
 
 const formatCurrency = (value) => {
     return (parseFloat(value) || 0).toLocaleString('en-US', {
@@ -188,24 +189,6 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario, empresa =
 
     addTotalLine("Total de la Compra", formatCurrency(compra.total_compra), 40, true);
 
-    // Open PDF reliably using Blob URL
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
-    const pdfWindow = window.open('', '_blank');
-    if (pdfWindow) {
-        pdfWindow.document.write(`
-            <html>
-                <head>
-                    <title>Compra-OC-${docNumber}</title>
-                    <style>body { margin: 0; padding: 0; overflow: hidden; }</style>
-                </head>
-                <body>
-                    <embed src="${url}#toolbar=1&navpanes=0&scrollbar=1" type="application/pdf" width="100%" height="100%" />
-                </body>
-            </html>
-        `);
-        pdfWindow.document.close();
-    } else {
-        window.open(url, '_blank');
-    }
+    // Abrir el PDF de forma confiable (blob URL; about:blank con embed fallaba en Chrome)
+    openPdf(doc, `Compra-OC-${docNumber}.pdf`);
 };
