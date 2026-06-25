@@ -18,7 +18,7 @@ const renderFacturaNotas = (notas) => {
 };
 
 // ── Configuración de empresa para encabezados de impresión ──
-let _empresaConfig = { nombre: 'Sistema', direccion: '', ciudad: '', telefono: '', rnc: '' };
+let _empresaConfig = { nombre: 'Sistema', direccion: '', ciudad: '', telefono: '', rnc: '', slogan: '' };
 
 export const setEmpresaPrintConfig = (empresa) => {
   if (empresa) {
@@ -28,6 +28,7 @@ export const setEmpresaPrintConfig = (empresa) => {
       ciudad: empresa.ciudad || '',
       telefono: empresa.telefono || '',
       rnc: empresa.rnc || '',
+      slogan: empresa.slogan || '',
     };
   }
 };
@@ -291,7 +292,173 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
 };
 
 // ── Full Page / Half Page Invoice ──
+// Factura A4 estilo dealer (Caminero Motors): datos del vehiculo + forma de
+// pago con inicial/pagares. Se usa cuando la factura viene de una solicitud
+// financiada (factura.solicitud presente). El cliente mostrado es el COMPRADOR
+// real (manual_cliente_nombre / solicitud), no la financiera.
+const printFacturaDealerFullPage = (factura) => {
+  const emp = _empresaConfig;
+  const sol = factura.solicitud || {};
+  const details = factura.facturas_detalle || [];
+  const fechaStr = formatInTimeZone(new Date(factura.fecha), 'd/M/yyyy');
+  const horaStr = formatInTimeZone(new Date(factura.fecha), 'hh:mm a');
+  const venceStr = sol.fecha_vencimiento ? formatInTimeZone(new Date(`${String(sol.fecha_vencimiento).slice(0,10)}T00:00:00`), 'd/M/yyyy') : '';
+  const numeroStr = String(factura.numero || '').padStart(7, '0');
+
+  const buyerNombre = (factura.manual_cliente_nombre || sol.cliente_nombre || factura.clientes?.nombre || '').toUpperCase();
+  const buyerCodigo = sol.cliente_rnc || factura.clientes?.codigo || '';
+  const buyerRnc = sol.cliente_rnc || '';
+
+  const inicial = parseFloat(sol.inicial) || 0;
+  const nCuotas = parseInt(sol.tiempo_meses) || 0;
+  const cuota = parseFloat(sol.cuota_mensual) || 0;
+  const matricula = sol._matricula || 'TRÁMITE';
+  const placa = sol._placa || 'TRÁMITE';
+
+  const html = `
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8"><style>
+      @page { margin: 12mm 12mm; size: 8.5in 11in; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #000; line-height: 1.35; -webkit-print-color-adjust: exact; }
+      .top { display: flex; justify-content: space-between; align-items: flex-start; }
+      .emp h1 { font-size: 20px; font-weight: 900; }
+      .emp .slogan { font-style: italic; font-size: 12px; }
+      .emp p { font-size: 11px; }
+      .doc { text-align: right; }
+      .doc .t { font-size: 18px; font-weight: 900; letter-spacing: 2px; }
+      .doc .ncf { font-size: 12px; font-weight: 700; margin-top: 4px; }
+      .cab { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; }
+      .cli-box { border: 1px solid #000; border-radius: 4px; padding: 6px 8px; flex: 1.4; }
+      .cli-box .ln { display: flex; gap: 6px; margin: 1px 0; }
+      .cli-box .k { width: 70px; color: #333; }
+      .cli-box .v { font-weight: 700; }
+      .meta { flex: 1; }
+      .meta .ln { display: flex; justify-content: space-between; border-bottom: 1px solid #ccc; padding: 1px 0; }
+      .meta .k { color: #333; }
+      .meta .v { font-weight: 700; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 6px; text-align: left; font-size: 11px; text-transform: uppercase; }
+      th.num, td.num { text-align: right; }
+      td { padding: 3px 6px; font-size: 12px; }
+      .veh-pay { display: flex; gap: 12px; margin-top: 6px; }
+      .veh { flex: 1.5; display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 1px 8px; align-content: start; }
+      .veh .k { color: #333; }
+      .veh .v { font-weight: 700; }
+      .pay { flex: 1; }
+      .pay .ttl { border-bottom: 1px solid #000; font-weight: 700; margin-bottom: 3px; }
+      .pay .line { font-weight: 700; }
+      .tots { width: 250px; margin-left: auto; margin-top: 6px; border: 1px solid #000; }
+      .tots .r { display: flex; justify-content: space-between; padding: 2px 8px; border-bottom: 1px solid #ddd; }
+      .tots .r:last-child { border-bottom: none; }
+      .tots .r.final { font-weight: 900; background: #eee; }
+      .firmas { display: flex; justify-content: space-around; margin-top: 28px; }
+      .firmas .f { text-align: center; width: 40%; border-top: 1px solid #000; padding-top: 2px; font-size: 11px; }
+      .nota { font-size: 9px; text-align: center; margin-top: 14px; color: #222; line-height: 1.3; }
+    </style></head>
+    <body onload="window.print()">
+      <div class="top">
+        <div class="emp">
+          <h1>${emp.nombre}</h1>
+          ${emp.slogan ? `<div class="slogan">${emp.slogan}</div>` : ''}
+          ${emp.direccion ? `<p>${emp.direccion}</p>` : ''}
+          ${emp.telefono ? `<p>${emp.telefono}</p>` : ''}
+          ${emp.rnc ? `<p>${emp.rnc}</p>` : ''}
+        </div>
+        <div class="doc">
+          <div class="t">FACTURA</div>
+          <div class="ncf">NCF: ${factura.ncf || ''}</div>
+        </div>
+      </div>
+
+      <div class="cab">
+        <div class="cli-box">
+          <div class="ln"><span class="k">Cliente</span><span class="v">${buyerCodigo}</span><span class="k" style="width:auto;margin-left:auto;">RNC:</span><span class="v">${buyerRnc && buyerRnc !== buyerCodigo ? buyerRnc : ''}</span></div>
+          <div class="ln"><span class="k">Nombre</span><span class="v">${buyerNombre}</span></div>
+          <div class="ln"><span class="k">Dirección</span><span class="v">${sol.cliente_direccion || ''}</span></div>
+          <div class="ln"><span class="k">Teléfonos</span><span class="v">${sol.cliente_telefono || ''}</span></div>
+        </div>
+        <div class="meta">
+          <div class="ln"><span class="k">Numero</span><span class="v">${numeroStr}</span></div>
+          <div class="ln"><span class="k">Fecha</span><span class="v">${fechaStr} ${horaStr}</span></div>
+          <div class="ln"><span class="k">Vence</span><span class="v">${venceStr}</span></div>
+          <div class="ln"><span class="k">Vendedor</span><span class="v">${factura.vendedor || ''}</span></div>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr>
+          <th style="width:8%;" class="num">Cant.</th>
+          <th style="width:18%;">Referencia</th>
+          <th style="width:34%;">Descripción</th>
+          <th style="width:14%;" class="num">Precio Unit.</th>
+          <th style="width:8%;" class="num">Desc.</th>
+          <th style="width:8%;" class="num">ITBIS</th>
+          <th style="width:10%;" class="num">Total</th>
+        </tr></thead>
+        <tbody>
+          ${details.map(item => `
+            <tr>
+              <td class="num">${Number(item.cantidad || 1).toFixed(2)} UND</td>
+              <td>${(item.codigo || '').toUpperCase()}</td>
+              <td>${(item.descripcion || '').toUpperCase()}</td>
+              <td class="num">${formatCurrency(item.precio)}</td>
+              <td class="num">${formatCurrency(item.descuento || 0)}</td>
+              <td class="num">${formatCurrency(item.itbis || 0)}</td>
+              <td class="num">${formatCurrency(item.importe)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+
+      <div class="veh-pay">
+        <div class="veh">
+          <span class="k">Tipo</span><span class="v">MOTOCICLETA</span>
+          <span class="k">Chasis</span><span class="v">${(sol.chasis || '').toUpperCase()}</span>
+          <span class="k">Marca</span><span class="v">${(sol.marca || '').toUpperCase()}</span>
+          <span class="k">Color</span><span class="v">${(sol.color || '').toUpperCase()}</span>
+          <span class="k">Modelo</span><span class="v">${(sol.modelo || '').toUpperCase()}</span>
+          <span class="k">Motor</span><span class="v">${(sol.motor || '').toUpperCase()}</span>
+          <span class="k">Año</span><span class="v">${sol.anio || ''}</span>
+          <span class="k">Matrícula</span><span class="v">${matricula}</span>
+          <span class="k"></span><span class="v"></span>
+          <span class="k">Placa</span><span class="v">${placa}</span>
+        </div>
+        <div class="pay">
+          <div class="ttl">Forma de Pago</div>
+          ${inicial > 0 ? `<div class="line">INICIAL = ${formatCurrency(inicial)}</div>` : ''}
+          ${nCuotas > 0 && cuota > 0 ? `<div class="line">Pendiente ${nCuotas} Pagarés de ${formatCurrency(cuota)}</div>` : ''}
+          <div style="margin-top:8px;color:#333;">Valores Expresado en<br><b>DOP</b></div>
+        </div>
+      </div>
+
+      <div class="tots">
+        <div class="r"><span>Sub-Total</span><span>${formatCurrency(factura.subtotal)}</span></div>
+        <div class="r"><span>Descuento</span><span>${formatCurrency(factura.descuento || 0)}</span></div>
+        <div class="r"><span>Recargo</span><span>${formatCurrency(factura.recargo || 0)}</span></div>
+        <div class="r"><span>ITBIS</span><span>${formatCurrency(factura.itbis || 0)}</span></div>
+        <div class="r final"><span>Total Facturado</span><span>${formatCurrency(factura.total)}</span></div>
+      </div>
+
+      <div class="firmas">
+        <div class="f">Entregado por</div>
+        <div class="f">Recibido por</div>
+      </div>
+
+      <div class="nota">
+        NOTA: Las facturas a crédito vencen según las condiciones de pago indicadas, devengan intereses mensuales a partir de su vencimiento.
+        NO aceptamos devoluciones después de 48 horas de despachada la mercancía.
+      </div>
+    </body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) { win.document.write(html); win.document.close(); }
+};
+
 const printFacturaFullPage = (factura, printFormat) => {
+  // Factura estilo dealer (moto financiada) si viene de una solicitud
+  if (factura.solicitud) {
+    return printFacturaDealerFullPage(factura);
+  }
   const details = factura.facturas_detalle || [];
   const client = factura.clientes || {};
   const seller = factura.perfiles || {};

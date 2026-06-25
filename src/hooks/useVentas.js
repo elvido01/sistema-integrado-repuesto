@@ -978,6 +978,28 @@ export const useVentas = () => {
         if (ncfData?.nombre_emisor) {
           facturaForPrint.nombre_emisor_ncf = ncfData.nombre_emisor;
         }
+        // Si la venta vino de una solicitud financiada, adjuntar sus datos para
+        // imprimir la factura estilo dealer (vehiculo + inicial/pagares).
+        if (solicitudCompraId) {
+          const { data: solData } = await supabase
+            .from('solicitudes_compras')
+            .select('*')
+            .eq('id', solicitudCompraId)
+            .maybeSingle();
+          if (solData) {
+            let _placa = 'TRÁMITE', _matricula = 'TRÁMITE';
+            if (solData.producto_id) {
+              const { data: prod } = await supabase
+                .from('productos')
+                .select('placa, matricula')
+                .eq('id', solData.producto_id)
+                .maybeSingle();
+              if (prod?.placa) _placa = prod.placa;
+              if (prod?.matricula) _matricula = prod.matricula;
+            }
+            facturaForPrint.solicitud = { ...solData, _placa, _matricula };
+          }
+        }
         onSuccess(facturaForPrint);
       }
       // Avisar a otros paneles abiertos (ej. Orden de Compra) que el stock bajó,

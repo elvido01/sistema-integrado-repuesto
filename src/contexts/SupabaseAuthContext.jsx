@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }) => {
       if (profileData?.tenant_id) {
         let { data: empresaData, error: empresaError } = await supabase
           .from('config_empresa')
-          .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct, feat_suplidores_locales, incluir_existencias_cero_default, feat_cliente_dealer, feat_financiera, formato_comprobante_pago, financiamiento_tipo, financiera_tenant_id')
+          .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, slogan, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct, feat_suplidores_locales, incluir_existencias_cero_default, feat_cliente_dealer, feat_financiera, formato_comprobante_pago, financiamiento_tipo, financiera_tenant_id')
           .eq('tenant_id', profileData.tenant_id)
           .maybeSingle();
         if (empresaError && String(empresaError.message || '').match(/(feat_suplidores_locales|incluir_existencias_cero_default|feat_cliente_dealer|feat_financiera|formato_comprobante_pago|financiamiento_tipo|financiera_tenant_id)/)) {
