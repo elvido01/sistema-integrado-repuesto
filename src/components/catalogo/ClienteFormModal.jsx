@@ -116,7 +116,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           activo: true,
           autorizar_credito: prefill?.autorizar_credito ?? false,
           limite_credito: prefill?.limite_credito || 0,
-          dias_credito: 0,
+          dias_credito: prefill?.dias_credito || 0,
           tipo_ncf: '02',
           precio_nivel: 1,
         });

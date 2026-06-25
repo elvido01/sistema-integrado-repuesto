@@ -1155,12 +1155,15 @@ const SolicitudesComprasPage = () => {
               onClick={() => {
                 if (!selectedSolicitud) return;
                 const ced = (selectedSolicitud.cliente_rnc || '').trim();
+                const nCuotas = parseInt(selectedSolicitud.tiempo_meses) || 0;
+                const diasPorPeriodo = { diario: 1, semanal: 7, quincenal: 15, mensual: 30 }[selectedSolicitud.frecuencia] || 30;
                 setClientePrefill({
                   nombre: selectedSolicitud.cliente_nombre || '',
                   rnc: ced,
                   codigo: ced,
                   autorizar_credito: true,
                   limite_credito: parseFloat(selectedSolicitud.total_pagares) || 0,
+                  dias_credito: nCuotas * diasPorPeriodo,
                 });
                 setClienteModalOpen(true);
               }}
