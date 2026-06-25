@@ -18,6 +18,7 @@ import { format } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteFormModal from '@/components/catalogo/ClienteFormModal';
+import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import { usePanels } from '@/contexts/PanelContext';
 
 // Normaliza una fecha (Date, 'YYYY-MM-DD' o timestamp ISO) al inicio del día local.
@@ -55,6 +56,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
   const { toast } = useToast();
   const { profile, tenantId } = useAuth();
   const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
+  const [isClienteSearchOpen, setIsClienteSearchOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const empty = {
@@ -291,10 +293,19 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
+  // Cliente elegido por el buscador (puede no estar en la lista precargada)
+  const [pickedCliente, setPickedCliente] = useState(null);
   const selectedCliente = useMemo(
-    () => clientes.find(c => c.id === form.cliente_id),
-    [clientes, form.cliente_id]
+    () => (pickedCliente && pickedCliente.id === form.cliente_id ? pickedCliente : clientes.find(c => c.id === form.cliente_id)),
+    [pickedCliente, clientes, form.cliente_id]
   );
+
+  const handleSelectClienteBuscado = (c) => {
+    setPickedCliente(c);
+    setForm(prev => ({ ...prev, cliente_id: c.id, cliente_nombre: c.nombre || '', cliente_rnc: c.rnc || c.codigo || '' }));
+    setCedulaCheck(null);
+    setIsClienteSearchOpen(false);
+  };
 
   useEffect(() => {
     if (selectedCliente && !form.cliente_rnc) {
@@ -384,6 +395,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
   return (
     <>
       <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleSelectProduct} onlyWithStock />
+      <ClienteSearchModal isOpen={isClienteSearchOpen} onClose={() => setIsClienteSearchOpen(false)} onSelectCliente={handleSelectClienteBuscado} />
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-[95vw] w-[1200px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl">
 
@@ -431,10 +443,23 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
               <div className="grid grid-cols-12 gap-3">
                 <div className="col-span-5 space-y-1">
                   <Label className="text-[10px] font-bold text-slate-500 uppercase">Cliente</Label>
-                  <Select value={form.cliente_id} onValueChange={val => updateField('cliente_id', val)}>
-                    <SelectTrigger className="h-8 border-slate-200"><SelectValue placeholder="Seleccione cliente..." /></SelectTrigger>
-                    <SelectContent>{clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsClienteSearchOpen(true)}
+                      className="h-8 flex-1 justify-start font-normal text-sm border-slate-200 truncate"
+                    >
+                      <Search className="w-3.5 h-3.5 mr-2 text-slate-400 shrink-0" />
+                      {form.cliente_id ? (selectedCliente?.nombre || form.cliente_nombre || 'Cliente') : <span className="text-slate-400">Buscar cliente...</span>}
+                    </Button>
+                    {form.cliente_id && (
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600 shrink-0"
+                        onClick={() => setForm(prev => ({ ...prev, cliente_id: '', cliente_nombre: '', cliente_rnc: '' }))}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="col-span-4 space-y-1">
                   <Label className="text-[10px] font-bold text-slate-500 uppercase">Nombre Manual</Label>
