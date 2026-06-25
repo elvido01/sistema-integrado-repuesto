@@ -32,7 +32,12 @@ export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fecha
   const rows = [];
   for (let k = 1; k <= n; k++) {
     let cap; let interes; let cuota;
-    if (adj > 0) {
+    if (metodo === 'vencimiento') {
+      // A vencimiento (bullet): interes periodico, capital TODO en la ultima cuota
+      interes = round2(P * i);
+      cap = (k === n) ? round2(P - sumCap) : 0;
+      cuota = round2(cap + interes);
+    } else if (adj > 0) {
       // Cuota fija ajustada por el operador
       cap = round2(P / n);
       cuota = adj;
@@ -53,7 +58,7 @@ export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fecha
       interes = round2(P * i);
       cuota = round2(cap + interes);
     }
-    if (k === n) {
+    if (k === n && metodo !== 'vencimiento') {
       cap = round2(P - sumCap);
       cuota = adj > 0 ? adj : round2(cap + interes);
       if (adj > 0) interes = round2(adj - cap);

@@ -163,8 +163,9 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
               <Select value={form.metodo} onValueChange={(v) => set('metodo', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="simple">Simple (cuota fija)</SelectItem>
-                  <SelectItem value="frances">Francés (amortiza capital)</SelectItem>
+                  <SelectItem value="simple">Cuotas Fijas (interés simple)</SelectItem>
+                  <SelectItem value="frances">Sobre Saldo Insoluto (francés)</SelectItem>
+                  <SelectItem value="vencimiento">A Vencimiento (interés periódico, capital al final)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
