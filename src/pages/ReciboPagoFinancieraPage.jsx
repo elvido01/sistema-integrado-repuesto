@@ -160,7 +160,7 @@ const ReciboPagoFinancieraPage = () => {
       if (Number(c.mora_pend) > 0) {
         out.push({
           key: `${c.cuota_id}-mora`, cuota_id: c.cuota_id, esMora: true,
-          fecha: '', vence: c.fecha_vencimiento, origen: '>>MORA<<',
+          fecha: hoy(), vence: c.fecha_vencimiento, origen: '>>MORA<<',
           referencia: c.referencia, descripcion: 'Cargos por Atrasos (MORA)',
           monto: round2(c.mora_pend), pendiente: round2(c.mora_pend),
           capital_pend: 0, interes_pend: 0, mora_pend: round2(c.mora_pend),
