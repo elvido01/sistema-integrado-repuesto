@@ -120,11 +120,21 @@ SET search_path TO 'public'
 AS $$
 DECLARE
   v_tenant  uuid := public.get_user_tenant();
+  v_genmora  boolean := true;
+  v_cli_mora numeric := 0;
   v_result  json;
   v_cargos  json;
   v_cargos_pend numeric;
 BEGIN
   IF v_tenant IS NULL THEN RAISE EXCEPTION 'No se pudo determinar el tenant'; END IF;
+
+  -- La mora se rige por el CLIENTE (cotejo + tasa), aplicada al vuelo. Asi el
+  -- switch y el % del catalogo / del Recibo de Pago mandan en tiempo real.
+  SELECT COALESCE(generar_mora, true), COALESCE(mora_pct, 0)
+    INTO v_genmora, v_cli_mora
+  FROM public.clientes WHERE id = p_cliente_id AND tenant_id = v_tenant;
+  v_genmora  := COALESCE(v_genmora, true);
+  v_cli_mora := COALESCE(v_cli_mora, 0);
 
   -- Cargos manuales pendientes (Otras Transacciones)
   SELECT
@@ -169,10 +179,16 @@ BEGIN
   ),
   cu2 AS (
     SELECT *,
-      GREATEST(
-        round((capital_pend + interes_pend) * (mora_pct/100.0) * meses_atraso, 2) - mora_pagada,
-        0
-      ) AS mora_pend
+      -- Mora solo si el cotejo del cliente esta encendido (generar_mora).
+      -- Tasa efectiva: la del cliente si la tiene; si no, la del prestamo.
+      CASE WHEN v_genmora THEN
+        GREATEST(
+          round((capital_pend + interes_pend)
+                * ((CASE WHEN v_cli_mora > 0 THEN v_cli_mora ELSE mora_pct END)/100.0)
+                * meses_atraso, 2) - mora_pagada,
+          0
+        )
+      ELSE 0 END AS mora_pend
     FROM cu
   )
   SELECT json_build_object(
