@@ -376,6 +376,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
       tasa_interes: parseFloat(form.tasa_interes) || 0,
       total_pagares: parseFloat(form.total_pagares) || 0,
       cuota_mensual: parseFloat(form.cuota_mensual) || 0,
+      cuota_ajustada: parseFloat(form.cuota_ajustada) || null,
       fecha_vencimiento: form.fecha_vencimiento || null,
       incluye_placa: form.incluye_placa,
       incluye_gps: form.incluye_gps,
