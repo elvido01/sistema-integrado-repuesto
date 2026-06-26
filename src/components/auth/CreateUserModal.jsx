@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -21,7 +21,7 @@ import {
     SelectValue
 } from '@/components/ui/select';
 import { Loader2, UserPlus, Eye, EyeOff } from 'lucide-react';
-import { toLoginEmail, isUsernameValido, USERNAME_EMAIL_DOMAIN } from '@/lib/loginIdentity';
+import { toLoginEmail, isUsernameValido } from '@/lib/loginIdentity';
 
 const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
     const { toast } = useToast();
@@ -34,6 +34,15 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
         fullName: '',
         role: 'seller'
     });
+
+    // Al abrir el modal, dejar los campos vacíos (evita que el navegador deje
+    // pegado el usuario/clave del admin de un autocompletado anterior).
+    useEffect(() => {
+        if (isOpen) {
+            setFormData({ username: '', password: '', fullName: '', role: 'seller' });
+            setShowPassword(false);
+        }
+    }, [isOpen]);
 
     const handleChange = (e) => {
         const { id, value } = e.target;
@@ -126,7 +135,10 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                         Ingresa los detalles para la nueva cuenta de acceso al sistema.
                     </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                <form onSubmit={handleSubmit} className="space-y-4 py-4" autoComplete="off">
+                    {/* Trampa anti-autocompletado: el navegador rellena estos campos ocultos en vez de los reales */}
+                    <input type="text" name="fakeusernameremembered" autoComplete="username" className="hidden" tabIndex={-1} aria-hidden="true" />
+                    <input type="password" name="fakepasswordremembered" autoComplete="new-password" className="hidden" tabIndex={-1} aria-hidden="true" />
                     <div className="space-y-2">
                         <Label htmlFor="fullName">Nombre Completo</Label>
                         <Input
@@ -134,6 +146,7 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                             placeholder="Ej: Juan Pérez"
                             value={formData.fullName}
                             onChange={handleChange}
+                            autoComplete="off"
                             required
                         />
                     </div>
@@ -141,8 +154,12 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                         <Label htmlFor="username">Usuario</Label>
                         <Input
                             id="username"
+                            name="nuevo-usuario-colaborador"
                             type="text"
                             autoCapitalize="none"
+                            autoComplete="off"
+                            autoCorrect="off"
+                            spellCheck={false}
                             placeholder="ej: rafa (sin espacios)"
                             value={formData.username}
                             onChange={handleChange}
@@ -158,7 +175,9 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                         <div className="relative">
                             <Input
                                 id="password"
+                                name="nueva-clave-colaborador"
                                 type={showPassword ? 'text' : 'password'}
+                                autoComplete="new-password"
                                 placeholder="Mínimo 6 caracteres"
                                 value={formData.password}
                                 onChange={handleChange}
@@ -182,6 +201,8 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="admin">Administrador</SelectItem>
+                                <SelectItem value="gerente">Gerente</SelectItem>
+                                <SelectItem value="supervisor">Supervisor</SelectItem>
                                 <SelectItem value="seller">Vendedor</SelectItem>
                             </SelectContent>
                         </Select>
