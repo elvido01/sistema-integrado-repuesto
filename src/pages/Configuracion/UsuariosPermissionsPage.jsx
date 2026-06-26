@@ -14,6 +14,7 @@ import {
     TableRow
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
     Select,
@@ -24,6 +25,66 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { usernameDesdeEmail } from '@/lib/loginIdentity';
+
+const FULL_ACCESS_ROLES = ['admin', 'owner'];
+
+const isFullAccessRole = (role) => FULL_ACCESS_ROLES.includes(String(role || '').toLowerCase());
+
+// Etiquetas de rol en español (para mostrar en la lista y la cabecera)
+const ROLE_LABELS = {
+    admin: 'Administrador',
+    owner: 'Propietario',
+    manager: 'Gerente',
+    gerente: 'Gerente',
+    supervisor: 'Supervisor',
+    seller: 'Vendedor',
+    vendedor: 'Vendedor',
+};
+const rolLabel = (role) => ROLE_LABELS[String(role || '').toLowerCase()] || role || '—';
+
+// Plantillas de permisos POR DEFECTO según el rol. Son solo una sugerencia:
+// el admin las aplica y SIEMPRE puede editarlas (marcar/desmarcar) antes de guardar.
+const mkPerms = (keys, canEdit) => keys.map((k) => ({ module_key: k, can_view: true, can_edit: !!canEdit }));
+
+// Módulos reservados a Administrador (no entran en plantillas de otros roles)
+const BLOQUEADOS_NO_ADMIN = ['usuarios', 'config_sistema', 'perfil-empresa', 'comprobantes-fiscales', 'presupuesto-inteligente'];
+
+const defaultPermsForRole = (role, allModules) => {
+    const r = String(role || '').toLowerCase();
+
+    // Vendedor: operación de ventas
+    const vendedorEdit = ['ventas', 'recibo-ingreso', 'pedidos', 'cotizaciones', 'clientes', 'devoluciones'];
+    const vendedorView = ['orden-compra', 'mercancias', 'reporte-transacciones-diarias'];
+
+    if (r === 'seller' || r === 'vendedor') {
+        return [...mkPerms(vendedorEdit, true), ...mkPerms(vendedorView, false)];
+    }
+
+    if (r === 'supervisor') {
+        const supEdit = [...vendedorEdit, 'compras', 'solicitudes-compras', 'aprobaciones-compras', 'suplidores',
+            'cierre-caja', 'entrada-mercancia', 'salida-mercancia', 'actualizar-ubicacion', 'vendedores',
+            'marcas', 'modelos', 'tipos-producto'];
+        const supView = ['pago-suplidores', 'reporte-compras', 'reporte-movimientos', 'cartera-clientes',
+            'flujo-caja', 'inventario-fisico', 'reporte-transacciones-diarias', 'orden-compra', 'mercancias'];
+        return [...mkPerms(supEdit, true), ...mkPerms(supView.filter((k) => !supEdit.includes(k)), false)];
+    }
+
+    if (r === 'gerente' || r === 'manager') {
+        // Gerente: acceso amplio (ver+editar) a todo lo operativo/reportes/catálogo,
+        // excepto configuración del sistema/usuarios (reservado a Administrador).
+        return (allModules || [])
+            .filter((m) => !BLOQUEADOS_NO_ADMIN.includes(m.key))
+            .map((m) => ({ module_key: m.key, can_view: true, can_edit: true }));
+    }
+
+    return [];
+};
+
+const currentMonthStart = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+};
 
 const UsuariosPermissionsPage = () => {
     const { toast } = useToast();
@@ -34,6 +95,8 @@ const UsuariosPermissionsPage = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [salesGoal, setSalesGoal] = useState('');
+    const [salesGoalLoading, setSalesGoalLoading] = useState(false);
 
     useEffect(() => {
         fetchUsers();
@@ -63,17 +126,35 @@ const UsuariosPermissionsPage = () => {
 
     const handleSelectUser = async (user) => {
         setSelectedUser(user);
+        setSalesGoal('');
+        setSalesGoalLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('user_module_permissions')
-                .select('*')
-                .eq('user_id', user.id);
+            const [permsRes, goalRes] = await Promise.all([
+                supabase
+                    .from('user_module_permissions')
+                    .select('*')
+                    .eq('user_id', user.id),
+                supabase
+                    .from('vendedor_metas_mensuales')
+                    .select('meta')
+                    .eq('tenant_id', user.tenant_id)
+                    .eq('user_id', user.id)
+                    .eq('periodo', currentMonthStart())
+                    .maybeSingle(),
+            ]);
 
-            if (error) throw error;
-            setUserPermissions(data || []);
+            if (permsRes.error) throw permsRes.error;
+            setUserPermissions(permsRes.data || []);
+            if (goalRes.error) {
+                console.warn('No se pudo cargar la meta del vendedor:', goalRes.error.message);
+            } else {
+                setSalesGoal(goalRes.data?.meta ? String(goalRes.data.meta) : '');
+            }
         } catch (error) {
             console.error("Error fetching user permissions:", error);
             setUserPermissions([]);
+        } finally {
+            setSalesGoalLoading(false);
         }
     };
 
@@ -88,9 +169,32 @@ const UsuariosPermissionsPage = () => {
         });
     };
 
+    // Aplica la plantilla de permisos del rol. merge=true conserva lo ya marcado
+    // y solo AGREGA los módulos sugeridos que falten (no borra nada).
+    const aplicarPlantilla = (role, { merge = true } = {}) => {
+        if (!selectedUser) return;
+        const tpl = defaultPermsForRole(role, MODULES);
+        setUserPermissions(prev => {
+            if (!merge) {
+                return tpl.map(t => ({ user_id: selectedUser.id, ...t }));
+            }
+            const map = new Map((prev || []).map(p => [p.module_key, p]));
+            tpl.forEach(t => {
+                if (!map.has(t.module_key)) map.set(t.module_key, { user_id: selectedUser.id, ...t });
+            });
+            return Array.from(map.values());
+        });
+    };
+
     const handleRoleChange = async (newRole) => {
         setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, role: newRole } : u));
         setSelectedUser(prev => ({ ...prev, role: newRole }));
+        // Si el usuario aún no tiene permisos configurados, precargar los del rol
+        // (siempre editables). Si ya tiene, no se toca nada hasta que el admin
+        // use el botón "Aplicar permisos sugeridos".
+        if (!isFullAccessRole(newRole) && (userPermissions || []).length === 0) {
+            aplicarPlantilla(newRole, { merge: false });
+        }
     };
 
     const saveChanges = async () => {
@@ -106,20 +210,36 @@ const UsuariosPermissionsPage = () => {
             if (profileError) throw profileError;
 
             // 2. Upsert Permissions
-            if (selectedUser.role === 'seller') {
-                const { error: permsError } = await supabase
-                    .from('user_module_permissions')
-                    .upsert(
-                        userPermissions.map(p => ({
-                            user_id: selectedUser.id,
-                            module_key: p.module_key,
-                            can_view: p.can_view,
-                            can_edit: p.can_edit
-                        })),
-                        { onConflict: 'user_id,module_key' }
-                    );
+            if (!isFullAccessRole(selectedUser.role)) {
+                if (userPermissions.length > 0) {
+                    const { error: permsError } = await supabase
+                        .from('user_module_permissions')
+                        .upsert(
+                            userPermissions.map(p => ({
+                                user_id: selectedUser.id,
+                                module_key: p.module_key,
+                                can_view: p.can_view,
+                                can_edit: p.can_edit
+                            })),
+                            { onConflict: 'user_id,module_key' }
+                        );
 
-                if (permsError) throw permsError;
+                    if (permsError) throw permsError;
+                }
+
+                const goalValue = Number(String(salesGoal || '').replace(/,/g, ''));
+                if (goalValue > 0) {
+                    const { error: goalError } = await supabase
+                        .from('vendedor_metas_mensuales')
+                        .upsert({
+                            tenant_id: selectedUser.tenant_id,
+                            user_id: selectedUser.id,
+                            periodo: currentMonthStart(),
+                            meta: goalValue,
+                        }, { onConflict: 'tenant_id,user_id,periodo' });
+
+                    if (goalError) throw goalError;
+                }
             }
 
             toast({
@@ -226,7 +346,7 @@ const UsuariosPermissionsPage = () => {
                                             <TableCell className="py-4">
                                                 <div className="font-medium text-gray-900">{user.full_name || user.email || 'Usuario'}</div>
                                                 <div className="text-xs text-gray-500 uppercase flex items-center mt-1">
-                                                    <Shield className="w-3 h-3 mr-1" /> {user.role}
+                                                    <Shield className="w-3 h-3 mr-1" /> {rolLabel(user.role)}
                                                 </div>
                                             </TableCell>
                                         </TableRow>
@@ -250,7 +370,9 @@ const UsuariosPermissionsPage = () => {
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <CardTitle className="text-lg">{selectedUser.full_name || 'Configurar Usuario'}</CardTitle>
-                                        <CardDescription>{selectedUser.email}</CardDescription>
+                                        <CardDescription>
+                                            Usuario: {usernameDesdeEmail(selectedUser.email)} · Rol: {rolLabel(selectedUser.role)}
+                                        </CardDescription>
                                     </div>
                                     <div className="flex gap-2">
                                         <Button variant="outline" onClick={() => setIsEditModalOpen(true)}>
@@ -283,15 +405,52 @@ const UsuariosPermissionsPage = () => {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="admin">Administrador (Acceso Total)</SelectItem>
+                                            <SelectItem value="gerente">Gerente (Acceso Granular)</SelectItem>
+                                            <SelectItem value="supervisor">Supervisor (Acceso Granular)</SelectItem>
                                             <SelectItem value="seller">Vendedor (Acceso Granular)</SelectItem>
+                                            <SelectItem value="vendedor">Vendedor Legacy</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
 
+                                {!isFullAccessRole(selectedUser.role) ? (
+                                    <div className="grid gap-2 rounded-lg border bg-blue-50/40 p-4 sm:max-w-md">
+                                        <label className="text-sm font-semibold text-gray-700">Meta de venta de este mes</label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={salesGoal}
+                                            onChange={(event) => setSalesGoal(event.target.value)}
+                                            placeholder={salesGoalLoading ? 'Cargando meta...' : 'Ej: 150000'}
+                                            disabled={salesGoalLoading}
+                                        />
+                                        <p className="text-xs text-gray-500">
+                                            Esta meta alimenta el inicio movil del vendedor y se compara con sus ventas facturadas por usuario.
+                                        </p>
+                                    </div>
+                                ) : null}
+
                                 {/* Module Permissions Checklist */}
-                                {selectedUser.role === 'seller' ? (
+                                {!isFullAccessRole(selectedUser.role) ? (
                                     <div className="space-y-4">
-                                        <label className="text-sm font-semibold text-gray-700">Permisos por Módulo</label>
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <label className="text-sm font-semibold text-gray-700">Permisos por Módulo</label>
+                                            <div className="flex gap-2">
+                                                <Button type="button" variant="outline" size="sm"
+                                                    onClick={() => aplicarPlantilla(selectedUser.role, { merge: true })}>
+                                                    Aplicar permisos sugeridos ({rolLabel(selectedUser.role)})
+                                                </Button>
+                                                <Button type="button" variant="ghost" size="sm" className="text-gray-500"
+                                                    onClick={() => setUserPermissions(prev => (prev || []).map(p => ({ ...p, can_view: false, can_edit: false })))}>
+                                                    Limpiar todo
+                                                </Button>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-gray-500">
+                                            Los permisos sugeridos son solo un punto de partida según el rol. Puedes marcar o
+                                            desmarcar cualquier módulo libremente antes de <strong>Guardar Cambios</strong>.
+                                        </p>
                                         <div className="border rounded-lg overflow-hidden">
                                             <Table>
                                                 <TableHeader className="bg-gray-50">
