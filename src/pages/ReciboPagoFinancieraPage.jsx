@@ -12,8 +12,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Save, X, Search, FilePlus } from 'lucide-react';
+import { Loader2, Save, X, Search, FilePlus, Gavel } from 'lucide-react';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
+import OtrasTransaccionesModal from '@/components/financiera/OtrasTransaccionesModal';
 import { round2 } from '@/components/financiera/amortizacion';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
@@ -38,6 +39,7 @@ const ReciboPagoFinancieraPage = () => {
   useEffect(() => { setSidebarOpen(false); }, [setSidebarOpen]);
 
   const [cliente, setCliente] = useState(null);
+  const [otrasOpen, setOtrasOpen] = useState(false); // modal Otras Transacciones (cargos)
   const [moraOn, setMoraOn] = useState(true);      // cotejo Generar Cargos por Atrasos (MORA)
   const [moraPctText, setMoraPctText] = useState('0'); // tasa de mora del cliente
   const [codigoInput, setCodigoInput] = useState('');
@@ -169,6 +171,7 @@ const ReciboPagoFinancieraPage = () => {
   };
 
   const cuotas = estado?.cuotas || [];
+  const cargos = estado?.cargos || []; // Otras Transacciones (cargos manuales)
   const prestamosUnicos = useMemo(
     () => [...new Map(cuotas.map((c) => [c.prestamo_id, c.prestamo_numero])).entries()].map(([id, num]) => ({ id, num })),
     [cuotas]
@@ -177,18 +180,24 @@ const ReciboPagoFinancieraPage = () => {
     () => (prestamoFiltro === 'todos' ? cuotas : cuotas.filter((c) => c.prestamo_id === prestamoFiltro)),
     [cuotas, prestamoFiltro]
   );
+  // Los cargos son a nivel cliente: se muestran con "Todos…" o si coinciden con el préstamo filtrado
+  const cargosFiltrados = useMemo(
+    () => (prestamoFiltro === 'todos' ? cargos : cargos.filter((c) => c.prestamo_id === prestamoFiltro)),
+    [cargos, prestamoFiltro]
+  );
 
   const capitalPend = cuotasFiltradas.reduce((a, c) => a + Number(c.capital_pend || 0), 0);
   const interesPend = cuotasFiltradas.reduce((a, c) => a + Number(c.interes_pend || 0), 0);
   const moraPend = cuotasFiltradas.reduce((a, c) => a + Number(c.mora_pend || 0), 0);
-  const balanceAnterior = round2(capitalPend + interesPend + moraPend);
-  // Filas de la tabla (MORA como linea aparte). El abono se marca por fila.
+  const cargosPend = cargosFiltrados.reduce((a, c) => a + Number(c.pendiente || 0), 0);
+  const balanceAnterior = round2(capitalPend + interesPend + moraPend + cargosPend);
+  // Filas de la tabla (MORA y cargos como lineas aparte). El abono se marca por fila.
   const filas = useMemo(() => {
     const out = [];
     cuotasFiltradas.forEach((c) => {
       if (Number(c.mora_pend) > 0) {
         out.push({
-          key: `${c.cuota_id}-mora`, cuota_id: c.cuota_id, esMora: true,
+          key: `${c.cuota_id}-mora`, cuota_id: c.cuota_id, esMora: true, esCargo: false,
           fecha: hoy(), vence: c.fecha_vencimiento, origen: '>>MORA<<',
           referencia: c.referencia, descripcion: 'Cargos por Atrasos (MORA)',
           monto: round2(c.mora_pend), pendiente: round2(c.mora_pend),
@@ -196,15 +205,25 @@ const ReciboPagoFinancieraPage = () => {
         });
       }
       out.push({
-        key: `${c.cuota_id}-fin`, cuota_id: c.cuota_id, esMora: false,
+        key: `${c.cuota_id}-fin`, cuota_id: c.cuota_id, esMora: false, esCargo: false,
         fecha: c.fecha || '', vence: c.fecha_vencimiento, origen: c.prestamo_numero,
         referencia: c.referencia, descripcion: 'Financiamiento',
         monto: round2(c.monto_cuota), pendiente: round2(Number(c.capital_pend) + Number(c.interes_pend)),
         capital_pend: round2(c.capital_pend), interes_pend: round2(c.interes_pend), mora_pend: 0,
       });
     });
+    // Cargos manuales (Otras Transacciones) como filas cobrables
+    cargosFiltrados.forEach((cg) => {
+      out.push({
+        key: `cargo-${cg.cargo_id}`, cargo_id: cg.cargo_id, esMora: false, esCargo: true,
+        fecha: cg.fecha || '', vence: cg.fecha || '', origen: cg.numero,
+        referencia: cg.concepto || '', descripcion: cg.tipo + (cg.descripcion ? ` · ${cg.descripcion}` : ''),
+        monto: round2(cg.monto), pendiente: round2(cg.pendiente),
+        capital_pend: 0, interes_pend: 0, mora_pend: 0,
+      });
+    });
     return out;
-  }, [cuotasFiltradas]);
+  }, [cuotasFiltradas, cargosFiltrados]);
 
   const montoNum = round2(filas.reduce((a, r) => a + (Number(abonos[r.key]) || 0), 0));
   const balanceActual = Math.max(round2(balanceAnterior - montoNum), 0);
@@ -216,6 +235,7 @@ const ReciboPagoFinancieraPage = () => {
     filas.forEach((r) => {
       const ab = Number(abonos[r.key]) || 0;
       if (ab <= 0) return;
+      if (r.esCargo) return; // los cargos no son capital/interés/mora
       if (r.esMora) { mora += ab; }
       else { const i = Math.min(ab, r.interes_pend); int += i; cap += round2(ab - i); }
     });
@@ -275,10 +295,13 @@ const ReciboPagoFinancieraPage = () => {
     if (montoNum > balanceAnterior + 0.01) { toast({ variant: 'destructive', title: 'El monto excede el balance pendiente' }); return; }
 
     // Abonos exactos por cuota (interes antes que capital; mora en su fila)
+    // y abonos a cargos manuales (Otras Transacciones) por separado.
     const map = {};
+    const cargosAlloc = [];
     filas.forEach((r) => {
       const ab = Number(abonos[r.key]) || 0;
       if (ab <= 0) return;
+      if (r.esCargo) { cargosAlloc.push({ cargo_id: r.cargo_id, monto: round2(ab) }); return; }
       if (!map[r.cuota_id]) map[r.cuota_id] = { cuota_id: r.cuota_id, capital: 0, interes: 0, mora: 0 };
       if (r.esMora) {
         map[r.cuota_id].mora = round2(map[r.cuota_id].mora + ab);
@@ -303,6 +326,7 @@ const ReciboPagoFinancieraPage = () => {
         p_fecha: null,
         p_prestamo_id: prestamoFiltro === 'todos' ? null : prestamoFiltro,
         p_abonos: allocations,
+        p_cargos: cargosAlloc,
       });
       if (error) throw error;
       toast({ title: 'Pago registrado', description: `Recibo ${data?.numero} · Total ${fmt(data?.total_pagado)}` });
@@ -445,10 +469,10 @@ const ReciboPagoFinancieraPage = () => {
                   return (
                   <tr key={r.key}
                       onClick={() => setSelKey(r.key)}
-                      className={`select-none border-b last:border-0 cursor-pointer ${isSel ? 'bg-blue-500 text-white' : (i % 2 === 1 ? 'bg-[#e0fadd]' : 'bg-white')} ${r.esMora && !isSel ? 'text-red-600 font-semibold' : ''}`}>
+                      className={`select-none border-b last:border-0 cursor-pointer ${isSel ? 'bg-blue-500 text-white' : (i % 2 === 1 ? 'bg-[#e0fadd]' : 'bg-white')} ${r.esMora && !isSel ? 'text-red-600 font-semibold' : ''} ${r.esCargo && !isSel ? 'text-amber-700 font-semibold' : ''}`}>
                     <td className="px-2 py-1">{r.fecha}</td>
                     <td className="px-2 py-1">{r.vence}</td>
-                    <td className={`px-2 py-1 ${isSel ? 'text-white' : (r.esMora ? '' : 'font-bold text-blue-900')}`}>{r.origen}</td>
+                    <td className={`px-2 py-1 ${isSel ? 'text-white' : (r.esMora ? '' : (r.esCargo ? 'font-bold' : 'font-bold text-blue-900'))}`}>{r.origen}</td>
                     <td className="px-2 py-1">{r.referencia}</td>
                     <td className="px-2 py-1">{r.descripcion}</td>
                     <td className="px-2 py-1 text-right">{fmt(r.monto)}</td>
@@ -488,24 +512,40 @@ const ReciboPagoFinancieraPage = () => {
               <div className="flex justify-between"><span>Capital Pendiente</span><b>{fmt(capitalPend)}</b></div>
               <div className="flex justify-between"><span>Intereses Pendientes</span><b>{fmt(interesPend)}</b></div>
               <div className="flex justify-between"><span>Mora Pendiente</span><b className="text-red-600">{fmt(moraPend)}</b></div>
+              {cargosPend > 0 && (
+                <div className="flex justify-between"><span>Otros Cargos</span><b className="text-amber-700">{fmt(cargosPend)}</b></div>
+              )}
             </div>
 
-            {/* Mora en tiempo real (mismo cotejo + tasa del catálogo del cliente) */}
-            <div className="border rounded-md p-2 text-xs space-y-2 bg-amber-50/50 lg:col-start-2 lg:row-start-1">
-              <div className="flex items-center justify-between">
-                <Label className="font-bold text-slate-600 cursor-pointer">Generar Cargos por Atrasos (MORA)</Label>
-                <Switch checked={moraOn} onCheckedChange={toggleMora} disabled={!cliente} />
+            {/* Mora en tiempo real (60%) + acceso rápido a Otras Transacciones (40%) */}
+            <div className="lg:col-start-2 lg:row-start-1 flex gap-2 items-stretch">
+              <div className="border rounded-md p-2 text-xs space-y-2 bg-amber-50/50 basis-[60%] grow-0 shrink min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <Label className="font-bold text-slate-600 cursor-pointer text-[11px] leading-tight">Generar Cargos por Atrasos (MORA)</Label>
+                  <Switch checked={moraOn} onCheckedChange={toggleMora} disabled={!cliente} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-slate-500 whitespace-nowrap">Mora %</Label>
+                  <Input
+                    type="number" step="0.01" value={moraPctText}
+                    disabled={!cliente || !moraOn}
+                    onChange={(e) => setMoraPctText(e.target.value)}
+                    onBlur={guardarMoraPct}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); guardarMoraPct(); } }}
+                    className="h-7 text-sm flex-1 min-w-0"
+                  />
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-slate-500 whitespace-nowrap">Mora % (por mes)</Label>
-                <Input
-                  type="number" step="0.01" value={moraPctText}
-                  disabled={!cliente || !moraOn}
-                  onChange={(e) => setMoraPctText(e.target.value)}
-                  onBlur={guardarMoraPct}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); guardarMoraPct(); } }}
-                  className="h-7 text-sm flex-1"
-                />
+              <div className="basis-[40%] grow-0 shrink-0 min-w-0">
+                <Button
+                  type="button" variant="outline" disabled={!cliente}
+                  onClick={() => setOtrasOpen(true)}
+                  title="Aplicar un cargo al cliente (Cargo por Abogados, Gastos de Cobro…)"
+                  className="h-full w-full flex flex-col items-center justify-center gap-1 border-dashed border-amber-300 bg-amber-50/40 hover:bg-amber-100 text-amber-700 whitespace-normal py-2"
+                >
+                  <Gavel className="w-4 h-4" />
+                  <span className="text-[11px] font-bold leading-tight text-center">Otras Transacciones</span>
+                </Button>
               </div>
             </div>
 
@@ -547,6 +587,15 @@ const ReciboPagoFinancieraPage = () => {
       </div>
 
       <ClienteSearchModal isOpen={buscarOpen} onClose={() => setBuscarOpen(false)} onSelectCliente={seleccionarCliente} />
+
+      <OtrasTransaccionesModal
+        isOpen={otrasOpen}
+        clientePreseleccionado={cliente}
+        onClose={(ok) => {
+          setOtrasOpen(false);
+          if (ok && cliente?.id) cargarEstado(cliente.id); // refrescar para ver el nuevo cargo AB-
+        }}
+      />
     </div>
   );
 };

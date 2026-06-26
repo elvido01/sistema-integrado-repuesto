@@ -61,6 +61,7 @@ import GpsFinancingPage from '@/pages/gps/GpsFinancingPage';
 import GpsDeviceDetailPage from '@/pages/gps/GpsDeviceDetailPage';
 import FinancieraPrestamosPage from '@/pages/FinancieraPrestamosPage';
 import ReciboPagoFinancieraPage from '@/pages/ReciboPagoFinancieraPage';
+import OtrasTransaccionesPage from '@/pages/OtrasTransaccionesPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
 import PlanGate from '@/components/auth/PlanGate';
@@ -145,6 +146,7 @@ const componentMapping = {
   'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
   'prestamos': { component: ({ extraData }) => <Protected module="prestamos"><FinancieraPrestamosPage extraData={extraData} /></Protected>, icon: DollarSign, name: 'Préstamos' },
   'recibo-pago': { component: () => <Protected module="prestamos"><ReciboPagoFinancieraPage /></Protected>, icon: Receipt, name: 'Recibo de Pago' },
+  'otras-transacciones': { component: () => <Protected module="prestamos"><OtrasTransaccionesPage /></Protected>, icon: Receipt, name: 'Otras Transacciones' },
 };
 
 export { PanelContext, usePanels };  // re-export desde panelCore para no romper imports

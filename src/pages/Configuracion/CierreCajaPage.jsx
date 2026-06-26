@@ -39,6 +39,19 @@ const DENOMINACIONES = [
 const formatCurrency = (v) =>
   new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 
+const isMobileCashSale = (venta) => {
+  const formaPago = String(venta?.forma_pago || '').toUpperCase();
+  const tipoPago = String(venta?.tipo_pago || '').toUpperCase();
+  const notas = String(venta?.notas || '').toUpperCase();
+
+  return formaPago === 'EFECTIVO'
+    || notas.includes('POS_MOVIL')
+    || notas.includes('POS MOVIL')
+    || notas.includes('MOVIL')
+    || notas.includes('MÓVIL')
+    || tipoPago.includes('MOVIL');
+};
+
 /* ─────────────────────────────────────────────────────────── */
 const CierreCajaPage = () => {
   const { toast } = useToast();
@@ -98,7 +111,7 @@ const CierreCajaPage = () => {
       // Ventas del día
       let ventasQuery = supabase
         .from('facturas')
-        .select('total, itbis, subtotal, descuento, forma_pago, monto_recibido, cambio')
+        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas')
         .eq('tenant_id', tenantId)
         .gte('fecha', startOfDay)
         .lte('fecha', endOfDay);
@@ -112,6 +125,27 @@ const CierreCajaPage = () => {
         console.warn('Error cargando ventas:', ventasErr.message);
       } else {
         ventas = ventasData || [];
+      }
+
+      let ventasMovilesQuery = supabase
+        .from('facturas')
+        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas')
+        .eq('tenant_id', tenantId)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+
+      if (selectedCajero && selectedCajero !== 'ALL') {
+        ventasMovilesQuery = ventasMovilesQuery.eq('usuario_id', selectedCajero);
+      }
+
+      const { data: ventasMovilesData, error: ventasMovilesErr } = await ventasMovilesQuery;
+      if (ventasMovilesErr) {
+        console.warn('Error cargando ventas moviles:', ventasMovilesErr.message);
+      } else {
+        const ventasIds = new Set(ventas.map(v => v.id));
+        const ventasMovilesFaltantes = (ventasMovilesData || [])
+          .filter(v => isMobileCashSale(v) && !ventasIds.has(v.id));
+        ventas = [...ventas, ...ventasMovilesFaltantes];
       }
     } catch (e) {
       console.warn('Exception cargando ventas:', e);
@@ -205,12 +239,22 @@ const CierreCajaPage = () => {
       console.warn('Exception cargando gastos diarios:', e);
     }
 
-    const totalVentasContado = ventas
-      .filter(v => v.forma_pago === 'CONTADO')
+    const ventasContado = ventas.filter(v => {
+      const formaPago = String(v.forma_pago || '').toUpperCase();
+      return formaPago === 'CONTADO' || formaPago === 'EFECTIVO';
+    });
+
+    const totalVentasContado = ventasContado
       .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
 
+    const totalVentasContadoMovil = ventasContado
+      .filter(isMobileCashSale)
+      .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
+
+    const totalVentasContadoCaja = Math.max(0, totalVentasContado - totalVentasContadoMovil);
+
     const totalVentasCredito = ventas
-      .filter(v => v.forma_pago === 'CREDITO')
+      .filter(v => String(v.forma_pago || '').toUpperCase() === 'CREDITO')
       .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
 
     const totalVentas = ventas.reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
@@ -234,6 +278,8 @@ const CierreCajaPage = () => {
     setResumen({
       totalVentas,
       totalVentasContado,
+      totalVentasContadoCaja,
+      totalVentasContadoMovil,
       totalVentasCredito,
       totalItbis,
       totalDescuento,
@@ -284,6 +330,8 @@ const CierreCajaPage = () => {
         cajero_nombre: cajeroName,
         total_ventas: resumen?.totalVentas || 0,
         total_ventas_contado: resumen?.totalVentasContado || 0,
+        total_ventas_contado_caja: resumen?.totalVentasContadoCaja || 0,
+        total_ventas_contado_movil: resumen?.totalVentasContadoMovil || 0,
         total_ventas_credito: resumen?.totalVentasCredito || 0,
         total_itbis: resumen?.totalItbis || 0,
         total_descuento: resumen?.totalDescuento || 0,
@@ -352,7 +400,8 @@ const CierreCajaPage = () => {
         <div class="row"><span>Cajero:</span><span>${cierre.cajero_nombre}</span></div>
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">RESUMEN DE VENTAS</div>
-        <div class="row"><span>Ventas Contado:</span><span>${formatCurrency(resumen?.totalVentasContado)}</span></div>
+        <div class="row"><span>Ventas Contado Caja:</span><span>${formatCurrency(resumen?.totalVentasContadoCaja)}</span></div>
+        <div class="row"><span>Cuenta Contado Móvil:</span><span>${formatCurrency(resumen?.totalVentasContadoMovil)}</span></div>
         <div class="row"><span>Ventas Crédito:</span><span>${formatCurrency(resumen?.totalVentasCredito)}</span></div>
         <div class="row"><span>Total Ventas:</span><span class="bold">${formatCurrency(resumen?.totalVentas)}</span></div>
         <div class="row"><span>Devoluciones:</span><span>${formatCurrency(resumen?.totalDevoluciones)}</span></div>
@@ -494,7 +543,8 @@ const CierreCajaPage = () => {
                 <div className="space-y-2">
                   {[
                     ['Cantidad de Facturas', resumen.cantFacturas, false, true],
-                    ['Ventas Contado', resumen.totalVentasContado],
+                    ['Ventas Contado Caja', resumen.totalVentasContadoCaja],
+                    ['Cuenta Contado Móvil', resumen.totalVentasContadoMovil],
                     ['Ventas Crédito', resumen.totalVentasCredito],
                     ['Total Ventas', resumen.totalVentas, true],
                     ['Devoluciones', resumen.totalDevoluciones],
