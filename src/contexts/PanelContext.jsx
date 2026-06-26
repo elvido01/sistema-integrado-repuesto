@@ -62,6 +62,8 @@ import GpsDeviceDetailPage from '@/pages/gps/GpsDeviceDetailPage';
 import FinancieraPrestamosPage from '@/pages/FinancieraPrestamosPage';
 import ReciboPagoFinancieraPage from '@/pages/ReciboPagoFinancieraPage';
 import OtrasTransaccionesPage from '@/pages/OtrasTransaccionesPage';
+import HistoricoClientePage from '@/pages/HistoricoClientePage';
+import ListaChasisPrestamosPage from '@/pages/ListaChasisPrestamosPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
 import PlanGate from '@/components/auth/PlanGate';
@@ -147,6 +149,8 @@ const componentMapping = {
   'prestamos': { component: ({ extraData }) => <Protected module="prestamos"><FinancieraPrestamosPage extraData={extraData} /></Protected>, icon: DollarSign, name: 'Préstamos' },
   'recibo-pago': { component: () => <Protected module="prestamos"><ReciboPagoFinancieraPage /></Protected>, icon: Receipt, name: 'Recibo de Pago' },
   'otras-transacciones': { component: () => <Protected module="prestamos"><OtrasTransaccionesPage /></Protected>, icon: Receipt, name: 'Otras Transacciones' },
+  'historico-cliente': { component: () => <Protected module="prestamos"><HistoricoClientePage /></Protected>, icon: Receipt, name: 'Histórico de Cliente' },
+  'lista-chasis-prestamos': { component: () => <Protected module="prestamos"><ListaChasisPrestamosPage /></Protected>, icon: Receipt, name: 'Lista de Chasis en Préstamos' },
 };
 
 export { PanelContext, usePanels };  // re-export desde panelCore para no romper imports
