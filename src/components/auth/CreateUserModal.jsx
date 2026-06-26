@@ -21,6 +21,7 @@ import {
     SelectValue
 } from '@/components/ui/select';
 import { Loader2, UserPlus, Eye, EyeOff } from 'lucide-react';
+import { toLoginEmail, isUsernameValido, USERNAME_EMAIL_DOMAIN } from '@/lib/loginIdentity';
 
 const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
     const { toast } = useToast();
@@ -28,7 +29,7 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [formData, setFormData] = useState({
-        email: '',
+        username: '',
         password: '',
         fullName: '',
         role: 'seller'
@@ -49,13 +50,21 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
 
         try {
             // Validate inputs
-            if (!formData.email || !formData.password || !formData.fullName) {
+            const usuario = (formData.username || '').trim().toLowerCase();
+            if (!usuario || !formData.password || !formData.fullName) {
                 throw new Error("Por favor completa todos los campos.");
+            }
+            // El usuario puede ser un nombre de usuario o un correo real (con @)
+            if (!usuario.includes('@') && !isUsernameValido(usuario)) {
+                throw new Error("El usuario debe tener al menos 3 caracteres y solo letras, números, punto, guion o guion bajo (sin espacios).");
             }
 
             if (formData.password.length < 6) {
                 throw new Error("La contraseña debe tener al menos 6 caracteres.");
             }
+
+            // Email de login: si trae '@' es correo real; si no, se deriva del usuario
+            const loginEmail = toLoginEmail(usuario);
 
             // Create user via Edge Function (uses service_role → auto-confirms email)
             const { data, error } = await supabase.functions.invoke('admin-management', {
@@ -63,7 +72,7 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                     action: 'create_user',
                     targetUserId: 'new', // placeholder, not used for create
                     updates: {
-                        email: formData.email,
+                        email: loginEmail,
                         password: formData.password,
                         full_name: formData.fullName,
                         role: formData.role,
@@ -77,18 +86,21 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                 if (error.context?.json?.error) {
                     errorMsg = error.context.json.error;
                 }
+                if (/already.*registered|already exists|duplicate/i.test(errorMsg || '')) {
+                    errorMsg = `El usuario «${usuario}» ya existe. Elige otro nombre de usuario.`;
+                }
                 throw new Error(errorMsg);
             }
 
             toast({
                 title: "Usuario Creado",
-                description: `Se ha creado la cuenta para ${formData.email}. Ya puede iniciar sesión.`,
+                description: `Cuenta creada. ${usuario.includes('@') ? usuario : `Usuario: ${usuario}`}. Ya puede iniciar sesión.`,
             });
 
             if (onUserCreated) onUserCreated(data?.user);
             onClose();
             // Reset form
-            setFormData({ email: '', password: '', fullName: '', role: 'seller' });
+            setFormData({ username: '', password: '', fullName: '', role: 'seller' });
 
         } catch (error) {
             console.error("Error creating user:", error);
@@ -126,15 +138,20 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="email">Correo Electrónico</Label>
+                        <Label htmlFor="username">Usuario</Label>
                         <Input
-                            id="email"
-                            type="email"
-                            placeholder="juan@motoflow.app"
-                            value={formData.email}
+                            id="username"
+                            type="text"
+                            autoCapitalize="none"
+                            placeholder="ej: rafa (sin espacios)"
+                            value={formData.username}
                             onChange={handleChange}
                             required
                         />
+                        <p className="text-[11px] text-gray-500">
+                            El colaborador entrará con este usuario y la contraseña, sin necesidad de correo.
+                            También puedes escribir un correo real (con @) si lo prefieres.
+                        </p>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="password">Contraseña Temporal</Label>

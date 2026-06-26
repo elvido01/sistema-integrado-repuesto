@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { supabase } from '@/src/supabase/client';
-import { Lock, Mail, Eye, EyeOff, Fingerprint } from 'lucide-react-native';
+import { toLoginEmail } from '@/src/lib/loginIdentity';
+import { Lock, User, Eye, EyeOff, Fingerprint } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
@@ -73,15 +74,16 @@ export default function LoginScreen() {
   }
 
   async function signInWithEmail() {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      Alert.alert('Datos requeridos', 'Digite el correo y la contrasena.');
+    // Permite entrar con usuario (sin correo) o con correo real
+    const loginEmail = toLoginEmail(email);
+    if (!loginEmail || !password) {
+      Alert.alert('Datos requeridos', 'Digite el usuario y la contrasena.');
       return;
     }
 
     setLoading(true);
-    console.log('Intento de login para:', trimmedEmail);
-    await signIn(trimmedEmail, password, true);
+    console.log('Intento de login para:', loginEmail);
+    await signIn(loginEmail, password, true);
     setLoading(false);
   }
 
@@ -128,14 +130,14 @@ export default function LoginScreen() {
 
       <View className="space-y-4">
         <View className="bg-gray-100 flex-row items-center rounded-xl px-4 py-3">
-          <Mail color="#6b7280" size={20} />
+          <User color="#6b7280" size={20} />
           <TextInput
             className="flex-1 ml-3 text-base text-gray-900"
-            placeholder="Correo electronico"
+            placeholder="Usuario o correo"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
-            keyboardType="email-address"
+            autoCorrect={false}
           />
         </View>
 

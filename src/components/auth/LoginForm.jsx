@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import MotoFlowLogo from '@/components/common/MotoFlowLogo';
 import { supabase } from '@/lib/customSupabaseClient';
+import { toLoginEmail } from '@/lib/loginIdentity';
 
 const LoginForm = ({ onRegistrar }) => {
   const { signIn } = useAuth();
@@ -50,7 +51,8 @@ const LoginForm = ({ onRegistrar }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { error } = await signIn(email, password);
+      // Permite entrar con usuario (sin correo) o con correo real
+      const { error } = await signIn(toLoginEmail(email), password);
       // Si hubo error (ej. contraseña incorrecta), reactivar el boton.
       // Si fue exitoso, la sesion cambia y el componente se desmonta solo.
       if (error) setLoading(false);
@@ -108,14 +110,15 @@ const LoginForm = ({ onRegistrar }) => {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <Label htmlFor="email">Correo Electrónico</Label>
+            <Label htmlFor="email">Usuario o Correo</Label>
             <Input
               id="email"
-              type="email"
+              type="text"
+              autoCapitalize="none"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              placeholder="tu@empresa.com"
+              placeholder="usuario o tu@empresa.com"
               className="mt-1"
             />
           </div>
