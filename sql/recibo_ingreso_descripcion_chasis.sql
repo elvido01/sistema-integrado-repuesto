@@ -1,10 +1,19 @@
 -- =====================================================================
--- get_datos_cliente_para_recibo: agregar DESCRIPCION (chasis + cod. cliente)
+-- get_datos_cliente_para_recibo: DESCRIPCION (chasis + cod. cliente)
+-- SOLO para el flujo dealer/financiera (Caminero Motors / MotoPrestamos)
 -- ---------------------------------------------------------------------
--- En el Recibo de Ingreso la columna DESCRIPCION salia vacia. Ahora cada
--- factura pendiente trae 'CHASIS: <chasis> | COD CLI: <codigo>' para dar
--- seguimiento. El chasis se guarda en facturas_detalle.codigo (al venir de
--- una solicitud de compra, el codigo de la linea es el chasis). Re-ejecutable.
+-- En el Recibo de Ingreso la columna DESCRIPCION mostraba 'CHASIS: <chasis>
+-- | COD CLI: <codigo>'. Eso solo tiene sentido en empresas que venden
+-- vehiculos/financiamiento (Caminero, MotoPrestamos), donde la linea de la
+-- factura trae el chasis en facturas_detalle.codigo.
+--
+-- En empresas de repuestos (ej. Repuestos Morla) ese "codigo" es el codigo
+-- del producto, NO un chasis, y NO debe mostrarse como tal. Por eso la
+-- descripcion solo se arma cuando el tenant es dealer/financiera; para los
+-- demas queda vacia (como antes).
+--
+-- Gate por configuracion (no UUIDs): feat_financiera, financiamiento_tipo
+-- = 'terceros', o financiera_tenant_id no nulo. Re-ejecutable.
 -- =====================================================================
 
 CREATE OR REPLACE FUNCTION public.get_datos_cliente_para_recibo(p_cliente_id uuid)
@@ -12,10 +21,25 @@ RETURNS jsonb
 LANGUAGE plpgsql
 AS $$
 DECLARE
+    v_tenant uuid := public.get_user_tenant();
+    v_is_dealer boolean := false;
     v_balance_anterior numeric;
     v_ultimo_pago json;
     v_facturas_pendientes json;
 BEGIN
+    -- Es una empresa del flujo dealer/financiera (motos), donde el codigo de
+    -- la linea es un chasis? Solo entonces mostramos CHASIS / COD CLI.
+    SELECT (
+              COALESCE(ce.feat_financiera, false) = true
+              OR COALESCE(ce.financiamiento_tipo, 'propio') = 'terceros'
+              OR ce.financiera_tenant_id IS NOT NULL
+           )
+      INTO v_is_dealer
+    FROM public.config_empresa ce
+    WHERE ce.tenant_id = v_tenant
+    LIMIT 1;
+    v_is_dealer := COALESCE(v_is_dealer, false);
+
     SELECT COALESCE(SUM(monto_pendiente), 0) INTO v_balance_anterior
     FROM public.facturas
     WHERE cliente_id = p_cliente_id AND estado = 'PENDIENTE';
@@ -33,7 +57,7 @@ BEGIN
             'fecha_vencimiento', f.fecha + (f.dias_credito || ' days')::interval,
             'origen', 'Venta',
             'referencia', 'FT-' || f.numero,
-            'descripcion', btrim(
+            'descripcion', CASE WHEN v_is_dealer THEN btrim(
               COALESCE(
                 (SELECT 'CHASIS: ' || string_agg(NULLIF(btrim(fd.codigo), ''), ', ')
                  FROM public.facturas_detalle fd
@@ -50,7 +74,7 @@ BEGIN
                      THEN ' | COD CLI: ' || cl.codigo
                    ELSE ''
                  END
-            ),
+            ) ELSE '' END,
             'monto_total', f.total,
             'monto_pendiente', f.monto_pendiente
         )
@@ -69,4 +93,4 @@ $$;
 
 NOTIFY pgrst, 'reload schema';
 
-SELECT 'get_datos_cliente_para_recibo ahora incluye descripcion (chasis + cod cliente)' AS status;
+SELECT 'get_datos_cliente_para_recibo: descripcion chasis solo dealer/financiera' AS status;
