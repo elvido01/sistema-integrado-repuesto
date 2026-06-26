@@ -53,8 +53,8 @@ const ListaChasisPrestamosPage = () => {
     setLoading(false);
   }, [estado, tipo, marca, modelo, anio, chasis, toast]);
 
-  useEffect(() => { consultar(); /* carga inicial */ // eslint-disable-next-line
-  }, []);
+  // No se consulta al abrir: el reporte arranca VACÍO (la base crecerá mucho).
+  // Solo se carga cuando el usuario presiona Consultar (F10), idealmente filtrando.
 
   const totalBalance = rows.reduce((a, r) => a + (Number(r.balance) || 0), 0);
 
@@ -133,6 +133,7 @@ const ListaChasisPrestamosPage = () => {
                 </thead>
                 <tbody>
                   {loading && <tr><td colSpan={10} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
+                  {!loading && !consultado && <tr><td colSpan={10} className="p-10 text-center italic text-slate-400">Usa los filtros (Tipo, Marca, Chasis, Estatus…) y presiona <b>Consultar (F10)</b> para ver resultados.</td></tr>}
                   {!loading && consultado && rows.length === 0 && <tr><td colSpan={10} className="p-10 text-center italic text-slate-400">Sin resultados.</td></tr>}
                   {!loading && rows.map((r, i) => (
                     <tr key={`${r.prestamo}-${i}`} className={`border-b last:border-0 ${i % 2 === 1 ? 'bg-[#eef6ff]' : 'bg-white'}`}>
