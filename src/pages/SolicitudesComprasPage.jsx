@@ -80,7 +80,9 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     tiempo_meses: 12,
     tasa_interes: 3,
     total_pagares: 0,
-    cuota_mensual: 0,
+    cuota_base: 0,        // cuota sin ajuste (Monto de las Cuotas)
+    cuota_mensual: 0,     // cuota final (ajustada si el operador la redondea)
+    cuota_ajustada: '',   // cuota redondeada por el operador (opcional)
     fecha_vencimiento: '',
     incluye_placa: false,
     incluye_gps: false,
@@ -181,40 +183,53 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
 
     // Capital a financiar = (contado + add-ons + adicional) - inicial
     const montoFinanciado = valor + addonsTotal + adic - inic;
-    let totalPagares = 0;
-    let cuota = 0;
+    let cuotaBase = 0;
 
     if (meses > 0 && montoFinanciado > 0) {
       if (tasa > 0) {
         if (form.tipo_financiamiento === 'simple') {
           // Interés simple: interés total = capital × tasa_mensual × meses
           const interesTotal = montoFinanciado * (tasa / 100) * meses;
-          totalPagares = montoFinanciado + interesTotal;
-          cuota = totalPagares / meses;
+          cuotaBase = (montoFinanciado + interesTotal) / meses;
         } else {
           // Amortización francesa (PMT, interés sobre saldo)
           const tasaMensual = tasa / 100;
-          cuota = montoFinanciado * tasaMensual / (1 - Math.pow(1 + tasaMensual, -meses));
-          totalPagares = cuota * meses;
+          cuotaBase = montoFinanciado * tasaMensual / (1 - Math.pow(1 + tasaMensual, -meses));
         }
       } else {
-        totalPagares = montoFinanciado;
-        cuota = montoFinanciado / meses;
+        cuotaBase = montoFinanciado / meses;
       }
     }
+
+    // Cuota ajustada (redondeo manual del operador, como el sistema viejo):
+    // si la pone, la cuota final pasa a ese valor y el total se recalcula.
+    const adj = parseFloat(form.cuota_ajustada) || 0;
+    const cuotaFinal = adj > 0 ? adj : cuotaBase;
+    const totalPagares = meses > 0 ? cuotaFinal * meses : 0;
 
     setForm(prev => ({
       ...prev,
       financiamiento: Math.round(montoFinanciado * 100) / 100,
+      cuota_base: Math.round(cuotaBase * 100) / 100,
       total_pagares: Math.round(totalPagares * 100) / 100,
-      cuota_mensual: Math.round(cuota * 100) / 100,
+      cuota_mensual: Math.round(cuotaFinal * 100) / 100,
     }));
   }, [
     form.valor_contado, form.inicial, form.adicional, form.tasa_interes, form.tiempo_meses,
     form.incluye_placa, form.incluye_gps, form.incluye_casco, form.incluye_seguro,
     form.monto_placa, form.monto_gps, form.monto_casco, form.monto_seguro,
-    form.tipo_financiamiento,
+    form.tipo_financiamiento, form.cuota_ajustada,
   ]);
+
+  // Redondear la cuota base hacia arriba al múltiplo elegido (1/5/10/50/100)
+  const redondearCuota = (mult) => {
+    const base = parseFloat(form.cuota_base) || 0;
+    if (!(base > 0)) return;
+    setForm(prev => ({ ...prev, cuota_ajustada: String(Math.ceil(base / mult) * mult) }));
+  };
+  const masAjustes = ((parseFloat(form.cuota_ajustada) || 0) > 0)
+    ? Math.round(((parseFloat(form.cuota_ajustada) || 0) - (parseFloat(form.cuota_base) || 0)) * 100) / 100
+    : 0;
 
   // ── Vencimiento de la 1ra cuota = fecha + 1 período según la frecuencia ──
   useEffect(() => {
@@ -626,6 +641,43 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
 
                 {/* Columna derecha - Resumen calculado */}
                 <div className="col-span-5 bg-gradient-to-br from-slate-50 to-green-50 rounded-lg p-4 border border-green-100 flex flex-col justify-center space-y-3">
+                  {/* Resultado: cuota ajustable (como MotoPréstamos / sistema viejo) */}
+                  <div className="border border-emerald-200 rounded-md bg-emerald-50/60 p-2.5">
+                    <div className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-widest mb-1.5">Resultado</div>
+                    <div className="grid grid-cols-3 gap-2 items-end">
+                      <div className="space-y-0.5">
+                        <Label className="text-[9px] text-slate-500 leading-tight block">Monto de las Cuotas</Label>
+                        <div className="h-8 flex items-center px-1.5 bg-white border rounded text-xs font-bold text-slate-700 font-mono">
+                          {(parseFloat(form.cuota_base) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      <div className="space-y-0.5">
+                        <Label className="text-[9px] text-slate-500 leading-tight block">Más Ajustes</Label>
+                        <div className={`h-8 flex items-center px-1.5 bg-white border rounded text-xs font-bold font-mono ${masAjustes < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                          {masAjustes.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      <div className="space-y-0.5">
+                        <Label className="text-[9px] font-bold text-emerald-800 leading-tight block">Cuota Ajustada</Label>
+                        <Input
+                          type="number" step="0.01" value={form.cuota_ajustada}
+                          onChange={e => updateField('cuota_ajustada', e.target.value)}
+                          placeholder={(parseFloat(form.cuota_base) || 0).toFixed(2)}
+                          className="h-8 text-xs font-bold font-mono border-emerald-300"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                      <span className="text-[9px] text-slate-500">Redondear a:</span>
+                      {[1, 5, 10, 50, 100].map(m => (
+                        <Button key={m} type="button" size="sm" variant="outline" className="h-5 px-1.5 text-[9px]" onClick={() => redondearCuota(m)}>{m}</Button>
+                      ))}
+                      {(parseFloat(form.cuota_ajustada) || 0) > 0 && (
+                        <Button type="button" size="sm" variant="ghost" className="h-5 px-1.5 text-[9px] text-slate-500" onClick={() => updateField('cuota_ajustada', '')}>Quitar</Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="h-px bg-green-200" />
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500 font-medium">Financiamiento:</span>
                     <span className="font-mono font-bold text-slate-700">RD$ {(parseFloat(form.financiamiento) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
