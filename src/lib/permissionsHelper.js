@@ -61,7 +61,7 @@ export const MODULES = [
     { key: 'etiquetas-masivas', label: 'Impresión Etiquetas' },
     { key: 'solicitudes', label: 'Inventario - Solicitudes Agotados' },
     { key: 'reporte-compras', label: 'Reporte de Compras' },
-    { key: 'reporte-movimientos', label: 'Reporte - Movimiento de Mercancías' },
+    { key: 'reporte-movimientos', label: 'Reporte - Transacciones de Inventario' },
     { key: 'reporte-transacciones-diarias', label: 'Transacciones Diarias' },
     { key: 'inventario-fisico', label: 'Reporte - Inventario Físico' },
     { key: 'reportes-dgii', label: 'Reportes DGII (606/607/608)' },

@@ -103,7 +103,7 @@ const componentMapping = {
   'cambio-codigo': { component: () => <Protected module="cambio-codigo"><CambioCodigoPage /></Protected>, icon: RefreshCw, name: 'Cambio de Código' },
   'reporte-compras': { component: () => <Protected module="reporte-compras"><ReporteComprasPage /></Protected>, icon: BarChart2, name: 'Reporte de Compras' },
   'reporte-transacciones-diarias': { component: () => <Protected module="reporte-transacciones-diarias"><ReporteTransaccionesDiariasPage /></Protected>, icon: ListChecks, name: 'Transacciones Diarias' },
-  'reporte-movimientos': { component: () => <Protected module="reporte-movimientos"><ReporteMovimientosPage /></Protected>, icon: BarChart2, name: 'Movimiento de Mercancías' },
+  'reporte-movimientos': { component: () => <Protected module="reporte-movimientos"><ReporteMovimientosPage /></Protected>, icon: BarChart2, name: 'Transacciones de Inventario' },
   'clientes': { component: () => <Protected module="clientes"><ClientesPage /></Protected>, icon: Users, name: 'Clientes' },
   'suplidores': { component: () => <Protected module="suplidores"><SuplidoresPage /></Protected>, icon: Briefcase, name: 'Suplidores' },
   'usuarios': { component: () => <Protected module="usuarios"><UsuariosPermissionsPage /></Protected>, icon: UserCog, name: 'Usuarios y Permisos' },

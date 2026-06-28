@@ -89,6 +89,39 @@ export const useVentas = () => {
     };
   };
 
+  /* ---- Control de venta bajo costo ----
+   * Margen minimo (% sobre costo) configurable en config_empresa.margen_minimo_pct.
+   * 0 (o no configurado) = solo se prohibe vender por debajo del costo. */
+  const margenMinPct = Number(empresa?.margen_minimo_pct || 0) / 100;
+
+  // Precio neto unitario (sin ITBIS, ya con descuento de la linea aplicado).
+  const getPrecioNetoUnit = (item) => {
+    const itbis_pct = normalizeItbisPct(item.itbis_pct);
+    const precioConItbis = Number(item.precio || 0);
+    const descuentoPct = Number(item.descuento || 0);
+    const netoConItbis = precioConItbis * (1 - descuentoPct / 100);
+    return netoConItbis / (1 + itbis_pct);
+  };
+
+  // Devuelve { costo, piso, precioNeto } si la linea queda bajo el costo minimo, o null.
+  const checkBajoCosto = (item) => {
+    const costo = Number(item?.costo_unitario || 0);
+    if (costo <= 0) return null; // sin costo registrado no se puede validar
+    const piso = costo * (1 + margenMinPct);
+    const precioNeto = getPrecioNetoUnit(item);
+    // Tolerancia de medio centavo para evitar falsos positivos por redondeo.
+    if (precioNeto < piso - 0.005) return { costo, piso, precioNeto };
+    return null;
+  };
+
+  const describeBajoCosto = (item, bc) => {
+    const nombre = item.descripcion || item.codigo || 'Artículo';
+    const extra = margenMinPct > 0
+      ? ` Mínimo permitido RD$ ${bc.piso.toFixed(2)} (margen ${empresa?.margen_minimo_pct}% sobre costo RD$ ${bc.costo.toFixed(2)}).`
+      : ` Costo RD$ ${bc.costo.toFixed(2)}.`;
+    return `${nombre}: precio neto RD$ ${bc.precioNeto.toFixed(2)} está por debajo del mínimo.${extra}`;
+  };
+
   const updateCurrentItem = useCallback((field, value) => {
     setCurrentItem(prev => {
       if (!prev) return null;
@@ -111,6 +144,17 @@ export const useVentas = () => {
     if (!currentItem) return;
     if (!currentItem.cantidad || currentItem.cantidad <= 0) {
       toast({ title: 'Error', description: 'La cantidad debe ser mayor a 0', variant: 'destructive' });
+      return;
+    }
+
+    const bajoCosto = checkBajoCosto(currentItem);
+    if (bajoCosto) {
+      toast({
+        title: 'Precio por debajo del costo',
+        description: `${describeBajoCosto(currentItem, bajoCosto)} Suba el precio para continuar.`,
+        variant: 'destructive',
+        duration: 7000,
+      });
       return;
     }
 
@@ -640,6 +684,19 @@ export const useVentas = () => {
     if (paymentType === 'credito' && !cliente.autorizar_credito) {
       toast({ title: 'Error de crédito', description: 'Este cliente no tiene crédito autorizado.', variant: 'destructive' });
       return;
+    }
+    // Bloqueo total: ninguna linea puede facturarse por debajo del costo minimo.
+    for (const it of items) {
+      const bc = checkBajoCosto(it);
+      if (bc) {
+        toast({
+          title: 'Venta bloqueada: precio bajo costo',
+          description: `${describeBajoCosto(it, bc)} Ajuste el precio para poder facturar.`,
+          variant: 'destructive',
+          duration: 8000,
+        });
+        return;
+      }
     }
     // Validar que el monto recibido no sea menor al total para ventas de contado
     if (paymentType === 'contado') {

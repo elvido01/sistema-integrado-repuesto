@@ -48,6 +48,7 @@ const ConfiguracionSistemaPage = () => {
         caja_historial_desde: '1970-01-01',
         precio2_descuento_pct: 10,
         precio3_descuento_pct: 15,
+        margen_minimo_pct: 0,
         incluir_existencias_cero_default: true,
         cobranza_hora_corte: '17:50',
         cobranza_buscador_telefono: '',
@@ -103,6 +104,7 @@ const ConfiguracionSistemaPage = () => {
                     caja_historial_desde: data.caja_historial_desde || '1970-01-01',
                     precio2_descuento_pct: data.precio2_descuento_pct ?? 10,
                     precio3_descuento_pct: data.precio3_descuento_pct ?? 15,
+                    margen_minimo_pct: data.margen_minimo_pct ?? 0,
                     incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true,
                     cobranza_hora_corte: (data.cobranza_hora_corte || '17:50').slice(0, 5),
                     cobranza_buscador_telefono: data.cobranza_buscador_telefono || '',
@@ -435,6 +437,25 @@ const ConfiguracionSistemaPage = () => {
                                 </div>
                                 <p className="text-[10px] text-gray-500 italic">
                                     Útil para mayoristas: una empresa puede usar P2 -5% y P3 -8%, otra P2 -10% y P3 -15%.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Control de venta bajo costo */}
+                    <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
+                        <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
+                           <Percent className="w-4 h-4" /> Control de Venta Bajo Costo
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-1.5">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Margen Mínimo Exigido</Label>
+                                <div className="flex items-center">
+                                    <Input id="margen_minimo_pct" type="number" min="0" max="100" step="0.01" value={formData.margen_minimo_pct} onChange={handleNumberChange} className="h-10 rounded-r-none font-bold text-right" />
+                                    <div className="bg-blue-50 border border-l-0 border-blue-200 h-10 px-3 flex items-center justify-center rounded-r-md text-xs font-bold text-blue-700">%</div>
+                                </div>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    El sistema bloquea facturar cualquier línea cuyo precio neto (sin ITBIS) sea menor a <strong>Costo + este margen</strong>. Con <strong>0%</strong> solo se prohíbe vender por debajo del costo.
                                 </p>
                             </div>
                         </div>

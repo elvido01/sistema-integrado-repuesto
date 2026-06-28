@@ -16,6 +16,7 @@ import {
 
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useLayout } from '@/contexts/LayoutContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -23,7 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { formatDateForSupabase, formatInTimeZone, getCurrentDateInTimeZone } from '@/lib/dateUtils';
 
@@ -37,13 +38,22 @@ const fmtQty = (value) => Number(value || 0).toLocaleString('es-DO', {
   maximumFractionDigits: 2,
 });
 
+// Quita el prefijo redundante de direccion (ej: "ENTRADA-EN-000002" -> "EN-000002").
+const cleanDoc = (ref) => String(ref || '').replace(/^(ENTRADA|SALIDA)-/i, '').trim() || '-';
+
+// Estilos compactos para una tabla mas armonica.
+const TH = 'h-auto px-2 py-1.5 text-[11px] leading-tight';
+const TD = 'px-2 py-1.5 text-[12px] leading-tight';
+
 const MovimientoMercanciasPage = () => {
   const { empresa } = useAuth();
   const { toast } = useToast();
+  const { setSidebarOpen } = useLayout();
 
   const [loading, setLoading] = useState(false);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
   const [movimientos, setMovimientos] = useState([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [productos, setProductos] = useState([]);
   const [proveedores, setProveedores] = useState([]);
   const [lastSync, setLastSync] = useState(null);
@@ -115,7 +125,7 @@ const MovimientoMercanciasPage = () => {
             )
           )
         `)
-        .order('fecha', { ascending: false })
+        .order('fecha', { ascending: true })
         .limit(10000);
 
       if (filters.dateRange?.from) {
@@ -144,6 +154,7 @@ const MovimientoMercanciasPage = () => {
       if (error) throw error;
 
       setMovimientos(data || []);
+      setHasSearched(true);
       setLastSync(new Date());
     } catch (error) {
       toast({
@@ -156,15 +167,14 @@ const MovimientoMercanciasPage = () => {
     }
   }, [filters, toast]);
 
+  // Colapsa el menu lateral al entrar para dar mas ancho al reporte.
+  useEffect(() => { setSidebarOpen(false); }, [setSidebarOpen]);
+
   useEffect(() => {
     cargarCatalogos();
   }, [cargarCatalogos]);
 
-  useEffect(() => {
-    cargarMovimientos();
-    // La busqueda se refresca manualmente despues del primer render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // No se consulta la base hasta que el usuario presione "Filtrar".
 
   const resumen = useMemo(() => {
     return movimientos.reduce((acc, mov) => {
@@ -219,7 +229,7 @@ const MovimientoMercanciasPage = () => {
   return (
     <>
       <Helmet>
-        <title>Movimiento de Mercancias - {empresa?.nombre || 'Sistema'}</title>
+        <title>Transacciones de Inventario - {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
 
       <motion.div
@@ -232,10 +242,10 @@ const MovimientoMercanciasPage = () => {
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
               <div>
                 <h1 className="text-white font-black uppercase tracking-[0.18em] text-lg">
-                  Movimiento de Mercancias
+                  Transacciones de Inventario
                 </h1>
                 <p className="text-blue-100 text-xs mt-1">
-                  Kardex por producto, periodo y suplidor asignado.
+                  Entradas y salidas por mercancia, periodo y suplidor (de fecha antigua a reciente).
                 </p>
               </div>
               <div className="flex items-center gap-2 text-xs text-blue-100">
@@ -390,31 +400,46 @@ const MovimientoMercanciasPage = () => {
           </div>
 
           <div className="max-h-[58vh] overflow-auto px-4 pb-4">
-            <Table>
+            <Table className="text-xs">
               <TableHeader className="sticky top-0 z-10 bg-slate-200">
                 <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>Suplidor</TableHead>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="text-right">Entrada</TableHead>
-                  <TableHead className="text-right">Salida</TableHead>
-                  <TableHead className="text-right">Costo</TableHead>
-                  <TableHead className="text-right">Importe</TableHead>
+                  <TableHead rowSpan={2} className={cn(TH, 'align-bottom')}>Fecha</TableHead>
+                  <TableHead rowSpan={2} className={cn(TH, 'align-bottom')}>Transacción</TableHead>
+                  <TableHead rowSpan={2} className={cn(TH, 'align-bottom')}>Código</TableHead>
+                  <TableHead rowSpan={2} className={cn(TH, 'align-bottom')}>Descripción</TableHead>
+                  <TableHead colSpan={3} className={cn(TH, 'text-center border-l border-slate-300 bg-emerald-100 text-emerald-800 font-black uppercase')}>
+                    Entradas
+                  </TableHead>
+                  <TableHead colSpan={3} className={cn(TH, 'text-center border-l border-slate-300 bg-red-100 text-red-800 font-black uppercase')}>
+                    Salidas
+                  </TableHead>
+                </TableRow>
+                <TableRow>
+                  <TableHead className={cn(TH, 'text-right border-l border-slate-300 bg-emerald-50')}>Cant.</TableHead>
+                  <TableHead className={cn(TH, 'text-right bg-emerald-50')}>Costo c/u</TableHead>
+                  <TableHead className={cn(TH, 'text-right bg-emerald-50')}>Costo Total</TableHead>
+                  <TableHead className={cn(TH, 'text-right border-l border-slate-300 bg-red-50')}>Cant.</TableHead>
+                  <TableHead className={cn(TH, 'text-right bg-red-50')}>Costo c/u</TableHead>
+                  <TableHead className={cn(TH, 'text-right bg-red-50')}>Costo Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-10 text-center text-slate-500">
+                    <TableCell colSpan={10} className="py-10 text-center text-slate-500">
                       <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
                       Cargando movimientos...
                     </TableCell>
                   </TableRow>
+                ) : !hasSearched ? (
+                  <TableRow>
+                    <TableCell colSpan={10} className="py-10 text-center text-slate-500">
+                      Configure los filtros y presione <span className="font-semibold">Filtrar</span> para ver las transacciones.
+                    </TableCell>
+                  </TableRow>
                 ) : movimientos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-10 text-center text-slate-500">
+                    <TableCell colSpan={10} className="py-10 text-center text-slate-500">
                       No se encontraron movimientos con los filtros seleccionados.
                     </TableCell>
                   </TableRow>
@@ -423,55 +448,74 @@ const MovimientoMercanciasPage = () => {
                     const cantidad = Number(mov.cantidad || 0);
                     const entrada = cantidad > 0 ? cantidad : 0;
                     const salida = cantidad < 0 ? Math.abs(cantidad) : 0;
-                    const importe = Math.abs(cantidad) * Number(mov.costo_unitario || 0);
+                    const costoCU = Number(mov.costo_unitario || 0);
+                    const costoTotal = Math.abs(cantidad) * costoCU;
                     const producto = mov.productos || {};
-                    const suplidor = producto.suplidor || {};
+                    const esEntrada = cantidad > 0;
 
                     return (
                       <TableRow key={mov.id} className="hover:bg-slate-50">
-                        <TableCell className="whitespace-nowrap">
+                        <TableCell className={cn(TD, 'whitespace-nowrap')}>
                           {mov.fecha ? formatInTimeZone(new Date(mov.fecha), 'dd/MM/yyyy') : 'N/A'}
                         </TableCell>
-                        <TableCell>
-                          <div className="font-bold text-slate-800">{producto.codigo || 'S/C'}</div>
-                          <div className="text-xs text-slate-500 max-w-[360px] truncate" title={producto.descripcion}>
-                            {producto.descripcion || 'Sin descripcion'}
-                          </div>
+                        <TableCell className={cn(TD, 'font-mono whitespace-nowrap')}>
+                          <div className="font-bold text-slate-700">{cleanDoc(mov.referencia_doc)}</div>
+                          {mov.tipo && (
+                            <div className="text-[10px] uppercase text-slate-400">{mov.tipo}</div>
+                          )}
                         </TableCell>
-                        <TableCell className="max-w-[220px] truncate" title={suplidor.nombre}>
-                          {suplidor.nombre || 'Sin suplidor'}
+                        <TableCell className={cn(TD, 'font-bold text-slate-800 whitespace-nowrap')}>
+                          {producto.codigo || 'S/C'}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {mov.referencia_doc || '-'}
+                        <TableCell className={cn(TD, 'max-w-[280px] truncate text-slate-600')} title={producto.descripcion}>
+                          {producto.descripcion || 'Sin descripcion'}
                         </TableCell>
-                        <TableCell>
-                          <span className={cn(
-                            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-black uppercase',
-                            cantidad >= 0
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-red-50 text-red-700 border-red-200',
-                          )}>
-                            {cantidad >= 0 ? <ArrowDownCircle className="h-3.5 w-3.5" /> : <ArrowUpCircle className="h-3.5 w-3.5" />}
-                            {mov.tipo || (cantidad >= 0 ? 'Entrada' : 'Salida')}
-                          </span>
+                        <TableCell className={cn(TD, 'text-right tabular-nums border-l border-slate-200 text-emerald-700 font-semibold')}>
+                          {esEntrada ? fmtQty(entrada) : '-'}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-emerald-700 font-semibold">
-                          {entrada ? fmtQty(entrada) : '-'}
+                        <TableCell className={cn(TD, 'text-right tabular-nums text-slate-600 whitespace-nowrap')}>
+                          {esEntrada ? `RD$ ${fmtNumber(costoCU)}` : '-'}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-red-700 font-semibold">
-                          {salida ? fmtQty(salida) : '-'}
+                        <TableCell className={cn(TD, 'text-right tabular-nums font-bold text-emerald-700 whitespace-nowrap')}>
+                          {esEntrada ? `RD$ ${fmtNumber(costoTotal)}` : '-'}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          RD$ {fmtNumber(mov.costo_unitario)}
+                        <TableCell className={cn(TD, 'text-right tabular-nums border-l border-slate-200 text-red-700 font-semibold')}>
+                          {!esEntrada && salida ? fmtQty(salida) : '-'}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums font-bold">
-                          RD$ {fmtNumber(importe)}
+                        <TableCell className={cn(TD, 'text-right tabular-nums text-slate-600 whitespace-nowrap')}>
+                          {!esEntrada && salida ? `RD$ ${fmtNumber(costoCU)}` : '-'}
+                        </TableCell>
+                        <TableCell className={cn(TD, 'text-right tabular-nums font-bold text-red-700 whitespace-nowrap')}>
+                          {!esEntrada && salida ? `RD$ ${fmtNumber(costoTotal)}` : '-'}
                         </TableCell>
                       </TableRow>
                     );
                   })
                 )}
               </TableBody>
+              {!loading && movimientos.length > 0 && (
+                <TableFooter className="sticky bottom-0 bg-slate-800">
+                  <TableRow className="hover:bg-slate-800">
+                    <TableCell colSpan={4} className={cn(TD, 'text-right font-black uppercase tracking-wide text-white')}>
+                      Total General
+                    </TableCell>
+                    <TableCell className={cn(TD, 'text-right tabular-nums border-l border-slate-600 font-black text-emerald-300')}>
+                      {fmtQty(resumen.entradas)}
+                    </TableCell>
+                    <TableCell />
+                    <TableCell className={cn(TD, 'text-right tabular-nums font-black text-emerald-300 whitespace-nowrap')}>
+                      RD$ {fmtNumber(resumen.valorEntradas)}
+                    </TableCell>
+                    <TableCell className={cn(TD, 'text-right tabular-nums border-l border-slate-600 font-black text-red-300')}>
+                      {fmtQty(resumen.salidas)}
+                    </TableCell>
+                    <TableCell />
+                    <TableCell className={cn(TD, 'text-right tabular-nums font-black text-red-300 whitespace-nowrap')}>
+                      RD$ {fmtNumber(resumen.valorSalidas)}
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              )}
             </Table>
           </div>
         </div>
