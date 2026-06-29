@@ -30,16 +30,23 @@ const HybridFinancialOverviewCard = ({
 
   // Proyección mensual usando los días reales del mes actual
   const diasEnMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const proyeccionFinalMesVentas = proyeccionHibridaDiaria * diasEnMes;
+  // Piso: la estimación al cierre nunca puede ser menor a lo ya vendido en el mes.
+  const proyeccionFinalMesVentas = Math.max(proyeccionHibridaDiaria * diasEnMes, ventasActuales);
   const resultadoProyectado = proyeccionFinalMesVentas - totalCompromisosMensual;
 
   // 2. Mes Anterior (Desempeño)
-  const ventasMesAnterior = growthData?.ventas_mes_anterior || 0;
-  const resultadoMesAnterior = ventasMesAnterior - totalCompromisosMensual;
-  
-  const diferenciaPasado = resultadoProyectado - resultadoMesAnterior;
+  // La RPC get_monthly_growth puede devolver el dato como 'ventas_mes_anterior'
+  // (versión vieja) o como 'mesAnterior' (versión multi-tenant en prod). Leemos
+  // ambos para no perder el comparativo del mes pasado.
+  const ventasMesAnterior = Number(
+    growthData?.ventas_mes_anterior ?? growthData?.mesAnterior ?? 0
+  );
   const hasMesAnterior = ventasMesAnterior > 0;
-  const porcentajeCrecimiento = resultadoMesAnterior !== 0 ? (diferenciaPasado / Math.abs(resultadoMesAnterior)) * 100 : 0;
+  // Crecimiento sobre VENTAS: proyección de cierre de este mes vs ventas reales
+  // del mes pasado. Si vendiste más este mes, el % sale positivo.
+  const porcentajeCrecimiento = ventasMesAnterior > 0
+    ? ((proyeccionFinalMesVentas - ventasMesAnterior) / ventasMesAnterior) * 100
+    : 0;
   
   const progressoMeta = Math.min((ventasActuales / meta) * 100, 100);
   const lograMeta = proyeccionFinalMesVentas >= meta;

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plus, Edit2, Wallet, CreditCard, ArrowRight, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { isBefore, startOfToday, isAfter, endOfWeek, isSameWeek } from 'date-fns';
+import { isBefore, startOfToday, isAfter, endOfWeek, isSameWeek, format } from 'date-fns';
 
 const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, onEdit, onPay, customTotal = null }) => {
   const totalCompromisos = compromisos.reduce((sum, c) => sum + (c.monto || 0), 0);
@@ -43,40 +43,46 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, 
             const future = isAfter(date, endOfWeek(new Date(), { weekStartsOn: 1 }));
 
             return (
-            <div key={i} className="flex justify-between items-center pb-2 border-b border-gray-50 last:border-0 last:pb-0 group">
-              <div className="flex items-center gap-2 overflow-hidden pr-2">
+            <div key={i} className="pb-2 border-b border-gray-50 last:border-0 last:pb-0 group">
+              {/* Línea 1: descripción a ancho completo */}
+              <div className="flex items-center gap-2 min-w-0">
                 <CreditCard className={`w-4 h-4 shrink-0 ${isOverdue ? 'text-red-400' : 'text-gray-400'} group-hover:${isOverdue ? 'text-red-500' : 'text-indigo-500'} transition-colors`} />
-                <div className="flex flex-col min-w-0">
-                  <span className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-gray-700'} truncate uppercase`} title={c.nombre}>{c.nombre}</span>
-                  <div className="flex gap-2 items-center">
-                    {isOverdue && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">Atrasado</span>}
-                    {thisWeek && !isOverdue && <span className="text-[9px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-bold uppercase">Esta semana</span>}
-                    {future && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase">Futuro</span>}
-                    {c.recurrente && (
-                      <span
-                        className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5"
-                        title={`Se renueva ${c.frecuencia || 'mensual'}mente al pagarlo`}
-                      >
-                        <RefreshCw className="w-2.5 h-2.5" />
-                        {c.frecuencia || 'mensual'}
-                      </span>
-                    )}
-                    {onPay && (
-                      <button 
-                        onClick={() => onPay(c)}
-                        className="text-[9px] bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase transition-colors cursor-pointer"
-                      >
-                        Pagar
-                      </button>
-                    )}
-                  </div>
+                <span className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-gray-700'} truncate uppercase flex-1`} title={c.nombre}>{c.nombre}</span>
+              </div>
+              {/* Línea 2: fecha + monto */}
+              <div className="flex items-center justify-between gap-2 mt-0.5 pl-6">
+                <span className={`text-[10px] ${isOverdue ? 'text-red-400' : 'text-gray-400'} truncate`}>
+                  {dateStr ? format(date, 'dd/MM/yy') : ''}
+                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className={`text-sm font-bold ${isOverdue ? 'text-red-600' : 'text-gray-900'}`}>{formatCurrency(c.monto)}</span>
+                  {onEdit && (
+                    <button onClick={() => onEdit(c)} className="p-1 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 opacity-0 group-hover:opacity-100 transition-all focus:opacity-100">
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className={`text-sm font-bold ${isOverdue ? 'text-red-600' : 'text-gray-900'}`}>{formatCurrency(c.monto)}</span>
-                {onEdit && (
-                  <button onClick={() => onEdit(c)} className="p-1 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 opacity-0 group-hover:opacity-100 transition-all focus:opacity-100">
-                    <Edit2 className="w-3.5 h-3.5" />
+              {/* Línea 3: badges en una sola fila */}
+              <div className="flex items-center gap-1.5 mt-1 pl-6 overflow-x-auto">
+                {isOverdue && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Atrasado</span>}
+                {thisWeek && !isOverdue && <span className="text-[9px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Esta semana</span>}
+                {future && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Futuro</span>}
+                {c.recurrente && (
+                  <span
+                    className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0"
+                    title={`Se renueva ${c.frecuencia || 'mensual'}mente al pagarlo`}
+                  >
+                    <RefreshCw className="w-2.5 h-2.5" />
+                    {c.frecuencia || 'mensual'}
+                  </span>
+                )}
+                {onPay && (
+                  <button
+                    onClick={() => onPay(c)}
+                    className="text-[9px] bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase transition-colors cursor-pointer shrink-0"
+                  >
+                    Pagar
                   </button>
                 )}
               </div>
