@@ -42,6 +42,11 @@ test_key.pem
 supabase/.temp/
 schema_prod.sql
 
+# Respaldos/volcados de base de datos — contienen datos sensibles (hashes, tokens, datos de clientes)
+*.backup
+*.dump
+db_cluster-*.backup
+
 # graphify-out — knowledge graph (generated, local only)
 graphify-out/
 src/graphify-out/
