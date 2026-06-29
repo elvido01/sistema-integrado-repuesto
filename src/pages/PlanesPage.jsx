@@ -9,10 +9,21 @@ import { Button } from '@/components/ui/button';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import PagoTransferenciaModal from '@/components/suscripcion/PagoTransferenciaModal';
 
+// Meses gratis al pagar anual (2 = "paga 10, lleva 12" ≈ 17% de ahorro).
+// Ajustar aquí si se quiere otro descuento.
+const MESES_GRATIS_ANUAL = 2;
+const DIAS_ANUAL = 365;
+
 const PlanesPage = () => {
   const { planes, planActual, suscripcion, porVencer, isVencida } = useSuscripcion();
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [showPagoModal, setShowPagoModal] = useState(false);
+  const [ciclo, setCiclo] = useState('mensual'); // 'mensual' | 'anual'
+
+  const esAnual = ciclo === 'anual';
+  // Precio anual con descuento: 12 meses - meses gratis.
+  const precioAnual = (mensual) => Number(mensual || 0) * (12 - MESES_GRATIS_ANUAL);
+  const ahorroAnual = (mensual) => Number(mensual || 0) * MESES_GRATIS_ANUAL;
 
   const planMeta = {
     TRIAL:      { icon: Clock,    gradient: 'from-amber-500 to-orange-500',   color: 'amber',   badge: 'Prueba Gratis',   popular: false },
@@ -39,7 +50,13 @@ const PlanesPage = () => {
 
   const handleSelectPlan = (plan) => {
     if (plan.nombre === 'TRIAL') return;
-    setSelectedPlan(plan);
+    // Capturamos el ciclo elegido en el momento de seleccionar.
+    setSelectedPlan({
+      ...plan,
+      _ciclo: ciclo,
+      _monto: esAnual ? precioAnual(plan.precio) : plan.precio,
+      _duracionDias: esAnual ? DIAS_ANUAL : plan.duracion_dias,
+    });
     setShowPagoModal(true);
   };
 
@@ -63,6 +80,33 @@ const PlanesPage = () => {
             Elige el plan que mejor se adapte a tu negocio.
             Todos los planes incluyen soporte técnico y actualizaciones.
           </p>
+
+          {/* Toggle Mensual / Anual */}
+          <div className="mt-6 flex items-center justify-center">
+            <div className="inline-flex items-center bg-white/10 border border-white/20 rounded-full p-1 backdrop-blur-sm">
+              <button
+                onClick={() => setCiclo('mensual')}
+                className={`px-5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all ${
+                  !esAnual ? 'bg-white text-[#1a0a3a] shadow' : 'text-white/70 hover:text-white'
+                }`}
+              >
+                Mensual
+              </button>
+              <button
+                onClick={() => setCiclo('anual')}
+                className={`px-5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                  esAnual ? 'bg-white text-[#1a0a3a] shadow' : 'text-white/70 hover:text-white'
+                }`}
+              >
+                Anual
+                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                  esAnual ? 'bg-emerald-500 text-white' : 'bg-emerald-400/30 text-emerald-200'
+                }`}>
+                  {MESES_GRATIS_ANUAL} MESES GRATIS
+                </span>
+              </button>
+            </div>
+          </div>
         </motion.div>
       </div>
 
@@ -135,12 +179,24 @@ const PlanesPage = () => {
                   <div className="flex items-baseline justify-center gap-1">
                     <span className="text-gray-400 text-lg font-bold">RD$</span>
                     <span className="text-4xl font-black text-gray-900">
-                      {plan.precio?.toLocaleString()}
+                      {(esAnual ? precioAnual(plan.precio) : plan.precio)?.toLocaleString()}
                     </span>
                   </div>
-                  <p className="text-gray-400 text-xs font-medium mt-1">
-                    por mes · {plan.duracion_dias} días
-                  </p>
+                  {esAnual ? (
+                    <div className="mt-1 space-y-0.5">
+                      <p className="text-gray-400 text-xs font-medium">
+                        por año ·{' '}
+                        <span className="line-through">RD${(plan.precio * 12)?.toLocaleString()}</span>
+                      </p>
+                      <p className="text-emerald-600 text-[11px] font-black uppercase">
+                        Ahorras RD${ahorroAnual(plan.precio)?.toLocaleString()} / año
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 text-xs font-medium mt-1">
+                      por mes · {plan.duracion_dias} días
+                    </p>
+                  )}
                 </div>
 
                 {/* Features */}
@@ -186,7 +242,7 @@ const PlanesPage = () => {
                           : `bg-gradient-to-r ${meta.gradient} hover:opacity-90 text-white`
                     }`}
                   >
-                    {isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisi�n' : canPayCurrent ? (
+                    {isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisi�n' : canPayCurrent ? (
                       <>
                         Pagar Plan Actual
                         <ChevronRight className="w-4 h-4 ml-2" />
@@ -225,6 +281,9 @@ const PlanesPage = () => {
       {showPagoModal && selectedPlan && (
         <PagoTransferenciaModal
           plan={selectedPlan}
+          ciclo={selectedPlan._ciclo}
+          monto={selectedPlan._monto}
+          duracionDias={selectedPlan._duracionDias}
           onClose={() => { setShowPagoModal(false); setSelectedPlan(null); }}
         />
       )}

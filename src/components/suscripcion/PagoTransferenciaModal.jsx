@@ -12,11 +12,15 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 
-const PagoTransferenciaModal = ({ plan, onClose }) => {
+const PagoTransferenciaModal = ({ plan, ciclo = 'mensual', monto, duracionDias, onClose }) => {
   const { toast } = useToast();
   const { tenantId } = useAuth();
   const { refetch } = useSuscripcion();
   const fileInputRef = useRef(null);
+
+  const esAnual = ciclo === 'anual';
+  const montoFinal = Number(monto ?? plan.precio ?? 0);
+  const periodoLabel = esAnual ? 'año' : 'mes';
 
   const [cuentasBancarias, setCuentasBancarias] = useState([]);
   const [loadingCuentas, setLoadingCuentas] = useState(true);
@@ -105,11 +109,13 @@ const PagoTransferenciaModal = ({ plan, onClose }) => {
       // 2. Llamar RPC para crear solicitud de pago
       const { data: pagoId, error: rpcErr } = await supabase.rpc('solicitar_pago_suscripcion', {
         p_plan_id: plan.id,
-        p_monto: plan.precio,
+        p_monto: montoFinal,
         p_referencia: formData.referencia.trim(),
         p_banco_origen: formData.banco_origen.trim() || null,
         p_titular_cuenta: formData.titular_cuenta.trim() || null,
         p_comprobante_url: comprobanteUrl,
+        p_ciclo: ciclo,
+        p_duracion_dias: duracionDias ?? null,
       });
 
       if (rpcErr) throw rpcErr;
@@ -177,8 +183,8 @@ const PagoTransferenciaModal = ({ plan, onClose }) => {
 
             <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
               <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Plan Seleccionado</p>
-              <p className="text-lg font-black text-gray-800">{plan.nombre}</p>
-              <p className="text-sm text-gray-500">RD${plan.precio?.toLocaleString()}/mes</p>
+              <p className="text-lg font-black text-gray-800">{plan.nombre} {esAnual && <span className="text-emerald-600 text-xs font-black uppercase">· Anual</span>}</p>
+              <p className="text-sm text-gray-500">RD${montoFinal?.toLocaleString()}/{periodoLabel}</p>
             </div>
 
             <Button
@@ -206,7 +212,7 @@ const PagoTransferenciaModal = ({ plan, onClose }) => {
         <div className="bg-gradient-to-r from-[#1a0a3a] to-[#3a1a5c] px-6 py-4 flex items-center justify-between sticky top-0 z-10">
           <div>
             <h2 className="text-white font-black text-lg uppercase tracking-wide">Pago por Transferencia</h2>
-            <p className="text-white/60 text-xs">Plan {plan.nombre} · RD${plan.precio?.toLocaleString()}/mes</p>
+            <p className="text-white/60 text-xs">Plan {plan.nombre} {esAnual ? '(Anual)' : ''} · RD${montoFinal?.toLocaleString()}/{periodoLabel}</p>
           </div>
           <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
             <X className="w-5 h-5" />
@@ -236,7 +242,7 @@ const PagoTransferenciaModal = ({ plan, onClose }) => {
                   )}
                   <div className="flex items-center justify-between pt-1 border-t border-blue-200">
                     <span className="text-xs text-blue-600 font-bold">Monto a transferir:</span>
-                    <span className="text-lg font-black text-blue-800">RD${plan.precio?.toLocaleString()}</span>
+                    <span className="text-lg font-black text-blue-800">RD${montoFinal?.toLocaleString()}</span>
                   </div>
                 </div>
               ))

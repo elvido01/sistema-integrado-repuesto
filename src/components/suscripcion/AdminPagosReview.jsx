@@ -145,9 +145,16 @@ const AdminPagosReview = ({ onChanged }) => {
               </div>
               <div className="text-right shrink-0">
                 <p className="text-lg font-black text-gray-900">RD${pago.monto?.toLocaleString()}</p>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-700">
-                  {pago.plan_nombre}
-                </span>
+                <div className="flex items-center justify-end gap-1">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-700">
+                    {pago.plan_nombre}
+                  </span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                    pago.ciclo === 'anual' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {pago.ciclo === 'anual' ? 'Anual' : 'Mensual'}
+                  </span>
+                </div>
               </div>
             </div>
 
