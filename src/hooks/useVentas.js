@@ -94,23 +94,23 @@ export const useVentas = () => {
    * 0 (o no configurado) = solo se prohibe vender por debajo del costo. */
   const margenMinPct = Number(empresa?.margen_minimo_pct || 0) / 100;
 
-  // Precio neto unitario (sin ITBIS, ya con descuento de la linea aplicado).
-  const getPrecioNetoUnit = (item) => {
-    const itbis_pct = normalizeItbisPct(item.itbis_pct);
-    const precioConItbis = Number(item.precio || 0);
+  // Precio de venta unitario (tal cual se cobra, ya con el descuento de la linea
+  // aplicado). Se compara directamente contra el costo, igual que la "Ganancia
+  // Real" de la ficha del producto: NO se le quita el ITBIS.
+  const getPrecioVentaUnit = (item) => {
+    const precio = Number(item.precio || 0);
     const descuentoPct = Number(item.descuento || 0);
-    const netoConItbis = precioConItbis * (1 - descuentoPct / 100);
-    return netoConItbis / (1 + itbis_pct);
+    return precio * (1 - descuentoPct / 100);
   };
 
-  // Devuelve { costo, piso, precioNeto } si la linea queda bajo el costo minimo, o null.
+  // Devuelve { costo, piso, precioVenta } si la linea queda bajo el costo minimo, o null.
   const checkBajoCosto = (item) => {
     const costo = Number(item?.costo_unitario || 0);
     if (costo <= 0) return null; // sin costo registrado no se puede validar
     const piso = costo * (1 + margenMinPct);
-    const precioNeto = getPrecioNetoUnit(item);
+    const precioVenta = getPrecioVentaUnit(item);
     // Tolerancia de medio centavo para evitar falsos positivos por redondeo.
-    if (precioNeto < piso - 0.005) return { costo, piso, precioNeto };
+    if (precioVenta < piso - 0.005) return { costo, piso, precioVenta };
     return null;
   };
 
@@ -119,7 +119,7 @@ export const useVentas = () => {
     const extra = margenMinPct > 0
       ? ` Mínimo permitido RD$ ${bc.piso.toFixed(2)} (margen ${empresa?.margen_minimo_pct}% sobre costo RD$ ${bc.costo.toFixed(2)}).`
       : ` Costo RD$ ${bc.costo.toFixed(2)}.`;
-    return `${nombre}: precio neto RD$ ${bc.precioNeto.toFixed(2)} está por debajo del mínimo.${extra}`;
+    return `${nombre}: precio RD$ ${bc.precioVenta.toFixed(2)} está por debajo del mínimo.${extra}`;
   };
 
   const updateCurrentItem = useCallback((field, value) => {

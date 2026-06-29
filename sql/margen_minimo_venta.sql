@@ -9,8 +9,9 @@
 --                             costo * 1.05, de lo contrario la venta se bloquea.
 --
 -- El bloqueo es total: se valida al agregar la linea y de nuevo al facturar
--- (src/hooks/useVentas.js). El precio comparado es el NETO sin ITBIS y ya con
--- el descuento de la linea aplicado.
+-- (src/hooks/useVentas.js). El precio comparado es el PRECIO DE VENTA tal cual
+-- (ya con el descuento de la linea), SIN quitarle el ITBIS, igual que la
+-- "Ganancia Real" de la ficha del producto.
 --
 -- Re-ejecutable.
 -- =====================================================================

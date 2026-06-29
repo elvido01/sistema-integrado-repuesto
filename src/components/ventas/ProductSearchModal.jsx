@@ -31,6 +31,9 @@ const ProductSearchModal = ({
 }) => {
   const { toast } = useToast();
   const { tenantId, user, empresa } = useAuth();
+  // Dealers y financieras manejan códigos largos (chasis/VIN) que deben verse
+  // completos; repuestos usa códigos cortos en columna angosta.
+  const codigosLargos = empresa?.tipo_negocio === 'dealer' || empresa?.tipo_negocio === 'financiera';
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -259,7 +262,7 @@ const ProductSearchModal = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-gray-50/30 border-2 border-morla-gold shadow-2xl [&>button[class*='absolute']]:hidden">
+      <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-gray-50/30 border-2 border-morla-gold shadow-2xl [&>button[class*='absolute']]:hidden">
         {/* Custom Header matching "información de la mercancía" */}
         <div className="bg-blue-300 border-b border-blue-400 px-4 py-2 flex items-center justify-between flex-shrink-0">
           <h2 className="text-md font-bold text-blue-900 uppercase tracking-wider">Buscar Producto</h2>
@@ -330,18 +333,16 @@ const ProductSearchModal = ({
             <div className="h-full bg-white border rounded-md shadow-sm overflow-hidden flex flex-col">
               {/* Single Horizontal Scroll Container */}
               <div className="flex-grow overflow-auto scrollbar-thin scrollbar-thumb-slate-300">
-                <div className="min-w-[1320px]">
+                <div className="min-w-[960px]">
                   <Table className="w-full table-fixed overflow-visible">
                     <TableHeader className="sticky top-0 bg-gray-100 z-10 shadow-sm">
                       <TableRow className="hover:bg-transparent border-b">
-                        <TableHead className="font-bold text-gray-700 w-[200px]">Código</TableHead>
+                        <TableHead className={`font-bold text-gray-700 ${codigosLargos ? 'w-[220px]' : 'w-[150px]'}`}>Código</TableHead>
                         <TableHead className="font-bold text-gray-700 w-[110px]">Referencia</TableHead>
-                        <TableHead className="font-bold text-gray-700 w-[350px]">Descripción</TableHead>
-                        <TableHead className="font-bold text-gray-700 w-[130px]">Ubicación</TableHead>
+                        <TableHead className={`font-bold text-gray-700 ${codigosLargos ? 'w-[300px]' : 'w-[360px]'}`}>Descripción</TableHead>
+                        <TableHead className="font-bold text-gray-700 w-[120px]">Ubicación</TableHead>
                         <TableHead className="text-right font-bold text-gray-700 w-[90px]">Existencia</TableHead>
-                        <TableHead className="text-right font-bold text-gray-700 w-[130px]">Precio+Imp</TableHead>
-                        <TableHead className="font-bold text-gray-700 w-[150px]">Marca</TableHead>
-                        <TableHead className="font-bold text-gray-700 w-[150px]">Modelo</TableHead>
+                        <TableHead className="text-right font-bold text-gray-700 w-[140px]">Precio+Imp</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -365,7 +366,7 @@ const ProductSearchModal = ({
                                     : 'bg-[#e0fadd] hover:bg-[#e0fadd]'
                               }`}
                             >
-                                <TableCell className={`text-sm py-2 whitespace-nowrap font-bold ${idx === selectedIndex ? 'text-white' : 'text-blue-900'}`}>
+                                <TableCell title={product.codigo} className={`text-sm py-2 whitespace-nowrap font-bold ${codigosLargos ? '' : 'overflow-hidden text-ellipsis'} ${idx === selectedIndex ? 'text-white' : 'text-blue-900'}`}>
                                   {product.codigo}
                                 </TableCell>
                               <TableCell className={`font-medium py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-600'}`}>
@@ -383,12 +384,6 @@ const ProductSearchModal = ({
                                 <TableCell className={`text-right font-black py-2 whitespace-nowrap text-sm ${idx === selectedIndex ? 'text-white bg-transparent' : 'text-blue-900 bg-blue-50/20'}`}>
                                   {formatPrice(product.precio)}
                                 </TableCell>
-                              <TableCell className={`py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-500'}`}>
-                                {product.marca_nombre || '-'}
-                              </TableCell>
-                              <TableCell className={`py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-500'}`}>
-                                {product.modelo_nombre || '-'}
-                              </TableCell>
                               {sendingToOrder === product.id && (
                                 <div className="absolute inset-0 bg-white/50 flex items-center justify-center pointer-events-none">
                                   <Loader2 className="w-5 h-5 animate-spin text-blue-600" />

@@ -49,6 +49,7 @@ const ConfiguracionSistemaPage = () => {
         precio2_descuento_pct: 10,
         precio3_descuento_pct: 15,
         margen_minimo_pct: 0,
+        tipo_negocio: 'repuestos',
         incluir_existencias_cero_default: true,
         cobranza_hora_corte: '17:50',
         cobranza_buscador_telefono: '',
@@ -105,6 +106,7 @@ const ConfiguracionSistemaPage = () => {
                     precio2_descuento_pct: data.precio2_descuento_pct ?? 10,
                     precio3_descuento_pct: data.precio3_descuento_pct ?? 15,
                     margen_minimo_pct: data.margen_minimo_pct ?? 0,
+                    tipo_negocio: data.tipo_negocio || 'repuestos',
                     incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true,
                     cobranza_hora_corte: (data.cobranza_hora_corte || '17:50').slice(0, 5),
                     cobranza_buscador_telefono: data.cobranza_buscador_telefono || '',
@@ -442,12 +444,27 @@ const ConfiguracionSistemaPage = () => {
                         </div>
                     </div>
 
-                    {/* Control de venta bajo costo */}
+                    {/* Tipo de empresa y control de venta bajo costo */}
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
                         <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
-                           <Percent className="w-4 h-4" /> Control de Venta Bajo Costo
+                           <Percent className="w-4 h-4" /> Empresa y Control de Venta
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-1.5">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Tipo de Empresa</Label>
+                                <Select value={formData.tipo_negocio} onValueChange={(value) => setFormData(prev => ({ ...prev, tipo_negocio: value }))}>
+                                    <SelectTrigger className="h-10 bg-white"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="repuestos">Repuestos / Piezas (código corto)</SelectItem>
+                                        <SelectItem value="dealer">Dealer / Vehículos (chasis largo)</SelectItem>
+                                        <SelectItem value="financiera">Financiera / Motopréstamos</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    En <strong>Dealer</strong> y <strong>Financiera</strong> el código (chasis/VIN) se muestra completo en el buscador. En <strong>Repuestos</strong> el código va en columna angosta.
+                                </p>
+                            </div>
+
                             <div className="space-y-1.5">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Margen Mínimo Exigido</Label>
                                 <div className="flex items-center">
@@ -455,7 +472,7 @@ const ConfiguracionSistemaPage = () => {
                                     <div className="bg-blue-50 border border-l-0 border-blue-200 h-10 px-3 flex items-center justify-center rounded-r-md text-xs font-bold text-blue-700">%</div>
                                 </div>
                                 <p className="text-[10px] text-gray-500 italic">
-                                    El sistema bloquea facturar cualquier línea cuyo precio neto (sin ITBIS) sea menor a <strong>Costo + este margen</strong>. Con <strong>0%</strong> solo se prohíbe vender por debajo del costo.
+                                    El sistema bloquea facturar cualquier línea cuyo precio (ya con su descuento) sea menor a <strong>Costo + este margen</strong>. Con <strong>0%</strong> basta con vender por encima del costo (aunque sea un peso).
                                 </p>
                             </div>
                         </div>
