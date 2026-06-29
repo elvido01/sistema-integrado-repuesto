@@ -5,6 +5,13 @@ import { isBefore, startOfToday, isAfter, endOfWeek, isSameWeek, format } from '
 
 const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, onEdit, onPay, customTotal = null }) => {
   const totalCompromisos = compromisos.reduce((sum, c) => sum + (c.monto || 0), 0);
+
+  // Ordenar siempre por fecha más antigua primero (sin fecha al final).
+  const compromisosOrdenados = [...compromisos].sort((a, b) => {
+    const ta = a.fecha ? new Date(a.fecha).getTime() : Infinity;
+    const tb = b.fecha ? new Date(b.fecha).getTime() : Infinity;
+    return ta - tb;
+  });
   const hasNegativeExcedente = excedente < 0;
   const balanceIsShort = hasNegativeExcedente;
   const balanceLabel = hasNegativeExcedente ? 'Caja negativa' : 'Excedente';
@@ -33,8 +40,8 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, 
       </div>
 
       <div className="flex-1 overflow-auto pr-2 mb-4 space-y-3">
-        {compromisos.length > 0 ? (
-          compromisos.map((c, i) => {
+        {compromisosOrdenados.length > 0 ? (
+          compromisosOrdenados.map((c, i) => {
             const dateStr = c.fecha ? c.fecha.split('T')[0] : '';
             const [year, month, day] = dateStr ? dateStr.split('-') : [];
             const date = dateStr ? new Date(year, month - 1, day, 12, 0, 0) : new Date();
