@@ -35,13 +35,14 @@ Programador de tareas de Windows → Crear tarea básica → diaria → "Iniciar
 | 2. Vehículos | `scv8_mp_los_naranjos.mercancias` | `productos` (código = chasis) |
 | 3. Préstamos | `prestamos_01/02/05` | `prestamos` + `prestamo_cuotas` |
 
-## Notas / aproximaciones
-- `prestamos` no tiene columna de balance: se deriva de `prestamo_cuotas`. Solo los
-  préstamos activos (balance>0) llevan cuotas generadas (interés simple); los saldados
-  van solo como cabecera.
-- `frecuencia` se asume **mensual** (el `forma_pago` viejo 1/2/3 no está documentado).
-- El detalle pagado por cuota es una reconstrucción (el sistema viejo era un libro de
-  cargos/abonos, no un calendario fijo). El balance total por préstamo sí queda correcto.
+## Notas (Fase 3 — basada en el libro real)
+- Las **cuotas/saldo** salen de `cxc_pendiente` (saldo pendiente real por préstamo:
+  fila de capital + filas de interés). Así el balance coincide con el sistema viejo.
+- El **historial de pagos** sale de las transacciones `RI` de `cxc_mov_master` → tabla
+  `prestamo_pagos` (de ahí "Último Pago" y la lista de abonos).
+- Un préstamo se marca **activo solo si tiene saldo real** en `cxc_pendiente`; el resto
+  (refinanciados/viejos) quedan como cabecera saldada → la cartera no se infla.
+- `frecuencia` se asume **mensual** (el `forma_pago` viejo no está documentado).
 - Préstamos cuyo cliente no aparece en ninguna base se omiten (se reportan en consola).
 
 ## Archivos
