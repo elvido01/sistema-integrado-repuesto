@@ -47,6 +47,9 @@ schema_prod.sql
 *.dump
 db_cluster-*.backup
 
+# Migración SiiF/SCV8 — salidas generadas (datos de clientes, NO versionar)
+scripts/migracion-siif/out/
+
 # graphify-out — knowledge graph (generated, local only)
 graphify-out/
 src/graphify-out/
