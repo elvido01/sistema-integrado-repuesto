@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Bike, ClipboardList, Edit, FileDown, Plus, RefreshCw, Search, Send, Trash2, X } from 'lucide-react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
@@ -36,6 +36,7 @@ type SolicitudCompra = {
   tasa_interes?: number | string | null;
   total_pagares?: number | string | null;
   cuota_mensual?: number | string | null;
+  cuota_ajustada?: number | string | null;
   fecha_vencimiento?: string | null;
   incluye_placa?: boolean | null;
   incluye_gps?: boolean | null;
@@ -50,7 +51,7 @@ type SolicitudCompra = {
   notas?: string | null;
 };
 
-type Cliente = { id: string; nombre: string; rnc?: string | null };
+type Cliente = { id: string; nombre: string; rnc?: string | null; telefono?: string | null; codigo?: string | null };
 type Vendedor = { id: string; nombre: string };
 
 const emptyForm: SolicitudCompra = {
@@ -76,6 +77,7 @@ const emptyForm: SolicitudCompra = {
   tasa_interes: 3,
   total_pagares: 0,
   cuota_mensual: 0,
+  cuota_ajustada: '',
   fecha_vencimiento: '',
   incluye_placa: false,
   incluye_gps: false,
@@ -168,26 +170,32 @@ const getTotals = (form: SolicitudCompra) => {
   const meses = Math.max(0, Math.trunc(n(form.tiempo_meses)));
   const tasa = n(form.tasa_interes);
   let totalPagares = 0;
-  let cuota = 0;
+  let cuotaBase = 0;
 
   if (capital > 0 && meses > 0) {
     if (tasa > 0 && form.tipo_financiamiento === 'frances') {
       const tasaMensual = tasa / 100;
-      cuota = capital * tasaMensual / (1 - Math.pow(1 + tasaMensual, -meses));
-      totalPagares = cuota * meses;
+      cuotaBase = capital * tasaMensual / (1 - Math.pow(1 + tasaMensual, -meses));
     } else if (tasa > 0) {
-      totalPagares = capital + (capital * (tasa / 100) * meses);
-      cuota = totalPagares / meses;
+      const interesTotal = capital * (tasa / 100) * meses;
+      cuotaBase = (capital + interesTotal) / meses;
     } else {
-      totalPagares = capital;
-      cuota = capital / meses;
+      cuotaBase = capital / meses;
     }
   }
 
+  const cuotaAjustada = n(form.cuota_ajustada);
+  const cuotaFinal = cuotaAjustada > 0 ? cuotaAjustada : cuotaBase;
+  totalPagares = meses > 0 ? cuotaFinal * meses : 0;
+  const cuotaBaseRounded = Math.round(cuotaBase * 100) / 100;
+  const cuotaFinalRounded = Math.round(cuotaFinal * 100) / 100;
+
   return {
     financiamiento: Math.round(capital * 100) / 100,
+    cuota_base: cuotaBaseRounded,
+    mas_ajustes: cuotaAjustada > 0 ? Math.round((cuotaAjustada - cuotaBaseRounded) * 100) / 100 : 0,
     total_pagares: Math.round(totalPagares * 100) / 100,
-    cuota_mensual: Math.round(cuota * 100) / 100,
+    cuota_mensual: cuotaFinalRounded,
   };
 };
 
@@ -225,6 +233,9 @@ export default function SolicitudesCompraMobileScreen() {
   const [saving, setSaving] = useState(false);
   const [solicitudes, setSolicitudes] = useState<SolicitudCompra[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [clientOpen, setClientOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientsLoading, setClientsLoading] = useState(false);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [selected, setSelected] = useState<SolicitudCompra | null>(null);
   const [search, setSearch] = useState('');
@@ -239,6 +250,7 @@ export default function SolicitudesCompraMobileScreen() {
   const [addonPrices, setAddonPrices] = useState({ placa: 0, gps: 0, casco: 0, seguro: 0 });
   const shareRef = useRef<ViewShot>(null);
   const productSearchRequestRef = useRef(0);
+  const clientSearchRequestRef = useRef(0);
 
   const isCaminero = tenantId === CAMINERO_MOTORS_TENANT;
   const visibleSolicitudes = useMemo(() => {
@@ -276,7 +288,7 @@ export default function SolicitudesCompraMobileScreen() {
           .select('*')
           .in('estado', ['Pendiente', 'C/RUTA'])
           .order('fecha', { ascending: false }),
-        supabase.from('clientes').select('id, nombre, rnc').eq('activo', true).order('nombre'),
+        supabase.from('clientes').select('id, nombre, rnc, telefono, codigo').eq('activo', true).order('nombre').limit(30),
         supabase.from('vendedores').select('id, nombre').eq('activo', true).order('nombre'),
         supabase
           .from('config_empresa')
@@ -317,6 +329,79 @@ export default function SolicitudesCompraMobileScreen() {
       if (key === 'incluye_seguro') next.monto_seguro = value ? n(prev.monto_seguro) || addonPrices.seguro : 0;
       return next;
     });
+  };
+
+  const redondearCuota = (multiplo: number) => {
+    const cuotaBase = formTotals.cuota_base;
+    if (!(cuotaBase > 0)) return;
+    setField('cuota_ajustada', String(Math.ceil(cuotaBase / multiplo) * multiplo));
+  };
+
+  const setManualClienteNombre = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      cliente_id: null,
+      cliente_nombre: value,
+    }));
+  };
+
+  const setManualClienteRnc = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      cliente_id: null,
+      cliente_rnc: value,
+    }));
+  };
+
+  const loadClientes = useCallback(async (searchText = clientSearch) => {
+    const requestId = clientSearchRequestRef.current + 1;
+    clientSearchRequestRef.current = requestId;
+    setClientsLoading(true);
+    try {
+      let query = supabase
+        .from('clientes')
+        .select('id, nombre, rnc, telefono, codigo')
+        .eq('activo', true)
+        .order('nombre', { ascending: true })
+        .limit(40);
+
+      const term = searchText.trim().replace(/,/g, ' ');
+      if (term) {
+        query = query.or(`nombre.ilike.%${term}%,rnc.ilike.%${term}%,telefono.ilike.%${term}%,codigo.ilike.%${term}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      if (requestId === clientSearchRequestRef.current) {
+        setClientes((data || []) as Cliente[]);
+      }
+    } catch (error: any) {
+      if (requestId === clientSearchRequestRef.current) {
+        Alert.alert('Error', error.message || 'No se pudieron buscar clientes.');
+      }
+    } finally {
+      if (requestId === clientSearchRequestRef.current) {
+        setClientsLoading(false);
+      }
+    }
+  }, [clientSearch]);
+
+  useEffect(() => {
+    if (!clientOpen) return;
+    const timer = setTimeout(() => {
+      loadClientes(clientSearch);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [clientOpen, clientSearch, loadClientes]);
+
+  const selectCliente = (cliente: Cliente) => {
+    setForm((prev) => ({
+      ...prev,
+      cliente_id: cliente.id,
+      cliente_nombre: cliente.nombre || '',
+      cliente_rnc: cliente.rnc || '',
+    }));
+    setClientOpen(false);
   };
 
   const openNew = () => {
@@ -438,6 +523,7 @@ export default function SolicitudesCompraMobileScreen() {
         tasa_interes: n(form.tasa_interes),
         total_pagares: formTotals.total_pagares,
         cuota_mensual: formTotals.cuota_mensual,
+        cuota_ajustada: n(form.cuota_ajustada) > 0 ? n(form.cuota_ajustada) : null,
         fecha_vencimiento: form.fecha_vencimiento || null,
         incluye_placa: !!form.incluye_placa,
         incluye_gps: !!form.incluye_gps,
@@ -510,7 +596,7 @@ export default function SolicitudesCompraMobileScreen() {
   if (!isCaminero) {
     return (
       <View className="flex-1 bg-gray-50">
-        <View className="bg-brand px-4 py-4 flex-row items-center">
+        <View className="bg-brand px-4 pb-4 flex-row items-center" style={{ paddingTop: Math.max(insets.top + 12, 24) }}>
           <TouchableOpacity onPress={() => router.back()} className="mr-3">
             <ArrowLeft color="white" size={22} />
           </TouchableOpacity>
@@ -527,7 +613,7 @@ export default function SolicitudesCompraMobileScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <View className="bg-brand px-4 py-4 flex-row items-center">
+      <View className="bg-brand px-4 pb-4 flex-row items-center" style={{ paddingTop: Math.max(insets.top + 12, 24) }}>
         <TouchableOpacity onPress={() => router.back()} className="mr-3">
           <ArrowLeft color="white" size={22} />
         </TouchableOpacity>
@@ -558,7 +644,7 @@ export default function SolicitudesCompraMobileScreen() {
         <FlatList
           data={visibleSolicitudes}
           keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={{ padding: 12, paddingBottom: 160 }}
+          contentContainerStyle={{ padding: 12, paddingBottom: Math.max(insets.bottom + 190, 190) }}
           ListEmptyComponent={
             <View className="items-center justify-center py-16">
               <ClipboardList color="#cbd5e1" size={48} />
@@ -588,7 +674,7 @@ export default function SolicitudesCompraMobileScreen() {
       )}
 
       {selected ? (
-        <View className="bg-white border-t border-slate-200 p-3">
+        <View className="bg-white border-t border-slate-200 px-3 pt-3" style={{ paddingBottom: Math.max(insets.bottom + 12, 24) }}>
           <Text className="text-xs text-slate-500 mb-2">Seleccionada #{selected.numero}</Text>
           <View className="flex-row gap-2">
             <TouchableOpacity className="bg-slate-700 rounded-xl px-3 py-3 flex-1 flex-row justify-center items-center" onPress={() => openEdit(selected)}>
@@ -606,7 +692,7 @@ export default function SolicitudesCompraMobileScreen() {
         </View>
       ) : null}
 
-      <TouchableOpacity className="absolute right-5 bottom-24 bg-brand rounded-full w-14 h-14 items-center justify-center shadow-lg" onPress={openNew}>
+      <TouchableOpacity className="absolute right-5 bg-brand rounded-full w-14 h-14 items-center justify-center shadow-lg" style={{ bottom: Math.max(insets.bottom + 92, 104) }} onPress={openNew}>
         <Plus color="white" size={28} />
       </TouchableOpacity>
 
@@ -679,7 +765,11 @@ export default function SolicitudesCompraMobileScreen() {
       </Modal>
 
       <Modal visible={formOpen} animationType="slide" onRequestClose={() => setFormOpen(false)}>
-        <View className="flex-1 bg-slate-50">
+        <KeyboardAvoidingView
+          className="flex-1 bg-slate-50"
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
           <View className="bg-[#a3c2f0] px-4 py-3 flex-row items-center">
             <ClipboardList color="#1e293b" size={22} />
             <Text className="text-slate-800 font-black text-lg flex-1 ml-2">SOLICITUD DE COMPRA</Text>
@@ -687,11 +777,26 @@ export default function SolicitudesCompraMobileScreen() {
               <X color="#1e293b" size={24} />
             </TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: Math.max(150, insets.bottom + 130) }}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={{ padding: 14, paddingBottom: Math.max(260, insets.bottom + 240) }}
+          >
             <Text className="text-[11px] font-black text-blue-800 uppercase mb-2">Datos del cliente</Text>
             <View className="bg-white border border-slate-200 rounded-xl p-3 mb-4">
-              <Field label="Nombre manual" value={String(form.cliente_nombre || '')} onChangeText={(v) => setField('cliente_nombre', v)} placeholder="Nombre del cliente" />
-              <Field label="RNC / Cedula" value={String(form.cliente_rnc || '')} onChangeText={(v) => setField('cliente_rnc', v)} placeholder="000-0000000-0" />
+              <TouchableOpacity
+                className="bg-blue-50 border border-blue-200 rounded-xl py-3 mb-3 flex-row justify-center items-center"
+                onPress={() => { setClientSearch(''); setClientOpen(true); loadClientes(''); }}
+              >
+                <Search color="#1d4ed8" size={18} />
+                <Text className="text-blue-800 font-bold ml-2">Buscar cliente registrado</Text>
+              </TouchableOpacity>
+              <Field label="Nombre manual" value={String(form.cliente_nombre || '')} onChangeText={setManualClienteNombre} placeholder="Nombre del cliente" />
+              <Field label="RNC / Cedula" value={String(form.cliente_rnc || '')} onChangeText={setManualClienteRnc} placeholder="000-0000000-0" />
+              {form.cliente_id ? (
+                <Text className="text-[11px] text-emerald-700 font-bold -mt-1 mb-3">Cliente registrado seleccionado</Text>
+              ) : null}
               <Text className="text-[11px] font-bold text-slate-500 uppercase mb-1">Vendedor</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {vendedores.map((v) => (
@@ -788,6 +893,50 @@ export default function SolicitudesCompraMobileScreen() {
                 );
               })}
 
+              <View className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mt-2 mb-3">
+                <Text className="text-[10px] font-black text-emerald-700 uppercase tracking-[1.5px] mb-3">Resultado</Text>
+                <View className="flex-row gap-2">
+                  <View className="flex-1">
+                    <Text className="text-[10px] font-bold text-slate-500 mb-1">Monto de cuotas</Text>
+                    <View className="bg-white border border-slate-200 rounded-xl px-2 py-2.5">
+                      <Text className="font-black text-slate-800 text-xs">{money(formTotals.cuota_base)}</Text>
+                    </View>
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-[10px] font-bold text-slate-500 mb-1">Mas ajustes</Text>
+                    <View className="bg-white border border-slate-200 rounded-xl px-2 py-2.5">
+                      <Text className={`font-black text-xs ${formTotals.mas_ajustes < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {money(formTotals.mas_ajustes)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+                <View className="mt-2">
+                  <Text className="text-[10px] font-black text-emerald-800 mb-1">Cuota ajustada</Text>
+                  <TextInput
+                    className="bg-white border border-emerald-300 rounded-xl px-3 py-2.5 text-slate-900 font-bold"
+                    value={String(form.cuota_ajustada || '')}
+                    onChangeText={(v) => setField('cuota_ajustada', cleanMoneyInput(v))}
+                    keyboardType="decimal-pad"
+                    placeholder={formTotals.cuota_base ? formTotals.cuota_base.toFixed(2) : '0.00'}
+                    placeholderTextColor="#94a3b8"
+                  />
+                </View>
+                <View className="flex-row flex-wrap items-center gap-2 mt-3">
+                  <Text className="text-[10px] text-slate-500 font-bold">Redondear a:</Text>
+                  {[1, 5, 10, 50, 100].map((multiplo) => (
+                    <TouchableOpacity key={multiplo} className="bg-white border border-emerald-200 rounded-lg px-2.5 py-1.5" onPress={() => redondearCuota(multiplo)}>
+                      <Text className="text-[11px] font-bold text-slate-700">{multiplo}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {n(form.cuota_ajustada) > 0 ? (
+                    <TouchableOpacity className="px-2 py-1.5" onPress={() => setField('cuota_ajustada', '')}>
+                      <Text className="text-[11px] font-bold text-slate-500">Quitar</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+
               <View className="bg-green-50 border border-green-100 rounded-xl p-3 mt-2">
                 <View className="flex-row justify-between mb-2"><Text className="text-slate-600">Financiamiento</Text><Text className="font-bold">{money(formTotals.financiamiento)}</Text></View>
                 <View className="flex-row justify-between mb-2"><Text className="text-slate-600">Total de pagares</Text><Text className="font-bold">{money(formTotals.total_pagares)}</Text></View>
@@ -811,12 +960,12 @@ export default function SolicitudesCompraMobileScreen() {
               <Text className="font-bold text-white ml-2">Guardar</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={productOpen} animationType="slide" onRequestClose={() => setProductOpen(false)}>
         <View className="flex-1 bg-gray-50">
-          <View className="bg-brand px-4 py-4 flex-row items-center">
+          <View className="bg-brand px-4 pb-4 flex-row items-center" style={{ paddingTop: Math.max(insets.top + 12, 24) }}>
             <Text className="text-white font-bold text-lg flex-1">Buscar vehiculo</Text>
             <TouchableOpacity onPress={() => setProductOpen(false)}><X color="white" size={24} /></TouchableOpacity>
           </View>
@@ -850,6 +999,58 @@ export default function SolicitudesCompraMobileScreen() {
                   <Text className="font-bold text-slate-900">{item.descripcion}</Text>
                   <Text className="text-xs text-slate-500 mt-1">{item.codigo} {item.referencia ? `| ${item.referencia}` : ''}</Text>
                   <Text className="text-emerald-700 font-bold mt-1">{money(item.precio_venta_1)}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
+      </Modal>
+
+      <Modal visible={clientOpen} animationType="slide" onRequestClose={() => setClientOpen(false)}>
+        <View className="flex-1 bg-gray-50">
+          <View className="bg-brand px-4 pb-4 flex-row items-center" style={{ paddingTop: Math.max(insets.top + 12, 24) }}>
+            <Text className="text-white font-bold text-lg flex-1">Buscar cliente</Text>
+            <TouchableOpacity onPress={() => setClientOpen(false)}><X color="white" size={24} /></TouchableOpacity>
+          </View>
+          <View className="bg-white p-3 border-b border-slate-200">
+            <View className="flex-row gap-2">
+              <TextInput
+                className="bg-slate-100 rounded-xl px-3 py-2 flex-1"
+                value={clientSearch}
+                onChangeText={setClientSearch}
+                autoCapitalize="words"
+                autoCorrect={false}
+                placeholder="Nombre, RNC, telefono o codigo..."
+                placeholderTextColor="#94a3b8"
+                returnKeyType="search"
+                onSubmitEditing={() => loadClientes(clientSearch)}
+              />
+              <TouchableOpacity className="bg-brand rounded-xl px-4 justify-center" onPress={() => loadClientes(clientSearch)}>
+                <Search color="white" size={20} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          {clientsLoading ? (
+            <View className="flex-1 items-center justify-center"><ActivityIndicator color="#1d4ed8" /></View>
+          ) : (
+            <FlatList
+              data={clientes}
+              keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ padding: 12, paddingBottom: Math.max(insets.bottom + 24, 48) }}
+              ListEmptyComponent={
+                <View className="items-center justify-center py-16">
+                  <Search color="#cbd5e1" size={42} />
+                  <Text className="text-slate-400 mt-3">No se encontraron clientes</Text>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <TouchableOpacity className="bg-white border border-slate-200 rounded-xl p-3 mb-2" onPress={() => selectCliente(item)}>
+                  <View className="flex-row justify-between gap-3">
+                    <Text className="font-bold text-slate-900 flex-1">{item.nombre}</Text>
+                    {item.codigo ? <Text className="text-xs font-mono text-blue-800">{item.codigo}</Text> : null}
+                  </View>
+                  <Text className="text-xs text-slate-500 mt-1">{item.rnc || item.telefono || 'Sin RNC/Cedula'}</Text>
                 </TouchableOpacity>
               )}
             />

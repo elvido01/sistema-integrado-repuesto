@@ -6,6 +6,7 @@ import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { useCartStore } from '@/src/store/useCartStore';
 import { supabase } from '@/src/supabase/client';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type OrdenRow = {
   id: string;
@@ -37,6 +38,7 @@ const dateOnly = (date: Date) => {
 
 export default function OrdenCompraScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const {
     items,
     addItem,
@@ -425,7 +427,7 @@ export default function OrdenCompraScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <View className="bg-white px-4 py-3 border-b border-gray-100">
+      <View className="bg-white px-4 pb-3 border-b border-gray-100" style={{ paddingTop: Math.max(insets.top + 10, 16) }}>
         <View className="flex-row items-center justify-between">
           <View className="flex-1">
             <Text className="text-gray-500 text-xs font-medium uppercase">Modulo de compras</Text>
@@ -462,7 +464,7 @@ export default function OrdenCompraScreen() {
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 220 }}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 250, 250) }}
         ListEmptyComponent={
           <View className="items-center justify-center px-8 py-16">
             <View className="bg-slate-100 p-4 rounded-full mb-4">
@@ -553,7 +555,7 @@ export default function OrdenCompraScreen() {
       />
 
       {items.length > 0 && (
-        <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-200 p-4 pb-6">
+        <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-200 px-4 pt-4" style={{ paddingBottom: Math.max(insets.bottom + 16, 24) }}>
           <TextInput
             className="bg-gray-100 rounded-xl px-3 py-2 text-gray-900 mb-3"
             placeholder="Notas para la orden"

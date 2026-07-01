@@ -13,9 +13,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Clipboard from 'expo-clipboard';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import { supabase } from '@/src/supabase/client';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
 export default function CatalogoScreen() {
+  const insets = useSafeAreaInsets();
   const { tenantId } = useAuthStore();
+  const includeZeroStock = tenantId !== CAMINERO_MOTORS_TENANT;
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [marca, setMarca] = useState('');
@@ -248,10 +253,10 @@ export default function CatalogoScreen() {
     refetch,
     isRefetching
   } = useInfiniteQuery({
-    queryKey: ['productos', tenantId, debouncedSearch, debouncedMarca, debouncedModelo],
+    queryKey: ['productos', tenantId, debouncedSearch, debouncedMarca, debouncedModelo, includeZeroStock],
     initialPageParam: 1,
     queryFn: ({ pageParam = 1 }: { pageParam: number }) =>
-      fetchProductos(pageParam, 20, debouncedSearch, debouncedMarca, debouncedModelo),
+      fetchProductos(pageParam, 20, debouncedSearch, debouncedMarca, debouncedModelo, includeZeroStock),
     getNextPageParam: (lastPage, pages) => lastPage.hasMore ? pages.length + 1 : undefined,
     enabled: !!tenantId,
   });
@@ -375,7 +380,8 @@ export default function CatalogoScreen() {
       {/* Barra "Volver a factura" — solo en modo venta */}
       {modoCarrito && (
         <TouchableOpacity
-          className="bg-emerald-600 px-4 py-2 flex-row items-center justify-between active:bg-emerald-700"
+          className="bg-emerald-600 px-4 pb-2 flex-row items-center justify-between active:bg-emerald-700"
+          style={{ paddingTop: Math.max(insets.top + 8, 12) }}
           onPress={() => router.push(modoCotizacion ? '/(tabs)/cotizaciones' : modoPedido ? '/(tabs)/pedidos' : modoOrdenCompra ? '/(tabs)/orden-compra' : '/(tabs)/pos')}
         >
           <View className="flex-row items-center">
@@ -392,7 +398,7 @@ export default function CatalogoScreen() {
         </TouchableOpacity>
       )}
 
-      <View className="bg-brand p-4 pb-3 shadow-sm">
+      <View className="bg-brand px-4 pb-3 shadow-sm" style={{ paddingTop: modoCarrito ? 12 : Math.max(insets.top + 12, 16) }}>
         {/* Barra de busqueda + scanner */}
         <View className="flex-row items-center">
           <View className="flex-1 bg-white rounded-xl flex-row items-center px-3 py-2">
@@ -474,7 +480,7 @@ export default function CatalogoScreen() {
           }
           onRefresh={refetch}
           refreshing={isRefetching && !isFetchingNextPage}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 40) }}
           removeClippedSubviews={true}
           maxToRenderPerBatch={10}
           initialNumToRender={10}

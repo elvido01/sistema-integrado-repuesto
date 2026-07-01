@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../supabase/client';
+import type { ModulePermission } from '../services/permissions';
 
 type Profile = {
   id: string;
   tenant_id: string | null;
   role?: string | null;
   is_superadmin?: boolean | null;
+  full_name?: string | null;
   nombre_completo?: string | null;
 };
 
@@ -26,6 +28,7 @@ interface AuthState {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
+  permissions: ModulePermission[];
   empresa: EmpresaConfig | null;
   tenantId: string | null;
   empresaId: string | null;
@@ -47,6 +50,15 @@ async function fetchProfileAndEmpresa(userId: string) {
 
   const tenantId = profileData?.tenant_id || null;
   let empresaData: EmpresaConfig | null = null;
+  let permissionsData: ModulePermission[] = [];
+
+  const { data: perms, error: permsError } = await supabase
+    .from('user_module_permissions')
+    .select('module_key, can_view, can_edit')
+    .eq('user_id', userId);
+
+  if (permsError) throw permsError;
+  permissionsData = (perms || []) as ModulePermission[];
 
   if (tenantId) {
     const { data, error } = await supabase
@@ -61,6 +73,7 @@ async function fetchProfileAndEmpresa(userId: string) {
 
   return {
     profile: (profileData || null) as Profile | null,
+    permissions: permissionsData,
     empresa: empresaData,
     tenantId,
   };
@@ -70,6 +83,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   user: null,
   profile: null,
+  permissions: [],
   empresa: null,
   tenantId: null,
   empresaId: null,
@@ -78,16 +92,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ session, user });
 
     if (!user) {
-      set({ profile: null, empresa: null, tenantId: null, empresaId: null });
+      set({ profile: null, permissions: [], empresa: null, tenantId: null, empresaId: null });
       return;
     }
 
     try {
-      const { profile, empresa, tenantId } = await fetchProfileAndEmpresa(user.id);
-      set({ profile, empresa, tenantId, empresaId: tenantId });
+      const { profile, permissions, empresa, tenantId } = await fetchProfileAndEmpresa(user.id);
+      set({ profile, permissions, empresa, tenantId, empresaId: tenantId });
     } catch (error) {
       console.error('[AuthStore] Error loading profile/company:', error);
-      set({ profile: null, empresa: null, tenantId: null, empresaId: null });
+      set({ profile: null, permissions: [], empresa: null, tenantId: null, empresaId: null });
     }
   },
   setUser: (user) => set({ user }),
@@ -95,14 +109,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   refreshProfile: async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
-      set({ session: null, user: null, profile: null, empresa: null, tenantId: null, empresaId: null });
+      set({ session: null, user: null, profile: null, permissions: [], empresa: null, tenantId: null, empresaId: null });
       return;
     }
-    const { profile, empresa, tenantId } = await fetchProfileAndEmpresa(session.user.id);
-    set({ session, user: session.user, profile, empresa, tenantId, empresaId: tenantId });
+    const { profile, permissions, empresa, tenantId } = await fetchProfileAndEmpresa(session.user.id);
+    set({ session, user: session.user, profile, permissions, empresa, tenantId, empresaId: tenantId });
   },
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ session: null, user: null, profile: null, empresa: null, tenantId: null, empresaId: null });
+    set({ session: null, user: null, profile: null, permissions: [], empresa: null, tenantId: null, empresaId: null });
   },
 }));

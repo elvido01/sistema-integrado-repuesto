@@ -95,7 +95,8 @@
           "faceIDPermission": "Motoflow usa Face ID o huella para iniciar sesion de forma segura."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

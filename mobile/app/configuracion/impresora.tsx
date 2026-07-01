@@ -18,8 +18,10 @@ import {
     printTestPage,
     type DiscoveredPrinter,
 } from '@/services/bluetoothPrinter';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ImpresoraConfig() {
+    const insets = useSafeAreaInsets();
     const [saved, setSaved] = useState<{ id: string; name: string | null } | null>(null);
     const [scanning, setScanning] = useState(false);
     const [results, setResults] = useState<DiscoveredPrinter[]>([]);
@@ -90,7 +92,7 @@ export default function ImpresoraConfig() {
 
     return (
         <View className="flex-1 bg-slate-50">
-            <View className="flex-row items-center px-4 py-3 bg-white border-b border-slate-200">
+            <View className="flex-row items-center px-4 pb-3 bg-white border-b border-slate-200" style={{ paddingTop: Math.max(insets.top + 10, 16) }}>
                 <TouchableOpacity onPress={() => router.back()} className="p-1 mr-2">
                     <ArrowLeft size={22} color="#0f172a" />
                 </TouchableOpacity>
@@ -98,7 +100,7 @@ export default function ImpresoraConfig() {
                 <Text className="ml-2 text-base font-bold text-slate-900">Impresora Bluetooth</Text>
             </View>
 
-            <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
+            <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: Math.max(insets.bottom + 24, 40) }}>
                 {/* Estado actual */}
                 {saved ? (
                     <View className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">

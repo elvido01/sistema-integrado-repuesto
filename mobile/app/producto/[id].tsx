@@ -5,10 +5,12 @@ import { supabase } from '@/src/supabase/client';
 import { useCartStore } from '@/src/store/useCartStore';
 import { ArrowLeft, ShoppingCart, Share2, Package } from 'lucide-react-native';
 import { shareToWhatsApp } from '@/src/utils/whatsapp';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ProductoDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [producto, setProducto] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [cantidad, setCantidad] = useState(1);
@@ -61,7 +63,7 @@ export default function ProductoDetailScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <View className="bg-brand pt-12 pb-4 px-4 flex-row items-center justify-between shadow-sm">
+      <View className="bg-brand pb-4 px-4 flex-row items-center justify-between shadow-sm" style={{ paddingTop: Math.max(insets.top + 10, 20) }}>
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
           <ArrowLeft color="white" size={24} />
         </TouchableOpacity>
@@ -71,7 +73,7 @@ export default function ProductoDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView className="flex-1 p-4">
+      <ScrollView className="flex-1 p-4" contentContainerStyle={{ paddingBottom: 16 }}>
         <View className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-4">
           <View className="bg-gray-100 w-full h-48 rounded-xl items-center justify-center mb-4">
             <Package color="#9ca3af" size={64} />
@@ -106,7 +108,7 @@ export default function ProductoDetailScreen() {
         </View>
       </ScrollView>
 
-      <View className="bg-white p-4 border-t border-gray-200">
+      <View className="bg-white px-4 pt-4 border-t border-gray-200" style={{ paddingBottom: Math.max(insets.bottom + 16, 24) }}>
         <TouchableOpacity 
           className="bg-brand py-4 rounded-xl flex-row justify-center items-center shadow-sm"
           onPress={handleAddToCart}

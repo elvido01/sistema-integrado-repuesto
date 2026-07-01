@@ -12,6 +12,21 @@ const W = 32; // 58mm impresora térmica estándar
 // asi que 48 columnas es seguro. La dejamos como parametro.
 
 const fmt = (n: number) => Number(n || 0).toFixed(2);
+const REPUESTOS_MORLA_EMPRESA = {
+    nombre: 'REPUESTOS MORLA',
+    razon_social: 'REPUESTOS MORLA',
+    rnc: '',
+    direccion1: 'Av. Duarte, esq. Baldemiro Rijo',
+    direccion2: 'Higuey, Rep. Dom.',
+    telefono: '809-390-5965',
+};
+const isCamineroHeader = (empresa: any) => {
+    const text = `${empresa?.nombre || ''} ${empresa?.razon_social || ''}`.toUpperCase();
+    return text.includes('MPN') || text.includes('CAMINERO');
+};
+const normalizePosEmpresa = (empresa: any) => (
+    isCamineroHeader(empresa) ? { ...empresa, ...REPUESTOS_MORLA_EMPRESA } : empresa
+);
 
 function padLeft(s: string, n: number) { return s.length >= n ? s.slice(0, n) : ' '.repeat(n - s.length) + s; }
 function padRight(s: string, n: number) { return s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length); }
@@ -24,7 +39,7 @@ function labelVal(label: string, value: string, width: number): string {
 
 export async function printFacturaPos(f: any, { width = 32 } = {}) {
     const lines: TicketLine[] = [];
-    const empresa = f?.empresa || {};
+    const empresa = normalizePosEmpresa(f?.empresa || {});
     const EMPRESA = {
         nombre: empresa.razon_social || empresa.nombre || 'MotoFlow',
         direccion: empresa.direccion1 || empresa.direccion || '',
@@ -64,10 +79,11 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
     // Header de columnas
     const CANT_W = 6;
     const PRECIO_W = 8;
-    const MONTO_W = width - CANT_W - PRECIO_W;
+    const ITBIS_W = 7;
+    const MONTO_W = width - CANT_W - PRECIO_W - ITBIS_W;
     lines.push({
         type: 'text',
-        text: padRight('CANT', CANT_W) + padLeft('PRECIO', PRECIO_W) + padLeft('MONTO', MONTO_W),
+        text: padRight('CANT', CANT_W) + padLeft('PRECIO', PRECIO_W) + padLeft('ITBIS', ITBIS_W) + padLeft('MONTO', MONTO_W),
         bold: true,
     });
     lines.push({ type: 'sep' });
@@ -77,8 +93,8 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
     let itbisTotal = 0;
     for (const it of (f.items || [])) {
         const importe = Number(it.importe) || 0;
-        subtotal += importe;
         const itbis = Number(it.itbis || 0);
+        subtotal += Math.max(0, importe - itbis);
         itbisTotal += itbis;
 
         // Descripción (puede ocupar 2 líneas si es larga)
@@ -87,8 +103,9 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
 
         const cantStr = padRight(`${it.cantidad} ${it.unidad || 'UND'}`, CANT_W);
         const precioStr = padLeft(fmt(it.precio), PRECIO_W);
+        const itbisStr = padLeft(fmt(itbis), ITBIS_W);
         const montoStr = padLeft(fmt(importe), MONTO_W);
-        lines.push({ type: 'text', text: cantStr + precioStr + montoStr });
+        lines.push({ type: 'text', text: cantStr + precioStr + itbisStr + montoStr });
     }
 
     lines.push({ type: 'sep' });

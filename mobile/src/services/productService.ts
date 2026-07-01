@@ -15,6 +15,8 @@ export interface Producto {
   costo?: number;
   suplidor_id?: string | null;
   itbis_pct?: number;
+  marca_nombre?: string | null;
+  modelo_nombre?: string | null;
   url_imagen?: string;
 }
 
@@ -27,7 +29,8 @@ export async function fetchProductos(
   pageSize = 20,
   search = '',
   marcaFilter = '',
-  modeloFilter = ''
+  modeloFilter = '',
+  includeZeroStock = true
 ) {
   const offset = (page - 1) * pageSize;
 
@@ -37,7 +40,7 @@ export async function fetchProductos(
     p_search_term: search || null,
     p_marca_filter: marcaFilter || null,
     p_modelo_filter: modeloFilter || null,
-    p_include_zero_stock: true,
+    p_include_zero_stock: includeZeroStock,
   });
 
   if (error) {
@@ -71,6 +74,8 @@ export async function fetchProductos(
       costo: Number(p.costo) || 0,
       suplidor_id: p.suplidor_id || null,
       itbis_pct: Number(p.itbis_pct) || 0.18,
+      marca_nombre: p.marca_nombre || null,
+      modelo_nombre: p.modelo_nombre || null,
       url_imagen: p.imagen_url || undefined,
     };
   });

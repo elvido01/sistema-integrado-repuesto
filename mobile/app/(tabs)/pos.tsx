@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Platform } from 'react-native';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Platform, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { useCartStore } from '@/src/store/useCartStore';
 import { Trash2, Plus, Minus, Search, User, CreditCard, ShoppingCart, PlusCircle, Share2, X, Printer } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -9,13 +9,54 @@ import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { getSavedPrinter } from '@/services/bluetoothPrinter';
 import { printFacturaPos } from '@/services/printFactura';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+const REPUESTOS_MORLA_EMPRESA = {
+  nombre: 'REPUESTOS MORLA',
+  razon_social: 'REPUESTOS MORLA',
+  rnc: '',
+  direccion1: 'Av. Duarte, esq. Baldemiro Rijo',
+  direccion2: 'Higuey, Rep. Dom.',
+  telefono: '809-390-5965',
+};
+const isCamineroHeader = (empresa: any) => {
+  const text = `${empresa?.nombre || ''} ${empresa?.razon_social || ''}`.toUpperCase();
+  return text.includes('MPN') || text.includes('CAMINERO');
+};
+const normalizePosEmpresa = (empresa: any) => (
+  isCamineroHeader(empresa) ? { ...empresa, ...REPUESTOS_MORLA_EMPRESA } : empresa
+);
+const normalizeItbisPct = (value: unknown) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0.18;
+  return parsed > 1 ? parsed / 100 : parsed;
+};
+const getLineTotals = (item: any) => {
+  const cantidad = Number(item.cantidad || 0);
+  const precioConItbis = Number(item.precioSeleccionado || 0);
+  const descuento = Number(item.descuento || 0);
+  const itbisPct = normalizeItbisPct(item.itbis_pct);
+  const importe = round2((precioConItbis * cantidad) - descuento);
+  const base = itbisPct > 0 ? round2(importe / (1 + itbisPct)) : importe;
+  const itbis = round2(importe - base);
+  return {
+    cantidad,
+    precioConItbis,
+    descuento,
+    importe,
+    base,
+    itbis,
+    precioBase: cantidad > 0 ? round2(base / cantidad) : 0,
+  };
+};
 
 export default function POSScreen() {
   const router = useRouter();
-  const { user, empresa } = useAuthStore();
+  const insets = useSafeAreaInsets();
+  const { user, empresa, tenantId } = useAuthStore();
   const {
     items,
-    getSubtotal,
     getTotal,
     removeItem,
     updateQuantity,
@@ -33,6 +74,23 @@ export default function POSScreen() {
   const ticketRef = useRef<ViewShot>(null);
   const [compartiendo, setCompartiendo] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
+  const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardBottomInset(Math.max(0, event.endCoordinates?.height || 0));
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardBottomInset(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Imprime la factura activa en la impresora Bluetooth vinculada.
   const imprimirEnBluetooth = async () => {
@@ -62,7 +120,6 @@ export default function POSScreen() {
     }
   };
 
-  const subtotal = getSubtotal();
   const total = getTotal();
   const pagadoNum = parseFloat(montoPagado.replace(/,/g, '')) || 0;
   const cambio = useMemo(() => Math.max(0, pagadoNum - total), [pagadoNum, total]);
@@ -98,19 +155,42 @@ export default function POSScreen() {
         console.warn('[POS] No se pudo obtener NCF:', ncfErr?.message);
       }
 
+      const fechaVenta = new Date().toISOString();
+      const lineasCalculadas = items.map((item) => ({ item, totals: getLineTotals(item) }));
+      const subtotalCalculado = round2(lineasCalculadas.reduce((sum, row) => sum + row.totals.base, 0));
+      const itbisCalculado = round2(lineasCalculadas.reduce((sum, row) => sum + row.totals.itbis, 0));
+      const totalCalculado = round2(lineasCalculadas.reduce((sum, row) => sum + row.totals.importe, 0));
+      let empresaEmision = normalizePosEmpresa(empresa);
+
+      if (tenantId) {
+        const { data: empresaActual, error: empresaError } = await supabase
+          .from('config_empresa')
+          .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura')
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+        if (empresaError) throw empresaError;
+        if (empresaActual) empresaEmision = normalizePosEmpresa(empresaActual);
+      }
+
       // 1. Guardar Venta en Supabase
       const { data: venta, error: ventaError } = await supabase
         .from('facturas')
         .insert({
+          tenant_id: tenantId,
           usuario_id: user?.id,
           cliente_id: null,
-          subtotal: subtotal,
+          fecha: fechaVenta,
+          subtotal: subtotalCalculado,
           descuento: 0,
-          itbis: 0,
-          total: total,
-          forma_pago: 'EFECTIVO',
+          itbis: itbisCalculado,
+          total: totalCalculado,
+          forma_pago: 'CONTADO',
+          tipo_pago: 'EFECTIVO',
+          monto_recibido: pagadoNum,
+          cambio: round2(pagadoNum - totalCalculado),
           estado: 'PAGADA',
           ncf: ncfAsignado,
+          notas: 'POS_MOVIL',
         })
         .select()
         .single();
@@ -118,16 +198,17 @@ export default function POSScreen() {
       if (ventaError) throw ventaError;
 
       // 2. Guardar Detalles
-      const detalles = items.map((item) => ({
+      const detalles = lineasCalculadas.map(({ item, totals }) => ({
+        tenant_id: tenantId,
         factura_id: venta.id,
         producto_id: item.id,
         codigo: item.codigo,
         descripcion: item.descripcion,
-        cantidad: item.cantidad,
-        precio: item.precioSeleccionado,
-        descuento: item.descuento,
-        itbis: 0,
-        importe: item.precioSeleccionado * item.cantidad - item.descuento,
+        cantidad: totals.cantidad,
+        precio: totals.precioBase,
+        descuento: totals.descuento,
+        itbis: totals.itbis,
+        importe: totals.importe,
       }));
       const { error: detallesError } = await supabase.from('facturas_detalle').insert(detalles);
       if (detallesError) throw detallesError;
@@ -152,21 +233,24 @@ export default function POSScreen() {
       const numeroFactura = venta.numero || String(venta.id).slice(0, 8).toUpperCase();
       setFacturaModal({
         numero: numeroFactura,
-        empresa,
+        empresa: empresaEmision,
         cotizacionNumero: cotizacionOrigenNumero,
         pedidoNumero: pedidoOrigenNumero,
-        fecha: new Date(),
+        fecha: fechaVenta,
         cliente: clienteNombre,
-        items: items.map((it) => ({
+        items: lineasCalculadas.map(({ item: it, totals }) => ({
           codigo: it.codigo,
           descripcion: it.descripcion,
-          cantidad: it.cantidad,
-          precio: it.precioSeleccionado,
-          importe: it.precioSeleccionado * it.cantidad - it.descuento,
+          cantidad: totals.cantidad,
+          precio: totals.precioConItbis,
+          itbis: totals.itbis,
+          importe: totals.importe,
         })),
-        total,
+        subtotal: subtotalCalculado,
+        itbis: itbisCalculado,
+        total: totalCalculado,
         pagado: pagadoNum,
-        cambio,
+        cambio: round2(pagadoNum - totalCalculado),
       });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Error al procesar la venta');
@@ -178,12 +262,13 @@ export default function POSScreen() {
   // Construye el texto de la factura en formato ticket POS (monospace).
   // Se envuelve en ``` para que WhatsApp/Telegram/Discord lo rendericen
   // como bloque monospace y se vea como el ticket impreso.
+  const empresaTicket = normalizePosEmpresa(empresa);
   const EMPRESA = {
-    nombre: empresa?.razon_social || empresa?.nombre || 'MotoFlow',
-    direccion: empresa?.direccion1 || '',
-    direccion2: empresa?.direccion2 || '',
-    telefono: empresa?.telefono || '',
-    rnc: empresa?.rnc || '',
+    nombre: empresaTicket?.razon_social || empresaTicket?.nombre || 'MotoFlow',
+    direccion: empresaTicket?.direccion1 || '',
+    direccion2: empresaTicket?.direccion2 || '',
+    telefono: empresaTicket?.telefono || '',
+    rnc: empresaTicket?.rnc || '',
   };
 
   const buildFacturaTexto = (f: any) => {
@@ -243,16 +328,18 @@ export default function POSScreen() {
     t += '\n';
 
     let subtotal = 0;
-    const itbisTotal = 0;
+    let itbisTotal = 0;
     f.items.forEach((it: any) => {
       const importe = Number(it.importe) || 0;
-      subtotal += importe;
+      const itbis = Number(it.itbis || 0);
+      subtotal += Math.max(0, importe - itbis);
+      itbisTotal += itbis;
       t += `${it.descripcion}\n`;
       // Linea de cantidades: CANT UND  PRECIO  ITBIS  MONTO E
       const cantStr = `${it.cantidad} UND`.padEnd(CANT_W);
       const precioStr = fmt(it.precio).padStart(PRECIO_W);
-      const itbisStr = '0.00'.padStart(ITBIS_W);
-      const montoStr = (fmt(importe) + ' E').padStart(MONTO_W);
+      const itbisStr = fmt(itbis).padStart(ITBIS_W);
+      const montoStr = (fmt(importe) + (itbis > 0 ? '' : ' E')).padStart(MONTO_W);
       t += cantStr + precioStr + itbisStr + montoStr + '\n';
     });
 
@@ -315,8 +402,12 @@ export default function POSScreen() {
   };
 
   return (
-    <View className="flex-1 bg-gray-50">
-      <View className="bg-white p-4 border-b border-gray-100 flex-row justify-between items-center">
+    <KeyboardAvoidingView
+      className="flex-1 bg-gray-50"
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+    >
+      <View className="bg-white px-4 pb-4 border-b border-gray-100 flex-row justify-between items-center" style={{ paddingTop: Math.max(insets.top + 12, 16) }}>
         <View className="flex-row items-center flex-1">
           <View className="bg-gray-100 p-2 rounded-full mr-3">
             <User color="#6b7280" size={20} />
@@ -391,7 +482,10 @@ export default function POSScreen() {
       />
 
       {items.length > 0 && (
-        <View className="bg-white border-t border-gray-200 p-4 pb-6">
+        <View
+          className="bg-white border-t border-gray-200 px-4 pt-4"
+          style={{ paddingBottom: Math.max(insets.bottom + 16, 24), marginBottom: keyboardBottomInset }}
+        >
           {/* Boton para seguir agregando */}
           <TouchableOpacity
             className="bg-gray-100 py-3 rounded-xl flex-row justify-center items-center mb-3"
@@ -541,6 +635,6 @@ export default function POSScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }

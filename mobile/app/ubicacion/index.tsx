@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, CheckCircle2, Loader2, MapPin, Plus, ScanLine, Search, X } from 'lucide-react-native';
 import { supabase } from '@/src/supabase/client';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Ubicacion = {
   id: string;
@@ -22,6 +23,7 @@ type ScannerField = 'product' | 'location' | null;
 
 export default function ActualizarUbicacionScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [codigo, setCodigo] = useState('');
   const [ubicacion, setUbicacion] = useState('');
   const [ubicacionSearch, setUbicacionSearch] = useState('');
@@ -230,7 +232,7 @@ export default function ActualizarUbicacionScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <View className="bg-brand pt-12 pb-4 px-4 flex-row items-center">
+      <View className="bg-brand pb-4 px-4 flex-row items-center" style={{ paddingTop: Math.max(insets.top + 10, 20) }}>
         <TouchableOpacity onPress={() => router.back()} className="p-2 mr-2">
           <ArrowLeft color="white" size={24} />
         </TouchableOpacity>
@@ -244,7 +246,7 @@ export default function ActualizarUbicacionScreen() {
       <ScrollView
         className="flex-1 p-4"
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 120, 140) }}
       >
         <View className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
           <View className="items-center mb-6">
@@ -378,7 +380,7 @@ export default function ActualizarUbicacionScreen() {
 
       <Modal visible={scannerField !== null} animationType="fade" onRequestClose={closeScanner}>
         <View className="flex-1 bg-black">
-          <View className="absolute top-12 left-4 z-10">
+          <View className="absolute left-4 z-10" style={{ top: Math.max(insets.top + 12, 24) }}>
             <TouchableOpacity onPress={closeScanner} className="bg-black/50 p-2 rounded-full">
               <X color="white" size={30} />
             </TouchableOpacity>
@@ -391,7 +393,7 @@ export default function ActualizarUbicacionScreen() {
             />
           ) : null}
           <View className="absolute top-1/2 left-1/2 -mt-32 -ml-32 w-64 h-64 border-2 border-brand/80 rounded-xl" />
-          <View className="absolute bottom-12 w-full items-center">
+          <View className="absolute w-full items-center" style={{ bottom: Math.max(insets.bottom + 24, 48) }}>
             <View className="bg-black/70 px-6 py-3 rounded-full">
               <Text className="text-white text-lg font-medium">
                 Escanear {scannerField === 'product' ? 'producto' : 'ubicacion'}

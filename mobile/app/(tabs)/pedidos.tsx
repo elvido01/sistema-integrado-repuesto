@@ -7,6 +7,8 @@ import * as Sharing from 'expo-sharing';
 import { useCartStore } from '@/src/store/useCartStore';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { supabase } from '@/src/supabase/client';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatFechaDMY } from '@/src/utils/formatDate';
 
 const CLIENTE_GENERICO_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
 
@@ -43,6 +45,7 @@ const dateOnly = (date: Date) => {
 
 export default function PedidosScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { empresa } = useAuthStore();
   const {
     items,
@@ -419,7 +422,7 @@ export default function PedidosScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <View className="bg-white px-4 py-3 border-b border-gray-100">
+      <View className="bg-white px-4 pb-3 border-b border-gray-100" style={{ paddingTop: Math.max(insets.top + 10, 16) }}>
         <View className="flex-row items-center justify-between">
           <View className="flex-1">
             <Text className="text-gray-500 text-xs font-medium uppercase">Modulo de pedidos</Text>
@@ -469,7 +472,7 @@ export default function PedidosScreen() {
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 240 }}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 270, 270) }}
         ListEmptyComponent={
           <View className="items-center justify-center px-8 py-16">
             <View className="bg-emerald-100 p-4 rounded-full mb-4">
@@ -539,7 +542,7 @@ export default function PedidosScreen() {
                     {pedido.manual_cliente_nombre || pedido.cliente_nombre || 'Cliente Generico'}
                   </Text>
                   <View className="flex-row justify-between mt-1">
-                    <Text className="text-gray-400 text-xs">{pedido.fecha || 'Sin fecha'}</Text>
+                    <Text className="text-gray-400 text-xs">{pedido.fecha ? formatFechaDMY(pedido.fecha) : 'Sin fecha'}</Text>
                     <Text className="text-gray-400 text-xs">{pedido.estado || 'Pendiente'}</Text>
                   </View>
                   {pedido.estado === 'Pendiente' && (
@@ -562,7 +565,7 @@ export default function PedidosScreen() {
       />
 
       {items.length > 0 && (
-        <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-200 p-4 pb-6">
+        <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-200 px-4 pt-4" style={{ paddingBottom: Math.max(insets.bottom + 16, 24) }}>
           <TouchableOpacity
             className="bg-gray-100 py-3 rounded-xl flex-row justify-center items-center mb-3"
             onPress={() => router.push('/(tabs)/catalogo?modo=pedido')}

@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { ArrowLeft, Boxes, Calculator, Loader2, ScanBarcode, ScanLine, Search, X } from 'lucide-react-native';
 import { supabase } from '@/src/supabase/client';
 import { fetchProductos, Producto } from '@/src/services/productService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ProductoEncontrado = {
   id: string;
@@ -17,6 +18,7 @@ type ProductoEncontrado = {
 
 export default function ActualizarExistenciaScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [codigo, setCodigo] = useState('');
   const [nuevaExistencia, setNuevaExistencia] = useState('');
   const [product, setProduct] = useState<ProductoEncontrado | null>(null);
@@ -259,14 +261,14 @@ export default function ActualizarExistenciaScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <View className="bg-brand pt-12 pb-4 px-4 flex-row items-center">
+      <View className="bg-brand pb-4 px-4 flex-row items-center" style={{ paddingTop: Math.max(insets.top + 10, 20) }}>
         <TouchableOpacity onPress={() => router.back()} className="p-2 mr-2">
           <ArrowLeft color="white" size={24} />
         </TouchableOpacity>
         <Text className="text-white text-xl font-bold">Actualizar Existencia</Text>
       </View>
 
-      <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
+      <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 40) }}>
         <View className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
           <View className="items-center mb-6">
             <View className="bg-amber-100 p-4 rounded-full mb-3">
@@ -359,7 +361,7 @@ export default function ActualizarExistenciaScreen() {
 
       <Modal visible={scannerOpen} animationType="fade" onRequestClose={closeScanner}>
         <View className="flex-1 bg-black">
-          <View className="absolute top-12 left-4 z-10">
+          <View className="absolute left-4 z-10" style={{ top: Math.max(insets.top + 12, 24) }}>
             <TouchableOpacity onPress={closeScanner} className="bg-black/50 p-2 rounded-full">
               <X color="white" size={30} />
             </TouchableOpacity>
@@ -372,7 +374,7 @@ export default function ActualizarExistenciaScreen() {
             />
           ) : null}
           <View className="absolute top-1/2 left-1/2 -mt-32 -ml-32 w-64 h-64 border-2 border-brand/80 rounded-xl" />
-          <View className="absolute bottom-12 w-full items-center">
+          <View className="absolute w-full items-center" style={{ bottom: Math.max(insets.bottom + 24, 48) }}>
             <View className="bg-black/70 px-6 py-3 rounded-full">
               <Text className="text-white text-lg font-medium">Escanear producto</Text>
             </View>
@@ -382,7 +384,7 @@ export default function ActualizarExistenciaScreen() {
 
       <Modal visible={catalogOpen} animationType="slide" onRequestClose={() => setCatalogOpen(false)}>
         <View className="flex-1 bg-gray-50">
-          <View className="bg-brand pt-12 pb-4 px-4">
+          <View className="bg-brand pb-4 px-4" style={{ paddingTop: Math.max(insets.top + 10, 20) }}>
             <Text className="text-white text-xl font-bold">Catalogo</Text>
           </View>
 

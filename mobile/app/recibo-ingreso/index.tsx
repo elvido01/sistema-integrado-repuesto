@@ -874,7 +874,7 @@ export default function ReciboIngresoMobileScreen() {
 
   return (
     <View className="flex-1 bg-gray-100">
-      <View className="bg-blue-800 pt-12 pb-3 px-3">
+      <View className="bg-blue-800 pb-3 px-3" style={{ paddingTop: Math.max(insets.top + 10, 20) }}>
         <View className="flex-row items-center">
           <TouchableOpacity onPress={() => router.back()} className="p-2 mr-1">
             <ArrowLeft color="white" size={24} />
@@ -1036,7 +1036,7 @@ export default function ReciboIngresoMobileScreen() {
 
       <Modal visible={clienteModalOpen} animationType="slide" onRequestClose={() => setClienteModalOpen(false)}>
         <View className="flex-1 bg-gray-50">
-          <View className="bg-blue-800 pt-12 pb-4 px-4 flex-row items-center">
+          <View className="bg-blue-800 pb-4 px-4 flex-row items-center" style={{ paddingTop: Math.max(insets.top + 10, 20) }}>
             <TouchableOpacity onPress={() => setClienteModalOpen(false)} className="p-2 mr-2">
               <X color="white" size={24} />
             </TouchableOpacity>
@@ -1249,7 +1249,7 @@ export default function ReciboIngresoMobileScreen() {
 
       <Modal visible={reprintModalOpen} animationType="slide" onRequestClose={() => setReprintModalOpen(false)}>
         <View className="flex-1 bg-gray-50">
-          <View className="bg-blue-800 pt-12 pb-4 px-4 flex-row items-center">
+          <View className="bg-blue-800 pb-4 px-4 flex-row items-center" style={{ paddingTop: Math.max(insets.top + 10, 20) }}>
             <TouchableOpacity onPress={() => setReprintModalOpen(false)} className="p-2 mr-2">
               <X color="white" size={24} />
             </TouchableOpacity>
