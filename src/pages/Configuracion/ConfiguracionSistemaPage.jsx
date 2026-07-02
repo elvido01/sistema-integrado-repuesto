@@ -35,6 +35,7 @@ const ConfiguracionSistemaPage = () => {
         modo_fecha: 1,
         logo_url: '',
         meta_ventas: 150000,
+        meta_flujo_neto_mensual: 0,
         incremento_meta_pct: 0,
         intervalo_meta: 'Ninguno',
         fecha_inicio_meta: null,
@@ -92,6 +93,7 @@ const ConfiguracionSistemaPage = () => {
                     modo_fecha: data.modo_fecha || 1,
                     logo_url: data.logo_url || '',
                     meta_ventas: data.meta_ventas || 150000,
+                    meta_flujo_neto_mensual: data.meta_flujo_neto_mensual ?? 0,
                     incremento_meta_pct: data.incremento_meta_pct || 0,
                     intervalo_meta: data.intervalo_meta || 'Ninguno',
                     fecha_inicio_meta: data.fecha_inicio_meta || null,
@@ -493,6 +495,17 @@ const ConfiguracionSistemaPage = () => {
                             </div>
 
                             <div className="space-y-1.5">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Meta Flujo Neto Mensual (Dashboard)</Label>
+                                <div className="flex items-center">
+                                    <div className="bg-gray-200 border border-r-0 h-10 px-3 flex items-center justify-center rounded-l-md text-xs font-bold text-gray-500">RD$</div>
+                                    <Input id="meta_flujo_neto_mensual" type="number" value={formData.meta_flujo_neto_mensual} onChange={handleNumberChange} className="h-10 rounded-l-none font-bold text-emerald-700 text-lg" />
+                                </div>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Meta de dinero neto (cobros − pagos) para la tarjeta "Flujo neto acumulado" en Inicio.
+                                </p>
+                            </div>
+
+                            <div className="space-y-1.5">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Saldo Inicial Caja (Dashboard)</Label>
                                 <div className="flex items-center">
                                     <div className="bg-gray-200 border border-r-0 h-10 px-3 flex items-center justify-center rounded-l-md text-xs font-bold text-gray-500">RD$</div>
@@ -542,7 +555,7 @@ const ConfiguracionSistemaPage = () => {
                             {formData.fecha_inicio_meta && formData.intervalo_meta !== 'Ninguno' && formData.incremento_meta_pct > 0 && (
                             <div className="md:col-span-3 bg-blue-50/50 p-3 rounded-md border border-blue-100/50 flex flex-col items-center justify-center">
                                 <p className="text-xs text-blue-600 text-center font-medium">
-                                   * La meta empezó a calcularse el <b>{new Date(formData.fecha_inicio_meta).toLocaleDateString()}</b>.  El Dashboard aplicará interés compuesto del +{formData.incremento_meta_pct}% de forma {formData.intervalo_meta.toLowerCase()} automáticamente para desafiar a tu negocio.
+                                   * La meta empezó a calcularse el <b>{new Date(formData.fecha_inicio_meta).toLocaleDateString('es-DO')}</b>.  El Dashboard aplicará interés compuesto del +{formData.incremento_meta_pct}% de forma {formData.intervalo_meta.toLowerCase()} automáticamente para desafiar a tu negocio.
                                 </p>
                             </div>
                             )}

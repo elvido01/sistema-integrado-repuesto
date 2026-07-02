@@ -6,7 +6,7 @@ import Logo from '@/components/common/Logo';
 import SummaryCard from '@/components/common/SummaryCard';
 
 // Componentes SaaS
-import HybridFinancialOverviewCard from '@/components/dashboard/HybridFinancialOverviewCard';
+import FlujoNetoCard from '@/components/dashboard/FlujoNetoCard';
 import CommitmentsCard from '@/components/dashboard/CommitmentsCard';
 import SupplierCommitmentsCard from '@/components/dashboard/SupplierCommitmentsCard';
 import CommitmentFormModal from '@/components/dashboard/CommitmentFormModal';
@@ -41,19 +41,10 @@ const isDueThisWeekOrOverdue = (date, today = new Date()) => {
   return isBefore(date, startOfToday()) || isSameWeek(date, today, { weekStartsOn: 1 });
 };
 
-const DEFAULT_CASH_BALANCE_INITIAL_SEED = 0;
-
 const getStartOfTodayISO = () => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return today.toISOString();
-};
-
-const getCashHistoryAnchorISO = (value) => {
-  if (!value) return '1970-01-01T00:00:00.000Z';
-  const [year, month, day] = String(value).split('T')[0].split('-').map(Number);
-  if (!year || !month || !day) return '1970-01-01T00:00:00.000Z';
-  return new Date(year, month - 1, day, 0, 0, 0, 0).toISOString();
 };
 
 const HomePage = () => {
@@ -83,9 +74,7 @@ const HomePage = () => {
     gastosDiariosHoy: [],
     compromisos: [],
     suplidorCompromisos: [],
-    ventasMetricas: null,
-    crecimientoData: null,
-    finanzasSemanales: null
+    flujoNeto: null
   });
 
   const [loading, setLoading] = useState(true);
@@ -117,11 +106,6 @@ const HomePage = () => {
 
       if (configEmpresa?.nombre) setNombreEmpresa(configEmpresa.nombre);
       if (configEmpresa?.formato_comprobante_pago) setFormatoComprobante(configEmpresa.formato_comprobante_pago);
-
-      const configuredCashSeed = Number(configEmpresa?.saldo_inicial_caja);
-      const cashBalanceInitialSeed = Number.isFinite(configuredCashSeed)
-        ? configuredCashSeed
-        : DEFAULT_CASH_BALANCE_INITIAL_SEED;
 
       const calculateCurrentMeta = (config) => {
         if (!config || !config.meta_ventas) return 150000;
@@ -156,37 +140,48 @@ const HomePage = () => {
 
       const currentMeta = calculateCurrentMeta(configEmpresa);
 
-      // 1. Stats generales
-      const { data: statsData, error: statsErr } = await supabase.rpc('get_stats_dashboard');
-      if (statsErr) throw statsErr;
-      if (statsData) setStats(statsData);
+      // Fecha de hoy (local) para la lista de gastos del día.
+      const todayDate = getStartOfTodayISO().split('T')[0];
 
-      // 2. Calidad de ventas, proyecciones y compromisos
-      const [salesRes, comRes, metricsRes, growthRes, weeklyRes] = await Promise.all([
-        supabase.rpc('get_sales_quality'),
-        supabase.rpc('get_commitments_week'),
-        supabase.rpc('get_sales_metrics'),
-        supabase.rpc('get_monthly_growth'),
-        supabase.rpc('get_weekly_financials')
+      // ------------------------------------------------------------------
+      // UNA sola tanda paralela y tolerante a fallos (allSettled).
+      //  - Rápido: el excedente de caja se calcula en un RPC (la BD suma el
+      //    historial de una vez), en vez de traer miles de filas al navegador.
+      //  - Robusto: si una consulta falla o va lenta, NO tumba el resto ni
+      //    muestra la alerta roja; conservamos los datos previos (merge).
+      // ------------------------------------------------------------------
+      const results = await Promise.allSettled([
+        supabase.rpc('get_stats_dashboard'),          // 0
+        supabase.rpc('get_sales_quality'),            // 1
+        supabase.rpc('get_commitments_week'),         // 2
+        supabase.rpc('get_flujo_neto_dashboard'),     // 3
+        supabase.rpc('get_caja_excedente_dashboard'), // 4  (excedente + caja de hoy)
+        supabase.from('compras').select('id, numero, referencia, fecha, dias_credito, monto_pendiente, total_compra, monto_pagado, suplidor_id, proveedores(nombre)').eq('tenant_id', tenantId).ilike('forma_pago', 'CREDITO').eq('estado', 'PENDIENTE').order('fecha', { ascending: true }),  // 5  (CxP suplidores)
+        supabase.from('gastos_diarios').select('id, fecha, tipo_gasto, monto, descripcion').eq('tenant_id', tenantId).eq('fecha', todayDate).eq('anulado', false).order('created_at', { ascending: false })  // 6  (lista de gastos de hoy)
       ]);
 
-      // 3. Compromisos de suplidores (Cuentas por Pagar)
-      // Buscamos todas las facturas de compras con saldo pendiente
-      const { data: suplidorRawData, error: suplidorErr } = await supabase
-        .from('compras')
-        .select('id, numero, referencia, fecha, dias_credito, monto_pendiente, total_compra, monto_pagado, suplidor_id, proveedores(nombre)')
-        .eq('tenant_id', tenantId)
-        .ilike('forma_pago', 'CREDITO')
-        .eq('estado', 'PENDIENTE')
-        .order('fecha', { ascending: true });
+      // Lectura segura de cada resultado (fallback si esa consulta falló).
+      const val = (i, fb = { data: null }) => (results[i].status === 'fulfilled' ? results[i].value : fb);
+      const statsRes = val(0);
+      const salesRes = val(1);
+      const comRes = val(2);
+      const flujoRes = val(3);
+      const cajaRes = val(4);
+      const suplRes = val(5, { data: [] });
+      const gDiariosHoy = val(6, { data: [] });
 
+      if (!statsRes.error && statsRes.data) setStats(statsRes.data);
+
+      // Compromisos de suplidores (Cuentas por Pagar) que vencen esta semana o ya vencieron.
+      const suplidorErr = suplRes.error;
+      const suplidorRawData = suplRes.data;
       let suplidorData = [];
       if (!suplidorErr && suplidorRawData) {
         const hoy = new Date();
         const hoyStart = startOfToday();
         suplidorData = suplidorRawData.map(c => {
           const pendiente = c.monto_pendiente !== null ? c.monto_pendiente : ((c.total_compra || 0) - (c.monto_pagado || 0));
-          // Calcular fecha de vencimiento ajustando si es necesario a UTC para problemas de timezone, 
+          // Calcular fecha de vencimiento ajustando si es necesario a UTC para problemas de timezone,
           // pero como new Date() mapea la fecha local, addDays funciona bien.
           const fechaVencimiento = c.fecha ? addDays(new Date(c.fecha + 'T00:00:00'), c.dias_credito || 0) : new Date();
           const isOverdue = isBefore(fechaVencimiento, hoyStart);
@@ -204,61 +199,35 @@ const HomePage = () => {
         });
       }
 
-      if (suplidorErr) throw suplidorErr;
+      // Excedente de caja (efectivo acumulado) y caja de hoy vienen del RPC.
+      // Solo confiamos en ellos si el RPC llegó bien; si no, conservamos lo previo.
+      const cajaOk = results[4].status === 'fulfilled' && !cajaRes.error && !!cajaRes.data;
+      const excedenteCaja = Number(cajaRes.data?.excedente) || 0;
+      const cajaActualContadoHoy = Number(cajaRes.data?.caja_hoy) || 0;
 
-      // 4. Caja Actual y Excedente (independientes de cierres de caja)
-      // Caja Actual: ventas de contado del dia.
-      // Excedente: saldo inicial + historial acumulado de entradas/salidas de efectivo.
-      const todayStart = getStartOfTodayISO();
-      const historyAnchor = getCashHistoryAnchorISO(configEmpresa?.caja_historial_desde);
+      // Merge resiliente: cada campo usa su dato nuevo o conserva el anterior.
+      setFinanzas(prev => ({
+        ...prev,
+        ventasContado: salesRes.data?.ventasContado ?? prev.ventasContado,
+        ventasCredito: salesRes.data?.ventasCredito ?? prev.ventasCredito,
+        ventasSemana: salesRes.data?.ventasSemana ?? prev.ventasSemana,
+        meta: currentMeta || prev.meta,
+        compromisos: comRes.error ? prev.compromisos : (comRes.data || []),
+        suplidorCompromisos: suplidorErr
+          ? prev.suplidorCompromisos
+          : (suplidorData || []).map(s => ({ ...s, suplidor_nombre: s.proveedores?.nombre })),
+        caja: cajaOk ? excedenteCaja : prev.caja,
+        cajaActualContadoHoy: cajaOk ? cajaActualContadoHoy : prev.cajaActualContadoHoy,
+        gastosDiariosHoy: (gDiariosHoy.data ?? prev.gastosDiariosHoy) || [],
+        flujoNeto: flujoRes?.data || prev.flujoNeto || null
+      }));
 
-      const todayDate = todayStart.split('T')[0];
-
-      const [vContadoHoy, rIngresoHoy, gDiariosHoy, vContadoHist, rIngresoHist, cPagadosHist, pSuplidoresHist, cContadoHist, gDiariosHist] = await Promise.all([
-        supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', todayStart).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
-        supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId).gte('created_at', todayStart).eq('anulado', false),
-        supabase.from('gastos_diarios').select('id, fecha, tipo_gasto, monto, descripcion').eq('tenant_id', tenantId).eq('fecha', todayDate).eq('anulado', false).order('created_at', { ascending: false }),
-        supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', historyAnchor).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
-        supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId).gte('created_at', historyAnchor).eq('anulado', false),
-        supabase.from('compromisos').select('monto').eq('tenant_id', tenantId).gte('fecha_pago', historyAnchor).eq('activo', false),
-        supabase.from('pagos_suplidores').select('monto_pagado, formas_pago').eq('tenant_id', tenantId).gte('created_at', historyAnchor).eq('anulado', false),
-        supabase.from('compras').select('total_compra').eq('tenant_id', tenantId).gte('created_at', historyAnchor).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
-        supabase.from('gastos_diarios').select('monto').eq('tenant_id', tenantId).gte('fecha', historyAnchor.split('T')[0]).eq('anulado', false)
-      ]);
-
-      const tVentasContadoHoy = (vContadoHoy.data || []).reduce((acc, v) => acc + Number(v.total), 0);
-      const tRecibosIngresoHoy = (rIngresoHoy.data || []).reduce((acc, r) => acc + Number(r.monto_pagado), 0);
-      const tGastosDiariosHoy = (gDiariosHoy.data || []).reduce((acc, g) => acc + Number(g.monto), 0);
-      const tVentasContadoHist = (vContadoHist.data || []).reduce((acc, v) => acc + Number(v.total), 0);
-      const tRecibosIngresoHist = (rIngresoHist.data || []).reduce((acc, r) => acc + Number(r.monto_pagado), 0);
-      const tCompromisosPagadosHist = (cPagadosHist.data || []).reduce((acc, c) => acc + Number(c.monto), 0);
-      const tPagosSuplidoresHist = (pSuplidoresHist.data || []).reduce((acc, p) => acc + Number(p.monto_pagado || 0), 0);
-      const tComprasContadoHist = (cContadoHist.data || []).reduce((acc, c) => acc + Number(c.total_compra), 0);
-      const tGastosDiariosHist = (gDiariosHist.data || []).reduce((acc, g) => acc + Number(g.monto), 0);
-
-      const cajaActualContadoHoy = tVentasContadoHoy + tRecibosIngresoHoy - tGastosDiariosHoy;
-      const excedenteCaja = cashBalanceInitialSeed + tVentasContadoHist + tRecibosIngresoHist - tCompromisosPagadosHist - tPagosSuplidoresHist - tComprasContadoHist - tGastosDiariosHist;
-
-      if (!salesRes?.error && !comRes?.error) {
-
-        setFinanzas(prev => ({
-          ...prev,
-          ventasContado: salesRes.data?.ventasContado || 0,
-          ventasCredito: salesRes.data?.ventasCredito || 0,
-          ventasSemana: salesRes.data?.ventasSemana || 0,
-          meta: currentMeta,
-          compromisos: comRes.data || [],
-          suplidorCompromisos: (suplidorData || []).map(s => ({
-            ...s,
-            suplidor_nombre: s.proveedores?.nombre
-          })),
-          caja: excedenteCaja,
-          cajaActualContadoHoy,
-          gastosDiariosHoy: gDiariosHoy.data || [],
-          ventasMetricas: metricsRes?.data || null,
-          crecimientoData: growthRes?.data || null,
-          finanzasSemanales: weeklyRes?.data || null
-        }));
+      // Ancla rodante: si el corte quedó en un mes anterior, congelamos lo
+      // acumulado hasta el 1ro de este mes (fire-and-forget). No cambia el
+      // excedente; solo hace que la próxima carga sume únicamente el mes en
+      // curso. Se auto-desactiva en cuanto queda rodada (debe_rodar = false).
+      if (cajaRes.data?.debe_rodar) {
+        supabase.rpc('rodar_ancla_caja').catch(() => {});
       }
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
@@ -635,15 +604,11 @@ const HomePage = () => {
                     onPay={handlePaySupplierCommitment}
                   />
 
-                  {/* Metas + Proyección Híbrida */}
-                  <HybridFinancialOverviewCard 
-                    meta={finanzas.meta} 
-                    ventasSemana={finanzas.ventasSemana} 
-                    salesMetrics={finanzas.ventasMetricas}
-                    growthData={finanzas.crecimientoData}
-                    cajaRestante={finanzas.caja - totalDeudaSemanal}
-                    totalCompromisosSemana={totalDeudaSemanal}
-                    totalCompromisosMensual={finanzas.compromisos.reduce((sum, c) => sum + (c.monto || 0), 0)}
+                  {/* Flujo neto acumulado del mes (+ Metas y proyecciones) */}
+                  <FlujoNetoCard
+                    data={finanzas.flujoNeto}
+                    loading={loading}
+                    onRetry={() => fetchDashboardData(true)}
                   />
                 </motion.div>
 
