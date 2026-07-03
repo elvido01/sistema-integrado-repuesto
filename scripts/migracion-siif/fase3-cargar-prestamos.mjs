@@ -20,13 +20,24 @@ const TENANT_ID = '766fe3d6-6885-4f2b-b2cc-1a91db696fb4';
 const COMMIT = process.argv.includes('--commit');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-const FECHA = '2026-06-30';
+// Carpeta de respaldo: por defecto la MÁS RECIENTE en E:\COPIAS (igual que fase1/fase2).
+// Se puede forzar una fecha: node fase3-cargar-prestamos.mjs 2026-07-01 --commit
+const BASE_DIR = process.env.COPIAS_DIR || 'E:\\COPIAS';
+function latestBackup(baseDir) {
+  const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(d.name))
+    .map((d) => d.name)
+    .sort();
+  if (!dirs.length) throw new Error(`No hay carpetas de respaldo en ${baseDir}`);
+  return dirs[dirs.length - 1];
+}
+const FECHA = process.argv.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a)) || process.env.FECHA || latestBackup(BASE_DIR);
 const SOURCES = [
   { file: `prestamos_01.${FECHA}.SQL`, offset: 0 },
   { file: `prestamos_02.${FECHA}.SQL`, offset: 200_000_000 },
   { file: `prestamos_05.${FECHA}.SQL`, offset: 500_000_000 },
 ];
-const BASE = 'E:\\COPIAS\\' + FECHA + '\\';
+const BASE = path.join(BASE_DIR, FECHA) + path.sep;
 const n = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 const txt = (v) => (v == null ? '' : String(v).trim());
 const pad7 = (x) => String(x).padStart(7, '0');
@@ -61,6 +72,7 @@ for (const src of SOURCES) {
       plazo_cuotas: parseInt(r.cantidad_cuotas, 10) || parseInt(r.cant_cuotas, 10) || 1,
       fecha_inicio: fecha(r.fecha_inicio) || fecha(r.fecha) || fecha(r.vence) || '2000-01-01',
       vence: fecha(r.vence),
+      ult_pago: fecha(r.ult_pago),
       garantia: [txt(r.vhmarca), txt(r.vhmodelo), txt(r.vhano), txt(r.vhchasis), txt(r.vhmatricula) ? 'Mat:' + txt(r.vhmatricula) : ''].filter(Boolean).join(' ') || null,
       notas: txt(r.grnombre) ? `Garante: ${txt(r.grnombre)} ${txt(r.grcedula)}`.trim() : null,
     });
@@ -110,15 +122,33 @@ function cuotasDe(h, prestamoId) {
     });
 }
 
+// Corte de castigo: préstamo cuyo ÚLTIMO PAGO (o inicio, si nunca pagó) tiene
+// MÁS de N años -> incobrable. N configurable con CASTIGO_ANIOS (default 6).
+const CASTIGO_ANIOS = Number(process.env.CASTIGO_ANIOS || 6);
+const CASTIGO_CUTOFF = (() => {
+  const d = new Date(); d.setFullYear(d.getFullYear() - CASTIGO_ANIOS);
+  return d.toISOString().slice(0, 10);
+})();
+// Último pago REAL por cédula = fecha máxima de un RI (cxc_mov_master). Es el
+// mismo dato que muestra Gestión de Cobro y es MÁS confiable que el campo
+// ult_pago del header (que viene vacío en muchos préstamos).
+const ultPagoByCedula = new Map();
+for (const p of pagosByClienteFecha) {
+  const cur = ultPagoByCedula.get(p.cedula);
+  if (!cur || (p.fecha && p.fecha > cur)) ultPagoByCedula.set(p.cedula, p.fecha);
+}
 let sinCliente = 0;
 for (const h of headers) {
   h.cliente_id = cliByCedula.get(h.cedula) || null;
   if (!h.cliente_id) sinCliente++;
   h.tienePendiente = (pendingByKey.get(`${h.offset}:${h.loanNum}`) || []).length > 0;
-  h.estado = h.tienePendiente ? 'activo' : 'saldado';
+  // Último pago: RI real del cliente; si nunca ha pagado, el ult_pago del header o el inicio.
+  h.refPago = ultPagoByCedula.get(h.cedula) || h.ult_pago || h.fecha_inicio;
+  h.esCastigo = h.tienePendiente && !!h.refPago && h.refPago < CASTIGO_CUTOFF; // incobrable por antigüedad
+  h.estado = !h.tienePendiente ? 'saldado' : (h.esCastigo ? 'castigado' : 'activo');
 }
 const lista = headers.filter((h) => h.cliente_id);
-console.log(`Sin cliente: ${sinCliente} (omitidos) | a cargar: ${lista.length} | activos(con pendiente): ${lista.filter((h) => h.tienePendiente).length}`);
+console.log(`Sin cliente: ${sinCliente} (omitidos) | a cargar: ${lista.length} | activos: ${lista.filter((h) => h.estado === 'activo').length} | castigados(<${CASTIGO_CUTOFF}): ${lista.filter((h) => h.estado === 'castigado').length}`);
 
 if (!COMMIT) {
   // valida cliente de ejemplo
@@ -139,13 +169,16 @@ if (!COMMIT) {
 
 // --- 4. Cargar cabeceras (upsert por id, casa por legacy_id) ---
 const byLegacy = new Map();
+const byLegacyInfo = new Map();  // legacy_id -> {estado, castigado_manual, motivo_castigo, fecha_castigo}
 const manualNumeros = new Set(); // números de préstamos NO migrados (no pisarlos)
 let f2 = 0;
 for (;;) {
-  const { data, error } = await supabase.from('prestamos').select('id, legacy_id, numero').eq('tenant_id', TENANT_ID).range(f2, f2 + 999);
+  const { data, error } = await supabase.from('prestamos')
+    .select('id, legacy_id, numero, estado, castigado_manual, motivo_castigo, fecha_castigo')
+    .eq('tenant_id', TENANT_ID).range(f2, f2 + 999);
   if (error) { console.error(error.message); process.exit(1); }
   for (const r of data) {
-    if (r.legacy_id != null) byLegacy.set(Number(r.legacy_id), r.id);
+    if (r.legacy_id != null) { byLegacy.set(Number(r.legacy_id), r.id); byLegacyInfo.set(Number(r.legacy_id), r); }
     else if (r.numero) manualNumeros.add(r.numero);
   }
   if (data.length < 1000) break; f2 += 1000;
@@ -156,7 +189,17 @@ const headerRows = lista.map((h) => {
   let numero = h.numero;
   if (seenNumero.has(numero)) numero = `${numero}-${h.legacy_id}`; // garantizar unicidad
   seenNumero.add(numero);
-  return { id, tenant_id: TENANT_ID, legacy_id: h.legacy_id, cliente_id: h.cliente_id, numero, monto_capital: h.monto_capital, tasa_interes: h.tasa_interes, mora_pct: h.mora_pct, plazo_cuotas: h.plazo_cuotas, frecuencia: 'mensual', metodo_interes: 'simple', tipo: 'financiamiento', estado: h.estado, fecha_inicio: h.fecha_inicio, fecha_primera_cuota: h.vence || h.fecha_inicio, garantia: h.garantia, notas: h.notas };
+  // Clasificación de castigo: si es MANUAL, se respeta lo que puso la persona;
+  // si no, aplica la regla por antigüedad.
+  const prev = byLegacyInfo.get(h.legacy_id);
+  let estado = h.estado, motivo_castigo = null, fecha_castigo = null, castigado_manual = false;
+  if (prev && prev.castigado_manual) {
+    estado = prev.estado; motivo_castigo = prev.motivo_castigo; fecha_castigo = prev.fecha_castigo; castigado_manual = true;
+  } else if (estado === 'castigado') {
+    motivo_castigo = 'incobrable';
+    fecha_castigo = h.refPago || h.ult_pago || h.fecha_inicio;
+  }
+  return { id, tenant_id: TENANT_ID, legacy_id: h.legacy_id, cliente_id: h.cliente_id, numero, monto_capital: h.monto_capital, tasa_interes: h.tasa_interes, mora_pct: h.mora_pct, plazo_cuotas: h.plazo_cuotas, frecuencia: 'mensual', metodo_interes: 'simple', tipo: 'financiamiento', estado, fecha_inicio: h.fecha_inicio, fecha_primera_cuota: h.vence || h.fecha_inicio, garantia: h.garantia, notas: h.notas, motivo_castigo, fecha_castigo, castigado_manual };
 });
 async function up(table, rows, label) {
   const B = 500; let ok = 0;
@@ -169,6 +212,20 @@ async function up(table, rows, label) {
 await up('prestamos', headerRows, 'cabeceras');
 
 // --- 5. Cuotas: borrar las de estos préstamos y regenerar desde pendiente ---
+// SEGURIDAD: si la app nueva ya aplicó cobros (prestamo_pago_detalle), regenerar
+// las cuotas pisaría esos pagos. Abortar salvo --force.
+{
+  const { count, error } = await supabase
+    .from('prestamo_pago_detalle')
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', TENANT_ID);
+  if (error) { console.error('chequeo pago_detalle:', error.message); process.exit(1); }
+  if (count > 0 && !process.argv.includes('--force')) {
+    console.error(`\n⛔ Hay ${count} abonos aplicados en el sistema nuevo (prestamo_pago_detalle).`);
+    console.error('   Re-generar cuotas los borraría. Aborta. Usa --force solo si entiendes el riesgo.');
+    process.exit(1);
+  }
+}
 const ids = lista.map((h) => h._id);
 for (let i = 0; i < ids.length; i += 200) {
   const { error } = await supabase.from('prestamo_cuotas').delete().in('prestamo_id', ids.slice(i, i + 200));

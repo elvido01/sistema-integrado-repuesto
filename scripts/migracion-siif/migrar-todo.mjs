@@ -11,13 +11,20 @@ import { execSync } from 'node:child_process';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const commit = process.argv.includes('--commit') ? ' --commit' : '';
 
-// Orden: generar JSON (clientes, vehículos) → cargar clientes → cargar vehículos → cargar préstamos.
+// Orden: generar JSON clientes → cargar clientes → cargar préstamos.
+// NOTA: MotoPréstamos Los Naranjos es SOLO financiera; el catálogo de vehículos/
+// motos es de CAMINERO MOTORS (tenant aparte). Por eso Fase 2 (vehículos→productos)
+// queda FUERA del pipeline de este tenant. Los vehículos ya viven como `garantia`
+// en cada préstamo (Fase 3). Ver memoria project_caminero_motoprestalos.
 const pasos = [
-  { desc: 'Fase 1 · extraer clientes',   cmd: 'fase1-clientes.mjs' },
-  { desc: 'Fase 1 · cargar clientes',    cmd: `fase1-cargar-clientes.mjs${commit}` },
-  { desc: 'Fase 2 · extraer vehículos',  cmd: 'fase2-vehiculos.mjs' },
-  { desc: 'Fase 2 · cargar vehículos',   cmd: `fase2-cargar-vehiculos.mjs${commit}` },
-  { desc: 'Fase 3 · cargar préstamos',   cmd: `fase3-cargar-prestamos.mjs${commit}` },
+  // Financiera (MotoPréstamos Los Naranjos) → tenant 766fe3d6
+  { desc: 'Fase 1 · extraer clientes',        cmd: 'fase1-clientes.mjs' },
+  { desc: 'Fase 1 · cargar clientes',         cmd: `fase1-cargar-clientes.mjs${commit}` },
+  { desc: 'Fase 3 · cargar préstamos',        cmd: `fase3-cargar-prestamos.mjs${commit}` },
+  // Dealer (Caminero Motors) → tenant b39506c3. Su catálogo vive en la tabla
+  // mercancias de scv8_mp_los_naranjos (aunque el archivo tenga otro nombre).
+  { desc: 'Caminero · catálogo → dealer',     cmd: `fase-caminero-catalogo.mjs${commit}` },
+  { desc: 'Caminero · inventario (kardex)',   cmd: `fase-caminero-inventario.mjs${commit}` },
 ];
 
 console.log(`\n===== MIGRACIÓN SiiF → MotoFlow ${commit ? '(CARGA REAL)' : '(SIMULACIÓN)'} =====`);
