@@ -250,6 +250,21 @@ BEGIN
      AND tipo = 'mandado_buscar'
      AND estado = 'mandado_buscar';
 
+  -- Y CUMPLE la promesa de pago activa: el cliente pago, la promesa no debe
+  -- seguir mostrandose (ni como vencida) en Gestion de Cobro.
+  UPDATE public.cobro_gestiones
+     SET estado = 'cumplida',
+         metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+           'cumplida_por_pago', true,
+           'pago_id', v_pago_id,
+           'pago_numero', v_numero,
+           'monto_pagado', v_total
+         )
+   WHERE tenant_id = v_fin
+     AND cliente_id = p_cliente_id
+     AND tipo = 'promesa_pago'
+     AND estado NOT IN ('cumplida', 'cancelada');
+
   SELECT 'RI-' || lpad((COALESCE(MAX((regexp_replace(numero, '\D','','g'))::int), 0) + 1)::text, 6, '0')
     INTO v_recibo_numero
   FROM public.recibos_ingreso

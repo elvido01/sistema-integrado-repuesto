@@ -100,6 +100,19 @@ BEGIN
       ) AS facturas
     FROM vencidas v
     GROUP BY v.cliente_id
+  ),
+  -- Ultimo pago (recibo de ingreso) por cliente + cuantos pagos en 15 dias.
+  pagos AS (
+    SELECT
+      r.cliente_id,
+      MAX(r.created_at) AS ultimo_created,
+      (ARRAY_AGG(r.fecha        ORDER BY r.fecha DESC, r.created_at DESC))[1] AS ultima_fecha,
+      (ARRAY_AGG(r.monto_pagado ORDER BY r.fecha DESC, r.created_at DESC))[1] AS ultimo_monto,
+      COUNT(*) FILTER (WHERE r.fecha >= CURRENT_DATE - 15)::int AS pagos15
+    FROM public.recibos_ingreso r
+    WHERE r.tenant_id = v_tenant
+      AND COALESCE(r.anulado, false) = false
+    GROUP BY r.cliente_id
   )
   SELECT json_agg(
     json_build_object(
@@ -110,9 +123,15 @@ BEGIN
       'total_atrasado',   ROUND(a.total, 2),
       'dias_mas_vencido', a.dias_max,
       'facturas',         a.facturas,
-      'seg_estado',       COALESCE(s.estado, 'pendiente'),
-      'seg_fecha',        s.fecha_promesa,
+      -- REGLA: si el cliente PAGO despues de registrar la promesa
+      -- (cliente_vendra), la promesa queda cumplida: no se muestra como
+      -- "Promesa vencida" aunque la fecha prometida ya haya pasado.
+      'seg_estado',       CASE WHEN pc.promesa_cumplida THEN 'pendiente' ELSE COALESCE(s.estado, 'pendiente') END,
+      'seg_fecha',        CASE WHEN pc.promesa_cumplida THEN NULL ELSE s.fecha_promesa END,
       'seg_nota',         s.nota,
+      'ultimo_pago_fecha', p.ultima_fecha,
+      'ultimo_pago_monto', p.ultimo_monto,
+      'pagos15_count',    COALESCE(p.pagos15, 0),
       'ultimo_envio',     s.ultimo_envio,
       -- "Para reenviar": le enviaste recordatorio, NO ha pagado, y ya paso el
       -- momento de esperar (el dia prometido vencio, o es hoy y ya paso la hora de corte)
@@ -140,12 +159,25 @@ BEGIN
     ON c.id = a.cliente_id AND c.tenant_id = v_tenant
   LEFT JOIN public.cobranza_seguimiento s
     ON s.cliente_id = a.cliente_id AND s.tenant_id = v_tenant
+  LEFT JOIN pagos p
+    ON p.cliente_id = a.cliente_id
+  -- promesa_cumplida: el cliente pago DESPUES de registrarse la promesa.
+  CROSS JOIN LATERAL (
+    SELECT (
+      COALESCE(s.estado, '') = 'cliente_vendra'
+      AND p.ultimo_created IS NOT NULL
+      AND s.updated_at IS NOT NULL
+      AND p.ultimo_created >= s.updated_at
+    ) AS promesa_cumplida
+  ) pc
   -- Pospuestos: si el cliente prometio venir en una fecha futura, se
   -- oculta de la lista hasta ese dia (reaparece el dia prometido).
+  -- Si ya pago (promesa cumplida), NO se oculta: vuelve a la lista normal.
   WHERE NOT (
     COALESCE(s.estado, '') = 'cliente_vendra'
     AND s.fecha_promesa IS NOT NULL
     AND s.fecha_promesa > CURRENT_DATE
+    AND NOT pc.promesa_cumplida
   );
 
   RETURN json_build_object(

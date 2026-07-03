@@ -191,6 +191,15 @@ BEGIN
     WHERE g.tenant_id = v_tenant
       AND g.tipo = 'promesa_pago'
       AND estado NOT IN ('cumplida', 'cancelada')
+      -- REGLA: si el cliente PAGO despues de registrar la promesa, la promesa
+      -- queda cumplida y no debe marcar "Promesa vencida".
+      AND NOT EXISTS (
+        SELECT 1 FROM public.prestamo_pagos pp
+        WHERE pp.cliente_id = g.cliente_id
+          AND pp.tenant_id = v_tenant
+          AND COALESCE(pp.anulado, false) = false
+          AND pp.created_at >= g.created_at
+      )
     ORDER BY g.cliente_id, g.created_at DESC
   ),
   fisicas AS (
