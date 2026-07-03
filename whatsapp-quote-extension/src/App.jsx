@@ -21,12 +21,12 @@ const plainAmount = new Intl.NumberFormat('es-DO', {
 
 const DEFAULT_COBRO_TEMPLATE =
   'Hola {NOMBRE}. El estado de su cuenta en {EMPRESA} es el siguiente: ' +
-  'cuotas atrasadas: {N} FACTURA: {FACTURAS}, MONTO ATRASADO: {MONTO} - ' +
+  '{PAGOS}, MONTO ATRASADO: {MONTO} - ' +
   'Favor pagar a mas tardar entre las proximas 48 horas y evitar cargos ' +
   'adicionales, este es un mensaje automatico del sistema. Gracias.';
 const DEFAULT_FINANCIERA_COBRO_TEMPLATE =
   'Hola {NOMBRE}. El estado de su cuenta en {EMPRESA} es el siguiente: ' +
-  'pagos vencidos: {N}, PRESTAMO: {FACTURAS}, MONTO ATRASADO: {MONTO} - ' +
+  '{PAGOS}, MONTO ATRASADO: {MONTO} - ' +
   'Favor pagar a mas tardar entre las proximas 48 horas y evitar cargos ' +
   'adicionales, este es un mensaje automatico del sistema. Gracias.';
 
@@ -35,16 +35,21 @@ function buildCobroMessage(estado) {
   const fallbackTemplate = isFinancieraCobro
     ? DEFAULT_FINANCIERA_COBRO_TEMPLATE
     : DEFAULT_COBRO_TEMPLATE;
-  const plantilla = (estado?.plantilla && estado.plantilla.trim()) || fallbackTemplate;
+  const plantilla = isFinancieraCobro
+    ? fallbackTemplate
+    : ((estado?.plantilla && estado.plantilla.trim()) || fallbackTemplate);
   const facturas = (estado?.facturas || []).map((f) => f.numero).join(', ');
+  const pagosVencidos = Number(estado?.cuotas_atrasadas ?? 0);
+  const pagosTexto = `${pagosVencidos} ${pagosVencidos === 1 ? 'pago vencido' : 'pagos vencidos'}`;
   const map = {
     '{NOMBRE}': estado?.cliente_nombre || '',
     '{EMPRESA}': estado?.empresa_nombre || 'la empresa',
-    '{N}': String(estado?.cuotas_atrasadas ?? 0),
+    '{N}': String(pagosVencidos),
+    '{PAGOS}': pagosTexto,
     '{FACTURAS}': facturas,
     '{MONTO}': plainAmount.format(Number(estado?.total_atrasado) || 0)
   };
-  return plantilla.replace(/\{NOMBRE\}|\{EMPRESA\}|\{N\}|\{FACTURAS\}|\{MONTO\}/g, (token) => map[token] ?? token);
+  return plantilla.replace(/\{NOMBRE\}|\{EMPRESA\}|\{N\}|\{PAGOS\}|\{FACTURAS\}|\{MONTO\}/g, (token) => map[token] ?? token);
 }
 
 function buildCobroMessageFor(cliente, empresaNombre, plantilla) {
