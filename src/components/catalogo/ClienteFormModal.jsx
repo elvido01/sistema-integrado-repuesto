@@ -511,7 +511,10 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
               <Button type="button" variant="secondary">Cancelar</Button>
             </DialogClose>
             {isLastTab ? (
-              <Button type="submit" disabled={isSubmitting}>
+              // type="button" + onClick (NO type="submit"): así ningún botón del
+              // form es submit y el cambio Siguiente->Guardar durante el mismo
+              // click no puede disparar un envío accidental que cerraba el modal.
+              <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {(cliente || matchedId) ? 'Guardar Cambios' : 'Crear Cliente'}
               </Button>
