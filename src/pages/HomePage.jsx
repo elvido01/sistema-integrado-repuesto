@@ -227,7 +227,10 @@ const HomePage = () => {
       // excedente; solo hace que la próxima carga sume únicamente el mes en
       // curso. Se auto-desactiva en cuanto queda rodada (debe_rodar = false).
       if (cajaRes.data?.debe_rodar) {
-        supabase.rpc('rodar_ancla_caja').catch(() => {});
+        // Nota: el builder de supabase.rpc() es thenable pero NO expone .catch
+        // directo; hay que encadenar .catch DESPUES de .then (si no, lanza
+        // "TypeError: .catch is not a function" y disparaba la alerta roja).
+        supabase.rpc('rodar_ancla_caja').then(() => {}).catch(() => {});
       }
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);

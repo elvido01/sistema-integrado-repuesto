@@ -22,19 +22,22 @@
 --       * una venta a credito NO cuenta al emitirse; cuenta cuando entra
 --         el cobro por recibos_ingreso -> no se duplica con facturas.
 --   gasto_operativo       -> gastos_diarios
---   compromiso_fijo       -> compromisos pagados (activo=false, fecha_pago)
+--   compromiso_fijo       -> compromisos pagados (activo=false), atribuidos a
+--                            su MES DE VENCIMIENTO (c.fecha), no a la fecha de
+--                            pago: un compromiso de junio pagado el 1/jul cuenta
+--                            en junio y no distorsiona el mes en curso.
 --   pago_suplidor         -> pagos_suplidores
 --   compra_contado        -> compras.forma_pago='contado'
 --       * una compra a credito NO cuenta al registrarse; cuenta cuando se
 --         paga via pagos_suplidores -> no se duplica con compras.
 --
 -- Fecha de negocio por tabla (no created_at):
---   facturas.fecha, recibos_ingreso.fecha, gastos_diarios.fecha,
---   pagos_suplidores.fecha, compras.fecha  (columnas DATE)
---   compromisos.fecha_pago (timestamptz) -> se convierte a fecha local RD.
+--   recibos_ingreso.fecha, gastos_diarios.fecha, pagos_suplidores.fecha,
+--   compras.fecha, compromisos.fecha (vencimiento)  -> columnas DATE.
+--   facturas.fecha -> TIMESTAMPTZ (hora local de la venta); se convierte a
+--   fecha local RD con AT TIME ZONE antes de comparar/agrupar.
 --
--- Zona horaria: America/Santo_Domingo para determinar "hoy" y el dia
--- contable de compromisos.
+-- Zona horaria: America/Santo_Domingo para determinar "hoy".
 --
 -- Seguridad: SECURITY DEFINER que resuelve el tenant del usuario
 -- autenticado con get_user_tenant() (mismo patron que get_clientes_morosos).
@@ -61,6 +64,8 @@ CREATE INDEX IF NOT EXISTS idx_compras_tenant_fecha
   ON public.compras (tenant_id, fecha);
 CREATE INDEX IF NOT EXISTS idx_compromisos_tenant_fecha_pago
   ON public.compromisos (tenant_id, fecha_pago);
+CREATE INDEX IF NOT EXISTS idx_compromisos_tenant_fecha
+  ON public.compromisos (tenant_id, fecha);
 -- gastos_diarios ya tiene idx_gastos_diarios_tenant_fecha.
 
 
@@ -102,11 +107,18 @@ BEGIN
 
   WITH movimientos AS (
     -- INGRESO: ventas de contado (efectivo recibido al vender)
-    SELECT f.fecha::date AS dia, f.total::numeric AS ingreso, 0::numeric AS egreso,
+    -- OJO: facturas.fecha es TIMESTAMPTZ (guarda la hora local de la venta),
+    -- a diferencia de las demas tablas que usan DATE. Por eso se convierte a
+    -- fecha local RD antes de comparar/agrupar: con ::date directo (zona de
+    -- sesion = UTC) una venta de la noche se corria al dia siguiente y las
+    -- ventas de hoy pasadas las ~8pm se perdian (limite <= hoy en UTC).
+    SELECT (f.fecha AT TIME ZONE 'America/Santo_Domingo')::date AS dia,
+           f.total::numeric AS ingreso, 0::numeric AS egreso,
            'ingreso_venta_contado'::text AS categoria
     FROM public.facturas f
     WHERE f.tenant_id = v_tenant
-      AND f.fecha >= v_mes_ant_ini AND f.fecha <= v_hoy
+      AND (f.fecha AT TIME ZONE 'America/Santo_Domingo')::date >= v_mes_ant_ini
+      AND (f.fecha AT TIME ZONE 'America/Santo_Domingo')::date <= v_hoy
       AND f.forma_pago ILIKE 'contado'
       AND COALESCE(f.estado, '') <> 'ANULADA'
 
@@ -127,14 +139,19 @@ BEGIN
       AND COALESCE(g.anulado, false) = false
 
     UNION ALL
-    -- EGRESO: compromisos fijos PAGADOS (activo=false + fecha_pago real)
-    SELECT (c.fecha_pago AT TIME ZONE 'America/Santo_Domingo')::date, 0, c.monto::numeric, 'compromiso_fijo'
+    -- EGRESO: compromisos fijos PAGADOS, atribuidos a su MES DE VENCIMIENTO
+    -- (c.fecha), NO a la fecha de pago. Asi un compromiso que vence el 30/jun
+    -- pero se paga el 1/jul cuenta en junio y no distorsiona el mes en curso
+    -- (un pago que se pasa un dia no debe brincar de mes). Igual se exige que
+    -- este realmente pagado (activo=false + fecha_pago). El excedente de caja
+    -- si usa fecha_pago (ahi el efectivo real salio ese dia).
+    SELECT c.fecha, 0, c.monto::numeric, 'compromiso_fijo'
     FROM public.compromisos c
     WHERE c.tenant_id = v_tenant
       AND c.activo = false
       AND c.fecha_pago IS NOT NULL
-      AND (c.fecha_pago AT TIME ZONE 'America/Santo_Domingo')::date >= v_mes_ant_ini
-      AND (c.fecha_pago AT TIME ZONE 'America/Santo_Domingo')::date <= v_hoy
+      AND c.fecha >= v_mes_ant_ini
+      AND c.fecha <= v_hoy
 
     UNION ALL
     -- EGRESO: pagos a suplidores
