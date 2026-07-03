@@ -10,6 +10,10 @@ import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const commit = process.argv.includes('--commit') ? ' --commit' : '';
+// --force: re-genera cuotas aunque existan abonos aplicados en el sistema
+// nuevo (los des-aplica). Correcto SOLO mientras SiiF siga siendo el libro
+// oficial y todo pago se digite alla (el respaldo del dia ya los trae).
+const force = process.argv.includes('--force') ? ' --force' : '';
 
 // Orden: generar JSON clientes → cargar clientes → cargar préstamos.
 // NOTA: MotoPréstamos Los Naranjos es SOLO financiera; el catálogo de vehículos/
@@ -20,11 +24,16 @@ const pasos = [
   // Financiera (MotoPréstamos Los Naranjos) → tenant 766fe3d6
   { desc: 'Fase 1 · extraer clientes',        cmd: 'fase1-clientes.mjs' },
   { desc: 'Fase 1 · cargar clientes',         cmd: `fase1-cargar-clientes.mjs${commit}` },
-  { desc: 'Fase 3 · cargar préstamos',        cmd: `fase3-cargar-prestamos.mjs${commit}` },
+  { desc: 'Fase 3 · cargar préstamos',        cmd: `fase3-cargar-prestamos.mjs${commit}${force}` },
   // Dealer (Caminero Motors) → tenant b39506c3. Su catálogo vive en la tabla
   // mercancias de scv8_mp_los_naranjos (aunque el archivo tenga otro nombre).
   { desc: 'Caminero · catálogo → dealer',     cmd: `fase-caminero-catalogo.mjs${commit}` },
   { desc: 'Caminero · inventario (kardex)',   cmd: `fase-caminero-inventario.mjs${commit}` },
+  // NOTA: fase-caminero-cxc.mjs queda FUERA del pipeline: el sondeo del
+  // 2026-07-03 mostro que scv8_caminero_motors esta muerta desde ago-2014
+  // (la operacion actual del dealer vive en scv8_mp_los_naranjos, ya cubierta
+  // por las fases de arriba). El script queda disponible por si algun dia el
+  // dealer separa su base de verdad.
 ];
 
 console.log(`\n===== MIGRACIÓN SiiF → MotoFlow ${commit ? '(CARGA REAL)' : '(SIMULACIÓN)'} =====`);
