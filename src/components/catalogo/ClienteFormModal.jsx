@@ -56,6 +56,9 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
   const { empresa } = useAuth();
   const isDealer = !!empresa?.feat_cliente_dealer;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Cliente existente detectado al teclear el código (para cargar sus datos y
+  // actualizarlo en vez de crear un duplicado).
+  const [matchedId, setMatchedId] = useState(null);
   const [formData, setFormData] = useState({
     // Personal Info
     codigo: '',
@@ -87,6 +90,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
   useEffect(() => {
     if (isOpen) {
       setActiveTab('personal');
+      setMatchedId(null);
       if (cliente) {
         setFormData({
           codigo: cliente.codigo || '',
@@ -131,6 +135,50 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
       }
     }
   }, [cliente, isOpen, prefill]);
+
+  // Al CREAR: si el código tecleado coincide EXACTO con un cliente existente
+  // (de esta empresa, vía RLS), carga sus datos para no llenar el formulario en
+  // balde; al guardar se actualiza ese cliente en vez de crear un duplicado.
+  useEffect(() => {
+    if (!isOpen || cliente) return; // solo en modo crear
+    const codigo = String(formData.codigo || '').trim();
+    if (!codigo) { setMatchedId(null); return; }
+    let cancel = false;
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from('clientes')
+        .select('*')
+        .eq('codigo', codigo)
+        .limit(1);
+      if (cancel) return;
+      const row = data && data[0];
+      if (error || !row) { setMatchedId(null); return; }
+      setMatchedId(row.id);
+      setFormData({
+        codigo: row.codigo || '',
+        nombre: row.nombre || '',
+        rnc: row.rnc || '',
+        telefono: row.telefono || '',
+        email: row.email || '',
+        logo_url: row.logo_url || '',
+        direccion: row.direccion || '',
+        activo: row.activo ?? true,
+        autorizar_credito: row.autorizar_credito ?? false,
+        limite_credito: row.limite_credito || 0,
+        dias_credito: row.dias_credito || 0,
+        mora_pct: row.mora_pct || 0,
+        generar_mora: row.generar_mora ?? true,
+        tipo_ncf: row.tipo_ncf || '02',
+        precio_nivel: row.precio_nivel || 1,
+      });
+      setFicha({ ...emptyFicha(), ...(row.ficha_dealer || {}) });
+      toast({
+        title: 'Cliente existente',
+        description: `Se cargaron los datos de "${row.nombre}". Al guardar se actualizarán.`,
+      });
+    }, 450);
+    return () => { cancel = true; clearTimeout(timer); };
+  }, [formData.codigo, isOpen, cliente]);
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;
@@ -198,6 +246,11 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Blindaje: si el submit se dispara SIN estar en la última pestaña
+    // (p.ej. el botón "Siguiente" que React convierte a type=submit al pasar a
+    // la última pestaña, o un Enter), avanzamos en vez de guardar/cerrar.
+    // Solo se guarda cuando el usuario está en la última pestaña.
+    if (!isLastTab) { handleNext(); return; }
     if (!validatePersonal()) return;
     setIsSubmitting(true);
 
@@ -218,12 +271,13 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
       dataToSubmit.ficha_dealer = ficha;
     }
 
+    // Actualiza si es edición (prop cliente) o si el código coincidió con un
+    // cliente existente al teclearlo (matchedId). Si no, inserta uno nuevo.
+    const targetId = cliente?.id || matchedId;
     let result;
-    if (cliente) {
-      // Update
-      result = await supabase.from('clientes').update(dataToSubmit).eq('id', cliente.id).select();
+    if (targetId) {
+      result = await supabase.from('clientes').update(dataToSubmit).eq('id', targetId).select();
     } else {
-      // Insert
       result = await supabase.from('clientes').insert(dataToSubmit).select();
     }
 
@@ -246,7 +300,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     } else {
       toast({
         title: 'Éxito',
-        description: `Cliente ${cliente ? 'actualizado' : 'creado'} correctamente.`,
+        description: `Cliente ${targetId ? 'actualizado' : 'creado'} correctamente.`,
       });
       onClose(true); // pass true to indicate success and trigger refresh
     }
@@ -257,9 +311,9 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{cliente ? 'Editar Cliente' : 'Crear Cliente'}</DialogTitle>
+          <DialogTitle>{(cliente || matchedId) ? 'Editar Cliente' : 'Crear Cliente'}</DialogTitle>
           <DialogDescription>
-            {cliente ? 'Actualiza la información de este cliente.' : 'Crea un nuevo cliente en el sistema.'}
+            {(cliente || matchedId) ? 'Actualiza la información de este cliente.' : 'Crea un nuevo cliente en el sistema.'}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
@@ -270,6 +324,11 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
               <TabsTrigger value="credito">Crédito y Facturación</TabsTrigger>
             </TabsList>
             <TabsContent value="personal" className="py-4 space-y-4">
+              {matchedId && !cliente && (
+                <div className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
+                  Ya existe un cliente con ese código: se cargaron sus datos. Al guardar se <b>actualizará</b> (no se crea duplicado).
+                </div>
+              )}
               {isDealer ? (
                 <>
                   <div className="grid grid-cols-[11rem_1fr] gap-4">
@@ -454,7 +513,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
             {isLastTab ? (
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {cliente ? 'Guardar Cambios' : 'Crear Cliente'}
+                {(cliente || matchedId) ? 'Guardar Cambios' : 'Crear Cliente'}
               </Button>
             ) : (
               <Button type="button" onClick={handleNext}>

@@ -72,8 +72,15 @@ const ProductSearchModal = ({
     }
   }, [isOpen]);
 
+  // Contador de petición: evita que una respuesta VIEJA (p.ej. el fetch inicial
+  // con búsqueda vacía, que es más lento) sobrescriba el resultado de una
+  // búsqueda más nueva. Sin esto, "gana" la última que resuelve, no la última
+  // que se pidió, y el filtro se revertía a la lista completa.
+  const requestIdRef = useRef(0);
+
   const fetchProducts = useCallback(
     async (page, isNewSearch = false) => {
+      const reqId = ++requestIdRef.current;
       setLoading(true);
       try {
         const offset = page * PAGE_LIMIT;
@@ -87,6 +94,8 @@ const ProductSearchModal = ({
           p_include_zero_stock: !!includeZeroStock,
         });
 
+        // Respuesta obsoleta: ya se disparó una búsqueda más reciente -> ignorar.
+        if (reqId !== requestIdRef.current) return;
         if (error) throw error;
 
         const newProducts = data || [];
@@ -97,6 +106,7 @@ const ProductSearchModal = ({
         setHasMore(newProducts.length === PAGE_LIMIT);
         setCurrentPage(page);
       } catch (error) {
+        if (reqId !== requestIdRef.current) return;
         console.error('Error fetching products in modal:', error);
         toast({
           variant: 'destructive',
@@ -104,7 +114,8 @@ const ProductSearchModal = ({
           description: error.message,
         });
       } finally {
-        setLoading(false);
+        // Solo apaga el spinner si esta es la petición vigente.
+        if (reqId === requestIdRef.current) setLoading(false);
       }
     },
     [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock]
