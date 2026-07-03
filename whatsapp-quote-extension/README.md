@@ -18,6 +18,7 @@ La extension lee estas variables desde el `.env.local` del repo principal durant
 ```bash
 VITE_SUPABASE_URL="https://TU_PROYECTO.supabase.co"
 VITE_SUPABASE_ANON_KEY="TU_ANON_KEY"
+VITE_MOTOFLOW_APP_URL="https://URL_REAL_DEL_CRM"
 ```
 
 No uses `service_role` en esta extension.

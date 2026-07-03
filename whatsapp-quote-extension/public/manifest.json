@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Motoflow Cotizador WhatsApp",
-  "description": "Panel manual de cotizaciones de Motoflow dentro de WhatsApp Web.",
-  "version": "0.1.0",
+  "name": "MotoFlow Omni Beta",
+  "description": "Extension multicanal beta de MotoFlow sobre WhatsApp Web.",
+  "version": "2.0.0.1",
+  "version_name": "2.0.0-beta.1",
   "permissions": ["storage"],
   "host_permissions": [
     "https://web.whatsapp.com/*",

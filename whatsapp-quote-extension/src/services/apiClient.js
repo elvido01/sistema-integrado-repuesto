@@ -15,6 +15,12 @@ async function fetchJson(url, options) {
   return payload;
 }
 
+function isMissingOutOfStockRpcError(error) {
+  const message = String(error?.message || '');
+  return /omni_crear_solicitudes_agotadas/i.test(message)
+    && /schema cache|function/i.test(message);
+}
+
 // Renueva el access_token usando el refresh_token (los tokens de Supabase
 // expiran en ~1h). Si el refresh falla, limpia la sesion guardada.
 async function refreshSession(session) {
@@ -587,6 +593,84 @@ export async function searchCustomers(query) {
   return fetchJson(url.toString(), { headers });
 }
 
+export async function createOutOfStockRequests(payload) {
+  const headers = await getAuthHeaders();
+  try {
+    return await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/omni_crear_solicitudes_agotadas`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ p_payload: payload })
+    });
+  } catch (error) {
+    if (isMissingOutOfStockRpcError(error)) {
+      throw new Error(
+        'Supabase todavia no tiene cargada la funcion de Producto agotado. Ejecuta el SQL en el proyecto correcto y luego corre: SELECT pg_notify('
+        + "'pgrst','reload schema'"
+        + ');'
+      );
+    }
+    throw error;
+  }
+}
+
+export async function getAvailableProductNotifications({ limit = 10 } = {}) {
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/notificaciones`);
+  url.searchParams.set('select', 'id,tipo,titulo,mensaje,solicitud_id,producto_id,created_at,visto_at');
+  url.searchParams.set('tipo', 'eq.stock_disponible');
+  url.searchParams.set('visto_at', 'is.null');
+  url.searchParams.set('order', 'created_at.desc');
+  url.searchParams.set('limit', String(limit));
+
+  return fetchJson(url.toString(), { headers });
+}
+
+export async function getOutOfStockRequest(solicitudId) {
+  if (!solicitudId) throw new Error('solicitud_id es requerido.');
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/solicitudes_clientes`);
+  url.searchParams.set('select', '*,clientes(nombre,telefono),productos(codigo,descripcion,precio,precio1)');
+  url.searchParams.set('id', `eq.${solicitudId}`);
+  url.searchParams.set('limit', '1');
+
+  const rows = await fetchJson(url.toString(), { headers });
+  return rows?.[0] || null;
+}
+
+export async function markNotificationsRead(ids = []) {
+  const cleanIds = ids.filter(Boolean);
+  if (!cleanIds.length) return null;
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/notificaciones`);
+  url.searchParams.set('id', `in.(${cleanIds.join(',')})`);
+
+  return fetchJson(url.toString(), {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ visto_at: new Date().toISOString() })
+  });
+}
+
+export async function markOutOfStockCustomerNotified(solicitudId) {
+  if (!solicitudId) throw new Error('solicitud_id es requerido.');
+  const headers = await getAuthHeaders();
+  const user = await fetchJson(`${SUPABASE_URL}/auth/v1/user`, { headers }).catch(() => null);
+  const url = new URL(`${SUPABASE_URL}/rest/v1/solicitudes_clientes`);
+  url.searchParams.set('id', `eq.${solicitudId}`);
+  url.searchParams.set('select', '*');
+
+  const [row] = await fetchJson(url.toString(), {
+    method: 'PATCH',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({
+      customer_notified_at: new Date().toISOString(),
+      notified_by: user?.id || null
+    })
+  });
+
+  return row;
+}
+
 export async function getVendors() {
   const headers = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/vendedores`);
@@ -821,6 +905,19 @@ export async function setCobranzaSeguimiento({ clienteId, estado, fecha, nota })
       p_nota: nota || null
     })
   });
+}
+
+// Historial de gestiones de cobro del cliente (timeline del "Caso de cobro").
+// Sin esto el caso solo mostraba las gestiones agregadas en la sesion actual
+// y parecia que el historial no se guardaba.
+export async function getCobroGestiones(clienteId, limit = 50) {
+  if (!clienteId) return [];
+  const headers = await getAuthHeaders();
+  return fetchRestRows('cobro_gestiones', {
+    select: 'id,cliente_id,prestamo_id,tipo,estado,resultado,fecha_promesa,monto_promesa,canal,nota,metadata,created_at',
+    cliente_id: `eq.${clienteId}`,
+    order: 'created_at.desc'
+  }, headers, limit);
 }
 
 export async function insertCobroGestion(payload) {

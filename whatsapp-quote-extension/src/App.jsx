@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { castigarPrestamo, createQuote, getClienteFicha, getClientesMorosos, getEmpresasUsuarioExtension, getOmniConversations, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
-import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatInPlace, openWhatsAppChatViaInternalLink, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
+import { castigarPrestamo, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getOmniConversations, getOutOfStockRequest, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
 import OmniInbox from './components/omni/OmniInbox.jsx';
+import QuickOutOfStockForm from './components/out-of-stock/QuickOutOfStockForm.jsx';
 import { CHANNEL_TYPES, getChannelCounts, getInitialChannel } from './channels/channelRegistry.js';
 import { getDefaultOmniFlags, OMNI_BETA_VERSION, readSafeMode, writeSafeMode } from './core/omniConfig.js';
 
@@ -64,6 +65,27 @@ function buildCobroMessageFor(cliente, empresaNombre, plantilla) {
   });
 }
 
+function buildAvailableProductMessage(solicitud) {
+  const name = solicitud?.clientes?.nombre
+    || solicitud?.cliente_nombre
+    || solicitud?.customer_name_snapshot
+    || 'cliente';
+  const productName = solicitud?.productos?.descripcion
+    || solicitud?.producto_texto
+    || 'el producto que solicitaste';
+  const price = Number(solicitud?.productos?.precio ?? solicitud?.productos?.precio1 ?? 0);
+  const priceText = price > 0 ? `, con precio de ${money.format(price)}` : '';
+
+  return `Hola, ${name}. Ya tenemos disponible ${productName}${priceText}. Deseas que te lo reservemos?`;
+}
+
+function getSolicitudPhone(solicitud) {
+  return solicitud?.phone_normalized
+    || solicitud?.clientes?.telefono
+    || solicitud?.cliente_telefono
+    || '';
+}
+
 const PENDING_COBRO_KEY = 'motoflow_pending_cobro';
 const PENDING_BUSCADOR_KEY = 'motoflow_pending_buscador';
 const MOTOFLOW_APP_URL = import.meta.env.VITE_MOTOFLOW_APP_URL || '';
@@ -86,12 +108,17 @@ const GESTION_COBRO_TABS = [
   { key: 'reenviar', label: 'Para reenviar' }
 ];
 
-// Normaliza un telefono dominicano al formato de wa.me (1 + 10 digitos)
-function normalizePhone(raw) {
+// Normaliza un telefono dominicano al formato de wa.me (1 + 10 digitos).
+function normalizePhone(raw, options = {}) {
   let digits = String(raw || '').replace(/\D/g, '');
   if (!digits) return '';
   if (digits.length === 10) digits = '1' + digits;
+  if (options.e164) return digits ? `+${digits}` : '';
   return digits;
+}
+
+function normalizePhoneE164(raw) {
+  return normalizePhone(raw, { e164: true });
 }
 
 function sleep(ms) {
@@ -340,6 +367,8 @@ export default function App() {
   const [advancedLoading, setAdvancedLoading] = useState(false);
   const [pastingQuote, setPastingQuote] = useState(false);
   const [sendingToMotoflow, setSendingToMotoflow] = useState(false);
+  const [outOfStockOpen, setOutOfStockOpen] = useState(false);
+  const [outOfStockSaving, setOutOfStockSaving] = useState(false);
   const [lastQuote, setLastQuote] = useState(() => readLastQuote(activeQuoteChat));
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerResults, setCustomerResults] = useState([]);
@@ -354,6 +383,8 @@ export default function App() {
   const [morosos, setMorosos] = useState(null);   // { empresa_nombre, plantilla, clientes: [] }
   const [morososLoading, setMorososLoading] = useState(false);
   const [cobroMsg, setCobroMsg] = useState('');
+  const [availableProducts, setAvailableProducts] = useState([]);
+  const [availableProductsLoading, setAvailableProductsLoading] = useState(false);
   const [omniConversationsPreview, setOmniConversationsPreview] = useState([]);
   const [cobroFilter, setCobroFilter] = useState('');
   const [cobroView, setCobroView] = useState('todos');
@@ -636,6 +667,17 @@ export default function App() {
     return () => {
       active = false;
     };
+  }, [session?.access_token, empresaPending]);
+
+  useEffect(() => {
+    if (!session?.access_token || empresaPending) {
+      setAvailableProducts([]);
+      return;
+    }
+
+    loadAvailableProductNotifications();
+    const timer = window.setInterval(loadAvailableProductNotifications, 60000);
+    return () => window.clearInterval(timer);
   }, [session?.access_token, empresaPending]);
 
   useEffect(() => {
@@ -1063,6 +1105,71 @@ export default function App() {
     }
   }
 
+  async function loadAvailableProductNotifications() {
+    if (!session?.access_token || empresaPending) return;
+    setAvailableProductsLoading(true);
+    try {
+      const rows = await getAvailableProductNotifications({ limit: 8 });
+      setAvailableProducts(rows || []);
+    } catch (error) {
+      console.debug('[Motoflow Omni] No se pudieron cargar productos disponibles:', error.message);
+    } finally {
+      setAvailableProductsLoading(false);
+    }
+  }
+
+  async function handlePrepareAvailableProduct(notification) {
+    if (!notification?.solicitud_id) {
+      setNotice('La notificacion no tiene solicitud vinculada.');
+      return;
+    }
+
+    try {
+      const solicitud = await getOutOfStockRequest(notification.solicitud_id);
+      if (!solicitud) {
+        setNotice('No pude cargar la solicitud vinculada.');
+        return;
+      }
+
+      const text = buildAvailableProductMessage(solicitud);
+      const phone = normalizePhone(getSolicitudPhone(solicitud));
+      if (!phone) {
+        await navigator.clipboard.writeText(text).catch(() => null);
+        setNotice('El contacto no tiene telefono. Copie el mensaje al portapapeles.');
+        return;
+      }
+
+      const ok = await openChatAndPasteWithoutReload({
+        phone,
+        text,
+        expectedName: solicitud.clientes?.nombre || solicitud.cliente_nombre || solicitud.customer_name_snapshot || ''
+      });
+
+      if (ok) {
+        await markNotificationsRead([notification.id]).catch(() => null);
+        setAvailableProducts((current) => current.filter((item) => item.id !== notification.id));
+        setNotice('Mensaje preparado en WhatsApp. Revisa, edita y envia manualmente.');
+      } else {
+        await navigator.clipboard.writeText(text).catch(() => null);
+        setNotice('No pude pegar en WhatsApp. Copie el mensaje al portapapeles.');
+      }
+    } catch (error) {
+      setNotice(error.message || 'No se pudo preparar el mensaje.');
+    }
+  }
+
+  async function handleMarkAvailableNotified(notification) {
+    if (!notification?.solicitud_id) return;
+    try {
+      await markOutOfStockCustomerNotified(notification.solicitud_id);
+      await markNotificationsRead([notification.id]).catch(() => null);
+      setAvailableProducts((current) => current.filter((item) => item.id !== notification.id));
+      setNotice('Cliente marcado como avisado.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo marcar como avisado.');
+    }
+  }
+
   // Guarda el seguimiento de un cliente en la BD
   function saveSeg(cliente) {
     return setCobranzaSeguimiento({
@@ -1153,58 +1260,94 @@ export default function App() {
     }
   }
 
-  async function waitForChatReadyAfterInternalOpen(beforeChat, expectedName = '') {
-    const expected = looseText(expectedName);
-    const wasAlreadyInExpectedChat = expected && isSameLooseName(beforeChat?.name, expectedName);
+  // Chats ya verificados en esta sesión: teléfono → nombre del chat aceptado.
+  // Permite reenvíos al mismo cliente aunque el nombre del contacto en
+  // WhatsApp no sea igual al del sistema.
+  const verifiedChatsRef = useRef(new Map());
 
-    for (let attempt = 0; attempt < 26; attempt += 1) {
-      await sleep(attempt === 0 ? 900 : 500);
-      const current = getCurrentChat();
-      const changedChat = Boolean(current.name && current.name !== beforeChat?.name);
-      const expectedChat = expected && isSameLooseName(current.name, expectedName);
+  // ¿El chat abierto corresponde al destinatario? SOLO por igualdad estricta
+  // de nombre, por dígitos del teléfono, o por chat ya verificado. OJO: la
+  // comparación por contención (isSameLooseName) daba falsos positivos —
+  // "Yerlin Flota Caminero Motors" contiene "Caminero Motors" y el mensaje
+  // se pegaba en el chat equivocado.
+  function chatMatchesTarget(chatName, expectedName, phoneDigits) {
+    if (!chatName) return false;
+    const nameA = looseText(chatName);
+    if (expectedName && nameA && nameA === looseText(expectedName)) return true;
+    const headerDigits = String(chatName).replace(/\D/g, '');
+    const target = String(phoneDigits || '').replace(/\D/g, '');
+    if (target && headerDigits.length >= 7
+      && headerDigits.replace(/^1/, '') === target.replace(/^1/, '')) return true;
+    const cached = target ? verifiedChatsRef.current.get(target) : null;
+    return Boolean(cached && nameA === looseText(cached));
+  }
 
-      if (wasAlreadyInExpectedChat || changedChat || expectedChat || !beforeChat?.name) {
-        return true;
+  // Abre el chat SIN recargar usando el buscador de WhatsApp (por DOM).
+  // El pushState('/send?...') de antes NO funcionaba: WhatsApp solo procesa
+  // /send al cargar la página, por eso los mensajes dejaron de pegarse.
+  // Devuelve { ok, reason } — reason dice por qué falló (diagnóstico).
+  async function openChatWithoutReload({ phone, expectedName }) {
+    const digits = String(phone || '').replace(/\D/g, '');
+    const before = getCurrentChat();
+
+    // ¿Ya estamos en el chat correcto? (reenvíos al mismo cliente)
+    if (chatMatchesTarget(before.name, expectedName, digits)) return { ok: true };
+
+    // Consultas en orden: número completo, número local (sin el 1 de RD/US),
+    // y por último el nombre del cliente tal como está en el sistema.
+    const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : '';
+    const queries = [digits, local, String(expectedName || '').trim()].filter(Boolean);
+
+    let lastReason = 'sin_telefono';
+    for (const q of queries) {
+      const result = await openWhatsAppChatViaSearch(q);
+      if (!result?.ok) {
+        lastReason = result?.reason || 'desconocido';
+        continue;
       }
+
+      const now = getCurrentChat();
+      // Verificación estricta: nombre o dígitos coinciden.
+      if (chatMatchesTarget(now.name, expectedName, digits)) {
+        if (digits && now.name) verifiedChatsRef.current.set(digits, now.name);
+        return { ok: true };
+      }
+      // Si buscamos por el NÚMERO exacto y el chat cambió, aceptamos: el
+      // header puede mostrar el nombre del contacto guardado en el teléfono,
+      // distinto al nombre registrado en el sistema. Se recuerda el chat
+      // verificado para reenvíos futuros a este mismo número.
+      if (/^\d+$/.test(q) && now.name && now.name !== before.name) {
+        if (digits) verifiedChatsRef.current.set(digits, now.name);
+        return { ok: true };
+      }
+      // Abrió un chat que no es el del cliente (búsqueda por nombre ambigua):
+      // NO pegar aquí; probar la siguiente consulta.
+      lastReason = 'chat_equivocado';
     }
 
-    return false;
+    return { ok: false, reason: lastReason };
   }
 
   async function openChatAndPasteWithoutReload({ phone, text, expectedName }) {
-    const beforeChat = getCurrentChat();
-    const opened = openWhatsAppChatInPlace(phone, text);
-    if (!opened) return false;
-
-    let ready = await waitForChatReadyAfterInternalOpen(beforeChat, expectedName);
-    if (!ready) {
-      const linkOpened = openWhatsAppChatViaInternalLink(phone, text);
-      if (!linkOpened) return false;
-      ready = await waitForChatReadyAfterInternalOpen(beforeChat, expectedName);
-    }
-
-    if (!ready) return false;
+    const opened = await openChatWithoutReload({ phone, expectedName });
+    if (!opened.ok) return opened;
 
     const needle = looseText(text).slice(0, 30);
     for (let attempt = 0; attempt < 14; attempt += 1) {
       const draft = looseText(getWhatsAppDraftText());
-      if (needle && draft.includes(needle)) return true;
+      if (needle && draft.includes(needle)) return { ok: true };
 
       const pasted = await pasteTextIntoWhatsApp(text);
-      if (pasted) return true;
+      if (pasted) return { ok: true };
       await sleep(500);
     }
 
-    return false;
+    return { ok: false, reason: 'no_pego' };
   }
 
   async function openChatAndAttachWithoutReload({ phone, file, expectedName }) {
-    const beforeChat = getCurrentChat();
-    const opened = openWhatsAppChatInPlace(phone);
-    if (!opened) return false;
-
-    const ready = await waitForChatReadyAfterInternalOpen(beforeChat, expectedName);
-    if (!ready) return false;
+    const opened = await openChatWithoutReload({ phone, expectedName });
+    if (!opened.ok) return false;
 
     for (let attempt = 0; attempt < 18; attempt += 1) {
       const attached = await attachFileToWhatsApp(file);
@@ -1234,6 +1377,14 @@ export default function App() {
     setSendingId(cliente.cliente_id);
     // Registrar el envio (para la lista "Para reenviar" si no paga)
     await marcarEnvioCobranza(cliente.cliente_id).catch(() => {});
+    // Historial: registrar SIEMPRE el mensaje_enviado en cobro_gestiones
+    // (todas las empresas: prestamos y facturas). Ademas, para los casos de
+    // "Recordatorio 3 dias" esta gestion es la que saca la cuota de esa lista.
+    await insertCobroGestion({
+      cliente_id: cliente.cliente_id,
+      prestamo_id: cliente.prestamo_id || null,
+      ...buildMensajeCobroGestion(cliente)
+    }).catch(() => {});
     safeLogEvent('cobro_reminder_pasted', {
       cliente_id: cliente.cliente_id,
       customer_name: cliente.cliente_nombre,
@@ -1251,23 +1402,57 @@ export default function App() {
         window.localStorage.setItem(PENDING_COBRO_KEY, JSON.stringify({ text, ts: Date.now() }));
       } catch {}
 
-      const ok = await openChatAndPasteWithoutReload({
+      const result = await openChatAndPasteWithoutReload({
         phone,
         text,
         expectedName: cliente.cliente_nombre
       });
 
-      if (ok) {
+      if (result.ok) {
         try {
           window.localStorage.removeItem(PENDING_COBRO_KEY);
         } catch {}
+        // Reglas internas: al enviar, el caso sale de su lista SIN recargar.
+        // - Recordatorio 3 dias: se quita la tarjeta (ya quedo registrada la
+        //   gestion mensaje_enviado con la cuota).
+        // - Para reenviar: por_reenviar pasa a false (ultimo_envio = ahora).
+        const sameCase = (c) => (
+          cliente.case_id && c.case_id
+            ? String(c.case_id) === String(cliente.case_id)
+            : c.cliente_id === cliente.cliente_id
+        );
+        const nowIso = new Date().toISOString();
+        setMorosos((current) => {
+          if (!current?.clientes) return current;
+          return {
+            ...current,
+            clientes: current.clientes
+              .filter((c) => !(cliente.recordatorio_pago && c.recordatorio_pago && sameCase(c)))
+              .map((c) => (c.cliente_id === cliente.cliente_id
+                ? { ...c, por_reenviar: false, ultimo_envio: nowIso }
+                : c))
+          };
+        });
+        // Cerrar las ventanas (Caso de cobro + Gestion de Cobro) para dejar el
+        // chat visible con el mensaje pegado, listo para presionar Enter.
+        setSelectedCobroCase(null);
+        setDebtModalOpen(false);
         setCobroMsg('Recordatorio pegado en el chat. Revisa y presiona Enter para enviar.');
       } else {
-        try {
-          window.localStorage.removeItem(PENDING_COBRO_KEY);
-        } catch {}
-        await navigator.clipboard.writeText(text).catch(() => {});
-        setCobroMsg('No pude cambiar el chat sin recargar. Mensaje copiado; abre el chat y pegalo manualmente.');
+        // El buscador no pudo abrir el chat (numero sin conversacion previa,
+        // o fallo del DOM — 'reason' dice cual). Único camino: /send con
+        // recarga. Dejamos el mensaje en PENDING_COBRO_KEY para que el efecto
+        // de restauración lo pegue automáticamente al volver a cargar.
+        const linkOpened = openWhatsAppChatViaInternalLink(phone, text);
+        if (linkOpened) {
+          setCobroMsg(`Abriendo con recarga (motivo: ${result.reason || 'desconocido'}); el mensaje se pegará solo…`);
+        } else {
+          try {
+            window.localStorage.removeItem(PENDING_COBRO_KEY);
+          } catch {}
+          await navigator.clipboard.writeText(text).catch(() => {});
+          setCobroMsg(`No pude abrir el chat (motivo: ${result.reason || 'desconocido'}). Mensaje copiado; ábrelo manualmente.`);
+        }
       }
     } finally {
       setSendingId(null);
@@ -1331,6 +1516,19 @@ export default function App() {
     setCasePromiseAmount('');
     setCaseNote('');
     setCaseVisitResult('pendiente');
+
+    // Cargar el historial REAL de gestiones desde la BD. Antes el timeline
+    // solo mostraba las gestiones agregadas en esta sesion (en memoria) y el
+    // caso siempre aparecia "Sin gestiones registradas" al reabrirlo.
+    getCobroGestiones(cliente.cliente_id)
+      .then((rows) => {
+        setSelectedCobroCase((current) => (
+          current && current.cliente_id === cliente.cliente_id
+            ? { ...current, gestiones: rows || [] }
+            : current
+        ));
+      })
+      .catch(() => {});
   }
 
   function appendGestionToCase(gestion) {
@@ -1361,6 +1559,27 @@ export default function App() {
         ...payload
       });
       appendGestionToCase(row || payload);
+
+      // Empresas de FACTURAS (repuestos): su lista lee el estado desde
+      // cobranza_seguimiento (no desde cobro_gestiones). Sincronizar para que
+      // la promesa / mandado a buscar registrados en el caso se reflejen
+      // tambien en la lista y sus contadores.
+      const esFacturas = !['financiera', 'gestion_cobro'].includes(morosos?.tipo_cobranza);
+      if (esFacturas && payload.tipo === 'promesa_pago') {
+        await setCobranzaSeguimiento({
+          clienteId: selectedCobroCase.cliente_id,
+          estado: 'cliente_vendra',
+          fecha: payload.fecha_promesa || null,
+          nota: payload.nota || null
+        }).catch(() => {});
+      } else if (esFacturas && payload.tipo === 'mandado_buscar') {
+        await setCobranzaSeguimiento({
+          clienteId: selectedCobroCase.cliente_id,
+          estado: 'ir_a_buscar',
+          nota: payload.nota || null
+        }).catch(() => {});
+      }
+
       setCobroMsg(successMessage);
       await loadMorosos();
       return true;
@@ -1377,7 +1596,7 @@ export default function App() {
       tipo: 'mensaje_enviado',
       estado: 'enviado',
       canal: 'whatsapp',
-      nota: `Recordatorio enviado desde Gestion de Cobro para ${cliente.prestamo_numero || 'prestamo'}.`,
+      nota: `Recordatorio enviado desde Gestion de Cobro para ${cliente.prestamo_numero || (cliente.facturas || [])[0]?.numero || 'la cuenta'}.`,
       metadata: {
         origen: cliente.recordatorio_pago ? 'recordatorio_pago_extension' : 'gestion_credito_extension',
         recordatorio_pago: Boolean(cliente.recordatorio_pago),
@@ -1413,7 +1632,8 @@ export default function App() {
   }
 
   async function handleCaseEnviarWhatsapp(cliente) {
-    await registrarMensajeCobro(cliente, 'Mensaje registrado.');
+    // handleEnviarMsj ya registra la gestion mensaje_enviado para TODOS los
+    // envios (evita duplicarla aqui).
     await handleEnviarMsj(cliente);
   }
 
@@ -1628,6 +1848,99 @@ export default function App() {
     window.open(url.toString(), 'motoflow_cliente');
   }
 
+  function getOutOfStockContext() {
+    const conversation = commercialConversation;
+    if (conversation) {
+      const channel = conversation.platform || activeChannel || CHANNEL_TYPES.UNIFIED;
+      const phone = conversation.customer_phone || conversation.phone || '';
+      return {
+        channel,
+        channelLabel: getOmniPlatformLabel(channel),
+        customerName: getOmniConversationName(conversation),
+        phone,
+        conversationId: conversation.id || conversation.external_conversation_id || '',
+        externalContactId: conversation.customer_external_id || conversation.external_contact_id || phone || conversation.id || '',
+        customerId: conversation.cliente_id || conversation.customer_id || null
+      };
+    }
+
+    const liveChat = getCurrentChat();
+    const chatName = liveChat.name || chat.name || '';
+    const phone = customerPhone || (/\d{7,}/.test(chatName) ? chatName : '');
+    return {
+      channel: 'whatsapp',
+      channelLabel: 'WhatsApp',
+      customerName: selectedCustomer?.nombre || customerQuery || chatName || '',
+      phone,
+      conversationId: liveChat.id || chat.id || '',
+      externalContactId: normalizePhone(phone) || liveChat.id || chat.id || '',
+      customerId: selectedCustomer?.id || null
+    };
+  }
+
+  function handleOpenOutOfStock() {
+    const context = getOutOfStockContext();
+    if (!context?.customerName && !context?.phone && !context?.conversationId) {
+      setNotice('Selecciona una conversacion para registrar una solicitud.');
+      return;
+    }
+    setOutOfStockOpen(true);
+  }
+
+  async function handleSubmitOutOfStock(formData) {
+    if (outOfStockSaving) return;
+
+    const context = getOutOfStockContext();
+    const phone = formData.phone || context.phone || '';
+    const payload = {
+      created_from: 'motoflow_omni',
+      source_channel: context.channel || 'whatsapp',
+      source_conversation_id: context.conversationId || null,
+      external_contact_id: context.externalContactId || null,
+      customer_name: formData.customerName || context.customerName || 'Cliente',
+      phone,
+      phone_normalized: normalizePhoneE164(phone) || null,
+      cliente_id: selectedCustomer?.id || context.customerId || null,
+      notes: formData.notes || null,
+      duplicate_action: 'increase',
+      products: formData.lines
+    };
+
+    setOutOfStockSaving(true);
+    try {
+      const result = await createOutOfStockRequests(payload);
+      const rows = result?.results || [];
+      const purchaseOk = rows.filter((row) => row.purchase?.ok).length;
+      const freeOrSkipped = rows.filter((row) => row.purchase?.skipped || row.purchase?.reason === 'producto_libre').length;
+      const missingSupplier = rows.filter((row) => row.purchase?.missing_supplier).length;
+
+      safeLogEvent('out_of_stock_request_created', {
+        customer_name: payload.customer_name,
+        customer_phone: payload.phone,
+        metadata: {
+          source_channel: payload.source_channel,
+          source_conversation_id: payload.source_conversation_id,
+          lines: payload.products.length,
+          purchase_ok: purchaseOk,
+          free_or_skipped: freeOrSkipped,
+          missing_supplier: missingSupplier
+        }
+      });
+
+      setNotice([
+        `${rows.length || payload.products.length} solicitud(es) registrada(s).`,
+        purchaseOk ? `${purchaseOk} enviada(s) a compras.` : null,
+        missingSupplier ? `${missingSupplier} sin suplidor.` : null,
+        freeOrSkipped ? `${freeOrSkipped} libre(s) sin orden.` : null
+      ].filter(Boolean).join(' '));
+      setOutOfStockOpen(false);
+    } catch (error) {
+      setNotice(error.message || 'No se pudo registrar la solicitud. Abre el modulo web como fallback.');
+    } finally {
+      setOutOfStockSaving(false);
+    }
+  }
+
   const omniCounts = getChannelCounts({ morosos, omniConversations: omniConversationsPreview });
   const isSocialChannelActive = [
     CHANNEL_TYPES.UNIFIED,
@@ -1639,6 +1952,12 @@ export default function App() {
   const panelChatLabel = commercialConversation
     ? `${getOmniConversationName(commercialConversation)} · ${getOmniPlatformLabel(commercialConversation.platform || activeChannel)}`
     : (chat.name || 'Chat actual');
+  const outOfStockContext = getOutOfStockContext();
+  const canOpenOutOfStock = Boolean(
+    session
+    && !empresaPending
+    && (outOfStockContext.customerName || outOfStockContext.phone || outOfStockContext.conversationId)
+  );
 
   if (collapsed) {
     return (
@@ -1704,6 +2023,29 @@ export default function App() {
         </section>
       )}
 
+      {session && !empresaPending && (availableProducts.length > 0 || availableProductsLoading) && (
+        <section className="mf-available-products">
+          <header>
+            <strong>Productos disponibles</strong>
+            <button type="button" onClick={loadAvailableProductNotifications} disabled={availableProductsLoading}>
+              {availableProductsLoading ? '...' : 'Actualizar'}
+            </button>
+          </header>
+          {availableProducts.slice(0, 3).map((notification) => (
+            <article key={notification.id}>
+              <span>
+                <b>{notification.titulo || 'Producto disponible'}</b>
+                <small>{notification.mensaje || 'Solicitud pendiente de aviso'}</small>
+              </span>
+              <div>
+                <button type="button" onClick={() => handlePrepareAvailableProduct(notification)}>Mensaje</button>
+                <button type="button" onClick={() => handleMarkAvailableNotified(notification)}>Avisado</button>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
+
       {session && !empresaPending && (
         <nav className="mf-tabs">
           <button
@@ -1719,6 +2061,15 @@ export default function App() {
             onClick={handleGoCobranza}
           >
             Ver deuda
+          </button>
+          <button
+            className="mf-tab-stock"
+            type="button"
+            onClick={handleOpenOutOfStock}
+            disabled={!canOpenOutOfStock}
+            title={canOpenOutOfStock ? 'Registrar producto agotado' : 'Selecciona una conversacion para registrar una solicitud.'}
+          >
+            Producto agotado
           </button>
         </nav>
       )}
@@ -1768,6 +2119,16 @@ export default function App() {
         </form>
       )}
 
+      <QuickOutOfStockForm
+        isOpen={outOfStockOpen}
+        context={outOfStockContext}
+        selectedCustomer={selectedCustomer}
+        onClose={() => setOutOfStockOpen(false)}
+        onSearchProducts={searchProducts}
+        onSubmit={handleSubmitOutOfStock}
+        saving={outOfStockSaving}
+      />
+
       {session && !empresaPending && isSocialChannelActive && mode === 'omni' && (
         <section className="mf-social-commercial">
           {commercialConversation ? (
@@ -1788,6 +2149,7 @@ export default function App() {
                 <button type="button" onClick={handleCreateOmniCustomer}>Crear cliente</button>
                 <button type="button" onClick={() => handleOmniQuoteConversation(commercialConversation)}>Cotizar</button>
                 <button type="button" disabled={!commercialConversation.cliente_id && !commercialConversation.customer_id} onClick={handleGoCobranza}>Ver deuda</button>
+                <button type="button" onClick={handleOpenOutOfStock}>Producto agotado</button>
                 <button type="button" onClick={() => handleOmniQuickStatus('seguimiento', 'Conversacion marcada para seguimiento.')}>Crear seguimiento</button>
                 <button type="button" onClick={() => setNotice('Historial comercial disponible al asociar el cliente de Motoflow.')}>Ver historial</button>
                 <button type="button" onClick={handleMarkOmniAttended}>Marcar atendido</button>
