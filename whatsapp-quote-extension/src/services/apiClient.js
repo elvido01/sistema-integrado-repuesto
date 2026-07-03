@@ -62,6 +62,404 @@ async function getAuthHeaders() {
   };
 }
 
+const APP_TIME_ZONE = 'America/Santo_Domingo';
+const SUPABASE_PAGE_SIZE = 1000;
+const IN_FILTER_CHUNK_SIZE = 180;
+const DIAS_GRACIA_PAGO = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function todayDate() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date()).reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function daysBetween(from, to = todayDate()) {
+  if (!from) return 0;
+  const start = new Date(`${from}T00:00:00`);
+  const end = new Date(`${to}T00:00:00`);
+  return Math.max(0, Math.floor((end.getTime() - start.getTime()) / DAY_MS));
+}
+
+function chunkArray(items, size = IN_FILTER_CHUNK_SIZE) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
+function pendingCuota(cuota) {
+  return Math.max(
+    0,
+    Number(cuota.capital || 0) + Number(cuota.interes || 0)
+      - Number(cuota.capital_pagado || 0) - Number(cuota.interes_pagado || 0)
+  );
+}
+
+function cleanLoanNumber(value) {
+  const raw = String(value || '').trim();
+  const duplicatedLegacy = raw.match(/^(PT-\d+)-2\d+$/i);
+  return duplicatedLegacy ? duplicatedLegacy[1] : raw;
+}
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+async function fetchRestRows(table, params, headers, pageSize = SUPABASE_PAGE_SIZE) {
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) url.searchParams.set(key, value);
+    });
+    url.searchParams.set('offset', String(from));
+    url.searchParams.set('limit', String(pageSize));
+    const data = await fetchJson(url.toString(), { headers });
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return rows;
+}
+
+async function getCurrentEmpresa(headers) {
+  try {
+    const payload = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_empresas_usuario_extension`, {
+      method: 'POST',
+      headers,
+      body: '{}'
+    });
+    const empresas = payload?.empresas || [];
+    const active = empresas.find((empresa) => empresa.activa) || empresas[0];
+    if (active) return active;
+  } catch {
+    // Si el RPC nuevo no esta aplicado todavia, usa el flujo anterior.
+  }
+
+  const user = await fetchJson(`${SUPABASE_URL}/auth/v1/user`, { headers });
+  const profiles = await fetchRestRows('profiles', {
+    select: 'tenant_id',
+    id: `eq.${user?.id}`,
+    limit: '1'
+  }, headers);
+  const tenantId = profiles?.[0]?.tenant_id;
+  if (!tenantId) return null;
+
+  try {
+    const empresas = await fetchRestRows('config_empresa', {
+      select: 'tenant_id,nombre,razon_social,plantilla_cobro,cobranza_hora_corte,feat_financiera',
+      tenant_id: `eq.${tenantId}`,
+      limit: '1'
+    }, headers);
+    return empresas?.[0] || null;
+  } catch (error) {
+    if (!/feat_financiera|plantilla_cobro|cobranza_hora_corte/i.test(error.message || '')) throw error;
+    const empresas = await fetchRestRows('config_empresa', {
+      select: 'tenant_id,nombre,razon_social',
+      tenant_id: `eq.${tenantId}`,
+      limit: '1'
+    }, headers);
+    return empresas?.[0] ? { ...empresas[0], feat_financiera: false } : null;
+  }
+}
+
+function isFinancieraEmpresa(empresa) {
+  const txt = normalizeText(`${empresa?.nombre || ''} ${empresa?.razon_social || ''}`);
+  return Boolean(empresa?.feat_financiera)
+    || txt.includes('motoprestamo')
+    || txt.includes('moto prestamo')
+    || txt.includes('naranjo');
+}
+
+async function getClientesMorososFinanciera(headers, empresa) {
+  const prestamos = await fetchRestRows('prestamos', {
+    select: 'id,numero,cliente_id,tipo,garantia,tasa_interes,estado,fecha_inicio,created_at',
+    estado: 'eq.activo',
+    order: 'fecha_inicio.asc,created_at.desc'
+  }, headers);
+
+  if (!prestamos.length) {
+    return {
+      tipo_cobranza: 'financiera',
+      empresa_nombre: empresa?.nombre || empresa?.razon_social || 'la empresa',
+      plantilla: empresa?.plantilla_cobro || null,
+      clientes: []
+    };
+  }
+
+  const prestamoIds = prestamos.map((p) => p.id).filter(Boolean);
+  const cuotas = [];
+  for (const ids of chunkArray(prestamoIds)) {
+    const chunk = await fetchRestRows('prestamo_cuotas', {
+      select: 'id,prestamo_id,numero_cuota,fecha_vencimiento,capital,interes,monto_cuota,capital_pagado,interes_pagado,estado',
+      prestamo_id: `in.(${ids.join(',')})`,
+      or: '(estado.is.null,estado.neq.pagada)',
+      order: 'fecha_vencimiento.asc'
+    }, headers);
+    cuotas.push(...chunk);
+  }
+
+  const cuotasPorPrestamo = cuotas.reduce((acc, cuota) => {
+    if (!acc[cuota.prestamo_id]) acc[cuota.prestamo_id] = [];
+    acc[cuota.prestamo_id].push(cuota);
+    return acc;
+  }, {});
+
+  const rowsByCliente = new Map();
+  const recordatorioCandidatos = [];
+  prestamos.forEach((prestamo) => {
+    const loanCuotas = cuotasPorPrestamo[prestamo.id] || [];
+    const vencidas = loanCuotas.filter((cuota) => (
+      daysBetween(cuota.fecha_vencimiento) > DIAS_GRACIA_PAGO && pendingCuota(cuota) > 0
+    ));
+    const capitalBase = loanCuotas.reduce((sum, cuota) => (
+      sum + Math.max(0, Number(cuota.capital || 0) - Number(cuota.capital_pagado || 0))
+    ), 0);
+    const ultimoInteres = loanCuotas
+      .filter((cuota) => Number(cuota.interes || 0) > 0 && cuota.fecha_vencimiento)
+      .map((cuota) => cuota.fecha_vencimiento)
+      .sort()
+      .at(-1);
+    const interesCorrienteEquivalente = capitalBase > 0
+      && Number(prestamo.tasa_interes || 0) > 0
+      && ultimoInteres
+      && daysBetween(ultimoInteres) > 0
+      ? 1
+      : 0;
+    const pagosEquivalentes = vencidas.length + interesCorrienteEquivalente;
+    if (!prestamo.cliente_id) return;
+    if (pagosEquivalentes <= 0) {
+      // No es moroso. "Recordatorio 3 dias" (aviso temprano): prestamos con
+      // exactamente 1 cuota vencida hace 3 dias y nada mas atrasado.
+      const dia3 = loanCuotas.filter((cuota) => (
+        daysBetween(cuota.fecha_vencimiento) === DIAS_GRACIA_PAGO && pendingCuota(cuota) > 0
+      ));
+      if (dia3.length === 1) recordatorioCandidatos.push({ prestamo, cuota: dia3[0] });
+      return;
+    }
+
+    const cleanNumero = cleanLoanNumber(prestamo.numero);
+    const oldest = vencidas[0]?.fecha_vencimiento || ultimoInteres || prestamo.fecha_inicio;
+    const dias = daysBetween(oldest);
+    const monto = vencidas.reduce((sum, cuota) => sum + pendingCuota(cuota), 0);
+    const current = rowsByCliente.get(prestamo.cliente_id) || {
+      cliente_id: prestamo.cliente_id,
+      cuotas_atrasadas: 0,
+      total_atrasado: 0,
+      dias_mas_vencido: 0,
+      facturasMap: new Map()
+    };
+
+    current.cuotas_atrasadas += pagosEquivalentes;
+    current.total_atrasado += monto;
+    current.dias_mas_vencido = Math.max(current.dias_mas_vencido, dias);
+    const existingLoan = current.facturasMap.get(cleanNumero);
+    current.facturasMap.set(cleanNumero, {
+      numero: cleanNumero,
+      monto_atrasado: Math.round(((existingLoan?.monto_atrasado || 0) + monto) * 100) / 100,
+      dias_vencida: Math.max(existingLoan?.dias_vencida || 0, dias)
+    });
+    rowsByCliente.set(prestamo.cliente_id, current);
+  });
+
+  const clienteIds = [...rowsByCliente.keys()];
+  const recordatorioClienteIds = [...new Set(recordatorioCandidatos.map((r) => r.prestamo.cliente_id))];
+  const todosClienteIds = [...new Set([...clienteIds, ...recordatorioClienteIds])];
+  if (!todosClienteIds.length) {
+    return {
+      tipo_cobranza: 'financiera',
+      empresa_nombre: empresa?.nombre || empresa?.razon_social || 'la empresa',
+      plantilla: empresa?.plantilla_cobro || null,
+      clientes: []
+    };
+  }
+
+  const clientes = [];
+  for (const ids of chunkArray(todosClienteIds)) {
+    const chunk = await fetchRestRows('clientes', {
+      select: 'id,nombre,telefono,rnc,codigo',
+      id: `in.(${ids.join(',')})`,
+      activo: 'eq.true'
+    }, headers);
+    clientes.push(...chunk);
+  }
+  const clientesMap = new Map(clientes.map((cliente) => [cliente.id, cliente]));
+
+  let seguimientos = [];
+  try {
+    for (const ids of chunkArray(clienteIds)) {
+      const chunk = await fetchRestRows('cobranza_seguimiento', {
+        select: 'cliente_id,estado,fecha_promesa,nota,ultimo_envio',
+        cliente_id: `in.(${ids.join(',')})`
+      }, headers);
+      seguimientos.push(...chunk);
+    }
+  } catch {
+    seguimientos = [];
+  }
+  const seguimientoMap = new Map(seguimientos.map((seg) => [seg.cliente_id, seg]));
+
+  let pagos = [];
+  try {
+    for (const ids of chunkArray(clienteIds)) {
+      const chunk = await fetchRestRows('prestamo_pagos', {
+        select: 'cliente_id,created_at,fecha,total_pagado,cobrador',
+        cliente_id: `in.(${ids.join(',')})`,
+        anulado: 'eq.false'
+      }, headers);
+      pagos.push(...chunk);
+    }
+  } catch {
+    pagos = [];
+  }
+  const pagosPorCliente = pagos.reduce((acc, pago) => {
+    if (!acc[pago.cliente_id]) acc[pago.cliente_id] = [];
+    acc[pago.cliente_id].push(pago);
+    return acc;
+  }, {});
+
+  const corte = empresa?.cobranza_hora_corte || '17:50';
+  const nowTime = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(new Date());
+
+  const out = clienteIds.map((clienteId) => {
+    const row = rowsByCliente.get(clienteId);
+    const cliente = clientesMap.get(clienteId) || {};
+    const seg = seguimientoMap.get(clienteId) || {};
+    const facturas = [...row.facturasMap.values()].sort((a, b) => b.dias_vencida - a.dias_vencida);
+    const pagosCliente = (pagosPorCliente[clienteId] || []).sort((a, b) => (
+      String(b.fecha || '').localeCompare(String(a.fecha || ''))
+      || String(b.created_at || '').localeCompare(String(a.created_at || ''))
+    ));
+    const ultimoPago = pagosCliente[0] || null;
+    const ultimoEnvio = seg.ultimo_envio || null;
+    const fechaBase = seg.fecha_promesa || (ultimoEnvio ? String(ultimoEnvio).slice(0, 10) : null);
+    const pagoPosterior = ultimoEnvio
+      ? (pagosPorCliente[clienteId] || []).some((pago) => String(pago.created_at || pago.fecha || '') >= String(ultimoEnvio))
+      : false;
+    const porReenviar = Boolean(
+      ultimoEnvio
+      && !pagoPosterior
+      && (
+        (fechaBase && fechaBase < todayDate())
+        || (fechaBase === todayDate() && nowTime >= corte)
+      )
+    );
+
+    return {
+      tipo_cobranza: 'financiera',
+      cliente_id: clienteId,
+      cliente_nombre: cliente.nombre || 'Cliente',
+      cliente_telefono: cliente.telefono || '',
+      cuotas_atrasadas: row.cuotas_atrasadas,
+      total_atrasado: Math.round(row.total_atrasado * 100) / 100,
+      dias_mas_vencido: row.dias_mas_vencido,
+      facturas,
+      seg_estado: seg.estado || 'pendiente',
+      seg_fecha: seg.fecha_promesa || null,
+      seg_nota: seg.nota || '',
+      ultimo_envio: ultimoEnvio,
+      ultimo_pago: ultimoPago,
+      ultimo_pago_fecha: ultimoPago?.fecha || null,
+      ultimo_pago_monto: ultimoPago?.total_pagado || 0,
+      por_reenviar: porReenviar
+    };
+  }).filter((row) => !(
+    row.seg_estado === 'cliente_vendra'
+    && row.seg_fecha
+    && row.seg_fecha > todayDate()
+  ));
+
+  // Recordatorio 3 dias (aviso temprano): agrega los prestamos NO morosos con
+  // exactamente 1 cuota a 3 dias, excluyendo los que ya tienen recordatorio
+  // enviado (cobro_gestiones.mensaje_enviado con recordatorio_pago).
+  if (recordatorioCandidatos.length) {
+    let gestiones = [];
+    try {
+      for (const ids of chunkArray(recordatorioClienteIds)) {
+        const chunk = await fetchRestRows('cobro_gestiones', {
+          select: 'cliente_id,tipo,metadata',
+          cliente_id: `in.(${ids.join(',')})`,
+          tipo: 'eq.mensaje_enviado'
+        }, headers);
+        gestiones.push(...chunk);
+      }
+    } catch {
+      gestiones = [];
+    }
+    const yaRecordado = (clienteId, cuotaId) => gestiones.some((g) => (
+      g.cliente_id === clienteId
+      && String(g.metadata?.recordatorio_pago ?? 'false') === 'true'
+      && String(g.metadata?.recordatorio_cuota_id ?? '') === String(cuotaId)
+    ));
+
+    recordatorioCandidatos.forEach(({ prestamo, cuota }) => {
+      if (yaRecordado(prestamo.cliente_id, cuota.id)) return;
+      const cliente = clientesMap.get(prestamo.cliente_id);
+      if (!cliente) return; // cliente inactivo o no encontrado
+      const monto = Math.round(pendingCuota(cuota) * 100) / 100;
+      const numero = cleanLoanNumber(prestamo.numero);
+      out.push({
+        tipo_cobranza: 'financiera',
+        case_id: cuota.id,
+        prestamo_id: prestamo.id,
+        prestamo_numero: numero,
+        cliente_id: prestamo.cliente_id,
+        cliente_nombre: cliente.nombre || 'Cliente',
+        cliente_telefono: cliente.telefono || '',
+        cuotas_atrasadas: 1,
+        pagos_vencidos_equivalentes: 1,
+        total_atrasado: monto,
+        dias_mas_vencido: DIAS_GRACIA_PAGO,
+        recordatorio_pago: true,
+        recordatorio_cuota_id: cuota.id,
+        recordatorio_fecha_vencimiento: cuota.fecha_vencimiento,
+        facturas: [{
+          numero,
+          cuota_id: cuota.id,
+          fecha_vencimiento: cuota.fecha_vencimiento,
+          monto_atrasado: monto,
+          dias_vencida: DIAS_GRACIA_PAGO
+        }],
+        seg_estado: 'pendiente',
+        seg_fecha: null,
+        seg_nota: '',
+        ultimo_envio: null,
+        ultimo_pago: null,
+        ultimo_pago_fecha: null,
+        ultimo_pago_monto: 0,
+        por_reenviar: false
+      });
+    });
+  }
+
+  out.sort((a, b) => (
+    b.dias_mas_vencido - a.dias_mas_vencido
+    || b.total_atrasado - a.total_atrasado
+    || String(a.cliente_nombre || '').localeCompare(String(b.cliente_nombre || ''))
+  ));
+
+  return {
+    tipo_cobranza: 'financiera',
+    empresa_nombre: empresa?.nombre || empresa?.razon_social || 'la empresa',
+    plantilla: empresa?.plantilla_cobro || null,
+    clientes: out
+  };
+}
+
 export async function searchProducts(queryOrFilters) {
   const filters =
     typeof queryOrFilters === 'string'
@@ -148,6 +546,25 @@ export function signOut() {
   window.localStorage.removeItem(SESSION_KEY);
 }
 
+export async function getEmpresasUsuarioExtension() {
+  const headers = await getAuthHeaders();
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_empresas_usuario_extension`, {
+    method: 'POST',
+    headers,
+    body: '{}'
+  });
+}
+
+export async function setEmpresaActivaExtension(tenantId) {
+  if (!tenantId) throw new Error('Selecciona una empresa.');
+  const headers = await getAuthHeaders();
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/set_empresa_activa_extension`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_tenant_id: tenantId })
+  });
+}
+
 export async function searchCustomers(query) {
   const headers = await getAuthHeaders();
   const cleanQuery = String(query || '').trim();
@@ -180,6 +597,113 @@ export async function getVendors() {
   return fetchJson(url.toString(), { headers });
 }
 
+export async function getOmniConversations({ channel = 'unified', search = '', limit = 60 } = {}) {
+  const headers = await getAuthHeaders();
+  const empresa = await getCurrentEmpresa(headers).catch(() => null);
+  const url = new URL(`${SUPABASE_URL}/rest/v1/sales_conversations_view`);
+  url.searchParams.set('select', '*');
+  if (empresa?.tenant_id) url.searchParams.set('tenant_id', `eq.${empresa.tenant_id}`);
+
+  if (channel === 'instagram' || channel === 'facebook' || channel === 'youtube') {
+    url.searchParams.set('platform', `eq.${channel}`);
+  } else {
+    url.searchParams.set('platform', 'neq.whatsapp');
+  }
+
+  const cleanSearch = String(search || '').trim();
+  if (cleanSearch) {
+    const safeSearch = cleanSearch.replace(/[(),]/g, ' ');
+    url.searchParams.set('or', [
+      `customer_name.ilike.*${safeSearch}*`,
+      `customer_phone.ilike.*${safeSearch}*`,
+      `customer_external_id.ilike.*${safeSearch}*`,
+      `last_message_preview.ilike.*${safeSearch}*`
+    ].join(','));
+  }
+
+  url.searchParams.set('order', 'last_message_at.desc.nullslast');
+  url.searchParams.set('limit', String(limit));
+
+  return fetchJson(url.toString(), { headers });
+}
+
+export async function getOmniMessages(conversationId) {
+  if (!conversationId) return [];
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/sales_messages`);
+  url.searchParams.set('select', 'id,conversation_id,platform,sender_type,message_type,message_text,media_url,status,created_at,raw_data');
+  url.searchParams.set('conversation_id', `eq.${conversationId}`);
+  url.searchParams.set('order', 'created_at.asc');
+  url.searchParams.set('limit', '120');
+
+  return fetchJson(url.toString(), { headers });
+}
+
+export async function sendOmniReply({ conversation, text }) {
+  if (!conversation?.id) throw new Error('Selecciona una conversacion.');
+  const cleanText = String(text || '').trim();
+  if (!cleanText) throw new Error('Escribe un mensaje para responder.');
+
+  const headers = await getAuthHeaders();
+  const empresa = await getCurrentEmpresa(headers).catch(() => null);
+  if (!empresa?.tenant_id) throw new Error('No se pudo determinar la empresa activa.');
+
+  const [row] = await fetchJson(`${SUPABASE_URL}/rest/v1/sales_messages?select=*`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({
+      tenant_id: empresa.tenant_id,
+      conversation_id: conversation.id,
+      platform: conversation.platform || 'instagram',
+      sender_type: 'agent',
+      message_type: 'text',
+      message_text: cleanText,
+      status: 'queued',
+      raw_data: {
+        source: 'motoflow_omni_extension',
+        note: 'Mensaje registrado desde extension. Pendiente conectar envio oficial del canal.'
+      }
+    })
+  });
+
+  return row;
+}
+
+export async function linkOmniConversationQuote({ conversationId, cotizacionId, status = 'cotizacion_enviada' }) {
+  if (!conversationId || !cotizacionId) return null;
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/sales_conversations`);
+  url.searchParams.set('id', `eq.${conversationId}`);
+  url.searchParams.set('select', '*');
+
+  const [row] = await fetchJson(url.toString(), {
+    method: 'PATCH',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({
+      cotizacion_id: cotizacionId,
+      status
+    })
+  });
+
+  return row;
+}
+
+export async function updateOmniConversationStatus({ conversationId, status }) {
+  if (!conversationId || !status) throw new Error('Selecciona una conversacion y un estado.');
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/sales_conversations`);
+  url.searchParams.set('id', `eq.${conversationId}`);
+  url.searchParams.set('select', '*');
+
+  const [row] = await fetchJson(url.toString(), {
+    method: 'PATCH',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({ status })
+  });
+
+  return row;
+}
+
 // Estado de cuenta (cobranza): cuotas atrasadas del cliente + plantilla
 export async function getEstadoCuenta(clienteId) {
   if (!clienteId) throw new Error('Selecciona un cliente para ver su estado de cuenta.');
@@ -192,15 +716,55 @@ export async function getEstadoCuenta(clienteId) {
   });
 }
 
-// Lista de cobranza: TODOS los clientes con facturas vencidas + su seguimiento
+// Lista de cobranza:
+// - Repuestos: TODOS los clientes con facturas vencidas + su seguimiento.
+// - Financiera/MotoPrestamos: clientes con prestamos atrasados, agrupados por cliente.
 export async function getClientesMorosos() {
   const headers = await getAuthHeaders();
+  const empresa = await getCurrentEmpresa(headers).catch(() => null);
 
-  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_clientes_morosos`, {
+  try {
+    const gestionCobro = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_gestion_cobro_extension`, {
+      method: 'POST',
+      headers,
+      body: '{}'
+    });
+    if (gestionCobro?.clientes?.length || isFinancieraEmpresa(empresa)) {
+      return gestionCobro;
+    }
+  } catch {
+    // Si el RPC de Gestion de Cobro no esta aplicado todavia, usa los fallbacks.
+  }
+
+  try {
+    const rpcFinanciera = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_clientes_morosos_financiera`, {
+      method: 'POST',
+      headers,
+      body: '{}'
+    });
+    if (rpcFinanciera?.clientes?.length || isFinancieraEmpresa(empresa)) {
+      return rpcFinanciera;
+    }
+  } catch {
+    // Si el RPC no esta aplicado todavia, intenta con la lectura directa.
+  }
+
+  try {
+    const cobranzaFinanciera = await getClientesMorososFinanciera(headers, empresa);
+    if (cobranzaFinanciera?.clientes?.length || isFinancieraEmpresa(empresa)) {
+      return cobranzaFinanciera;
+    }
+  } catch {
+    // Si este tenant no tiene tablas/permisos de financiera, usa cobranza normal.
+  }
+
+  const cobranzaFacturas = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_clientes_morosos`, {
     method: 'POST',
     headers,
     body: '{}'
   });
+
+  return cobranzaFacturas;
 }
 
 // Ficha completa del cliente (para el PDF que se manda al buscador)
@@ -255,6 +819,45 @@ export async function setCobranzaSeguimiento({ clienteId, estado, fecha, nota })
       p_estado: estado || 'pendiente',
       p_fecha: fecha || null,
       p_nota: nota || null
+    })
+  });
+}
+
+export async function insertCobroGestion(payload) {
+  if (!payload?.cliente_id) throw new Error('cliente_id es requerido.');
+  const headers = await getAuthHeaders();
+
+  const [row] = await fetchJson(`${SUPABASE_URL}/rest/v1/cobro_gestiones?select=*`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({
+      cliente_id: payload.cliente_id,
+      prestamo_id: payload.prestamo_id || null,
+      tipo: payload.tipo,
+      estado: payload.estado || 'registrada',
+      resultado: payload.resultado || null,
+      fecha_promesa: payload.fecha_promesa || null,
+      monto_promesa: payload.monto_promesa ?? null,
+      canal: payload.canal || null,
+      nota: payload.nota || null,
+      metadata: payload.metadata || {}
+    })
+  });
+
+  return row;
+}
+
+export async function castigarPrestamo({ prestamoId, motivo = 'incobrable', password = null }) {
+  if (!prestamoId) throw new Error('prestamo_id es requerido.');
+  const headers = await getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/castigar_prestamo`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_prestamo_id: prestamoId,
+      p_motivo: motivo,
+      p_password: password || null
     })
   });
 }
