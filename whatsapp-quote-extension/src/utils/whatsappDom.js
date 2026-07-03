@@ -21,6 +21,22 @@ export function getCurrentChat() {
   return { id, name };
 }
 
+export function openWhatsAppChatInPlace(phone, text = '') {
+  const cleanPhone = String(phone || '').replace(/\D/g, '');
+  if (!cleanPhone) return false;
+
+  const params = new URLSearchParams({ phone: cleanPhone });
+  if (text) params.set('text', text);
+
+  try {
+    window.history.pushState({}, '', `/send?${params.toString()}`);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function findMessageBox() {
   const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
 
@@ -30,6 +46,10 @@ function findMessageBox() {
     editables[editables.length - 1] ||
     null
   );
+}
+
+export function getWhatsAppDraftText() {
+  return cleanText(findMessageBox()?.textContent || '');
 }
 
 // Adjunta un archivo (PDF) en el chat abierto de WhatsApp Web.

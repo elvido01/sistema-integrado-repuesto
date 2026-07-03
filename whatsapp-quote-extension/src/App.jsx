@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createQuote, getClienteFicha, getClientesMorosos, getStoredSession, getVendors, logConversationEvent, marcarEnvioCobranza, searchCustomers, searchProducts, setClienteTelefono, setCobranzaSeguimiento, signInWithPassword, signOut } from './services/apiClient.js';
-import { attachFileToWhatsApp, getCurrentChat, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
+import { castigarPrestamo, createQuote, getClienteFicha, getClientesMorosos, getEmpresasUsuarioExtension, getOmniConversations, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatInPlace, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
+import ChannelRail from './components/omni/ChannelRail.jsx';
+import OmniInbox from './components/omni/OmniInbox.jsx';
+import { CHANNEL_TYPES, getChannelCounts, getInitialChannel } from './channels/channelRegistry.js';
+import { getDefaultOmniFlags, OMNI_BETA_VERSION, readSafeMode, writeSafeMode } from './core/omniConfig.js';
 
 const money = new Intl.NumberFormat('es-DO', {
   style: 'currency',
@@ -20,9 +24,18 @@ const DEFAULT_COBRO_TEMPLATE =
   'cuotas atrasadas: {N} FACTURA: {FACTURAS}, MONTO ATRASADO: {MONTO} - ' +
   'Favor pagar a mas tardar entre las proximas 48 horas y evitar cargos ' +
   'adicionales, este es un mensaje automatico del sistema. Gracias.';
+const DEFAULT_FINANCIERA_COBRO_TEMPLATE =
+  'Hola {NOMBRE}. El estado de su cuenta en {EMPRESA} es el siguiente: ' +
+  'pagos vencidos: {N}, PRESTAMO: {FACTURAS}, MONTO ATRASADO: {MONTO} - ' +
+  'Favor pagar a mas tardar entre las proximas 48 horas y evitar cargos ' +
+  'adicionales, este es un mensaje automatico del sistema. Gracias.';
 
 function buildCobroMessage(estado) {
-  const plantilla = (estado?.plantilla && estado.plantilla.trim()) || DEFAULT_COBRO_TEMPLATE;
+  const isFinancieraCobro = ['financiera', 'gestion_cobro'].includes(estado?.tipo_cobranza);
+  const fallbackTemplate = isFinancieraCobro
+    ? DEFAULT_FINANCIERA_COBRO_TEMPLATE
+    : DEFAULT_COBRO_TEMPLATE;
+  const plantilla = (estado?.plantilla && estado.plantilla.trim()) || fallbackTemplate;
   const facturas = (estado?.facturas || []).map((f) => f.numero).join(', ');
   const map = {
     '{NOMBRE}': estado?.cliente_nombre || '',
@@ -38,6 +51,7 @@ function buildCobroMessageFor(cliente, empresaNombre, plantilla) {
   return buildCobroMessage({
     plantilla,
     empresa_nombre: empresaNombre,
+    tipo_cobranza: cliente.tipo_cobranza,
     cliente_nombre: cliente.cliente_nombre,
     cuotas_atrasadas: cliente.cuotas_atrasadas,
     total_atrasado: cliente.total_atrasado,
@@ -47,10 +61,24 @@ function buildCobroMessageFor(cliente, empresaNombre, plantilla) {
 
 const PENDING_COBRO_KEY = 'motoflow_pending_cobro';
 const PENDING_BUSCADOR_KEY = 'motoflow_pending_buscador';
+const MOTOFLOW_APP_URL = import.meta.env.VITE_MOTOFLOW_APP_URL || '';
+const OMNI_FLAGS = getDefaultOmniFlags();
 
 const COBRO_ESTADOS = [
   { key: 'ir_a_buscar', label: 'Ir a buscar' },
   { key: 'cliente_vendra', label: 'Cliente vendra' }
+];
+
+const GESTION_COBRO_TABS = [
+  { key: 'todos', label: 'Todos los atrasados' },
+  { key: 'recordatorio_pago', label: 'Recordatorio 3 dias' },
+  { key: 'promesas', label: 'Promesas de pago' },
+  { key: 'promesas_vencidas', label: 'Promesas vencidas' },
+  { key: 'pagaron_siguen', label: 'Pagaron y siguen atrasados' },
+  { key: 'mandados_buscar', label: 'Mandados a buscar' },
+  { key: 'sin_respuesta', label: 'Sin respuesta' },
+  { key: 'criticos', label: 'Casos criticos' },
+  { key: 'reenviar', label: 'Para reenviar' }
 ];
 
 // Normaliza un telefono dominicano al formato de wa.me (1 + 10 digitos)
@@ -59,6 +87,106 @@ function normalizePhone(raw) {
   if (!digits) return '';
   if (digits.length === 10) digits = '1' + digits;
   return digits;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function looseText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function isSameLooseName(a, b) {
+  const left = looseText(a);
+  const right = looseText(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function formatDateDo(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '-';
+}
+
+function getOmniConversationName(conversation) {
+  return conversation?.customer_name
+    || conversation?.cliente_nombre
+    || conversation?.customer_phone
+    || conversation?.customer_external_id
+    || 'Cliente Omni';
+}
+
+function getOmniPlatformLabel(platform) {
+  const labels = {
+    whatsapp: 'WhatsApp',
+    instagram: 'Instagram',
+    facebook: 'Facebook',
+    tiktok: 'TikTok',
+    unified: 'Bandeja integrada',
+    followups: 'Seguimientos'
+  };
+  return labels[platform] || platform || 'Canal social';
+}
+
+function splitPrestamoNumero(value) {
+  const raw = String(value || '-').trim();
+  const match = /^(PT-\d+)-(.+)$/.exec(raw);
+  return match ? [match[1], match[2]] : [raw];
+}
+
+function firstPresent(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== '');
+}
+
+function getGestionUltimoPagoFecha(cliente) {
+  return firstPresent(
+    cliente.ultimo_pago_fecha,
+    cliente.ult_pago_fecha,
+    cliente.fecha_ultimo_pago,
+    cliente.ultimo_pago?.fecha,
+    cliente.ultimo_pago
+  );
+}
+
+function getGestionUltimoPagoMonto(cliente) {
+  return firstPresent(
+    cliente.ultimo_pago_monto,
+    cliente.ult_pago_monto,
+    cliente.monto_ultimo_pago,
+    cliente.ultimo_pago?.monto,
+    cliente.ultimo_pago?.total_pagado
+  );
+}
+
+function getGestionEstado(cliente) {
+  const today = new Date().toISOString().slice(0, 10);
+  const pagos = Number(cliente.pagos_vencidos_equivalentes ?? cliente.cuotas_atrasadas ?? 0);
+  const promesa = cliente.seg_fecha || cliente.fecha_promesa;
+
+  if (cliente.recordatorio_pago) return 'Recordatorio 3 dias';
+  if (cliente.estado_cobro) return cliente.estado_cobro;
+  if (cliente.seg_estado === 'ir_a_buscar' || cliente.fisica_estado === 'mandado_buscar') return 'Mandado a buscar';
+  if (promesa && promesa < today) return 'Promesa vencida';
+  if (promesa && promesa === today) return 'Promesa para hoy';
+  if (promesa) return 'Promesa futura';
+  if (cliente.tiene_respuesta || cliente.respuesta_tipo) return 'Respondio';
+  return pagos >= 2 ? 'Moroso' : 'Seguimiento';
+}
+
+function getGestionPrioridad(cliente) {
+  const monto = Number(cliente.total_atrasado || 0);
+  const dias = Number(cliente.dias_mas_vencido || 0);
+
+  if (cliente.prioridad) return cliente.prioridad;
+  if (dias >= 31 || monto >= 15000) return 'Alta';
+  if (dias >= 16 || monto >= 6000) return 'Media';
+  return 'Baja';
 }
 
 const STORAGE_PREFIX = 'motoflow_quote_draft:';
@@ -177,8 +305,15 @@ function serializeLines(lines) {
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
-  const [mode, setMode] = useState('cotizar'); // 'cotizar' | 'cobranza'
+  const [mode, setMode] = useState('cotizar'); // 'cotizar' | 'cobranza' | 'omni'
+  const [safeMode, setSafeMode] = useState(() => readSafeMode());
+  const [activeChannel, setActiveChannel] = useState(() => getInitialChannel());
   const [chat, setChat] = useState(() => getCurrentChat());
+  const [omniQuoteConversation, setOmniQuoteConversation] = useState(null);
+  const [omniSelectedConversation, setOmniSelectedConversation] = useState(null);
+  const activeQuoteChat = omniQuoteConversation
+    ? { id: `omni:${omniQuoteConversation.id}`, name: getOmniConversationName(omniQuoteConversation) }
+    : chat;
   const [lines, setLines] = useState([]);
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState([]);
@@ -188,6 +323,9 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+  const [empresasUsuario, setEmpresasUsuario] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const [empresaPending, setEmpresaPending] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedSearch, setAdvancedSearch] = useState('');
   const [advancedMarca, setAdvancedMarca] = useState('');
@@ -197,22 +335,32 @@ export default function App() {
   const [advancedLoading, setAdvancedLoading] = useState(false);
   const [pastingQuote, setPastingQuote] = useState(false);
   const [sendingToMotoflow, setSendingToMotoflow] = useState(false);
-  const [lastQuote, setLastQuote] = useState(() => readLastQuote(chat));
+  const [lastQuote, setLastQuote] = useState(() => readLastQuote(activeQuoteChat));
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerResults, setCustomerResults] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerPhone, setCustomerPhone] = useState('');
   const [vendors, setVendors] = useState([]);
   const [selectedVendorId, setSelectedVendorId] = useState('');
-  const [internalNote, setInternalNote] = useState(() => readMeta(chat).internalNote || '');
-  const [quoteStatus, setQuoteStatus] = useState(() => readMeta(chat).quoteStatus || 'cotizado');
-  const [quoteHistory, setQuoteHistory] = useState(() => readHistory(chat));
+  const [internalNote, setInternalNote] = useState(() => readMeta(activeQuoteChat).internalNote || '');
+  const [quoteStatus, setQuoteStatus] = useState(() => readMeta(activeQuoteChat).quoteStatus || 'cotizado');
+  const [quoteHistory, setQuoteHistory] = useState(() => readHistory(activeQuoteChat));
   const [motoflowDetailsOpen, setMotoflowDetailsOpen] = useState(false);
   const [morosos, setMorosos] = useState(null);   // { empresa_nombre, plantilla, clientes: [] }
   const [morososLoading, setMorososLoading] = useState(false);
   const [cobroMsg, setCobroMsg] = useState('');
+  const [omniConversationsPreview, setOmniConversationsPreview] = useState([]);
   const [cobroFilter, setCobroFilter] = useState('');
-  const [cobroView, setCobroView] = useState('todos'); // 'todos' | 'reenviar'
+  const [cobroView, setCobroView] = useState('todos');
+  const [debtModalOpen, setDebtModalOpen] = useState(false);
+  const [selectedCobroCase, setSelectedCobroCase] = useState(null);
+  const [summaryCobroCase, setSummaryCobroCase] = useState(null);
+  const [caseDetailTab, setCaseDetailTab] = useState('gestion');
+  const [casePromiseDate, setCasePromiseDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [casePromiseAmount, setCasePromiseAmount] = useState('');
+  const [caseNote, setCaseNote] = useState('');
+  const [caseVisitResult, setCaseVisitResult] = useState('pendiente');
+  const [caseSaving, setCaseSaving] = useState(false);
   const [sendingId, setSendingId] = useState(null);  // cliente_id que se esta enviando
   const phoneFocusRef = useRef('');                  // telefono al entrar al campo (para detectar cambios)
 
@@ -225,13 +373,32 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!session?.access_token || empresaPending) return;
+    let alive = true;
+
+    getEmpresasUsuarioExtension()
+      .then((payload) => {
+        if (!alive) return;
+        const empresas = payload?.empresas || [];
+        setEmpresasUsuario(empresas);
+        const active = empresas.find((empresa) => empresa.activa) || empresas[0];
+        setSelectedTenantId(active?.tenant_id || payload?.tenant_activo || '');
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, [session?.access_token, empresaPending]);
+
   // Encoge WhatsApp Web mientras el panel esta abierto, para ver la
   // conversacion completa al lado (no tapada por el panel).
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle('mf-panel-open', !collapsed);
+    root.classList.toggle('mf-panel-open', !collapsed && !safeMode);
     return () => root.classList.remove('mf-panel-open');
-  }, [collapsed]);
+  }, [collapsed, safeMode]);
 
   // Al abrir el chat de un cliente desde la lista de cobranza, WhatsApp
   // recarga la pagina; aqui recuperamos el mensaje pendiente y lo pegamos.
@@ -347,11 +514,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(getStorageKey(chat));
-      const meta = readMeta(chat);
+      const saved = window.localStorage.getItem(getStorageKey(activeQuoteChat));
+      const meta = readMeta(activeQuoteChat);
       setLines(saved ? JSON.parse(saved) : []);
-      setLastQuote(readLastQuote(chat));
-      setQuoteHistory(readHistory(chat));
+      setLastQuote(readLastQuote(activeQuoteChat));
+      setQuoteHistory(readHistory(activeQuoteChat));
       setInternalNote(meta.internalNote || '');
       setQuoteStatus(meta.quoteStatus || 'cotizado');
     } catch {
@@ -361,23 +528,23 @@ export default function App() {
       setInternalNote('');
       setQuoteStatus('cotizado');
     }
-  }, [chat.id]);
+  }, [activeQuoteChat.id]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(getStorageKey(chat), JSON.stringify(lines));
+      window.localStorage.setItem(getStorageKey(activeQuoteChat), JSON.stringify(lines));
     } catch {
       // localStorage can be blocked in unusual browser profiles.
     }
-  }, [chat.id, lines]);
+  }, [activeQuoteChat.id, lines]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(getMetaStorageKey(chat), JSON.stringify({ internalNote, quoteStatus }));
+      window.localStorage.setItem(getMetaStorageKey(activeQuoteChat), JSON.stringify({ internalNote, quoteStatus }));
     } catch {
       // localStorage can be blocked in unusual browser profiles.
     }
-  }, [chat.id, internalNote, quoteStatus]);
+  }, [activeQuoteChat.id, internalNote, quoteStatus]);
 
   useEffect(() => {
     const term = query.trim();
@@ -447,13 +614,37 @@ export default function App() {
   }, [session?.access_token]);
 
   useEffect(() => {
-    if (!chat.name) return;
-
-    setCustomerQuery((current) => current || chat.name);
-    if (/[\d+() -]{7,}/.test(chat.name)) {
-      setCustomerPhone((current) => current || chat.name);
+    if (!session?.access_token || empresaPending) {
+      setOmniConversationsPreview([]);
+      return;
     }
-  }, [chat.name]);
+
+    let active = true;
+    getOmniConversations({ channel: CHANNEL_TYPES.UNIFIED, limit: 200 })
+      .then((rows) => {
+        if (active) setOmniConversationsPreview(rows || []);
+      })
+      .catch(() => {
+        if (active) setOmniConversationsPreview([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session?.access_token, empresaPending]);
+
+  useEffect(() => {
+    const name = omniQuoteConversation
+      ? getOmniConversationName(omniQuoteConversation)
+      : chat.name;
+    const phone = omniQuoteConversation?.customer_phone || '';
+    if (!name) return;
+
+    setCustomerQuery((current) => current || name);
+    if (phone || /[\d+() -]{7,}/.test(name)) {
+      setCustomerPhone((current) => current || phone || name);
+    }
+  }, [chat.name, omniQuoteConversation?.id]);
 
   useEffect(() => {
     if (!session || selectedCustomer) {
@@ -529,11 +720,11 @@ export default function App() {
 
     logConversationEvent({
       event_type: eventType,
-      chat_id: chat.id,
-      chat_name: chat.name,
+      chat_id: activeQuoteChat.id,
+      chat_name: activeQuoteChat.name,
       cliente_id: selectedCustomer?.id || null,
       vendedor_id: selectedVendorId || null,
-      customer_name: selectedCustomer?.nombre || customerQuery || chat.name || null,
+      customer_name: selectedCustomer?.nombre || customerQuery || activeQuoteChat.name || null,
       customer_phone: customerPhone || selectedCustomer?.telefono || null,
       status: quoteStatus,
       note: internalNote,
@@ -544,6 +735,9 @@ export default function App() {
         selected_customer: selectedCustomer
           ? { id: selectedCustomer.id, nombre: selectedCustomer.nombre, telefono: selectedCustomer.telefono || null }
           : null,
+        omni_conversation_id: omniQuoteConversation?.id || null,
+        omni_platform: omniQuoteConversation?.platform || null,
+        source: omniQuoteConversation ? 'motoflow_omni_extension' : 'whatsapp_web_extension',
         ...overrides.metadata
       }
     }).catch((error) => {
@@ -598,8 +792,8 @@ export default function App() {
     };
     const nextHistory = [historyItem, ...quoteHistory].slice(0, 8);
 
-    window.localStorage.setItem(getLastQuoteStorageKey(chat), JSON.stringify(snapshot));
-    writeHistory(chat, nextHistory);
+    window.localStorage.setItem(getLastQuoteStorageKey(activeQuoteChat), JSON.stringify(snapshot));
+    writeHistory(activeQuoteChat, nextHistory);
     setLastQuote(snapshot);
     setQuoteHistory(nextHistory);
   }
@@ -614,7 +808,35 @@ export default function App() {
 
     setPastingQuote(true);
     try {
-      const text = formatQuoteMessage(chat, lines, totals);
+      const text = formatQuoteMessage(activeQuoteChat, lines, totals);
+
+      if (omniQuoteConversation) {
+        await sendOmniReply({ conversation: omniQuoteConversation, text });
+        const quoteSnapshot = {
+          sentAt: new Date().toISOString(),
+          lines,
+          total: totals.total,
+          channel: omniQuoteConversation.platform,
+          sales_conversation_id: omniQuoteConversation.id
+        };
+        rememberQuote(quoteSnapshot);
+        safeLogEvent('omni_quote_registered', {
+          quote_total: totals.total,
+          items: serializeLines(lines),
+          metadata: {
+            message_registered_as_queued: true,
+            sales_conversation_id: omniQuoteConversation.id,
+            platform: omniQuoteConversation.platform
+          }
+        });
+        setLines([]);
+        setProducts([]);
+        setQuery('');
+        setAdvancedOpen(false);
+        setNotice('Cotizacion registrada en la conversacion Omni. Pendiente envio oficial del canal.');
+        return;
+      }
+
       const ok = await pasteTextIntoWhatsApp(text);
       if (ok) {
         const quoteSnapshot = {
@@ -683,15 +905,17 @@ export default function App() {
         fecha_cotizacion: toDate(today),
         fecha_vencimiento: toDate(vencimiento),
         cliente_id: selectedCustomer?.id || GENERIC_CLIENT_ID,
-        manual_cliente_nombre: selectedCustomer?.id ? null : (customerQuery.trim() || chat.name || 'Cliente WhatsApp'),
+        manual_cliente_nombre: selectedCustomer?.id ? null : (customerQuery.trim() || activeQuoteChat.name || 'Cliente WhatsApp'),
         vendedor_id: selectedVendorId || null,
         subtotal: totals.subtotal,
         descuento_total: 0,
         itbis_total: totals.tax,
         total_cotizacion: totals.total,
         notas: [
-          'Cotizacion confirmada desde WhatsApp Web',
-          chat.name ? `Chat: ${chat.name}` : null,
+          omniQuoteConversation ? 'Cotizacion creada desde MotoFlow Omni Extension' : 'Cotizacion confirmada desde WhatsApp Web',
+          activeQuoteChat.name ? `Chat: ${activeQuoteChat.name}` : null,
+          omniQuoteConversation?.platform ? `Canal: ${omniQuoteConversation.platform}` : null,
+          omniQuoteConversation?.id ? `Sales conversation: ${omniQuoteConversation.id}` : null,
           customerPhone ? `Telefono: ${customerPhone}` : null,
           quoteStatus ? `Estado: ${STATUS_OPTIONS.find((item) => item.key === quoteStatus)?.label || quoteStatus}` : null,
           internalNote.trim() ? `Nota interna: ${internalNote.trim()}` : null
@@ -699,11 +923,22 @@ export default function App() {
         detalles
       });
 
+      if (omniQuoteConversation?.id && cotizacion?.id) {
+        await linkOmniConversationQuote({
+          conversationId: omniQuoteConversation.id,
+          cotizacionId: cotizacion.id
+        }).catch(() => null);
+      }
+
       safeLogEvent('quote_sent_to_invoice', {
         cotizacion_id: cotizacion.id,
         quote_total: totals.total,
         items: serializeLines(lines),
-        metadata: { cotizacion_numero: cotizacion.numero }
+        metadata: {
+          cotizacion_numero: cotizacion.numero,
+          sales_conversation_id: omniQuoteConversation?.id || null,
+          platform: omniQuoteConversation?.platform || null
+        }
       });
       setNotice(`Lista para facturar en Motoflow: cotizacion ${cotizacion.numero}.`);
     } catch (error) {
@@ -722,6 +957,33 @@ export default function App() {
       const nextSession = await signInWithPassword(loginEmail.trim(), loginPassword);
       setSession(nextSession);
       setLoginPassword('');
+
+      let empresas = [];
+      let tenantActivo = '';
+      try {
+        const payload = await getEmpresasUsuarioExtension();
+        empresas = payload?.empresas || [];
+        tenantActivo = payload?.tenant_activo || '';
+      } catch {
+        empresas = [];
+      }
+
+      setEmpresasUsuario(empresas);
+
+      if (empresas.length > 1) {
+        const active = empresas.find((empresa) => empresa.activa) || empresas[0];
+        setSelectedTenantId(active?.tenant_id || tenantActivo || '');
+        setEmpresaPending(true);
+        setNotice('Selecciona la empresa con la que quieres trabajar.');
+        return;
+      }
+
+      if (empresas.length === 1) {
+        await setEmpresaActivaExtension(empresas[0].tenant_id).catch(() => {});
+        setSelectedTenantId(empresas[0].tenant_id);
+      }
+
+      setEmpresaPending(false);
       setNotice('Conectado a Motoflow. Ya puedes buscar productos.');
     } catch (error) {
       setNotice(error.message || 'No se pudo iniciar sesion.');
@@ -730,9 +992,31 @@ export default function App() {
     }
   }
 
+  async function handleEmpresaActivaSubmit(event) {
+    event.preventDefault();
+    setLoginLoading(true);
+    setNotice('');
+
+    try {
+      const result = await setEmpresaActivaExtension(selectedTenantId);
+      setEmpresaPending(false);
+      setMorosos(null);
+      setProducts([]);
+      setQuery('');
+      setNotice(`Conectado a ${result?.empresa_nombre || 'la empresa'}.`);
+    } catch (error) {
+      setNotice(error.message || 'No se pudo seleccionar la empresa.');
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
   function handleLogout() {
     signOut();
     setSession(null);
+    setEmpresaPending(false);
+    setEmpresasUsuario([]);
+    setSelectedTenantId('');
     setProducts([]);
     setQuery('');
     setNotice('Sesion cerrada en la extension.');
@@ -762,7 +1046,9 @@ export default function App() {
       const data = await getClientesMorosos();
       setMorosos(data);
       if (!data?.clientes?.length) {
-        setCobroMsg('No hay clientes con facturas vencidas. Todo al dia.');
+        setCobroMsg(data?.tipo_cobranza === 'financiera'
+          ? 'No hay clientes con prestamos atrasados. Todo al dia.'
+          : 'No hay clientes con facturas vencidas. Todo al dia.');
       }
     } catch (error) {
       setCobroMsg(error.message || 'No se pudo cargar la lista de cobranza.');
@@ -862,6 +1148,62 @@ export default function App() {
     }
   }
 
+  async function waitForChatReadyAfterInternalOpen(beforeChat, expectedName = '') {
+    const expected = looseText(expectedName);
+    const wasAlreadyInExpectedChat = expected && isSameLooseName(beforeChat?.name, expectedName);
+
+    for (let attempt = 0; attempt < 26; attempt += 1) {
+      await sleep(attempt === 0 ? 900 : 500);
+      const current = getCurrentChat();
+      const changedChat = Boolean(current.name && current.name !== beforeChat?.name);
+      const expectedChat = expected && isSameLooseName(current.name, expectedName);
+
+      if (wasAlreadyInExpectedChat || changedChat || expectedChat || !beforeChat?.name) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async function openChatAndPasteWithoutReload({ phone, text, expectedName }) {
+    const beforeChat = getCurrentChat();
+    const opened = openWhatsAppChatInPlace(phone, text);
+    if (!opened) return false;
+
+    const ready = await waitForChatReadyAfterInternalOpen(beforeChat, expectedName);
+    if (!ready) return false;
+
+    const needle = looseText(text).slice(0, 30);
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      const draft = looseText(getWhatsAppDraftText());
+      if (needle && draft.includes(needle)) return true;
+
+      const pasted = await pasteTextIntoWhatsApp(text);
+      if (pasted) return true;
+      await sleep(500);
+    }
+
+    return false;
+  }
+
+  async function openChatAndAttachWithoutReload({ phone, file, expectedName }) {
+    const beforeChat = getCurrentChat();
+    const opened = openWhatsAppChatInPlace(phone);
+    if (!opened) return false;
+
+    const ready = await waitForChatReadyAfterInternalOpen(beforeChat, expectedName);
+    if (!ready) return false;
+
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      const attached = await attachFileToWhatsApp(file);
+      if (attached) return true;
+      await sleep(500);
+    }
+
+    return false;
+  }
+
   async function handleEnviarMsj(cliente) {
     if (sendingId) return;
     const phone = normalizePhone(cliente.cliente_telefono);
@@ -881,11 +1223,6 @@ export default function App() {
     setSendingId(cliente.cliente_id);
     // Registrar el envio (para la lista "Para reenviar" si no paga)
     await marcarEnvioCobranza(cliente.cliente_id).catch(() => {});
-    try {
-      window.localStorage.setItem(PENDING_COBRO_KEY, JSON.stringify({ phone, text, ts: Date.now() }));
-    } catch {
-      // si localStorage esta bloqueado, igual abrimos el chat
-    }
     safeLogEvent('cobro_reminder_pasted', {
       cliente_id: cliente.cliente_id,
       customer_name: cliente.cliente_nombre,
@@ -897,8 +1234,23 @@ export default function App() {
         via: 'lista_morosos'
       }
     });
-    // Abre el chat del cliente; al recargar, el efecto de "pendiente" pega el texto
-    window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
+
+    try {
+      const ok = await openChatAndPasteWithoutReload({
+        phone,
+        text,
+        expectedName: cliente.cliente_nombre
+      });
+
+      if (ok) {
+        setCobroMsg('Recordatorio pegado en el chat. Revisa y presiona Enter para enviar.');
+      } else {
+        await navigator.clipboard.writeText(text).catch(() => {});
+        setCobroMsg('No pude cambiar el chat sin recargar. Mensaje copiado; abre el chat y pegalo manualmente.');
+      }
+    } finally {
+      setSendingId(null);
+    }
   }
 
   // "Ir a buscar": manda el PDF con la ficha del cliente al WhatsApp del
@@ -925,42 +1277,388 @@ export default function App() {
         }
       };
 
-      try {
-        window.localStorage.setItem(PENDING_BUSCADOR_KEY, JSON.stringify({ phone, data, ts: Date.now() }));
-      } catch {
-        // si localStorage falla, igual abrimos el chat (sin adjunto automatico)
-      }
-
       safeLogEvent('cobro_ficha_buscador', {
         cliente_id: cliente.cliente_id,
         customer_name: cliente.cliente_nombre,
         metadata: { buscador_phone: phone, via: 'lista_morosos' }
       });
 
-      window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
+      const file = buildFichaPdf(data);
+      const ok = await openChatAndAttachWithoutReload({
+        phone,
+        file,
+        expectedName: ficha?.buscador_nombre || ''
+      });
+
+      if (ok) {
+        setCobroMsg('PDF adjuntado al chat del buscador. Revisa y presiona Enviar.');
+      } else {
+        downloadPdf(file);
+        setCobroMsg('No pude abrir el chat sin recargar. Descargue el PDF: arrastralo al chat del buscador.');
+      }
     } catch (error) {
       setCobroMsg(`No se pudo preparar el envio al buscador: ${error.message || 'error'}`);
+    } finally {
       setSendingId(null);
     }
   }
 
+  function openCobroCase(cliente) {
+    setSelectedCobroCase(cliente);
+    setCaseDetailTab('gestion');
+    setCasePromiseDate(new Date().toISOString().slice(0, 10));
+    setCasePromiseAmount('');
+    setCaseNote('');
+    setCaseVisitResult('pendiente');
+  }
+
+  function appendGestionToCase(gestion) {
+    if (!gestion) return;
+    setSelectedCobroCase((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        gestiones: [gestion, ...(current.gestiones || [])],
+        tiene_respuesta: current.tiene_respuesta || ['llamada', 'respuesta_cliente'].includes(gestion.tipo),
+        tiene_promesa: current.tiene_promesa || gestion.tipo === 'promesa_pago',
+        tiene_gestion_fisica: current.tiene_gestion_fisica || ['mandado_buscar', 'visita'].includes(gestion.tipo),
+        seg_fecha: gestion.fecha_promesa || current.seg_fecha,
+        monto_promesa: gestion.monto_promesa || current.monto_promesa
+      };
+    });
+  }
+
+  async function saveCaseGestion(payload, successMessage) {
+    if (!selectedCobroCase?.cliente_id || caseSaving) return false;
+    setCaseSaving(true);
+    setCobroMsg('');
+
+    try {
+      const row = await insertCobroGestion({
+        cliente_id: selectedCobroCase.cliente_id,
+        prestamo_id: selectedCobroCase.prestamo_id || selectedCobroCase.case_id || null,
+        ...payload
+      });
+      appendGestionToCase(row || payload);
+      setCobroMsg(successMessage);
+      await loadMorosos();
+      return true;
+    } catch (error) {
+      setCobroMsg(error.message || 'No se pudo guardar la gestion.');
+      return false;
+    } finally {
+      setCaseSaving(false);
+    }
+  }
+
+  function buildMensajeCobroGestion(cliente) {
+    return {
+      tipo: 'mensaje_enviado',
+      estado: 'enviado',
+      canal: 'whatsapp',
+      nota: `Recordatorio enviado desde Gestion de Cobro para ${cliente.prestamo_numero || 'prestamo'}.`,
+      metadata: {
+        origen: cliente.recordatorio_pago ? 'recordatorio_pago_extension' : 'gestion_credito_extension',
+        recordatorio_pago: Boolean(cliente.recordatorio_pago),
+        recordatorio_cuota_id: cliente.recordatorio_cuota_id || null,
+        recordatorio_fecha_vencimiento: cliente.recordatorio_fecha_vencimiento || null,
+        dias_atraso: cliente.dias_mas_vencido || 0
+      }
+    };
+  }
+
+  async function registrarMensajeCobro(cliente, successMessage = 'Mensaje registrado.') {
+    if (!cliente?.cliente_id) return false;
+    setCobroMsg('');
+
+    try {
+      const row = await insertCobroGestion({
+        cliente_id: cliente.cliente_id,
+        prestamo_id: cliente.prestamo_id || cliente.case_id || null,
+        ...buildMensajeCobroGestion(cliente)
+      });
+
+      if (selectedCobroCase?.cliente_id === cliente.cliente_id) {
+        appendGestionToCase(row || buildMensajeCobroGestion(cliente));
+      }
+
+      setCobroMsg(successMessage);
+      await loadMorosos();
+      return true;
+    } catch (error) {
+      setCobroMsg(error.message || 'No se pudo guardar el mensaje enviado.');
+      return false;
+    }
+  }
+
+  async function handleCaseEnviarWhatsapp(cliente) {
+    await registrarMensajeCobro(cliente, 'Mensaje registrado.');
+    await handleEnviarMsj(cliente);
+  }
+
+  async function handleCaseMandarABuscar() {
+    const fecha = casePromiseDate || new Date().toISOString().slice(0, 10);
+    const saved = await saveCaseGestion({
+      tipo: 'mandado_buscar',
+      estado: 'mandado_buscar',
+      resultado: 'pendiente',
+      nota: caseNote || `Cliente fue mandado a buscar dia ${formatDateDo(fecha)}.`,
+      metadata: { fecha_busqueda: fecha, origen: 'gestion_credito_extension' }
+    }, 'Cliente marcado para buscar fisicamente.');
+    if (saved) setCaseNote('');
+  }
+
+  async function handleCaseRegistrarVisita() {
+    const saved = await saveCaseGestion({
+      tipo: 'visita',
+      estado: caseVisitResult === 'resuelto' ? 'cerrada' : 'pendiente',
+      resultado: caseVisitResult,
+      nota: caseNote || null
+    }, 'Visita registrada.');
+    if (saved) setCaseNote('');
+  }
+
+  async function handleCaseRegistrarLlamada() {
+    const nota = caseNote.trim();
+    if (!nota || nota.toLowerCase() === 'llamada:') {
+      setCobroMsg('Escribe una nota de llamada antes de guardar.');
+      return;
+    }
+    const montoPromesa = Number(String(casePromiseAmount).replace(/,/g, '')) || null;
+    const saved = await saveCaseGestion({
+      tipo: 'llamada',
+      estado: 'registrada',
+      canal: 'telefono',
+      resultado: 'respondio',
+      nota,
+      metadata: {
+        fecha_llamada: casePromiseDate || new Date().toISOString().slice(0, 10),
+        monto_promesa: montoPromesa
+      }
+    }, 'Llamada registrada.');
+    if (saved) {
+      setCaseNote('');
+      setCaseDetailTab('gestion');
+    }
+  }
+
+  async function handleCaseRegistrarPromesa() {
+    if (!casePromiseDate) {
+      setCobroMsg('Fecha requerida para registrar promesa.');
+      return;
+    }
+    const montoPromesa = Number(String(casePromiseAmount).replace(/,/g, '')) || null;
+    const saved = await saveCaseGestion({
+      tipo: 'promesa_pago',
+      estado: 'pendiente',
+      canal: 'whatsapp',
+      fecha_promesa: casePromiseDate,
+      monto_promesa: montoPromesa,
+      nota: caseNote || null,
+      metadata: { origen: caseDetailTab === 'mensajes' ? 'whatsapp' : 'extension' }
+    }, 'Promesa registrada.');
+    if (saved) {
+      setCasePromiseAmount('');
+      setCaseNote('');
+      setCaseDetailTab('gestion');
+    }
+  }
+
+  async function handleCaseCastigarCuenta() {
+    if (!selectedCobroCase?.prestamo_id) return;
+    const motivo = window.prompt('Motivo para castigar la cuenta:', 'incobrable');
+    if (!motivo) return;
+    const password = window.prompt('Clave del creador si aplica. Deja vacio si tienes autorizacion:') || null;
+
+    setCaseSaving(true);
+    try {
+      await castigarPrestamo({
+        prestamoId: selectedCobroCase.prestamo_id,
+        motivo,
+        password
+      });
+      setCobroMsg(`${selectedCobroCase.prestamo_numero || 'Prestamo'} paso a Cuentas Incobrables.`);
+      setSelectedCobroCase(null);
+      await loadMorosos();
+    } catch (error) {
+      setCobroMsg(error.message || 'No se pudo castigar la cuenta.');
+    } finally {
+      setCaseSaving(false);
+    }
+  }
+
+  function handleCaseVerResumen(cliente) {
+    if (!cliente) return;
+    setSummaryCobroCase(cliente);
+  }
+
+  function handleCaseAbrirCrm(cliente) {
+    if (!cliente?.cliente_id) return;
+    if (!MOTOFLOW_APP_URL) {
+      return;
+    }
+
+    const url = new URL(MOTOFLOW_APP_URL);
+    url.searchParams.set('mf_panel', 'recibo-pago');
+    url.searchParams.set('clienteId', cliente.cliente_id);
+    url.searchParams.set('requestedAt', String(Date.now()));
+    if (cliente.prestamo_id || cliente.case_id) url.searchParams.set('prestamoId', cliente.prestamo_id || cliente.case_id);
+    if (cliente.cliente_codigo) url.searchParams.set('clienteCodigo', cliente.cliente_codigo);
+    if (cliente.cliente_nombre) url.searchParams.set('clienteNombre', cliente.cliente_nombre);
+    if (cliente.cliente_rnc) url.searchParams.set('clienteRnc', cliente.cliente_rnc);
+    if (cliente.cliente_direccion) url.searchParams.set('clienteDireccion', cliente.cliente_direccion);
+    if (cliente.cliente_telefono) url.searchParams.set('clienteTelefono', cliente.cliente_telefono);
+
+    window.open(url.toString(), 'motoflow_cliente');
+    setCobroMsg('Abriendo cliente en Recibo de Pago.');
+  }
+
+  function handleRestoreWhatsApp() {
+    writeSafeMode(true);
+    setSafeMode(true);
+    setCollapsed(true);
+  }
+
+  function handleReactivateOmni() {
+    writeSafeMode(false);
+    setSafeMode(false);
+    setCollapsed(false);
+  }
+
+  function handleSelectOmniChannel(channel) {
+    setActiveChannel(channel);
+    if (channel === CHANNEL_TYPES.WHATSAPP) {
+      setOmniQuoteConversation(null);
+      setOmniSelectedConversation(null);
+      setMode('cotizar');
+      return;
+    }
+    if (channel === CHANNEL_TYPES.FOLLOWUPS) {
+      setOmniQuoteConversation(null);
+      setOmniSelectedConversation(null);
+      handleGoCobranza();
+      return;
+    }
+    setOmniQuoteConversation(null);
+    setMode('omni');
+  }
+
+  function handleOmniQuoteConversation(conversation) {
+    if (!conversation?.id) return;
+    setOmniQuoteConversation(conversation);
+    setActiveChannel(conversation.platform || CHANNEL_TYPES.UNIFIED);
+    setMode('cotizar');
+    setCustomerQuery(getOmniConversationName(conversation));
+    setCustomerPhone(conversation.customer_phone || conversation.phone || '');
+    setSelectedCustomer(null);
+    setNotice('Cotizando desde conversacion Omni.');
+  }
+
+  async function handleMarkOmniAttended() {
+    const conversation = omniSelectedConversation || omniQuoteConversation;
+    if (!conversation?.id) return;
+    handleOmniQuickStatus('cerrado', 'Conversacion marcada como atendida.');
+  }
+
+  async function handleOmniQuickStatus(status, successMessage) {
+    const conversation = omniSelectedConversation || omniQuoteConversation;
+    if (!conversation?.id) return;
+    try {
+      const saved = await updateOmniConversationStatus({
+        conversationId: conversation.id,
+        status
+      });
+      const next = saved || { ...conversation, status };
+      setOmniSelectedConversation((current) => current?.id === conversation.id ? { ...current, ...next } : current);
+      setOmniQuoteConversation((current) => current?.id === conversation.id ? { ...current, ...next } : current);
+      setOmniConversationsPreview((current) => current.map((item) => (
+        item.id === conversation.id ? { ...item, ...next } : item
+      )));
+      setNotice(successMessage || 'Conversacion actualizada.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo actualizar la conversacion.');
+    }
+  }
+
+  function handleAssociateOmniCustomer() {
+    const conversation = omniSelectedConversation || omniQuoteConversation;
+    if (!conversation) return;
+    setMode('cotizar');
+    setMotoflowDetailsOpen(true);
+    setCustomerQuery(getOmniConversationName(conversation));
+    setCustomerPhone(conversation.customer_phone || conversation.phone || '');
+    setSelectedCustomer(null);
+    setNotice('Busca y selecciona el cliente de Motoflow para asociar esta conversacion.');
+  }
+
+  function handleCreateOmniCustomer() {
+    const conversation = omniSelectedConversation || omniQuoteConversation;
+    if (!conversation || !MOTOFLOW_APP_URL) {
+      setNotice('Abre Motoflow para crear el cliente y luego asocialo desde esta conversacion.');
+      return;
+    }
+    const url = new URL(MOTOFLOW_APP_URL);
+    url.searchParams.set('mf_panel', 'clientes');
+    url.searchParams.set('crear', '1');
+    url.searchParams.set('nombre', getOmniConversationName(conversation));
+    if (conversation.customer_phone || conversation.phone) {
+      url.searchParams.set('telefono', conversation.customer_phone || conversation.phone);
+    }
+    window.open(url.toString(), 'motoflow_cliente');
+  }
+
+  const omniCounts = getChannelCounts({ morosos, omniConversations: omniConversationsPreview });
+  const isSocialChannelActive = [
+    CHANNEL_TYPES.UNIFIED,
+    CHANNEL_TYPES.INSTAGRAM,
+    CHANNEL_TYPES.FACEBOOK
+  ].includes(activeChannel);
+  const isOmniInboxActive = session && !empresaPending && isSocialChannelActive;
+  const commercialConversation = omniQuoteConversation || (isSocialChannelActive ? omniSelectedConversation : null);
+  const panelChatLabel = commercialConversation
+    ? `${getOmniConversationName(commercialConversation)} · ${getOmniPlatformLabel(commercialConversation.platform || activeChannel)}`
+    : (chat.name || 'Chat actual');
+
   if (collapsed) {
     return (
-      <button className="mf-floating-button" type="button" onClick={() => setCollapsed(false)}>
-        Cotizar
+      <button className="mf-floating-button" type="button" onClick={safeMode ? handleReactivateOmni : () => setCollapsed(false)}>
+        {safeMode ? 'Activar Omni' : 'Cotizar'}
       </button>
     );
   }
 
   return (
-    <aside className="mf-panel" aria-label="Cotizacion WhatsApp">
+    <>
+      {session && !empresaPending && (
+        <div className="mf-omni-left-dock">
+          <ChannelRail
+            activeChannel={activeChannel}
+            counts={omniCounts}
+            flags={OMNI_FLAGS}
+            onSelect={handleSelectOmniChannel}
+          />
+        </div>
+      )}
+
+      {isOmniInboxActive && (
+        <div id="motoflow-omni-workspace" className="mf-omni-workspace" aria-label="MotoFlow Omni social workspace">
+          <OmniInbox
+            channel={activeChannel}
+            onQuoteConversation={handleOmniQuoteConversation}
+            onConversationsChange={setOmniConversationsPreview}
+            onSelectedConversationChange={setOmniSelectedConversation}
+          />
+        </div>
+      )}
+
+      <aside className="mf-panel" aria-label="MotoFlow Omni Beta">
       <header className="mf-header">
         <div>
-          <p className="mf-kicker">Motoflow</p>
-          <h2>Cotizacion WhatsApp</h2>
-          <p className="mf-chat">{chat.name || 'Chat actual'}</p>
+          <p className="mf-kicker">Motoflow <span className="mf-beta-badge">BETA</span></p>
+          <h2>MotoFlow Omni</h2>
+          <p className="mf-chat">{panelChatLabel}</p>
           <div className="mf-header-actions">
-            {session && (
+            {session && !empresaPending && (
               <>
                 <span>Conectado</span>
                 <button className="mf-logout-button" type="button" onClick={handleLogout}>Salir</button>
@@ -976,7 +1674,16 @@ export default function App() {
         </button>
       </header>
 
-      {session && (
+      {session && !empresaPending && (
+        <section className="mf-omni-status">
+          <span className="mf-omni-version">{OMNI_BETA_VERSION}</span>
+          <button className="mf-safe-button" type="button" onClick={handleRestoreWhatsApp} title="Desmontar temporalmente MotoFlow Omni">
+            Restaurar WhatsApp
+          </button>
+        </section>
+      )}
+
+      {session && !empresaPending && (
         <nav className="mf-tabs">
           <button
             className={`mf-tab-quote${mode === 'cotizar' ? ' is-active' : ''}`}
@@ -995,39 +1702,93 @@ export default function App() {
         </nav>
       )}
 
-      {!session && (
-        <form className="mf-login" onSubmit={handleLogin}>
+      {(!session || empresaPending) && (
+        <form className="mf-login" onSubmit={empresaPending ? handleEmpresaActivaSubmit : handleLogin}>
           <strong>Conectar con Motoflow</strong>
-          <p>Usa el mismo correo y clave del CRM para habilitar la busqueda.</p>
-          <input
-            autoComplete="email"
-            type="email"
-            value={loginEmail}
-            onChange={(event) => setLoginEmail(event.target.value)}
-            placeholder="Correo"
-            required
-          />
-          <input
-            autoComplete="current-password"
-            type="password"
-            value={loginPassword}
-            onChange={(event) => setLoginPassword(event.target.value)}
-            placeholder="Clave"
-            required
-          />
+          {empresaPending ? (
+            <>
+              <p>Selecciona la empresa con la que quieres trabajar.</p>
+              <select
+                value={selectedTenantId}
+                onChange={(event) => setSelectedTenantId(event.target.value)}
+                required
+              >
+                {empresasUsuario.map((empresa) => (
+                  <option key={empresa.tenant_id} value={empresa.tenant_id}>
+                    {empresa.nombre}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <>
+              <p>Usa el mismo correo y clave del CRM para habilitar la busqueda.</p>
+              <input
+                autoComplete="email"
+                type="email"
+                value={loginEmail}
+                onChange={(event) => setLoginEmail(event.target.value)}
+                placeholder="Correo"
+                required
+              />
+              <input
+                autoComplete="current-password"
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                placeholder="Clave"
+                required
+              />
+            </>
+          )}
           <button type="submit" disabled={loginLoading}>
-            {loginLoading ? 'Conectando...' : 'Conectar'}
+            {loginLoading ? 'Conectando...' : empresaPending ? 'Entrar a esta empresa' : 'Conectar'}
           </button>
         </form>
       )}
 
-      {session && mode === 'cotizar' && (
+      {session && !empresaPending && isSocialChannelActive && mode === 'omni' && (
+        <section className="mf-social-commercial">
+          {commercialConversation ? (
+            <>
+              <header className="mf-social-commercial-head">
+                <span className="mf-social-avatar">{getOmniConversationName(commercialConversation).charAt(0).toUpperCase() || '?'}</span>
+                <div>
+                  <strong>{getOmniConversationName(commercialConversation)}</strong>
+                  <small>{getOmniPlatformLabel(commercialConversation.platform || activeChannel)} · {commercialConversation.status || 'nuevo'}</small>
+                </div>
+              </header>
+              <div className="mf-social-link-state">
+                <span>Cliente Motoflow</span>
+                <b>{commercialConversation.cliente_id || commercialConversation.customer_id ? 'Asociado' : 'Sin asociar'}</b>
+              </div>
+              <div className="mf-social-commercial-actions">
+                <button type="button" onClick={handleAssociateOmniCustomer}>Asociar cliente</button>
+                <button type="button" onClick={handleCreateOmniCustomer}>Crear cliente</button>
+                <button type="button" onClick={() => handleOmniQuoteConversation(commercialConversation)}>Cotizar</button>
+                <button type="button" disabled={!commercialConversation.cliente_id && !commercialConversation.customer_id} onClick={handleGoCobranza}>Ver deuda</button>
+                <button type="button" onClick={() => handleOmniQuickStatus('seguimiento', 'Conversacion marcada para seguimiento.')}>Crear seguimiento</button>
+                <button type="button" onClick={() => setNotice('Historial comercial disponible al asociar el cliente de Motoflow.')}>Ver historial</button>
+                <button type="button" onClick={handleMarkOmniAttended}>Marcar atendido</button>
+              </div>
+            </>
+          ) : (
+            <div className="mf-social-empty-commercial">
+              <strong>Selecciona una conversacion</strong>
+              <p>El panel comercial mostrara cliente, cotizacion, deuda y seguimiento.</p>
+            </div>
+          )}
+          {notice && <p className="mf-notice">{notice}</p>}
+        </section>
+      )}
+
+      {session && !empresaPending && mode === 'cotizar' && (
         <section className="mf-motoflow-box">
           <button className="mf-motoflow-toggle" type="button" onClick={() => setMotoflowDetailsOpen((open) => !open)}>
             <span>
               Datos Motoflow
               <small>
-                {selectedCustomer?.nombre || customerQuery || chat.name || 'Cliente sin asignar'} · {STATUS_OPTIONS.find((item) => item.key === quoteStatus)?.label || 'Cotizado'}
+                {selectedCustomer?.nombre || customerQuery || activeQuoteChat.name || 'Cliente sin asignar'} · {STATUS_OPTIONS.find((item) => item.key === quoteStatus)?.label || 'Cotizado'}
               </small>
             </span>
             <b>{motoflowDetailsOpen ? 'Ocultar' : 'Editar'}</b>
@@ -1105,17 +1866,103 @@ export default function App() {
         </section>
       )}
 
-      {session && mode === 'cobranza' && (() => {
+      {session && !empresaPending && mode === 'cobranza' && (() => {
         const clientes = morosos?.clientes || [];
         const filtro = cobroFilter.trim().toLowerCase();
-        const reenviarCount = clientes.filter((c) => c.por_reenviar).length;
-        let visibles = cobroView === 'reenviar' ? clientes.filter((c) => c.por_reenviar) : clientes;
+        const today = new Date().toISOString().slice(0, 10);
+        const tabMatch = (cliente, tabKey) => {
+          if (tabKey === 'recordatorio_pago') return Boolean(cliente.recordatorio_pago);
+          if (cliente.recordatorio_pago) return false;
+          if (tabKey === 'todos') return true;
+          if (tabKey === 'promesas') return Boolean(cliente.tiene_promesa || cliente.seg_fecha);
+          if (tabKey === 'promesas_vencidas') return Boolean(cliente.promesa_vencida || (cliente.seg_fecha && cliente.seg_fecha < today));
+          if (tabKey === 'pagaron_siguen') return Number(cliente.pagos15_count || 0) > 0;
+          if (tabKey === 'mandados_buscar') return Boolean(cliente.tiene_gestion_fisica || cliente.seg_estado === 'ir_a_buscar' || cliente.estado_cobro === 'Mandado a buscar');
+          if (tabKey === 'sin_respuesta') return !cliente.tiene_promesa && !cliente.seg_fecha && !cliente.tiene_respuesta;
+          if (tabKey === 'criticos') return Boolean(cliente.caso_critico || (cliente.prioridad === 'Alta' && (cliente.dias_mas_vencido >= 31 || !cliente.tiene_promesa)));
+          if (tabKey === 'reenviar') return Boolean(cliente.por_reenviar);
+          return true;
+        };
+        const tabCounts = Object.fromEntries(
+          GESTION_COBRO_TABS.map((tab) => [tab.key, clientes.filter((cliente) => tabMatch(cliente, tab.key)).length])
+        );
+        const quickTabs = ['recordatorio_pago', 'reenviar'];
+        const isQuickCobroList = quickTabs.includes(cobroView);
+        const quickClientes = isQuickCobroList
+          ? clientes.filter((cliente) => tabMatch(cliente, cobroView))
+          : [];
+
+        return (
+          <section className="mf-cobranza mf-cobranza-menu-only">
+            <div className="mf-cobranza-tabs" aria-label="Menu principal de deuda">
+              <div className="mf-cobranza-tabs-scroll">
+                {GESTION_COBRO_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`${cobroView === tab.key ? 'is-active' : ''}${tab.key === 'reenviar' ? ' mf-tab-reenviar' : ''}`}
+                    onClick={() => {
+                      setCobroView(tab.key);
+                      setDebtModalOpen(!quickTabs.includes(tab.key));
+                    }}
+                  >
+                    {tab.label} ({tabCounts[tab.key] || 0})
+                  </button>
+                ))}
+              </div>
+            </div>
+            {cobroMsg && <p className="mf-cobro-msg">{cobroMsg}</p>}
+            {morososLoading && <p className="mf-muted">Cargando datos de gestion...</p>}
+            {isQuickCobroList && !morososLoading && (
+              <div className="mf-quick-send-list" aria-label={`Lista rapida ${cobroView}`}>
+                {quickClientes.length ? quickClientes.map((cliente) => (
+                  <article className="mf-quick-send-row" key={cliente.case_id || cliente.prestamo_id || cliente.cliente_id}>
+                    <button
+                      type="button"
+                      className="mf-quick-send-main"
+                      onClick={() => openCobroCase(cliente)}
+                      title="Ver caso"
+                    >
+                      <strong>{cliente.cliente_nombre || 'Cliente'}</strong>
+                      <small>
+                        {cliente.cliente_telefono || 'Sin telefono'} · {cliente.prestamo_numero || (cliente.facturas || [])[0]?.numero || '-'}
+                      </small>
+                    </button>
+                    <span className="mf-quick-send-amount">
+                      {money.format(Number(cliente.total_atrasado) || 0)}
+                    </span>
+                    <button
+                      type="button"
+                      className="mf-quick-send-button"
+                      onClick={() => handleCaseEnviarWhatsapp(cliente)}
+                      disabled={sendingId === cliente.cliente_id}
+                    >
+                      {sendingId === cliente.cliente_id ? '...' : 'Enviar'}
+                    </button>
+                  </article>
+                )) : (
+                  <p className="mf-quick-empty">
+                    {cobroView === 'reenviar'
+                      ? 'No hay clientes pendientes para reenviar.'
+                      : 'No hay recordatorios pendientes.'}
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+        );
+
+        let visibles = clientes.filter((cliente) => tabMatch(cliente, cobroView));
         if (filtro) {
           visibles = visibles.filter((c) =>
             (c.cliente_nombre || '').toLowerCase().includes(filtro) ||
             (c.cliente_telefono || '').toLowerCase().includes(filtro));
         }
-        const totalGeneral = clientes.reduce((sum, c) => sum + (Number(c.total_atrasado) || 0), 0);
+        const isGestionCobro = morosos?.tipo_cobranza === 'gestion_cobro';
+        const isFinancieraCobro = morosos?.tipo_cobranza === 'financiera' || isGestionCobro;
+        const usaAccionesWhatsAppCobro = !isFinancieraCobro;
+        const deudaLabel = isFinancieraCobro ? 'prestamo(s)' : 'factura(s)';
+        const cuentaLabel = isFinancieraCobro ? 'pagos vencidos' : 'cuota(s)';
 
         return (
           <section className="mf-cobranza">
@@ -1127,33 +1974,24 @@ export default function App() {
                 placeholder="Buscar cliente..."
               />
               <button type="button" onClick={loadMorosos} disabled={morososLoading} title="Actualizar">
-                {morososLoading ? '...' : '↻'}
+                ...
               </button>
             </div>
 
             {clientes.length > 0 && (
-              <div className="mf-cobranza-tabs">
-                <button
-                  type="button"
-                  className={cobroView === 'todos' ? 'is-active' : ''}
-                  onClick={() => setCobroView('todos')}
-                >
-                  Todos ({clientes.length})
-                </button>
-                <button
-                  type="button"
-                  className={`mf-tab-reenviar${cobroView === 'reenviar' ? ' is-active' : ''}`}
-                  onClick={() => setCobroView('reenviar')}
-                >
-                  Para reenviar ({reenviarCount})
-                </button>
-              </div>
-            )}
-
-            {clientes.length > 0 && (
-              <div className="mf-cobranza-summary">
-                <span>{clientes.length} cliente(s) con deuda vencida</span>
-                <b>{money.format(totalGeneral)}</b>
+              <div className="mf-cobranza-tabs" aria-label="Filtros Gestion de Cobro">
+                <div className="mf-cobranza-tabs-scroll">
+                  {GESTION_COBRO_TABS.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      className={`${cobroView === tab.key ? 'is-active' : ''}${tab.key === 'reenviar' ? ' mf-tab-reenviar' : ''}`}
+                      onClick={() => setCobroView(tab.key)}
+                    >
+                      {tab.label} ({tabCounts[tab.key] || 0})
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1162,7 +2000,7 @@ export default function App() {
 
             <div className="mf-cobranza-list">
               {visibles.map((cliente) => (
-                <article className="mf-cob-card" key={cliente.cliente_id}>
+                <article className="mf-cob-card" key={cliente.case_id || cliente.prestamo_id || cliente.cliente_id}>
                   <header className="mf-cob-card-head">
                     <strong>{cliente.cliente_nombre}</strong>
                     <span className="mf-cob-head-badges">
@@ -1186,9 +2024,11 @@ export default function App() {
                     <b>{money.format(cliente.total_atrasado)}</b>
                   </div>
                   <div className="mf-cob-card-facts">
-                    {cliente.cuotas_atrasadas} cuota(s): {(cliente.facturas || []).map((f) => f.numero).join(', ')}
+                    {cliente.cuotas_atrasadas} {cuentaLabel}: {(cliente.facturas || []).map((f) => f.numero).join(', ') || deudaLabel}
                   </div>
 
+                  {usaAccionesWhatsAppCobro && (
+                    <>
                   <div className="mf-cob-seg">
                     {COBRO_ESTADOS.map((est) => (
                       <button
@@ -1246,6 +2086,8 @@ export default function App() {
                       {sendingId === cliente.cliente_id ? 'Abriendo chat...' : 'Enviar msj'}
                     </button>
                   )}
+                    </>
+                  )}
                 </article>
               ))}
 
@@ -1302,7 +2144,7 @@ export default function App() {
         {lines.length === 0 ? (
           <div className="mf-empty">
             <strong>Todavia no hay articulos.</strong>
-            <p>Agrega productos manualmente desde el buscador para preparar la cotizacion sin salir de WhatsApp.</p>
+            <p>{omniQuoteConversation ? 'Agrega productos para cotizar esta conversacion Omni.' : 'Agrega productos manualmente desde el buscador para preparar la cotizacion sin salir de WhatsApp.'}</p>
             {lastQuote?.lines?.length > 0 && (
               <button className="mf-restore-button" type="button" onClick={restoreLastQuote}>
                 Recuperar ultima cotizacion ({lastQuote.lines.length})
@@ -1365,7 +2207,9 @@ export default function App() {
           {sendingToMotoflow ? 'Enviando a Motoflow...' : 'Mandar a facturar en Motoflow'}
         </button>
         <button className="mf-primary" type="button" onClick={handlePasteQuote} disabled={pastingQuote}>
-          {pastingQuote ? 'Pegando cotizacion...' : 'Crear y pegar cotizacion'}
+          {pastingQuote
+            ? (omniQuoteConversation ? 'Registrando cotizacion...' : 'Pegando cotizacion...')
+            : (omniQuoteConversation ? 'Crear y registrar cotizacion' : 'Crear y pegar cotizacion')}
         </button>
       </footer>
       </>
@@ -1458,6 +2302,416 @@ export default function App() {
           </div>
         </div>
       )}
-    </aside>
+
+      {debtModalOpen && (() => {
+        const clientes = morosos?.clientes || [];
+        const today = new Date().toISOString().slice(0, 10);
+        const matchTab = (cliente, tabKey) => {
+          if (tabKey === 'recordatorio_pago') return Boolean(cliente.recordatorio_pago);
+          if (cliente.recordatorio_pago) return false;
+          if (tabKey === 'todos') return true;
+          if (tabKey === 'promesas') return Boolean(cliente.tiene_promesa || cliente.seg_fecha);
+          if (tabKey === 'promesas_vencidas') return Boolean(cliente.promesa_vencida || (cliente.seg_fecha && cliente.seg_fecha < today));
+          if (tabKey === 'pagaron_siguen') return Number(cliente.pagos15_count || 0) > 0;
+          if (tabKey === 'mandados_buscar') return Boolean(cliente.tiene_gestion_fisica || cliente.seg_estado === 'ir_a_buscar' || cliente.estado_cobro === 'Mandado a buscar');
+          if (tabKey === 'sin_respuesta') return !cliente.tiene_promesa && !cliente.seg_fecha && !cliente.tiene_respuesta;
+          if (tabKey === 'criticos') return Boolean(cliente.caso_critico || (cliente.prioridad === 'Alta' && (cliente.dias_mas_vencido >= 31 || !cliente.tiene_promesa)));
+          if (tabKey === 'reenviar') return Boolean(cliente.por_reenviar);
+          return true;
+        };
+        const tabCounts = Object.fromEntries(
+          GESTION_COBRO_TABS.map((tab) => [tab.key, clientes.filter((cliente) => matchTab(cliente, tab.key)).length])
+        );
+        const filtro = cobroFilter.trim().toLowerCase();
+        const rows = clientes
+          .filter((cliente) => matchTab(cliente, cobroView))
+          .filter((cliente) => {
+            if (!filtro) return true;
+            return [
+              cliente.cliente_nombre,
+              cliente.cliente_telefono,
+              cliente.cliente_codigo,
+              cliente.cliente_rnc,
+              cliente.prestamo_numero,
+              ...(cliente.facturas || []).map((item) => item.numero)
+            ].filter(Boolean).join(' ').toLowerCase().includes(filtro);
+          });
+
+        return (
+          <div className="mf-modal-backdrop" role="dialog" aria-modal="true" aria-label="Gestion de Cobro">
+            <div className="mf-product-modal mf-gestion-modal">
+              <header className="mf-modal-header">
+                <h3>Gestion de Cobro</h3>
+                <button type="button" onClick={() => setDebtModalOpen(false)} title="Cerrar">×</button>
+              </header>
+
+              <section className="mf-gestion-modal-menu">
+                {GESTION_COBRO_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`${cobroView === tab.key ? 'is-active' : ''}${tab.key === 'reenviar' ? ' mf-tab-reenviar' : ''}`}
+                    onClick={() => setCobroView(tab.key)}
+                  >
+                    {tab.label} ({tabCounts[tab.key] || 0})
+                  </button>
+                ))}
+              </section>
+
+              <section className="mf-gestion-modal-filters">
+                <input
+                  autoFocus
+                  value={cobroFilter}
+                  onChange={(event) => setCobroFilter(event.target.value)}
+                  placeholder="Buscar cliente, telefono, cedula o prestamo..."
+                />
+                <button type="button" onClick={loadMorosos} disabled={morososLoading}>
+                  {morososLoading ? 'Actualizando...' : 'Actualizar'}
+                </button>
+              </section>
+
+              <section className="mf-product-table-wrap">
+                <table className="mf-product-table mf-gestion-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Prestamo / Motor</th>
+                      <th>Dias atraso</th>
+                      <th>Vencido</th>
+                      <th>Ult. pago</th>
+                      <th>Ult. respuesta</th>
+                      <th>Promesa de pago</th>
+                      <th>Estado</th>
+                      <th>Prioridad</th>
+                      <th>Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {morososLoading && (
+                      <tr>
+                        <td colSpan="10" className="mf-table-state">Cargando gestion de cobro...</td>
+                      </tr>
+                    )}
+                    {!morososLoading && rows.length === 0 && (
+                      <tr>
+                        <td colSpan="10" className="mf-table-state">No hay casos para este filtro.</td>
+                      </tr>
+                    )}
+                    {!morososLoading && rows.map((cliente) => {
+                      const loanNumber = cliente.prestamo_numero || (cliente.facturas || [])[0]?.numero || '-';
+                      const loanParts = splitPrestamoNumero(loanNumber);
+                      const ultimoPagoFecha = getGestionUltimoPagoFecha(cliente);
+                      const ultimoPagoMonto = Number(getGestionUltimoPagoMonto(cliente) || 0);
+                      const estadoCobro = getGestionEstado(cliente);
+                      const prioridad = getGestionPrioridad(cliente);
+                      return (
+                        <tr key={cliente.case_id || cliente.prestamo_id || cliente.cliente_id}>
+                          <td>
+                            <strong>{cliente.cliente_nombre || 'Cliente'}</strong>
+                            <small>{cliente.cliente_telefono || '-'}</small>
+                          </td>
+                          <td>
+                            <button type="button" className="mf-loan-stack">
+                              {loanParts.map((part) => <span key={part}>{part}</span>)}
+                            </button>
+                            <small>financiamiento</small>
+                          </td>
+                          <td>
+                            <b className="mf-days">{cliente.dias_mas_vencido || 0} dias</b>
+                            <small>{cliente.bucket || '-'}</small>
+                          </td>
+                          <td className="mf-price">{money.format(Number(cliente.total_atrasado) || 0)}</td>
+                          <td>
+                            <span>{formatDateDo(ultimoPagoFecha)}</span>
+                            {ultimoPagoMonto > 0 && <small className="mf-last-payment-amount">{money.format(ultimoPagoMonto)}</small>}
+                          </td>
+                          <td>
+                            <span>{cliente.tiene_respuesta ? 'Respondio' : 'Sin respuesta'}</span>
+                            <small>{cliente.seg_nota || '-'}</small>
+                          </td>
+                          <td>
+                            <span>{cliente.seg_fecha ? formatDateDo(cliente.seg_fecha) : '-'}</span>
+                            {Number(cliente.monto_promesa || 0) > 0 && <small>{money.format(cliente.monto_promesa)}</small>}
+                          </td>
+                          <td><span className="mf-gestion-pill">{estadoCobro}</span></td>
+                          <td><span className={`mf-gestion-pill ${prioridad === 'Alta' ? 'is-high' : ''}`}>{prioridad}</span></td>
+                          <td>
+                            <button className="mf-case-button" type="button" onClick={() => openCobroCase(cliente)}>
+                              Ver caso
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </section>
+
+              <footer className="mf-modal-footer">
+                <span>{rows.length} caso(s) mostrados</span>
+                <button type="button" onClick={() => setDebtModalOpen(false)}>Cerrar</button>
+              </footer>
+            </div>
+          </div>
+        );
+      })()}
+
+      {selectedCobroCase && (() => {
+        const cliente = selectedCobroCase;
+        const loanNumber = cliente.prestamo_numero || (cliente.facturas || [])[0]?.numero || '-';
+        const ultimoPagoFecha = getGestionUltimoPagoFecha(cliente);
+        const ultimoPagoMonto = Number(getGestionUltimoPagoMonto(cliente) || 0);
+        const estadoCobro = getGestionEstado(cliente);
+        const pagosVencidos = Number(cliente.pagos_vencidos_equivalentes ?? cliente.cuotas_atrasadas ?? 0);
+        const montoVencido = Number(cliente.total_atrasado || 0);
+        const diasAtraso = Number(cliente.dias_mas_vencido || 0);
+        const fechaPromesa = cliente.seg_fecha || cliente.fecha_promesa;
+        const montoPromesa = Number(cliente.monto_promesa || cliente.monto_prometido || 0);
+        const telefono = cliente.cliente_telefono || '-';
+        const cedula = cliente.cliente_rnc || cliente.rnc || cliente.cliente_codigo || '-';
+        const garantia = cliente.garantia || cliente.motor || '-';
+        const pago15 = Number(cliente.pagos15_count || 0) > 0 ? 'Si' : 'No';
+        const todayInputValue = new Date().toISOString().slice(0, 10);
+        const timeline = cliente.gestiones || [];
+        const pagos = cliente.pagos15 || [];
+
+        return (
+          <div className="mf-modal-backdrop mf-case-backdrop" role="dialog" aria-modal="true" aria-label="Caso de cobro">
+            <div className="mf-case-modal">
+              <header className="mf-case-header">
+                <h3>Caso de cobro</h3>
+                <div className="mf-case-header-actions">
+                  <button type="button" className="mf-danger-outline" onClick={handleCaseCastigarCuenta} disabled={caseSaving}>Castigar cuenta</button>
+                  <button type="button" onClick={() => handleCaseVerResumen(cliente)}>Ver resumen</button>
+                  {MOTOFLOW_APP_URL && <button type="button" onClick={() => handleCaseAbrirCrm(cliente)}>Abrir en CRM</button>}
+                  <span className="mf-client-active">Cliente activo</span>
+                  <button type="button" className="mf-case-close" onClick={() => setSelectedCobroCase(null)} title="Cerrar">x</button>
+                </div>
+              </header>
+
+              <section className="mf-case-identity">
+                <div className="mf-case-avatar" />
+                <div>
+                  <strong>{cliente.cliente_nombre || 'Cliente'}</strong>
+                  <span>{telefono}</span>
+                  <span>Cedula: {cedula}</span>
+                </div>
+              </section>
+
+              <section className="mf-case-summary-grid">
+                <article className="mf-case-box">
+                  <h4>Resumen del prestamo</h4>
+                  <div className="mf-case-facts">
+                    <span>Prestamo: <b>{loanNumber}</b></span>
+                    <span>Monto vencido: <b className="mf-danger-text">{money.format(montoVencido)}</b></span>
+                    <span>Dias de atraso: <b className="mf-days">{diasAtraso} dias</b></span>
+                    <span>Pagos vencidos: <b>{pagosVencidos}</b></span>
+                    <span>Ultimo pago: <b>{formatDateDo(ultimoPagoFecha)}</b></span>
+                    <span>Motor/Garantia: <b>{garantia}</b></span>
+                    <span>Pago ult. 15 dias: <b>{pago15}</b></span>
+                    {ultimoPagoMonto > 0 && <span>Ult. monto: <b className="mf-last-payment-amount">{money.format(ultimoPagoMonto)}</b></span>}
+                  </div>
+                </article>
+
+                <article className="mf-case-box">
+                  <h4>Promesa de pago actual</h4>
+                  <div className="mf-case-facts">
+                    <span>Fecha prometida: <b>{fechaPromesa ? formatDateDo(fechaPromesa) : '-'}</b></span>
+                    <span>Monto prometido: <b>{montoPromesa > 0 ? money.format(montoPromesa) : '-'}</b></span>
+                    <span>Estado: <b className="mf-gestion-pill">{estadoCobro}</b></span>
+                  </div>
+                </article>
+              </section>
+
+              <nav className="mf-case-tabs">
+                {['gestion', 'pagos', 'mensajes', 'visitas', 'notas'].map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className={caseDetailTab === tab ? 'is-active' : ''}
+                    onClick={() => {
+                      setCaseDetailTab(tab);
+                      if (tab === 'notas' && !caseNote.trim()) setCaseNote('');
+                    }}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </nav>
+
+              <section className="mf-case-detail-body">
+                {caseDetailTab === 'gestion' && (
+                  timeline.length ? (
+                    <div className="mf-case-timeline">
+                      {timeline.map((gestion, index) => (
+                        <article key={gestion.id || `${gestion.tipo}-${index}`}>
+                          <strong>{String(gestion.tipo || 'Gestion').replaceAll('_', ' ')}</strong>
+                          <span>{formatDateDo(gestion.created_at || gestion.fecha_promesa)}</span>
+                          {gestion.fecha_promesa && <small>Promesa: {formatDateDo(gestion.fecha_promesa)} {Number(gestion.monto_promesa || 0) > 0 ? money.format(gestion.monto_promesa) : ''}</small>}
+                          {gestion.metadata?.fecha_busqueda && <small>Busqueda: {formatDateDo(gestion.metadata.fecha_busqueda)}</small>}
+                          {gestion.metadata?.fecha_llamada && <small>Llamada: {formatDateDo(gestion.metadata.fecha_llamada)}</small>}
+                          {gestion.nota && <p>{gestion.nota}</p>}
+                          {gestion.resultado && <small>Resultado: {gestion.resultado}</small>}
+                        </article>
+                      ))}
+                    </div>
+                  ) : <div className="mf-case-empty">Sin gestiones registradas.</div>
+                )}
+
+                {caseDetailTab === 'pagos' && (
+                  pagos.length ? (
+                    <div className="mf-case-payments">
+                      {pagos.map((pago, index) => (
+                        <div key={pago.id || `${pago.fecha}-${index}`}>
+                          <span>{formatDateDo(pago.fecha)}</span>
+                          <b className="mf-last-payment-amount">{money.format(Number(pago.total_pagado || pago.monto || 0))}</b>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <div className="mf-case-empty">Sin pagos en los ultimos 15 dias.</div>
+                )}
+
+                {caseDetailTab === 'mensajes' && (
+                  <textarea
+                    value={caseNote}
+                    onChange={(event) => setCaseNote(event.target.value)}
+                    placeholder="Nota o respuesta del cliente..."
+                    rows="4"
+                  />
+                )}
+
+                {caseDetailTab === 'visitas' && (
+                  <div className="mf-case-form-grid">
+                    <select value={caseVisitResult} onChange={(event) => setCaseVisitResult(event.target.value)}>
+                      <option value="pendiente">Pendiente</option>
+                      <option value="no_estaba">No estaba</option>
+                      <option value="prometio_pagar">Prometio pagar</option>
+                      <option value="direccion_incorrecta">Direccion incorrecta</option>
+                      <option value="resuelto">Resuelto</option>
+                    </select>
+                    <textarea
+                      value={caseNote}
+                      onChange={(event) => setCaseNote(event.target.value)}
+                      placeholder="Nota de visita..."
+                      rows="3"
+                    />
+                    <button type="button" onClick={handleCaseRegistrarVisita} disabled={caseSaving}>Registrar visita</button>
+                  </div>
+                )}
+
+                {caseDetailTab === 'notas' && (
+                  <div className="mf-case-form-grid">
+                    <textarea
+                      value={caseNote}
+                      onChange={(event) => setCaseNote(event.target.value)}
+                      placeholder="Nota interna..."
+                      rows="4"
+                    />
+                    <button type="button" onClick={() => saveCaseGestion({ tipo: 'nota', estado: 'registrada', nota: caseNote }, 'Nota registrada.')} disabled={caseSaving || !caseNote.trim()}>Guardar nota</button>
+                    {caseNote.trim().toLowerCase().startsWith('llamada:') && (
+                      <button type="button" onClick={handleCaseRegistrarLlamada} disabled={caseSaving}>Registrar nota llamada</button>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              <section className="mf-case-actions">
+                <h4>Acciones rapidas</h4>
+                <div className="mf-case-action-row">
+                  <button type="button" onClick={() => handleCaseEnviarWhatsapp(cliente)} disabled={caseSaving}>Enviar WhatsApp</button>
+                  <button type="button" onClick={() => { setCaseDetailTab('notas'); setCaseNote((current) => current.trim() || 'Llamada: '); }}>Registrar llamada</button>
+                  <button type="button" onClick={() => setCaseDetailTab('visitas')}>Registrar visita</button>
+                  <button type="button" onClick={handleCaseMandarABuscar} disabled={caseSaving}>Mandar a buscar</button>
+                  <input type="date" value={casePromiseDate || todayInputValue} onChange={(event) => setCasePromiseDate(event.target.value)} />
+                  <input type="text" value={casePromiseAmount} onChange={(event) => setCasePromiseAmount(event.target.value)} placeholder="Monto" />
+                </div>
+                <button type="button" className="mf-promise-button" onClick={handleCaseRegistrarPromesa} disabled={caseSaving}>
+                  {caseSaving ? 'Guardando...' : 'Registrar promesa'}
+                </button>
+              </section>
+            </div>
+          </div>
+        );
+      })()}
+
+      {summaryCobroCase && (() => {
+        const cliente = summaryCobroCase;
+        const loanNumber = cliente.prestamo_numero || (cliente.facturas || [])[0]?.numero || '-';
+        const ultimoPagoFecha = getGestionUltimoPagoFecha(cliente);
+        const ultimoPagoMonto = Number(getGestionUltimoPagoMonto(cliente) || 0);
+        const estadoCobro = getGestionEstado(cliente);
+        const prioridad = getGestionPrioridad(cliente);
+        const pagosVencidos = Number(cliente.pagos_vencidos_equivalentes ?? cliente.cuotas_atrasadas ?? 0);
+        const montoVencido = Number(cliente.total_atrasado || 0);
+        const diasAtraso = Number(cliente.dias_mas_vencido || 0);
+        const fechaPromesa = cliente.seg_fecha || cliente.fecha_promesa;
+        const montoPromesa = Number(cliente.monto_promesa || cliente.monto_prometido || 0);
+        const telefono = cliente.cliente_telefono || '-';
+        const cedula = cliente.cliente_rnc || cliente.rnc || cliente.cliente_codigo || '-';
+        const pago15 = Number(cliente.pagos15_count || 0) > 0 ? 'Si' : 'No';
+
+        return (
+          <div className="mf-modal-backdrop mf-summary-backdrop" role="dialog" aria-modal="true" aria-label="Resumen del cliente">
+            <div className="mf-readonly-summary">
+              <header className="mf-readonly-header">
+                <div>
+                  <p>Resumen del cliente</p>
+                  <h3>{cliente.cliente_nombre || 'Cliente'}</h3>
+                </div>
+                <button type="button" onClick={() => setSummaryCobroCase(null)} title="Cerrar">x</button>
+              </header>
+
+              <section className="mf-readonly-badges">
+                <span className="mf-gestion-pill">{estadoCobro}</span>
+                <span className={`mf-gestion-pill ${prioridad === 'Alta' ? 'is-high' : ''}`}>{prioridad}</span>
+                <span className="mf-client-active">Cliente activo</span>
+              </section>
+
+              <section className="mf-readonly-grid">
+                <article>
+                  <strong>Contacto</strong>
+                  <span>Telefono: <b>{telefono}</b></span>
+                  <span>Cedula/Codigo: <b>{cedula}</b></span>
+                </article>
+                <article>
+                  <strong>Prestamo</strong>
+                  <span>Numero: <b>{loanNumber}</b></span>
+                  <span>Pagos vencidos: <b>{pagosVencidos}</b></span>
+                </article>
+                <article>
+                  <strong>Deuda</strong>
+                  <span>Monto vencido: <b className="mf-danger-text">{money.format(montoVencido)}</b></span>
+                  <span>Dias atraso: <b className="mf-days">{diasAtraso} dias</b></span>
+                </article>
+                <article>
+                  <strong>Ultimo pago</strong>
+                  <span>Fecha: <b>{formatDateDo(ultimoPagoFecha)}</b></span>
+                  <span>Monto: <b className="mf-last-payment-amount">{ultimoPagoMonto > 0 ? money.format(ultimoPagoMonto) : '-'}</b></span>
+                  <span>Pago ult. 15 dias: <b>{pago15}</b></span>
+                </article>
+                <article>
+                  <strong>Promesa actual</strong>
+                  <span>Fecha: <b>{fechaPromesa ? formatDateDo(fechaPromesa) : '-'}</b></span>
+                  <span>Monto: <b>{montoPromesa > 0 ? money.format(montoPromesa) : '-'}</b></span>
+                </article>
+                <article>
+                  <strong>Respuesta</strong>
+                  <span>Ultima respuesta: <b>{cliente.tiene_respuesta ? 'Respondio' : 'Sin respuesta'}</b></span>
+                  <span>Nota: <b>{cliente.seg_nota || '-'}</b></span>
+                </article>
+              </section>
+
+              <footer className="mf-readonly-footer">
+                {MOTOFLOW_APP_URL && (
+                  <button type="button" onClick={() => handleCaseAbrirCrm(cliente)}>Abrir en CRM</button>
+                )}
+                <button type="button" onClick={() => setSummaryCobroCase(null)}>Cerrar</button>
+              </footer>
+            </div>
+          </div>
+        );
+      })()}
+      </aside>
+    </>
   );
 }
