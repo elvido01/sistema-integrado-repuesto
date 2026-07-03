@@ -176,7 +176,7 @@ const CierreCajaPage = () => {
       // Primero filtramos por fecha como DATE, luego fallback a created_at.
       const { data: recibosData, error: recibosErr } = await supabase
         .from('recibos_ingreso')
-        .select('monto_pagado, fecha, created_at')
+        .select('monto_pagado, fecha, created_at, origen')
         .eq('tenant_id', tenantId)
         .eq('fecha', fechaStr);
 
@@ -185,7 +185,7 @@ const CierreCajaPage = () => {
         // Fallback: intentar por created_at (TIMESTAMPTZ)
         const { data: recibosCreatedData, error: recibosCreatedErr } = await supabase
           .from('recibos_ingreso')
-          .select('monto_pagado, created_at')
+          .select('monto_pagado, created_at, origen')
           .eq('tenant_id', tenantId)
           .gte('created_at', startOfDay)
           .lte('created_at', endOfDay);
@@ -262,6 +262,10 @@ const CierreCajaPage = () => {
     const totalDescuento = ventas.reduce((sum, v) => sum + (parseFloat(v.descuento) || 0), 0);
     const totalDevoluciones = devoluciones.reduce((sum, d) => sum + (parseFloat(d.total_devolucion) || 0), 0);
     const totalRecibos = recibos.reduce((sum, r) => sum + (parseFloat(r.monto_pagado) || 0), 0);
+    const totalRecibosMovil = recibos
+      .filter(r => String(r.origen || '').toLowerCase() === 'movil')
+      .reduce((sum, r) => sum + (parseFloat(r.monto_pagado) || 0), 0);
+    const totalRecibosCaja = Math.max(0, totalRecibos - totalRecibosMovil);
     const totalGastosDiarios = gastosDiarios.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
     const totalPagosSuplidoresEfectivo = pagosSuplidores.reduce((sum, p) => {
       const efectivo = (p.formas_pago || []).filter(fp => fp.forma === 'Efectivo')
@@ -285,6 +289,8 @@ const CierreCajaPage = () => {
       totalDescuento,
       totalDevoluciones,
       totalRecibos,
+      totalRecibosMovil,
+      totalRecibosCaja,
       totalGastosDiarios,
       totalPagosSuplidores: totalPagosSuplidoresEfectivo,
       cambioEntregado,
@@ -405,7 +411,9 @@ const CierreCajaPage = () => {
         <div class="row"><span>Ventas Crédito:</span><span>${formatCurrency(resumen?.totalVentasCredito)}</span></div>
         <div class="row"><span>Total Ventas:</span><span class="bold">${formatCurrency(resumen?.totalVentas)}</span></div>
         <div class="row"><span>Devoluciones:</span><span>${formatCurrency(resumen?.totalDevoluciones)}</span></div>
-        <div class="row"><span>Recibos Ingreso:</span><span>${formatCurrency(resumen?.totalRecibos)}</span></div>
+        <div class="row"><span>Recibos Ingreso Caja:</span><span>${formatCurrency(resumen?.totalRecibosCaja)}</span></div>
+        <div class="row"><span>Recibos Ingreso Móvil:</span><span>${formatCurrency(resumen?.totalRecibosMovil)}</span></div>
+        <div class="row"><span>Recibos Ingreso (total):</span><span>${formatCurrency(resumen?.totalRecibos)}</span></div>
         <div class="row"><span>Pagos Suplidores:</span><span>${formatCurrency(resumen?.totalPagosSuplidores)}</span></div>
         <div class="row"><span>Gastos Diarios:</span><span>${formatCurrency(resumen?.totalGastosDiarios)}</span></div>
         <div class="row total-row"><span>Efectivo en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
@@ -548,7 +556,9 @@ const CierreCajaPage = () => {
                     ['Ventas Crédito', resumen.totalVentasCredito],
                     ['Total Ventas', resumen.totalVentas, true],
                     ['Devoluciones', resumen.totalDevoluciones],
-                    ['Recibos de Ingreso', resumen.totalRecibos],
+                    ['Recibos de Ingreso Caja', resumen.totalRecibosCaja],
+                    ['Recibos de Ingreso Móvil', resumen.totalRecibosMovil],
+                    ['Recibos de Ingreso (total)', resumen.totalRecibos],
                     ['Pagos a Suplidores (Efectivo)', resumen.totalPagosSuplidores],
                     ['Gastos Diarios', resumen.totalGastosDiarios],
                   ].map(([label, value, bold, isCount]) => (

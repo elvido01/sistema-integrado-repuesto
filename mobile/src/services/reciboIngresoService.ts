@@ -193,6 +193,8 @@ export async function crearReciboIngreso(params: {
     monto_pagado: params.totalAbonos,
     concepto: 'Pago/Abono a facturas',
     formas_pago: params.formasPago,
+    // Marca el canal para que el Cierre de Caja separe "Recibos de Ingreso Móvil".
+    origen: 'movil',
   };
 
   const abonosData = params.facturas

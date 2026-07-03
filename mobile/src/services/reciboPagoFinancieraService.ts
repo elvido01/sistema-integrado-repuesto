@@ -35,6 +35,7 @@ export type EstadoPrestamosFinanciera = {
 export type PagoPrestamoFinancieraResult = {
   pago_id: string;
   numero: string;
+  numero_interno?: string;
   total_pagado: number;
   sobrante: number;
   balance_anterior: number;
@@ -120,8 +121,9 @@ export async function registrarPagoPrestamoFinanciera(params: {
   banco?: string | null;
   comentarios?: string | null;
   prestamoId?: string | null;
+  cuotaIds?: string[] | null;
 }): Promise<PagoPrestamoFinancieraResult> {
-  const { data, error } = await supabase.rpc('registrar_pago_prestamo_financiera_externa', {
+  const rpcParams: Record<string, unknown> = {
     p_cliente_id: params.clienteId,
     p_monto: params.monto,
     p_fecha: params.fecha || null,
@@ -131,11 +133,17 @@ export async function registrarPagoPrestamoFinanciera(params: {
     p_banco: params.banco || null,
     p_comentarios: params.comentarios || null,
     p_prestamo_id: params.prestamoId || null,
-  });
+  };
+  if (params.cuotaIds?.length) {
+    rpcParams.p_cuota_ids = params.cuotaIds;
+  }
+
+  const { data, error } = await supabase.rpc('registrar_pago_prestamo_financiera_externa', rpcParams);
   if (error) throw error;
   return {
     pago_id: data?.pago_id,
     numero: String(data?.numero || ''),
+    numero_interno: data?.numero_interno ? String(data.numero_interno) : undefined,
     total_pagado: toNumber(data?.total_pagado),
     sobrante: toNumber(data?.sobrante),
     balance_anterior: toNumber(data?.balance_anterior),
