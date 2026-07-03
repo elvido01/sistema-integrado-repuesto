@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",
-    "package": "powershell -ExecutionPolicy Bypass -File ./package-extension.ps1"
+    "package": "powershell -ExecutionPolicy Bypass -File ./package-extension.ps1",
+    "package:beta": "powershell -ExecutionPolicy Bypass -File ./package-beta-extension.ps1"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.7.0",

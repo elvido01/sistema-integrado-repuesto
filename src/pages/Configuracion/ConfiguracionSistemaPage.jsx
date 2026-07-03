@@ -11,6 +11,10 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PrinterSettings from '@/components/configuracion/PrinterSettings';
 import IntegracionFiscalSettings from '@/components/configuracion/IntegracionFiscalSettings';
 
+const WHATSAPP_EXTENSION_DOWNLOAD_VERSION = '2026-07-03-1';
+const WHATSAPP_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-whatsapp-extension.zip?v=${WHATSAPP_EXTENSION_DOWNLOAD_VERSION}`;
+const OMNI_BETA_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-omni-beta-extension.zip?v=${WHATSAPP_EXTENSION_DOWNLOAD_VERSION}`;
+
 const ConfiguracionSistemaPage = () => {
     const { toast } = useToast();
     const { tenantId } = useAuth();
@@ -761,11 +765,18 @@ const ConfiguracionSistemaPage = () => {
                         </p>
                         <div className="flex items-center gap-2 flex-wrap">
                             <a
-                                href="/downloads/motoflow-whatsapp-extension.zip"
+                                href={WHATSAPP_EXTENSION_DOWNLOAD_URL}
                                 download
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
                             >
-                                <Download className="w-3 h-3" /> Descargar extensión (ZIP)
+                                <Download className="w-3 h-3" /> Descargar extension actual (ZIP)
+                            </a>
+                            <a
+                                href={OMNI_BETA_EXTENSION_DOWNLOAD_URL}
+                                download
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded text-[11px] font-bold"
+                            >
+                                <Download className="w-3 h-3" /> Descargar Omni Beta (ZIP)
                             </a>
                         </div>
 

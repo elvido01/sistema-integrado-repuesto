@@ -18,9 +18,13 @@ Write-Host "==> Compilando la extension..." -ForegroundColor Cyan
 Push-Location $ext
 try {
     npm run build
+    if ($LASTEXITCODE -ne 0) { throw "npm run build fallo con codigo $LASTEXITCODE" }
 } finally {
     Pop-Location
 }
+
+$betaManifestDist = Join-Path $ext 'dist\manifest.beta.json'
+if (Test-Path $betaManifestDist) { Remove-Item $betaManifestDist -Force }
 
 $zipPub  = Join-Path $root 'public\downloads\motoflow-whatsapp-extension.zip'
 $zipDist = Join-Path $root 'dist\downloads\motoflow-whatsapp-extension.zip'
