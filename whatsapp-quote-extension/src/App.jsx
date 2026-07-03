@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { castigarPrestamo, createQuote, getClienteFicha, getClientesMorosos, getEmpresasUsuarioExtension, getOmniConversations, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
-import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatInPlace, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
+import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatInPlace, openWhatsAppChatViaInternalLink, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
 import OmniInbox from './components/omni/OmniInbox.jsx';
@@ -1171,7 +1171,13 @@ export default function App() {
     const opened = openWhatsAppChatInPlace(phone, text);
     if (!opened) return false;
 
-    const ready = await waitForChatReadyAfterInternalOpen(beforeChat, expectedName);
+    let ready = await waitForChatReadyAfterInternalOpen(beforeChat, expectedName);
+    if (!ready) {
+      const linkOpened = openWhatsAppChatViaInternalLink(phone, text);
+      if (!linkOpened) return false;
+      ready = await waitForChatReadyAfterInternalOpen(beforeChat, expectedName);
+    }
+
     if (!ready) return false;
 
     const needle = looseText(text).slice(0, 30);
@@ -1236,6 +1242,10 @@ export default function App() {
     });
 
     try {
+      try {
+        window.localStorage.setItem(PENDING_COBRO_KEY, JSON.stringify({ text, ts: Date.now() }));
+      } catch {}
+
       const ok = await openChatAndPasteWithoutReload({
         phone,
         text,
@@ -1243,8 +1253,14 @@ export default function App() {
       });
 
       if (ok) {
+        try {
+          window.localStorage.removeItem(PENDING_COBRO_KEY);
+        } catch {}
         setCobroMsg('Recordatorio pegado en el chat. Revisa y presiona Enter para enviar.');
       } else {
+        try {
+          window.localStorage.removeItem(PENDING_COBRO_KEY);
+        } catch {}
         await navigator.clipboard.writeText(text).catch(() => {});
         setCobroMsg('No pude cambiar el chat sin recargar. Mensaje copiado; abre el chat y pegalo manualmente.');
       }

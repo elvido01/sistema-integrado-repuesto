@@ -37,6 +37,29 @@ export function openWhatsAppChatInPlace(phone, text = '') {
   }
 }
 
+export function openWhatsAppChatViaInternalLink(phone, text = '') {
+  const cleanPhone = String(phone || '').replace(/\D/g, '');
+  if (!cleanPhone) return false;
+
+  const params = new URLSearchParams({ phone: cleanPhone });
+  if (text) params.set('text', text);
+
+  try {
+    const link = document.createElement('a');
+    link.href = `/send?${params.toString()}`;
+    link.rel = 'noopener';
+    link.style.position = 'fixed';
+    link.style.left = '-9999px';
+    link.style.top = '-9999px';
+    document.body.appendChild(link);
+    link.click();
+    window.setTimeout(() => link.remove(), 1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function findMessageBox() {
   const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
 
