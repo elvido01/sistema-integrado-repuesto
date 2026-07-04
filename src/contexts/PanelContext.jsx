@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PanelContext, usePanels } from './panelCore';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -64,6 +64,9 @@ import ReciboPagoFinancieraPage from '@/pages/ReciboPagoFinancieraPage';
 import OtrasTransaccionesPage from '@/pages/OtrasTransaccionesPage';
 import HistoricoClientePage from '@/pages/HistoricoClientePage';
 import ListaChasisPrestamosPage from '@/pages/ListaChasisPrestamosPage';
+import GestionCobroPage from '@/pages/GestionCobroPage';
+import CuentasIncobrablesPage from '@/pages/CuentasIncobrablesPage';
+import NotaCreditoFinancieraPage from '@/pages/NotaCreditoFinancieraPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
 import PlanGate from '@/components/auth/PlanGate';
@@ -80,7 +83,7 @@ const Protected = ({ module, children }) => (
 const ReciboIngresoRouter = ({ extraData }) => {
   const { empresa } = useAuth();
   return empresa?.feat_financiera
-    ? <ReciboPagoFinancieraPage />
+    ? <ReciboPagoFinancieraPage extraData={extraData} />
     : <ReciboIngresoPage extraData={extraData} />;
 };
 
@@ -147,7 +150,10 @@ const componentMapping = {
   'gps-dispositivo-detalle': { component: ({ extraData }) => <Protected module="gps-dispositivos"><GpsDeviceDetailPage extraData={extraData} /></Protected>, icon: RadioTower, name: 'GPS Detalle' },
   'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
   'prestamos': { component: ({ extraData }) => <Protected module="prestamos"><FinancieraPrestamosPage extraData={extraData} /></Protected>, icon: DollarSign, name: 'Préstamos' },
-  'recibo-pago': { component: () => <Protected module="prestamos"><ReciboPagoFinancieraPage /></Protected>, icon: Receipt, name: 'Recibo de Pago' },
+  'gestion-cobro': { component: () => <Protected module="prestamos"><GestionCobroPage /></Protected>, icon: MessageCircle, name: 'Gestion de Cobro' },
+  'cuentas-incobrables': { component: () => <Protected module="prestamos"><CuentasIncobrablesPage /></Protected>, icon: ShieldAlert, name: 'Cuentas Incobrables' },
+  'recibo-pago': { component: ({ extraData }) => <Protected module="prestamos"><ReciboPagoFinancieraPage extraData={extraData} /></Protected>, icon: Receipt, name: 'Recibo de Pago' },
+  'nota-credito': { component: () => <Protected module="prestamos"><NotaCreditoFinancieraPage /></Protected>, icon: Receipt, name: 'Nota de Crédito' },
   'otras-transacciones': { component: () => <Protected module="prestamos"><OtrasTransaccionesPage /></Protected>, icon: Receipt, name: 'Otras Transacciones' },
   'historico-cliente': { component: () => <Protected module="prestamos"><HistoricoClientePage /></Protected>, icon: Receipt, name: 'Histórico de Cliente' },
   'lista-chasis-prestamos': { component: () => <Protected module="prestamos"><ListaChasisPrestamosPage /></Protected>, icon: Receipt, name: 'Lista de Chasis en Préstamos' },

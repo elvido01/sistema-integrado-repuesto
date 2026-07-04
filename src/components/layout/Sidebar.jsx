@@ -110,6 +110,7 @@ const navItems = [
     icon: DollarSign,
     subItems: [
       { title: 'Préstamos', id: 'prestamos', icon: DollarSign, featFlag: 'feat_financiera' },
+      { title: 'Nota de Crédito', id: 'nota-credito', icon: Receipt, featFlag: 'feat_financiera', permissionKey: 'prestamos', adminOnly: true },
       { title: 'Gestion de Cobro', id: 'gestion-cobro', icon: MessageCircle, featFlag: 'feat_financiera', permissionKey: 'prestamos' },
       { title: 'Cuentas Incobrables', id: 'cuentas-incobrables', icon: ShieldAlert, featFlag: 'feat_financiera', permissionKey: 'prestamos' },
       { title: 'Otras Transacciones', id: 'otras-transacciones', icon: Receipt, featFlag: 'feat_financiera' },
@@ -359,6 +360,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             if (sub.tenantOnly && !(Array.isArray(sub.tenantOnly) ? sub.tenantOnly.includes(tenantId) : sub.tenantOnly === tenantId)) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
             if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
+            if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito
             if (sub.id === 'whatsapp-crm' && !puedePlus) return false; // Sales Hub = función Plus (PRO/ENTERPRISE)
             return canAccess(profile, permissions, sub.permissionKey || sub.id);
           });
