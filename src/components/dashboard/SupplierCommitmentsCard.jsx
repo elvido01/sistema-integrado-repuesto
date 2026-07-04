@@ -44,26 +44,29 @@ const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = nul
                   {c.suplidor_nombre || 'Desconocido'}
                 </span>
               </div>
-              {/* Línea 2: fecha (factura) + monto */}
-              <div className="flex items-center justify-between gap-2 mt-0.5 pl-6">
+              {/* Línea 2: REFERENCIA de la compra (la factura del suplidor) + vencimiento */}
+              <div className="flex items-center gap-2 mt-0.5 pl-6">
                 <span className={`text-[10px] ${c.isOverdue ? 'text-red-400' : 'text-gray-400'} truncate`}>
-                  Fact: {c.numero || c.referencia || 'N/A'} — {c.fecha_vencimiento ? format(new Date(c.fecha_vencimiento), 'dd/MM/yy') : (c.fecha ? format(new Date(c.fecha), 'dd/MM/yy') : '')}
+                  Ref: {c.referencia || c.numero || 'N/A'} — {c.fecha_vencimiento ? format(new Date(c.fecha_vencimiento), 'dd/MM/yy') : (c.fecha ? format(new Date(c.fecha), 'dd/MM/yy') : '')}
                 </span>
-                <span className={`text-sm font-black shrink-0 ${c.isOverdue ? 'text-red-600' : 'text-slate-800'}`}>{formatCurrency(c.monto_pendiente)}</span>
               </div>
-              {/* Línea 3: badges en una sola fila */}
-              <div className="flex items-center gap-1.5 mt-1 pl-6 overflow-x-auto">
-                {c.isOverdue && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Atrasado</span>}
-                {c.fecha_vencimiento && isSameWeek(new Date(c.fecha_vencimiento), new Date(), { weekStartsOn: 1 }) && !c.isOverdue && <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Esta semana</span>}
-                {c.fecha_vencimiento && isAfter(new Date(c.fecha_vencimiento), endOfWeek(new Date(), { weekStartsOn: 1 })) && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Futuro</span>}
-                {onPay && (
-                  <button
-                    onClick={() => onPay(c)}
-                    className="text-[9px] bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase transition-colors cursor-pointer shrink-0"
-                  >
-                    Pagar
-                  </button>
-                )}
+              {/* Línea 3: badges a la izquierda + MONTO a la derecha (asi los
+                  montos grandes, p.ej. 1,000,000.00, se ven completos) */}
+              <div className="flex items-center justify-between gap-2 mt-1 pl-6">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {c.isOverdue && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Atrasado</span>}
+                  {c.fecha_vencimiento && isSameWeek(new Date(c.fecha_vencimiento), new Date(), { weekStartsOn: 1 }) && !c.isOverdue && <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Esta semana</span>}
+                  {c.fecha_vencimiento && isAfter(new Date(c.fecha_vencimiento), endOfWeek(new Date(), { weekStartsOn: 1 })) && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Futuro</span>}
+                  {onPay && (
+                    <button
+                      onClick={() => onPay(c)}
+                      className="text-[9px] bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase transition-colors cursor-pointer shrink-0"
+                    >
+                      Pagar
+                    </button>
+                  )}
+                </div>
+                <span className={`text-sm font-black whitespace-nowrap shrink-0 ${c.isOverdue ? 'text-red-600' : 'text-slate-800'}`}>{formatCurrency(c.monto_pendiente)}</span>
               </div>
             </div>
           ))
