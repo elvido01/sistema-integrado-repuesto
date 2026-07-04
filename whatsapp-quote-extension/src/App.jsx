@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { castigarPrestamo, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getOmniConversations, getOutOfStockRequest, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
@@ -99,10 +99,12 @@ const COBRO_ESTADOS = [
 const GESTION_COBRO_TABS = [
   { key: 'todos', label: 'Todos los atrasados' },
   { key: 'recordatorio_pago', label: 'Recordatorio 3 dias' },
-  { key: 'promesas', label: 'Promesas de pago' },
+  // "Promesas de pago" se retiro del menu a pedido del usuario (2026-07-03):
+  // las promesas se siguen viendo en cada caso y en "Promesas vencidas".
   { key: 'promesas_vencidas', label: 'Promesas vencidas' },
   { key: 'pagaron_siguen', label: 'Pagaron y siguen atrasados' },
   { key: 'mandados_buscar', label: 'Mandados a buscar' },
+  { key: 'robados', label: 'Robados' },
   { key: 'sin_respuesta', label: 'Sin respuesta' },
   { key: 'criticos', label: 'Casos criticos' },
   { key: 'reenviar', label: 'Para reenviar' }
@@ -196,11 +198,20 @@ function getGestionUltimoPagoMonto(cliente) {
   );
 }
 
+// Estilo del pill de estado: ROBADO va en negro con letras blancas (igual
+// que el badge de la web) para que resalte del resto.
+const estadoPillStyle = (estado) => (
+  estado === 'Robado'
+    ? { background: '#1e293b', color: '#ffffff', borderColor: '#0f172a' }
+    : undefined
+);
+
 function getGestionEstado(cliente) {
   const today = new Date().toISOString().slice(0, 10);
   const pagos = Number(cliente.pagos_vencidos_equivalentes ?? cliente.cuotas_atrasadas ?? 0);
   const promesa = cliente.seg_fecha || cliente.fecha_promesa;
 
+  if (cliente.es_robado) return 'Robado';
   if (cliente.recordatorio_pago) return 'Recordatorio 3 dias';
   if (cliente.estado_cobro) return cliente.estado_cobro;
   if (cliente.seg_estado === 'ir_a_buscar' || cliente.fisica_estado === 'mandado_buscar') return 'Mandado a buscar';
@@ -1091,6 +1102,18 @@ export default function App() {
     setCobroMsg('');
     try {
       const data = await getClientesMorosos();
+      // Sellar es_robado leyendo cobro_gestiones directo: funciona aunque el
+      // RPC desplegado aun no devuelva el campo (independencia de despliegue).
+      if (data?.clientes?.length) {
+        try {
+          const robadoIds = await getRobadoClienteIds();
+          data.clientes = data.clientes.map((c) => (
+            robadoIds.has(c.cliente_id) ? { ...c, es_robado: true } : c
+          ));
+        } catch {
+          // sin permisos/tabla: se queda con lo que diga el RPC
+        }
+      }
       setMorosos(data);
       if (!data?.clientes?.length) {
         setCobroMsg(data?.tipo_cobranza === 'financiera'
@@ -1522,9 +1545,11 @@ export default function App() {
     // caso siempre aparecia "Sin gestiones registradas" al reabrirlo.
     getCobroGestiones(cliente.cliente_id)
       .then((rows) => {
+        // es_robado se deriva del historial real (no depende del RPC).
+        const esRobado = (rows || []).some((g) => g.tipo === 'robado' && g.estado !== 'cerrada');
         setSelectedCobroCase((current) => (
           current && current.cliente_id === cliente.cliente_id
-            ? { ...current, gestiones: rows || [] }
+            ? { ...current, gestiones: rows || [], es_robado: esRobado }
             : current
         ));
       })
@@ -1647,6 +1672,37 @@ export default function App() {
       metadata: { fecha_busqueda: fecha, origen: 'gestion_credito_extension' }
     }, 'Cliente marcado para buscar fisicamente.');
     if (saved) setCaseNote('');
+  }
+
+  // ROBADO: estado manual (poner/quitar). Ningun pago lo cierra: el cliente
+  // paga bajo acuerdo flexible y el caso queda en gestion para seguimiento.
+  async function handleCaseMarcarRobado() {
+    const clienteId = selectedCobroCase?.cliente_id;
+    const saved = await saveCaseGestion({
+      tipo: 'robado',
+      estado: 'activo',
+      nota: caseNote || 'Moto robada: acuerdo de cobro flexible.',
+      metadata: { origen: 'gestion_credito_extension' }
+    }, 'Cliente marcado como ROBADO.');
+    if (saved) {
+      setCaseNote('');
+      setSelectedCobroCase((c) => (c && c.cliente_id === clienteId ? { ...c, es_robado: true, estado_cobro: 'Robado' } : c));
+    }
+  }
+
+  async function handleCaseQuitarRobado() {
+    if (!selectedCobroCase?.cliente_id || caseSaving) return;
+    setCaseSaving(true);
+    try {
+      await closeCobroGestiones({ clienteId: selectedCobroCase.cliente_id, tipo: 'robado' });
+      setSelectedCobroCase((c) => (c ? { ...c, es_robado: false, estado_cobro: null } : c));
+      setCobroMsg('Estado ROBADO retirado.');
+      await loadMorosos();
+    } catch (error) {
+      setCobroMsg(error.message || 'No se pudo quitar el estado ROBADO.');
+    } finally {
+      setCaseSaving(false);
+    }
   }
 
   async function handleCaseRegistrarVisita() {
@@ -2256,6 +2312,9 @@ export default function App() {
         const tabMatch = (cliente, tabKey) => {
           if (tabKey === 'recordatorio_pago') return Boolean(cliente.recordatorio_pago);
           if (cliente.recordatorio_pago) return false;
+          if (tabKey === 'robados') return Boolean(cliente.es_robado);
+          // ROBADO es exclusivo: vive SOLO en su pestana (acuerdo de pago).
+          if (cliente.es_robado) return false;
           if (tabKey === 'todos') return true;
           if (tabKey === 'promesas') return Boolean(cliente.tiene_promesa || cliente.seg_fecha);
           if (tabKey === 'promesas_vencidas') return Boolean(cliente.promesa_vencida || (cliente.seg_fecha && cliente.seg_fecha < today));
@@ -2692,6 +2751,9 @@ export default function App() {
         const matchTab = (cliente, tabKey) => {
           if (tabKey === 'recordatorio_pago') return Boolean(cliente.recordatorio_pago);
           if (cliente.recordatorio_pago) return false;
+          if (tabKey === 'robados') return Boolean(cliente.es_robado);
+          // ROBADO es exclusivo: vive SOLO en su pestana (acuerdo de pago).
+          if (cliente.es_robado) return false;
           if (tabKey === 'todos') return true;
           if (tabKey === 'promesas') return Boolean(cliente.tiene_promesa || cliente.seg_fecha);
           if (tabKey === 'promesas_vencidas') return Boolean(cliente.promesa_vencida || (cliente.seg_fecha && cliente.seg_fecha < today));
@@ -2816,7 +2878,7 @@ export default function App() {
                             <span>{cliente.seg_fecha ? formatDateDo(cliente.seg_fecha) : '-'}</span>
                             {Number(cliente.monto_promesa || 0) > 0 && <small>{money.format(cliente.monto_promesa)}</small>}
                           </td>
-                          <td><span className="mf-gestion-pill">{estadoCobro}</span></td>
+                          <td><span className="mf-gestion-pill" style={estadoPillStyle(estadoCobro)}>{estadoCobro}</span></td>
                           <td><span className={`mf-gestion-pill ${prioridad === 'Alta' ? 'is-high' : ''}`}>{prioridad}</span></td>
                           <td>
                             <button className="mf-case-button" type="button" onClick={() => openCobroCase(cliente)}>
@@ -2901,7 +2963,7 @@ export default function App() {
                   <div className="mf-case-facts">
                     <span>Fecha prometida: <b>{fechaPromesa ? formatDateDo(fechaPromesa) : '-'}</b></span>
                     <span>Monto prometido: <b>{montoPromesa > 0 ? money.format(montoPromesa) : '-'}</b></span>
-                    <span>Estado: <b className="mf-gestion-pill">{estadoCobro}</b></span>
+                    <span>Estado: <b className="mf-gestion-pill" style={estadoPillStyle(estadoCobro)}>{estadoCobro}</b></span>
                   </div>
                 </article>
               </section>
@@ -3005,6 +3067,18 @@ export default function App() {
                   <button type="button" onClick={() => { setCaseDetailTab('notas'); setCaseNote((current) => current.trim() || 'Llamada: '); }}>Registrar llamada</button>
                   <button type="button" onClick={() => setCaseDetailTab('visitas')}>Registrar visita</button>
                   <button type="button" onClick={handleCaseMandarABuscar} disabled={caseSaving}>Mandar a buscar</button>
+                  {selectedCobroCase?.es_robado ? (
+                    <button
+                      type="button"
+                      onClick={handleCaseQuitarRobado}
+                      disabled={caseSaving}
+                      style={{ background: '#1e293b', color: '#fff', borderColor: '#0f172a' }}
+                    >
+                      Quitar ROBADO
+                    </button>
+                  ) : (
+                    <button type="button" onClick={handleCaseMarcarRobado} disabled={caseSaving}>Marcar ROBADO</button>
+                  )}
                   <input type="date" value={casePromiseDate || todayInputValue} onChange={(event) => setCasePromiseDate(event.target.value)} />
                   <input type="text" value={casePromiseAmount} onChange={(event) => setCasePromiseAmount(event.target.value)} placeholder="Monto" />
                 </div>
@@ -3045,7 +3119,7 @@ export default function App() {
               </header>
 
               <section className="mf-readonly-badges">
-                <span className="mf-gestion-pill">{estadoCobro}</span>
+                <span className="mf-gestion-pill" style={estadoPillStyle(estadoCobro)}>{estadoCobro}</span>
                 <span className={`mf-gestion-pill ${prioridad === 'Alta' ? 'is-high' : ''}`}>{prioridad}</span>
                 <span className="mf-client-active">Cliente activo</span>
               </section>

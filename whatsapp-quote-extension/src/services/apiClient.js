@@ -907,6 +907,35 @@ export async function setCobranzaSeguimiento({ clienteId, estado, fecha, nota })
   });
 }
 
+// Clientes con estado ROBADO activo (gestion tipo='robado' sin cerrar).
+// Se consulta directo a la tabla para NO depender de que el RPC de gestion
+// este actualizado con el campo es_robado.
+export async function getRobadoClienteIds() {
+  const headers = await getAuthHeaders();
+  const rows = await fetchRestRows('cobro_gestiones', {
+    select: 'cliente_id',
+    tipo: 'eq.robado',
+    estado: 'neq.cerrada'
+  }, headers);
+  return new Set((rows || []).map((r) => r.cliente_id).filter(Boolean));
+}
+
+// Cierra las gestiones ACTIVAS de un tipo para un cliente (ej: quitar el
+// estado ROBADO). PATCH masivo: estado='cerrada'.
+export async function closeCobroGestiones({ clienteId, tipo, resultado = 'cerrado_manual' }) {
+  if (!clienteId || !tipo) throw new Error('cliente_id y tipo son requeridos.');
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/cobro_gestiones`);
+  url.searchParams.set('cliente_id', `eq.${clienteId}`);
+  url.searchParams.set('tipo', `eq.${tipo}`);
+  url.searchParams.set('estado', 'neq.cerrada');
+  return fetchJson(url.toString(), {
+    method: 'PATCH',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({ estado: 'cerrada', resultado })
+  });
+}
+
 // Historial de gestiones de cobro del cliente (timeline del "Caso de cobro").
 // Sin esto el caso solo mostraba las gestiones agregadas en la sesion actual
 // y parecia que el historial no se guardaba.

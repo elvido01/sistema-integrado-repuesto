@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Receipt,
   Search,
+  ShieldAlert,
   UserCheck,
   UserRound,
   Users,
@@ -161,6 +162,9 @@ const priorityFor = (row) => {
 };
 
 const estadoFrom = (row) => {
+  // ROBADO: moto robada con acuerdo de cobro flexible. Se pone/quita SOLO
+  // manualmente y domina sobre los demas estados para no perderlo de vista.
+  if (row.robado) return 'Robado';
   if (row.recordatorio_pago) return 'Recordatorio 3 dias';
   const promesa = row.promesa;
   if (row.gestion_fisica?.estado === 'mandado_buscar') return 'Mandado a buscar';
@@ -182,6 +186,7 @@ const badgeClass = {
   'Promesa futura': 'bg-blue-100 text-blue-700 border-blue-200',
   'Promesa vencida': 'bg-red-100 text-red-700 border-red-200',
   'Mandado a buscar': 'bg-violet-100 text-violet-700 border-violet-200',
+  Robado: 'bg-slate-800 text-white border-slate-900',
   Moroso: 'bg-orange-100 text-orange-700 border-orange-200',
   Seguimiento: 'bg-amber-100 text-amber-700 border-amber-200',
   Respondio: 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -198,6 +203,7 @@ const kpiMeta = [
   { key: 'promesasVencidas', label: 'Promesas vencidas', icon: Clock, tone: 'text-red-600 bg-red-50' },
   { key: 'pagaron15', label: 'Pagaron ult. 15 dias y siguen atrasados', icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50' },
   { key: 'mandadosBuscar', label: 'Mandados a buscar', icon: MapPin, tone: 'text-violet-600 bg-violet-50' },
+  { key: 'robados', label: 'Robados', icon: ShieldAlert, tone: 'text-slate-700 bg-slate-100' },
   { key: 'sinRespuesta', label: 'Sin respuesta', icon: MessageCircle, tone: 'text-slate-600 bg-slate-50' },
   { key: 'respRevisar', label: 'Resp. por revisar', icon: UserCheck, tone: 'text-cyan-600 bg-cyan-50' },
 ];
@@ -205,10 +211,12 @@ const kpiMeta = [
 const tabOptions = [
   { key: 'todos', label: 'Todos los atrasados' },
   { key: 'recordatorio_pago', label: 'Recordatorio 3 dias' },
-  { key: 'promesas', label: 'Promesas de pago' },
+  // "Promesas de pago" se retiro del menu a pedido del usuario (2026-07-03):
+  // las promesas se siguen viendo en cada caso y en "Promesas vencidas".
   { key: 'promesas_vencidas', label: 'Promesas vencidas' },
   { key: 'pagaron_siguen', label: 'Pagaron y siguen atrasados' },
   { key: 'mandados_buscar', label: 'Mandados a buscar' },
+  { key: 'robados', label: 'Robados' },
   { key: 'sin_respuesta', label: 'Sin respuesta' },
   { key: 'criticos', label: 'Casos criticos' },
 ];
@@ -435,6 +443,7 @@ const GestionCobroPage = () => {
         const promesa = gs.find((g) => g.tipo === 'promesa_pago' && g.estado !== 'cumplida' && g.estado !== 'cancelada');
         const gestionFisica = gs.find((g) => ['mandado_buscar', 'visita'].includes(g.tipo) && g.estado !== 'cerrada');
         const ultimaRespuesta = gs.find((g) => g.tipo === 'respuesta_cliente' || g.tipo === 'llamada');
+        const robado = gs.find((g) => g.tipo === 'robado' && g.estado !== 'cerrada') || null;
         const row = {
           id: isRecordatorioPago ? `recordatorio-${recordatorioCuota.id}` : p.id,
           prestamo_id: p.id,
@@ -459,6 +468,7 @@ const GestionCobroPage = () => {
           promesa,
           gestion_fisica: gestionFisica,
           ultima_respuesta: ultimaRespuesta,
+          robado,
         };
         row.prioridad = priorityFor(row);
         row.estado_cobro = estadoFrom(row);
@@ -535,20 +545,26 @@ const GestionCobroPage = () => {
   useEffect(() => { cargar(); }, [cargar]);
 
   const kpis = useMemo(() => {
-    const regularRows = rows.filter((r) => !r.recordatorio_pago);
+    const activeRows = rows.filter((r) => !r.recordatorio_pago);
+    // ROBADOS: la empresa los trata como acuerdo de pago — viven SOLO en su
+    // pestana; fuera de los contadores operativos (promesas/sin respuesta/etc).
+    // Los KPI de deuda total (atrasados/monto) SI los incluyen: siguen debiendo.
+    const regularRows = activeRows.filter((r) => !r.robado);
     const promesasHoy = regularRows.filter((r) => r.promesa?.fecha_promesa === todayDate()).length;
     const promesasVencidas = regularRows.filter((r) => r.promesa?.fecha_promesa && r.promesa.fecha_promesa < todayDate()).length;
     return {
       // "Clientes atrasados" = clientes DISTINTOS (no préstamos): un cliente con
       // varias motos vencidas cuenta 1 vez. Así coincide con la extensión, que
       // agrupa por cliente.
-      atrasados: new Set(regularRows.map((r) => r.cliente_id)).size,
-      montoVencido: regularRows.reduce((sum, r) => sum + Number(r.monto_vencido || 0), 0),
+      atrasados: new Set(activeRows.map((r) => r.cliente_id)).size,
+      montoVencido: activeRows.reduce((sum, r) => sum + Number(r.monto_vencido || 0), 0),
       recordatorios3: rows.filter((r) => r.recordatorio_pago).length,
       promesasHoy,
       promesasVencidas,
       pagaron15: regularRows.filter((r) => r.pagos15.length > 0).length,
       mandadosBuscar: regularRows.filter((r) => r.gestion_fisica?.estado === 'mandado_buscar').length,
+      // clientes distintos (no prestamos): Rigoberto con 2 motos robadas = 1
+      robados: new Set(activeRows.filter((r) => r.robado).map((r) => r.cliente_id)).size,
       sinRespuesta: regularRows.filter((r) => !r.ultima_respuesta && !r.promesa).length,
       respRevisar: regularRows.filter((r) => r.ultima_respuesta?.estado === 'pendiente_revision').length,
     };
@@ -582,7 +598,11 @@ const GestionCobroPage = () => {
       }
 
       if (activeTab === 'recordatorio_pago') return !!row.recordatorio_pago;
+      if (activeTab === 'robados') return !!row.robado;
       if (row.recordatorio_pago) return false;
+      // ROBADO es exclusivo: la empresa lo trata como acuerdo de pago, asi
+      // que vive SOLO en su pestana (no en Todos/Promesas/Sin respuesta/etc.)
+      if (row.robado) return false;
       if (activeTab === 'promesas') return !!row.promesa;
       if (activeTab === 'promesas_vencidas') return row.promesa?.fecha_promesa && row.promesa.fecha_promesa < todayDate();
       if (activeTab === 'pagaron_siguen') return row.pagos15.length > 0;
@@ -683,6 +703,35 @@ const GestionCobroPage = () => {
     resultado: visitForm.resultado,
     nota: visitForm.nota || null,
   }, 'Visita registrada');
+
+  // ROBADO: estado manual (poner/quitar). Ningun pago lo cierra: el cliente
+  // sigue pagando bajo el acuerdo flexible y el caso queda en seguimiento.
+  const marcarRobado = () => saveGestion({
+    tipo: 'robado',
+    estado: 'activo',
+    nota: visitForm.nota || noteText.trim() || 'Moto robada: acuerdo de cobro flexible.',
+    metadata: { origen: 'gestion_credito' },
+  }, 'Cliente marcado como ROBADO');
+
+  const quitarRobado = async () => {
+    if (!selected) return;
+    setSavingAction(true);
+    try {
+      const { error } = await supabase
+        .from('cobro_gestiones')
+        .update({ estado: 'cerrada', resultado: 'cerrado_manual' })
+        .eq('cliente_id', selected.cliente_id)
+        .eq('tipo', 'robado')
+        .neq('estado', 'cerrada');
+      if (error) throw error;
+      toast({ title: 'Estado ROBADO retirado' });
+      await cargar();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo quitar el estado', description: e.message });
+    } finally {
+      setSavingAction(false);
+    }
+  };
 
   const registrarNota = async () => {
     if (!noteText.trim()) return;
@@ -790,11 +839,14 @@ const GestionCobroPage = () => {
             key={key}
             type="button"
             onClick={() => {
-              if (key === 'promesasHoy') setActiveTab('promesas');
+              // La pestana "Promesas de pago" se retiro del menu; el KPI de
+              // promesas para hoy lleva a "Promesas vencidas" (la mas cercana).
+              if (key === 'promesasHoy') setActiveTab('promesas_vencidas');
               if (key === 'recordatorios3') setActiveTab('recordatorio_pago');
               if (key === 'promesasVencidas') setActiveTab('promesas_vencidas');
               if (key === 'pagaron15') setActiveTab('pagaron_siguen');
               if (key === 'mandadosBuscar') setActiveTab('mandados_buscar');
+              if (key === 'robados') setActiveTab('robados');
               if (key === 'sinRespuesta') setActiveTab('sin_respuesta');
             }}
             className="min-h-[86px] rounded-lg border bg-white px-3 pb-3 pt-2 text-left shadow-sm hover:border-blue-200 hover:bg-blue-50/30"
@@ -1160,7 +1212,7 @@ const GestionCobroPage = () => {
                     {timeline.map((g) => (
                       <div key={g.id} className="flex gap-3 text-xs">
                         <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                          {g.tipo === 'promesa_pago' ? <CalendarClock className="h-4 w-4" /> : g.tipo === 'llamada' ? <Phone className="h-4 w-4" /> : g.tipo === 'mandado_buscar' || g.tipo === 'visita' ? <MapPin className="h-4 w-4" /> : <MessageCircle className="h-4 w-4" />}
+                          {g.tipo === 'robado' ? <ShieldAlert className="h-4 w-4" /> : g.tipo === 'promesa_pago' ? <CalendarClock className="h-4 w-4" /> : g.tipo === 'llamada' ? <Phone className="h-4 w-4" /> : g.tipo === 'mandado_buscar' || g.tipo === 'visita' ? <MapPin className="h-4 w-4" /> : <MessageCircle className="h-4 w-4" />}
                         </div>
                         <div className="min-w-0 flex-1 border-b pb-2">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -1261,6 +1313,15 @@ const GestionCobroPage = () => {
                     <Button variant="outline" className="h-11 justify-start text-xs" onClick={() => { setQuickActionMode('promesa'); mandarABuscar(); }} disabled={savingAction}>
                       <UserCheck className="mr-2 h-4 w-4" /> Mandar a buscar
                     </Button>
+                    {selected?.robado ? (
+                      <Button variant="outline" className="h-11 justify-start text-xs border-slate-400 bg-slate-800 text-white hover:bg-slate-700 hover:text-white" onClick={quitarRobado} disabled={savingAction}>
+                        <ShieldAlert className="mr-2 h-4 w-4" /> Quitar ROBADO
+                      </Button>
+                    ) : (
+                      <Button variant="outline" className="h-11 justify-start text-xs border-slate-300 text-slate-700" onClick={marcarRobado} disabled={savingAction}>
+                        <ShieldAlert className="mr-2 h-4 w-4" /> Marcar ROBADO
+                      </Button>
+                    )}
                     <Input
                       type="date"
                       value={promiseForm.fecha}

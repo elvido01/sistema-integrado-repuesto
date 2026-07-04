@@ -210,6 +210,17 @@ BEGIN
       AND estado <> 'cerrada'
     ORDER BY g.cliente_id, g.created_at DESC
   ),
+  -- ROBADO: al cliente le robaron la moto y la empresa acordo un cobro
+  -- flexible. Se pone y se quita SOLO manualmente (ningun pago lo cierra);
+  -- el caso sigue en gestion para seguimiento.
+  robados AS (
+    SELECT DISTINCT ON (g.cliente_id) g.cliente_id, g.nota AS robado_nota, g.created_at AS robado_desde
+    FROM public.cobro_gestiones g
+    WHERE g.tenant_id = v_tenant
+      AND g.tipo = 'robado'
+      AND estado <> 'cerrada'
+    ORDER BY g.cliente_id, g.created_at DESC
+  ),
   respuestas AS (
     SELECT DISTINCT ON (g.cliente_id) g.*
     FROM public.cobro_gestiones g
@@ -236,7 +247,10 @@ BEGIN
       f.estado AS fisica_estado,
       r.tipo AS respuesta_tipo,
       r.estado AS respuesta_estado,
-      r.nota AS respuesta_nota
+      r.nota AS respuesta_nota,
+      (rb.cliente_id IS NOT NULL) AS es_robado,
+      rb.robado_nota,
+      rb.robado_desde
     FROM casos b
     JOIN public.clientes c
       ON c.id = b.cliente_id
@@ -247,6 +261,7 @@ BEGIN
     LEFT JOIN promesas pr ON pr.cliente_id = b.cliente_id
     LEFT JOIN fisicas f ON f.cliente_id = b.cliente_id
     LEFT JOIN respuestas r ON r.cliente_id = b.cliente_id
+    LEFT JOIN robados rb ON rb.cliente_id = b.cliente_id
   )
   SELECT json_agg(
     json_build_object(
@@ -275,7 +290,11 @@ BEGIN
         (dias_atraso >= 31 OR monto_vencido >= 15000)
         AND fecha_promesa IS NULL
       ),
+      'es_robado', es_robado,
+      'robado_nota', robado_nota,
+      'robado_desde', robado_desde,
       'estado_cobro', CASE
+        WHEN es_robado THEN 'Robado'
         WHEN recordatorio_pago THEN 'Recordatorio 3 dias'
         WHEN fisica_estado = 'mandado_buscar' THEN 'Mandado a buscar'
         WHEN fecha_promesa IS NOT NULL AND fecha_promesa < v_today THEN 'Promesa vencida'
