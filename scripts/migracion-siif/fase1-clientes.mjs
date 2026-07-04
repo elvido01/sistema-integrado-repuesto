@@ -62,10 +62,13 @@ const ln = await parseTable(fileLN, 'clientes');
 console.log(`scv8_mp_los_naranjos.clientes: ${ln.rows.length}`);
 
 // offsets de legacy_id por base de origen (espacios de id independientes)
+// OJO (separacion 2026-07-04): prestamos_05 = MOTO PRESTAMOS ODALYS, que ahora
+// tiene SU PROPIO tenant (fase-financiera-cxc.mjs odalys). Se saco del merge
+// de Naranjos. prestamos_02 = INVERSIONES VILLA CERRO (muerta ~2016) se queda
+// como historico dentro de Naranjos por decision del usuario.
 const PRESTAMOS = [
   { file: `prestamos_01.${fecha}.SQL`, offset: 200000000 },
   { file: `prestamos_02.${fecha}.SQL`, offset: 300000000 },
-  { file: `prestamos_05.${fecha}.SQL`, offset: 500000000 },
 ];
 
 // --- unir por código (prioriza el registro de scv8, más completo) ---

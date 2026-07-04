@@ -32,10 +32,12 @@ function latestBackup(baseDir) {
   return dirs[dirs.length - 1];
 }
 const FECHA = process.argv.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a)) || process.env.FECHA || latestBackup(BASE_DIR);
+// OJO (separacion 2026-07-04): prestamos_05 = MOTO PRESTAMOS ODALYS, ahora en
+// SU PROPIO tenant (fase-financiera-cxc.mjs odalys) — fuera del merge Naranjos.
+// prestamos_02 = INVERSIONES VILLA CERRO (muerta ~2016), se queda de historico.
 const SOURCES = [
   { file: `prestamos_01.${FECHA}.SQL`, offset: 0 },
   { file: `prestamos_02.${FECHA}.SQL`, offset: 200_000_000 },
-  { file: `prestamos_05.${FECHA}.SQL`, offset: 500_000_000 },
 ];
 const BASE = path.join(BASE_DIR, FECHA) + path.sep;
 const n = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };

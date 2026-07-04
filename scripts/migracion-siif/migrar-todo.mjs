@@ -34,6 +34,12 @@ const pasos = [
   // (la operacion actual del dealer vive en scv8_mp_los_naranjos, ya cubierta
   // por las fases de arriba). El script queda disponible por si algun dia el
   // dealer separa su base de verdad.
+  //
+  // Financieras SEPARADAS (antes fusionadas en Naranjos; ver cpf_gen_cias):
+  //   05 ODALYS      = prestamos_05          → tenant c05a1d05
+  //   07 INVERSIONES = cpf_inv_los_naranjos  → tenant c07a1d07
+  { desc: 'Odalys · clientes + préstamos',         cmd: `fase-financiera-cxc.mjs odalys${commit}${force}` },
+  { desc: 'Inversiones LN · clientes + préstamos', cmd: `fase-financiera-cxc.mjs inversiones${commit}${force}` },
 ];
 
 console.log(`\n===== MIGRACIÓN SiiF → MotoFlow ${commit ? '(CARGA REAL)' : '(SIMULACIÓN)'} =====`);
