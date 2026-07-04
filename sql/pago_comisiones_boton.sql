@@ -23,6 +23,12 @@
 -- =====================================================================
 
 -- 1) TABLAS: completar pagos_comisiones + candado --------------------------
+-- FIX FK: la tabla original (sin uso) apuntaba vendedor_id -> perfiles(id),
+-- pero las comisiones son de la tabla vendedores. Re-apuntar (tabla vacia).
+ALTER TABLE public.pagos_comisiones DROP CONSTRAINT IF EXISTS pagos_comisiones_vendedor_id_fkey;
+ALTER TABLE public.pagos_comisiones ADD CONSTRAINT pagos_comisiones_vendedor_id_fkey
+  FOREIGN KEY (vendedor_id) REFERENCES public.vendedores(id);
+
 ALTER TABLE public.pagos_comisiones
   ADD COLUMN IF NOT EXISTS tenant_id       uuid,
   ADD COLUMN IF NOT EXISTS numero          text,
