@@ -1150,6 +1150,109 @@ export const printRecibo4Pulgadas = (reciboData) => {
   setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
 };
 
+// Comprobante de NOTA DE CREDITO (financiera) — mismo formato del recibo
+// de pago de 4 pulgadas, pero sin formas de pago (no entra dinero a caja).
+// notaData: { numero, fecha, clienteNombre, balanceAnterior, totalAcreditado,
+//             balanceActual, lineas:[{referencia, descripcion, monto}], comentarios }
+export const printNotaCreditoPOS = (notaData) => {
+  const { numero, fecha, clienteNombre, balanceAnterior, totalAcreditado, balanceActual, lineas = [], comentarios } = notaData;
+  const fechaStr = formatInTimeZone(new Date(fecha || Date.now()), 'd/L/yyyy');
+  const horaStr = formatInTimeZone(new Date(), 'hh:mm a');
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        @page { margin: 0; size: 101.6mm auto; }
+        body {
+          width: 98mm; margin: 0 auto; padding: 3mm 4mm;
+          font-family: Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.32; color: #000; font-weight: 700;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .bold { font-weight: 900; }
+        .header { margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+        .header h1 { font-size: 22px; margin: 0; font-weight: 900; }
+        .header p { margin: 2px 0; font-size: 14px; }
+        .separator { border-top: 1px dashed #000; margin: 6px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+        th { text-align: left; font-size: 15px; border-bottom: 1px solid #000; padding: 3px 0; }
+        td { font-size: 16px; padding: 4px 0; }
+        .total-row { font-weight: 900; font-size: 21px; margin-top: 8px; display: flex; justify-content: space-between; border-top: 2px solid #000; padding-top: 5px; }
+        .footer { margin-top: 20px; text-align: center; font-size: 15px; border-top: 1px dashed #ccc; padding-top: 10px; }
+      </style>
+    </head>
+    <body onload="window.print()">
+      <div class="header text-center">
+        ${getHeaderHTML()}
+        <div style="margin-top: 6px; font-weight: 900; font-size: 18px;">NOTA DE CRÉDITO</div>
+      </div>
+
+      <div style="margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between;">
+          <span>No. Nota: <span class="bold">${numero}</span></span>
+          <span>${fechaStr} ${horaStr}</span>
+        </div>
+        <div style="margin-top: 5px;"><span class="bold">CLIENTE:</span> ${(clienteNombre || 'N/A').toUpperCase()}</div>
+      </div>
+
+      <div class="bold" style="font-size: 16px; margin-bottom: 3px; background: #eee; padding: 3px;">LÍNEAS ACREDITADAS:</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="70%">REFERENCIA</th>
+            <th width="30%" class="text-right">ACREDITADO</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lineas.map(l => `
+            <tr>
+              <td>${l.referencia}${l.descripcion ? ` · ${l.descripcion}` : ''}</td>
+              <td class="text-right">${formatCurrency(l.monto)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <div style="margin-top: 10px; background: #f9f9f9; padding: 5px; border: 1px solid #ddd;">
+        <div style="display: flex; justify-content: space-between; font-size: 16px;">
+          <span>Balance Anterior:</span>
+          <span>${formatCurrency(balanceAnterior)}</span>
+        </div>
+        <div class="total-row">
+          <span>TOTAL ACREDITADO:</span>
+          <span>${formatCurrency(totalAcreditado)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 17px; margin-top: 4px;">
+          <span class="bold">Balance Actual:</span>
+          <span class="bold">${formatCurrency(balanceActual)}</span>
+        </div>
+      </div>
+
+      ${comentarios ? `<p style="margin-top: 8px; font-size: 14px;"><span class="bold">MOTIVO:</span> ${comentarios}</p>` : ''}
+
+      <div class="footer">
+        <p>*** DESCUENTO APLICADO — NO REPRESENTA DINERO EN CAJA ***</p>
+        <p>Autorizado por: __________________________</p>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+  iframe.contentWindow.document.open();
+  iframe.contentWindow.document.write(html);
+  iframe.contentWindow.document.close();
+  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+};
+
 // ── Helper interno: imprime un HTML POS en un iframe oculto ──
 const _printPosHTML = (html) => {
   const iframe = document.createElement('iframe');

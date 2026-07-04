@@ -10,8 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Save, X, Search, FilePlus, ShieldAlert } from 'lucide-react';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
+import { printNotaCreditoPOS } from '@/lib/printPOS';
 import { round2 } from '@/components/financiera/amortizacion';
 import { formatFechaDMY } from '@/lib/dateUtils';
 
@@ -56,6 +58,7 @@ const NotaCreditoFinancieraPage = () => {
   const [selKey, setSelKey] = useState(null);
   const [montoText, setMontoText] = useState('');
   const [comentarios, setComentarios] = useState('');
+  const [imprimir, setImprimir] = useState(true);
 
   const cargarProximoNumero = useCallback(async () => {
     try {
@@ -245,6 +248,24 @@ const NotaCreditoFinancieraPage = () => {
       });
       if (error) throw error;
       toast({ title: 'Nota de crédito grabada', description: `${data?.numero} · Acreditado ${fmt(data?.monto)} · Balance actual ${fmt(data?.balance_actual)}` });
+      if (imprimir) {
+        try {
+          printNotaCreditoPOS({
+            numero: data?.numero,
+            fecha: new Date(),
+            clienteNombre: cliente?.nombre,
+            balanceAnterior: data?.balance_anterior,
+            totalAcreditado: data?.monto,
+            balanceActual: data?.balance_actual,
+            lineas: filas
+              .filter((r) => (Number(abonos[r.key]) || 0) > 0)
+              .map((r) => ({ referencia: `${r.origen} ${r.referencia || ''}`.trim(), descripcion: r.esMora ? 'MORA' : (r.esCargo ? r.descripcion : ''), monto: round2(Number(abonos[r.key]) || 0) })),
+            comentarios: comentarios || '',
+          });
+        } catch (printErr) {
+          console.error('No se pudo imprimir la nota de crédito:', printErr);
+        }
+      }
       setAbonos({}); setEditKey(null); setMontoText(''); setComentarios('');
       await cargarEstado(cliente.id);
       await cargarProximoNumero();
@@ -434,12 +455,17 @@ const NotaCreditoFinancieraPage = () => {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end flex-wrap gap-2 border-t pt-2">
+          <div className="flex items-center justify-between flex-wrap gap-3 border-t pt-2">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={imprimir} onCheckedChange={(c) => setImprimir(!!c)} /> Imprimir
+            </label>
+            <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={nuevo}><FilePlus className="w-4 h-4 mr-1" />Nuevo</Button>
             <Button type="button" variant="secondary" onClick={() => closePanel(activePanel)}><X className="w-4 h-4 mr-1" />Retornar</Button>
             <Button type="button" onClick={handleGrabar} disabled={saving || !cliente}>
               {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}F10 - Grabar
             </Button>
+            </div>
           </div>
         </div>
       </div>

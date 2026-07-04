@@ -16,7 +16,7 @@ import { Calendar as CalendarIcon, Search, Printer, X, Loader2 } from 'lucide-re
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateTransaccionesReportePDF, generateFacturaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
-import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS } from '@/lib/printPOS';
+import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS, printNotaCreditoPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ReporteTransaccionesDiariasPage = () => {
@@ -209,6 +209,34 @@ const ReporteTransaccionesDiariasPage = () => {
           console.error('[RI] Fallback a HTML:', printErr);
           printRecibo4Pulgadas(reciboData);
         }
+      } else if (prefix === 'NC') {
+        // prestamo_notas_credito.numero guarda el texto completo (NC-0000001)
+        const { data: nota, error } = await supabase
+          .from('prestamo_notas_credito')
+          .select('*, clientes(nombre), prestamo_nota_credito_detalle(abono_total, abono_mora, cuota_id, cargo_id)')
+          .eq('numero', transaction.transaccion)
+          .maybeSingle();
+        if (error) throw error;
+        if (!nota) {
+          toast({ title: 'No encontrado', description: `Nota de crédito ${transaction.transaccion} no encontrada.`, variant: 'destructive' });
+          return;
+        }
+        printNotaCreditoPOS({
+          numero: nota.numero,
+          fecha: nota.fecha,
+          clienteNombre: nota.clientes?.nombre || transaction.cliente_nombre,
+          balanceAnterior: nota.balance_anterior,
+          totalAcreditado: nota.monto,
+          balanceActual: nota.balance_actual,
+          lineas: (nota.prestamo_nota_credito_detalle || []).map(d => ({
+            referencia: d.cargo_id ? 'Cargo (Otras Transacciones)' : 'Cuota de préstamo',
+            descripcion: Number(d.abono_mora) > 0 ? 'incluye mora' : '',
+            monto: d.abono_total,
+          })),
+          comentarios: nota.comentarios || '',
+        });
+      } else if (prefix === 'AB') {
+        toast({ title: 'Cargo al cliente', description: `${transaction.transaccion}: ${transaction.descripcion || 'Otras Transacciones'} — sin documento imprimible.` });
       } else {
         toast({ title: 'Aviso', description: 'Tipo de transacción no soportada para visualizar.' });
       }
@@ -333,7 +361,9 @@ const ReporteTransaccionesDiariasPage = () => {
                     <SelectItem value="all">Todas las transacciones</SelectItem>
                     <SelectItem value="FT">Ventas (FT)</SelectItem>
                     <SelectItem value="DV">Devoluciones (DV)</SelectItem>
-                    <SelectItem value="PG">Pagos (PG)</SelectItem>
+                    <SelectItem value="PG">Recibos de Ingreso (PG/RI)</SelectItem>
+                    <SelectItem value="NC">Notas de Crédito (NC)</SelectItem>
+                    <SelectItem value="AB">Otras Transacciones (AB)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
