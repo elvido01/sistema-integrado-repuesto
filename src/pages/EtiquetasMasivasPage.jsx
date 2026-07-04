@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Helmet } from 'react-helmet';
-import { Search, Printer, Barcode, AlertCircle, Loader2, ChevronRight, Check, X, MapPin, Plus, Tag, Save } from 'lucide-react';
+import { Search, Printer, Barcode, AlertCircle, Loader2, ChevronRight, Check, X, MapPin, Plus, Tag, Save, Pencil } from 'lucide-react';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
+import ProductFormModal from '@/components/products/ProductFormModal';
+import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -128,6 +130,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 const processedItems = details.map(d => {
                     const productInfo = productsMap[d.producto_id] || {};
                     return {
+                        producto_id: d.producto_id || null,
                         codigo: d.codigo,
                         // Usar descripción actualizada del producto, fallback al detalle de compra
                         descripcion: productInfo.descripcion || d.descripcion,
@@ -181,6 +184,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 const processedItems = oDetails.map(d => {
                     const productInfo = productsMap[d.producto_id] || {};
                     return {
+                        producto_id: d.producto_id || null,
                         codigo: d.codigo,
                         // Usar descripción actualizada del producto, fallback al detalle de orden
                         descripcion: productInfo.descripcion || d.descripcion,
@@ -467,6 +471,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
         if (!individualProduct) return;
         const qty = parseInt(individualQty) || 1;
         const newItem = {
+            producto_id: individualProduct.id || null,
             codigo: individualProduct.codigo,
             descripcion: individualProduct.descripcion,
             cantidadCompra: qty,
@@ -482,6 +487,197 @@ const EtiquetasMasivasPage = ({ extraData }) => {
         setIndividualCode('');
         setIndividualQty(1);
     }, [individualProduct, individualQty, showLocation, toast]);
+
+    // ------------------------------------------------------------------
+    // Editar mercancía desde la lista (abre "Información de la Mercancía")
+    // Mismo patrón que InventarioFisicoPage: carga completa + guardado con
+    // presentaciones y ajuste real de existencia (Entrada/Salida).
+    // ------------------------------------------------------------------
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [editingProduct, setEditingProduct] = useState(null);
+
+    const openProductEditor = useCallback(async (item) => {
+        try {
+            // Resolver el id del producto (filas viejas pueden no traerlo)
+            let productId = item.producto_id;
+            if (!productId) {
+                const { data: byCode } = await supabase
+                    .from('productos')
+                    .select('id')
+                    .eq('codigo', item.codigo)
+                    .limit(1)
+                    .maybeSingle();
+                productId = byCode?.id;
+            }
+            if (!productId) {
+                toast({ variant: 'destructive', title: 'Producto no encontrado', description: `No existe una mercancía con el código ${item.codigo}.` });
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from('productos')
+                .select('*, presentaciones(*), tipo:tipos_producto(id, nombre), marca:marcas(id, nombre), modelo:modelos(id, nombre), suplidor:proveedores(id, nombre)')
+                .eq('id', productId)
+                .single();
+            if (error) throw error;
+            const { data: stockData } = await supabase.rpc('get_stock_actual', { producto_uuid: productId });
+            setEditingProduct({
+                ...data,
+                tipo_id: data.tipo?.id?.toString() || data.tipo_id?.toString() || '',
+                marca_id: data.marca?.id?.toString() || data.marca_id?.toString() || '',
+                modelos_ids: data.modelos_ids || (data.modelo_id ? [data.modelo_id] : []),
+                suplidor_id: data.suplidor?.id?.toString() || data.suplidor_id?.toString() || '',
+                existencia: stockData || 0,
+            });
+            setEditModalOpen(true);
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'No se pudo abrir la mercancía', description: err.message });
+        }
+    }, [toast]);
+
+    const handleSaveProduct = useCallback(async (productData, presentations, isEditing) => {
+        try {
+            const parseNumeric = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+            const { existencia, ...productDataWithoutStock } = productData;
+            const productPayload = {
+                ...productDataWithoutStock,
+                costo: parseNumeric(productData.costo),
+                precio: parseNumeric(productData.precio),
+                itbis_pct: parseNumeric(productData.itbis_pct),
+                min_stock: parseNumeric(productData.min_stock),
+                max_stock: parseNumeric(productData.max_stock),
+                garantia_meses: parseInt(productData.garantia_meses, 10) || 0,
+            };
+
+            const { id, ...updateData } = productPayload;
+            const { data: savedProduct, error } = await supabase
+                .from('productos')
+                .update(updateData)
+                .eq('id', id)
+                .select()
+                .single();
+            if (error) throw error;
+
+            // Presentaciones: mismo patrón keep/delete que ProductsPage
+            const keepIds = (presentations || [])
+                .map(p => p.id)
+                .filter(pid => pid && !pid.toString().startsWith('new-'));
+            let deleteQuery = supabase.from('presentaciones').delete().eq('producto_id', savedProduct.id);
+            if (keepIds.length > 0) deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.join(',')})`);
+            const { error: delError } = await deleteQuery;
+            if (delError) console.error('Error eliminando presentaciones:', delError);
+
+            if (presentations && presentations.length > 0) {
+                const presentationsToUpsert = presentations.map((p) => {
+                    const { id: pid, ...rest } = p;
+                    const payload = {
+                        ...rest,
+                        producto_id: savedProduct.id,
+                        cantidad: parseNumeric(p.cantidad),
+                        costo: parseNumeric(p.costo),
+                        margen_pct: parseNumeric(p.margen_pct),
+                        precio1: parseNumeric(p.precio1),
+                        descuento_pct: parseNumeric(p.descuento_pct),
+                        precio_final: parseNumeric(p.precio_final),
+                    };
+                    if (pid && !pid.toString().startsWith('new-')) payload.id = pid;
+                    return payload;
+                });
+                const { error: presError } = await supabase.from('presentaciones').upsert(presentationsToUpsert);
+                if (presError) throw presError;
+            }
+
+            // Ajuste de existencia: Entrada/Salida real (trazable), igual que
+            // Inventario Físico. El almacén principal se resuelve al momento.
+            const currentExistencia = editingProduct?.existencia || 0;
+            const diff = parseFloat(existencia || 0) - parseFloat(currentExistencia);
+            if (Math.abs(diff) > 0.001) {
+                const { data: alms } = await supabase.from('almacenes').select('id').limit(1);
+                const almacenId = alms?.[0]?.id;
+                if (!almacenId) {
+                    toast({ variant: 'destructive', title: 'Falta el Almacén Principal', description: 'Se guardó la mercancía, pero el ajuste de existencia no se generó (no hay almacén).' });
+                } else {
+                    const mainPresentation = (presentations || []).find(p => p.afecta_ft) || (presentations || [])[0];
+                    const unitToUse = mainPresentation ? mainPresentation.tipo : 'UND - Unidad';
+                    if (diff > 0) {
+                        const { data: numData } = await supabase.rpc('get_next_entrada_numero');
+                        const { error: entError } = await supabase.rpc('crear_entrada_inventario', {
+                            p_entrada_data: {
+                                numero: numData,
+                                fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
+                                referencia: 'AJUSTE DESDE ETIQUETAS MASIVAS',
+                                concepto: 'AJUSTE DE INVENTARIO',
+                                almacen_id: almacenId,
+                                notas: `Ajuste desde Impresión de Etiquetas, producto ${savedProduct.codigo}`,
+                                total_costo: (diff * savedProduct.costo) || 0,
+                            },
+                            p_detalles_data: [{
+                                producto_id: savedProduct.id,
+                                codigo: savedProduct.codigo,
+                                descripcion: savedProduct.descripcion,
+                                cantidad: diff,
+                                unidad: unitToUse,
+                                costo_unitario: savedProduct.costo || 0,
+                                importe: (diff * savedProduct.costo) || 0,
+                            }],
+                            p_tipo_movimiento: 'AJUSTE',
+                        });
+                        if (entError) toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste de entrada.' });
+                        else toast({ title: 'Ajuste automático', description: `Entrada ${numData} por +${diff} uds.` });
+                    } else {
+                        const absDiff = Math.abs(diff);
+                        const { data: numData } = await supabase.rpc('get_next_salida_numero');
+                        const { error: salError } = await supabase.rpc('crear_salida_inventario', {
+                            p_salida_data: {
+                                numero: numData,
+                                fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
+                                referencia: 'AJUSTE DESDE ETIQUETAS MASIVAS',
+                                concepto: 'AJUSTE DE SALIDA',
+                                almacen_id: almacenId,
+                                notas: `Ajuste desde Impresión de Etiquetas, producto ${savedProduct.codigo}`,
+                                total_costo: (absDiff * savedProduct.costo) || 0,
+                            },
+                            p_detalles_data: [{
+                                producto_id: savedProduct.id,
+                                codigo: savedProduct.codigo,
+                                descripcion: savedProduct.descripcion,
+                                cantidad: absDiff,
+                                unidad: unitToUse,
+                                costo_unitario: savedProduct.costo || 0,
+                                importe: (absDiff * savedProduct.costo) || 0,
+                            }],
+                            p_tipo_movimiento: 'AJUSTE',
+                        });
+                        if (salError) toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste de salida.' });
+                        else toast({ title: 'Ajuste automático', description: `Salida ${numData} por -${absDiff} uds.` });
+                    }
+                }
+            } else {
+                toast({ title: 'Producto actualizado', description: 'Los cambios se guardaron correctamente.' });
+            }
+
+            // Refrescar la(s) fila(s) de la lista con los datos nuevos
+            setItems(prev => prev.map(it => (
+                (it.producto_id && it.producto_id === savedProduct.id) || it.codigo === savedProduct.codigo
+                    ? {
+                        ...it,
+                        producto_id: savedProduct.id,
+                        codigo: savedProduct.codigo,
+                        descripcion: savedProduct.descripcion,
+                        precio: savedProduct.precio || 0,
+                        ubicacion: savedProduct.ubicacion || 'N/A',
+                        priceModified: false,
+                        priceSaved: false,
+                    }
+                    : it
+            )));
+
+            setEditModalOpen(false);
+            setEditingProduct(null);
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error al guardar', description: err.message });
+        }
+    }, [toast, editingProduct]);
 
     const handlePrintSingle = useCallback(async () => {
         if (!individualProduct || isPrintingSingle) return;
@@ -902,6 +1098,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                                         <TableHead className="w-24 text-center text-[10px] font-black uppercase text-slate-700">Tickets</TableHead>
                                         <TableHead className="text-right text-[10px] font-black uppercase text-slate-700">Precio</TableHead>
                                         <TableHead className="text-[10px] font-black uppercase text-slate-700">Ubicación</TableHead>
+                                        <TableHead className="text-center text-[10px] font-black uppercase text-slate-700 w-12">Editar</TableHead>
                                         <TableHead className="text-center text-[10px] font-black uppercase text-slate-700 w-12">Loc.</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -967,6 +1164,16 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-center p-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openProductEditor(item)}
+                                                    title="Ver / editar la mercancía"
+                                                    className="p-1.5 rounded-md text-morla-blue hover:bg-blue-50 hover:scale-110 transition-all"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                </button>
+                                            </TableCell>
+                                            <TableCell className="text-center p-1">
                                                 <Switch
                                                     checked={item.printLocation}
                                                     onCheckedChange={() => toggleItemLocation(index)}
@@ -998,6 +1205,14 @@ const EtiquetasMasivasPage = ({ extraData }) => {
                 isOpen={isProductSearchOpen}
                 onClose={() => setIsProductSearchOpen(false)}
                 onSelectProduct={handleProductSearchSelect}
+            />
+
+            {/* Ver/editar la mercancía de una fila (Información de la Mercancía) */}
+            <ProductFormModal
+                isOpen={editModalOpen}
+                onClose={() => { setEditModalOpen(false); setEditingProduct(null); }}
+                onSave={handleSaveProduct}
+                product={editingProduct}
             />
         </div>
     );
