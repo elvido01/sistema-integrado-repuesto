@@ -11,14 +11,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFoo
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Calendar as CalendarIcon, Loader2, Search, Printer, CheckSquare } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Calendar as CalendarIcon, Loader2, Search, Printer, CheckSquare, DollarSign } from 'lucide-react';
 import { startOfMonth } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { generateComisionPDF } from '@/components/common/pdf/comisionPDF';
+import { printPagoCompromisoPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
+const ROLES_ADMIN = ['admin', 'owner', 'manager', 'gerente'];
+
 const PagoComisionesPage = () => {
-  const { empresa } = useAuth();
+  const { empresa, profile } = useAuth();
   const { toast } = useToast();
   // ... (state follows)
   const [vendedores, setVendedores] = useState([]);
@@ -33,7 +38,30 @@ const PagoComisionesPage = () => {
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
 
+  // Pago de comisión (botón PAGAR)
+  const [pagarOpen, setPagarOpen] = useState(false);
+  const [montoPagar, setMontoPagar] = useState('');
+  const [formaPago, setFormaPago] = useState('EFECTIVO');
+  const [bancoPago, setBancoPago] = useState('');
+  const [referenciaPago, setReferenciaPago] = useState('');
+  const [notasPago, setNotasPago] = useState('');
+  const [pagando, setPagando] = useState(false);
+  const [ultimosPagos, setUltimosPagos] = useState([]);
+  const esAdmin = ROLES_ADMIN.includes(profile?.role);
+
   const formatCurrency = (value) => new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2 }).format(value || 0);
+
+  const cargarUltimosPagos = useCallback(async () => {
+    const { data } = await supabase
+      .from('pagos_comisiones')
+      .select('id, numero, fecha_pago, periodo_desde, periodo_hasta, total_comision, forma_pago, referencia, notas, vendedores(nombre)')
+      .eq('anulado', false)
+      .order('created_at', { ascending: false })
+      .limit(8);
+    setUltimosPagos(data || []);
+  }, []);
+
+  useEffect(() => { cargarUltimosPagos(); }, [cargarUltimosPagos]);
 
   useEffect(() => {
     const fetchVendedores = async () => {
@@ -120,6 +148,72 @@ const PagoComisionesPage = () => {
       setCalculating(false);
     }
   }, [selectedVendedor, fechaDesde, fechaHasta, porcentaje, filtroPago, toast]);
+
+  const imprimirComprobantePago = (pago) => {
+    printPagoCompromisoPOS({
+      numero: pago.numero,
+      fecha_pago: pago.fecha_pago,
+      nombre: `COMISIÓN ${(pago.vendedorNombre || '').toUpperCase()} · ${formatInTimeZone(pago.periodo_desde, 'dd/MM/yyyy')} a ${formatInTimeZone(pago.periodo_hasta, 'dd/MM/yyyy')}`,
+      tipo: 'COMISIONES',
+      forma_pago: pago.forma_pago,
+      referencia_pago: pago.referencia || pago.banco || '',
+      monto: pago.total_comision,
+      recurrente: false,
+    });
+  };
+
+  const abrirPagar = () => {
+    if (comisiones.length === 0 || !(totales.aPagar > 0)) {
+      toast({ variant: 'destructive', title: 'Nada que pagar', description: 'Consulta primero las comisiones pendientes del vendedor.' });
+      return;
+    }
+    setMontoPagar(String(Math.round(totales.aPagar * 100) / 100));
+    setFormaPago('EFECTIVO'); setBancoPago(''); setReferenciaPago(''); setNotasPago('');
+    setPagarOpen(true);
+  };
+
+  const handlePagar = async () => {
+    const monto = parseFloat(montoPagar) || 0;
+    if (monto <= 0) { toast({ variant: 'destructive', title: 'Monto inválido' }); return; }
+    setPagando(true);
+    try {
+      const { data, error } = await supabase.rpc('pagar_comision', {
+        p_vendedor_id: selectedVendedor,
+        p_periodo_desde: formatDateForSupabase(fechaDesde),
+        p_periodo_hasta: formatDateForSupabase(fechaHasta),
+        p_total_ventas: totales.monto,
+        p_porcentaje: porcentaje,
+        p_total_comision: monto,
+        p_forma_pago: formaPago,
+        p_banco: bancoPago || null,
+        p_referencia: referenciaPago || null,
+        p_notas: notasPago || null,
+        p_factura_ids: comisiones.map(c => c.factura_id).filter(Boolean),
+      });
+      if (error) throw error;
+      toast({
+        title: `💰 Comisión pagada — ${data?.numero}`,
+        description: `${currentVendedorName}: RD$ ${formatCurrency(data?.monto)} (${formaPago === 'EFECTIVO' ? 'efectivo, descontado de la caja del día' : 'transferencia, descontado de la caja actual'})`,
+      });
+      imprimirComprobantePago({
+        numero: data?.numero,
+        fecha_pago: new Date(),
+        vendedorNombre: currentVendedorName,
+        periodo_desde: fechaDesde,
+        periodo_hasta: fechaHasta,
+        forma_pago: formaPago,
+        referencia: referenciaPago,
+        banco: bancoPago,
+        total_comision: data?.monto,
+      });
+      setPagarOpen(false);
+      await cargarUltimosPagos();
+      await handleConsultar(); // el reporte excluye las facturas ya pagadas -> queda en 0
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo pagar la comisión', description: e.message });
+    }
+    setPagando(false);
+  };
 
   const handleImprimir = () => {
     if (comisiones.length === 0) {
@@ -273,6 +367,16 @@ const PagoComisionesPage = () => {
                 <span>F5 - Imprimir</span>
                 <Printer className="w-4 h-4 text-gray-500" />
               </Button>
+              {esAdmin && (
+                <Button
+                  onClick={abrirPagar}
+                  disabled={pagando || comisiones.length === 0 || !(totales.aPagar > 0)}
+                  className="h-9 bg-green-700 hover:bg-green-800 text-white font-bold rounded-none border border-green-800 uppercase text-[11px] w-full justify-between px-3"
+                >
+                  <span>Pagar Comisión</span>
+                  <DollarSign className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           </div>
 
@@ -337,8 +441,98 @@ const PagoComisionesPage = () => {
               </div>
             </div>
           </div>
+
+          {/* Historial de pagos de comisiones */}
+          {ultimosPagos.length > 0 && (
+            <div className="bg-white border border-gray-300 shadow-sm">
+              <div className="bg-[#dce6f2] px-2 py-1 text-[11px] font-black text-gray-600 uppercase">Últimos pagos de comisiones</div>
+              <Table>
+                <TableBody>
+                  {ultimosPagos.map(p => (
+                    <TableRow key={p.id} className="h-7 border-b border-gray-100">
+                      <TableCell className="text-[11px] font-bold text-blue-700 py-1 px-2">{p.numero}</TableCell>
+                      <TableCell className="text-[11px] py-1 px-2">{formatInTimeZone(p.fecha_pago, 'dd/MM/yyyy')}</TableCell>
+                      <TableCell className="text-[11px] font-bold py-1 px-2 uppercase">{p.vendedores?.nombre || '—'}</TableCell>
+                      <TableCell className="text-[11px] py-1 px-2">{formatInTimeZone(p.periodo_desde, 'dd/MM/yyyy')} → {formatInTimeZone(p.periodo_hasta, 'dd/MM/yyyy')}</TableCell>
+                      <TableCell className="text-[11px] py-1 px-2">{p.forma_pago}</TableCell>
+                      <TableCell className="text-[11px] font-black text-right py-1 px-2 text-green-700">{formatCurrency(p.total_comision)}</TableCell>
+                      <TableCell className="py-1 px-2 text-right">
+                        <Button
+                          variant="outline" size="sm" className="h-6 text-[10px] px-2"
+                          onClick={() => imprimirComprobantePago({ ...p, vendedorNombre: p.vendedores?.nombre })}
+                        >
+                          <Printer className="w-3 h-3 mr-1" />Reimprimir
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Modal de confirmación de pago */}
+      <Dialog open={pagarOpen} onOpenChange={setPagarOpen}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-[#0a1e3a]">Pagar comisión — {currentVendedorName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs space-y-1">
+              <div className="flex justify-between"><span>Período</span><b>{formatInTimeZone(fechaDesde, 'dd/MM/yyyy')} → {formatInTimeZone(fechaHasta, 'dd/MM/yyyy')}</b></div>
+              <div className="flex justify-between"><span>Facturas incluidas</span><b>{comisiones.length}</b></div>
+              <div className="flex justify-between"><span>Ventas del período</span><b>{formatCurrency(totales.monto)}</b></div>
+              <div className="flex justify-between"><span>% aplicado</span><b>{porcentaje}%</b></div>
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Monto a pagar (RD$)</Label>
+              <Input
+                type="number" step="0.01" value={montoPagar}
+                onChange={e => setMontoPagar(e.target.value)}
+                className="mt-1 text-right font-black text-lg text-green-700"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Forma de pago</Label>
+              <Select value={formaPago} onValueChange={setFormaPago}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-white">
+                  <SelectItem value="EFECTIVO">Efectivo (descuenta de la caja del día)</SelectItem>
+                  <SelectItem value="TRANSFERENCIA">Transferencia (descuenta de la caja actual)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {formaPago === 'TRANSFERENCIA' && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs font-bold">Banco</Label>
+                  <Input value={bancoPago} onChange={e => setBancoPago(e.target.value)} className="mt-1 h-8 text-xs" />
+                </div>
+                <div>
+                  <Label className="text-xs font-bold">Referencia</Label>
+                  <Input value={referenciaPago} onChange={e => setReferenciaPago(e.target.value)} className="mt-1 h-8 text-xs" />
+                </div>
+              </div>
+            )}
+            <div>
+              <Label className="text-xs font-bold">Notas</Label>
+              <Textarea value={notasPago} onChange={e => setNotasPago(e.target.value)} className="mt-1 h-14 text-sm resize-none" />
+            </div>
+            <p className="text-[11px] text-slate-500 leading-tight">
+              Las facturas de esta consulta quedarán marcadas como comisionadas: si vuelves a consultar el mismo período no se pagarán dos veces.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPagarOpen(false)} disabled={pagando}>Cancelar</Button>
+            <Button onClick={handlePagar} disabled={pagando} className="bg-green-700 hover:bg-green-800 text-white font-bold">
+              {pagando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <DollarSign className="w-4 h-4 mr-1" />}
+              Confirmar pago
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
