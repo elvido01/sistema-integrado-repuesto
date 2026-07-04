@@ -1006,6 +1006,33 @@ export const useVentas = () => {
         }
       }
 
+      // FINANCIAMIENTO PROPIO: la empresa vende Y financia (ej. Moto Prestamos
+      // Odalys / Inversiones Los Naranjos). Al facturar la solicitud financiada
+      // se crea el prestamo + cuotas en LA MISMA empresa y la factura queda
+      // saldada (la deuda vive en el prestamo, no en la CxC).
+      if (
+        !editingFacturaId &&
+        paymentType === 'credito' &&
+        solicitudCompraId &&
+        (empresa?.financiamiento_tipo || 'propio') === 'propio' &&
+        empresa?.feat_financiera
+      ) {
+        try {
+          const { data: fpRes, error: fpErr } = await supabase.rpc('procesar_financiamiento_propio', {
+            p_factura_id: activeFactura.id,
+            p_solicitud_id: solicitudCompraId,
+          });
+          if (fpErr) {
+            toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: `La factura se grabó, pero no se creó el préstamo: ${fpErr.message}` });
+          } else if (fpRes?.ok) {
+            toast({ title: '🏦 Financiamiento creado', description: `Préstamo ${fpRes.prestamo_numero} creado en esta empresa por RD$ ${Number(fpRes.capital || 0).toFixed(2)}.` });
+          }
+        } catch (fpCatch) {
+          console.error('Error en financiamiento propio:', fpCatch.message);
+          toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: fpCatch.message });
+        }
+      }
+
       // Alerta NCF: notificar si quedan pocos comprobantes
       if (ncfData && ncfData.restantes <= ncfData.alerta_cuando_queden) {
         try {

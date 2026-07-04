@@ -34,6 +34,7 @@ import {
   RadioTower,
   MapPinned,
   Sparkles,
+  ShieldAlert,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -82,7 +83,12 @@ const navItems = [
       { title: 'Recibo de Ingreso', id: 'recibo-ingreso', icon: Receipt },
       { title: 'Compras', id: 'compras' },
       { title: 'Pedidos', id: 'pedidos', tenantExclude: 'b39506c3-27dc-467d-830b-096731b83113' },
-      { title: 'Solicitudes de Compras', id: 'solicitudes-compras', icon: ClipboardList, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      // Caminero Motors (terceros) + financieras que venden y financian propio
+      { title: 'Solicitudes de Compras', id: 'solicitudes-compras', icon: ClipboardList, tenantOnly: [
+        'b39506c3-27dc-467d-830b-096731b83113', // Caminero Motors
+        'c05a1d05-0d1e-4a2b-8c3f-0da1e5000005', // Moto Prestamos Odalys
+        'c07a1d07-1e2f-4b3c-9d4a-107a10500007', // Inversiones Los Naranjos
+      ] },
       { title: 'Carta de Ruta', id: 'carta-ruta', icon: FileText, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Documentación Cliente', id: 'documentacion-cliente', icon: FileImage, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Cotizaciones', id: 'cotizaciones' },
@@ -104,6 +110,8 @@ const navItems = [
     icon: DollarSign,
     subItems: [
       { title: 'Préstamos', id: 'prestamos', icon: DollarSign, featFlag: 'feat_financiera' },
+      { title: 'Gestion de Cobro', id: 'gestion-cobro', icon: MessageCircle, featFlag: 'feat_financiera', permissionKey: 'prestamos' },
+      { title: 'Cuentas Incobrables', id: 'cuentas-incobrables', icon: ShieldAlert, featFlag: 'feat_financiera', permissionKey: 'prestamos' },
       { title: 'Otras Transacciones', id: 'otras-transacciones', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'Histórico de Cliente', id: 'historico-cliente', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'Lista de Chasis en Préstamos', id: 'lista-chasis-prestamos', icon: Receipt, featFlag: 'feat_financiera' },
@@ -348,11 +356,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         {/* Groups */}
         {navItems.map((item) => {
           const allowedSubItems = item.subItems.filter(sub => {
-            if (sub.tenantOnly && sub.tenantOnly !== tenantId) return false;
+            if (sub.tenantOnly && !(Array.isArray(sub.tenantOnly) ? sub.tenantOnly.includes(tenantId) : sub.tenantOnly === tenantId)) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
             if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
             if (sub.id === 'whatsapp-crm' && !puedePlus) return false; // Sales Hub = función Plus (PRO/ENTERPRISE)
-            return canAccess(profile, permissions, sub.id);
+            return canAccess(profile, permissions, sub.permissionKey || sub.id);
           });
           if (allowedSubItems.length === 0) return null;
 
