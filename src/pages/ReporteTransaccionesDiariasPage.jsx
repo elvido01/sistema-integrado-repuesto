@@ -79,6 +79,14 @@ const ReporteTransaccionesDiariasPage = () => {
       if (filters.descripcion) {
         filteredData = filteredData.filter(t => t.descripcion?.toLowerCase().includes(filters.descripcion.toLowerCase()));
       }
+      if (filters.concepto && filters.concepto !== 'all') {
+        // Concepto = tipo de documento por prefijo (RI y PG son recibos de ingreso)
+        filteredData = filteredData.filter(t => {
+          const prefix = String(t.transaccion || '').split('-')[0].toUpperCase();
+          if (filters.concepto === 'PG') return prefix === 'PG' || prefix === 'RI';
+          return prefix === filters.concepto;
+        });
+      }
       setTransactions(filteredData);
     }
     setLoading(false);
@@ -384,6 +392,11 @@ const ReporteTransaccionesDiariasPage = () => {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">-*- Todos -*-</SelectItem>
+                    <SelectItem value="FT">Venta de Mercancías (FT)</SelectItem>
+                    <SelectItem value="DV">Devolución (DV)</SelectItem>
+                    <SelectItem value="PG">Recibo de Ingreso (RI/PG)</SelectItem>
+                    <SelectItem value="NC">Nota de Crédito (NC)</SelectItem>
+                    <SelectItem value="AB">Otras Transacciones (AB)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
