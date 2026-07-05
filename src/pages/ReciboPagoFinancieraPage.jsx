@@ -692,6 +692,12 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                     className="h-7 text-sm flex-1 min-w-0"
                   />
                 </div>
+                {moraOn && !(parseFloat(moraPctText) > 0) && (
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    En 0 usa la tasa de la empresa{Number(empresa?.mora_pct_default) > 0 ? ` (${empresa.mora_pct_default}% mensual)` : ''}.
+                    Para quitarle la mora a este cliente, apaga el cotejo de arriba.
+                  </p>
+                )}
               </div>
               <div className="basis-[40%] grow-0 shrink-0 min-w-0">
                 <Button
