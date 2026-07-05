@@ -108,15 +108,26 @@ for (;;) {
 // --- 3. Construir cuotas desde pendiente y estado del préstamo ---
 function cuotasDe(h, prestamoId) {
   const rows = pendingByKey.get(`${h.offset}:${h.loanNum}`) || [];
-  let i = 0;
-  return rows
-    .sort((a, b) => (fecha(a.vence) || '') < (fecha(b.vence) || '') ? -1 : 1)
-    .map((r) => {
-      i += 1;
+  // Número REAL de la cuota en el sistema viejo (campo cuota "143/365").
+  // Antes se renumeraba 1..N sobre las PENDIENTES y la última salía 217/365
+  // en vez de 365/365. Hay unique (tenant, prestamo, numero_cuota): las
+  // filas sin número (INT) o duplicadas toman el menor número libre.
+  const sorted = rows.sort((a, b) => (fecha(a.vence) || '') < (fecha(b.vence) || '') ? -1 : 1);
+  const used = new Set();
+  const reales = sorted.map((r) => {
+    const mc = /^0*(\d+)/.exec(txt(r.cuota));
+    const v = mc ? parseInt(mc[1], 10) : 0;
+    if (v && !used.has(v)) { used.add(v); return v; }
+    return 0;
+  });
+  let next = 1;
+  const alloc = () => { while (used.has(next)) next++; used.add(next); return next; };
+  return sorted
+    .map((r, idx) => {
       const pend = n(r.pendiente);
       const esInteres = txt(r.concepto) === 'INT' || n(r.interes) >= pend - 0.005;
       return {
-        prestamo_id: prestamoId, tenant_id: TENANT_ID, numero_cuota: i,
+        prestamo_id: prestamoId, tenant_id: TENANT_ID, numero_cuota: reales[idx] || alloc(),
         fecha_vencimiento: fecha(r.vence) || h.vence || h.fecha_inicio,
         capital: esInteres ? 0 : pend, interes: esInteres ? pend : 0,
         monto_cuota: pend, capital_pagado: 0, interes_pagado: 0, mora_pagada: 0, estado: 'pendiente',
