@@ -77,6 +77,15 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [otrasOpen, setOtrasOpen] = useState(false); // modal Otras Transacciones (cargos)
   const [moraOn, setMoraOn] = useState(true);      // cotejo Generar Cargos por Atrasos (MORA)
   const [moraPctText, setMoraPctText] = useState('0'); // tasa de mora del cliente
+  // Tasa default de la empresa (se lee de la BD, no del contexto: el objeto
+  // empresa de la sesión puede ser anterior a la columna mora_pct_default)
+  const [moraDefaultRef, setMoraDefaultRef] = useState(0);
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('config_empresa').select('mora_pct_default').limit(1).maybeSingle();
+      setMoraDefaultRef(Number(data?.mora_pct_default) || 0);
+    })();
+  }, []);
   const [codigoInput, setCodigoInput] = useState('');
   const [buscarOpen, setBuscarOpen] = useState(false);
   const [estado, setEstado] = useState(null);
@@ -137,7 +146,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       if (cliMora) {
         const on = cliMora.generar_mora ?? true;
         const tasaCli = Number(cliMora.mora_pct) || 0;
-        const efectiva = tasaCli > 0 ? tasaCli : (Number(empresa?.mora_pct_default) || 0);
+        const efectiva = tasaCli > 0 ? tasaCli : moraDefaultRef;
         setMoraOn(on);
         setMoraPctText(String(on ? efectiva : tasaCli));
       }
@@ -170,7 +179,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       setClienteMandadoBuscar(false);
     }
     setLoading(false);
-  }, [toast, empresa]);
+  }, [toast, moraDefaultRef]);
 
   // Switch de mora en tiempo real: actualiza el cliente y recalcula el estado.
   const toggleMora = async (checked) => {
@@ -700,7 +709,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 </div>
                 {moraOn && !(parseFloat(moraPctText) > 0) && (
                   <p className="text-[10px] text-slate-500 leading-tight">
-                    En 0 usa la tasa de la empresa{Number(empresa?.mora_pct_default) > 0 ? ` (${empresa.mora_pct_default}% mensual)` : ''}.
+                    En 0 usa la tasa de la empresa{moraDefaultRef > 0 ? ` (${moraDefaultRef}% mensual)` : ''}.
                     Para quitarle la mora a este cliente, apaga el cotejo de arriba.
                   </p>
                 )}
