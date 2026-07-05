@@ -128,12 +128,18 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       if (gestionError && gestionError.code !== 'PGRST116' && gestionError.code !== '42P01') throw gestionError;
       setClienteMandadoBuscar(!!gestionBuscar);
 
-      // Estado de la mora del cliente (para el switch en tiempo real)
+      // Estado de la mora del cliente (para el switch en tiempo real).
+      // El campo muestra la tasa EFECTIVA: la del cliente, o la default de la
+      // empresa cuando el cliente esta en 0 — asi se nota que el cotejo esta
+      // encendido y cobrando (el guardado sigue siendo por cliente).
       const { data: cliMora } = await supabase
         .from('clientes').select('generar_mora, mora_pct').eq('id', clienteId).maybeSingle();
       if (cliMora) {
-        setMoraOn(cliMora.generar_mora ?? true);
-        setMoraPctText(String(cliMora.mora_pct ?? 0));
+        const on = cliMora.generar_mora ?? true;
+        const tasaCli = Number(cliMora.mora_pct) || 0;
+        const efectiva = tasaCli > 0 ? tasaCli : (Number(empresa?.mora_pct_default) || 0);
+        setMoraOn(on);
+        setMoraPctText(String(on ? efectiva : tasaCli));
       }
 
       // Último pago (capital/interés/mora) — best effort. Se trae completo
@@ -164,7 +170,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       setClienteMandadoBuscar(false);
     }
     setLoading(false);
-  }, [toast]);
+  }, [toast, empresa]);
 
   // Switch de mora en tiempo real: actualiza el cliente y recalcula el estado.
   const toggleMora = async (checked) => {
