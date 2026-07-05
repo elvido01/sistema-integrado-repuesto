@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -12,14 +12,42 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Save, X, Search, FilePlus, Gavel } from 'lucide-react';
+import { Loader2, Save, X, Search, FilePlus, Gavel, Printer } from 'lucide-react';
+import { printReciboPagoFinancieraPOS } from '@/lib/printPOS';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import OtrasTransaccionesModal from '@/components/financiera/OtrasTransaccionesModal';
 import { round2 } from '@/components/financiera/amortizacion';
+import { formatFechaDMY } from '@/lib/dateUtils';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 const hoy = () => new Date().toISOString().slice(0, 10);
 const FORMAS = ['Efectivo', 'Cheque', 'Tarjeta'];
+const DIAS_GRACIA_PAGO = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const diasDesde = (fecha, hasta = hoy()) => {
+  if (!fecha) return 0;
+  const inicio = new Date(`${fecha}T00:00:00`);
+  const fin = new Date(`${hasta}T00:00:00`);
+  return Math.max(0, Math.floor((fin.getTime() - inicio.getTime()) / DAY_MS));
+};
+
+const cuotaSuperaGracia = (cuota) => {
+  const pendiente = Number(cuota?.pendiente ?? 0) > 0;
+  return pendiente && diasDesde(cuota?.fecha_vencimiento) > DIAS_GRACIA_PAGO;
+};
+
+const cuotaInteresPendiente = (cuota) => (
+  Boolean(cuota?.es_interes_corriente) && Number(cuota?.pendiente ?? 0) > 0
+);
+
+const estadoPorCuotas = (cuotas = []) => {
+  const vencidas = cuotas.filter(cuotaSuperaGracia);
+  const pagosVencidosEquivalentes = vencidas.length + (cuotas.some(cuotaInteresPendiente) ? 1 : 0);
+  if (pagosVencidosEquivalentes >= 2) return { txt: 'MOROSO', cls: 'text-orange-600' };
+  if (pagosVencidosEquivalentes === 1) return { txt: 'SEGUIMIENTO', cls: 'text-amber-600' };
+  return { txt: 'AL DIA', cls: 'text-emerald-600' };
+};
 
 // Formatea el texto del Monto Pagado con separador de miles y decimales
 const fmtMontoInput = (raw) => {
@@ -29,11 +57,18 @@ const fmtMontoInput = (raw) => {
   return dp !== undefined ? `${intFmt}.${dp}` : intFmt;
 };
 
-const ReciboPagoFinancieraPage = () => {
+const cleanLoanNumber = (value) => {
+  const raw = String(value || '').trim();
+  const duplicatedLegacy = raw.match(/^(PT-\d+)-2\d+$/i);
+  return duplicatedLegacy ? duplicatedLegacy[1] : raw;
+};
+
+const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const { toast } = useToast();
   const { empresa } = useAuth();
   const { closePanel, activePanel } = usePanels();
   const { setSidebarOpen } = useLayout();
+  const lastAutoClienteKeyRef = useRef(null);
 
   // Al abrir el Recibo de Pago, cerrar el menu lateral para ganar espacio
   useEffect(() => { setSidebarOpen(false); }, [setSidebarOpen]);
@@ -45,6 +80,7 @@ const ReciboPagoFinancieraPage = () => {
   const [codigoInput, setCodigoInput] = useState('');
   const [buscarOpen, setBuscarOpen] = useState(false);
   const [estado, setEstado] = useState(null);
+  const [clienteMandadoBuscar, setClienteMandadoBuscar] = useState(false);
   const [ultimoPago, setUltimoPago] = useState(null);
   const [numero, setNumero] = useState('—');
   const [loading, setLoading] = useState(false);
@@ -81,6 +117,17 @@ const ReciboPagoFinancieraPage = () => {
       if (error) throw error;
       setEstado(data);
 
+      const { data: gestionBuscar, error: gestionError } = await supabase
+        .from('cobro_gestiones')
+        .select('id')
+        .eq('cliente_id', clienteId)
+        .eq('tipo', 'mandado_buscar')
+        .eq('estado', 'mandado_buscar')
+        .limit(1)
+        .maybeSingle();
+      if (gestionError && gestionError.code !== 'PGRST116' && gestionError.code !== '42P01') throw gestionError;
+      setClienteMandadoBuscar(!!gestionBuscar);
+
       // Estado de la mora del cliente (para el switch en tiempo real)
       const { data: cliMora } = await supabase
         .from('clientes').select('generar_mora, mora_pct').eq('id', clienteId).maybeSingle();
@@ -89,30 +136,32 @@ const ReciboPagoFinancieraPage = () => {
         setMoraPctText(String(cliMora.mora_pct ?? 0));
       }
 
-      // Último pago (capital/interés/mora) — best effort
+      // Último pago (capital/interés/mora) — best effort. Se trae completo
+      // para poder REIMPRIMIR el recibo con el formato del ticket móvil.
       const { data: pago } = await supabase
         .from('prestamo_pagos')
-        .select('id, fecha')
+        .select('id, numero, fecha, forma_pago, cobrador, comentarios, cuenta_numero, banco, total_pagado, balance_anterior, balance_actual')
         .eq('cliente_id', clienteId).eq('anulado', false)
         .order('fecha', { ascending: false }).order('created_at', { ascending: false })
         .limit(1).maybeSingle();
       if (pago) {
         const { data: det } = await supabase
           .from('prestamo_pago_detalle')
-          .select('abono_capital, abono_interes, abono_mora')
+          .select('abono_capital, abono_interes, abono_mora, abono_total, prestamo_cuotas:cuota_id(numero_cuota, fecha_vencimiento, monto_cuota, capital, interes, capital_pagado, interes_pagado, prestamos:prestamo_id(numero, plazo_cuotas))')
           .eq('pago_id', pago.id);
         const s = (det || []).reduce((a, d) => ({
           cap: a.cap + Number(d.abono_capital || 0),
           int: a.int + Number(d.abono_interes || 0),
           mora: a.mora + Number(d.abono_mora || 0),
         }), { cap: 0, int: 0, mora: 0 });
-        setUltimoPago({ fecha: pago.fecha, ...s });
+        setUltimoPago({ fecha: pago.fecha, ...s, pago, detalle: det || [] });
       } else {
         setUltimoPago(null);
       }
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo cargar el estado', description: e.message });
       setEstado(null);
+      setClienteMandadoBuscar(false);
     }
     setLoading(false);
   }, [toast]);
@@ -135,12 +184,54 @@ const ReciboPagoFinancieraPage = () => {
     cargarEstado(cliente.id);
   };
 
-  const seleccionarCliente = (c) => {
+  const seleccionarCliente = useCallback((c) => {
     setCliente(c); setBuscarOpen(false);
     setCodigoInput(c.codigo || c.rnc || '');
     setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setPrestamoFiltro('todos');
     cargarEstado(c.id);
-  };
+  }, [cargarEstado]);
+
+  useEffect(() => {
+    const clienteId = extraData?.clienteId;
+    if (!clienteId) return;
+
+    const autoKey = `${clienteId}:${extraData?.requestedAt || ''}`;
+    if (lastAutoClienteKeyRef.current === autoKey) return;
+    lastAutoClienteKeyRef.current = autoKey;
+
+    if (extraData?.cliente?.id === clienteId) {
+      seleccionarCliente(extraData.cliente);
+      if (extraData?.prestamoId) setPrestamoFiltro(extraData.prestamoId);
+      return;
+    }
+
+    let cancelled = false;
+    const cargarClientePreseleccionado = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('clientes')
+          .select('id, nombre, codigo, rnc, direccion, telefono')
+          .eq('id', clienteId)
+          .eq('activo', true)
+          .maybeSingle();
+        if (error) throw error;
+        if (cancelled) return;
+        if (data) {
+          seleccionarCliente(data);
+          if (extraData?.prestamoId) setPrestamoFiltro(extraData.prestamoId);
+        } else {
+          toast({ variant: 'destructive', title: 'Cliente no encontrado', description: 'No se pudo cargar el cliente seleccionado desde Gestion de Cobro.' });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          toast({ variant: 'destructive', title: 'Error al cargar cliente', description: e.message });
+        }
+      }
+    };
+
+    cargarClientePreseleccionado();
+    return () => { cancelled = true; };
+  }, [extraData, seleccionarCliente, toast]);
 
   // Buscar cliente escribiendo el código o la cédula y presionando Enter
   const buscarPorCodigo = async () => {
@@ -165,7 +256,7 @@ const ReciboPagoFinancieraPage = () => {
   };
 
   const nuevo = () => {
-    setCliente(null); setEstado(null); setUltimoPago(null); setCodigoInput('');
+    setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput('');
     setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
     setPrestamoFiltro('todos'); cargarProximoNumero();
   };
@@ -173,7 +264,7 @@ const ReciboPagoFinancieraPage = () => {
   const cuotas = estado?.cuotas || [];
   const cargos = estado?.cargos || []; // Otras Transacciones (cargos manuales)
   const prestamosUnicos = useMemo(
-    () => [...new Map(cuotas.map((c) => [c.prestamo_id, c.prestamo_numero])).entries()].map(([id, num]) => ({ id, num })),
+    () => [...new Map(cuotas.map((c) => [c.prestamo_id, cleanLoanNumber(c.prestamo_numero)])).entries()].map(([id, num]) => ({ id, num })),
     [cuotas]
   );
   const cuotasFiltradas = useMemo(
@@ -206,7 +297,7 @@ const ReciboPagoFinancieraPage = () => {
       }
       out.push({
         key: `${c.cuota_id}-fin`, cuota_id: c.cuota_id, esMora: false, esCargo: false,
-        fecha: c.fecha || '', vence: c.fecha_vencimiento, origen: c.prestamo_numero,
+        fecha: c.fecha || '', vence: c.fecha_vencimiento, origen: cleanLoanNumber(c.prestamo_numero),
         referencia: c.referencia, descripcion: 'Financiamiento',
         monto: round2(c.monto_cuota), pendiente: round2(Number(c.capital_pend) + Number(c.interes_pend)),
         capital_pend: round2(c.capital_pend), interes_pend: round2(c.interes_pend), mora_pend: 0,
@@ -270,24 +361,45 @@ const ReciboPagoFinancieraPage = () => {
 
   // Estado del cliente segun su condicion (no se elige a mano):
   //  verde AL DIA (sin cuotas vencidas) · amarillo SEGUIMIENTO (atraso <=30d) · rojo SE BUSCA (>30d)
+  // Regla actual: 0-3 dias = AL DIA; 2+ pagos equivalentes = MOROSO; 1 equivalente = SEGUIMIENTO; SE BUSCA es manual.
   const estadoCliente = (() => {
     if (!cliente) return null;
+    if (clienteMandadoBuscar) return { txt: 'SE BUSCA', cls: 'text-red-600' };
     const cuotasP = estado?.cuotas || [];
-    const hoy = new Date();
-    let maxDias = 0;
-    let hayVencida = false;
-    cuotasP.forEach((c) => {
-      if (c.vencida) {
-        hayVencida = true;
-        const fv = new Date(`${c.fecha_vencimiento}T00:00:00`);
-        const dias = Math.floor((hoy - fv) / 86400000);
-        if (dias > maxDias) maxDias = dias;
-      }
-    });
+    return estadoPorCuotas(cuotasP);
     if (!hayVencida) return { txt: 'AL DÍA', cls: 'text-emerald-600' };
-    if (maxDias <= 30) return { txt: 'SEGUIMIENTO', cls: 'text-amber-600' };
-    return { txt: 'SE BUSCA', cls: 'text-red-600' };
   })();
+
+  // Reimprime el ÚLTIMO pago del cliente con el mismo formato del ticket móvil
+  const reimprimirUltimoPago = () => {
+    const p = ultimoPago?.pago;
+    if (!p) return;
+    printReciboPagoFinancieraPOS({
+      numero: p.numero,
+      fecha: p.fecha,
+      clienteNombre: cliente?.nombre,
+      clienteCodigo: cliente?.codigo || cliente?.rnc || null,
+      totalPagado: p.total_pagado,
+      balanceAnterior: p.balance_anterior,
+      balanceActual: p.balance_actual,
+      formaPago: p.forma_pago,
+      cuenta: p.cuenta_numero || null,
+      banco: p.banco || null,
+      comentarios: p.comentarios || null,
+      cobrador: p.cobrador || null,
+      detalles: (ultimoPago.detalle || []).map((d) => {
+        const q = d.prestamo_cuotas;
+        return {
+          documento: cleanLoanNumber(q?.prestamos?.numero || ''),
+          referencia: q ? `${String(q.numero_cuota).padStart(3, '0')}/${String(q.prestamos?.plazo_cuotas || 0).padStart(3, '0')}` : '',
+          fecha: q?.fecha_vencimiento || p.fecha,
+          monto: q?.monto_cuota || d.abono_total,
+          abono: d.abono_total,
+          pendiente: q ? Math.max(round2((Number(q.capital) - Number(q.capital_pagado)) + (Number(q.interes) - Number(q.interes_pagado))), 0) : 0,
+        };
+      }),
+    });
+  };
 
   const handleGrabar = async () => {
     if (!cliente?.id) { toast({ variant: 'destructive', title: 'Selecciona un cliente' }); return; }
@@ -329,7 +441,52 @@ const ReciboPagoFinancieraPage = () => {
         p_cargos: cargosAlloc,
       });
       if (error) throw error;
+      const { error: gestionPagoError } = await supabase
+        .from('cobro_gestiones')
+        .update({
+          estado: 'cerrada',
+          resultado: 'pago_recibido',
+        })
+        .eq('cliente_id', cliente.id)
+        .eq('tipo', 'mandado_buscar')
+        .eq('estado', 'mandado_buscar');
+      if (gestionPagoError && gestionPagoError.code !== '42P01') throw gestionPagoError;
+      setClienteMandadoBuscar(false);
       toast({ title: 'Pago registrado', description: `Recibo ${data?.numero} · Total ${fmt(data?.total_pagado)}` });
+      // Imprimir el recibo con el formato del ticket movil (4 pulgadas)
+      if (imprimir) {
+        try {
+          printReciboPagoFinancieraPOS({
+            numero: data?.numero,
+            fecha: new Date(),
+            clienteNombre: cliente?.nombre,
+            clienteCodigo: cliente?.codigo || cliente?.rnc || null,
+            totalPagado: data?.total_pagado,
+            balanceAnterior: data?.balance_anterior,
+            balanceActual: data?.balance_actual,
+            formaPago: forma,
+            cuenta: cuenta || null,
+            banco: banco || null,
+            comentarios: comentarios || null,
+            cobrador: cobrador || null,
+            detalles: filas
+              .filter((r) => (Number(abonos[r.key]) || 0) > 0)
+              .map((r) => {
+                const ab = Number(abonos[r.key]) || 0;
+                return {
+                  documento: r.origen,
+                  referencia: r.referencia || '',
+                  fecha: r.vence || r.fecha,
+                  monto: r.monto,
+                  abono: ab,
+                  pendiente: Math.max(round2(r.pendiente - ab), 0),
+                };
+              }),
+          });
+        } catch (printErr) {
+          console.error('No se pudo imprimir el recibo de pago:', printErr);
+        }
+      }
       setAbonos({}); setEditKey(null); setMontoText(''); setComentarios('');
       await cargarEstado(cliente.id);
       await cargarProximoNumero();
@@ -407,7 +564,7 @@ const ReciboPagoFinancieraPage = () => {
                 </div>
                 <div className="flex items-baseline gap-2 justify-end">
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Fecha</span>
-                  <span className="font-bold">{hoy()}</span>
+                  <span className="font-bold">{formatFechaDMY(hoy())}</span>
                 </div>
               </div>
               <div className="border-t pt-2 flex items-center gap-2 min-w-0">
@@ -470,8 +627,8 @@ const ReciboPagoFinancieraPage = () => {
                   <tr key={r.key}
                       onClick={() => setSelKey(r.key)}
                       className={`select-none border-b last:border-0 cursor-pointer ${isSel ? 'bg-blue-500 text-white' : (i % 2 === 1 ? 'bg-[#e0fadd]' : 'bg-white')} ${r.esMora && !isSel ? 'text-red-600 font-semibold' : ''} ${r.esCargo && !isSel ? 'text-amber-700 font-semibold' : ''}`}>
-                    <td className="px-2 py-1">{r.fecha}</td>
-                    <td className="px-2 py-1">{r.vence}</td>
+                    <td className="px-2 py-1">{formatFechaDMY(r.fecha)}</td>
+                    <td className="px-2 py-1">{formatFechaDMY(r.vence)}</td>
                     <td className={`px-2 py-1 ${isSel ? 'text-white' : (r.esMora ? '' : (r.esCargo ? 'font-bold' : 'font-bold text-blue-900'))}`}>{r.origen}</td>
                     <td className="px-2 py-1">{r.referencia}</td>
                     <td className="px-2 py-1">{r.descripcion}</td>
@@ -550,8 +707,18 @@ const ReciboPagoFinancieraPage = () => {
             </div>
 
             <div className="border-2 border-blue-200 rounded-md p-2 text-xs lg:col-start-3 lg:row-start-1">
-              <div className="text-blue-600 font-bold text-center mb-1">
-                Último Pago → {ultimoPago?.fecha || 'N/A'}
+              <div className="text-blue-600 font-bold text-center mb-1 flex items-center justify-center gap-2">
+                <span>Último Pago → {ultimoPago?.fecha ? formatFechaDMY(ultimoPago.fecha) : 'N/A'}</span>
+                {ultimoPago?.pago && (
+                  <button
+                    type="button"
+                    onClick={reimprimirUltimoPago}
+                    title={`Reimprimir recibo ${ultimoPago.pago.numero || ''}`}
+                    className="text-slate-500 hover:text-blue-700"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
               <div className="flex justify-between"><span>Capital</span><b>{fmt(abonoCapital)}</b></div>
               <div className="flex justify-between"><span>Intereses</span><b>{fmt(abonoInteres)}</b></div>

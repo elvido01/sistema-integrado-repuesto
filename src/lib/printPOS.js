@@ -1253,6 +1253,112 @@ export const printNotaCreditoPOS = (notaData) => {
   setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
 };
 
+// Recibo de PAGO de la financiera (prestamos) — replica del ticket de la
+// app movil (printReciboFinanciera.ts, Caminero/MotoPrestamos) en 4 pulgadas.
+// data: { numero, fecha, clienteNombre, clienteCodigo, totalPagado, sobrante,
+//         balanceAnterior, balanceActual, formaPago, cuenta, banco,
+//         comentarios, cobrador, detalles:[{documento, referencia, fecha,
+//         monto, abono, pendiente}] }
+export const printReciboPagoFinancieraPOS = (data) => {
+  const {
+    numero, fecha, clienteNombre, clienteCodigo, totalPagado, sobrante,
+    balanceAnterior, balanceActual, formaPago, cuenta, banco,
+    comentarios, cobrador, detalles = [],
+  } = data;
+  const fechaStr = formatInTimeZone(new Date(fecha || Date.now()), 'dd-MM-yyyy');
+  const afectados = detalles.filter((d) => Number(d.abono || 0) > 0);
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        @page { margin: 0; size: 101.6mm auto; }
+        body {
+          width: 98mm; margin: 0 auto; padding: 3mm 4mm;
+          font-family: Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.32; color: #000; font-weight: 700;
+        }
+        .text-center { text-align: center; }
+        .bold { font-weight: 900; }
+        .header { margin-bottom: 8px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+        .header h1 { font-size: 22px; margin: 0; font-weight: 900; }
+        .header p { margin: 2px 0; font-size: 14px; }
+        .row { display: flex; justify-content: space-between; }
+        .separator { border-top: 1px dashed #000; margin: 6px 0; }
+        .det { margin-bottom: 8px; }
+        .det div { font-size: 15px; }
+        .firma { margin-top: 26px; text-align: center; }
+        .firma .linea { border-top: 1px solid #000; width: 60%; margin: 0 auto 3px; }
+        .footer { margin-top: 12px; text-align: center; font-size: 15px; }
+      </style>
+    </head>
+    <body onload="window.print()">
+      <div class="header text-center">
+        ${getHeaderHTML()}
+        <div style="margin-top: 6px; font-weight: 900; font-size: 18px;">RECIBO DE PAGO</div>
+      </div>
+
+      <div class="row">
+        <span>No. Recibo: <span class="bold">${numero || 'N/A'}</span></span>
+        <span>${fechaStr}</span>
+      </div>
+      <div class="bold" style="font-size: 19px;">MONTO: ${formatCurrency(totalPagado)}</div>
+      ${cobrador ? `<div>COBRADOR: ${String(cobrador).toUpperCase()}</div>` : ''}
+
+      <div style="margin-top: 8px;">HEMOS RECIBIDO DE:</div>
+      <div class="bold" style="font-size: 17px;">${String(clienteNombre || 'N/A').toUpperCase()}</div>
+      ${clienteCodigo ? `<div>CODIGO: ${clienteCodigo}</div>` : ''}
+
+      ${comentarios ? `
+      <div style="margin-top: 8px;">POR CONCEPTO DE:</div>
+      <div class="bold">${String(comentarios).toUpperCase()}</div>` : ''}
+
+      <div class="separator"></div>
+      ${afectados.map((d) => `
+        <div class="det">
+          <div>Documento : <span class="bold">${d.documento || ''}</span></div>
+          <div>Referencia: ${d.referencia || ''}</div>
+          <div>Fecha: ${d.fecha ? formatInTimeZone(new Date(`${String(d.fecha).split('T')[0]}T12:00:00`), 'dd-MM-yyyy') : ''}</div>
+          <div>Monto: ${formatCurrency(d.monto)}</div>
+          <div class="bold">Abono: ${formatCurrency(d.abono)}</div>
+          <div>Pendiente: ${formatCurrency(d.pendiente)}</div>
+        </div>
+      `).join('')}
+      ${afectados.length ? '<div class="separator"></div>' : ''}
+
+      <div class="row"><span>Balance Anterior:</span><span>${formatCurrency(balanceAnterior)}</span></div>
+      <div class="row bold" style="font-size: 18px;"><span>Abono a Cuenta:</span><span>${formatCurrency(totalPagado)}</span></div>
+      ${Number(sobrante || 0) > 0 ? `<div class="row"><span>Sobrante:</span><span>${formatCurrency(sobrante)}</span></div>` : ''}
+      <div class="row bold" style="font-size: 18px;"><span>Balance Actual:</span><span>${formatCurrency(balanceActual)}</span></div>
+
+      <div style="margin-top: 8px;">${String(formaPago || 'EFECTIVO').toUpperCase()}</div>
+      ${cuenta ? `<div>REF: ${cuenta}</div>` : ''}
+      ${banco ? `<div>BANCO: ${String(banco).toUpperCase()}</div>` : ''}
+
+      <div class="firma">
+        <div class="linea"></div>
+        <div>Firma</div>
+      </div>
+      <div class="footer">
+        <p class="bold">*** GRACIAS POR SU PAGO ***</p>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+  iframe.contentWindow.document.open();
+  iframe.contentWindow.document.write(html);
+  iframe.contentWindow.document.close();
+  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+};
+
 // ── Helper interno: imprime un HTML POS en un iframe oculto ──
 const _printPosHTML = (html) => {
   const iframe = document.createElement('iframe');
