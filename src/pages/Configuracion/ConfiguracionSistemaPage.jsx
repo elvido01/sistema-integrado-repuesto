@@ -59,7 +59,8 @@ const ConfiguracionSistemaPage = () => {
         cobranza_hora_corte: '17:50',
         cobranza_buscador_telefono: '',
         financiamiento_tipo: 'propio',
-        financiera_tenant_id: null
+        financiera_tenant_id: null,
+        mora_pct_default: 0
     });
 
     const [financieras, setFinancieras] = useState([]);
@@ -117,7 +118,8 @@ const ConfiguracionSistemaPage = () => {
                     cobranza_hora_corte: (data.cobranza_hora_corte || '17:50').slice(0, 5),
                     cobranza_buscador_telefono: data.cobranza_buscador_telefono || '',
                     financiamiento_tipo: data.financiamiento_tipo || 'propio',
-                    financiera_tenant_id: data.financiera_tenant_id || null
+                    financiera_tenant_id: data.financiera_tenant_id || null,
+                    mora_pct_default: data.mora_pct_default ?? 0
                 });
                 
                 setOriginalGoalData({
@@ -795,6 +797,24 @@ const ConfiguracionSistemaPage = () => {
                         <p className="text-[10px] text-gray-500 italic">
                             Un cliente que prometió venir hoy aparece en la lista "Para reenviar" solo después de esta hora
                             (ej. 10 min antes del cierre). Así le das chance de llegar antes de volver a contactarlo.
+                        </p>
+
+                        <div className="flex items-center gap-3 flex-wrap pt-2 border-t mt-1">
+                            <Label htmlFor="mora_pct_default" className="text-xs font-bold text-slate-700">
+                                Mora % mensual (financiera)
+                            </Label>
+                            <Input
+                                id="mora_pct_default"
+                                type="number"
+                                step="0.01"
+                                value={formData.mora_pct_default}
+                                onChange={handleInputChange}
+                                className="w-24 h-8 text-sm text-right"
+                            />
+                        </div>
+                        <p className="text-[10px] text-gray-500 italic">
+                            Tasa de mora mensual usada cuando el cliente y el préstamo no tienen tasa propia (0).
+                            Se prorratea por día de atraso, igual que el sistema viejo. Ej: 4 = 4% mensual.
                         </p>
 
                         <div className="flex items-center gap-3 flex-wrap pt-2 border-t mt-1">
