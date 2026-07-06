@@ -55,6 +55,12 @@ function loanNumOf(row) { // a qué préstamo (num_transaccion) pertenece una fi
 const headers = [];               // cabeceras de préstamo
 const pendingByKey = new Map();   // `${offset}:${loanNum}` -> [filas pendientes]
 const pagosByClienteFecha = [];   // RI -> pagos
+const cargosViejos = [];          // AB/MR/AD/ND/IN/IC -> prestamo_cargos (Otras Transacciones)
+// Tipos de cxc_pendiente que SON cargos manuales del cliente (no cuotas):
+// AB=abogado/cobrador, MR=mora manual, AD/ND/IN/IC=ajustes/notas debito.
+// OJO: antes entraban a pendingByKey por su propio num_transaccion y se
+// mezclaban como "cuotas" en préstamos ajenos con ese mismo número.
+const TIPOS_CARGO = new Set(['AB', 'MR', 'AD', 'ND', 'IN', 'IC']);
 
 for (const src of SOURCES) {
   const fp = BASE + src.file;
@@ -81,6 +87,24 @@ for (const src of SOURCES) {
   }
   const pend = await parseTable(fp, 'cxc_pendiente').catch(() => ({ rows: [] }));
   for (const r of pend.rows) {
+    const tip = txt(r.tip_transaccion);
+    if (TIPOS_CARGO.has(tip)) {
+      // Cargo manual del cliente -> Otras Transacciones (todos, aun pagados,
+      // para que el estado quede idempotente en cada sync)
+      const monto = n(r.debito) || n(r.pendiente);
+      if (monto <= 0.005) continue;
+      cargosViejos.push({
+        cedula: txt(r.cliente),
+        numero: `${tip}-${pad7(r.num_transaccion)}`,
+        fecha: fecha(r.fecha) || FECHA,
+        desc: txt(r.descripcion),
+        monto: Math.round(monto * 100) / 100,
+        pendiente: Math.max(Math.round(n(r.pendiente) * 100) / 100, 0),
+      });
+      continue;
+    }
+    // Cuotas del préstamo: SOLO PT (cuotas) e IP (días de intereses)
+    if (tip !== 'PT' && tip !== 'IP') continue;
     if (n(r.pendiente) <= 0.005) continue;
     const key = `${src.offset}:${loanNumOf(r)}`;
     if (!pendingByKey.has(key)) pendingByKey.set(key, []);
@@ -125,7 +149,11 @@ function cuotasDe(h, prestamoId) {
   return sorted
     .map((r, idx) => {
       const pend = n(r.pendiente);
-      const esInteres = txt(r.concepto) === 'INT' || n(r.interes) >= pend - 0.005;
+      // Interes SOLO si la fila es de intereses (tip IP o concepto INT).
+      // La heurística vieja (campo interes >= pendiente) clasificaba mal las
+      // cuotas casi pagadas (el campo interes es el devengado INFORMATIVO) y
+      // disparaba el interés corriente en financiamientos (caso VILORIO).
+      const esInteres = txt(r.tip_transaccion) === 'IP' || txt(r.concepto) === 'INT';
       return {
         prestamo_id: prestamoId, tenant_id: TENANT_ID, numero_cuota: reales[idx] || alloc(),
         fecha_vencimiento: fecha(r.vence) || h.vence || h.fecha_inicio,
@@ -266,5 +294,34 @@ for (const p of pagosByClienteFecha) {
 }
 await up('prestamo_pagos', pagoRows, 'pagos');
 
-console.log(`\n✅ ${headerRows.length} préstamos, ${cuotas.length} cuotas (saldo real), ${pagoRows.length} pagos cargados.`);
+// --- 7. Cargos manuales del viejo (AB abogado/cobrador, MR, etc.) ---------
+// Van a prestamo_cargos (Otras Transacciones): suman al balance del cliente
+// y se cobran en el Recibo de Pago. Idempotente por (tenant, numero).
+const cargoRows = [];
+for (const c of cargosViejos) {
+  const cid = cliByCedula.get(c.cedula); if (!cid) continue;
+  const pagado = Math.max(Math.round((c.monto - c.pendiente) * 100) / 100, 0);
+  cargoRows.push({
+    tenant_id: TENANT_ID, numero: c.numero, cliente_id: cid,
+    tipo: (c.desc || 'CARGO').toUpperCase().slice(0, 80) || 'CARGO',
+    descripcion: c.desc || null, fecha: c.fecha,
+    monto: c.monto, monto_pagado: pagado,
+    estado: c.pendiente <= 0.005 ? 'pagado' : (pagado > 0 ? 'parcial' : 'pendiente'),
+    anulado: false,
+  });
+}
+{
+  const B = 500; let ok = 0;
+  for (let i = 0; i < cargoRows.length; i += B) {
+    const { error } = await supabase.from('prestamo_cargos')
+      .upsert(cargoRows.slice(i, i + B), { onConflict: 'tenant_id,numero' });
+    if (error) { console.error(`❌ cargos ${i}: ${error.message}`); process.exit(1); }
+    ok += Math.min(B, cargoRows.length - i);
+    if (ok % 2000 === 0 || ok === cargoRows.length) console.log(`  cargos: ${ok}/${cargoRows.length}`);
+  }
+}
+const cargosPend = cargoRows.filter((c) => c.estado !== 'pagado');
+console.log(`Cargos del viejo: ${cargoRows.length} (${cargosPend.length} con pendiente, RD$ ${cargosPend.reduce((a, c) => a + (c.monto - c.monto_pagado), 0).toFixed(2)})`);
+
+console.log(`\n✅ ${headerRows.length} préstamos, ${cuotas.length} cuotas (saldo real), ${pagoRows.length} pagos, ${cargoRows.length} cargos cargados.`);
 process.exit(0);

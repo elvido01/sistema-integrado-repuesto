@@ -104,6 +104,10 @@ console.log(`clientes en base: ${cliParsed.rows.length} | únicos por código: $
 const headers = [];
 const pendingByKey = new Map();
 const pagosRI = [];
+const cargosViejos = []; // AB/MR/etc -> prestamo_cargos (Otras Transacciones)
+// Tipos que son CARGOS manuales, no cuotas (antes se mezclaban en préstamos
+// ajenos porque usan su propio num_transaccion):
+const TIPOS_CARGO = new Set(['AB', 'MR', 'AD', 'ND', 'IN', 'IC']);
 {
   const pr = await parseTable(FILE, 'prestamos').catch(() => ({ rows: [] }));
   for (const r of pr.rows) {
@@ -126,6 +130,21 @@ const pagosRI = [];
   }
   const pend = await parseTable(FILE, 'cxc_pendiente').catch(() => ({ rows: [] }));
   for (const r of pend.rows) {
+    const tip = txt(r.tip_transaccion);
+    if (TIPOS_CARGO.has(tip)) {
+      const monto = n(r.debito) || n(r.pendiente);
+      if (monto <= 0.005) continue;
+      cargosViejos.push({
+        cedula: txt(r.cliente),
+        numero: `${tip}-${pad7(r.num_transaccion)}`,
+        fecha: fecha(r.fecha) || FECHA,
+        desc: txt(r.descripcion),
+        monto: Math.round(monto * 100) / 100,
+        pendiente: Math.max(Math.round(n(r.pendiente) * 100) / 100, 0),
+      });
+      continue;
+    }
+    if (tip !== 'PT' && tip !== 'IP') continue; // solo cuotas e intereses
     if (n(r.pendiente) <= 0.005) continue;
     const key = String(loanNumOf(r));
     if (!pendingByKey.has(key)) pendingByKey.set(key, []);
@@ -305,7 +324,10 @@ function cuotasDe(h, prestamoId) {
   return sorted
     .map((r, idx) => {
       const pend = n(r.pendiente);
-      const esInteres = txt(r.concepto) === 'INT' || n(r.interes) >= pend - 0.005;
+      // Interes SOLO si la fila es de intereses (tip IP o concepto INT); la
+      // heurística vieja (interes>=pendiente) clasificaba mal cuotas casi
+      // pagadas y disparaba interés corriente inventado.
+      const esInteres = txt(r.tip_transaccion) === 'IP' || txt(r.concepto) === 'INT';
       return {
         prestamo_id: prestamoId, tenant_id: TENANT_ID, numero_cuota: reales[idx] || alloc(),
         fecha_vencimiento: fecha(r.vence) || h.vence || h.fecha_inicio,
@@ -338,5 +360,27 @@ for (const p of pagosRI) {
 }
 await up('prestamo_pagos', pagoRows, 'pagos');
 
-console.log(`\n✅ ${EMPRESA.nombre}: ${cliRows.length} clientes, ${headerRows.length} préstamos (${activos} activos), ${cuotas.length} cuotas, ${pagoRows.length} pagos → tenant ${TENANT_ID}.`);
+// ---- 8) CARGOS del viejo (AB abogado/cobrador, MR, etc.) -> Otras Transacciones ----
+const cargoRows = [];
+for (const c of cargosViejos) {
+  const cid = cliByCedula.get(c.cedula); if (!cid) continue;
+  const pagado = Math.max(Math.round((c.monto - c.pendiente) * 100) / 100, 0);
+  cargoRows.push({
+    tenant_id: TENANT_ID, numero: c.numero, cliente_id: cid,
+    tipo: (c.desc || 'CARGO').toUpperCase().slice(0, 80) || 'CARGO',
+    descripcion: c.desc || null, fecha: c.fecha,
+    monto: c.monto, monto_pagado: pagado,
+    estado: c.pendiente <= 0.005 ? 'pagado' : (pagado > 0 ? 'parcial' : 'pendiente'),
+    anulado: false,
+  });
+}
+for (let i = 0; i < cargoRows.length; i += 500) {
+  const { error } = await supabase.from('prestamo_cargos')
+    .upsert(cargoRows.slice(i, i + 500), { onConflict: 'tenant_id,numero' });
+  if (error) { console.error(`❌ cargos ${i}: ${error.message}`); process.exit(1); }
+}
+const cargosPendCnt = cargoRows.filter((c) => c.estado !== 'pagado');
+console.log(`Cargos del viejo: ${cargoRows.length} (${cargosPendCnt.length} con pendiente, RD$ ${cargosPendCnt.reduce((a, c) => a + (c.monto - c.monto_pagado), 0).toFixed(2)})`);
+
+console.log(`\n✅ ${EMPRESA.nombre}: ${cliRows.length} clientes, ${headerRows.length} préstamos (${activos} activos), ${cuotas.length} cuotas, ${pagoRows.length} pagos, ${cargoRows.length} cargos → tenant ${TENANT_ID}.`);
 process.exit(0);
