@@ -31,6 +31,17 @@ const PRIO_BADGE = {
   proxima: { txt: 'PRÓXIMA', cls: 'bg-amber-100 text-amber-700' },
   puede_esperar: { txt: 'ESPERAR', cls: 'bg-slate-200 text-slate-600' },
 };
+const DECISION_DEFAULT = 'pedir_hoy';
+const DECISION_OPTIONS = {
+  pedir_hoy: { label: 'Pedir hoy', short: 'Pedir', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  no_disponible: { label: 'No lo tiene suplidor', short: 'No disponible', cls: 'bg-red-50 text-red-700 border-red-200' },
+  pospuesto_presupuesto: { label: 'Pospuesto por presupuesto', short: 'Presupuesto', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  poca_rotacion: { label: 'Poca rotacion', short: 'Poca rotacion', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
+  sustituido: { label: 'Sustituido', short: 'Sustituido', cls: 'bg-purple-50 text-purple-700 border-purple-200' },
+};
+
+const isDetallePedidoHoy = (detalle) => (detalle?.decision_estado || DECISION_DEFAULT) === DECISION_DEFAULT;
+
 import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
 import AprobacionesComprasPage from '@/pages/AprobacionesComprasPage';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
@@ -57,6 +68,17 @@ const stripReceptionFields = (detalle) => {
     cantidad_recibida,
     cantidad_pendiente,
     estado_linea,
+    decision_estado,
+    decision_motivo,
+    ...legacyDetalle
+  } = detalle;
+  return legacyDetalle;
+};
+
+const stripDecisionFields = (detalle) => {
+  const {
+    decision_estado,
+    decision_motivo,
     ...legacyDetalle
   } = detalle;
   return legacyDetalle;
@@ -580,7 +602,7 @@ const OrdenCompraPage = () => {
         return;
       }
     }
-    setDetalles(prev => calculateAllImportes([...prev, { ...stagingItem, id: Date.now() + Math.random() }]));
+    setDetalles(prev => calculateAllImportes([...prev, { ...stagingItem, id: Date.now() + Math.random(), decision_estado: DECISION_DEFAULT, decision_motivo: null }]));
     resetStaging();
   };
 
@@ -681,6 +703,8 @@ const OrdenCompraPage = () => {
       itbis_pct: itbisPct,
       importe: 0,
       existencia: product.existencia ?? 0,
+      decision_estado: DECISION_DEFAULT,
+      decision_motivo: null,
     };
 
     setDetalles((prev) => calculateAllImportes([...prev, newDetalle]));
@@ -707,6 +731,19 @@ const OrdenCompraPage = () => {
       });
       return calculateAllImportes(updated);
     });
+  };
+
+  const handleDecisionDetalle = (id, decision) => {
+    const option = DECISION_OPTIONS[decision] ? decision : DECISION_DEFAULT;
+    setDetalles((prev) => calculateAllImportes(prev.map((d) => (
+      d.id === id
+        ? {
+            ...d,
+            decision_estado: option,
+            decision_motivo: option === DECISION_DEFAULT ? null : DECISION_OPTIONS[option].label,
+          }
+        : d
+    ))));
   };
 
   const removeDetalle = (id) => {
@@ -789,6 +826,8 @@ const OrdenCompraPage = () => {
           const { data: stockVal } = await supabase.rpc('get_stock_actual', { producto_uuid: detail.producto_id });
           return {
             ...detail,
+            decision_estado: detail.decision_estado || DECISION_DEFAULT,
+            decision_motivo: detail.decision_motivo || null,
             existencia: stockVal || 0
           };
         }));
@@ -804,7 +843,12 @@ const OrdenCompraPage = () => {
         fecha_orden: orderData.fecha_orden ? new Date(orderData.fecha_orden + 'T00:00:00') : new Date(),
         fecha_vencimiento: orderData.fecha_vencimiento ? new Date(orderData.fecha_vencimiento + 'T00:00:00') : new Date()
       });
-      setDetalles(enhancedDetails.map(d => ({ ...d, id: d.id || Date.now() + Math.random() })));
+      setDetalles(enhancedDetails.map(d => ({
+        ...d,
+        id: d.id || Date.now() + Math.random(),
+        decision_estado: d.decision_estado || DECISION_DEFAULT,
+        decision_motivo: d.decision_motivo || null,
+      })));
 
       setIsEditMode(true);
       setView('form');
@@ -976,6 +1020,7 @@ const OrdenCompraPage = () => {
     let itbis_total = 0;
 
     detalles.forEach((d) => {
+      if (!isDetallePedidoHoy(d)) return;
       const cantidad = parseFloat(d.cantidad) || 0;
       const precio = parseFloat(d.precio) || 0;
       const descPct = (parseFloat(d.descuento_pct) || 0) / 100;
@@ -997,6 +1042,30 @@ const OrdenCompraPage = () => {
 
     const total_orden = total_gravado + total_exento + itbis_total;
     return { total_exento, total_gravado, descuento_total, itbis_total, total_orden };
+  }, [detalles, orden.aplicar_itbis]);
+
+  const decisionTotals = useMemo(() => {
+    return detalles.reduce((acc, d) => {
+      const decision = d.decision_estado || DECISION_DEFAULT;
+      const amount = Number(d.importe || calculateImporte(d) || 0);
+      acc.total_sugerido += amount;
+      if (decision === DECISION_DEFAULT) {
+        acc.pedir_hoy += amount;
+        acc.count_pedir += 1;
+      } else {
+        acc.excluido += amount;
+        acc.count_excluido += 1;
+        acc.byDecision[decision] = (acc.byDecision[decision] || 0) + amount;
+      }
+      return acc;
+    }, {
+      total_sugerido: 0,
+      pedir_hoy: 0,
+      excluido: 0,
+      count_pedir: 0,
+      count_excluido: 0,
+      byDecision: {},
+    });
   }, [detalles, orden.aplicar_itbis]);
 
   const handleOrdenAutomatica = async () => {
@@ -1078,6 +1147,8 @@ const OrdenCompraPage = () => {
           itbis_pct: p.itbis_pct || 0,
           importe: 0,
           existencia: p.existencia ?? 0,
+          decision_estado: DECISION_DEFAULT,
+          decision_motivo: null,
           // Metadata de grupo (si v2)
           _grupo_id: p.grupo_id || null,
           _grupo_nombre: p.grupo_nombre || null,
@@ -1104,7 +1175,7 @@ const OrdenCompraPage = () => {
   useEffect(() => {
     let cancel = false;
     const calc = async () => {
-      const conProd = (detalles || []).filter(d => d.producto_id);
+      const conProd = (detalles || []).filter(d => d.producto_id && isDetallePedidoHoy(d));
       if (!mostrarInteligente || !selectedProveedor?.id || !tenantId || conProd.length === 0) {
         setSugerenciaCompra(null);
         setPrioridadMap({});
@@ -1204,7 +1275,7 @@ const OrdenCompraPage = () => {
     };
     calc();
     return () => { cancel = true; };
-  }, [mostrarInteligente, selectedProveedor?.id, detalles.length, tenantId]);
+  }, [mostrarInteligente, selectedProveedor?.id, detalles, tenantId]);
 
   // Fase A v2: cargar presupuesto_compras_v2 (control estricto, disponible, limite)
   // Se carga al montar y cuando cambia tenant. Se refresca tras guardar una orden.
@@ -1289,7 +1360,7 @@ const OrdenCompraPage = () => {
     setOptimizando(true);
     try {
       const items = detalles
-        .filter(d => d.producto_id && Number(d.cantidad) > 0)
+        .filter(d => d.producto_id && isDetallePedidoHoy(d) && Number(d.cantidad) > 0)
         .map(d => {
           const cant = Number(d.cantidad) || 0;
           const precio = Number(d.precio) || 0;
@@ -1330,10 +1401,22 @@ const OrdenCompraPage = () => {
     setDetalles(prev => prev.flatMap(d => {
       const acc = mapAcciones.get(d.producto_id);
       if (!acc) return [d]; // no estaba en el analisis -> lo dejamos
-      if (acc.accion === 'quitar') return [];
+      if (acc.accion === 'quitar') {
+        return [{
+          ...d,
+          decision_estado: 'pospuesto_presupuesto',
+          decision_motivo: 'Recorte sugerido por optimizacion de presupuesto',
+        }];
+      }
       if (acc.accion === 'reducir' || acc.accion === 'mantener') {
         const cantidadNueva = Number(acc.cantidad_nueva) || 0;
-        if (cantidadNueva <= 0) return [];
+        if (cantidadNueva <= 0) {
+          return [{
+            ...d,
+            decision_estado: 'pospuesto_presupuesto',
+            decision_motivo: 'Recorte sugerido por optimizacion de presupuesto',
+          }];
+        }
         return [{ ...d, cantidad: cantidadNueva }];
       }
       return [d];
@@ -1455,6 +1538,15 @@ const OrdenCompraPage = () => {
     }
 
     // ── Gate Fase A v2: control estricto + PIN supervisor o workflow ──
+    if (!detalles.some(isDetallePedidoHoy)) {
+      toast({
+        variant: 'destructive',
+        title: 'Sin productos para pedir',
+        description: 'Marca al menos una linea como "Pedir hoy" antes de guardar la orden.',
+      });
+      return;
+    }
+
     if (!bypassGate && presupuestoV2?.control_estricto) {
       const total = Number(totals.total_orden) || 0;
       const dispo = Number(presupuestoV2.disponible) || 0;
@@ -1545,24 +1637,45 @@ const OrdenCompraPage = () => {
       return;
     }
 
-    const detallesData = detalles.map((d) => ({
-      orden_compra_id: savedOrden.id,
-      producto_id: d.producto_id,
-      codigo: d.codigo,
-      descripcion: d.descripcion,
-      cantidad: d.cantidad,
-      cantidad_pedida: d.cantidad_pedida ?? d.cantidad,
-      cantidad_recibida: d.cantidad_recibida ?? 0,
-      cantidad_pendiente: Number(d.cantidad_pendiente ?? Math.max(0, Number(d.cantidad_pedida ?? d.cantidad ?? 0) - Number(d.cantidad_recibida ?? 0))),
-      estado_linea: d.estado_linea || 'pendiente',
-      unidad: d.unidad,
-      precio: d.precio,
-      descuento_pct: d.descuento_pct,
-      itbis_pct: d.itbis_pct,
-      importe: d.importe,
-    }));
+    const detallesData = detalles.map((d) => {
+      const pedirHoy = isDetallePedidoHoy(d);
+      const cantidadPedida = pedirHoy ? Number(d.cantidad_pedida ?? d.cantidad ?? 0) : 0;
+      const cantidadRecibida = Number(d.cantidad_recibida ?? 0);
+      return {
+        orden_compra_id: savedOrden.id,
+        producto_id: d.producto_id,
+        codigo: d.codigo,
+        descripcion: d.descripcion,
+        cantidad: d.cantidad,
+        cantidad_pedida: cantidadPedida,
+        cantidad_recibida: cantidadRecibida,
+        cantidad_pendiente: pedirHoy ? Math.max(0, cantidadPedida - cantidadRecibida) : 0,
+        estado_linea: pedirHoy ? (d.estado_linea || 'pendiente') : 'cancelada',
+        decision_estado: d.decision_estado || DECISION_DEFAULT,
+        decision_motivo: d.decision_motivo || null,
+        unidad: d.unidad,
+        precio: d.precio,
+        descuento_pct: d.descuento_pct,
+        itbis_pct: d.itbis_pct,
+        importe: d.importe,
+      };
+    });
 
     let { error: detallesError } = await supabase.from('ordenes_compra_detalle').insert(detallesData);
+
+    if (
+      detallesError
+      && (
+        detallesError.message?.includes('decision_estado')
+        || detallesError.message?.includes('decision_motivo')
+        || detallesError.code === 'PGRST204'
+      )
+    ) {
+      const retryResult = await supabase
+        .from('ordenes_compra_detalle')
+        .insert(detallesData.map(stripDecisionFields));
+      detallesError = retryResult.error;
+    }
 
     if (
       detallesError
@@ -1641,10 +1754,11 @@ const OrdenCompraPage = () => {
         toast({ title: 'Éxito', description: 'Orden de compra guardada correctamente.' });
       }
 
+      const detallesImpresion = detallesData.filter(isDetallePedidoHoy);
       if (printMethod === 'pos') {
-        printOrdenCompraPOS(savedOrden, selectedProveedor, detallesData, paperSize);
+        printOrdenCompraPOS(savedOrden, selectedProveedor, detallesImpresion, paperSize);
       } else {
-        generateOrderPDF(savedOrden, selectedProveedor, detallesData, empresa);
+        generateOrderPDF(savedOrden, selectedProveedor, detallesImpresion, empresa);
       }
 
       // Refrescar presupuesto v2 para reflejar comprado_mes actualizado
@@ -2263,6 +2377,7 @@ const OrdenCompraPage = () => {
                   <TableHead className="w-20 text-right">Desc.</TableHead>
                   <TableHead className="w-24 text-right">ITBIS</TableHead>
                   <TableHead className="w-32 text-right">Importe</TableHead>
+                  <TableHead className="w-36 text-center">Decision</TableHead>
                   {mostrarInteligente && <TableHead className="w-24 text-center">Prioridad</TableHead>}
                   <TableHead className="w-10" />
                 </TableRow>
@@ -2272,7 +2387,7 @@ const OrdenCompraPage = () => {
               {detalles.length === 0 ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i} className="h-7 border-b border-slate-100">
-                    {Array.from({ length: isVehicleDealer ? 10 : (mostrarInteligente ? 10 : 9) }).map((_, j) => (
+                    {Array.from({ length: isVehicleDealer ? 10 : (mostrarInteligente ? 11 : 10) }).map((_, j) => (
                       <TableCell key={j} className="p-0 border-r border-slate-50 last:border-r-0 h-7" />
                     ))}
                   </TableRow>
@@ -2281,10 +2396,13 @@ const OrdenCompraPage = () => {
                 detalles.map((d) => {
                   const puedeMarcarNoSuplido = ['Enviada', 'Parcial'].includes(orden.estado)
                     && !['recibida', 'cancelada'].includes(d.estado_linea || '');
+                  const decision = d.decision_estado || DECISION_DEFAULT;
+                  const decisionMeta = DECISION_OPTIONS[decision] || DECISION_OPTIONS[DECISION_DEFAULT];
+                  const pedidoHoy = isDetallePedidoHoy(d);
                   return (
                   <TableRow
                     key={d.id}
-                    className="h-7 border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors group"
+                    className={`h-7 border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors group ${pedidoHoy ? '' : 'bg-slate-50/70 opacity-75'}`}
                     onDoubleClick={() => handleEditDetalle(d)}
                     onContextMenu={(e) => {
                       // Clic derecho → menú "Enviar a Suplidor Virtual"
@@ -2388,7 +2506,19 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 text-right font-mono">{Number(d.precio || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
-                        <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className={`py-0 px-2 text-right font-bold ${pedidoHoy ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="py-0 px-1 text-center" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                          <Select value={decision} onValueChange={(value) => handleDecisionDetalle(d.id, value)}>
+                            <SelectTrigger className={`h-6 w-32 px-2 text-[10px] font-bold border ${decisionMeta.cls}`}>
+                              <span className="truncate">{decisionMeta.short}</span>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(DECISION_OPTIONS).map(([key, opt]) => (
+                                <SelectItem key={key} value={key}>{opt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
                         {mostrarInteligente && (
                           <TableCell className="py-0 px-2 text-center">
                             {d.producto_id && prioridadMap[d.producto_id] ? (
@@ -2500,8 +2630,18 @@ const OrdenCompraPage = () => {
           {mostrarInteligente && sugerenciaCompra && (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                <p className="text-[10px] uppercase text-slate-400 font-bold">Total orden</p>
-                <p className="font-bold text-slate-800 text-sm">RD$ {sugerenciaCompra.totalOrden.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                <p className="text-[10px] uppercase text-slate-400 font-bold">Sugerido inicial</p>
+                <p className="font-bold text-slate-800 text-sm">RD$ {decisionTotals.total_sugerido.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                {decisionTotals.count_excluido > 0 && (
+                  <p className="text-[9px] text-slate-400 mt-0.5">{decisionTotals.count_excluido} linea(s) fuera</p>
+                )}
+              </div>
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <p className="text-[10px] uppercase text-emerald-600 font-bold">A pedir hoy</p>
+                <p className="font-bold text-emerald-700 text-sm">RD$ {decisionTotals.pedir_hoy.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                {decisionTotals.excluido > 0 && (
+                  <p className="text-[9px] text-emerald-700 mt-0.5">Bajo RD$ {decisionTotals.excluido.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                )}
               </div>
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                 <p className="text-[10px] uppercase text-red-500 font-bold">🔴 Urgente {sugerenciaCompra.countUrgente ? `(${sugerenciaCompra.countUrgente})` : ''}</p>
@@ -2607,8 +2747,14 @@ const OrdenCompraPage = () => {
             <div className="flex justify-between text-slate-600"><span>Total Gravado</span><span className="font-bold">{Number(totals.total_gravado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
             <div className="flex justify-between text-slate-600"><span>Descuento</span><span className="font-bold text-red-600">{Number(totals.descuento_total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
             <div className="flex justify-between text-slate-600 border-b border-slate-200 pb-1.5"><span>ITBIS</span><span className="font-bold">{Number(totals.itbis_total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+            {decisionTotals.excluido > 0 && (
+              <div className="flex justify-between text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-100">
+                <span>Fuera de pedido</span>
+                <span className="font-bold">{Number(decisionTotals.excluido || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center bg-yellow-50 p-2 mt-1 border border-yellow-200 rounded-sm">
-              <span className="text-morla-blue font-bold text-xl">TOTAL</span>
+              <span className="text-morla-blue font-bold text-lg">A PEDIR</span>
               <span className="text-red-700 font-bold text-2xl tracking-tighter">{Number(totals.total_orden || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           </div>
