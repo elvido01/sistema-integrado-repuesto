@@ -297,8 +297,18 @@ await up('prestamo_pagos', pagoRows, 'pagos');
 // --- 7. Cargos manuales del viejo (AB abogado/cobrador, MR, etc.) ---------
 // Van a prestamo_cargos (Otras Transacciones): suman al balance del cliente
 // y se cobran en el Recibo de Pago. Idempotente por (tenant, numero).
-const cargoRows = [];
+// Dedupe por numero: el viejo puede tener VARIAS filas del mismo cargo
+// (parcialidades) -> se agregan monto y pendiente (evita el error
+// "ON CONFLICT DO UPDATE command cannot affect row a second time").
+const cargosByNum = new Map();
 for (const c of cargosViejos) {
+  const prev = cargosByNum.get(c.numero);
+  if (!prev) { cargosByNum.set(c.numero, { ...c }); continue; }
+  prev.monto = Math.round((prev.monto + c.monto) * 100) / 100;
+  prev.pendiente = Math.round((prev.pendiente + c.pendiente) * 100) / 100;
+}
+const cargoRows = [];
+for (const c of cargosByNum.values()) {
   const cid = cliByCedula.get(c.cedula); if (!cid) continue;
   const pagado = Math.max(Math.round((c.monto - c.pendiente) * 100) / 100, 0);
   cargoRows.push({

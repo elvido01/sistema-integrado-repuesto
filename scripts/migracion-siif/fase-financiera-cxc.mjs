@@ -361,8 +361,16 @@ for (const p of pagosRI) {
 await up('prestamo_pagos', pagoRows, 'pagos');
 
 // ---- 8) CARGOS del viejo (AB abogado/cobrador, MR, etc.) -> Otras Transacciones ----
-const cargoRows = [];
+// Dedupe por numero (el viejo puede tener varias filas del mismo cargo)
+const cargosByNum = new Map();
 for (const c of cargosViejos) {
+  const prev = cargosByNum.get(c.numero);
+  if (!prev) { cargosByNum.set(c.numero, { ...c }); continue; }
+  prev.monto = Math.round((prev.monto + c.monto) * 100) / 100;
+  prev.pendiente = Math.round((prev.pendiente + c.pendiente) * 100) / 100;
+}
+const cargoRows = [];
+for (const c of cargosByNum.values()) {
   const cid = cliByCedula.get(c.cedula); if (!cid) continue;
   const pagado = Math.max(Math.round((c.monto - c.pendiente) * 100) / 100, 0);
   cargoRows.push({
