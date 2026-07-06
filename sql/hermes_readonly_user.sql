@@ -103,7 +103,7 @@ DECLARE
   v_matches integer;
   r record;
 BEGIN
-  SELECT COUNT(*), MIN(ce.tenant_id)
+  SELECT COUNT(*), (array_agg(ce.tenant_id ORDER BY ce.tenant_id::text))[1]
     INTO v_matches, v_morla_tenant_id
   FROM public.config_empresa ce
   WHERE ce.tenant_id IS NOT NULL
