@@ -824,16 +824,17 @@ const OrdenCompraPage = () => {
       // 3. Enrich details with current product stock (existencia)
       let enhancedDetails = detailsData;
       let desactivadosOmitidos = 0;
+      let repuestosOmitidos = 0;
       if (detailsData.length > 0) {
-        // Traer el estado activo de los productos de la orden (una sola consulta)
+        // Traer estado activo + minimo de los productos (una sola consulta)
         const prodIds = [...new Set(detailsData.map(d => d.producto_id).filter(Boolean))];
-        const activoMap = {};
+        const prodMap = {};
         if (prodIds.length > 0) {
           const { data: prodRows } = await supabase
             .from('productos')
-            .select('id, activo')
+            .select('id, activo, min_stock')
             .in('id', prodIds);
-          (prodRows || []).forEach(p => { activoMap[p.id] = p.activo; });
+          (prodRows || []).forEach(p => { prodMap[p.id] = p; });
         }
         enhancedDetails = await Promise.all(detailsData.map(async (detail) => {
           // Call the same function the product search modal uses internally
@@ -843,7 +844,8 @@ const OrdenCompraPage = () => {
             decision_estado: detail.decision_estado || DECISION_DEFAULT,
             decision_motivo: detail.decision_motivo || null,
             existencia: stockVal || 0,
-            _activo: detail.producto_id ? (activoMap[detail.producto_id] !== false) : true,
+            _activo: detail.producto_id ? (prodMap[detail.producto_id]?.activo !== false) : true,
+            _min_stock: detail.producto_id ? Number(prodMap[detail.producto_id]?.min_stock || 0) : 0,
           };
         }));
         // Omitir productos desactivados (descontinuados / con código nuevo): no
@@ -851,6 +853,23 @@ const OrdenCompraPage = () => {
         const antes = enhancedDetails.length;
         enhancedDetails = enhancedDetails.filter(d => d._activo);
         desactivadosOmitidos = antes - enhancedDetails.length;
+        // En borradores AUTO-generados, quitar tambien las lineas YA REPUESTAS:
+        // el borrador acumula lineas historicas y si el producto llego por otra
+        // compra queda pidiendo de mas (misma regla inversa del auto-envio de
+        // ventas: se necesita si existencia <= minimo, o <= 0 sin minimo).
+        const esBorradorAuto = (orderData.notas || '').includes('Generada automáticamente')
+          && (orderData.estado || 'Pendiente') === 'Pendiente';
+        if (esBorradorAuto) {
+          const antes2 = enhancedDetails.length;
+          enhancedDetails = enhancedDetails.filter(d => {
+            if (!d.producto_id) return true;
+            const min = d._min_stock;
+            const exist = Number(d.existencia) || 0;
+            const necesita = min > 0 ? exist <= min : exist <= 0;
+            return necesita;
+          });
+          repuestosOmitidos = antes2 - enhancedDetails.length;
+        }
       }
 
       // 4. Set states
@@ -872,10 +891,13 @@ const OrdenCompraPage = () => {
 
       setIsEditMode(true);
       setView('form');
-      if (desactivadosOmitidos > 0) {
+      if (desactivadosOmitidos > 0 || repuestosOmitidos > 0) {
+        const partes = [];
+        if (desactivadosOmitidos > 0) partes.push(`${desactivadosOmitidos} desactivado(s)`);
+        if (repuestosOmitidos > 0) partes.push(`${repuestosOmitidos} ya repuesto(s) (tienen stock suficiente)`);
         toast({
-          title: 'Productos desactivados omitidos',
-          description: `Se quitaron ${desactivadosOmitidos} producto(s) desactivado(s) de esta orden. Grábela para guardar la orden limpia.`,
+          title: 'Orden depurada al cargar',
+          description: `Se quitaron: ${partes.join(' y ')}. Grábela para guardar la orden limpia.`,
         });
       }
     } catch (error) {
