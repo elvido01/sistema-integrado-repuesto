@@ -2714,6 +2714,28 @@ const OrdenCompraPage = () => {
                       />
                     </div>
 
+                    {/* UN solo flujo: en modo recuperación el desglose incluye la
+                        resta de la orden (antes "Disp ahora" salía dos veces). */}
+                    {sugerenciaCompra.modo_distribucion === 'recuperacion' ? (
+                      <div className="text-[9px] text-slate-500 leading-tight mt-1 space-y-0.5">
+                        <p>Le pagaste (30d): <span className="font-bold text-emerald-700">RD$ {Number(sugerenciaCompra.pagos_suplidor_30d || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
+                        <p>× factor {Number(sugerenciaCompra.factor_recuperacion || 0.85).toFixed(2)} = libera <span className="font-bold text-violet-700">RD$ {Number(sugerenciaCompra.fondo_liberado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
+                        <p>− Ya compraste (30d): <span className="font-mono text-slate-600">RD$ {Number(sugerenciaCompra.comprado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
+                        <p className="font-bold text-violet-700">= Disp ahora: RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                        {ordenActual > 0 && (
+                          <>
+                            <p className="text-slate-500">
+                              − Esta orden: <span className="font-mono">RD$ {ordenActual.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                            </p>
+                            <p className={`font-bold ${colorDispDespues}`}>
+                              = Quedaría: RD$ {dispDespues.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                              {dispDespues < 0 && ' ⚠️'}
+                            </p>
+                          </>
+                        )}
+                        <p className="text-amber-700 mt-0.5 border-t border-violet-200 pt-0.5">Aun le debes: RD$ {Number(sugerenciaCompra.deuda_suplidor || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                      </div>
+                    ) : (
                     <div className="text-[9px] mt-1 leading-tight space-y-0.5">
                       <p className="text-violet-600">
                         Disp ahora: <span className="font-bold">RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
@@ -2730,15 +2752,6 @@ const OrdenCompraPage = () => {
                         </>
                       )}
                     </div>
-
-                    {sugerenciaCompra.modo_distribucion === 'recuperacion' && (
-                      <div className="text-[9px] text-slate-500 leading-tight mt-1 border-t border-violet-200 pt-1 space-y-0.5">
-                        <p>Le pagaste (30d): <span className="font-bold text-emerald-700">RD$ {Number(sugerenciaCompra.pagos_suplidor_30d || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
-                        <p>× factor {Number(sugerenciaCompra.factor_recuperacion || 0.85).toFixed(2)} = libera <span className="font-bold text-violet-700">RD$ {Number(sugerenciaCompra.fondo_liberado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
-                        <p>− Ya compraste (30d): <span className="font-mono text-slate-600">RD$ {Number(sugerenciaCompra.comprado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
-                        <p className="font-bold text-violet-700">= Disp ahora: RD$ {Number(sugerenciaCompra.disponible || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
-                        <p className="text-amber-700 mt-0.5">Aun le debes: RD$ {Number(sugerenciaCompra.deuda_suplidor || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
-                      </div>
                     )}
                     {sugerenciaCompra.modo_distribucion === 'sin_deuda' && (
                       <p className="text-[9px] text-emerald-600 italic leading-tight mt-1">
@@ -3170,18 +3183,20 @@ const OrdenCompraPage = () => {
             {configForm.modelo_presupuesto !== 'fijo' && (
             <div className="space-y-1">
               <Label className="text-[11px] uppercase font-bold text-slate-700">Velocidad de recuperación por suplidor</Label>
+              {/* OJO: los values deben ser String(Number(x)) — "0.9", no "0.90" —
+                  o el trigger no muestra la opción elegida (0.9 !== "0.90"). */}
               <Select
-                value={String(configForm.factor_recuperacion ?? 0.85)}
+                value={String(Number(configForm.factor_recuperacion ?? 0.85))}
                 onValueChange={(v) => setConfigForm(p => ({ ...p, factor_recuperacion: Number(v) }))}
               >
                 <SelectTrigger className="h-9"><SelectValue placeholder="Elige la velocidad" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="0.95">95% — Muy lento (deuda baja 5%)</SelectItem>
-                  <SelectItem value="0.90">90% — Lento (deuda baja 10%)</SelectItem>
+                  <SelectItem value="0.9">90% — Lento (deuda baja 10%)</SelectItem>
                   <SelectItem value="0.85">85% — Moderado ⭐ Recomendado (deuda baja 15%)</SelectItem>
-                  <SelectItem value="0.80">80% — Moderado-fuerte (deuda baja 20%)</SelectItem>
+                  <SelectItem value="0.8">80% — Moderado-fuerte (deuda baja 20%)</SelectItem>
                   <SelectItem value="0.75">75% — Agresivo (deuda baja 25%)</SelectItem>
-                  <SelectItem value="0.70">70% — Muy agresivo (deuda baja 30%)</SelectItem>
+                  <SelectItem value="0.7">70% — Muy agresivo (deuda baja 30%)</SelectItem>
                 </SelectContent>
               </Select>
               {(() => {
