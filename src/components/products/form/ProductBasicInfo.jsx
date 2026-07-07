@@ -435,13 +435,16 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
   // - Cambia el id (otro producto cargado), o
   // - El padre re-fetchea y reinyecta el producto (loadVersion incrementa).
   // El ref evita recálculos en cada keystroke o cambio interno de formData.
+  // OJO: si el producto tiene guardado stock_mode='manual', se RESPETAN sus
+  // min/max — antes el auto-cálculo forzaba 'auto' y pisaba lo manual al abrir.
   useEffect(() => {
     if (!formData.id) return;
     const cacheKey = `${formData.id}::${loadVersion}`;
     if (autoCalculatedIdRef.current === cacheKey) return;
     autoCalculatedIdRef.current = cacheKey;
+    if ((formData.stock_mode || 'auto') === 'manual') return;
     calculateAutoStock();
-  }, [formData.id, loadVersion, calculateAutoStock]);
+  }, [formData.id, loadVersion, calculateAutoStock, formData.stock_mode]);
 
   // Permite recalcular manualmente desde el botón AUTO MÍN/MÁX
   const recalculateStockManually = useCallback(() => {
