@@ -12,7 +12,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
-import { PackageX, Loader2, X } from 'lucide-react';
+import { PackageX, Loader2, X, Eye } from 'lucide-react';
 
 export default function SuplidorVirtualMenu({
     contextMenu,           // { detalle, x, y } | null
@@ -20,6 +20,7 @@ export default function SuplidorVirtualMenu({
     orden_compra_id,       // uuid de la OC si ya está guardada (opcional)
     onClose,               // () => void
     onSent,                // (detalle) => void — el padre debe sacar la línea de la OC
+    onViewProduct,         // (detalle) => void — abre Información de la Mercancía (opcional)
 }) {
     const { toast } = useToast();
     const { tenantId, user } = useAuth();
@@ -179,6 +180,15 @@ export default function SuplidorVirtualMenu({
             <div className="px-3 py-2 border-b border-slate-100 text-[11px] text-slate-500 uppercase tracking-wide font-bold">
                 {detalle.codigo || 'Producto'}
             </div>
+            {onViewProduct && (
+                <button
+                    onClick={() => { onViewProduct(detalle); onClose(); }}
+                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 text-sm border-b border-slate-100"
+                >
+                    <Eye className="h-4 w-4 text-blue-600" />
+                    <span className="font-medium text-slate-800">Ver producto</span>
+                </button>
+            )}
             <button
                 onClick={() => setConfirmOpen(true)}
                 className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center gap-2 text-sm"

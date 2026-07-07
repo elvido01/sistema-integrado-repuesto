@@ -24,6 +24,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 // import AgenteCambioSuplidor from '@/components/compras/AgenteCambioSuplidor'; // desactivado temporalmente
 import SuplidorVirtualMenu from '@/components/compras/SuplidorVirtualMenu';
+import ProductFormModal from '@/components/products/ProductFormModal';
 import { getPresupuestoCompras, analizarOrdenActual, asesorCompras } from '@/services/comprasInteligentesService';
 
 const PRIO_BADGE = {
@@ -130,6 +131,9 @@ const OrdenCompraPage = () => {
   const [selectedProveedor, setSelectedProveedor] = useState(null);
   // Menú contextual "Suplidor Virtual" (clic derecho en línea de detalle)
   const [supVirtMenu, setSupVirtMenu] = useState(null);
+  // "Ver producto" (clic derecho): abre Información de la Mercancía
+  const [prodModalOpen, setProdModalOpen] = useState(false);
+  const [prodEditando, setProdEditando] = useState(null);
   const [orden, setOrden] = useState({
     numero: '',
     fecha_orden: getCurrentDateInTimeZone(),
@@ -1116,6 +1120,145 @@ const OrdenCompraPage = () => {
     });
   }, [detalles, orden.aplicar_itbis]);
 
+  // ── "Ver producto" desde el clic derecho: Información de la Mercancía ──
+  // Mismo patrón probado de EtiquetasMasivasPage (carga completa + guardado
+  // con presentaciones + ajuste real de existencia Entrada/Salida).
+  const abrirProductoDesdeOrden = async (detalle) => {
+    try {
+      let productId = detalle.producto_id;
+      if (!productId && detalle.codigo) {
+        const { data: byCode } = await supabase
+          .from('productos').select('id').eq('codigo', detalle.codigo).limit(1).maybeSingle();
+        productId = byCode?.id;
+      }
+      if (!productId) {
+        toast({ variant: 'destructive', title: 'Producto no encontrado', description: `No existe una mercancía con el código ${detalle.codigo}.` });
+        return;
+      }
+      const { data, error } = await supabase
+        .from('productos')
+        .select('*, presentaciones(*), tipo:tipos_producto(id, nombre), marca:marcas(id, nombre), modelo:modelos(id, nombre), suplidor:proveedores(id, nombre)')
+        .eq('id', productId)
+        .single();
+      if (error) throw error;
+      const { data: stockData } = await supabase.rpc('get_stock_actual', { producto_uuid: productId });
+      setProdEditando({
+        ...data,
+        tipo_id: data.tipo?.id?.toString() || data.tipo_id?.toString() || '',
+        marca_id: data.marca?.id?.toString() || data.marca_id?.toString() || '',
+        modelos_ids: data.modelos_ids || (data.modelo_id ? [data.modelo_id] : []),
+        suplidor_id: data.suplidor?.id?.toString() || data.suplidor_id?.toString() || '',
+        existencia: stockData || 0,
+      });
+      setProdModalOpen(true);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo abrir la mercancía', description: err.message });
+    }
+  };
+
+  const handleSaveProductoOrden = async (productData, presentations) => {
+    try {
+      const parseNumeric = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+      const { existencia, ...productDataWithoutStock } = productData;
+      const productPayload = {
+        ...productDataWithoutStock,
+        costo: parseNumeric(productData.costo),
+        precio: parseNumeric(productData.precio),
+        itbis_pct: parseNumeric(productData.itbis_pct),
+        min_stock: parseNumeric(productData.min_stock),
+        max_stock: parseNumeric(productData.max_stock),
+        garantia_meses: parseInt(productData.garantia_meses, 10) || 0,
+      };
+      const { id, ...updateData } = productPayload;
+      const { data: savedProduct, error } = await supabase
+        .from('productos').update(updateData).eq('id', id).select().single();
+      if (error) throw error;
+
+      // Presentaciones: mismo patrón keep/delete que ProductsPage
+      const keepIds = (presentations || [])
+        .map(p => p.id)
+        .filter(pid => pid && !pid.toString().startsWith('new-'));
+      let deleteQuery = supabase.from('presentaciones').delete().eq('producto_id', savedProduct.id);
+      if (keepIds.length > 0) deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.join(',')})`);
+      await deleteQuery;
+      if (presentations && presentations.length > 0) {
+        const presentationsToUpsert = presentations.map((p) => {
+          const { id: pid, ...rest } = p;
+          const payload = {
+            ...rest,
+            producto_id: savedProduct.id,
+            cantidad: parseNumeric(p.cantidad),
+            costo: parseNumeric(p.costo),
+            margen_pct: parseNumeric(p.margen_pct),
+            precio1: parseNumeric(p.precio1),
+            descuento_pct: parseNumeric(p.descuento_pct),
+            precio_final: parseNumeric(p.precio_final),
+          };
+          if (pid && !pid.toString().startsWith('new-')) payload.id = pid;
+          return payload;
+        });
+        const { error: presError } = await supabase.from('presentaciones').upsert(presentationsToUpsert);
+        if (presError) throw presError;
+      }
+
+      // Ajuste de existencia: Entrada/Salida real (trazable)
+      const currentExistencia = prodEditando?.existencia || 0;
+      const diff = parseFloat(existencia || 0) - parseFloat(currentExistencia);
+      if (Math.abs(diff) > 0.001) {
+        const { data: alms } = await supabase.from('almacenes').select('id').limit(1);
+        const almacenId = alms?.[0]?.id;
+        if (!almacenId) {
+          toast({ variant: 'destructive', title: 'Falta el Almacén Principal', description: 'Se guardó la mercancía, pero el ajuste de existencia no se generó (no hay almacén).' });
+        } else {
+          const mainPresentation = (presentations || []).find(p => p.afecta_ft) || (presentations || [])[0];
+          const unitToUse = mainPresentation ? mainPresentation.tipo : 'UND - Unidad';
+          const rpcName = diff > 0 ? 'crear_entrada_inventario' : 'crear_salida_inventario';
+          const numRpc = diff > 0 ? 'get_next_entrada_numero' : 'get_next_salida_numero';
+          const absDiff = Math.abs(diff);
+          const { data: numData } = await supabase.rpc(numRpc);
+          const { error: ajusteError } = await supabase.rpc(rpcName, {
+            [diff > 0 ? 'p_entrada_data' : 'p_salida_data']: {
+              numero: numData,
+              fecha: formatDateForSupabase(getCurrentDateInTimeZone()),
+              referencia: 'AJUSTE DESDE ORDEN DE COMPRA',
+              concepto: diff > 0 ? 'AJUSTE DE INVENTARIO' : 'AJUSTE DE SALIDA',
+              almacen_id: almacenId,
+              notas: `Ajuste desde Orden de Compra, producto ${savedProduct.codigo}`,
+              total_costo: (absDiff * savedProduct.costo) || 0,
+            },
+            p_detalles_data: [{
+              producto_id: savedProduct.id,
+              codigo: savedProduct.codigo,
+              descripcion: savedProduct.descripcion,
+              cantidad: absDiff,
+              unidad: unitToUse,
+              costo_unitario: savedProduct.costo || 0,
+              importe: (absDiff * savedProduct.costo) || 0,
+            }],
+            p_tipo_movimiento: 'AJUSTE',
+          });
+          if (ajusteError) toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste de existencia.' });
+          else toast({ title: 'Ajuste automático', description: `${diff > 0 ? 'Entrada' : 'Salida'} ${numData} por ${diff > 0 ? '+' : '-'}${absDiff} uds.` });
+        }
+      } else {
+        toast({ title: 'Producto actualizado', description: 'Los cambios se guardaron correctamente.' });
+      }
+
+      // Refrescar la línea de la orden con existencia/descripcion nuevas
+      const { data: stockNuevo } = await supabase.rpc('get_stock_actual', { producto_uuid: savedProduct.id });
+      setDetalles(prev => prev.map(d => (
+        d.producto_id === savedProduct.id
+          ? { ...d, descripcion: savedProduct.descripcion, existencia: stockNuevo ?? d.existencia }
+          : d
+      )));
+
+      setProdModalOpen(false);
+      setProdEditando(null);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error al guardar', description: err.message });
+    }
+  };
+
   const handleOrdenAutomatica = async () => {
     if (!selectedProveedor) {
       toast({
@@ -1473,7 +1616,7 @@ const OrdenCompraPage = () => {
     setPreviewOptim(null);
     toast({
       title: '✨ Orden optimizada',
-      description: `Ahorro estimado: RD$ ${Number(previewOptim.ahorro).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`,
+      description: `Ahorro estimado: RD$ ${Number(previewOptim.ahorro).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     });
   };
 
@@ -2152,13 +2295,13 @@ const OrdenCompraPage = () => {
                 <div>
                   <p className="text-[9px] uppercase text-slate-500">Asignado</p>
                   <p className="text-xs font-mono font-black text-slate-800">
-                    RD$ {Number(infoSuplidor.asignado).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                    RD$ {Number(infoSuplidor.asignado).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
                   <p className="text-[9px] uppercase text-slate-500">Comprado</p>
                   <p className="text-xs font-mono font-black text-blue-700">
-                    RD$ {Number(infoSuplidor.comprado).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                    RD$ {Number(infoSuplidor.comprado).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
@@ -2168,7 +2311,7 @@ const OrdenCompraPage = () => {
                     infoSuplidor.color === 'amarillo' ? 'text-amber-700' :
                     'text-red-700'
                   }`}>
-                    RD$ {Number(infoSuplidor.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                    RD$ {Number(infoSuplidor.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
@@ -2499,7 +2642,7 @@ const OrdenCompraPage = () => {
                                         <div className="flex items-center gap-1">
                                           <span className="font-mono font-bold text-slate-700">{eq.codigo}</span>
                                           {eq.prioridad === 1 && <span className="text-amber-500" title="Preferido">⭐</span>}
-                                          <span className="ml-auto font-mono text-[9px] text-slate-500">RD$ {Number(eq.precio).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                                          <span className="ml-auto font-mono text-[9px] text-slate-500">RD$ {Number(eq.precio).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         </div>
                                         <p className="text-slate-600 truncate">{eq.descripcion}</p>
                                         <div className="flex items-center gap-3 mt-0.5 text-[9px]">
@@ -2651,7 +2794,7 @@ const OrdenCompraPage = () => {
                 {sugerenciaCompra.totalUrgente > 0 ? (
                   <>
                     <span className="text-xs text-slate-500">💡 Compra urgente sugerida:</span>
-                    <span className="font-bold text-red-600">RD$ {sugerenciaCompra.totalUrgente.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold text-red-600">RD$ {sugerenciaCompra.totalUrgente.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </>
                 ) : (
                   <span className="text-xs text-slate-500">💡 Sin compras urgentes por ahora</span>
@@ -2665,7 +2808,7 @@ const OrdenCompraPage = () => {
                 onClick={handleOptimizarOrden}
                 disabled={optimizando || !detalles?.length}
                 className="bg-amber-500 hover:bg-amber-600 text-white font-bold"
-                title={`Tu orden de RD$ ${Number(totals.total_orden).toLocaleString('es-DO', { minimumFractionDigits: 2 })} excede el presupuesto disponible de RD$ ${Number(presupuestoV2.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}. Hacé click para recortar items sin rotación.`}
+                title={`Tu orden de RD$ ${Number(totals.total_orden).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} excede el presupuesto disponible de RD$ ${Number(presupuestoV2.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Hacé click para recortar items sin rotación.`}
               >
                 {optimizando
                   ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Optimizando...</>
@@ -2674,34 +2817,36 @@ const OrdenCompraPage = () => {
             )}
           </div>
 
-          {/* Franja de análisis de caja (inline, sin ventana aparte) */}
+          {/* Franja de análisis de caja (inline, sin ventana aparte).
+              items-start: cada tarjeta con su altura natural — sin el hueco
+              vacío que dejaba estirarlas a la altura de la de Recuperación. */}
           {mostrarInteligente && sugerenciaCompra && (
-            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 items-start">
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                 <p className="text-[10px] uppercase text-slate-400 font-bold">Sugerido inicial</p>
-                <p className="font-bold text-slate-800 text-sm">RD$ {decisionTotals.total_sugerido.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                <p className="font-bold text-slate-800 text-sm">RD$ {decisionTotals.total_sugerido.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 {decisionTotals.count_excluido > 0 && (
                   <p className="text-[9px] text-slate-400 mt-0.5">{decisionTotals.count_excluido} linea(s) fuera</p>
                 )}
               </div>
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                 <p className="text-[10px] uppercase text-emerald-600 font-bold">A pedir hoy</p>
-                <p className="font-bold text-emerald-700 text-sm">RD$ {decisionTotals.pedir_hoy.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                <p className="font-bold text-emerald-700 text-sm">RD$ {decisionTotals.pedir_hoy.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 {decisionTotals.excluido > 0 && (
-                  <p className="text-[9px] text-emerald-700 mt-0.5">Bajo RD$ {decisionTotals.excluido.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-[9px] text-emerald-700 mt-0.5">Bajo RD$ {decisionTotals.excluido.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 )}
               </div>
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                 <p className="text-[10px] uppercase text-red-500 font-bold">🔴 Urgente {sugerenciaCompra.countUrgente ? `(${sugerenciaCompra.countUrgente})` : ''}</p>
-                <p className="font-bold text-red-700 text-sm">RD$ {sugerenciaCompra.totalUrgente.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                <p className="font-bold text-red-700 text-sm">RD$ {sugerenciaCompra.totalUrgente.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                 <p className="text-[10px] uppercase text-amber-600 font-bold">🟡 Próxima {sugerenciaCompra.countProxima ? `(${sugerenciaCompra.countProxima})` : ''}</p>
-                <p className="font-bold text-amber-700 text-sm">RD$ {sugerenciaCompra.totalProxima.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                <p className="font-bold text-amber-700 text-sm">RD$ {sugerenciaCompra.totalProxima.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <p className="text-[10px] uppercase text-slate-400 font-bold">⚪ Puede esperar {sugerenciaCompra.countEsperar ? `(${sugerenciaCompra.countEsperar})` : ''}</p>
-                <p className="font-bold text-slate-600 text-sm">RD$ {sugerenciaCompra.totalEsperar.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                <p className="font-bold text-slate-600 text-sm">RD$ {sugerenciaCompra.totalEsperar.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               {(() => {
                 const presup = Number(sugerenciaCompra.presupuesto) || 0;
@@ -2725,7 +2870,7 @@ const OrdenCompraPage = () => {
                         : `Presupuesto mes ${sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}`}
                     </p>
                     <p className="font-bold text-violet-700 text-sm">
-                      RD$ {presup.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                      RD$ {presup.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
 
                     {/* Barra visual del progreso disponible */}
@@ -2740,35 +2885,35 @@ const OrdenCompraPage = () => {
                         resta de la orden (antes "Disp ahora" salía dos veces). */}
                     {sugerenciaCompra.modo_distribucion === 'recuperacion' ? (
                       <div className="text-[9px] text-slate-500 leading-tight mt-1 space-y-0.5">
-                        <p>Le pagaste (30d): <span className="font-bold text-emerald-700">RD$ {Number(sugerenciaCompra.pagos_suplidor_30d || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
-                        <p>× factor {Number(sugerenciaCompra.factor_recuperacion || 0.85).toFixed(2)} = libera <span className="font-bold text-violet-700">RD$ {Number(sugerenciaCompra.fondo_liberado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
-                        <p>− Ya compraste (30d): <span className="font-mono text-slate-600">RD$ {Number(sugerenciaCompra.comprado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span></p>
-                        <p className="font-bold text-violet-700">= Disp ahora: RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                        <p>Le pagaste (30d): <span className="font-bold text-emerald-700">RD$ {Number(sugerenciaCompra.pagos_suplidor_30d || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                        <p>× factor {Number(sugerenciaCompra.factor_recuperacion || 0.85).toFixed(2)} = libera <span className="font-bold text-violet-700">RD$ {Number(sugerenciaCompra.fondo_liberado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                        <p>− Ya compraste (30d): <span className="font-mono text-slate-600">RD$ {Number(sugerenciaCompra.comprado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                        <p className="font-bold text-violet-700">= Disp ahora: RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         {ordenActual > 0 && (
                           <>
                             <p className="text-slate-500">
-                              − Esta orden: <span className="font-mono">RD$ {ordenActual.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                              − Esta orden: <span className="font-mono">RD$ {ordenActual.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </p>
                             <p className={`font-bold ${colorDispDespues}`}>
-                              = Quedaría: RD$ {dispDespues.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                              = Quedaría: RD$ {dispDespues.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               {dispDespues < 0 && ' ⚠️'}
                             </p>
                           </>
                         )}
-                        <p className="text-amber-700 mt-0.5 border-t border-violet-200 pt-0.5">Aun le debes: RD$ {Number(sugerenciaCompra.deuda_suplidor || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                        <p className="text-amber-700 mt-0.5 border-t border-violet-200 pt-0.5">Aun le debes: RD$ {Number(sugerenciaCompra.deuda_suplidor || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                       </div>
                     ) : (
                     <div className="text-[9px] mt-1 leading-tight space-y-0.5">
                       <p className="text-violet-600">
-                        Disp ahora: <span className="font-bold">RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                        Disp ahora: <span className="font-bold">RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </p>
                       {ordenActual > 0 && (
                         <>
                           <p className="text-slate-500">
-                            − Esta orden: <span className="font-mono">RD$ {ordenActual.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                            − Esta orden: <span className="font-mono">RD$ {ordenActual.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </p>
                           <p className={`font-bold ${colorDispDespues}`}>
-                            = Quedaría: RD$ {dispDespues.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                            = Quedaría: RD$ {dispDespues.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             {dispDespues < 0 && ' ⚠️'}
                           </p>
                         </>
@@ -2931,6 +3076,15 @@ const OrdenCompraPage = () => {
           removeDetalle(detalleOriginal.id);
           setSupVirtMenu(null);
         }}
+        onViewProduct={abrirProductoDesdeOrden}
+      />
+
+      {/* Ver/editar la mercancía de una línea (Información de la Mercancía) */}
+      <ProductFormModal
+        isOpen={prodModalOpen}
+        onClose={() => { setProdModalOpen(false); setProdEditando(null); }}
+        onSave={handleSaveProductoOrden}
+        product={prodEditando}
       />
 
       {/* ════════════════════════════════════════════════════ */}
@@ -2961,24 +3115,24 @@ const OrdenCompraPage = () => {
                   <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-amber-800">
                     <span>Total de la orden:</span>
                     <span className="text-right font-mono font-bold">
-                      RD$ {Number(pinGateInfo.monto_orden).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                      RD$ {Number(pinGateInfo.monto_orden).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     {pinGateInfo.motivo === 'EXCEDE_PRESUPUESTO_DISPONIBLE' ? (
                       <>
                         <span>Disponible este mes:</span>
                         <span className="text-right font-mono">
-                          RD$ {Number(pinGateInfo.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                          RD$ {Number(pinGateInfo.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                         <span className="text-red-700 font-bold">Exceso:</span>
                         <span className="text-right font-mono text-red-700 font-bold">
-                          RD$ {Number(pinGateInfo.exceso).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                          RD$ {Number(pinGateInfo.exceso).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </>
                     ) : (
                       <>
                         <span>Límite aprobación:</span>
                         <span className="text-right font-mono">
-                          RD$ {Number(pinGateInfo.limite).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                          RD$ {Number(pinGateInfo.limite).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </>
                     )}
@@ -3310,15 +3464,15 @@ const OrdenCompraPage = () => {
               <div className="grid grid-cols-2 gap-1 text-[11px] text-amber-800">
                 <span>Total orden:</span>
                 <span className="text-right font-mono font-bold">
-                  RD$ {Number(pinGateInfo.monto_orden).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                  RD$ {Number(pinGateInfo.monto_orden).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
                 <span>Disponible:</span>
                 <span className="text-right font-mono">
-                  RD$ {Number(pinGateInfo.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                  RD$ {Number(pinGateInfo.disponible).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
                 <span className="text-red-700 font-bold">Exceso:</span>
                 <span className="text-right font-mono text-red-700 font-bold">
-                  RD$ {Number(pinGateInfo.exceso).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                  RD$ {Number(pinGateInfo.exceso).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
@@ -3377,15 +3531,15 @@ const OrdenCompraPage = () => {
               <div className="grid grid-cols-3 gap-2 my-2">
                 <div className="bg-slate-50 border border-slate-200 rounded-md p-2 text-center">
                   <p className="text-[10px] uppercase font-bold text-slate-500">Antes</p>
-                  <p className="text-sm font-mono font-black text-slate-700">RD$ {Number(previewOptim.total_antes).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-sm font-mono font-black text-slate-700">RD$ {Number(previewOptim.total_antes).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div className="bg-emerald-50 border border-emerald-200 rounded-md p-2 text-center">
                   <p className="text-[10px] uppercase font-bold text-emerald-600">Después</p>
-                  <p className="text-sm font-mono font-black text-emerald-700">RD$ {Number(previewOptim.total_despues).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-sm font-mono font-black text-emerald-700">RD$ {Number(previewOptim.total_despues).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-center">
                   <p className="text-[10px] uppercase font-bold text-amber-600">Ahorro</p>
-                  <p className="text-sm font-mono font-black text-amber-700">RD$ {Number(previewOptim.ahorro).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-sm font-mono font-black text-amber-700">RD$ {Number(previewOptim.ahorro).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
               </div>
 
@@ -3427,7 +3581,7 @@ const OrdenCompraPage = () => {
                             {orig?.cantidad || 0} → <b>{Number(it.cantidad_nueva).toLocaleString('es-DO')}</b>
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">
-                            RD$ {Number(it.subtotal_nuevo).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                            RD$ {Number(it.subtotal_nuevo).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </TableCell>
                         </TableRow>
                       );
