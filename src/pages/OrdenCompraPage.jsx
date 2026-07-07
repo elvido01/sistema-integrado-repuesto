@@ -304,6 +304,7 @@ const OrdenCompraPage = () => {
   // Fase A v2: modal inline de configuracion del presupuesto
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [configForm, setConfigForm] = useState({
+    modelo_presupuesto: 'recuperacion',
     monto_base_mensual: '',
     incremento_mensual_pct: 0,
     caja_minima: 0,
@@ -325,6 +326,7 @@ const OrdenCompraPage = () => {
         .maybeSingle();
       if (data) {
         setConfigForm({
+          modelo_presupuesto: data.modelo_presupuesto || 'recuperacion',
           monto_base_mensual: data.monto_base_mensual ?? '',
           incremento_mensual_pct: data.incremento_mensual_pct ?? 0,
           caja_minima: data.caja_minima ?? 0,
@@ -342,6 +344,7 @@ const OrdenCompraPage = () => {
     try {
       const payload = {
         tenant_id: tenantId,
+        modelo_presupuesto: configForm.modelo_presupuesto || 'recuperacion',
         monto_base_mensual: configForm.monto_base_mensual === '' ? null : Number(configForm.monto_base_mensual),
         incremento_mensual_pct: Number(configForm.incremento_mensual_pct) || 0,
         caja_minima: Number(configForm.caja_minima) || 0,
@@ -820,7 +823,18 @@ const OrdenCompraPage = () => {
 
       // 3. Enrich details with current product stock (existencia)
       let enhancedDetails = detailsData;
+      let desactivadosOmitidos = 0;
       if (detailsData.length > 0) {
+        // Traer el estado activo de los productos de la orden (una sola consulta)
+        const prodIds = [...new Set(detailsData.map(d => d.producto_id).filter(Boolean))];
+        const activoMap = {};
+        if (prodIds.length > 0) {
+          const { data: prodRows } = await supabase
+            .from('productos')
+            .select('id, activo')
+            .in('id', prodIds);
+          (prodRows || []).forEach(p => { activoMap[p.id] = p.activo; });
+        }
         enhancedDetails = await Promise.all(detailsData.map(async (detail) => {
           // Call the same function the product search modal uses internally
           const { data: stockVal } = await supabase.rpc('get_stock_actual', { producto_uuid: detail.producto_id });
@@ -828,9 +842,15 @@ const OrdenCompraPage = () => {
             ...detail,
             decision_estado: detail.decision_estado || DECISION_DEFAULT,
             decision_motivo: detail.decision_motivo || null,
-            existencia: stockVal || 0
+            existencia: stockVal || 0,
+            _activo: detail.producto_id ? (activoMap[detail.producto_id] !== false) : true,
           };
         }));
+        // Omitir productos desactivados (descontinuados / con código nuevo): no
+        // deben quedar en el borrador aunque una carga vieja los haya metido.
+        const antes = enhancedDetails.length;
+        enhancedDetails = enhancedDetails.filter(d => d._activo);
+        desactivadosOmitidos = antes - enhancedDetails.length;
       }
 
       // 4. Set states
@@ -852,6 +872,12 @@ const OrdenCompraPage = () => {
 
       setIsEditMode(true);
       setView('form');
+      if (desactivadosOmitidos > 0) {
+        toast({
+          title: 'Productos desactivados omitidos',
+          description: `Se quitaron ${desactivadosOmitidos} producto(s) desactivado(s) de esta orden. Grábela para guardar la orden limpia.`,
+        });
+      }
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar la orden para editar.' });
     } finally {
@@ -2668,6 +2694,8 @@ const OrdenCompraPage = () => {
                     <p className="text-[10px] uppercase text-violet-500 font-bold leading-tight">
                       {sugerenciaCompra.modo_distribucion === 'recuperacion'
                         ? `Recuperacion ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}`
+                        : sugerenciaCompra.modo_distribucion === 'presupuesto_fijo'
+                        ? 'Presupuesto fijo mensual'
                         : sugerenciaCompra.modo_distribucion === 'sin_deuda'
                         ? `${selectedProveedor?.nombre?.slice(0, 14) || 'suplidor'} (al dia)`
                         : sugerenciaCompra.modo_distribucion
@@ -3079,43 +3107,67 @@ const OrdenCompraPage = () => {
           </DialogHeader>
 
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-[11px] uppercase font-bold text-slate-700">Monto base mensual (RD$)</Label>
-                <Input
-                  type="number" min={0} step="0.01"
-                  value={configForm.monto_base_mensual}
-                  onChange={(e) => setConfigForm(p => ({ ...p, monto_base_mensual: e.target.value }))}
-                  placeholder="Ej: 300000"
-                />
-                <p className="text-[10px] text-slate-500">Vacío = automático según ventas.</p>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] uppercase font-bold text-slate-700">Incremento MÁXIMO mensual (%)</Label>
-                <Input
-                  type="number" min={0} max={100} step="0.5"
-                  value={configForm.incremento_mensual_pct}
-                  onChange={(e) => setConfigForm(p => ({ ...p, incremento_mensual_pct: e.target.value }))}
-                  placeholder="Ej: 5"
-                />
-                <p className="text-[10px] text-slate-500">
-                  Tope. El sistema aplica menos si la deuda es alta. Solo se setea 1 vez.
-                </p>
-              </div>
+            {/* INTERRUPTOR de modelo: solo uno gobierna */}
+            <div className="space-y-1 border rounded-md p-2 bg-violet-50/40 border-violet-200">
+              <Label className="text-[11px] uppercase font-bold text-violet-700">Modelo de presupuesto</Label>
+              <Select
+                value={configForm.modelo_presupuesto || 'recuperacion'}
+                onValueChange={(v) => setConfigForm(p => ({ ...p, modelo_presupuesto: v }))}
+              >
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="recuperacion">Recuperación por pagos (por suplidor)</SelectItem>
+                  <SelectItem value="fijo">Presupuesto fijo mensual (monto base)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-slate-500 leading-tight">
+                {configForm.modelo_presupuesto === 'fijo'
+                  ? 'El límite es tu monto base mensual compartido entre todos los suplidores, tengan deuda o no.'
+                  : 'El límite por suplidor sale de lo que le pagas: pagos de 30 días × factor. Un suplidor sin deuda usa la caja global.'}
+              </p>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-[11px] uppercase font-bold text-slate-700">Caja mínima de seguridad (RD$)</Label>
-              <Input
-                type="number" min={0} step="0.01"
-                value={configForm.caja_minima}
-                onChange={(e) => setConfigForm(p => ({ ...p, caja_minima: e.target.value }))}
-                placeholder="Ej: 50000"
-              />
-              <p className="text-[10px] text-slate-500">Monto que SIEMPRE debe quedar en caja, no se compromete.</p>
-            </div>
+            {configForm.modelo_presupuesto === 'fijo' && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] uppercase font-bold text-slate-700">Monto base mensual (RD$)</Label>
+                    <Input
+                      type="number" min={0} step="0.01"
+                      value={configForm.monto_base_mensual}
+                      onChange={(e) => setConfigForm(p => ({ ...p, monto_base_mensual: e.target.value }))}
+                      placeholder="Ej: 300000"
+                    />
+                    <p className="text-[10px] text-slate-500">Vacío = automático según ventas.</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] uppercase font-bold text-slate-700">Incremento MÁXIMO mensual (%)</Label>
+                    <Input
+                      type="number" min={0} max={100} step="0.5"
+                      value={configForm.incremento_mensual_pct}
+                      onChange={(e) => setConfigForm(p => ({ ...p, incremento_mensual_pct: e.target.value }))}
+                      placeholder="Ej: 5"
+                    />
+                    <p className="text-[10px] text-slate-500">
+                      Tope. El sistema aplica menos si la deuda es alta. Solo se setea 1 vez.
+                    </p>
+                  </div>
+                </div>
 
-            {/* Velocidad de recuperacion (payment-driven v3) */}
+                <div className="space-y-1">
+                  <Label className="text-[11px] uppercase font-bold text-slate-700">Caja mínima de seguridad (RD$)</Label>
+                  <Input
+                    type="number" min={0} step="0.01"
+                    value={configForm.caja_minima}
+                    onChange={(e) => setConfigForm(p => ({ ...p, caja_minima: e.target.value }))}
+                    placeholder="Ej: 50000"
+                  />
+                  <p className="text-[10px] text-slate-500">Monto que SIEMPRE debe quedar en caja, no se compromete.</p>
+                </div>
+              </>
+            )}
+
+            {configForm.modelo_presupuesto !== 'fijo' && (
             <div className="space-y-1">
               <Label className="text-[11px] uppercase font-bold text-slate-700">Velocidad de recuperación por suplidor</Label>
               <Select
@@ -3147,6 +3199,7 @@ const OrdenCompraPage = () => {
                 );
               })()}
             </div>
+            )}
 
             <div className="border-t pt-3 space-y-2">
               <div className="flex items-center gap-2 p-2 rounded-md border border-amber-200 bg-amber-50">
