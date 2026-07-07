@@ -2848,31 +2848,68 @@ const OrdenCompraPage = () => {
                 <p className="text-[10px] uppercase text-slate-400 font-bold">⚪ Puede esperar {sugerenciaCompra.countEsperar ? `(${sugerenciaCompra.countEsperar})` : ''}</p>
                 <p className="font-bold text-slate-600 text-sm">RD$ {sugerenciaCompra.totalEsperar.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
+              {/* Salud de caja en la fila, al lado de "Puede esperar" */}
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <p className="text-[10px] uppercase text-slate-400 font-bold">Salud de caja</p>
+                <p className={`font-bold text-sm ${sugerenciaCompra.salud_caja === 'tension' ? 'text-red-600' : sugerenciaCompra.salud_caja === 'ajustada' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {sugerenciaCompra.salud_caja === 'tension' ? 'En tensión' : sugerenciaCompra.salud_caja === 'ajustada' ? 'Ajustada' : 'Sana'}
+                </p>
+              </div>
+              {/* Presupuesto/Recuperación: franja HORIZONTAL a lo ancho (ocupa menos alto) */}
               {(() => {
                 const presup = Number(sugerenciaCompra.presupuesto) || 0;
                 const dispOriginal = Number(sugerenciaCompra.disponible) || 0;
                 const ordenActual = Number(totals.total_orden) || 0;
                 const dispDespues = dispOriginal - ordenActual;
-                const ratioOrden = presup > 0 ? ordenActual / presup : 0;
                 const ratioDisp = presup > 0 ? Math.max(0, dispDespues) / presup : 0;
                 const colorDispDespues = dispDespues < 0 ? 'text-red-600' : dispDespues / Math.max(1, presup) < 0.10 ? 'text-amber-600' : 'text-emerald-600';
+                const fmtRD = (n) => Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 return (
-                  <div className={`rounded-lg border-2 px-3 py-2 ${dispDespues < 0 ? 'border-red-400 bg-red-50 animate-pulse' : dispDespues / Math.max(1, presup) < 0.10 ? 'border-amber-300 bg-amber-50' : 'border-violet-200 bg-violet-50'}`}>
-                    <p className="text-[10px] uppercase text-violet-500 font-bold leading-tight">
-                      {sugerenciaCompra.modo_distribucion === 'recuperacion'
-                        ? `Recuperacion ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}`
-                        : sugerenciaCompra.modo_distribucion === 'presupuesto_fijo'
-                        ? 'Presupuesto fijo mensual'
-                        : sugerenciaCompra.modo_distribucion === 'sin_deuda'
-                        ? `${selectedProveedor?.nombre?.slice(0, 14) || 'suplidor'} (al dia)`
-                        : sugerenciaCompra.modo_distribucion
-                        ? `Presup. ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}`
-                        : `Presupuesto mes ${sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}`}
-                    </p>
-                    <p className="font-bold text-violet-700 text-sm">
-                      RD$ {presup.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-
+                  <div className={`col-span-full rounded-lg border-2 px-3 py-1.5 ${dispDespues < 0 ? 'border-red-400 bg-red-50 animate-pulse' : dispDespues / Math.max(1, presup) < 0.10 ? 'border-amber-300 bg-amber-50' : 'border-violet-200 bg-violet-50'}`}>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                      <div className="shrink-0">
+                        <p className="text-[10px] uppercase text-violet-500 font-bold leading-tight">
+                          {sugerenciaCompra.modo_distribucion === 'recuperacion'
+                            ? `Recuperacion ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}`
+                            : sugerenciaCompra.modo_distribucion === 'presupuesto_fijo'
+                            ? 'Presupuesto fijo mensual'
+                            : sugerenciaCompra.modo_distribucion === 'sin_deuda'
+                            ? `${selectedProveedor?.nombre?.slice(0, 14) || 'suplidor'} (al dia)`
+                            : sugerenciaCompra.modo_distribucion
+                            ? `Presup. ${selectedProveedor?.nombre?.slice(0, 12) || 'suplidor'}`
+                            : `Presupuesto mes ${sugerenciaCompra.modo === 'manual' ? '(manual)' : '(auto)'}`}
+                        </p>
+                        <p className="font-bold text-violet-700 text-sm leading-tight">RD$ {fmtRD(presup)}</p>
+                      </div>
+                      {sugerenciaCompra.modo_distribucion === 'recuperacion' ? (
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] text-slate-500 leading-tight">
+                          <span>Le pagaste (30d): <b className="text-emerald-700">RD$ {fmtRD(sugerenciaCompra.pagos_suplidor_30d)}</b></span>
+                          <span>× {Number(sugerenciaCompra.factor_recuperacion || 0.85).toFixed(2)} = libera <b className="text-violet-700">RD$ {fmtRD(sugerenciaCompra.fondo_liberado)}</b></span>
+                          <span>− compraste (30d): RD$ {fmtRD(sugerenciaCompra.comprado)}</span>
+                          <span className="font-bold text-violet-700">= Disp: RD$ {fmtRD(dispOriginal)}</span>
+                          {ordenActual > 0 && (
+                            <>
+                              <span>− esta orden: RD$ {fmtRD(ordenActual)}</span>
+                              <span className={`font-bold ${colorDispDespues}`}>= Quedaría: RD$ {fmtRD(dispDespues)}{dispDespues < 0 && ' ⚠️'}</span>
+                            </>
+                          )}
+                          <span className="text-amber-700">· Aun le debes: RD$ {fmtRD(sugerenciaCompra.deuda_suplidor)}</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] text-slate-500 leading-tight">
+                          <span className="text-violet-600">Disp ahora: <b>RD$ {fmtRD(dispOriginal)}</b></span>
+                          {ordenActual > 0 && (
+                            <>
+                              <span>− esta orden: RD$ {fmtRD(ordenActual)}</span>
+                              <span className={`font-bold ${colorDispDespues}`}>= Quedaría: RD$ {fmtRD(dispDespues)}{dispDespues < 0 && ' ⚠️'}</span>
+                            </>
+                          )}
+                          {sugerenciaCompra.modo_distribucion === 'sin_deuda' && (
+                            <span className="text-emerald-600 italic">Al día con este suplidor · límite = caja global</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     {/* Barra visual del progreso disponible */}
                     <div className="h-1.5 w-full bg-slate-200 rounded-full mt-1 overflow-hidden">
                       <div
@@ -2880,60 +2917,9 @@ const OrdenCompraPage = () => {
                         style={{ width: `${Math.min(100, Math.max(0, ratioDisp * 100))}%` }}
                       />
                     </div>
-
-                    {/* UN solo flujo: en modo recuperación el desglose incluye la
-                        resta de la orden (antes "Disp ahora" salía dos veces). */}
-                    {sugerenciaCompra.modo_distribucion === 'recuperacion' ? (
-                      <div className="text-[9px] text-slate-500 leading-tight mt-1 space-y-0.5">
-                        <p>Le pagaste (30d): <span className="font-bold text-emerald-700">RD$ {Number(sugerenciaCompra.pagos_suplidor_30d || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                        <p>× factor {Number(sugerenciaCompra.factor_recuperacion || 0.85).toFixed(2)} = libera <span className="font-bold text-violet-700">RD$ {Number(sugerenciaCompra.fondo_liberado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                        <p>− Ya compraste (30d): <span className="font-mono text-slate-600">RD$ {Number(sugerenciaCompra.comprado || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                        <p className="font-bold text-violet-700">= Disp ahora: RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        {ordenActual > 0 && (
-                          <>
-                            <p className="text-slate-500">
-                              − Esta orden: <span className="font-mono">RD$ {ordenActual.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                            </p>
-                            <p className={`font-bold ${colorDispDespues}`}>
-                              = Quedaría: RD$ {dispDespues.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              {dispDespues < 0 && ' ⚠️'}
-                            </p>
-                          </>
-                        )}
-                        <p className="text-amber-700 mt-0.5 border-t border-violet-200 pt-0.5">Aun le debes: RD$ {Number(sugerenciaCompra.deuda_suplidor || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                      </div>
-                    ) : (
-                    <div className="text-[9px] mt-1 leading-tight space-y-0.5">
-                      <p className="text-violet-600">
-                        Disp ahora: <span className="font-bold">RD$ {dispOriginal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </p>
-                      {ordenActual > 0 && (
-                        <>
-                          <p className="text-slate-500">
-                            − Esta orden: <span className="font-mono">RD$ {ordenActual.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </p>
-                          <p className={`font-bold ${colorDispDespues}`}>
-                            = Quedaría: RD$ {dispDespues.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            {dispDespues < 0 && ' ⚠️'}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                    )}
-                    {sugerenciaCompra.modo_distribucion === 'sin_deuda' && (
-                      <p className="text-[9px] text-emerald-600 italic leading-tight mt-1">
-                        Estas al dia con este suplidor. Limite = caja global.
-                      </p>
-                    )}
                   </div>
                 );
               })()}
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 flex flex-col justify-center">
-                <p className="text-[10px] uppercase text-slate-400 font-bold">Salud de caja</p>
-                <p className={`font-bold text-sm ${sugerenciaCompra.salud_caja === 'tension' ? 'text-red-600' : sugerenciaCompra.salud_caja === 'ajustada' ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {sugerenciaCompra.salud_caja === 'tension' ? 'En tensión' : sugerenciaCompra.salud_caja === 'ajustada' ? 'Ajustada' : 'Sana'}
-                </p>
-              </div>
             </div>
           )}
         </div>
