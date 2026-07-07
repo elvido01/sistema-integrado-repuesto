@@ -134,6 +134,19 @@ const OrdenCompraPage = () => {
   // "Ver producto" (clic derecho): abre Información de la Mercancía
   const [prodModalOpen, setProdModalOpen] = useState(false);
   const [prodEditando, setProdEditando] = useState(null);
+  // Calibración de lead time del suplidor (entrega/ciclo reales del historial)
+  const [leadInfo, setLeadInfo] = useState(null);
+  useEffect(() => {
+    let cancel = false;
+    setLeadInfo(null);
+    if (!selectedProveedor?.id) return;
+    (async () => {
+      // Silencioso si el RPC aún no existe en esta base
+      const { data, error } = await supabase.rpc('get_suplidor_lead_time', { p_suplidor_id: selectedProveedor.id });
+      if (!cancel && !error && data) setLeadInfo(data);
+    })();
+    return () => { cancel = true; };
+  }, [selectedProveedor?.id]);
   const [orden, setOrden] = useState({
     numero: '',
     fecha_orden: getCurrentDateInTimeZone(),
@@ -2799,6 +2812,21 @@ const OrdenCompraPage = () => {
                 ) : (
                   <span className="text-xs text-slate-500">💡 Sin compras urgentes por ahora</span>
                 )}
+              </div>
+            )}
+            {/* Calibración de lead time del suplidor (auto, con su historial) */}
+            {leadInfo && (
+              <div
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-sky-200 bg-sky-50 text-[11px] text-sky-800"
+                title={leadInfo.calibrado
+                  ? `Calculado del historial: entrega en ~${leadInfo.lead_dias} día(s), le compras cada ~${leadInfo.ciclo_dias} día(s). La Orden Automática pide para cubrir ${leadInfo.cobertura_objetivo} días y reordena al quedar ${leadInfo.cobertura_reorden} días de stock.`
+                  : 'Aún sin historial suficiente: usando valores estándar (entrega 7d, ciclo 7d). Se calibra solo con cada compra.'}
+              >
+                <span>📦</span>
+                <span>
+                  Entrega ~<b>{leadInfo.lead_dias}d</b> · compras cada ~<b>{leadInfo.ciclo_dias}d</b> → pide para <b>{leadInfo.cobertura_objetivo}d</b>
+                  {!leadInfo.calibrado && <span className="text-sky-500"> (estándar)</span>}
+                </span>
               </div>
             )}
 
