@@ -853,13 +853,13 @@ const OrdenCompraPage = () => {
         const antes = enhancedDetails.length;
         enhancedDetails = enhancedDetails.filter(d => d._activo);
         desactivadosOmitidos = antes - enhancedDetails.length;
-        // En borradores AUTO-generados, quitar tambien las lineas YA REPUESTAS:
-        // el borrador acumula lineas historicas y si el producto llego por otra
-        // compra queda pidiendo de mas (misma regla inversa del auto-envio de
-        // ventas: se necesita si existencia <= minimo, o <= 0 sin minimo).
-        const esBorradorAuto = (orderData.notas || '').includes('Generada automáticamente')
-          && (orderData.estado || 'Pendiente') === 'Pendiente';
-        if (esBorradorAuto) {
+        // En TODO borrador Pendiente, quitar tambien las lineas YA REPUESTAS:
+        // los borradores acumulan lineas historicas y si el producto llego por
+        // otra compra queda pidiendo de mas (misma regla inversa del auto-envio
+        // de ventas: se necesita si existencia <= minimo, o <= 0 sin minimo).
+        // Ordenes ya Enviadas/Recibidas no se tocan.
+        const esBorradorPendiente = (orderData.estado || 'Pendiente') === 'Pendiente';
+        if (esBorradorPendiente) {
           const antes2 = enhancedDetails.length;
           enhancedDetails = enhancedDetails.filter(d => {
             if (!d.producto_id) return true;
