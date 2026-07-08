@@ -44,7 +44,7 @@ const fhora = (ts) => {
 const NotasComentariosPage = () => {
   const { toast } = useToast();
   const { tenantId, user, profile } = useAuth();
-  const { closePanel, openPanel, activePanel } = usePanels();
+  const { closePanel, activePanel } = usePanels();
 
   const [cliente, setCliente] = useState(null);
   const [codigoInput, setCodigoInput] = useState('');
@@ -66,6 +66,37 @@ const NotasComentariosPage = () => {
   const [imagePreview, setImagePreview] = useState(null);
 
   const esAdmin = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
+
+  // Listado general (todos los registros de documentación) — integrado:
+  // se ve al entrar, se filtra, y al hacer clic carga el cliente completo
+  const [allDocs, setAllDocs] = useState([]);
+  const [allSearch, setAllSearch] = useState('');
+  const [loadingAll, setLoadingAll] = useState(false);
+
+  const cargarListadoGeneral = useCallback(async () => {
+    setLoadingAll(true);
+    const { data } = await supabase
+      .from('documentacion_clientes')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    setAllDocs(data || []);
+    setLoadingAll(false);
+  }, []);
+
+  React.useEffect(() => { cargarListadoGeneral(); }, [cargarListadoGeneral]);
+
+  const norm = (v) => String(v || '').toLowerCase().trim();
+  const listadoFiltrado = React.useMemo(() => {
+    const q = norm(allSearch);
+    if (!q) return allDocs;
+    return allDocs.filter((r) =>
+      norm(r.cliente_nombre).includes(q) ||
+      norm(r.documento_identidad).includes(q) ||
+      norm(r.chasis).includes(q) ||
+      norm(r.placa).includes(q)
+    );
+  }, [allDocs, allSearch]);
 
   const cargar = useCallback(async (clienteId, cedula) => {
     if (!clienteId) return;
@@ -102,6 +133,10 @@ const NotasComentariosPage = () => {
       setNotas(nts || []);
       setPrestamos(prs || []);
       setDocs(dcs || []);
+      // La documentación sube LLENA: se carga la unidad más reciente del
+      // cliente al formulario (con sus imágenes); si no tiene, queda en crear
+      if (dcs && dcs.length) abrirDocEditar(dcs[0]);
+      else abrirDocNuevo();
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudieron cargar los datos del cliente', description: e.message });
       setNotas([]); setPrestamos([]); setDocs([]);
@@ -116,6 +151,33 @@ const NotasComentariosPage = () => {
     // El formulario de documentación queda desplegado y limpio para este cliente
     setDocEditing(null); setDocForm(emptyDocForm); setDocFiles({}); setDocUrls({});
     cargar(c.id, c.rnc);
+  };
+
+  // Clic en una fila del listado general -> carga el cliente completo
+  const seleccionarDesdeListado = async (r) => {
+    let cli = null;
+    if (r.cliente_id) {
+      const { data } = await supabase.from('clientes')
+        .select('id, nombre, codigo, rnc, direccion, telefono')
+        .eq('id', r.cliente_id).maybeSingle();
+      cli = data || null;
+    }
+    if (!cli && r.documento_identidad) {
+      // Registros de la aliada o sin cliente asignado: se busca por cédula
+      const { data } = await supabase.from('clientes')
+        .select('id, nombre, codigo, rnc, direccion, telefono')
+        .eq('rnc', r.documento_identidad).limit(1);
+      cli = data?.[0] || null;
+    }
+    if (cli) seleccionarCliente(cli);
+    else toast({ variant: 'destructive', title: 'Sin cliente registrado', description: 'Este registro no está ligado a ningún cliente del catálogo.' });
+  };
+
+  const volverAlListado = () => {
+    setCliente(null); setCodigoInput('');
+    setNotas([]); setPrestamos([]); setDocs([]);
+    setDocEditing(null); setDocForm(emptyDocForm); setDocFiles({}); setDocUrls({});
+    cargarListadoGeneral();
   };
 
   const buscarPorCodigo = async () => {
@@ -250,7 +312,7 @@ const NotasComentariosPage = () => {
       if (error) throw error;
 
       toast({ title: 'Documentación guardada' });
-      abrirDocNuevo(); // formulario limpio, listo para la siguiente unidad
+      cargarListadoGeneral();
       if (cliente) cargar(cliente.id, cliente.rnc);
     } catch (e) {
       toast({ variant: 'destructive', title: 'Error guardando documentación', description: e.message });
@@ -267,6 +329,7 @@ const NotasComentariosPage = () => {
       const { error } = await supabase.from('documentacion_clientes').delete().eq('id', record.id);
       if (error) throw error;
       toast({ title: 'Registro eliminado' });
+      cargarListadoGeneral();
       if (cliente) cargar(cliente.id, cliente.rnc);
     } catch (e) {
       toast({ variant: 'destructive', title: 'Error eliminando', description: e.message });
@@ -301,7 +364,7 @@ const NotasComentariosPage = () => {
         <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 py-1 px-2 font-extrabold tracking-wide text-base flex items-center">
           <span className="w-36" />
           <span className="flex-1 text-center">NOTAS Y COMENTARIOS — DOCUMENTACIÓN DEL CLIENTE</span>
-          <Button type="button" variant="outline" size="sm" className="h-7 text-xs w-36" onClick={() => openPanel('documentacion-cliente')}>
+          <Button type="button" variant="outline" size="sm" className="h-7 text-xs w-36" onClick={volverAlListado}>
             <List className="w-3.5 h-3.5 mr-1" />Listado general
           </Button>
         </div>
@@ -346,6 +409,64 @@ const NotasComentariosPage = () => {
             </div>
           </div>
 
+          {/* Listado general integrado: se ve al entrar y se filtra; el clic carga el cliente */}
+          {!cliente && (
+            <div className="border rounded-md overflow-hidden">
+              <div className="flex items-center gap-2 p-2 border-b bg-slate-50">
+                <span className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap flex items-center gap-1">
+                  <List className="w-3.5 h-3.5" /> Listado general
+                </span>
+                <Input
+                  value={allSearch}
+                  onChange={(e) => setAllSearch(e.target.value)}
+                  placeholder="Filtrar por nombre, cédula, chasis o placa…"
+                  className="flex-1 h-8 text-sm"
+                />
+                <span className="text-[11px] text-slate-400 whitespace-nowrap">{listadoFiltrado.length} registros</span>
+              </div>
+              <div className="overflow-y-auto max-h-[420px]">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-100 text-gray-700 font-bold border-b sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1">Cliente</th>
+                      <th className="text-left px-2 py-1 w-32">Cédula</th>
+                      <th className="text-left px-2 py-1 w-36">Chasis</th>
+                      <th className="text-left px-2 py-1 w-24">Placa</th>
+                      <th className="text-left px-2 py-1 w-32">Matrícula</th>
+                      <th className="text-center px-2 py-1 w-16">Imgs</th>
+                      <th className="text-left px-2 py-1 w-20">Fecha</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingAll && <tr><td colSpan={7} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
+                    {!loadingAll && listadoFiltrado.length === 0 && <tr><td colSpan={7} className="p-8 text-center italic text-slate-400">Sin registros de documentación.</td></tr>}
+                    {!loadingAll && listadoFiltrado.map((r, i) => (
+                      <tr key={r.id}
+                          onClick={() => seleccionarDesdeListado(r)}
+                          className={`border-b last:border-0 cursor-pointer hover:bg-blue-50 ${i % 2 === 1 ? 'bg-[#f7fafc]' : 'bg-white'}`}>
+                        <td className="px-2 py-1 font-semibold uppercase truncate max-w-[220px]">
+                          {r.cliente_nombre || '—'}
+                          {r.tenant_id !== tenantId && (
+                            <span className="ml-1 inline-block px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold align-middle" title="Registro de la empresa aliada">ALIADA</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1 whitespace-nowrap">{r.documento_identidad || '—'}</td>
+                        <td className="px-2 py-1 font-mono truncate max-w-[140px]">{r.chasis || '—'}</td>
+                        <td className="px-2 py-1 font-mono">{r.placa || '—'}</td>
+                        <td className="px-2 py-1">
+                          {r.matricula ? <span className={`px-1 rounded border text-[10px] font-bold ${estadoBadge(r.matricula)}`}>{r.matricula}</span> : '—'}
+                        </td>
+                        <td className="px-2 py-1 text-center">{countDocs(r)}/5</td>
+                        <td className="px-2 py-1 whitespace-nowrap">{fdate(r.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {cliente && (<>
           {/* Nueva nota */}
           <div className="border rounded-md p-2">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Nueva nota / comentario</span>
@@ -507,9 +628,7 @@ const NotasComentariosPage = () => {
               </div>
             )}
 
-            {!cliente ? (
-              <div className="py-3 text-center text-xs italic text-slate-400">Selecciona un cliente para ver su documentación.</div>
-            ) : docs.length === 0 ? null : (
+            {docs.length === 0 ? null : (
               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                 {docs.map((r) => (
                   <div key={r.id} className="border rounded-md p-2 bg-slate-50/60">
@@ -543,6 +662,7 @@ const NotasComentariosPage = () => {
               </div>
             )}
           </div>
+          </>)}
 
           {/* Acciones */}
           <div className="flex items-center justify-between flex-wrap gap-3 border-t pt-2">
