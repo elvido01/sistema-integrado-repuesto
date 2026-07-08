@@ -89,18 +89,19 @@ const navItems = [
         'c07a1d07-1e2f-4b3c-9d4a-107a10500007', // Inversiones Los Naranjos
       ] },
       { title: 'Carta de Ruta', id: 'carta-ruta', icon: FileText, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
-      { title: 'Documentación Cliente', id: 'documentacion-cliente', icon: FileImage, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Cotizaciones', id: 'cotizaciones' },
       { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, tenantOnly: '00000000-0000-0000-0000-000000000001' },
       { title: 'Devoluciones', id: 'devoluciones' },
     ],
   },
   {
-    // Solo empresas tipo financiera (igual al menú Documentos del sistema viejo)
+    // Financieras + Caminero Motors (igual al menú Documentos del sistema
+    // viejo). Caminero y Naranjos comparten los datos de estos módulos.
     title: 'Documentos',
     icon: FileText,
     subItems: [
-      { title: 'Notas y Comentarios', id: 'notas-comentarios', icon: FileText, tipoNegocio: 'financiera', permissionKey: 'prestamos' },
+      { title: 'Notas y Comentarios', id: 'notas-comentarios', icon: FileText, tipoNegocio: 'financiera', tenantOr: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Documentación Cliente', id: 'documentacion-cliente', icon: FileImage, tipoNegocio: 'financiera', tenantOr: 'b39506c3-27dc-467d-830b-096731b83113' },
     ],
   },
   {
@@ -368,7 +369,12 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             if (sub.tenantOnly && !(Array.isArray(sub.tenantOnly) ? sub.tenantOnly.includes(tenantId) : sub.tenantOnly === tenantId)) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
             if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
-            if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio) return false; // módulos por tipo de negocio (ej. Documentos)
+            // módulos por tipo de negocio (ej. Documentos); tenantOr = tenants
+            // extra que también lo ven aunque no sean de ese tipo (Caminero)
+            if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio) {
+              const tenantOrOk = sub.tenantOr && (Array.isArray(sub.tenantOr) ? sub.tenantOr.includes(tenantId) : sub.tenantOr === tenantId);
+              if (!tenantOrOk) return false;
+            }
             if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito
             if (sub.id === 'whatsapp-crm' && !puedePlus) return false; // Sales Hub = función Plus (PRO/ENTERPRISE)
             return canAccess(profile, permissions, sub.permissionKey || sub.id);

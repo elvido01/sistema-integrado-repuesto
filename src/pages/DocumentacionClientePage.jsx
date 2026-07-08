@@ -83,8 +83,9 @@ export default function DocumentacionClientePage() {
       const [{ data: docs, error: docsError }, { data: clientesData }] = await Promise.all([
         supabase
           .from('documentacion_clientes')
+          // Sin filtro de tenant: la política RLS trae los registros propios
+          // + los de la empresa aliada (Caminero <-> Naranjos comparten)
           .select('*, clientes(nombre, rnc, telefono)')
-          .eq('tenant_id', tenantId)
           .order('created_at', { ascending: false })
           .limit(500),
         supabase
@@ -205,7 +206,8 @@ export default function DocumentacionClientePage() {
       const uploaded = await uploadFiles(recordId, editing || {});
       const payload = {
         id: recordId,
-        tenant_id: tenantId,
+        // Editar un registro de la empresa aliada NO se lo apropia
+        tenant_id: editing?.tenant_id || tenantId,
         cliente_id: form.cliente_id || null,
         cliente_nombre: form.cliente_nombre.trim().toUpperCase(),
         documento_identidad: form.documento_identidad.trim(),
@@ -388,7 +390,12 @@ export default function DocumentacionClientePage() {
               </TableRow>
             ) : filtered.map((record) => (
               <TableRow key={record.id} className="hover:bg-slate-50">
-                <TableCell className="font-semibold uppercase">{record.cliente_nombre || record.clientes?.nombre}</TableCell>
+                <TableCell className="font-semibold uppercase">
+                  {record.cliente_nombre || record.clientes?.nombre}
+                  {record.tenant_id !== tenantId && (
+                    <span className="ml-1.5 inline-block px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold align-middle" title="Registro de la empresa aliada">ALIADA</span>
+                  )}
+                </TableCell>
                 <TableCell>{record.documento_identidad || record.clientes?.rnc || '-'}</TableCell>
                 <TableCell className="font-mono text-xs">{record.chasis || '-'}</TableCell>
                 <TableCell>
@@ -415,9 +422,11 @@ export default function DocumentacionClientePage() {
                     <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => openEdit(record)}>
                       Ver / Editar
                     </Button>
-                    <Button size="sm" variant="outline" className="h-7 px-2 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleDelete(record)}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    {record.tenant_id === tenantId && (
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleDelete(record)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

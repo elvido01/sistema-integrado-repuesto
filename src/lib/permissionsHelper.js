@@ -40,7 +40,8 @@ export const MODULES = [
     { key: 'pedidos', label: 'Pedidos' },
     { key: 'solicitudes-compras', label: 'Solicitudes de Compras' },
     { key: 'carta-ruta', label: 'Carta de Ruta' },
-    { key: 'documentacion-cliente', label: 'Documentación Cliente' },
+    { key: 'documentacion-cliente', label: 'Documentos - Documentación Cliente' },
+    { key: 'notas-comentarios', label: 'Documentos - Notas y Comentarios' },
     { key: 'cotizaciones', label: 'Cotizaciones' },
     { key: 'cotizaciones-magna', label: 'Cot. Facturas Magna' },
     { key: 'orden-compra', label: 'Orden de Compra' },
@@ -90,4 +91,5 @@ export const MODULES = [
     { key: 'vendedores', label: 'Catálogo - Vendedores' },
     { key: 'cambio-codigo', label: 'Inventario - Cambio de Código' },
     { key: 'prestamos', label: 'Financiera - Préstamos' },
+    { key: 'gestion-cobro', label: 'Financiera - Gestion de Cobro' },
 ];

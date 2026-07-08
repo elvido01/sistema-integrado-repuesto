@@ -38,15 +38,21 @@ const NotasComentariosPage = () => {
 
   const esAdmin = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
 
-  const cargar = useCallback(async (clienteId) => {
+  const cargar = useCallback(async (clienteId, cedula) => {
     if (!clienteId) return;
     setLoading(true);
     try {
+      // Las notas de la empresa aliada (Caminero <-> Naranjos) se cruzan por
+      // cédula: el mismo cliente tiene otro id en el otro tenant
+      let notasQuery = supabase.from('cliente_notas')
+        .select('id, fecha, nota, usuario_nombre, created_at, tenant_id, prestamo:prestamo_id (numero)')
+        .order('created_at', { ascending: false });
+      const ced = (cedula || '').trim();
+      notasQuery = ced
+        ? notasQuery.or(`cliente_id.eq.${clienteId},cliente_cedula.eq.${ced}`)
+        : notasQuery.eq('cliente_id', clienteId);
       const [{ data: nts, error: e1 }, { data: prs, error: e2 }] = await Promise.all([
-        supabase.from('cliente_notas')
-          .select('id, fecha, nota, usuario_nombre, created_at, prestamo:prestamo_id (numero)')
-          .eq('cliente_id', clienteId)
-          .order('created_at', { ascending: false }),
+        notasQuery,
         supabase.from('prestamos')
           .select('id, numero, estado')
           .eq('cliente_id', clienteId)
@@ -67,7 +73,7 @@ const NotasComentariosPage = () => {
     setCliente(c); setBuscarOpen(false);
     setCodigoInput(c.codigo || c.rnc || '');
     setPrestamoId(''); setNuevaNota('');
-    cargar(c.id);
+    cargar(c.id, c.rnc);
   };
 
   const buscarPorCodigo = async () => {
@@ -93,6 +99,7 @@ const NotasComentariosPage = () => {
       const { error } = await supabase.from('cliente_notas').insert({
         tenant_id: tenantId,
         cliente_id: cliente.id,
+        cliente_cedula: (cliente.rnc || '').trim() || null,
         prestamo_id: prestamoId || null,
         nota: texto,
         usuario_id: user?.id || null,
@@ -100,7 +107,7 @@ const NotasComentariosPage = () => {
       });
       if (error) throw error;
       setNuevaNota('');
-      await cargar(cliente.id);
+      await cargar(cliente.id, cliente.rnc);
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo guardar la nota', description: e.message });
     }
@@ -201,15 +208,22 @@ const NotasComentariosPage = () => {
                     <tr key={n.id} className={`border-b last:border-0 align-top ${i % 2 === 1 ? 'bg-[#eef6ff]' : 'bg-white'}`}>
                       <td className="px-2 py-1 whitespace-nowrap">{fdate(n.fecha)}</td>
                       <td className="px-2 py-1 whitespace-nowrap">{fhora(n.created_at)}</td>
-                      <td className="px-2 py-1 truncate max-w-[130px]" title={n.usuario_nombre || ''}>{n.usuario_nombre || '—'}</td>
+                      <td className="px-2 py-1 truncate max-w-[130px]" title={n.usuario_nombre || ''}>
+                        {n.usuario_nombre || '—'}
+                        {n.tenant_id !== tenantId && (
+                          <span className="ml-1 inline-block px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold align-middle" title="Nota registrada por la empresa aliada">ALIADA</span>
+                        )}
+                      </td>
                       <td className="px-2 py-1 font-bold text-blue-900 whitespace-nowrap">{n.prestamo?.numero || ''}</td>
                       <td className="px-2 py-1 whitespace-pre-wrap">{n.nota}</td>
                       {esAdmin && (
                         <td className="px-1 py-1 text-center">
-                          <button type="button" onClick={() => eliminarNota(n)} title="Eliminar nota"
-                                  className="text-slate-300 hover:text-red-600 transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {n.tenant_id === tenantId && (
+                            <button type="button" onClick={() => eliminarNota(n)} title="Eliminar nota"
+                                    className="text-slate-300 hover:text-red-600 transition-colors">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       )}
                     </tr>
