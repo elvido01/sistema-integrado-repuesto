@@ -6,9 +6,29 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Plus, Search, Trash2, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Download, Eye, FileImage, List, Loader2, Plus, Printer, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
+
+// ── Documentación (misma tabla/bucket que Documentación Cliente) ──
+const BUCKET = 'documentacion-clientes';
+const docFields = [
+  { key: 'cedula_pasaporte_path', label: 'Cédula / Pasaporte' },
+  { key: 'matricula_moto_path', label: 'Matrícula Moto' },
+  { key: 'placa_path', label: 'Placa' },
+  { key: 'autorizacion_path', label: 'Autorización' },
+  { key: 'carta_saldo_path', label: 'Carta de Saldo' },
+];
+const ESTADOS_DOC = ['EN TRAMITE', 'ENTREGADA', 'EN CAMINERO MOTORS'];
+const estadoBadge = (estado) => ({
+  'EN TRAMITE': 'bg-red-50 text-red-700 border-red-200',
+  'ENTREGADA': 'bg-green-50 text-green-700 border-green-200',
+  'EN CAMINERO MOTORS': 'bg-yellow-50 text-yellow-700 border-yellow-200',
+}[estado] || 'bg-slate-50 text-slate-500 border-slate-200');
+
+const emptyDocForm = { chasis: '', placa: '', placa_estado: '', matricula: '' };
 
 const fdate = (d) => {
   if (!d) return '';
@@ -24,7 +44,7 @@ const fhora = (ts) => {
 const NotasComentariosPage = () => {
   const { toast } = useToast();
   const { tenantId, user, profile } = useAuth();
-  const { closePanel, activePanel } = usePanels();
+  const { closePanel, openPanel, activePanel } = usePanels();
 
   const [cliente, setCliente] = useState(null);
   const [codigoInput, setCodigoInput] = useState('');
@@ -36,35 +56,56 @@ const NotasComentariosPage = () => {
   const [loading, setLoading] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
+  // Documentación del cliente (unidades: chasis/placa/matrícula + imágenes)
+  const [docs, setDocs] = useState([]);
+  const [docModalOpen, setDocModalOpen] = useState(false);
+  const [docEditing, setDocEditing] = useState(null);
+  const [docForm, setDocForm] = useState(emptyDocForm);
+  const [docFiles, setDocFiles] = useState({});
+  const [docUrls, setDocUrls] = useState({});
+  const [docSaving, setDocSaving] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
+
   const esAdmin = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
 
   const cargar = useCallback(async (clienteId, cedula) => {
     if (!clienteId) return;
     setLoading(true);
     try {
-      // Las notas de la empresa aliada (Caminero <-> Naranjos) se cruzan por
-      // cédula: el mismo cliente tiene otro id en el otro tenant
+      // Las notas y la documentación de la empresa aliada (Caminero <->
+      // Naranjos) se cruzan por cédula: el mismo cliente tiene otro id allá
+      const ced = (cedula || '').trim();
       let notasQuery = supabase.from('cliente_notas')
         .select('id, fecha, nota, usuario_nombre, created_at, tenant_id, prestamo:prestamo_id (numero)')
         .order('created_at', { ascending: false });
-      const ced = (cedula || '').trim();
       notasQuery = ced
         ? notasQuery.or(`cliente_id.eq.${clienteId},cliente_cedula.eq.${ced}`)
         : notasQuery.eq('cliente_id', clienteId);
-      const [{ data: nts, error: e1 }, { data: prs, error: e2 }] = await Promise.all([
+
+      let docsQuery = supabase.from('documentacion_clientes')
+        .select('*')
+        .order('created_at', { ascending: false });
+      docsQuery = ced
+        ? docsQuery.or(`cliente_id.eq.${clienteId},documento_identidad.eq.${ced}`)
+        : docsQuery.eq('cliente_id', clienteId);
+
+      const [{ data: nts, error: e1 }, { data: prs, error: e2 }, { data: dcs, error: e3 }] = await Promise.all([
         notasQuery,
         supabase.from('prestamos')
           .select('id, numero, estado')
           .eq('cliente_id', clienteId)
           .order('created_at', { ascending: false }),
+        docsQuery,
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
+      if (e3) throw e3;
       setNotas(nts || []);
       setPrestamos(prs || []);
+      setDocs(dcs || []);
     } catch (e) {
-      toast({ variant: 'destructive', title: 'No se pudieron cargar las notas', description: e.message });
-      setNotas([]); setPrestamos([]);
+      toast({ variant: 'destructive', title: 'No se pudieron cargar los datos del cliente', description: e.message });
+      setNotas([]); setPrestamos([]); setDocs([]);
     }
     setLoading(false);
   }, [toast]);
@@ -91,6 +132,7 @@ const NotasComentariosPage = () => {
     }
   };
 
+  // ── Notas ──
   const agregarNota = async () => {
     const texto = nuevaNota.trim();
     if (!cliente || !texto) return;
@@ -125,16 +167,144 @@ const NotasComentariosPage = () => {
     }
   };
 
+  // ── Documentación ──
+  const getSignedUrls = async (record) => {
+    const urls = {};
+    await Promise.all(docFields.map(async (field) => {
+      const path = record?.[field.key];
+      if (!path) return;
+      const { data } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 10);
+      if (data?.signedUrl) urls[field.key] = data.signedUrl;
+    }));
+    return urls;
+  };
+
+  const abrirDocNuevo = () => {
+    setDocEditing(null);
+    setDocForm(emptyDocForm);
+    setDocFiles({}); setDocUrls({});
+    setDocModalOpen(true);
+  };
+
+  const abrirDocEditar = async (record) => {
+    setDocEditing(record);
+    setDocForm({
+      chasis: record.chasis || '',
+      placa: record.placa || '',
+      placa_estado: record.placa_estado || '',
+      matricula: record.matricula || '',
+    });
+    setDocFiles({});
+    setDocUrls(await getSignedUrls(record));
+    setDocModalOpen(true);
+  };
+
+  const handleDocFile = (key, file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast({ variant: 'destructive', title: 'Archivo inválido', description: 'Solo se permiten imágenes.' });
+      return;
+    }
+    setDocFiles((prev) => ({ ...prev, [key]: file }));
+    setDocUrls((prev) => ({ ...prev, [key]: URL.createObjectURL(file) }));
+  };
+
+  const guardarDoc = async () => {
+    if (!cliente && !docEditing) return;
+    setDocSaving(true);
+    try {
+      const recordId = docEditing?.id || crypto.randomUUID();
+      const uploaded = {};
+      for (const field of docFields) {
+        const file = docFiles[field.key];
+        if (!file) continue;
+        const ext = file.name.split('.').pop() || 'jpg';
+        const path = `${tenantId}/${recordId}/${field.key.replace('_path', '')}-${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true, contentType: file.type });
+        if (error) throw new Error(`No se pudo subir ${field.label}: ${error.message}`);
+        if (docEditing?.[field.key]) {
+          await supabase.storage.from(BUCKET).remove([docEditing[field.key]]).catch(() => {});
+        }
+        uploaded[field.key] = path;
+      }
+
+      // El cliente NO se re-digita: viene del cliente seleccionado (campos
+      // unificados). Editar un registro de la empresa aliada no se lo apropia.
+      const payload = {
+        id: recordId,
+        tenant_id: docEditing?.tenant_id || tenantId,
+        cliente_id: docEditing ? (docEditing.cliente_id || cliente?.id || null) : cliente.id,
+        cliente_nombre: docEditing?.cliente_nombre || (cliente?.nombre || '').toUpperCase(),
+        documento_identidad: docEditing?.documento_identidad || (cliente?.rnc || ''),
+        telefono: docEditing?.telefono || (cliente?.telefono || ''),
+        chasis: docForm.chasis.trim().toUpperCase(),
+        placa: docForm.placa.trim().toUpperCase(),
+        placa_estado: docForm.placa_estado || null,
+        matricula: docForm.matricula || null,
+        notas: docEditing?.notas ?? null,
+        updated_at: new Date().toISOString(),
+        created_by: docEditing?.created_by || user?.id || null,
+        ...uploaded,
+      };
+
+      const { error } = await supabase.from('documentacion_clientes').upsert(payload, { onConflict: 'id' });
+      if (error) throw error;
+
+      toast({ title: 'Documentación guardada' });
+      setDocModalOpen(false);
+      if (cliente) cargar(cliente.id, cliente.rnc);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Error guardando documentación', description: e.message });
+    } finally {
+      setDocSaving(false);
+    }
+  };
+
+  const eliminarDoc = async (record) => {
+    if (!window.confirm(`¿Borrar la documentación del chasis ${record.chasis || '(sin chasis)'}?`)) return;
+    try {
+      const paths = docFields.map((f) => record[f.key]).filter(Boolean);
+      if (paths.length) await supabase.storage.from(BUCKET).remove(paths).catch(() => {});
+      const { error } = await supabase.from('documentacion_clientes').delete().eq('id', record.id);
+      if (error) throw error;
+      toast({ title: 'Registro eliminado' });
+      if (cliente) cargar(cliente.id, cliente.rnc);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Error eliminando', description: e.message });
+    }
+  };
+
+  const handleDownloadImage = (preview) => {
+    if (!preview?.url) return;
+    const a = document.createElement('a');
+    a.href = preview.url; a.download = preview.label || 'documento';
+    a.target = '_blank'; a.click();
+  };
+
+  const handlePrintImage = (preview) => {
+    if (!preview?.url) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`
+      <html><head><title>${preview.label}</title>
+      <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;}img{max-width:100%;max-height:100vh;object-fit:contain;}</style>
+      </head><body><img src="${preview.url}" alt="${preview.label}" onload="window.print()" /></body></html>
+    `);
+    win.document.close();
+  };
+
+  const countDocs = (r) => docFields.filter((f) => r[f.key]).length;
+
   return (
     <div className="p-1.5 bg-slate-100">
       <Helmet><title>Notas y Comentarios — Documentos</title></Helmet>
       <div className="bg-white rounded-lg shadow border w-full overflow-hidden">
         <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-1 font-extrabold tracking-wide text-base">
-          NOTAS Y COMENTARIOS
+          NOTAS Y COMENTARIOS — DOCUMENTACIÓN DEL CLIENTE
         </div>
 
         <div className="p-2 space-y-2">
-          {/* Cliente */}
+          {/* Cliente (único: sirve para notas y documentación) */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 [&>*]:min-w-0">
             <div className="border rounded-md p-2 lg:col-span-2">
               <div className="flex items-center gap-2">
@@ -149,7 +319,11 @@ const NotasComentariosPage = () => {
                   <Search className="w-3.5 h-3.5 mr-1" />F3
                 </Button>
               </div>
-              <div className="mt-2 text-sm font-bold text-blue-700 leading-tight truncate" title={cliente?.nombre || ''}>{cliente?.nombre || '—'}</div>
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                <span className="text-sm font-bold text-blue-700 leading-tight truncate" title={cliente?.nombre || ''}>{cliente?.nombre || '—'}</span>
+                {cliente?.rnc && <span className="text-xs text-slate-500">Cédula: <b>{cliente.rnc}</b></span>}
+                {cliente?.telefono && <span className="text-xs text-slate-500">Tel: <b>{cliente.telefono}</b></span>}
+              </div>
               <div className="text-xs text-slate-500 truncate" title={cliente?.direccion || ''}>{cliente?.direccion || '—'}</div>
             </div>
             <div className="border rounded-md p-2">
@@ -167,6 +341,60 @@ const NotasComentariosPage = () => {
               </select>
               <div className="mt-1 text-[11px] text-slate-400">Si eliges un préstamo, la nota queda ligada a él.</div>
             </div>
+          </div>
+
+          {/* Documentación del cliente (unidades con imágenes) */}
+          <div className="border rounded-md p-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                <FileImage className="w-3.5 h-3.5" /> Documentación (matrícula, placa, cédula…)
+              </span>
+              <div className="flex gap-1.5">
+                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => openPanel('documentacion-cliente')}>
+                  <List className="w-3.5 h-3.5 mr-1" />Listado general
+                </Button>
+                <Button type="button" size="sm" className="h-7 text-xs" disabled={!cliente} onClick={abrirDocNuevo}>
+                  <Plus className="w-3.5 h-3.5 mr-1" />Nueva documentación
+                </Button>
+              </div>
+            </div>
+            {!cliente ? (
+              <div className="py-3 text-center text-xs italic text-slate-400">Selecciona un cliente para ver su documentación.</div>
+            ) : docs.length === 0 ? (
+              <div className="py-3 text-center text-xs italic text-slate-400">Este cliente no tiene documentación registrada.</div>
+            ) : (
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                {docs.map((r) => (
+                  <div key={r.id} className="border rounded-md p-2 bg-slate-50/60">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-bold truncate" title={r.chasis || ''}>{r.chasis || '(sin chasis)'}</span>
+                      {r.tenant_id !== tenantId && (
+                        <span className="px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold" title="Registro de la empresa aliada">ALIADA</span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[11px]">
+                      {r.placa && <span className="font-mono">{r.placa}</span>}
+                      {r.placa_estado && <span className={`px-1 rounded border text-[10px] font-bold ${estadoBadge(r.placa_estado)}`}>PLACA: {r.placa_estado}</span>}
+                      {r.matricula && <span className={`px-1 rounded border text-[10px] font-bold ${estadoBadge(r.matricula)}`}>MATRÍCULA: {r.matricula}</span>}
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-500">{countDocs(r)}/5 imágenes · {fdate(r.created_at)}</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => abrirDocEditar(r)}>
+                          <Eye className="w-3 h-3 mr-1" />Ver / Editar
+                        </Button>
+                        {esAdmin && r.tenant_id === tenantId && (
+                          <button type="button" onClick={() => eliminarDoc(r)} title="Eliminar documentación"
+                                  className="text-slate-300 hover:text-red-600 transition-colors px-1">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Nueva nota */}
@@ -188,7 +416,7 @@ const NotasComentariosPage = () => {
 
           {/* Historial */}
           <div className="border rounded-md overflow-hidden">
-            <div className="overflow-y-auto h-[300px]">
+            <div className="overflow-y-auto h-[260px]">
               <table className="w-full text-xs">
                 <thead className="bg-gray-100 text-gray-700 font-bold border-b sticky top-0">
                   <tr>
@@ -235,13 +463,130 @@ const NotasComentariosPage = () => {
 
           {/* Acciones */}
           <div className="flex items-center justify-between flex-wrap gap-3 border-t pt-2">
-            <div className="text-xs text-slate-600">{cliente ? `${notas.length} nota${notas.length === 1 ? '' : 's'}` : ''}</div>
+            <div className="text-xs text-slate-600">{cliente ? `${notas.length} nota${notas.length === 1 ? '' : 's'} · ${docs.length} documentación` : ''}</div>
             <Button type="button" variant="secondary" onClick={() => closePanel(activePanel)}><X className="w-4 h-4 mr-1" />Retornar</Button>
           </div>
         </div>
       </div>
 
       <ClienteSearchModal isOpen={buscarOpen} onClose={() => setBuscarOpen(false)} onSelectCliente={seleccionarCliente} />
+
+      {/* Modal de documentación — el cliente va fijo, solo datos de la unidad */}
+      <Dialog open={docModalOpen} onOpenChange={(open) => { if (!open) setDocModalOpen(false); }}>
+        <DialogContent className="max-w-4xl p-0 overflow-hidden">
+          <DialogHeader className="bg-cyan-700 text-white px-5 py-3">
+            <DialogTitle className="text-white uppercase">
+              Documentación {docEditing ? '(Editando)' : '(Creando)'} — {(docEditing?.cliente_nombre || cliente?.nombre || '').toUpperCase()}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="p-4 space-y-4 max-h-[75vh] overflow-y-auto bg-white">
+            <div className="text-xs text-slate-500 -mt-1">
+              Cédula: <b>{docEditing?.documento_identidad || cliente?.rnc || '—'}</b>
+              {' · '}Tel: <b>{docEditing?.telefono || cliente?.telefono || '—'}</b>
+              {' — '}Las notas van en la bitácora de abajo, no aquí.
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div>
+                <Label>Chasis</Label>
+                <Input value={docForm.chasis} onChange={(e) => setDocForm((p) => ({ ...p, chasis: e.target.value.toUpperCase() }))} />
+              </div>
+              <div>
+                <Label>Placa</Label>
+                <Input value={docForm.placa} onChange={(e) => setDocForm((p) => ({ ...p, placa: e.target.value.toUpperCase() }))} placeholder="Número placa" />
+              </div>
+              <div>
+                <Label>Estado de la placa</Label>
+                <select
+                  value={docForm.placa_estado}
+                  onChange={(e) => setDocForm((p) => ({ ...p, placa_estado: e.target.value }))}
+                  className="w-full h-10 border border-slate-300 rounded px-2 text-sm bg-white"
+                >
+                  <option value="">Estado</option>
+                  {ESTADOS_DOC.map((op) => <option key={op} value={op}>{op}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>Matrícula</Label>
+                <select
+                  value={docForm.matricula}
+                  onChange={(e) => setDocForm((p) => ({ ...p, matricula: e.target.value }))}
+                  className="w-full h-10 border border-slate-300 rounded px-2 text-sm bg-white"
+                >
+                  <option value="">Estado</option>
+                  {ESTADOS_DOC.map((op) => <option key={op} value={op}>{op}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              {docFields.map((field) => (
+                <div key={field.key} className="border border-slate-300 rounded bg-slate-50 overflow-hidden">
+                  <div className="px-2 py-1.5 bg-slate-100 border-b flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase truncate">{field.label}</span>
+                    {docUrls[field.key] && (
+                      <button
+                        type="button"
+                        onClick={() => setImagePreview({ label: field.label, url: docUrls[field.key] })}
+                        className="h-6 px-2 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-[10px] font-bold inline-flex items-center gap-1"
+                        title="Vista previa"
+                      >
+                        <Eye className="h-3 w-3" />Ver
+                      </button>
+                    )}
+                  </div>
+                  <label className="block cursor-pointer">
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDocFile(field.key, e.target.files?.[0])} />
+                    <div className="h-32 flex items-center justify-center bg-white">
+                      {docUrls[field.key] ? (
+                        <img src={docUrls[field.key]} alt={field.label} className="max-h-full max-w-full object-contain" />
+                      ) : (
+                        <div className="text-center text-slate-400">
+                          <Upload className="h-7 w-7 mx-auto mb-1" />
+                          <span className="text-xs">Cargar imagen</span>
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                  <div className="px-2 py-1 text-[10px] text-slate-500 truncate">
+                    {docFiles[field.key]?.name || (docUrls[field.key] ? 'Imagen cargada' : 'Pendiente')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter className="bg-slate-100 border-t px-4 py-3">
+            <Button variant="outline" onClick={() => setDocModalOpen(false)} disabled={docSaving}>Cancelar</Button>
+            <Button onClick={guardarDoc} disabled={docSaving} className="bg-emerald-700 hover:bg-emerald-800 text-white">
+              {docSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+              {docEditing ? 'Actualizar' : 'Crear'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Vista previa de imagen (ver / descargar / imprimir) */}
+      <Dialog open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
+        <DialogContent className="max-w-4xl p-0 overflow-hidden [&>button]:text-white [&>button]:opacity-100 [&>button]:hover:bg-white/10 [&>button]:focus:ring-white">
+          <DialogHeader className="px-4 py-3 bg-slate-800 text-white">
+            <DialogTitle className="text-white">{imagePreview?.label}</DialogTitle>
+          </DialogHeader>
+          <div className="bg-slate-100 p-4 flex items-center justify-center min-h-[55vh]">
+            {imagePreview?.url && (
+              <img src={imagePreview.url} alt={imagePreview.label} className="max-h-[65vh] max-w-full object-contain bg-white shadow" />
+            )}
+          </div>
+          <DialogFooter className="bg-white border-t px-4 py-3">
+            <Button variant="outline" onClick={() => handleDownloadImage(imagePreview)} disabled={!imagePreview?.url}>
+              <Download className="h-4 w-4 mr-1" />Descargar
+            </Button>
+            <Button onClick={() => handlePrintImage(imagePreview)} disabled={!imagePreview?.url} className="bg-slate-800 hover:bg-slate-700 text-white">
+              <Printer className="h-4 w-4 mr-1" />Imprimir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

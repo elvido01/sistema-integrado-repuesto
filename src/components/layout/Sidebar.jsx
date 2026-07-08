@@ -96,12 +96,13 @@ const navItems = [
   },
   {
     // Financieras + Caminero Motors (igual al menú Documentos del sistema
-    // viejo). Caminero y Naranjos comparten los datos de estos módulos.
+    // viejo). Caminero y Naranjos comparten los datos de este módulo.
+    // Notas y Comentarios incluye la Documentación Cliente (formulario
+    // combinado); el listado general se abre desde un botón interno.
     title: 'Documentos',
     icon: FileText,
     subItems: [
       { title: 'Notas y Comentarios', id: 'notas-comentarios', icon: FileText, tipoNegocio: 'financiera', tenantOr: 'b39506c3-27dc-467d-830b-096731b83113' },
-      { title: 'Documentación Cliente', id: 'documentacion-cliente', icon: FileImage, tipoNegocio: 'financiera', tenantOr: 'b39506c3-27dc-467d-830b-096731b83113' },
     ],
   },
   {
