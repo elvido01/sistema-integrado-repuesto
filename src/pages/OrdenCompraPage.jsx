@@ -191,6 +191,11 @@ const OrdenCompraPage = () => {
 
   // Equivalentes por producto (mostrados debajo de cada linea)
   const [equivalentesMap, setEquivalentesMap] = useState({});  // { producto_id: [{...}, ...] }
+  const [eqRefresh, setEqRefresh] = useState(0); // fuerza recarga tras relacionar
+  // Fase 4: "Relacionar equivalentes" desde el clic derecho
+  const [eqLink, setEqLink] = useState(null);        // { detalle, otro, preferido: 'A'|'B' }
+  const [eqSearchOpen, setEqSearchOpen] = useState(false);
+  const [eqSaving, setEqSaving] = useState(false);
 
   // Detectar pares de productos equivalentes EN LA MISMA ORDEN
   // (potencial duplicacion de stock)
@@ -235,7 +240,64 @@ const OrdenCompraPage = () => {
     };
     cargarEquiv();
     return () => { cancel = true; };
-  }, [detalles.map(d => d.producto_id).filter(Boolean).sort().join(',')]);
+  }, [detalles.map(d => d.producto_id).filter(Boolean).sort().join(','), eqRefresh]);
+
+  // Fase 4: vincular el producto de la línea (A) con otro producto (B) como
+  // equivalentes. Reglas: si uno ya tiene grupo, el otro entra de sustituto;
+  // si ninguno tiene, se crea el grupo con el preferido elegido.
+  const guardarRelacionEq = async () => {
+    const A = eqLink?.detalle; const B = eqLink?.otro;
+    if (!A?.producto_id || !B?.id) return;
+    if (A.producto_id === B.id) {
+      toast({ variant: 'destructive', title: 'Es el mismo producto' });
+      return;
+    }
+    setEqSaving(true);
+    try {
+      const { data: mA } = await supabase.from('producto_grupo_miembros').select('grupo_id').eq('producto_id', A.producto_id).maybeSingle();
+      const { data: mB } = await supabase.from('producto_grupo_miembros').select('grupo_id').eq('producto_id', B.id).maybeSingle();
+
+      if (mA?.grupo_id && mB?.grupo_id) {
+        if (mA.grupo_id === mB.grupo_id) {
+          toast({ title: 'Ya están relacionados', description: 'Ambos productos pertenecen al mismo grupo.' });
+        } else {
+          toast({ variant: 'destructive', title: 'Grupos distintos', description: 'Cada producto ya está en un grupo diferente. Fusiónalos desde el módulo de grupos de equivalentes.' });
+        }
+        return;
+      }
+
+      if (mA?.grupo_id || mB?.grupo_id) {
+        // Uno ya tiene grupo: el otro entra como sustituto (se respeta el preferido existente)
+        const grupoId = mA?.grupo_id || mB.grupo_id;
+        const nuevoId = mA?.grupo_id ? B.id : A.producto_id;
+        const { error } = await supabase.from('producto_grupo_miembros').insert({ producto_id: nuevoId, grupo_id: grupoId, prioridad: 2 });
+        if (error) throw error;
+        toast({ title: '🔗 Relacionados', description: 'Se agregó al grupo existente como sustituto (el preferido actual se mantiene).' });
+      } else {
+        // Ninguno tiene grupo: crear uno nuevo con el preferido elegido
+        const nombre = `EQ ${A.codigo || ''} + ${B.codigo || ''}`.trim().slice(0, 60);
+        const { data: grupo, error: gErr } = await supabase
+          .from('producto_grupos')
+          .insert({ tenant_id: tenantId, nombre, descripcion: `Creado desde Orden de Compra (${A.descripcion || ''})`.slice(0, 200) })
+          .select('id')
+          .single();
+        if (gErr) throw gErr;
+        const pref = eqLink.preferido || 'A';
+        const { error: mErr } = await supabase.from('producto_grupo_miembros').insert([
+          { producto_id: A.producto_id, grupo_id: grupo.id, prioridad: pref === 'A' ? 1 : 2 },
+          { producto_id: B.id, grupo_id: grupo.id, prioridad: pref === 'B' ? 1 : 2 },
+        ]);
+        if (mErr) throw mErr;
+        toast({ title: '🔗 Grupo de equivalentes creado', description: `${A.codigo} y ${B.codigo} ahora cuentan como el mismo stock en la Orden Automática.` });
+      }
+      setEqLink(null);
+      setEqRefresh(v => v + 1);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo relacionar', description: err.message });
+    } finally {
+      setEqSaving(false);
+    }
+  };
 
   // Nuevo Producto Rapido (sin salir de la OC)
   const [quickProdModalOpen, setQuickProdModalOpen] = useState(false);
@@ -3135,6 +3197,13 @@ const OrdenCompraPage = () => {
           setSupVirtMenu(null);
         }}
         onViewProduct={abrirProductoDesdeOrden}
+        onLinkEquivalent={(detalle) => {
+          if (!detalle?.producto_id) {
+            toast({ variant: 'destructive', title: 'Producto sin ID', description: 'Guarda el producto en mercancías primero.' });
+            return;
+          }
+          setEqLink({ detalle, otro: null, preferido: 'A' });
+        }}
       />
 
       {/* Ver/editar la mercancía de una línea (Información de la Mercancía) */}
@@ -3143,6 +3212,66 @@ const OrdenCompraPage = () => {
         onClose={() => { setProdModalOpen(false); setProdEditando(null); }}
         onSave={handleSaveProductoOrden}
         product={prodEditando}
+      />
+
+      {/* Fase 4: Relacionar equivalentes desde la orden */}
+      <Dialog open={!!eqLink} onOpenChange={(open) => { if (!open) setEqLink(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-purple-700">🔗 Relacionar equivalentes</DialogTitle>
+            <DialogDescription className="text-slate-600 text-xs">
+              Los productos relacionados cuentan como el MISMO stock en la Orden Automática: si uno tiene existencia, no te sugiere comprar el otro.
+            </DialogDescription>
+          </DialogHeader>
+          {eqLink && (
+            <div className="space-y-3 text-sm">
+              <div className="bg-slate-50 border rounded p-2">
+                <p className="text-[10px] uppercase font-bold text-slate-400">Producto A (de la orden)</p>
+                <p className="font-bold text-slate-800">{eqLink.detalle.codigo} — {eqLink.detalle.descripcion}</p>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded p-2">
+                <p className="text-[10px] uppercase font-bold text-purple-500">Producto B (equivalente)</p>
+                {eqLink.otro ? (
+                  <p className="font-bold text-slate-800">{eqLink.otro.codigo} — {eqLink.otro.descripcion}</p>
+                ) : (
+                  <p className="text-slate-400 italic">Sin seleccionar…</p>
+                )}
+                <Button type="button" variant="outline" size="sm" className="mt-1.5" onClick={() => setEqSearchOpen(true)}>
+                  <Search className="w-3.5 h-3.5 mr-1" /> {eqLink.otro ? 'Cambiar producto' : 'Buscar producto (F3)'}
+                </Button>
+              </div>
+              {eqLink.otro && (
+                <div className="space-y-1">
+                  <Label className="text-[11px] uppercase font-bold text-slate-600">¿Cuál es el PREFERIDO del grupo?</Label>
+                  <Select value={eqLink.preferido} onValueChange={(v) => setEqLink(prev => ({ ...prev, preferido: v }))}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="A">⭐ {eqLink.detalle.codigo} (el de la orden)</SelectItem>
+                      <SelectItem value="B">⭐ {eqLink.otro.codigo}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-slate-500">El preferido es el que la Orden Automática pide primero; el otro queda de sustituto. Si uno de los dos ya tiene grupo, el nuevo entra como sustituto y el preferido actual se respeta.</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEqLink(null)} disabled={eqSaving}>Cancelar</Button>
+            <Button onClick={guardarRelacionEq} disabled={eqSaving || !eqLink?.otro} className="bg-purple-600 hover:bg-purple-700 text-white">
+              {eqSaving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : '🔗'} Relacionar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Buscador para elegir el producto equivalente */}
+      <ProductSearchModal
+        isOpen={eqSearchOpen}
+        onClose={() => setEqSearchOpen(false)}
+        onSelectProduct={(p) => {
+          setEqLink(prev => (prev ? { ...prev, otro: p } : prev));
+          setEqSearchOpen(false);
+        }}
       />
 
       {/* ════════════════════════════════════════════════════ */}
