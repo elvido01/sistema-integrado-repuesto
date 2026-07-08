@@ -34,14 +34,16 @@ const PRIO_BADGE = {
 };
 const DECISION_DEFAULT = 'pedir_hoy';
 const DECISION_OPTIONS = {
-  pedir_hoy: { label: 'Pedir hoy', short: 'Pedir', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  pedir_hoy: { label: 'Pedir hoy (sin confirmar)', short: 'Pedir', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  pedido: { label: 'Pedido ✓ (confirmado con suplidor)', short: 'Pedido ✓', cls: 'bg-emerald-600 text-white border-emerald-700' },
   no_disponible: { label: 'No lo tiene suplidor', short: 'No disponible', cls: 'bg-red-50 text-red-700 border-red-200' },
   pospuesto_presupuesto: { label: 'Pospuesto por presupuesto', short: 'Presupuesto', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   poca_rotacion: { label: 'Poca rotacion', short: 'Poca rotacion', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
   sustituido: { label: 'Sustituido', short: 'Sustituido', cls: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
-const isDetallePedidoHoy = (detalle) => (detalle?.decision_estado || DECISION_DEFAULT) === DECISION_DEFAULT;
+// Va en la orden: tanto lo pendiente de confirmar como lo ya confirmado
+const isDetallePedidoHoy = (detalle) => ['pedir_hoy', 'pedido'].includes(detalle?.decision_estado || DECISION_DEFAULT);
 
 import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
 import AprobacionesComprasPage from '@/pages/AprobacionesComprasPage';
@@ -760,7 +762,7 @@ const OrdenCompraPage = () => {
         ? {
             ...d,
             decision_estado: option,
-            decision_motivo: option === DECISION_DEFAULT ? null : DECISION_OPTIONS[option].label,
+            decision_motivo: (option === DECISION_DEFAULT || option === 'pedido') ? null : DECISION_OPTIONS[option].label,
           }
         : d
     ))));
@@ -2839,6 +2841,23 @@ const OrdenCompraPage = () => {
                 )}
               </div>
             )}
+            {/* Contador del ritual con el suplidor: confirmadas vs por confirmar */}
+            {(() => {
+              const conProd = detalles.filter(d => d.producto_id || d.codigo);
+              const confirmadas = conProd.filter(d => d.decision_estado === 'pedido').length;
+              const sinConfirmar = conProd.filter(d => (d.decision_estado || DECISION_DEFAULT) === DECISION_DEFAULT).length;
+              if (confirmadas + sinConfirmar === 0) return null;
+              return sinConfirmar === 0 ? (
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-[11px] font-bold text-emerald-700">
+                  ✔ Todas confirmadas con el suplidor ({confirmadas})
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-[11px] text-amber-800"
+                  title="Marca cada línea como 'Pedido ✓' en la columna Decisión conforme el suplidor te la confirma">
+                  ✔ <b>{confirmadas}</b> confirmadas · faltan <b>{sinConfirmar}</b> por confirmar
+                </div>
+              );
+            })()}
             {/* Calibración de lead time del suplidor (auto, con su historial) */}
             {leadInfo && (
               <div
