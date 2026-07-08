@@ -375,9 +375,103 @@ const CierreCajaPage = () => {
     }
   };
 
+  /* ── Print cierre (formato carta 8.5x11) ── */
+  const printCierreCajaCarta = (cierre, resumen) => {
+    const filaResumen = (label, val, bold = false) =>
+      `<tr${bold ? ' class="bold"' : ''}><td>${label}</td><td class="num">${formatCurrency(val)}</td></tr>`;
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="UTF-8">
+        <style>
+          @page { size: letter; margin: 14mm; }
+          body { margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #000; }
+          h1 { font-size: 22px; margin: 0; }
+          .sub { font-size: 14px; letter-spacing: 2px; font-weight: bold; margin-top: 2px; }
+          .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #000; padding-bottom: 8px; }
+          .meta { text-align: right; font-size: 12px; line-height: 1.5; }
+          .cols { display: flex; gap: 28px; margin-top: 16px; }
+          .col { flex: 1; }
+          .sec { font-weight: bold; font-size: 13px; border-bottom: 2px solid #000; padding-bottom: 3px; margin: 14px 0 6px; text-transform: uppercase; }
+          table { width: 100%; border-collapse: collapse; }
+          td, th { padding: 3px 2px; border-bottom: 1px solid #ddd; }
+          th { text-align: left; border-bottom: 1px solid #000; font-size: 11px; }
+          .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+          .bold { font-weight: bold; }
+          .grande { font-size: 15px; font-weight: bold; }
+          .caja { border: 2px solid #000; padding: 6px 10px; display: flex; justify-content: space-between; font-size: 16px; font-weight: bold; margin-top: 10px; }
+          .firmas { display: flex; gap: 60px; margin-top: 60px; }
+          .firmas div { flex: 1; border-top: 1px solid #000; text-align: center; padding-top: 4px; font-size: 11px; }
+        </style>
+      </head>
+      <body onload="window.print()">
+        <div class="head">
+          <div>
+            <h1>${(empresa?.nombre || 'MotoFlow').toUpperCase()}</h1>
+            <div class="sub">CIERRE DE CAJA</div>
+          </div>
+          <div class="meta">
+            <div><b>Fecha:</b> ${formatInTimeZone(new Date(cierre.fecha), 'dd/MM/yyyy')}</div>
+            <div><b>Turno:</b> ${cierre.turno}</div>
+            <div><b>Cajero:</b> ${cierre.cajero_nombre}</div>
+          </div>
+        </div>
+
+        <div class="cols">
+          <div class="col">
+            <div class="sec">Resumen de Ventas</div>
+            <table><tbody>
+              ${filaResumen('Ventas Contado Caja', resumen?.totalVentasContadoCaja)}
+              ${filaResumen('Ventas Contado Móvil', resumen?.totalVentasContadoMovil)}
+              ${filaResumen('Ventas Crédito', resumen?.totalVentasCredito)}
+              ${filaResumen('Total Ventas', resumen?.totalVentas, true)}
+              ${filaResumen('Devoluciones', resumen?.totalDevoluciones)}
+              ${filaResumen('Recibos Ingreso Caja', resumen?.totalRecibosCaja)}
+              ${filaResumen('Recibos Ingreso Móvil', resumen?.totalRecibosMovil)}
+              ${filaResumen('Recibos Ingreso (total)', resumen?.totalRecibos)}
+              ${filaResumen('Pagos Suplidores', resumen?.totalPagosSuplidores)}
+              ${filaResumen('Gastos Diarios', resumen?.totalGastosDiarios)}
+            </tbody></table>
+            <div class="caja"><span>EFECTIVO EN CAJA</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
+
+            ${(resumen?.gastosDiarios || []).length ? `
+            <div class="sec">Desglose de Gastos</div>
+            <table><tbody>
+              ${resumen.gastosDiarios.map(g => `<tr><td>${(g.tipo_gasto || 'GASTO')}${g.descripcion ? ` — ${g.descripcion}` : ''}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
+              <tr class="bold"><td>Total Gastos</td><td class="num">${formatCurrency(resumen?.totalGastosDiarios)}</td></tr>
+            </tbody></table>` : ''}
+          </div>
+
+          <div class="col">
+            <div class="sec">Desglose de Monedas</div>
+            <table>
+              <thead><tr><th>Denominación</th><th class="num">Cant.</th><th class="num">Valor</th></tr></thead>
+              <tbody>
+                ${DENOMINACIONES.map(d => {
+                  const cant = cierre.desglose[d.label] || 0;
+                  const val = d.tipo ? cant : cant * d.value;
+                  return `<tr><td>${d.label}</td><td class="num">${cant}</td><td class="num">${formatCurrency(val)}</td></tr>`;
+                }).join('')}
+                <tr class="grande"><td colspan="2">Total Desglose</td><td class="num">${formatCurrency(cierre.total_desglose)}</td></tr>
+                <tr class="grande"><td colspan="2">Diferencia${cierre.diferencia < 0 ? ' (FALTANTE)' : cierre.diferencia > 0 ? ' (SOBRANTE)' : ''}</td><td class="num">${formatCurrency(cierre.diferencia)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="firmas">
+          <div>Cajero</div>
+          <div>Supervisor</div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   /* ── Print cierre ── */
   const printCierreCaja = (cierre, resumen) => {
-    const html = `
+    const esCarta = (empresa?.formato_cierre_caja || 'pos_80mm') === 'carta';
+    const html = esCarta ? printCierreCajaCarta(cierre, resumen) : `
       <!DOCTYPE html>
       <html>
       <head><meta charset="UTF-8">

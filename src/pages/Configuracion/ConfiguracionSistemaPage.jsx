@@ -49,6 +49,7 @@ const ConfiguracionSistemaPage = () => {
         formato_factura: 'pos_4inch',
         formato_precio_etiqueta: 'alpha',
         formato_comprobante_pago: 'pdf',
+        formato_cierre_caja: 'pos_80mm',
         saldo_inicial_caja: 0,
         caja_historial_desde: '1970-01-01',
         precio2_descuento_pct: 10,
@@ -108,6 +109,7 @@ const ConfiguracionSistemaPage = () => {
                     formato_factura: data.formato_factura || 'pos_4inch',
                     formato_precio_etiqueta: data.formato_precio_etiqueta || 'alpha',
                     formato_comprobante_pago: data.formato_comprobante_pago || 'pdf',
+                    formato_cierre_caja: data.formato_cierre_caja || 'pos_80mm',
                     saldo_inicial_caja: data.saldo_inicial_caja ?? 0,
                     caja_historial_desde: data.caja_historial_desde || '1970-01-01',
                     precio2_descuento_pct: data.precio2_descuento_pct ?? 10,
@@ -694,6 +696,20 @@ const ConfiguracionSistemaPage = () => {
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">
                                     Formato del comprobante que se imprime al pagar compromisos, suplidores y gastos diarios desde el Inicio.
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Formato de Cierre de Caja</Label>
+                                <Select value={formData.formato_cierre_caja} onValueChange={(v) => handleSelectChange('formato_cierre_caja', v)}>
+                                    <SelectTrigger className="h-10 border-indigo-200 bg-indigo-50/30 text-indigo-700 font-bold"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="pos_80mm">Ticket 80mm (POS)</SelectItem>
+                                        <SelectItem value="carta">Carta (Hoja 8.5 x 11)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Formato del impreso al cerrar el turno en Cierre de Caja.
                                 </p>
                             </div>
                         </div>
