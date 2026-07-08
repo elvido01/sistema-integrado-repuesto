@@ -1965,6 +1965,19 @@ const OrdenCompraPage = () => {
         generateOrderPDF(savedOrden, selectedProveedor, detallesImpresion, empresa);
       }
 
+      // Fase 1 (cierre del ciclo): imprimir ES el acto de pedir. Ofrecer
+      // marcarla ENVIADA aquí mismo para que no dependa del botón aparte
+      // (que se olvidaba y dejaba borradores fantasma para siempre).
+      if ((savedOrden.estado || 'Pendiente') === 'Pendiente'
+          && confirm('¿Ya le pediste esta orden al suplidor?\n\nSe marcará como ENVIADA y contará como mercancía en camino (al recibir la compra se rebaja sola).')) {
+        const { error: envErr } = await supabase.rpc('confirmar_orden_compra_enviada', { p_orden_id: savedOrden.id });
+        if (envErr) {
+          toast({ variant: 'destructive', title: 'No se pudo marcar como enviada', description: envErr.message });
+        } else {
+          toast({ title: '📦 Orden ENVIADA al suplidor', description: 'Cuenta como mercancía en camino.' });
+        }
+      }
+
       // Refrescar presupuesto v2 para reflejar comprado_mes actualizado
       refreshPresupuestoV2();
       clearDraft(DRAFT_KEY);
@@ -2014,13 +2027,25 @@ const OrdenCompraPage = () => {
             <Loader2 className={`h-5 w-5 mb-0.5 text-blue-600 ${isLoadingList ? 'animate-spin' : ''}`} />
             CONSULTAR
           </Button>
-          <Button variant="ghost" className="h-10 flex flex-col items-center px-2 py-1 text-[10px]" disabled={!selectedOrderID} onClick={() => {
+          <Button variant="ghost" className="h-10 flex flex-col items-center px-2 py-1 text-[10px]" disabled={!selectedOrderID} onClick={async () => {
             const current = orders.find(o => o.id === selectedOrderID);
             if (current) {
               if (printMethod === 'pos') {
                  printOrdenCompraPOS(current, current.proveedores, previewDetails, paperSize);
               } else {
                  generateOrderPDF(current, current.proveedores, previewDetails, empresa);
+              }
+              // Fase 1: imprimir un borrador = entregarlo al suplidor.
+              // Ofrecer marcarla ENVIADA de una vez (sin depender del boton aparte).
+              if ((current.estado || 'Pendiente') === 'Pendiente'
+                  && confirm(`¿Ya le pediste la orden ${current.numero || ''} al suplidor?\n\nSe marcará como ENVIADA y contará como mercancía en camino.`)) {
+                const { error: envErr } = await supabase.rpc('confirmar_orden_compra_enviada', { p_orden_id: current.id });
+                if (envErr) {
+                  toast({ variant: 'destructive', title: 'No se pudo marcar como enviada', description: envErr.message });
+                } else {
+                  toast({ title: '📦 Orden ENVIADA al suplidor', description: 'Cuenta como mercancía en camino.' });
+                  fetchOrders();
+                }
               }
             }
           }}>

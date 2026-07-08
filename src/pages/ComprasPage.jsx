@@ -951,6 +951,24 @@ const ComprasPage = () => {
         if (!pendientesCompra.some((d) => d.cantidad_restante > 0)) break;
         await aplicarEnOrden(ordenPendiente.id);
       }
+
+      // Fase 1 (cierre del ciclo): si quedó mercancía sin conciliar, rebajar
+      // también los BORRADORES Pendiente del suplidor. Antes solo se tocaban
+      // las Enviadas, y como el paso "Enviar" se olvidaba, las órdenes
+      // quedaban vivas para siempre pidiendo lo que ya llegó.
+      if (pendientesCompra.some((d) => d.cantidad_restante > 0)) {
+        const { data: borradores } = await supabase
+          .from('ordenes_compra')
+          .select('id, numero')
+          .eq('suplidor_id', savedCompra.suplidor_id)
+          .eq('estado', 'Pendiente')
+          .order('fecha_orden', { ascending: true })
+          .limit(10);
+        for (const ordenBorrador of borradores || []) {
+          if (!pendientesCompra.some((d) => d.cantidad_restante > 0)) break;
+          await aplicarEnOrden(ordenBorrador.id);
+        }
+      }
     };
 
     // Validación de duplicidad (Mismo Suplidor con misma Referencia o NCF)
