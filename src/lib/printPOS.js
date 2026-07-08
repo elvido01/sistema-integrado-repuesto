@@ -1388,10 +1388,10 @@ const _comprobantePagoHTML = (data, paperSize) => {
   const is4inch = paperSize !== '80mm';
   const pageWidth = is4inch ? '101.6mm' : '80mm';
   const bodyWidth = is4inch ? '96mm' : '74mm';
-  const baseFont = is4inch ? '13px' : '11px';
-  const headFont = is4inch ? '18px' : '15px';
-  const totalFont = is4inch ? '16px' : '14px';
-  const smallFont = is4inch ? '11px' : '10px';
+  const baseFont = is4inch ? '15px' : '14px';
+  const headFont = is4inch ? '20px' : '18px';
+  const totalFont = is4inch ? '18px' : '16px';
+  const smallFont = is4inch ? '12px' : '12px';
 
   return `
     <!DOCTYPE html>
@@ -1405,15 +1405,16 @@ const _comprobantePagoHTML = (data, paperSize) => {
           width: ${bodyWidth}; margin: 0 auto; padding: 3mm 4mm;
           box-sizing: border-box; font-family: Arial, Helvetica, sans-serif;
           font-size: ${baseFont}; line-height: 1.3; color:#000;
+          font-weight: 700; letter-spacing: 0.2px;
           -webkit-print-color-adjust: exact;
         }
         .text-center { text-align:center; }
         .text-right { text-align:right; }
-        .bold { font-weight:bold; }
+        .bold { font-weight:900; }
         .header { margin-bottom: 8px; border-bottom: 2px solid #000; padding-bottom: 5px; }
         .header h1 { font-size:${headFont}; margin:0; font-weight:900; }
         .header p { margin: 1px 0; font-size: ${smallFont}; }
-        .titulo { margin-top:6px; font-weight:bold; font-size:${is4inch ? '13px' : '12px'}; letter-spacing:0.5px; }
+        .titulo { margin-top:6px; font-weight:900; font-size:${is4inch ? '16px' : '15px'}; letter-spacing:0.5px; }
         .row { display:flex; justify-content:space-between; margin-bottom:2px; }
         .separator { border-top:1px dashed #000; margin:6px 0; }
         table { width:100%; border-collapse:collapse; }

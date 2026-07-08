@@ -225,7 +225,7 @@ const CierreCajaPage = () => {
     try {
       const { data: gastosData, error: gastosErr } = await supabase
         .from('gastos_diarios')
-        .select('monto, descripcion')
+        .select('monto, descripcion, tipo_gasto')
         .eq('tenant_id', tenantId)
         .eq('fecha', fechaStr)
         .eq('anulado', false);
@@ -292,6 +292,7 @@ const CierreCajaPage = () => {
       totalRecibosMovil,
       totalRecibosCaja,
       totalGastosDiarios,
+      gastosDiarios, // detalle para el impreso del cierre
       totalPagosSuplidores: totalPagosSuplidoresEfectivo,
       cambioEntregado,
       cantFacturas,
@@ -384,21 +385,23 @@ const CierreCajaPage = () => {
           @page { margin: 0; size: 80mm auto; }
           body {
             width: 72mm; margin: 0 auto; padding: 2mm 4mm;
-            font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #000;
+            font-family: Arial, Helvetica, sans-serif; font-size: 14px;
+            font-weight: 700; letter-spacing: 0.2px; color: #000;
+            -webkit-print-color-adjust: exact;
           }
           .text-center { text-align: center; }
           .text-right { text-align: right; }
-          .bold { font-weight: bold; }
+          .bold { font-weight: 900; }
           .separator { border-top: 1px dashed #000; margin: 5px 0; }
-          h1 { font-size: 15px; margin: 0; }
+          h1 { font-size: 19px; margin: 0; font-weight: 900; }
           .row { display: flex; justify-content: space-between; margin-bottom: 2px; }
-          .total-row { font-weight: bold; font-size: 14px; border-top: 2px solid #000; padding-top: 4px; margin-top: 6px; }
+          .total-row { font-weight: 900; font-size: 16px; border-top: 2px solid #000; padding-top: 4px; margin-top: 6px; }
         </style>
       </head>
       <body onload="window.print()">
         <div class="text-center">
           <h1 class="bold">MotoFlow</h1>
-          <p style="margin: 2px 0; font-size: 11px;">CIERRE DE CAJA</p>
+          <p style="margin: 2px 0; font-size: 13px;">CIERRE DE CAJA</p>
         </div>
         <div class="separator"></div>
         <div class="row"><span>Fecha:</span><span>${formatInTimeZone(new Date(cierre.fecha), 'dd/MM/yyyy')}</span></div>
@@ -417,6 +420,17 @@ const CierreCajaPage = () => {
         <div class="row"><span>Pagos Suplidores:</span><span>${formatCurrency(resumen?.totalPagosSuplidores)}</span></div>
         <div class="row"><span>Gastos Diarios:</span><span>${formatCurrency(resumen?.totalGastosDiarios)}</span></div>
         <div class="row total-row"><span>Efectivo en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
+        ${(resumen?.gastosDiarios || []).length ? `
+        <div class="separator"></div>
+        <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE GASTOS</div>
+        ${resumen.gastosDiarios.map(g => `
+          <div class="row">
+            <span style="max-width: 70%;">${(g.tipo_gasto || 'GASTO')}${g.descripcion ? ` — ${g.descripcion}` : ''}</span>
+            <span>${formatCurrency(g.monto)}</span>
+          </div>`).join('')}
+        <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
+          <span>Total Gastos:</span><span>${formatCurrency(resumen?.totalGastosDiarios)}</span>
+        </div>` : ''}
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE MONEDAS</div>
         ${DENOMINACIONES.map(d => {
@@ -429,7 +443,7 @@ const CierreCajaPage = () => {
           <span>Diferencia:</span><span>${formatCurrency(cierre.diferencia)}</span>
         </div>
         <div class="separator"></div>
-        <p class="text-center" style="margin-top: 10px; font-size: 11px;">*** FIN DEL CIERRE ***</p>
+        <p class="text-center" style="margin-top: 10px; font-size: 13px;">*** FIN DEL CIERRE ***</p>
       </body>
       </html>
     `;
