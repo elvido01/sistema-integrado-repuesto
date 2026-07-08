@@ -337,11 +337,19 @@ const GestionCobroPage = () => {
       }
       cuotasData.sort((a, b) => String(a.fecha_vencimiento || '').localeCompare(String(b.fecha_vencimiento || '')));
 
-      const vencidas = (cuotasData || []).filter((q) => (
-        daysBetween(q.fecha_vencimiento) > DIAS_GRACIA_PAGO && pendingCuota(q) > 0
-      ));
+      // Regla domingo-cerrado: la financiera no abre los domingos, así que el
+      // aviso de 3 días que caía en DOMINGO se corre al LUNES. Ese lunes la
+      // cuota (ya con 4 días) cuenta como recordatorio, NO como morosa.
+      const esLunes = new Date().getDay() === 1;
+      const esDiaRecordatorio = (dias) => (
+        dias === DIAS_GRACIA_PAGO || (esLunes && dias === DIAS_GRACIA_PAGO + 1)
+      );
+      const vencidas = (cuotasData || []).filter((q) => {
+        const dias = daysBetween(q.fecha_vencimiento);
+        return dias > DIAS_GRACIA_PAGO && !esDiaRecordatorio(dias) && pendingCuota(q) > 0;
+      });
       const recordatoriosDia3 = (cuotasData || []).filter((q) => (
-        daysBetween(q.fecha_vencimiento) === DIAS_GRACIA_PAGO && pendingCuota(q) > 0
+        esDiaRecordatorio(daysBetween(q.fecha_vencimiento)) && pendingCuota(q) > 0
       ));
       const prestamosConVencidas = new Set(vencidas.map((q) => q.prestamo_id));
       const prestamosConRecordatorioDia3 = new Set(recordatoriosDia3.map((q) => q.prestamo_id));
@@ -432,7 +440,9 @@ const GestionCobroPage = () => {
         const isCasoAtrasado = cuotas.length > 0 || interesCorrienteEquivalente > 0;
         const cuotasRecordatorio = (recordatoriosPorPrestamo[p.id] || [])
           .filter((q) => !hasReminderSentForCuota(gs, q.id));
-        const isRecordatorioPago = !isCasoAtrasado && cuotasRecordatorio.length === 1;
+        // >= 1: el lunes pueden coincidir la cuota de 3 días y la del domingo
+        // (4 días) en préstamos de cuota diaria — ambas son recordatorio.
+        const isRecordatorioPago = !isCasoAtrasado && cuotasRecordatorio.length >= 1;
         if (!isCasoAtrasado && !isRecordatorioPago) return null;
 
         const cuotasCaso = isRecordatorioPago ? cuotasRecordatorio : cuotas;
@@ -453,8 +463,8 @@ const GestionCobroPage = () => {
           cliente,
           tipo: p.tipo,
           garantia: p.garantia,
-          cuotas_vencidas: isRecordatorioPago ? 1 : cuotas.length,
-          pagos_vencidos_equivalentes: isRecordatorioPago ? 1 : cuotas.length + interesCorrienteEquivalente,
+          cuotas_vencidas: isRecordatorioPago ? cuotasRecordatorio.length : cuotas.length,
+          pagos_vencidos_equivalentes: isRecordatorioPago ? cuotasRecordatorio.length : cuotas.length + interesCorrienteEquivalente,
           interes_corriente_equivalente: isRecordatorioPago ? 0 : interesCorrienteEquivalente,
           monto_vencido: montoVencido,
           dias_atraso: diasAtraso,

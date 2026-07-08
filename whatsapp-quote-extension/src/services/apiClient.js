@@ -222,11 +222,19 @@ async function getClientesMorososFinanciera(headers, empresa) {
 
   const rowsByCliente = new Map();
   const recordatorioCandidatos = [];
+  // Regla domingo-cerrado: la financiera no abre los domingos, asi que el
+  // aviso de 3 dias que caia en DOMINGO se corre al LUNES. Ese lunes la
+  // cuota (ya con 4 dias) cuenta como recordatorio, NO como morosa.
+  const esLunes = new Date().getDay() === 1;
+  const esDiaRecordatorio = (dias) => (
+    dias === DIAS_GRACIA_PAGO || (esLunes && dias === DIAS_GRACIA_PAGO + 1)
+  );
   prestamos.forEach((prestamo) => {
     const loanCuotas = cuotasPorPrestamo[prestamo.id] || [];
-    const vencidas = loanCuotas.filter((cuota) => (
-      daysBetween(cuota.fecha_vencimiento) > DIAS_GRACIA_PAGO && pendingCuota(cuota) > 0
-    ));
+    const vencidas = loanCuotas.filter((cuota) => {
+      const dias = daysBetween(cuota.fecha_vencimiento);
+      return dias > DIAS_GRACIA_PAGO && !esDiaRecordatorio(dias) && pendingCuota(cuota) > 0;
+    });
     const capitalBase = loanCuotas.reduce((sum, cuota) => (
       sum + Math.max(0, Number(cuota.capital || 0) - Number(cuota.capital_pagado || 0))
     ), 0);
@@ -244,12 +252,14 @@ async function getClientesMorososFinanciera(headers, empresa) {
     const pagosEquivalentes = vencidas.length + interesCorrienteEquivalente;
     if (!prestamo.cliente_id) return;
     if (pagosEquivalentes <= 0) {
-      // No es moroso. "Recordatorio 3 dias" (aviso temprano): prestamos con
-      // exactamente 1 cuota vencida hace 3 dias y nada mas atrasado.
-      const dia3 = loanCuotas.filter((cuota) => (
-        daysBetween(cuota.fecha_vencimiento) === DIAS_GRACIA_PAGO && pendingCuota(cuota) > 0
-      ));
-      if (dia3.length === 1) recordatorioCandidatos.push({ prestamo, cuota: dia3[0] });
+      // No es moroso. "Recordatorio 3 dias" (aviso temprano): cuotas a 3 dias
+      // (o a 4 los LUNES, por la regla domingo-cerrado) y nada mas atrasado.
+      const dia3 = loanCuotas
+        .filter((cuota) => (
+          esDiaRecordatorio(daysBetween(cuota.fecha_vencimiento)) && pendingCuota(cuota) > 0
+        ))
+        .sort((a, b) => String(a.fecha_vencimiento || '').localeCompare(String(b.fecha_vencimiento || '')));
+      if (dia3.length >= 1) recordatorioCandidatos.push({ prestamo, cuota: dia3[0] });
       return;
     }
 

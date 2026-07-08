@@ -63,16 +63,24 @@ BEGIN
       AND COALESCE(q.estado, 'pendiente') <> 'pagada'
   ),
   vencidas AS (
+    -- Regla domingo-cerrado: los LUNES la cuota de 4 dias NO es morosa
+    -- (su aviso de 3 dias caia el domingo y la financiera no abre).
     SELECT *
     FROM cuotas_base
     WHERE pendiente > 0
       AND (v_today - fecha_vencimiento) > 3
+      AND NOT (EXTRACT(ISODOW FROM v_today) = 1 AND (v_today - fecha_vencimiento) = 4)
   ),
   recordatorios_dia3 AS (
+    -- Aviso a los 3 dias; los LUNES incluye tambien los de 4 dias
+    -- (los que hubieran salido el domingo, regla domingo-cerrado).
     SELECT *
     FROM cuotas_base qb
     WHERE qb.pendiente > 0
-      AND (v_today - qb.fecha_vencimiento) = 3
+      AND (
+        (v_today - qb.fecha_vencimiento) = 3
+        OR (EXTRACT(ISODOW FROM v_today) = 1 AND (v_today - qb.fecha_vencimiento) = 4)
+      )
       AND NOT EXISTS (
         SELECT 1
         FROM public.cobro_gestiones g
@@ -363,5 +371,11 @@ REVOKE EXECUTE ON FUNCTION public.get_gestion_cobro_extension() FROM PUBLIC, ano
 GRANT EXECUTE ON FUNCTION public.get_gestion_cobro_extension() TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
+
+DO $$ BEGIN
+  IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
+    PERFORM public.registrar_migracion('whatsapp_extension_gestion_cobro.sql');
+  END IF;
+END $$;
 
 SELECT 'whatsapp extension gestion de cobro listo' AS status;

@@ -11,7 +11,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PrinterSettings from '@/components/configuracion/PrinterSettings';
 import IntegracionFiscalSettings from '@/components/configuracion/IntegracionFiscalSettings';
 
-const WHATSAPP_EXTENSION_DOWNLOAD_VERSION = '2026-07-03-1';
+const WHATSAPP_EXTENSION_DOWNLOAD_VERSION = '2026-07-08-1';
 const WHATSAPP_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-whatsapp-extension.zip?v=${WHATSAPP_EXTENSION_DOWNLOAD_VERSION}`;
 const OMNI_BETA_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-omni-beta-extension.zip?v=${WHATSAPP_EXTENSION_DOWNLOAD_VERSION}`;
 
