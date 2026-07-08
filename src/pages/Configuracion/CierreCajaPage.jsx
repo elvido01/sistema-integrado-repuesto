@@ -400,7 +400,7 @@ const CierreCajaPage = () => {
       </head>
       <body onload="window.print()">
         <div class="text-center">
-          <h1 class="bold">MotoFlow</h1>
+          <h1 class="bold">${(empresa?.nombre || 'MotoFlow').toUpperCase()}</h1>
           <p style="margin: 2px 0; font-size: 13px;">CIERRE DE CAJA</p>
         </div>
         <div class="separator"></div>
@@ -433,14 +433,24 @@ const CierreCajaPage = () => {
         </div>` : ''}
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE MONEDAS</div>
+        <div class="row" style="font-size: 12px; border-bottom: 1px solid #000; margin-bottom: 2px;">
+          <span style="flex: 1;">DENOM.</span>
+          <span class="text-right" style="width: 42px;">CANT.</span>
+          <span class="text-right" style="width: 84px;">VALOR</span>
+        </div>
         ${DENOMINACIONES.map(d => {
           const cant = cierre.desglose[d.label] || 0;
           const val = d.tipo ? cant : cant * d.value;
-          return `<div class="row"><span>${d.label}</span><span>${cant}</span><span class="text-right" style="width:60px;">${formatCurrency(val)}</span></div>`;
+          return `<div class="row">
+            <span style="flex: 1;">${d.label}</span>
+            <span class="text-right" style="width: 42px;">${cant}</span>
+            <span class="text-right" style="width: 84px;">${formatCurrency(val)}</span>
+          </div>`;
         }).join('')}
         <div class="row total-row"><span>Total Desglose:</span><span>${formatCurrency(cierre.total_desglose)}</span></div>
-        <div class="row" style="margin-top: 6px; font-weight: bold; ${cierre.diferencia < 0 ? 'color:red;' : cierre.diferencia > 0 ? 'color: green;' : ''}">
-          <span>Diferencia:</span><span>${formatCurrency(cierre.diferencia)}</span>
+        <div class="row" style="margin-top: 6px; font-weight: 900; font-size: 16px;">
+          <span>Diferencia${cierre.diferencia < 0 ? ' (FALTANTE)' : cierre.diferencia > 0 ? ' (SOBRANTE)' : ''}:</span>
+          <span>${formatCurrency(cierre.diferencia)}</span>
         </div>
         <div class="separator"></div>
         <p class="text-center" style="margin-top: 10px; font-size: 13px;">*** FIN DEL CIERRE ***</p>
