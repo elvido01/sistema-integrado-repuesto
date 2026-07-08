@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownCircle, ArrowUpCircle, FileText, Users, BarChart3, ShoppingCart } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, FileText, Users, BarChart3, ShoppingCart, Briefcase } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -52,6 +52,7 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data }) => {
           <Row icon={BarChart3} label="Compromisos fijos pagados" value={Number(p.compromisos_fijos_pagados) || 0} negative />
           <Row icon={Users} label="Pagos a suplidores" value={Number(p.pagos_suplidores) || 0} negative />
           <Row icon={ShoppingCart} label="Compras de contado" value={Number(p.compras_contado) || 0} negative />
+          <Row icon={Briefcase} label="Pago de comisiones" value={Number(p.pagos_comisiones) || 0} negative />
           <div className="flex items-center justify-between py-2 border-b-2 border-slate-200">
             <span className="text-xs font-semibold text-slate-500">Total egresos</span>
             <span className="text-sm font-black text-rose-600">
