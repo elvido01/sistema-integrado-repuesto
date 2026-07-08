@@ -98,6 +98,14 @@ const navItems = [
     ],
   },
   {
+    // Solo empresas tipo financiera (igual al menú Documentos del sistema viejo)
+    title: 'Documentos',
+    icon: FileText,
+    subItems: [
+      { title: 'Notas y Comentarios', id: 'notas-comentarios', icon: FileText, tipoNegocio: 'financiera', permissionKey: 'prestamos' },
+    ],
+  },
+  {
     title: 'Cuentas por Pagar',
     icon: DollarSign,
     subItems: [
@@ -360,6 +368,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             if (sub.tenantOnly && !(Array.isArray(sub.tenantOnly) ? sub.tenantOnly.includes(tenantId) : sub.tenantOnly === tenantId)) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
             if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
+            if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio) return false; // módulos por tipo de negocio (ej. Documentos)
             if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito
             if (sub.id === 'whatsapp-crm' && !puedePlus) return false; // Sales Hub = función Plus (PRO/ENTERPRISE)
             return canAccess(profile, permissions, sub.permissionKey || sub.id);

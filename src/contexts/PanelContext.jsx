@@ -63,6 +63,7 @@ import FinancieraPrestamosPage from '@/pages/FinancieraPrestamosPage';
 import ReciboPagoFinancieraPage from '@/pages/ReciboPagoFinancieraPage';
 import OtrasTransaccionesPage from '@/pages/OtrasTransaccionesPage';
 import HistoricoClientePage from '@/pages/HistoricoClientePage';
+import NotasComentariosPage from '@/pages/NotasComentariosPage';
 import ListaChasisPrestamosPage from '@/pages/ListaChasisPrestamosPage';
 import GestionCobroPage from '@/pages/GestionCobroPage';
 import CuentasIncobrablesPage from '@/pages/CuentasIncobrablesPage';
@@ -156,6 +157,7 @@ const componentMapping = {
   'nota-credito': { component: () => <Protected module="prestamos"><NotaCreditoFinancieraPage /></Protected>, icon: Receipt, name: 'Nota de Crédito' },
   'otras-transacciones': { component: () => <Protected module="prestamos"><OtrasTransaccionesPage /></Protected>, icon: Receipt, name: 'Otras Transacciones' },
   'historico-cliente': { component: () => <Protected module="prestamos"><HistoricoClientePage /></Protected>, icon: Receipt, name: 'Histórico de Cliente' },
+  'notas-comentarios': { component: () => <Protected module="prestamos"><NotasComentariosPage /></Protected>, icon: FileText, name: 'Notas y Comentarios' },
   'lista-chasis-prestamos': { component: () => <Protected module="prestamos"><ListaChasisPrestamosPage /></Protected>, icon: Receipt, name: 'Lista de Chasis en Préstamos' },
 };
 
