@@ -8,9 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
   const { toast } = useToast();
+  const { profile } = useAuth();
+  // Solo las cuentas administrativas pueden crear/ver gastos reservados
+  const esAdmin = ['admin', 'owner'].includes(profile?.role);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     nombre: '',
@@ -20,6 +24,7 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
     activo: true,
     recurrente: false,
     frecuencia: 'mensual',
+    solo_admin: false,
   });
 
   useEffect(() => {
@@ -34,6 +39,7 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
           activo: compromiso.activo ?? true,
           recurrente: compromiso.recurrente ?? false,
           frecuencia: compromiso.frecuencia || 'mensual',
+          solo_admin: compromiso.solo_admin ?? false,
         });
       } else {
         // Reset for new commitment
@@ -45,6 +51,7 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
           activo: true,
           recurrente: true,
           frecuencia: 'mensual',
+          solo_admin: false,
         });
       }
     }
@@ -147,6 +154,25 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
             <Checkbox id="activo" checked={formData.activo} onCheckedChange={(checked) => handleCheckedChange('activo', checked)} />
             <Label htmlFor="activo">Compromiso Activo</Label>
           </div>
+
+          {esAdmin && (
+            <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 space-y-1">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="solo_admin"
+                  checked={formData.solo_admin}
+                  onCheckedChange={(checked) => handleCheckedChange('solo_admin', !!checked)}
+                />
+                <Label htmlFor="solo_admin" className="font-medium">
+                  Solo administración
+                </Label>
+              </div>
+              <p className="text-xs text-amber-700 pl-6">
+                Este gasto no aparece a los demás usuarios; al pagarlo, la rebaja
+                de caja sí la ve todo el que vea el balance.
+              </p>
+            </div>
+          )}
 
           <div className="rounded-md border border-indigo-100 bg-indigo-50/40 p-3 space-y-3">
             <div className="flex items-center space-x-2">

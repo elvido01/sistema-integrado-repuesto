@@ -360,6 +360,7 @@ const HomePage = () => {
           activo: true,
           recurrente: true,
           frecuencia: c.frecuencia || 'mensual',
+          solo_admin: c.solo_admin ?? false,
         });
 
         if (insErr) {

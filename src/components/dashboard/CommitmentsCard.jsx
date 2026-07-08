@@ -72,6 +72,11 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, 
               </div>
               {/* Línea 3: badges en una sola fila */}
               <div className="flex items-center gap-1.5 mt-1 pl-6 overflow-x-auto">
+                {c.solo_admin && (
+                  <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase shrink-0" title="Solo lo ven las cuentas administrativas">
+                    Solo admin
+                  </span>
+                )}
                 {isOverdue && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Atrasado</span>}
                 {thisWeek && !isOverdue && <span className="text-[9px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Esta semana</span>}
                 {future && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Futuro</span>}
