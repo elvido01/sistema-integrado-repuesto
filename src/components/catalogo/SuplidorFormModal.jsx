@@ -19,6 +19,7 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
     activo: true,
     vende_a_credito: false,
     dias_credito: 0,
+    moneda: 'DOP',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -32,6 +33,7 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
         activo: suplidor.activo ?? true,
         vende_a_credito: suplidor.vende_a_credito ?? false,
         dias_credito: suplidor.dias_credito || 0,
+        moneda: suplidor.moneda || 'DOP',
       });
     } else {
       setFormData({
@@ -42,6 +44,7 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
         activo: true,
         vende_a_credito: false,
         dias_credito: 0,
+        moneda: 'DOP',
       });
     }
   }, [suplidor, isOpen]);
@@ -117,6 +120,13 @@ const SuplidorFormModal = ({ suplidor, isOpen, onClose }) => {
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="vende_a_credito" className="text-right">Vende a Crédito</Label>
             <Checkbox id="vende_a_credito" checked={formData.vende_a_credito} onCheckedChange={(checked) => handleCheckedChange('vende_a_credito', checked)} />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="factura_usd" className="text-right">Factura en US$</Label>
+            <div className="col-span-3 flex items-center gap-2">
+              <Checkbox id="factura_usd" checked={formData.moneda === 'USD'} onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, moneda: checked ? 'USD' : 'DOP' }))} />
+              <span className="text-xs text-muted-foreground">Sus compras se digitan en dólares a la tasa del día</span>
+            </div>
           </div>
           {formData.vende_a_credito && (
             <div className="grid grid-cols-4 items-center gap-4">

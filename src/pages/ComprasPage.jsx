@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Save, X, Loader2 } from 'lucide-react';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -39,6 +40,7 @@ const ComprasPage = () => {
   const compraParaEditar = currentPanel?.extraData?.compraParaEditar;
   const [isEditMode, setIsEditMode] = useState(false);
   const [proveedores, setProveedores] = useState([]);
+  const [tasaDia, setTasaDia] = useState(0); // RD$ por US$ (suplidores que facturan en dólares)
   const [almacenes, setAlmacenes] = useState([]);
   const [catalogTipos, setCatalogTipos] = useState([]);
   const [catalogMarcas, setCatalogMarcas] = useState([]);
@@ -184,9 +186,17 @@ const ComprasPage = () => {
         id_orden_origen: data.id_orden_origen || null,
       });
 
+      // Compra en US$: en la BD todo está en RD$; en pantalla se edita en
+      // dólares con la tasa con la que se grabó
+      const tasaCompraUSD = data.moneda === 'USD' && Number(data.tasa_cambio) > 0 ? Number(data.tasa_cambio) : 0;
+      if (tasaCompraUSD) setTasaDia(tasaCompraUSD);
+      const aUSD = (v) => Number(((Number(v) || 0) / tasaCompraUSD).toFixed(2));
+
       if (data.compras_detalle) {
         setDetalles(data.compras_detalle.map(d => ({
           ...d,
+          costo_unitario: tasaCompraUSD ? aUSD(d.costo_unitario) : d.costo_unitario,
+          importe: tasaCompraUSD ? aUSD(d.importe) : d.importe,
           original_id: d.id,
           id: Math.random() // for local unique key rendering
         })));
@@ -194,9 +204,9 @@ const ComprasPage = () => {
 
       const rawPagos = data.pagos || [];
       if (rawPagos.length > 0) {
-          setPagos(rawPagos);
+          setPagos(tasaCompraUSD ? rawPagos.map(p => ({ ...p, monto: p.monto_usd ?? aUSD(p.monto) })) : rawPagos);
       } else if (data.monto_pagado > 0) {
-          setPagos([{ tipo: '01', referencia: '', monto: data.monto_pagado, id: Date.now() }]);
+          setPagos([{ tipo: '01', referencia: '', monto: tasaCompraUSD ? aUSD(data.monto_pagado) : data.monto_pagado, id: Date.now() }]);
       }
       
       toast({ title: 'Modo Edición', description: `Editando compra ${data.numero}` });
@@ -278,14 +288,30 @@ const ComprasPage = () => {
     return { exento, gravado, descuento, itbis, total };
   }, [detalles, compra.itbis_incluido]);
 
+  // --- Suplidor que factura en US$: la compra se digita en dólares y el
+  // sistema convierte a RD$ con la tasa del día al grabar (costo/precio
+  // del producto y la contabilidad siguen en pesos) ---
+  const suplidorActivo = useMemo(() => proveedores.find(p => p.id === compra.suplidor_id), [proveedores, compra.suplidor_id]);
+  const esUSD = suplidorActivo?.moneda === 'USD';
+
+  useEffect(() => {
+    if (!esUSD) return;
+    supabase.rpc('get_tasa_dia').then(({ data }) => {
+      setTasaDia(prev => (prev > 0 ? prev : Number(data) || 0));
+    });
+  }, [esUSD]);
+
   const handleProductSelect = (product) => {
     // product.itbis_pct ya viene como decimal (0.18) de la DB
     const itbisPct = product.itbis_pct ?? 0.18;
+    // El costo del catálogo está en RD$; si el suplidor factura en US$,
+    // se sugiere convertido a dólares con la tasa del día
+    const costoCatalogo = product.costo || 0;
     setCurrentDetalle(prev => ({
       ...prev,
       codigo: product.codigo,
       descripcion: product.descripcion,
-      costo_unitario: product.costo || 0,
+      costo_unitario: esUSD && tasaDia > 0 ? Number((costoCatalogo / tasaDia).toFixed(2)) : costoCatalogo,
       itbis_pct: itbisPct,
       producto_id: product.id,
     }));
@@ -861,6 +887,15 @@ const ComprasPage = () => {
       return;
     }
 
+    if (esUSD && !(Number(tasaDia) > 0)) {
+      toast({
+        variant: "destructive",
+        title: "Falta la tasa del día",
+        description: "Este suplidor factura en US$. Indica la tasa de cambio del día para poder grabar la compra."
+      });
+      return;
+    }
+
     const totalPagado = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
     const diferencia = Math.abs(totalPagado - totals.total);
 
@@ -1013,18 +1048,34 @@ const ComprasPage = () => {
       }
     }
 
+    // Suplidor en US$: en pantalla todo se digitó en dólares; a la BD va
+    // convertido a RD$ con la tasa del día (la deuda queda en US$)
+    const usd = esUSD && Number(tasaDia) > 0;
+    const tasa = Number(tasaDia) || 0;
+    const rd = (v) => Number(((Number(v) || 0) * tasa).toFixed(2));
+    const detallesGuardar = usd
+      ? detalles.map(d => ({ ...d, costo_unitario: rd(d.costo_unitario), importe: rd(d.importe) }))
+      : detalles;
+    const totalsGuardar = usd
+      ? { exento: rd(totals.exento), gravado: rd(totals.gravado), descuento: rd(totals.descuento), itbis: rd(totals.itbis), total: rd(totals.total) }
+      : totals;
+
     const compraData = {
       ...compra,
       fecha: formatDateForSupabase(compra.fecha),
-      total_exento: totals.exento,
-      total_gravado: totals.gravado,
-      descuento_total: totals.descuento,
-      itbis_total: totals.itbis,
-      total_compra: totals.total,
-      monto_pagado: compra.forma_pago === 'Credito' ? 0 : totals.total,
-      monto_pendiente: compra.forma_pago === 'Credito' ? totals.total : 0,
+      total_exento: totalsGuardar.exento,
+      total_gravado: totalsGuardar.gravado,
+      descuento_total: totalsGuardar.descuento,
+      itbis_total: totalsGuardar.itbis,
+      total_compra: totalsGuardar.total,
+      monto_pagado: compra.forma_pago === 'Credito' ? 0 : totalsGuardar.total,
+      monto_pendiente: compra.forma_pago === 'Credito' ? totalsGuardar.total : 0,
       estado: compra.forma_pago === 'Credito' ? 'PENDIENTE' : 'PAGADA',
-      pagos: pagos.filter(p => p.monto > 0),
+      moneda: usd ? 'USD' : 'DOP',
+      tasa_cambio: usd ? tasa : null,
+      total_usd: usd ? totals.total : null,
+      pendiente_usd: usd ? (compra.forma_pago === 'Credito' ? totals.total : 0) : null,
+      pagos: pagos.filter(p => p.monto > 0).map(p => usd ? { ...p, monto: rd(p.monto), monto_usd: Number(p.monto) } : p),
       usuario_id: authUser?.id || user?.id,
       invoice_image_path: ocrData?.image_paths,
       ocr_text: ocrData?.ocr_text,
@@ -1068,7 +1119,10 @@ const ComprasPage = () => {
       savedCompra = data;
     }
 
-    const detallesData = detalles.map(d => ({
+    // La tasa usada queda registrada como la tasa del día de la empresa
+    if (usd) supabase.rpc('set_tasa_dia', { p_tasa: tasa }).then(() => {}, () => {});
+
+    const detallesData = detallesGuardar.map(d => ({
       compra_id: savedCompra.id,
       producto_id: d.producto_id,
       codigo: d.codigo,
@@ -1100,7 +1154,7 @@ const ComprasPage = () => {
         });
       }
 
-      const movimientos = detalles.map(d => ({
+      const movimientos = detallesGuardar.map(d => ({
         producto_id: d.producto_id,
         tipo: 'ENTRADA',
         cantidad: d.cantidad,
@@ -1113,7 +1167,7 @@ const ComprasPage = () => {
 
       // Sync product costs and prices if requested
       if (compra.actualizar_precios) {
-        for (const d of detalles) {
+        for (const d of detallesGuardar) {
           if (!d.producto_id) continue;
 
           // Fetch ALL presentations for this product to ensure proper synchronization
@@ -1415,6 +1469,30 @@ const ComprasPage = () => {
               onOpenSuplidorSearch={() => setIsSuplidorModalOpen(true)}
               onEditSuplidor={handleEditSuplidor}
             />
+
+            {esUSD && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2">
+                <span className="text-sm font-black text-emerald-800">💵 SUPLIDOR EN US$</span>
+                <span className="text-xs text-emerald-700">Digita los montos en dólares (como la factura)</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-emerald-800 uppercase">Tasa del día</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={tasaDia || ''}
+                    onChange={(e) => setTasaDia(parseFloat(e.target.value) || 0)}
+                    placeholder="RD$ x US$"
+                    className="h-8 w-28 text-right font-bold bg-white border-emerald-400"
+                  />
+                </div>
+                <span className="ml-auto text-sm font-bold text-emerald-900">
+                  Total US$ {totals.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  {tasaDia > 0 && (
+                    <span className="text-emerald-700"> ≈ RD$ {(totals.total * tasaDia).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  )}
+                </span>
+              </div>
+            )}
 
             <CompraDetalles
               currentDetalle={currentDetalle}

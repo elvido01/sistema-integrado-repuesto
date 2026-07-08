@@ -25,6 +25,9 @@ const initialState = {
   balanceAnterior: 0,
   totalPagado: 0,
   balanceActual: 0,
+  balanceUsd: 0,
+  totalPagadoUsd: 0,
+  balanceActualUsd: 0,
   imprimir: true,
 };
 
@@ -49,6 +52,11 @@ const PagoSuplidoresPage = () => {
   const [suplidorSearch, setSuplidorSearch] = useState('');
   const [suplidorPopoverOpen, setSuplidorPopoverOpen] = useState(false);
   const [paperSize, setPaperSize] = useState('4inch'); // 4inch (POS térmico) por defecto
+  // Suplidor que factura en US$: la deuda vive en dólares y se paga a la tasa de HOY
+  const [monedaUSD, setMonedaUSD] = useState(false);
+  const [tasa, setTasa] = useState(0); // RD$ por US$ del día del pago
+
+  const esFilaUSD = useCallback((c) => c.moneda === 'USD' && Number(c.pendiente_usd) > 0, []);
 
   const filteredSuplidores = useMemo(() => {
     const q = suplidorSearch.trim().toLowerCase();
@@ -61,7 +69,7 @@ const PagoSuplidoresPage = () => {
   const fetchInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data: suplidoresData, error: suplidoresError } = await supabase.from('proveedores').select('id, nombre').eq('activo', true);
+      const { data: suplidoresData, error: suplidoresError } = await supabase.from('proveedores').select('id, nombre, moneda').eq('activo', true);
       if (suplidoresError) throw suplidoresError;
       setSuplidores(suplidoresData);
 
@@ -80,12 +88,19 @@ const PagoSuplidoresPage = () => {
 
   const handleSuplidorSelect = async (suplidorId) => {
     if (!suplidorId) {
-      setPago(prev => ({ ...prev, suplidorId: null, suplidorNombre: '', balanceAnterior: 0 }));
+      setPago(prev => ({ ...prev, suplidorId: null, suplidorNombre: '', balanceAnterior: 0, balanceUsd: 0 }));
       setCompras([]);
+      setMonedaUSD(false);
       return;
     }
     setIsLoading(true);
     const selectedSuplidor = suplidores.find(s => s.id === suplidorId);
+    const isUSD = selectedSuplidor?.moneda === 'USD';
+    setMonedaUSD(isUSD);
+    if (isUSD) {
+      const { data: tasaData } = await supabase.rpc('get_tasa_dia');
+      setTasa(prev => (prev > 0 ? prev : Number(tasaData) || 0));
+    }
     try {
       const { data, error } = await supabase.rpc('get_compras_pendientes_suplidor', { p_suplidor_id: suplidorId });
       if (error) throw error;
@@ -94,7 +109,9 @@ const PagoSuplidoresPage = () => {
       const comprasConAbono = data
         .map(c => ({ ...c, abono: 0 }))
         .sort((a, b) => getCompraOldestTime(a) - getCompraOldestTime(b));
-      const balanceAnterior = comprasConAbono.reduce((sum, c) => sum + Number(c.monto_pendiente), 0);
+      // El balance de las compras en US$ se lleva en dólares; el de las de pesos, en RD$
+      const balanceAnterior = comprasConAbono.reduce((sum, c) => sum + (esFilaUSD(c) ? 0 : Number(c.monto_pendiente)), 0);
+      const balanceUsd = comprasConAbono.reduce((sum, c) => sum + (esFilaUSD(c) ? Number(c.pendiente_usd) : 0), 0);
 
       setCompras(comprasConAbono);
       setPago(prev => ({
@@ -103,6 +120,8 @@ const PagoSuplidoresPage = () => {
         suplidorNombre: selectedSuplidor?.nombre || '',
         balanceAnterior,
         balanceActual: balanceAnterior,
+        balanceUsd,
+        balanceActualUsd: balanceUsd,
         fecha: getCurrentDateInTimeZone(),
       }));
     } catch (error) {
@@ -115,7 +134,8 @@ const PagoSuplidoresPage = () => {
     const abonoValue = parseFloat(abono) || 0;
     setCompras(compras.map(c => {
       if (c.id === compraId) {
-        const montoPendiente = parseFloat(c.monto_pendiente);
+        // Compras en US$ se abonan en dólares; en pesos, en RD$
+        const montoPendiente = esFilaUSD(c) ? Number(c.pendiente_usd) : parseFloat(c.monto_pendiente);
         const newAbono = Math.min(Math.max(0, abonoValue), montoPendiente);
         return { ...c, abono: newAbono };
       }
@@ -123,6 +143,8 @@ const PagoSuplidoresPage = () => {
     }));
   };
 
+  // Reparte un total en RD$ (lo que sale de caja) entre las facturas, la más
+  // vieja primero. Las facturas en US$ consumen su equivalente a la tasa del día.
   const distribuirPagoEnCompras = useCallback((montoTotal) => {
     const totalDisponible = Math.max(0, toMoney(montoTotal));
 
@@ -132,10 +154,13 @@ const PagoSuplidoresPage = () => {
       const ordenadas = [...prevCompras].sort((a, b) => getCompraOldestTime(a) - getCompraOldestTime(b));
 
       ordenadas.forEach((compra) => {
-        const pendiente = Math.max(0, Number(compra.monto_pendiente) || 0);
-        const abono = Math.min(pendiente, restante);
-        abonosPorCompra.set(compra.id, toMoney(abono));
-        restante = toMoney(restante - abono);
+        const esU = esFilaUSD(compra) && tasa > 0;
+        const pendienteRD = esU
+          ? toMoney(Number(compra.pendiente_usd) * tasa)
+          : Math.max(0, Number(compra.monto_pendiente) || 0);
+        const abonoRD = Math.min(pendienteRD, restante);
+        abonosPorCompra.set(compra.id, esU ? toMoney(abonoRD / tasa) : toMoney(abonoRD));
+        restante = toMoney(restante - abonoRD);
       });
 
       return prevCompras.map(compra => ({
@@ -143,19 +168,28 @@ const PagoSuplidoresPage = () => {
         abono: abonosPorCompra.get(compra.id) || 0,
       }));
     });
-  }, []);
+  }, [esFilaUSD, tasa]);
 
+  // Abonos separados por moneda (el abono de cada fila está en SU moneda)
+  const totalAbonosDop = useMemo(() => {
+    return compras.reduce((sum, c) => sum + (esFilaUSD(c) ? 0 : Number(c.abono)), 0);
+  }, [compras, esFilaUSD]);
+  const totalAbonosUsd = useMemo(() => {
+    return compras.reduce((sum, c) => sum + (esFilaUSD(c) ? Number(c.abono) : 0), 0);
+  }, [compras, esFilaUSD]);
+  // Total que sale de caja/banco en RD$ (los US$ se compran a la tasa del día)
   const totalAbonos = useMemo(() => {
-    return compras.reduce((sum, c) => sum + Number(c.abono), 0);
-  }, [compras]);
+    return toMoney(totalAbonosDop + totalAbonosUsd * (tasa || 0));
+  }, [totalAbonosDop, totalAbonosUsd, tasa]);
 
   useEffect(() => {
-    const balanceActual = pago.balanceAnterior - totalAbonos;
-    setPago(prev => ({ ...prev, totalPagado: totalAbonos, balanceActual }));
+    const balanceActual = pago.balanceAnterior - totalAbonosDop;
+    const balanceActualUsd = (pago.balanceUsd || 0) - totalAbonosUsd;
+    setPago(prev => ({ ...prev, totalPagado: totalAbonos, totalPagadoUsd: totalAbonosUsd, balanceActual, balanceActualUsd }));
     if (formasPago.length === 1) {
       setFormasPago([{ ...formasPago[0], monto: totalAbonos }]);
     }
-  }, [totalAbonos, pago.balanceAnterior]);
+  }, [totalAbonos, totalAbonosDop, totalAbonosUsd, pago.balanceAnterior, pago.balanceUsd]);
 
   const handleFormaPagoChange = (id, field, value) => {
     const nextFormasPago = formasPago.map(p => p.id === id ? { ...p, [field]: value } : p);
@@ -197,6 +231,10 @@ const PagoSuplidoresPage = () => {
       toast({ variant: 'destructive', title: 'Error de validación', description: 'El total de formas de pago no coincide con el total a pagar.' });
       return;
     }
+    if (totalAbonosUsd > 0 && !(tasa > 0)) {
+      toast({ variant: 'destructive', title: 'Falta la tasa del día', description: 'Este suplidor se paga en dólares. Indica la tasa de cambio de HOY para calcular los pesos.' });
+      return;
+    }
 
     setIsSaving(true);
     const pagoData = {
@@ -205,14 +243,17 @@ const PagoSuplidoresPage = () => {
       total_pagado: totalAbonos,
       concepto: 'Pago a suplidor',
       formas_pago: formasPago,
+      // Pago en dólares: tasa de HOY y total en US$ (la diferencia cambiaria
+      // la calcula y guarda el RPC contra la tasa de cada compra)
+      tasa_cambio: totalAbonosUsd > 0 ? tasa : null,
+      total_usd: totalAbonosUsd > 0 ? toMoney(totalAbonosUsd) : null,
     };
 
     const detallesData = compras
       .filter(c => c.abono > 0)
-      .map(c => ({
-        compra_id: c.id,
-        monto_abonado: c.abono,
-      }));
+      .map(c => (esFilaUSD(c)
+        ? { compra_id: c.id, monto_abonado: toMoney(c.abono * tasa), abonado_usd: toMoney(c.abono) }
+        : { compra_id: c.id, monto_abonado: c.abono }));
 
     try {
       const { data, error } = await supabase.rpc('procesar_pago_suplidor', {
@@ -221,6 +262,9 @@ const PagoSuplidoresPage = () => {
       });
 
       if (error) throw error;
+
+      // La tasa usada queda como la tasa del día de la empresa
+      if (totalAbonosUsd > 0 && tasa > 0) supabase.rpc('set_tasa_dia', { p_tasa: tasa }).then(() => {}, () => {});
 
       toast({ title: 'Éxito', description: `Pago ${data} guardado correctamente.` });
 
@@ -275,6 +319,7 @@ const PagoSuplidoresPage = () => {
     setPago(initialState);
     setCompras([]);
     setFormasPago([{ id: 1, forma: 'Efectivo', monto: 0, referencia: '' }]);
+    setMonedaUSD(false);
     fetchInitialData();
   }, [fetchInitialData]);
 
@@ -387,8 +432,29 @@ const PagoSuplidoresPage = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div className="p-2 bg-gray-50 rounded">
                   <span className="font-semibold">Balance Anterior:</span>
-                  <span className="font-bold ml-2 text-red-600">{formatCurrency(pago.balanceAnterior)}</span>
+                  {monedaUSD ? (
+                    <span className="font-bold ml-2 text-red-600">
+                      US$ {formatCurrency(pago.balanceUsd)}
+                      {pago.balanceAnterior > 0 && <span className="text-gray-500 font-semibold"> + RD$ {formatCurrency(pago.balanceAnterior)}</span>}
+                    </span>
+                  ) : (
+                    <span className="font-bold ml-2 text-red-600">{formatCurrency(pago.balanceAnterior)}</span>
+                  )}
                 </div>
+                {monedaUSD && (
+                  <div className="p-2 bg-emerald-50 border border-emerald-300 rounded flex items-center gap-2">
+                    <span className="font-bold text-emerald-800 text-xs uppercase whitespace-nowrap">💵 Tasa del día</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={tasa || ''}
+                      onChange={(e) => setTasa(parseFloat(e.target.value) || 0)}
+                      placeholder="RD$ x US$"
+                      className="h-8 w-28 text-right font-bold bg-white border-emerald-400"
+                    />
+                    <span className="text-[11px] text-emerald-700">Los abonos se digitan en US$</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -445,10 +511,20 @@ const PagoSuplidoresPage = () => {
                       <TableCell>{formatInTimeZone(new Date(c.fecha_emision), 'dd/MM/yyyy')}</TableCell>
                       <TableCell>{formatInTimeZone(new Date(c.fecha_vencimiento), 'dd/MM/yyyy')}</TableCell>
                       <TableCell>{c.referencia}</TableCell>
-                      <TableCell>{formatCurrency(c.monto_total)}</TableCell>
-                      <TableCell className="font-semibold">{formatCurrency(c.monto_pendiente)}</TableCell>
+                      <TableCell>{esFilaUSD(c) ? <span className="text-emerald-800 font-semibold">US$ {formatCurrency(c.total_usd)}</span> : formatCurrency(c.monto_total)}</TableCell>
+                      <TableCell className="font-semibold">
+                        {esFilaUSD(c) ? (
+                          <span className="text-emerald-800">
+                            US$ {formatCurrency(c.pendiente_usd)}
+                            {tasa > 0 && <span className="block text-[11px] text-gray-500 font-normal">≈ RD$ {formatCurrency(c.pendiente_usd * tasa)}</span>}
+                          </span>
+                        ) : formatCurrency(c.monto_pendiente)}
+                      </TableCell>
                       <TableCell className="text-right">
                         <Input type="number" value={c.abono} onChange={(e) => handleAbonoChange(c.id, e.target.value)} className="text-right h-8 bg-yellow-100" />
+                        {esFilaUSD(c) && c.abono > 0 && tasa > 0 && (
+                          <div className="text-[11px] text-gray-500 mt-0.5">US$ {formatCurrency(c.abono)} ≈ RD$ {formatCurrency(c.abono * tasa)}</div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -480,9 +556,20 @@ const PagoSuplidoresPage = () => {
               )}
             </div>
             <div className="space-y-2 text-right font-semibold">
-              <div className="flex justify-between"><span className="text-gray-600">Balance Anterior:</span><span>{formatCurrency(pago.balanceAnterior)}</span></div>
-              <div className="flex justify-between text-blue-600"><span>Total Pagado:</span><span>{formatCurrency(pago.totalPagado)}</span></div>
-              <div className="flex justify-between text-red-600 text-lg border-t pt-1"><span>Balance Actual:</span><span>{formatCurrency(pago.balanceActual)}</span></div>
+              {monedaUSD ? (
+                <>
+                  <div className="flex justify-between"><span className="text-gray-600">Balance Anterior:</span><span>US$ {formatCurrency(pago.balanceUsd)}</span></div>
+                  <div className="flex justify-between text-emerald-700"><span>Abono en US$:</span><span>US$ {formatCurrency(pago.totalPagadoUsd)}</span></div>
+                  <div className="flex justify-between text-blue-600"><span>Salen de caja (RD$ a tasa {formatCurrency(tasa)}):</span><span>RD$ {formatCurrency(pago.totalPagado)}</span></div>
+                  <div className="flex justify-between text-red-600 text-lg border-t pt-1"><span>Balance Actual:</span><span>US$ {formatCurrency(pago.balanceActualUsd)}</span></div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between"><span className="text-gray-600">Balance Anterior:</span><span>{formatCurrency(pago.balanceAnterior)}</span></div>
+                  <div className="flex justify-between text-blue-600"><span>Total Pagado:</span><span>{formatCurrency(pago.totalPagado)}</span></div>
+                  <div className="flex justify-between text-red-600 text-lg border-t pt-1"><span>Balance Actual:</span><span>{formatCurrency(pago.balanceActual)}</span></div>
+                </>
+              )}
             </div>
           </div>
 
