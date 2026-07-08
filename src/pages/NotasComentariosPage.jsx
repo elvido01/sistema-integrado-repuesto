@@ -298,8 +298,12 @@ const NotasComentariosPage = () => {
     <div className="p-1.5 bg-slate-100">
       <Helmet><title>Notas y Comentarios — Documentos</title></Helmet>
       <div className="bg-white rounded-lg shadow border w-full overflow-hidden">
-        <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-1 font-extrabold tracking-wide text-base">
-          NOTAS Y COMENTARIOS — DOCUMENTACIÓN DEL CLIENTE
+        <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 py-1 px-2 font-extrabold tracking-wide text-base flex items-center">
+          <span className="w-36" />
+          <span className="flex-1 text-center">NOTAS Y COMENTARIOS — DOCUMENTACIÓN DEL CLIENTE</span>
+          <Button type="button" variant="outline" size="sm" className="h-7 text-xs w-36" onClick={() => openPanel('documentacion-cliente')}>
+            <List className="w-3.5 h-3.5 mr-1" />Listado general
+          </Button>
         </div>
 
         <div className="p-2 space-y-2">
@@ -342,21 +346,75 @@ const NotasComentariosPage = () => {
             </div>
           </div>
 
-          {/* Documentación del cliente (unidades con imágenes) */}
+          {/* Nueva nota */}
           <div className="border rounded-md p-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                <FileImage className="w-3.5 h-3.5" /> Documentación (matrícula, placa, cédula…)
-              </span>
-              <div className="flex gap-1.5">
-                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => openPanel('documentacion-cliente')}>
-                  <List className="w-3.5 h-3.5 mr-1" />Listado general
-                </Button>
-                <Button type="button" size="sm" className="h-7 text-xs" disabled={!cliente} onClick={abrirDocNuevo}>
-                  <Plus className="w-3.5 h-3.5 mr-1" />Nueva documentación
-                </Button>
-              </div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Nueva nota / comentario</span>
+            <Textarea
+              value={nuevaNota}
+              onChange={(e) => setNuevaNota(e.target.value)}
+              disabled={!cliente}
+              placeholder={cliente ? 'Escribe la nota o comentario…' : 'Selecciona un cliente primero'}
+              className="mt-1 min-h-[64px] text-sm"
+            />
+            <div className="mt-2 flex justify-end">
+              <Button type="button" size="sm" onClick={agregarNota} disabled={!cliente || !nuevaNota.trim() || guardando}>
+                {guardando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}Agregar Nota
+              </Button>
             </div>
+          </div>
+
+          {/* Historial */}
+          <div className="border rounded-md overflow-hidden">
+            <div className="overflow-y-auto h-[260px]">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-100 text-gray-700 font-bold border-b sticky top-0">
+                  <tr>
+                    <th className="text-left px-2 py-1 w-24">Fecha</th>
+                    <th className="text-left px-2 py-1 w-14">Hora</th>
+                    <th className="text-left px-2 py-1 w-32">Usuario</th>
+                    <th className="text-left px-2 py-1 w-28">Préstamo</th>
+                    <th className="text-left px-2 py-1">Nota / Comentario</th>
+                    {esAdmin && <th className="w-9"></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading && <tr><td colSpan={6} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
+                  {!loading && !cliente && <tr><td colSpan={6} className="p-10 text-center italic text-slate-400">--- SELECCIONE UN CLIENTE ---</td></tr>}
+                  {!loading && cliente && notas.length === 0 && <tr><td colSpan={6} className="p-10 text-center italic text-slate-400">Este cliente no tiene notas registradas.</td></tr>}
+                  {!loading && cliente && notas.map((n, i) => (
+                    <tr key={n.id} className={`border-b last:border-0 align-top ${i % 2 === 1 ? 'bg-[#eef6ff]' : 'bg-white'}`}>
+                      <td className="px-2 py-1 whitespace-nowrap">{fdate(n.fecha)}</td>
+                      <td className="px-2 py-1 whitespace-nowrap">{fhora(n.created_at)}</td>
+                      <td className="px-2 py-1 truncate max-w-[130px]" title={n.usuario_nombre || ''}>
+                        {n.usuario_nombre || '—'}
+                        {n.tenant_id !== tenantId && (
+                          <span className="ml-1 inline-block px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold align-middle" title="Nota registrada por la empresa aliada">ALIADA</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 font-bold text-blue-900 whitespace-nowrap">{n.prestamo?.numero || ''}</td>
+                      <td className="px-2 py-1 whitespace-pre-wrap">{n.nota}</td>
+                      {esAdmin && (
+                        <td className="px-1 py-1 text-center">
+                          {n.tenant_id === tenantId && (
+                            <button type="button" onClick={() => eliminarNota(n)} title="Eliminar nota"
+                                    className="text-slate-300 hover:text-red-600 transition-colors">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Documentación del cliente — al final, siempre desplegada */}
+          <div className="border rounded-md p-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+              <FileImage className="w-3.5 h-3.5" /> Documentación (matrícula, placa, cédula…)
+            </span>
             {/* Formulario SIEMPRE desplegado en la pantalla al elegir cliente */}
             {cliente && (
               <div className="mt-2 border-2 border-cyan-700 rounded-md overflow-hidden">
@@ -484,70 +542,6 @@ const NotasComentariosPage = () => {
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Nueva nota */}
-          <div className="border rounded-md p-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Nueva nota / comentario</span>
-            <Textarea
-              value={nuevaNota}
-              onChange={(e) => setNuevaNota(e.target.value)}
-              disabled={!cliente}
-              placeholder={cliente ? 'Escribe la nota o comentario…' : 'Selecciona un cliente primero'}
-              className="mt-1 min-h-[64px] text-sm"
-            />
-            <div className="mt-2 flex justify-end">
-              <Button type="button" size="sm" onClick={agregarNota} disabled={!cliente || !nuevaNota.trim() || guardando}>
-                {guardando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}Agregar Nota
-              </Button>
-            </div>
-          </div>
-
-          {/* Historial */}
-          <div className="border rounded-md overflow-hidden">
-            <div className="overflow-y-auto h-[260px]">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-100 text-gray-700 font-bold border-b sticky top-0">
-                  <tr>
-                    <th className="text-left px-2 py-1 w-24">Fecha</th>
-                    <th className="text-left px-2 py-1 w-14">Hora</th>
-                    <th className="text-left px-2 py-1 w-32">Usuario</th>
-                    <th className="text-left px-2 py-1 w-28">Préstamo</th>
-                    <th className="text-left px-2 py-1">Nota / Comentario</th>
-                    {esAdmin && <th className="w-9"></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading && <tr><td colSpan={6} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
-                  {!loading && !cliente && <tr><td colSpan={6} className="p-10 text-center italic text-slate-400">--- SELECCIONE UN CLIENTE ---</td></tr>}
-                  {!loading && cliente && notas.length === 0 && <tr><td colSpan={6} className="p-10 text-center italic text-slate-400">Este cliente no tiene notas registradas.</td></tr>}
-                  {!loading && cliente && notas.map((n, i) => (
-                    <tr key={n.id} className={`border-b last:border-0 align-top ${i % 2 === 1 ? 'bg-[#eef6ff]' : 'bg-white'}`}>
-                      <td className="px-2 py-1 whitespace-nowrap">{fdate(n.fecha)}</td>
-                      <td className="px-2 py-1 whitespace-nowrap">{fhora(n.created_at)}</td>
-                      <td className="px-2 py-1 truncate max-w-[130px]" title={n.usuario_nombre || ''}>
-                        {n.usuario_nombre || '—'}
-                        {n.tenant_id !== tenantId && (
-                          <span className="ml-1 inline-block px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold align-middle" title="Nota registrada por la empresa aliada">ALIADA</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1 font-bold text-blue-900 whitespace-nowrap">{n.prestamo?.numero || ''}</td>
-                      <td className="px-2 py-1 whitespace-pre-wrap">{n.nota}</td>
-                      {esAdmin && (
-                        <td className="px-1 py-1 text-center">
-                          {n.tenant_id === tenantId && (
-                            <button type="button" onClick={() => eliminarNota(n)} title="Eliminar nota"
-                                    className="text-slate-300 hover:text-red-600 transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
 
           {/* Acciones */}
