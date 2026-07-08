@@ -81,7 +81,6 @@ const navItems = [
     subItems: [
       { title: 'Ventas', id: 'ventas' },
       { title: 'Recibo de Ingreso', id: 'recibo-ingreso', icon: Receipt },
-      { title: 'Compras', id: 'compras' },
       { title: 'Pedidos', id: 'pedidos', tenantExclude: 'b39506c3-27dc-467d-830b-096731b83113' },
       // Caminero Motors (terceros) + financieras que venden y financian propio
       { title: 'Solicitudes de Compras', id: 'solicitudes-compras', icon: ClipboardList, tenantOnly: [
@@ -93,7 +92,6 @@ const navItems = [
       { title: 'Documentación Cliente', id: 'documentacion-cliente', icon: FileImage, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
       { title: 'Cotizaciones', id: 'cotizaciones' },
       { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, tenantOnly: '00000000-0000-0000-0000-000000000001' },
-      { title: 'Orden de Compra', id: 'orden-compra' },
       { title: 'Devoluciones', id: 'devoluciones' },
     ],
   },
@@ -109,6 +107,8 @@ const navItems = [
     title: 'Cuentas por Pagar',
     icon: DollarSign,
     subItems: [
+      { title: 'Orden de Compra', id: 'orden-compra' },
+      { title: 'Compras', id: 'compras' },
       { title: 'Pago a Suplidores', id: 'pago-suplidores', icon: Truck },
       { title: 'Pago Comisiones', id: 'pago-comisiones-vendedor', icon: Users },
     ],
