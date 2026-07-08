@@ -114,6 +114,7 @@ const NotasComentariosPage = () => {
     setCliente(c); setBuscarOpen(false);
     setCodigoInput(c.codigo || c.rnc || '');
     setPrestamoId(''); setNuevaNota('');
+    setDocModalOpen(false); setDocEditing(null);
     cargar(c.id, c.rnc);
   };
 
@@ -358,11 +359,104 @@ const NotasComentariosPage = () => {
                 </Button>
               </div>
             </div>
+            {/* Formulario desplegado en la pantalla (no flotante) */}
+            {docModalOpen && (
+              <div className="mt-2 border-2 border-cyan-700 rounded-md overflow-hidden">
+                <div className="bg-cyan-700 text-white px-3 py-1.5 text-sm font-bold uppercase flex items-center justify-between">
+                  <span>Documentación {docEditing ? '(Editando)' : '(Creando)'} — {(docEditing?.cliente_nombre || cliente?.nombre || '').toUpperCase()}</span>
+                  <button type="button" onClick={() => setDocModalOpen(false)} className="text-white/80 hover:text-white"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="p-3 space-y-3 bg-white">
+                  <div className="text-xs text-slate-500">
+                    Cédula: <b>{docEditing?.documento_identidad || cliente?.rnc || '—'}</b>
+                    {' · '}Tel: <b>{docEditing?.telefono || cliente?.telefono || '—'}</b>
+                    {' — '}Las notas van en la bitácora de abajo, no aquí.
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div>
+                      <Label>Chasis</Label>
+                      <Input value={docForm.chasis} onChange={(e) => setDocForm((p) => ({ ...p, chasis: e.target.value.toUpperCase() }))} />
+                    </div>
+                    <div>
+                      <Label>Placa</Label>
+                      <Input value={docForm.placa} onChange={(e) => setDocForm((p) => ({ ...p, placa: e.target.value.toUpperCase() }))} placeholder="Número placa" />
+                    </div>
+                    <div>
+                      <Label>Estado de la placa</Label>
+                      <select
+                        value={docForm.placa_estado}
+                        onChange={(e) => setDocForm((p) => ({ ...p, placa_estado: e.target.value }))}
+                        className="w-full h-10 border border-slate-300 rounded px-2 text-sm bg-white"
+                      >
+                        <option value="">Estado</option>
+                        {ESTADOS_DOC.map((op) => <option key={op} value={op}>{op}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Label>Matrícula</Label>
+                      <select
+                        value={docForm.matricula}
+                        onChange={(e) => setDocForm((p) => ({ ...p, matricula: e.target.value }))}
+                        className="w-full h-10 border border-slate-300 rounded px-2 text-sm bg-white"
+                      >
+                        <option value="">Estado</option>
+                        {ESTADOS_DOC.map((op) => <option key={op} value={op}>{op}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                    {docFields.map((field) => (
+                      <div key={field.key} className="border border-slate-300 rounded bg-slate-50 overflow-hidden">
+                        <div className="px-2 py-1.5 bg-slate-100 border-b flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold text-slate-700 uppercase truncate">{field.label}</span>
+                          {docUrls[field.key] && (
+                            <button
+                              type="button"
+                              onClick={() => setImagePreview({ label: field.label, url: docUrls[field.key] })}
+                              className="h-6 px-2 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-[10px] font-bold inline-flex items-center gap-1"
+                              title="Vista previa"
+                            >
+                              <Eye className="h-3 w-3" />Ver
+                            </button>
+                          )}
+                        </div>
+                        <label className="block cursor-pointer">
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDocFile(field.key, e.target.files?.[0])} />
+                          <div className="h-32 flex items-center justify-center bg-white">
+                            {docUrls[field.key] ? (
+                              <img src={docUrls[field.key]} alt={field.label} className="max-h-full max-w-full object-contain" />
+                            ) : (
+                              <div className="text-center text-slate-400">
+                                <Upload className="h-7 w-7 mx-auto mb-1" />
+                                <span className="text-xs">Cargar imagen</span>
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                        <div className="px-2 py-1 text-[10px] text-slate-500 truncate">
+                          {docFiles[field.key]?.name || (docUrls[field.key] ? 'Imagen cargada' : 'Pendiente')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-end gap-2 border-t pt-2">
+                    <Button variant="outline" size="sm" onClick={() => setDocModalOpen(false)} disabled={docSaving}>Cancelar</Button>
+                    <Button size="sm" onClick={guardarDoc} disabled={docSaving} className="bg-emerald-700 hover:bg-emerald-800 text-white">
+                      {docSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                      {docEditing ? 'Actualizar' : 'Crear'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!cliente ? (
               <div className="py-3 text-center text-xs italic text-slate-400">Selecciona un cliente para ver su documentación.</div>
-            ) : docs.length === 0 ? (
+            ) : docs.length === 0 && !docModalOpen ? (
               <div className="py-3 text-center text-xs italic text-slate-400">Este cliente no tiene documentación registrada.</div>
-            ) : (
+            ) : docs.length === 0 ? null : (
               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                 {docs.map((r) => (
                   <div key={r.id} className="border rounded-md p-2 bg-slate-50/60">
@@ -470,101 +564,6 @@ const NotasComentariosPage = () => {
       </div>
 
       <ClienteSearchModal isOpen={buscarOpen} onClose={() => setBuscarOpen(false)} onSelectCliente={seleccionarCliente} />
-
-      {/* Modal de documentación — el cliente va fijo, solo datos de la unidad */}
-      <Dialog open={docModalOpen} onOpenChange={(open) => { if (!open) setDocModalOpen(false); }}>
-        <DialogContent className="max-w-4xl p-0 overflow-hidden">
-          <DialogHeader className="bg-cyan-700 text-white px-5 py-3">
-            <DialogTitle className="text-white uppercase">
-              Documentación {docEditing ? '(Editando)' : '(Creando)'} — {(docEditing?.cliente_nombre || cliente?.nombre || '').toUpperCase()}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="p-4 space-y-4 max-h-[75vh] overflow-y-auto bg-white">
-            <div className="text-xs text-slate-500 -mt-1">
-              Cédula: <b>{docEditing?.documento_identidad || cliente?.rnc || '—'}</b>
-              {' · '}Tel: <b>{docEditing?.telefono || cliente?.telefono || '—'}</b>
-              {' — '}Las notas van en la bitácora de abajo, no aquí.
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div>
-                <Label>Chasis</Label>
-                <Input value={docForm.chasis} onChange={(e) => setDocForm((p) => ({ ...p, chasis: e.target.value.toUpperCase() }))} />
-              </div>
-              <div>
-                <Label>Placa</Label>
-                <Input value={docForm.placa} onChange={(e) => setDocForm((p) => ({ ...p, placa: e.target.value.toUpperCase() }))} placeholder="Número placa" />
-              </div>
-              <div>
-                <Label>Estado de la placa</Label>
-                <select
-                  value={docForm.placa_estado}
-                  onChange={(e) => setDocForm((p) => ({ ...p, placa_estado: e.target.value }))}
-                  className="w-full h-10 border border-slate-300 rounded px-2 text-sm bg-white"
-                >
-                  <option value="">Estado</option>
-                  {ESTADOS_DOC.map((op) => <option key={op} value={op}>{op}</option>)}
-                </select>
-              </div>
-              <div>
-                <Label>Matrícula</Label>
-                <select
-                  value={docForm.matricula}
-                  onChange={(e) => setDocForm((p) => ({ ...p, matricula: e.target.value }))}
-                  className="w-full h-10 border border-slate-300 rounded px-2 text-sm bg-white"
-                >
-                  <option value="">Estado</option>
-                  {ESTADOS_DOC.map((op) => <option key={op} value={op}>{op}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              {docFields.map((field) => (
-                <div key={field.key} className="border border-slate-300 rounded bg-slate-50 overflow-hidden">
-                  <div className="px-2 py-1.5 bg-slate-100 border-b flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold text-slate-700 uppercase truncate">{field.label}</span>
-                    {docUrls[field.key] && (
-                      <button
-                        type="button"
-                        onClick={() => setImagePreview({ label: field.label, url: docUrls[field.key] })}
-                        className="h-6 px-2 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-[10px] font-bold inline-flex items-center gap-1"
-                        title="Vista previa"
-                      >
-                        <Eye className="h-3 w-3" />Ver
-                      </button>
-                    )}
-                  </div>
-                  <label className="block cursor-pointer">
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDocFile(field.key, e.target.files?.[0])} />
-                    <div className="h-32 flex items-center justify-center bg-white">
-                      {docUrls[field.key] ? (
-                        <img src={docUrls[field.key]} alt={field.label} className="max-h-full max-w-full object-contain" />
-                      ) : (
-                        <div className="text-center text-slate-400">
-                          <Upload className="h-7 w-7 mx-auto mb-1" />
-                          <span className="text-xs">Cargar imagen</span>
-                        </div>
-                      )}
-                    </div>
-                  </label>
-                  <div className="px-2 py-1 text-[10px] text-slate-500 truncate">
-                    {docFiles[field.key]?.name || (docUrls[field.key] ? 'Imagen cargada' : 'Pendiente')}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <DialogFooter className="bg-slate-100 border-t px-4 py-3">
-            <Button variant="outline" onClick={() => setDocModalOpen(false)} disabled={docSaving}>Cancelar</Button>
-            <Button onClick={guardarDoc} disabled={docSaving} className="bg-emerald-700 hover:bg-emerald-800 text-white">
-              {docSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-              {docEditing ? 'Actualizar' : 'Crear'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Vista previa de imagen (ver / descargar / imprimir) */}
       <Dialog open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
