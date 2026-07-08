@@ -300,7 +300,7 @@ CREATE INDEX IF NOT EXISTS idx_facturas_detalle_producto ON public.facturas_deta
 NOTIFY pgrst, 'reload schema';
 
 DO $$ BEGIN
-  IF to_regproc('public.registrar_migracion(text)') IS NOT NULL THEN
+  IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
     PERFORM public.registrar_migracion('acierto_compras.sql');
   END IF;
 END $$;

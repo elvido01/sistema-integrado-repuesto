@@ -26,7 +26,7 @@ COMMENT ON COLUMN public.ordenes_compra_detalle.decision_estado IS
   'Decision del operador: pedir_hoy (default, sin confirmar), pedido (confirmado con el suplidor), no_disponible, pospuesto_presupuesto, poca_rotacion, sustituido.';
 
 DO $$ BEGIN
-  IF to_regproc('public.registrar_migracion(text)') IS NOT NULL THEN
+  IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
     PERFORM public.registrar_migracion('decision_pedido_confirmado.sql');
   END IF;
 END $$;

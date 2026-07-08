@@ -173,7 +173,7 @@ GRANT EXECUTE ON FUNCTION public.optimizar_orden_compra(UUID, JSONB, NUMERIC)
 NOTIFY pgrst, 'reload schema';
 
 DO $$ BEGIN
-  IF to_regproc('public.registrar_migracion(text)') IS NOT NULL THEN
+  IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
     PERFORM public.registrar_migracion('optimizar_por_retorno.sql');
   END IF;
 END $$;

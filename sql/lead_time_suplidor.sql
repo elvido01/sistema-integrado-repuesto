@@ -298,7 +298,7 @@ GRANT EXECUTE ON FUNCTION public.get_productos_para_orden_automatica(UUID) TO au
 NOTIFY pgrst, 'reload schema';
 
 DO $$ BEGIN
-  IF to_regproc('public.registrar_migracion(text)') IS NOT NULL THEN
+  IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
     PERFORM public.registrar_migracion('lead_time_suplidor.sql');
   END IF;
 END $$;
