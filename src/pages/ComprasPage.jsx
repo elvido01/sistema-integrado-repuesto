@@ -217,7 +217,8 @@ const ComprasPage = () => {
 
   // --- Integration with Orden de Compra ---
   useEffect(() => {
-    if (ordenParaFacturar) {
+    if (!ordenParaFacturar) return;
+    const cargarOrden = async () => {
       const { orderData, details } = ordenParaFacturar;
 
       setCompra(prev => ({
@@ -228,30 +229,51 @@ const ComprasPage = () => {
         id_orden_origen: orderData.id
       }));
 
+      // Suplidor que factura en US$: los precios de la orden están en RD$
+      // (catálogo); se convierten a dólares con la tasa del día
+      let tasaOrden = 0;
+      const { data: prov } = await supabase
+        .from('proveedores').select('moneda').eq('id', orderData.suplidor_id).maybeSingle();
+      if (prov?.moneda === 'USD') {
+        const { data: t } = await supabase.rpc('get_tasa_dia');
+        tasaOrden = Number(t) || 0;
+        if (tasaOrden > 0) setTasaDia(tasaOrden);
+      }
+      const aUSD = (v) => Number(((Number(v) || 0) / tasaOrden).toFixed(2));
+
       const loadedDetails = details.map(d => ({
         id: Math.random(),
         codigo: d.codigo,
         descripcion: d.descripcion,
         cantidad: d.cantidad,
         unidad: d.unidad || 'UND',
-        costo_unitario: d.precio || 0,
+        costo_unitario: tasaOrden > 0 ? aUSD(d.precio) : (d.precio || 0),
         descuento_pct: d.descuento_pct || 0,
         itbis_pct: d.itbis_pct ? (parseFloat(d.itbis_pct) / 100) : 0.18,
-        importe: d.importe,
+        importe: tasaOrden > 0 ? aUSD(d.importe) : d.importe,
         producto_id: d.producto_id,
         is_matched: true
       }));
 
       setDetalles(loadedDetails);
 
-      toast({
-        title: 'Orden de Compra Cargada',
-        description: `Se han importado ${loadedDetails.length} productos de la orden ${orderData.numero || ''}.`
-      });
+      if (prov?.moneda === 'USD' && !(tasaOrden > 0)) {
+        toast({
+          variant: 'destructive',
+          title: 'Suplidor en US$ sin tasa del día',
+          description: 'Los costos llegaron en RD$. Pon la tasa del día y re-digita los costos en dólares según la factura.',
+        });
+      } else {
+        toast({
+          title: 'Orden de Compra Cargada',
+          description: `Se han importado ${loadedDetails.length} productos de la orden ${orderData.numero || ''}.${tasaOrden > 0 ? ` Costos convertidos a US$ (tasa ${tasaOrden}).` : ''}`
+        });
+      }
 
       // Clear the context state so it doesn't reload on next visit
       setOrdenParaFacturar(null);
-    }
+    };
+    cargarOrden();
   }, [ordenParaFacturar, setOrdenParaFacturar, toast]);
 
   const totals = useMemo(() => {
@@ -325,7 +347,7 @@ const ComprasPage = () => {
     }, 150);
   };
 
-  const handleSearchByCode = async (code) => {
+  const handleSearchByCode = async (code, crearSiNoExiste = false) => {
     if (!code) return;
     try {
       const { data, error } = await supabase
@@ -338,8 +360,21 @@ const ComprasPage = () => {
 
       if (data) {
         handleProductSelect(data);
+      } else if (crearSiNoExiste) {
+        // Dealers/financieras: cada unidad (chasis) tiene código único que no
+        // se repite — se crea aquí mismo sin salir de la compra. El costo va
+        // al catálogo en RD$ (si el suplidor factura en US$, se convierte).
+        const costoDigitado = parseFloat(currentDetalle.costo_unitario) || 0;
+        setActiveLineId('staging');
+        const sugerido = await buildSuggestedProductFromLine({
+          codigo: code.trim(),
+          descripcion: currentDetalle.descripcion || '',
+          costo_unitario: esUSD && tasaDia > 0 ? Number((costoDigitado * tasaDia).toFixed(2)) : costoDigitado,
+        });
+        setTempProductData(sugerido);
+        setIsProductModalOpen(true);
       } else {
-        toast({ variant: 'destructive', title: 'No encontrado', description: 'Producto no encontrado con ese código.' });
+        toast({ variant: 'destructive', title: 'No encontrado', description: 'Producto no encontrado con ese código. Presiona Enter sobre el código para crearlo.' });
       }
     } catch (e) {
       console.error(e);
@@ -551,7 +586,11 @@ const ComprasPage = () => {
 
   const handleCreateProductFromLine = async (line) => {
     setActiveLineId(line.id);
-    const suggestedProduct = await buildSuggestedProductFromLine(line);
+    // El costo del catálogo vive en RD$; si la compra se digita en US$, se convierte
+    const lineaCatalogo = esUSD && tasaDia > 0
+      ? { ...line, costo_unitario: Number(((parseFloat(line.costo_unitario) || 0) * tasaDia).toFixed(2)) }
+      : line;
+    const suggestedProduct = await buildSuggestedProductFromLine(lineaCatalogo);
     setTempProductData(suggestedProduct);
     setIsProductModalOpen(true);
   };
@@ -576,6 +615,24 @@ const ComprasPage = () => {
       };
 
       if (!isEditing) delete productPayload.id;
+
+      // Candado: el código es único por empresa (dealers/financieras usan el
+      // chasis como código y NO puede repetirse)
+      if (!isEditing && productPayload.codigo) {
+        const { data: existentes } = await supabase
+          .from('productos')
+          .select('id, codigo, descripcion')
+          .ilike('codigo', productPayload.codigo.trim())
+          .limit(1);
+        if (existentes && existentes.length > 0) {
+          toast({
+            variant: 'destructive',
+            title: 'Código duplicado',
+            description: `El código "${productPayload.codigo}" ya existe en el catálogo (${existentes[0].descripcion}). Cada unidad debe tener su código único.`,
+          });
+          return;
+        }
+      }
 
       // Insertar nuevo producto
       const { data: savedProduct, error } = await supabase
@@ -606,21 +663,31 @@ const ComprasPage = () => {
         if (presError) throw presError;
       }
 
-      // VINCULAR EN LA TABLA DE COMPRA — reflejar todos los cambios hechos en el formulario
-      setDetalles(prev => prev.map(d =>
-        d.id === activeLineId
-          ? {
-              ...d,
-              producto_id: savedProduct.id,
-              is_matched: true,
-              codigo: savedProduct.codigo || d.codigo,
-              descripcion: savedProduct.descripcion || d.descripcion,
-              referencia: savedProduct.referencia || d.referencia,
-              costo_unitario: savedProduct.costo || d.costo_unitario,
-              itbis_pct: savedProduct.itbis_pct ?? d.itbis_pct,
-            }
-          : d
-      ));
+      if (activeLineId === 'staging') {
+        // Producto creado desde la casilla amarilla (código nuevo digitado a
+        // mano): se llena la casilla y solo falta cantidad + botón verde
+        handleProductSelect(savedProduct);
+      } else {
+        // VINCULAR EN LA TABLA DE COMPRA — reflejar todos los cambios hechos en el formulario
+        // (si la compra se digita en US$, el costo del catálogo RD$ se convierte a dólares)
+        const costoLinea = esUSD && tasaDia > 0
+          ? Number(((savedProduct.costo || 0) / tasaDia).toFixed(2))
+          : savedProduct.costo;
+        setDetalles(prev => prev.map(d =>
+          d.id === activeLineId
+            ? {
+                ...d,
+                producto_id: savedProduct.id,
+                is_matched: true,
+                codigo: savedProduct.codigo || d.codigo,
+                descripcion: savedProduct.descripcion || d.descripcion,
+                referencia: savedProduct.referencia || d.referencia,
+                costo_unitario: costoLinea || d.costo_unitario,
+                itbis_pct: savedProduct.itbis_pct ?? d.itbis_pct,
+              }
+            : d
+        ));
+      }
 
       setIsProductModalOpen(false);
       toast({ title: 'Éxito', description: 'Producto creado y vinculado a la compra correctamente.' });

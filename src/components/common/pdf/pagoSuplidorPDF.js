@@ -59,13 +59,20 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
     doc.setFont('helvetica', 'bold');
     doc.text("DETALLE DE FACTURAS ABONADAS:", margin, 65);
 
+    // Pago en dólares: cada factura US$ muestra su abono en dólares y su
+    // equivalente en pesos a la tasa del día
+    const esPagoUSD = Number(pago.tasa_cambio) > 0 && Number(pago.total_usd) > 0;
+
     const tableColumn = ["FECHA", "REFERENCIA", "MONTO PENDIENTE", "MONTO ABONADO"];
-    const tableRows = detalles.map(d => [
-        formatDate(d.fecha_emision),
-        d.referencia || 'N/A',
-        formatCurrency(d.monto_pendiente),
-        formatCurrency(d.monto_abonado)
-    ]);
+    const tableRows = detalles.map(d => {
+        const filaUSD = Number(d.abonado_usd) > 0;
+        return [
+            formatDate(d.fecha_emision),
+            d.referencia || 'N/A',
+            filaUSD ? `US$ ${formatCurrency(d.pendiente_usd)}` : formatCurrency(d.monto_pendiente),
+            filaUSD ? `US$ ${formatCurrency(d.abonado_usd)} = RD$ ${formatCurrency(d.monto_abonado)}` : formatCurrency(d.monto_abonado)
+        ];
+    });
 
     autoTable(doc, {
         head: [tableColumn],
@@ -107,8 +114,21 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
     const totalsX = 140;
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.text("TOTAL PAGADO:", totalsX, currentY);
-    doc.text(formatCurrency(pago.total_pagado), pageWidth - margin, currentY, { align: 'right' });
+    if (esPagoUSD) {
+        doc.setFontSize(10);
+        doc.text("TOTAL EN US$:", totalsX, currentY);
+        doc.text(`US$ ${formatCurrency(pago.total_usd)}`, pageWidth - margin, currentY, { align: 'right' });
+        currentY += 6;
+        doc.text("TASA DEL DIA:", totalsX, currentY);
+        doc.text(formatCurrency(pago.tasa_cambio), pageWidth - margin, currentY, { align: 'right' });
+        currentY += 7;
+        doc.setFontSize(11);
+        doc.text("TOTAL PAGADO RD$:", totalsX, currentY);
+        doc.text(formatCurrency(pago.total_pagado), pageWidth - margin, currentY, { align: 'right' });
+    } else {
+        doc.text("TOTAL PAGADO:", totalsX, currentY);
+        doc.text(formatCurrency(pago.total_pagado), pageWidth - margin, currentY, { align: 'right' });
+    }
 
     // --- Signatures ---
     const signatureY = currentY + 30;

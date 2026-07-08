@@ -271,7 +271,7 @@ const PagoSuplidoresPage = () => {
       if (pago.imprimir) {
         const enrichedDetalles = detallesData.map(d => {
           const original = compras.find(c => c.id === d.compra_id);
-          return { ...d, fecha_emision: original?.fecha_emision, referencia: original?.referencia, monto_pendiente: original?.monto_pendiente };
+          return { ...d, fecha_emision: original?.fecha_emision, referencia: original?.referencia, monto_pendiente: original?.monto_pendiente, pendiente_usd: original?.pendiente_usd, moneda: original?.moneda };
         });
 
         if (paperSize === 'pdf') {

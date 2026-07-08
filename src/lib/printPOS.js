@@ -2646,7 +2646,7 @@ export const printPagoSuplidorPOS = (pago, suplidorNombre, detalles, formasPago,
             <tr>
               <td class="num">${d.fecha_emision ? formatInTimeZone(new Date(d.fecha_emision), 'd/L/yyyy') : '---'}</td>
               <td>${d.referencia || '---'}</td>
-              <td class="text-right num">${formatCurrency(d.monto_abonado)}</td>
+              <td class="text-right num">${Number(d.abonado_usd) > 0 ? `US$ ${formatCurrency(d.abonado_usd)}<br>RD$ ${formatCurrency(d.monto_abonado)}` : formatCurrency(d.monto_abonado)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -2674,6 +2674,16 @@ export const printPagoSuplidorPOS = (pago, suplidorNombre, detalles, formasPago,
       </table>
 
       <div class="separator"></div>
+      ${Number(pago.tasa_cambio) > 0 && Number(pago.total_usd) > 0 ? `
+      <div class="totals-row">
+        <div class="totals-label">TOTAL EN US$ :</div>
+        <div class="totals-value">${formatCurrency(pago.total_usd)}</div>
+      </div>
+      <div class="totals-row">
+        <div class="totals-label">TASA DEL DIA :</div>
+        <div class="totals-value">${formatCurrency(pago.tasa_cambio)}</div>
+      </div>
+      ` : ''}
       <div class="totals-row grand-total">
         <div class="totals-label">TOTAL PAGADO :</div>
         <div class="totals-value">${formatCurrency(pago.total_pagado || totalAbonado)}</div>

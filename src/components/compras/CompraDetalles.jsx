@@ -47,7 +47,9 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
             onKeyDown={e => {
               if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault();
-                if (currentDetalle.codigo) onSearchByCode?.(currentDetalle.codigo);
+                // Enter/Tab explícito: si el código no existe ofrece crearlo
+                // (dealers/financieras: cada unidad tiene su código único)
+                if (currentDetalle.codigo) onSearchByCode?.(currentDetalle.codigo, true);
               }
             }}
             placeholder="F3 Búscar"
