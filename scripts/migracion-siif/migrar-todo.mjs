@@ -40,6 +40,9 @@ const pasos = [
   //   07 INVERSIONES = cpf_inv_los_naranjos  → tenant c07a1d07
   { desc: 'Odalys · clientes + préstamos',         cmd: `fase-financiera-cxc.mjs odalys${commit}${force}` },
   { desc: 'Inversiones LN · clientes + préstamos', cmd: `fase-financiera-cxc.mjs inversiones${commit}${force}` },
+  // Bitácora "Notas y Comentarios" del viejo (clientes_notas) -> cliente_notas
+  // de las 3 financieras. Idempotente (id determinístico por base+id legacy).
+  { desc: 'Notas de clientes (3 financieras)',     cmd: `fase-notas-clientes.mjs${commit}` },
 ];
 
 console.log(`\n===== MIGRACIÓN SiiF → MotoFlow ${commit ? '(CARGA REAL)' : '(SIMULACIÓN)'} =====`);

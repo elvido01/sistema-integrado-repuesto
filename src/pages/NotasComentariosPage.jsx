@@ -58,7 +58,6 @@ const NotasComentariosPage = () => {
 
   // Documentación del cliente (unidades: chasis/placa/matrícula + imágenes)
   const [docs, setDocs] = useState([]);
-  const [docModalOpen, setDocModalOpen] = useState(false);
   const [docEditing, setDocEditing] = useState(null);
   const [docForm, setDocForm] = useState(emptyDocForm);
   const [docFiles, setDocFiles] = useState({});
@@ -114,7 +113,8 @@ const NotasComentariosPage = () => {
     setCliente(c); setBuscarOpen(false);
     setCodigoInput(c.codigo || c.rnc || '');
     setPrestamoId(''); setNuevaNota('');
-    setDocModalOpen(false); setDocEditing(null);
+    // El formulario de documentación queda desplegado y limpio para este cliente
+    setDocEditing(null); setDocForm(emptyDocForm); setDocFiles({}); setDocUrls({});
     cargar(c.id, c.rnc);
   };
 
@@ -184,7 +184,6 @@ const NotasComentariosPage = () => {
     setDocEditing(null);
     setDocForm(emptyDocForm);
     setDocFiles({}); setDocUrls({});
-    setDocModalOpen(true);
   };
 
   const abrirDocEditar = async (record) => {
@@ -197,7 +196,6 @@ const NotasComentariosPage = () => {
     });
     setDocFiles({});
     setDocUrls(await getSignedUrls(record));
-    setDocModalOpen(true);
   };
 
   const handleDocFile = (key, file) => {
@@ -252,7 +250,7 @@ const NotasComentariosPage = () => {
       if (error) throw error;
 
       toast({ title: 'Documentación guardada' });
-      setDocModalOpen(false);
+      abrirDocNuevo(); // formulario limpio, listo para la siguiente unidad
       if (cliente) cargar(cliente.id, cliente.rnc);
     } catch (e) {
       toast({ variant: 'destructive', title: 'Error guardando documentación', description: e.message });
@@ -359,12 +357,11 @@ const NotasComentariosPage = () => {
                 </Button>
               </div>
             </div>
-            {/* Formulario desplegado en la pantalla (no flotante) */}
-            {docModalOpen && (
+            {/* Formulario SIEMPRE desplegado en la pantalla al elegir cliente */}
+            {cliente && (
               <div className="mt-2 border-2 border-cyan-700 rounded-md overflow-hidden">
                 <div className="bg-cyan-700 text-white px-3 py-1.5 text-sm font-bold uppercase flex items-center justify-between">
                   <span>Documentación {docEditing ? '(Editando)' : '(Creando)'} — {(docEditing?.cliente_nombre || cliente?.nombre || '').toUpperCase()}</span>
-                  <button type="button" onClick={() => setDocModalOpen(false)} className="text-white/80 hover:text-white"><X className="w-4 h-4" /></button>
                 </div>
                 <div className="p-3 space-y-3 bg-white">
                   <div className="text-xs text-slate-500">
@@ -442,7 +439,7 @@ const NotasComentariosPage = () => {
                   </div>
 
                   <div className="flex justify-end gap-2 border-t pt-2">
-                    <Button variant="outline" size="sm" onClick={() => setDocModalOpen(false)} disabled={docSaving}>Cancelar</Button>
+                    <Button variant="outline" size="sm" onClick={abrirDocNuevo} disabled={docSaving}>Limpiar</Button>
                     <Button size="sm" onClick={guardarDoc} disabled={docSaving} className="bg-emerald-700 hover:bg-emerald-800 text-white">
                       {docSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
                       {docEditing ? 'Actualizar' : 'Crear'}
@@ -454,8 +451,6 @@ const NotasComentariosPage = () => {
 
             {!cliente ? (
               <div className="py-3 text-center text-xs italic text-slate-400">Selecciona un cliente para ver su documentación.</div>
-            ) : docs.length === 0 && !docModalOpen ? (
-              <div className="py-3 text-center text-xs italic text-slate-400">Este cliente no tiene documentación registrada.</div>
             ) : docs.length === 0 ? null : (
               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                 {docs.map((r) => (
