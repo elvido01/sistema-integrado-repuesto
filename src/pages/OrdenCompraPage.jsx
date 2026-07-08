@@ -46,6 +46,7 @@ const DECISION_OPTIONS = {
 const isDetallePedidoHoy = (detalle) => ['pedir_hoy', 'pedido'].includes(detalle?.decision_estado || DECISION_DEFAULT);
 
 import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
+import AciertoComprasPage from '@/pages/AciertoComprasPage';
 import AprobacionesComprasPage from '@/pages/AprobacionesComprasPage';
 import { generateOrderPDF } from '@/components/common/PDFGenerator';
 import { printOrdenCompraPOS } from '@/lib/printPOS';
@@ -2146,6 +2147,15 @@ const OrdenCompraPage = () => {
           </Button>
           <Button
             variant="ghost"
+            className="h-10 flex flex-col items-center px-2 py-1 text-[10px]"
+            onClick={() => setView('acierto')}
+            title="Mide qué % del dinero de cada compra ya se vendió (30/60/90 días) y cuánto quedó muerto"
+          >
+            <Brain className="h-5 w-5 mb-0.5 text-emerald-600" />
+            ACIERTO
+          </Button>
+          <Button
+            variant="ghost"
             className="h-10 flex flex-col items-center px-2 py-1 text-[10px] relative"
             onClick={() => setView('aprobaciones')}
             title="Cola de Aprobaciones de Compras (Control Inteligente)"
@@ -3172,6 +3182,9 @@ const OrdenCompraPage = () => {
         {view === 'form' && renderFormView()}
         {view === 'suplidor-virtual' && (
           <SuplidorVirtualPage onBack={() => setView('list')} />
+        )}
+        {view === 'acierto' && (
+          <AciertoComprasPage onBack={() => setView('list')} />
         )}
         {view === 'aprobaciones' && (
           <div className="space-y-2">
