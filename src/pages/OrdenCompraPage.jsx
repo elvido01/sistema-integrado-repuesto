@@ -1371,7 +1371,11 @@ const OrdenCompraPage = () => {
     setIsGenerating(false);
 
     if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron obtener los productos bajo stock.' });
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: `No se pudieron obtener los productos bajo stock. ${error.code === '57014' ? 'El cálculo tardó demasiado (timeout) — reintenta.' : (error.message || '')}`,
+      });
       return;
     }
     if (!data || data.length === 0) {
