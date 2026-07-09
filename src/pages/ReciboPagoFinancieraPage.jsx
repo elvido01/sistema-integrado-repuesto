@@ -12,7 +12,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Save, X, Search, FilePlus, Gavel, Printer } from 'lucide-react';
+import { ChevronDown, Loader2, Save, X, Search, FilePlus, Gavel, Printer } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { printReciboPagoFinancieraPOS } from '@/lib/printPOS';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import OtrasTransaccionesModal from '@/components/financiera/OtrasTransaccionesModal';
@@ -109,6 +110,9 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   // Tamaño del papel del recibo — se recuerda por PC (cada caja tiene su impresora)
   const [paperSize, setPaperSize] = useState(() => localStorage.getItem('recibo_financiera_paper') || '4inch');
   const cambiarPapel = (v) => { setPaperSize(v); localStorage.setItem('recibo_financiera_paper', v); };
+  // Opciones > Reimprimir: número de recibo editable (null = modo normal)
+  const [reimpNumero, setReimpNumero] = useState(null);
+  const [reimpBusy, setReimpBusy] = useState(false);
 
   useEffect(() => { if (empresa?.nombre && !cobrador) setCobrador(empresa.nombre); }, [empresa, cobrador]);
 
@@ -276,7 +280,79 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const nuevo = () => {
     setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput('');
     setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
-    setPrestamoFiltro('todos'); cargarProximoNumero();
+    setPrestamoFiltro('todos'); setReimpNumero(null); cargarProximoNumero();
+  };
+
+  // Opciones > Reimprimir: habilita el campo Número editable, pre-llenado
+  // con el último recibo emitido (de cualquier cliente)
+  const iniciarReimpresion = async () => {
+    try {
+      const { data } = await supabase.from('prestamo_pagos')
+        .select('numero, fecha')
+        .order('fecha', { ascending: false })
+        .limit(50);
+      const ultimo = (data || [])
+        .map((r) => ({ n: r.numero, d: Number(String(r.numero).replace(/\D/g, '')) || 0 }))
+        .sort((a, b) => b.d - a.d)[0];
+      setReimpNumero(ultimo?.n || '');
+    } catch {
+      setReimpNumero('');
+    }
+  };
+
+  // Busca el recibo por número (acepta con o sin el prefijo RI- y sin ceros)
+  const reimprimirPorNumero = async () => {
+    const raw = String(reimpNumero || '').trim();
+    if (!raw) return;
+    setReimpBusy(true);
+    try {
+      const dig = raw.replace(/\D/g, '');
+      const candidatos = [...new Set([raw, dig.padStart(7, '0'), `RI-${dig.padStart(7, '0')}`])].filter(Boolean);
+      let pago = null;
+      for (const n of candidatos) {
+        const { data } = await supabase.from('prestamo_pagos').select('*').eq('numero', n).limit(1);
+        if (data && data.length) { pago = data[0]; break; }
+      }
+      if (!pago) {
+        toast({ variant: 'destructive', title: 'Recibo no encontrado', description: `No existe el recibo "${raw}".` });
+        return;
+      }
+      const [{ data: cli }, { data: det }] = await Promise.all([
+        supabase.from('clientes').select('nombre, codigo, rnc').eq('id', pago.cliente_id).maybeSingle(),
+        supabase.from('prestamo_pago_detalle')
+          .select('abono_total, cuota:cuota_id (numero_cuota, fecha_vencimiento, monto_cuota, capital, interes, capital_pagado, interes_pagado, prestamos(numero, plazo_cuotas))')
+          .eq('pago_id', pago.id),
+      ]);
+      printReciboPagoFinancieraPOS({
+        numero: pago.numero,
+        fecha: pago.fecha,
+        clienteNombre: cli?.nombre,
+        clienteCodigo: cli?.codigo || cli?.rnc || null,
+        totalPagado: pago.total_pagado,
+        balanceAnterior: pago.balance_anterior,
+        balanceActual: pago.balance_actual,
+        formaPago: pago.forma_pago,
+        cuenta: pago.cuenta_numero || null,
+        banco: pago.banco || null,
+        comentarios: pago.comentarios || null,
+        cobrador: pago.cobrador || null,
+        detalles: (det || []).map((d) => {
+          const q = d.cuota;
+          return {
+            documento: cleanLoanNumber(q?.prestamos?.numero || ''),
+            referencia: q ? `${String(q.numero_cuota).padStart(3, '0')}/${String(q.prestamos?.plazo_cuotas || 0).padStart(3, '0')}` : '',
+            fecha: q?.fecha_vencimiento || pago.fecha,
+            monto: q?.monto_cuota || d.abono_total,
+            abono: d.abono_total,
+            pendiente: q ? Math.max(round2((Number(q.capital) - Number(q.capital_pagado)) + (Number(q.interes) - Number(q.interes_pagado))), 0) : 0,
+          };
+        }),
+      }, paperSize);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo reimprimir', description: e.message });
+    } finally {
+      setReimpBusy(false);
+    }
   };
 
   const cuotas = estado?.cuotas || [];
@@ -519,9 +595,28 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       <Helmet><title>Recibo de Pago — Financiera</title></Helmet>
 
       <div className="bg-white rounded-lg shadow border w-full overflow-hidden">
-        {/* Título */}
-        <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-1 font-extrabold tracking-wide text-base">
-          RECIBO DE PAGO
+        {/* Título con menú Opciones (Reimprimir / Nuevo / Salir, como el viejo) */}
+        <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 py-1 px-2 font-extrabold tracking-wide text-base flex items-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm" className="h-7 w-28 text-xs font-bold">
+                Opciones <ChevronDown className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={iniciarReimpresion}>
+                <Printer className="w-3.5 h-3.5 mr-2" />Reimprimir
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={nuevo}>
+                <FilePlus className="w-3.5 h-3.5 mr-2" />Nuevo
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => closePanel(activePanel)}>
+                <X className="w-3.5 h-3.5 mr-2" />Salir
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <span className="flex-1 text-center">RECIBO DE PAGO</span>
+          <span className="w-28" />
         </div>
 
         <div className="p-2 space-y-1">
@@ -576,9 +671,28 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
             {/* Numero / Fecha / Forma de pago */}
             <div className="border rounded-md p-2 space-y-2">
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="flex items-baseline gap-2">
+                <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Número</span>
-                  <span className="font-mono font-bold">{numero}</span>
+                  {reimpNumero === null ? (
+                    <span className="font-mono font-bold">{numero}</span>
+                  ) : (
+                    <span className="flex items-center gap-1">
+                      <Input
+                        value={reimpNumero}
+                        onChange={(e) => setReimpNumero(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); reimprimirPorNumero(); } }}
+                        autoFocus
+                        className="h-7 w-32 font-mono font-bold text-sm bg-amber-50 border-amber-400"
+                        title="Número del recibo a reimprimir"
+                      />
+                      <Button type="button" size="sm" className="h-7 px-2 text-xs" onClick={reimprimirPorNumero} disabled={reimpBusy}>
+                        {reimpBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5" onClick={() => setReimpNumero(null)} title="Cancelar reimpresión">
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-baseline gap-2 justify-end">
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Fecha</span>
