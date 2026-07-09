@@ -326,6 +326,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       printReciboPagoFinancieraPOS({
         numero: pago.numero,
         fecha: pago.fecha,
+        hora: pago.created_at || null,
         clienteNombre: cli?.nombre,
         clienteCodigo: cli?.codigo || cli?.rnc || null,
         totalPagado: pago.total_pagado,
@@ -471,6 +472,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
     printReciboPagoFinancieraPOS({
       numero: p.numero,
       fecha: p.fecha,
+      hora: p.created_at || null,
       clienteNombre: cliente?.nombre,
       clienteCodigo: cliente?.codigo || cliente?.rnc || null,
       totalPagado: p.total_pagado,

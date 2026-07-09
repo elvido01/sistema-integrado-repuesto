@@ -1261,25 +1261,27 @@ export const printNotaCreditoPOS = (notaData) => {
 //         monto, abono, pendiente}] }
 export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
   const {
-    numero, fecha, clienteNombre, clienteCodigo, totalPagado, sobrante,
+    numero, fecha, hora, clienteNombre, clienteCodigo, totalPagado, sobrante,
     balanceAnterior, balanceActual, formaPago, cuenta, banco,
     comentarios, cobrador, detalles = [],
   } = data;
   const fechaStr = formatInTimeZone(new Date(fecha || Date.now()), 'dd-MM-yyyy');
+  const horaStr = formatInTimeZone(new Date(hora || Date.now()), 'hh:mm a');
   const afectados = detalles.filter((d) => Number(d.abono || 0) > 0);
 
   // La página debe medir EXACTAMENTE lo que mide el papel de la impresora;
-  // si se manda 101.6mm a una térmica de 80mm el texto sale corrido/cortado.
+  // y el cuerpo no puede pasar del área imprimible (las térmicas de 80mm
+  // imprimen ~72mm: más ancho = valores cortados a la derecha).
   const is4inch = paperSize !== '80mm';
   const pageW = is4inch ? '101.6mm' : '80mm';
-  const bodyW = is4inch ? '98mm' : '74mm';
-  const fBase = is4inch ? '16px' : '14px';
-  const fH1 = is4inch ? '22px' : '19px';
-  const fTitulo = is4inch ? '18px' : '16px';
-  const fMonto = is4inch ? '19px' : '17px';
-  const fNombre = is4inch ? '17px' : '15px';
+  const bodyW = is4inch ? '96mm' : '70mm';
+  const fBase = is4inch ? '16px' : '13px';
+  const fH1 = is4inch ? '22px' : '18px';
+  const fTitulo = is4inch ? '18px' : '15px';
+  const fMonto = is4inch ? '19px' : '16px';
+  const fNombre = is4inch ? '17px' : '14px';
   const fDet = is4inch ? '15px' : '13px';
-  const fTot = is4inch ? '18px' : '16px';
+  const fTot = is4inch ? '18px' : '15px';
 
   const html = `
     <!DOCTYPE html>
@@ -1290,8 +1292,8 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
         @page { margin: 0; size: ${pageW} auto; }
         html, body { margin: 0; padding: 0; background: #fff; }
         body {
-          width: ${bodyW}; margin: 0; padding: 3mm 3mm;
-          box-sizing: border-box;
+          width: ${bodyW}; margin: 0; padding: 3mm 2mm;
+          box-sizing: border-box; overflow: hidden;
           font-family: Arial, Helvetica, sans-serif; font-size: ${fBase}; line-height: 1.32; color: #000; font-weight: 700;
         }
         .text-center { text-align: center; }
@@ -1314,10 +1316,8 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
         <div style="margin-top: 6px; font-weight: 900; font-size: ${fTitulo};">RECIBO DE PAGO</div>
       </div>
 
-      <div class="row">
-        <span>No. Recibo: <span class="bold">${numero || 'N/A'}</span></span>
-        <span>${fechaStr}</span>
-      </div>
+      <div>No. Recibo: <span class="bold">${numero || 'N/A'}</span></div>
+      <div class="row"><span>Fecha: <span class="bold">${fechaStr}</span></span><span>Hora: ${horaStr}</span></div>
       <div class="bold" style="font-size: ${fMonto};">MONTO: ${formatCurrency(totalPagado)}</div>
       ${cobrador ? `<div>COBRADOR: ${String(cobrador).toUpperCase()}</div>` : ''}
 
@@ -1342,10 +1342,12 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
       `).join('')}
       ${afectados.length ? '<div class="separator"></div>' : ''}
 
-      <div class="row"><span>Balance Anterior:</span><span>${formatCurrency(balanceAnterior)}</span></div>
-      <div class="row bold" style="font-size: ${fTot};"><span>Abono a Cuenta:</span><span>${formatCurrency(totalPagado)}</span></div>
-      ${Number(sobrante || 0) > 0 ? `<div class="row"><span>Sobrante:</span><span>${formatCurrency(sobrante)}</span></div>` : ''}
-      <div class="row bold" style="font-size: ${fTot};"><span>Balance Actual:</span><span>${formatCurrency(balanceActual)}</span></div>
+      <div style="border: 2px solid #000; border-radius: 4px; padding: 4px 6px; margin-top: 4px;">
+        <div class="row"><span>Balance Anterior:</span><span>${formatCurrency(balanceAnterior)}</span></div>
+        <div class="row bold" style="font-size: ${fTot};"><span>Abono a Cuenta:</span><span>${formatCurrency(totalPagado)}</span></div>
+        ${Number(sobrante || 0) > 0 ? `<div class="row"><span>Sobrante:</span><span>${formatCurrency(sobrante)}</span></div>` : ''}
+        <div class="row bold" style="font-size: ${fTot};"><span>Balance Actual:</span><span>${formatCurrency(balanceActual)}</span></div>
+      </div>
 
       <div style="margin-top: 8px;">${String(formaPago || 'EFECTIVO').toUpperCase()}</div>
       ${cuenta ? `<div>REF: ${cuenta}</div>` : ''}
@@ -1353,7 +1355,7 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
 
       <div class="firma">
         <div class="linea"></div>
-        <div>Firma</div>
+        <div>Recibido por</div>
       </div>
       <div class="footer">
         <p class="bold">*** GRACIAS POR SU PAGO ***</p>
