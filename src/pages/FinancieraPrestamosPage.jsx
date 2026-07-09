@@ -3,9 +3,12 @@ import { Helmet } from 'react-helmet';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Loader2, Plus, Receipt, DollarSign, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Receipt, DollarSign, RefreshCw, Printer } from 'lucide-react';
 import NuevoPrestamoModal from '@/components/financiera/NuevoPrestamoModal';
 import { usePanels } from '@/contexts/PanelContext';
+import { formatFechaDMY } from '@/lib/dateUtils';
+import { printInformePrestamo } from '@/lib/printInformePrestamo';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 
@@ -18,9 +21,49 @@ const ESTADO_BADGE = {
 const FinancieraPrestamosPage = () => {
   const { toast } = useToast();
   const { openPanel } = usePanels();
+  const { empresa } = useAuth();
   const [prestamos, setPrestamos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [nuevoOpen, setNuevoOpen] = useState(false);
+  const [printingId, setPrintingId] = useState(null);
+
+  // Informe de Préstamo (hoja carta, estructura del sistema viejo)
+  const imprimirInforme = async (p) => {
+    setPrintingId(p.id);
+    try {
+      const [{ data: full }, { data: cli }, { data: cuotas }, { data: cargos }] = await Promise.all([
+        supabase.from('prestamos').select('*').eq('id', p.id).single(),
+        supabase.from('clientes').select('*').eq('id', p.cliente_id).maybeSingle(),
+        supabase.from('prestamo_cuotas')
+          .select('numero_cuota, capital, interes, monto_cuota, capital_pagado, interes_pagado, mora_pagada')
+          .eq('prestamo_id', p.id).order('numero_cuota'),
+        supabase.from('prestamo_cargos')
+          .select('tipo, monto, monto_pagado, anulado')
+          .eq('prestamo_id', p.id),
+      ]);
+      const qs = cuotas || [];
+      const cgs = (cargos || []).filter((c) => !c.anulado);
+      const moraCargos = cgs.filter((c) => String(c.tipo || '').toUpperCase() === 'MR');
+      const otrosCargos = cgs.filter((c) => String(c.tipo || '').toUpperCase() !== 'MR');
+      const sum = (arr, k) => arr.reduce((a, x) => a + (Number(x[k]) || 0), 0);
+      const moraPagada = sum(qs, 'mora_pagada');
+      printInformePrestamo({
+        empresa,
+        prestamo: full,
+        cliente: cli,
+        valorCuota: qs[0]?.monto_cuota || 0,
+        totales: {
+          capital: { gen: sum(qs, 'capital'), pag: sum(qs, 'capital_pagado') },
+          intereses: { gen: sum(qs, 'interes'), pag: sum(qs, 'interes_pagado') },
+          atrasos: { gen: moraPagada + sum(moraCargos, 'monto'), pag: moraPagada + sum(moraCargos, 'monto_pagado') },
+          otros: { gen: sum(otrosCargos, 'monto'), pag: sum(otrosCargos, 'monto_pagado') },
+        },
+      });
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo imprimir el informe', description: e.message });
+    }
+    setPrintingId(null);
+  };
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -79,12 +122,13 @@ const FinancieraPrestamosPage = () => {
               <th className="text-center p-3">Cuotas</th>
               <th className="text-left p-3">Inicio</th>
               <th className="text-center p-3">Estado</th>
+              <th className="text-center p-3 w-14"></th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
+            {loading && <tr><td colSpan={8} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
             {!loading && prestamos.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-slate-400">No hay préstamos. Crea el primero con "Nuevo Préstamo".</td></tr>
+              <tr><td colSpan={8} className="p-6 text-center text-slate-400">No hay préstamos. Crea el primero con "Nuevo Préstamo".</td></tr>
             )}
             {prestamos.map((p) => (
               <tr key={p.id} className="border-b last:border-0 hover:bg-slate-50">
@@ -93,9 +137,17 @@ const FinancieraPrestamosPage = () => {
                 <td className="p-3 capitalize">{p.tipo}</td>
                 <td className="p-3 text-right">{fmt(p.monto_capital)}</td>
                 <td className="p-3 text-center">{p.plazo_cuotas}</td>
-                <td className="p-3">{p.fecha_inicio}</td>
+                <td className="p-3">{formatFechaDMY(p.fecha_inicio)}</td>
                 <td className="p-3 text-center">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${ESTADO_BADGE[p.estado] || 'bg-slate-100'}`}>{p.estado}</span>
+                </td>
+                <td className="p-3 text-center">
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2"
+                          title="Imprimir Informe de Préstamo (hoja carta)"
+                          disabled={printingId === p.id}
+                          onClick={() => imprimirInforme(p)}>
+                    {printingId === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                  </Button>
                 </td>
               </tr>
             ))}
