@@ -33,6 +33,7 @@ const docFields = [
   { key: 'placa_path', label: 'Placa' },
   { key: 'autorizacion_path', label: 'Autorización' },
   { key: 'carta_saldo_path', label: 'Carta de Saldo' },
+  { key: 'seguro_path', label: 'Seguro' },
 ];
 
 const normalize = (value) => String(value || '').toLowerCase().trim();
@@ -411,7 +412,7 @@ export default function DocumentacionClientePage() {
                 </TableCell>
                 <TableCell className="text-center">
                   <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
-                    {countDocs(record)}/5
+                    {countDocs(record)}/{docFields.length}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-center text-xs text-slate-500">
@@ -513,7 +514,7 @@ export default function DocumentacionClientePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
               {docFields.map((field) => (
                 <DocumentSlot
                   key={field.key}

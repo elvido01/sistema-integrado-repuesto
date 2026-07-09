@@ -20,6 +20,7 @@ const docFields = [
   { key: 'placa_path', label: 'Placa' },
   { key: 'autorizacion_path', label: 'Autorización' },
   { key: 'carta_saldo_path', label: 'Carta de Saldo' },
+  { key: 'seguro_path', label: 'Seguro' },
 ];
 const ESTADOS_DOC = ['EN TRAMITE', 'ENTREGADA', 'EN CAMINERO MOTORS'];
 const estadoBadge = (estado) => ({
@@ -458,7 +459,7 @@ const NotasComentariosPage = () => {
                         <td className="px-2 py-1">
                           {r.matricula ? <span className={`px-1 rounded border text-[10px] font-bold ${estadoBadge(r.matricula)}`}>{r.matricula}</span> : '—'}
                         </td>
-                        <td className="px-2 py-1 text-center">{countDocs(r)}/5</td>
+                        <td className="px-2 py-1 text-center">{countDocs(r)}/{docFields.length}</td>
                         <td className="px-2 py-1 whitespace-nowrap">{fdate(r.created_at)}</td>
                       </tr>
                     ))}
@@ -583,7 +584,7 @@ const NotasComentariosPage = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                     {docFields.map((field) => (
                       <div key={field.key} className="border border-slate-300 rounded bg-slate-50 overflow-hidden">
                         <div className="px-2 py-1.5 bg-slate-100 border-b flex items-center justify-between gap-2">
@@ -646,7 +647,7 @@ const NotasComentariosPage = () => {
                       {r.matricula && <span className={`px-1 rounded border text-[10px] font-bold ${estadoBadge(r.matricula)}`}>MATRÍCULA: {r.matricula}</span>}
                     </div>
                     <div className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-slate-500">{countDocs(r)}/5 imágenes · {fdate(r.created_at)}</span>
+                      <span className="text-[11px] text-slate-500">{countDocs(r)}/{docFields.length} imágenes · {fdate(r.created_at)}</span>
                       <div className="flex gap-1">
                         <Button type="button" size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => abrirDocEditar(r)}>
                           <Eye className="w-3 h-3 mr-1" />Ver / Editar
