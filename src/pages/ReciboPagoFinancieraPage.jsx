@@ -106,6 +106,9 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [cobrador, setCobrador] = useState(empresa?.nombre || '');
   const [comentarios, setComentarios] = useState('');
   const [imprimir, setImprimir] = useState(true);
+  // Tamaño del papel del recibo — se recuerda por PC (cada caja tiene su impresora)
+  const [paperSize, setPaperSize] = useState(() => localStorage.getItem('recibo_financiera_paper') || '4inch');
+  const cambiarPapel = (v) => { setPaperSize(v); localStorage.setItem('recibo_financiera_paper', v); };
 
   useEffect(() => { if (empresa?.nombre && !cobrador) setCobrador(empresa.nombre); }, [empresa, cobrador]);
 
@@ -413,7 +416,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
           pendiente: q ? Math.max(round2((Number(q.capital) - Number(q.capital_pagado)) + (Number(q.interes) - Number(q.interes_pagado))), 0) : 0,
         };
       }),
-    });
+    }, paperSize);
   };
 
   const handleGrabar = async () => {
@@ -497,7 +500,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                   pendiente: Math.max(round2(r.pendiente - ab), 0),
                 };
               }),
-          });
+          }, paperSize);
         } catch (printErr) {
           console.error('No se pudo imprimir el recibo de pago:', printErr);
         }
@@ -760,9 +763,22 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
 
           {/* Footer */}
           <div className="flex items-center justify-between flex-wrap gap-3 border-t pt-2">
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={imprimir} onCheckedChange={(c) => setImprimir(!!c)} /> Imprimir
-            </label>
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={imprimir} onCheckedChange={(c) => setImprimir(!!c)} /> Imprimir
+              </label>
+              {imprimir && (
+                <Select value={paperSize} onValueChange={cambiarPapel}>
+                  <SelectTrigger className="h-8 w-44 text-xs font-bold bg-white border-slate-300">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="4inch">📑 101.6mm (4 pulgadas)</SelectItem>
+                    <SelectItem value="80mm">📑 80mm (3 pulgadas)</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={nuevo}><FilePlus className="w-4 h-4 mr-1" />Nuevo</Button>
               <Button type="button" variant="secondary" onClick={() => closePanel(activePanel)}><X className="w-4 h-4 mr-1" />Retornar</Button>
