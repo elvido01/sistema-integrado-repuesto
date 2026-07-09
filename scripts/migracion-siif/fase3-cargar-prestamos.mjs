@@ -329,6 +329,33 @@ for (const p of pagosByClienteFecha) {
 }
 await up('prestamo_pagos', pagoRows, 'pagos');
 
+// Recibos de ingreso del día: el CIERRE DE CAJA de MotoFlow lee recibos_ingreso,
+// así que los cobros oficiales recientes del viejo también se registran ahí
+// (solo pagos nuevos de esta corrida con fecha de los últimos 7 días).
+{
+  const lim = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const recientes = pagoRows.filter((p) => String(p.fecha) >= lim);
+  if (recientes.length && COMMIT) {
+    const nums = recientes.map((p) => p.numero);
+    const ya = new Set();
+    for (let i = 0; i < nums.length; i += 200) {
+      const { data } = await supabase.from('recibos_ingreso').select('numero').eq('tenant_id', TENANT_ID).in('numero', nums.slice(i, i + 200));
+      for (const r of data || []) ya.add(r.numero);
+    }
+    const reciboRows = recientes.filter((p) => !ya.has(p.numero)).map((p) => ({
+      tenant_id: TENANT_ID, numero: p.numero, fecha: p.fecha, cliente_id: p.cliente_id,
+      monto_pagado: p.total_pagado, concepto: p.comentarios || 'Pago de préstamo (sistema viejo)',
+      formas_pago: [{ forma: 'Efectivo', monto: Number(p.total_pagado), referencia: p.numero }],
+      anulado: false, origen: 'sync',
+    }));
+    if (reciboRows.length) {
+      const { error } = await supabase.from('recibos_ingreso').insert(reciboRows);
+      if (error) console.error('recibos_ingreso del día:', error.message);
+      else console.log(`Recibos de ingreso del día creados: ${reciboRows.length}`);
+    }
+  }
+}
+
 // --- 7. Cargos manuales del viejo (AB abogado/cobrador, MR, etc.) ---------
 // Van a prestamo_cargos (Otras Transacciones): suman al balance del cliente
 // y se cobran en el Recibo de Pago. Idempotente por (tenant, numero).
