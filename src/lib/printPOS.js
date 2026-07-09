@@ -1263,7 +1263,7 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
   const {
     numero, fecha, hora, clienteNombre, clienteCodigo, totalPagado, sobrante,
     balanceAnterior, balanceActual, formaPago, cuenta, banco,
-    comentarios, cobrador, detalles = [],
+    comentarios, cobrador, usuario, detalles = [],
   } = data;
   const fechaStr = formatInTimeZone(new Date(fecha || Date.now()), 'dd-MM-yyyy');
   const horaStr = formatInTimeZone(new Date(hora || Date.now()), 'hh:mm a');
@@ -1357,6 +1357,7 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
       <div class="firma">
         <div class="linea"></div>
         <div>Recibido por</div>
+        ${usuario ? `<div class="bold">${String(usuario).toUpperCase()}</div>` : ''}
       </div>
       <div class="footer">
         <p class="bold">*** GRACIAS POR SU PAGO ***</p>

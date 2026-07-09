@@ -66,7 +66,16 @@ const cleanLoanNumber = (value) => {
 
 const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const { toast } = useToast();
-  const { empresa } = useAuth();
+  const { empresa, profile, user } = useAuth();
+  // Nombre del usuario logueado — sale debajo de "Recibido por" en el recibo
+  const usuarioActual = profile?.full_name || profile?.nombre_completo || user?.email || '';
+
+  // En reimpresiones se muestra quien HIZO el recibo (si se sabe); si no, el logueado
+  const nombreUsuarioDePago = async (createdBy) => {
+    if (!createdBy) return usuarioActual;
+    const { data: prof } = await supabase.from('profiles').select('full_name, email').eq('id', createdBy).maybeSingle();
+    return prof?.full_name || prof?.email || usuarioActual;
+  };
   const { closePanel, activePanel } = usePanels();
   const { setSidebarOpen } = useLayout();
   const lastAutoClienteKeyRef = useRef(null);
@@ -327,6 +336,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         numero: pago.numero,
         fecha: pago.fecha,
         hora: pago.created_at || null,
+        usuario: await nombreUsuarioDePago(pago.created_by),
         clienteNombre: cli?.nombre,
         clienteCodigo: cli?.codigo || cli?.rnc || null,
         totalPagado: pago.total_pagado,
@@ -466,13 +476,14 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   })();
 
   // Reimprime el ÚLTIMO pago del cliente con el mismo formato del ticket móvil
-  const reimprimirUltimoPago = () => {
+  const reimprimirUltimoPago = async () => {
     const p = ultimoPago?.pago;
     if (!p) return;
     printReciboPagoFinancieraPOS({
       numero: p.numero,
       fecha: p.fecha,
       hora: p.created_at || null,
+      usuario: await nombreUsuarioDePago(p.created_by),
       clienteNombre: cliente?.nombre,
       clienteCodigo: cliente?.codigo || cliente?.rnc || null,
       totalPagado: p.total_pagado,
@@ -555,6 +566,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
           printReciboPagoFinancieraPOS({
             numero: data?.numero,
             fecha: new Date(),
+            usuario: usuarioActual,
             clienteNombre: cliente?.nombre,
             clienteCodigo: cliente?.codigo || cliente?.rnc || null,
             totalPagado: data?.total_pagado,
