@@ -268,6 +268,41 @@ await up('prestamos', headerRows, 'cabeceras');
   }
 }
 const ids = lista.map((h) => h._id);
+
+// --force: des-aplicar PRIMERO los abonos/notas de crédito que la app nueva
+// aplicó sobre cuotas migradas (violarían la FK al borrar las cuotas). El
+// viejo sigue siendo el libro oficial: esos cobros vuelven a bajar como RI.
+// Los préstamos originados EN la app (sin legacy) no se tocan.
+if (process.argv.includes('--force')) {
+  const idSet = new Set(ids);
+  const desaplicar = async (tabla) => {
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+      let q = supabase.from(tabla).select('id, cuota_id').range(from, from + 999);
+      const { data, error } = await q;
+      if (error) { console.error(`${tabla}:`, error.message); process.exit(1); }
+      rows.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    if (!rows.length) return 0;
+    const cuotaIds = [...new Set(rows.map((r) => r.cuota_id).filter(Boolean))];
+    const cuotaPrestamo = new Map();
+    for (let i = 0; i < cuotaIds.length; i += 200) {
+      const { data } = await supabase.from('prestamo_cuotas').select('id, prestamo_id').in('id', cuotaIds.slice(i, i + 200));
+      for (const c of data || []) cuotaPrestamo.set(c.id, c.prestamo_id);
+    }
+    const delIds = rows.filter((r) => idSet.has(cuotaPrestamo.get(r.cuota_id))).map((r) => r.id);
+    for (let i = 0; i < delIds.length; i += 200) {
+      const { error } = await supabase.from(tabla).delete().in('id', delIds.slice(i, i + 200));
+      if (error) { console.error(`${tabla} delete:`, error.message); process.exit(1); }
+    }
+    return delIds.length;
+  };
+  const nAb = await desaplicar('prestamo_pago_detalle');
+  const nNc = await desaplicar('prestamo_nota_credito_detalle');
+  if (nAb || nNc) console.log(`  --force: des-aplicados ${nAb} abonos y ${nNc} detalles de NC del sistema nuevo`);
+}
+
 for (let i = 0; i < ids.length; i += 200) {
   const { error } = await supabase.from('prestamo_cuotas').delete().in('prestamo_id', ids.slice(i, i + 200));
   if (error) { console.error('❌ limpiando cuotas:', error.message); process.exit(1); }
