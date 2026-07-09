@@ -22,7 +22,7 @@ import { formatFechaDMY } from '@/lib/dateUtils';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 const hoy = () => new Date().toISOString().slice(0, 10);
-const FORMAS = ['Efectivo', 'Cheque', 'Tarjeta'];
+const FORMAS = ['Efectivo', 'Cheque', 'Tarjeta', 'Transferencia'];
 const DIAS_GRACIA_PAGO = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
