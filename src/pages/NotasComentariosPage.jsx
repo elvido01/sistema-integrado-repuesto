@@ -153,21 +153,20 @@ const NotasComentariosPage = () => {
     cargar(c.id, c.rnc);
   };
 
-  // Clic en una fila del listado general -> carga el cliente completo
+  // Clic en una fila del listado general -> carga el cliente completo.
+  // El RPC busca en las DOS empresas (Caminero <-> Naranjos) y compara la
+  // cédula sin formato (el viejo la guardó con y sin guiones).
   const seleccionarDesdeListado = async (r) => {
     let cli = null;
-    if (r.cliente_id) {
+    if (r.documento_identidad) {
+      const { data } = await supabase.rpc('buscar_clientes_documentos', { p_q: r.documento_identidad });
+      cli = data?.[0] || null;
+    }
+    if (!cli && r.cliente_id) {
       const { data } = await supabase.from('clientes')
-        .select('id, nombre, codigo, rnc, direccion, telefono')
+        .select('id, nombre, codigo, rnc, direccion, telefono, tenant_id')
         .eq('id', r.cliente_id).maybeSingle();
       cli = data || null;
-    }
-    if (!cli && r.documento_identidad) {
-      // Registros de la aliada o sin cliente asignado: se busca por cédula
-      const { data } = await supabase.from('clientes')
-        .select('id, nombre, codigo, rnc, direccion, telefono')
-        .eq('rnc', r.documento_identidad).limit(1);
-      cli = data?.[0] || null;
     }
     if (cli) seleccionarCliente(cli);
     else toast({ variant: 'destructive', title: 'Sin cliente registrado', description: 'Este registro no está ligado a ningún cliente del catálogo.' });
@@ -184,12 +183,12 @@ const NotasComentariosPage = () => {
     const q = codigoInput.trim();
     if (!q) return;
     try {
-      const { data: cls, error } = await supabase
-        .from('clientes').select('id, nombre, codigo, rnc, direccion, telefono')
-        .or(`codigo.eq.${q},rnc.eq.${q}`).eq('activo', true).limit(1);
+      // Busca en el catálogo propio Y en el de la empresa aliada, con la
+      // cédula sin importar el formato (con o sin guiones)
+      const { data: cls, error } = await supabase.rpc('buscar_clientes_documentos', { p_q: q });
       if (error) throw error;
       if (cls && cls.length) seleccionarCliente(cls[0]);
-      else toast({ variant: 'destructive', title: 'Cliente no encontrado', description: `No hay cliente con código/cédula ${q}.` });
+      else toast({ variant: 'destructive', title: 'Cliente no encontrado', description: `No hay cliente con código/cédula/nombre "${q}" en ninguna de las dos empresas.` });
     } catch (e) {
       toast({ variant: 'destructive', title: 'Error al buscar', description: e.message });
     }
@@ -387,6 +386,9 @@ const NotasComentariosPage = () => {
               </div>
               <div className="mt-2 flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-bold text-blue-700 leading-tight truncate" title={cliente?.nombre || ''}>{cliente?.nombre || '—'}</span>
+                {cliente?.tenant_id && cliente.tenant_id !== tenantId && (
+                  <span className="px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold" title="Cliente registrado en la empresa aliada">ALIADA</span>
+                )}
                 {cliente?.rnc && <span className="text-xs text-slate-500">Cédula: <b>{cliente.rnc}</b></span>}
                 {cliente?.telefono && <span className="text-xs text-slate-500">Tel: <b>{cliente.telefono}</b></span>}
               </div>
