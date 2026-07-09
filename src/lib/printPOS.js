@@ -1269,14 +1269,15 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
   const horaStr = formatInTimeZone(new Date(hora || Date.now()), 'hh:mm a');
   const afectados = detalles.filter((d) => Number(d.abono || 0) > 0);
 
-  // La página debe medir EXACTAMENTE lo que mide el papel de la impresora;
-  // y el cuerpo no puede pasar del área imprimible (las térmicas de 80mm
-  // imprimen ~72mm: más ancho = valores cortados a la derecha).
+  // La página debe medir EXACTAMENTE lo que mide el papel de la impresora,
+  // y el cuerpo queda BIEN adentro del área imprimible: las térmicas de
+  // 80mm imprimen ~72mm y el driver puede correr el origen unos mm más,
+  // así que el contenido se limita a 64mm (como el ticket del viejo).
   const is4inch = paperSize !== '80mm';
   const pageW = is4inch ? '101.6mm' : '80mm';
-  const bodyW = is4inch ? '96mm' : '70mm';
+  const bodyW = is4inch ? '96mm' : '64mm';
   const fBase = is4inch ? '16px' : '13px';
-  const fH1 = is4inch ? '22px' : '18px';
+  const fH1 = is4inch ? '22px' : '17px';
   const fTitulo = is4inch ? '18px' : '15px';
   const fMonto = is4inch ? '19px' : '16px';
   const fNombre = is4inch ? '17px' : '14px';
@@ -1317,7 +1318,7 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
       </div>
 
       <div>No. Recibo: <span class="bold">${numero || 'N/A'}</span></div>
-      <div class="row"><span>Fecha: <span class="bold">${fechaStr}</span></span><span>Hora: ${horaStr}</span></div>
+      <div>Fecha: <span class="bold">${fechaStr}</span> · ${horaStr}</div>
       <div class="bold" style="font-size: ${fMonto};">MONTO: ${formatCurrency(totalPagado)}</div>
       ${cobrador ? `<div>COBRADOR: ${String(cobrador).toUpperCase()}</div>` : ''}
 
