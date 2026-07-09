@@ -481,7 +481,7 @@ const CierreCajaPage = () => {
           </div>
 
           <div class="col">
-            <div class="sec">Desglose de Monedas</div>
+            <div class="sec">Desglose del Dinero en Caja</div>
             <table>
               <thead><tr><th>Denominación</th><th class="num">Cant.</th><th class="num">Valor</th></tr></thead>
               <tbody>
@@ -581,7 +581,7 @@ const CierreCajaPage = () => {
         <div class="row"><span>Total de Sistema:</span><span>${formatCurrency((Number(resumen?.totalVentasContado) || 0) + (Number(resumen?.totalRecibos) || 0) - (Number(resumen?.totalDevoluciones) || 0))}</span></div>
         <div class="row total-row"><span>Dinero en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
         <div class="separator"></div>
-        <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE MONEDAS</div>
+        <div class="bold" style="margin-bottom: 4px;">DESGLOSE DINERO EN CAJA</div>
         <div class="row" style="font-size: 12px; border-bottom: 1px solid #000; margin-bottom: 2px;">
           <span style="flex: 1;">DENOM.</span>
           <span class="text-right" style="width: 42px;">CANT.</span>
