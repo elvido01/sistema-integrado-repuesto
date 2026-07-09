@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, Search } from 'lucide-react';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import { calcAmortizacion, round2 } from './amortizacion';
+import { formatFechaDMY } from '@/lib/dateUtils';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 
@@ -30,6 +31,7 @@ const initial = {
   garantia: '',
   notas: '',
   cuotaAjustada: '', // cuota redondeada por el operador (opcional)
+  desembolso: 'efectivo', // efectivo resta de la caja del día; transferencia/cheque del excedente
 };
 
 const NuevoPrestamoModal = ({ isOpen, onClose }) => {
@@ -95,6 +97,7 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
         p_garantia: form.garantia || null,
         p_notas: form.notas || null,
         p_cuota_ajustada: adj > 0 ? adj : null,
+        p_desembolso: form.desembolso || 'efectivo',
       });
       if (error) throw error;
       toast({ title: 'Préstamo creado', description: `${data?.numero} · ${cliente.nombre}` });
@@ -181,6 +184,20 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
               <Label>Garantía</Label>
               <Input value={form.garantia} onChange={(e) => set('garantia', e.target.value)} placeholder="Matrícula / vehículo" />
             </div>
+            <div className="space-y-1.5">
+              <Label>Desembolso</Label>
+              <Select value={form.desembolso} onValueChange={(v) => set('desembolso', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="efectivo">Efectivo</SelectItem>
+                  <SelectItem value="transferencia">Transferencia</SelectItem>
+                  <SelectItem value="cheque">Cheque</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-slate-500 italic leading-tight">
+                Efectivo resta de la caja del día; transferencia y cheque, del excedente.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -248,7 +265,7 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
                   {cuotas.map((c) => (
                     <tr key={c.numero_cuota} className="border-b last:border-0">
                       <td className="p-2">{c.numero_cuota}</td>
-                      <td className="p-2">{c.fecha_vencimiento}</td>
+                      <td className="p-2">{formatFechaDMY(c.fecha_vencimiento)}</td>
                       <td className="p-2 text-right">{fmt(c.capital)}</td>
                       <td className="p-2 text-right">{fmt(c.interes)}</td>
                       <td className="p-2 text-right font-semibold">{fmt(c.monto_cuota)}</td>
