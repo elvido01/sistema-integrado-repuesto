@@ -106,6 +106,7 @@ const CierreCajaPage = () => {
     let recibos = [];
     let pagosSuplidores = [];
     let gastosDiarios = [];
+    let prestamosEfectivo = []; // préstamos desembolsados HOY en efectivo (financieras)
 
     try {
       // Ventas del día
@@ -239,6 +240,24 @@ const CierreCajaPage = () => {
       console.warn('Exception cargando gastos diarios:', e);
     }
 
+    try {
+      // Préstamos originados hoy con desembolso en EFECTIVO (salen de la caja)
+      const { data: prestData, error: prestErr } = await supabase
+        .from('prestamos')
+        .select('numero, monto_capital, created_at, clientes(nombre)')
+        .eq('tenant_id', tenantId)
+        .ilike('desembolso', 'efectivo')
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+      if (prestErr) {
+        console.warn('Error cargando préstamos en efectivo:', prestErr.message);
+      } else {
+        prestamosEfectivo = prestData || [];
+      }
+    } catch (e) {
+      console.warn('Exception cargando préstamos en efectivo:', e);
+    }
+
     const ventasContado = ventas.filter(v => {
       const formaPago = String(v.forma_pago || '').toUpperCase();
       return formaPago === 'CONTADO' || formaPago === 'EFECTIVO';
@@ -267,6 +286,7 @@ const CierreCajaPage = () => {
       .reduce((sum, r) => sum + (parseFloat(r.monto_pagado) || 0), 0);
     const totalRecibosCaja = Math.max(0, totalRecibos - totalRecibosMovil);
     const totalGastosDiarios = gastosDiarios.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
+    const totalPrestamosEfectivo = prestamosEfectivo.reduce((sum, p) => sum + (parseFloat(p.monto_capital) || 0), 0);
     const totalPagosSuplidoresEfectivo = pagosSuplidores.reduce((sum, p) => {
       const efectivo = (p.formas_pago || []).filter(fp => fp.forma === 'Efectivo')
         .reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0);
@@ -293,11 +313,14 @@ const CierreCajaPage = () => {
       totalRecibosCaja,
       totalGastosDiarios,
       gastosDiarios, // detalle para el impreso del cierre
+      totalPrestamosEfectivo,
+      prestamosEfectivo, // detalle para el impreso del cierre (financieras)
       totalPagosSuplidores: totalPagosSuplidoresEfectivo,
       cambioEntregado,
       cantFacturas,
-      // Fórmula final: Efectivo en Caja = Ventas Contado + Recibos de Ingreso - Devoluciones - Pagos Suplidores (Efectivo)
-      efectivoEnCaja: totalVentasContado + totalRecibos - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios,
+      // Fórmula final: Efectivo en Caja = Ventas Contado + Recibos de Ingreso - Devoluciones
+      //                - Pagos Suplidores (Efectivo) - Gastos - Préstamos desembolsados en efectivo
+      efectivoEnCaja: totalVentasContado + totalRecibos - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPrestamosEfectivo,
     });
 
     setLoadingResumen(false);
@@ -431,6 +454,7 @@ const CierreCajaPage = () => {
               ${filaResumen('Recibos Ingreso (total)', resumen?.totalRecibos)}
               ${filaResumen('Pagos Suplidores', resumen?.totalPagosSuplidores)}
               ${filaResumen('Gastos Diarios', resumen?.totalGastosDiarios)}
+              ${Number(resumen?.totalPrestamosEfectivo) > 0 ? filaResumen('Préstamos (Efectivo)', resumen?.totalPrestamosEfectivo) : ''}
             </tbody></table>
             <div class="caja"><span>EFECTIVO EN CAJA</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
 
@@ -440,6 +464,20 @@ const CierreCajaPage = () => {
               ${resumen.gastosDiarios.map(g => `<tr><td>${(g.tipo_gasto || 'GASTO')}${g.descripcion ? ` — ${g.descripcion}` : ''}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
               <tr class="bold"><td>Total Gastos</td><td class="num">${formatCurrency(resumen?.totalGastosDiarios)}</td></tr>
             </tbody></table>` : ''}
+
+            ${(resumen?.prestamosEfectivo || []).length ? `
+            <div class="sec">Préstamos (Efectivo)</div>
+            <table><tbody>
+              ${resumen.prestamosEfectivo.map(p => `<tr><td>${(p.clientes?.nombre || 'PRÉSTAMO')}${p.numero ? ` — ${p.numero}` : ''}</td><td class="num">${formatCurrency(p.monto_capital)}</td></tr>`).join('')}
+              <tr class="bold"><td>Total Préstamos</td><td class="num">${formatCurrency(resumen?.totalPrestamosEfectivo)}</td></tr>
+            </tbody></table>` : ''}
+
+            <div class="sec">Cuadre</div>
+            <table><tbody>
+              ${filaResumen('Gasto Total', (Number(resumen?.totalGastosDiarios) || 0) + (Number(resumen?.totalPrestamosEfectivo) || 0) + (Number(resumen?.totalPagosSuplidores) || 0), true)}
+              ${filaResumen('Total de Sistema', (Number(resumen?.totalVentasContado) || 0) + (Number(resumen?.totalRecibos) || 0) - (Number(resumen?.totalDevoluciones) || 0), true)}
+              ${filaResumen('Dinero en Caja', resumen?.efectivoEnCaja, true)}
+            </tbody></table>
           </div>
 
           <div class="col">
@@ -513,6 +551,7 @@ const CierreCajaPage = () => {
         <div class="row"><span>Recibos Ingreso (total):</span><span>${formatCurrency(resumen?.totalRecibos)}</span></div>
         <div class="row"><span>Pagos Suplidores:</span><span>${formatCurrency(resumen?.totalPagosSuplidores)}</span></div>
         <div class="row"><span>Gastos Diarios:</span><span>${formatCurrency(resumen?.totalGastosDiarios)}</span></div>
+        ${Number(resumen?.totalPrestamosEfectivo) > 0 ? `<div class="row"><span>Préstamos (Efectivo):</span><span>${formatCurrency(resumen?.totalPrestamosEfectivo)}</span></div>` : ''}
         <div class="row total-row"><span>Efectivo en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
         ${(resumen?.gastosDiarios || []).length ? `
         <div class="separator"></div>
@@ -525,6 +564,22 @@ const CierreCajaPage = () => {
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
           <span>Total Gastos:</span><span>${formatCurrency(resumen?.totalGastosDiarios)}</span>
         </div>` : ''}
+        ${(resumen?.prestamosEfectivo || []).length ? `
+        <div class="separator"></div>
+        <div class="bold" style="margin-bottom: 4px;">PRÉSTAMOS (EFECTIVO)</div>
+        ${resumen.prestamosEfectivo.map(p => `
+          <div class="row">
+            <span style="max-width: 70%;">${(p.clientes?.nombre || p.numero || 'PRÉSTAMO')}</span>
+            <span>${formatCurrency(p.monto_capital)}</span>
+          </div>`).join('')}
+        <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
+          <span>Total Préstamos:</span><span>${formatCurrency(resumen?.totalPrestamosEfectivo)}</span>
+        </div>` : ''}
+        <div class="separator"></div>
+        <div class="bold" style="margin-bottom: 4px;">CUADRE</div>
+        <div class="row"><span>Gasto Total:</span><span>${formatCurrency((Number(resumen?.totalGastosDiarios) || 0) + (Number(resumen?.totalPrestamosEfectivo) || 0) + (Number(resumen?.totalPagosSuplidores) || 0))}</span></div>
+        <div class="row"><span>Total de Sistema:</span><span>${formatCurrency((Number(resumen?.totalVentasContado) || 0) + (Number(resumen?.totalRecibos) || 0) - (Number(resumen?.totalDevoluciones) || 0))}</span></div>
+        <div class="row total-row"><span>Dinero en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE MONEDAS</div>
         <div class="row" style="font-size: 12px; border-bottom: 1px solid #000; margin-bottom: 2px;">
