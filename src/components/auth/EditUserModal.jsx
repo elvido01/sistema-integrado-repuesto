@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, UserCog, Eye, EyeOff } from 'lucide-react';
+import { toLoginEmail, usernameDesdeEmail } from '@/lib/loginIdentity';
 
 const EditUserModal = ({ isOpen, onClose, user, onUserUpdated }) => {
     const { toast } = useToast();
@@ -27,7 +28,9 @@ const EditUserModal = ({ isOpen, onClose, user, onUserUpdated }) => {
     useEffect(() => {
         if (user) {
             setFormData({
-                email: user.email || '',
+                // Si es un correo interno (@usuario.motoflow.app) se muestra
+                // SOLO el usuario; al guardar se completa el dominio solo
+                email: usernameDesdeEmail(user.email || ''),
                 password: '',
                 fullName: user.full_name || ''
             });
@@ -46,7 +49,9 @@ const EditUserModal = ({ isOpen, onClose, user, onUserUpdated }) => {
 
         try {
             const updates = {};
-            if (formData.email !== user.email && formData.email) updates.email = formData.email;
+            // "caraballo" -> caraballo@usuario.motoflow.app; un correo real pasa igual
+            const emailFinal = toLoginEmail(formData.email);
+            if (emailFinal && emailFinal !== user.email) updates.email = emailFinal;
             if (formData.password) updates.password = formData.password;
             if (formData.fullName !== user.full_name && formData.fullName) updates.full_name = formData.fullName;
 
@@ -130,14 +135,18 @@ const EditUserModal = ({ isOpen, onClose, user, onUserUpdated }) => {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="email">Correo Electrónico</Label>
+                        <Label htmlFor="email">Usuario o Correo</Label>
                         <Input
                             id="email"
-                            type="email"
+                            type="text"
+                            placeholder="usuario (sin @) o correo real"
                             value={formData.email}
                             onChange={handleChange}
                             required
                         />
+                        <p className="text-[11px] text-muted-foreground">
+                            Con solo el usuario (ej. "caraballo") entra al sistema; el correo interno se completa solo.
+                        </p>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="password">Nueva Contraseña (opcional)</Label>
