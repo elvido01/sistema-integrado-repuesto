@@ -121,9 +121,12 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   // Tamaño del papel del recibo — se recuerda por PC (cada caja tiene su impresora)
   const [paperSize, setPaperSize] = useState(() => localStorage.getItem('recibo_financiera_paper') || '4inch');
   const cambiarPapel = (v) => { setPaperSize(v); localStorage.setItem('recibo_financiera_paper', v); };
-  // Opciones > Reimprimir: número de recibo editable (null = modo normal)
+  // Opciones > Reimprimir: número de recibo editable (null = modo normal).
+  // reimpVista = la transacción cargada EN PANTALLA (como el viejo): se
+  // previsualiza el recibo y el botón Grabar se convierte en Reimprimir.
   const [reimpNumero, setReimpNumero] = useState(null);
   const [reimpBusy, setReimpBusy] = useState(false);
+  const [reimpVista, setReimpVista] = useState(null);
   // Opciones > Editar: cambiar forma de pago de un recibo grabado
   const esAdminUser = ['admin', 'owner'].includes(profile?.role);
   const [editOpen, setEditOpen] = useState(false);
@@ -314,11 +317,11 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const nuevo = () => {
     setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput(''); setPromesa(null);
     setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
-    setPrestamoFiltro('todos'); setReimpNumero(null); cargarProximoNumero();
+    setPrestamoFiltro('todos'); setReimpNumero(null); setReimpVista(null); cargarProximoNumero();
   };
 
-  // Opciones > Reimprimir: habilita el campo Número editable, pre-llenado
-  // con el último recibo emitido (de cualquier cliente)
+  // Opciones > Reimprimir: habilita el campo Número editable pre-llenado
+  // con el último recibo y lo PREVISUALIZA en pantalla de una vez
   const iniciarReimpresion = async () => {
     try {
       const { data } = await supabase.from('prestamo_pagos')
@@ -329,14 +332,16 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         .map((r) => ({ n: r.numero, d: Number(String(r.numero).replace(/\D/g, '')) || 0 }))
         .sort((a, b) => b.d - a.d)[0];
       setReimpNumero(ultimo?.n || '');
+      if (ultimo?.n) buscarReimpresion(ultimo.n);
     } catch {
       setReimpNumero('');
     }
   };
 
-  // Busca el recibo por número (acepta con o sin el prefijo RI- y sin ceros)
-  const reimprimirPorNumero = async () => {
-    const raw = String(reimpNumero || '').trim();
+  // Busca el recibo por número (con o sin RI- y sin ceros) y lo carga en
+  // pantalla: cliente, líneas abonadas, balances y comentarios
+  const buscarReimpresion = async (numOverride) => {
+    const raw = String(numOverride ?? reimpNumero ?? '').trim();
     if (!raw) return;
     setReimpBusy(true);
     try {
@@ -349,47 +354,68 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       }
       if (!pago) {
         toast({ variant: 'destructive', title: 'Recibo no encontrado', description: `No existe el recibo "${raw}".` });
+        setReimpVista(null);
         return;
       }
       const [{ data: cli }, { data: det }] = await Promise.all([
-        supabase.from('clientes').select('nombre, codigo, rnc').eq('id', pago.cliente_id).maybeSingle(),
+        supabase.from('clientes').select('nombre, codigo, rnc, direccion').eq('id', pago.cliente_id).maybeSingle(),
         supabase.from('prestamo_pago_detalle')
           .select('abono_total, cuota:cuota_id (numero_cuota, fecha_vencimiento, monto_cuota, capital, interes, capital_pagado, interes_pagado, prestamos(numero, plazo_cuotas))')
           .eq('pago_id', pago.id),
       ]);
-      printReciboPagoFinancieraPOS({
-        numero: pago.numero,
-        fecha: pago.fecha,
-        hora: pago.created_at || null,
-        usuario: await nombreUsuarioDePago(pago.created_by),
-        clienteNombre: cli?.nombre,
-        clienteCodigo: cli?.codigo || cli?.rnc || null,
-        totalPagado: pago.total_pagado,
-        balanceAnterior: pago.balance_anterior,
-        balanceActual: pago.balance_actual,
-        formaPago: pago.forma_pago,
-        cuenta: pago.cuenta_numero || null,
-        banco: pago.banco || null,
-        comentarios: pago.comentarios || null,
-        cobrador: pago.cobrador || null,
-        detalles: (det || []).map((d) => {
-          const q = d.cuota;
-          return {
-            documento: cleanLoanNumber(q?.prestamos?.numero || ''),
-            referencia: q ? `${String(q.numero_cuota).padStart(3, '0')}/${String(q.prestamos?.plazo_cuotas || 0).padStart(3, '0')}` : '',
-            fecha: q?.fecha_vencimiento || pago.fecha,
-            monto: q?.monto_cuota || d.abono_total,
-            abono: d.abono_total,
-            pendiente: q ? Math.max(round2((Number(q.capital) - Number(q.capital_pagado)) + (Number(q.interes) - Number(q.interes_pagado))), 0) : 0,
-          };
-        }),
-      }, paperSize);
+      const detalles = (det || []).map((d) => {
+        const q = d.cuota;
+        return {
+          documento: cleanLoanNumber(q?.prestamos?.numero || ''),
+          referencia: q ? `${String(q.numero_cuota).padStart(3, '0')}/${String(q.prestamos?.plazo_cuotas || 0).padStart(3, '0')}` : '',
+          fecha: q?.fecha_vencimiento || pago.fecha,
+          monto: q?.monto_cuota || d.abono_total,
+          abono: d.abono_total,
+          pendiente: q ? Math.max(round2((Number(q.capital) - Number(q.capital_pagado)) + (Number(q.interes) - Number(q.interes_pagado))), 0) : 0,
+        };
+      });
+      setReimpVista({
+        pago,
+        clienteNombre: cli?.nombre || '—',
+        clienteCodigo: cli?.codigo || cli?.rnc || '',
+        clienteDireccion: cli?.direccion || '',
+        filas: detalles.map((d, i) => ({
+          key: `rv-${i}`, fecha: pago.fecha, vence: d.fecha, origen: d.documento,
+          referencia: d.referencia, descripcion: '', monto: d.monto,
+          pendiente: d.pendiente, abono: d.abono,
+        })),
+        printData: {
+          numero: pago.numero,
+          fecha: pago.fecha,
+          hora: pago.created_at || null,
+          usuario: await nombreUsuarioDePago(pago.created_by),
+          clienteNombre: cli?.nombre,
+          clienteCodigo: cli?.codigo || cli?.rnc || null,
+          totalPagado: pago.total_pagado,
+          balanceAnterior: pago.balance_anterior,
+          balanceActual: pago.balance_actual,
+          formaPago: pago.forma_pago,
+          cuenta: pago.cuenta_numero || null,
+          banco: pago.banco || null,
+          comentarios: pago.comentarios || null,
+          cobrador: pago.cobrador || null,
+          detalles,
+        },
+      });
+      setReimpNumero(pago.numero);
     } catch (e) {
-      toast({ variant: 'destructive', title: 'No se pudo reimprimir', description: e.message });
+      toast({ variant: 'destructive', title: 'No se pudo cargar el recibo', description: e.message });
     } finally {
       setReimpBusy(false);
     }
   };
+
+  const imprimirReimpresion = () => {
+    if (!reimpVista) return;
+    printReciboPagoFinancieraPOS(reimpVista.printData, paperSize);
+  };
+
+  const salirReimpresion = () => { setReimpNumero(null); setReimpVista(null); };
 
   // ── Opciones > Editar (forma de pago de un recibo grabado) ──
   const abrirEditar = async () => {
@@ -748,10 +774,12 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                   <Search className="w-3.5 h-3.5 mr-1" />F3
                 </Button>
               </div>
-              <div className="mt-2 text-sm font-bold text-blue-700 leading-tight truncate" title={cliente?.nombre || ''}>{cliente?.nombre || '—'}</div>
+              <div className="mt-2 text-sm font-bold text-blue-700 leading-tight truncate" title={reimpVista ? reimpVista.clienteNombre : (cliente?.nombre || '')}>
+                {reimpVista ? `${reimpVista.clienteCodigo} — ${reimpVista.clienteNombre}` : (cliente?.nombre || '—')}
+              </div>
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-500 truncate flex-1 min-w-0" title={cliente?.direccion || ''}>{cliente?.direccion || '—'}</span>
-                <span className="text-emerald-600 whitespace-nowrap font-semibold">{cliente?.telefono || '—'}</span>
+                <span className="text-slate-500 truncate flex-1 min-w-0" title={reimpVista ? reimpVista.clienteDireccion : (cliente?.direccion || '')}>{reimpVista ? (reimpVista.clienteDireccion || '—') : (cliente?.direccion || '—')}</span>
+                <span className="text-emerald-600 whitespace-nowrap font-semibold">{reimpVista ? '' : (cliente?.telefono || '—')}</span>
               </div>
             </div>
 
@@ -759,7 +787,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
             <div className="border rounded-md p-1.5 space-y-1">
               <div className="flex items-center gap-2">
                 <Label className="text-xs w-20">Cobrador</Label>
-                <Input value={cobrador} onChange={(e) => setCobrador(e.target.value)} className="h-7 text-xs" />
+                <Input value={reimpVista ? (reimpVista.pago.cobrador || '') : cobrador} onChange={(e) => setCobrador(e.target.value)} readOnly={!!reimpVista} className="h-7 text-xs" />
               </div>
               <div className="flex items-center gap-2 min-w-0">
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -802,15 +830,15 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                       <Input
                         value={reimpNumero}
                         onChange={(e) => setReimpNumero(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); reimprimirPorNumero(); } }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarReimpresion(); } }}
                         autoFocus
                         className="h-7 w-32 font-mono font-bold text-sm bg-amber-50 border-amber-400"
-                        title="Número del recibo a reimprimir"
+                        title="Número del recibo a previsualizar"
                       />
-                      <Button type="button" size="sm" className="h-7 px-2 text-xs" onClick={reimprimirPorNumero} disabled={reimpBusy}>
-                        {reimpBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                      <Button type="button" size="sm" className="h-7 px-2 text-xs" onClick={() => buscarReimpresion()} disabled={reimpBusy} title="Buscar y previsualizar">
+                        {reimpBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5" onClick={() => setReimpNumero(null)} title="Cancelar reimpresión">
+                      <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5" onClick={salirReimpresion} title="Cancelar reimpresión">
                         <X className="w-3.5 h-3.5" />
                       </Button>
                     </span>
@@ -818,12 +846,12 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 </div>
                 <div className="flex items-baseline gap-2 justify-end">
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Fecha</span>
-                  <span className="font-bold">{formatFechaDMY(hoy())}</span>
+                  <span className="font-bold">{formatFechaDMY(reimpVista ? reimpVista.pago.fecha : hoy())}</span>
                 </div>
               </div>
               <div className="border-t pt-2 flex items-center gap-2 min-w-0">
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none shrink-0">Forma de<br />Pago</Label>
-                <Select value={forma} onValueChange={setForma}>
+                <Select value={reimpVista ? (reimpVista.pago.forma_pago || 'Efectivo') : forma} onValueChange={setForma} disabled={!!reimpVista}>
                   <SelectTrigger className="h-9 text-sm w-[100px] min-w-[44px] shrink"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
@@ -831,8 +859,8 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 </Select>
                 <Label className="text-[10px] font-bold text-slate-400 uppercase leading-none whitespace-nowrap shrink-0">Monto<br />Pagado</Label>
                 <Input
-                  type="text" inputMode="decimal"
-                  value={fmtMontoInput(montoText)}
+                  type="text" inputMode="decimal" readOnly={!!reimpVista}
+                  value={reimpVista ? fmtMontoInput(String(reimpVista.pago.total_pagado)) : fmtMontoInput(montoText)}
                   onChange={(e) => {
                     let raw = e.target.value.replace(/,/g, '').replace(/[^\d.]/g, '');
                     const parts = raw.split('.');
@@ -872,10 +900,23 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 </tr>
               </thead>
               <tbody>
-                {loading && <tr><td colSpan={8} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
-                {!loading && !cliente && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">--- SELECCIONE UN CLIENTE PARA VER REGISTROS ---</td></tr>}
-                {!loading && cliente && filas.length === 0 && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">Sin cuotas pendientes.</td></tr>}
-                {filas.map((r, i) => {
+                {/* Vista de reimpresión: las líneas del recibo tal como se grabó */}
+                {reimpVista && reimpVista.filas.map((r, i) => (
+                  <tr key={r.key} className={`border-b last:border-0 ${i % 2 === 1 ? 'bg-[#e0fadd]' : 'bg-white'}`}>
+                    <td className="px-2 py-1">{formatFechaDMY(r.fecha)}</td>
+                    <td className="px-2 py-1">{formatFechaDMY(r.vence)}</td>
+                    <td className="px-2 py-1 font-bold text-blue-900">{r.origen}</td>
+                    <td className="px-2 py-1">{r.referencia}</td>
+                    <td className="px-2 py-1">{r.descripcion}</td>
+                    <td className="px-2 py-1 text-right">{fmt(r.monto)}</td>
+                    <td className="px-2 py-1 text-right">{fmt(r.pendiente)}</td>
+                    <td className="px-2 py-1 text-right font-bold text-emerald-700">{fmt(r.abono)}</td>
+                  </tr>
+                ))}
+                {!reimpVista && loading && <tr><td colSpan={8} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
+                {!reimpVista && !loading && !cliente && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">--- SELECCIONE UN CLIENTE PARA VER REGISTROS ---</td></tr>}
+                {!reimpVista && !loading && cliente && filas.length === 0 && <tr><td colSpan={8} className="p-10 text-center italic text-slate-400">Sin cuotas pendientes.</td></tr>}
+                {!reimpVista && filas.map((r, i) => {
                   const isSel = selKey === r.key;
                   return (
                   <tr key={r.key}
@@ -987,13 +1028,18 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
 
             <div className="border rounded-md p-2 lg:col-start-1 lg:col-span-2 lg:row-start-2 max-h-[94px] overflow-hidden">
               <Label className="text-xs font-bold">Comentarios</Label>
-              <Textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} className="mt-1 h-12 text-sm resize-none" />
+              <Textarea
+                value={reimpVista ? (reimpVista.pago.comentarios || '') : comentarios}
+                onChange={(e) => setComentarios(e.target.value)}
+                readOnly={!!reimpVista}
+                className="mt-1 h-12 text-sm resize-none"
+              />
             </div>
 
             <div className="border rounded-md p-2 text-sm space-y-1 lg:col-start-3 lg:row-start-2">
-              <div className="flex justify-between text-slate-500"><span>Balance Anterior</span><b className="text-slate-700">{fmt(balanceAnterior)}</b></div>
-              <div className="flex justify-between font-bold border-t pt-1"><span>Total Pagado</span><span>{fmt(montoNum)}</span></div>
-              <div className="flex justify-between text-red-600 font-bold border-t pt-1"><span>Balance Actual</span><span>{fmt(balanceActual)}</span></div>
+              <div className="flex justify-between text-slate-500"><span>Balance Anterior</span><b className="text-slate-700">{fmt(reimpVista ? reimpVista.pago.balance_anterior : balanceAnterior)}</b></div>
+              <div className="flex justify-between font-bold border-t pt-1"><span>Total Pagado</span><span>{fmt(reimpVista ? reimpVista.pago.total_pagado : montoNum)}</span></div>
+              <div className="flex justify-between text-red-600 font-bold border-t pt-1"><span>Balance Actual</span><span>{fmt(reimpVista ? reimpVista.pago.balance_actual : balanceActual)}</span></div>
             </div>
           </div>
 
@@ -1018,9 +1064,15 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={nuevo}><FilePlus className="w-4 h-4 mr-1" />Nuevo</Button>
               <Button type="button" variant="secondary" onClick={() => closePanel(activePanel)}><X className="w-4 h-4 mr-1" />Retornar</Button>
-              <Button type="button" onClick={handleGrabar} disabled={saving || !cliente}>
-                {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}F10 - Grabar
-              </Button>
+              {reimpVista ? (
+                <Button type="button" onClick={imprimirReimpresion} className="bg-amber-600 hover:bg-amber-700 text-white">
+                  <Printer className="w-4 h-4 mr-1" />F10 - Reimprimir
+                </Button>
+              ) : (
+                <Button type="button" onClick={handleGrabar} disabled={saving || !cliente}>
+                  {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}F10 - Grabar
+                </Button>
+              )}
             </div>
           </div>
         </div>
