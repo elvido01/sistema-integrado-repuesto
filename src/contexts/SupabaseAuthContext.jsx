@@ -186,7 +186,7 @@ export const AuthProvider = ({ children }) => {
     return { error };
   }, [toast]);
 
-  const signIn = useCallback(async (email, password) => {
+  const signIn = useCallback(async (email, password, tenantPreferido = null) => {
     await supabase.auth.signOut().catch(console.error);
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -204,6 +204,15 @@ export const AuthProvider = ({ children }) => {
         description: msg,
       });
     } else {
+      // Multi-empresa: si eligió empresa en el login, fijarla como activa
+      // ANTES de cargar el perfil para que get_user_tenant() ya la respete
+      if (tenantPreferido) {
+        try {
+          await supabase.rpc('cambiar_empresa_activa', { p_tenant: tenantPreferido });
+        } catch (e) {
+          console.error('[Auth] No se pudo fijar la empresa elegida:', e);
+        }
+      }
       handleSession(data.session);
     }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { LogIn, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Eye, EyeOff, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,31 @@ const LoginForm = ({ onRegistrar }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Multi-empresa: si el usuario pertenece a 2+ empresas, elegir cuál
+  const [empresas, setEmpresas] = useState([]);
+  const [empresaSel, setEmpresaSel] = useState('');
+
+  useEffect(() => {
+    const v = email.trim();
+    if (!v) { setEmpresas([]); setEmpresaSel(''); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await supabase.rpc('get_empresas_login', {
+          p_usuario: toLoginEmail(v),
+        });
+        const lista = data || [];
+        setEmpresas(lista);
+        setEmpresaSel(prev =>
+          lista.some(e => e.tenant_id === prev) ? prev : (lista[0]?.tenant_id || '')
+        );
+      } catch {
+        setEmpresas([]);
+        setEmpresaSel('');
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [email]);
 
   // Branding del tenant detectado por dominio
   const [tenantBranding, setTenantBranding] = useState(null);
@@ -51,8 +76,13 @@ const LoginForm = ({ onRegistrar }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      // Permite entrar con usuario (sin correo) o con correo real
-      const { error } = await signIn(toLoginEmail(email), password);
+      // Permite entrar con usuario (sin correo) o con correo real;
+      // si eligió empresa (multi-empresa), entra directo a esa
+      const { error } = await signIn(
+        toLoginEmail(email),
+        password,
+        empresas.length > 1 ? empresaSel : null
+      );
       // Si hubo error (ej. contraseña incorrecta), reactivar el boton.
       // Si fue exitoso, la sesion cambia y el componente se desmonta solo.
       if (error) setLoading(false);
@@ -146,6 +176,25 @@ const LoginForm = ({ onRegistrar }) => {
               </Button>
             </div>
           </div>
+
+          {/* Selector de empresa: solo aparece si el usuario está en 2+ empresas */}
+          {empresas.length > 1 && (
+            <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
+              <Label htmlFor="empresa" className="flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-blue-600" /> Empresa
+              </Label>
+              <select
+                id="empresa"
+                value={empresaSel}
+                onChange={(e) => setEmpresaSel(e.target.value)}
+                className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {empresas.map((e) => (
+                  <option key={e.tenant_id} value={e.tenant_id}>{e.nombre}</option>
+                ))}
+              </select>
+            </motion.div>
+          )}
 
           <Button
             type="submit"
