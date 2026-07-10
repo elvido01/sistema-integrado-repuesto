@@ -112,6 +112,10 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [editKey, setEditKey] = useState(null); // fila cuyo abono se esta editando
   const [selKey, setSelKey] = useState(null); // fila seleccionada (resaltado azul)
   const [montoText, setMontoText] = useState(''); // texto del campo Monto Pagado
+  // Modo SiiF: al TECLEAR un total en Monto Pagado ese monto queda FIJO como
+  // objetivo; se puede reubicar el desglose a mano y la pantalla marca
+  // "Faltan X por Distribuir." hasta que el desglose cuadre con el objetivo.
+  const [montoObjetivo, setMontoObjetivo] = useState(null);
   const [forma, setForma] = useState('Efectivo');
   const [cuenta, setCuenta] = useState('');
   const [banco, setBanco] = useState('');
@@ -231,7 +235,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
     setMoraOn(checked);
     const { error } = await supabase.from('clientes').update({ generar_mora: checked }).eq('id', cliente.id);
     if (error) { toast({ variant: 'destructive', title: 'No se pudo cambiar la mora', description: error.message }); return; }
-    setAbonos({}); setMontoText('');
+    setAbonos({}); setMontoText(''); setMontoObjetivo(null);
     cargarEstado(cliente.id);
   };
   const guardarMoraPct = async () => {
@@ -239,14 +243,14 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
     const val = parseFloat(moraPctText) || 0;
     const { error } = await supabase.from('clientes').update({ mora_pct: val }).eq('id', cliente.id);
     if (error) { toast({ variant: 'destructive', title: 'No se pudo cambiar la tasa', description: error.message }); return; }
-    setAbonos({}); setMontoText('');
+    setAbonos({}); setMontoText(''); setMontoObjetivo(null);
     cargarEstado(cliente.id);
   };
 
   const seleccionarCliente = useCallback((c) => {
     setCliente(c); setBuscarOpen(false);
     setCodigoInput(c.codigo || c.rnc || '');
-    setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setPrestamoFiltro('todos');
+    setAbonos({}); setEditKey(null); setMontoText(''); setMontoObjetivo(null); setComentarios(''); setPrestamoFiltro('todos');
     cargarEstado(c.id);
   }, [cargarEstado]);
 
@@ -316,7 +320,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
 
   const nuevo = () => {
     setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput(''); setPromesa(null);
-    setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
+    setAbonos({}); setEditKey(null); setMontoText(''); setMontoObjetivo(null); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
     setPrestamoFiltro('todos'); setReimpNumero(null); setReimpVista(null); cargarProximoNumero();
   };
 
@@ -543,6 +547,9 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
 
   const montoNum = round2(filas.reduce((a, r) => a + (Number(abonos[r.key]) || 0), 0));
   const balanceActual = Math.max(round2(balanceAnterior - montoNum), 0);
+  // Modo monto fijo (SiiF): lo que falta (o sobra) por reubicar entre filas
+  const faltante = montoObjetivo != null ? round2(montoObjetivo - montoNum) : 0;
+  const hayFaltante = montoObjetivo != null && Math.abs(faltante) > 0.009;
 
   // Desglose del abono actual (capital / interes / mora): el abono de cada
   // cuota cubre primero interes y luego capital; la mora va en su propia fila.
@@ -563,16 +570,20 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
 
   const sumaAbonos = (mapa) => round2(filas.reduce((a, f) => a + (Number(mapa[f.key]) || 0), 0));
 
-  // Fija el abono de una fila (tope: su pendiente) y sincroniza el Monto Pagado
+  // Fija el abono de una fila (tope: su pendiente). Con monto fijo (se tecleó
+  // un total) el Monto Pagado NO cambia: la diferencia queda "por distribuir".
   const setAbonoFila = (r, val) => {
     const n = Math.min(Math.max(round2(Number(val) || 0), 0), round2(r.pendiente));
     const next = { ...abonos, [r.key]: n };
     setAbonos(next);
-    const s = sumaAbonos(next);
-    setMontoText(s ? String(s) : '');
+    if (montoObjetivo == null) {
+      const s = sumaAbonos(next);
+      setMontoText(s ? String(s) : '');
+    }
   };
 
   // Teclear un total en Monto Pagado -> repartir entre cuotas (mas vieja primero)
+  // y dejar ese total FIJO como objetivo (reubicable a mano, estilo SiiF)
   const distribuirTotal = (total) => {
     let rest = round2(Number(total) || 0);
     const next = {};
@@ -632,6 +643,14 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
     if (!cliente?.id) { toast({ variant: 'destructive', title: 'Selecciona un cliente' }); return; }
     if (!(montoNum > 0)) { toast({ variant: 'destructive', title: 'Marca el abono de al menos una cuota' }); return; }
     if (montoNum > balanceAnterior + 0.01) { toast({ variant: 'destructive', title: 'El monto excede el balance pendiente' }); return; }
+    if (hayFaltante) {
+      toast({
+        variant: 'destructive',
+        title: faltante > 0 ? `Faltan ${fmt(faltante)} por distribuir` : `Hay ${fmt(Math.abs(faltante))} distribuidos de más`,
+        description: 'Reubica los abonos hasta cuadrar con el Monto Pagado, o ajusta el Monto Pagado.',
+      });
+      return;
+    }
 
     // Abonos exactos por cuota (interes antes que capital; mora en su fila)
     // y abonos a cargos manuales (Otras Transacciones) por separado.
@@ -869,9 +888,11 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                     raw = dp !== undefined ? `${ip}.${dp.slice(0, 2)}` : ip;
                     setMontoText(raw);
                     distribuirTotal(raw);
+                    const n = round2(Number(raw) || 0);
+                    setMontoObjetivo(n > 0 ? n : null);
                   }}
                   placeholder="0.00"
-                  className="text-right font-bold text-lg h-9 flex-1 min-w-[96px] shrink-0"
+                  className={`text-right font-bold text-lg h-9 flex-1 min-w-[96px] shrink-0 ${hayFaltante ? 'border-red-500 text-red-700' : ''}`}
                 />
               </div>
               {forma !== 'Efectivo' && (
@@ -956,6 +977,15 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
             </table>
             </div>
           </div>
+
+          {/* Monto fijo estilo SiiF: lo que falta (o sobra) por reubicar */}
+          {!reimpVista && hayFaltante && (
+            <p className="text-center text-sm font-bold text-red-600">
+              {faltante > 0
+                ? `Faltan ${fmt(faltante)} por Distribuir.`
+                : `Hay ${fmt(Math.abs(faltante))} distribuidos de más.`}
+            </p>
+          )}
 
           {/* Otras Informaciones (col1) · Último Pago (col3) · Comentarios (col1-2) · Balances (col3) */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 [&>*]:min-w-0 items-start">
