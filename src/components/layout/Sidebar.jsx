@@ -227,6 +227,31 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const [expandedGroup, setExpandedGroup] = useState(null);
   const [adminAlertCount, setAdminAlertCount] = useState(0);
 
+  // Multi-empresa: mismo usuario/contraseña en varias empresas (como el
+  // selector del sistema viejo). Solo aparece si pertenece a más de una.
+  const [misEmpresas, setMisEmpresas] = useState([]);
+  const [cambiandoEmpresa, setCambiandoEmpresa] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) { setMisEmpresas([]); return; }
+    supabase.rpc('get_mis_empresas').then(({ data, error }) => {
+      if (!error && Array.isArray(data)) setMisEmpresas(data);
+    }, () => {});
+  }, [user?.id]);
+
+  const cambiarEmpresa = async (nuevoTenant) => {
+    if (!nuevoTenant || nuevoTenant === tenantId) return;
+    setCambiandoEmpresa(true);
+    const { error } = await supabase.rpc('cambiar_empresa_activa', { p_tenant: nuevoTenant });
+    if (error) {
+      setCambiandoEmpresa(false);
+      console.error('cambiar_empresa_activa:', error.message);
+      return;
+    }
+    // Recarga completa: todo el estado (paneles, cachés) es de la otra empresa
+    window.location.reload();
+  };
+
   const fetchAdminAlerts = useCallback(async () => {
     if (!isSuperAdmin) {
       setAdminAlertCount(0);
@@ -542,6 +567,20 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       >
         {sidebarOpen ? (
           <>
+            {/* Selector de empresa (solo si el usuario pertenece a varias) */}
+            {misEmpresas.length > 1 && (
+              <select
+                value={tenantId || ''}
+                onChange={(e) => cambiarEmpresa(e.target.value)}
+                disabled={cambiandoEmpresa}
+                className="w-full h-8 text-[11px] font-bold border border-blue-200/60 rounded-lg px-2 bg-white text-blue-700 cursor-pointer"
+                title="Cambiar de empresa (mismo usuario y contraseña)"
+              >
+                {misEmpresas.map((e) => (
+                  <option key={e.tenant_id} value={e.tenant_id}>{e.nombre}</option>
+                ))}
+              </select>
+            )}
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="flex items-center gap-2 text-[11px] text-blue-700 bg-blue-100/60 px-2.5 py-2 rounded-lg flex-1 overflow-hidden border border-blue-200/50">
                 <User className="w-3.5 h-3.5 flex-shrink-0 text-blue-500" />

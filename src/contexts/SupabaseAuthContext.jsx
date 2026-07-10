@@ -15,6 +15,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [empresa, setEmpresa] = useState(null);
   const [fiscalActivo, setFiscalActivo] = useState(false);
+  const [activeTenantId, setActiveTenantId] = useState(null); // empresa activa (multi-empresa)
 
   const fetchProfileAndPermissions = useCallback(async (userId) => {
     try {
@@ -46,18 +47,29 @@ export const AuthProvider = ({ children }) => {
 
       console.log("[AuthDebug] Perms data:", permsData);
 
+      // 2b. Tenant ACTIVO: puede diferir del profile.tenant_id cuando el
+      // usuario pertenece a varias empresas (usuarios_empresas) y cambió
+      // de empresa con el selector — get_user_tenant() manda en el RLS,
+      // así que el branding/tenant del front debe seguirlo.
+      let activeTid = profileData?.tenant_id || null;
+      try {
+        const { data: t } = await supabase.rpc('get_user_tenant');
+        if (t) activeTid = t;
+      } catch { /* fallback al tenant del perfil */ }
+      setActiveTenantId(activeTid);
+
       // 3. Fetch Empresa (config_empresa) for PDF/print branding
-      if (profileData?.tenant_id) {
+      if (activeTid) {
         let { data: empresaData, error: empresaError } = await supabase
           .from('config_empresa')
           .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, slogan, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct, feat_suplidores_locales, incluir_existencias_cero_default, feat_cliente_dealer, feat_financiera, formato_comprobante_pago, formato_cierre_caja, financiamiento_tipo, financiera_tenant_id, margen_minimo_pct, tipo_negocio')
-          .eq('tenant_id', profileData.tenant_id)
+          .eq('tenant_id', activeTid)
           .maybeSingle();
         if (empresaError && String(empresaError.message || '').match(/(feat_suplidores_locales|incluir_existencias_cero_default|feat_cliente_dealer|feat_financiera|formato_comprobante_pago|formato_cierre_caja|financiamiento_tipo|financiera_tenant_id|margen_minimo_pct|tipo_negocio)/)) {
           const fallback = await supabase
             .from('config_empresa')
             .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct')
-            .eq('tenant_id', profileData.tenant_id)
+            .eq('tenant_id', activeTid)
             .maybeSingle();
           empresaData = fallback.data
             ? { ...fallback.data, feat_suplidores_locales: false, incluir_existencias_cero_default: true, feat_cliente_dealer: false, feat_financiera: false, formato_comprobante_pago: 'pdf', formato_cierre_caja: 'pos_80mm', financiamiento_tipo: 'propio', financiera_tenant_id: null, margen_minimo_pct: 0, tipo_negocio: 'repuestos' }
@@ -78,11 +90,11 @@ export const AuthProvider = ({ children }) => {
       }
 
       // 4. Check if tenant has active fiscal integration
-      if (profileData?.tenant_id) {
+      if (activeTid) {
         const { data: integData } = await supabase
           .from('integraciones_fiscales')
           .select('activo')
-          .eq('tenant_id', profileData.tenant_id)
+          .eq('tenant_id', activeTid)
           .eq('activo', true)
           .maybeSingle();
         setFiscalActivo(!!integData);
@@ -198,7 +210,7 @@ export const AuthProvider = ({ children }) => {
     return { error };
   }, [toast, handleSession]);
 
-  const tenantId = profile?.tenant_id || null;
+  const tenantId = activeTenantId || profile?.tenant_id || null;
   const isSuperAdmin = profile?.is_superadmin === true;
 
   const value = useMemo(() => ({
