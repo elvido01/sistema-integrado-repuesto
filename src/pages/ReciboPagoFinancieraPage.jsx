@@ -12,7 +12,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChevronDown, Loader2, Save, X, Search, FilePlus, Gavel, Printer } from 'lucide-react';
+import { ChevronDown, Loader2, Save, X, Search, FilePlus, Gavel, Printer, Pencil, Lock } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { printReciboPagoFinancieraPOS } from '@/lib/printPOS';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
@@ -122,6 +123,16 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   // Opciones > Reimprimir: número de recibo editable (null = modo normal)
   const [reimpNumero, setReimpNumero] = useState(null);
   const [reimpBusy, setReimpBusy] = useState(false);
+  // Opciones > Editar: cambiar forma de pago de un recibo grabado
+  const esAdminUser = ['admin', 'owner'].includes(profile?.role);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editNumero, setEditNumero] = useState('');
+  const [editInfo, setEditInfo] = useState(null); // { numero, cliente, monto, forma }
+  const [editForma, setEditForma] = useState('Efectivo');
+  const [editCuenta, setEditCuenta] = useState('');
+  const [editBanco, setEditBanco] = useState('');
+  const [editPass, setEditPass] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
 
   useEffect(() => { if (empresa?.nombre && !cobrador) setCobrador(empresa.nombre); }, [empresa, cobrador]);
 
@@ -363,6 +374,75 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       toast({ variant: 'destructive', title: 'No se pudo reimprimir', description: e.message });
     } finally {
       setReimpBusy(false);
+    }
+  };
+
+  // ── Opciones > Editar (forma de pago de un recibo grabado) ──
+  const abrirEditar = async () => {
+    setEditInfo(null); setEditPass(''); setEditCuenta(''); setEditBanco('');
+    try {
+      const { data } = await supabase.from('prestamo_pagos')
+        .select('numero, fecha').order('fecha', { ascending: false }).limit(50);
+      const ultimo = (data || [])
+        .map((r) => ({ n: r.numero, d: Number(String(r.numero).replace(/\D/g, '')) || 0 }))
+        .sort((a, b) => b.d - a.d)[0];
+      setEditNumero(ultimo?.n || '');
+    } catch { setEditNumero(''); }
+    setEditOpen(true);
+  };
+
+  const buscarEditPago = async () => {
+    const raw = String(editNumero || '').trim();
+    if (!raw) return;
+    setEditBusy(true);
+    try {
+      const dig = raw.replace(/\D/g, '');
+      const candidatos = [...new Set([raw, dig.padStart(7, '0'), `RI-${dig.padStart(7, '0')}`])].filter(Boolean);
+      let pago = null;
+      for (const n of candidatos) {
+        const { data } = await supabase.from('prestamo_pagos').select('*').eq('numero', n).eq('anulado', false).limit(1);
+        if (data && data.length) { pago = data[0]; break; }
+      }
+      if (!pago) {
+        toast({ variant: 'destructive', title: 'Recibo no encontrado', description: `No existe el recibo "${raw}".` });
+        setEditInfo(null);
+        return;
+      }
+      const { data: cli } = await supabase.from('clientes').select('nombre').eq('id', pago.cliente_id).maybeSingle();
+      setEditInfo({ numero: pago.numero, cliente: cli?.nombre || '—', monto: pago.total_pagado, forma: pago.forma_pago || 'Efectivo' });
+      setEditForma(pago.forma_pago || 'Efectivo');
+      setEditCuenta(pago.cuenta_numero || '');
+      setEditBanco(pago.banco || '');
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Error al buscar', description: e.message });
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const guardarEdicion = async () => {
+    if (!editInfo) return;
+    if (!esAdminUser && !editPass.trim()) {
+      toast({ variant: 'destructive', title: 'Falta la contraseña administrativa' });
+      return;
+    }
+    setEditBusy(true);
+    try {
+      const { error } = await supabase.rpc('editar_forma_pago_recibo', {
+        p_numero: editInfo.numero,
+        p_forma: editForma,
+        p_cuenta: editCuenta.trim() || null,
+        p_banco: editBanco.trim() || null,
+        p_password: esAdminUser ? null : editPass,
+      });
+      if (error) throw error;
+      toast({ title: 'Recibo actualizado', description: `${editInfo.numero} → ${editForma}` });
+      setEditOpen(false);
+      if (cliente) cargarEstado(cliente.id);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo editar', description: e.message });
+    } finally {
+      setEditBusy(false);
     }
   };
 
@@ -620,6 +700,9 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
             <DropdownMenuContent align="start">
               <DropdownMenuItem onClick={iniciarReimpresion}>
                 <Printer className="w-3.5 h-3.5 mr-2" />Reimprimir
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={abrirEditar}>
+                <Pencil className="w-3.5 h-3.5 mr-2" />Editar
               </DropdownMenuItem>
               <DropdownMenuItem onClick={nuevo}>
                 <FilePlus className="w-3.5 h-3.5 mr-2" />Nuevo
@@ -919,6 +1002,74 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       </div>
 
       <ClienteSearchModal isOpen={buscarOpen} onClose={() => setBuscarOpen(false)} onSelectCliente={seleccionarCliente} />
+
+      {/* Opciones > Editar: forma de pago de un recibo grabado */}
+      <Dialog open={editOpen} onOpenChange={(open) => { if (!open) setEditOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar recibo</DialogTitle>
+            <DialogDescription>Cambia la forma de pago de un recibo ya grabado.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                value={editNumero}
+                onChange={(e) => setEditNumero(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarEditPago(); } }}
+                placeholder="Número del recibo" className="font-mono"
+              />
+              <Button type="button" variant="outline" onClick={buscarEditPago} disabled={editBusy}>
+                {editBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              </Button>
+            </div>
+            {editInfo && (
+              <>
+                <div className="rounded-md border bg-slate-50 p-2 text-sm">
+                  <div className="font-mono font-bold">{editInfo.numero}</div>
+                  <div className="truncate">{editInfo.cliente}</div>
+                  <div>Monto: <b>{fmt(editInfo.monto)}</b> · Forma actual: <b>{editInfo.forma}</b></div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Nueva forma de pago</Label>
+                  <Select value={editForma} onValueChange={setEditForma}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {editForma !== 'Efectivo' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label>Cta./Referencia</Label>
+                      <Input value={editCuenta} onChange={(e) => setEditCuenta(e.target.value)} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Banco</Label>
+                      <Input value={editBanco} onChange={(e) => setEditBanco(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {!esAdminUser && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-2 space-y-1.5">
+                    <Label className="flex items-center gap-1 text-amber-800">
+                      <Lock className="w-3.5 h-3.5" /> Contraseña de un administrador
+                    </Label>
+                    <Input type="password" value={editPass} onChange={(e) => setEditPass(e.target.value)} placeholder="Requerida para editar" />
+                    <p className="text-[11px] text-amber-700">Editar recibos requiere autorización administrativa.</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setEditOpen(false)} disabled={editBusy}>Cancelar</Button>
+            <Button type="button" onClick={guardarEdicion} disabled={editBusy || !editInfo}>
+              {editBusy ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <OtrasTransaccionesModal
         isOpen={otrasOpen}
