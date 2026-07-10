@@ -359,6 +359,21 @@ BEGIN
    WHERE p.tenant_id = v_tenant AND p.cliente_id = p_cliente_id AND p.estado = 'activo'
      AND NOT EXISTS (SELECT 1 FROM public.prestamo_cuotas q3 WHERE q3.prestamo_id = p.id AND q3.estado <> 'pagada');
 
+  -- Un pago aceptado por la empresa libera automaticamente el estado SE BUSCA.
+  UPDATE public.cobro_gestiones
+     SET estado = 'cerrada',
+         resultado = 'pago_recibido',
+         metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+           'cerrado_por_pago', true,
+           'pago_id', v_pago_id,
+           'pago_numero', v_numero,
+           'monto_pagado', v_total
+         )
+   WHERE tenant_id = v_tenant
+     AND cliente_id = p_cliente_id
+     AND tipo = 'mandado_buscar'
+     AND estado = 'mandado_buscar';
+
   -- contabilidad: Recibo de Ingreso (caja / transacciones / dashboard)
   INSERT INTO public.recibos_ingreso (tenant_id, numero, cliente_id, fecha, monto_pagado, concepto, formas_pago, usuario_id)
   VALUES (
