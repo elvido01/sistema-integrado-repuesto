@@ -74,21 +74,12 @@ const EditUserModal = ({ isOpen, onClose, user, onUserUpdated }) => {
                 console.error("Invoke Error Context:", error);
                 let errorMsg = error.message;
 
-                if (error.context) {
-                    if (error.context.json) {
-                        errorMsg = error.context.json.error || error.context.json.message || errorMsg;
-                    } else if (error.context.text) {
-                        try {
-                            const parsed = JSON.parse(error.context.text);
-                            errorMsg = parsed.error || parsed.message || errorMsg;
-                        } catch (e) {
-                            // If text is not JSON, it might be the raw error message
-                            if (error.context.text.length < 200) {
-                                errorMsg = error.context.text;
-                            }
-                        }
-                    }
-                }
+                // error.context es la Response HTTP: el cuerpo trae el
+                // mensaje real del servidor (ej. "usuario ya ocupado")
+                try {
+                    const body = await error.context?.json?.();
+                    errorMsg = body?.error || body?.message || errorMsg;
+                } catch { /* cuerpo no-JSON: se queda el mensaje genérico */ }
 
                 throw new Error(errorMsg);
             }

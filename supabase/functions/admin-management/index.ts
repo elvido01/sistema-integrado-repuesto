@@ -200,6 +200,25 @@ Deno.serve(async (req) => {
         if (action === 'update_user') {
             const { email, password, full_name } = updates;
 
+            // Usuario/correo ocupado por OTRA cuenta → mensaje claro
+            // (los emails son unicos en todo el sistema, cross-empresa)
+            if (email) {
+                const { data: dueno } = await supabaseClient
+                    .from('profiles')
+                    .select('id, full_name')
+                    .eq('email', email)
+                    .neq('id', targetUserId)
+                    .maybeSingle();
+                if (dueno?.id) {
+                    return new Response(JSON.stringify({
+                        error: `Ese usuario/correo ya está ocupado por "${dueno.full_name || email}". Elige otro nombre de usuario.`,
+                    }), {
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        status: 409,
+                    });
+                }
+            }
+
             const authUpdates: any = {};
             // email_confirm: el cambio aplica de inmediato (los usuarios
             // internos @usuario.motoflow.app no reciben correos de confirmacion)

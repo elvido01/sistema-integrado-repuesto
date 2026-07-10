@@ -92,9 +92,11 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
 
             if (error) {
                 let errorMsg = error.message;
-                if (error.context?.json?.error) {
-                    errorMsg = error.context.json.error;
-                }
+                // error.context es la Response HTTP: el cuerpo trae el mensaje real
+                try {
+                    const body = await error.context?.json?.();
+                    errorMsg = body?.error || body?.message || errorMsg;
+                } catch { /* cuerpo no-JSON */ }
                 if (/already.*registered|already exists|duplicate/i.test(errorMsg || '')) {
                     errorMsg = `El usuario «${usuario}» ya existe. Elige otro nombre de usuario.`;
                 }
@@ -102,8 +104,10 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
             }
 
             toast({
-                title: "Usuario Creado",
-                description: `Cuenta creada. ${usuario.includes('@') ? usuario : `Usuario: ${usuario}`}. Ya puede iniciar sesión.`,
+                title: data?.linked ? "Usuario Vinculado" : "Usuario Creado",
+                description: data?.linked
+                    ? data.message
+                    : `Cuenta creada. ${usuario.includes('@') ? usuario : `Usuario: ${usuario}`}. Ya puede iniciar sesión.`,
             });
 
             if (onUserCreated) onUserCreated(data?.user);
