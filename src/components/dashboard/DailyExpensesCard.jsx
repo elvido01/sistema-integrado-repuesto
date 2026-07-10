@@ -2,7 +2,7 @@ import React from 'react';
 import { Plus, ReceiptText, WalletCards } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const DailyExpensesCard = ({ gastos = [], caja = 0, onAdd }) => {
+const DailyExpensesCard = ({ gastos = [], caja = 0, onAdd, onEdit }) => {
   const totalGastos = gastos.reduce((sum, g) => sum + (Number(g.monto) || 0), 0);
   const balanceDia = caja;
   const isNegative = balanceDia < 0;
@@ -34,7 +34,12 @@ const DailyExpensesCard = ({ gastos = [], caja = 0, onAdd }) => {
       <div className="flex-1 overflow-auto pr-2 mb-4 space-y-3">
         {gastos.length > 0 ? (
           gastos.map((g) => (
-            <div key={g.id} className="flex justify-between items-center pb-2 border-b border-gray-50 last:border-0 last:pb-0">
+            <div
+              key={g.id}
+              onDoubleClick={() => onEdit?.(g)}
+              title={onEdit ? 'Doble clic: editar o eliminar este gasto' : undefined}
+              className={`flex justify-between items-center pb-2 border-b border-gray-50 last:border-0 last:pb-0 ${onEdit ? 'cursor-pointer hover:bg-rose-50/50 rounded px-1 -mx-1' : ''}`}
+            >
               <div className="flex items-center gap-2 min-w-0 pr-2">
                 <WalletCards className="w-4 h-4 text-rose-400 shrink-0" />
                 <div className="min-w-0">

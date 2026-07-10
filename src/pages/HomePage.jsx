@@ -84,6 +84,7 @@ const HomePage = () => {
 
   const [isCommitmentModalOpen, setIsCommitmentModalOpen] = useState(false);
   const [isDailyExpenseModalOpen, setIsDailyExpenseModalOpen] = useState(false);
+  const [gastoParaEditar, setGastoParaEditar] = useState(null); // doble clic en un gasto de la tarjeta
   const [selectedCommitment, setSelectedCommitment] = useState(null);
   const [payCommitmentTarget, setPayCommitmentTarget] = useState(null);
   const [paySupplierTarget, setPaySupplierTarget] = useState(null);
@@ -308,6 +309,12 @@ const HomePage = () => {
   };
 
   const handleAddDailyExpense = () => {
+    setGastoParaEditar(null);
+    setIsDailyExpenseModalOpen(true);
+  };
+
+  const handleEditDailyExpense = (g) => {
+    setGastoParaEditar(g);
     setIsDailyExpenseModalOpen(true);
   };
 
@@ -598,6 +605,7 @@ const HomePage = () => {
                     gastos={finanzas.gastosDiariosHoy}
                     caja={finanzas.cajaActualContadoHoy}
                     onAdd={handleAddDailyExpense}
+                    onEdit={handleEditDailyExpense}
                   />
                   
                   {/* Compromisos Suplidores (Nuevo) */}
@@ -674,8 +682,10 @@ const HomePage = () => {
       {isAdmin && (
         <DailyExpenseModal
           isOpen={isDailyExpenseModalOpen}
+          gasto={gastoParaEditar}
           onClose={(success) => {
             setIsDailyExpenseModalOpen(false);
+            setGastoParaEditar(null);
             if (success) fetchDashboardData(true);
           }}
         />

@@ -27,7 +27,7 @@ const TIPOS_GASTO = [
   'Otro',
 ];
 
-const DailyExpenseModal = ({ isOpen, onClose }) => {
+const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const { toast } = useToast();
   const { user, tenantId, empresa } = useAuth();
   const montoInputRef = useRef(null);
@@ -66,9 +66,30 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
     setTimeout(() => { montoInputRef.current?.focus(); montoInputRef.current?.select(); }, 80);
   };
 
+  // Eliminar (anular): p. ej. se mandó a comprar algo y no se compró
+  const eliminarGasto = async () => {
+    if (!editandoId) return;
+    if (!window.confirm(`¿Eliminar este gasto de RD$${formData.monto}? El dinero vuelve a la caja.`)) return;
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('gastos_diarios').update({ anulado: true }).eq('id', editandoId);
+      if (error) throw error;
+      toast({ title: 'Gasto eliminado', description: 'El monto regresó a la caja del día.' });
+      setHuboCambios(true);
+      resetForm();
+      await cargarGastosHoy();
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'No se pudo eliminar', description: error.message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
-      resetForm();
+      // Doble clic en la tarjeta del dashboard: abre directo en edición
+      if (gasto?.id) editarGasto(gasto);
+      else resetForm();
       setHuboCambios(false);
       cargarGastosHoy();
       setTimeout(() => {
@@ -77,7 +98,7 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
       }, 80);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, gasto]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -240,9 +261,14 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
 
           <DialogFooter className="pt-4 mt-4 border-t">
             {editandoId && (
-              <Button type="button" variant="outline" onClick={resetForm}>
-                Cancelar edición
-              </Button>
+              <>
+                <Button type="button" variant="destructive" onClick={eliminarGasto} disabled={isSubmitting}>
+                  Eliminar
+                </Button>
+                <Button type="button" variant="outline" onClick={resetForm}>
+                  Cancelar edición
+                </Button>
+              </>
             )}
             <Button type="button" variant="secondary" onClick={() => onClose(huboCambios)}>
               Cerrar
