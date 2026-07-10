@@ -461,10 +461,10 @@ const ReporteTransaccionesDiariasPage = () => {
                 )}
               </TableBody>
               <TableFooter className="sticky bottom-0 bg-slate-200 z-10">
-                <TableRow className="font-bold">
-                  <TableCell colSpan={6} className="text-right uppercase text-xs">Totales →</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(totals.debitos)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(totals.creditos)}</TableCell>
+                <TableRow className="font-bold text-slate-900 hover:bg-slate-200">
+                  <TableCell colSpan={6} className="text-right uppercase text-xs text-slate-900">Totales →</TableCell>
+                  <TableCell className="text-right font-mono text-slate-900">{formatCurrency(totals.debitos)}</TableCell>
+                  <TableCell className="text-right font-mono text-slate-900">{formatCurrency(totals.creditos)}</TableCell>
                 </TableRow>
               </TableFooter>
             </Table>

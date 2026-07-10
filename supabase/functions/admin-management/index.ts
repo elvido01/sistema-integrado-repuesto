@@ -117,6 +117,33 @@ Deno.serve(async (req) => {
                 );
             }
 
+            // Multi-empresa: si el usuario YA existe (creado en otra empresa),
+            // "crearlo" aqui significa VINCULARLO a esta empresa
+            // (usuarios_empresas) para que entre con su misma clave.
+            const { data: existente } = await supabaseClient
+                .from('profiles')
+                .select('id, tenant_id, full_name')
+                .eq('email', email)
+                .maybeSingle();
+            if (existente?.id) {
+                const ueRolExist = role === 'admin' ? 'admin' : 'vendedor';
+                const { error: linkError } = await supabaseClient
+                    .from('usuarios_empresas')
+                    .upsert({
+                        user_id: existente.id,
+                        tenant_id: callerTenantId,
+                        rol: ueRolExist,
+                    }, { onConflict: 'user_id,tenant_id' });
+                if (linkError) throw linkError;
+                return new Response(JSON.stringify({
+                    message: `El usuario ya existía (${existente.full_name || email}) y fue vinculado a esta empresa: entra con su misma clave y puede cambiar de empresa desde el sidebar.`,
+                    linked: true,
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 200,
+                });
+            }
+
             // Create user via admin API → auto-confirms email, no email sent
             const { data: newUser, error: createError } = await supabaseClient.auth.admin.createUser({
                 email,
