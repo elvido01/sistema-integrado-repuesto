@@ -38,20 +38,45 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
     monto: '',
     descripcion: '',
   });
+  // Gastos ya registrados hoy: clic para EDITAR (ej. el mandado costó menos)
+  const [gastosHoy, setGastosHoy] = useState([]);
+  const [editandoId, setEditandoId] = useState(null);
+  const [huboCambios, setHuboCambios] = useState(false);
+
+  const cargarGastosHoy = async () => {
+    if (!tenantId) return;
+    const { data } = await supabase
+      .from('gastos_diarios')
+      .select('id, fecha, tipo_gasto, monto, descripcion')
+      .eq('tenant_id', tenantId)
+      .eq('fecha', todayISO())
+      .eq('anulado', false)
+      .order('created_at', { ascending: false });
+    setGastosHoy(data || []);
+  };
+
+  const resetForm = () => {
+    setEditandoId(null);
+    setFormData({ fecha: todayISO(), tipo_gasto: 'Operativo', monto: '', descripcion: '' });
+  };
+
+  const editarGasto = (g) => {
+    setEditandoId(g.id);
+    setFormData({ fecha: g.fecha, tipo_gasto: g.tipo_gasto || 'Operativo', monto: String(g.monto), descripcion: g.descripcion || '' });
+    setTimeout(() => { montoInputRef.current?.focus(); montoInputRef.current?.select(); }, 80);
+  };
 
   useEffect(() => {
     if (isOpen) {
-      setFormData({
-        fecha: todayISO(),
-        tipo_gasto: 'Operativo',
-        monto: '',
-        descripcion: '',
-      });
+      resetForm();
+      setHuboCambios(false);
+      cargarGastosHoy();
       setTimeout(() => {
         montoInputRef.current?.focus();
         montoInputRef.current?.select();
       }, 80);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handleChange = (e) => {
@@ -79,6 +104,23 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
 
     setIsSubmitting(true);
     try {
+      if (editandoId) {
+        // Corrección de un gasto ya registrado (ej. costó menos de lo anotado)
+        const { error } = await supabase.from('gastos_diarios').update({
+          fecha: formData.fecha,
+          tipo_gasto: formData.tipo_gasto,
+          monto,
+          descripcion: formData.descripcion.trim(),
+        }).eq('id', editandoId);
+        if (error) throw error;
+        toast({ title: 'Gasto actualizado', description: 'La caja se recalcula con el nuevo monto.' });
+        setHuboCambios(true);
+        resetForm();
+        await cargarGastosHoy();
+        setIsSubmitting(false);
+        return; // el modal queda abierto para seguir revisando
+      }
+
       const { error } = await supabase.from('gastos_diarios').insert({
         tenant_id: tenantId,
         fecha: formData.fecha,
@@ -128,12 +170,14 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(false); }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(huboCambios); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Gastos Diarios</DialogTitle>
+          <DialogTitle>{editandoId ? 'Editar Gasto' : 'Gastos Diarios'}</DialogTitle>
           <DialogDescription>
-            Registra una salida de efectivo para rebajarla de caja.
+            {editandoId
+              ? 'Corrige el monto o la descripción del gasto seleccionado.'
+              : 'Registra una salida de efectivo para rebajarla de caja.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -195,15 +239,40 @@ const DailyExpenseModal = ({ isOpen, onClose }) => {
           </div>
 
           <DialogFooter className="pt-4 mt-4 border-t">
-            <Button type="button" variant="secondary" onClick={() => onClose(false)}>
-              Cancelar
+            {editandoId && (
+              <Button type="button" variant="outline" onClick={resetForm}>
+                Cancelar edición
+              </Button>
+            )}
+            <Button type="button" variant="secondary" onClick={() => onClose(huboCambios)}>
+              Cerrar
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Guardar
+              {editandoId ? 'Actualizar' : 'Guardar'}
             </Button>
           </DialogFooter>
         </form>
+
+        {/* Gastos ya registrados HOY — clic para corregir */}
+        {gastosHoy.length > 0 && (
+          <div className="border-t pt-3">
+            <p className="text-[11px] font-bold text-slate-400 uppercase mb-1.5">Gastos de hoy (clic para editar)</p>
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              {gastosHoy.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => editarGasto(g)}
+                  className={`w-full flex items-center justify-between gap-2 text-left text-sm px-2 py-1 rounded border transition-colors ${editandoId === g.id ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
+                >
+                  <span className="truncate">{g.tipo_gasto} — {g.descripcion}</span>
+                  <span className="font-mono font-bold shrink-0">{Number(g.monto).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

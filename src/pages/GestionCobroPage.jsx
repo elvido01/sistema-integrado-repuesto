@@ -240,7 +240,10 @@ const GestionCobroPage = () => {
   const [prioridadFiltro, setPrioridadFiltro] = useState('todas');
   const [cobradorFiltro, setCobradorFiltro] = useState('todos');
   const [savingAction, setSavingAction] = useState(false);
-  const [promiseForm, setPromiseForm] = useState({ fecha: todayDate(), monto: '', nota: '' });
+  // La fecha de la promesa arranca VACÍA a propósito: obligar a elegirla
+  // evita el error humano de dejar la de hoy cuando el cliente dijo
+  // "mañana" (y elegir hoy sigue siendo válido para promesas del día)
+  const [promiseForm, setPromiseForm] = useState({ fecha: '', monto: '', nota: '' });
   const [visitForm, setVisitForm] = useState({ resultado: 'pendiente', nota: '' });
   const [noteText, setNoteText] = useState('');
   const [quickActionMode, setQuickActionMode] = useState('promesa');
@@ -672,12 +675,12 @@ const GestionCobroPage = () => {
   };
 
   const resetPromiseFields = () => {
-    setPromiseForm({ fecha: todayDate(), monto: '', nota: '' });
+    setPromiseForm({ fecha: '', monto: '', nota: '' });
   };
 
   const registrarPromesa = async () => {
     if (!promiseForm.fecha) {
-      toast({ variant: 'destructive', title: 'Fecha requerida' });
+      toast({ variant: 'destructive', title: 'Fecha requerida', description: 'Elige la fecha de la promesa en el calendario (puede ser hoy).' });
       return;
     }
     const montoPromesa = Number(String(promiseForm.monto).replace(/,/g, '')) || null;

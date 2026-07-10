@@ -101,6 +101,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [buscarOpen, setBuscarOpen] = useState(false);
   const [estado, setEstado] = useState(null);
   const [clienteMandadoBuscar, setClienteMandadoBuscar] = useState(false);
+  const [promesa, setPromesa] = useState(null); // promesa de pago activa (Gestión de Cobro)
   const [ultimoPago, setUltimoPago] = useState(null);
   const [numero, setNumero] = useState('—');
   const [loading, setLoading] = useState(false);
@@ -163,6 +164,19 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         .maybeSingle();
       if (gestionError && gestionError.code !== 'PGRST116' && gestionError.code !== '42P01') throw gestionError;
       setClienteMandadoBuscar(!!gestionBuscar);
+
+      // Promesa de pago activa (registrada en Gestión de Cobro): se muestra
+      // con su fecha y monto en la cabecera del recibo
+      const { data: proms, error: promError } = await supabase
+        .from('cobro_gestiones')
+        .select('fecha_promesa, monto_promesa, estado, created_at')
+        .eq('cliente_id', clienteId)
+        .eq('tipo', 'promesa_pago')
+        .not('estado', 'in', '(cumplida,cancelada)')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (promError && promError.code !== '42P01') console.warn('promesa:', promError.message);
+      setPromesa(proms?.[0]?.fecha_promesa ? proms[0] : null);
 
       // Estado de la mora del cliente (para el switch en tiempo real).
       // El campo muestra la tasa EFECTIVA: la del cliente, o la default de la
@@ -298,7 +312,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   };
 
   const nuevo = () => {
-    setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput('');
+    setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput(''); setPromesa(null);
     setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
     setPrestamoFiltro('todos'); setReimpNumero(null); cargarProximoNumero();
   };
@@ -763,6 +777,14 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                   </SelectContent>
                 </Select>
               </div>
+              {promesa && (
+                <div className={`text-[12px] font-bold rounded px-2 py-1 border ${promesa.fecha_promesa < hoy()
+                  ? 'text-red-700 bg-red-50 border-red-200'
+                  : 'text-amber-800 bg-amber-50 border-amber-300'}`}>
+                  🤝 PROMESA DE PAGO{promesa.fecha_promesa < hoy() ? ' (VENCIDA)' : ''}: {formatFechaDMY(promesa.fecha_promesa)}
+                  {Number(promesa.monto_promesa) > 0 ? ` · RD$ ${fmt(promesa.monto_promesa)}` : ''}
+                </div>
+              )}
             </div>
 
             {/* Numero / Fecha / Forma de pago */}
