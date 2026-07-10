@@ -105,10 +105,16 @@ const UsuariosPermissionsPage = () => {
     const fetchUsers = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .order('role', { ascending: true });
+            // Incluye también a los usuarios VINCULADOS a esta empresa
+            // (multi-empresa, usuarios_empresas), no solo los del tenant
+            let { data, error } = await supabase.rpc('get_usuarios_empresa');
+            if (error) {
+                // Fallback si el RPC aún no existe en esta base
+                ({ data, error } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .order('role', { ascending: true }));
+            }
 
             if (error) throw error;
             setUsers(data || []);
