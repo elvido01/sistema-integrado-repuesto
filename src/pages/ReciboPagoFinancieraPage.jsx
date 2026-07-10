@@ -756,10 +756,10 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
             </div>
 
             {/* Cobrador / Préstamo / Último pago */}
-            <div className="border rounded-md p-2 space-y-2">
+            <div className="border rounded-md p-1.5 space-y-1">
               <div className="flex items-center gap-2">
                 <Label className="text-xs w-20">Cobrador</Label>
-                <Input value={cobrador} onChange={(e) => setCobrador(e.target.value)} className="h-8 text-sm" />
+                <Input value={cobrador} onChange={(e) => setCobrador(e.target.value)} className="h-7 text-xs" />
               </div>
               <div className="flex items-center gap-2 min-w-0">
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -770,7 +770,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 </div>
                 <Label className="text-xs w-20 text-right shrink-0">Préstamo</Label>
                 <Select value={prestamoFiltro} onValueChange={setPrestamoFiltro}>
-                  <SelectTrigger className="h-8 text-sm flex-1 min-w-0"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-7 text-xs flex-1 min-w-0"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos…</SelectItem>
                     {prestamosUnicos.map((p) => <SelectItem key={p.id} value={p.id}>{p.num}</SelectItem>)}
@@ -778,10 +778,13 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 </Select>
               </div>
               {promesa && (
-                <div className={`text-[12px] font-bold rounded px-2 py-1 border ${promesa.fecha_promesa < hoy()
-                  ? 'text-red-700 bg-red-50 border-red-200'
-                  : 'text-amber-800 bg-amber-50 border-amber-300'}`}>
-                  🤝 PROMESA DE PAGO{promesa.fecha_promesa < hoy() ? ' (VENCIDA)' : ''}: {formatFechaDMY(promesa.fecha_promesa)}
+                <div
+                  className={`text-[11px] font-bold rounded px-1.5 py-0.5 border truncate leading-tight ${promesa.fecha_promesa < hoy()
+                    ? 'text-red-700 bg-red-50 border-red-200'
+                    : 'text-amber-800 bg-amber-50 border-amber-300'}`}
+                  title={`Promesa de pago registrada en Gestión de Cobro${promesa.fecha_promesa < hoy() ? ' (vencida)' : ''}`}
+                >
+                  🤝 PROMESA{promesa.fecha_promesa < hoy() ? ' VENCIDA' : ' DE PAGO'}: {formatFechaDMY(promesa.fecha_promesa)}
                   {Number(promesa.monto_promesa) > 0 ? ` · RD$ ${fmt(promesa.monto_promesa)}` : ''}
                 </div>
               )}
