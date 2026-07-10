@@ -419,7 +419,8 @@ const CierreCajaPage = () => {
       <head><meta charset="UTF-8">
         <style>
           @page { size: letter; margin: 14mm; }
-          body { margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #000; }
+          html, body { margin: 0; padding: 0; background: #fff; }
+          body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #000; }
           h1 { font-size: 22px; margin: 0; }
           .sub { font-size: 14px; letter-spacing: 2px; font-weight: bold; margin-top: 2px; }
           .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #000; padding-bottom: 8px; }

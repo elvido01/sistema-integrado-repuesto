@@ -38,7 +38,8 @@ export const printInformePrestamo = ({ empresa, prestamo, cliente, valorCuota, t
     <head><meta charset="UTF-8">
       <style>
         @page { size: letter; margin: 12mm; }
-        body { margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #000; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #000; }
         .head { display: flex; align-items: flex-start; border-bottom: 3px double #000; padding-bottom: 4px; }
         .head .fecha { width: 120px; font-size: 12px; }
         .head .centro { flex: 1; text-align: center; }
