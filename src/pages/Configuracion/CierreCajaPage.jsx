@@ -749,8 +749,15 @@ const CierreCajaPage = () => {
                     ['Recibos de Ingreso Caja', resumen.totalRecibosCaja],
                     ['Recibos de Ingreso Móvil', resumen.totalRecibosMovil],
                     ['Recibos de Ingreso (total)', resumen.totalRecibos],
+                    ...(Number(resumen.totalRecibosOtrasFormas) > 0 ? [
+                      ['· Recibos en Efectivo', resumen.totalRecibosEfectivo],
+                      ['· Recibos Transf/Cheque/Tarjeta', resumen.totalRecibosOtrasFormas],
+                    ] : []),
                     ['Pagos a Suplidores (Efectivo)', resumen.totalPagosSuplidores],
                     ['Gastos Diarios', resumen.totalGastosDiarios],
+                    ...(Number(resumen.totalPrestamosEfectivo) > 0 ? [
+                      ['Préstamos (Efectivo)', resumen.totalPrestamosEfectivo],
+                    ] : []),
                   ].map(([label, value, bold, isCount]) => (
                     <div key={label} className={`flex justify-between items-center py-1 ${bold ? 'border-t-2 border-morla-blue pt-2' : ''}`}>
                       <span className={`text-sm ${bold ? 'font-bold text-morla-blue' : 'text-gray-600'}`}>{label}</span>
