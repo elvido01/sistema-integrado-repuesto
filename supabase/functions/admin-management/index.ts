@@ -174,7 +174,9 @@ Deno.serve(async (req) => {
             const { email, password, full_name } = updates;
 
             const authUpdates: any = {};
-            if (email) authUpdates.email = email;
+            // email_confirm: el cambio aplica de inmediato (los usuarios
+            // internos @usuario.motoflow.app no reciben correos de confirmacion)
+            if (email) { authUpdates.email = email; authUpdates.email_confirm = true; }
             if (password) authUpdates.password = password;
 
             // Update Auth User
@@ -186,11 +188,15 @@ Deno.serve(async (req) => {
                 if (updateAuthError) throw updateAuthError;
             }
 
-            // Update Profile Name if provided
-            if (full_name) {
+            // Update Profile (nombre y/o email — la pantalla de usuarios lee
+            // profiles.email, por eso el correo tambien se refleja aqui)
+            const profileUpdates: any = {};
+            if (full_name) profileUpdates.full_name = full_name;
+            if (email) profileUpdates.email = email;
+            if (Object.keys(profileUpdates).length > 0) {
                 const { error: updateProfileError } = await supabaseClient
                     .from('profiles')
-                    .update({ full_name })
+                    .update(profileUpdates)
                     .eq('id', targetUserId);
                 if (updateProfileError) throw updateProfileError;
             }
