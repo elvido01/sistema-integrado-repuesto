@@ -67,6 +67,10 @@ const CierreCajaPage = () => {
   const [saving, setSaving] = useState(false);
   const [loadingResumen, setLoadingResumen] = useState(false);
   const [imprimir, setImprimir] = useState(true);
+  // Papel del impreso del cierre — se recuerda por PC (la caja tiene térmica
+  // 80mm; la oficina, impresora de hoja). Default: la config de la empresa.
+  const [papelCierre, setPapelCierre] = useState(() => localStorage.getItem('cierre_caja_paper') || '');
+  const cambiarPapelCierre = (v) => { setPapelCierre(v); localStorage.setItem('cierre_caja_paper', v); };
 
   /* Resumen de ventas */
   const [resumen, setResumen] = useState(null);
@@ -523,7 +527,7 @@ const CierreCajaPage = () => {
 
   /* ── Print cierre ── */
   const printCierreCaja = (cierre, resumen) => {
-    const esCarta = (empresa?.formato_cierre_caja || 'pos_80mm') === 'carta';
+    const esCarta = (papelCierre || empresa?.formato_cierre_caja || 'pos_80mm') === 'carta';
     const html = esCarta ? printCierreCajaCarta(cierre, resumen) : `
       <!DOCTYPE html>
       <html>
@@ -868,6 +872,17 @@ const CierreCajaPage = () => {
                         <Printer className="h-4 w-4" />
                         Imprimir ?
                       </label>
+                      {imprimir && (
+                        <select
+                          value={papelCierre || empresa?.formato_cierre_caja || 'pos_80mm'}
+                          onChange={(e) => cambiarPapelCierre(e.target.value)}
+                          className="h-9 border border-slate-300 rounded px-2 text-xs font-bold bg-white"
+                          title="Papel del impreso — se recuerda en esta PC"
+                        >
+                          <option value="pos_80mm">📑 Ticket 80mm</option>
+                          <option value="carta">📄 Carta (8.5 x 11)</option>
+                        </select>
+                      )}
                       <Button
                         onClick={handleCerrarTurno}
                         disabled={saving}
