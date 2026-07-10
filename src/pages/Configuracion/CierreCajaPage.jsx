@@ -529,8 +529,10 @@ const CierreCajaPage = () => {
       <head><meta charset="UTF-8">
         <style>
           @page { margin: 0; size: 80mm auto; }
+          html, body { margin: 0; padding: 0; background-color: #fff; }
           body {
-            width: 72mm; margin: 0 auto; padding: 2mm 4mm;
+            width: 68mm; margin: 0; padding: 2mm 4mm;
+            box-sizing: border-box; line-height: 1.2;
             font-family: Arial, Helvetica, sans-serif; font-size: 14px;
             font-weight: 700; letter-spacing: 0.2px; color: #000;
             -webkit-print-color-adjust: exact;
