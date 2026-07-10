@@ -1304,11 +1304,12 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
         .header p { margin: 2px 0; font-size: 14px; }
         .row { display: flex; justify-content: space-between; }
         .separator { border-top: 1px dashed #000; margin: 6px 0; }
-        .det { margin-bottom: 8px; }
+        p { margin: 1px 0; }
+        .det { margin-bottom: 6px; }
         .det div { font-size: ${fDet}; }
-        .firma { margin-top: 26px; text-align: center; }
+        .firma { margin-top: 16px; text-align: center; }
         .firma .linea { border-top: 1px solid #000; width: 60%; margin: 0 auto 3px; }
-        .footer { margin-top: 12px; text-align: center; font-size: ${fDet}; }
+        .footer { margin-top: 6px; text-align: center; font-size: ${fDet}; }
       </style>
     </head>
     <body onload="window.print()">

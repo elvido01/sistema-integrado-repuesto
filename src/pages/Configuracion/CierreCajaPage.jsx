@@ -499,7 +499,7 @@ const CierreCajaPage = () => {
             <table>
               <thead><tr><th>Denominación</th><th class="num">Cant.</th><th class="num">Valor</th></tr></thead>
               <tbody>
-                ${DENOMINACIONES.map(d => {
+                ${DENOMINACIONES.filter(d => Number(cierre.desglose[d.label] || 0) > 0).map(d => {
                   const cant = cierre.desglose[d.label] || 0;
                   const val = d.tipo ? cant : cant * d.value;
                   return `<tr><td>${d.label}</td><td class="num">${cant}</td><td class="num">${formatCurrency(val)}</td></tr>`;
@@ -538,10 +538,11 @@ const CierreCajaPage = () => {
           .text-center { text-align: center; }
           .text-right { text-align: right; }
           .bold { font-weight: 900; }
-          .separator { border-top: 1px dashed #000; margin: 5px 0; }
+          .separator { border-top: 1px dashed #000; margin: 3px 0; }
           h1 { font-size: 19px; margin: 0; font-weight: 900; }
-          .row { display: flex; justify-content: space-between; margin-bottom: 2px; }
-          .total-row { font-weight: 900; font-size: 16px; border-top: 2px solid #000; padding-top: 4px; margin-top: 6px; }
+          p { margin: 1px 0; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 1px; }
+          .total-row { font-weight: 900; font-size: 16px; border-top: 2px solid #000; padding-top: 3px; margin-top: 4px; }
         </style>
       </head>
       <body onload="window.print()">
@@ -604,7 +605,7 @@ const CierreCajaPage = () => {
           <span class="text-right" style="width: 42px;">CANT.</span>
           <span class="text-right" style="width: 84px;">VALOR</span>
         </div>
-        ${DENOMINACIONES.map(d => {
+        ${DENOMINACIONES.filter(d => Number(cierre.desglose[d.label] || 0) > 0).map(d => {
           const cant = cierre.desglose[d.label] || 0;
           const val = d.tipo ? cant : cant * d.value;
           return `<div class="row">
