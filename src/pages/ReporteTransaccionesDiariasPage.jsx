@@ -16,6 +16,7 @@ import { Calendar as CalendarIcon, Search, Printer, X, Loader2 } from 'lucide-re
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateTransaccionesReportePDF, generateFacturaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
+import { printListaTransacciones } from '@/lib/printListaTransacciones';
 import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS, printNotaCreditoPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
@@ -269,12 +270,29 @@ const ReporteTransaccionesDiariasPage = () => {
     }
   }, [closePanel, fetchTransactions, toast]);
 
+  const TIPO_LABEL = {
+    all: 'Todas', FT: 'VENTAS', DV: 'DEVOLUCIONES', PG: 'RECIBO DE INGRESO', NC: 'NOTAS DE CREDITO', AB: 'OTRAS TRANSACCIONES',
+  };
+
   const handlePrint = () => {
     if (transactions.length === 0) {
       toast({ title: 'Aviso', description: 'No hay transacciones para imprimir.' });
       return;
     }
-    generateTransaccionesReportePDF(transactions, filters, totals, empresa);
+    // Hoja carta con el formato "Lista de Transacciones" del sistema viejo
+    printListaTransacciones({
+      empresa,
+      filtros: {
+        desde: filters.fechaDesde,
+        hasta: filters.fechaHasta,
+        clienteNombre: filters.clienteId === 'all' ? '' : (clients.find((c) => c.id === filters.clienteId)?.nombre || ''),
+        transaccion: TIPO_LABEL[filters.tipoTransaccion] || 'Todas',
+        numero: filters.numeroTransaccion || '',
+        descripcion: filters.descripcion || '',
+      },
+      transacciones: transactions,
+      totales: totals,
+    });
   };
 
   useEffect(() => {
@@ -403,18 +421,18 @@ const ReporteTransaccionesDiariasPage = () => {
             </div>
           </div>
 
-          <ScrollArea className="flex-grow border rounded-lg bg-lime-50/20">
+          <ScrollArea className="flex-grow border rounded-lg bg-white">
             <Table>
-              <TableHeader className="bg-gray-200 sticky top-0 z-10">
-                <TableRow>
-                  <TableHead>FECHA</TableHead>
-                  <TableHead>TRANSACCION</TableHead>
-                  <TableHead>NCF</TableHead>
-                  <TableHead>CLIENTE</TableHead>
-                  <TableHead>NOMBRE</TableHead>
-                  <TableHead>DESCRIPCION</TableHead>
-                  <TableHead className="text-right">DEBITOS</TableHead>
-                  <TableHead className="text-right">CREDITOS</TableHead>
+              <TableHeader className="bg-slate-200 sticky top-0 z-10">
+                <TableRow className="[&>th]:h-8 [&>th]:text-slate-700 [&>th]:font-bold [&>th]:italic [&>th]:text-xs">
+                  <TableHead className="w-24">Fecha</TableHead>
+                  <TableHead className="w-28">Transaccion</TableHead>
+                  <TableHead className="w-24">Referencia</TableHead>
+                  <TableHead className="w-32">Cliente</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Descripcion</TableHead>
+                  <TableHead className="text-right w-24">Debitos</TableHead>
+                  <TableHead className="text-right w-28">Creditos</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -424,28 +442,29 @@ const ReporteTransaccionesDiariasPage = () => {
                   <TableRow><TableCell colSpan="8" className="text-center h-48">No se encontraron transacciones con los filtros seleccionados.</TableCell></TableRow>
                 ) : (
                   transactions.map((t, index) => (
-                    <TableRow 
-                      key={index} 
-                      className="hover:bg-lime-100/50 cursor-pointer"
+                    <TableRow
+                      key={index}
+                      className="hover:bg-slate-50 cursor-pointer [&>td]:py-1 [&>td]:text-[13px]"
+                      title="Doble clic: reimprimir el documento"
                       onDoubleClick={() => handleRowDoubleClick(t)}
                     >
-                      <TableCell>{formatInTimeZone(t.fecha, 'dd/MM/yyyy hh:mm:ss a')}</TableCell>
-                      <TableCell>{t.transaccion}</TableCell>
-                      <TableCell>{t.ncf}</TableCell>
-                      <TableCell>{t.cliente_codigo}</TableCell>
-                      <TableCell>{t.cliente_nombre}</TableCell>
-                      <TableCell>{t.descripcion}</TableCell>
-                      <TableCell className="text-right text-blue-600 font-semibold">{formatCurrency(t.debito)}</TableCell>
-                      <TableCell className="text-right text-red-600 font-semibold">{formatCurrency(t.credito)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatInTimeZone(t.fecha, 'dd/MM/yyyy')}</TableCell>
+                      <TableCell className="font-mono">{t.transaccion}</TableCell>
+                      <TableCell className="font-mono text-slate-500">{t.ncf}</TableCell>
+                      <TableCell className="font-mono">{t.cliente_codigo}</TableCell>
+                      <TableCell className="truncate max-w-[220px]" title={t.cliente_nombre || ''}>{t.cliente_nombre}</TableCell>
+                      <TableCell className="truncate max-w-[260px]" title={t.descripcion || ''}>{t.descripcion}</TableCell>
+                      <TableCell className="text-right font-mono">{Number(t.debito) > 0 ? formatCurrency(t.debito) : ''}</TableCell>
+                      <TableCell className="text-right font-mono">{Number(t.credito) > 0 ? formatCurrency(t.credito) : ''}</TableCell>
                     </TableRow>
                   ))
                 )}
               </TableBody>
-              <TableFooter className="sticky bottom-0 bg-gray-200 z-10">
+              <TableFooter className="sticky bottom-0 bg-slate-200 z-10">
                 <TableRow className="font-bold">
-                  <TableCell colSpan={6} className="text-right uppercase">TOTALES →</TableCell>
-                  <TableCell className="text-right text-blue-700">{formatCurrency(totals.debitos)}</TableCell>
-                  <TableCell className="text-right text-red-700">{formatCurrency(totals.creditos)}</TableCell>
+                  <TableCell colSpan={6} className="text-right uppercase text-xs">Totales →</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(totals.debitos)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(totals.creditos)}</TableCell>
                 </TableRow>
               </TableFooter>
             </Table>
