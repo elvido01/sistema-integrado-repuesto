@@ -72,12 +72,21 @@ for (const r of filas) {
 const merc = [...byCodigo.values()];
 console.log(`Unicos por codigo: ${merc.length}`);
 
-const mapProducto = (r, id) => ({
+// Nombre de marca/modelo resueltos desde marcas_modelos del SiiF. Cuando el
+// código no estaba en el catálogo viejo, mysql (con `< archivo`) escribe el
+// texto literal "NULL" → se trata como sin valor.
+const limpioLookup = (v) => { const u = upper(v); return (u && u !== 'NULL') ? u : null; };
+const marcaNom = (r) => limpioLookup(get(r, 'marca_nom'));
+const modeloNom = (r) => limpioLookup(get(r, 'modelo_nom'));
+
+const mapProducto = (r, id, marcaId, modeloId) => ({
   id, tenant_id: TENANT,
   legacy_id: get(r, 'id') ? Number(get(r, 'id')) : null,
   codigo: s(get(r, 'codigo')),
   referencia: s(get(r, 'referencia')) || null,
   descripcion: s(get(r, 'descripcion')) || s(get(r, 'codigo')),
+  marca_id: marcaId || null,
+  modelo_id: modeloId || null,
   costo: num(get(r, 'costo_1')),
   precio: num(get(r, 'precio_1')),
   itbis_pct: itbisPct(get(r, 'itbis')),
@@ -90,15 +99,50 @@ const mapProducto = (r, id) => ({
 if (!COMMIT) {
   const conStock = merc.filter((r) => num(get(r, 'stock')) > 0).length;
   const conPrecio = merc.filter((r) => num(get(r, 'precio_1')) > 0).length;
-  console.log(`Con precio>0: ${conPrecio} | con existencia>0: ${conStock}`);
+  const conMarca = merc.filter((r) => marcaNom(r)).length;
+  const conModelo = merc.filter((r) => modeloNom(r)).length;
+  console.log(`Con precio>0: ${conPrecio} | con existencia>0: ${conStock} | con marca: ${conMarca} | con modelo: ${conModelo}`);
+  console.log(`Marcas distintas: ${new Set(merc.map(marcaNom).filter(Boolean)).size}`);
   console.log('\nMuestra:', JSON.stringify(merc.slice(0, 5).map((r) => ({
-    ...mapProducto(r, '(uuid)'), stock: num(get(r, 'stock')),
+    ...mapProducto(r, '(uuid)', '(marca)', '(modelo)'), marca: marcaNom(r), modelo: modeloNom(r), stock: num(get(r, 'stock')),
   })), null, 2));
   console.log('\n(DRY-RUN — no se escribio nada.)');
   process.exit(0);
 }
 
 // ---- COMMIT ----
+// 0) Resolver/crear marcas y modelos del tenant (upsert por nombre)
+async function fetchMap(table, extraCols = '') {
+  const map = new Map(); let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from(table).select(`id, nombre${extraCols}`).eq('tenant_id', TENANT).range(from, from + 999);
+    if (error) { console.error(`${table}:`, error.message); process.exit(1); }
+    for (const r of data) map.set(upper(r.nombre) + (extraCols.includes('marca_id') ? '|' + r.marca_id : ''), r.id);
+    if (data.length < 1000) break; from += 1000;
+  }
+  return map;
+}
+const marcaMap = await fetchMap('marcas');
+const nuevasMarcas = [...new Set(merc.map(marcaNom).filter(Boolean))].filter((n) => !marcaMap.has(n))
+  .map((nombre) => ({ id: crypto.randomUUID(), tenant_id: TENANT, nombre, activo: true }));
+for (let i = 0; i < nuevasMarcas.length; i += 500) await supabase.from('marcas').insert(nuevasMarcas.slice(i, i + 500));
+nuevasMarcas.forEach((m) => marcaMap.set(upper(m.nombre), m.id));
+
+const modeloMap = await fetchMap('modelos', ', marca_id');
+const nuevosModelos = [];
+for (const r of merc) {
+  const mn = marcaNom(r), mo = modeloNom(r);
+  if (!mn || !mo) continue;
+  const mId = marcaMap.get(mn);
+  const key = mo + '|' + mId;
+  if (!modeloMap.has(key) && !nuevosModelos.find((x) => upper(x.nombre) + '|' + x.marca_id === key)) {
+    nuevosModelos.push({ id: crypto.randomUUID(), tenant_id: TENANT, marca_id: mId, nombre: mo, activo: true });
+  }
+}
+for (let i = 0; i < nuevosModelos.length; i += 500) await supabase.from('modelos').insert(nuevosModelos.slice(i, i + 500));
+nuevosModelos.forEach((m) => modeloMap.set(upper(m.nombre) + '|' + m.marca_id, m.id));
+console.log(`Marcas +${nuevasMarcas.length}, Modelos +${nuevosModelos.length}`);
+
 // 1) productos existentes (upsert por legacy_id / codigo)
 const byLegacy = new Map(); const byCod = new Map(); let f = 0;
 for (;;) {
@@ -111,7 +155,9 @@ for (;;) {
 const prodRows = merc.map((r) => {
   const legacy = get(r, 'id') ? Number(get(r, 'id')) : null;
   const id = (legacy != null && byLegacy.get(legacy)) || byCod.get(s(get(r, 'codigo'))) || crypto.randomUUID();
-  return mapProducto(r, id);
+  const mId = marcaNom(r) ? marcaMap.get(marcaNom(r)) : null;
+  const moId = (marcaNom(r) && modeloNom(r)) ? modeloMap.get(modeloNom(r) + '|' + mId) : null;
+  return mapProducto(r, id, mId, moId);
 });
 
 const B = 500; let ok = 0;
