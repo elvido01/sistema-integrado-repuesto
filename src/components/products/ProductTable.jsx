@@ -33,9 +33,9 @@ const ProductTable = ({
       if (error) throw error;
       toast({
         title: '✅ Movido a Repuestos Morla Nuevo',
-        description: data?.renombrado
-          ? `El código ya existía, se guardó como "${data.codigo}" (la "m" indica que viene de la vieja). Se eliminó de la vieja.`
-          : `Producto ${data?.codigo} agregado al sistema nuevo y eliminado de la vieja.`,
+        description: `${data?.renombrado
+          ? `El código ya existía, se guardó como "${data.codigo}" (la "m" indica que viene de la vieja).`
+          : `Producto ${data?.codigo} agregado al sistema nuevo.`} Existencia trasladada: ${Number(data?.existencia || 0).toFixed(2)}. Eliminado de la vieja.`,
         duration: 5000,
       });
       onMoved && onMoved(product.id);

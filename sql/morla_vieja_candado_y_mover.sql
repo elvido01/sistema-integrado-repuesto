@@ -68,6 +68,7 @@ DECLARE
   v_modelo_id uuid;
   v_new_id    uuid;
   v_renombrado boolean;
+  v_stock     numeric;
 BEGIN
   -- Solo desde la empresa vieja (evita usarlo por error desde otra)
   IF public.get_user_tenant() <> v_origen THEN
@@ -107,7 +108,10 @@ BEGIN
     END IF;
   END IF;
 
-  -- Crear el producto en el nuevo (sin existencia: el stock se maneja allá)
+  -- Existencia actual del producto en la vieja (se traslada al nuevo)
+  v_stock := COALESCE(public.get_stock_actual(p_producto_id), 0);
+
+  -- Crear el producto en el nuevo
   v_new_id := gen_random_uuid();
   INSERT INTO public.productos (
     id, tenant_id, codigo, referencia, descripcion, marca_id, modelo_id, modelos_ids,
@@ -118,12 +122,23 @@ BEGIN
     p.costo, p.precio, p.itbis_pct, p.min_stock, p.max_stock, p.ubicacion, true
   );
 
+  -- Trasladar la existencia como ENTRADA en el nuevo
+  IF v_stock <> 0 THEN
+    INSERT INTO public.inventario_movimientos (
+      tenant_id, producto_id, fecha, tipo, cantidad, costo_unitario, referencia_doc
+    ) VALUES (
+      v_destino, v_new_id, current_date,
+      CASE WHEN v_stock >= 0 THEN 'ENTRADA' ELSE 'SALIDA' END,
+      v_stock, p.costo, 'TRASLADO DESDE MORLA VIEJA'
+    );
+  END IF;
+
   -- Quitarlo de la VIEJA (la idea es ir vaciando REPUESTOS MORLA VIEJA hasta
   -- eliminarla). Primero sus movimientos de existencia (FK), luego el producto.
   DELETE FROM public.inventario_movimientos WHERE producto_id = p_producto_id AND tenant_id = v_origen;
   DELETE FROM public.productos WHERE id = p_producto_id AND tenant_id = v_origen;
 
-  RETURN json_build_object('ok', true, 'codigo', v_codigo, 'renombrado', v_renombrado, 'id', v_new_id, 'eliminado_origen', true);
+  RETURN json_build_object('ok', true, 'codigo', v_codigo, 'renombrado', v_renombrado, 'id', v_new_id, 'existencia', v_stock, 'eliminado_origen', true);
 END;
 $$;
 
