@@ -23,33 +23,46 @@ const ESC = '\x1B';
 const GS = '\x1D';
 
 /**
- * Renderiza un string HTML a un <canvas> del ancho pedido (en px).
- * Usa un contenedor oculto fuera de pantalla. 1px = 1 dot para térmica.
+ * Renderiza un string HTML (plantilla completa, con su propio <style>) a un
+ * <canvas> a su TAMAÑO NATURAL de diseño. Se hace dentro de un IFRAME aislado
+ * para que los estilos de la plantilla NO se filtren a la app (esa fuga dejaba
+ * la pantalla del sistema en blanco un instante). Captura a 2x para nitidez.
+ *
+ * `widthHintPx` solo dimensiona el iframe para que quepa el diseño; el ancho
+ * final del contenido lo decide el CSS de la plantilla (ej. body 72mm).
  */
-async function renderHtmlToCanvas(html: string, widthPx: number): Promise<HTMLCanvasElement> {
-    const host = document.createElement('div');
-    host.style.position = 'fixed';
-    host.style.left = '-100000px';
-    host.style.top = '0';
-    host.style.width = `${widthPx}px`;
-    host.style.background = '#ffffff';
-    // El contenido de las plantillas trae su propio <style>; lo respetamos.
-    host.innerHTML = `<div style="width:${widthPx}px;background:#fff;color:#000;">${stripAutoPrint(html)}</div>`;
-    document.body.appendChild(host);
+async function renderHtmlToCanvas(html: string, widthHintPx: number): Promise<HTMLCanvasElement> {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.left = '-100000px';
+    iframe.style.top = '0';
+    iframe.style.width = `${Math.max(widthHintPx, 1000)}px`;
+    iframe.style.height = '200px';
+    iframe.style.border = '0';
+    iframe.style.background = '#ffffff';
+    document.body.appendChild(iframe);
     try {
-        // Espera a que rendericen fuentes/imágenes embebidas
-        if ((document as any).fonts?.ready) { try { await (document as any).fonts.ready; } catch { /* noop */ } }
-        await new Promise((r) => setTimeout(r, 30));
-        const node = host.firstElementChild as HTMLElement;
-        const canvas = await toCanvas(node, {
+        const doc = iframe.contentWindow!.document;
+        doc.open();
+        doc.write(stripAutoPrint(html));
+        doc.close();
+        // Espera fuentes del iframe
+        const idoc: any = doc;
+        if (idoc.fonts?.ready) { try { await idoc.fonts.ready; } catch { /* noop */ } }
+        await new Promise((r) => setTimeout(r, 60));
+        const body = doc.body;
+        const w = Math.max(1, Math.ceil(body.scrollWidth));
+        const h = Math.max(1, Math.ceil(body.scrollHeight));
+        const canvas = await toCanvas(body, {
             backgroundColor: '#ffffff',
-            pixelRatio: 1,
-            width: widthPx,
+            pixelRatio: 2, // nitidez en térmica
+            width: w,
+            height: h,
             cacheBust: true,
         });
         return canvas;
     } finally {
-        document.body.removeChild(host);
+        document.body.removeChild(iframe);
     }
 }
 
