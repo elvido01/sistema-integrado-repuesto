@@ -128,6 +128,14 @@ public static class RawImage {
             pd.PrinterSettings.Copies = (short)copies;
             pd.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
             pd.OriginAtMargins = false;
+            // Papel TÉRMICO: fijar el tamaño de página al ancho pedido y al alto
+            // EXACTO del contenido (en centésimas de pulgada), así el rollo NO
+            // alimenta hoja en blanco de más.
+            if (widthMM > 0) {
+                int wH = (int)Math.Round(widthMM / 25.4 * 100.0);
+                int hH = (int)Math.Round((double)img.Height / img.Width * wH) + 8;
+                try { pd.DefaultPageSettings.PaperSize = new PaperSize("MFThermal", wH, hH); } catch {}
+            }
             pd.PrintController = new StandardPrintController(); // sin diálogo
             pd.PrintPage += new PrintPageEventHandler(OnPrintPage);
             pd.Print();
@@ -142,8 +150,8 @@ public static class RawImage {
         float scale = target / img.Width;
         float w = img.Width * scale;
         float h = img.Height * scale;
-        float x = e.PageBounds.Left + (widthMM > 0 ? 0 : (e.PageBounds.Width - w) / 2f);
-        e.Graphics.DrawImage(img, x, e.PageBounds.Top, w, h);
+        float x = widthMM > 0 ? 0 : (e.PageBounds.Width - w) / 2f;
+        e.Graphics.DrawImage(img, x, 0, w, h);
         e.HasMorePages = false;
     }
 }

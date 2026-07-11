@@ -17,7 +17,7 @@
 // printHtmlSmart(html, { tipo, anchoMM }) en vez de crear su iframe.
 // ============================================================
 
-import { agentIsAvailable, agentPrintImage, agentPrintRaw } from '@/services/motoflowPrintAgent';
+import { agentIsAvailable, agentPrintImage } from '@/services/motoflowPrintAgent';
 import { findReceiptPrinter, findLabelPrinter } from '@/services/printerAdapter';
 
 const PREF_KEY = 'mf_print_sin_dialogo'; // '1' = usar agente para imprimir sin diálogo
@@ -62,7 +62,7 @@ export async function printHtmlSmart(html, opts = {}) {
     if (isSilentPrintEnabled()) {
         try {
             if (!(await agentIsAvailable())) throw new Error('agente no disponible');
-            const { htmlToEscposRaster, htmlToPngBase64, DOTS_80MM, DOTS_58MM } = await import('@/services/escposRaster');
+            const { htmlToPngBase64, DOTS_80MM, DOTS_58MM } = await import('@/services/escposRaster');
 
             if (tipo === 'carta') {
                 const printer = await findLabelPrinterOrReceipt(preferPrinter);
@@ -71,11 +71,15 @@ export async function printHtmlSmart(html, opts = {}) {
                 return { backend: 'agent' };
             }
 
-            // ticket térmico
-            const anchoDots = (anchoMM && anchoMM <= 58) ? DOTS_58MM : DOTS_80MM;
+            // Ticket térmico → SIEMPRE por imagen GDI (pasa por el driver de
+            // Windows, funciona en CUALQUIER impresora: Star, Epson, Xprinter…).
+            // El ESC/POS raster nativo NO sirve en Star y da basura, por eso no
+            // se usa aquí. El ancho lo fija el driver a `anchoMM`.
+            const es58 = anchoMM && anchoMM <= 58;
+            const anchoDots = es58 ? DOTS_58MM : DOTS_80MM;
             const printer = await findReceiptPrinter(preferPrinter);
-            const escpos = await htmlToEscposRaster(html, anchoDots);
-            await agentPrintRaw(printer, escpos, { format: 'escpos', copies });
+            const png = await htmlToPngBase64(html, anchoDots);
+            await agentPrintImage(printer, png, { widthMM: es58 ? 48 : 72, copies });
             return { backend: 'agent' };
         } catch (err) {
             console.warn('[printHtmlSmart] agente falló, uso navegador:', err?.message || err);

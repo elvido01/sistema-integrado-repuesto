@@ -23,7 +23,7 @@ const path = require('path');
 const os = require('os');
 const { rawPrint, printImage, listPrinters, getPrinterStatus, cancelStalePrintJobs } = require('./lib/winRawPrinter');
 
-const VERSION = '0.7.0';
+const VERSION = '0.7.1';
 const PORT = Number(process.env.PORT) || 9123;
 const MAX_PRINT_BYTES = 5 * 1024 * 1024;
 const MAX_RECENT_JOBS = 100;
