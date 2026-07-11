@@ -695,6 +695,7 @@ const ProductsPage = ({ extraData }) => {
             loadingMore={loading && pagination.page > 1}
             onEdit={handleOpenFormModal}
             onDelete={handleDeleteProduct}
+            onMoved={() => { setSelectedProduct(null); fetchProducts?.(false); }}
             onChangeCode={handleOpenChangeCodeModal}
             selectedProduct={selectedProduct}
             onSelectProduct={setSelectedProduct}

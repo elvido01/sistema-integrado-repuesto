@@ -118,7 +118,12 @@ BEGIN
     p.costo, p.precio, p.itbis_pct, p.min_stock, p.max_stock, p.ubicacion, true
   );
 
-  RETURN json_build_object('ok', true, 'codigo', v_codigo, 'renombrado', v_renombrado, 'id', v_new_id);
+  -- Quitarlo de la VIEJA (la idea es ir vaciando REPUESTOS MORLA VIEJA hasta
+  -- eliminarla). Primero sus movimientos de existencia (FK), luego el producto.
+  DELETE FROM public.inventario_movimientos WHERE producto_id = p_producto_id AND tenant_id = v_origen;
+  DELETE FROM public.productos WHERE id = p_producto_id AND tenant_id = v_origen;
+
+  RETURN json_build_object('ok', true, 'codigo', v_codigo, 'renombrado', v_renombrado, 'id', v_new_id, 'eliminado_origen', true);
 END;
 $$;
 

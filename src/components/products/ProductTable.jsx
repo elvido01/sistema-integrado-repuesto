@@ -17,7 +17,7 @@ const ProductTable = ({
   products, loading, onEdit, onDelete, onChangeCode,
   selectedProduct, onSelectProduct, onPrintLabel, onImageStudio, onToggleEcommerce,
   agrupandoMode = false, seleccionados, onToggleSeleccion,
-  gruposMap = {},
+  gruposMap = {}, onMoved,
 }) => {
   const { toast } = useToast();
   const { tenantId } = useAuth();
@@ -34,10 +34,11 @@ const ProductTable = ({
       toast({
         title: '✅ Movido a Repuestos Morla Nuevo',
         description: data?.renombrado
-          ? `El código ya existía, se guardó como "${data.codigo}" (la "m" indica que viene de la vieja).`
-          : `Producto ${data?.codigo} agregado al sistema nuevo.`,
+          ? `El código ya existía, se guardó como "${data.codigo}" (la "m" indica que viene de la vieja). Se eliminó de la vieja.`
+          : `Producto ${data?.codigo} agregado al sistema nuevo y eliminado de la vieja.`,
         duration: 5000,
       });
+      onMoved && onMoved(product.id);
     } catch (err) {
       toast({ variant: 'destructive', title: 'No se pudo mover', description: err.message, duration: 6000 });
     } finally {
