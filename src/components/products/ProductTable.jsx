@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
-import { Edit, Trash2, Loader2, RefreshCw, Package, Barcode, Store, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
+import { Edit, Trash2, Loader2, RefreshCw, Package, Barcode, Store, Eye, EyeOff, Image as ImageIcon, ArrowRightLeft } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { supabase } from '@/lib/customSupabaseClient';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
+
+// REPUESTOS MORLA VIEJA: solo en esta empresa aparece "Mover a Morla nuevo".
+const MORLA_VIEJA_TENANT = '00000000-0000-0000-0000-000000000002';
 
 const ProductTable = ({
   products, loading, onEdit, onDelete, onChangeCode,
@@ -15,7 +20,30 @@ const ProductTable = ({
   gruposMap = {},
 }) => {
   const { toast } = useToast();
+  const { tenantId } = useAuth();
+  const esMorlaVieja = tenantId === MORLA_VIEJA_TENANT;
   const [sendingToOrder, setSendingToOrder] = useState(null);
+  const [moviendo, setMoviendo] = useState(null);
+
+  const handleMoverAMorlaNuevo = async (product) => {
+    if (moviendo) return;
+    setMoviendo(product.id);
+    try {
+      const { data, error } = await supabase.rpc('mover_producto_a_morla_nuevo', { p_producto_id: product.id });
+      if (error) throw error;
+      toast({
+        title: '✅ Movido a Repuestos Morla Nuevo',
+        description: data?.renombrado
+          ? `El código ya existía, se guardó como "${data.codigo}" (la "m" indica que viene de la vieja).`
+          : `Producto ${data?.codigo} agregado al sistema nuevo.`,
+        duration: 5000,
+      });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo mover', description: err.message, duration: 6000 });
+    } finally {
+      setMoviendo(null);
+    }
+  };
 
   const handleSendToOrden = async (product) => {
     if (sendingToOrder) return;
@@ -175,6 +203,22 @@ const ProductTable = ({
                     </TableRow>
                   </ContextMenuTrigger>
                   <ContextMenuContent className="w-56" style={{ zIndex: 10000 }}>
+                    {esMorlaVieja && (
+                      <>
+                        <ContextMenuItem
+                          className="font-bold text-emerald-700 cursor-pointer flex items-center gap-2 py-2"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            handleMoverAMorlaNuevo(product);
+                          }}
+                          disabled={!!moviendo}
+                        >
+                          {moviendo === product.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
+                          Mover a Repuestos Morla Nuevo
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                      </>
+                    )}
                     <ContextMenuItem
                       className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
                       onSelect={(e) => {
