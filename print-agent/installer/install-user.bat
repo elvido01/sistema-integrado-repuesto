@@ -44,13 +44,22 @@ if not exist "%DEST%" mkdir "%DEST%"
 if not exist "%LOGDIR%" mkdir "%LOGDIR%"
 
 echo [2/4] Deteniendo agente anterior si existe...
+REM Detener el inicio automatico y matar a quien tenga el puerto 9123 (exe o node)
+schtasks /End /TN "Motoflow Print Agent" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 taskkill /F /IM %EXE_NAME% >nul 2>&1
+REM Esperar hasta ~12s a que el puerto 9123 quede libre (evita "archivo en uso")
+powershell -NoProfile -ExecutionPolicy Bypass -Command "for($i=0;$i -lt 12;$i++){ if(-not (Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction SilentlyContinue)){ exit 0 }; Start-Sleep -Seconds 1 }; exit 1" >nul 2>&1
 
 echo [3/4] Copiando agente...
-copy /Y "%SOURCE%" "%TARGET%" >nul
+set /a _ctries=0
+:copyexe
+copy /Y "%SOURCE%" "%TARGET%" >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] No se pudo copiar el archivo a:
-    echo %TARGET%
+    set /a _ctries+=1
+    if !_ctries! LSS 8 ( timeout /t 1 /nobreak >nul & goto copyexe )
+    echo [ERROR] No se pudo copiar a %TARGET% ^(agente anterior en uso^).
+    echo Cierra el agente e intenta de nuevo.
     pause
     exit /b 1
 )

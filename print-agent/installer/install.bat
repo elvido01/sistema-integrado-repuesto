@@ -59,15 +59,28 @@ REM 2. Crear carpeta destino
 echo [1/4] Creando carpeta de instalacion...
 if not exist "%DEST%" mkdir "%DEST%"
 
-REM 3. Detener proceso anterior si existe
-echo [2/4] Deteniendo agente anterior si existe...
+REM 3. Detener y REEMPLAZAR el agente anterior de forma segura.
+REM    (evita el error "archivo en uso": detiene la tarea para que no
+REM     relance, mata a quien tenga el puerto 9123 —exe o node—, espera a
+REM     que el puerto se libere y luego reintenta la copia.)
+echo [2/4] Deteniendo agente anterior...
+schtasks /End /TN "Motoflow Print Agent" >nul 2>&1
+REM Matar a quien tenga el PUERTO 9123 (sea el exe o node) y por nombre de imagen
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 taskkill /F /IM %EXE_NAME% >nul 2>&1
+REM Esperar hasta ~12s a que el puerto 9123 quede libre (evita "archivo en uso")
+powershell -NoProfile -ExecutionPolicy Bypass -Command "for($i=0;$i -lt 12;$i++){ if(-not (Get-NetTCPConnection -LocalPort 9123 -State Listen -ErrorAction SilentlyContinue)){ exit 0 }; Start-Sleep -Seconds 1 }; exit 1" >nul 2>&1
 
-REM 4. Copiar exe
+REM 4. Copiar exe con reintentos (por si el archivo sigue bloqueado un instante)
 echo [3/4] Copiando archivo a %TARGET%...
-copy /Y "%SOURCE%" "%TARGET%" >nul
+set /a _ctries=0
+:copyexe
+copy /Y "%SOURCE%" "%TARGET%" >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] No se pudo copiar el archivo.
+    set /a _ctries+=1
+    if !_ctries! LSS 8 ( timeout /t 1 /nobreak >nul & goto copyexe )
+    echo [ERROR] No se pudo copiar: el agente anterior sigue en uso.
+    echo Cierra el agente ^(o reinicia la PC^) e intenta de nuevo.
     pause
     exit /b 1
 )
