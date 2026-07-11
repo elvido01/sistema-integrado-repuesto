@@ -76,34 +76,48 @@ console.log(`Unicos por codigo: ${merc.length}`);
 // código no estaba en el catálogo viejo, mysql (con `< archivo`) escribe el
 // texto literal "NULL" → se trata como sin valor.
 const limpioLookup = (v) => { const u = upper(v); return (u && u !== 'NULL') ? u : null; };
-const marcaNom = (r) => limpioLookup(get(r, 'marca_nom'));
+const marcaNomRaw = (r) => limpioLookup(get(r, 'marca_nom'));
 
 // Modelo de la MOTO extraído de la descripción (lo que el usuario reconoce:
 // C70, CG150, AX100…). El SiiF no lo guarda en el campo modelo para muchos
 // repuestos (modelo='0000'); sí está en el texto. Extractor curado de alta
 // precisión: familias con cilindrada + algunos nombres propios.
 const MODELOS_NOMBRE = ['STRYKER', 'STRIKER', 'APACHE', 'PLATINA', 'WAVE', 'BIZ', 'DAX', 'TRUENO', 'BESTIA', 'CHAPPY', 'CHAPY'];
+const PREFIJOS = 'CGL?|AX|AXIS|DT|RX|RS|GN|GS|EN|DR|YBR|XTZ|CRF|XR|GY|HLX|GLH|CB|CBF|CD';
 const extraerModeloDesc = (desc) => {
   const d = upper(desc);
   let m = d.match(/\bC(50|70|90|100|110)\b/);            // Honda C-series
   if (m) return 'C' + m[1];
-  m = d.match(/\b(CGL?|AX|AXIS|DT|RX|RS|GN|GS|EN|DR|YBR|XTZ|CRF|XR|GY|HLX|GLH|CB|CBF|CD)\s?-?\s?(\d{2,3})\b/);
+  m = d.match(new RegExp(`\\b(${PREFIJOS})\\s?-?\\s?(\\d{2,3})\\b`));
   if (m) return (m[1] + m[2]).replace(/[\s-]/g, '');
   for (const n of MODELOS_NOMBRE) {
     if (d.includes(n)) return n === 'STRIKER' ? 'STRYKER' : (n === 'CHAPY' ? 'CHAPPY' : n);
   }
   return null;
 };
+// ¿El texto (venga de donde venga) parece un modelo de moto real? Filtra la
+// basura del SiiF (tallas de goma "18", "PRESS CUB", "ALMACEN", "BLANCO"…).
+const esModeloValido = (v) => {
+  if (!v) return false;
+  const u = upper(v);
+  return /^C(50|70|90|100|110)$/.test(u)
+    || new RegExp(`^(${PREFIJOS})\\d{2,3}$`).test(u)
+    || MODELOS_NOMBRE.includes(u);
+};
 
-// Modelo final: prioriza el de la descripción (moto reconocible); si no hay,
-// usa el del SiiF salvo que sea basura (= nombre de la marca, caso modelo '0000').
+// Modelo final: prioriza el de la descripción; si no, acepta el del SiiF SOLO
+// si también parece un modelo de moto real (no talla de goma ni "PRESS CUB").
 const modeloNom = (r) => {
   const porDesc = extraerModeloDesc(get(r, 'descripcion'));
   if (porDesc) return porDesc;
   const siif = limpioLookup(get(r, 'modelo_nom'));
-  if (siif && siif !== marcaNom(r)) return siif;
-  return null;
+  return esModeloValido(siif) ? siif : null;
 };
+
+// Marca final: la del SiiF; si el producto NO trae marca pero SÍ tiene un modelo
+// de moto reconocible, se rotula GENERICO (los modelos cuelgan de una marca, y
+// así el producto muestra su modelo). Los genéricos sin modelo quedan sin marca.
+const marcaNom = (r) => marcaNomRaw(r) || (modeloNom(r) ? 'GENERICO' : null);
 
 const mapProducto = (r, id, marcaId, modeloId) => ({
   id, tenant_id: TENANT,
@@ -113,6 +127,9 @@ const mapProducto = (r, id, marcaId, modeloId) => ({
   descripcion: s(get(r, 'descripcion')) || s(get(r, 'codigo')),
   marca_id: marcaId || null,
   modelo_id: modeloId || null,
+  // El Maestro de Artículos muestra el modelo desde modelos_ids (arreglo),
+  // no desde modelo_id → hay que llenar ambos.
+  modelos_ids: modeloId ? [modeloId] : [],
   costo: num(get(r, 'costo_1')),
   precio: num(get(r, 'precio_1')),
   itbis_pct: itbisPct(get(r, 'itbis')),
