@@ -236,6 +236,14 @@ const PrinterSettings = () => {
             Las facturas y tickets POS salen directo a la impresora, sin la ventana de impresión. Requiere el Motoflow Print Agent corriendo.
           </span>
         </label>
+        {silentPrint && !agentAvailable && (
+          <div className="mt-2 text-[11px] bg-amber-100 border border-amber-300 text-amber-900 rounded p-2">
+            ⚠️ <b>El agente no está corriendo</b> (badge "NO INSTALADO"), por eso las impresiones aún salen con el
+            diálogo del navegador. Instálalo abajo; luego abre{' '}
+            <a href="http://127.0.0.1:9123/health" target="_blank" rel="noreferrer" className="underline font-bold">http://127.0.0.1:9123/health</a>{' '}
+            (debe mostrar texto) y pulsa <b>Detectar</b>. Cuando el badge diga <b>ACTIVO</b>, imprimirá sin diálogo.
+          </div>
+        )}
       </div>
 
       {/* ===========================================================
