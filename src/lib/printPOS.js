@@ -72,9 +72,7 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
   const is4inch = printFormat === 'pos_4inch';
   const pageWidth = is4inch ? '100mm' : '80mm';
   const bodyWidth = is4inch ? '72mm' : '68mm';
-  // Tipografía tamaño COMERCIAL (recibos POS): Arial/Helvetica negrita, cuerpo
-  // ~19-20px. Antes 14-15px se veía muy pequeño impreso.
-  const baseFontSize = is4inch ? '20px' : '19px';
+  const baseFontSize = is4inch ? '15px' : '14px';
 
   const html = `
     <!DOCTYPE html>
@@ -107,37 +105,37 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .header { margin-bottom: 4px; }
-        .header h1 { font-size: 27px; margin: 0; font-weight: 900; letter-spacing: 0.5px; }
-        .header p { margin: 1px 0; font-size: 17px; color: #000; }
+        .header h1 { font-size: 20px; margin: 0; font-weight: 900; letter-spacing: 0.5px; }
+        .header p { margin: 1px 0; font-size: 13px; color: #000; }
 
         .section { margin-bottom: 4px; }
-        .row { display: flex; justify-content: space-between; margin-bottom: 1px; font-size: 18px; }
-        .client-info-row { display: flex; gap: 6px; margin-bottom: 1px; font-size: 18px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 1px; font-size: 14px; }
+        .client-info-row { display: flex; gap: 6px; margin-bottom: 1px; font-size: 14px; }
         .separator { border-top: 1px dashed #000; margin: 4px 0; height: 0; }
         .double-separator { border-top: 2px double #000; margin: 4px 0; height: 0; }
 
         .num { font-family: Arial, Helvetica, sans-serif; }
 
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        th { text-align: left; padding-bottom: 2px; font-size: 17px; border-bottom: 1px solid #000; }
-        .item-name { text-transform: uppercase; padding-top: 4px; font-size: 19px; word-wrap: break-word; line-height: 1.2; }
-        .item-details { padding-bottom: 2px; font-size: 20px; }
+        th { text-align: left; padding-bottom: 2px; font-size: 13px; border-bottom: 1px solid #000; }
+        .item-name { text-transform: uppercase; padding-top: 4px; font-size: 14px; word-wrap: break-word; line-height: 1.2; }
+        .item-details { padding-bottom: 2px; font-size: 15px; }
         .item-details td.text-right { font-family: Arial, Helvetica, sans-serif; }
 
         .totals-container { margin-top: 4px; padding-top: 2px; }
-        .totals-row { display: flex; justify-content: flex-end; margin-bottom: 1px; font-size: 18px; }
+        .totals-row { display: flex; justify-content: flex-end; margin-bottom: 1px; font-size: 14px; }
         .totals-label { text-align: right; padding-right: 6px; flex: 1; }
-        .totals-value { text-align: right; width: 110px; font-variant-numeric: tabular-nums; font-family: Arial, Helvetica, sans-serif; }
+        .totals-value { text-align: right; width: 80px; font-variant-numeric: tabular-nums; font-family: Arial, Helvetica, sans-serif; }
 
-        .grand-total { font-size: 24px; margin-top: 2px; padding-top: 4px; font-weight: 900; border-top: 2px solid #000; }
-        .footer { margin-top: 8px; font-size: 17px; line-height: 1.2; padding-top: 4px; }
-        .notas-factura { margin: 4px 0; font-size: 17px; line-height: 1.25; font-weight: 700; white-space: pre-wrap; word-break: break-word; }
+        .grand-total { font-size: 17px; margin-top: 2px; padding-top: 4px; font-weight: 900; border-top: 2px solid #000; }
+        .footer { margin-top: 8px; font-size: 13px; line-height: 1.2; padding-top: 4px; }
+        .notas-factura { margin: 4px 0; font-size: 13px; line-height: 1.25; font-weight: 700; white-space: pre-wrap; word-break: break-word; }
       </style>
     </head>
     <body onload="window.print()">
       <div class="header text-center">
         ${getHeaderHTML(factura.nombre_emisor_ncf)}
-        <div style="margin-top: 4px; font-size: 21px; letter-spacing: 1px;">FACTURA</div>
+        <div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">FACTURA</div>
       </div>
 
       <div class="section">
