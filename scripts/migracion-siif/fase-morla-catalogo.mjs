@@ -77,7 +77,33 @@ console.log(`Unicos por codigo: ${merc.length}`);
 // texto literal "NULL" → se trata como sin valor.
 const limpioLookup = (v) => { const u = upper(v); return (u && u !== 'NULL') ? u : null; };
 const marcaNom = (r) => limpioLookup(get(r, 'marca_nom'));
-const modeloNom = (r) => limpioLookup(get(r, 'modelo_nom'));
+
+// Modelo de la MOTO extraído de la descripción (lo que el usuario reconoce:
+// C70, CG150, AX100…). El SiiF no lo guarda en el campo modelo para muchos
+// repuestos (modelo='0000'); sí está en el texto. Extractor curado de alta
+// precisión: familias con cilindrada + algunos nombres propios.
+const MODELOS_NOMBRE = ['STRYKER', 'STRIKER', 'APACHE', 'PLATINA', 'WAVE', 'BIZ', 'DAX', 'TRUENO', 'BESTIA', 'CHAPPY', 'CHAPY'];
+const extraerModeloDesc = (desc) => {
+  const d = upper(desc);
+  let m = d.match(/\bC(50|70|90|100|110)\b/);            // Honda C-series
+  if (m) return 'C' + m[1];
+  m = d.match(/\b(CGL?|AX|AXIS|DT|RX|RS|GN|GS|EN|DR|YBR|XTZ|CRF|XR|GY|HLX|GLH|CB|CBF|CD)\s?-?\s?(\d{2,3})\b/);
+  if (m) return (m[1] + m[2]).replace(/[\s-]/g, '');
+  for (const n of MODELOS_NOMBRE) {
+    if (d.includes(n)) return n === 'STRIKER' ? 'STRYKER' : (n === 'CHAPY' ? 'CHAPPY' : n);
+  }
+  return null;
+};
+
+// Modelo final: prioriza el de la descripción (moto reconocible); si no hay,
+// usa el del SiiF salvo que sea basura (= nombre de la marca, caso modelo '0000').
+const modeloNom = (r) => {
+  const porDesc = extraerModeloDesc(get(r, 'descripcion'));
+  if (porDesc) return porDesc;
+  const siif = limpioLookup(get(r, 'modelo_nom'));
+  if (siif && siif !== marcaNom(r)) return siif;
+  return null;
+};
 
 const mapProducto = (r, id, marcaId, modeloId) => ({
   id, tenant_id: TENANT,
