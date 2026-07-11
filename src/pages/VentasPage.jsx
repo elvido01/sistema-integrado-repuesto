@@ -291,6 +291,17 @@ const VentasPage = () => {
   };
 
   const handleConfirmAndPrint = () => {
+    // Morla Vieja (solo consulta): el POS se abre solo para consultar y mover
+    // productos al sistema nuevo. No se puede facturar.
+    if (empresa?.solo_consulta) {
+      toast({
+        variant: 'destructive',
+        title: 'Solo consulta',
+        description: 'REPUESTOS MORLA VIEJA es solo para consultar y mover productos al sistema nuevo. No se puede vender desde esta empresa.',
+        duration: 6000,
+      });
+      return;
+    }
     const activeVendedor = vendedores.find(v => v.id === selectedVendedor);
     handleSave(async (facturaData) => {
       if (facturaData) {
@@ -411,6 +422,12 @@ const VentasPage = () => {
   return (
     <div className="bg-gray-50 h-full flex flex-col">
       <Helmet><title>Ventas — {empresa?.nombre || 'MotoFlow'}</title></Helmet>
+
+      {empresa?.solo_consulta && (
+        <div className="bg-amber-100 border-b-2 border-amber-400 text-amber-900 px-4 py-2 text-sm font-bold text-center">
+          🔒 SOLO CONSULTA — {empresa?.nombre}. Puedes buscar productos y moverlos al sistema nuevo (clic derecho), pero NO se puede vender.
+        </div>
+      )}
 
       <VentasHeader
         date={date}

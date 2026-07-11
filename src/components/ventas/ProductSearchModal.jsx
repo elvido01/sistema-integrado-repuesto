@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Loader2, Search, X, Package, PackageX } from 'lucide-react';
+import { Loader2, Search, X, Package, PackageX, ArrowRightLeft } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -52,6 +52,27 @@ const ProductSearchModal = ({
       : true;
   const [includeZeroStock, setIncludeZeroStock] = useState(includeZeroStockDefault);
   const [sendingToOrder, setSendingToOrder] = useState(null); // product id being sent
+  const [moviendo, setMoviendo] = useState(null);
+  const esMorlaVieja = tenantId === '00000000-0000-0000-0000-000000000002';
+
+  const handleMoverAMorlaNuevo = async (product) => {
+    if (moviendo) return;
+    setMoviendo(product.id);
+    try {
+      const { data, error } = await supabase.rpc('mover_producto_a_morla_nuevo', { p_producto_id: product.id });
+      if (error) throw error;
+      toast({
+        title: '✅ Movido a Repuestos Morla Nuevo',
+        description: `${data?.renombrado ? `Guardado como "${data.codigo}" (la "m" indica que viene de la vieja).` : `Producto ${data?.codigo} agregado al sistema nuevo.`} Existencia trasladada: ${Number(data?.existencia || 0).toFixed(2)}. Eliminado de la vieja.`,
+        duration: 5000,
+      });
+      setProducts((prev) => prev.filter((x) => x.id !== product.id));
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo mover', description: err.message, duration: 6000 });
+    } finally {
+      setMoviendo(null);
+    }
+  };
   const [sendingNote, setSendingNote] = useState(false);
   const [quickNote, setQuickNote] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -403,6 +424,19 @@ const ProductSearchModal = ({
                             </TableRow>
                           </ContextMenuTrigger>
                           <ContextMenuContent className="w-64" style={{ zIndex: 10000 }}>
+                            {esMorlaVieja && (
+                              <ContextMenuItem
+                                className="font-bold text-emerald-700 cursor-pointer flex items-center gap-2 py-2"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  handleMoverAMorlaNuevo(product);
+                                }}
+                                disabled={!!moviendo}
+                              >
+                                {moviendo === product.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
+                                Mover a Repuestos Morla Nuevo
+                              </ContextMenuItem>
+                            )}
                             <ContextMenuItem
                               className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
                               onSelect={(e) => {

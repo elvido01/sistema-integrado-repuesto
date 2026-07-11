@@ -392,8 +392,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         {/* Groups */}
         {navItems.map((item) => {
           const allowedSubItems = item.subItems.filter(sub => {
-            // Empresa solo-consulta (ej. REPUESTOS MORLA VIEJA): sin vender/pedir/cotizar
-            if (empresa?.solo_consulta && ['ventas', 'pedidos', 'cotizaciones', 'cotizaciones-magna'].includes(sub.id)) return false;
+            // Empresa solo-consulta (ej. REPUESTOS MORLA VIEJA): se ocultan
+            // Pedidos y Cotizaciones. El Punto de Venta (ventas) SÍ se deja
+            // abierto para consultar y mover productos al sistema nuevo, pero
+            // el cobro queda bloqueado (banner + trigger en la BD).
+            if (empresa?.solo_consulta && ['pedidos', 'cotizaciones', 'cotizaciones-magna'].includes(sub.id)) return false;
             if (sub.tenantOnly && !(Array.isArray(sub.tenantOnly) ? sub.tenantOnly.includes(tenantId) : sub.tenantOnly === tenantId)) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
             if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
