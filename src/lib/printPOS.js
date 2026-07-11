@@ -1,4 +1,18 @@
 import { formatInTimeZone } from './dateUtils';
+import { printHtmlSmart, printViaBrowser } from './printHtmlSmart';
+
+// Emite una plantilla HTML. Si el usuario activó "impresión sin diálogo" y el
+// agente está corriendo, sale por el agente (silencioso); si no, por el
+// navegador (comportamiento de siempre). Fire-and-forget: no bloquea.
+//   tipo: 'ticket' (térmico ESC/POS) | 'carta' (hoja completa vía imagen GDI)
+//   anchoMM: ancho útil del papel térmico (72 para 4"/80mm, 48 para 58mm)
+const emitirImpresion = (html, opts = {}) => {
+  try {
+    Promise.resolve(printHtmlSmart(html, opts)).catch(() => printViaBrowser(html));
+  } catch (_) {
+    printViaBrowser(html);
+  }
+};
 
 const formatCurrency = (value) => {
   return (parseFloat(value) || 0).toLocaleString('en-US', {
@@ -270,25 +284,8 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-
-  // Remove after some time
-  setTimeout(() => {
-    if (document.body.contains(iframe)) {
-      document.body.removeChild(iframe);
-    }
-  }, 3000);
+  // Impresión sin diálogo por el agente si está activo; sino, navegador.
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: is4inch ? 72 : 68 });
 };
 
 // ── Full Page / Half Page Invoice ──
@@ -450,8 +447,8 @@ const printFacturaDealerFullPage = (factura) => {
       </div>
     </body></html>`;
 
-  const win = window.open('', '_blank');
-  if (win) { win.document.write(html); win.document.close(); }
+  // Factura dealer en hoja completa (carta) → imagen GDI o navegador.
+  emitirImpresion(html, { tipo: 'carta' });
 };
 
 const printFacturaFullPage = (factura, printFormat) => {
@@ -722,24 +719,7 @@ const printFacturaFullPage = (factura, printFormat) => {
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-
-  setTimeout(() => {
-    if (document.body.contains(iframe)) {
-      document.body.removeChild(iframe);
-    }
-  }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
@@ -905,25 +885,7 @@ export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-
-  // Remove after some time
-  setTimeout(() => {
-    if (document.body.contains(iframe)) {
-      document.body.removeChild(iframe);
-    }
-  }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 export const printReciboPOS = (reciboData) => {
@@ -1028,16 +990,7 @@ export const printReciboPOS = (reciboData) => {
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 export const printRecibo4Pulgadas = (reciboData) => {
@@ -1138,16 +1091,7 @@ export const printRecibo4Pulgadas = (reciboData) => {
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 // Comprobante de NOTA DE CREDITO (financiera) — mismo formato del recibo
@@ -1241,16 +1185,7 @@ export const printNotaCreditoPOS = (notaData) => {
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 // Recibo de PAGO de la financiera (prestamos) — replica del ticket de la
@@ -1367,32 +1302,12 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
-// ── Helper interno: imprime un HTML POS en un iframe oculto ──
-const _printPosHTML = (html) => {
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+// ── Helper interno: imprime un HTML POS (agente sin diálogo o navegador) ──
+const _printPosHTML = (html, anchoMM = 72) => {
+  emitirImpresion(html, { tipo: 'ticket', anchoMM });
 };
 
 // ── Plantilla compartida del comprobante de pago (ticket POS) ──
@@ -1722,18 +1637,7 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -1899,18 +1803,7 @@ export const printCotizacionMagnaPOS = (cotizacion, paperSize = '4inch', lines =
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 // ── Helper: Letter-size (8.5 x 11) print for Cotización Magna ──
@@ -2135,18 +2028,7 @@ const printCotizacionMagnaLetter = (cotizacion, vals, lines = []) => {
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -2385,18 +2267,7 @@ export const printCompraPOS = (compra, suplidor, detalles, paperSize = '4inch') 
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 export const printOrdenCompraPOS = (orden, suplidor, detalles, paperSize = '4inch') => {
@@ -2565,18 +2436,7 @@ export const printOrdenCompraPOS = (orden, suplidor, detalles, paperSize = '4inc
     </html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2721,18 +2581,7 @@ export const printPagoSuplidorPOS = (pago, suplidorNombre, detalles, formasPago,
     </body></html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -2834,13 +2683,7 @@ export const printEntradaPOS = (entrada, almacen, detalles, empresa = {}) => {
     </body></html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0';
-  iframe.style.width = '0'; iframe.style.height = '0'; iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2917,11 +2760,5 @@ export const printSalidaPOS = (salida, almacen, detalles, empresa = {}) => {
     </body></html>
   `;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0';
-  iframe.style.width = '0'; iframe.style.height = '0'; iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  iframe.contentWindow.document.open();
-  iframe.contentWindow.document.write(html);
-  iframe.contentWindow.document.close();
+  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
 };

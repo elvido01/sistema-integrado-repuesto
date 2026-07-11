@@ -21,9 +21,9 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { rawPrint, listPrinters, getPrinterStatus } = require('./lib/winRawPrinter');
+const { rawPrint, printImage, listPrinters, getPrinterStatus, cancelStalePrintJobs } = require('./lib/winRawPrinter');
 
-const VERSION = '0.6.1';
+const VERSION = '0.7.0';
 const PORT = Number(process.env.PORT) || 9123;
 const MAX_PRINT_BYTES = 5 * 1024 * 1024;
 const MAX_RECENT_JOBS = 100;
@@ -131,8 +131,10 @@ async function processQueue() {
     try {
       job.status = 'printing';
       job.startedAt = new Date().toISOString();
-      flog(`[queue] start job=${job.jobID} printer="${job.printerName}" bytes=${job.buffer.length}`);
-      const result = await rawPrint(job.printerName, job.buffer);
+      flog(`[queue] start job=${job.jobID} kind=${job.kind || 'raw'} printer="${job.printerName}" bytes=${job.buffer.length}`);
+      const result = job.kind === 'image'
+        ? await printImage(job.printerName, job.buffer, job.opts || {})
+        : await rawPrint(job.printerName, job.buffer, job.opts || {});
       job.finishedAt = new Date().toISOString();
       job.ok = !!result.ok;
       job.status = result.ok ? 'complete' : 'failed';
@@ -152,11 +154,13 @@ async function processQueue() {
   stats.queueLength = 0;
 }
 
-function enqueuePrint(printerName, buffer) {
+function enqueuePrint(printerName, buffer, kind = 'raw', opts = {}) {
   const jobID = `mf-${Date.now()}-${nextJobId++}`;
   return new Promise((resolve) => {
     const job = {
       jobID,
+      kind,
+      opts,
       printerName,
       buffer,
       bytes: buffer.length,
@@ -231,6 +235,7 @@ app.post('/print/raw', async (req, res) => {
   try {
     const body = req.body || {};
     const { printer: printerName, data, format, encoding } = body;
+    const copies = Math.max(1, Math.min(20, Math.round(Number(body.copies) || 1)));
 
     if (!printerName || typeof printerName !== 'string') return res.status(400).json({ ok: false, error: 'printer requerido' });
     if (!data || typeof data !== 'string') return res.status(400).json({ ok: false, error: 'data requerido' });
@@ -253,9 +258,9 @@ app.post('/print/raw', async (req, res) => {
       return res.status(413).json({ ok: false, error: `Trabajo demasiado grande (${buffer.length} bytes)` });
     }
 
-    flog(`[print] ${printerName} ${buffer.length} bytes (format=${format || 'raw'}) [cola=${printQueue.length}]`);
+    flog(`[print] ${printerName} ${buffer.length} bytes (format=${format || 'raw'}, copies=${copies}) [cola=${printQueue.length}]`);
 
-    const result = await enqueuePrint(printerName, buffer);
+    const result = await enqueuePrint(printerName, buffer, 'raw', { copies });
     stats.lastPrintAt = new Date().toISOString();
     if (result.ok) {
       stats.printsOk++;
@@ -270,6 +275,54 @@ app.post('/print/raw', async (req, res) => {
     flog('[print] EXCEPTION: ' + err.message);
     stats.printsFailed++;
     stats.lastError = err.message;
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ────────────────────────────────────────────────
+// /print/image — imprime un PNG (base64) via GDI, SIN diálogo.
+// La web renderiza cualquier plantilla HTML a imagen y la manda aquí:
+// sirve para facturas/tickets térmicos Y para hojas carta/A4 en
+// impresoras láser/inkjet, fiel al diseño y sin ventana del navegador.
+//   body: { printer, data(base64 png), widthMM?, copies? }
+//     widthMM = ancho del papel térmico (ej. 72). 0/omitido = hoja completa.
+// ────────────────────────────────────────────────
+app.post('/print/image', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const { printer: printerName, data } = body;
+    const widthMM = Math.max(0, Math.min(300, Math.round(Number(body.widthMM) || 0)));
+    const copies = Math.max(1, Math.min(20, Math.round(Number(body.copies) || 1)));
+
+    if (!printerName || typeof printerName !== 'string') return res.status(400).json({ ok: false, error: 'printer requerido' });
+    if (!data || typeof data !== 'string') return res.status(400).json({ ok: false, error: 'data (png base64) requerido' });
+
+    let buffer;
+    try {
+      // acepta con o sin prefijo data:image/png;base64,
+      const b64 = data.replace(/^data:image\/\w+;base64,/, '');
+      buffer = Buffer.from(b64, 'base64');
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: 'data inválido: ' + err.message });
+    }
+    if (!buffer.length) return res.status(400).json({ ok: false, error: 'data vacio' });
+    if (buffer.length > MAX_PRINT_BYTES) return res.status(413).json({ ok: false, error: `Imagen demasiado grande (${buffer.length} bytes)` });
+
+    flog(`[image] ${printerName} ${buffer.length} bytes (widthMM=${widthMM}, copies=${copies}) [cola=${printQueue.length}]`);
+    const result = await enqueuePrint(printerName, buffer, 'image', { widthMM, copies });
+    stats.lastPrintAt = new Date().toISOString();
+    if (result.ok) {
+      stats.printsOk++;
+      res.json({ ok: true, jobID: result.jobID, bytes: buffer.length, printer: printerName });
+    } else {
+      stats.printsFailed++;
+      stats.lastError = result.error;
+      flog('[image] FAILED: ' + result.error);
+      res.status(500).json({ ok: false, jobID: result.jobID, error: result.error });
+    }
+  } catch (err) {
+    flog('[image] EXCEPTION: ' + err.message);
+    stats.printsFailed++;
     res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -315,6 +368,27 @@ app.post('/spooler/restart', async (req, res) => {
 // Si lo instalaste con el wrapper restart.bat, este endpoint
 // hace exit(0) y el wrapper lo relanza. Si lo corres directo,
 // solo termina el proceso (tienes que reiniciarlo manualmente).
+app.post('/spooler/clear-stale', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const olderThanMinutes = Number(body.olderThanMinutes) || 30;
+    const printerName = typeof body.printer === 'string' ? body.printer : '';
+    flog(`[spooler] limpiar trabajos viejos printer="${printerName || '*'}" olderThan=${olderThanMinutes}m`);
+    const result = await cancelStalePrintJobs({ printerName, olderThanMinutes });
+    const removedCount = Array.isArray(result.removed) ? result.removed.length : 0;
+    const failedCount = Array.isArray(result.failed) ? result.failed.length : 0;
+    flog(`[spooler] limpieza complete removed=${removedCount} failed=${failedCount}`);
+    res.status(result.ok ? 200 : 207).json(result);
+  } catch (err) {
+    flog('[spooler] clear-stale FAILED: ' + err.message);
+    res.status(500).json({
+      ok: false,
+      error: err.message,
+      hint: 'Puede requerir ejecutar el agente como Administrador',
+    });
+  }
+});
+
 app.post('/restart-self', (req, res) => {
   flog('[restart-self] solicitado, saliendo en 500ms');
   res.json({ ok: true, message: 'Agente se reiniciará en 500ms' });
@@ -340,6 +414,11 @@ app.use((err, req, res, next) => {
 // para que el wrapper start-as-service.bat lo relance.
 // (Si solo logueamos sin salir, Node sigue con estado posiblemente corrupto.)
 process.on('uncaughtException', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    flog(`[startup] puerto ${PORT} ya esta en uso; otro agente esta corriendo. Saliendo sin relanzar.`);
+    setTimeout(() => process.exit(0), 100);
+    return;
+  }
   flog('[uncaughtException] ' + (err.stack || err.message));
   flog('[exit] saliendo con code 1 para que el wrapper relance');
   setTimeout(() => process.exit(1), 100);
@@ -379,7 +458,9 @@ app.listen(PORT, '127.0.0.1', () => {
   flog('    GET  /jobs');
   flog('    GET  /jobs/:jobID');
   flog('    POST /print/raw');
+  flog('    POST /print/image');
   flog('    POST /spooler/restart');
+  flog('    POST /spooler/clear-stale');
   flog('    POST /restart-self');
   flog('═══════════════════════════════════════════════════');
 });

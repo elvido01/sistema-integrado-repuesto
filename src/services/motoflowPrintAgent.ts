@@ -157,6 +157,44 @@ export function agentPrintEscPos(printerName: string, escpos: string) {
 }
 
 /**
+ * Imprime un PNG (base64, sin prefijo) via GDI en cualquier impresora Windows,
+ * SIN diálogo. widthMM = ancho del papel térmico (ej. 72); 0 = hoja completa
+ * (carta/A4). Requiere agente v0.7+.
+ */
+export async function agentPrintImage(
+    printerName: string,
+    pngBase64: string,
+    opts: { widthMM?: number; copies?: number } = {},
+): Promise<{ ok: boolean; bytes?: number; error?: string }> {
+    if (!(await agentIsAvailable())) {
+        throw new AgentNotAvailableError('Motoflow Print Agent no detectado');
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), AGENT_PRINT_TIMEOUT);
+    try {
+        const r = await fetch(`${AGENT_URL}/print/image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: ctrl.signal,
+            body: JSON.stringify({
+                printer: printerName,
+                data: pngBase64,
+                widthMM: opts.widthMM || 0,
+                copies: opts.copies || 1,
+            }),
+        });
+        const json = await r.json();
+        if (!r.ok || !json.ok) throw new Error(json.error || `Agent /print/image HTTP ${r.status}`);
+        return json;
+    } catch (err: any) {
+        if (err?.name === 'AbortError') throw new Error('Motoflow Print Agent no respondió al imprimir la imagen.');
+        throw err;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/**
  * Stats del agente (uptime, prints OK/fallidos, ultimo error, etc.)
  * Util para mostrar estado en UI de configuración.
  */
@@ -236,6 +274,28 @@ export async function agentRestartSpooler(): Promise<{ ok: boolean; message?: st
     const r = await fetch(`${AGENT_URL}/spooler/restart`, { method: 'POST' });
     const json = await r.json();
     if (!r.ok || !json.ok) {
+        return { ok: false, error: json.error || `HTTP ${r.status}`, hint: json.hint };
+    }
+    return json;
+}
+
+export async function agentClearStalePrintJobs(
+    olderThanMinutes = 30,
+    printerName?: string,
+): Promise<{ ok: boolean; olderThanMinutes?: number; removed?: any[]; failed?: any[]; error?: string; hint?: string }> {
+    if (!(await agentIsAvailable())) {
+        throw new AgentNotAvailableError('Motoflow Print Agent no detectado');
+    }
+    const r = await fetch(`${AGENT_URL}/spooler/clear-stale`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            olderThanMinutes,
+            printer: printerName || '',
+        }),
+    });
+    const json = await r.json();
+    if (!r.ok && r.status !== 207) {
         return { ok: false, error: json.error || `HTTP ${r.status}`, hint: json.hint };
     }
     return json;

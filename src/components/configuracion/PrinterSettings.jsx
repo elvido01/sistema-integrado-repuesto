@@ -19,8 +19,10 @@ import {
   agentGetPrinterStatus,
   agentRestartSpooler,
   agentRestartSelf,
+  agentClearStalePrintJobs,
 } from '@/services/motoflowPrintAgent';
 import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
+import { isSilentPrintEnabled, setSilentPrintEnabled } from '@/lib/printHtmlSmart';
 
 // localStorage keys para impresoras QZ Tray (todas las Windows)
 const QZ_RECEIPT_KEY = 'qz_receipt_printer';
@@ -50,9 +52,12 @@ const PrinterSettings = () => {
   const [agentPrinterStatus, setAgentPrinterStatus] = useState([]);
   const [restartingSpooler, setRestartingSpooler] = useState(false);
   const [restartingAgent, setRestartingAgent] = useState(false);
+  const [clearingStaleQueue, setClearingStaleQueue] = useState(false);
 
   // Selector de backend activo
   const [backend, setBackend] = useState(() => getPreferredBackend());
+  const [silentPrint, setSilentPrint] = useState(() => isSilentPrintEnabled());
+
 
   const handleBackendChange = (newBackend) => {
     setPreferredBackend(newBackend);
@@ -217,6 +222,20 @@ const PrinterSettings = () => {
         <p className="text-[10px] text-slate-500 mt-2">
           <b>Auto:</b> usa Motoflow Print Agent si está instalado, sino QZ Tray como fallback. Ideal para que cada cliente use lo que ya tiene.
         </p>
+
+        {/* Impresión sin diálogo (agente) para TODOS los documentos */}
+        <label className="flex items-start gap-2 mt-3 pt-3 border-t border-slate-200 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 w-4 h-4 accent-emerald-600"
+            checked={silentPrint}
+            onChange={(e) => { setSilentPrint(e.target.checked); setSilentPrintEnabled(e.target.checked); }}
+          />
+          <span className="text-[11px] text-slate-700">
+            <b>Imprimir SIN diálogo del navegador</b> (usa el agente para facturas, tickets y demás documentos).
+            Las facturas y tickets POS salen directo a la impresora, sin la ventana de impresión. Requiere el Motoflow Print Agent corriendo.
+          </span>
+        </label>
       </div>
 
       {/* ===========================================================
@@ -227,7 +246,12 @@ const PrinterSettings = () => {
           <Zap className="w-5 h-5 text-emerald-700" />
           <h3 className="text-sm font-bold uppercase text-emerald-900">Motoflow Print Agent</h3>
           {agentAvailable ? (
-            <span className="text-[10px] font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">ACTIVO</span>
+            <>
+              <span className="text-[10px] font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">ACTIVO</span>
+              <span className="text-[10px] font-bold bg-white text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full">
+                VERSION {agentHealth?.version ? `v${agentHealth.version}` : 'NO DETECTADA'}
+              </span>
+            </>
           ) : (
             <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">NO INSTALADO</span>
           )}
@@ -238,8 +262,14 @@ const PrinterSettings = () => {
           <div className="text-xs text-emerald-900 space-y-2">
             <p>
               ✅ Agente corriendo en <code className="bg-white px-1 rounded">127.0.0.1:9123</code> · <b>{agentPrintersCount}</b> impresoras detectadas.
-              {agentHealth?.version && <span className="ml-1 text-[10px] text-emerald-700">v{agentHealth.version}</span>}
             </p>
+
+            <div className="flex items-center justify-between gap-2 bg-white rounded p-2 border border-emerald-100">
+              <span className="text-[10px] uppercase text-slate-500 font-bold">Version instalada</span>
+              <span className="text-sm font-mono font-bold text-emerald-800">
+                {agentHealth?.version ? `v${agentHealth.version}` : 'No detectada'}
+              </span>
+            </div>
 
             {/* Stats del agente */}
             {agentHealth?.stats && (
@@ -322,6 +352,44 @@ const PrinterSettings = () => {
             <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-emerald-200">
               <Button size="sm" variant="ghost" className="h-7 text-[11px] text-emerald-700" onClick={refreshAgent} disabled={agentChecking}>
                 <RefreshCw className={`w-3 h-3 mr-1 ${agentChecking ? 'animate-spin' : ''}`} /> Reconectar
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] border-orange-300 text-orange-700 hover:bg-orange-50"
+                disabled={clearingStaleQueue}
+                onClick={async () => {
+                  if (!window.confirm('Limpiar trabajos de impresion viejos en Windows? Se borraran solo trabajos con mas de 30 minutos en cola.')) return;
+                  setClearingStaleQueue(true);
+                  try {
+                    const r = await agentClearStalePrintJobs(30);
+                    const removed = r.removed?.length || 0;
+                    const failed = r.failed?.length || 0;
+                    if (r.ok || removed > 0) {
+                      toast({
+                        title: 'Cola revisada',
+                        description: removed > 0
+                          ? `Se eliminaron ${removed} trabajos viejos de Windows${failed ? `; ${failed} no se pudieron borrar.` : '.'}`
+                          : 'No habia trabajos viejos retenidos en Windows.',
+                      });
+                      setTimeout(refreshAgent, 1000);
+                    } else {
+                      toast({
+                        variant: 'destructive',
+                        title: 'No se pudo limpiar la cola',
+                        description: r.error || 'Windows no permitio borrar los trabajos.',
+                      });
+                    }
+                  } catch (e) {
+                    toast({ variant: 'destructive', title: 'Error', description: e.message });
+                  } finally {
+                    setClearingStaleQueue(false);
+                  }
+                }}
+              >
+                <Trash2 className={`w-3 h-3 mr-1 ${clearingStaleQueue ? 'animate-pulse' : ''}`} />
+                Limpiar cola vieja
               </Button>
 
               <Button

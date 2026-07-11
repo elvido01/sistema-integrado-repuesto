@@ -22,6 +22,8 @@ Impresora Star / Zebra / EPSON / etc.
 | `GET` | `/jobs` | — | `{ ok, jobs, queueLength }` |
 | `GET` | `/jobs/:jobID` | — | `{ ok, job }` |
 | `POST` | `/print/raw` | `{ printer, data, format?, encoding? }` | `{ ok, jobID, bytes, printer }` |
+| `POST` | `/spooler/restart` | - | Reinicia el Print Spooler de Windows |
+| `POST` | `/spooler/clear-stale` | `{ olderThanMinutes?, printer? }` | Limpia trabajos viejos retenidos en Windows |
 
 ### Ejemplo de impresión
 
@@ -73,9 +75,9 @@ Nota: el agente no usa `node-printer`; compila un worker C# temporal (`rawprinte
 
 Estado actual:
 - `installer.bat` copia el exe a `C:\Program Files\Motoflow\PrintAgent\`
-- Autostart por Task Scheduler, HKLM/HKCU Run y carpeta Startup
+- Autostart por una sola via: Task Scheduler con privilegios altos. Si falla, usa HKLM Run como respaldo unico.
 - `install-user.bat` instala sin administrador en `%LOCALAPPDATA%\Motoflow\PrintAgent\` y registra HKCU\Run
-- Pendiente: servicio Windows real y tray icon con menu de diagnostico
+- Pendiente: tray icon con menu de diagnostico
 
 ## Integración con Motoflow Web
 

@@ -97,12 +97,68 @@ public static class RawPrinter {
 `;
 
 // ────────────────────────────────────────────────
+// Worker C# para imprimir IMAGENES via GDI (System.Drawing.Printing).
+// Sirve para CUALQUIER impresora Windows (laser/inkjet carta y térmica),
+// SIN diálogo del navegador. La web renderiza la plantilla HTML a PNG y
+// el agente la manda a la impresora tal cual (fiel al diseño).
+//   uso: rawimage.exe <printer> <pngFile> [widthMM] [copies]
+//        widthMM=0 → usa el ancho completo de la página (carta/A4)
+// ────────────────────────────────────────────────
+const IMAGE_CSHARP_CODE = `
+using System;
+using System.Drawing;
+using System.Drawing.Printing;
+
+public static class RawImage {
+    static Image img;
+    static int widthMM;
+    public static int Main(string[] args) {
+        try {
+            if (args.Length < 2) { Console.WriteLine("ERR:uso rawimage <printer> <png> [widthMM] [copies]"); return 2; }
+            string printer = args[0];
+            widthMM = args.Length >= 3 ? int.Parse(args[2]) : 0;
+            int copies = args.Length >= 4 ? int.Parse(args[3]) : 1;
+            using (Image loaded = Image.FromFile(args[1])) {
+                img = new Bitmap(loaded);
+            }
+            PrintDocument pd = new PrintDocument();
+            pd.PrinterSettings.PrinterName = printer;
+            if (!pd.PrinterSettings.IsValid) { Console.WriteLine("ERR:impresora invalida: " + printer); return 1; }
+            if (copies < 1) copies = 1;
+            pd.PrinterSettings.Copies = (short)copies;
+            pd.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
+            pd.OriginAtMargins = false;
+            pd.PrintController = new StandardPrintController(); // sin diálogo
+            pd.PrintPage += new PrintPageEventHandler(OnPrintPage);
+            pd.Print();
+            Console.WriteLine("OK:1");
+            return 0;
+        } catch (Exception ex) { Console.WriteLine("ERR:" + ex.Message); return 1; }
+    }
+    static void OnPrintPage(object sender, PrintPageEventArgs e) {
+        float target = widthMM > 0
+            ? (float)(widthMM / 25.4 * 100.0)   // ancho fijo en centésimas de pulgada (térmica/POS)
+            : e.PageBounds.Width;                // ancho completo de la hoja (carta/A4)
+        float scale = target / img.Width;
+        float w = img.Width * scale;
+        float h = img.Height * scale;
+        float x = e.PageBounds.Left + (widthMM > 0 ? 0 : (e.PageBounds.Width - w) / 2f);
+        e.Graphics.DrawImage(img, x, e.PageBounds.Top, w, h);
+        e.HasMorePages = false;
+    }
+}
+`;
+
+// ────────────────────────────────────────────────
 // Setup: compila el DLL una vez al cargar el módulo
 // ────────────────────────────────────────────────
 const DLL_DIR = path.join(os.tmpdir(), 'motoflow-print-agent');
 const DLL_PATH = path.join(DLL_DIR, 'rawprinter.dll');
 const EXE_PATH = path.join(DLL_DIR, 'rawprinter.exe');
 const CS_PATH = path.join(DLL_DIR, 'rawprinter.cs');
+const IMAGE_EXE_PATH = path.join(DLL_DIR, 'rawimage.exe');
+const IMAGE_CS_PATH = path.join(DLL_DIR, 'rawimage.cs');
+let setupImageOk = false;
 
 let setupPromise = null;
 let setupOk = false;
@@ -161,12 +217,68 @@ async function setupDll() {
             });
             setupExeOk = true;
             console.log('[PrintAgent] Worker EXE compilado:', EXE_PATH);
+
+            // Worker de IMAGEN (GDI) — necesita referencia a System.Drawing
+            try {
+                fs.writeFileSync(IMAGE_CS_PATH, IMAGE_CSHARP_CODE, 'utf8');
+                const needsImg = !fs.existsSync(IMAGE_EXE_PATH)
+                    || fs.statSync(IMAGE_EXE_PATH).mtimeMs < fs.statSync(IMAGE_CS_PATH).mtimeMs;
+                if (needsImg) {
+                    console.log('[PrintAgent] Compilando worker de imagen (GDI)...');
+                    execSync(`"${csc}" /target:exe /out:"${IMAGE_EXE_PATH}" /reference:System.Drawing.dll "${IMAGE_CS_PATH}"`, {
+                        stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000,
+                    });
+                }
+                setupImageOk = true;
+                console.log('[PrintAgent] Worker de imagen listo:', IMAGE_EXE_PATH);
+            } catch (imgErr) {
+                console.warn('[PrintAgent] Worker de imagen no disponible:', imgErr.message);
+            }
         } catch (err) {
             console.warn('[PrintAgent] Compilación de DLL falló:', err.message);
             console.warn('[PrintAgent] Usando fallback (Add-Type por print, más lento).');
         }
     })();
     return setupPromise;
+}
+
+// ────────────────────────────────────────────────
+// printImage: imprime un PNG via GDI (cualquier impresora, sin diálogo)
+// ────────────────────────────────────────────────
+async function printImage(printerName, pngBuffer, opts = {}) {
+    await setupDll();
+    if (!setupImageOk || !fs.existsSync(IMAGE_EXE_PATH)) {
+        return { ok: false, error: 'Worker de imagen no disponible (falta .NET/System.Drawing). Usa impresión RAW o el navegador.' };
+    }
+    const widthMM = Math.max(0, Math.round(Number(opts.widthMM) || 0));
+    const copies = Math.max(1, Math.round(Number(opts.copies) || 1));
+    const tempFile = path.join(os.tmpdir(), `motoflow-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`);
+    try {
+        fs.writeFileSync(tempFile, pngBuffer);
+    } catch (err) {
+        return { ok: false, error: `No se pudo escribir PNG temp: ${err.message}` };
+    }
+    return new Promise((resolve) => {
+        const worker = spawn(IMAGE_EXE_PATH, [printerName, tempFile, String(widthMM), String(copies)], { windowsHide: true });
+        let stdout = '', stderr = '';
+        worker.stdout.on('data', (d) => (stdout += d.toString()));
+        worker.stderr.on('data', (d) => (stderr += d.toString()));
+        const timer = setTimeout(() => {
+            try { if (worker.pid) spawn('taskkill', ['/PID', String(worker.pid), '/T', '/F'], { detached: true, stdio: 'ignore' }).unref(); } catch (_) {}
+            try { fs.unlinkSync(tempFile); } catch (_) {}
+            resolve({ ok: false, error: 'Timeout (30s) imprimiendo imagen.' });
+        }, 30000);
+        worker.on('close', (code) => {
+            clearTimeout(timer);
+            try { fs.unlinkSync(tempFile); } catch (_) {}
+            const out = stdout.trim();
+            const line = out.split(/\r?\n/).reverse().find((l) => l.startsWith('OK:') || l.startsWith('ERR:'));
+            if (line?.startsWith('OK:')) resolve({ ok: true, bytes: pngBuffer.length });
+            else if (line?.startsWith('ERR:')) resolve({ ok: false, error: line.slice(4) });
+            else resolve({ ok: false, error: stderr.trim() || `worker imagen exit ${code}` });
+        });
+        worker.on('error', (err) => { clearTimeout(timer); try { fs.unlinkSync(tempFile); } catch (_) {} resolve({ ok: false, error: 'No se pudo iniciar worker imagen: ' + err.message }); });
+    });
 }
 
 function escapePsString(s) {
@@ -177,15 +289,19 @@ function escapePsString(s) {
 // rawPrint: imprime bytes RAW
 // ────────────────────────────────────────────────
 
-async function rawPrint(printerName, bytes) {
+async function rawPrint(printerName, bytes, opts = {}) {
     await setupDll();
+
+    // copies: repetir el buffer N veces (cada copia trae su propio corte)
+    const copies = Math.max(1, Math.round(Number(opts.copies) || 1));
+    const payload = copies > 1 ? Buffer.concat(Array.from({ length: copies }, () => bytes)) : bytes;
 
     const tempFile = path.join(
         os.tmpdir(),
         `motoflow-print-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.bin`,
     );
     try {
-        fs.writeFileSync(tempFile, bytes);
+        fs.writeFileSync(tempFile, payload);
     } catch (err) {
         return { ok: false, error: `No se pudo escribir archivo temp: ${err.message}` };
     }
@@ -428,4 +544,92 @@ $result | ConvertTo-Json -Compress -Depth 5`,
     });
 }
 
-module.exports = { rawPrint, listPrinters, getPrinterStatus };
+function cancelStalePrintJobs({ printerName = '', olderThanMinutes = 30 } = {}) {
+    const minutes = Math.max(1, Math.min(1440, Number(olderThanMinutes) || 30));
+    return new Promise((resolve, reject) => {
+        const ps = spawn('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-Command',
+            `$ErrorActionPreference = 'Stop';
+$name = $env:MF_PRINTER_NAME;
+$minutes = [int]$env:MF_OLDER_THAN_MINUTES;
+if ($minutes -lt 1) { $minutes = 30 }
+$cutoff = (Get-Date).AddMinutes(-1 * $minutes);
+$removed = @();
+$failed = @();
+try {
+  $printers = if ($name) { @(Get-Printer -Name $name) } else { @(Get-Printer) };
+} catch {
+  Add-Type -AssemblyName System.Drawing;
+  $all = [System.Drawing.Printing.PrinterSettings]::InstalledPrinters;
+  if ($name) { $all = @($all | Where-Object { $_ -eq $name }) }
+  $printers = @($all | ForEach-Object { [pscustomobject]@{ Name = $_ } });
+}
+foreach ($p in $printers) {
+  $jobs = @();
+  try {
+    $jobs = @(Get-PrintJob -PrinterName $p.Name);
+  } catch {
+    $failed += [pscustomobject]@{ printer = $p.Name; error = $_.Exception.Message };
+    continue;
+  }
+  foreach ($j in $jobs) {
+    $submitted = $j.SubmittedTime;
+    if ($submitted -and $submitted -lt $cutoff) {
+      $entry = [pscustomobject]@{
+        printer = $p.Name;
+        id = $j.ID;
+        documentName = $j.DocumentName;
+        jobStatus = [string]$j.JobStatus;
+        submittedTime = $submitted;
+        size = $j.Size;
+      };
+      try {
+        Remove-PrintJob -PrinterName $p.Name -ID $j.ID -ErrorAction Stop;
+        $removed += $entry;
+      } catch {
+        $failed += [pscustomobject]@{ printer = $p.Name; id = $j.ID; documentName = $j.DocumentName; error = $_.Exception.Message };
+      }
+    }
+  }
+}
+[pscustomobject]@{
+  ok = ($failed.Count -eq 0);
+  olderThanMinutes = $minutes;
+  cutoff = $cutoff;
+  removed = $removed;
+  failed = $failed;
+} | ConvertTo-Json -Compress -Depth 5`,
+        ], {
+            env: {
+                ...process.env,
+                MF_PRINTER_NAME: printerName || '',
+                MF_OLDER_THAN_MINUTES: String(minutes),
+            },
+        });
+        const timer = setTimeout(() => {
+            ps.kill('SIGKILL');
+            reject(new Error('Timeout limpiando trabajos viejos de Windows'));
+        }, 10000);
+        let stdout = '';
+        let stderr = '';
+        ps.stdout.on('data', (d) => (stdout += d.toString()));
+        ps.stderr.on('data', (d) => (stderr += d.toString()));
+        ps.on('close', (code) => {
+            clearTimeout(timer);
+            if (code !== 0) return reject(new Error(stderr || `PowerShell exit code ${code}`));
+            try {
+                const trimmed = stdout.trim();
+                resolve(trimmed ? JSON.parse(trimmed) : { ok: true, removed: [], failed: [] });
+            } catch (err) {
+                reject(new Error('No se pudo parsear limpieza de cola: ' + err.message));
+            }
+        });
+        ps.on('error', (err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+    });
+}
+
+module.exports = { rawPrint, printImage, listPrinters, getPrinterStatus, cancelStalePrintJobs };

@@ -85,21 +85,25 @@ echo Creando arrancador persistente...
 ) > "%STARTER%"
 
 REM 5. Registrar autostart en Windows.
-REM    Preferimos Task Scheduler porque es mas confiable despues de reiniciar
-REM    y permite correr con privilegios elevados. Dejamos HKLM/HKCU/Startup como respaldo.
+REM    Usamos una sola via de arranque para evitar carreras al iniciar sesion.
 echo [4/4] Configurando inicio automatico con Windows...
 schtasks /Delete /TN "Motoflow Print Agent" /F >nul 2>&1
 schtasks /Delete /TN "Motoflow Print Agent Watchdog" /F >nul 2>&1
-schtasks /Create /TN "Motoflow Print Agent" /TR "\"%STARTER%\"" /SC ONLOGON /RL HIGHEST /F >nul
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "MotoflowPrintAgent" /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "MotoflowPrintAgent" /f >nul 2>&1
+if exist "%STARTUP_FILE%" del /F /Q "%STARTUP_FILE%" >nul 2>&1
+
+schtasks /Create /TN "Motoflow Print Agent" /TR "\"%STARTER%\"" /SC ONLOGON /DELAY 0000:20 /RL HIGHEST /F >nul
 if errorlevel 1 (
-    echo [WARN] No se pudo crear la tarea programada. Usando registro HKLM\Run.
+    echo [WARN] No se pudo crear la tarea con delay. Intentando sin delay...
+    schtasks /Create /TN "Motoflow Print Agent" /TR "\"%STARTER%\"" /SC ONLOGON /RL HIGHEST /F >nul
+)
+if errorlevel 1 (
+    echo [WARN] No se pudo crear la tarea programada. Usando HKLM\Run como respaldo unico.
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "MotoflowPrintAgent" /t REG_SZ /d "\"%STARTER%\"" /f >nul
 ) else (
     echo Tarea programada creada: Motoflow Print Agent
 )
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "MotoflowPrintAgent" /t REG_SZ /d "\"%STARTER%\"" /f >nul
-reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "MotoflowPrintAgent" /t REG_SZ /d "\"%STARTER%\"" /f >nul
-if not exist "%STARTUP_DIR%" mkdir "%STARTUP_DIR%" >nul 2>&1
-copy /Y "%STARTER%" "%STARTUP_FILE%" >nul 2>&1
 
 REM 6. Iniciar agente
 echo.
@@ -112,7 +116,7 @@ echo   INSTALACION COMPLETADA
 echo ===============================================================
 echo   Ubicacion: %DEST%
 echo   URL local: http://127.0.0.1:9123
-echo   Autostart: si (Task Scheduler al iniciar Windows + respaldos Run/Startup)
+echo   Autostart: si (una sola via: Task Scheduler, o HKLM\Run si falla)
 echo   Watchdog: no. El sistema verifica el agente al imprimir.
 echo.
 echo   Verifica abriendo en el navegador:
