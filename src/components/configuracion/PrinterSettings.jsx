@@ -469,12 +469,12 @@ const PrinterSettings = () => {
             <details className="text-[11px] text-slate-600">
               <summary className="cursor-pointer hover:text-emerald-700 font-bold">Instrucciones</summary>
               <ol className="list-decimal ml-5 mt-2 space-y-1">
-                <li>Descarga el ZIP del agente</li>
-                <li>Descomprime en cualquier carpeta</li>
-                <li>Doble clic en <code className="bg-white px-1 rounded">install-user.bat</code> si no tienes permisos de administrador</li>
-                <li>Si puedes usar administrador: doble clic en <code className="bg-white px-1 rounded">install.bat</code> → <b>Ejecutar como administrador</b></li>
-                <li>Recarga esta página (Ctrl+Shift+R)</li>
-                <li>El badge cambiará a "ACTIVO"</li>
+                <li>Descarga el ZIP y <b>descomprímelo</b> (clic derecho → Extraer todo) en cualquier carpeta.</li>
+                <li>Verás 3 archivos con ícono de <b>engranaje ⚙️</b>: <code className="bg-white px-1 rounded">install</code>, <code className="bg-white px-1 rounded">install-user</code> y <code className="bg-white px-1 rounded">uninstall</code>. (Si Windows oculta la extensión, no muestran el <code className="bg-white px-1 rounded">.bat</code> — es el mismo archivo.)</li>
+                <li><b>Sin permisos de administrador:</b> doble clic en <code className="bg-white px-1 rounded">install-user</code>.</li>
+                <li><b>Con administrador:</b> clic derecho en <code className="bg-white px-1 rounded">install</code> → <b>Ejecutar como administrador</b>.</li>
+                <li>Si sale un aviso azul de Windows ("Windows protegió tu PC"), clic en <b>Más información → Ejecutar de todos modos</b>.</li>
+                <li>Recarga esta página (Ctrl+Shift+R). El badge cambiará a <b>"ACTIVO"</b>.</li>
               </ol>
             </details>
           </div>
