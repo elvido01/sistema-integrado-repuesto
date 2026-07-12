@@ -3,7 +3,8 @@ import { Edit, Trash2, Loader2, RefreshCw, Package, Barcode, Store, Eye, EyeOff,
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import EquivalentesHoverCard from '@/components/products/EquivalentesHoverCard';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -155,23 +156,10 @@ const ProductTable = ({
                         <div className="flex items-center gap-1.5">
                           <span>{product.codigo}</span>
                           {gruposMap[product.id] && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full bg-purple-100 text-purple-700 text-[9px] font-bold whitespace-nowrap cursor-help"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  🔗 {gruposMap[product.id].total_miembros}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="text-xs font-bold">{gruposMap[product.id].grupo_nombre}</p>
-                                <p className="text-[10px] text-slate-500">
-                                  {gruposMap[product.id].total_miembros} equivalentes
-                                  {gruposMap[product.id].prioridad === 1 && ' · ⭐ Preferido'}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
+                            <EquivalentesHoverCard
+                              productoId={product.id}
+                              info={gruposMap[product.id]}
+                            />
                           )}
                         </div>
                       </TableCell>

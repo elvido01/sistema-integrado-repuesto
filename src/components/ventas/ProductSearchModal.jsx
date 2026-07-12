@@ -14,6 +14,8 @@ import { orNull } from '@/lib/rpc-helpers';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from '@/components/ui/context-menu';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 import { sendNotaToSuplidorVirtual } from '@/services/sendToSuplidorVirtual';
+import { loadGruposMap } from '@/lib/equivalentesInfo';
+import EquivalentesHoverCard from '@/components/products/EquivalentesHoverCard';
 
 const PAGE_LIMIT = 20;
 
@@ -77,6 +79,16 @@ const ProductSearchModal = ({
   const [quickNote, setQuickNote] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
+  // Equivalentes: mapa { producto_id -> { grupo_nombre, total_miembros, prioridad } }
+  // para pintar el badge 🔗 en cada fila (detalle al hover).
+  const [gruposMap, setGruposMap] = useState({});
+  const gruposConsultadosRef = useRef(new Set());
+  // Rescate de agotados: si una búsqueda sin "existencias en cero" no
+  // encuentra NADA, se reintenta incluyendo agotados (una vez por búsqueda)
+  // para que el vendedor vea el producto y sus equivalentes.
+  const [autoCeros, setAutoCeros] = useState(false);
+  const autoCerosSigRef = useRef(null);
+
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const debouncedMarcaFilter = useDebounce(marcaFilter, 300);
   const debouncedModeloFilter = useDebounce(modeloFilter, 300);
@@ -120,6 +132,22 @@ const ProductSearchModal = ({
         if (error) throw error;
 
         const newProducts = data || [];
+
+        // Rescate de agotados: la búsqueda con "solo con stock" no encontró
+        // nada, pero el producto puede existir agotado (y tener equivalentes).
+        // Se enciende el checkbox una sola vez por combinación de filtros para
+        // que el vendedor pueda apagarlo sin que se re-encienda.
+        const buscoAlgo = !!(debouncedSearchTerm || debouncedMarcaFilter || debouncedModeloFilter);
+        if (isNewSearch && newProducts.length === 0 && !includeZeroStock && !onlyWithStock && buscoAlgo) {
+          const sig = `${debouncedSearchTerm}|${debouncedMarcaFilter}|${debouncedModeloFilter}`;
+          if (autoCerosSigRef.current !== sig) {
+            autoCerosSigRef.current = sig;
+            setAutoCeros(true);
+            setIncludeZeroStock(true); // re-dispara la búsqueda incluyendo agotados
+            return;
+          }
+        }
+
         setProducts((prev) => (isNewSearch ? newProducts : [...prev, ...newProducts]));
         if (isNewSearch) {
           setSelectedIndex(-1);
@@ -139,9 +167,25 @@ const ProductSearchModal = ({
         if (reqId === requestIdRef.current) setLoading(false);
       }
     },
-    [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock]
+    [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock, onlyWithStock]
   );
   const loaderRef = useRef(null);
+
+  // Cargar membresías de grupos equivalentes para las filas visibles (batch,
+  // solo ids no consultados antes). Pinta el badge 🔗 con detalle al hover.
+  useEffect(() => {
+    const ids = products.map((p) => p.id).filter((id) => !gruposConsultadosRef.current.has(id));
+    if (ids.length === 0) return undefined;
+    ids.forEach((id) => gruposConsultadosRef.current.add(id));
+    let cancel = false;
+    loadGruposMap(ids)
+      .then((nuevo) => {
+        if (cancel || Object.keys(nuevo).length === 0) return;
+        setGruposMap((prev) => ({ ...prev, ...nuevo }));
+      })
+      .catch(() => { /* badge es informativo, silencioso */ });
+    return () => { cancel = true; };
+  }, [products]);
 
   // Reset search term on open, but keep marca/modelo filters.
   // Tambien resetea includeZeroStock al default configurado por el tenant.
@@ -153,8 +197,18 @@ const ProductSearchModal = ({
       setProducts([]);
       setSelectedIndex(-1);
       setIncludeZeroStock(includeZeroStockDefault);
+      setGruposMap({});
+      gruposConsultadosRef.current = new Set();
+      setAutoCeros(false);
+      autoCerosSigRef.current = null;
     }
   }, [isOpen, includeZeroStockDefault]);
+
+  // Si el usuario cambia la búsqueda, el aviso de "solo agotados" deja de aplicar.
+  useEffect(() => {
+    const sig = `${debouncedSearchTerm}|${debouncedMarcaFilter}|${debouncedModeloFilter}`;
+    if (autoCerosSigRef.current && autoCerosSigRef.current !== sig) setAutoCeros(false);
+  }, [debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter]);
 
   // Reset ALL filters (including marca/modelo) when sessionKey changes (e.g. new invoice)
   const prevSessionKeyRef = useRef(sessionKey);
@@ -353,11 +407,25 @@ const ProductSearchModal = ({
               </div>
               {!onlyWithStock && (
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="include-zero-stock" checked={includeZeroStock} onCheckedChange={setIncludeZeroStock} />
+                  <Checkbox
+                    id="include-zero-stock"
+                    checked={includeZeroStock}
+                    onCheckedChange={(v) => { setAutoCeros(false); setIncludeZeroStock(v); }}
+                  />
                   <Label htmlFor="include-zero-stock" className="text-sm font-medium text-gray-700">Incluir Existencias en cero</Label>
                 </div>
               )}
             </div>
+            {autoCeros && !loading && products.length > 0 && (
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
+                <PackageX className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                <p className="text-xs text-amber-800">
+                  <b>No había resultados con stock</b> — se muestran los productos <b>agotados</b> que coinciden.
+                  El distintivo <span className="inline-flex items-center px-1.5 rounded-full bg-purple-100 text-purple-700 text-[9px] font-bold">🔗</span> indica
+                  que tienen <b>equivalentes</b>: pase el mouse encima para verlos con su existencia y precio.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Table Area also in a White Card wrapper */}
@@ -398,8 +466,17 @@ const ProductSearchModal = ({
                                     : 'bg-[#e0fadd] hover:bg-[#e0fadd]'
                               }`}
                             >
-                                <TableCell title={product.codigo} className={`text-sm py-2 whitespace-nowrap font-bold ${codigosLargos ? '' : 'overflow-hidden text-ellipsis'} ${idx === selectedIndex ? 'text-white' : 'text-blue-900'}`}>
-                                  {product.codigo}
+                                <TableCell title={product.codigo} className={`text-sm py-2 whitespace-nowrap font-bold ${idx === selectedIndex ? 'text-white' : 'text-blue-900'}`}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={codigosLargos ? '' : 'overflow-hidden text-ellipsis'}>{product.codigo}</span>
+                                    {gruposMap[product.id] && (
+                                      <EquivalentesHoverCard
+                                        productoId={product.id}
+                                        info={gruposMap[product.id]}
+                                        invert={idx === selectedIndex}
+                                      />
+                                    )}
+                                  </div>
                                 </TableCell>
                               <TableCell className={`font-medium py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-600'}`}>
                                 {product.referencia || '-'}
