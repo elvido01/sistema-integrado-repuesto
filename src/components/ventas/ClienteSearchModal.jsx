@@ -50,7 +50,7 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
+      <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Buscar Cliente</DialogTitle>
         </DialogHeader>
@@ -70,11 +70,11 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
           <Table>
             <TableHeader className="sticky top-0 bg-white z-10">
               <TableRow>
-                <TableHead>Código</TableHead>
+                <TableHead className="w-[130px] whitespace-nowrap">Código</TableHead>
                 <TableHead>Nombre</TableHead>
-                <TableHead>RNC/Cédula</TableHead>
-                <TableHead>Teléfono</TableHead>
-                <TableHead>Crédito</TableHead>
+                <TableHead className="w-[130px] whitespace-nowrap">RNC/Cédula</TableHead>
+                <TableHead className="w-[110px] whitespace-nowrap">Teléfono</TableHead>
+                <TableHead className="w-[70px]">Crédito</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -91,10 +91,10 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
                     onDoubleClick={() => onSelectCliente(cliente)}
                     className="cursor-pointer hover:bg-muted/50"
                   >
-                    <TableCell className="font-mono text-sm">{cliente.codigo || '—'}</TableCell>
+                    <TableCell className="font-mono text-sm whitespace-nowrap">{cliente.codigo || '—'}</TableCell>
                     <TableCell className="font-medium">{cliente.nombre}</TableCell>
-                    <TableCell>{cliente.rnc}</TableCell>
-                    <TableCell>{cliente.telefono}</TableCell>
+                    <TableCell className="whitespace-nowrap">{cliente.rnc}</TableCell>
+                    <TableCell className="whitespace-nowrap">{cliente.telefono}</TableCell>
                     <TableCell>{cliente.autorizar_credito ? 'Sí' : 'No'}</TableCell>
                   </TableRow>
                 ))
