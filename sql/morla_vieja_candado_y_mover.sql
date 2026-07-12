@@ -128,7 +128,8 @@ BEGIN
       tenant_id, producto_id, fecha, tipo, cantidad, costo_unitario, referencia_doc
     ) VALUES (
       v_destino, v_new_id, current_date,
-      CASE WHEN v_stock >= 0 THEN 'ENTRADA' ELSE 'SALIDA' END,
+      -- la columna tipo es enum movimiento_tipo: el CASE debe castearse
+      (CASE WHEN v_stock >= 0 THEN 'ENTRADA' ELSE 'SALIDA' END)::public.movimiento_tipo,
       v_stock, p.costo, 'TRASLADO DESDE MORLA VIEJA'
     );
   END IF;
