@@ -18,11 +18,20 @@ const CMD = {
     BOLD_OFF: ESC + 'E' + '\x00',  // Bold off
     DOUBLE_H: ESC + '!' + '\x10',  // Double height
     NORMAL: ESC + '!' + '\x00',  // Normal size
-    CUT: GS + 'V' + 'A' + '\x00', // Partial cut
+    CUT: GS + 'V' + '\x00', // Corte total (GS V 0) — el mas compatible; antes
+    // GS V A ('A'=0x41) salia impreso como "VA" en algunas impresoras.
     FEED_3: ESC + 'd' + '\x03',
     FEED_5: ESC + 'd' + '\x05',
     LF: '\n',
 } as const;
+
+// Los recibos termicos no tienen los acentos en su tabla de caracteres:
+// "GENÉRICO" salia con un simbolo raro. Se quitan tildes/ñ y cualquier
+// caracter no-ASCII (los codigos de control ESC/POS son < 0x20, se conservan).
+const toAscii = (s: string): string =>
+    s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[¿¡]/g, '')
+        .replace(/[^\x00-\x7F]/g, '');
 
 // ── Width: Star TSP143 = 42 chars/line (Font A, 80mm) ──
 const W = 42;
@@ -148,7 +157,7 @@ function buildHeader(empresa?: EmpresaConfig, overrideName?: string): string {
         lines.push(centerLine(`RNC: ${empresa.rnc}`));
     }
     lines.push('');
-    return lines.join(CMD.LF);
+    return toAscii(lines.join(CMD.LF));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -308,7 +317,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
-    return lines.join(CMD.LF);
+    return toAscii(lines.join(CMD.LF));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -414,7 +423,7 @@ export function buildCotizacionEscPos(
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
-    return lines.join(CMD.LF);
+    return toAscii(lines.join(CMD.LF));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -494,5 +503,5 @@ export function buildReciboIngresoEscPos(
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
-    return lines.join(CMD.LF);
+    return toAscii(lines.join(CMD.LF));
 }
