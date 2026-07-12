@@ -56,6 +56,10 @@ const ProductSearchModal = ({
   const [sendingToOrder, setSendingToOrder] = useState(null); // product id being sent
   const [moviendo, setMoviendo] = useState(null);
   const esMorlaVieja = tenantId === '00000000-0000-0000-0000-000000000002';
+  // Traer de Morla Vieja sin cambiar de empresa (solo visible en la nueva)
+  const esMorlaNueva = tenantId === '00000000-0000-0000-0000-000000000001';
+  const [buscarEnVieja, setBuscarEnVieja] = useState(false);
+  const [trayendo, setTrayendo] = useState(null); // product id en traslado
 
   const handleMoverAMorlaNuevo = async (product) => {
     if (moviendo) return;
@@ -141,6 +145,25 @@ const ProductSearchModal = ({
       try {
         const offset = page * PAGE_LIMIT;
 
+        // Modo "Traer de Morla Vieja": busca el catálogo viejo desde la nueva
+        if (buscarEnVieja && esMorlaNueva) {
+          const { data: dataVieja, error: errVieja } = await supabase.rpc('buscar_productos_morla_vieja', {
+            p_limit: PAGE_LIMIT,
+            p_offset: offset,
+            p_search: orNull(debouncedSearchTerm),
+            p_marca: orNull(debouncedMarcaFilter),
+            p_modelo: orNull(debouncedModeloFilter),
+          });
+          if (reqId !== requestIdRef.current) return;
+          if (errVieja) throw errVieja;
+          const filas = (dataVieja || []).map((r) => ({ ...r, _vieja: true }));
+          setProducts((prev) => (isNewSearch ? filas : [...prev, ...filas]));
+          if (isNewSearch) setSelectedIndex(-1);
+          setHasMore(filas.length === PAGE_LIMIT);
+          setCurrentPage(page);
+          return;
+        }
+
         const { data, error } = await supabase.rpc('get_productos_paginados', {
           p_limit: PAGE_LIMIT,
           p_offset: offset,
@@ -190,13 +213,48 @@ const ProductSearchModal = ({
         if (reqId === requestIdRef.current) setLoading(false);
       }
     },
-    [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock, onlyWithStock]
+    [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock, onlyWithStock, buscarEnVieja, esMorlaNueva]
   );
+
+  // Doble clic (o Enter) sobre una pieza de la VIEJA: se mueve al sistema
+  // nuevo (con su existencia, borrándose de la vieja) y cae a la factura.
+  const handleTraerDeVieja = async (product) => {
+    if (trayendo) return;
+    setTrayendo(product.id);
+    try {
+      const { data, error } = await supabase.rpc('mover_producto_a_morla_nuevo', { p_producto_id: product.id });
+      if (error) throw error;
+      // Ficha completa del producto YA en la nueva (misma forma que el buscador)
+      const { data: rows, error: e2 } = await supabase.rpc('get_productos_paginados', {
+        p_limit: 10,
+        p_offset: 0,
+        p_search_term: data?.codigo || product.codigo,
+        p_marca_filter: null,
+        p_modelo_filter: null,
+        p_include_zero_stock: true,
+      });
+      if (e2) throw e2;
+      const full = (rows || []).find((r) => r.id === data?.id);
+      if (!full) throw new Error(`Se movió como "${data?.codigo}" pero no se pudo cargar la ficha — búscalo normal.`);
+      toast({
+        title: '⇄ Traído de Morla Vieja',
+        description: `${data?.renombrado ? `El código existía: quedó como "${data.codigo}".` : `Código ${data?.codigo}.`} Existencia trasladada: ${Number(data?.existencia || 0).toFixed(2)}. Eliminado de la vieja.`,
+        duration: 5000,
+      });
+      onSelectProduct(full);
+      onClose();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo traer de Morla Vieja', description: err.message, duration: 6000 });
+    } finally {
+      setTrayendo(null);
+    }
+  };
   const loaderRef = useRef(null);
 
   // Cargar membresías de grupos equivalentes para las filas visibles (batch,
   // solo ids no consultados antes). Pinta el badge 🔗 con detalle al hover.
   useEffect(() => {
+    if (buscarEnVieja) return undefined; // productos de otra empresa: sin grupos
     const ids = products.map((p) => p.id).filter((id) => !gruposConsultadosRef.current.has(id));
     if (ids.length === 0) return undefined;
     ids.forEach((id) => gruposConsultadosRef.current.add(id));
@@ -224,6 +282,7 @@ const ProductSearchModal = ({
       gruposConsultadosRef.current = new Set();
       setAutoCeros(false);
       autoCerosSigRef.current = null;
+      setBuscarEnVieja(false);
     }
   }, [isOpen, includeZeroStockDefault]);
 
@@ -273,8 +332,13 @@ const ProductSearchModal = ({
       } else if (e.key === 'Enter') {
         if (selectedIndex >= 0 && selectedIndex < products.length) {
           e.preventDefault();
-          onSelectProduct(products[selectedIndex]);
-          onClose();
+          const prod = products[selectedIndex];
+          if (prod._vieja) {
+            handleTraerDeVieja(prod);
+          } else {
+            onSelectProduct(prod);
+            onClose();
+          }
         }
       }
     };
@@ -428,17 +492,40 @@ const ProductSearchModal = ({
                   )}
                 </div>
               </div>
-              {!onlyWithStock && (
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="include-zero-stock"
-                    checked={includeZeroStock}
-                    onCheckedChange={(v) => { setAutoCeros(false); setIncludeZeroStock(v); }}
-                  />
-                  <Label htmlFor="include-zero-stock" className="text-sm font-medium text-gray-700">Incluir Existencias en cero</Label>
-                </div>
-              )}
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                {!onlyWithStock && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="include-zero-stock"
+                      checked={includeZeroStock}
+                      onCheckedChange={(v) => { setAutoCeros(false); setIncludeZeroStock(v); }}
+                    />
+                    <Label htmlFor="include-zero-stock" className="text-sm font-medium text-gray-700">Incluir Existencias en cero</Label>
+                  </div>
+                )}
+                {esMorlaNueva && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="buscar-en-vieja"
+                      checked={buscarEnVieja}
+                      onCheckedChange={(v) => setBuscarEnVieja(!!v)}
+                    />
+                    <Label htmlFor="buscar-en-vieja" className="text-sm font-bold text-amber-700 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3.5 h-3.5" /> Buscar en Morla Vieja
+                    </Label>
+                  </div>
+                )}
+              </div>
             </div>
+            {buscarEnVieja && (
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
+                <ArrowRightLeft className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                <p className="text-xs text-amber-800">
+                  <b>Buscando en REPUESTOS MORLA VIEJA.</b> Doble clic (o Enter) sobre la pieza:
+                  se <b>trae al sistema nuevo</b> con su existencia, se borra de la vieja y queda lista en la factura — sin cambiar de empresa.
+                </p>
+              </div>
+            )}
             {autoCeros && !loading && products.length > 0 && (
               <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
                 <PackageX className="h-4 w-4 text-amber-600 flex-shrink-0" />
@@ -469,7 +556,51 @@ const ProductSearchModal = ({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {products.map((product, idx) => (
+                      {products.map((product, idx) => product._vieja ? (
+                        <TableRow
+                          key={product.id}
+                          id={`product-row-${idx}`}
+                          onClick={() => setSelectedIndex(idx)}
+                          onDoubleClick={() => handleTraerDeVieja(product)}
+                          className={`cursor-pointer transition-colors border-b select-none text-xs relative ${
+                            idx === selectedIndex
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-600'
+                              : 'bg-amber-50 hover:bg-amber-100'
+                          }`}
+                        >
+                          <TableCell className={`text-sm py-2 whitespace-nowrap font-bold ${idx === selectedIndex ? 'text-white' : 'text-amber-900'}`}>
+                            <div className="flex items-center gap-1.5">
+                              <span className={codigosLargos ? '' : 'overflow-hidden text-ellipsis'}>{product.codigo}</span>
+                              <span className={`px-1.5 rounded-full text-[9px] font-bold flex-shrink-0 ${idx === selectedIndex ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-900'}`}>
+                                VIEJA
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className={`font-medium py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-600'}`}>
+                            {product.referencia || '-'}
+                          </TableCell>
+                          <TableCell className={`font-medium py-2 leading-tight ${idx === selectedIndex ? 'text-white' : 'text-slate-800'}`}>
+                            {product.descripcion}
+                            <span className={`ml-2 text-[10px] font-bold whitespace-nowrap ${idx === selectedIndex ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                              ⇄ doble clic = traer
+                            </span>
+                          </TableCell>
+                          <TableCell className={`italic py-2 whitespace-nowrap overflow-hidden text-ellipsis ${idx === selectedIndex ? 'text-white' : 'text-slate-500'}`}>
+                            {product.ubicacion || '-'}
+                          </TableCell>
+                          <TableCell className={`text-right font-bold py-2 ${idx === selectedIndex ? 'text-white' : Number(product.existencia) > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                            {Number(product.existencia ?? 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell className={`text-right font-black py-2 whitespace-nowrap text-sm ${idx === selectedIndex ? 'text-white' : 'text-amber-900'}`}>
+                            {formatPrice(product.precio)}
+                          </TableCell>
+                          {trayendo === product.id && (
+                            <div className="absolute inset-0 bg-white/60 flex items-center justify-center pointer-events-none">
+                              <Loader2 className="w-5 h-5 animate-spin text-emerald-700" />
+                            </div>
+                          )}
+                        </TableRow>
+                      ) : (
                         <ContextMenu key={product.id}>
                           <ContextMenuTrigger asChild>
                             <TableRow
