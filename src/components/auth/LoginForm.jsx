@@ -47,9 +47,12 @@ const LoginForm = ({ onRegistrar }) => {
 
   useEffect(() => {
     const hostname = window.location.hostname;
-    // No detectar en localhost ni en el dominio de MotoFlow
-    const skipDomains = ['localhost', '127.0.0.1', 'motoflow.pages.dev'];
-    if (skipDomains.some(d => hostname.includes(d))) {
+    // No detectar en localhost ni en dominios de despliegue de MotoFlow:
+    // el login de la plataforma siempre muestra la marca MotoFlow. El
+    // white-label por tenant queda solo para dominios propios de clientes
+    // (tenants.dominio también alimenta la tienda pública, no se toca).
+    const skipDomains = ['localhost', '127.0.0.1'];
+    if (skipDomains.some(d => hostname.includes(d)) || hostname.endsWith('.pages.dev') || hostname.includes('motoflow')) {
       setBrandingLoaded(true);
       return;
     }
