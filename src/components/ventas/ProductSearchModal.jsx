@@ -79,6 +79,29 @@ const ProductSearchModal = ({
   const [quickNote, setQuickNote] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
+  // Clic en un equivalente de la tarjeta 🔗: se usa ESE producto. Se trae la
+  // fila completa por el mismo RPC del buscador para que tenga la misma forma
+  // que cualquier selección normal (itbis, referencia, presentaciones, etc.).
+  const handleUsarEquivalente = async (eq) => {
+    try {
+      const { data, error } = await supabase.rpc('get_productos_paginados', {
+        p_limit: 10,
+        p_offset: 0,
+        p_search_term: eq.codigo,
+        p_marca_filter: null,
+        p_modelo_filter: null,
+        p_include_zero_stock: true,
+      });
+      if (error) throw error;
+      const full = (data || []).find((r) => r.id === eq.producto_id);
+      if (!full) throw new Error(`No se encontró la ficha completa de ${eq.codigo}`);
+      onSelectProduct(full);
+      onClose();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo usar el equivalente', description: err.message });
+    }
+  };
+
   // Equivalentes: mapa { producto_id -> { grupo_nombre, total_miembros, prioridad } }
   // para pintar el badge 🔗 en cada fila (detalle al hover).
   const [gruposMap, setGruposMap] = useState({});
@@ -422,7 +445,7 @@ const ProductSearchModal = ({
                 <p className="text-xs text-amber-800">
                   <b>No había resultados con stock</b> — se muestran los productos <b>agotados</b> que coinciden.
                   El distintivo <span className="inline-flex items-center px-1.5 rounded-full bg-purple-100 text-purple-700 text-[9px] font-bold">🔗</span> indica
-                  que tienen <b>equivalentes</b>: pase el mouse encima para verlos con su existencia y precio.
+                  que tienen <b>equivalentes</b>: pase el mouse para verlos y <b>haga clic en uno para usarlo</b>.
                 </p>
               </div>
             )}
@@ -474,6 +497,7 @@ const ProductSearchModal = ({
                                         productoId={product.id}
                                         info={gruposMap[product.id]}
                                         invert={idx === selectedIndex}
+                                        onUseEquivalente={handleUsarEquivalente}
                                       />
                                     )}
                                   </div>
