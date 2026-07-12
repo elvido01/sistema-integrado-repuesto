@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Package, PackageX, Star, AlertTriangle } from 'lucide-react';
@@ -13,10 +13,28 @@ const SugerenciasEquivalentesModal = ({
   // El cajero factura a punta de Enter; el aviso no debe reaccionar a esa
   // tecla, y durante los primeros ms tampoco a nada (Enter "en vuelo").
   const [armed, setArmed] = useState(false);
+  const contentRef = useRef(null);
   useEffect(() => {
     if (!isOpen) { setArmed(false); return undefined; }
     const t = setTimeout(() => setArmed(true), 400);
-    return () => clearTimeout(t);
+    // Bloqueo GLOBAL en fase captura: si el foco quedara en la fila amarilla
+    // del POS, Enter/Espacio seguirían avanzando cantidad→precio→agregar por
+    // debajo del aviso. Aquí mueren antes de llegar a cualquier handler.
+    const bloquear = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', bloquear, true);
+    window.addEventListener('keyup', bloquear, true);
+    window.addEventListener('keypress', bloquear, true);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('keydown', bloquear, true);
+      window.removeEventListener('keyup', bloquear, true);
+      window.removeEventListener('keypress', bloquear, true);
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -26,8 +44,16 @@ const SugerenciasEquivalentesModal = ({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
+        ref={contentRef}
+        tabIndex={-1}
         className="max-w-2xl"
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={(e) => {
+          // Sin foco en botones (Enter no activa nada), pero el foco SÍ debe
+          // salir del POS: si se queda en la fila amarilla, las teclas que el
+          // cajero siga tecleando (dígitos incluidos) caerían en esos campos.
+          e.preventDefault();
+          setTimeout(() => contentRef.current?.focus(), 0);
+        }}
         onEscapeKeyDown={(e) => { if (!armed) e.preventDefault(); }}
         onPointerDownOutside={(e) => { if (!armed) e.preventDefault(); }}
         onKeyDownCapture={(e) => {
