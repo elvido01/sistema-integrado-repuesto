@@ -23,7 +23,7 @@ const path = require('path');
 const os = require('os');
 const { rawPrint, printImage, listPrinters, getPrinterStatus, cancelStalePrintJobs } = require('./lib/winRawPrinter');
 
-const VERSION = '0.7.1';
+const VERSION = '0.7.2';
 const PORT = Number(process.env.PORT) || 9123;
 const MAX_PRINT_BYTES = 5 * 1024 * 1024;
 const MAX_RECENT_JOBS = 100;
@@ -80,6 +80,7 @@ function publicJob(job) {
 // dominios personalizados de Motoflow.
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/([a-z0-9-]+\.)*repuestos-morla\.pages\.dev$/i,
+  /^https:\/\/([a-z0-9-]+\.)*motoflow\.pages\.dev$/i,
   /^https:\/\/([a-z0-9-]+\.)*motoflow\.com\.do$/i,
   /^http:\/\/localhost(:\d+)?$/i,
   /^http:\/\/127\.0\.0\.1(:\d+)?$/i,
