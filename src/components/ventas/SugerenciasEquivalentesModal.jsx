@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Package, PackageX, Star, AlertTriangle } from 'lucide-react';
@@ -10,13 +10,33 @@ const SugerenciasEquivalentesModal = ({
   sugerencias,        // array de { id, codigo, descripcion, existencia, precio, costo, itbis_pct, es_preferido, margen_pct, grupo_nombre }
   onSelectSugerencia, // (producto) => void  -- reemplaza el item actual
 }) => {
+  // El cajero factura a punta de Enter; el aviso no debe reaccionar a esa
+  // tecla, y durante los primeros ms tampoco a nada (Enter "en vuelo").
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!isOpen) { setArmed(false); return undefined; }
+    const t = setTimeout(() => setArmed(true), 400);
+    return () => clearTimeout(t);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const grupoNombre = sugerencias?.[0]?.grupo_nombre || '';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent
+        className="max-w-2xl"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => { if (!armed) e.preventDefault(); }}
+        onPointerDownOutside={(e) => { if (!armed) e.preventDefault(); }}
+        onKeyDownCapture={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -52,6 +72,7 @@ const SugerenciasEquivalentesModal = ({
               <button
                 key={s.id}
                 onClick={() => {
+                  if (!armed) return;
                   onSelectSugerencia(s);
                   onClose();
                 }}
@@ -99,11 +120,11 @@ const SugerenciasEquivalentesModal = ({
           </div>
 
           <div className="flex justify-between pt-1">
-            <Button variant="outline" size="sm" onClick={onClose}>
+            <Button variant="outline" size="sm" onClick={() => { if (armed) onClose(); }}>
               No, mantener original
             </Button>
             <p className="text-[10px] text-slate-400 self-center">
-              Esc para cerrar
+              Esc mantiene el original · Enter no hace nada aquí
             </p>
           </div>
         </div>
