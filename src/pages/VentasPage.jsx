@@ -12,6 +12,7 @@ import SugerenciasEquivalentesModal from '@/components/ventas/SugerenciasEquival
 import { generateFacturaPDF } from '@/components/common/PDFGenerator';
 import { printFacturaPOS, printFacturaQZ, printFacturaWebUsb } from '@/lib/printPOS';
 import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
+import { isSilentPrintEnabled } from '@/lib/printHtmlSmart';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { findAlmacenPrincipal } from '@/lib/almacenUtils';
@@ -320,24 +321,26 @@ const VentasPage = () => {
           }
         }
 
-        // Route printing based on selected method
-        if (printMethod === 'qz' || printMethod === 'agent') {
-          // Forzar backend según método elegido. printFacturaQZ usa el adapter
-          // que respeta la preferencia global (setPreferredBackend).
+        // Route printing based on selected method.
+        // "Imprimir sin diálogo" (checkbox) → texto ESC/POS NATIVO por el agente
+        // (misma fuente nativa que daba QZ Tray, pero estable y sin permiso).
+        const silentOn = isSilentPrintEnabled();
+        if (printMethod === 'qz' || printMethod === 'agent' || silentOn) {
+          // printFacturaQZ usa el adapter (respeta la preferencia global).
           const previousBackend = getPreferredBackend();
-          if (printMethod === 'agent') setPreferredBackend('agent');
-          else setPreferredBackend('qz');
+          if (printMethod === 'qz') setPreferredBackend('qz');
+          else setPreferredBackend('agent'); // silent o 'agent' → agente
           try {
             await printFacturaQZ(facturaParaImprimir);
           } catch (err) {
-            console.error(`[${printMethod}] Error, falling back to browser:`, err);
+            console.error(`[print] Error ESC/POS nativo, uso navegador:`, err);
             toast({
               variant: "destructive",
-              title: printMethod === 'agent' ? 'Error con Motoflow Print Agent' : 'Error de conexión QZ Tray',
+              title: 'No se pudo imprimir con el agente',
               description: `${err.message || String(err)}. Usando impresión navegador.`,
               duration: 5000,
             });
-            printFacturaPOS(facturaParaImprimir);
+            printFacturaPOS(facturaParaImprimir, printFormat);
           } finally {
             setPreferredBackend(previousBackend);
           }
