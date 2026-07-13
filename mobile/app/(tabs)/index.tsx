@@ -294,7 +294,7 @@ function FinanceDetailModal({
                   {items.length === 0 ? (
                     <View className="bg-slate-50 border border-slate-100 rounded-xl p-3">
                       <Text className="text-slate-400 text-xs font-bold">
-                        {isGastos ? 'No hay gastos registrados hoy.' : 'No hay compromisos pendientes para este corte.'}
+                        {isGastos ? 'No hay gastos registrados hoy.' : 'No hay compromisos pendientes.'}
                       </Text>
                     </View>
                   ) : (
@@ -617,7 +617,7 @@ export default function DashboardScreen() {
         <MetricCard
           title="Compromisos a pagar"
           value={money(compromisosPagarVisible)}
-          subtitle={hasCompanyFinanceBreakdown ? `${finanzasEmpresas.length} empresas sumadas` : `${compromisoCountVisible} pendientes al cierre semanal`}
+          subtitle={hasCompanyFinanceBreakdown ? `${finanzasEmpresas.length} empresas sumadas` : `${compromisoCountVisible} pendientes en total`}
           tone={compromisosPagarVisible > 0 ? 'amber' : 'green'}
           icon="clock"
           onDoublePress={() => setDetailModal('compromisos')}
