@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Waves, TrendingUp, TrendingDown, Info, ChevronRight, Target } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import {
-  formatCurrencyDOP, computeComparacion, computeMetaEstado, tonoClasses, metaEstadoClasses,
+  formatCurrencyDOP, computeComparacion, tonoClasses,
 } from '@/lib/flujoNeto';
 import FlujoNetoDesgloseModal from './FlujoNetoDesgloseModal';
 import FlujoNetoMiniChart from './FlujoNetoMiniChart';
@@ -68,11 +68,11 @@ const FlujoNetoCard = ({ data, loading = false, onRetry }) => {
     !!data.periodo_anterior?.tiene_datos
   );
 
+  // Proyección del FLUJO NETO al cierre (ritmo actual × días del mes).
+  // OJO: no se compara contra la meta de ventas — son magnitudes distintas
+  // (la meta de ventas ya tiene su propia tarjeta con su % real).
   const metas = data.metas || {};
-  const metaMensual = Number(metas.meta_mensual) || 0;
   const proyeccion = Number(metas.proyeccion) || 0;
-  const meta = computeMetaEstado(proyeccion, metaMensual);
-  const pctMeta = meta.porcentaje !== null ? Math.max(0, Math.min(meta.porcentaje, 100)) : 0;
 
   // Color del valor principal.
   const flujoTono = sinMovimientos ? 'neutral' : flujo >= 0 ? 'positivo' : 'negativo';
@@ -148,30 +148,23 @@ const FlujoNetoCard = ({ data, loading = false, onRetry }) => {
         <MiniStat label="Prom. diario" value={formatCurrencyDOP(promedio, { decimals: 0 })} />
       </div>
 
-      {/* Metas y proyecciones */}
+      {/* Proyección del flujo neto al cierre del mes */}
       <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 shrink-0">
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            <Target className="w-3 h-3" /> Metas y proyecciones
+            <Target className="w-3 h-3" /> Proyección al cierre
           </span>
-          <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${metaEstadoClasses[meta.estado]}`}>
-            {meta.estado === 'gris' ? 'Sin meta' : `${(meta.porcentaje || 0).toFixed(0)}%`}
+          <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${
+            proyeccion >= 0
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-rose-50 text-rose-700 border-rose-200'
+          }`}>
+            {proyeccion < 0 ? '-' : ''}{formatCurrencyDOP(Math.abs(proyeccion), { decimals: 0 })}
           </span>
         </div>
-        <div className="flex justify-between gap-2 mt-1 text-[11px]">
-          <span className="text-slate-500">Meta <b className="text-slate-700">{formatCurrencyDOP(metaMensual, { decimals: 0 })}</b></span>
-          <span className="text-slate-500">Proy. <b className="text-slate-700">{formatCurrencyDOP(proyeccion, { decimals: 0 })}</b></span>
-        </div>
-        {metaMensual > 0 && (
-          <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden mt-1.5">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                meta.estado === 'verde' ? 'bg-emerald-500' : meta.estado === 'amarillo' ? 'bg-amber-500' : 'bg-rose-500'
-              }`}
-              style={{ width: `${pctMeta}%` }}
-            />
-          </div>
-        )}
+        <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+          A ritmo de {formatCurrencyDOP(promedio, { decimals: 0 })}/día, el mes cerraría con ese flujo neto.
+        </p>
       </div>
 
       {/* Ver desglose */}
