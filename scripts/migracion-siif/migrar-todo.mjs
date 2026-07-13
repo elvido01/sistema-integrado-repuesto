@@ -29,6 +29,10 @@ const pasos = [
   // mercancias de scv8_mp_los_naranjos (aunque el archivo tenga otro nombre).
   { desc: 'Caminero · catálogo → dealer',     cmd: `fase-caminero-catalogo.mjs${commit}` },
   { desc: 'Caminero · inventario (kardex)',   cmd: `fase-caminero-inventario.mjs${commit}` },
+  // CxP de suplidores: auto-detecta la tabla en el respaldo (primera corrida
+  // 2026-07-14); si no la encuentra reporta y sigue (exit 0). Requiere
+  // sql/compras_legacy_id.sql ejecutado.
+  { desc: 'Caminero · cuentas por pagar (CxP)', cmd: `fase-caminero-cxp.mjs${commit}` },
   // NOTA: fase-caminero-cxc.mjs queda FUERA del pipeline: el sondeo del
   // 2026-07-03 mostro que scv8_caminero_motors esta muerta desde ago-2014
   // (la operacion actual del dealer vive en scv8_mp_los_naranjos, ya cubierta
