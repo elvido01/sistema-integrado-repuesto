@@ -32,11 +32,11 @@ BEGIN
     RAISE EXCEPTION 'No se pudo determinar el tenant';
   END IF;
 
-  SELECT (ce.nombre ILIKE '%caminero%' OR ce.razon_social ILIKE '%caminero%')
-    INTO v_allow_fallback
-  FROM public.config_empresa ce
-  WHERE ce.tenant_id = v_tenant
-  LIMIT 1;
+  -- Vista combinada SOLO para el tenant real de CAMINERO MOTORS (id fijo).
+  -- Antes se detectaba por nombre/razón social ILIKE '%caminero%' y eso
+  -- arrastró a REPUESTOS MORLA (su razón social dice 'MPN Y CAMINERO
+  -- MOTORS') a sumar los compromisos de MotoPréstamos en su dashboard.
+  v_allow_fallback := (v_tenant = 'b39506c3-27dc-467d-830b-096731b83113');
 
   IF COALESCE(v_allow_fallback, false) THEN
     SELECT ce.tenant_id
