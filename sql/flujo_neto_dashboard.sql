@@ -93,17 +93,30 @@ DECLARE
                            (date_trunc('month', v_hoy) - interval '1 day')::date
                          );
   v_meta         numeric := 0;
+  v_meta_ventas  numeric := 0;
+  v_ventas_mes   numeric := 0;
   v_result       json;
 BEGIN
   IF v_tenant IS NULL THEN
     RAISE EXCEPTION 'No se pudo determinar el tenant del usuario';
   END IF;
 
-  SELECT COALESCE(meta_flujo_neto_mensual, 0)
-    INTO v_meta
+  SELECT COALESCE(meta_flujo_neto_mensual, 0), COALESCE(meta_ventas, 0)
+    INTO v_meta, v_meta_ventas
   FROM public.config_empresa
   WHERE tenant_id = v_tenant
   LIMIT 1;
+
+  -- Ventas del mes (contado + crédito, sin anuladas) para la franja de
+  -- METAS de la tarjeta: la meta de ventas se compara con VENTAS, nunca
+  -- con el flujo neto (eran magnitudes distintas y siempre daba ~0%).
+  SELECT COALESCE(SUM(f.total), 0)
+    INTO v_ventas_mes
+  FROM public.facturas f
+  WHERE f.tenant_id = v_tenant
+    AND (f.fecha AT TIME ZONE 'America/Santo_Domingo')::date >= v_mes_ini
+    AND (f.fecha AT TIME ZONE 'America/Santo_Domingo')::date <= v_hoy
+    AND COALESCE(f.estado, '') <> 'ANULADA';
 
   WITH movimientos AS (
     -- INGRESO: ventas de contado (efectivo recibido al vender)
@@ -249,6 +262,14 @@ BEGIN
       'porcentaje_meta',
         CASE WHEN v_meta > 0
              THEN ROUND((a.act_flujo / v_meta) * 100, 2)
+             ELSE NULL END,
+      -- Meta de VENTAS (lo que pinta la franja "Metas y proyecciones")
+      'meta_ventas',       ROUND(v_meta_ventas, 2),
+      'ventas_mes',        ROUND(v_ventas_mes, 2),
+      'proyeccion_ventas', ROUND((v_ventas_mes / NULLIF(v_dia, 0)) * v_dias_en_mes, 2),
+      'porcentaje_meta_ventas',
+        CASE WHEN v_meta_ventas > 0
+             THEN ROUND((v_ventas_mes / v_meta_ventas) * 100, 2)
              ELSE NULL END
     ),
     'series', json_build_object(
@@ -268,4 +289,10 @@ GRANT  EXECUTE ON FUNCTION public.get_flujo_neto_dashboard(date) TO authenticate
 
 NOTIFY pgrst, 'reload schema';
 
-SELECT 'meta_flujo_neto_mensual + get_flujo_neto_dashboard listos' AS status;
+DO $$ BEGIN
+  IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
+    PERFORM public.registrar_migracion('flujo_neto_dashboard.sql');
+  END IF;
+END $$;
+
+SELECT 'meta_flujo_neto_mensual + get_flujo_neto_dashboard listos (metas de ventas incluidas)' AS status;

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Waves, TrendingUp, TrendingDown, Info, ChevronRight, Target } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import {
-  formatCurrencyDOP, computeComparacion, tonoClasses,
+  formatCurrencyDOP, computeComparacion, computeMetaEstado, tonoClasses, metaEstadoClasses,
 } from '@/lib/flujoNeto';
 import FlujoNetoDesgloseModal from './FlujoNetoDesgloseModal';
 import FlujoNetoMiniChart from './FlujoNetoMiniChart';
@@ -68,11 +68,17 @@ const FlujoNetoCard = ({ data, loading = false, onRetry }) => {
     !!data.periodo_anterior?.tiene_datos
   );
 
-  // Proyección del FLUJO NETO al cierre (ritmo actual × días del mes).
-  // OJO: no se compara contra la meta de ventas — son magnitudes distintas
-  // (la meta de ventas ya tiene su propia tarjeta con su % real).
   const metas = data.metas || {};
-  const proyeccion = Number(metas.proyeccion) || 0;
+  const proyeccion = Number(metas.proyeccion) || 0; // proyección del flujo (respaldo)
+  // Meta de VENTAS: la franja compara meta de ventas vs ventas/proyección de
+  // VENTAS (nunca contra el flujo neto — magnitudes distintas, daba ~0%).
+  // ventas_mes solo existe en el RPC nuevo; si falta, cae al respaldo.
+  const tieneMetaVentas = metas.ventas_mes !== undefined && metas.ventas_mes !== null;
+  const metaVentas = Number(metas.meta_ventas) || 0;
+  const ventasMes = Number(metas.ventas_mes) || 0;
+  const proyVentas = Number(metas.proyeccion_ventas) || 0;
+  const metaEstado = computeMetaEstado(proyVentas, metaVentas);
+  const pctVentas = metaVentas > 0 ? Math.max(0, Math.min((ventasMes / metaVentas) * 100, 100)) : 0;
 
   // Color del valor principal.
   const flujoTono = sinMovimientos ? 'neutral' : flujo >= 0 ? 'positivo' : 'negativo';
@@ -148,24 +154,52 @@ const FlujoNetoCard = ({ data, loading = false, onRetry }) => {
         <MiniStat label="Prom. diario" value={formatCurrencyDOP(promedio, { decimals: 0 })} />
       </div>
 
-      {/* Proyección del flujo neto al cierre del mes */}
-      <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 shrink-0">
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            <Target className="w-3 h-3" /> Proyección al cierre
-          </span>
-          <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${
-            proyeccion >= 0
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : 'bg-rose-50 text-rose-700 border-rose-200'
-          }`}>
-            {proyeccion < 0 ? '-' : ''}{formatCurrencyDOP(Math.abs(proyeccion), { decimals: 0 })}
-          </span>
+      {/* Metas y proyecciones DE VENTAS (mismo display que la app móvil) */}
+      {tieneMetaVentas ? (
+        <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 shrink-0">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <Target className="w-3 h-3" /> Metas y proyecciones
+            </span>
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${metaEstadoClasses[metaEstado.estado]}`}>
+              {metaVentas > 0 ? `${pctVentas.toFixed(1)}%` : 'Sin meta'}
+            </span>
+          </div>
+          <div className="flex justify-between gap-2 mt-1 text-[11px]">
+            <span className="text-slate-500">Meta <b className="text-slate-700">{formatCurrencyDOP(metaVentas, { decimals: 0 })}</b></span>
+            <span className="text-slate-500">Proy. ventas <b className="text-slate-700">{formatCurrencyDOP(proyVentas, { decimals: 0 })}</b></span>
+          </div>
+          {metaVentas > 0 && (
+            <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden mt-1.5">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  metaEstado.estado === 'verde' ? 'bg-emerald-500' : metaEstado.estado === 'amarillo' ? 'bg-amber-500' : 'bg-rose-500'
+                }`}
+                style={{ width: `${pctVentas}%` }}
+              />
+            </div>
+          )}
         </div>
-        <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-          A ritmo de {formatCurrencyDOP(promedio, { decimals: 0 })}/día, el mes cerraría con ese flujo neto.
-        </p>
-      </div>
+      ) : (
+        // Respaldo mientras el RPC no traiga ventas_mes: proyección del flujo.
+        <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 shrink-0">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <Target className="w-3 h-3" /> Proyección al cierre
+            </span>
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${
+              proyeccion >= 0
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-rose-50 text-rose-700 border-rose-200'
+            }`}>
+              {proyeccion < 0 ? '-' : ''}{formatCurrencyDOP(Math.abs(proyeccion), { decimals: 0 })}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+            A ritmo de {formatCurrencyDOP(promedio, { decimals: 0 })}/día, el mes cerraría con ese flujo neto.
+          </p>
+        </div>
+      )}
 
       {/* Ver desglose */}
       <button
