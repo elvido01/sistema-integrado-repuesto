@@ -508,12 +508,13 @@ export async function fetchMobileDashboard(
     gastosHistRes,
     financieraExternaRes,
     camineroFinanceRes,
+    cajaExcedenteRes,
   ] = await Promise.all([
     supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', todayStart).lt('created_at', tomorrowStart).neq('estado', 'ANULADA'),
     supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', todayStart).lt('created_at', tomorrowStart).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
     supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId).gte('created_at', todayStart).lt('created_at', tomorrowStart).eq('anulado', false),
     supabase.from('gastos_diarios').select('monto').eq('tenant_id', tenantId).eq('fecha', today).eq('anulado', false),
-    supabase.from('compromisos').select('monto, fecha').eq('tenant_id', tenantId).eq('activo', true).lte('fecha', week.end),
+    supabase.from('compromisos').select('monto, fecha').eq('tenant_id', tenantId).eq('activo', true),
     supabase.from('compras').select('monto_pendiente, total_compra, monto_pagado, fecha, dias_credito').eq('tenant_id', tenantId).ilike('forma_pago', 'CREDITO').eq('estado', 'PENDIENTE'),
     supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', month.start).lt('created_at', month.next).neq('estado', 'ANULADA'),
     supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', previousMonth.start).lt('created_at', previousMonth.next).neq('estado', 'ANULADA'),
@@ -525,6 +526,9 @@ export async function fetchMobileDashboard(
     supabase.from('gastos_diarios').select('monto').eq('tenant_id', tenantId).gte('fecha', historyAnchorDate).eq('anulado', false),
     fetchFinancieraExternaRecibosDia(today),
     fetchCamineroFinanceSummary(today, week.end),
+    // Mismo RPC que usa el dashboard web: caja de hoy + excedente acumulado.
+    // Evita que la móvil recalcule a mano y difiera de la web.
+    supabase.rpc('get_caja_excedente_dashboard'),
   ]);
 
   const firstError = [
@@ -570,14 +574,22 @@ export async function fetchMobileDashboard(
     return sum + Math.max(0, pendiente);
   }, 0);
 
-  const cajaActual = ventasContadoHoy + recibosHoy - gastosDia;
-  const excedente = saldoInicial
-    + sumField(ventasContadoHistRes.data, 'total')
-    + sumField(recibosHistRes.data, 'monto_pagado')
-    - sumField(compromisosPagadosHistRes.data, 'monto')
-    - sumField(pagosSuplidoresHistRes.data, 'monto_pagado')
-    - sumField(comprasContadoHistRes.data, 'total_compra')
-    - sumField(gastosHistRes.data, 'monto');
+  // Preferir el RPC compartido con la web (mismos números garantizados);
+  // el cálculo local queda solo como respaldo si el RPC falla.
+  const cajaRpc: any = (cajaExcedenteRes as any)?.data;
+  const cajaRpcOk = !((cajaExcedenteRes as any)?.error) && cajaRpc && cajaRpc.excedente !== undefined;
+  const cajaActual = cajaRpcOk
+    ? toNumber(cajaRpc.caja_hoy)
+    : ventasContadoHoy + recibosHoy - gastosDia;
+  const excedente = cajaRpcOk
+    ? toNumber(cajaRpc.excedente)
+    : saldoInicial
+      + sumField(ventasContadoHistRes.data, 'total')
+      + sumField(recibosHistRes.data, 'monto_pagado')
+      - sumField(compromisosPagadosHistRes.data, 'monto')
+      - sumField(pagosSuplidoresHistRes.data, 'monto_pagado')
+      - sumField(comprasContadoHistRes.data, 'total_compra')
+      - sumField(gastosHistRes.data, 'monto');
 
   const dayOfMonth = Math.max(1, now.getDate());
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
