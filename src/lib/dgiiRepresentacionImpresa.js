@@ -176,37 +176,40 @@ export function normalizeRepresentacionData(data) {
   };
 }
 
+// Mismo formato que dgii-ecf (validado en produccion). Claves:
+// - Tipo 32 < RD$250mil va SIEMPRE al host fc.dgii.gov.do (consultatimbrefc),
+//   tambien en TesteCF/CerteCF — antes en certificacion apuntaba a
+//   ecf.dgii.gov.do/consultatimbre y el QR no abria.
+// - E43/E47 no llevan RncComprador en la consulta.
+// - encodeURIComponent por parametro (espacio = %20, no '+'): el codigo de
+//   seguridad viene de base64 y puede traer '+' o '/'.
 export function buildDgiiQrUrl(data) {
   const monto = formatMoney(data.montoTotal);
   const isFacturaConsumoMenor = data.tipo === '32' && Number(monto) < 250000;
   const ambiente = String(data.ambiente || '').trim();
-  const isProduccion = !ambiente || ambiente === 'Produccion';
-  const ambientePath = ambiente.toLowerCase();
-  const baseUrl = isProduccion
-    ? (isFacturaConsumoMenor
-      ? 'https://fc.dgii.gov.do/ecf/ConsultaTimbreFC'
-      : 'https://ecf.dgii.gov.do/ecf/consultatimbre')
-    : `https://ecf.dgii.gov.do/${ambientePath}/consultatimbre`;
+  const env = (!ambiente || ambiente === 'Produccion') ? 'ecf' : ambiente.toLowerCase();
+
+  if (isFacturaConsumoMenor) {
+    return `https://fc.dgii.gov.do/${env}/consultatimbrefc`
+      + `?rncemisor=${encodeURIComponent(data.rncEmisor)}`
+      + `&encf=${encodeURIComponent(data.encf)}`
+      + `&montototal=${encodeURIComponent(Number(monto))}`
+      + `&codigoseguridad=${encodeURIComponent(data.codigoSeguridad)}`;
+  }
 
   const compradorId = data.rncComprador || data.identificadorExtranjero || '';
-  const params = [
-    ['rncemisor', data.rncEmisor],
-  ];
-  if (!isFacturaConsumoMenor && compradorId) {
-    params.push(['rnccomprador', compradorId]);
-  }
-  params.push(['encf', data.encf]);
-  if (!isFacturaConsumoMenor) {
-    params.push(['fechaemision', data.fechaEmision]);
-  }
-  params.push(['montototal', monto]);
-  if (!isFacturaConsumoMenor) {
-    params.push(['fechafirma', data.fechaFirma]);
-  }
-  params.push(['codigoseguridad', data.codigoSeguridad]);
+  const sinComprador = data.tipo === '43' || data.tipo === '47';
+  const compradorParam = (!sinComprador && compradorId)
+    ? `RncComprador=${encodeURIComponent(compradorId)}&`
+    : '';
 
-  const search = new URLSearchParams(params);
-  return `${baseUrl}?${search.toString()}`;
+  return `https://ecf.dgii.gov.do/${env}/consultatimbre`
+    + `?rncemisor=${encodeURIComponent(data.rncEmisor)}`
+    + `&${compradorParam}encf=${encodeURIComponent(data.encf)}`
+    + `&fechaemision=${encodeURIComponent(data.fechaEmision)}`
+    + `&montototal=${encodeURIComponent(monto)}`
+    + `&fechafirma=${encodeURIComponent(data.fechaFirma)}`
+    + `&codigoseguridad=${encodeURIComponent(data.codigoSeguridad)}`;
 }
 
 export function getRepresentacionQrUrl(inputData) {
