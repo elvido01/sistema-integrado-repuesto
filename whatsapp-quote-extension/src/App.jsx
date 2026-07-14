@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
-import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp } from './utils/whatsappDom.js';
+import { castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
 import OmniInbox from './components/omni/OmniInbox.jsx';
@@ -419,6 +419,31 @@ export default function App() {
 
     return () => window.clearInterval(interval);
   }, []);
+
+  // Espejo de WhatsApp → Sales Hub: al abrir/cambiar de chat (y cada 20s
+  // mientras siga abierto) copia la conversación visible a la base para que
+  // el sistema/Hermes la vea. No invasivo (solo lee lo visible); el dedup por
+  // data-id evita duplicados. Solo canal WhatsApp, sesión activa y sin safeMode.
+  useEffect(() => {
+    if (safeMode) return;
+    if (!session?.access_token || empresaPending) return;
+    if (activeChannel !== CHANNEL_TYPES.WHATSAPP) return;
+
+    let cancelled = false;
+    const runMirror = async () => {
+      try {
+        const convo = readCurrentConversation();
+        if (!convo || cancelled) return;
+        await mirrorWhatsAppConversation(convo);
+      } catch {
+        // silencioso: el espejo nunca debe estorbar el uso normal
+      }
+    };
+
+    runMirror();
+    const interval = window.setInterval(runMirror, 20000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [chat.id, activeChannel, session?.access_token, empresaPending, safeMode]);
 
   useEffect(() => {
     if (!session?.access_token || empresaPending) return;

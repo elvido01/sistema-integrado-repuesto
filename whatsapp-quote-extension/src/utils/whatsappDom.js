@@ -28,6 +28,77 @@ export function getCurrentChat() {
   return { id, name };
 }
 
+// Lee la conversación de WhatsApp ABIERTA (contacto + mensajes visibles)
+// para espejarla a Sales Hub. NO invasivo: solo lee lo que está en pantalla
+// (no hace scroll). El dedup por data-id (external_message_id) del lado del
+// servidor evita duplicar al re-leer. Solo chats individuales (@c.us);
+// los grupos (@g.us) se ignoran. Devuelve null si no hay chat/mensajes.
+export function readCurrentConversation({ maxMessages = 40 } = {}) {
+  const main = document.querySelector('#main');
+  if (!main) return null;
+
+  const { name } = getCurrentChat();
+
+  // Filas de mensaje: data-id empieza con `true_` (enviado por mí) o
+  // `false_` (recibido). Eso da a la vez el id único y la dirección.
+  const rows = Array.from(main.querySelectorAll('[data-id]'))
+    .filter((el) => /^(true|false)_/.test(el.getAttribute('data-id') || ''));
+  if (!rows.length) return null;
+
+  // El data-id trae el jid: `<dir>_<jid>_<msgid>`, jid = `<phone>@c.us`.
+  let jid = '';
+  for (const el of rows) {
+    const m = (el.getAttribute('data-id') || '').match(/^(?:true|false)_([^_]+)_/);
+    if (m) { jid = m[1]; break; }
+  }
+  if (!jid || !/@c\.us$/i.test(jid)) return null; // grupo o formato raro
+  const phone = jid.replace(/@c\.us$/i, '').replace(/\D/g, '');
+  if (!phone) return null;
+
+  const detectMedia = (row) => {
+    if (row.querySelector('img[src^="blob:"]')) return 'image';
+    if (row.querySelector('[data-icon="audio"], [data-icon="ptt"], [data-icon="ptt-status"]')) return 'audio';
+    if (row.querySelector('video, [data-icon="media-play"]')) return 'video';
+    if (row.querySelector('[data-icon="document"], [data-icon="document-refreshed"]')) return 'document';
+    if (row.querySelector('[data-icon="sticker"]')) return 'sticker';
+    return 'text';
+  };
+
+  // data-pre-plain-text: "[10:30 p. m., 14/7/2026] Nombre: " → intento de fecha.
+  const parseTs = (pre) => {
+    const m = String(pre || '').match(/\[([^\]]+)\]/);
+    if (!m) return null;
+    const d = new Date(m[1]);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  };
+
+  const messages = [];
+  for (const row of rows.slice(-maxMessages)) {
+    const dataId = row.getAttribute('data-id');
+    const direction = dataId.startsWith('true_') ? 'out' : 'in';
+    const pre = row.querySelector('.copyable-text')?.getAttribute('data-pre-plain-text') || '';
+    const text = cleanText(row.querySelector('.selectable-text')?.textContent || '');
+    const mediaType = detectMedia(row);
+    if (!text && mediaType === 'text') continue; // fila sin contenido útil
+    messages.push({
+      external_message_id: dataId,
+      direction,
+      text,
+      message_type: mediaType,
+      ts: parseTs(pre),
+      pre: cleanText(pre) || null,
+    });
+  }
+  if (!messages.length) return null;
+
+  return {
+    external_conversation_id: `whatsapp:${phone}`,
+    phone,
+    name: name || phone,
+    messages,
+  };
+}
+
 export function openWhatsAppChatViaInternalLink(phone, text = '') {
   const cleanPhone = String(phone || '').replace(/\D/g, '');
   if (!cleanPhone) return false;

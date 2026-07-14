@@ -733,6 +733,30 @@ export async function getOmniMessages(conversationId) {
   return fetchJson(url.toString(), { headers });
 }
 
+// Espeja a Sales Hub la conversación de WhatsApp abierta (contacto +
+// mensajes leídos del DOM). Llama la RPC omni_mirror_whatsapp (SECURITY
+// DEFINER, valida tenant y deduplica). Degradación segura: si la RPC aún no
+// existe, no rompe la extensión (devuelve null).
+export async function mirrorWhatsAppConversation(payload) {
+  if (!payload?.external_conversation_id || !Array.isArray(payload?.messages) || !payload.messages.length) {
+    return null;
+  }
+  const headers = await getAuthHeaders();
+  try {
+    return await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/omni_mirror_whatsapp`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_payload: payload })
+    });
+  } catch (error) {
+    const msg = String(error?.message || '');
+    if (/omni_mirror_whatsapp/i.test(msg) && /schema cache|function|does not exist/i.test(msg)) {
+      return null; // RPC no desplegada todavía
+    }
+    throw error;
+  }
+}
+
 export async function sendOmniReply({ conversation, text }) {
   if (!conversation?.id) throw new Error('Selecciona una conversacion.');
   const cleanText = String(text || '').trim();
