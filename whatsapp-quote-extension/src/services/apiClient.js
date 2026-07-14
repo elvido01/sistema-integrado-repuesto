@@ -770,6 +770,7 @@ export async function sendMirrorHeartbeat(diag = {}) {
         p_chat_open: !!diag.chatOpen,
         p_rows_found: Number(diag.rowsFound) || 0,
         p_parsed: Number(diag.parsed) || 0,
+        p_probe: diag.probe || null,
       })
     });
   } catch (error) {

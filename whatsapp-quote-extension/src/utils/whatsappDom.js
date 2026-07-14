@@ -34,36 +34,66 @@ export function getCurrentChat() {
 // servidor evita duplicar al re-leer. Solo chats individuales (@c.us);
 // los grupos (@g.us) se ignoran. Devuelve null si no hay chat/mensajes.
 export function readCurrentConversation({ maxMessages = 40 } = {}) {
-  // diag: se manda SIEMPRE como latido, aunque no se lea nada. Sirve para
-  // detectar que el espejo se rompió (chat abierto pero 0 filas leídas =
-  // WhatsApp cambió su estructura) vs "no estabas trabajando".
+  // diag: se manda SIEMPRE como latido, aunque no se lea nada. `probe` lleva
+  // un mapa de la estructura real de WhatsApp Web para poder ajustar los
+  // selectores sin devtools cuando cambie.
   const main = document.querySelector('#main');
-  const diag = { mainPresent: !!main, chatOpen: false, rowsFound: 0, parsed: 0 };
+  const diag = { mainPresent: !!main, chatOpen: false, rowsFound: 0, parsed: 0, probe: null };
   if (!main) return { diag, convo: null };
   diag.chatOpen = !!main.querySelector('[contenteditable="true"]');
 
   const { name } = getCurrentChat();
 
-  // Filas de mensaje: data-id empieza con `true_` (enviado por mí) o
-  // `false_` (recibido). Eso da a la vez el id único y la dirección.
-  const rows = Array.from(main.querySelectorAll('[data-id]'))
-    .filter((el) => /^(true|false)_/.test(el.getAttribute('data-id') || ''));
+  // Estrategia robusta para ubicar las filas de mensaje. WhatsApp Web va
+  // cambiando: probamos por role="row", luego burbujas .message-in/out, y por
+  // último cualquier elemento con data-id de mensaje.
+  let rows = Array.from(main.querySelectorAll('div[role="row"]'));
+  if (!rows.length) {
+    rows = Array.from(main.querySelectorAll('.message-in, .message-out'))
+      .map((el) => el.closest('[role="row"]') || el);
+  }
+  if (!rows.length) {
+    rows = Array.from(main.querySelectorAll('[data-id]'))
+      .filter((el) => /^(true|false)_/.test(el.getAttribute('data-id') || ''));
+  }
+
+  // Sonda de diagnóstico: qué encuentra realmente cada selector.
+  const allDataId = Array.from(main.querySelectorAll('[data-id]'));
+  diag.probe = {
+    rowRole: main.querySelectorAll('div[role="row"]').length,
+    msgInOut: main.querySelectorAll('.message-in, .message-out').length,
+    dataIdCount: allDataId.length,
+    sampleDataIds: allDataId.slice(0, 4).map((el) => el.getAttribute('data-id')),
+    selectable: main.querySelectorAll('.selectable-text').length,
+    copyable: main.querySelectorAll('.copyable-text').length,
+    preText: main.querySelectorAll('[data-pre-plain-text]').length,
+  };
+
   diag.rowsFound = rows.length;
   if (!rows.length) return { diag, convo: null };
 
-  // El data-id trae el jid: `<dir>_<jid>_<msgid>`, jid = `<phone>@c.us`.
-  let jid = '';
-  for (const el of rows) {
-    const m = (el.getAttribute('data-id') || '').match(/^(?:true|false)_([^_]+)_/);
-    if (m) { jid = m[1]; break; }
+  // data-id de una fila: puede estar en la fila o en un hijo. Solo mensajes
+  // (prefijo true_/false_).
+  const getDataId = (row) => {
+    const self = row.getAttribute && row.getAttribute('data-id');
+    if (self && /^(true|false)_/.test(self)) return self;
+    const child = row.querySelector('[data-id]');
+    const cid = child?.getAttribute('data-id') || '';
+    return /^(true|false)_/.test(cid) ? cid : null;
+  };
+
+  // Teléfono desde cualquier data-id individual: `_<digitos>@c.us_`.
+  let phone = '';
+  for (const row of rows) {
+    const id = getDataId(row);
+    const m = id && id.match(/_(\d+)@c\.us_/);
+    if (m) { phone = m[1]; break; }
   }
-  if (!jid || !/@c\.us$/i.test(jid)) return { diag, convo: null }; // grupo o formato raro
-  const phone = jid.replace(/@c\.us$/i, '').replace(/\D/g, '');
-  if (!phone) return { diag, convo: null };
+  if (!phone) return { diag, convo: null }; // grupo, o no pude extraer el número
 
   const detectMedia = (row) => {
     if (row.querySelector('img[src^="blob:"]')) return 'image';
-    if (row.querySelector('[data-icon="audio"], [data-icon="ptt"], [data-icon="ptt-status"]')) return 'audio';
+    if (row.querySelector('[data-icon="audio"], [data-icon="ptt"], [data-icon="ptt-status"], [aria-label*="voz" i]')) return 'audio';
     if (row.querySelector('video, [data-icon="media-play"]')) return 'video';
     if (row.querySelector('[data-icon="document"], [data-icon="document-refreshed"]')) return 'document';
     if (row.querySelector('[data-icon="sticker"]')) return 'sticker';
@@ -80,9 +110,12 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
 
   const messages = [];
   for (const row of rows.slice(-maxMessages)) {
-    const dataId = row.getAttribute('data-id');
-    const direction = dataId.startsWith('true_') ? 'out' : 'in';
-    const pre = row.querySelector('.copyable-text')?.getAttribute('data-pre-plain-text') || '';
+    const dataId = getDataId(row);
+    if (!dataId) continue; // filas de fecha/sistema no tienen data-id de mensaje
+    const direction = dataId.startsWith('true_') ? 'out'
+      : dataId.startsWith('false_') ? 'in'
+      : (row.querySelector('.message-out') ? 'out' : 'in');
+    const pre = row.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || '';
     const text = cleanText(row.querySelector('.selectable-text')?.textContent || '');
     const mediaType = detectMedia(row);
     if (!text && mediaType === 'text') continue; // fila sin contenido útil
