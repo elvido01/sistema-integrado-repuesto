@@ -21,9 +21,9 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { rawPrint, printImage, listPrinters, getPrinterStatus, cancelStalePrintJobs } = require('./lib/winRawPrinter');
+const { rawPrint, printImage, listPrinters, getPrinterStatus, cancelStalePrintJobs, resolvePrinterName } = require('./lib/winRawPrinter');
 
-const VERSION = '0.7.2';
+const VERSION = '0.7.3';
 const PORT = Number(process.env.PORT) || 9123;
 const MAX_PRINT_BYTES = 5 * 1024 * 1024;
 const MAX_RECENT_JOBS = 100;
@@ -259,13 +259,22 @@ app.post('/print/raw', async (req, res) => {
       return res.status(413).json({ ok: false, error: `Trabajo demasiado grande (${buffer.length} bytes)` });
     }
 
-    flog(`[print] ${printerName} ${buffer.length} bytes (format=${format || 'raw'}, copies=${copies}) [cola=${printQueue.length}]`);
+    // Redirige a una impresora hermana viva si la pedida está muerta o es
+    // una cola duplicada "(Copia N)" (fix del USB que salta de puerto).
+    let targetPrinter = printerName;
+    try {
+      const resolved = await resolvePrinterName(printerName);
+      targetPrinter = resolved.name || printerName;
+      if (resolved.redirected) flog(`[resolve] "${printerName}" → "${targetPrinter}" (${resolved.reason})`);
+    } catch (e) { flog('[resolve] fallo (uso nombre original): ' + e.message); }
 
-    const result = await enqueuePrint(printerName, buffer, 'raw', { copies });
+    flog(`[print] ${targetPrinter} ${buffer.length} bytes (format=${format || 'raw'}, copies=${copies}) [cola=${printQueue.length}]`);
+
+    const result = await enqueuePrint(targetPrinter, buffer, 'raw', { copies });
     stats.lastPrintAt = new Date().toISOString();
     if (result.ok) {
       stats.printsOk++;
-      res.json({ ok: true, jobID: result.jobID, bytes: buffer.length, printer: printerName });
+      res.json({ ok: true, jobID: result.jobID, bytes: buffer.length, printer: targetPrinter, requestedPrinter: printerName });
     } else {
       stats.printsFailed++;
       stats.lastError = result.error;
@@ -309,12 +318,19 @@ app.post('/print/image', async (req, res) => {
     if (!buffer.length) return res.status(400).json({ ok: false, error: 'data vacio' });
     if (buffer.length > MAX_PRINT_BYTES) return res.status(413).json({ ok: false, error: `Imagen demasiado grande (${buffer.length} bytes)` });
 
-    flog(`[image] ${printerName} ${buffer.length} bytes (widthMM=${widthMM}, copies=${copies}) [cola=${printQueue.length}]`);
-    const result = await enqueuePrint(printerName, buffer, 'image', { widthMM, copies });
+    let targetPrinter = printerName;
+    try {
+      const resolved = await resolvePrinterName(printerName);
+      targetPrinter = resolved.name || printerName;
+      if (resolved.redirected) flog(`[resolve] "${printerName}" → "${targetPrinter}" (${resolved.reason})`);
+    } catch (e) { flog('[resolve] fallo (uso nombre original): ' + e.message); }
+
+    flog(`[image] ${targetPrinter} ${buffer.length} bytes (widthMM=${widthMM}, copies=${copies}) [cola=${printQueue.length}]`);
+    const result = await enqueuePrint(targetPrinter, buffer, 'image', { widthMM, copies });
     stats.lastPrintAt = new Date().toISOString();
     if (result.ok) {
       stats.printsOk++;
-      res.json({ ok: true, jobID: result.jobID, bytes: buffer.length, printer: printerName });
+      res.json({ ok: true, jobID: result.jobID, bytes: buffer.length, printer: targetPrinter, requestedPrinter: printerName });
     } else {
       stats.printsFailed++;
       stats.lastError = result.error;

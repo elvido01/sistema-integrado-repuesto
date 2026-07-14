@@ -52,6 +52,22 @@ async function pickBackend(): Promise<'agent' | 'qz'> {
  * con alguno de los nombres preferidos. Retorna el primero que matchee
  * exacto, sino el primero que contenga alguna substring conocida.
  */
+const isCopyName = (name: string) => /\((?:copia|copiar|copy)\s*\d+\)/i.test(name);
+
+// Cuando varias impresoras coinciden, prefiere la que NO es una cola
+// duplicada "(Copia N)" de Windows y, a igualdad, el nombre más corto.
+// El agente v0.7.3+ además redirige a la hermana viva; esto ayuda cuando
+// la web corre contra un agente viejo o QZ Tray.
+function pickBest(matches: string[]): string | null {
+    if (!matches.length) return null;
+    return [...matches].sort((a, b) => {
+        const ac = isCopyName(a) ? 1 : 0;
+        const bc = isCopyName(b) ? 1 : 0;
+        if (ac !== bc) return ac - bc;
+        return a.length - b.length;
+    })[0];
+}
+
 function matchPrinter(printers: string[], preferred: string[] = []): string | null {
     const lowerList = printers.map((p) => p.toLowerCase());
 
@@ -61,12 +77,17 @@ function matchPrinter(printers: string[], preferred: string[] = []): string | nu
         const idx = lowerList.indexOf(name.toLowerCase());
         if (idx >= 0) return printers[idx];
     }
-    // 2. Match por substring
+    // 2. Match por substring — recoge TODOS los que coinciden y elige el mejor
+    //    (sin sufijo "(Copia N)"), no el primero según el orden de Windows.
     for (const name of preferred) {
         if (!name) continue;
         const t = name.toLowerCase();
-        const idx = lowerList.findIndex((p) => p.includes(t) || t.includes(p));
-        if (idx >= 0) return printers[idx];
+        const matches = printers.filter((p) => {
+            const lp = p.toLowerCase();
+            return lp.includes(t) || t.includes(lp);
+        });
+        const best = pickBest(matches);
+        if (best) return best;
     }
     return null;
 }

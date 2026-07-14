@@ -640,4 +640,111 @@ foreach ($p in $printers) {
     });
 }
 
-module.exports = { rawPrint, printImage, listPrinters, getPrinterStatus, cancelStalePrintJobs };
+// ────────────────────────────────────────────────
+// resolvePrinterName — redirige a una impresora hermana VIVA
+// ────────────────────────────────────────────────
+// Windows a veces duplica una cola USB como "…(Copia 1)" cuando la
+// impresora reaparece en otro puerto. Los trabajos que caen en la cola
+// muerta se quedan atascados (el clásico "un día imprime, otro no").
+// Aquí, ANTES de encolar, si el nombre pedido no está disponible
+// (apagada, puerto muerto, o ES la copia muerta), se redirige a la
+// hermana viva con el mismo nombre base. Cubre a todos los clientes sin
+// que nadie tenga que re-seleccionar impresora a mano.
+
+let _printerSnapshot = { ts: 0, list: [] };
+const SNAPSHOT_TTL_MS = 5000;
+
+function stripCopySuffix(name) {
+    // "Star TSP100 (Copia 1)" · "(Copiar 2)" · "(Copy 3)" → "Star TSP100"
+    return String(name || '')
+        .replace(/\s*\((?:copia|copiar|copy)\s*\d+\)\s*$/i, '')
+        .trim();
+}
+
+// Estados de Windows que significan "no imprimirá ahora".
+const DEAD_STATUS = /offline|error|notavailable|paperout|paperjam|nopaper/i;
+
+function isAlive(p) {
+    if (!p) return false;
+    if (p.workOffline) return false;
+    return !DEAD_STATUS.test(p.status || '');
+}
+
+function getPrinterSnapshot() {
+    const now = Date.now();
+    if (now - _printerSnapshot.ts < SNAPSHOT_TTL_MS && _printerSnapshot.list.length) {
+        return Promise.resolve(_printerSnapshot.list);
+    }
+    return new Promise((resolve) => {
+        const ps = spawn('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-Command',
+            `try { Get-Printer | Select-Object Name,@{N='Status';E={[string]$_.PrinterStatus}},WorkOffline,PortName | ConvertTo-Json -Compress } catch { '[]' }`,
+        ]);
+        const timer = setTimeout(() => { try { ps.kill('SIGKILL'); } catch (_) {} resolve(_printerSnapshot.list); }, 3000);
+        let out = '';
+        ps.stdout.on('data', (d) => (out += d.toString()));
+        ps.on('close', () => {
+            clearTimeout(timer);
+            try {
+                const parsed = JSON.parse(out.trim() || '[]');
+                const arr = Array.isArray(parsed) ? parsed : [parsed];
+                const list = arr.filter(Boolean).map((p) => ({
+                    name: p.Name,
+                    status: String(p.Status || ''),
+                    workOffline: p.WorkOffline === true || p.WorkOffline === 'True',
+                    portName: p.PortName || '',
+                }));
+                _printerSnapshot = { ts: Date.now(), list };
+                resolve(list);
+            } catch (_) {
+                resolve(_printerSnapshot.list);
+            }
+        });
+        ps.on('error', () => { clearTimeout(timer); resolve(_printerSnapshot.list); });
+    });
+}
+
+async function resolvePrinterName(requested) {
+    const req = String(requested || '').trim();
+    if (!req) return { name: req, redirected: false };
+
+    let list;
+    try { list = await getPrinterSnapshot(); } catch (_) { list = []; }
+    if (!list.length) return { name: req, redirected: false }; // sin datos: no tocar
+
+    const byName = (n) => list.find((p) => p.name.toLowerCase() === n.toLowerCase());
+
+    // 1. Si la pedida existe y está viva, úsala tal cual (camino normal).
+    const exact = byName(req);
+    if (exact && isAlive(exact)) return { name: exact.name, redirected: false };
+
+    // 2. Agrupar por nombre base y buscar una hermana viva.
+    const base = stripCopySuffix(req).toLowerCase();
+    const group = list.filter((p) => stripCopySuffix(p.name).toLowerCase() === base);
+    const alive = group.filter(isAlive);
+    if (!alive.length) {
+        // Ninguna hermana viva: no romper (deja que se encole como antes).
+        return { name: exact ? exact.name : req, redirected: false };
+    }
+
+    // Preferir el nombre base limpio (sin "(Copia N)") y luego el más corto.
+    alive.sort((a, b) => {
+        const ac = /\((?:copia|copiar|copy)\s*\d+\)/i.test(a.name) ? 1 : 0;
+        const bc = /\((?:copia|copiar|copy)\s*\d+\)/i.test(b.name) ? 1 : 0;
+        if (ac !== bc) return ac - bc;
+        return a.name.length - b.name.length;
+    });
+    const chosen = alive[0];
+    if (chosen.name.toLowerCase() === req.toLowerCase()) {
+        return { name: chosen.name, redirected: false };
+    }
+    return {
+        name: chosen.name,
+        redirected: true,
+        from: req,
+        reason: exact ? `"${req}" en estado ${exact.status || 'no disponible'}` : `"${req}" no existe/está muerta`,
+    };
+}
+
+module.exports = { rawPrint, printImage, listPrinters, getPrinterStatus, cancelStalePrintJobs, resolvePrinterName };
