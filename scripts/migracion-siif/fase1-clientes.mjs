@@ -75,6 +75,7 @@ const PRESTAMOS = [
 const byCodigo = new Map();
 for (const r of ln.rows) { const c = s(r.codigo); if (c) byCodigo.set(c, mapCliente(r, 0)); }
 let agregadosDePrestamos = 0;
+let telefonosCompletados = 0;
 for (const src of PRESTAMOS) {
   const fp = path.join(folder, src.file);
   if (!fs.existsSync(fp)) continue;
@@ -82,7 +83,21 @@ for (const src of PRESTAMOS) {
   console.log(`${src.file}.clientes: ${pr.rows.length}`);
   for (const r of pr.rows) {
     const c = s(r.codigo);
-    if (c && !byCodigo.has(c)) { byCodigo.set(c, mapCliente(r, src.offset)); agregadosDePrestamos++; }
+    if (!c) continue;
+    const existente = byCodigo.get(c);
+    if (!existente) {
+      byCodigo.set(c, mapCliente(r, src.offset));
+      agregadosDePrestamos++;
+      continue;
+    }
+    // El master (scv8) gana en identidad, pero sus HUECOS se completan con
+    // prestamos_0X: scv8 solo tiene telefono en ~4,100 de 8,475 clientes
+    // mientras prestamos_01 lo tiene en ~6,100 — sin esto se perdian
+    // ~1,500 telefonos (detectado 2026-07-14).
+    const alt = mapCliente(r, src.offset);
+    if (!existente.telefono && alt.telefono) { existente.telefono = alt.telefono; telefonosCompletados++; }
+    if (!existente.email && alt.email) existente.email = alt.email;
+    if (!existente.direccion && alt.direccion) existente.direccion = alt.direccion;
   }
 }
 
@@ -102,6 +117,7 @@ const resumen = {
   total_clientes: clientes.length,
   de_scv8_mp_los_naranjos: ln.rows.length,
   extra_solo_en_prestamos: agregadosDePrestamos,
+  telefonos_completados_de_prestamos: telefonosCompletados,
   sin_telefono: sinTelefono,
   sin_cedula: sinCedula,
   sin_nombre: sinNombre,
