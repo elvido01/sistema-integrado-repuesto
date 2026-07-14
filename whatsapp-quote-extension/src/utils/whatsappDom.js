@@ -67,29 +67,38 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     selectable: main.querySelectorAll('.selectable-text').length,
     copyable: main.querySelectorAll('.copyable-text').length,
     preText: main.querySelectorAll('[data-pre-plain-text]').length,
+    tickRows: main.querySelectorAll('[data-icon^="msg-"]').length, // ticks = salientes
   };
 
   diag.rowsFound = rows.length;
   if (!rows.length) return { diag, convo: null };
 
-  // data-id de una fila: puede estar en la fila o en un hijo. Solo mensajes
-  // (prefijo true_/false_).
+  // data-id del mensaje. WhatsApp Web NUEVO ya no usa el prefijo true_/false_
+  // ni el jid: el data-id es solo el ID del mensaje (hex). Aceptamos cualquiera.
   const getDataId = (row) => {
     const self = row.getAttribute && row.getAttribute('data-id');
-    if (self && /^(true|false)_/.test(self)) return self;
-    const child = row.querySelector('[data-id]');
-    const cid = child?.getAttribute('data-id') || '';
-    return /^(true|false)_/.test(cid) ? cid : null;
+    if (self) return self;
+    return row.querySelector('[data-id]')?.getAttribute('data-id') || null;
   };
 
-  // Teléfono desde cualquier data-id individual: `_<digitos>@c.us_`.
-  let phone = '';
-  for (const row of rows) {
-    const id = getDataId(row);
-    const m = id && id.match(/_(\d+)@c\.us_/);
-    if (m) { phone = m[1]; break; }
-  }
-  if (!phone) return { diag, convo: null }; // grupo, o no pude extraer el número
+  // Dirección: en el formato nuevo no hay .message-out. Los mensajes SALIENTES
+  // muestran ticks de estado (data-icon="msg-check/msg-dblcheck/msg-time..."),
+  // los entrantes no. Respaldo: prefijo viejo true_/false_ si aún existiera.
+  const getDirection = (row, dataId) => {
+    if (dataId && dataId.startsWith('true_')) return 'out';
+    if (dataId && dataId.startsWith('false_')) return 'in';
+    if (row.querySelector('.message-out')) return 'out';
+    if (row.querySelector('[data-icon^="msg-"]')) return 'out';
+    return 'in';
+  };
+
+  // Teléfono: del encabezado del chat si el título es un número (contacto no
+  // guardado). Si es un nombre guardado, no hay número visible → id por nombre.
+  const digits = String(name || '').replace(/\D/g, '');
+  const phone = digits.length >= 7 ? digits : '';
+  const convId = phone
+    ? `whatsapp:${phone}`
+    : `whatsapp:name:${String(name || 'chat').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)}`;
 
   const detectMedia = (row) => {
     if (row.querySelector('img[src^="blob:"]')) return 'image';
@@ -108,20 +117,20 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
   };
 
+  const seen = new Set();
   const messages = [];
   for (const row of rows.slice(-maxMessages)) {
     const dataId = getDataId(row);
-    if (!dataId) continue; // filas de fecha/sistema no tienen data-id de mensaje
-    const direction = dataId.startsWith('true_') ? 'out'
-      : dataId.startsWith('false_') ? 'in'
-      : (row.querySelector('.message-out') ? 'out' : 'in');
+    if (!dataId || seen.has(dataId)) continue; // sin id o duplicado en el DOM
     const pre = row.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || '';
     const text = cleanText(row.querySelector('.selectable-text')?.textContent || '');
     const mediaType = detectMedia(row);
-    if (!text && mediaType === 'text') continue; // fila sin contenido útil
+    // filas de fecha/sistema ("viernes", "Llamada") no tienen texto ni media útil
+    if (!text && mediaType === 'text') continue;
+    seen.add(dataId);
     messages.push({
-      external_message_id: dataId,
-      direction,
+      external_message_id: `${convId}:${dataId}`,
+      direction: getDirection(row, dataId),
       text,
       message_type: mediaType,
       ts: parseTs(pre),
@@ -134,9 +143,9 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
   return {
     diag,
     convo: {
-      external_conversation_id: `whatsapp:${phone}`,
-      phone,
-      name: name || phone,
+      external_conversation_id: convId,
+      phone: phone || null,
+      name: name || convId,
       messages,
     },
   };
