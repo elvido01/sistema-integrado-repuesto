@@ -73,7 +73,15 @@ BEGIN
       jsonb_build_object('source', 'mirror', 'pre', v_msg->>'pre'),
       v_ts
     )
-    ON CONFLICT (tenant_id, platform, external_message_id) DO NOTHING;
+    -- Auto-sanador: al re-espejar corrige la dirección/tipo si el lector
+    -- mejoró (p.ej. el fix de "quién envió"). El texto solo se pisa si el
+    -- nuevo trae contenido (no borra un texto bueno con vacío).
+    ON CONFLICT (tenant_id, platform, external_message_id) DO UPDATE SET
+      sender_type  = EXCLUDED.sender_type,
+      status       = EXCLUDED.status,
+      message_type = EXCLUDED.message_type,
+      message_text = CASE WHEN COALESCE(EXCLUDED.message_text,'') <> ''
+                          THEN EXCLUDED.message_text ELSE sales_messages.message_text END;
 
     GET DIAGNOSTICS v_rowc = ROW_COUNT;
     IF v_rowc > 0 THEN v_inserted := v_inserted + 1; END IF;

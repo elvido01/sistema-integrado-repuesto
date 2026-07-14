@@ -68,6 +68,8 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     copyable: main.querySelectorAll('.copyable-text').length,
     preText: main.querySelectorAll('[data-pre-plain-text]').length,
     tickRows: main.querySelectorAll('[data-icon^="msg-"]').length, // ticks = salientes
+    tailOut: main.querySelectorAll('[data-icon="tail-out"]').length,
+    tailIn: main.querySelectorAll('[data-icon="tail-in"]').length,
   };
 
   diag.rowsFound = rows.length;
@@ -81,14 +83,26 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     return row.querySelector('[data-id]')?.getAttribute('data-id') || null;
   };
 
-  // Dirección: en el formato nuevo no hay .message-out. Los mensajes SALIENTES
-  // muestran ticks de estado (data-icon="msg-check/msg-dblcheck/msg-time..."),
-  // los entrantes no. Respaldo: prefijo viejo true_/false_ si aún existiera.
+  // Dirección (quién envió). WhatsApp nuevo no usa .message-out ni ticks
+  // msg-*. Señal robusta: POSICIÓN — los mensajes que YO envío van alineados
+  // a la derecha del panel. Fast-paths por clase/icono/tail si existieran.
+  const mainRect = main.getBoundingClientRect();
   const getDirection = (row, dataId) => {
     if (dataId && dataId.startsWith('true_')) return 'out';
     if (dataId && dataId.startsWith('false_')) return 'in';
-    if (row.querySelector('.message-out')) return 'out';
-    if (row.querySelector('[data-icon^="msg-"]')) return 'out';
+    if (row.querySelector('.message-out, [data-icon="tail-out"], [data-icon^="msg-"]')) return 'out';
+    if (row.querySelector('.message-in, [data-icon="tail-in"]')) return 'in';
+    // por posición de la burbuja de contenido
+    const content = row.querySelector('[data-pre-plain-text]')
+      || row.querySelector('.copyable-text')
+      || row.querySelector('.selectable-text')
+      || row.querySelector('span[aria-label], audio, img[src^="blob:"]')
+      || row.firstElementChild || row;
+    const rc = content.getBoundingClientRect ? content.getBoundingClientRect() : null;
+    if (rc && rc.width > 0 && mainRect.width > 0) {
+      const center = rc.left + rc.width / 2;
+      return center > mainRect.left + mainRect.width * 0.5 ? 'out' : 'in';
+    }
     return 'in';
   };
 
