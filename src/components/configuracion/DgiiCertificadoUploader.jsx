@@ -12,6 +12,7 @@ import DgiiCertificacionRunner from './DgiiCertificacionRunner';
 import DgiiAprobacionComercialRunner from './DgiiAprobacionComercialRunner';
 import DgiiSimulacionRunner from './DgiiSimulacionRunner';
 import DgiiRepresentacionImpresaRunner from './DgiiRepresentacionImpresaRunner';
+import DgiiRecepcionRunner from './DgiiRecepcionRunner';
 
 // Tamano maximo permitido para el .p12 (10 MB; reales son <50KB).
 const MAX_P12_BYTES = 10 * 1024 * 1024;
@@ -780,6 +781,12 @@ const DgiiCertificadoUploader = () => {
       {info?.configured && (
         <div className="border-t pt-6 mt-2">
           <DgiiRepresentacionImpresaRunner configInfo={info} />
+        </div>
+      )}
+
+      {info?.configured && (
+        <div className="border-t pt-6 mt-2">
+          <DgiiRecepcionRunner configInfo={info} />
         </div>
       )}
 
