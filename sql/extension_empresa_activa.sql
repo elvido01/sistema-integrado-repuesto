@@ -200,7 +200,9 @@ BEGIN
      SET tenant_id = EXCLUDED.tenant_id,
          updated_at = now();
 
-  SELECT COALESCE(ce.razon_social, ce.nombre, 'Empresa')
+  -- Nombre COMERCIAL primero (la razón social de Morla/Morla Vieja es
+  -- "MPN Y CAMINERO MOTORS", que confundía al confirmar la empresa).
+  SELECT COALESCE(NULLIF(ce.nombre, ''), NULLIF(ce.razon_social, ''), 'Empresa')
     INTO v_nombre
   FROM public.config_empresa ce
   WHERE ce.tenant_id = p_tenant_id
