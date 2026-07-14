@@ -34,8 +34,13 @@ export function getCurrentChat() {
 // servidor evita duplicar al re-leer. Solo chats individuales (@c.us);
 // los grupos (@g.us) se ignoran. Devuelve null si no hay chat/mensajes.
 export function readCurrentConversation({ maxMessages = 40 } = {}) {
+  // diag: se manda SIEMPRE como latido, aunque no se lea nada. Sirve para
+  // detectar que el espejo se rompió (chat abierto pero 0 filas leídas =
+  // WhatsApp cambió su estructura) vs "no estabas trabajando".
   const main = document.querySelector('#main');
-  if (!main) return null;
+  const diag = { mainPresent: !!main, chatOpen: false, rowsFound: 0, parsed: 0 };
+  if (!main) return { diag, convo: null };
+  diag.chatOpen = !!main.querySelector('[contenteditable="true"]');
 
   const { name } = getCurrentChat();
 
@@ -43,7 +48,8 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
   // `false_` (recibido). Eso da a la vez el id único y la dirección.
   const rows = Array.from(main.querySelectorAll('[data-id]'))
     .filter((el) => /^(true|false)_/.test(el.getAttribute('data-id') || ''));
-  if (!rows.length) return null;
+  diag.rowsFound = rows.length;
+  if (!rows.length) return { diag, convo: null };
 
   // El data-id trae el jid: `<dir>_<jid>_<msgid>`, jid = `<phone>@c.us`.
   let jid = '';
@@ -51,9 +57,9 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     const m = (el.getAttribute('data-id') || '').match(/^(?:true|false)_([^_]+)_/);
     if (m) { jid = m[1]; break; }
   }
-  if (!jid || !/@c\.us$/i.test(jid)) return null; // grupo o formato raro
+  if (!jid || !/@c\.us$/i.test(jid)) return { diag, convo: null }; // grupo o formato raro
   const phone = jid.replace(/@c\.us$/i, '').replace(/\D/g, '');
-  if (!phone) return null;
+  if (!phone) return { diag, convo: null };
 
   const detectMedia = (row) => {
     if (row.querySelector('img[src^="blob:"]')) return 'image';
@@ -89,13 +95,17 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
       pre: cleanText(pre) || null,
     });
   }
-  if (!messages.length) return null;
+  diag.parsed = messages.length;
+  if (!messages.length) return { diag, convo: null };
 
   return {
-    external_conversation_id: `whatsapp:${phone}`,
-    phone,
-    name: name || phone,
-    messages,
+    diag,
+    convo: {
+      external_conversation_id: `whatsapp:${phone}`,
+      phone,
+      name: name || phone,
+      messages,
+    },
   };
 }
 

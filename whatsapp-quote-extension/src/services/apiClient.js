@@ -757,6 +757,43 @@ export async function mirrorWhatsAppConversation(payload) {
   }
 }
 
+// Latido del espejo: se manda en CADA corrida (aunque no lea nada), con el
+// diagnóstico { chatOpen, rowsFound, parsed }. Permite detectar que el espejo
+// se rompió en silencio. Degradación segura si la RPC no existe.
+export async function sendMirrorHeartbeat(diag = {}) {
+  const headers = await getAuthHeaders();
+  try {
+    await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/omni_mirror_heartbeat`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        p_chat_open: !!diag.chatOpen,
+        p_rows_found: Number(diag.rowsFound) || 0,
+        p_parsed: Number(diag.parsed) || 0,
+      })
+    });
+  } catch (error) {
+    const msg = String(error?.message || '');
+    if (/omni_mirror_heartbeat/i.test(msg) && /schema cache|function|does not exist/i.test(msg)) return;
+    // no relanzar: el latido nunca debe estorbar
+  }
+}
+
+// Estado del espejo del tenant (para el chip visible). Devuelve el objeto de
+// get_omni_mirror_status o null si aún no está desplegado.
+export async function getMirrorStatus() {
+  const headers = await getAuthHeaders();
+  try {
+    return await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_omni_mirror_status`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function sendOmniReply({ conversation, text }) {
   if (!conversation?.id) throw new Error('Selecciona una conversacion.');
   const cleanText = String(text || '').trim();

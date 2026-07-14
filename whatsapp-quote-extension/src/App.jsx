@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
@@ -432,9 +432,11 @@ export default function App() {
     let cancelled = false;
     const runMirror = async () => {
       try {
-        const convo = readCurrentConversation();
-        if (!convo || cancelled) return;
-        await mirrorWhatsAppConversation(convo);
+        const { diag, convo } = readCurrentConversation();
+        if (cancelled) return;
+        // latido SIEMPRE (aunque no lea): así se detecta el DOM roto en silencio
+        await sendMirrorHeartbeat(diag);
+        if (convo && !cancelled) await mirrorWhatsAppConversation(convo);
       } catch {
         // silencioso: el espejo nunca debe estorbar el uso normal
       }
@@ -444,6 +446,20 @@ export default function App() {
     const interval = window.setInterval(runMirror, 20000);
     return () => { cancelled = true; window.clearInterval(interval); };
   }, [chat.id, activeChannel, session?.access_token, empresaPending, safeMode]);
+
+  // Estado del espejo (chip visible): se consulta al entrar y cada 60s.
+  const [mirrorStatus, setMirrorStatus] = useState(null);
+  useEffect(() => {
+    if (!session?.access_token || empresaPending) { setMirrorStatus(null); return; }
+    let cancelled = false;
+    const load = async () => {
+      const s = await getMirrorStatus().catch(() => null);
+      if (!cancelled) setMirrorStatus(s);
+    };
+    load();
+    const interval = window.setInterval(load, 60000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [session?.access_token, empresaPending, activeChannel]);
 
   useEffect(() => {
     if (!session?.access_token || empresaPending) return;
@@ -2098,6 +2114,24 @@ export default function App() {
       {session && !empresaPending && (
         <section className="mf-omni-status">
           <span className="mf-omni-version">{OMNI_BETA_VERSION}</span>
+          {(() => {
+            const est = mirrorStatus?.estado;
+            if (!est || est === 'desconocido') return null;
+            const map = {
+              ok:          { t: 'Espejo ✓', c: '#0a7a55', title: 'WhatsApp capturando al día' },
+              inactivo:    { t: 'Espejo en pausa', c: '#888', title: 'No llegan latidos: abre WhatsApp Web e inicia sesión' },
+              dom_roto:    { t: '⚠ Espejo sin leer', c: '#c0201a', title: 'Abriste chats pero no se leen mensajes — WhatsApp pudo cambiar su estructura. Avísale al equipo.' },
+              sin_captura: { t: '⚠ Sin capturas', c: '#c07a00', title: `Hace ${mirrorStatus?.horas_sin_captura ?? '?'} h que no entra un mensaje nuevo` },
+            };
+            const m = map[est];
+            if (!m) return null;
+            return (
+              <span className="mf-mirror-chip" title={m.title}
+                    style={{ color: m.c, fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>
+                {m.t}
+              </span>
+            );
+          })()}
           <button className="mf-safe-button" type="button" onClick={handleRestoreWhatsApp} title="Desmontar temporalmente MotoFlow Omni">
             Restaurar WhatsApp
           </button>
