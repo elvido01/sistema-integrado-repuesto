@@ -13,15 +13,19 @@
 -- sql/mora_default_empresa.sql) para mora e interés corriente. El TOTAL a
 -- cobrar es idéntico; lo que este reporte hace de más es SEPARAR bien
 -- capital vs interés dentro de cada cuota:
---   * Muchos préstamos (financiamiento de moto) guardan la cuota completa
---     como `capital` con `interes = 0` (el interés está metido dentro). Para
---     esos, el capital real de la cuota se estima con amortización flat:
+--   La decisión es POR PRÉSTAMO (no por cuota):
+--   * Si el préstamo separa el interés en ALGUNA cuota (interes>0) — p.ej.
+--     cuotas de interés mensual + un balloon de capital — se RESPETA el
+--     capital/interés que ya traen las cuotas.
+--   * Si NINGUNA cuota trae interés (todo está metido en `capital`, típico
+--     del financiamiento de moto), se reparte con amortización flat:
 --     capital_cuota = monto_capital / plazo_cuotas, y el resto es interés.
---   * Los que ya traen `interes > 0` separado se respetan tal cual.
 --   OJO: monto_capital es el principal ORIGINAL (las cuotas ya pagadas no se
 --   migraron), por eso NO se usa directo — se reparte proporcional al saldo.
--- Validado al centavo (2026-07-14): Fernando PT-0026551 → capital 164,500,
--- interés 89,030 (antes mostraba 253,530 todo como capital).
+-- Validado al centavo (2026-07-14):
+--   Fernando PT-0026551 (todo en capital) → capital 164,500, interés 89,030.
+--   Francisco PT-0026173 (interés separado) → capital 10,000, interés 8,769.86
+--     (+ corriente 394.52 = 9,164.38, igual al Recibo de Pago).
 --
 -- Filtros (todos opcionales):
 --   p_busqueda  — nombre/código de cliente o número de préstamo (ILIKE)
@@ -75,23 +79,19 @@ BEGIN
            OR c.codigo  ILIKE '%' || p_busqueda || '%'
            OR p.numero  ILIKE '%' || p_busqueda || '%')
   ),
+  pflag AS (  -- ¿el préstamo separa el interés en ALGUNA cuota?
+    SELECT pf.id AS prestamo_id, bool_or(q.interes > 0) AS tiene_interes
+    FROM pf
+    JOIN public.prestamo_cuotas q ON q.prestamo_id = pf.id AND q.tenant_id = v_tenant
+    GROUP BY pf.id
+  ),
   cu AS (  -- cuotas NO pagadas de esos préstamos
     SELECT pf.id AS prestamo_id, pf.numero, pf.tipo, pf.fecha_inicio,
            pf.cliente_nombre, pf.cliente_codigo, pf.genmora,
-           q.mora_pagada, q.fecha_vencimiento,
-           -- pendiente total de la cuota (capital + interés ya registrados)
-           (GREATEST(q.capital - q.capital_pagado, 0)
-            + GREATEST(q.interes - q.interes_pagado, 0)) AS pend,
-           (q.capital + q.interes) AS cuota_total,
-           -- capital PROGRAMADO de la cuota: si el interés viene separado
-           -- (interes>0) se usa tal cual; si está metido en el capital
-           -- (interes=0), se reparte con amortización flat = monto_capital/plazo.
-           CASE
-             WHEN q.interes > 0 THEN q.capital
-             WHEN COALESCE(pf.monto_capital, 0) > 0 AND COALESCE(pf.plazo_cuotas, 0) > 0
-               THEN LEAST(q.capital, round(pf.monto_capital / pf.plazo_cuotas, 2))
-             ELSE q.capital
-           END AS cap_sched,
+           pf.monto_capital, pf.plazo_cuotas,
+           q.capital, q.interes, q.mora_pagada, q.fecha_vencimiento,
+           GREATEST(q.capital - q.capital_pagado, 0) AS cap_raw,
+           GREATEST(q.interes - q.interes_pagado, 0) AS int_raw,
            GREATEST(0, (v_today - q.fecha_vencimiento))::int AS dias_atraso,
            CASE WHEN pf.cli_mora > 0 THEN pf.cli_mora
                 WHEN pf.prestamo_mora > 0 THEN pf.prestamo_mora
@@ -101,16 +101,28 @@ BEGIN
     WHERE COALESCE(q.estado, 'pendiente') <> 'pagada'
   ),
   cu2 AS (
-    SELECT *,
-      -- reparto proporcional del pendiente de la cuota
-      round(pend * CASE WHEN cuota_total > 0 THEN cap_sched / cuota_total ELSE 1 END, 2) AS capital_pend,
-      pend - round(pend * CASE WHEN cuota_total > 0 THEN cap_sched / cuota_total ELSE 1 END, 2) AS interes_pend,
-      -- mora sobre el pendiente TOTAL (no cambia con el reparto)
-      CASE WHEN genmora THEN
-        GREATEST(round(pend * (tasa_mora * 12.0 / 100.0)
-                       * dias_atraso / 365.0, 2) - mora_pagada, 0)
-      ELSE 0 END AS mora_pend
-    FROM cu
+    SELECT c.prestamo_id, c.numero, c.tipo, c.fecha_inicio,
+           c.cliente_nombre, c.cliente_codigo, c.fecha_vencimiento, c.dias_atraso,
+           (c.cap_raw + c.int_raw) AS pend,
+           -- capital pendiente de la cuota:
+           --   si el préstamo YA separa interés → capital crudo de la cuota;
+           --   si no → reparto flat (monto_capital/plazo dentro de la cuota).
+           CASE
+             WHEN lf.tiene_interes THEN c.cap_raw
+             WHEN COALESCE(c.monto_capital, 0) > 0 AND COALESCE(c.plazo_cuotas, 0) > 0
+                  AND (c.capital + c.interes) > 0
+               THEN round((c.cap_raw + c.int_raw)
+                          * LEAST(c.capital, round(c.monto_capital / c.plazo_cuotas, 2))
+                          / (c.capital + c.interes), 2)
+             ELSE c.cap_raw
+           END AS capital_pend,
+           -- mora sobre el pendiente TOTAL (no cambia con el reparto)
+           CASE WHEN c.genmora THEN
+             GREATEST(round((c.cap_raw + c.int_raw) * (c.tasa_mora * 12.0 / 100.0)
+                            * c.dias_atraso / 365.0, 2) - c.mora_pagada, 0)
+           ELSE 0 END AS mora_pend
+    FROM cu c
+    JOIN pflag lf ON lf.prestamo_id = c.prestamo_id
   ),
   ic AS (  -- base del interés corriente por préstamo (todas las cuotas)
     SELECT pf.id AS prestamo_id,
@@ -144,7 +156,7 @@ BEGIN
            MAX(c.cliente_nombre)  AS cliente_nombre,
            MAX(c.cliente_codigo)  AS cliente_codigo,
            SUM(c.capital_pend)    AS capital_pend,
-           SUM(c.interes_pend) + COALESCE(MAX(i.int_corr), 0) AS interes_pend,
+           SUM(c.pend - c.capital_pend) + COALESCE(MAX(i.int_corr), 0) AS interes_pend,
            SUM(c.mora_pend)       AS mora_pend,
            MAX(c.dias_atraso)     AS dias_atraso,
            COUNT(*) FILTER (WHERE c.fecha_vencimiento < v_today) AS cuotas_vencidas
