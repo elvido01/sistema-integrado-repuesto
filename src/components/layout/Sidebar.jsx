@@ -35,6 +35,7 @@ import {
   MapPinned,
   Sparkles,
   ShieldAlert,
+  PieChart,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -119,6 +120,7 @@ const navItems = [
     title: 'Financiera',
     icon: DollarSign,
     subItems: [
+      { title: 'Resumen de Cartera', id: 'resumen-cartera', icon: PieChart, featFlag: 'feat_financiera', permissionKey: 'prestamos' },
       { title: 'Préstamos', id: 'prestamos', icon: DollarSign, featFlag: 'feat_financiera' },
       { title: 'Nota de Crédito', id: 'nota-credito', icon: Receipt, featFlag: 'feat_financiera', permissionKey: 'prestamos', adminOnly: true },
       { title: 'Gestion de Cobro', id: 'gestion-cobro', icon: MessageCircle, featFlag: 'feat_financiera', permissionKey: 'prestamos' },

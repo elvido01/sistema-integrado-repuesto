@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PanelContext, usePanels } from './panelCore';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -65,6 +65,7 @@ import OtrasTransaccionesPage from '@/pages/OtrasTransaccionesPage';
 import HistoricoClientePage from '@/pages/HistoricoClientePage';
 import NotasComentariosPage from '@/pages/NotasComentariosPage';
 import ListaChasisPrestamosPage from '@/pages/ListaChasisPrestamosPage';
+import ResumenCarteraPage from '@/pages/ResumenCarteraPage';
 import GestionCobroPage from '@/pages/GestionCobroPage';
 import CuentasIncobrablesPage from '@/pages/CuentasIncobrablesPage';
 import NotaCreditoFinancieraPage from '@/pages/NotaCreditoFinancieraPage';
@@ -159,6 +160,7 @@ const componentMapping = {
   'historico-cliente': { component: () => <Protected module="prestamos"><HistoricoClientePage /></Protected>, icon: Receipt, name: 'Histórico de Cliente' },
   'notas-comentarios': { component: () => <Protected module="notas-comentarios"><NotasComentariosPage /></Protected>, icon: FileText, name: 'Notas y Comentarios' },
   'lista-chasis-prestamos': { component: () => <Protected module="prestamos"><ListaChasisPrestamosPage /></Protected>, icon: Receipt, name: 'Lista de Chasis en Préstamos' },
+  'resumen-cartera': { component: () => <Protected module="prestamos"><ResumenCarteraPage /></Protected>, icon: PieChart, name: 'Resumen de Cartera' },
 };
 
 export { PanelContext, usePanels };  // re-export desde panelCore para no romper imports
