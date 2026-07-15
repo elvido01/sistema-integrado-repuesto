@@ -558,10 +558,25 @@ const PagoSuplidoresPage = () => {
             <div className="space-y-2 text-right font-semibold">
               {monedaUSD ? (
                 <>
-                  <div className="flex justify-between"><span className="text-gray-600">Balance Anterior:</span><span>US$ {formatCurrency(pago.balanceUsd)}</span></div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Balance Anterior:</span>
+                    <span>
+                      US$ {formatCurrency(pago.balanceUsd)}
+                      {pago.balanceAnterior > 0 && <span className="text-gray-500 font-semibold"> + RD$ {formatCurrency(pago.balanceAnterior)}</span>}
+                    </span>
+                  </div>
                   <div className="flex justify-between text-emerald-700"><span>Abono en US$:</span><span>US$ {formatCurrency(pago.totalPagadoUsd)}</span></div>
+                  {totalAbonosDop > 0 && (
+                    <div className="flex justify-between text-emerald-700"><span>Abono en RD$:</span><span>RD$ {formatCurrency(totalAbonosDop)}</span></div>
+                  )}
                   <div className="flex justify-between text-blue-600"><span>Salen de caja (RD$ a tasa {formatCurrency(tasa)}):</span><span>RD$ {formatCurrency(pago.totalPagado)}</span></div>
-                  <div className="flex justify-between text-red-600 text-lg border-t pt-1"><span>Balance Actual:</span><span>US$ {formatCurrency(pago.balanceActualUsd)}</span></div>
+                  <div className="flex justify-between text-red-600 text-lg border-t pt-1">
+                    <span>Balance Actual:</span>
+                    <span>
+                      US$ {formatCurrency(pago.balanceActualUsd)}
+                      {pago.balanceAnterior > 0 && <span className="text-gray-500 text-base font-semibold"> + RD$ {formatCurrency(pago.balanceActual)}</span>}
+                    </span>
+                  </div>
                 </>
               ) : (
                 <>
