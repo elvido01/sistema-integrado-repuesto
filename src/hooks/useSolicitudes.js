@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 import {
     fetchSolicitudes,
+    countLlegadasPendientes,
     createSolicitud,
     cerrarSolicitud,
     marcarSolicitado,
@@ -33,12 +34,14 @@ export const useSolicitudes = () => {
     const [solicitudes, setSolicitudes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filtroEstado, setFiltroEstado] = useState('todas');
+    const [llegadasCount, setLlegadasCount] = useState(0);
 
     const refetch = useCallback(async () => {
         try {
             setLoading(true);
             const data = await fetchSolicitudes(filtroEstado);
             setSolicitudes(data);
+            try { setLlegadasCount(await countLlegadasPendientes()); } catch { /* badge best-effort */ }
         } catch (err) {
             console.error('[useSolicitudes] fetchSolicitudes error:', err);
             setSolicitudes([]);
@@ -133,6 +136,7 @@ export const useSolicitudes = () => {
         loading,
         filtroEstado,
         setFiltroEstado,
+        llegadasCount,
         crear,
         cerrar,
         marcarComoSolicitado,

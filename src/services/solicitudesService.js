@@ -27,6 +27,21 @@ export async function fetchSolicitudes(filtroEstado = null) {
 }
 
 /**
+ * Contar piezas que llegaron y falta avisar al cliente (para el badge de la
+ * pestaña "Llegaron"). Cuenta real, independiente del filtro activo. RLS
+ * la limita al tenant del usuario.
+ */
+export async function countLlegadasPendientes() {
+    const { count, error } = await supabase
+        .from('solicitudes_clientes')
+        .select('id', { count: 'exact', head: true })
+        .eq('estado', 'notificada')
+        .is('customer_notified_at', null);
+    if (error) throw error;
+    return count || 0;
+}
+
+/**
  * Marcar que ya se le avisó al cliente que su pieza llegó (cierra el
  * seguimiento de llegada). Usa la RPC; si aún no está desplegada, degrada
  * a un update directo de customer_notified_at.

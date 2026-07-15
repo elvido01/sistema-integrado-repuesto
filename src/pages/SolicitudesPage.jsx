@@ -3,7 +3,6 @@ import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { Plus, ClipboardList, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 import { useSolicitudes } from '@/hooks/useSolicitudes';
@@ -15,14 +14,18 @@ const SolicitudesPage = () => {
     const { user, profile , empresa} = useAuth();
     const { toast } = useToast();
     const {
-        solicitudes, loading, filtroEstado, setFiltroEstado,
+        solicitudes, loading, filtroEstado, setFiltroEstado, llegadasCount,
         crear, cerrar, marcarComoSolicitado, marcarAvisado, eliminar, actualizar, enviarAPedido
     } = useSolicitudes();
 
-    // Piezas que ya llegaron y falta avisarle al cliente (seguimiento de llegadas)
-    const llegadasPendientes = solicitudes.filter(
-        (s) => s.estado === 'notificada' && s.available_at && !s.customer_notified_at
-    ).length;
+    // Pestañas de estado (cuadros en la barra)
+    const estadoTabs = [
+        { value: 'todas', label: 'Todas' },
+        { value: 'abierta', label: 'Abiertas' },
+        { value: 'solicitado', label: 'Solicitadas' },
+        { value: 'llegadas', label: '📦 Llegaron', llegada: true },
+        { value: 'cerrada', label: 'Cerradas' },
+    ];
     
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [solicitudEditando, setSolicitudEditando] = useState(null);
@@ -102,38 +105,40 @@ const SolicitudesPage = () => {
                     animate={{ opacity: 1, y: 0 }}
                     className="bg-white rounded-lg shadow-lg border overflow-hidden"
                 >
-                    {/* Toolbar */}
-                    <div className="px-4 py-2.5 border-b bg-gray-50/60 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                                <Filter className="w-3.5 h-3.5 text-gray-400" />
-                                <span className="text-[11px] font-bold text-gray-500 uppercase">Estado:</span>
-                                <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-                                    <SelectTrigger className="h-7 w-[140px] text-xs">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="todas" className="text-xs">Todas</SelectItem>
-                                        <SelectItem value="abierta" className="text-xs">Abiertas</SelectItem>
-                                        <SelectItem value="solicitado" className="text-xs">Solicitadas</SelectItem>
-                                        <SelectItem value="llegadas" className="text-xs">📦 Llegaron (avisar cliente)</SelectItem>
-                                        <SelectItem value="cerrada" className="text-xs">Cerradas</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            {llegadasPendientes > 0 && filtroEstado !== 'llegadas' && (
-                                <Button
-                                    size="sm"
-                                    className="h-7 text-[11px] font-bold uppercase bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse"
-                                    onClick={() => setFiltroEstado('llegadas')}
-                                    title="Piezas que llegaron y falta avisarle al cliente"
-                                >
-                                    📦 Llegaron {llegadasPendientes} — avisar cliente
-                                </Button>
-                            )}
+                    {/* Toolbar — estados como pestañas/cuadros */}
+                    <div className="px-4 py-2.5 border-b bg-gray-50/60 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <Filter className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-[11px] font-bold text-gray-500 uppercase mr-1">Estado:</span>
+                            {estadoTabs.map((t) => {
+                                const active = filtroEstado === t.value;
+                                const base = 'inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-[11px] font-bold uppercase border transition-all';
+                                const cls = t.llegada
+                                    ? (active
+                                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                        : `bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 ${llegadasCount > 0 ? 'animate-pulse' : ''}`)
+                                    : (active
+                                        ? 'bg-morla-blue text-white border-morla-blue shadow-sm'
+                                        : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100');
+                                return (
+                                    <button
+                                        key={t.value}
+                                        type="button"
+                                        onClick={() => setFiltroEstado(t.value)}
+                                        className={`${base} ${cls}`}
+                                        title={t.llegada ? 'Piezas que llegaron y falta avisarle al cliente' : undefined}
+                                    >
+                                        {t.label}
+                                        {t.llegada && llegadasCount > 0 && (
+                                            <span className={`min-w-[16px] h-4 px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold ${active ? 'bg-white text-emerald-700' : 'bg-emerald-600 text-white'}`}>
+                                                {llegadasCount}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
-                        <span className="text-[11px] text-gray-400">
+                        <span className="text-[11px] text-gray-400 whitespace-nowrap">
                             {solicitudes.length} registro{solicitudes.length !== 1 ? 's' : ''}
                         </span>
                     </div>
