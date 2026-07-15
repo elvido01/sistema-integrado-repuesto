@@ -1411,10 +1411,20 @@ const ComprasPage = () => {
           }
 
           if (idsToUpdate.length > 0) {
-            await supabase
-              .from('solicitudes_clientes')
-              .update({ estado: 'notificada' })
-              .in('id', idsToUpdate);
+            // Detector de llegada persistente: sella available_at +
+            // notification_created_at y crea la notificación en la campana
+            // (recordatorio que no se esfuma). El trigger del kardex ya cubre
+            // los productos con código; esta RPC cubre el caso "texto libre"
+            // (piezas de WhatsApp aún sin código en el catálogo). Si la RPC
+            // no está desplegada, degrada al marcado simple para no romper
+            // el guardado de la compra.
+            const { error: rpcLlegadaErr } = await supabase.rpc('registrar_llegada_solicitudes', { p_ids: idsToUpdate });
+            if (rpcLlegadaErr) {
+              await supabase
+                .from('solicitudes_clientes')
+                .update({ estado: 'notificada', available_at: new Date().toISOString() })
+                .in('id', idsToUpdate);
+            }
 
             const listItems = notificaciones.map(n => `${n.productName} (Para: ${n.clientName})`).slice(0, 3).join(", ");
             const countExt = idsToUpdate.length > 3 ? ` y ${idsToUpdate.length - 3} más...` : '';
