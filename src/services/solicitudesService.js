@@ -14,7 +14,10 @@ export async function fetchSolicitudes(filtroEstado = null) {
     `)
         .order('created_at', { ascending: false });
 
-    if (filtroEstado && filtroEstado !== 'todas') {
+    if (filtroEstado === 'llegadas') {
+        // Piezas que llegaron y falta avisar al cliente (seguimiento de llegadas)
+        query = query.eq('estado', 'notificada').is('customer_notified_at', null);
+    } else if (filtroEstado && filtroEstado !== 'todas') {
         query = query.eq('estado', filtroEstado);
     }
 
@@ -24,14 +27,44 @@ export async function fetchSolicitudes(filtroEstado = null) {
 }
 
 /**
- * Create a new solicitud.
+ * Marcar que ya se le avisó al cliente que su pieza llegó (cierra el
+ * seguimiento de llegada). Usa la RPC; si aún no está desplegada, degrada
+ * a un update directo de customer_notified_at.
+ */
+export async function marcarClienteAvisado(id) {
+    const { error } = await supabase.rpc('marcar_cliente_avisado', { p_solicitud_id: id });
+    if (error) {
+        const { error: fallbackErr } = await supabase
+            .from('solicitudes_clientes')
+            .update({ customer_notified_at: new Date().toISOString() })
+            .eq('id', id);
+        if (fallbackErr) throw fallbackErr;
+    }
+}
+
+/**
+ * Create a new solicitud through the official domain flow.
+ * This also sends inventoried products to the supplier purchase order flow.
  */
 export async function createSolicitud(payload) {
-    const { data, error } = await supabase
-        .from('solicitudes_clientes')
-        .insert(payload)
-        .select()
-        .single();
+    const requestPayload = {
+        created_from: 'motoflow_web',
+        source_channel: 'motoflow_web',
+        cliente_id: payload.cliente_id || null,
+        customer_name: payload.cliente_nombre || null,
+        phone: payload.cliente_telefono || null,
+        notes: payload.notas || null,
+        duplicate_action: 'increase',
+        products: [{
+            producto_id: payload.producto_id || null,
+            producto_texto: payload.producto_texto || null,
+            cantidad: payload.cantidad_solicitada || 1,
+        }],
+    };
+
+    const { data, error } = await supabase.rpc('omni_crear_solicitudes_agotadas', {
+        p_payload: requestPayload,
+    });
 
     if (error) throw error;
     return data;

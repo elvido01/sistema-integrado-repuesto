@@ -5,10 +5,28 @@ import {
     createSolicitud,
     cerrarSolicitud,
     marcarSolicitado,
+    marcarClienteAvisado,
     eliminarSolicitud,
     updateSolicitud,
     enviarSolicitudAPedido
 } from '@/services/solicitudesService';
+
+const buildCreateMessage = (result) => {
+    const rows = result?.results || [];
+    if (!rows.length) return 'Solicitud registrada correctamente.';
+
+    const purchaseOk = rows.filter((row) => row.purchase?.ok).length;
+    const missingSupplier = rows.filter((row) => row.purchase?.missing_supplier).length;
+    const skipped = rows.filter((row) => row.purchase?.skipped || row.purchase?.reason === 'producto_libre').length;
+    const duplicated = rows.filter((row) => row.duplicate).length;
+
+    return [
+        duplicated ? 'Solicitud existente actualizada.' : 'Solicitud registrada correctamente.',
+        purchaseOk ? `${purchaseOk} producto(s) enviado(s) a orden de compra.` : null,
+        missingSupplier ? `${missingSupplier} producto(s) sin suplidor asignado.` : null,
+        skipped ? `${skipped} producto(s) libre(s) sin orden de compra.` : null,
+    ].filter(Boolean).join(' ');
+};
 
 export const useSolicitudes = () => {
     const { toast } = useToast();
@@ -40,8 +58,8 @@ export const useSolicitudes = () => {
 
     const crear = useCallback(async (payload) => {
         try {
-            await createSolicitud(payload);
-            toast({ title: 'Éxito', description: 'Solicitud registrada correctamente.' });
+            const result = await createSolicitud(payload);
+            toast({ title: 'Exito', description: buildCreateMessage(result) });
             await refetch();
         } catch (err) {
             toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo crear la solicitud.' });
@@ -52,7 +70,7 @@ export const useSolicitudes = () => {
     const actualizar = useCallback(async (id, payload) => {
         try {
             await updateSolicitud(id, payload);
-            toast({ title: 'Éxito', description: 'Solicitud actualizada correctamente.' });
+            toast({ title: 'Exito', description: 'Solicitud actualizada correctamente.' });
             await refetch();
         } catch (err) {
             toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo actualizar la solicitud.' });
@@ -80,6 +98,16 @@ export const useSolicitudes = () => {
         }
     }, [refetch, toast]);
 
+    const marcarAvisado = useCallback(async (id) => {
+        try {
+            await marcarClienteAvisado(id);
+            toast({ title: 'Cliente avisado', description: 'Marcado: ya le avisaste al cliente que llegó su pieza.' });
+            await refetch();
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo marcar como avisado.' });
+        }
+    }, [refetch, toast]);
+
     const eliminar = useCallback(async (id) => {
         try {
             await eliminarSolicitud(id);
@@ -93,7 +121,7 @@ export const useSolicitudes = () => {
     const enviarAPedido = useCallback(async (solicitud, userId) => {
         try {
             await enviarSolicitudAPedido(solicitud, userId);
-            toast({ title: 'Enviado a Pedidos', description: 'Se generó un pedido listo para la facturación.' });
+            toast({ title: 'Enviado a Pedidos', description: 'Se genero un pedido listo para la facturacion.' });
             await refetch();
         } catch (err) {
             toast({ variant: 'destructive', title: 'Error', description: err.message || 'No se pudo enviar a pedidos.' });
@@ -108,6 +136,7 @@ export const useSolicitudes = () => {
         crear,
         cerrar,
         marcarComoSolicitado,
+        marcarAvisado,
         eliminar,
         actualizar,
         enviarAPedido,

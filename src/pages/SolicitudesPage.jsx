@@ -14,10 +14,15 @@ import { useToast } from '@/components/ui/use-toast';
 const SolicitudesPage = () => {
     const { user, profile , empresa} = useAuth();
     const { toast } = useToast();
-    const { 
-        solicitudes, loading, filtroEstado, setFiltroEstado, 
-        crear, cerrar, marcarComoSolicitado, eliminar, actualizar, enviarAPedido 
+    const {
+        solicitudes, loading, filtroEstado, setFiltroEstado,
+        crear, cerrar, marcarComoSolicitado, marcarAvisado, eliminar, actualizar, enviarAPedido
     } = useSolicitudes();
+
+    // Piezas que ya llegaron y falta avisarle al cliente (seguimiento de llegadas)
+    const llegadasPendientes = solicitudes.filter(
+        (s) => s.estado === 'notificada' && s.available_at && !s.customer_notified_at
+    ).length;
     
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [solicitudEditando, setSolicitudEditando] = useState(null);
@@ -111,10 +116,22 @@ const SolicitudesPage = () => {
                                         <SelectItem value="todas" className="text-xs">Todas</SelectItem>
                                         <SelectItem value="abierta" className="text-xs">Abiertas</SelectItem>
                                         <SelectItem value="solicitado" className="text-xs">Solicitadas</SelectItem>
+                                        <SelectItem value="llegadas" className="text-xs">📦 Llegaron (avisar cliente)</SelectItem>
                                         <SelectItem value="cerrada" className="text-xs">Cerradas</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
+
+                            {llegadasPendientes > 0 && filtroEstado !== 'llegadas' && (
+                                <Button
+                                    size="sm"
+                                    className="h-7 text-[11px] font-bold uppercase bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse"
+                                    onClick={() => setFiltroEstado('llegadas')}
+                                    title="Piezas que llegaron y falta avisarle al cliente"
+                                >
+                                    📦 Llegaron {llegadasPendientes} — avisar cliente
+                                </Button>
+                            )}
                         </div>
                         <span className="text-[11px] text-gray-400">
                             {solicitudes.length} registro{solicitudes.length !== 1 ? 's' : ''}
@@ -128,6 +145,7 @@ const SolicitudesPage = () => {
                             loading={loading}
                             onCerrar={cerrar}
                             onMarcarSolicitado={marcarComoSolicitado}
+                            onMarcarAvisado={marcarAvisado}
                             onEliminar={eliminar}
                             onEdit={handleEdit}
                             onEnviarPedido={(sol) => enviarAPedido(sol, profile?.id)}

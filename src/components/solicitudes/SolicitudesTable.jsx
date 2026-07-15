@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, Loader2, ShoppingCart, Trash2, Send } from 'lucide-react';
+import { CheckCircle, Loader2, ShoppingCart, Trash2, Send, MessageCircle } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,10 @@ const estadoConfig = {
     cerrada: { label: 'Cerrada', className: 'bg-green-100 text-green-700 border-green-200' },
 };
 
-const SolicitudesTable = ({ solicitudes, loading, onCerrar, onMarcarSolicitado, onEliminar, onEdit, onEnviarPedido }) => {
+const fmtFecha = (d) =>
+    new Date(d).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const SolicitudesTable = ({ solicitudes, loading, onCerrar, onMarcarSolicitado, onMarcarAvisado, onEliminar, onEdit, onEnviarPedido }) => {
     if (loading) {
         return (
             <div className="flex items-center justify-center py-16 text-gray-400">
@@ -66,10 +69,13 @@ const SolicitudesTable = ({ solicitudes, loading, onCerrar, onMarcarSolicitado, 
                 <TableBody>
                     {solicitudes.map((sol) => {
                         const est = estadoConfig[sol.estado] || estadoConfig.abierta;
+                        const llego = sol.estado === 'notificada' && !!sol.available_at;
+                        const avisado = !!sol.customer_notified_at;
+                        const seguimientoPendiente = llego && !avisado;
                         return (
-                            <TableRow 
-                                key={sol.id} 
-                                className="h-9 hover:bg-gray-50/60 transition-colors cursor-pointer"
+                            <TableRow
+                                key={sol.id}
+                                className={`transition-colors cursor-pointer ${seguimientoPendiente ? 'bg-emerald-50/70 hover:bg-emerald-50 border-l-4 border-l-emerald-500' : 'hover:bg-gray-50/60'}`}
                                 onDoubleClick={() => onEdit && onEdit(sol)}
                                 title="Doble clic para editar"
                             >
@@ -77,12 +83,25 @@ const SolicitudesTable = ({ solicitudes, loading, onCerrar, onMarcarSolicitado, 
                                 <TableCell className="py-1 px-2 text-xs">{getProductoNombre(sol)}</TableCell>
                                 <TableCell className="py-1 px-2 text-xs text-center">{sol.cantidad_solicitada ?? '—'}</TableCell>
                                 <TableCell className="py-1 px-2 text-center">
-                                    <Badge variant="outline" className={`text-[10px] ${est.className}`}>
-                                        {est.label}
-                                    </Badge>
+                                    {seguimientoPendiente ? (
+                                        <Badge variant="outline" className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-300 font-bold whitespace-nowrap">
+                                            📦 Llegó
+                                        </Badge>
+                                    ) : avisado ? (
+                                        <Badge variant="outline" className="text-[10px] bg-teal-50 text-teal-700 border-teal-200 whitespace-nowrap">
+                                            Avisado
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="outline" className={`text-[10px] ${est.className}`}>
+                                            {est.label}
+                                        </Badge>
+                                    )}
                                 </TableCell>
                                 <TableCell className="py-1 px-2 text-xs text-gray-500">
-                                    {new Date(sol.created_at).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    <div>{fmtFecha(sol.created_at)}</div>
+                                    {sol.available_at && (
+                                        <div className="text-[10px] text-emerald-600 font-semibold">Llegó {fmtFecha(sol.available_at)}</div>
+                                    )}
                                 </TableCell>
                                 <TableCell className="py-1 px-2 text-center">
                                     <div className="flex items-center justify-center gap-1">
@@ -95,6 +114,17 @@ const SolicitudesTable = ({ solicitudes, loading, onCerrar, onMarcarSolicitado, 
                                                 title="Marcar como 'Solicitado al suplidor' (Detiene recordatorio)"
                                             >
                                                 <ShoppingCart className="w-4 h-4" />
+                                            </Button>
+                                        )}
+                                        {seguimientoPendiente && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
+                                                onClick={(e) => { e.stopPropagation(); onMarcarAvisado && onMarcarAvisado(sol.id); }}
+                                                title="Ya le avisé al cliente que llegó su pieza (cierra el seguimiento)"
+                                            >
+                                                <MessageCircle className="w-4 h-4" />
                                             </Button>
                                         )}
                                         {sol.estado === 'notificada' && (
