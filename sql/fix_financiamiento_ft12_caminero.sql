@@ -6,24 +6,39 @@
 -- MotoPréstamos Los Naranjos: no hay préstamo con el marcador [FT:...],
 -- la CxC sigue a nombre del comprador y no existe la CxP.
 --
--- Causa probable: la versión de procesar_financiamiento_terceros en prod
--- quedó vieja (ninguna versión está en schema_migraciones) y falló al
--- ejecutarse; el error solo se mostró en un toast pasajero.
+-- CAUSA CONFIRMADA (error 22003 al ejecutar): la migración diaria de SiiF
+-- metió 621 préstamos con número doble (ej. 'PT-0000022-200000022'); al
+-- quitarle las letras quedan 16 dígitos que DESBORDAN ::int en la fórmula
+-- de secuencia MAX(regexp_replace(numero,'\D',''))::int. Ese mismo código
+-- vive en crear_prestamo → TODOS los préstamos nuevos de la financiera
+-- están rotos, no solo el financiamiento de terceros.
+--
+-- Series reales en MotoPréstamos: PT-0026577 es el máximo vigente (26,601
+-- préstamos); PT-9xxxxxx son 48 legacy saldados de SiiF. La secuencia nueva
+-- continúa la serie vigente (→ PT-0026578) ignorando legacy dobles y serie 9.
 --
 -- Este script (re-ejecutable, idempotente):
---   1) Actualiza el RPC a la última versión (con cuota ajustada).
---   2) EJECUTA el financiamiento de FT-12 impersonando al cajero de
+--   1) Actualiza procesar_financiamiento_terceros (última versión + fórmula
+--      de secuencia a prueba de números legacy).
+--   2) Corrige crear_prestamo con la misma fórmula.
+--   3) EJECUTA el financiamiento de FT-12 impersonando al cajero de
 --      Caminero (el RPC deriva el tenant del usuario; en el SQL editor
 --      no hay JWT, así que seteamos el claim 'sub' manualmente).
---   3) Verifica: préstamo + cuotas + CxP en la financiera y CxC
+--   4) Verifica: préstamo + cuotas + CxP en la financiera y CxC
 --      reasignada en Caminero.
 -- =====================================================================
 
 -- ------------------------------------------------------------
--- 1) RPC última versión (idéntico a financiamiento_terceros_cuota_ajustada.sql)
+-- 1) RPC última versión (base: financiamiento_terceros_cuota_ajustada.sql
+--    + secuencias a prueba de legacy + capital desde sol.financiamiento)
 -- ------------------------------------------------------------
 ALTER TABLE public.solicitudes_compras
   ADD COLUMN IF NOT EXISTS cuota_ajustada numeric;
+
+-- Fecha límite para pagar el ADICIONAL (completivo del inicial, normalmente
+-- 15 o 30 días, junto con el primer pago). Lo usa el formulario de Solicitud.
+ALTER TABLE public.solicitudes_compras
+  ADD COLUMN IF NOT EXISTS adicional_fecha date;
 
 CREATE OR REPLACE FUNCTION public.procesar_financiamiento_terceros(
   p_factura_id          uuid,
@@ -83,7 +98,12 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Factura no encontrada'; END IF;
 
   v_inicial := round(COALESCE(sol.inicial, 0), 2);
-  v_capital := round(COALESCE(fac.total, 0) - v_inicial, 2);
+  -- Capital = financiamiento calculado en la solicitud:
+  --   (contado + placa/gps/casco/seguro) - inicial - adicional.
+  -- El ADICIONAL es completivo del inicial (el cliente lo paga aparte, a
+  -- 15/30 días): NO se financia. Fallback al cálculo por factura para
+  -- solicitudes viejas sin el campo.
+  v_capital := round(COALESCE(NULLIF(sol.financiamiento, 0), COALESCE(fac.total, 0) - v_inicial), 2);
   IF v_capital <= 0 THEN
     RETURN json_build_object('ok', false, 'motivo', 'capital <= 0; no se crea financiamiento');
   END IF;
@@ -141,8 +161,16 @@ BEGIN
   END IF;
 
   -- 2) Prestamo + cuotas
-  SELECT COALESCE(MAX((regexp_replace(numero, '\D','','g'))::int), 0) + 1
-    INTO v_seq FROM public.prestamos WHERE tenant_id = v_fin;
+  -- Secuencia a prueba de legacy: solo 'PT-<dígitos>' simple (excluye los
+  -- números dobles de la migración, que desbordan int) y por debajo de la
+  -- serie legacy PT-9xxxxxx de SiiF → continúa la serie vigente PT-00265xx.
+  SELECT COALESCE(MAX(t.n), 0) + 1 INTO v_seq
+  FROM (
+    SELECT substring(numero from 4)::bigint AS n
+    FROM public.prestamos
+    WHERE tenant_id = v_fin AND numero ~ '^PT-\d+$'
+  ) t
+  WHERE t.n < 9000000;
   v_numero := 'PT-' || lpad(v_seq::text, 7, '0');
 
   INSERT INTO public.prestamos (
@@ -185,8 +213,11 @@ BEGIN
     VALUES (v_fin, v_dealer_nombre, true) RETURNING id INTO v_prov;
   END IF;
 
-  SELECT COALESCE(MAX((regexp_replace(numero, '\D','','g'))::int), 0) + 1
-    INTO v_cseq FROM public.compras WHERE tenant_id = v_fin;
+  -- Misma protección para la CxP: solo números 'FIN-<dígitos>'
+  SELECT COALESCE(MAX(substring(numero from 5)::bigint), 0) + 1
+    INTO v_cseq
+  FROM public.compras
+  WHERE tenant_id = v_fin AND numero ~ '^FIN-\d+$';
   v_compra_num := 'FIN-' || lpad(v_cseq::text, 6, '0');
 
   INSERT INTO public.compras (
@@ -247,10 +278,109 @@ REVOKE EXECUTE ON FUNCTION public.procesar_financiamiento_terceros(uuid,uuid,uui
 GRANT  EXECUTE ON FUNCTION public.procesar_financiamiento_terceros(uuid,uuid,uuid) TO authenticated, service_role;
 
 -- ------------------------------------------------------------
+-- 1b) crear_prestamo con la MISMA fórmula de secuencia corregida
+--     (estaba roto igual: cualquier préstamo manual nuevo en la
+--     financiera desbordaba int por los números legacy dobles)
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.crear_prestamo(
+  p_cliente_id     uuid,
+  p_monto          numeric,
+  p_tasa           numeric,
+  p_plazo          int,
+  p_metodo         text DEFAULT 'simple',
+  p_frecuencia     text DEFAULT 'mensual',
+  p_mora_pct       numeric DEFAULT 0,
+  p_tipo           text DEFAULT 'financiamiento',
+  p_fecha_primera  date DEFAULT NULL,
+  p_garantia       text DEFAULT NULL,
+  p_notas          text DEFAULT NULL,
+  p_cuota_ajustada numeric DEFAULT NULL
+)
+RETURNS json
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_tenant   uuid := public.get_user_tenant();
+  v_id       uuid;
+  v_numero   text;
+  v_seq      int;
+  v_fecha1   date := COALESCE(p_fecha_primera, (current_date + interval '1 month')::date);
+  v_cuotas   json;
+  c          jsonb;
+  v_cap      numeric;
+  v_int      numeric;
+  v_cuota_m  numeric;
+  v_adj      numeric := COALESCE(p_cuota_ajustada, 0);
+BEGIN
+  IF v_tenant IS NULL THEN RAISE EXCEPTION 'No se pudo determinar el tenant'; END IF;
+  IF p_cliente_id IS NULL THEN RAISE EXCEPTION 'cliente_id es requerido'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.clientes WHERE id = p_cliente_id AND tenant_id = v_tenant) THEN
+    RAISE EXCEPTION 'Cliente no encontrado en este tenant';
+  END IF;
+
+  -- Secuencia a prueba de legacy (ver procesar_financiamiento_terceros)
+  SELECT COALESCE(MAX(t.n), 0) + 1 INTO v_seq
+  FROM (
+    SELECT substring(numero from 4)::bigint AS n
+    FROM public.prestamos
+    WHERE tenant_id = v_tenant AND numero ~ '^PT-\d+$'
+  ) t
+  WHERE t.n < 9000000;
+  v_numero := 'PT-' || lpad(v_seq::text, 7, '0');
+
+  INSERT INTO public.prestamos (
+    tenant_id, numero, cliente_id, tipo, metodo_interes, monto_capital,
+    tasa_interes, plazo_cuotas, frecuencia, mora_pct, fecha_primera_cuota,
+    garantia, notas
+  ) VALUES (
+    v_tenant, v_numero, p_cliente_id, COALESCE(p_tipo,'financiamiento'),
+    COALESCE(p_metodo,'simple'), p_monto, COALESCE(p_tasa,0), p_plazo,
+    COALESCE(p_frecuencia,'mensual'), COALESCE(p_mora_pct,0), v_fecha1,
+    p_garantia, p_notas
+  ) RETURNING id INTO v_id;
+
+  v_cuotas := public.calc_amortizacion(p_monto, p_tasa, p_plazo, COALESCE(p_metodo,'simple'), COALESCE(p_frecuencia,'mensual'), v_fecha1);
+
+  FOR c IN SELECT * FROM jsonb_array_elements(v_cuotas::jsonb) LOOP
+    v_cap := (c->>'capital')::numeric;
+    IF v_adj > 0 THEN
+      -- Cuota ajustada: capital igual, interes = cuota - capital
+      v_cuota_m := v_adj;
+      v_int     := round(v_adj - v_cap, 2);
+    ELSE
+      v_cuota_m := (c->>'monto_cuota')::numeric;
+      v_int     := (c->>'interes')::numeric;
+    END IF;
+
+    INSERT INTO public.prestamo_cuotas (
+      tenant_id, prestamo_id, numero_cuota, fecha_vencimiento, capital, interes, monto_cuota
+    ) VALUES (
+      v_tenant, v_id, (c->>'numero_cuota')::int, (c->>'fecha_vencimiento')::date,
+      v_cap, v_int, v_cuota_m
+    );
+  END LOOP;
+
+  RETURN json_build_object('id', v_id, 'numero', v_numero, 'cuota_ajustada', v_adj, 'cuotas', v_cuotas);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.crear_prestamo(uuid,numeric,numeric,int,text,text,numeric,text,date,text,text,numeric) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.crear_prestamo(uuid,numeric,numeric,int,text,text,numeric,text,date,text,text,numeric) TO authenticated, service_role;
+
+-- ------------------------------------------------------------
 -- 2) EJECUTAR el financiamiento pendiente de FT-12
 --    El RPC saca el tenant del usuario; en el SQL editor no hay JWT,
 --    así que impersonamos al cajero de Caminero (perfil b39506c3).
 -- ------------------------------------------------------------
+-- Los pagarés reales de la solicitud #17 son de RD$20,000.00 exactos
+-- (12 x 20,000 = 240,000 = total_pagares). Fijar la cuota ajustada para
+-- que las cuotas del préstamo salgan idénticas a los pagarés firmados.
+UPDATE public.solicitudes_compras
+   SET cuota_ajustada = 20000
+ WHERE id = '8718d907-3032-41a5-8db8-283900bba2e1'
+   AND COALESCE(cuota_ajustada, 0) = 0;
+
 SELECT set_config('request.jwt.claims',
   '{"sub":"6d7e711c-935d-442b-8f45-cf308863f414","role":"authenticated"}', false);
 

@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Edit, Trash2, Send, FileDown, RefreshCw, X, Loader2, Search, User, Bike, Calculator, DollarSign, Calendar as CalendarIcon, ClipboardList } from 'lucide-react';
 import { format } from 'date-fns';
-import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase, formatFechaDMY } from '@/lib/dateUtils';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteFormModal from '@/components/catalogo/ClienteFormModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
@@ -77,6 +77,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     inicial: 0,
     financiamiento: 0,
     adicional: 0,
+    adicional_fecha: '',  // fecha límite para pagar el adicional (completivo del inicial)
     tiempo_meses: 12,
     tasa_interes: 3,
     total_pagares: 0,
@@ -150,6 +151,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
         ...solicitud,
         fecha: solicitud.fecha || getCurrentDateInTimeZone(),
         fecha_vencimiento: solicitud.fecha_vencimiento || '',
+        adicional_fecha: solicitud.adicional_fecha || '',
       });
     } else {
       setForm(empty);
@@ -181,8 +183,10 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
       (form.incluye_casco ? parseFloat(form.monto_casco) || 0 : 0) +
       (form.incluye_seguro ? parseFloat(form.monto_seguro) || 0 : 0);
 
-    // Capital a financiar = (contado + add-ons + adicional) - inicial
-    const montoFinanciado = valor + addonsTotal + adic - inic;
+    // Capital a financiar = (contado + add-ons) - inicial - adicional.
+    // El ADICIONAL es un COMPLETIVO del inicial (el cliente lo paga aparte,
+    // normalmente a 15/30 días junto con el primer pago): NO se financia.
+    const montoFinanciado = valor + addonsTotal - inic - adic;
     let cuotaBase = 0;
 
     if (meses > 0 && montoFinanciado > 0) {
@@ -372,6 +376,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
       inicial: parseFloat(form.inicial) || 0,
       financiamiento: parseFloat(form.financiamiento) || 0,
       adicional: parseFloat(form.adicional) || 0,
+      adicional_fecha: ((parseFloat(form.adicional) || 0) > 0 && form.adicional_fecha) ? form.adicional_fecha : null,
       tiempo_meses: parseInt(form.tiempo_meses) || 0,
       tasa_interes: parseFloat(form.tasa_interes) || 0,
       total_pagares: parseFloat(form.total_pagares) || 0,
@@ -583,8 +588,36 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                     <Input type="text" inputMode="decimal" value={fmtMontoInput(form.inicial)} onChange={e => updateField('inicial', parseMontoInput(e.target.value))} className="h-9 text-sm font-bold" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Adicional RD$</Label>
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Adicional RD$ <span className="normal-case font-semibold text-slate-400">(completivo del inicial — no se financia)</span></Label>
                     <Input type="text" inputMode="decimal" value={fmtMontoInput(form.adicional)} onChange={e => updateField('adicional', parseMontoInput(e.target.value))} className="h-9 text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Pagar Adicional antes de</Label>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="date"
+                        value={form.adicional_fecha}
+                        onChange={e => updateField('adicional_fecha', e.target.value)}
+                        disabled={!((parseFloat(form.adicional) || 0) > 0)}
+                        className="h-9 text-sm flex-1"
+                      />
+                      {[15, 30].map(d => (
+                        <button
+                          key={d}
+                          type="button"
+                          disabled={!((parseFloat(form.adicional) || 0) > 0)}
+                          onClick={() => {
+                            const f = new Date();
+                            f.setDate(f.getDate() + d);
+                            updateField('adicional_fecha', f.toISOString().slice(0, 10));
+                          }}
+                          className="h-9 px-2 text-[11px] font-bold rounded border border-slate-300 bg-slate-50 hover:bg-slate-200 disabled:opacity-40"
+                          title={`Plazo de ${d} días para completar el inicial`}
+                        >
+                          {d}d
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">N° de Cuotas</Label>
@@ -1292,7 +1325,7 @@ const SolicitudesComprasPage = () => {
                 <div class="grid">
                   <div><span class="label">Valor al Contado:</span> <span class="value">RD$ ${fmtMoney(s.valor_contado)}</span></div>
                   <div><span class="label">Inicial:</span> <span class="value">RD$ ${fmtMoney(s.inicial)}</span></div>
-                  <div><span class="label">Adicional:</span> <span class="value">RD$ ${fmtMoney(s.adicional)}</span></div>
+                  <div><span class="label">Adicional:</span> <span class="value">RD$ ${fmtMoney(s.adicional)}${s.adicional_fecha ? ` (pagar antes de ${formatFechaDMY(s.adicional_fecha)})` : ''}</span></div>
                   <div><span class="label">Tasa de Interés:</span> <span class="value">${s.tasa_interes || 0}%</span></div>
                   <div><span class="label">Tiempo:</span> <span class="value">${s.tiempo_meses || 0} meses</span></div>
                   <div><span class="label">Incluye Placa:</span> <span class="value">${s.incluye_placa ? 'SÍ' : 'NO'}</span></div>
