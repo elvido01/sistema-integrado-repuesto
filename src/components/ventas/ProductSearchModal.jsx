@@ -381,6 +381,20 @@ const ProductSearchModal = ({
   const formatPrice = (price) =>
     new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP', minimumFractionDigits: 2 }).format(price || 0);
 
+  // Precio que REALMENTE cobrará la línea de facturación (misma regla que
+  // useVentas.addProductToInvoice): presentación con afecta_ft (o la primera)
+  // → precio1. Evita mostrar productos.precio desactualizado en el buscador
+  // (ej. GOMA en Repuestos Caminero: buscador 2,809 vs línea 3,111.10).
+  const precioVenta = (product) => {
+    const pres = product?.presentaciones;
+    if (Array.isArray(pres) && pres.length > 0) {
+      const main = pres.find(pp => pp.afecta_ft) || pres[0];
+      const p1 = parseFloat(main?.precio1 || 0);
+      if (p1 > 0) return p1;
+    }
+    return product?.precio || 0;
+  };
+
   const handleSendToOrden = async (product) => {
     if (sendingToOrder) return;
     setSendingToOrder(product.id);
@@ -592,7 +606,7 @@ const ProductSearchModal = ({
                             {Number(product.existencia ?? 0).toFixed(2)}
                           </TableCell>
                           <TableCell className={`text-right font-black py-2 whitespace-nowrap text-sm ${idx === selectedIndex ? 'text-white' : 'text-amber-900'}`}>
-                            {formatPrice(product.precio)}
+                            {formatPrice(precioVenta(product))}
                           </TableCell>
                           {trayendo === product.id && (
                             <div className="absolute inset-0 bg-white/60 flex items-center justify-center pointer-events-none">
@@ -646,7 +660,7 @@ const ProductSearchModal = ({
                                 {(product.existencia ?? 0).toFixed(2)}
                               </TableCell>
                                 <TableCell className={`text-right font-black py-2 whitespace-nowrap text-sm ${idx === selectedIndex ? 'text-white bg-transparent' : 'text-blue-900 bg-blue-50/20'}`}>
-                                  {formatPrice(product.precio)}
+                                  {formatPrice(precioVenta(product))}
                                 </TableCell>
                               {sendingToOrder === product.id && (
                                 <div className="absolute inset-0 bg-white/50 flex items-center justify-center pointer-events-none">
