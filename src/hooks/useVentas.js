@@ -29,6 +29,25 @@ export const useVentas = () => {
   const { toast } = useToast();
   const { user, empresa, tenantId } = useAuth();
   const hasSuplidoresLocales = !!empresa?.feat_suplidores_locales;
+
+  // Si el financiamiento (propio/terceros) falla al facturar, dejar constancia
+  // PERSISTENTE en la campana: el toast se esfuma y la venta queda sin préstamo
+  // sin que nadie se entere (pasó con FT-12 de Caminero el 16/07/2026).
+  const notificarFinanciamientoFallido = async (factura, motivo) => {
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) return;
+      await supabase.from('notificaciones').insert({
+        user_id: u.id,
+        tipo: 'financiamiento_fallido',
+        titulo: '🏦 Financiamiento NO registrado',
+        mensaje: `La factura #${factura?.numero ?? ''} se grabó, pero el préstamo NO se creó en la financiera: ${motivo}. Reprocésalo o avisa a soporte.`,
+        tenant_id: tenantId || null,
+      });
+    } catch (e) {
+      console.error('No se pudo registrar la notificación de financiamiento fallido:', e?.message);
+    }
+  };
   const [date, setDate] = useState(new Date());
   const [paymentType, setPaymentType] = useState('contado');
   const [diasCredito, setDiasCredito] = useState(0);
@@ -997,12 +1016,14 @@ export const useVentas = () => {
           });
           if (ftErr) {
             toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: `La factura se grabó, pero no se creó el préstamo en la financiera: ${ftErr.message}` });
+            await notificarFinanciamientoFallido(activeFactura, ftErr.message);
           } else if (ftRes?.ok) {
             toast({ title: '🏦 Financiamiento creado', description: `Préstamo ${ftRes.prestamo_numero} en la financiera y cuentas registradas.` });
           }
         } catch (ftCatch) {
           console.error('Error en financiamiento terceros:', ftCatch.message);
           toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: ftCatch.message });
+          await notificarFinanciamientoFallido(activeFactura, ftCatch.message);
         }
       }
 
@@ -1024,12 +1045,14 @@ export const useVentas = () => {
           });
           if (fpErr) {
             toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: `La factura se grabó, pero no se creó el préstamo: ${fpErr.message}` });
+            await notificarFinanciamientoFallido(activeFactura, fpErr.message);
           } else if (fpRes?.ok) {
             toast({ title: '🏦 Financiamiento creado', description: `Préstamo ${fpRes.prestamo_numero} creado en esta empresa por RD$ ${Number(fpRes.capital || 0).toFixed(2)}.` });
           }
         } catch (fpCatch) {
           console.error('Error en financiamiento propio:', fpCatch.message);
           toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: fpCatch.message });
+          await notificarFinanciamientoFallido(activeFactura, fpCatch.message);
         }
       }
 
