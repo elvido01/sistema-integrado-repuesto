@@ -13,9 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Edit, Trash2, Send, FileDown, RefreshCw, X, Loader2, Search, Package, User, Calendar as CalendarIcon, Wallet, Tags, Percent, Hash, ListOrdered, ShoppingCart, BarChart2 } from 'lucide-react';
-import { format } from 'date-fns';
-import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
-import { es } from 'date-fns/locale';
+import { getCurrentDateInTimeZone, formatDateForSupabase, formatFechaDMY } from '@/lib/dateUtils';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { generatePedidoPDF } from '@/components/common/PDFGenerator';
 import { useFacturacion } from '@/contexts/FacturacionContext';
@@ -433,7 +431,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                 <Label className="col-span-3 text-[11px] font-bold text-slate-500 uppercase text-right">Fecha:</Label>
                 <div className="col-span-9">
                   <Input
-                    value={format(new Date(currentPedido.fecha), 'dd/MM/yyyy')}
+                    value={formatFechaDMY(currentPedido.fecha)}
                     readOnly
                     className="h-7 bg-white border-slate-300 text-xs font-bold"
                   />
@@ -809,7 +807,7 @@ const PedidosPage = () => {
     return pedidos.filter(p =>
       p.numero?.toString().includes(searchTerm) ||
       p.cliente_nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (p.fecha ? formatInTimeZone(new Date(p.fecha), 'dd/MM/yyyy').includes(searchTerm) : false)
+      (p.fecha ? formatFechaDMY(p.fecha).includes(searchTerm) : false)
     );
   }, [pedidos, searchTerm]);
 
@@ -856,9 +854,7 @@ const PedidosPage = () => {
                           className={`cursor-pointer ${selectedPedido?.id === p.id ? 'bg-blue-100' : ''}`}
                         >
                           <TableCell>
-                            {p.fecha && !isNaN(new Date(p.fecha))
-                              ? formatInTimeZone(new Date(p.fecha), 'dd/MM/yyyy')
-                              : '---'}
+                            {formatFechaDMY(p.fecha) || '---'}
                           </TableCell>
                           <TableCell>{p.numero}</TableCell>
                           <TableCell>{p.usuario_email}</TableCell>
