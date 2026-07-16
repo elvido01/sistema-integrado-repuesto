@@ -900,8 +900,11 @@ export const printReciboPOS = (reciboData) => {
       <meta charset="UTF-8">
       <style>
         @page { margin: 0; size: 80mm auto; }
+        html, body { background-color: #fff; }
+        /* Pegado a la izquierda como la factura: 'margin: 0 auto' centraba el
+           recibo y lo corría a la derecha (se cortaba al imprimir). */
         body {
-          width: 78mm; margin: 0 auto; padding: 2mm 4mm;
+          width: 78mm; margin: 0; padding: 2mm 4mm; box-sizing: border-box;
           font-family: Arial, Helvetica, sans-serif;
           font-size: 16px; font-weight: 800; line-height: 1.25; color: #000;
           letter-spacing: 0.2px;
@@ -1005,8 +1008,11 @@ export const printRecibo4Pulgadas = (reciboData) => {
       <meta charset="UTF-8">
       <style>
         @page { margin: 0; size: 101.6mm auto; }
+        html, body { background-color: #fff; }
+        /* Pegado a la izquierda como la factura: 'margin: 0 auto' centraba el
+           contenido y lo corría a la derecha (se cortaba al imprimir). */
         body {
-          width: 98mm; margin: 0 auto; padding: 3mm 4mm;
+          width: 98mm; margin: 0; padding: 3mm 4mm; box-sizing: border-box;
           font-family: Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.32; color: #000; font-weight: 700;
         }
         .text-center { text-align: center; }
@@ -1110,8 +1116,11 @@ export const printNotaCreditoPOS = (notaData) => {
       <meta charset="UTF-8">
       <style>
         @page { margin: 0; size: 101.6mm auto; }
+        html, body { background-color: #fff; }
+        /* Pegado a la izquierda como la factura: 'margin: 0 auto' centraba el
+           contenido y lo corría a la derecha (se cortaba al imprimir). */
         body {
-          width: 98mm; margin: 0 auto; padding: 3mm 4mm;
+          width: 98mm; margin: 0; padding: 3mm 4mm; box-sizing: border-box;
           font-family: Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.32; color: #000; font-weight: 700;
         }
         .text-center { text-align: center; }
