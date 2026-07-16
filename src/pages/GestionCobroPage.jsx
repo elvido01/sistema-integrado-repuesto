@@ -134,6 +134,41 @@ const hasInteresCorrienteEquivalente = (prestamo, cuotas = []) => {
     && daysBetween(ultimoInteres) > 0;
 };
 
+// Suma n meses respetando fin de mes (31/01 + 1 mes = 28/02, como make_interval de PG)
+const addMonthsClamped = (date, months) => {
+  const r = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+  r.setDate(Math.min(date.getDate(), lastDay));
+  return r;
+};
+
+// MONTO del interés corriente pendiente (la fila >>INTERES<< del Recibo de
+// Pago). Misma fórmula canónica de get_prestamos_cliente
+// (sql/mora_default_empresa.sql):
+//   n_meses * round(cap_base * tasa/100) + round(cap_base * tasa/100 * 12 * días/365)
+// Sin esto, "Monto vencido" mostraba solo las cuotas (2,488.93) mientras el
+// Recibo de Pago mostraba el atraso real (3,072.38) — caso HECTOR PEGUERO.
+const interesCorrientePendiente = (prestamo, cuotas = []) => {
+  if (!hasInteresCorrienteEquivalente(prestamo, cuotas)) return 0;
+  const capBase = cuotas.reduce((sum, q) => (
+    sum + Math.max(0, Number(q.capital || 0) - Number(q.capital_pagado || 0))
+  ), 0);
+  const tasa = Number(prestamo?.tasa_interes || 0) / 100;
+  const ultimo = cuotas
+    .filter((q) => Number(q.interes || 0) > 0 && q.fecha_vencimiento)
+    .map((q) => q.fecha_vencimiento)
+    .sort()
+    .at(-1);
+  const base = new Date(`${String(ultimo).slice(0, 10)}T00:00:00`);
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  let nMeses = (hoy.getFullYear() - base.getFullYear()) * 12 + (hoy.getMonth() - base.getMonth());
+  while (nMeses > 0 && addMonthsClamped(base, nMeses) > hoy) nMeses -= 1;
+  const diasPart = Math.max(0, Math.round((hoy - addMonthsClamped(base, nMeses)) / 86400000));
+  const round2 = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
+  return nMeses * round2(capBase * tasa) + round2((capBase * tasa * 12 * diasPart) / 365);
+};
+
 const normalizePhone = (value) => {
   const digits = String(value || '').replace(/\D/g, '');
   if (!digits) return '';
@@ -366,6 +401,11 @@ const GestionCobroPage = () => {
           .filter((p) => hasInteresCorrienteEquivalente(p, cuotasDataPorPrestamo[p.id] || []))
           .map((p) => p.id)
       );
+      // Monto del interés corriente por préstamo (para sumarlo al monto vencido,
+      // igual que la fila >>INTERES<< del Recibo de Pago)
+      const interesCorrientePorPrestamo = new Map(
+        prestamos.map((p) => [p.id, interesCorrientePendiente(p, cuotasDataPorPrestamo[p.id] || [])])
+      );
       const activePrestamos = prestamos.filter((p) => (
         prestamosConVencidas.has(p.id)
           || prestamosConInteresEquivalente.has(p.id)
@@ -450,7 +490,10 @@ const GestionCobroPage = () => {
 
         const cuotasCaso = isRecordatorioPago ? cuotasRecordatorio : cuotas;
         const recordatorioCuota = isRecordatorioPago ? cuotasRecordatorio[0] : null;
-        const montoVencido = cuotasCaso.reduce((sum, q) => sum + pendingCuota(q), 0);
+        // Monto vencido = cuotas vencidas + interés corriente (mismo total que
+        // el Recibo de Pago; antes faltaba el interés y los montos no cuadraban)
+        const interesCorrienteMonto = isRecordatorioPago ? 0 : (interesCorrientePorPrestamo.get(p.id) || 0);
+        const montoVencido = cuotasCaso.reduce((sum, q) => sum + pendingCuota(q), 0) + interesCorrienteMonto;
         const oldest = cuotasCaso[0]?.fecha_vencimiento;
         const diasAtraso = isRecordatorioPago ? DIAS_GRACIA_PAGO : (oldest ? daysBetween(oldest) : 0);
         const promesa = gs.find((g) => g.tipo === 'promesa_pago' && g.estado !== 'cumplida' && g.estado !== 'cancelada');
