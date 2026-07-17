@@ -219,6 +219,9 @@ BEGIN
   WHERE tenant_id = v_fin AND numero ~ '^FIN-\d+$';
   v_compra_num := 'FIN-' || lpad(v_cseq::text, 6, '0');
 
+  -- CxP = capital + adicional: TODO lo que la financiera cobrará del cliente
+  -- por esta venta (préstamo + AD-) se lo debe al dealer. Así la CxC del
+  -- dealer (factura con extras - inicial) cuadra 1:1 con esta CxP.
   INSERT INTO public.compras (
     tenant_id, numero, fecha, suplidor_id, referencia,
     total_exento, total_gravado, itbis_total, total_compra,
@@ -226,8 +229,8 @@ BEGIN
   ) VALUES (
     v_fin, v_compra_num, current_date, v_prov,
     'Financiamiento factura #' || fac.numero || ' - comprador ' || buyer_nombre,
-    v_capital, 0, 0, v_capital,
-    'CREDITO', 0, 0, v_capital, 'PENDIENTE', false, false
+    v_capital + v_adic, 0, 0, v_capital + v_adic,
+    'CREDITO', 0, 0, v_capital + v_adic, 'PENDIENTE', false, false
   );
 
   -- ================= DEALER =================

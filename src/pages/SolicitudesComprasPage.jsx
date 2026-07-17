@@ -887,11 +887,18 @@ const SolicitudesComprasPage = () => {
         }
       }
 
-      // 1. Factura solo el valor de contado del vehículo.
-      //    Los add-ons y el financiamiento van como comentarios (Caminero pasa
-      //    el financiamiento a otra empresa que se incorporará más adelante).
+      // 1. Factura = valor de contado + add-ons incluidos (placa/GPS/casco/
+      //    seguro): son parte de la venta y el sistema viejo los factura DENTRO
+      //    del precio del vehículo (ej. FERNANDO: 180,000 + 4,600 = 184,600).
+      //    Así la CxC del dealer cuadra con lo que cobra la financiera:
+      //    pendiente = financiamiento (capital) + adicional.
       const valor = parseFloat(s.valor_contado) || 0;
-      const subtotal = valor;
+      const addonsTotal =
+        (s.incluye_placa ? parseFloat(s.monto_placa) || 0 : 0) +
+        (s.incluye_gps ? parseFloat(s.monto_gps) || 0 : 0) +
+        (s.incluye_casco ? parseFloat(s.monto_casco) || 0 : 0) +
+        (s.incluye_seguro ? parseFloat(s.monto_seguro) || 0 : 0);
+      const subtotal = valor + addonsTotal;
       const itbis = 0;
       const montoTotal = subtotal + itbis;
 
