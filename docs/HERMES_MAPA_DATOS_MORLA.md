@@ -31,7 +31,7 @@
 | `crm_whatsapp_*` (inbox Meta: 92 conversaciones, 436 mensajes) | contacts (phone, lead_score hot/warm/cold, cliente_id), conversations (status, intent, cotizacion_id), messages | Inbox oficial de WhatsApp en la web (WhatsAppCrmPage) | Lee ✓ / No escribe | Recepción activa; **envío por API bloqueado** hasta poner método de pago en Meta |
 | `sales_conversations`/`sales_messages` (espejo WhatsApp Web: 142 chats, 880 mensajes) | chat completo del WhatsApp real, vía extensión Omni | La fuente que Hermes debe LEER para WhatsApp | Lee ✓ / No escribe | Usar las vistas masticadas de abajo, no las tablas crudas |
 | `hermes_whatsapp_conversaciones` / `hermes_whatsapp_mensajes` (vistas) | una fila por chat con `sin_responder`, `horas_desde_cliente`, último mensaje; mensajes con quien='yo'/'cliente' | Detectar chats sin responder y leer la conversación | Lee ✓ | **Ya creadas.** Punto de partida del barrido diario |
-| `solicitudes_clientes` + vista `hermes_llegadas_pendientes` | cliente, teléfono, producto agotado, estado, available_at | Pedidos de productos agotados + aviso automático cuando llegan (trigger en kardex) | Lee ✓ (marcar avisado: solo desde la web o service_role — `hermes_readonly` no ejecuta el RPC) | **Ya creado.** Hoy hay 1 llegada pendiente de avisar |
+| `solicitudes_clientes` + vista `hermes_llegadas_pendientes` | cliente, teléfono, producto agotado, estado, available_at | Pedidos de productos agotados + aviso automático cuando llegan (trigger en kardex) | Lee ✓ + push en tiempo real por `LISTEN hermes_llegadas` (marcar avisado: solo web o service_role) | **Ya creado.** Hoy hay 1 llegada pendiente de avisar |
 | `ai_marketing_content` + `social_posts` (+métricas) | copys FB/IG/WhatsApp, guiones, fecha_programada; posts publicados y sus métricas | Publicaciones con datos reales de productos | Lee ✓ / No escribe (lo maneja el módulo Marketing IA) | Módulo montado, casi sin uso (1 contenido, 1 post) |
 | `config_empresa` | tipo_negocio=repuestos, feat_crm_whatsapp=true | Saber qué módulos tiene la empresa | Lee ✓ | — |
 | `hermes.product_image_status` (vista) | producto activo + precio, stock_actual, has_image, imagen_url, sales_30d, last_sale_at, first_stock_entry_at | Elegir productos promocionables sin foto (pedido diario 10:15) | Lee ✓ | **Corrida en prod ✓.** La imagen es `productos.imagen_url` (bucket `product-images`), una por producto |
@@ -89,8 +89,20 @@ Reglas ya puestas en la base:
 3. **Cierres**: si el cliente compró, buscar su factura del día en `facturas`
    (por cliente/teléfono/monto), poner `estado='comprado'` y guardar `factura_id`.
    Si pidió algo agotado, `estado='agotado_solicitado'` y enlazar `solicitud_id`.
-4. **Llegadas**: `SELECT * FROM hermes.hermes_llegadas_pendientes;` → redactar
-   el aviso "ya llegó tu pieza". El "marcar avisado" lo hace la persona con
+4. **Llegadas — en tiempo real, sin botones**: la detección es automática
+   (trigger del kardex con cualquier entrada de mercancía) y además hay un
+   canal push: en cuanto una solicitud pasa a 'notificada', Postgres publica
+   un aviso por `LISTEN hermes_llegadas` con JSON (cliente, teléfono,
+   producto, cantidad). Hermes lo escucha por su misma conexión psycopg2:
+   ```python
+   conn.autocommit = True
+   cur.execute("LISTEN hermes_llegadas;")
+   # luego: select.select([conn],[],[],60) → conn.poll() → conn.notifies
+   # cada payload es JSON; IGNORAR los de tenant_id ≠ Morla
+   ```
+   Al conectar (o reconectar), ponerse al día primero con
+   `SELECT * FROM hermes.hermes_llegadas_pendientes;` por si llegó algo
+   mientras estaba desconectado. El "marcar avisado" lo hace la persona con
    el botón 📦 del módulo Solicitudes (o service_role vía RPC
    `marcar_cliente_avisado`) — `hermes_readonly` no tiene ese permiso.
 5. **Reporte comercial diario** (fin de tarde): ventas del día desde
