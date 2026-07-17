@@ -66,20 +66,11 @@ WHERE p.activo = true;
 REVOKE ALL ON public.hermes_product_image_status FROM anon;
 GRANT SELECT ON public.hermes_product_image_status TO authenticated, service_role;
 
--- Vista para el rol restringido hermes_readonly (schema hermes, solo Morla)
-DO $$
-DECLARE
-  v_morla constant uuid := '00000000-0000-0000-0000-000000000001';
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'hermes')
-     AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hermes_readonly') THEN
-    EXECUTE format(
-      'CREATE OR REPLACE VIEW hermes.product_image_status WITH (security_barrier = true) AS
-         SELECT * FROM public.hermes_product_image_status WHERE tenant_id = %L::uuid',
-      v_morla);
-    EXECUTE 'GRANT SELECT ON hermes.product_image_status TO hermes_readonly';
-  END IF;
-END $$;
+-- Vista para el rol restringido hermes_readonly (hermes.product_image_status):
+-- vive en sql/hermes_readonly_vistas.sql junto con las demás vistas del
+-- schema hermes — correr ese archivo después de este. (No se define aquí
+-- sobre la vista pública porque security_invoker chequearía los permisos
+-- de hermes_readonly sobre las tablas base → permission denied.)
 
 NOTIFY pgrst, 'reload schema';
 

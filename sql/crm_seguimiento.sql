@@ -130,32 +130,12 @@ ORDER BY CASE cs.prioridad WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END,
 GRANT SELECT ON public.hermes_crm_hoy TO authenticated, service_role;
 
 -- ------------------------------------------------------------
--- Acceso para el rol restringido hermes_readonly (si está montado):
--- vistas en el schema hermes limitadas al tenant de Morla.
--- El CHECK OPTION impide insertar/mover filas de otra empresa.
+-- Acceso para el rol restringido hermes_readonly:
+-- las vistas del schema hermes (crm_seguimiento RW, crm_hoy, etc.)
+-- viven TODAS en sql/hermes_readonly_vistas.sql — correr ese archivo
+-- después de este (y después de cualquier re-run de hermes_readonly.sql,
+-- que borra las vistas del schema hermes al regenerarlo).
 -- ------------------------------------------------------------
-DO $$
-DECLARE
-  v_morla constant uuid := '00000000-0000-0000-0000-000000000001';
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'hermes')
-     AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hermes_readonly') THEN
-
-    EXECUTE format(
-      'CREATE OR REPLACE VIEW hermes.crm_seguimiento WITH (security_barrier = true) AS
-         SELECT * FROM public.crm_seguimiento WHERE tenant_id = %L::uuid
-       WITH CASCADED CHECK OPTION',
-      v_morla);
-
-    EXECUTE format(
-      'CREATE OR REPLACE VIEW hermes.crm_hoy WITH (security_barrier = true) AS
-         SELECT * FROM public.hermes_crm_hoy WHERE tenant_id = %L::uuid',
-      v_morla);
-
-    EXECUTE 'GRANT SELECT, INSERT, UPDATE ON hermes.crm_seguimiento TO hermes_readonly';
-    EXECUTE 'GRANT SELECT ON hermes.crm_hoy TO hermes_readonly';
-  END IF;
-END $$;
 
 NOTIFY pgrst, 'reload schema';
 

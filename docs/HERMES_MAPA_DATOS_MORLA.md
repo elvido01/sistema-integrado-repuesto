@@ -12,6 +12,10 @@
   El rol es de solo lectura por defecto; para escribir en el CRM debe abrir
   la transacción así: `BEGIN; SET TRANSACTION READ WRITE; ... COMMIT;`
   (solo tiene permiso de escritura en `hermes.crm_seguimiento`).
+  Las vistas custom de este schema (`crm_seguimiento`, `crm_hoy`,
+  `product_image_status`, WhatsApp y llegadas) las crea
+  [sql/hermes_readonly_vistas.sql](../sql/hermes_readonly_vistas.sql) —
+  re-correrlo si algún día se re-ejecuta `hermes_readonly.sql` (las borra).
 - Si se conecta con `service_role`/`postgres`, usa las tablas `public.*`
   directo, siempre con `WHERE tenant_id = '00000000-0000-0000-0000-000000000001'`.
 
@@ -27,15 +31,15 @@
 | `crm_whatsapp_*` (inbox Meta: 92 conversaciones, 436 mensajes) | contacts (phone, lead_score hot/warm/cold, cliente_id), conversations (status, intent, cotizacion_id), messages | Inbox oficial de WhatsApp en la web (WhatsAppCrmPage) | Lee ✓ / No escribe | Recepción activa; **envío por API bloqueado** hasta poner método de pago en Meta |
 | `sales_conversations`/`sales_messages` (espejo WhatsApp Web: 142 chats, 880 mensajes) | chat completo del WhatsApp real, vía extensión Omni | La fuente que Hermes debe LEER para WhatsApp | Lee ✓ / No escribe | Usar las vistas masticadas de abajo, no las tablas crudas |
 | `hermes_whatsapp_conversaciones` / `hermes_whatsapp_mensajes` (vistas) | una fila por chat con `sin_responder`, `horas_desde_cliente`, último mensaje; mensajes con quien='yo'/'cliente' | Detectar chats sin responder y leer la conversación | Lee ✓ | **Ya creadas.** Punto de partida del barrido diario |
-| `solicitudes_clientes` + vista `hermes_llegadas_pendientes` | cliente, teléfono, producto agotado, estado, available_at | Pedidos de productos agotados + aviso automático cuando llegan (trigger en kardex) | Lee ✓ / Escribe vía RPC `marcar_cliente_avisado(id)` | **Ya creado.** Hoy hay 1 llegada pendiente de avisar |
+| `solicitudes_clientes` + vista `hermes_llegadas_pendientes` | cliente, teléfono, producto agotado, estado, available_at | Pedidos de productos agotados + aviso automático cuando llegan (trigger en kardex) | Lee ✓ (marcar avisado: solo desde la web o service_role — `hermes_readonly` no ejecuta el RPC) | **Ya creado.** Hoy hay 1 llegada pendiente de avisar |
 | `ai_marketing_content` + `social_posts` (+métricas) | copys FB/IG/WhatsApp, guiones, fecha_programada; posts publicados y sus métricas | Publicaciones con datos reales de productos | Lee ✓ / No escribe (lo maneja el módulo Marketing IA) | Módulo montado, casi sin uso (1 contenido, 1 post) |
 | `config_empresa` | tipo_negocio=repuestos, feat_crm_whatsapp=true | Saber qué módulos tiene la empresa | Lee ✓ | — |
-| `hermes.product_image_status` (vista) | producto activo + precio, stock_actual, has_image, imagen_url, sales_30d, last_sale_at, first_stock_entry_at | Elegir productos promocionables sin foto (pedido diario 10:15) | Lee ✓ | Correr [sql/hermes_product_image_status.sql](../sql/hermes_product_image_status.sql); la imagen es `productos.imagen_url` (bucket `product-images`) |
-| **`crm_seguimiento` (NUEVO — hoy)** | ficha comercial: estado, prioridad, proxima_accion, fecha_seguimiento, enlaces a factura/solicitud | El pipeline de ventas y seguimiento diario | **Lee ✓ / Escribe ✓** | Correr [sql/crm_seguimiento.sql](../sql/crm_seguimiento.sql) en prod |
+| `hermes.product_image_status` (vista) | producto activo + precio, stock_actual, has_image, imagen_url, sales_30d, last_sale_at, first_stock_entry_at | Elegir productos promocionables sin foto (pedido diario 10:15) | Lee ✓ | **Corrida en prod ✓.** La imagen es `productos.imagen_url` (bucket `product-images`), una por producto |
+| **`crm_seguimiento` (NUEVO — hoy)** | ficha comercial: estado, prioridad, proxima_accion, fecha_seguimiento, enlaces a factura/solicitud | El pipeline de ventas y seguimiento diario | **Lee ✓ / Escribe ✓** | **Corrida en prod ✓** ([sql/crm_seguimiento.sql](../sql/crm_seguimiento.sql)) |
 
 ## Datos faltantes
 
-- **Seguimiento comercial** — no existía ninguna tabla de pipeline. Creada hoy (`crm_seguimiento`), falta correr el SQL en prod.
+- **Seguimiento comercial** — no existía ninguna tabla de pipeline. Creada hoy (`crm_seguimiento`) y ya corrida en prod.
 - **Envío de WhatsApp por API** — bloqueado (método de pago en Meta). Mientras tanto los mensajes salen manual/por la extensión; Hermes redacta, la persona envía.
 - **Teléfonos del detal** — las ventas de mostrador no registran cliente ni teléfono; el CRM captura eso desde WhatsApp.
 - **Vínculo conversación→venta** — no existía; el CRM nuevo lo resuelve con `factura_id`.
@@ -86,8 +90,9 @@ Reglas ya puestas en la base:
    (por cliente/teléfono/monto), poner `estado='comprado'` y guardar `factura_id`.
    Si pidió algo agotado, `estado='agotado_solicitado'` y enlazar `solicitud_id`.
 4. **Llegadas**: `SELECT * FROM hermes.hermes_llegadas_pendientes;` → redactar
-   el aviso "ya llegó tu pieza"; al enviarse, marcar con
-   `SELECT marcar_cliente_avisado('<solicitud_id>');`.
+   el aviso "ya llegó tu pieza". El "marcar avisado" lo hace la persona con
+   el botón 📦 del módulo Solicitudes (o service_role vía RPC
+   `marcar_cliente_avisado`) — `hermes_readonly` no tiene ese permiso.
 5. **Reporte comercial diario** (fin de tarde): ventas del día desde
    `facturas` (cantidad, total, formas de pago), fichas nuevas, fichas
    cerradas (comprado/perdido), seguimientos pendientes para mañana y
