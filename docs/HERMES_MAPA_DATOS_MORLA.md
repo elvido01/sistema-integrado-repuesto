@@ -30,6 +30,7 @@
 | `solicitudes_clientes` + vista `hermes_llegadas_pendientes` | cliente, teléfono, producto agotado, estado, available_at | Pedidos de productos agotados + aviso automático cuando llegan (trigger en kardex) | Lee ✓ / Escribe vía RPC `marcar_cliente_avisado(id)` | **Ya creado.** Hoy hay 1 llegada pendiente de avisar |
 | `ai_marketing_content` + `social_posts` (+métricas) | copys FB/IG/WhatsApp, guiones, fecha_programada; posts publicados y sus métricas | Publicaciones con datos reales de productos | Lee ✓ / No escribe (lo maneja el módulo Marketing IA) | Módulo montado, casi sin uso (1 contenido, 1 post) |
 | `config_empresa` | tipo_negocio=repuestos, feat_crm_whatsapp=true | Saber qué módulos tiene la empresa | Lee ✓ | — |
+| `hermes.product_image_status` (vista) | producto activo + precio, stock_actual, has_image, imagen_url, sales_30d, last_sale_at, first_stock_entry_at | Elegir productos promocionables sin foto (pedido diario 10:15) | Lee ✓ | Correr [sql/hermes_product_image_status.sql](../sql/hermes_product_image_status.sql); la imagen es `productos.imagen_url` (bucket `product-images`) |
 | **`crm_seguimiento` (NUEVO — hoy)** | ficha comercial: estado, prioridad, proxima_accion, fecha_seguimiento, enlaces a factura/solicitud | El pipeline de ventas y seguimiento diario | **Lee ✓ / Escribe ✓** | Correr [sql/crm_seguimiento.sql](../sql/crm_seguimiento.sql) en prod |
 
 ## Datos faltantes
