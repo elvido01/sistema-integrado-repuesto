@@ -504,6 +504,18 @@ BEGIN
      SET adicional_fecha = DATE '2026-07-31'
    WHERE tenant_id = v_cam AND numero = 18
      AND adicional_fecha = DATE '2026-07-08';
+
+  -- La columna "Fecha" del Recibo usa created_at del cargo; alinear el AD de
+  -- FERNANDO a la fecha real de la operación (16/07, la del préstamo), igual
+  -- que el sistema viejo. Idempotente.
+  UPDATE public.prestamo_cargos pc
+     SET created_at = p.created_at
+    FROM public.prestamos p
+   WHERE p.id = pc.prestamo_id
+     AND pc.tenant_id = v_fin
+     AND p.numero = 'PT-0026579'
+     AND pc.tipo = 'ADICIONAL'
+     AND pc.created_at::date <> p.created_at::date;
 END $$;
 
 -- ------------------------------------------------------------

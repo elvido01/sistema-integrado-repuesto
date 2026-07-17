@@ -514,6 +514,18 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   // Filas de la tabla (MORA y cargos como lineas aparte). El abono se marca por fila.
   const filas = useMemo(() => {
     const out = [];
+    // Cargos manuales (Otras Transacciones) PRIMERO — como el sistema viejo,
+    // que muestra el ADICIONAL/AB arriba de las cuotas. Fecha = día en que se
+    // aplicó el cargo (creado); Vence = fecha pactada de pago.
+    cargosFiltrados.forEach((cg) => {
+      out.push({
+        key: `cargo-${cg.cargo_id}`, cargo_id: cg.cargo_id, esMora: false, esCargo: true,
+        fecha: cg.creado || cg.fecha || '', vence: cg.fecha || '', origen: cg.numero,
+        referencia: cg.concepto || '', descripcion: cg.tipo + (cg.descripcion ? ` · ${cg.descripcion}` : ''),
+        monto: round2(cg.monto), pendiente: round2(cg.pendiente),
+        capital_pend: 0, interes_pend: 0, mora_pend: 0,
+      });
+    });
     cuotasFiltradas.forEach((c) => {
       if (Number(c.mora_pend) > 0) {
         out.push({
@@ -530,16 +542,6 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         referencia: c.referencia, descripcion: 'Financiamiento',
         monto: round2(c.monto_cuota), pendiente: round2(Number(c.capital_pend) + Number(c.interes_pend)),
         capital_pend: round2(c.capital_pend), interes_pend: round2(c.interes_pend), mora_pend: 0,
-      });
-    });
-    // Cargos manuales (Otras Transacciones) como filas cobrables
-    cargosFiltrados.forEach((cg) => {
-      out.push({
-        key: `cargo-${cg.cargo_id}`, cargo_id: cg.cargo_id, esMora: false, esCargo: true,
-        fecha: cg.fecha || '', vence: cg.fecha || '', origen: cg.numero,
-        referencia: cg.concepto || '', descripcion: cg.tipo + (cg.descripcion ? ` · ${cg.descripcion}` : ''),
-        monto: round2(cg.monto), pendiente: round2(cg.pendiente),
-        capital_pend: 0, interes_pend: 0, mora_pend: 0,
       });
     });
     return out;

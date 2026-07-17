@@ -72,12 +72,15 @@ BEGIN
   v_emp_mora := COALESCE(v_emp_mora, 0);
 
   -- Cargos manuales pendientes (Otras Transacciones)
+  -- 'creado' = fecha en que se aplicó el cargo (columna Fecha del Recibo);
+  -- 'fecha'  = fecha de vencimiento pactada (columna Vence).
   SELECT
     COALESCE(json_agg(json_build_object(
       'cargo_id',    id,
       'numero',      numero,
       'prestamo_id', prestamo_id,
       'fecha',       fecha,
+      'creado',      created_at::date,
       'tipo',        tipo,
       'concepto',    concepto,
       'descripcion', descripcion,
