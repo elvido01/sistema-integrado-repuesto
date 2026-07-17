@@ -95,7 +95,10 @@ BEGIN
     SELECT
       prestamo_id,
       MAX(prestamo_numero) AS prestamo_numero,
-      MAX(cliente_id) AS cliente_id,
+      -- max(uuid) NO existe en Postgres (rompía todo el RPC con 42883 y la
+      -- extensión caía a un camino viejo sin pagos15 ni reglas nuevas):
+      -- se agrega vía texto. Un préstamo tiene UN solo cliente.
+      MIN(cliente_id::text)::uuid AS cliente_id,
       MAX(tipo) AS tipo,
       MAX(garantia) AS garantia,
       SUM(capital_pend) AS capital_base,
@@ -108,7 +111,7 @@ BEGIN
     SELECT
       COALESCE(v.prestamo_id, ic.prestamo_id) AS prestamo_id,
       COALESCE(MAX(v.prestamo_numero), MAX(ic.prestamo_numero)) AS prestamo_numero,
-      COALESCE(MAX(v.cliente_id), MAX(ic.cliente_id)) AS cliente_id,
+      COALESCE(MAX(v.cliente_id::text), MAX(ic.cliente_id::text))::uuid AS cliente_id,
       COALESCE(MAX(v.tipo), MAX(ic.tipo)) AS tipo,
       COALESCE(MAX(v.garantia), MAX(ic.garantia)) AS garantia,
       COUNT(v.fecha_vencimiento)::int AS cuotas_vencidas,
@@ -139,7 +142,7 @@ BEGIN
     SELECT
       r.prestamo_id,
       MAX(r.prestamo_numero) AS prestamo_numero,
-      MAX(r.cliente_id) AS cliente_id,
+      MIN(r.cliente_id::text)::uuid AS cliente_id,
       MAX(r.tipo) AS tipo,
       MAX(r.garantia) AS garantia,
       COUNT(*)::int AS cuotas_vencidas,

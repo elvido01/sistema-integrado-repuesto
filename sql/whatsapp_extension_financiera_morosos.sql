@@ -1,20 +1,9 @@
 -- =====================================================================
--- FIX: monto atrasado sin el interés corriente (WhatsApp + Gestión Cobro)
+-- WhatsApp Extension -> Lista de deuda para financiera
 -- ---------------------------------------------------------------------
--- Caso HECTOR PEGUERO (PT-0025599, 16/07/2026): el Recibo de Pago muestra
--- el atraso REAL (cuotas vencidas 2,488.93 + >>INTERES<< corriente 583.45
--- = 3,072.38), pero Gestión de Cobro y el mensaje de WhatsApp de morosos
--- decían 2,488.93: contaban el interés corriente como "pago vencido
--- equivalente" pero NO sumaban su monto.
---
--- Este script re-crea get_clientes_morosos_financiera() (la fuente del
--- mensaje de WhatsApp de la extensión) agregando el monto del interés
--- corriente a total_atrasado, con la MISMA fórmula canónica de
--- get_prestamos_cliente (sql/mora_default_empresa.sql):
---   int_corr = n_meses_completos * round(cap_base * tasa/100, 2)
---            + round(cap_base * tasa/100 * 12 * dias_parciales / 365, 2)
--- (La página web de Gestión de Cobro se corrige aparte en el frontend.)
--- Re-ejecutable.
+-- Devuelve la misma forma que get_clientes_morosos(), pero calculada desde
+-- prestamos/prestamo_cuotas. La extension puede usarla sin depender del
+-- nombre comercial en config_empresa ni de consultas directas a varias tablas.
 -- =====================================================================
 
 CREATE OR REPLACE FUNCTION public.get_clientes_morosos_financiera()
@@ -80,38 +69,13 @@ BEGIN
     SELECT
       prestamo_id,
       MAX(prestamo_numero) AS prestamo_numero,
-      -- max(uuid) NO existe en Postgres (rompía el RPC con 42883): vía texto
+      -- max(uuid) NO existe en Postgres: vía texto
       MIN(cliente_id::text)::uuid AS cliente_id,
       SUM(capital_pend) AS capital_base,
       MAX(fecha_vencimiento) FILTER (WHERE COALESCE(interes, 0) > 0) AS ultimo_interes_venc,
       MAX(COALESCE(tasa_interes, 0)) AS tasa_interes
     FROM cuotas_base
     GROUP BY prestamo_id
-  ),
-  -- Monto del interés corriente con la fórmula canónica del Recibo de Pago
-  -- (get_prestamos_cliente en mora_default_empresa.sql): meses completos
-  -- + parte proporcional por día sobre el capital pendiente.
-  interes_monto AS (
-    SELECT
-      ic.*,
-      CASE
-        WHEN ic.capital_base > 0
-         AND ic.tasa_interes > 0
-         AND ic.ultimo_interes_venc IS NOT NULL
-         AND ic.ultimo_interes_venc < v_today
-        THEN (
-          SELECT n.n_meses * round(ic.capital_base * (ic.tasa_interes / 100.0), 2)
-               + round(ic.capital_base * (ic.tasa_interes / 100.0) * 12.0
-                       * GREATEST(0, (v_today - (ic.ultimo_interes_venc + make_interval(months => n.n_meses))::date))::numeric
-                       / 365.0, 2)
-          FROM (
-            SELECT (date_part('year',  age(v_today, ic.ultimo_interes_venc)) * 12
-                    + date_part('month', age(v_today, ic.ultimo_interes_venc)))::int AS n_meses
-          ) n
-        )
-        ELSE 0
-      END AS monto_interes_corriente
-    FROM interes_corriente ic
   ),
   prestamos_atrasados AS (
     SELECT
@@ -126,16 +90,13 @@ BEGIN
          AND MAX(ic.ultimo_interes_venc) < v_today
         THEN 1 ELSE 0
       END AS interes_equivalente,
-      -- Cuotas vencidas + interés corriente (antes faltaba el interés,
-      -- por eso WhatsApp decía 2,488.93 en vez de 3,072.38)
-      COALESCE(SUM(v.pendiente), 0)
-        + COALESCE(MAX(ic.monto_interes_corriente), 0) AS monto_vencido,
+      COALESCE(SUM(v.pendiente), 0) AS monto_vencido,
       GREATEST(
         COALESCE(MAX(v_today - v.fecha_vencimiento), 0),
         COALESCE(MAX(v_today - ic.ultimo_interes_venc), 0)
       )::int AS dias_atraso
     FROM vencidas v
-    FULL JOIN interes_monto ic
+    FULL JOIN interes_corriente ic
       ON ic.prestamo_id = v.prestamo_id
     GROUP BY COALESCE(v.prestamo_id, ic.prestamo_id)
   ),
@@ -233,10 +194,4 @@ GRANT EXECUTE ON FUNCTION public.get_clientes_morosos_financiera() TO authentica
 
 NOTIFY pgrst, 'reload schema';
 
-DO $$ BEGIN
-  IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
-    PERFORM public.registrar_migracion('fix_monto_atrasado_interes_corriente.sql');
-  END IF;
-END $$;
-
-SELECT 'total_atrasado incluye interés corriente (WhatsApp morosos financiera)' AS status;
+SELECT 'whatsapp extension financiera morosos listo' AS status;
