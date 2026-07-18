@@ -36,6 +36,7 @@ import {
   Sparkles,
   ShieldAlert,
   PieChart,
+  CalendarClock,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -72,6 +73,7 @@ const navItems = [
     icon: MessageCircle,
     subItems: [
       { title: 'Sales Hub', id: 'whatsapp-crm', icon: MessageCircle },
+      { title: 'Seguimientos de Hoy', id: 'seguimientos-hoy', icon: CalendarClock, permissionKey: 'clientes', tenantOnly: '00000000-0000-0000-0000-000000000001' },
       { title: 'Clientes', id: 'clientes', icon: Users },
       { title: 'Cartera de Clientes', id: 'cartera-clientes', icon: Users },
     ],

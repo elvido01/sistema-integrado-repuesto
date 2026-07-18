@@ -97,6 +97,11 @@ Reglas ya puestas en la base (Etapa 1.2):
    Campos en NULL = no tocar lo que ya tiene la ficha.
 2. **Seguimiento del día**: `SELECT * FROM hermes.crm_hoy;` → redactar el
    mensaje de seguimiento de cada ficha (la persona lo envía por WhatsApp).
+   La tienda ve y ejecuta estas mismas fichas en el panel **"Seguimientos de
+   Hoy"** de MotoFlow (menú CRM): allí anotan notas, reprograman fechas y
+   marcan perdido/requiere_aprobacion/agotado — todo por
+   `crm_upsert_seguimiento`, así que lo que la tienda haga le aparece a
+   Hermes en `crm_hoy` al momento (y viceversa).
 3. **Cierres**: la venta a cliente registrado se cierra SOLA (trigger al
    facturar: `comprado` + `factura_id`). Hermes solo cierra a mano:
    `perdido` (con la razón en `p_nota`) y las compras de mostrador sin

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PanelContext, usePanels } from './panelCore';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -68,6 +68,7 @@ import ListaChasisPrestamosPage from '@/pages/ListaChasisPrestamosPage';
 import ResumenCarteraPage from '@/pages/ResumenCarteraPage';
 import GestionCobroPage from '@/pages/GestionCobroPage';
 import CuentasIncobrablesPage from '@/pages/CuentasIncobrablesPage';
+import SeguimientosHoyPage from '@/pages/SeguimientosHoyPage';
 import NotaCreditoFinancieraPage from '@/pages/NotaCreditoFinancieraPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
@@ -144,6 +145,7 @@ const componentMapping = {
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
   'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MORLA AI CEO' },
   'whatsapp-crm': { component: () => <Protected module="whatsapp-crm"><PlanGate nombre="Sales Hub / CRM"><WhatsAppCrmPage /></PlanGate></Protected>, icon: MessageCircle, name: 'Sales Hub' },
+  'seguimientos-hoy': { component: () => <Protected module="clientes"><SeguimientosHoyPage /></Protected>, icon: CalendarClock, name: 'Seguimientos de Hoy' },
   'gps-dashboard': { component: () => <Protected module="gps-dashboard"><GpsDashboardPage /></Protected>, icon: RadioTower, name: 'GPS Dashboard' },
   'gps-dispositivos': { component: () => <Protected module="gps-dispositivos"><GpsDevicesPage /></Protected>, icon: RadioTower, name: 'GPS Dispositivos' },
   'gps-mapa': { component: () => <Protected module="gps-mapa"><GpsMapPage /></Protected>, icon: MapPin, name: 'GPS Mapa' },
