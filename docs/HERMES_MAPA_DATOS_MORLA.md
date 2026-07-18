@@ -35,7 +35,7 @@
 | `ai_marketing_content` + `social_posts` (+métricas) | copys FB/IG/WhatsApp, guiones, fecha_programada; posts publicados y sus métricas | Publicaciones con datos reales de productos | Lee ✓ / No escribe (lo maneja el módulo Marketing IA) | Módulo montado, casi sin uso (1 contenido, 1 post) |
 | `config_empresa` | tipo_negocio=repuestos, feat_crm_whatsapp=true | Saber qué módulos tiene la empresa | Lee ✓ | — |
 | `hermes.product_image_status` (vista) | producto activo + precio, stock_actual, has_image, imagen_url, sales_30d, last_sale_at, first_stock_entry_at | Elegir productos promocionables sin foto (pedido diario 10:15) | Lee ✓ | **Corrida en prod ✓.** La imagen es `productos.imagen_url` (bucket `product-images`), una por producto |
-| **`crm_seguimiento` (NUEVO — hoy)** | ficha comercial: estado, prioridad, proxima_accion, fecha_seguimiento, enlaces a factura/solicitud | El pipeline de ventas y seguimiento diario | **Lee ✓ / Escribe ✓** | **Corrida en prod ✓** ([sql/crm_seguimiento.sql](../sql/crm_seguimiento.sql)) |
+| **`crm_seguimiento` (NUEVO — hoy)** | ficha comercial: estado, prioridad, proxima_accion, fecha_seguimiento, enlaces a factura/solicitud | El pipeline de ventas y seguimiento diario | **Lee ✓ / Escribe ✓ vía `hermes.crm_upsert_seguimiento(...)`** | Etapa 1.2: dedup teléfono+producto y cierre automático al facturar ([sql/crm_operativo.sql](../sql/crm_operativo.sql)) |
 
 ## Datos faltantes
 
@@ -59,36 +59,49 @@ Estados: `nuevo` → `interesado` → `precio_enviado` → `pendiente_pago` /
 (pidió algo sin existencia) y `requiere_aprobacion` (Hermes no decide solo:
 descuentos, crédito, casos raros).
 
-Reglas ya puestas en la base:
-- Solo **un seguimiento abierto por teléfono** por empresa: si el cliente ya
-  tiene ficha abierta, se ACTUALIZA, no se crea otra.
-- `actualizado_en` se actualiza solo (trigger).
-- Vista **`hermes.crm_hoy`**: lo que toca hoy (abiertos con fecha vencida o
-  sin fecha), prioridad alta primero.
+Reglas ya puestas en la base (Etapa 1.2):
+- Solo **un seguimiento abierto por teléfono + producto**: mismo cliente y
+  mismo producto → se ACTUALIZA la ficha; producto distinto → ficha nueva.
+- **Cierre automático al facturar**: cuando se factura a un cliente
+  registrado (por `cliente_id` o teléfono), sus fichas abiertas del producto
+  facturado (o sin producto) pasan solas a `comprado` con `factura_id`
+  enlazado. Ignora facturas anuladas.
+- `actualizado_en` se actualiza solo (trigger); las notas se ACUMULAN con
+  fecha, no se pisan.
+- Vista **`hermes.crm_hoy`**: SOLO lo que requiere acción hoy — abiertos con
+  fecha vencida o sin fecha, prioridad alta primero. Las fichas
+  `agotado_solicitado` se ocultan mientras la pieza no llega y reaparecen
+  solas cuando el detector marca la solicitud como `notificada`.
 
 ## Cómo Hermes debe usarlo (rutina diaria)
 
 1. **Barrido de WhatsApp**: `SELECT * FROM hermes.hermes_whatsapp_conversaciones WHERE sin_responder` →
-   por cada chat, leer sus mensajes y crear/actualizar la ficha:
+   por cada chat, leer sus mensajes y crear/actualizar la ficha con la
+   función de escritura controlada (NO hacer INSERT manual — la función
+   normaliza el teléfono, enlaza sola cliente/contacto/producto, evita
+   duplicados por teléfono+producto y acumula las notas con fecha):
    ```sql
    BEGIN; SET TRANSACTION READ WRITE;
-   -- ¿ya tiene ficha abierta?
-   SELECT id, estado FROM hermes.crm_seguimiento
-    WHERE telefono = '8095551234' AND estado NOT IN ('comprado','perdido');
-   -- si no: crear
-   INSERT INTO hermes.crm_seguimiento
-     (tenant_id, cliente_nombre, telefono, canal_origen, producto_consultado,
-      codigo_producto, estado, prioridad, proxima_accion, fecha_seguimiento, notas, creado_por)
-   VALUES ('00000000-0000-0000-0000-000000000001', 'Juan Pérez', '8095551234', 'whatsapp',
-      'goma 90/90-17', 'GM9017', 'precio_enviado', 'media',
-      'preguntar si pasa a buscarla', current_date + 1, 'preguntó precio, se le envió RD$850', 'hermes');
+   SELECT hermes.crm_upsert_seguimiento(
+     p_telefono          := '809-555-1234',        -- como venga, se normaliza
+     p_cliente_nombre    := 'Juan Pérez',
+     p_producto          := 'goma 90/90-17',
+     p_codigo            := 'GM9017',              -- si se conoce
+     p_estado            := 'precio_enviado',
+     p_proxima_accion    := 'preguntar si pasa a buscarla',
+     p_fecha_seguimiento := current_date + 1,
+     p_nota              := 'preguntó precio, se le envió RD$850');
    COMMIT;
    ```
+   Devuelve JSON con `accion` ('creada'/'actualizada') y `seguimiento_id`.
+   Campos en NULL = no tocar lo que ya tiene la ficha.
 2. **Seguimiento del día**: `SELECT * FROM hermes.crm_hoy;` → redactar el
    mensaje de seguimiento de cada ficha (la persona lo envía por WhatsApp).
-3. **Cierres**: si el cliente compró, buscar su factura del día en `facturas`
-   (por cliente/teléfono/monto), poner `estado='comprado'` y guardar `factura_id`.
-   Si pidió algo agotado, `estado='agotado_solicitado'` y enlazar `solicitud_id`.
+3. **Cierres**: la venta a cliente registrado se cierra SOLA (trigger al
+   facturar: `comprado` + `factura_id`). Hermes solo cierra a mano:
+   `perdido` (con la razón en `p_nota`) y las compras de mostrador sin
+   cliente registrado que detecte en la conversación. Si pidió algo
+   agotado: `estado='agotado_solicitado'` y enlazar `p_solicitud_id`.
 4. **Llegadas — en tiempo real, sin botones**: la detección es automática
    (trigger del kardex con cualquier entrada de mercancía) y además hay un
    canal push: en cuanto una solicitud pasa a 'notificada', Postgres publica

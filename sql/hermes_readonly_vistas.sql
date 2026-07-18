@@ -13,7 +13,11 @@
 -- Este archivo es el CANÓNICO de las vistas custom del schema hermes:
 --   crm_seguimiento (lectura+escritura), crm_hoy, product_image_status,
 --   hermes_whatsapp_conversaciones, hermes_whatsapp_mensajes,
---   hermes_llegadas_pendientes (lectura).
+--   hermes_llegadas_pendientes (lectura), y la función
+--   hermes.crm_upsert_seguimiento (la vía RECOMENDADA de escritura del CRM:
+--   normaliza teléfono, enlaza cliente/contacto/producto, dedup tel+producto).
+--   Requiere que public.crm_upsert_seguimiento exista → correr DESPUÉS de
+--   sql/crm_operativo.sql.
 -- Los nombres de WhatsApp/llegadas son idénticos a las vistas públicas
 -- para que las consultas sin schema resuelvan por search_path (=hermes).
 --
@@ -70,6 +74,11 @@ BEGIN
       AND cs.estado NOT IN ('comprado','perdido')
       AND (cs.fecha_seguimiento IS NULL
            OR cs.fecha_seguimiento <= (now() AT TIME ZONE 'America/Santo_Domingo')::date)
+      AND (cs.estado <> 'agotado_solicitado'
+           OR cs.solicitud_id IS NULL
+           OR EXISTS (SELECT 1 FROM public.solicitudes_clientes sc
+                      WHERE sc.id = cs.solicitud_id
+                        AND (sc.estado = 'notificada' OR sc.available_at IS NOT NULL)))
     ORDER BY CASE cs.prioridad WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END,
              cs.fecha_seguimiento NULLS LAST,
              cs.actualizado_en
@@ -207,6 +216,42 @@ BEGIN
            hermes.hermes_whatsapp_conversaciones, hermes.hermes_whatsapp_mensajes,
            hermes.hermes_llegadas_pendientes TO hermes_readonly';
   EXECUTE 'GRANT INSERT, UPDATE ON hermes.crm_seguimiento TO hermes_readonly';
+
+  -- ------------------------------------------------------------
+  -- 7) Escritura RECOMENDADA del CRM: wrapper de crm_upsert_seguimiento.
+  --    hermes_readonly no tiene USAGE sobre public (no puede llamar la
+  --    función de allá), así que se expone aquí. Fuerza creado_por='hermes'
+  --    y tenant de Morla (el wrapper no acepta tenant).
+  -- ------------------------------------------------------------
+  IF to_regprocedure('public.crm_upsert_seguimiento(text,text,text,text,text,text,text,text,date,text,uuid,text,uuid)') IS NULL THEN
+    RAISE EXCEPTION 'Falta public.crm_upsert_seguimiento: correr primero sql/crm_operativo.sql';
+  END IF;
+
+  CREATE OR REPLACE FUNCTION hermes.crm_upsert_seguimiento(
+    p_telefono          text,
+    p_cliente_nombre    text DEFAULT NULL,
+    p_canal_origen      text DEFAULT 'whatsapp',
+    p_producto          text DEFAULT NULL,
+    p_codigo            text DEFAULT NULL,
+    p_estado            text DEFAULT NULL,
+    p_prioridad         text DEFAULT NULL,
+    p_proxima_accion    text DEFAULT NULL,
+    p_fecha_seguimiento date DEFAULT NULL,
+    p_nota              text DEFAULT NULL,
+    p_solicitud_id      uuid DEFAULT NULL)
+  RETURNS jsonb
+  LANGUAGE sql
+  SECURITY DEFINER
+  SET search_path TO public
+  AS $fn$
+    SELECT public.crm_upsert_seguimiento(
+      p_telefono, p_cliente_nombre, p_canal_origen, p_producto, p_codigo,
+      p_estado, p_prioridad, p_proxima_accion, p_fecha_seguimiento, p_nota,
+      p_solicitud_id, 'hermes', NULL);
+  $fn$;
+
+  EXECUTE 'REVOKE ALL ON FUNCTION hermes.crm_upsert_seguimiento(text,text,text,text,text,text,text,text,date,text,uuid) FROM PUBLIC';
+  EXECUTE 'GRANT EXECUTE ON FUNCTION hermes.crm_upsert_seguimiento(text,text,text,text,text,text,text,text,date,text,uuid) TO hermes_readonly';
 END $$;
 
 DO $$ BEGIN

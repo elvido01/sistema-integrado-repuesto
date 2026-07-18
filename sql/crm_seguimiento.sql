@@ -61,10 +61,17 @@ CREATE TABLE IF NOT EXISTS public.crm_seguimiento (
   actualizado_en   timestamptz NOT NULL DEFAULT now()
 );
 
--- Un solo seguimiento ABIERTO por teléfono y empresa: Hermes actualiza la
--- ficha existente en vez de crear otra cada vez que relee el chat.
+-- Un solo seguimiento ABIERTO por teléfono + producto (Etapa 1.2): mismo
+-- cliente y mismo producto → se actualiza la ficha; producto distinto →
+-- ficha nueva. La escritura normal va por crm_upsert_seguimiento
+-- (sql/crm_operativo.sql), que normaliza el teléfono antes de guardar.
 CREATE UNIQUE INDEX IF NOT EXISTS crm_seguimiento_abierto_uq
-  ON public.crm_seguimiento (tenant_id, telefono)
+  ON public.crm_seguimiento (
+    tenant_id,
+    telefono,
+    (COALESCE(lower(NULLIF(btrim(codigo_producto), '')),
+              lower(NULLIF(btrim(producto_consultado), '')), ''))
+  )
   WHERE telefono IS NOT NULL AND estado NOT IN ('comprado','perdido');
 
 CREATE INDEX IF NOT EXISTS crm_seguimiento_estado_idx
@@ -123,6 +130,12 @@ LEFT JOIN public.config_empresa ce ON ce.tenant_id = cs.tenant_id
 WHERE cs.estado NOT IN ('comprado','perdido')
   AND (cs.fecha_seguimiento IS NULL
        OR cs.fecha_seguimiento <= (now() AT TIME ZONE 'America/Santo_Domingo')::date)
+  -- 'agotado_solicitado' no requiere acción mientras la pieza no llega
+  AND (cs.estado <> 'agotado_solicitado'
+       OR cs.solicitud_id IS NULL
+       OR EXISTS (SELECT 1 FROM public.solicitudes_clientes sc
+                  WHERE sc.id = cs.solicitud_id
+                    AND (sc.estado = 'notificada' OR sc.available_at IS NOT NULL)))
 ORDER BY CASE cs.prioridad WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END,
          cs.fecha_seguimiento NULLS LAST,
          cs.actualizado_en;
