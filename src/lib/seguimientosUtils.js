@@ -74,6 +74,19 @@ export function resumenSeguimientos(fichas, ctx = {}) {
   };
 }
 
+// Reglas de negocio del panel: perdido exige la razón; requiere_aprobacion
+// (descuento, crédito, negociación, garantía, reclamo) exige la nota.
+export function validarAccionEstado(estadoNuevo, nota) {
+  const n = String(nota || '').trim();
+  if (estadoNuevo === 'perdido' && !n) {
+    return { ok: false, error: 'Para marcar perdido escribe la razón en la nota.' };
+  }
+  if (estadoNuevo === 'requiere_aprobacion' && !n) {
+    return { ok: false, error: 'Requiere aprobación necesita la nota (qué pide el cliente).' };
+  }
+  return { ok: true, error: null };
+}
+
 // Las notas se acumulan con fecha (crm_upsert_seguimiento): la última línea
 // es lo más reciente.
 export function ultimaNota(notas) {

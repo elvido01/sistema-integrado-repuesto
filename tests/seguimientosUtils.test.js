@@ -118,6 +118,24 @@ describe('resumenSeguimientos', () => {
   });
 });
 
+describe('validarAccionEstado', () => {
+  it('perdido y requiere_aprobacion exigen nota; agotado y guardar normal no', async () => {
+    const { validarAccionEstado } = await import('../src/lib/seguimientosUtils.js');
+    expect(validarAccionEstado('perdido', '').ok).toBe(false);
+    expect(validarAccionEstado('perdido', '  ').ok).toBe(false);
+    expect(validarAccionEstado('perdido', 'no le sirvió el precio').ok).toBe(true);
+    expect(validarAccionEstado('requiere_aprobacion', '').ok).toBe(false);
+    expect(validarAccionEstado('requiere_aprobacion', 'pide 10% de descuento').ok).toBe(true);
+    expect(validarAccionEstado('agotado_solicitado', '').ok).toBe(true);
+    expect(validarAccionEstado(null, '').ok).toBe(true);
+  });
+  it('cuando falla, dice qué falta', async () => {
+    const { validarAccionEstado } = await import('../src/lib/seguimientosUtils.js');
+    expect(validarAccionEstado('perdido', '').error).toMatch(/razón/i);
+    expect(validarAccionEstado('requiere_aprobacion', '').error).toMatch(/nota/i);
+  });
+});
+
 describe('ultimaNota', () => {
   it('devuelve la última línea con contenido', () => {
     expect(ultimaNota('17/07 pidió precio\n18/07 [auto] Comprado — factura #3014')).toBe('18/07 [auto] Comprado — factura #3014');

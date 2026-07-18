@@ -11,7 +11,7 @@ import { Loader2, RefreshCw, Search, MessageCircle, CalendarClock, Ban, ShieldAl
 import { formatFechaDMY } from '@/lib/dateUtils';
 import {
   normalizarTelefonoRD, clasificarSeguimiento, ordenarSeguimientos,
-  filtrarSeguimientos, resumenSeguimientos, ultimaNota,
+  filtrarSeguimientos, resumenSeguimientos, ultimaNota, validarAccionEstado,
 } from '@/lib/seguimientosUtils';
 
 const hoyLocal = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
@@ -111,8 +111,9 @@ const SeguimientosHoyPage = () => {
     const f = gestionar;
     if (!f) return;
     const nota = form.nota.trim();
-    if (estadoNuevo === 'perdido' && !nota) {
-      toast({ variant: 'destructive', title: 'Falta la razón', description: 'Para marcar perdido escribe la razón en la nota.' });
+    const valida = validarAccionEstado(estadoNuevo, nota);
+    if (!valida.ok) {
+      toast({ variant: 'destructive', title: 'Falta la nota', description: valida.error });
       return;
     }
     setBusy(true);
@@ -342,7 +343,7 @@ const SeguimientosHoyPage = () => {
               </div>
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button size="sm" variant="outline" disabled={busy}
-                  title="Descuentos, crédito o casos excepcionales"
+                  title="Descuento, crédito, negociación, garantía o reclamo — exige la nota"
                   onClick={() => guardar('requiere_aprobacion')}>
                   <ShieldAlert className="w-4 h-4 mr-1" />Requiere aprobación
                 </Button>
