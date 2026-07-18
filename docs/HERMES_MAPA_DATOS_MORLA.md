@@ -36,6 +36,7 @@
 | `config_empresa` | tipo_negocio=repuestos, feat_crm_whatsapp=true | Saber qué módulos tiene la empresa | Lee ✓ | — |
 | `hermes.product_image_status` (vista) | producto activo + precio, stock_actual, has_image, imagen_url, sales_30d, last_sale_at, first_stock_entry_at | Elegir productos promocionables sin foto (pedido diario 10:15) | Lee ✓ | **Corrida en prod ✓.** La imagen es `productos.imagen_url` (bucket `product-images`), una por producto |
 | **`crm_seguimiento` (NUEVO — hoy)** | ficha comercial: estado, prioridad, proxima_accion, fecha_seguimiento, enlaces a factura/solicitud | El pipeline de ventas y seguimiento diario | **Lee ✓ / Escribe ✓ vía `hermes.crm_upsert_seguimiento(...)`** | Etapa 1.2: dedup teléfono+producto y cierre automático al facturar ([sql/crm_operativo.sql](../sql/crm_operativo.sql)) |
+| `hermes.oportunidades_comerciales` + `hermes.oportunidades_hoy` (Etapa 2.1) | cola única: tipo (promocion/requiere_foto/producto_frio/seguimiento), prioridad, score, razon, accion_recomendada, last_recommended_at | Qué promocionar, qué foto pedir, qué frío mover y a quién dar seguimiento — con razón y acción | Lee ✓ | [sql/etapa_2_1_oportunidades_comerciales.sql](../sql/etapa_2_1_oportunidades_comerciales.sql); `_hoy` limita: ≤2 promos (solo foto real), ≤1 frío, ≤5 fotos, todos los seguimientos; anti-repetición 5 días desde `ai_product_content_history` |
 
 ## Datos faltantes
 
@@ -95,8 +96,18 @@ Reglas ya puestas en la base (Etapa 1.2):
    ```
    Devuelve JSON con `accion` ('creada'/'actualizada') y `seguimiento_id`.
    Campos en NULL = no tocar lo que ya tiene la ficha.
-2. **Seguimiento del día**: `SELECT * FROM hermes.crm_hoy;` → redactar el
-   mensaje de seguimiento de cada ficha (la persona lo envía por WhatsApp).
+2. **Cola comercial del día** (una sola consulta, Etapa 2.1):
+   ```sql
+   SELECT tipo, prioridad, descripcion, precio, stock_actual, has_image,
+          razon, accion_recomendada
+   FROM hermes.oportunidades_hoy;
+   ```
+   Ya viene ordenada: seguimientos (alta primero) → hasta 2 promociones
+   listas (SOLO con foto real) → hasta 1 producto frío → hasta 5 fotos por
+   pedir. Redactar los seguimientos (la persona los envía). NUNCA publicar
+   un producto sin foto real aunque falten promociones; el `codigo` es
+   referencia interna y no va en contenido publicable. (`hermes.crm_hoy`
+   sigue disponible si solo se quieren las fichas del CRM.)
 3. **Cierres**: la venta a cliente registrado se cierra SOLA (trigger al
    facturar: `comprado` + `factura_id`). Hermes solo cierra a mano:
    `perdido` (con la razón en `p_nota`) y las compras de mostrador sin

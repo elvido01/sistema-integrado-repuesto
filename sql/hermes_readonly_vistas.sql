@@ -22,7 +22,9 @@
 -- para que las consultas sin schema resuelvan por search_path (=hermes).
 --
 -- ⚠ Si se re-ejecuta sql/hermes_readonly.sql, ese script BORRA todas las
---   vistas del schema hermes al regenerarlo → volver a correr ESTE archivo.
+--   vistas del schema hermes al regenerarlo → volver a correr ESTE archivo
+--   y después sql/etapa_2_1_oportunidades_comerciales.sql (cola de
+--   oportunidades, depende de las vistas de aquí).
 -- Permisos de escritura: SOLO hermes.crm_seguimiento (INSERT/UPDATE).
 -- Como el rol es read-only por defecto, escribir requiere:
 --   BEGIN; SET TRANSACTION READ WRITE; ... COMMIT;
