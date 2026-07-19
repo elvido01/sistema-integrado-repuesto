@@ -1,6 +1,11 @@
 -- =====================================================================
 -- OMNI MIRROR v2 — teléfono real, directorio de contactos y cotizaciones
 -- ---------------------------------------------------------------------
+-- ⚠ La función omni_mirror_whatsapp de este archivo fue SUPERSEDIDA por
+--   sql/whatsapp_contactos_nombre.sql (v2.1: propaga el nombre visible al
+--   directorio y respeta name_source manual). Si re-corres este archivo,
+--   re-corre aquel después.
+-- ---------------------------------------------------------------------
 -- PROBLEMA: la extensión solo sacaba el teléfono del TÍTULO del chat, que
 -- en contactos guardados es el nombre → conversaciones con
 -- customer_phone = NULL y external_conversation_id = whatsapp:name:<slug>.
