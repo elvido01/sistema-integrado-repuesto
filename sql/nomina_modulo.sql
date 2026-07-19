@@ -234,7 +234,10 @@ BEGIN
   LOOP
     v_afp_m := CASE WHEN v_emp.cotiza_tss THEN round(LEAST(v_emp.sueldo_mensual, 464460) * 0.0287, 2) ELSE 0 END;
     v_sfs_m := CASE WHEN v_emp.cotiza_tss THEN round(LEAST(v_emp.sueldo_mensual, 232230) * 0.0304, 2) ELSE 0 END;
-    v_isr_m := public.nomina_isr_mensual(v_emp.sueldo_mensual - v_afp_m - v_sfs_m);
+    -- ISR SOLO para el empleado formal (cotiza_tss); informal = sueldo simple
+    v_isr_m := CASE WHEN v_emp.cotiza_tss
+                    THEN public.nomina_isr_mensual(v_emp.sueldo_mensual - v_afp_m - v_sfs_m)
+                    ELSE 0 END;
 
     INSERT INTO public.nomina_detalle (tenant_id, nomina_id, empleado_id, sueldo_base,
                                        tss_afp, tss_sfs, isr)

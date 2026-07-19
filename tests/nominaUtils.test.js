@@ -72,6 +72,16 @@ describe('calcularDetalleNomina', () => {
     expect(d.isr).toBe(0);
     expect(d.neto).toBe(d.sueldo_base);
   });
+  it('sin TSS NO se aplica NINGÚN descuento de ley, ni ISR (empleado informal)', () => {
+    const d = calcularDetalleNomina(
+      { sueldo_mensual: 60000, frecuencia_pago: 'quincenal', cotiza_tss: false },
+      {}
+    );
+    expect(d.tss_afp).toBe(0);
+    expect(d.tss_sfs).toBe(0);
+    expect(d.isr).toBe(0);        // aunque el sueldo pase del exento
+    expect(d.neto).toBe(30000);   // quincena limpia
+  });
   it('el ISR del período se prorratea con el factor', () => {
     const d = calcularDetalleNomina(
       { sueldo_mensual: 60000, frecuencia_pago: 'quincenal', cotiza_tss: true },

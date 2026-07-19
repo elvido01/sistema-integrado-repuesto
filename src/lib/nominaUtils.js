@@ -60,7 +60,11 @@ export function calcularDetalleNomina(empleado, extras = {}) {
   const tssAfp = round2(tssMes.afp * factor);
   const tssSfs = round2(tssMes.sfs * factor);
 
-  const isrMes = calcularIsrMensual((Number(empleado.sueldo_mensual) || 0) - tssMes.afp - tssMes.sfs);
+  // Sin el switch TSS el empleado es informal: CERO descuentos de ley
+  // (tampoco ISR, aunque el sueldo pase del tramo exento).
+  const isrMes = empleado.cotiza_tss
+    ? calcularIsrMensual((Number(empleado.sueldo_mensual) || 0) - tssMes.afp - tssMes.sfs)
+    : 0;
   const isr = round2(isrMes * factor);
 
   const neto = round2(
