@@ -1,4 +1,7 @@
 -- =====================================================================
+-- ⚠ SUPERSEDIDO por sql/san_editar_eliminar.sql (eliminar sin la
+--   restricción de pagos + editar/reactivar). NO correr esta versión.
+-- =====================================================================
 -- SAN: eliminar un SAN cancelado (limpieza de la lista)
 -- ---------------------------------------------------------------------
 -- Regla: solo se ELIMINA un SAN en estado 'Cancelado' y SIN pagos

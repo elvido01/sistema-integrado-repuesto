@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2 } from 'lucide-react';
+import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos } from '@/lib/sanUtils';
 
@@ -31,6 +31,8 @@ const SanPage = () => {
   const [pagoForm, setPagoForm] = useState({ monto: '', observaciones: '' });
   const [celebrar, setCelebrar] = useState(false);
   const [elimOpen, setElimOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ nombre: '', monto: '', dias: '', inicio: '' });
 
   const money = useCallback((v) => ocultar ? 'RD$ ····'
     : `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`,
@@ -157,6 +159,41 @@ const SanPage = () => {
       await cargar();
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo eliminar', description: e.message });
+    }
+    setBusy(false);
+  };
+
+  const abrirEditar = () => {
+    setEditForm({
+      nombre: sanSel.nombre, monto: String(sanSel.monto_objetivo),
+      dias: String(sanSel.dias), inicio: String(sanSel.fecha_inicio),
+    });
+    setEditOpen(true);
+  };
+
+  const editar = async () => {
+    const monto = Number(String(editForm.monto).replace(/,/g, '')) || 0;
+    const dias = Math.trunc(Number(editForm.dias)) || 0;
+    if (!editForm.nombre.trim() || monto <= 0 || dias <= 0) {
+      toast({ variant: 'destructive', title: 'Completa nombre, monto y días' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('san_editar', {
+        p_san_id: sanSel.id, p_nombre: editForm.nombre.trim(),
+        p_monto_objetivo: monto, p_dias: dias, p_fecha_inicio: editForm.inicio,
+      });
+      if (error) throw error;
+      toast({
+        title: data.reactivado ? '♻ SAN reactivado y actualizado' : 'SAN actualizado',
+        description: `Nuevo pago diario: ${money(data.pago_diario)}${data.completado ? ' — ¡lo ahorrado ya cubre la meta!' : ''}${data.sobrante_sin_aplicar > 0 ? ` · sobraron ${money(data.sobrante_sin_aplicar)} sin aplicar` : ''}`,
+      });
+      setEditOpen(false);
+      await refrescarSel(sanSel.id);
+      if (data.completado) setCelebrar(true);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo editar', description: e.message });
     }
     setBusy(false);
   };
@@ -324,6 +361,11 @@ const SanPage = () => {
         </Button>
         <h1 className="text-xl font-bold flex-1 truncate">{sanSel.nombre}</h1>
         <span className={`px-2 py-0.5 rounded-full text-xs ${estadoSanTone(sanSel.estado)}`}>{sanSel.estado}</span>
+        {['Activo', 'Cancelado'].includes(sanSel.estado) && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={abrirEditar}
+            title={sanSel.estado === 'Cancelado' ? 'Editarlo lo reactiva' : 'Corregir nombre, monto o días'}>
+            <Pencil className="w-4 h-4 mr-1" />Editar</Button>
+        )}
         {sanSel.estado === 'Activo' && (
           <Button size="sm" variant="outline" className="text-red-600 border-red-300" disabled={busy}
             onClick={() => cambiarEstado('Cancelado')}><Ban className="w-4 h-4 mr-1" />Cancelar</Button>
@@ -335,7 +377,7 @@ const SanPage = () => {
               <Archive className="w-4 h-4 mr-1" />Archivar</Button>
           </>
         )}
-        {sanSel.estado === 'Cancelado' && Number(sanSel.monto_ahorrado) === 0 && (
+        {sanSel.estado === 'Cancelado' && (
           <Button size="sm" variant="outline" className="text-red-600 border-red-300" disabled={busy}
             onClick={() => setElimOpen(true)}><Trash2 className="w-4 h-4 mr-1" />Eliminar</Button>
         )}
@@ -481,13 +523,49 @@ const SanPage = () => {
         </DialogContent>
       </Dialog>
 
+      {/* editar SAN */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Editar SAN{sanSel?.estado === 'Cancelado' ? ' (lo reactiva)' : ''}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">Nombre o propósito</label>
+              <Input value={editForm.nombre} onChange={(e) => setEditForm((p) => ({ ...p, nombre: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-sm font-medium">Monto objetivo (RD$)</label>
+                <Input type="number" value={editForm.monto}
+                  onChange={(e) => setEditForm((p) => ({ ...p, monto: e.target.value }))} /></div>
+              <div><label className="text-sm font-medium">Cantidad de días</label>
+                <Input type="number" value={editForm.dias}
+                  onChange={(e) => setEditForm((p) => ({ ...p, dias: e.target.value }))} /></div>
+            </div>
+            <div><label className="text-sm font-medium">Fecha de inicio</label>
+              <Input type="date" value={editForm.inicio}
+                onChange={(e) => setEditForm((p) => ({ ...p, inicio: e.target.value }))} /></div>
+            <p className="text-xs text-muted-foreground">
+              El calendario se regenera con el plan nuevo y lo ya ahorrado
+              {Number(sanSel?.monto_ahorrado) > 0 && <> (<b>{money(sanSel.monto_ahorrado)}</b>)</>} se
+              re-aplica automáticamente desde el día 1 — no se pierde nada.
+            </p>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" disabled={busy}>Cancelar</Button></DialogClose>
+            <Button onClick={editar} disabled={busy}>
+              {busy ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Pencil className="w-4 h-4 mr-1" />}Guardar cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* confirmar eliminar */}
       <Dialog open={elimOpen} onOpenChange={setElimOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>¿Eliminar este SAN?</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            "{sanSel?.nombre}" está cancelado y sin pagos: se borrará con su calendario.
-            Esta acción no se puede deshacer.
+            "{sanSel?.nombre}" se borrará con su calendario y TODO su historial de pagos
+            {Number(sanSel?.monto_ahorrado) > 0 && <> (tiene <b>{money(sanSel.monto_ahorrado)}</b> registrados)</>}.
+            Esta acción no se puede deshacer. Si solo quieres corregirlo, usa Editar.
           </p>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" disabled={busy}>Cancelar</Button></DialogClose>
