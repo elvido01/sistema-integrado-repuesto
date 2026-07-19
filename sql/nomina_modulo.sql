@@ -28,7 +28,7 @@
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.empleados (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id       uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  tenant_id       uuid NOT NULL DEFAULT public.get_user_tenant() REFERENCES public.tenants(id) ON DELETE CASCADE,
   nombre          text NOT NULL,
   cedula          text,
   telefono        text,
