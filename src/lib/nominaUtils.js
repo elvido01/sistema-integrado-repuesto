@@ -77,6 +77,32 @@ export function calcularDetalleNomina(empleado, extras = {}) {
   return { sueldo_base: sueldoBase, tss_afp: tssAfp, tss_sfs: tssSfs, isr, neto };
 }
 
+// Período sugerido al generar una nómina, con fecha de pago 15 y 30.
+// hoyStr = 'YYYY-MM-DD' (zona RD). Devuelve strings 'YYYY-MM-DD'.
+export function periodoSugerido(frecuencia, hoyStr) {
+  const [y, m, d] = String(hoyStr).split('-').map(Number);
+  const pad = (n) => String(n).padStart(2, '0');
+  const iso = (yy, mm, dd) => `${yy}-${pad(mm)}-${pad(dd)}`;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();  // último día del mes m (1-based)
+
+  if (frecuencia === 'semanal') {
+    const base = new Date(Date.UTC(y, m - 1, d));
+    const dow = (base.getUTCDay() + 6) % 7;                  // lunes = 0
+    const lunes = new Date(base);  lunes.setUTCDate(d - dow);
+    const sabado = new Date(base); sabado.setUTCDate(d - dow + 5);
+    const fmt = (dt) => iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
+    return { desde: fmt(lunes), hasta: fmt(sabado), fecha_pago: fmt(sabado) };
+  }
+  if (frecuencia === 'mensual') {
+    return { desde: iso(y, m, 1), hasta: iso(y, m, lastDay), fecha_pago: iso(y, m, lastDay) };
+  }
+  // quincenal: 1ra (paga 15) y 2da (paga 30, o último si el mes es más corto)
+  if (d <= 15) {
+    return { desde: iso(y, m, 1), hasta: iso(y, m, 15), fecha_pago: iso(y, m, 15) };
+  }
+  return { desde: iso(y, m, 16), hasta: iso(y, m, lastDay), fecha_pago: iso(y, m, Math.min(30, lastDay)) };
+}
+
 export function pendienteAdelanto(adelanto) {
   return round2((Number(adelanto?.monto) || 0) - (Number(adelanto?.descontado) || 0));
 }

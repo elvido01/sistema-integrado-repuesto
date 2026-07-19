@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Loader2, RefreshCw, Users, Wallet, HandCoins, Ban, Plus, Pencil } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
-import { calcularDetalleNomina, pendienteAdelanto } from '@/lib/nominaUtils';
+import { calcularDetalleNomina, pendienteAdelanto, periodoSugerido } from '@/lib/nominaUtils';
 
 const money = (v) => `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`;
 const hoyTZ = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
@@ -19,24 +19,6 @@ const FRECUENCIAS = [
   { value: 'semanal', label: 'Semanal' },
   { value: 'mensual', label: 'Mensual' },
 ];
-
-// Período sugerido según la frecuencia y la fecha de hoy
-function periodoSugerido(frecuencia) {
-  const hoy = new Date(`${hoyTZ()}T12:00:00`);
-  const y = hoy.getFullYear(), m = hoy.getMonth(), d = hoy.getDate();
-  const iso = (dt) => dt.toLocaleDateString('en-CA');
-  if (frecuencia === 'quincenal') {
-    if (d <= 15) return { desde: iso(new Date(y, m, 1)), hasta: iso(new Date(y, m, 15)) };
-    return { desde: iso(new Date(y, m, 16)), hasta: iso(new Date(y, m + 1, 0)) };
-  }
-  if (frecuencia === 'semanal') {
-    const dow = (hoy.getDay() + 6) % 7; // lunes = 0
-    const lunes = new Date(y, m, d - dow);
-    const sabado = new Date(y, m, d - dow + 5);
-    return { desde: iso(lunes), hasta: iso(sabado) };
-  }
-  return { desde: iso(new Date(y, m, 1)), hasta: iso(new Date(y, m + 1, 0)) };
-}
 
 const EMPLEADO_VACIO = {
   nombre: '', cedula: '', telefono: '', puesto: '', sueldo_mensual: '',
@@ -60,7 +42,7 @@ const NominaPage = () => {
   // modales
   const [empEdit, setEmpEdit] = useState(null);          // empleado en edición (o EMPLEADO_VACIO)
   const [genOpen, setGenOpen] = useState(false);
-  const [genForm, setGenForm] = useState({ frecuencia: 'quincenal', ...periodoSugerido('quincenal'), fecha_pago: hoyTZ() });
+  const [genForm, setGenForm] = useState({ frecuencia: 'quincenal', ...periodoSugerido('quincenal', hoyTZ()) });
   const [pagarOpen, setPagarOpen] = useState(false);
   const [formaPago, setFormaPago] = useState('Efectivo');
   const [adelOpen, setAdelOpen] = useState(false);
@@ -154,7 +136,12 @@ const NominaPage = () => {
     try {
       const { data, error } = await supabase.rpc('nomina_pagar', { p_nomina_id: nominaSel.id, p_forma_pago: formaPago });
       if (error) throw error;
-      toast({ title: 'Nómina pagada', description: `${money(data.total_neto)} (${formaPago}) — compromiso saldado` });
+      toast({
+        title: 'Nómina pagada',
+        description: data.siguiente_nomina_id
+          ? `${money(data.total_neto)} (${formaPago}). Próximo período ${formatFechaDMY(String(data.siguiente_desde))}–${formatFechaDMY(String(data.siguiente_hasta))} ya generado, se paga el ${formatFechaDMY(String(data.siguiente_pago))}.`
+          : `${money(data.total_neto)} (${formaPago}) — compromiso saldado`,
+      });
       setPagarOpen(false);
       await refrescarSeleccion(nominaSel.id);
     } catch (e) {
@@ -274,7 +261,7 @@ const NominaPage = () => {
           <Button key={id} size="sm" variant={tab === id ? 'default' : 'outline'} onClick={() => setTab(id)}>{label}</Button>
         ))}
         {tab === 'nominas' && (
-          <Button size="sm" className="ml-auto" onClick={() => { setGenForm({ frecuencia: 'quincenal', ...periodoSugerido('quincenal'), fecha_pago: hoyTZ() }); setGenOpen(true); }}>
+          <Button size="sm" className="ml-auto" onClick={() => { setGenForm({ frecuencia: 'quincenal', ...periodoSugerido('quincenal', hoyTZ()) }); setGenOpen(true); }}>
             <Plus className="w-4 h-4 mr-1" />Generar nómina
           </Button>
         )}
@@ -517,7 +504,7 @@ const NominaPage = () => {
             <div>
               <label className="text-sm font-medium">Frecuencia</label>
               <Select value={genForm.frecuencia}
-                onValueChange={(v) => setGenForm({ frecuencia: v, ...periodoSugerido(v), fecha_pago: hoyTZ() })}>
+                onValueChange={(v) => setGenForm({ frecuencia: v, ...periodoSugerido(v, hoyTZ()) })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{FRECUENCIAS.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}</SelectContent>
               </Select>
@@ -533,6 +520,10 @@ const NominaPage = () => {
             <p className="text-xs text-muted-foreground">
               Entra todo empleado ACTIVO con esa frecuencia. Los adelantos pendientes se proponen completos
               (puedes fraccionarlos línea por línea antes de pagar). El neto aparece de una vez en Compromisos a Pagar.
+            </p>
+            <p className="text-xs text-emerald-700 bg-emerald-50 rounded-lg p-2">
+              🔁 Solo generas a mano la primera vez: al pagar cada nómina, el sistema crea sola la del
+              período siguiente (quincenal paga el 15 y el 30).
             </p>
           </div>
           <DialogFooter>
@@ -561,6 +552,9 @@ const NominaPage = () => {
                 </SelectContent>
               </Select>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Se salda el compromiso del dashboard y se genera sola la nómina del próximo período.
+            </p>
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" disabled={busy}>Cancelar</Button></DialogClose>

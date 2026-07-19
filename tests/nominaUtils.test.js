@@ -7,6 +7,7 @@ import {
   calcularDetalleNomina,
   pendienteAdelanto,
   proponerDescuentos,
+  periodoSugerido,
 } from '../src/lib/nominaUtils.js';
 
 describe('sueldoPorPeriodo / factorPeriodo', () => {
@@ -90,6 +91,32 @@ describe('calcularDetalleNomina', () => {
     // ISR mensual sobre (60,000 - 3,546 TSS) = 56,454 → anual 677,448
     // 31,216 + (677,448-624,329)*20% = 41,839.80 → /12 = 3,486.65 → quincena 1,743.33
     expect(d.isr).toBe(1743.33);
+  });
+});
+
+describe('periodoSugerido (pago 15 y 30)', () => {
+  it('quincenal 1ra: del 1 al 15, paga el 15', () => {
+    expect(periodoSugerido('quincenal', '2026-07-10'))
+      .toEqual({ desde: '2026-07-01', hasta: '2026-07-15', fecha_pago: '2026-07-15' });
+  });
+  it('quincenal 2da: del 16 a fin de mes, paga el 30 (aunque el mes tenga 31)', () => {
+    expect(periodoSugerido('quincenal', '2026-07-18'))
+      .toEqual({ desde: '2026-07-16', hasta: '2026-07-31', fecha_pago: '2026-07-30' });
+  });
+  it('quincenal 2da en febrero: paga el último día (28), no el 30', () => {
+    expect(periodoSugerido('quincenal', '2026-02-20'))
+      .toEqual({ desde: '2026-02-16', hasta: '2026-02-28', fecha_pago: '2026-02-28' });
+  });
+  it('mensual: mes completo, paga el último día', () => {
+    expect(periodoSugerido('mensual', '2026-07-18'))
+      .toEqual({ desde: '2026-07-01', hasta: '2026-07-31', fecha_pago: '2026-07-31' });
+  });
+  it('semanal: lunes a sábado de la semana de hoy, paga el sábado', () => {
+    const p = periodoSugerido('semanal', '2026-07-18');
+    expect(p.fecha_pago).toBe(p.hasta);
+    expect(p.desde <= '2026-07-18' && '2026-07-18' <= p.hasta).toBe(true);
+    const dias = (new Date(p.hasta) - new Date(p.desde)) / 864e5;
+    expect(dias).toBe(5);
   });
 });
 
