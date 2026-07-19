@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PanelContext, usePanels } from './panelCore';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet, PiggyBank } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -70,6 +70,7 @@ import GestionCobroPage from '@/pages/GestionCobroPage';
 import CuentasIncobrablesPage from '@/pages/CuentasIncobrablesPage';
 import SeguimientosHoyPage from '@/pages/SeguimientosHoyPage';
 import NominaPage from '@/pages/NominaPage';
+import SanPage from '@/pages/SanPage';
 import NotaCreditoFinancieraPage from '@/pages/NotaCreditoFinancieraPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
@@ -165,6 +166,7 @@ const componentMapping = {
   'notas-comentarios': { component: () => <Protected module="notas-comentarios"><NotasComentariosPage /></Protected>, icon: FileText, name: 'Notas y Comentarios' },
   'lista-chasis-prestamos': { component: () => <Protected module="prestamos"><ListaChasisPrestamosPage /></Protected>, icon: Receipt, name: 'Lista de Chasis en Préstamos' },
   'resumen-cartera': { component: () => <Protected module="prestamos"><ResumenCarteraPage /></Protected>, icon: PieChart, name: 'Resumen de Cartera' },
+  'san': { component: () => <Protected module="san"><SanPage /></Protected>, icon: PiggyBank, name: 'SAN Ahorro' },
 };
 
 export { PanelContext, usePanels };  // re-export desde panelCore para no romper imports

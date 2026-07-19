@@ -56,6 +56,7 @@ export const MODULES = [
     { key: 'pago-suplidores', label: 'Pago a Suplidores' },
     { key: 'pago-comisiones-vendedor', label: 'Pago Comisiones' },
     { key: 'nomina', label: 'Nómina' },
+    { key: 'san', label: 'SAN Ahorro Programado' },
     { key: 'mercancias', label: 'Inventario - Mercancías' },
     { key: 'entrada-mercancia', label: 'Entrada Mercancía' },
     { key: 'salida-mercancia', label: 'Salida Mercancía' },
