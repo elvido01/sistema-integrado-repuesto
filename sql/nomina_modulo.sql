@@ -309,7 +309,7 @@ BEGIN
   WHERE d.id = p_detalle_id AND d.tenant_id = v_tenant
   FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Línea de nómina no encontrada'; END IF;
-  IF v_det.estado <> 'borrador' THEN RAISE EXCEPTION 'La nómina ya no es editable (%%)', v_det.estado; END IF;
+  IF v_det.estado <> 'borrador' THEN RAISE EXCEPTION 'La nómina ya no es editable (%)', v_det.estado; END IF;
 
   UPDATE public.nomina_detalle SET
     otros_ingresos   = COALESCE(p_otros_ingresos, otros_ingresos),
