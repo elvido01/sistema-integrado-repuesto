@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PanelContext, usePanels } from './panelCore';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -69,6 +69,7 @@ import ResumenCarteraPage from '@/pages/ResumenCarteraPage';
 import GestionCobroPage from '@/pages/GestionCobroPage';
 import CuentasIncobrablesPage from '@/pages/CuentasIncobrablesPage';
 import SeguimientosHoyPage from '@/pages/SeguimientosHoyPage';
+import NominaPage from '@/pages/NominaPage';
 import NotaCreditoFinancieraPage from '@/pages/NotaCreditoFinancieraPage';
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
@@ -96,6 +97,7 @@ const componentMapping = {
   'recibo-ingreso': { component: ({ extraData }) => <Protected module="recibo-ingreso"><ReciboIngresoRouter extraData={extraData} /></Protected>, icon: Receipt, name: 'Recibo de Ingreso' },
   'pago-suplidores': { component: () => <Protected module="pago-suplidores"><PagoSuplidoresPage /></Protected>, icon: Truck, name: 'Pago a Suplidores' },
   'pago-comisiones-vendedor': { component: () => <Protected module="pago-comisiones-vendedor"><PagoComisionesPage /></Protected>, icon: Users, name: 'Pago Comisiones' },
+  'nomina': { component: () => <Protected module="nomina"><NominaPage /></Protected>, icon: Wallet, name: 'Nómina' },
   'compras': { component: () => <Protected module="compras"><ComprasPage /></Protected>, icon: Truck, name: 'Compras' },
   'pedidos': { component: () => <Protected module="pedidos"><PedidosPage /></Protected>, icon: ListOrdered, name: 'Pedidos' },
   'cotizaciones': { component: () => <Protected module="cotizaciones"><CotizacionPage /></Protected>, icon: FileText, name: 'Cotizaciones' },

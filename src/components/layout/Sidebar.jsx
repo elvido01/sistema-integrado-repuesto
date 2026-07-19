@@ -116,6 +116,7 @@ const navItems = [
       { title: 'Compras', id: 'compras' },
       { title: 'Pago a Suplidores', id: 'pago-suplidores', icon: Truck },
       { title: 'Pago Comisiones', id: 'pago-comisiones-vendedor', icon: Users },
+      { title: 'Nómina', id: 'nomina', icon: Users },
     ],
   },
   {
