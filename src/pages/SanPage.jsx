@@ -439,73 +439,75 @@ const SanPage = () => {
         <Button size="sm" variant={tabDetalle === 'historial' ? 'default' : 'outline'} onClick={() => setTabDetalle('historial')}>Historial</Button>
       </div>
 
-      {/* calendario de cuadros (SAN largos: por bloques de 30 días) */}
+      {/* calendario: un bloque de 30 días cerrado = UN cuadro del doble de ancho */}
       {tabDetalle === 'calendario' && (
-        <div className="space-y-3">
+        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))' }}>
           {bloques.map((b) => {
             const abierto = bloques.length === 1 || expandidos.has(b.indice);
-            const pct = b.programado > 0 ? Math.round((b.pagado / b.programado) * 100) : 0;
+
+            // Bloque cerrado: cuadro doble con días, fechas y el monto
+            if (!abierto) {
+              return (
+                <motion.button key={`b${b.indice}`} whileTap={{ scale: 0.96 }}
+                  style={{ gridColumn: 'span 2' }}
+                  onClick={() => toggleBloque(b.indice)}
+                  title={`Ver los días ${b.desde} al ${b.hasta}`}
+                  className={`rounded-xl border-2 px-2 py-2 min-h-[68px] flex flex-col items-center justify-center transition-all ${
+                    b.completo ? 'bg-emerald-500 border-emerald-500 text-white shadow'
+                    : b.atrasados > 0 ? 'bg-yellow-300 border-yellow-400 text-yellow-900'
+                    : 'bg-white border-slate-200 text-slate-800 hover:border-emerald-300'}`}>
+                  <div className="flex items-center gap-1 font-bold text-sm leading-none">
+                    {b.completo && <Check className="w-4 h-4" />}
+                    {!b.completo && b.atrasados > 0 && <span>⚠</span>}
+                    Días {b.desde}–{b.hasta}
+                  </div>
+                  <div className={`text-[10px] mt-1 leading-tight ${b.completo ? 'text-emerald-50' : 'text-muted-foreground'}`}>
+                    {formatFechaDMY(b.fecha_desde)} – {formatFechaDMY(b.fecha_hasta)}
+                  </div>
+                  <div className="text-[13px] font-bold mt-1 leading-none">
+                    {money(b.completo ? b.pagado : b.programado)}
+                  </div>
+                </motion.button>
+              );
+            }
+
+            // Bloque abierto: cabecera fina + sus cuadros de día
             return (
-              <div key={b.indice} className="space-y-2">
+              <React.Fragment key={`b${b.indice}`}>
                 {bloques.length > 1 && (
                   <button onClick={() => toggleBloque(b.indice)}
-                    className="w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 bg-card hover:bg-muted/40 transition-colors text-left">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${
-                      b.completo ? 'bg-emerald-500 text-white'
-                      : b.atrasados > 0 ? 'bg-yellow-300 text-yellow-900'
-                      : 'bg-slate-100 text-slate-600'}`}>
-                      {b.completo ? <Check className="w-5 h-5" /> : b.atrasados > 0 ? '⚠' : b.indice + 1}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-sm flex items-center gap-2">
-                        Días {b.desde}–{b.hasta}
-                        {b.tieneHoy && <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-700">HOY</span>}
-                        {b.completo && <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-700">completo</span>}
-                        {!b.completo && b.atrasados > 0 && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] bg-yellow-100 text-yellow-800">{b.atrasados} atrasado(s)</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatFechaDMY(b.fecha_desde)} – {formatFechaDMY(b.fecha_hasta)}
-                      </div>
-                      <div className="h-1.5 rounded-full bg-slate-200 mt-1.5 overflow-hidden max-w-xs">
-                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(pct, 100)}%` }} />
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm font-bold text-emerald-600">{money(b.pagado)}</div>
-                      <div className="text-[11px] text-muted-foreground">de {money(b.programado)}</div>
-                    </div>
-                    <ChevronDown className={`w-5 h-5 text-muted-foreground shrink-0 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+                    style={{ gridColumn: '1 / -1' }}
+                    className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 pt-1">
+                    <ChevronDown className="w-4 h-4" />
+                    Días {b.desde}–{b.hasta}
+                    <span className="font-normal text-muted-foreground">
+                      {formatFechaDMY(b.fecha_desde)} – {formatFechaDMY(b.fecha_hasta)}
+                    </span>
+                    {b.tieneHoy && <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-700">HOY</span>}
                   </button>
                 )}
-
-                {abierto && (
-                  <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))' }}>
-                    {b.dias.map((p) => {
-                      const clase = estadoDia(p, hoyStr);
-                      const esHoy = p.fecha_programada === hoyStr;
-                      return (
-                        <motion.div key={p.id} whileTap={clase !== 'pagado' ? { scale: 0.92 } : undefined}
-                          className={cuadroClases(clase, esHoy)}
-                          title={`Día ${p.numero_dia} · ${formatFechaDMY(p.fecha_programada)}`}
-                          onClick={() => abrirPago(p)}>
-                          <div className="text-lg font-bold leading-none">
-                            {clase === 'pagado' ? <Check className="w-5 h-5 inline" /> : clase === 'atrasado' ? '⚠ ' : ''}
-                            {clase !== 'pagado' && p.numero_dia}
-                            {clase === 'pagado' && <span className="ml-1">{p.numero_dia}</span>}
-                          </div>
-                          <div className="text-[11px] mt-1 leading-tight">
-                            {clase === 'parcial' || (clase === 'atrasado' && Number(p.monto_pagado) > 0)
-                              ? <>faltan<br />{money(p.saldo_pendiente)}</>
-                              : money(p.monto_programado)}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                {b.dias.map((p) => {
+                  const clase = estadoDia(p, hoyStr);
+                  const esHoy = p.fecha_programada === hoyStr;
+                  return (
+                    <motion.div key={p.id} whileTap={clase !== 'pagado' ? { scale: 0.92 } : undefined}
+                      className={cuadroClases(clase, esHoy)}
+                      title={`Día ${p.numero_dia} · ${formatFechaDMY(p.fecha_programada)}`}
+                      onClick={() => abrirPago(p)}>
+                      <div className="text-lg font-bold leading-none">
+                        {clase === 'pagado' ? <Check className="w-5 h-5 inline" /> : clase === 'atrasado' ? '⚠ ' : ''}
+                        {clase !== 'pagado' && p.numero_dia}
+                        {clase === 'pagado' && <span className="ml-1">{p.numero_dia}</span>}
+                      </div>
+                      <div className="text-[11px] mt-1 leading-tight">
+                        {clase === 'parcial' || (clase === 'atrasado' && Number(p.monto_pagado) > 0)
+                          ? <>faltan<br />{money(p.saldo_pendiente)}</>
+                          : money(p.monto_programado)}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </React.Fragment>
             );
           })}
         </div>
