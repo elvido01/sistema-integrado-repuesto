@@ -121,7 +121,10 @@ const NominaPage = () => {
         p_hasta: genForm.hasta, p_fecha_pago: genForm.fecha_pago,
       });
       if (error) throw error;
-      toast({ title: `Nómina generada (${data.empleados} empleados)`, description: `Neto: ${money(data.total_neto)} — ya aparece en Compromisos a Pagar` });
+      toast({
+        title: `Nómina generada (${data.empleados} empleados)`,
+        description: `Neto ${money(data.total_neto)}. Los ${data.periodos_vivos || 1} próximos pagos ya están en Compromisos a Pagar.`,
+      });
       setGenOpen(false);
       await refrescarSeleccion(data.nomina_id);
       setTab('nominas');
@@ -138,8 +141,8 @@ const NominaPage = () => {
       if (error) throw error;
       toast({
         title: 'Nómina pagada',
-        description: data.siguiente_nomina_id
-          ? `${money(data.total_neto)} (${formaPago}). Próximo período ${formatFechaDMY(String(data.siguiente_desde))}–${formatFechaDMY(String(data.siguiente_hasta))} ya generado, se paga el ${formatFechaDMY(String(data.siguiente_pago))}.`
+        description: data.proxima_pago
+          ? `${money(data.total_neto)} (${formaPago}). Próximo pago: ${formatFechaDMY(String(data.proxima_pago))} — ya está en Compromisos a Pagar.`
           : `${money(data.total_neto)} (${formaPago}) — compromiso saldado`,
       });
       setPagarOpen(false);
@@ -522,8 +525,9 @@ const NominaPage = () => {
               (puedes fraccionarlos línea por línea antes de pagar). El neto aparece de una vez en Compromisos a Pagar.
             </p>
             <p className="text-xs text-emerald-700 bg-emerald-50 rounded-lg p-2">
-              🔁 Solo generas a mano la primera vez: al pagar cada nómina, el sistema crea sola la del
-              período siguiente (quincenal paga el 15 y el 30).
+              🔁 Solo generas a mano la primera vez. El sistema mantiene siempre los <b>2 próximos
+              pagos</b> visibles en Compromisos a Pagar (quincenal: el 15 y el 30) y crea el que
+              sigue cada vez que pagas uno.
             </p>
           </div>
           <DialogFooter>

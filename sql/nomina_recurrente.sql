@@ -1,24 +1,37 @@
 -- =====================================================================
--- NÓMINA RECURRENTE — se auto-genera el próximo período al pagar
+-- NÓMINA RECURRENTE — siempre se ven los DOS próximos pagos (15 y 30)
 -- ---------------------------------------------------------------------
--- Pedido del dueño: la nómina es recurrente (no crearla cada quincena) y
--- los días de pago son 15 y 30. Solución (mismo patrón que los
--- compromisos recurrentes del dashboard, que al pagarse crean el
--- siguiente):
---   * _nomina_periodo_siguiente(): dado un período, devuelve el próximo
---     con su fecha de pago — quincenal paga el 15 (1ra) y el 30 (2da,
---     o último día si el mes es más corto); mensual el último día;
---     semanal el sábado.
---   * _nomina_generar_periodo(): el generador real (antes dentro de
---     nomina_generar). p_raise_if_empty=false para el auto-siguiente
---     (si no hay empleados, no crea nada y no revienta el pago).
---   * nomina_generar(): wrapper delgado (lo llama la web).
---   * nomina_pagar(): al pagar, además de saldar el compromiso, GENERA
---     el borrador del próximo período (con su propio compromiso en el
---     dashboard) — si no existe ya. Así solo se genera UNA vez a mano.
+-- Pedido del dueño: la nómina es recurrente (no crearla cada quincena),
+-- los días de pago son 15 y 30, y "deben aparecer los dos pagos y
+-- activarse el día o la semana que le toque".
+--
+-- Diseño: VENTANA RODANTE de 2 períodos vivos por frecuencia.
+--   * Al generar (1 sola vez) se crean el período pedido y el siguiente
+--     → en Compromisos a Pagar se ven los DOS pagos (ej. 30/07 y 15/08).
+--     El dashboard ya los marca solo como ATRASADO / ESTA SEMANA / FUTURO
+--     según su fecha: "se activan" cuando les toca.
+--   * Al pagar uno, se crea el que falte para que siempre queden 2 por
+--     delante. Nunca hay que volver a generar a mano.
+--
+-- Piezas:
+--   _nomina_periodo_siguiente()   próximo período + fecha de pago
+--                                 (quincenal 15 y 30 — o último día si el
+--                                 mes es más corto; mensual último día;
+--                                 semanal sábado).
+--   _nomina_generar_periodo()     generador real (antes en nomina_generar).
+--   _nomina_asegurar_compromiso() toda nómina en borrador tiene su
+--                                 compromiso ACTIVO y sincronizado
+--                                 (repara los borrados desde el dashboard).
+--   _nomina_asegurar_ventana()    mantiene los 2 períodos por delante.
+--   nomina_generar()/nomina_pagar()  usan la ventana.
+--   trg_compromiso_nomina_pagado  pagar el compromiso DESDE EL DASHBOARD
+--                                 cierra la nómina igual. OJO: solo cuenta
+--                                 como pago si trae fecha_pago (borrar un
+--                                 compromiso NO paga la nómina).
+--
 -- Supersede nomina_generar/nomina_pagar de nomina_modulo.sql y
--- fix_nomina_isr_solo_tss.sql (mantiene el ISR solo-si-cotiza_tss).
--- Idempotente / re-ejecutable.
+-- fix_nomina_isr_solo_tss.sql (mantiene ISR solo si cotiza_tss).
+-- Al final REPARA lo existente. Idempotente / re-ejecutable.
 -- =====================================================================
 
 -- 1) Siguiente período + fecha de pago (15 y 30)
@@ -153,24 +166,101 @@ BEGIN
   END IF;
 
   PERFORM public._nomina_recalcular(v_nomina);
-
-  -- recurrente = FALSE a propósito: la recurrencia la maneja el módulo de
-  -- nómina (al pagar se genera el próximo período con SU compromiso). Si
-  -- fuera true, el dashboard crearía además un compromiso fantasma.
-  INSERT INTO public.compromisos (tenant_id, nombre, monto, fecha, tipo, activo, recurrente, frecuencia, solo_admin)
-  SELECT p_tenant,
-         'Nómina ' || p_frecuencia || ' ' || to_char(p_desde, 'DD/MM') || '–' || to_char(p_hasta, 'DD/MM'),
-         n.total_neto, p_fecha_pago, 'nomina', true, false, p_frecuencia, true
-  FROM public.nominas n WHERE n.id = v_nomina
-  RETURNING id INTO v_comp;
-
-  UPDATE public.nominas SET compromiso_id = v_comp WHERE id = v_nomina;
+  PERFORM public._nomina_asegurar_compromiso(v_nomina);
   RETURN v_nomina;
 END $$;
 
 REVOKE ALL ON FUNCTION public._nomina_generar_periodo(uuid,text,date,date,date,boolean) FROM PUBLIC, anon, authenticated;
 
--- 3) Generar (web) — wrapper delgado
+-- 3) Toda nómina en borrador tiene su compromiso ACTIVO y sincronizado.
+--    (Si lo borraron desde el dashboard, lo vuelve a crear.)
+CREATE OR REPLACE FUNCTION public._nomina_asegurar_compromiso(p_nomina_id uuid)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public AS $$
+DECLARE
+  v_nom  record;
+  v_comp uuid;
+BEGIN
+  SELECT * INTO v_nom FROM public.nominas WHERE id = p_nomina_id;
+  IF NOT FOUND OR v_nom.estado <> 'borrador' THEN RETURN NULL; END IF;
+
+  SELECT c.id INTO v_comp
+  FROM public.compromisos c
+  WHERE c.id = v_nom.compromiso_id AND c.activo = true;
+
+  IF FOUND THEN
+    UPDATE public.compromisos
+       SET monto = v_nom.total_neto, fecha = v_nom.fecha_pago, tipo = 'nomina'
+     WHERE id = v_comp;
+    RETURN v_comp;
+  END IF;
+
+  -- recurrente = FALSE a propósito: la recurrencia la maneja el módulo de
+  -- nómina; si fuera true el dashboard crearía un compromiso fantasma.
+  INSERT INTO public.compromisos (tenant_id, nombre, monto, fecha, tipo, activo, recurrente, frecuencia, solo_admin)
+  VALUES (v_nom.tenant_id,
+          'Nómina ' || v_nom.frecuencia || ' ' ||
+            to_char(v_nom.fecha_desde, 'DD/MM') || '–' || to_char(v_nom.fecha_hasta, 'DD/MM'),
+          v_nom.total_neto, v_nom.fecha_pago, 'nomina', true, false, v_nom.frecuencia, true)
+  RETURNING id INTO v_comp;
+
+  UPDATE public.nominas SET compromiso_id = v_comp WHERE id = p_nomina_id;
+  RETURN v_comp;
+END $$;
+
+REVOKE ALL ON FUNCTION public._nomina_asegurar_compromiso(uuid) FROM PUBLIC, anon, authenticated;
+
+-- 4) Ventana rodante: siempre p_minimo períodos por delante (los 2 pagos)
+CREATE OR REPLACE FUNCTION public._nomina_asegurar_ventana(
+  p_tenant uuid, p_frecuencia text, p_minimo int DEFAULT 2
+)
+RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public AS $$
+DECLARE
+  v_vivas   int;
+  v_ult     record;
+  v_sig     record;
+  v_new     uuid;
+  v_creadas int := 0;
+  v_guard   int := 0;
+  r         record;
+BEGIN
+  -- a) reparar compromisos de las nóminas vivas
+  FOR r IN
+    SELECT id FROM public.nominas
+    WHERE tenant_id = p_tenant AND frecuencia = p_frecuencia AND estado = 'borrador'
+  LOOP
+    PERFORM public._nomina_asegurar_compromiso(r.id);
+  END LOOP;
+
+  -- b) completar hasta p_minimo períodos vivos
+  LOOP
+    SELECT count(*) INTO v_vivas FROM public.nominas
+     WHERE tenant_id = p_tenant AND frecuencia = p_frecuencia AND estado = 'borrador';
+    EXIT WHEN v_vivas >= p_minimo;
+
+    SELECT * INTO v_ult FROM public.nominas
+     WHERE tenant_id = p_tenant AND frecuencia = p_frecuencia AND estado <> 'anulada'
+     ORDER BY fecha_hasta DESC, numero DESC
+     LIMIT 1;
+    EXIT WHEN NOT FOUND;
+
+    SELECT * INTO v_sig
+      FROM public._nomina_periodo_siguiente(p_frecuencia, v_ult.fecha_desde, v_ult.fecha_hasta);
+
+    v_new := public._nomina_generar_periodo(p_tenant, p_frecuencia,
+                                            v_sig.o_desde, v_sig.o_hasta, v_sig.o_pago, false);
+    EXIT WHEN v_new IS NULL;          -- sin empleados o ya existía
+    v_creadas := v_creadas + 1;
+
+    v_guard := v_guard + 1;
+    EXIT WHEN v_guard > 12;           -- candado anti-bucle
+  END LOOP;
+
+  RETURN v_creadas;
+END $$;
+
+REVOKE ALL ON FUNCTION public._nomina_asegurar_ventana(uuid,text,int) FROM PUBLIC, anon, authenticated;
+
+-- 5) Generar (web) — crea el período pedido y deja 2 por delante
 CREATE OR REPLACE FUNCTION public.nomina_generar(
   p_frecuencia text,
   p_desde      date,
@@ -189,23 +279,24 @@ BEGIN
   IF p_hasta < p_desde THEN RAISE EXCEPTION 'Rango de fechas inválido'; END IF;
 
   v_nomina := public._nomina_generar_periodo(v_tenant, p_frecuencia, p_desde, p_hasta, p_fecha_pago, true);
+  PERFORM public._nomina_asegurar_ventana(v_tenant, p_frecuencia, 2);
 
   RETURN jsonb_build_object('ok', true, 'nomina_id', v_nomina,
     'empleados', (SELECT count(*) FROM public.nomina_detalle WHERE nomina_id = v_nomina),
-    'total_neto', (SELECT total_neto FROM public.nominas WHERE id = v_nomina));
+    'total_neto', (SELECT total_neto FROM public.nominas WHERE id = v_nomina),
+    'periodos_vivos', (SELECT count(*) FROM public.nominas
+                        WHERE tenant_id = v_tenant AND frecuencia = p_frecuencia AND estado = 'borrador'));
 END $$;
 
 REVOKE ALL ON FUNCTION public.nomina_generar(text,date,date,date) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.nomina_generar(text,date,date,date) TO authenticated, service_role;
 
--- 4) Pagar — salda el compromiso y AUTO-GENERA el próximo período
+-- 6) Pagar — salda el compromiso y rellena la ventana
 CREATE OR REPLACE FUNCTION public.nomina_pagar(p_nomina_id uuid, p_forma_pago text DEFAULT 'Efectivo')
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public AS $$
 DECLARE
   v_tenant uuid := public.get_user_tenant();
   v_nom    record;
-  v_sig    record;
-  v_next   uuid := NULL;
 BEGIN
   SELECT * INTO v_nom FROM public.nominas
   WHERE id = p_nomina_id AND tenant_id = v_tenant FOR UPDATE;
@@ -219,27 +310,25 @@ BEGIN
          forma_pago = p_forma_pago, referencia_pago = 'Nómina #' || v_nom.numero
   WHERE id = v_nom.compromiso_id;
 
-  -- Recurrencia: crear el borrador del próximo período (con su compromiso)
-  SELECT * INTO v_sig FROM public._nomina_periodo_siguiente(v_nom.frecuencia, v_nom.fecha_desde, v_nom.fecha_hasta);
-  v_next := public._nomina_generar_periodo(v_tenant, v_nom.frecuencia, v_sig.o_desde, v_sig.o_hasta, v_sig.o_pago, false);
+  PERFORM public._nomina_asegurar_ventana(v_tenant, v_nom.frecuencia, 2);
 
   RETURN jsonb_build_object('ok', true, 'total_neto', v_nom.total_neto,
-    'siguiente_nomina_id', v_next,
-    'siguiente_desde', v_sig.o_desde, 'siguiente_hasta', v_sig.o_hasta, 'siguiente_pago', v_sig.o_pago);
+    'proxima_pago', (SELECT min(fecha_pago) FROM public.nominas
+                      WHERE tenant_id = v_tenant AND frecuencia = v_nom.frecuencia AND estado = 'borrador'),
+    'periodos_vivos', (SELECT count(*) FROM public.nominas
+                        WHERE tenant_id = v_tenant AND frecuencia = v_nom.frecuencia AND estado = 'borrador'));
 END $$;
 
 REVOKE ALL ON FUNCTION public.nomina_pagar(uuid,text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.nomina_pagar(uuid,text) TO authenticated, service_role;
 
--- 5) Si el compromiso de nómina se paga DESDE EL DASHBOARD, la nómina
---    también se cierra y se genera el próximo período (mismo resultado
---    que pagar desde el módulo). Cuando el pago viene de nomina_pagar,
---    la nómina ya está 'pagada' y el trigger no hace nada.
+-- 7) Pagar el compromiso DESDE EL DASHBOARD cierra la nómina igual.
+--    ⚠ Solo cuenta como pago si trae fecha_pago: BORRAR un compromiso
+--    (que solo lo desactiva) NO paga la nómina.
 CREATE OR REPLACE FUNCTION public.trg_compromiso_nomina_pagado_fn()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public AS $$
 DECLARE
   v_nom record;
-  v_sig record;
 BEGIN
   SELECT * INTO v_nom FROM public.nominas
   WHERE compromiso_id = NEW.id AND estado = 'borrador'
@@ -252,9 +341,7 @@ BEGIN
          pagada_at = now()
    WHERE id = v_nom.id;
 
-  SELECT * INTO v_sig FROM public._nomina_periodo_siguiente(v_nom.frecuencia, v_nom.fecha_desde, v_nom.fecha_hasta);
-  PERFORM public._nomina_generar_periodo(v_nom.tenant_id, v_nom.frecuencia,
-                                         v_sig.o_desde, v_sig.o_hasta, v_sig.o_pago, false);
+  PERFORM public._nomina_asegurar_ventana(v_nom.tenant_id, v_nom.frecuencia, 2);
   RETURN NEW;
 END $$;
 
@@ -262,8 +349,21 @@ DROP TRIGGER IF EXISTS trg_compromiso_nomina_pagado ON public.compromisos;
 CREATE TRIGGER trg_compromiso_nomina_pagado
   AFTER UPDATE OF activo ON public.compromisos
   FOR EACH ROW
-  WHEN (NEW.tipo = 'nomina' AND OLD.activo = true AND NEW.activo = false)
+  WHEN (NEW.tipo = 'nomina' AND OLD.activo = true AND NEW.activo = false
+        AND NEW.fecha_pago IS NOT NULL)
   EXECUTE FUNCTION public.trg_compromiso_nomina_pagado_fn();
+
+-- 8) REPARAR lo existente: recrea compromisos borrados y deja 2 períodos
+--    vivos por cada frecuencia que ya tenga nóminas.
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT DISTINCT tenant_id, frecuencia FROM public.nominas WHERE estado = 'borrador'
+  LOOP
+    PERFORM public._nomina_asegurar_ventana(r.tenant_id, r.frecuencia, 2);
+  END LOOP;
+END $$;
 
 NOTIFY pgrst, 'reload schema';
 
@@ -273,4 +373,10 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-SELECT 'Nómina recurrente: al pagar se genera el próximo período (pago 15 y 30)' AS status;
+-- Verificación: nóminas vivas y sus compromisos
+SELECT n.numero, n.frecuencia, n.fecha_desde, n.fecha_hasta, n.fecha_pago,
+       n.total_neto, c.nombre AS compromiso, c.activo AS compromiso_activo
+FROM public.nominas n
+LEFT JOIN public.compromisos c ON c.id = n.compromiso_id
+WHERE n.estado = 'borrador'
+ORDER BY n.fecha_pago;
