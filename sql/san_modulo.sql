@@ -234,13 +234,38 @@ BEGIN
   RETURN jsonb_build_object('ok', true);
 END $$;
 
+-- ------------------------------------------------------------
+-- RPC: eliminar (solo Cancelado y sin pagos — ver san_eliminar.sql)
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.san_eliminar(p_san_id uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public AS $$
+DECLARE
+  v_tenant uuid := public.get_user_tenant();
+  v_san    record;
+BEGIN
+  SELECT * INTO v_san FROM public.san
+  WHERE id = p_san_id AND tenant_id = v_tenant FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'SAN no encontrado'; END IF;
+  IF v_san.estado <> 'Cancelado' THEN
+    RAISE EXCEPTION 'Solo se elimina un SAN cancelado (este está %)', v_san.estado;
+  END IF;
+  IF v_san.monto_ahorrado > 0
+     OR EXISTS (SELECT 1 FROM public.san_transacciones WHERE san_id = p_san_id) THEN
+    RAISE EXCEPTION 'Este SAN tiene pagos registrados: se conserva por auditoría (déjalo Cancelado)';
+  END IF;
+
+  DELETE FROM public.san WHERE id = p_san_id;
+  RETURN jsonb_build_object('ok', true);
+END $$;
+
 DO $$
 DECLARE f text;
 BEGIN
   FOREACH f IN ARRAY ARRAY[
     'san_crear(text,numeric,int,date)',
     'san_registrar_pago(uuid,int,numeric,text)',
-    'san_cambiar_estado(uuid,text)'
+    'san_cambiar_estado(uuid,text)',
+    'san_eliminar(uuid)'
   ] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION public.%s FROM PUBLIC, anon', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION public.%s TO authenticated, service_role', f);

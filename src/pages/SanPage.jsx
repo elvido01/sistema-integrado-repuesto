@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper } from 'lucide-react';
+import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2 } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos } from '@/lib/sanUtils';
 
@@ -30,6 +30,7 @@ const SanPage = () => {
   const [pagoDia, setPagoDia] = useState(null);      // cuadro tocado
   const [pagoForm, setPagoForm] = useState({ monto: '', observaciones: '' });
   const [celebrar, setCelebrar] = useState(false);
+  const [elimOpen, setElimOpen] = useState(false);
 
   const money = useCallback((v) => ocultar ? 'RD$ ····'
     : `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`,
@@ -141,6 +142,21 @@ const SanPage = () => {
       await refrescarSel(sanSel.id);
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo cambiar', description: e.message });
+    }
+    setBusy(false);
+  };
+
+  const eliminar = async () => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('san_eliminar', { p_san_id: sanSel.id });
+      if (error) throw error;
+      toast({ title: 'SAN eliminado' });
+      setElimOpen(false);
+      setSanSel(null);
+      await cargar();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo eliminar', description: e.message });
     }
     setBusy(false);
   };
@@ -319,6 +335,10 @@ const SanPage = () => {
               <Archive className="w-4 h-4 mr-1" />Archivar</Button>
           </>
         )}
+        {sanSel.estado === 'Cancelado' && Number(sanSel.monto_ahorrado) === 0 && (
+          <Button size="sm" variant="outline" className="text-red-600 border-red-300" disabled={busy}
+            onClick={() => setElimOpen(true)}><Trash2 className="w-4 h-4 mr-1" />Eliminar</Button>
+        )}
       </div>
 
       {/* tarjeta resumen */}
@@ -456,6 +476,23 @@ const SanPage = () => {
             <DialogClose asChild><Button variant="outline" disabled={busy}>Cancelar</Button></DialogClose>
             <Button onClick={registrarPago} disabled={busy}>
               {busy ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Check className="w-4 h-4 mr-1" />}Registrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* confirmar eliminar */}
+      <Dialog open={elimOpen} onOpenChange={setElimOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>¿Eliminar este SAN?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            "{sanSel?.nombre}" está cancelado y sin pagos: se borrará con su calendario.
+            Esta acción no se puede deshacer.
+          </p>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" disabled={busy}>Cancelar</Button></DialogClose>
+            <Button variant="destructive" onClick={eliminar} disabled={busy}>
+              {busy ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Trash2 className="w-4 h-4 mr-1" />}Eliminar
             </Button>
           </DialogFooter>
         </DialogContent>
