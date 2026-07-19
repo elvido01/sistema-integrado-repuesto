@@ -10,6 +10,7 @@ import {
   SalesFocusProduct,
   SellerDashboardData,
 } from '@/src/services/dashboardService';
+import { fetchSanDashboard, suscribirSan, SanDashboard, SAN_VACIO } from '@/src/services/sanService';
 
 const money = (value: number) =>
   `RD$${Number(value || 0).toLocaleString('es-DO', {
@@ -465,6 +466,23 @@ export default function DashboardScreen() {
     loadDashboard(false);
   }, [loadDashboard]);
 
+  // ----- SAN (Ahorro Programado) en tiempo real -----
+  const [san, setSan] = useState<SanDashboard>(SAN_VACIO);
+  const cargarSan = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      setSan(await fetchSanDashboard(tenantId));
+    } catch {
+      /* si falla, la tarjeta simplemente no se muestra */
+    }
+  }, [tenantId]);
+
+  useEffect(() => { cargarSan(); }, [cargarSan]);
+  useEffect(() => {
+    if (!tenantId) return undefined;
+    return suscribirSan(tenantId, cargarSan);   // se actualiza al instante con cada pago
+  }, [tenantId, cargarSan]);
+
   const faltanteMeta = Math.max(0, data.meta - data.ventasMes);
   const proyeccionOk = data.proyeccionCierre >= data.meta;
   const finanzasEmpresas = data.finanzasEmpresas || [];
@@ -573,6 +591,69 @@ export default function DashboardScreen() {
           </View>
         </View>
       </View>
+
+      {san.sanes.length > 0 && (
+        <View className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
+          <View className="flex-row items-center justify-between mb-3">
+            <View className="flex-row items-center flex-1 pr-3">
+              <View className="bg-emerald-50 w-11 h-11 rounded-xl items-center justify-center mr-3">
+                <Feather name="pie-chart" color="#059669" size={22} />
+              </View>
+              <View className="flex-1">
+                <Text className="text-gray-500 text-[10px] font-black uppercase tracking-wider">
+                  SAN — Ahorro Programado
+                </Text>
+                <Text className="text-gray-950 text-2xl font-black" adjustsFontSizeToFit numberOfLines={1}>
+                  {money(san.totales.ahorrado)}
+                </Text>
+                <Text className="text-gray-500 text-xs">
+                  de {money(san.totales.comprometido)} · {san.totales.activos} activo(s)
+                </Text>
+              </View>
+            </View>
+            <View className="bg-emerald-50 px-2.5 py-1 rounded-full">
+              <Text className="text-emerald-700 text-[10px] font-black">{san.totales.porcentaje}%</Text>
+            </View>
+          </View>
+
+          {san.sanes.map((s) => (
+            <View key={s.id} className="border-t border-gray-100 pt-3 mt-3">
+              <View className="flex-row justify-between items-center">
+                <Text className="text-gray-900 font-bold flex-1 pr-2" numberOfLines={1}>{s.nombre}</Text>
+                <Text className="text-emerald-700 font-black">{s.porcentaje}%</Text>
+              </View>
+              <View className="h-3 bg-gray-100 rounded-full overflow-hidden mt-2">
+                <View className="h-full bg-emerald-500 rounded-full"
+                  style={{ width: `${Math.min(s.porcentaje, 100)}%` }} />
+              </View>
+              <View className="flex-row justify-between mt-2">
+                <Text className="text-gray-500 text-xs">{money(s.ahorrado)} ahorrado</Text>
+                <Text className="text-gray-500 text-xs">Faltan {money(s.restante)}</Text>
+              </View>
+              {s.diasAtrasados > 0 ? (
+                <View className="bg-amber-50 rounded-lg px-3 py-2 mt-2 flex-row items-center">
+                  <Feather name="alert-triangle" color="#d97706" size={14} />
+                  <Text className="text-amber-700 text-xs font-bold ml-2 flex-1">
+                    {s.diasAtrasados} dia(s) atrasado(s) · {money(s.faltaAlDia)} para ponerte al dia
+                  </Text>
+                </View>
+              ) : s.faltaHoy > 0 ? (
+                <View className="bg-emerald-50 rounded-lg px-3 py-2 mt-2 flex-row items-center">
+                  <Feather name="calendar" color="#059669" size={14} />
+                  <Text className="text-emerald-700 text-xs font-bold ml-2 flex-1">
+                    Hoy toca {money(s.faltaHoy)} · no rompas la cadena
+                  </Text>
+                </View>
+              ) : (
+                <View className="bg-emerald-50 rounded-lg px-3 py-2 mt-2 flex-row items-center">
+                  <Feather name="check-circle" color="#059669" size={14} />
+                  <Text className="text-emerald-700 text-xs font-bold ml-2 flex-1">Al dia ✔</Text>
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
 
       <View className="flex-row flex-wrap justify-between">
         <MetricCard
