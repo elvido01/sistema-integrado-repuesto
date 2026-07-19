@@ -39,6 +39,45 @@ export function estadoDia(pago, hoyStr) {
   return 'pendiente';
 }
 
+// SAN largos (365 días): el calendario se agrupa en bloques de 30 días.
+// Los bloques completos se colapsan en una barra y solo se despliega
+// donde el usuario está trabajando — así no hay que hacer scroll eterno.
+export function agruparEnBloques(pagos, hoyStr, tamano = 30) {
+  const arr = pagos || [];
+  const bloques = [];
+  for (let i = 0; i < arr.length; i += tamano) {
+    const dias = arr.slice(i, i + tamano);
+    if (!dias.length) break;
+    bloques.push({
+      indice: bloques.length,
+      desde: dias[0].numero_dia,
+      hasta: dias[dias.length - 1].numero_dia,
+      fecha_desde: dias[0].fecha_programada,
+      fecha_hasta: dias[dias.length - 1].fecha_programada,
+      dias,
+      programado: round2(dias.reduce((s, p) => s + (Number(p.monto_programado) || 0), 0)),
+      pagado: round2(dias.reduce((s, p) => s + (Number(p.monto_pagado) || 0), 0)),
+      completo: dias.every((p) => p.estado === 'Pagado'),
+      tieneHoy: dias.some((p) => p.fecha_programada === hoyStr),
+      atrasados: dias.filter((p) => estadoDia(p, hoyStr) === 'atrasado').length,
+    });
+  }
+  return bloques;
+}
+
+// Qué bloques nacen abiertos: donde cae hoy y el primero sin terminar
+// (si ya está todo pagado, el último).
+export function bloquesAbiertos(bloques) {
+  const set = new Set();
+  const arr = bloques || [];
+  const conHoy = arr.find((b) => b.tieneHoy);
+  if (conHoy) set.add(conHoy.indice);
+  const incompleto = arr.find((b) => !b.completo);
+  if (incompleto) set.add(incompleto.indice);
+  if (set.size === 0 && arr.length) set.add(arr[arr.length - 1].indice);
+  return set;
+}
+
 export function estadisticasSan(pagos, hoyStr) {
   const arr = pagos || [];
   const meta = round2(arr.reduce((s, p) => s + (Number(p.monto_programado) || 0), 0));

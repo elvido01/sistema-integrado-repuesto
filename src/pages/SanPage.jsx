@@ -6,9 +6,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil } from 'lucide-react';
+import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil, ChevronDown } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
-import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos } from '@/lib/sanUtils';
+import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos, agruparEnBloques, bloquesAbiertos } from '@/lib/sanUtils';
 
 const hoyTZ = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
 
@@ -225,6 +225,16 @@ const SanPage = () => {
 
   const stats = useMemo(() => estadisticasSan(pagos, hoyStr), [pagos, hoyStr]);
 
+  // SAN largos: bloques de 30 días; los completos quedan colapsados
+  const bloques = useMemo(() => agruparEnBloques(pagos, hoyStr), [pagos, hoyStr]);
+  const [expandidos, setExpandidos] = useState(() => new Set());
+  useEffect(() => { setExpandidos(bloquesAbiertos(bloques)); }, [bloques]);
+  const toggleBloque = (i) => setExpandidos((prev) => {
+    const s = new Set(prev);
+    if (s.has(i)) s.delete(i); else s.add(i);
+    return s;
+  });
+
   const estadoSanTone = (e) => e === 'Activo' ? 'bg-emerald-100 text-emerald-700'
     : e === 'Completado' ? 'bg-indigo-100 text-indigo-700'
     : e === 'Archivado' ? 'bg-slate-200 text-slate-600' : 'bg-red-100 text-red-600';
@@ -429,28 +439,73 @@ const SanPage = () => {
         <Button size="sm" variant={tabDetalle === 'historial' ? 'default' : 'outline'} onClick={() => setTabDetalle('historial')}>Historial</Button>
       </div>
 
-      {/* calendario de cuadros */}
+      {/* calendario de cuadros (SAN largos: por bloques de 30 días) */}
       {tabDetalle === 'calendario' && (
-        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))' }}>
-          {pagos.map((p) => {
-            const clase = estadoDia(p, hoyStr);
-            const esHoy = p.fecha_programada === hoyStr;
+        <div className="space-y-3">
+          {bloques.map((b) => {
+            const abierto = bloques.length === 1 || expandidos.has(b.indice);
+            const pct = b.programado > 0 ? Math.round((b.pagado / b.programado) * 100) : 0;
             return (
-              <motion.div key={p.id} whileTap={clase !== 'pagado' ? { scale: 0.92 } : undefined}
-                className={cuadroClases(clase, esHoy)}
-                title={`Día ${p.numero_dia} · ${formatFechaDMY(p.fecha_programada)}`}
-                onClick={() => abrirPago(p)}>
-                <div className="text-lg font-bold leading-none">
-                  {clase === 'pagado' ? <Check className="w-5 h-5 inline" /> : clase === 'atrasado' ? '⚠ ' : ''}
-                  {clase !== 'pagado' && p.numero_dia}
-                  {clase === 'pagado' && <span className="ml-1">{p.numero_dia}</span>}
-                </div>
-                <div className="text-[11px] mt-1 leading-tight">
-                  {clase === 'parcial' || (clase === 'atrasado' && Number(p.monto_pagado) > 0)
-                    ? <>faltan<br />{money(p.saldo_pendiente)}</>
-                    : money(p.monto_programado)}
-                </div>
-              </motion.div>
+              <div key={b.indice} className="space-y-2">
+                {bloques.length > 1 && (
+                  <button onClick={() => toggleBloque(b.indice)}
+                    className="w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 bg-card hover:bg-muted/40 transition-colors text-left">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${
+                      b.completo ? 'bg-emerald-500 text-white'
+                      : b.atrasados > 0 ? 'bg-yellow-300 text-yellow-900'
+                      : 'bg-slate-100 text-slate-600'}`}>
+                      {b.completo ? <Check className="w-5 h-5" /> : b.atrasados > 0 ? '⚠' : b.indice + 1}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-sm flex items-center gap-2">
+                        Días {b.desde}–{b.hasta}
+                        {b.tieneHoy && <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-700">HOY</span>}
+                        {b.completo && <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-700">completo</span>}
+                        {!b.completo && b.atrasados > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] bg-yellow-100 text-yellow-800">{b.atrasados} atrasado(s)</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatFechaDMY(b.fecha_desde)} – {formatFechaDMY(b.fecha_hasta)}
+                      </div>
+                      <div className="h-1.5 rounded-full bg-slate-200 mt-1.5 overflow-hidden max-w-xs">
+                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(pct, 100)}%` }} />
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-bold text-emerald-600">{money(b.pagado)}</div>
+                      <div className="text-[11px] text-muted-foreground">de {money(b.programado)}</div>
+                    </div>
+                    <ChevronDown className={`w-5 h-5 text-muted-foreground shrink-0 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
+
+                {abierto && (
+                  <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))' }}>
+                    {b.dias.map((p) => {
+                      const clase = estadoDia(p, hoyStr);
+                      const esHoy = p.fecha_programada === hoyStr;
+                      return (
+                        <motion.div key={p.id} whileTap={clase !== 'pagado' ? { scale: 0.92 } : undefined}
+                          className={cuadroClases(clase, esHoy)}
+                          title={`Día ${p.numero_dia} · ${formatFechaDMY(p.fecha_programada)}`}
+                          onClick={() => abrirPago(p)}>
+                          <div className="text-lg font-bold leading-none">
+                            {clase === 'pagado' ? <Check className="w-5 h-5 inline" /> : clase === 'atrasado' ? '⚠ ' : ''}
+                            {clase !== 'pagado' && p.numero_dia}
+                            {clase === 'pagado' && <span className="ml-1">{p.numero_dia}</span>}
+                          </div>
+                          <div className="text-[11px] mt-1 leading-tight">
+                            {clase === 'parcial' || (clase === 'atrasado' && Number(p.monto_pagado) > 0)
+                              ? <>faltan<br />{money(p.saldo_pendiente)}</>
+                              : money(p.monto_programado)}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

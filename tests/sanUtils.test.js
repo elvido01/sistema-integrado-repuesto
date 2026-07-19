@@ -4,6 +4,8 @@ import {
   aplicarPagoEnCascada,
   estadoDia,
   estadisticasSan,
+  agruparEnBloques,
+  bloquesAbiertos,
 } from '../src/lib/sanUtils.js';
 
 const HOY = '2026-07-18';
@@ -66,6 +68,71 @@ describe('estadoDia', () => {
     expect(estadoDia({ estado: 'Parcial', fecha_programada: '2026-07-10' }, HOY)).toBe('atrasado');
     expect(estadoDia({ estado: 'Pendiente', fecha_programada: '2026-07-25' }, HOY)).toBe('pendiente');
     expect(estadoDia({ estado: 'Pendiente', fecha_programada: HOY }, HOY)).toBe('pendiente');
+  });
+});
+
+describe('agruparEnBloques (SAN largos: bloques de 30 días)', () => {
+  const fecha = (i) => new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+  const pagos = (total, pagadosHasta) => Array.from({ length: total }, (_, i) => ({
+    numero_dia: i + 1,
+    fecha_programada: fecha(i),
+    monto_programado: 1000,
+    monto_pagado: i < pagadosHasta ? 1000 : 0,
+    estado: i < pagadosHasta ? 'Pagado' : 'Pendiente',
+  }));
+
+  it('parte 65 días en 3 bloques (1-30, 31-60, 61-65)', () => {
+    const b = agruparEnBloques(pagos(65, 30), fecha(30));
+    expect(b.length).toBe(3);
+    expect([b[0].desde, b[0].hasta]).toEqual([1, 30]);
+    expect([b[1].desde, b[1].hasta]).toEqual([31, 60]);
+    expect([b[2].desde, b[2].hasta]).toEqual([61, 65]);
+    expect(b[2].dias.length).toBe(5);
+  });
+
+  it('marca el bloque completo y suma sus montos', () => {
+    const b = agruparEnBloques(pagos(65, 30), fecha(30));
+    expect(b[0].completo).toBe(true);
+    expect(b[0].pagado).toBe(30000);
+    expect(b[0].programado).toBe(30000);
+    expect(b[1].completo).toBe(false);
+    expect(b[1].pagado).toBe(0);
+  });
+
+  it('señala el bloque donde cae hoy y cuenta atrasados', () => {
+    const b = agruparEnBloques(pagos(65, 30), fecha(30));   // hoy = día 31
+    expect(b[0].tieneHoy).toBe(false);
+    expect(b[1].tieneHoy).toBe(true);
+    expect(b[0].atrasados).toBe(0);
+    const c = agruparEnBloques(pagos(65, 0), fecha(40));    // hoy = día 41, nada pagado
+    expect(c[0].atrasados).toBe(30);
+  });
+
+  it('un SAN de 30 días o menos queda en un solo bloque', () => {
+    expect(agruparEnBloques(pagos(30, 5), fecha(5)).length).toBe(1);
+    expect(agruparEnBloques(pagos(15, 0), fecha(0)).length).toBe(1);
+  });
+});
+
+describe('bloquesAbiertos', () => {
+  const fecha = (i) => new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+  const pagos = (total, pagadosHasta) => Array.from({ length: total }, (_, i) => ({
+    numero_dia: i + 1,
+    fecha_programada: fecha(i),
+    monto_programado: 1000,
+    monto_pagado: i < pagadosHasta ? 1000 : 0,
+    estado: i < pagadosHasta ? 'Pagado' : 'Pendiente',
+  }));
+
+  it('abre el bloque donde estás, no los completos', () => {
+    const b = agruparEnBloques(pagos(65, 30), fecha(30));
+    const abiertos = bloquesAbiertos(b);
+    expect(abiertos.has(0)).toBe(false);
+    expect(abiertos.has(1)).toBe(true);
+  });
+  it('si todo está completo abre el último', () => {
+    const b = agruparEnBloques(pagos(60, 60), fecha(59));
+    expect(bloquesAbiertos(b).has(1)).toBe(true);
   });
 });
 
