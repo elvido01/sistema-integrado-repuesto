@@ -14,6 +14,10 @@
 -- psycopg2) las ve completas y filtra por tenant_id. Idempotente.
 -- =====================================================================
 
+-- ⚠ Endurecidas (whatsapp_espejo_seguridad.sql): solo conversaciones
+-- individuales con teléfono verificable (nunca grupos ni chats por nombre)
+-- y el texto pasa por ocultar_secretos() — un mensaje con credenciales se
+-- sirve como '[contenido sensible oculto]'. Requiere esa migración antes.
 CREATE OR REPLACE VIEW public.hermes_whatsapp_conversaciones
 WITH (security_invoker = true) AS
 SELECT
@@ -26,7 +30,7 @@ SELECT
   c.last_message_at                           AS ultimo_mensaje_at,
   c.last_user_message_at                      AS ultimo_del_cliente_at,
   c.last_agent_message_at                     AS ultimo_mio_at,
-  c.last_message_preview                      AS ultimo_mensaje,
+  public.ocultar_secretos(c.last_message_preview) AS ultimo_mensaje,
   -- sin responder = el cliente escribió y yo no he contestado después
   (c.last_user_message_at IS NOT NULL
     AND (c.last_agent_message_at IS NULL
@@ -37,7 +41,9 @@ SELECT
   (SELECT count(*) FROM public.sales_messages m WHERE m.conversation_id = c.id) AS total_mensajes
 FROM public.sales_conversations c
 LEFT JOIN public.config_empresa ce ON ce.tenant_id = c.tenant_id
-WHERE c.platform = 'whatsapp';
+WHERE c.platform = 'whatsapp'
+  AND c.customer_phone IS NOT NULL
+  AND COALESCE(c.metadata->>'grupo', 'false') <> 'true';
 
 CREATE OR REPLACE VIEW public.hermes_whatsapp_mensajes
 WITH (security_invoker = true) AS
@@ -48,12 +54,14 @@ SELECT
   c.customer_phone                            AS telefono,
   CASE WHEN m.sender_type = 'agent' THEN 'yo' ELSE 'cliente' END AS quien,
   m.message_type                              AS tipo,
-  m.message_text                              AS texto,
+  public.ocultar_secretos(m.message_text)     AS texto,
   m.created_at                                AS fecha,
   (m.raw_data->>'source')                     AS origen
 FROM public.sales_messages m
 JOIN public.sales_conversations c ON c.id = m.conversation_id
-WHERE m.platform = 'whatsapp';
+WHERE m.platform = 'whatsapp'
+  AND c.customer_phone IS NOT NULL
+  AND COALESCE(c.metadata->>'grupo', 'false') <> 'true';
 
 GRANT SELECT ON public.hermes_whatsapp_conversaciones TO authenticated, service_role;
 GRANT SELECT ON public.hermes_whatsapp_mensajes       TO authenticated, service_role;

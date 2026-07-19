@@ -38,6 +38,9 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hermes_readonly') THEN
     RAISE EXCEPTION 'Falta el schema hermes o el rol hermes_readonly: correr primero sql/hermes_readonly.sql';
   END IF;
+  IF to_regprocedure('public.ocultar_secretos(text)') IS NULL THEN
+    RAISE EXCEPTION 'Falta public.ocultar_secretos: correr primero sql/whatsapp_espejo_seguridad.sql';
+  END IF;
 
   -- ------------------------------------------------------------
   -- 1) CRM de seguimiento (la ÚNICA con escritura)
@@ -142,7 +145,7 @@ BEGIN
       c.last_message_at                           AS ultimo_mensaje_at,
       c.last_user_message_at                      AS ultimo_del_cliente_at,
       c.last_agent_message_at                     AS ultimo_mio_at,
-      c.last_message_preview                      AS ultimo_mensaje,
+      public.ocultar_secretos(c.last_message_preview) AS ultimo_mensaje,
       (c.last_user_message_at IS NOT NULL
         AND (c.last_agent_message_at IS NULL
              OR c.last_user_message_at > c.last_agent_message_at)) AS sin_responder,
@@ -154,6 +157,8 @@ BEGIN
     LEFT JOIN public.config_empresa ce ON ce.tenant_id = c.tenant_id
     WHERE c.platform = 'whatsapp'
       AND c.tenant_id = %L::uuid
+      AND c.customer_phone IS NOT NULL                       -- solo identidad verificable
+      AND COALESCE(c.metadata->>'grupo', 'false') <> 'true'  -- nunca grupos
   $q$, v_morla);
 
   -- ------------------------------------------------------------
@@ -168,13 +173,15 @@ BEGIN
       c.customer_phone                            AS telefono,
       CASE WHEN m.sender_type = 'agent' THEN 'yo' ELSE 'cliente' END AS quien,
       m.message_type                              AS tipo,
-      m.message_text                              AS texto,
+      public.ocultar_secretos(m.message_text)     AS texto,
       m.created_at                                AS fecha,
       (m.raw_data->>'source')                     AS origen
     FROM public.sales_messages m
     JOIN public.sales_conversations c ON c.id = m.conversation_id
     WHERE m.platform = 'whatsapp'
       AND m.tenant_id = %L::uuid
+      AND c.customer_phone IS NOT NULL
+      AND COALESCE(c.metadata->>'grupo', 'false') <> 'true'
   $q$, v_morla);
 
   -- ------------------------------------------------------------
@@ -236,6 +243,7 @@ BEGIN
     JOIN public.cotizaciones_detalle cd ON cd.cotizacion_id = c.id AND cd.tenant_id = c.tenant_id
     WHERE sc.platform = 'whatsapp'
       AND sc.tenant_id = %L::uuid
+      AND sc.customer_phone IS NOT NULL
   $q$, v_morla);
 
   -- ------------------------------------------------------------
