@@ -13,7 +13,8 @@
 -- Este archivo es el CANÓNICO de las vistas custom del schema hermes:
 --   crm_seguimiento (lectura+escritura), crm_hoy, product_image_status,
 --   hermes_whatsapp_conversaciones, hermes_whatsapp_mensajes,
---   hermes_llegadas_pendientes (lectura), y la función
+--   hermes_llegadas_pendientes, hermes_whatsapp_cotizaciones (lectura),
+--   y la función
 --   hermes.crm_upsert_seguimiento (la vía RECOMENDADA de escritura del CRM:
 --   normaliza teléfono, enlaza cliente/contacto/producto, dedup tel+producto).
 --   Requiere que public.crm_upsert_seguimiento exista → correr DESPUÉS de
@@ -210,11 +211,39 @@ BEGIN
   $q$, v_morla);
 
   -- ------------------------------------------------------------
+  -- 6b) Cotizaciones estructuradas por conversación de WhatsApp.
+  --     La extensión guarda la cotización canónica (cotizaciones +
+  --     cotizaciones_detalle) y enlaza sales_conversations.cotizacion_id.
+  --     Sin costos ni márgenes; precio_unitario es el de venta cotizado.
+  -- ------------------------------------------------------------
+  EXECUTE format($q$
+    CREATE OR REPLACE VIEW hermes.hermes_whatsapp_cotizaciones WITH (security_barrier = true) AS
+    SELECT
+      sc.tenant_id,
+      sc.id                  AS conversation_id,
+      sc.customer_phone      AS telefono,
+      sc.customer_name       AS cliente,
+      c.id                   AS cotizacion_id,
+      c.numero               AS cotizacion_numero,
+      cd.producto_id,
+      cd.codigo              AS codigo_producto,
+      cd.descripcion         AS producto_descripcion,
+      cd.cantidad,
+      cd.precio_unitario,
+      c.created_at           AS fecha
+    FROM public.sales_conversations sc
+    JOIN public.cotizaciones c        ON c.id = sc.cotizacion_id AND c.tenant_id = sc.tenant_id
+    JOIN public.cotizaciones_detalle cd ON cd.cotizacion_id = c.id AND cd.tenant_id = c.tenant_id
+    WHERE sc.platform = 'whatsapp'
+      AND sc.tenant_id = %L::uuid
+  $q$, v_morla);
+
+  -- ------------------------------------------------------------
   -- Permisos mínimos: todo lectura; escritura SOLO en crm_seguimiento
   -- ------------------------------------------------------------
   EXECUTE 'GRANT SELECT ON hermes.crm_seguimiento, hermes.crm_hoy, hermes.product_image_status,
            hermes.hermes_whatsapp_conversaciones, hermes.hermes_whatsapp_mensajes,
-           hermes.hermes_llegadas_pendientes TO hermes_readonly';
+           hermes.hermes_llegadas_pendientes, hermes.hermes_whatsapp_cotizaciones TO hermes_readonly';
   EXECUTE 'GRANT INSERT, UPDATE ON hermes.crm_seguimiento TO hermes_readonly';
 
   -- ------------------------------------------------------------

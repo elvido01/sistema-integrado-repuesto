@@ -1,6 +1,21 @@
+import { parseJid, normalizarDigitosIntl, extraerTelefonoLegacyDataId, slugNombreChat } from './jid.js';
+
 function cleanText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
+
+// JID del chat activo, anunciado por jid-probe.js (corre en world MAIN y lee
+// los módulos internos de WhatsApp Web). Es la ÚNICA fuente confiable del
+// número cuando el contacto está guardado (el título trae el nombre).
+let jidActivo = { jid: null, at: 0 };
+try {
+  window.addEventListener('message', (ev) => {
+    const d = ev?.data;
+    if (d && d.source === 'motoflow-omni' && d.type === 'active-chat-jid') {
+      jidActivo = { jid: d.jid || null, at: Date.now() };
+    }
+  });
+} catch { /* entorno sin window (tests) */ }
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -106,13 +121,33 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     return 'in';
   };
 
-  // Teléfono: del encabezado del chat si el título es un número (contacto no
-  // guardado). Si es un nombre guardado, no hay número visible → id por nombre.
-  const digits = String(name || '').replace(/\D/g, '');
-  const phone = digits.length >= 7 ? digits : '';
-  const convId = phone
-    ? `whatsapp:${phone}`
-    : `whatsapp:name:${String(name || 'chat').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)}`;
+  // Teléfono — en orden de confiabilidad:
+  //  1) JID interno del chat activo (probe world MAIN): funciona con
+  //     contactos GUARDADOS, que es donde el título no trae número.
+  //  2) Título del encabezado si es un número (contacto no guardado).
+  //  3) data-id legacy de algún mensaje (formatos viejos de WA Web).
+  // Grupos (@g.us): NO se espejan — no hay destinatario individual válido.
+  let jid = null;
+  let phone = '';
+  const probe = (Date.now() - jidActivo.at) < 20000 ? parseJid(jidActivo.jid) : { phone: null, tipo: 'desconocido' };
+  if (probe.tipo === 'grupo') {
+    diag.grupo = true;
+    return { diag, convo: null };
+  }
+  if (probe.tipo === 'individual') { jid = jidActivo.jid; phone = probe.phone; }
+  if (!phone) {
+    const digits = normalizarDigitosIntl(name);
+    if (digits.length >= 7) phone = digits;
+  }
+  if (!phone) {
+    for (const row of rows) {
+      const t = extraerTelefonoLegacyDataId(getDataId(row));
+      if (t) { phone = t; break; }
+    }
+  }
+  diag.telefono = phone || null;
+  const nameKey = `whatsapp:name:${slugNombreChat(name)}`;
+  const convId = phone ? `whatsapp:${phone}` : nameKey;
 
   const detectMedia = (row) => {
     if (row.querySelector('img[src^="blob:"]')) return 'image';
@@ -159,6 +194,8 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     convo: {
       external_conversation_id: convId,
       phone: phone || null,
+      jid: jid || null,                 // JID crudo del proveedor (auditoría)
+      name_key: nameKey,                // para migrar la conversación vieja por-nombre
       name: name || convId,
       messages,
     },
