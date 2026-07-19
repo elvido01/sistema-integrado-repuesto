@@ -1,28 +1,17 @@
 -- ============================================================
--- ⚠ SUPERSEDIDO por sql/paginados_imagen_url.sql (misma lógica +
---   imagen_url en el retorno, para la foto en la app móvil).
---   NO correr esta versión: pisaría la nueva.
+-- get_productos_paginados + imagen_url (fix foto en la app móvil)
 -- ============================================================
--- Optimización: get_productos_paginados con filtro de stock
--- ============================================================
--- PROBLEMA: con p_include_zero_stock=false y sin texto de búsqueda
--- (el modal Buscar Producto recién abierto), la función llamaba
--- get_stock_actual(p.id) POR CADA producto activo del tenant para
--- encontrar los primeros 20 con stock. Con catálogos grandes eso
--- tomaba ~8 segundos por apertura del modal.
---
--- FIX: el stock se calcula UNA sola vez con un agregado sobre
--- inventario_movimientos (SUM(cantidad) por producto — misma
--- definición que get_stock_actual) y se junta con LEFT JOIN.
--- + índice de cobertura para que el agregado sea index-only.
---
--- La firma y el resultado NO cambian: mismos parámetros, mismas
--- columnas. Idempotente.
+-- BUG: la app móvil mapea p.imagen_url del resultado de esta RPC,
+-- pero la RPC nunca devolvió esa columna → el modal del producto
+-- salía siempre "sin foto" aunque el producto tuviera imagen.
+-- FIX: se agrega imagen_url al RETURNS TABLE (los demás campos y la
+-- lógica quedan EXACTAMENTE como optimizar_productos_paginados_stock.sql,
+-- que queda supersedido). Agregar columna requiere DROP + CREATE.
+-- La web no se afecta (lee campos por nombre). La app móvil queda
+-- arreglada SIN actualizarla. Idempotente.
 -- ============================================================
 
--- Índice de cobertura para el agregado de stock por tenant
-CREATE INDEX IF NOT EXISTS idx_invmov_tenant_producto_cantidad
-  ON public.inventario_movimientos (tenant_id, producto_id) INCLUDE (cantidad);
+DROP FUNCTION IF EXISTS public.get_productos_paginados(integer, integer, text, text, text, boolean, text);
 
 CREATE OR REPLACE FUNCTION public.get_productos_paginados(
   p_limit integer,
@@ -48,6 +37,7 @@ RETURNS TABLE(
   existencia numeric,
   presentaciones json,
   min_stock numeric,
+  imagen_url text,
   total_count bigint
 ) AS $$
 DECLARE
@@ -80,6 +70,7 @@ BEGIN
       get_nombres_modelos(p.modelos_ids) AS modelo_nombre_val,
       tp.nombre AS tipo_nombre_val,
       p.min_stock,
+      p.imagen_url AS imagen_url_val,
       p.modelos_ids,
       COALESCE(s.stk, 0) AS existencia_val
     FROM productos p
@@ -140,6 +131,7 @@ BEGIN
       WHERE pr.producto_id = cp.prod_id
     ) AS presentaciones,
     cp.min_stock,
+    cp.imagen_url_val AS imagen_url,
     cp.total_count
   FROM counted_products cp
   ORDER BY cp.descripcion ASC
@@ -155,8 +147,8 @@ NOTIFY pgrst, 'reload schema';
 
 DO $$ BEGIN
   IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
-    PERFORM public.registrar_migracion('optimizar_productos_paginados_stock.sql');
+    PERFORM public.registrar_migracion('paginados_imagen_url.sql');
   END IF;
 END $$;
 
-SELECT 'get_productos_paginados optimizado: stock en una pasada + indice de cobertura' AS status;
+SELECT 'get_productos_paginados ahora devuelve imagen_url (foto visible en la app móvil)' AS status;
