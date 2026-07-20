@@ -38,6 +38,7 @@ import {
   PieChart,
   CalendarClock,
   PiggyBank,
+  Landmark,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -116,6 +117,7 @@ const navItems = [
       { title: 'Orden de Compra', id: 'orden-compra' },
       { title: 'Compras', id: 'compras' },
       { title: 'Pago a Suplidores', id: 'pago-suplidores', icon: Truck },
+      { title: 'Cuentas Bancarias', id: 'cuentas-bancarias', icon: Landmark },
       { title: 'Pago Comisiones', id: 'pago-comisiones-vendedor', icon: Users },
       { title: 'Nómina', id: 'nomina', icon: Users },
     ],

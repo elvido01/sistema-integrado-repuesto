@@ -54,6 +54,7 @@ export const MODULES = [
     { key: 'gps-financiamiento', label: 'GPS - Financiamiento' },
     { key: 'devoluciones', label: 'Devoluciones' },
     { key: 'pago-suplidores', label: 'Pago a Suplidores' },
+    { key: 'cuentas-bancarias', label: 'Cuentas Bancarias' },
     { key: 'pago-comisiones-vendedor', label: 'Pago Comisiones' },
     { key: 'nomina', label: 'Nómina' },
     { key: 'san', label: 'SAN Ahorro Programado' },

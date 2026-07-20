@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PanelContext, usePanels } from './panelCore';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet, PiggyBank } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet, PiggyBank, Landmark } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 import VentasPage from '@/pages/VentasPage';
@@ -47,6 +47,7 @@ import PerfilEmpresa from '@/pages/Configuracion/PerfilEmpresa';
 import ComprobantesPage from '@/pages/Configuracion/ComprobantesPage';
 import DgiiMonitorPage from '@/pages/Configuracion/DgiiMonitorPage';
 import PresupuestoInteligentePage from '@/pages/Configuracion/PresupuestoInteligentePage';
+import CuentasBancariasPage from '@/pages/CuentasBancariasPage';
 import AprobacionesComprasPage from '@/pages/AprobacionesComprasPage';
 import GruposEquivalentesPage from '@/pages/GruposEquivalentesPage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
@@ -138,6 +139,7 @@ const componentMapping = {
   'cartera-clientes': { component: () => <Protected module="cartera-clientes"><CarteraClientesPage /></Protected>, icon: Users, name: 'Cartera de Clientes' },
   'recomendador-precios': { component: () => <Protected module="recomendador-precios"><RecomendadorPreciosPage /></Protected>, icon: DollarSign, name: 'Recomendador de Precios' },
   'cierre-caja': { component: () => <Protected module="cierre-caja"><CierreCajaPage /></Protected>, icon: Settings, name: 'Cierre de Caja' },
+  'cuentas-bancarias': { component: () => <Protected module="cuentas-bancarias"><CuentasBancariasPage /></Protected>, icon: Landmark, name: 'Cuentas Bancarias' },
   'config_sistema': { component: () => <Protected module="config_sistema"><ConfiguracionSistemaPage /></Protected>, icon: Settings, name: 'Configuracion del Sistema' },
   'perfil-empresa': { component: () => <Protected module="perfil-empresa"><PerfilEmpresa /></Protected>, icon: Building2, name: 'Perfil Empresa' },
   'comprobantes-fiscales': { component: () => <Protected module="comprobantes-fiscales"><ComprobantesPage /></Protected>, icon: FileText, name: 'Comprobantes Fiscales' },

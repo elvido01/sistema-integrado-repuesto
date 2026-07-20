@@ -68,6 +68,13 @@ CREATE INDEX IF NOT EXISTS idx_mov_bancario_cuenta
 COMMENT ON TABLE public.movimientos_bancarios IS
   'Libro mayor de cuentas bancarias. Saldo = saldo_inicial + ENTRADAS − SALIDAS.';
 
+-- Cuenta por DEFECTO de la empresa: viene preseleccionada en ventas,
+-- recibos, cierre y pagos por transferencia (pero se puede cambiar al
+-- momento). Se configura en Configuración del Sistema.
+ALTER TABLE public.config_empresa
+  ADD COLUMN IF NOT EXISTS cuenta_bancaria_default_id uuid
+  REFERENCES public.cuentas_bancarias(id) ON DELETE SET NULL;
+
 -- ---------------------------------------------------------------------
 -- 3) RLS (aislamiento por empresa, estándar del sistema)
 -- ---------------------------------------------------------------------

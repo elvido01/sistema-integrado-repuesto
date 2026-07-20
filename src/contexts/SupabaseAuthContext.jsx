@@ -62,17 +62,17 @@ export const AuthProvider = ({ children }) => {
       if (activeTid) {
         let { data: empresaData, error: empresaError } = await supabase
           .from('config_empresa')
-          .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, slogan, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct, feat_suplidores_locales, incluir_existencias_cero_default, feat_cliente_dealer, feat_financiera, formato_comprobante_pago, formato_cierre_caja, financiamiento_tipo, financiera_tenant_id, margen_minimo_pct, tipo_negocio, solo_consulta, empresa_vieja_tenant_id')
+          .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, slogan, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct, feat_suplidores_locales, incluir_existencias_cero_default, feat_cliente_dealer, feat_financiera, formato_comprobante_pago, formato_cierre_caja, financiamiento_tipo, financiera_tenant_id, margen_minimo_pct, tipo_negocio, solo_consulta, empresa_vieja_tenant_id, cuenta_bancaria_default_id')
           .eq('tenant_id', activeTid)
           .maybeSingle();
-        if (empresaError && String(empresaError.message || '').match(/(feat_suplidores_locales|incluir_existencias_cero_default|feat_cliente_dealer|feat_financiera|formato_comprobante_pago|formato_cierre_caja|financiamiento_tipo|financiera_tenant_id|margen_minimo_pct|tipo_negocio|solo_consulta|empresa_vieja_tenant_id)/)) {
+        if (empresaError && String(empresaError.message || '').match(/(feat_suplidores_locales|incluir_existencias_cero_default|feat_cliente_dealer|feat_financiera|formato_comprobante_pago|formato_cierre_caja|financiamiento_tipo|financiera_tenant_id|margen_minimo_pct|tipo_negocio|solo_consulta|empresa_vieja_tenant_id|cuenta_bancaria_default_id)/)) {
           const fallback = await supabase
             .from('config_empresa')
             .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura, formato_precio_etiqueta, precio2_descuento_pct, precio3_descuento_pct')
             .eq('tenant_id', activeTid)
             .maybeSingle();
           empresaData = fallback.data
-            ? { ...fallback.data, feat_suplidores_locales: false, incluir_existencias_cero_default: true, feat_cliente_dealer: false, feat_financiera: false, formato_comprobante_pago: 'pdf', formato_cierre_caja: 'pos_80mm', financiamiento_tipo: 'propio', financiera_tenant_id: null, margen_minimo_pct: 0, tipo_negocio: 'repuestos', solo_consulta: false, empresa_vieja_tenant_id: null }
+            ? { ...fallback.data, feat_suplidores_locales: false, incluir_existencias_cero_default: true, feat_cliente_dealer: false, feat_financiera: false, formato_comprobante_pago: 'pdf', formato_cierre_caja: 'pos_80mm', financiamiento_tipo: 'propio', financiera_tenant_id: null, margen_minimo_pct: 0, tipo_negocio: 'repuestos', solo_consulta: false, empresa_vieja_tenant_id: null, cuenta_bancaria_default_id: null }
             : null;
           empresaError = fallback.error;
         }
