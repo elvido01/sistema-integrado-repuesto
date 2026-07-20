@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff } from 'lucide-react-native';
+import { LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { canAccessModule } from '@/src/services/permissions';
 import { getQuickAccessTabs, saveQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
@@ -45,6 +45,9 @@ export default function MasScreen() {
     { title: 'Recepcion de Mercancia', icon: PackageOpen, route: '/recepcion', color: '#f59e0b', moduleKey: 'recepcion-mercancia' },
     { title: 'Impresora Bluetooth', icon: Printer, route: '/(tabs)/impresora', color: '#0ea5e9', moduleKey: 'impresora-bluetooth', quickName: 'impresora' },
     { title: 'Configuracion', icon: Settings, route: '/(tabs)/configuracion', color: '#6b7280', moduleKey: 'configuracion', quickName: 'configuracion' },
+    // Solo admin/owner: no existe permiso 'usuarios' para vendedores, así
+    // que canAccessModule lo deja pasar únicamente a full-access roles.
+    { title: 'Usuarios', icon: Users, route: '/usuarios', color: '#7c3aed', moduleKey: 'usuarios' },
   ].filter((item) => canAccessModule(profile, permissions, item.moduleKey));
 
   const roleLabel = profile?.role === 'admin'
