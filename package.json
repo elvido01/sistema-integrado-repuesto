@@ -9,6 +9,9 @@
     "preview": "vite preview --port 5173",
     "predev": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\kill-port.ps1 5173",
     "test": "vitest",
+    "vault:sync": "node scripts/vault-sync/sync.mjs",
+    "vault:sync:una-vez": "node scripts/vault-sync/sync.mjs --una-vez",
+    "vault:sync:simular": "node scripts/vault-sync/sync.mjs --simular --una-vez",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=motoflow --branch=feat/mercancias-filtros --commit-dirty=true && npx wrangler pages deploy dist --project-name=repuestos-morla --branch=main --commit-dirty=true"
   },
   "dependencies": {

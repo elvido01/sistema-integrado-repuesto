@@ -67,3 +67,7 @@ mobile/*.log
 
 # Artefactos de build de la extension de WhatsApp (se regeneran con npm run build)
 whatsapp-quote-extension/motoflow-whatsapp-extension.zip
+
+# Vault sync — estado local y conflictos
+scripts/vault-sync/.estado.json
+vault/**/*.conflicto-*.md
