@@ -132,51 +132,52 @@ CREATE POLICY vault_notas_tenant ON public.vault_notas
 
 -- ---------------------------------------------------------------------
 -- 4. Vistas para Hermes
---    OJO: inline a la tabla base. Nunca sobre vistas public con
---    security_invoker -> permission denied (lección de julio 2026).
+--    OJO x2:
+--    a) inline a la tabla base, nunca sobre vistas public con
+--       security_invoker -> permission denied (lección de julio 2026).
+--    b) Hermes entra por psycopg2 con el rol hermes_readonly, SIN JWT de
+--       Supabase, así que get_user_tenant() le devuelve NULL y el RLS lo
+--       bloquearía todo. Por eso el tenant va FIJO en la vista y usamos
+--       security_barrier (la vista corre como su dueño): el WHERE de la
+--       vista ES la frontera de seguridad. Mismo patrón que crm_hoy.
 -- ---------------------------------------------------------------------
 CREATE SCHEMA IF NOT EXISTS hermes;
 
-DROP VIEW IF EXISTS hermes.vault_notas CASCADE;
-CREATE VIEW hermes.vault_notas
-WITH (security_invoker = true) AS
-  SELECT
-    v.id,
-    v.ruta,
-    v.carpeta,
-    v.titulo,
-    v.contenido,
-    v.autor,
-    v.wikilinks,
-    v.tags,
-    v.updated_at
-  FROM public.vault_notas v
-  WHERE v.borrada = false;
+DO $$
+DECLARE
+  v_morla constant uuid := '00000000-0000-0000-0000-000000000001';
+BEGIN
+  -- Lectura: todo el vault de Morla
+  EXECUTE format($q$
+    CREATE OR REPLACE VIEW hermes.vault_notas WITH (security_barrier = true) AS
+      SELECT v.id, v.ruta, v.carpeta, v.titulo, v.contenido,
+             v.autor, v.wikilinks, v.tags, v.updated_at
+      FROM public.vault_notas v
+      WHERE v.tenant_id = %L::uuid
+        AND v.borrada = false
+  $q$, v_morla);
 
--- Vista de escritura: Hermes solo ve/toca lo suyo. El CHECK OPTION hace
--- que no pueda insertar fuera de su carpeta ni aunque lo intente.
-DROP VIEW IF EXISTS hermes.vault_mis_notas CASCADE;
-CREATE VIEW hermes.vault_mis_notas
-WITH (security_invoker = true) AS
-  SELECT
-    v.id,
-    v.ruta,
-    v.titulo,
-    v.contenido,
-    v.wikilinks,
-    v.tags,
-    v.autor,
-    v.borrada,
-    v.updated_at
-  FROM public.vault_notas v
-  WHERE v.autor = 'hermes'
-WITH CASCADED CHECK OPTION;
+  -- Escritura: solo lo suyo. El CHECK OPTION impide que inserte o mueva
+  -- una fila fuera de este filtro, ni aunque lo intente a propósito.
+  EXECUTE format($q$
+    CREATE OR REPLACE VIEW hermes.vault_mis_notas WITH (security_barrier = true) AS
+      SELECT v.id, v.ruta, v.titulo, v.contenido,
+             v.wikilinks, v.tags, v.autor, v.borrada, v.updated_at
+      FROM public.vault_notas v
+      WHERE v.tenant_id = %L::uuid
+        AND v.autor = 'hermes'
+    WITH CASCADED CHECK OPTION
+  $q$, v_morla);
+END $$;
 
 -- ---------------------------------------------------------------------
 -- 5. RPCs para Hermes (escribir y buscar)
 -- ---------------------------------------------------------------------
 
 -- Guarda/actualiza una nota de Hermes. Devuelve la ruta final.
+-- SECURITY DEFINER a propósito: Hermes entra sin JWT, así que no puede
+-- apoyarse en RLS. El tenant se fija aquí dentro y el autor está acotado
+-- a los agentes; la frontera de seguridad es esta función, no el RLS.
 CREATE OR REPLACE FUNCTION public.vault_guardar_nota(
   p_ruta      text,
   p_contenido text,
@@ -185,10 +186,11 @@ CREATE OR REPLACE FUNCTION public.vault_guardar_nota(
 )
 RETURNS text
 LANGUAGE plpgsql
-SECURITY INVOKER          -- respeta RLS: cada quien en su empresa
+SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
+  v_morla constant uuid := '00000000-0000-0000-0000-000000000001';
   v_ruta  text := regexp_replace(btrim(p_ruta), '^/+', '');
   v_links text[];
   v_tags  text[];
@@ -214,8 +216,9 @@ BEGIN
     INTO v_tags
     FROM regexp_matches(coalesce(p_contenido, ''), '(?:^|\s)#([a-zA-Z0-9áéíóúñ_-]+)', 'g') AS m;
 
-  INSERT INTO public.vault_notas (ruta, titulo, contenido, autor, wikilinks, tags, hash, borrada)
+  INSERT INTO public.vault_notas (tenant_id, ruta, titulo, contenido, autor, wikilinks, tags, hash, borrada)
   VALUES (
+    v_morla,
     v_ruta,
     coalesce(p_titulo, regexp_replace(split_part(v_ruta, '/', -1), '\.md$', '')),
     coalesce(p_contenido, ''),
@@ -248,7 +251,7 @@ CREATE OR REPLACE FUNCTION public.vault_buscar(
 )
 RETURNS TABLE (ruta text, titulo text, autor text, extracto text, relevancia real)
 LANGUAGE sql
-SECURITY INVOKER
+SECURITY DEFINER
 SET search_path = public
 AS $$
   SELECT
@@ -259,26 +262,31 @@ AS $$
                 'MaxWords=40, MinWords=15, ShortWord=3, MaxFragments=2') AS extracto,
     ts_rank(v.busqueda, plainto_tsquery('spanish', p_texto)) AS relevancia
   FROM public.vault_notas v
-  WHERE v.borrada = false
+  WHERE v.tenant_id = '00000000-0000-0000-0000-000000000001'::uuid
+    AND v.borrada = false
     AND v.busqueda @@ plainto_tsquery('spanish', p_texto)
   ORDER BY relevancia DESC, v.updated_at DESC
   LIMIT greatest(1, least(coalesce(p_limite, 10), 50));
 $$;
 
 -- Espejos en el esquema hermes (Hermes llama hermes.*)
+-- SECURITY DEFINER en los dos: el RPC público de 4 argumentos está
+-- revocado (deja elegir autor), así que un wrapper INVOKER no podría
+-- llamarlo. Corriendo como dueño, el wrapper es la única puerta y fija
+-- 'hermes' sin que el llamador pueda cambiarlo.
 CREATE OR REPLACE FUNCTION hermes.vault_guardar_nota(
   p_ruta text, p_contenido text, p_titulo text DEFAULT NULL
 )
 RETURNS text
 LANGUAGE sql
-SECURITY INVOKER
+SECURITY DEFINER
 SET search_path = public
 AS $$ SELECT public.vault_guardar_nota(p_ruta, p_contenido, p_titulo, 'hermes'); $$;
 
 CREATE OR REPLACE FUNCTION hermes.vault_buscar(p_texto text, p_limite integer DEFAULT 10)
 RETURNS TABLE (ruta text, titulo text, autor text, extracto text, relevancia real)
 LANGUAGE sql
-SECURITY INVOKER
+SECURITY DEFINER
 SET search_path = public
 AS $$ SELECT * FROM public.vault_buscar(p_texto, p_limite); $$;
 
@@ -294,13 +302,19 @@ DO $$ BEGIN
     GRANT SELECT ON hermes.vault_notas    TO hermes_readonly;
     GRANT SELECT, INSERT, UPDATE ON hermes.vault_mis_notas TO hermes_readonly;
 
-    -- La tabla base: lectura + escritura, acotada por RLS y por el trigger
-    GRANT SELECT, INSERT, UPDATE ON public.vault_notas TO hermes_readonly;
+    -- Sobre la tabla base NO se da nada: las vistas (que corren como su
+    -- dueño) y los RPCs SECURITY DEFINER son el único camino. Así Hermes
+    -- nunca puede leer notas de otra empresa ni saltarse el filtro.
+    REVOKE ALL ON public.vault_notas FROM hermes_readonly;
 
     GRANT EXECUTE ON FUNCTION hermes.vault_guardar_nota(text, text, text) TO hermes_readonly;
     GRANT EXECUTE ON FUNCTION hermes.vault_buscar(text, integer)          TO hermes_readonly;
-    GRANT EXECUTE ON FUNCTION public.vault_guardar_nota(text, text, text, text) TO hermes_readonly;
-    GRANT EXECUTE ON FUNCTION public.vault_buscar(text, integer)                TO hermes_readonly;
+    GRANT EXECUTE ON FUNCTION public.vault_buscar(text, integer)          TO hermes_readonly;
+
+    -- El RPC público lleva p_autor: si Hermes pudiera llamarlo, pasaría
+    -- p_autor='claude' y escribiría en la carpeta ajena. Solo el wrapper
+    -- hermes.* (que fija 'hermes') queda a su alcance.
+    REVOKE ALL ON FUNCTION public.vault_guardar_nota(text, text, text, text) FROM hermes_readonly, PUBLIC;
 
     RAISE NOTICE 'Permisos de vault otorgados a hermes_readonly';
   ELSE
