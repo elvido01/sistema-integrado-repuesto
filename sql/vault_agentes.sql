@@ -43,20 +43,32 @@ CREATE TABLE IF NOT EXISTS public.vault_notas (
   CONSTRAINT vault_notas_ruta_unica UNIQUE (tenant_id, ruta)
 );
 
--- Carpeta raíz, para filtrar rápido por dueño
-ALTER TABLE public.vault_notas
-  DROP COLUMN IF EXISTS carpeta;
-ALTER TABLE public.vault_notas
-  ADD COLUMN carpeta text GENERATED ALWAYS AS (split_part(ruta, '/', 1)) STORED;
+-- Columnas generadas. Se AGREGAN solo si faltan: nada de DROP+ADD, que
+-- en la segunda corrida choca con las vistas de hermes que dependen de
+-- ellas (2BP01: cannot drop column carpeta ... other objects depend on it).
+DO $$
+BEGIN
+  -- Carpeta raíz, para filtrar rápido por dueño
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'vault_notas' AND column_name = 'carpeta'
+  ) THEN
+    ALTER TABLE public.vault_notas
+      ADD COLUMN carpeta text GENERATED ALWAYS AS (split_part(ruta, '/', 1)) STORED;
+  END IF;
 
--- Búsqueda en español: Hermes busca por concepto en vez de leerse las 19
--- notas completas cada vez (le ahorra contexto).
-ALTER TABLE public.vault_notas
-  DROP COLUMN IF EXISTS busqueda;
-ALTER TABLE public.vault_notas
-  ADD COLUMN busqueda tsvector GENERATED ALWAYS AS (
-    to_tsvector('spanish', coalesce(titulo, '') || ' ' || coalesce(contenido, ''))
-  ) STORED;
+  -- Búsqueda en español: Hermes busca por concepto en vez de leerse las
+  -- 19 notas completas cada vez (le ahorra contexto).
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'vault_notas' AND column_name = 'busqueda'
+  ) THEN
+    ALTER TABLE public.vault_notas
+      ADD COLUMN busqueda tsvector GENERATED ALWAYS AS (
+        to_tsvector('spanish', coalesce(titulo, '') || ' ' || coalesce(contenido, ''))
+      ) STORED;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_vault_notas_busqueda ON public.vault_notas USING gin (busqueda);
 CREATE INDEX IF NOT EXISTS idx_vault_notas_tenant   ON public.vault_notas (tenant_id, borrada);
