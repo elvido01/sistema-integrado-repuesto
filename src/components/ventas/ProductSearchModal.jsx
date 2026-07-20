@@ -55,9 +55,11 @@ const ProductSearchModal = ({
   const [includeZeroStock, setIncludeZeroStock] = useState(includeZeroStockDefault);
   const [sendingToOrder, setSendingToOrder] = useState(null); // product id being sent
   const [moviendo, setMoviendo] = useState(null);
-  const esMorlaVieja = tenantId === '00000000-0000-0000-0000-000000000002';
-  // Traer de Morla Vieja sin cambiar de empresa (solo visible en la nueva)
-  const esMorlaNueva = tenantId === '00000000-0000-0000-0000-000000000001';
+  // Genérico (config-driven, ya no atado a Morla):
+  //  · esVieja    = esta empresa es de SOLO CONSULTA (Morla Vieja, Caminero Viejo…)
+  //  · tieneVieja = esta empresa tiene una empresa vieja asociada → puede "traer de ella"
+  const esVieja = !!empresa?.solo_consulta;
+  const tieneVieja = !!empresa?.empresa_vieja_tenant_id;
   const [buscarEnVieja, setBuscarEnVieja] = useState(false);
   const [trayendo, setTrayendo] = useState(null); // product id en traslado
 
@@ -65,10 +67,10 @@ const ProductSearchModal = ({
     if (moviendo) return;
     setMoviendo(product.id);
     try {
-      const { data, error } = await supabase.rpc('mover_producto_a_morla_nuevo', { p_producto_id: product.id });
+      const { data, error } = await supabase.rpc('mover_producto_de_vieja', { p_producto_id: product.id });
       if (error) throw error;
       toast({
-        title: '✅ Movido a Repuestos Morla Nuevo',
+        title: '✅ Movido al sistema nuevo',
         description: `${data?.renombrado ? `Guardado como "${data.codigo}" (la "m" indica que viene de la vieja).` : `Producto ${data?.codigo} agregado al sistema nuevo.`} Existencia trasladada: ${Number(data?.existencia || 0).toFixed(2)}. Eliminado de la vieja.`,
         duration: 5000,
       });
@@ -146,8 +148,8 @@ const ProductSearchModal = ({
         const offset = page * PAGE_LIMIT;
 
         // Modo "Traer de Morla Vieja": busca el catálogo viejo desde la nueva
-        if (buscarEnVieja && esMorlaNueva) {
-          const { data: dataVieja, error: errVieja } = await supabase.rpc('buscar_productos_morla_vieja', {
+        if (buscarEnVieja && tieneVieja) {
+          const { data: dataVieja, error: errVieja } = await supabase.rpc('buscar_productos_vieja', {
             p_limit: PAGE_LIMIT,
             p_offset: offset,
             p_search: orNull(debouncedSearchTerm),
@@ -213,7 +215,7 @@ const ProductSearchModal = ({
         if (reqId === requestIdRef.current) setLoading(false);
       }
     },
-    [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock, onlyWithStock, buscarEnVieja, esMorlaNueva]
+    [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock, onlyWithStock, buscarEnVieja, tieneVieja]
   );
 
   // Doble clic (o Enter) sobre una pieza de la VIEJA: se mueve al sistema
@@ -222,7 +224,7 @@ const ProductSearchModal = ({
     if (trayendo) return;
     setTrayendo(product.id);
     try {
-      const { data, error } = await supabase.rpc('mover_producto_a_morla_nuevo', { p_producto_id: product.id });
+      const { data, error } = await supabase.rpc('mover_producto_de_vieja', { p_producto_id: product.id });
       if (error) throw error;
       // Ficha completa del producto YA en la nueva (misma forma que el buscador)
       const { data: rows, error: e2 } = await supabase.rpc('get_productos_paginados', {
@@ -237,14 +239,14 @@ const ProductSearchModal = ({
       const full = (rows || []).find((r) => r.id === data?.id);
       if (!full) throw new Error(`Se movió como "${data?.codigo}" pero no se pudo cargar la ficha — búscalo normal.`);
       toast({
-        title: '⇄ Traído de Morla Vieja',
+        title: '⇄ Traído de la empresa vieja',
         description: `${data?.renombrado ? `El código existía: quedó como "${data.codigo}".` : `Código ${data?.codigo}.`} Existencia trasladada: ${Number(data?.existencia || 0).toFixed(2)}. Eliminado de la vieja.`,
         duration: 5000,
       });
       onSelectProduct(full);
       onClose();
     } catch (err) {
-      toast({ variant: 'destructive', title: 'No se pudo traer de Morla Vieja', description: err.message, duration: 6000 });
+      toast({ variant: 'destructive', title: 'No se pudo traer de la empresa vieja', description: err.message, duration: 6000 });
     } finally {
       setTrayendo(null);
     }
@@ -517,7 +519,7 @@ const ProductSearchModal = ({
                     <Label htmlFor="include-zero-stock" className="text-sm font-medium text-gray-700">Incluir Existencias en cero</Label>
                   </div>
                 )}
-                {esMorlaNueva && (
+                {tieneVieja && (
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="buscar-en-vieja"
@@ -525,7 +527,7 @@ const ProductSearchModal = ({
                       onCheckedChange={(v) => setBuscarEnVieja(!!v)}
                     />
                     <Label htmlFor="buscar-en-vieja" className="text-sm font-bold text-amber-700 flex items-center gap-1">
-                      <ArrowRightLeft className="w-3.5 h-3.5" /> Buscar en Morla Vieja
+                      <ArrowRightLeft className="w-3.5 h-3.5" /> Buscar en la empresa vieja
                     </Label>
                   </div>
                 )}
@@ -535,7 +537,7 @@ const ProductSearchModal = ({
               <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
                 <ArrowRightLeft className="h-4 w-4 text-amber-600 flex-shrink-0" />
                 <p className="text-xs text-amber-800">
-                  <b>Buscando en REPUESTOS MORLA VIEJA.</b> Doble clic (o Enter) sobre la pieza:
+                  <b>Buscando en la empresa vieja (solo consulta).</b> Doble clic (o Enter) sobre la pieza:
                   se <b>trae al sistema nuevo</b> con su existencia, se borra de la vieja y queda lista en la factura — sin cambiar de empresa.
                 </p>
               </div>
@@ -670,7 +672,7 @@ const ProductSearchModal = ({
                             </TableRow>
                           </ContextMenuTrigger>
                           <ContextMenuContent className="w-64" style={{ zIndex: 10000 }}>
-                            {esMorlaVieja && (
+                            {esVieja && (
                               <ContextMenuItem
                                 className="font-bold text-emerald-700 cursor-pointer flex items-center gap-2 py-2"
                                 onSelect={(e) => {
@@ -680,7 +682,7 @@ const ProductSearchModal = ({
                                 disabled={!!moviendo}
                               >
                                 {moviendo === product.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
-                                Mover a Repuestos Morla Nuevo
+                                Mover al sistema nuevo
                               </ContextMenuItem>
                             )}
                             <ContextMenuItem

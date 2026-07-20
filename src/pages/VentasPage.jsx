@@ -298,7 +298,7 @@ const VentasPage = () => {
       toast({
         variant: 'destructive',
         title: 'Solo consulta',
-        description: 'REPUESTOS MORLA VIEJA es solo para consultar y mover productos al sistema nuevo. No se puede vender desde esta empresa.',
+        description: `${empresa?.nombre || 'Esta empresa'} es solo para consultar y mover productos al sistema nuevo. No se puede vender desde esta empresa.`,
         duration: 6000,
       });
       return;
