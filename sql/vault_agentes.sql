@@ -271,7 +271,12 @@ BEGIN
     p_autor,
     v_links,
     v_tags,
-    encode(digest(coalesce(p_contenido, ''), 'sha256'), 'hex'),
+    -- sha256() nativo de Postgres (11+), NO digest() de pgcrypto: esa
+    -- extensión vive en el esquema `extensions` en Supabase y queda
+    -- fuera del search_path de esta función -> "function digest(text,
+    -- unknown) does not exist". Coincide con el hash que calcula el
+    -- demonio en JS, así que el sync no ve cambios fantasma.
+    encode(sha256(convert_to(coalesce(p_contenido, ''), 'utf8')), 'hex'),
     false
   )
   ON CONFLICT (tenant_id, ruta) DO UPDATE
