@@ -266,7 +266,18 @@ BEGIN
   VALUES (
     v_morla,
     v_ruta,
-    coalesce(p_titulo, regexp_replace(split_part(v_ruta, '/', -1), '\.md$', '')),
+    -- Título: el que pasen; si no, el primer "# encabezado" de la nota;
+    -- si tampoco, el nombre del archivo. Mismo criterio que parsearNota()
+    -- en JS, para que las notas de Elvido y las de los agentes se listen
+    -- igual y no se vea una mezcla de "Resumen del 19/07" con
+    -- "resumen-2026-07-19". La bandera 'n' hace que ^ y $ funcionen por
+    -- línea, no sobre todo el texto.
+    coalesce(
+      nullif(btrim(p_titulo), ''),
+      nullif(btrim((regexp_match(coalesce(p_contenido, ''),
+                                 '^[[:space:]]*#[[:space:]]+(.+)$', 'n'))[1]), ''),
+      regexp_replace(split_part(v_ruta, '/', -1), '\.md$', '')
+    ),
     coalesce(p_contenido, ''),
     p_autor,
     v_links,
