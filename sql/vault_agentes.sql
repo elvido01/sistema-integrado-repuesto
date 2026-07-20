@@ -18,12 +18,10 @@
 -- Idempotente / re-ejecutable.
 -- =====================================================================
 
--- Depende del censor de credenciales que ya usamos en el espejo WhatsApp.
-DO $$ BEGIN
-  IF to_regprocedure('public.ocultar_secretos(text)') IS NULL THEN
-    RAISE EXCEPTION 'Falta public.ocultar_secretos: correr primero sql/whatsapp_espejo_seguridad.sql';
-  END IF;
-END $$;
+-- Sin dependencias: el detector de credenciales de este archivo
+-- (vault_parece_credencial) es propio, calibrado para notas técnicas.
+-- Ver el comentario en la sección 2 sobre por qué NO reusa
+-- ocultar_secretos() del espejo de WhatsApp.
 
 -- ---------------------------------------------------------------------
 -- 1. Tabla
@@ -71,6 +69,39 @@ COMMENT ON TABLE public.vault_notas IS
 -- ---------------------------------------------------------------------
 -- 2. Guardias de escritura (dueño de carpeta + secretos)
 -- ---------------------------------------------------------------------
+
+-- Detector de credenciales calibrado PARA UN VAULT TÉCNICO.
+--
+-- No reusamos ocultar_secretos() aquí: aquel bloquea la sola palabra
+-- "service_role", que en un chat de WhatsApp es sospechosa pero en una
+-- nota de arquitectura es normal ("cada edge function con
+-- SERVICE_ROLE_KEY debe validar tenant"). Bloquear menciones rechazaría
+-- justo las notas más útiles. Buscamos VALORES, no palabras.
+-- Espejo de pareceCredencial() en scripts/vault-sync/vaultSyncCore.mjs
+CREATE OR REPLACE FUNCTION public.vault_parece_credencial(p_texto text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN p_texto IS NULL OR btrim(p_texto) = '' THEN false
+    ELSE
+      -- JWT
+      p_texto ~ 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+'
+      -- OpenAI
+      OR p_texto ~ 'sk-[A-Za-z0-9_-]{20,}'
+      -- Llave privada PEM
+      OR p_texto ~ '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+      -- Cadena de conexión con contraseña embebida
+      OR p_texto ~* '(postgres|postgresql|mysql|mongodb(\+srv)?|redis|amqp)s?://[^[:space:]:@/]+:[^[:space:]@/]{4,}@'
+      OR p_texto ~* 'https?://[^[:space:]:@/]+:[^[:space:]@/]{4,}@'
+      -- Asignación con valor opaco largo (28+ evita placeholders)
+      OR p_texto ~* '(password|passwd|contrase[nñ]a|secret|token|api[_-]?key|secret[_-]?key|service[_-]?role[_-]?key|anon[_-]?key)[[:space:]]*[:=][[:space:]]*["'']?[A-Za-z0-9_/+-]{28,}'
+  END
+$$;
+
+COMMENT ON FUNCTION public.vault_parece_credencial(text) IS
+  'Detecta credenciales REALES (no menciones) para el vault compartido. Ver sql/vault_agentes.sql';
 CREATE OR REPLACE FUNCTION public._vault_validar()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -97,14 +128,17 @@ BEGIN
         'El agente % solo puede escribir en agentes/%/ (intentó "%"). Para comentar una nota ajena, crea la tuya con un [[wikilink]].',
         NEW.autor, NEW.autor, NEW.ruta;
     END IF;
-  ELSIF NEW.ruta LIKE 'agentes/%' THEN
-    RAISE EXCEPTION 'La carpeta agentes/ es de los agentes; no escribas ahí como elvido (ruta "%")', NEW.ruta;
+  ELSIF NEW.ruta ~ '^agentes/(hermes|claude)/' THEN
+    -- Elvido no escribe DENTRO de la carpeta de un agente. El índice
+    -- agentes/README.md sí es suyo: ahí están las reglas del acuerdo.
+    RAISE EXCEPTION 'agentes/%/ es del agente; no escribas ahí como elvido (ruta "%")',
+      split_part(NEW.ruta, '/', 2), NEW.ruta;
   END IF;
 
   -- Guardia de secretos: el vault es compartido, una credencial aquí se
   -- replica a otra PC. Rechazamos en vez de censurar para que el autor
   -- lo arregle y sepa que pasó.
-  IF public.ocultar_secretos(NEW.contenido) IS DISTINCT FROM NEW.contenido THEN
+  IF public.vault_parece_credencial(NEW.contenido) THEN
     RAISE EXCEPTION
       'La nota "%" contiene algo que parece una credencial. Sácala antes de sincronizar (el vault es compartido).',
       NEW.ruta;

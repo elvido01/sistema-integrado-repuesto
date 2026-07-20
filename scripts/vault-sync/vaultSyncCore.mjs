@@ -92,3 +92,32 @@ export function decidirAccion({ hashLocal, hashRemoto, hashBase }) {
 export function nombreConflicto(ruta, fechaISO) {
   return String(ruta).replace(/\.md$/, `.conflicto-${fechaISO}.md`);
 }
+
+// ---------------------------------------------------------------------
+// Guardia de credenciales, calibrado PARA UN VAULT TÉCNICO.
+//
+// El detector del espejo de WhatsApp (ocultar_secretos) bloquea la sola
+// palabra "service_role", lo cual allá tiene sentido: en un chat de
+// clientes eso es sospechoso. Aquí no — las notas de arquitectura hablan
+// de credenciales todo el tiempo ("cada edge function con SERVICE_ROLE_KEY
+// debe validar tenant"). Si bloqueamos menciones, rechazamos justo las
+// notas más útiles.
+//
+// Así que buscamos VALORES, no palabras.
+// ---------------------------------------------------------------------
+const PATRONES_CREDENCIAL = [
+  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/,   // JWT
+  /sk-[A-Za-z0-9_-]{20,}/,                                        // OpenAI
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,                           // PEM
+  /\b(?:postgres|postgresql|mysql|mongodb(?:\+srv)?|redis|amqp)s?:\/\/[^\s:@/]+:[^\s@/]{4,}@/i, // conexión con clave
+  /https?:\/\/[^\s:@/]+:[^\s@/]{4,}@/i,                           // http básico con clave
+  // Asignación con un valor opaco largo: SECRETO=<28+ chars sin espacios>.
+  // El umbral alto evita pegarle a placeholders tipo "TU_CLAVE_AQUI".
+  /(?:password|passwd|contrase[nñ]a|secret|token|api[_-]?key|secret[_-]?key|service[_-]?role[_-]?key|anon[_-]?key)\s*[:=]\s*["']?[A-Za-z0-9_\-/+]{28,}/i,
+];
+
+export function pareceCredencial(texto) {
+  const t = String(texto ?? '');
+  if (!t.trim()) return false;
+  return PATRONES_CREDENCIAL.some((re) => re.test(t));
+}

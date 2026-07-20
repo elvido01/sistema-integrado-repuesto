@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   hashContenido, parsearNota, duenoDeRuta, decidirAccion, nombreConflicto,
+  pareceCredencial,
 } from './vaultSyncCore.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -127,6 +128,12 @@ async function sincronizar() {
     }
 
     if (accion === 'subir') {
+      // Cortamos aquí: mejor no mandar la credencial a la red aunque el
+      // trigger la fuera a rechazar igual.
+      if (pareceCredencial(local.contenido)) {
+        log('🔒', `${ruta} NO se sube: parece contener una credencial. Sácala y vuelve a guardar.`);
+        continue;
+      }
       const autor = duenoDeRuta(ruta);
       const meta = parsearNota(local.contenido, ruta);
       log('↑', `${ruta}  (${motivo})`);
