@@ -471,11 +471,13 @@ export default function DashboardScreen() {
   const cargarSan = useCallback(async () => {
     if (!tenantId) return;
     try {
-      setSan(await fetchSanDashboard(tenantId));
+      // Un admin de Caminero ve los SAN de la financiera (MotoPréstamos),
+      // que vive en otro tenant. Los vendedores no.
+      setSan(await fetchSanDashboard(tenantId, { comoAdminFinanciera: !!isManagerRole }));
     } catch {
       /* si falla, la tarjeta simplemente no se muestra */
     }
-  }, [tenantId]);
+  }, [tenantId, isManagerRole]);
 
   useEffect(() => { cargarSan(); }, [cargarSan]);
   useEffect(() => {

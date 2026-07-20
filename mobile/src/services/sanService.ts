@@ -14,10 +14,21 @@ export const SAN_VACIO: SanDashboard = {
   totales: { activos: 0, comprometido: 0, ahorrado: 0, porcentaje: 0, faltaAlDia: 0 },
 };
 
+type SanOpts = {
+  // Caminero y MotoPréstamos son de los mismos dueños; MotoPréstamos no
+  // tiene app. Un ADMIN de Caminero puede ver los SAN de la financiera
+  // aunque vivan en otro tenant, vía RPC SECURITY DEFINER (el RLS no lo
+  // deja leer esas filas directo). Igual que la tarjeta Recibos Financiera.
+  comoAdminFinanciera?: boolean;
+};
+
 // Trae los SAN activos + SOLO los días no pagados hasta hoy (lo que hace
 // falta para estar al día). No baja el calendario completo: un SAN de 365
 // días traería 365 filas al teléfono para nada.
-export async function fetchSanDashboard(tenantId: string): Promise<SanDashboard> {
+export async function fetchSanDashboard(
+  tenantId: string,
+  opts: SanOpts = {},
+): Promise<SanDashboard> {
   if (!tenantId) return SAN_VACIO;
   const hoy = hoyRD();
 
@@ -30,6 +41,13 @@ export async function fetchSanDashboard(tenantId: string): Promise<SanDashboard>
   if (error) throw error;
 
   const ids = (sanes || []).map((s: any) => s.id);
+
+  // La empresa activa no tiene SAN propios. Si el usuario es admin,
+  // buscamos los de la financiera (MotoPréstamos) por RPC.
+  if (!ids.length && opts.comoAdminFinanciera) {
+    return fetchSanFinancieraExterna(hoy);
+  }
+
   let pendientes: any[] = [];
   if (ids.length) {
     const { data, error: errPagos } = await supabase
@@ -43,6 +61,15 @@ export async function fetchSanDashboard(tenantId: string): Promise<SanDashboard>
   }
 
   const resumenes = construirResumenSan(sanes as any, pendientes as any, hoy);
+  return { sanes: resumenes, totales: totalesSan(resumenes) };
+}
+
+// SAN de la financiera para un admin de Caminero (cross-tenant vía RPC).
+async function fetchSanFinancieraExterna(hoy: string): Promise<SanDashboard> {
+  const { data, error } = await supabase.rpc('get_san_financiera_externa');
+  if (error) throw error;
+  const payload = (data || {}) as { sanes?: any[]; pendientes?: any[] };
+  const resumenes = construirResumenSan(payload.sanes || [], payload.pendientes || [], hoy);
   return { sanes: resumenes, totales: totalesSan(resumenes) };
 }
 
