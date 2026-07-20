@@ -594,8 +594,65 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+      <View className="flex-row flex-wrap justify-between">
+        <MetricCard
+          title="Ventas del dia"
+          value={shortMoney(data.ventasDia)}
+          subtitle="ingresos de hoy"
+          tone="orange"
+          icon="arrow-up-right"
+          onPress={() => router.push('/(tabs)/pos')}
+        />
+        <MetricCard
+          title="Caja actual"
+          value={money(data.cajaActual)}
+          subtitle={hasCompanyFinanceBreakdown ? 'caja operativa Caminero' : 'contado + recibos - gastos'}
+          tone="blue"
+          icon="credit-card"
+        />
+        {showFinancieraExterna ? (
+          <MetricCard
+            title="Recibos financiera"
+            value={money(data.financieraExternaRecibosDia)}
+            subtitle={data.financieraExternaNombre || 'Motoprestamos Los Naranjos'}
+            tone="green"
+            icon="briefcase"
+          />
+        ) : null}
+        <MetricCard
+          title="Excedente"
+          value={money(data.excedente)}
+          subtitle={cajaVsCompromisos >= 0 ? 'caja cubre compromisos' : `faltan ${money(Math.abs(cajaVsCompromisos))}`}
+          tone={cajaVsCompromisos >= 0 ? 'green' : 'red'}
+          icon="dollar-sign"
+        />
+        <MetricCard
+          title="Gastos del dia"
+          value={money(gastosDiaVisible)}
+          subtitle={hasCompanyFinanceBreakdown ? `${finanzasEmpresas.length} empresas sumadas` : `${gastoCountVisible} gastos registrados`}
+          tone={gastosDiaVisible > 0 ? 'red' : 'slate'}
+          icon="file-text"
+          onDoublePress={() => setDetailModal('gastos')}
+        />
+        <MetricCard
+          title="Compromisos a pagar"
+          value={money(compromisosPagarVisible)}
+          subtitle={hasCompanyFinanceBreakdown ? `${finanzasEmpresas.length} empresas sumadas` : `${compromisoCountVisible} pendientes en total`}
+          tone={compromisosPagarVisible > 0 ? 'amber' : 'green'}
+          icon="clock"
+          onDoublePress={() => setDetailModal('compromisos')}
+        />
+        <MetricCard
+          title="Compromisos suplidores"
+          value={money(data.compromisosSuplidores)}
+          subtitle={`${data.suplidorSemanaCount} compras a credito vencen`}
+          tone={data.compromisosSuplidores > 0 ? 'amber' : 'green'}
+          icon="truck"
+        />
+      </View>
+
       {san.sanes.length > 0 && (
-        <View className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
+        <View className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mt-4">
           <View className="flex-row items-center justify-between mb-3">
             <View className="flex-row items-center flex-1 pr-3">
               <View className="bg-emerald-50 w-11 h-11 rounded-xl items-center justify-center mr-3">
@@ -656,63 +713,6 @@ export default function DashboardScreen() {
           ))}
         </View>
       )}
-
-      <View className="flex-row flex-wrap justify-between">
-        <MetricCard
-          title="Ventas del dia"
-          value={shortMoney(data.ventasDia)}
-          subtitle="ingresos de hoy"
-          tone="orange"
-          icon="arrow-up-right"
-          onPress={() => router.push('/(tabs)/pos')}
-        />
-        <MetricCard
-          title="Caja actual"
-          value={money(data.cajaActual)}
-          subtitle={hasCompanyFinanceBreakdown ? 'caja operativa Caminero' : 'contado + recibos - gastos'}
-          tone="blue"
-          icon="credit-card"
-        />
-        {showFinancieraExterna ? (
-          <MetricCard
-            title="Recibos financiera"
-            value={money(data.financieraExternaRecibosDia)}
-            subtitle={data.financieraExternaNombre || 'Motoprestamos Los Naranjos'}
-            tone="green"
-            icon="briefcase"
-          />
-        ) : null}
-        <MetricCard
-          title="Excedente"
-          value={money(data.excedente)}
-          subtitle={cajaVsCompromisos >= 0 ? 'caja cubre compromisos' : `faltan ${money(Math.abs(cajaVsCompromisos))}`}
-          tone={cajaVsCompromisos >= 0 ? 'green' : 'red'}
-          icon="dollar-sign"
-        />
-        <MetricCard
-          title="Gastos del dia"
-          value={money(gastosDiaVisible)}
-          subtitle={hasCompanyFinanceBreakdown ? `${finanzasEmpresas.length} empresas sumadas` : `${gastoCountVisible} gastos registrados`}
-          tone={gastosDiaVisible > 0 ? 'red' : 'slate'}
-          icon="file-text"
-          onDoublePress={() => setDetailModal('gastos')}
-        />
-        <MetricCard
-          title="Compromisos a pagar"
-          value={money(compromisosPagarVisible)}
-          subtitle={hasCompanyFinanceBreakdown ? `${finanzasEmpresas.length} empresas sumadas` : `${compromisoCountVisible} pendientes en total`}
-          tone={compromisosPagarVisible > 0 ? 'amber' : 'green'}
-          icon="clock"
-          onDoublePress={() => setDetailModal('compromisos')}
-        />
-        <MetricCard
-          title="Compromisos suplidores"
-          value={money(data.compromisosSuplidores)}
-          subtitle={`${data.suplidorSemanaCount} compras a credito vencen`}
-          tone={data.compromisosSuplidores > 0 ? 'amber' : 'green'}
-          icon="truck"
-        />
-      </View>
 
       <FinanceDetailModal
         visible={detailModal !== null}
