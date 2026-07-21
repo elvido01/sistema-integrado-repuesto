@@ -9,10 +9,16 @@ import { Landmark } from 'lucide-react';
 // suplidor). Viene con la cuenta PREDETERMINADA de la empresa ya
 // seleccionada, pero se puede cambiar. `value`/`onChange` los controla el
 // padre. Si `moneda` se pasa, solo muestra cuentas de esa moneda.
-export default function CuentaBancariaSelect({ value, onChange, moneda, label = 'Cuenta bancaria', autoDefault = true }) {
+export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda, label = 'Cuenta bancaria', autoDefault = true }) {
   const { tenantId, empresa } = useAuth();
   const [cuentas, setCuentas] = useState([]);
   const [cargando, setCargando] = useState(true);
+
+  // Notifica al padre el id y (opcional) la cuenta completa (banco, numero…).
+  const emitir = (id, lista = cuentas) => {
+    onChange?.(id);
+    onSelect?.(lista.find((c) => c.id === id) || null);
+  };
 
   useEffect(() => {
     let vivo = true;
@@ -30,7 +36,7 @@ export default function CuentaBancariaSelect({ value, onChange, moneda, label = 
       // Preseleccionar la predeterminada (o la primera) si el padre no trae valor.
       if (autoDefault && !value && lista.length) {
         const def = lista.find((c) => c.id === empresa?.cuenta_bancaria_default_id) || lista[0];
-        onChange?.(def.id);
+        emitir(def.id, lista);
       }
     })();
     return () => { vivo = false; };
@@ -48,7 +54,7 @@ export default function CuentaBancariaSelect({ value, onChange, moneda, label = 
   return (
     <div>
       {label && <Label className="flex items-center gap-1 text-xs"><Landmark className="w-3.5 h-3.5" />{label}</Label>}
-      <Select value={value || ''} onValueChange={onChange}>
+      <Select value={value || ''} onValueChange={(id) => emitir(id)}>
         <SelectTrigger><SelectValue placeholder="Seleccionar cuenta…" /></SelectTrigger>
         <SelectContent>
           {cuentas.map((c) => (

@@ -16,6 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
 import { printPagoSuplidorPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 
 const initialState = {
   numero: '',
@@ -47,6 +48,7 @@ const PagoSuplidoresPage = () => {
   const [suplidores, setSuplidores] = useState([]);
   const [compras, setCompras] = useState([]);
   const [formasPago, setFormasPago] = useState([{ id: 1, forma: 'Efectivo', monto: 0, referencia: '' }]);
+  const [cuentaId, setCuentaId] = useState(null); // cuenta de donde sale la transferencia/cheque
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [suplidorSearch, setSuplidorSearch] = useState('');
@@ -262,6 +264,19 @@ const PagoSuplidoresPage = () => {
       });
 
       if (error) throw error;
+
+      // Salida de la cuenta bancaria por la porción no-efectivo (transferencia/cheque).
+      const montoBanco = formasPago
+        .filter(f => f.forma === 'Transferencia' || f.forma === 'Cheque')
+        .reduce((s, f) => s + (Number(f.monto) || 0), 0);
+      if (cuentaId && montoBanco > 0) {
+        const ref = formasPago.find(f => f.forma === 'Transferencia' || f.forma === 'Cheque')?.referencia || String(data || '');
+        supabase.rpc('registrar_movimiento_bancario', {
+          p_cuenta_id: cuentaId, p_tipo: 'SALIDA', p_monto: montoBanco,
+          p_concepto: `Pago suplidor ${pago.suplidorNombre || ''} (${data || ''})`.trim(),
+          p_referencia: ref, p_origen_tipo: 'pago_suplidor', p_origen_id: null, p_fecha: null,
+        }).then(() => {}, () => {});
+      }
 
       // La tasa usada queda como la tasa del día de la empresa
       if (totalAbonosUsd > 0 && tasa > 0) supabase.rpc('set_tasa_dia', { p_tasa: tasa }).then(() => {}, () => {});
@@ -485,6 +500,11 @@ const PagoSuplidoresPage = () => {
               <Button variant="outline" size="sm" onClick={addFormaPago} className="mt-2 w-full">
                 <PlusCircle className="h-4 w-4 mr-2" /> Añadir Forma de Pago
               </Button>
+              {formasPago.some(f => f.forma === 'Transferencia' || f.forma === 'Cheque') && (
+                <div className="mt-3">
+                  <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" label="Sale de la cuenta" />
+                </div>
+              )}
             </div>
           </div>
 

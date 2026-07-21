@@ -3,6 +3,7 @@ import { Helmet } from 'react-helmet';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { usePanels } from '@/contexts/PanelContext';
 import { useLayout } from '@/contexts/LayoutContext';
 import { Button } from '@/components/ui/button';
@@ -119,6 +120,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [forma, setForma] = useState('Efectivo');
   const [cuenta, setCuenta] = useState('');
   const [banco, setBanco] = useState('');
+  const [cuentaId, setCuentaId] = useState(null); // cuenta bancaria que recibe (transferencia/cheque/tarjeta)
   const [cobrador, setCobrador] = useState(empresa?.nombre || '');
   const [comentarios, setComentarios] = useState('');
   const [imprimir, setImprimir] = useState(true);
@@ -320,7 +322,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
 
   const nuevo = () => {
     setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput(''); setPromesa(null);
-    setAbonos({}); setEditKey(null); setMontoText(''); setMontoObjetivo(null); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco('');
+    setAbonos({}); setEditKey(null); setMontoText(''); setMontoObjetivo(null); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco(''); setCuentaId(null);
     setPrestamoFiltro('todos'); setReimpNumero(null); setReimpVista(null); cargarProximoNumero();
   };
 
@@ -689,6 +691,17 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         p_cargos: cargosAlloc,
       });
       if (error) throw error;
+
+      // Si el pago no fue en efectivo, entra a la cuenta bancaria seleccionada.
+      if (forma !== 'Efectivo' && cuentaId) {
+        supabase.rpc('registrar_movimiento_bancario', {
+          p_cuenta_id: cuentaId, p_tipo: 'ENTRADA', p_monto: montoNum,
+          p_concepto: `Recibo ${data?.numero || ''} — ${cliente?.nombre || ''}`.trim(),
+          p_referencia: cuenta || data?.numero || null,
+          p_origen_tipo: 'recibo', p_origen_id: data?.id || null, p_fecha: null,
+        }).then(() => {}, () => {});
+      }
+
       const { error: gestionPagoError } = await supabase
         .from('cobro_gestiones')
         .update({
@@ -898,10 +911,13 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 />
               </div>
               {forma !== 'Efectivo' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <Input value={cuenta} onChange={(e) => setCuenta(e.target.value)} placeholder="Cta. Número" className="h-8 text-xs" />
-                  <Input value={banco} onChange={(e) => setBanco(e.target.value)} placeholder="Banco" className="h-8 text-xs" />
-                </div>
+                <CuentaBancariaSelect
+                  value={cuentaId}
+                  onChange={setCuentaId}
+                  onSelect={(c) => { setCuenta(c?.numero_cuenta || ''); setBanco(c?.banco || ''); }}
+                  moneda="DOP"
+                  label="Cuenta que recibe"
+                />
               )}
             </div>
           </div>
