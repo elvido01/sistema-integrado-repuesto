@@ -11,6 +11,7 @@ import {
   SellerDashboardData,
 } from '@/src/services/dashboardService';
 import { fetchSanDashboard, suscribirSan, SanDashboard, SAN_VACIO } from '@/src/services/sanService';
+import { fetchCuentasBanco, totalCuentas, CuentaBanco } from '@/src/services/cuentasService';
 
 const money = (value: number) =>
   `RD$${Number(value || 0).toLocaleString('es-DO', {
@@ -485,6 +486,25 @@ export default function DashboardScreen() {
     return suscribirSan(tenantId, cargarSan);   // se actualiza al instante con cada pago
   }, [tenantId, cargarSan]);
 
+  // ----- Cuentas bancarias de la empresa (solo gerenciales) -----
+  const [cuentas, setCuentas] = useState<CuentaBanco[]>([]);
+  const cargarCuentas = useCallback(async () => {
+    if (!tenantId || !isManagerRole) { setCuentas([]); return; }
+    try {
+      setCuentas(await fetchCuentasBanco(tenantId, { comoGerencial: true }));
+    } catch {
+      /* si falla, la tarjeta simplemente no se muestra */
+    }
+  }, [tenantId, isManagerRole]);
+
+  useEffect(() => { cargarCuentas(); }, [cargarCuentas]);
+
+  const refrescarTodo = useCallback(() => {
+    loadDashboard(true);
+    cargarSan();
+    cargarCuentas();
+  }, [loadDashboard, cargarSan, cargarCuentas]);
+
   const faltanteMeta = Math.max(0, data.meta - data.ventasMes);
   const proyeccionOk = data.proyeccionCierre >= data.meta;
   const finanzasEmpresas = data.finanzasEmpresas || [];
@@ -537,7 +557,7 @@ export default function DashboardScreen() {
     <ScrollView
       className="flex-1 bg-gray-50"
       contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadDashboard(true)} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refrescarTodo} />}
     >
       <View className="mb-4">
         <Text className="text-gray-500 text-xs font-bold uppercase tracking-wider">Dashboard</Text>
@@ -650,6 +670,33 @@ export default function DashboardScreen() {
           icon="truck"
         />
       </View>
+
+      {isManagerRole && cuentas.length > 0 && (
+        <View className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mt-4">
+          <View className="flex-row items-center mb-1">
+            <View className="bg-blue-50 w-11 h-11 rounded-xl items-center justify-center mr-3">
+              <Feather name="credit-card" color="#1d4ed8" size={22} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-gray-500 text-[10px] font-black uppercase tracking-wider">
+                Cuentas Bancarias
+              </Text>
+              <Text className="text-gray-950 text-2xl font-black" adjustsFontSizeToFit numberOfLines={1}>
+                {money(totalCuentas(cuentas))}
+              </Text>
+            </View>
+          </View>
+
+          {cuentas.map((c) => (
+            <View key={c.id} className="flex-row justify-between items-center border-t border-gray-100 pt-3 mt-3">
+              <Text className="text-gray-800 font-semibold flex-1 pr-3" numberOfLines={1}>{c.nombre}</Text>
+              <Text className={`font-black ${c.saldo < 0 ? 'text-red-600' : 'text-gray-950'}`}>
+                {money(c.saldo)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {san.sanes.length > 0 && (
         <View className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mt-4">
