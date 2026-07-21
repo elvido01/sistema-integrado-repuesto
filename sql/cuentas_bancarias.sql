@@ -68,6 +68,12 @@ CREATE INDEX IF NOT EXISTS idx_mov_bancario_cuenta
 COMMENT ON TABLE public.movimientos_bancarios IS
   'Libro mayor de cuentas bancarias. Saldo = saldo_inicial + ENTRADAS − SALIDAS.';
 
+-- Ampliar los orígenes (agrega 'compromiso' para pagos de gastos/servicios).
+-- Idempotente: reemplaza el CHECK.
+ALTER TABLE public.movimientos_bancarios DROP CONSTRAINT IF EXISTS movimientos_bancarios_origen_tipo_check;
+ALTER TABLE public.movimientos_bancarios ADD CONSTRAINT movimientos_bancarios_origen_tipo_check
+  CHECK (origen_tipo IN ('venta','recibo','cierre_caja','pago_suplidor','compromiso','ajuste','transferencia_interna'));
+
 -- Cuenta por DEFECTO de la empresa: viene preseleccionada en ventas,
 -- recibos, cierre y pagos por transferencia (pero se puede cambiar al
 -- momento). Se configura en Configuración del Sistema.

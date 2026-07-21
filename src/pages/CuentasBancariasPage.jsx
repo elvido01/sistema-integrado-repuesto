@@ -23,7 +23,7 @@ const fmtFecha = (f) => (f ? String(f).split('T')[0].split('-').reverse().join('
 
 const ORIGEN_LABEL = {
   venta: 'Venta', recibo: 'Recibo', cierre_caja: 'Cierre de caja',
-  pago_suplidor: 'Pago a suplidor', ajuste: 'Ajuste manual', transferencia_interna: 'Transferencia',
+  pago_suplidor: 'Pago a suplidor', compromiso: 'Compromiso/gasto', ajuste: 'Ajuste manual', transferencia_interna: 'Transferencia',
 };
 
 const CUENTA_VACIA = { banco: '', alias: '', numero_cuenta: '', tipo: 'corriente', moneda: 'DOP', saldo_inicial: '0' };

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Wallet, ArrowDownToLine, FileCheck } from 'lucide-react';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 
 const FORMAS_PAGO = [
   { value: 'Efectivo', label: 'Efectivo de caja', icon: Wallet, requiereRef: false },
@@ -18,12 +19,14 @@ const formatCurrency = (val) =>
 const PayCommitmentModal = ({ isOpen, onClose, compromiso, onConfirm }) => {
   const [formaPago, setFormaPago] = useState('Efectivo');
   const [referencia, setReferencia] = useState('');
+  const [cuentaId, setCuentaId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setFormaPago('Efectivo');
       setReferencia('');
+      setCuentaId(null);
       setSubmitting(false);
     }
   }, [isOpen]);
@@ -40,6 +43,7 @@ const PayCommitmentModal = ({ isOpen, onClose, compromiso, onConfirm }) => {
       await onConfirm({
         forma_pago: formaPago,
         referencia_pago: referencia.trim() || null,
+        cuenta_bancaria_id: formaSelected?.requiereRef ? cuentaId : null,
       });
     } finally {
       setSubmitting(false);
@@ -89,18 +93,21 @@ const PayCommitmentModal = ({ isOpen, onClose, compromiso, onConfirm }) => {
           </div>
 
           {formaSelected?.requiereRef && (
-            <div className="space-y-2">
-              <Label htmlFor="referencia-pago" className="text-xs font-bold uppercase tracking-wide text-slate-600">
-                {formaPago === 'Cheque' ? 'No. de cheque' : 'No. de transferencia / referencia'}
-              </Label>
-              <Input
-                id="referencia-pago"
-                autoFocus
-                value={referencia}
-                onChange={(e) => setReferencia(e.target.value)}
-                placeholder={formaPago === 'Cheque' ? 'Ej: 0123456' : 'Ej: TRX20260427-0001'}
-              />
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="referencia-pago" className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                  {formaPago === 'Cheque' ? 'No. de cheque' : 'No. de transferencia / referencia'}
+                </Label>
+                <Input
+                  id="referencia-pago"
+                  autoFocus
+                  value={referencia}
+                  onChange={(e) => setReferencia(e.target.value)}
+                  placeholder={formaPago === 'Cheque' ? 'Ej: 0123456' : 'Ej: TRX20260427-0001'}
+                />
+              </div>
+              <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" label="Sale de la cuenta" />
+            </>
           )}
         </div>
 

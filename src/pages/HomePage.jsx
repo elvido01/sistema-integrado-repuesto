@@ -329,7 +329,7 @@ const HomePage = () => {
   };
 
   // Confirmacion desde el modal: aplica el pago con la forma seleccionada
-  const handleConfirmPayCommitment = async ({ forma_pago, referencia_pago }) => {
+  const handleConfirmPayCommitment = async ({ forma_pago, referencia_pago, cuenta_bancaria_id }) => {
     const c = payCommitmentTarget;
     if (!c) return;
 
@@ -345,6 +345,15 @@ const HomePage = () => {
         .eq('id', c.id);
 
       if (error) throw error;
+
+      // Si se pagó por transferencia/cheque, restar de la cuenta bancaria.
+      if (cuenta_bancaria_id) {
+        supabase.rpc('registrar_movimiento_bancario', {
+          p_cuenta_id: cuenta_bancaria_id, p_tipo: 'SALIDA', p_monto: c.monto,
+          p_concepto: `Compromiso: ${c.nombre}`, p_referencia: referencia_pago,
+          p_origen_tipo: 'compromiso', p_origen_id: c.id, p_fecha: null,
+        }).then(() => {}, () => {});
+      }
 
       // Auto-renovación: crear el siguiente compromiso si es recurrente
       if (c.recurrente) {
@@ -428,7 +437,7 @@ const HomePage = () => {
   // Confirmacion del modal: registra el pago a suplidor con la forma elegida.
   // Usa la misma RPC que el panel de Pago a Suplidores (procesar_pago_suplidor)
   // pero con un solo abono = monto pendiente.
-  const handleConfirmPaySupplier = async ({ forma_pago, referencia_pago, monto_abonado }) => {
+  const handleConfirmPaySupplier = async ({ forma_pago, referencia_pago, monto_abonado, cuenta_bancaria_id }) => {
     const c = paySupplierTarget;
     if (!c) return;
 
@@ -455,6 +464,16 @@ const HomePage = () => {
         p_detalles_data: detallesData,
       });
       if (error) throw error;
+
+      // Si fue transferencia/cheque, restar de la cuenta bancaria.
+      if (cuenta_bancaria_id) {
+        supabase.rpc('registrar_movimiento_bancario', {
+          p_cuenta_id: cuenta_bancaria_id, p_tipo: 'SALIDA', p_monto: monto_abonado,
+          p_concepto: `Pago suplidor ${c.suplidor_nombre || c.proveedores?.nombre || ''} — ${c.numero || c.referencia || ''}`.trim(),
+          p_referencia: referencia_pago || String(data || ''),
+          p_origen_tipo: 'pago_suplidor', p_origen_id: null, p_fecha: null,
+        }).then(() => {}, () => {});
+      }
 
       toast({
         title: "Pago a suplidor registrado",
