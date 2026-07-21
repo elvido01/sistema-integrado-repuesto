@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil, ChevronDown } from 'lucide-react';
+import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil, ChevronDown, Landmark } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos, agruparEnBloques, bloquesAbiertos } from '@/lib/sanUtils';
@@ -33,7 +33,8 @@ const SanPage = () => {
   const [celebrar, setCelebrar] = useState(false);
   const [elimOpen, setElimOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ nombre: '', monto: '', dias: '', inicio: '' });
+  const [editForm, setEditForm] = useState({ nombre: '', monto: '', dias: '', inicio: '', cuenta: null });
+  const [cuentasMap, setCuentasMap] = useState({}); // id -> "Banco — Alias"
 
   const money = useCallback((v) => ocultar ? 'RD$ ····'
     : `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`,
@@ -41,9 +42,13 @@ const SanPage = () => {
 
   const cargar = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('san').select('*').order('created_at', { ascending: false });
+    const [{ data, error }, { data: ctas }] = await Promise.all([
+      supabase.from('san').select('*').order('created_at', { ascending: false }),
+      supabase.from('cuentas_bancarias').select('id, banco, alias'),
+    ]);
     if (error) toast({ variant: 'destructive', title: 'No se pudo cargar SAN', description: error.message });
     else setSans(data || []);
+    setCuentasMap(Object.fromEntries((ctas || []).map((c) => [c.id, `${c.banco}${c.alias ? ` — ${c.alias}` : ''}`])));
     setLoading(false);
   }, [toast]);
 
@@ -169,6 +174,7 @@ const SanPage = () => {
     setEditForm({
       nombre: sanSel.nombre, monto: String(sanSel.monto_objetivo),
       dias: String(sanSel.dias), inicio: String(sanSel.fecha_inicio),
+      cuenta: sanSel.cuenta_bancaria_id || null,
     });
     setEditOpen(true);
   };
@@ -185,6 +191,7 @@ const SanPage = () => {
       const { data, error } = await supabase.rpc('san_editar', {
         p_san_id: sanSel.id, p_nombre: editForm.nombre.trim(),
         p_monto_objetivo: monto, p_dias: dias, p_fecha_inicio: editForm.inicio,
+        p_cuenta_bancaria_id: editForm.cuenta || null,
       });
       if (error) throw error;
       toast({
@@ -314,6 +321,12 @@ const SanPage = () => {
                       initial={{ width: 0 }} animate={{ width: `${Math.min(pct, 100)}%` }} transition={{ duration: 0.8 }} />
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">{pct}% · meta {formatFechaDMY(String(s.fecha_fin))}</div>
+                  <div className="text-[11px] mt-1 flex items-center gap-1 truncate">
+                    <Landmark className="w-3 h-3 flex-shrink-0" />
+                    {s.cuenta_bancaria_id && cuentasMap[s.cuenta_bancaria_id]
+                      ? <span className="text-sky-700 truncate">{cuentasMap[s.cuenta_bancaria_id]}</span>
+                      : <span className="text-amber-600">Sin cuenta bancaria</span>}
+                  </div>
                 </motion.button>
               );
             })}
@@ -379,6 +392,13 @@ const SanPage = () => {
         </Button>
         <h1 className="text-xl font-bold flex-1 truncate">{sanSel.nombre}</h1>
         <span className={`px-2 py-0.5 rounded-full text-xs ${estadoSanTone(sanSel.estado)}`}>{sanSel.estado}</span>
+        <span className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 ${sanSel.cuenta_bancaria_id ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-700'}`}
+          title="Cuenta de donde sale el ahorro">
+          <Landmark className="w-3 h-3" />
+          {sanSel.cuenta_bancaria_id && cuentasMap[sanSel.cuenta_bancaria_id]
+            ? cuentasMap[sanSel.cuenta_bancaria_id]
+            : 'Sin cuenta bancaria'}
+        </span>
         {['Activo', 'Cancelado'].includes(sanSel.estado) && (
           <Button size="sm" variant="outline" disabled={busy} onClick={abrirEditar}
             title={sanSel.estado === 'Cancelado' ? 'Editarlo lo reactiva' : 'Corregir nombre, monto o días'}>
@@ -608,6 +628,12 @@ const SanPage = () => {
             <div><label className="text-sm font-medium">Fecha de inicio</label>
               <Input type="date" value={editForm.inicio}
                 onChange={(e) => setEditForm((p) => ({ ...p, inicio: e.target.value }))} /></div>
+            <div>
+              <label className="text-sm font-medium">Cuenta bancaria (de donde sale el ahorro)</label>
+              <CuentaBancariaSelect value={editForm.cuenta}
+                onChange={(v) => setEditForm((p) => ({ ...p, cuenta: v }))}
+                moneda="DOP" contexto="san" autoDefault={false} label={null} />
+            </div>
             <p className="text-xs text-muted-foreground">
               El calendario se regenera con el plan nuevo y lo ya ahorrado
               {Number(sanSel?.monto_ahorrado) > 0 && <> (<b>{money(sanSel.monto_ahorrado)}</b>)</>} se
