@@ -293,11 +293,10 @@ const SanPage = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           {chip(dash.activos, 'SAN activos', 'bg-emerald-50 text-emerald-800')}
           {chip(money(dash.comprometido), 'Comprometido', 'bg-indigo-50 text-indigo-800')}
           {chip(money(dash.ahorrado), 'Ahorrado', 'bg-emerald-50 text-emerald-800')}
-          {chip(dash.proximo ? dash.proximo.nombre : '—', 'Próxima meta', 'bg-amber-50 text-amber-800')}
           {chip(dash.diasRestantes ?? '—', 'Días restantes', 'bg-sky-50 text-sky-800')}
           {chip(dash.completados, 'Completados', 'bg-slate-100 text-slate-700')}
 
