@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil, ChevronDown } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos, agruparEnBloques, bloquesAbiertos } from '@/lib/sanUtils';
 
 const hoyTZ = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
@@ -26,7 +27,7 @@ const SanPage = () => {
   const [tabDetalle, setTabDetalle] = useState('calendario');
 
   const [crearOpen, setCrearOpen] = useState(false);
-  const [crearForm, setCrearForm] = useState({ nombre: '', monto: '', dias: '', inicio: hoyTZ() });
+  const [crearForm, setCrearForm] = useState({ nombre: '', monto: '', dias: '', inicio: hoyTZ(), cuenta: null });
   const [pagoDia, setPagoDia] = useState(null);      // cuadro tocado
   const [pagoForm, setPagoForm] = useState({ monto: '', observaciones: '' });
   const [celebrar, setCelebrar] = useState(false);
@@ -81,11 +82,12 @@ const SanPage = () => {
       const { data, error } = await supabase.rpc('san_crear', {
         p_nombre: crearForm.nombre.trim(), p_monto_objetivo: monto,
         p_dias: dias, p_fecha_inicio: crearForm.inicio || null,
+        p_cuenta_bancaria_id: crearForm.cuenta || null,
       });
       if (error) throw error;
       toast({ title: '🎯 SAN creado', description: `Pago diario: ${money(data.pago_diario)} · meta el ${formatFechaDMY(String(data.fecha_fin))}` });
       setCrearOpen(false);
-      setCrearForm({ nombre: '', monto: '', dias: '', inicio: hoyTZ() });
+      setCrearForm({ nombre: '', monto: '', dias: '', inicio: hoyTZ(), cuenta: null });
       const nuevo = await refrescarSel(data.san_id);
       if (!nuevo) await cargar();
     } catch (e) {
@@ -339,6 +341,12 @@ const SanPage = () => {
               <div><label className="text-sm font-medium">Fecha de inicio</label>
                 <Input type="date" value={crearForm.inicio}
                   onChange={(e) => setCrearForm((p) => ({ ...p, inicio: e.target.value }))} /></div>
+              <div>
+                <label className="text-sm font-medium">Cuenta bancaria (de donde sale el ahorro)</label>
+                <CuentaBancariaSelect value={crearForm.cuenta}
+                  onChange={(v) => setCrearForm((p) => ({ ...p, cuenta: v }))}
+                  moneda="DOP" contexto="san" label={null} />
+              </div>
               {Number(crearForm.monto) > 0 && Number(crearForm.dias) > 0 && (
                 <div className="rounded-lg bg-emerald-50 text-emerald-800 p-3 text-sm">
                   Pago diario: <b>{money(plan.pagoDiario)}</b>
