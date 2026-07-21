@@ -14,6 +14,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -67,6 +68,7 @@ const CierreCajaPage = () => {
   const [saving, setSaving] = useState(false);
   const [loadingResumen, setLoadingResumen] = useState(false);
   const [imprimir, setImprimir] = useState(true);
+  const [cuentaId, setCuentaId] = useState(null); // cuenta bancaria destino del efectivo
   // Papel del impreso del cierre — se recuerda por PC (la caja tiene térmica
   // 80mm; la oficina, impresora de hoja). Default: la config de la empresa.
   const [papelCierre, setPapelCierre] = useState(() => localStorage.getItem('cierre_caja_paper') || '');
@@ -391,8 +393,25 @@ const CierreCajaPage = () => {
         usuario_id: user?.id,
       };
 
-      const { error } = await supabase.from('cierres_caja').insert([cierre]);
+      const { data: cierreRow, error } = await supabase.from('cierres_caja').insert([cierre]).select('id').single();
       if (error) throw error;
+
+      // El efectivo del cierre entra a la cuenta bancaria seleccionada.
+      // No bloquea el cierre si el banco falla (el cierre ya quedó grabado).
+      const efectivo = resumen?.efectivoEnCaja || 0;
+      if (cuentaId && efectivo > 0 && cierreRow?.id) {
+        const { error: eMov } = await supabase.rpc('registrar_movimiento_bancario', {
+          p_cuenta_id: cuentaId,
+          p_tipo: 'ENTRADA',
+          p_monto: efectivo,
+          p_concepto: `Cierre de caja — turno ${turno} (${formatDateForSupabase(fecha)})`,
+          p_referencia: null,
+          p_origen_tipo: 'cierre_caja',
+          p_origen_id: cierreRow.id,
+          p_fecha: formatDateForSupabase(fecha),
+        });
+        if (eMov) toast({ variant: 'destructive', title: 'Cierre grabado, pero no se registró en la cuenta', description: eMov.message });
+      }
 
       if (imprimir) {
         printCierreCaja(cierre, resumen);
@@ -868,6 +887,10 @@ const CierreCajaPage = () => {
                         </TableFooter>
                       </Table>
                     </ScrollArea>
+
+                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" label="Depositar el efectivo en la cuenta" />
+                    </div>
 
                     <div className="mt-3 flex items-center justify-between">
                       <label className="flex items-center gap-2 text-sm cursor-pointer">
