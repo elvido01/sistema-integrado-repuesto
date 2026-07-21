@@ -117,7 +117,6 @@ const navItems = [
       { title: 'Orden de Compra', id: 'orden-compra' },
       { title: 'Compras', id: 'compras' },
       { title: 'Pago a Suplidores', id: 'pago-suplidores', icon: Truck },
-      { title: 'Cuentas Bancarias', id: 'cuentas-bancarias', icon: Landmark },
       { title: 'Pago Comisiones', id: 'pago-comisiones-vendedor', icon: Users },
       { title: 'Nómina', id: 'nomina', icon: Users },
     ],
@@ -148,6 +147,13 @@ const navItems = [
       { title: 'Actualizar Ubicación', id: 'actualizar-ubicacion' },
       { title: 'Imp. Etiquetas', id: 'etiquetas-masivas', icon: Barcode },
       { title: 'Solicitudes Agotados', id: 'solicitudes', icon: ClipboardList },
+    ],
+  },
+  {
+    title: 'Cuentas Bancarias',
+    icon: Landmark,
+    subItems: [
+      { title: 'Cuentas y Saldos', id: 'cuentas-bancarias', icon: Landmark },
     ],
   },
   {
