@@ -59,6 +59,7 @@ const VentasPage = () => {
     printMethod, setPrintMethod,
     recargo, setRecargo,
     tipoPago, setTipoPago,
+    cuentaBancoId, setCuentaBancoId,
     pagos, setPagos,
     notas, setNotas,
     editingFacturaId,
@@ -511,6 +512,8 @@ const VentasPage = () => {
         setPrintMethod={(v) => { setPrintMethod(v); localStorage.setItem('ventas_printMethod', v); }}
         tipoPago={tipoPago}
         setTipoPago={setTipoPago}
+        cuentaBancoId={cuentaBancoId}
+        setCuentaBancoId={setCuentaBancoId}
         pagos={pagos}
         setPagos={setPagos}
         recargo={recargo}

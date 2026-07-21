@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -18,7 +19,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import CotizacionSearchModal from '@/components/ventas/CotizacionSearchModal';
 
-const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymentType, setPaymentType, diasCredito, setDiasCredito, montoRecibido, setMontoRecibido, cambio, cliente }) => {
+const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymentType, setPaymentType, diasCredito, setDiasCredito, montoRecibido, setMontoRecibido, cambio, cliente, tipoPago, setTipoPago, cuentaBancoId, setCuentaBancoId }) => {
   const { toast } = useToast();
   const {
     items,
@@ -212,7 +213,26 @@ const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymen
                     {paymentType === 'credito' && (
                       <div><Label>Días de crédito</Label><Input type="number" value={diasCredito} onChange={(e) => setDiasCredito(e.target.value)} /></div>
                     )}
-                    <div className="flex gap-2 my-2"><div className="flex-1"><Label>Forma de pago</Label><Select><SelectTrigger><SelectValue placeholder="Efectivo" /></SelectTrigger><SelectContent></SelectContent></Select></div><div><Label>Monto</Label><Input type="number" className="w-32" value={montoRecibido} onChange={(e) => setMontoRecibido(e.target.value)} /></div></div>
+                    <div className="flex gap-2 my-2">
+                      <div className="flex-1">
+                        <Label>Forma de pago</Label>
+                        <Select value={tipoPago} onValueChange={setTipoPago}>
+                          <SelectTrigger><SelectValue placeholder="Efectivo" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="EFECTIVO">Efectivo</SelectItem>
+                            <SelectItem value="TRANSFERENCIA">Transferencia</SelectItem>
+                            <SelectItem value="TARJETA">Tarjeta</SelectItem>
+                            <SelectItem value="CHEQUE">Cheque</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div><Label>Monto</Label><Input type="number" className="w-32" value={montoRecibido} onChange={(e) => setMontoRecibido(e.target.value)} /></div>
+                    </div>
+                    {paymentType === 'contado' && tipoPago && tipoPago !== 'EFECTIVO' && (
+                      <div className="my-2">
+                        <CuentaBancariaSelect value={cuentaBancoId} onChange={setCuentaBancoId} moneda="DOP" label="Entra a la cuenta" />
+                      </div>
+                    )}
                     <div className="h-20 border rounded-md bg-gray-50 mb-2"></div>
                     <div className="flex justify-between font-bold"><p>Recibido:</p><p>{parseFloat(montoRecibido || 0).toFixed(2)}</p></div>
                     <div className="flex justify-between font-bold"><p>Cambio:</p><p>{cambio > 0 ? cambio.toFixed(2) : '0.00'}</p></div>

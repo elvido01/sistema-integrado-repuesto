@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Loader2, X, AlertCircle, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 
 const VentasFooter = ({
   cliente,
@@ -39,6 +40,8 @@ const VentasFooter = ({
   grabarBtnRef,
   tipoPago,
   setTipoPago,
+  cuentaBancoId,
+  setCuentaBancoId,
   pagos = [],
   setPagos,
   notas = '',
@@ -231,7 +234,9 @@ const VentasFooter = ({
               </SelectTrigger>
               <SelectContent className="bg-white border border-gray-400">
                 <SelectItem value="EFECTIVO" className="text-[11px] font-bold">EFECTIVO</SelectItem>
+                <SelectItem value="TRANSFERENCIA" className="text-[11px] font-bold">TRANSFERENCIA</SelectItem>
                 <SelectItem value="TARJETA" className="text-[11px] font-bold">TARJETA</SelectItem>
+                <SelectItem value="CHEQUE" className="text-[11px] font-bold">CHEQUE</SelectItem>
               </SelectContent>
             </Select>
             <Input
@@ -278,6 +283,13 @@ const VentasFooter = ({
               }}
             />
           </div>
+
+          {/* Cuenta bancaria destino cuando el contado NO es en efectivo */}
+          {paymentType === 'contado' && tipoPago && tipoPago !== 'EFECTIVO' && (
+            <div className="px-1 pb-1">
+              <CuentaBancariaSelect value={cuentaBancoId} onChange={setCuentaBancoId} moneda="DOP" label="Entra a la cuenta" />
+            </div>
+          )}
 
           {/* Pagos table (only if there are payments) */}
           {pagos.length > 0 && (

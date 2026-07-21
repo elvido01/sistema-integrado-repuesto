@@ -65,7 +65,8 @@ export const useVentas = () => {
   const [printFormat, setPrintFormat] = useState(() => localStorage.getItem('ventas_printFormat') || empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser');
   const [recargo, setRecargo] = useState(0);
-  const [tipoPago, setTipoPago] = useState('EFECTIVO'); // EFECTIVO, TARJETA
+  const [tipoPago, setTipoPago] = useState('EFECTIVO'); // EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE
+  const [cuentaBancoId, setCuentaBancoId] = useState(null); // cuenta destino si el contado no es efectivo
   const [pagos, setPagos] = useState([]); // [{ tipo, ref, monto }]
   const [notas, setNotas] = useState('');
   const [ncfPreview, setNcfPreview] = useState(null); // { ncf: 'B0100000334', tipo_ncf: '01' }
@@ -330,6 +331,7 @@ export const useVentas = () => {
     setEditingItemIndex(null);
     setRecargo(0);
     setTipoPago('EFECTIVO');
+    setCuentaBancoId(null);
     setPagos([]);
     setPrintFormat('pos_4inch');
     setEditingFacturaId(null);
@@ -896,6 +898,17 @@ export const useVentas = () => {
       }));
       await supabase.from('inventario_movimientos').insert(inventarioMovimientos);
 
+      // Venta de CONTADO cobrada por método NO efectivo (transferencia/tarjeta/
+      // cheque): el dinero entra a una cuenta bancaria, no a la gaveta.
+      if (paymentType === 'contado' && tipoPago && tipoPago !== 'EFECTIVO' && cuentaBancoId && activeFactura?.id) {
+        supabase.rpc('registrar_movimiento_bancario', {
+          p_cuenta_id: cuentaBancoId, p_tipo: 'ENTRADA', p_monto: totals.totalFactura,
+          p_concepto: `Venta ${activeFactura.numero || ''} (${tipoPago})`.trim(),
+          p_referencia: activeFactura.numero ? String(activeFactura.numero) : null,
+          p_origen_tipo: 'venta', p_origen_id: activeFactura.id, p_fecha: null,
+        }).then(() => {}, () => {});
+      }
+
       if (!editingFacturaId) {
         try {
           await enviarReposicionAutomatica(items);
@@ -1343,6 +1356,7 @@ export const useVentas = () => {
     handleSelectCotizacion,
     recargo, setRecargo,
     tipoPago, setTipoPago,
+    cuentaBancoId, setCuentaBancoId,
     notas, setNotas,
     pedidoId, setPedidoId,
     handleSelectPedido,

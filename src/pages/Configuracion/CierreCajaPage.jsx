@@ -276,7 +276,17 @@ const CierreCajaPage = () => {
       .filter(isMobileCashSale)
       .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
 
-    const totalVentasContadoCaja = Math.max(0, totalVentasContado - totalVentasContadoMovil);
+    // Ventas de contado cobradas por transferencia/tarjeta/cheque NO entran a la
+    // gaveta (van a la cuenta bancaria). Sin tipo_pago = efectivo (histórico).
+    const esContadoEfectivo = (v) => {
+      const tp = String(v.tipo_pago || '').toUpperCase();
+      return !tp || tp.includes('EFECTIVO');
+    };
+    const totalVentasContadoNoEfectivo = ventasContado
+      .filter(v => !esContadoEfectivo(v))
+      .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
+
+    const totalVentasContadoCaja = Math.max(0, totalVentasContado - totalVentasContadoMovil - totalVentasContadoNoEfectivo);
 
     const totalVentasCredito = ventas
       .filter(v => String(v.forma_pago || '').toUpperCase() === 'CREDITO')
