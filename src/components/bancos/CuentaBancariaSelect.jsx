@@ -9,7 +9,7 @@ import { Landmark } from 'lucide-react';
 // suplidor). Viene con la cuenta PREDETERMINADA de la empresa ya
 // seleccionada, pero se puede cambiar. `value`/`onChange` los controla el
 // padre. Si `moneda` se pasa, solo muestra cuentas de esa moneda.
-export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda, label = 'Cuenta bancaria', autoDefault = true }) {
+export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda, label = 'Cuenta bancaria', autoDefault = true, contexto = null }) {
   const { tenantId, empresa } = useAuth();
   const [cuentas, setCuentas] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -29,19 +29,26 @@ export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda
         .select('id, banco, alias, moneda, numero_cuenta')
         .eq('tenant_id', tenantId).eq('activo', true)
         .order('orden').order('banco');
+      // Cuentas predeterminadas por módulo (ventas/recibo/cierre_caja/…)
+      const { data: defs } = await supabase
+        .from('cuentas_bancarias_default')
+        .select('modulo, cuenta_id')
+        .eq('tenant_id', tenantId);
       if (!vivo) return;
+      const mapDef = Object.fromEntries((defs || []).map((d) => [d.modulo, d.cuenta_id]));
       const lista = (data || []).filter((c) => !moneda || c.moneda === moneda);
       setCuentas(lista);
       setCargando(false);
-      // Preseleccionar la predeterminada (o la primera) si el padre no trae valor.
+      // Preseleccionar: default del MÓDULO → default general → primera.
       if (autoDefault && !value && lista.length) {
-        const def = lista.find((c) => c.id === empresa?.cuenta_bancaria_default_id) || lista[0];
+        const defId = (contexto && mapDef[contexto]) || empresa?.cuenta_bancaria_default_id || null;
+        const def = lista.find((c) => c.id === defId) || lista[0];
         emitir(def.id, lista);
       }
     })();
     return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId, moneda]);
+  }, [tenantId, moneda, contexto]);
 
   if (!cargando && cuentas.length === 0) {
     return (

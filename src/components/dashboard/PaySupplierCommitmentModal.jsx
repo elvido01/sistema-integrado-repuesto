@@ -129,7 +129,7 @@ const PaySupplierCommitmentModal = ({ isOpen, onClose, commitment, onConfirm }) 
                   placeholder={formaPago === 'Cheque' ? 'Ej: 0123456' : 'Ej: TRX20260427-0001'}
                 />
               </div>
-              <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" label="Sale de la cuenta" />
+              <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" contexto="pago_suplidor" label="Sale de la cuenta" />
             </>
           )}
         </div>

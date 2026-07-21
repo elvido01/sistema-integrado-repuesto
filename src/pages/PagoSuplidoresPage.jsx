@@ -502,7 +502,7 @@ const PagoSuplidoresPage = () => {
               </Button>
               {formasPago.some(f => f.forma === 'Transferencia' || f.forma === 'Cheque') && (
                 <div className="mt-3">
-                  <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" label="Sale de la cuenta" />
+                  <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" contexto="pago_suplidor" label="Sale de la cuenta" />
                 </div>
               )}
             </div>

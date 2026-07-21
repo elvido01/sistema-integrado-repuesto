@@ -287,7 +287,7 @@ const VentasFooter = ({
           {/* Cuenta bancaria destino cuando el contado NO es en efectivo */}
           {paymentType === 'contado' && tipoPago && tipoPago !== 'EFECTIVO' && (
             <div className="px-1 pb-1">
-              <CuentaBancariaSelect value={cuentaBancoId} onChange={setCuentaBancoId} moneda="DOP" label="Entra a la cuenta" />
+              <CuentaBancariaSelect value={cuentaBancoId} onChange={setCuentaBancoId} moneda="DOP" contexto="ventas" label="Entra a la cuenta" />
             </div>
           )}
 

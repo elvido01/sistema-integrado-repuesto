@@ -916,6 +916,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                   onChange={setCuentaId}
                   onSelect={(c) => { setCuenta(c?.numero_cuenta || ''); setBanco(c?.banco || ''); }}
                   moneda="DOP"
+                  contexto="recibo"
                   label="Cuenta que recibe"
                 />
               )}

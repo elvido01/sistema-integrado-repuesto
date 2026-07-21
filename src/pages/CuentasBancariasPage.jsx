@@ -28,12 +28,22 @@ const ORIGEN_LABEL = {
 
 const CUENTA_VACIA = { banco: '', alias: '', numero_cuenta: '', tipo: 'corriente', moneda: 'DOP', saldo_inicial: '0' };
 
+// Módulos que pueden tener su propia cuenta predeterminada.
+const MODULOS = [
+  { key: 'ventas', label: 'Ventas por transferencia' },
+  { key: 'recibo', label: 'Recibos de pago' },
+  { key: 'cierre_caja', label: 'Cierre de caja' },
+  { key: 'pago_suplidor', label: 'Pago a suplidores' },
+  { key: 'compromiso', label: 'Compromisos / gastos' },
+];
+
 export default function CuentasBancariasPage() {
   const { tenantId } = useAuth();
   const { toast } = useToast();
 
   const [cuentas, setCuentas] = useState([]);
   const [defaultId, setDefaultId] = useState(null);
+  const [defaultsMod, setDefaultsMod] = useState({}); // { modulo: cuenta_id }
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);       // cuenta en edición o CUENTA_VACIA
   const [saving, setSaving] = useState(false);
@@ -44,13 +54,15 @@ export default function CuentasBancariasPage() {
   const cargar = useCallback(async () => {
     if (!tenantId) return;
     try {
-      const [{ data: saldos, error: e1 }, { data: cfg }] = await Promise.all([
+      const [{ data: saldos, error: e1 }, { data: cfg }, { data: defs }] = await Promise.all([
         supabase.from('cuentas_bancarias_saldos').select('*').eq('tenant_id', tenantId).order('orden').order('banco'),
         supabase.from('config_empresa').select('cuenta_bancaria_default_id').eq('tenant_id', tenantId).maybeSingle(),
+        supabase.from('cuentas_bancarias_default').select('modulo, cuenta_id').eq('tenant_id', tenantId),
       ]);
       if (e1) throw e1;
       setCuentas(saldos || []);
       setDefaultId(cfg?.cuenta_bancaria_default_id || null);
+      setDefaultsMod(Object.fromEntries((defs || []).map((d) => [d.modulo, d.cuenta_id])));
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error al cargar cuentas', description: err.message });
     } finally {
@@ -114,6 +126,21 @@ export default function CuentasBancariasPage() {
     if (error) { toast({ variant: 'destructive', title: 'Error', description: error.message }); return; }
     setDefaultId(c.id);
     toast({ title: 'Cuenta predeterminada', description: `${c.banco}${c.alias ? ` — ${c.alias}` : ''}` });
+  };
+
+  const guardarDefaultModulo = async (modulo, cuentaId) => {
+    const val = cuentaId === '__none__' ? null : cuentaId;
+    try {
+      if (!val) {
+        await supabase.from('cuentas_bancarias_default').delete().eq('tenant_id', tenantId).eq('modulo', modulo);
+      } else {
+        await supabase.from('cuentas_bancarias_default').upsert(
+          { tenant_id: tenantId, modulo, cuenta_id: val }, { onConflict: 'tenant_id,modulo' });
+      }
+      setDefaultsMod((prev) => ({ ...prev, [modulo]: val }));
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    }
   };
 
   const verMovimientos = async (c) => {
@@ -209,6 +236,30 @@ export default function CuentasBancariasPage() {
               </div>
             </motion.div>
           ))}
+        </div>
+      )}
+
+      {/* Cuenta predeterminada por módulo */}
+      {cuentas.length > 0 && (
+        <div className="mt-6 bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+          <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-1"><Landmark className="w-4 h-4 text-blue-700" />Cuenta predeterminada por módulo</h2>
+          <p className="text-xs text-gray-500 mb-3">Cada flujo trae preseleccionada su cuenta. Si un módulo no tiene una asignada, usa la ⭐ general.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {MODULOS.map((mod) => (
+              <div key={mod.key} className="flex items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2">
+                <span className="text-sm font-medium text-gray-700">{mod.label}</span>
+                <Select value={defaultsMod[mod.key] || '__none__'} onValueChange={(v) => guardarDefaultModulo(mod.key, v)}>
+                  <SelectTrigger className="w-[190px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">General ⭐ (por defecto)</SelectItem>
+                    {cuentas.filter((c) => c.activo).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.banco}{c.alias ? ` — ${c.alias}` : ''} ({c.moneda})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

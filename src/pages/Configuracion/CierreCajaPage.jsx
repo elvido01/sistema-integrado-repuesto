@@ -899,7 +899,7 @@ const CierreCajaPage = () => {
                     </ScrollArea>
 
                     <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" label="Depositar el efectivo en la cuenta" />
+                      <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" contexto="cierre_caja" label="Depositar el efectivo en la cuenta" />
                     </div>
 
                     <div className="mt-3 flex items-center justify-between">
