@@ -133,7 +133,6 @@ const navItems = [
       { title: 'Otras Transacciones', id: 'otras-transacciones', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'Histórico de Cliente', id: 'historico-cliente', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'Lista de Chasis en Préstamos', id: 'lista-chasis-prestamos', icon: Receipt, featFlag: 'feat_financiera' },
-      { title: 'SAN Ahorro', id: 'san', icon: PiggyBank, tenantOnly: '766fe3d6-6885-4f2b-b2cc-1a91db696fb4' },
     ],
   },
   {
@@ -154,6 +153,7 @@ const navItems = [
     icon: Landmark,
     subItems: [
       { title: 'Cuentas y Saldos', id: 'cuentas-bancarias', icon: Landmark },
+      { title: 'SAN Ahorro', id: 'san', icon: PiggyBank, tenantOnly: '766fe3d6-6885-4f2b-b2cc-1a91db696fb4' },
     ],
   },
   {
