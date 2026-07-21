@@ -34,7 +34,9 @@ const SanPage = () => {
   const [elimOpen, setElimOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ nombre: '', monto: '', dias: '', inicio: '', cuenta: null });
-  const [cuentasMap, setCuentasMap] = useState({}); // id -> "Banco — Alias"
+  const [cuentasInfo, setCuentasInfo] = useState({}); // id -> { label, saldo, moneda }
+  // Cuenta cuyo saldo se muestra en el tablero del SAN (la elige el usuario)
+  const [cuentaDisplay, setCuentaDisplay] = useState(() => localStorage.getItem('san_cuenta_display') || '');
 
   const money = useCallback((v) => ocultar ? 'RD$ ····'
     : `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`,
@@ -44,11 +46,15 @@ const SanPage = () => {
     setLoading(true);
     const [{ data, error }, { data: ctas }] = await Promise.all([
       supabase.from('san').select('*').order('created_at', { ascending: false }),
-      supabase.from('cuentas_bancarias').select('id, banco, alias'),
+      supabase.from('cuentas_bancarias_saldos').select('id, banco, alias, saldo, moneda'),
     ]);
     if (error) toast({ variant: 'destructive', title: 'No se pudo cargar SAN', description: error.message });
     else setSans(data || []);
-    setCuentasMap(Object.fromEntries((ctas || []).map((c) => [c.id, `${c.banco}${c.alias ? ` — ${c.alias}` : ''}`])));
+    setCuentasInfo(Object.fromEntries((ctas || []).map((c) => [c.id, {
+      label: `${c.banco}${c.alias ? ` — ${c.alias}` : ''}`,
+      saldo: Number(c.saldo) || 0,
+      moneda: c.moneda,
+    }])));
     setLoading(false);
   }, [toast]);
 
@@ -287,13 +293,31 @@ const SanPage = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
           {chip(dash.activos, 'SAN activos', 'bg-emerald-50 text-emerald-800')}
           {chip(money(dash.comprometido), 'Comprometido', 'bg-indigo-50 text-indigo-800')}
           {chip(money(dash.ahorrado), 'Ahorrado', 'bg-emerald-50 text-emerald-800')}
           {chip(dash.proximo ? dash.proximo.nombre : '—', 'Próxima meta', 'bg-amber-50 text-amber-800')}
           {chip(dash.diasRestantes ?? '—', 'Días restantes', 'bg-sky-50 text-sky-800')}
           {chip(dash.completados, 'Completados', 'bg-slate-100 text-slate-700')}
+
+          {/* Saldo EN VIVO de la cuenta que el usuario elija (espejo de Cuentas Bancarias) */}
+          <div className="rounded-lg px-3 py-2 text-center bg-sky-50 text-sky-900 border border-sky-200">
+            <div className="text-lg font-bold leading-none truncate">
+              {cuentaDisplay && cuentasInfo[cuentaDisplay] ? money(cuentasInfo[cuentaDisplay].saldo) : '—'}
+            </div>
+            <select
+              value={cuentaDisplay}
+              onChange={(e) => { setCuentaDisplay(e.target.value); localStorage.setItem('san_cuenta_display', e.target.value); }}
+              className="text-[11px] mt-1 w-full bg-transparent text-center outline-none cursor-pointer text-sky-800"
+              title="Elige la cuenta cuyo saldo quieres vigilar aquí"
+            >
+              <option value="">Saldo de cuenta…</option>
+              {Object.entries(cuentasInfo).map(([id, c]) => (
+                <option key={id} value={id}>{c.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {sans.length === 0 ? (
@@ -323,8 +347,8 @@ const SanPage = () => {
                   <div className="text-xs text-muted-foreground mt-1">{pct}% · meta {formatFechaDMY(String(s.fecha_fin))}</div>
                   <div className="text-[11px] mt-1 flex items-center gap-1 truncate">
                     <Landmark className="w-3 h-3 flex-shrink-0" />
-                    {s.cuenta_bancaria_id && cuentasMap[s.cuenta_bancaria_id]
-                      ? <span className="text-sky-700 truncate">{cuentasMap[s.cuenta_bancaria_id]}</span>
+                    {s.cuenta_bancaria_id && cuentasInfo[s.cuenta_bancaria_id]
+                      ? <span className="text-sky-700 truncate">{cuentasInfo[s.cuenta_bancaria_id].label}</span>
                       : <span className="text-amber-600">Sin cuenta bancaria</span>}
                   </div>
                 </motion.button>
@@ -395,8 +419,8 @@ const SanPage = () => {
         <span className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 ${sanSel.cuenta_bancaria_id ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-700'}`}
           title="Cuenta de donde sale el ahorro">
           <Landmark className="w-3 h-3" />
-          {sanSel.cuenta_bancaria_id && cuentasMap[sanSel.cuenta_bancaria_id]
-            ? cuentasMap[sanSel.cuenta_bancaria_id]
+          {sanSel.cuenta_bancaria_id && cuentasInfo[sanSel.cuenta_bancaria_id]
+            ? cuentasInfo[sanSel.cuenta_bancaria_id].label
             : 'Sin cuenta bancaria'}
         </span>
         {['Activo', 'Cancelado'].includes(sanSel.estado) && (
