@@ -6,8 +6,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2, Search, Plus, Trash2 } from 'lucide-react';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { calcAmortizacion, round2 } from './amortizacion';
 import { formatFechaDMY } from '@/lib/dateUtils';
 
@@ -40,8 +41,24 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
   const [cliente, setCliente] = useState(null);
   const [buscarOpen, setBuscarOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Reparto del desembolso por cuenta (transferencia/cheque). Una fila por
+  // cuenta: se puede sacar todo de una o partirlo entre varias.
+  const [lineas, setLineas] = useState([{ id: 1, cuenta_id: '', monto: '' }]);
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const porBanco = form.desembolso === 'transferencia' || form.desembolso === 'cheque';
+  const capital = Number(form.monto) || 0;
+  const totalLineas = useMemo(
+    () => lineas.reduce((a, l) => a + (Number(l.monto) || 0), 0),
+    [lineas]
+  );
+  const faltaRepartir = round2(capital - totalLineas);
+
+  const setLinea = (id, campo, valor) =>
+    setLineas((ls) => ls.map((l) => (l.id === id ? { ...l, [campo]: valor } : l)));
+  const addLinea = () => setLineas((ls) => [...ls, { id: Date.now(), cuenta_id: '', monto: '' }]);
+  const delLinea = (id) => setLineas((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
 
   // Cuota base (sin ajuste) → "Monto de las Cuotas"
   const baseCuotas = useMemo(
@@ -74,13 +91,39 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
     set('cuotaAjustada', String(Math.ceil(montoCuotaBase / mult) * mult));
   };
 
-  const reset = () => { setForm(initial); setCliente(null); };
+  const reset = () => { setForm(initial); setCliente(null); setLineas([{ id: 1, cuenta_id: '', monto: '' }]); };
 
   const handleGuardar = async () => {
     if (!cliente?.id) { toast({ variant: 'destructive', title: 'Selecciona un cliente' }); return; }
     if (!(Number(form.monto) > 0) || !(parseInt(form.plazo, 10) > 0)) {
       toast({ variant: 'destructive', title: 'Monto y plazo son requeridos' });
       return;
+    }
+    // Desembolso por banco: cada cuenta con su monto, y la suma debe dar el capital.
+    let repartos = [];
+    if (porBanco) {
+      repartos = lineas
+        .map((l) => ({ cuenta_id: l.cuenta_id, monto: Number(l.monto) || 0 }))
+        .filter((l) => l.cuenta_id && l.monto > 0);
+      if (!repartos.length) {
+        toast({ variant: 'destructive', title: 'Falta la cuenta', description: 'Elige de qué cuenta sale el desembolso y cuánto.' });
+        return;
+      }
+      if (Math.abs(faltaRepartir) > 0.01) {
+        toast({
+          variant: 'destructive',
+          title: 'El reparto no cuadra',
+          description: faltaRepartir > 0
+            ? `Faltan RD$ ${fmt(faltaRepartir)} por repartir entre las cuentas.`
+            : `Te pasaste por RD$ ${fmt(Math.abs(faltaRepartir))}.`,
+        });
+        return;
+      }
+      const usadas = repartos.map((r) => r.cuenta_id);
+      if (new Set(usadas).size !== usadas.length) {
+        toast({ variant: 'destructive', title: 'Cuenta repetida', description: 'No repitas la misma cuenta en dos líneas.' });
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -100,6 +143,33 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
         p_desembolso: form.desembolso || 'efectivo',
       });
       if (error) throw error;
+
+      // Una SALIDA por cuenta: queda en el historial de cada una con el monto,
+      // el nombre del cliente y el número del préstamo.
+      if (porBanco && repartos.length) {
+        const fallidas = [];
+        for (const r of repartos) {
+          const { error: movErr } = await supabase.rpc('registrar_movimiento_bancario_compartido', {
+            p_cuenta_id: r.cuenta_id,
+            p_tipo: 'SALIDA',
+            p_monto: r.monto,
+            p_concepto: `Desembolso préstamo ${data?.numero || ''} — ${cliente.nombre}`.trim(),
+            p_referencia: data?.numero || null,
+            p_origen_tipo: 'desembolso',
+            p_origen_id: null,
+            p_fecha: null,
+          });
+          if (movErr) fallidas.push(movErr.message);
+        }
+        if (fallidas.length) {
+          toast({
+            variant: 'destructive',
+            title: 'Préstamo creado, pero el banco no cuadró',
+            description: `No se registró la salida en ${fallidas.length} cuenta(s): ${fallidas[0]}. Regístrala a mano en Cuentas Bancarias.`,
+          });
+        }
+      }
+
       toast({ title: 'Préstamo creado', description: `${data?.numero} · ${cliente.nombre}` });
       reset();
       onClose(true);
@@ -199,6 +269,61 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
               </p>
             </div>
           </div>
+
+          {/* Reparto del desembolso: de qué cuenta(s) sale el dinero.
+              Se puede sacar todo de una o partirlo entre varias. */}
+          {porBanco && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold uppercase text-slate-600">
+                  ¿De cuál cuenta sale el dinero?
+                </Label>
+                <span className={`text-xs font-bold ${Math.abs(faltaRepartir) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {Math.abs(faltaRepartir) < 0.01
+                    ? `✓ Repartido RD$ ${fmt(totalLineas)}`
+                    : faltaRepartir > 0
+                      ? `Faltan RD$ ${fmt(faltaRepartir)}`
+                      : `Sobran RD$ ${fmt(Math.abs(faltaRepartir))}`}
+                </span>
+              </div>
+
+              {lineas.map((l, i) => (
+                <div key={l.id} className="grid grid-cols-[1fr_140px_auto] gap-2 items-end">
+                  <CuentaBancariaSelect
+                    value={l.cuenta_id}
+                    onChange={(v) => setLinea(l.id, 'cuenta_id', v)}
+                    moneda="DOP"
+                    autoDefault={i === 0}
+                    label={null}
+                  />
+                  <Input
+                    type="number" placeholder="Monto" value={l.monto}
+                    onChange={(e) => setLinea(l.id, 'monto', e.target.value)}
+                    className="text-right"
+                  />
+                  <Button variant="ghost" size="icon" className="h-9 w-9"
+                    onClick={() => delLinea(l.id)} disabled={lineas.length === 1} title="Quitar">
+                    <Trash2 className="w-4 h-4 text-red-500" />
+                  </Button>
+                </div>
+              ))}
+
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="text-xs" onClick={addLinea}>
+                  <Plus className="w-3.5 h-3.5 mr-1" />Otra cuenta
+                </Button>
+                {capital > 0 && lineas.length === 1 && (
+                  <Button variant="outline" size="sm" className="text-xs"
+                    onClick={() => setLinea(lineas[0].id, 'monto', String(capital))}>
+                    Poner todo ({fmt(capital)})
+                  </Button>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-500 italic leading-tight">
+                Cada cuenta registra su salida con el monto, el cliente y el número del préstamo.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Notas</Label>
