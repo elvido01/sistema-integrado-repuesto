@@ -54,6 +54,9 @@ There are **no `<Route>` components**. Navigation is managed by `PanelContext` (
 ### Auth & Permissions
 `SupabaseAuthContext` (`src/contexts/SupabaseAuthContext.jsx`) loads the user's profile, `tenant_id`, permissions, and empresa config on login. The `RouteGuard` component wraps each page in `PanelContext` — it checks `user_module_permissions` table. `SuscripcionContext` handles plan-based access blocking.
 
+### Mobile App Layout
+Mobile screens with fixed bottom actions (Guardar, Cancelar, Compartir, Finalizar, etc.) must keep those buttons above the Android/iOS navigation area. Use `useSafeAreaInsets()` from `react-native-safe-area-context`, set the footer `paddingBottom` to at least `insets.bottom + 18`, and add enough `paddingBottom` to the `ScrollView` content so the last fields are not hidden behind the footer. This is required for future mobile modules.
+
 ### Compras Module
 The purchase flow has three entry points, all landing in `ComprasPage.jsx`:
 - **Manual entry**: typing a code in the yellow staging row triggers `handleSearchByCode` (looks up product by code, fills cost/description/itbis)

@@ -487,6 +487,10 @@ export async function fetchMobileDashboard(
 
   const historyAnchor = cashHistoryAnchorISO(configEmpresa?.caja_historial_desde);
   const historyAnchorDate = historyAnchor.split('T')[0];
+  // Si la empresa se reinició a mitad de mes ("poner los números en 0"), lo
+  // vendido del mes cuenta DESDE ese día: las facturas anteriores al corte
+  // ya no son suyas. Sin reinicio (ancla vieja) es el mes completo de siempre.
+  const ventasDesde = historyAnchor > month.start ? historyAnchor : month.start;
   const saldoInicial = Number.isFinite(toNumber(configEmpresa?.saldo_inicial_caja))
     ? toNumber(configEmpresa?.saldo_inicial_caja)
     : 0;
@@ -509,6 +513,7 @@ export async function fetchMobileDashboard(
     financieraExternaRes,
     camineroFinanceRes,
     cajaExcedenteRes,
+    flujoNetoRes,
   ] = await Promise.all([
     supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', todayStart).lt('created_at', tomorrowStart).neq('estado', 'ANULADA'),
     supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', todayStart).lt('created_at', tomorrowStart).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
@@ -516,7 +521,7 @@ export async function fetchMobileDashboard(
     supabase.from('gastos_diarios').select('monto').eq('tenant_id', tenantId).eq('fecha', today).eq('anulado', false),
     supabase.from('compromisos').select('monto, fecha').eq('tenant_id', tenantId).eq('activo', true),
     supabase.from('compras').select('monto_pendiente, total_compra, monto_pagado, fecha, dias_credito').eq('tenant_id', tenantId).ilike('forma_pago', 'CREDITO').eq('estado', 'PENDIENTE'),
-    supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', month.start).lt('created_at', month.next).neq('estado', 'ANULADA'),
+    supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', ventasDesde).lt('created_at', month.next).neq('estado', 'ANULADA'),
     supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', previousMonth.start).lt('created_at', previousMonth.next).neq('estado', 'ANULADA'),
     supabase.from('facturas').select('total').eq('tenant_id', tenantId).gte('created_at', historyAnchor).ilike('forma_pago', 'contado').neq('estado', 'ANULADA'),
     supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId).gte('created_at', historyAnchor).eq('anulado', false),
@@ -529,6 +534,9 @@ export async function fetchMobileDashboard(
     // Mismo RPC que usa el dashboard web: caja de hoy + excedente acumulado.
     // Evita que la móvil recalcule a mano y difiera de la web.
     supabase.rpc('get_caja_excedente_dashboard'),
+    // Idem para METAS: trae ventas del período y proyección ya calculadas
+    // respetando el ancla de caja (empresa reiniciada a mitad de mes).
+    supabase.rpc('get_flujo_neto_dashboard'),
   ]);
 
   const firstError = [
@@ -591,19 +599,29 @@ export async function fetchMobileDashboard(
       - sumField(comprasContadoHistRes.data, 'total_compra')
       - sumField(gastosHistRes.data, 'monto');
 
-  const dayOfMonth = Math.max(1, now.getDate());
+  // Metas: se toman del MISMO RPC que la tarjeta web, que ya cuenta desde
+  // GREATEST(inicio de mes, caja_historial_desde) — así una empresa que se
+  // reinició a mitad de mes no arrastra lo vendido antes del corte. El
+  // cálculo local queda de respaldo si el RPC falla.
+  const flujoMetas: any = (flujoNetoRes as any)?.data?.metas;
+  const flujoOk = !((flujoNetoRes as any)?.error) && flujoMetas && flujoMetas.ventas_mes !== undefined;
+  const dayOfPeriod = Math.max(1, Math.round(
+    (now.getTime() - new Date(ventasDesde).getTime()) / 86400000) + 1);
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const proyeccionCierre = (ventasMes / dayOfMonth) * daysInMonth;
+  const ventasPeriodo = flujoOk ? toNumber(flujoMetas.ventas_mes) : ventasMes;
+  const proyeccionCierre = flujoOk
+    ? toNumber(flujoMetas.proyeccion_ventas)
+    : (ventasPeriodo / dayOfPeriod) * daysInMonth;
 
   const vendedor = userId
-    ? await fetchSellerDashboard(tenantId, userId, meta, ventasMes, proyeccionCierre)
+    ? await fetchSellerDashboard(tenantId, userId, meta, ventasPeriodo, proyeccionCierre)
     : null;
 
   return {
     meta,
     ventasDia,
-    ventasMes,
-    progresoMeta: meta > 0 ? Math.min((ventasMes / meta) * 100, 100) : 0,
+    ventasMes: ventasPeriodo,
+    progresoMeta: meta > 0 ? Math.min((ventasPeriodo / meta) * 100, 100) : 0,
     proyeccionCierre,
     cajaActual,
     excedente,

@@ -401,7 +401,7 @@ const EstadoResultadosPage = () => {
                   const ventaNeta = v.ventaNeta;
                   return (
                     <TableRow key={v.id}>
-                      <TableCell>{v.fecha}</TableCell>
+                      <TableCell>{fecha(v.fecha)}</TableCell>
                       <TableCell>{v.numero}</TableCell>
                       <TableCell className="truncate max-w-[260px]">{v.cliente}</TableCell>
                       <TableCell className="text-right">RD$ {money(ventaNeta)}</TableCell>

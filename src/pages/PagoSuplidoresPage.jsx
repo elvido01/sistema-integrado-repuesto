@@ -271,7 +271,9 @@ const PagoSuplidoresPage = () => {
         .reduce((s, f) => s + (Number(f.monto) || 0), 0);
       if (cuentaId && montoBanco > 0) {
         const ref = formasPago.find(f => f.forma === 'Transferencia' || f.forma === 'Cheque')?.referencia || String(data || '');
-        supabase.rpc('registrar_movimiento_bancario', {
+        // RPC COMPARTIDO: la cuenta puede ser la de la financiera vinculada
+        // (ej. Caminero paga desde la 004 de MotoPréstamos).
+        supabase.rpc('registrar_movimiento_bancario_compartido', {
           p_cuenta_id: cuentaId, p_tipo: 'SALIDA', p_monto: montoBanco,
           p_concepto: `Pago suplidor ${pago.suplidorNombre || ''} (${data || ''})`.trim(),
           p_referencia: ref, p_origen_tipo: 'pago_suplidor', p_origen_id: null, p_fecha: null,

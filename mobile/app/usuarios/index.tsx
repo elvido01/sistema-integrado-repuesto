@@ -5,13 +5,20 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Plus, UserPlus, Users, X, ShieldCheck } from 'lucide-react-native';
+import { ArrowLeft, Plus, UserPlus, Users, X, ShieldCheck, Pencil } from 'lucide-react-native';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { isFullAccessRole } from '@/src/services/permissions';
 import {
-  fetchUsuarios, crearUsuario, etiquetaRol, ROLES,
+  fetchUsuarios, crearUsuario, actualizarUsuario, etiquetaRol, ROLES,
   type UsuarioPanel, type RolUsuario,
 } from '@/src/services/usuariosService';
+
+// Los correos internos no son correos de verdad: no se muestran ni se
+// re-escriben en el formulario al editar.
+const CORREO_INTERNO = '@usuario.motoflow.app';
+const esCorreoInterno = (email?: string | null) => !!email && email.endsWith(CORREO_INTERNO);
+const usuarioVisible = (email?: string | null) =>
+  !email ? '' : esCorreoInterno(email) ? email.replace(CORREO_INTERNO, '') : email;
 
 export default function UsuariosScreen() {
   const router = useRouter();
@@ -22,6 +29,7 @@ export default function UsuariosScreen() {
   const [usuarios, setUsuarios] = useState<UsuarioPanel[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
+  const [editando, setEditando] = useState<UsuarioPanel | null>(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -67,8 +75,9 @@ export default function UsuariosScreen() {
             ) : (
               <View className="bg-white border-y border-gray-200">
                 {usuarios.map((u, i) => (
-                  <View
+                  <TouchableOpacity
                     key={u.id}
+                    onPress={() => setEditando(u)}
                     className={`flex-row items-center p-4 ${i !== usuarios.length - 1 ? 'border-b border-gray-100' : ''}`}
                   >
                     <View className="bg-violet-100 w-11 h-11 rounded-full items-center justify-center mr-3">
@@ -78,14 +87,15 @@ export default function UsuariosScreen() {
                     </View>
                     <View className="flex-1">
                       <Text className="text-base font-semibold text-gray-900">{u.display_name}</Text>
-                      {!!u.email && !u.email.endsWith('@usuario.motoflow.app') && (
-                        <Text className="text-xs text-gray-400">{u.email}</Text>
+                      {!!usuarioVisible(u.email) && (
+                        <Text className="text-xs text-gray-400">{usuarioVisible(u.email)}</Text>
                       )}
                     </View>
-                    <View className="bg-slate-100 rounded-full px-3 py-1">
+                    <View className="bg-slate-100 rounded-full px-3 py-1 mr-2">
                       <Text className="text-xs font-bold text-slate-600">{etiquetaRol(u.rol)}</Text>
                     </View>
-                  </View>
+                    <Pencil color="#9ca3af" size={16} />
+                  </TouchableOpacity>
                 ))}
               </View>
             )}
@@ -102,11 +112,12 @@ export default function UsuariosScreen() {
             <Text className="text-white font-bold ml-1">Crear usuario</Text>
           </TouchableOpacity>
 
-          <CrearUsuarioModal
-            visible={modal}
+          <UsuarioModal
+            visible={modal || !!editando}
+            usuario={editando}
             tenantId={tenantId}
-            onClose={() => setModal(false)}
-            onCreated={() => { setModal(false); cargar(); }}
+            onClose={() => { setModal(false); setEditando(null); }}
+            onSaved={() => { setModal(false); setEditando(null); cargar(); }}
           />
         </>
       )}
@@ -114,15 +125,17 @@ export default function UsuariosScreen() {
   );
 }
 
-function CrearUsuarioModal({
-  visible, tenantId, onClose, onCreated,
+function UsuarioModal({
+  visible, usuario: editar, tenantId, onClose, onSaved,
 }: {
   visible: boolean;
+  usuario: UsuarioPanel | null;   // null = crear
   tenantId: string | null;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const esEdicion = !!editar;
   const [nombre, setNombre] = useState('');
   const [usuario, setUsuario] = useState('');
   const [password, setPassword] = useState('');
@@ -131,16 +144,58 @@ function CrearUsuarioModal({
 
   const limpiar = () => { setNombre(''); setUsuario(''); setPassword(''); setRole('seller'); };
 
+  // Al abrir: carga los datos del usuario a editar, o deja todo en blanco.
+  // Se rehace en cada apertura para que no queden datos del anterior.
+  useEffect(() => {
+    if (!visible) return;
+    if (editar) {
+      setNombre(editar.display_name || '');
+      setUsuario(usuarioVisible(editar.email));
+      setPassword('');
+      setRole((ROLES.find((r) => r.value === editar.rol)?.value) || 'seller');
+    } else {
+      limpiar();
+    }
+  }, [visible, editar]);
+
   const guardar = async () => {
-    if (!tenantId) { Alert.alert('Error', 'No se pudo determinar la empresa.'); return; }
     if (!usuario.trim()) { Alert.alert('Falta el usuario', 'Escribe un usuario o correo.'); return; }
+
+    if (esEdicion) {
+      if (password && password.length < 6) {
+        Alert.alert('Contraseña corta', 'Usa al menos 6 caracteres.');
+        return;
+      }
+      setSaving(true);
+      try {
+        await actualizarUsuario({
+          userId: editar!.id,
+          nombre,
+          // solo se manda si cambió: evita reescribir el correo sin necesidad
+          usuario: usuario.trim() !== usuarioVisible(editar!.email) ? usuario : undefined,
+          password: password || undefined,
+          role,
+        });
+        Alert.alert('Usuario actualizado', password
+          ? 'Datos y contraseña guardados.'
+          : 'Datos guardados.');
+        onSaved();
+      } catch (e: any) {
+        Alert.alert('No se pudo actualizar', e?.message || 'Error desconocido.');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    if (!tenantId) { Alert.alert('Error', 'No se pudo determinar la empresa.'); return; }
     if (password.length < 6) { Alert.alert('Contraseña corta', 'Usa al menos 6 caracteres.'); return; }
     setSaving(true);
     try {
       const r = await crearUsuario({ nombre, usuario, password, role, tenantId });
       Alert.alert(r.vinculado ? 'Usuario vinculado' : 'Usuario creado', r.mensaje);
       limpiar();
-      onCreated();
+      onSaved();
     } catch (e: any) {
       Alert.alert('No se pudo crear', e?.message || 'Error desconocido.');
     } finally {
@@ -154,14 +209,20 @@ function CrearUsuarioModal({
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View className="bg-white rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
             <View className="flex-row items-center mb-4">
-              <UserPlus color="#7c3aed" size={22} />
-              <Text className="text-lg font-bold text-gray-900 ml-2 flex-1">Nuevo usuario</Text>
+              {esEdicion ? <Pencil color="#7c3aed" size={22} /> : <UserPlus color="#7c3aed" size={22} />}
+              <Text className="text-lg font-bold text-gray-900 ml-2 flex-1">
+                {esEdicion ? 'Editar usuario' : 'Nuevo usuario'}
+              </Text>
               <TouchableOpacity onPress={onClose} className="p-1"><X color="#6b7280" size={22} /></TouchableOpacity>
             </View>
 
+            {/* autoComplete off en los tres campos: en la versión web el
+                navegador rellenaba el correo y la contraseña guardados (los
+                de OTRA empresa) y se creaba el usuario con esos datos. */}
             <Text className="text-xs font-bold text-gray-500 mb-1">NOMBRE COMPLETO</Text>
             <TextInput
               value={nombre} onChangeText={setNombre} placeholder="Ej. Rafael Pérez"
+              autoComplete="off" importantForAutofill="no"
               className="bg-gray-100 rounded-xl px-4 py-3 mb-3 text-gray-900"
             />
 
@@ -169,16 +230,21 @@ function CrearUsuarioModal({
             <TextInput
               value={usuario} onChangeText={setUsuario} placeholder="rafa (o correo real)"
               autoCapitalize="none" autoCorrect={false}
+              autoComplete="off" importantForAutofill="no" textContentType="none"
               className="bg-gray-100 rounded-xl px-4 py-3 mb-1 text-gray-900"
             />
             <Text className="text-[11px] text-gray-400 mb-3">
               Si no es correo, el usuario entra escribiendo solo ese nombre.
             </Text>
 
-            <Text className="text-xs font-bold text-gray-500 mb-1">CONTRASEÑA</Text>
+            <Text className="text-xs font-bold text-gray-500 mb-1">
+              {esEdicion ? 'CONTRASEÑA NUEVA (opcional)' : 'CONTRASEÑA'}
+            </Text>
             <TextInput
-              value={password} onChangeText={setPassword} placeholder="Mínimo 6 caracteres"
+              value={password} onChangeText={setPassword}
+              placeholder={esEdicion ? 'Dejar en blanco para no cambiarla' : 'Mínimo 6 caracteres'}
               secureTextEntry autoCapitalize="none"
+              autoComplete="new-password" importantForAutofill="no" textContentType="none"
               className="bg-gray-100 rounded-xl px-4 py-3 mb-3 text-gray-900"
             />
 
@@ -202,7 +268,11 @@ function CrearUsuarioModal({
               onPress={guardar} disabled={saving}
               className={`rounded-xl py-4 items-center ${saving ? 'bg-violet-300' : 'bg-violet-600'}`}
             >
-              {saving ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-base">Crear usuario</Text>}
+              {saving ? <ActivityIndicator color="#fff" /> : (
+                <Text className="text-white font-bold text-base">
+                  {esEdicion ? 'Guardar cambios' : 'Crear usuario'}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

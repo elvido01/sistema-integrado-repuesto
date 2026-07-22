@@ -284,10 +284,15 @@ const VentasFooter = ({
             />
           </div>
 
-          {/* Cuenta bancaria destino cuando el contado NO es en efectivo */}
-          {paymentType === 'contado' && tipoPago && tipoPago !== 'EFECTIVO' && (
+          {/* Cuenta bancaria destino cuando el pago NO es en efectivo:
+              - contado: entra el total de la factura.
+              - crédito/terceros: entra el INICIAL (antes iba a efectivo).
+              La cuenta puede ser la compartida de la financiera (004). */}
+          {tipoPago && tipoPago !== 'EFECTIVO'
+            && (paymentType === 'contado' || (parseFloat(montoRecibido) || 0) > 0) && (
             <div className="px-1 pb-1">
-              <CuentaBancariaSelect value={cuentaBancoId} onChange={setCuentaBancoId} moneda="DOP" contexto="ventas" label="Entra a la cuenta" />
+              <CuentaBancariaSelect value={cuentaBancoId} onChange={setCuentaBancoId} moneda="DOP" contexto="ventas"
+                label={paymentType === 'credito' ? 'Inicial entra a la cuenta' : 'Entra a la cuenta'} />
             </div>
           )}
 

@@ -9,12 +9,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil, ChevronDown, Landmark } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos, agruparEnBloques, bloquesAbiertos } from '@/lib/sanUtils';
 
 const hoyTZ = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
 
 const SanPage = () => {
   const { toast } = useToast();
+  const { tenantId } = useAuth();
   const hoyStr = hoyTZ();
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -36,8 +38,12 @@ const SanPage = () => {
   const [editForm, setEditForm] = useState({ nombre: '', monto: '', dias: '', inicio: '', cuenta: null });
   const [cuentasInfo, setCuentasInfo] = useState({}); // id -> { label, saldo, moneda }
   const [atrasosMap, setAtrasosMap] = useState({}); // san_id -> días vencidos sin pagar
-  // Cuenta cuyo saldo se muestra en el tablero del SAN (la elige el usuario)
-  const [cuentaDisplay, setCuentaDisplay] = useState(() => localStorage.getItem('san_cuenta_display') || '');
+  // Cuenta MADRE del módulo: ahí cae el total de cada SAN completado (el
+  // ingreso lo hace el servidor, aquí solo se ve el saldo). Se guarda por
+  // empresa en config_empresa.san_cuenta_madre_id; si está vacía manda la
+  // cuenta predeterminada de la empresa.
+  const [cuentaMadre, setCuentaMadre] = useState('');
+  const [madreEnBD, setMadreEnBD] = useState(true);    // false = falta correr sql/san_cuenta_madre.sql
 
   const money = useCallback((v) => ocultar ? 'RD$ ····'
     : `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`,
@@ -62,8 +68,24 @@ const SanPage = () => {
       saldo: Number(c.saldo) || 0,
       moneda: c.moneda,
     }])));
+
+    // Cuenta madre de la empresa; si no hay elegida, la predeterminada
+    let madre = '';
+    if (tenantId) {
+      const { data: cfg, error: cfgErr } = await supabase
+        .from('config_empresa').select('san_cuenta_madre_id, cuenta_bancaria_default_id')
+        .eq('tenant_id', tenantId).maybeSingle();
+      if (cfgErr) {  // columna aún no existe: se cae al modo "solo mirar saldo"
+        setMadreEnBD(false);
+        madre = localStorage.getItem('san_cuenta_display') || '';
+      } else {
+        setMadreEnBD(true);
+        madre = cfg?.san_cuenta_madre_id || cfg?.cuenta_bancaria_default_id || '';
+      }
+    }
+    setCuentaMadre(madre);
     setLoading(false);
-  }, [toast]);
+  }, [toast, tenantId]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -229,6 +251,29 @@ const SanPage = () => {
     setCrearOpen(true);
   };
 
+  // ------- cuenta madre -------
+  const elegirCuentaMadre = async (id) => {
+    const anterior = cuentaMadre;
+    setCuentaMadre(id);
+    if (!madreEnBD) {   // sin la columna en BD solo recuerda cuál saldo mirar
+      localStorage.setItem('san_cuenta_display', id);
+      return;
+    }
+    const { data, error } = await supabase.rpc('san_set_cuenta_madre', { p_cuenta_id: id || null });
+    if (error) {
+      setCuentaMadre(anterior);
+      toast({ variant: 'destructive', title: 'No se pudo fijar la cuenta madre', description: error.message });
+      return;
+    }
+    toast({
+      title: id ? '🏦 Cuenta madre actualizada' : 'Cuenta madre quitada',
+      description: data?.sincronizados > 0
+        ? `${data.sincronizados} SAN completado(s) quedaron reflejados aquí`
+        : undefined,
+    });
+    await cargar();
+  };
+
   // ------- dashboard -------
   const dash = useMemo(() => {
     const activos = sans.filter((s) => s.estado === 'Activo');
@@ -313,18 +358,20 @@ const SanPage = () => {
           {chip(money(dash.comprometido), 'Comprometido', 'bg-indigo-50 text-indigo-800')}
           {chip(money(dash.ahorrado), 'Ahorrado', 'bg-emerald-50 text-emerald-800')}
 
-          {/* Saldo EN VIVO de la cuenta que el usuario elija (espejo de Cuentas Bancarias) */}
+          {/* CUENTA MADRE: saldo EN VIVO y destino de cada SAN completado */}
           <div className="rounded-lg px-3 py-2 text-center bg-sky-50 text-sky-900 border border-sky-200">
             <div className="text-lg font-bold leading-none truncate">
-              {cuentaDisplay && cuentasInfo[cuentaDisplay] ? money(cuentasInfo[cuentaDisplay].saldo) : '—'}
+              {cuentaMadre && cuentasInfo[cuentaMadre] ? money(cuentasInfo[cuentaMadre].saldo) : '—'}
             </div>
             <select
-              value={cuentaDisplay}
-              onChange={(e) => { setCuentaDisplay(e.target.value); localStorage.setItem('san_cuenta_display', e.target.value); }}
+              value={cuentaMadre}
+              onChange={(e) => elegirCuentaMadre(e.target.value)}
               className="text-[11px] mt-1 w-full bg-transparent text-center outline-none cursor-pointer text-sky-800"
-              title="Elige la cuenta cuyo saldo quieres vigilar aquí"
+              title={madreEnBD
+                ? 'Cuenta madre: al completarse un SAN, su total entra aquí'
+                : 'Solo muestra el saldo (falta correr sql/san_cuenta_madre.sql)'}
             >
-              <option value="">Saldo de cuenta…</option>
+              <option value="">Cuenta madre…</option>
               {Object.entries(cuentasInfo).map(([id, c]) => (
                 <option key={id} value={id}>{c.label}</option>
               ))}
@@ -729,6 +776,12 @@ const SanPage = () => {
               <h2 className="text-2xl font-bold">¡Felicidades!</h2>
               <p className="text-muted-foreground mt-1">Has cumplido tu meta de ahorro:</p>
               <p className="font-semibold text-lg mt-1">{sanSel.nombre} — {money(sanSel.monto_objetivo)}</p>
+              {madreEnBD && cuentaMadre && cuentasInfo[cuentaMadre] && (
+                <p className="text-sm text-sky-700 mt-2 flex items-center justify-center gap-1">
+                  <Landmark className="w-4 h-4 flex-shrink-0" />
+                  Entró a la cuenta madre: {cuentasInfo[cuentaMadre].label}
+                </p>
+              )}
               <div className="flex flex-col gap-2 mt-5">
                 <Button onClick={duplicar}><Copy className="w-4 h-4 mr-1" />Duplicar este SAN</Button>
                 <Button variant="outline" onClick={() => { setCelebrar(false); setSanSel(null); setCrearOpen(true); }}>

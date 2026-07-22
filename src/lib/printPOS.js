@@ -1345,8 +1345,11 @@ const _comprobantePagoHTML = (data, paperSize) => {
       <style>
         @page { margin: 0; size: ${pageWidth} auto; }
         html, body { margin: 0; padding: 0; background:#fff; }
+        /* Pegado a la izquierda como la factura: 'margin: 0 auto' centraba el
+           comprobante y lo corría a la derecha (al imprimir por el navegador
+           el papel es Carta, no el ticket, y quedaba en medio de la hoja). */
         body {
-          width: ${bodyWidth}; margin: 0 auto; padding: 3mm 4mm;
+          width: ${bodyWidth}; margin: 0; padding: 3mm 4mm;
           box-sizing: border-box; font-family: Arial, Helvetica, sans-serif;
           font-size: ${baseFont}; line-height: 1.3; color:#000;
           font-weight: 700; letter-spacing: 0.2px;

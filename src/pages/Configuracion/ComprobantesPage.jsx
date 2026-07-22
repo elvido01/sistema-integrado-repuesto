@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { formatFechaDMY } from '@/lib/dateUtils';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -255,7 +256,7 @@ const ComprobantesPage = () => {
                       onClick={() => handleModificar(seq)}
                     >
                       <TableCell className="text-[11px] font-bold px-2 py-0.5">{seq.fecha_solicitud}</TableCell>
-                      <TableCell className="text-[11px] font-bold px-2 py-0.5">{seq.fecha_vencimiento}</TableCell>
+                      <TableCell className="text-[11px] font-bold px-2 py-0.5">{formatFechaDMY(seq.fecha_vencimiento)}</TableCell>
                       <TableCell className="text-[11px] font-bold px-2 py-0.5 text-blue-700">{buildNCFInicial(seq)}</TableCell>
                       <TableCell className="text-[11px] font-bold px-2 py-0.5 text-red-600">{buildNCFFinal(seq)}</TableCell>
                       <TableCell className="text-[11px] font-black px-2 py-0.5 text-green-700">{buildNCF(seq)}</TableCell>

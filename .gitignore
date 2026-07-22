@@ -14,9 +14,13 @@ node_modules/
 .DS_Store
 .env
 .env.local
+.env.txt
 .env.development.local
 .env.test.local
 .env.production.local
+
+# logs sueltos en la raíz (expo web, etc.)
+/.expo-web.*.log
 
 npm-debug.log*
 yarn-debug.log*

@@ -19,30 +19,32 @@ const ClientesPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedCliente, setSelectedCliente] = useState(null);
 
-    const fetchClientes = useCallback(async () => {
+    // Búsqueda en el SERVIDOR: con miles de clientes no se pueden traer todos
+    // (PostgREST corta en 1000). Se consulta la base por término y se limita.
+    const fetchClientes = useCallback(async (term = '') => {
         setLoading(true);
-        const { data, error } = await supabase.from('clientes').select('*').order('nombre', { ascending: true });
+        const t = String(term || '').trim().replace(/[,()]/g, ' ').trim();
+        let query = supabase.from('clientes').select('*').order('nombre', { ascending: true }).limit(200);
+        if (t) {
+            const like = `%${t}%`;
+            query = query.or(`nombre.ilike.${like},codigo.ilike.${like},rnc.ilike.${like},telefono.ilike.${like}`);
+        }
+        const { data, error } = await query;
         if (error) {
             toast({ title: 'Error', description: 'No se pudieron cargar los clientes.', variant: 'destructive' });
         } else {
-            setClientes(data);
+            setClientes(data || []);
         }
         setLoading(false);
     }, [toast]);
 
+    // Debounce del buscador (300ms). En el primer render (term vacío) trae los primeros 200.
     useEffect(() => {
-        fetchClientes();
-    }, [fetchClientes]);
+        const h = setTimeout(() => fetchClientes(searchTerm), 300);
+        return () => clearTimeout(h);
+    }, [searchTerm, fetchClientes]);
 
-    const filteredClientes = useMemo(() => {
-        if (!searchTerm) return clientes;
-        return clientes.filter(c =>
-            c.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (c.codigo && c.codigo.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (c.rnc && c.rnc.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (c.telefono && c.telefono.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
-    }, [clientes, searchTerm]);
+    const filteredClientes = clientes;
 
     const handleEdit = (cliente) => {
         setSelectedCliente(cliente);
@@ -58,7 +60,7 @@ const ClientesPage = () => {
         setIsModalOpen(false);
         setSelectedCliente(null);
         if (dataChanged) {
-            fetchClientes();
+            fetchClientes(searchTerm);
         }
     };
 
@@ -75,7 +77,7 @@ const ClientesPage = () => {
                 title: "Cliente eliminado",
                 description: "El cliente ha sido eliminado correctamente.",
             });
-            fetchClientes();
+            fetchClientes(searchTerm);
         }
     };
 

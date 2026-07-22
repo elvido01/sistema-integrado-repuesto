@@ -85,3 +85,55 @@ export async function crearUsuario(input: CrearUsuarioInput): Promise<CrearUsuar
     vinculado: !!data?.linked,
   };
 }
+
+export type ActualizarUsuarioInput = {
+  userId: string;
+  nombre?: string;
+  usuario?: string;   // usuario o correo nuevo (vacío = no se cambia)
+  password?: string;  // vacío = se mantiene la actual
+  role?: RolUsuario;
+};
+
+// Edita un usuario existente, igual que la pantalla web:
+//   * nombre / usuario-correo / contraseña → edge function admin-management
+//     (corre con service_role; la app nunca toca auth.admin)
+//   * rol → update directo a profiles (lo protege el RLS del tenant)
+export async function actualizarUsuario(input: ActualizarUsuarioInput): Promise<void> {
+  if (!input.userId) throw new Error('Usuario inválido');
+
+  const updates: Record<string, string> = {};
+  if (input.nombre?.trim()) updates.full_name = input.nombre.trim();
+  if (input.usuario?.trim()) {
+    const loginEmail = toLoginEmail(input.usuario);
+    if (!loginEmail) throw new Error('Usuario o correo inválido');
+    updates.email = loginEmail;
+  }
+  if (input.password) {
+    if (input.password.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres');
+    updates.password = input.password;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    const { error } = await supabase.functions.invoke('admin-management', {
+      body: { action: 'update_user', targetUserId: input.userId, updates },
+    });
+    if (error) {
+      let msg = error.message;
+      try {
+        const body = await (error as any).context?.json?.();
+        msg = body?.error || body?.message || msg;
+      } catch {
+        /* respuesta no-JSON */
+      }
+      throw new Error(msg);
+    }
+  }
+
+  if (input.role) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: input.role })
+      .eq('id', input.userId);
+    if (error) throw new Error(error.message);
+  }
+}

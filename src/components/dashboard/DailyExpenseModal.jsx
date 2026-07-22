@@ -290,9 +290,10 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   key={g.id}
                   type="button"
                   onClick={() => editarGasto(g)}
-                  className={`w-full flex items-center justify-between gap-2 text-left text-sm px-2 py-1 rounded border transition-colors ${editandoId === g.id ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
+                  className={`w-full flex items-start justify-between gap-2 text-left text-sm px-2 py-1 rounded border transition-colors ${editandoId === g.id ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
                 >
-                  <span className="truncate">{g.tipo_gasto} — {g.descripcion}</span>
+                  {/* La descripcion se lee COMPLETA: baja de linea, no se corta */}
+                  <span className="min-w-0 flex-1 break-words">{g.tipo_gasto} — {g.descripcion}</span>
                   <span className="font-mono font-bold shrink-0">{Number(g.monto).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
                 </button>
               ))}

@@ -900,8 +900,10 @@ export const useVentas = () => {
 
       // Venta de CONTADO cobrada por método NO efectivo (transferencia/tarjeta/
       // cheque): el dinero entra a una cuenta bancaria, no a la gaveta.
+      // Se usa el RPC COMPARTIDO para que la cuenta pueda ser la de la
+      // financiera vinculada (ej. Caminero cobra a la 004 de MotoPréstamos).
       if (paymentType === 'contado' && tipoPago && tipoPago !== 'EFECTIVO' && cuentaBancoId && activeFactura?.id) {
-        supabase.rpc('registrar_movimiento_bancario', {
+        supabase.rpc('registrar_movimiento_bancario_compartido', {
           p_cuenta_id: cuentaBancoId, p_tipo: 'ENTRADA', p_monto: totals.totalFactura,
           p_concepto: `Venta ${activeFactura.numero || ''} (${tipoPago})`.trim(),
           p_referencia: activeFactura.numero ? String(activeFactura.numero) : null,
@@ -1008,6 +1010,18 @@ export const useVentas = () => {
             .update({ monto_pendiente: Math.max(0, totals.totalFactura - abonoCredito) })
             .eq('id', activeFactura.id);
           toast({ variant: 'destructive', title: 'Abono aplicado, recibo no generado', description: 'Se descont\u00f3 el abono del pendiente, pero no se cre\u00f3 el recibo. Reg\u00edstrelo manualmente.' });
+        }
+
+        // El INICIAL cobrado por transferencia/cheque/tarjeta entra a la
+        // cuenta elegida (puede ser la 004 compartida de la financiera), no a
+        // la gaveta. Antes el inicial de cr\u00e9dito siempre contaba como efectivo.
+        if (tipoPago && tipoPago !== 'EFECTIVO' && cuentaBancoId && abonoCredito > 0) {
+          supabase.rpc('registrar_movimiento_bancario_compartido', {
+            p_cuenta_id: cuentaBancoId, p_tipo: 'ENTRADA', p_monto: abonoCredito,
+            p_concepto: `Inicial venta ${activeFactura.numero || ''} (${tipoPago})`.trim(),
+            p_referencia: activeFactura.numero ? String(activeFactura.numero) : null,
+            p_origen_tipo: 'venta', p_origen_id: activeFactura.id, p_fecha: null,
+          }).then(() => {}, () => {});
         }
       }
 

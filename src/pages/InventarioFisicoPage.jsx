@@ -326,7 +326,7 @@ const InventarioFisicoPage = () => {
         </div>
         <div class="info">
           Ubicación: ${selectedUbicacion === 'all' ? 'TODAS' : selectedUbicacion}<br/>
-          Fecha: ${new Date().toLocaleDateString()}<br/>
+          Fecha: ${new Date().toLocaleDateString('es-DO')}<br/>
           Artículos: ${filteredProducts.length}
         </div>
         <table>

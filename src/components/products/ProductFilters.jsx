@@ -58,8 +58,8 @@ const ProductFilters = ({
   const handleImportClick = () => fileInputRef.current?.click();
 
   return (
-    <div className="p-4 border-b space-y-4">
-      <div className="flex flex-col sm:flex-row gap-2">
+    <div className="p-4 border-b">
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-4">
         <div className="relative flex-grow">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
           <Input
@@ -70,7 +70,27 @@ const ProductFilters = ({
             className="pl-10"
           />
         </div>
-        <div className="flex gap-2">
+
+        {/* Filtros tipo input (texto libre, ILIKE en BD). Orden de tab: Busqueda, Modelo, Marca, Tipo. */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:col-span-2 md:row-start-2">
+          <FilterInput
+            placeholder="Modelo"
+            value={filters.modelo}
+            onChange={(v) => setFilters((prev) => ({ ...prev, modelo: v }))}
+          />
+          <FilterInput
+            placeholder="Marca"
+            value={filters.marca}
+            onChange={(v) => setFilters((prev) => ({ ...prev, marca: v }))}
+          />
+          <FilterInput
+            placeholder="Tipo"
+            value={filters.tipo}
+            onChange={(v) => setFilters((prev) => ({ ...prev, tipo: v }))}
+          />
+        </div>
+
+        <div className="flex gap-2 md:row-start-1 md:col-start-2">
           <Select
             value={limit === 5000 ? 'all' : String(limit)}
             onValueChange={(val) => setLimit(val === 'all' ? 5000 : Number(val))}
@@ -100,25 +120,6 @@ const ProductFilters = ({
             onChange={(e) => onFileUpload?.(e)}
           />
         </div>
-      </div>
-
-      {/* Filtros tipo input (texto libre, ILIKE en BD). Orden: Modelo, Marca, Tipo. */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <FilterInput
-          placeholder="Modelo"
-          value={filters.modelo}
-          onChange={(v) => setFilters((prev) => ({ ...prev, modelo: v }))}
-        />
-        <FilterInput
-          placeholder="Marca"
-          value={filters.marca}
-          onChange={(v) => setFilters((prev) => ({ ...prev, marca: v }))}
-        />
-        <FilterInput
-          placeholder="Tipo"
-          value={filters.tipo}
-          onChange={(v) => setFilters((prev) => ({ ...prev, tipo: v }))}
-        />
       </div>
     </div>
   );

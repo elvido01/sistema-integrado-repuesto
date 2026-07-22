@@ -12,7 +12,11 @@ import { Loader2, Printer, X, Search } from 'lucide-react';
 import { generateListaChasisPDF } from '@/components/common/pdf/listaChasisPDF';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
-const fdate = (d) => (d ? String(d).slice(0, 10) : '');
+const fdate = (d) => {
+  if (!d) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(d);
+};
 
 const ListaChasisPrestamosPage = () => {
   const { toast } = useToast();

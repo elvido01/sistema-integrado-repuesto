@@ -24,11 +24,21 @@ export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda
     let vivo = true;
     (async () => {
       if (!tenantId) return;
-      const { data } = await supabase
-        .from('cuentas_bancarias')
-        .select('id, banco, alias, moneda, numero_cuenta')
-        .eq('tenant_id', tenantId).eq('activo', true)
-        .order('orden').order('banco');
+      // get_cuentas_seleccionables trae las propias + las de la financiera
+      // vinculada (cuenta compartida). Si no existe aún el RPC, cae al query
+      // directo de las propias.
+      let data = null;
+      const rpc = await supabase.rpc('get_cuentas_seleccionables', { p_moneda: moneda || null });
+      if (!rpc.error) {
+        data = rpc.data;
+      } else {
+        const q = await supabase
+          .from('cuentas_bancarias')
+          .select('id, banco, alias, moneda, numero_cuenta')
+          .eq('tenant_id', tenantId).eq('activo', true)
+          .order('orden').order('banco');
+        data = q.data;
+      }
       // Cuentas predeterminadas por módulo (ventas/recibo/cierre_caja/…)
       const { data: defs } = await supabase
         .from('cuentas_bancarias_default')
@@ -68,6 +78,7 @@ export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda
             <SelectItem key={c.id} value={c.id}>
               {c.banco}{c.alias ? ` — ${c.alias}` : ''} ({c.moneda}{c.numero_cuenta ? ` ···${String(c.numero_cuenta).slice(-4)}` : ''})
               {c.id === empresa?.cuenta_bancaria_default_id ? ' ⭐' : ''}
+              {c.externa ? ` · compartida (${c.empresa})` : ''}
             </SelectItem>
           ))}
         </SelectContent>

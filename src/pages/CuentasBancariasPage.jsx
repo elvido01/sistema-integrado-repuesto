@@ -24,6 +24,7 @@ const fmtFecha = (f) => (f ? String(f).split('T')[0].split('-').reverse().join('
 const ORIGEN_LABEL = {
   venta: 'Venta', recibo: 'Recibo', cierre_caja: 'Cierre de caja',
   pago_suplidor: 'Pago a suplidor', compromiso: 'Compromiso/gasto', san: 'Abono SAN', ajuste: 'Ajuste manual', transferencia_interna: 'Transferencia',
+  san_completado: 'SAN completado', apertura: 'Apertura', ingreso: 'Ingreso', retiro: 'Retiro',
 };
 
 const CUENTA_VACIA = { banco: '', alias: '', numero_cuenta: '', tipo: 'corriente', moneda: 'DOP', saldo_inicial: '0' };
@@ -49,6 +50,7 @@ export default function CuentasBancariasPage() {
   const [modal, setModal] = useState(null);       // cuenta en edición o CUENTA_VACIA
   const [saving, setSaving] = useState(false);
   const [movsDe, setMovsDe] = useState(null);      // cuenta cuyo historial se ve
+  const [manual, setManual] = useState(null);      // { cuenta, tipo, monto, fecha, concepto }
   const [movs, setMovs] = useState([]);
   const [loadingMovs, setLoadingMovs] = useState(false);
 
@@ -148,15 +150,73 @@ export default function CuentasBancariasPage() {
     setMovsDe(c);
     setLoadingMovs(true);
     try {
+      // Solo los últimos 30 días (fecha del movimiento en hora RD).
+      const hoyRD = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santo_Domingo' }));
+      const desde = new Date(hoyRD.getTime() - 30 * 86400000).toLocaleDateString('en-CA');
       const { data, error } = await supabase
         .from('movimientos_bancarios').select('*')
-        .eq('cuenta_id', c.id).order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(200);
+        .eq('cuenta_id', c.id).gte('fecha', desde)
+        .order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(200);
       if (error) throw error;
-      setMovs(data || []);
+      const lista = data || [];
+      // El FONDO INICIAL (saldo_inicial) se muestra como la línea más antigua,
+      // siempre (aunque quede fuera de los 30 días) para que el saldo cuadre a
+      // la vista. Es sintético: no vive en movimientos_bancarios.
+      const ini = Number(c.saldo_inicial) || 0;
+      if (ini !== 0) {
+        const { data: cta } = await supabase
+          .from('cuentas_bancarias').select('created_at').eq('id', c.id).maybeSingle();
+        lista.push({
+          id: `fondo-inicial-${c.id}`,
+          fecha: cta?.created_at ? String(cta.created_at).slice(0, 10) : null,
+          tipo: ini >= 0 ? 'ENTRADA' : 'SALIDA',
+          monto: Math.abs(ini),
+          concepto: 'FONDO INICIAL',
+          origen_tipo: 'apertura',
+          referencia: null,
+        });
+      }
+      setMovs(lista);
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
       setLoadingMovs(false);
+    }
+  };
+
+  const abrirManual = (c, tipo) => setManual({
+    cuenta: c, tipo, monto: '', concepto: '',
+    fecha: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }),
+  });
+
+  const guardarManual = async () => {
+    const monto = Number(String(manual.monto).replace(/,/g, '')) || 0;
+    if (monto <= 0) { toast({ variant: 'destructive', title: 'Monto inválido' }); return; }
+    if (!manual.concepto.trim()) { toast({ variant: 'destructive', title: 'Escribe el concepto (ej. Alquiler local)' }); return; }
+    setSaving(true);
+    try {
+      // Ingreso = ENTRADA (origen 'ingreso'); Retiro = SALIDA (origen 'retiro').
+      // Cada uno es independiente (origen_id null). Usa el RPC compartido por
+      // si la cuenta es la de la financiera vinculada.
+      const esIngreso = manual.tipo === 'ingreso';
+      const { error } = await supabase.rpc('registrar_movimiento_bancario_compartido', {
+        p_cuenta_id: manual.cuenta.id,
+        p_tipo: esIngreso ? 'ENTRADA' : 'SALIDA',
+        p_monto: monto,
+        p_concepto: manual.concepto.trim(),
+        p_referencia: null,
+        p_origen_tipo: manual.tipo,
+        p_origen_id: null,
+        p_fecha: manual.fecha || null,
+      });
+      if (error) throw error;
+      toast({ title: esIngreso ? '↓ Ingreso registrado' : '↑ Retiro registrado', description: `${money(monto, manual.cuenta.moneda)} · ${manual.concepto.trim()}` });
+      setManual(null);
+      await cargar();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo registrar', description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -221,6 +281,18 @@ export default function CuentasBancariasPage() {
 
               <div className="flex items-center gap-1 mt-4 pt-3 border-t border-gray-100">
                 <Button variant="ghost" size="sm" className="text-xs px-2" onClick={() => verMovimientos(c)}>Movimientos</Button>
+                {c.activo && (
+                  <>
+                    <Button variant="ghost" size="sm" className="text-xs px-2 text-emerald-700" title="Registrar un ingreso (alquiler, aporte…)"
+                      onClick={() => abrirManual(c, 'ingreso')}>
+                      <ArrowDownCircle className="w-3.5 h-3.5 mr-1" />Ingreso
+                    </Button>
+                    <Button variant="ghost" size="sm" className="text-xs px-2 text-red-600" title="Registrar un retiro (uso personal…)"
+                      onClick={() => abrirManual(c, 'retiro')}>
+                      <ArrowUpCircle className="w-3.5 h-3.5 mr-1" />Retiro
+                    </Button>
+                  </>
+                )}
                 <div className="flex-1" />
                 {defaultId !== c.id && c.activo && (
                   <Button variant="ghost" size="icon" className="h-8 w-8" title="Hacer predeterminada" onClick={() => hacerDefault(c)}>
@@ -305,6 +377,52 @@ export default function CuentasBancariasPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Ingreso / Retiro manual */}
+      <Dialog open={!!manual} onOpenChange={(o) => !o && setManual(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {manual?.tipo === 'ingreso'
+                ? <><ArrowDownCircle className="w-5 h-5 text-emerald-600" />Registrar ingreso</>
+                : <><ArrowUpCircle className="w-5 h-5 text-red-600" />Registrar retiro</>}
+            </DialogTitle>
+          </DialogHeader>
+          {manual && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                {manual.tipo === 'ingreso' ? 'Entra a' : 'Sale de'}{' '}
+                <b>{manual.cuenta.banco}{manual.cuenta.alias ? ` — ${manual.cuenta.alias}` : ''}</b>
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Monto ({manual.cuenta.moneda})</Label>
+                  <Input type="number" autoFocus value={manual.monto}
+                    onChange={(e) => setManual((m) => ({ ...m, monto: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Fecha</Label>
+                  <Input type="date" value={manual.fecha}
+                    onChange={(e) => setManual((m) => ({ ...m, fecha: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <Label>Concepto</Label>
+                <Input value={manual.concepto}
+                  placeholder={manual.tipo === 'ingreso' ? 'Ej. Alquiler local 2, aporte de socio…' : 'Ej. Uso personal, retiro de socio…'}
+                  onChange={(e) => setManual((m) => ({ ...m, concepto: e.target.value }))} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManual(null)}>Cancelar</Button>
+            <Button onClick={guardarManual} disabled={saving}
+              className={manual?.tipo === 'ingreso' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Registrar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Panel de movimientos */}
       <Dialog open={!!movsDe} onOpenChange={(o) => !o && setMovsDe(null)}>
         <DialogContent className="max-w-2xl">
@@ -312,6 +430,7 @@ export default function CuentasBancariasPage() {
             <DialogTitle className="flex items-center gap-2">
               <Landmark className="w-5 h-5 text-blue-700" />
               {movsDe?.banco}{movsDe?.alias ? ` — ${movsDe.alias}` : ''}
+              <span className="text-[11px] font-normal text-gray-400">· últimos 30 días</span>
               <span className="ml-auto text-lg font-black">{movsDe && money(movsDe.saldo, movsDe.moneda)}</span>
             </DialogTitle>
           </DialogHeader>

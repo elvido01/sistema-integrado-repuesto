@@ -20,11 +20,27 @@ const force = process.argv.includes('--force') ? ' --force' : '';
 // motos es de CAMINERO MOTORS (tenant aparte). Por eso Fase 2 (vehículos→productos)
 // queda FUERA del pipeline de este tenant. Los vehículos ya viven como `garantia`
 // en cada préstamo (Fase 3). Ver memoria project_caminero_motoprestalos.
+// ───────────────────────────────────────────────────────────────────────
+// GO-LIVE DE LAS 3 FINANCIERAS — 2026-07-21
+// Naranjos, Odalys e Inversiones cobran desde hoy EN MOTOFLOW; el SiiF
+// quedó solo para consulta. Sus fases salen del pipeline porque con --force
+// BORRAN las cuotas y des-aplican los abonos para regenerarlos desde el
+// viejo: un solo backup se llevaría por delante todo lo cobrado aquí (el
+// viejo ya no los tiene). La fase de clientes además pisaría con datos
+// viejos los que se editen en MotoFlow.
+// Para reactivarlas puntualmente: FINANCIERAS_SYNC=1 node migrar-todo.mjs …
+// Caminero (catálogo/kardex del dealer) sigue igual: su operación real
+// todavía vive en el SiiF.
+// ───────────────────────────────────────────────────────────────────────
+const FINANCIERAS_SYNC = process.env.FINANCIERAS_SYNC === '1';
+
 const pasos = [
-  // Financiera (MotoPréstamos Los Naranjos) → tenant 766fe3d6
-  { desc: 'Fase 1 · extraer clientes',        cmd: 'fase1-clientes.mjs' },
-  { desc: 'Fase 1 · cargar clientes',         cmd: `fase1-cargar-clientes.mjs${commit}` },
-  { desc: 'Fase 3 · cargar préstamos',        cmd: `fase3-cargar-prestamos.mjs${commit}${force}` },
+  // Financiera (MotoPréstamos Los Naranjos) → tenant 766fe3d6 — CONGELADA
+  ...(FINANCIERAS_SYNC ? [
+    { desc: 'Fase 1 · extraer clientes',        cmd: 'fase1-clientes.mjs' },
+    { desc: 'Fase 1 · cargar clientes',         cmd: `fase1-cargar-clientes.mjs${commit}` },
+    { desc: 'Fase 3 · cargar préstamos',        cmd: `fase3-cargar-prestamos.mjs${commit}${force}` },
+  ] : []),
   // Dealer (Caminero Motors) → tenant b39506c3. Su catálogo vive en la tabla
   // mercancias de scv8_mp_los_naranjos (aunque el archivo tenga otro nombre).
   { desc: 'Caminero · catálogo → dealer',     cmd: `fase-caminero-catalogo.mjs${commit}` },
@@ -46,11 +62,14 @@ const pasos = [
   // Financieras SEPARADAS (antes fusionadas en Naranjos; ver cpf_gen_cias):
   //   05 ODALYS      = prestamos_05          → tenant c05a1d05
   //   07 INVERSIONES = cpf_inv_los_naranjos  → tenant c07a1d07
-  { desc: 'Odalys · clientes + préstamos',         cmd: `fase-financiera-cxc.mjs odalys${commit}${force}` },
-  { desc: 'Inversiones LN · clientes + préstamos', cmd: `fase-financiera-cxc.mjs inversiones${commit}${force}` },
-  // Bitácora "Notas y Comentarios" del viejo (clientes_notas) -> cliente_notas
-  // de las 3 financieras. Idempotente (id determinístico por base+id legacy).
-  { desc: 'Notas de clientes (3 financieras)',     cmd: `fase-notas-clientes.mjs${commit}` },
+  // CONGELADAS desde el go-live (ver arriba).
+  ...(FINANCIERAS_SYNC ? [
+    { desc: 'Odalys · clientes + préstamos',         cmd: `fase-financiera-cxc.mjs odalys${commit}${force}` },
+    { desc: 'Inversiones LN · clientes + préstamos', cmd: `fase-financiera-cxc.mjs inversiones${commit}${force}` },
+    // Bitácora "Notas y Comentarios" del viejo (clientes_notas) -> cliente_notas
+    // de las 3 financieras. Idempotente (id determinístico por base+id legacy).
+    { desc: 'Notas de clientes (3 financieras)',     cmd: `fase-notas-clientes.mjs${commit}` },
+  ] : []),
 ];
 
 console.log(`\n===== MIGRACIÓN SiiF → MotoFlow ${commit ? '(CARGA REAL)' : '(SIMULACIÓN)'} =====`);
