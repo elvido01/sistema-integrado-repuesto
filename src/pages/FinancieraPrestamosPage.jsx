@@ -7,7 +7,7 @@ import { Loader2, Plus, Receipt, DollarSign, RefreshCw, Printer } from 'lucide-r
 import NuevoPrestamoModal from '@/components/financiera/NuevoPrestamoModal';
 import { usePanels } from '@/contexts/PanelContext';
 import { formatFechaDMY } from '@/lib/dateUtils';
-import { printInformePrestamo } from '@/lib/printInformePrestamo';
+import { imprimirInformePrestamo } from '@/lib/printInformePrestamo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
@@ -31,34 +31,7 @@ const FinancieraPrestamosPage = () => {
   const imprimirInforme = async (p) => {
     setPrintingId(p.id);
     try {
-      const [{ data: full }, { data: cli }, { data: cuotas }, { data: cargos }] = await Promise.all([
-        supabase.from('prestamos').select('*').eq('id', p.id).single(),
-        supabase.from('clientes').select('*').eq('id', p.cliente_id).maybeSingle(),
-        supabase.from('prestamo_cuotas')
-          .select('numero_cuota, capital, interes, monto_cuota, capital_pagado, interes_pagado, mora_pagada')
-          .eq('prestamo_id', p.id).order('numero_cuota'),
-        supabase.from('prestamo_cargos')
-          .select('tipo, monto, monto_pagado, anulado')
-          .eq('prestamo_id', p.id),
-      ]);
-      const qs = cuotas || [];
-      const cgs = (cargos || []).filter((c) => !c.anulado);
-      const moraCargos = cgs.filter((c) => String(c.tipo || '').toUpperCase() === 'MR');
-      const otrosCargos = cgs.filter((c) => String(c.tipo || '').toUpperCase() !== 'MR');
-      const sum = (arr, k) => arr.reduce((a, x) => a + (Number(x[k]) || 0), 0);
-      const moraPagada = sum(qs, 'mora_pagada');
-      printInformePrestamo({
-        empresa,
-        prestamo: full,
-        cliente: cli,
-        valorCuota: qs[0]?.monto_cuota || 0,
-        totales: {
-          capital: { gen: sum(qs, 'capital'), pag: sum(qs, 'capital_pagado') },
-          intereses: { gen: sum(qs, 'interes'), pag: sum(qs, 'interes_pagado') },
-          atrasos: { gen: moraPagada + sum(moraCargos, 'monto'), pag: moraPagada + sum(moraCargos, 'monto_pagado') },
-          otros: { gen: sum(otrosCargos, 'monto'), pag: sum(otrosCargos, 'monto_pagado') },
-        },
-      });
+      await imprimirInformePrestamo({ prestamoId: p.id, clienteId: p.cliente_id, empresa });
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo imprimir el informe', description: e.message });
     }

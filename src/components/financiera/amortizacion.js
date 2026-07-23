@@ -29,15 +29,24 @@ export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fecha
     cuotaFija = round2((P * i) / (1 - Math.pow(1 + i, -n)));
   }
 
+  // A VENCIMIENTO (interes periodico): NO se generan cuotas de interes por
+  // adelantado. Va UNA sola linea con el capital, venciendo al final del
+  // plazo; el interes lo acumula el sistema dia a dia (interes corriente),
+  // igual que los prestamos a interes que vienen del sistema viejo.
+  if (metodo === 'vencimiento') {
+    return [{
+      numero_cuota: 1,
+      fecha_vencimiento: base ? addPeriodo(base, n, frecuencia) : '',
+      capital: P,
+      interes: 0,
+      monto_cuota: P,
+    }];
+  }
+
   const rows = [];
   for (let k = 1; k <= n; k++) {
     let cap; let interes; let cuota;
-    if (metodo === 'vencimiento') {
-      // A vencimiento (bullet): interes periodico, capital TODO en la ultima cuota
-      interes = round2(P * i);
-      cap = (k === n) ? round2(P - sumCap) : 0;
-      cuota = round2(cap + interes);
-    } else if (adj > 0) {
+    if (adj > 0) {
       // Cuota fija ajustada por el operador
       cap = round2(P / n);
       cuota = adj;
@@ -58,7 +67,7 @@ export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fecha
       interes = round2(P * i);
       cuota = round2(cap + interes);
     }
-    if (k === n && metodo !== 'vencimiento') {
+    if (k === n) {
       cap = round2(P - sumCap);
       cuota = adj > 0 ? adj : round2(cap + interes);
       if (adj > 0) interes = round2(adj - cap);

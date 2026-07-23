@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { generateGastoDiarioPDF } from '@/components/common/pdf/gastoDiarioPDF';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
@@ -38,6 +39,10 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     monto: '',
     descripcion: '',
   });
+  // De dónde sale el gasto: la gaveta (efectivo) o una cuenta bancaria.
+  // Sirve para gastos grandes que superan el efectivo en caja.
+  const [pagaCon, setPagaCon] = useState('efectivo'); // 'efectivo' | 'banco'
+  const [cuentaId, setCuentaId] = useState('');
   // Gastos ya registrados hoy: clic para EDITAR (ej. el mandado costó menos)
   const [gastosHoy, setGastosHoy] = useState([]);
   const [editandoId, setEditandoId] = useState(null);
@@ -58,6 +63,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const resetForm = () => {
     setEditandoId(null);
     setFormData({ fecha: todayISO(), tipo_gasto: 'Operativo', monto: '', descripcion: '' });
+    setPagaCon('efectivo');
+    setCuentaId('');
   };
 
   const editarGasto = (g) => {
@@ -123,6 +130,11 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       return;
     }
 
+    if (pagaCon === 'banco' && !cuentaId) {
+      toast({ variant: 'destructive', title: 'Falta la cuenta', description: 'Elige de qué cuenta bancaria sale el gasto.' });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       if (editandoId) {
@@ -142,20 +154,44 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         return; // el modal queda abierto para seguir revisando
       }
 
-      const { error } = await supabase.from('gastos_diarios').insert({
+      const desdeBanco = pagaCon === 'banco' && cuentaId;
+      const { data: gastoCreado, error } = await supabase.from('gastos_diarios').insert({
         tenant_id: tenantId,
         fecha: formData.fecha,
         tipo_gasto: formData.tipo_gasto,
         monto,
         descripcion: formData.descripcion.trim(),
         usuario_id: user?.id || null,
-      });
+        cuenta_bancaria_id: desdeBanco ? cuentaId : null,
+      }).select('id').single();
 
       if (error) throw error;
 
+      // Pagado por banco: sale de la cuenta (y NO de la gaveta). Idempotente
+      // por el id del gasto; si falla, el gasto igual quedó registrado.
+      if (desdeBanco) {
+        const { error: movErr } = await supabase.rpc('registrar_movimiento_bancario_compartido', {
+          p_cuenta_id: cuentaId,
+          p_tipo: 'SALIDA',
+          p_monto: monto,
+          p_concepto: `Gasto ${formData.tipo_gasto}: ${formData.descripcion.trim()}`.trim(),
+          p_referencia: null,
+          p_origen_tipo: 'gasto',
+          p_origen_id: gastoCreado?.id || null,
+          p_fecha: formData.fecha || null,
+        });
+        if (movErr) {
+          toast({
+            variant: 'destructive',
+            title: 'Gasto registrado, pero el banco no cuadró',
+            description: `No se descontó de la cuenta (${movErr.message}). Regístralo a mano en Cuentas Bancarias.`,
+          });
+        }
+      }
+
       toast({
         title: 'Gasto diario registrado',
-        description: 'El gasto fue descontado de caja.',
+        description: desdeBanco ? 'El gasto salió de la cuenta bancaria.' : 'El gasto fue descontado de caja.',
       });
 
       // Comprobante de gasto segun el formato configurado (Config. del Sistema)
@@ -246,6 +282,32 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
               required
             />
           </div>
+
+          {/* De dónde sale: la gaveta o una cuenta bancaria. Para gastos
+              grandes que superan el efectivo en caja. */}
+          {!editandoId && (
+            <div className="space-y-2">
+              <Label>¿De dónde sale?</Label>
+              <Select value={pagaCon} onValueChange={(v) => { setPagaCon(v); if (v === 'efectivo') setCuentaId(''); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="efectivo">Efectivo (caja del día)</SelectItem>
+                  <SelectItem value="banco">Cuenta bancaria</SelectItem>
+                </SelectContent>
+              </Select>
+              {pagaCon === 'banco' && (
+                <div className="pt-1">
+                  <CuentaBancariaSelect
+                    value={cuentaId} onChange={setCuentaId}
+                    moneda="DOP" contexto="compromiso" label="Sale de la cuenta"
+                  />
+                  <p className="text-[10px] text-gray-500 italic mt-1">
+                    No resta del efectivo en caja: sale del saldo de esa cuenta.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="descripcion-gasto">Descripcion</Label>

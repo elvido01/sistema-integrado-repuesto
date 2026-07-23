@@ -4,6 +4,7 @@
 //   caja del cliente, Vehiculo en Garantia | Inmueble en Garantia,
 //   Garante | Comentarios, y la tabla GENERADO / PAGADO / PENDIENTE.
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { supabase } from '@/lib/customSupabaseClient';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 const fdate = (d) => {
@@ -146,4 +147,43 @@ export const printInformePrestamo = ({ empresa, prestamo, cliente, valorCuota, t
   iframe.contentWindow.document.write(html);
   iframe.contentWindow.document.close();
   setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+};
+
+// Arma el informe desde la BD y lo manda a imprimir (hoja carta). Lo usan
+// tanto la reimpresion (lista de Prestamos) como la creacion (Nuevo Prestamo),
+// para que ambos saquen exactamente el mismo documento.
+export const imprimirInformePrestamo = async ({ prestamoId, clienteId, empresa }) => {
+  if (!prestamoId) return;
+  const [{ data: full }, { data: cli }, { data: cuotas }, { data: cargos }] = await Promise.all([
+    supabase.from('prestamos').select('*').eq('id', prestamoId).single(),
+    clienteId
+      ? supabase.from('clientes').select('*').eq('id', clienteId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase.from('prestamo_cuotas')
+      .select('numero_cuota, capital, interes, monto_cuota, capital_pagado, interes_pagado, mora_pagada')
+      .eq('prestamo_id', prestamoId).order('numero_cuota'),
+    supabase.from('prestamo_cargos')
+      .select('tipo, monto, monto_pagado, anulado')
+      .eq('prestamo_id', prestamoId),
+  ]);
+
+  const qs = cuotas || [];
+  const cgs = (cargos || []).filter((c) => !c.anulado);
+  const moraCargos = cgs.filter((c) => String(c.tipo || '').toUpperCase() === 'MR');
+  const otrosCargos = cgs.filter((c) => String(c.tipo || '').toUpperCase() !== 'MR');
+  const sum = (arr, k) => arr.reduce((a, x) => a + (Number(x[k]) || 0), 0);
+  const moraPagada = sum(qs, 'mora_pagada');
+
+  printInformePrestamo({
+    empresa,
+    prestamo: full,
+    cliente: cli,
+    valorCuota: qs[0]?.monto_cuota || 0,
+    totales: {
+      capital: { gen: sum(qs, 'capital'), pag: sum(qs, 'capital_pagado') },
+      intereses: { gen: sum(qs, 'interes'), pag: sum(qs, 'interes_pagado') },
+      atrasos: { gen: moraPagada + sum(moraCargos, 'monto'), pag: moraPagada + sum(moraCargos, 'monto_pagado') },
+      otros: { gen: sum(otrosCargos, 'monto'), pag: sum(otrosCargos, 'monto_pagado') },
+    },
+  });
 };

@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, Search, Plus, Trash2 } from 'lucide-react';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
+import { imprimirInformePrestamo } from '@/lib/printInformePrestamo';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { calcAmortizacion, round2 } from './amortizacion';
 import { formatFechaDMY } from '@/lib/dateUtils';
 
@@ -37,6 +39,7 @@ const initial = {
 
 const NuevoPrestamoModal = ({ isOpen, onClose }) => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
   const [form, setForm] = useState(initial);
   const [cliente, setCliente] = useState(null);
   const [buscarOpen, setBuscarOpen] = useState(false);
@@ -168,6 +171,17 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
             description: `No se registró la salida en ${fallidas.length} cuenta(s): ${fallidas[0]}. Regístrala a mano en Cuentas Bancarias.`,
           });
         }
+      }
+
+      // Informe del préstamo en hoja carta, igual que la reimpresión.
+      try {
+        await imprimirInformePrestamo({ prestamoId: data?.id, clienteId: cliente.id, empresa });
+      } catch (impErr) {
+        toast({
+          variant: 'destructive',
+          title: 'Préstamo creado, pero no se imprimió',
+          description: `${impErr.message}. Imprímelo desde la lista de Préstamos.`,
+        });
       }
 
       toast({ title: 'Préstamo creado', description: `${data?.numero} · ${cliente.nombre}` });
