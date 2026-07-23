@@ -355,23 +355,6 @@ const HomePage = () => {
         }).then(() => {}, () => {});
       }
 
-      // Pago en EFECTIVO: se engancha como Gasto Diario para que aparezca en el
-      // cierre de caja y en la libreta de gastos, y rebaje la caja del día. El
-      // dashboard y el cierre cuentan el GASTO (no el compromiso) — ver
-      // sql/compromiso_efectivo_a_gasto.sql, que evita el doble conteo.
-      if (String(forma_pago || '').toLowerCase().includes('efectivo')) {
-        const { error: gErr } = await supabase.from('gastos_diarios').insert({
-          tenant_id: tenantId,
-          fecha: new Date().toISOString().split('T')[0],
-          tipo_gasto: 'Compromiso',
-          monto: c.monto,
-          descripcion: c.nombre,
-          usuario_id: profile?.id || null,
-          compromiso_id: c.id,
-        });
-        if (gErr) console.warn('No se pudo enganchar el compromiso a gastos diarios:', gErr.message);
-      }
-
       // Auto-renovación: crear el siguiente compromiso si es recurrente
       if (c.recurrente) {
         const baseDate = c.fecha ? new Date(c.fecha + 'T12:00:00') : new Date();
