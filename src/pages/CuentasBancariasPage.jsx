@@ -63,7 +63,31 @@ export default function CuentasBancariasPage() {
         supabase.from('cuentas_bancarias_default').select('modulo, cuenta_id').eq('tenant_id', tenantId),
       ]);
       if (e1) throw e1;
-      setCuentas(saldos || []);
+
+      // Cuentas COMPARTIDAS con la financiera vinculada (ej. la 004110544 de
+      // MotoPréstamos que Caminero también usa): se ven con el MISMO saldo en
+      // ambas empresas. Vienen marcadas y no se editan desde aquí — su dueña
+      // es la otra empresa.
+      let compartidas = [];
+      try {
+        const { data: ext } = await supabase.rpc('get_cuentas_financiera_externa');
+        const propias = new Set((saldos || []).map((c) => c.id));
+        compartidas = ((ext?.cuentas) || [])
+          .filter((c) => !propias.has(c.id))
+          .map((c) => ({
+            id: c.id,
+            banco: c.nombre,           // el RPC ya devuelve "BANCO — alias"
+            alias: null,
+            moneda: c.moneda,
+            saldo: c.saldo,
+            saldo_inicial: 0,
+            activo: true,
+            _compartida: true,
+            _empresa: ext?.nombre || 'otra empresa',
+          }));
+      } catch { /* sin financiera vinculada o sin permiso: solo las propias */ }
+
+      setCuentas([...(saldos || []), ...compartidas]);
       setDefaultId(cfg?.cuenta_bancaria_default_id || null);
       setDefaultsMod(Object.fromEntries((defs || []).map((d) => [d.modulo, d.cuenta_id])));
     } catch (err) {
@@ -153,11 +177,21 @@ export default function CuentasBancariasPage() {
       // Solo los últimos 30 días (fecha del movimiento en hora RD).
       const hoyRD = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santo_Domingo' }));
       const desde = new Date(hoyRD.getTime() - 30 * 86400000).toLocaleDateString('en-CA');
-      const { data, error } = await supabase
-        .from('movimientos_bancarios').select('*')
-        .eq('cuenta_id', c.id).gte('fecha', desde)
-        .order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(200);
-      if (error) throw error;
+      // El RPC sirve tanto la cuenta propia como la COMPARTIDA de la
+      // financiera vinculada (esos movimientos son de la otra empresa y el
+      // RLS los ocultaría). Si aún no existe, cae al query directo.
+      let data = null;
+      const rpc = await supabase.rpc('get_movimientos_cuenta', { p_cuenta_id: c.id, p_desde: desde });
+      if (!rpc.error) {
+        data = rpc.data;
+      } else {
+        const q = await supabase
+          .from('movimientos_bancarios').select('*')
+          .eq('cuenta_id', c.id).gte('fecha', desde)
+          .order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(200);
+        if (q.error) throw q.error;
+        data = q.data;
+      }
       const lista = data || [];
       // El FONDO INICIAL (saldo_inicial) se muestra como la línea más antigua,
       // siempre (aunque quede fuera de los 30 días) para que el saldo cuadre a
@@ -267,9 +301,11 @@ export default function CuentasBancariasPage() {
                     <span className="font-bold text-gray-900 truncate">{c.banco}</span>
                     {defaultId === c.id && <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-[10px]">Predeterminada</Badge>}
                     {!c.activo && <Badge variant="secondary" className="text-[10px]">Inactiva</Badge>}
+                    {c._compartida && <Badge className="bg-sky-100 text-sky-800 hover:bg-sky-100 text-[10px]">Compartida</Badge>}
                   </div>
                   {c.alias && <div className="text-xs text-gray-500 truncate">{c.alias}</div>}
                   {c.numero_cuenta && <div className="text-xs text-gray-400 font-mono">···{String(c.numero_cuenta).slice(-4)}</div>}
+                  {c._compartida && <div className="text-[11px] text-sky-700 truncate">de {c._empresa}</div>}
                 </div>
                 <Badge variant="outline" className="text-[10px] flex-shrink-0">{c.moneda}</Badge>
               </div>
@@ -294,18 +330,24 @@ export default function CuentasBancariasPage() {
                   </>
                 )}
                 <div className="flex-1" />
-                {defaultId !== c.id && c.activo && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" title="Hacer predeterminada" onClick={() => hacerDefault(c)}>
-                    <Star className="w-4 h-4 text-amber-500" />
-                  </Button>
+                {/* Una cuenta COMPARTIDA no se edita desde aquí: su dueña es la
+                    otra empresa. Sí se le pueden registrar ingresos/retiros. */}
+                {!c._compartida && (
+                  <>
+                    {defaultId !== c.id && c.activo && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Hacer predeterminada" onClick={() => hacerDefault(c)}>
+                        <Star className="w-4 h-4 text-amber-500" />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar"
+                      onClick={() => setModal({ ...c, saldo_inicial: String(c.saldo_inicial ?? 0) })}>
+                      <Pencil className="w-4 h-4 text-gray-500" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title={c.activo ? 'Desactivar' : 'Activar'} onClick={() => toggleActivo(c)}>
+                      {c.activo ? <StarOff className="w-4 h-4 text-gray-400" /> : <RefreshCw className="w-4 h-4 text-emerald-600" />}
+                    </Button>
+                  </>
                 )}
-                <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar"
-                  onClick={() => setModal({ ...c, saldo_inicial: String(c.saldo_inicial ?? 0) })}>
-                  <Pencil className="w-4 h-4 text-gray-500" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" title={c.activo ? 'Desactivar' : 'Activar'} onClick={() => toggleActivo(c)}>
-                  {c.activo ? <StarOff className="w-4 h-4 text-gray-400" /> : <RefreshCw className="w-4 h-4 text-emerald-600" />}
-                </Button>
               </div>
             </motion.div>
           ))}
