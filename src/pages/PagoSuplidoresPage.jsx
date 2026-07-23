@@ -34,10 +34,29 @@ const initialState = {
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
-const getCompraOldestTime = (compra) => {
-  const rawDate = compra.fecha_emision || compra.fecha_vencimiento;
+// Fecha (columna DATE del RPC) como día calendario, sin corrimiento de zona
+// horaria: 'YYYY-MM-DD' → 'DD/MM/YYYY'. new Date('YYYY-MM-DD') la parsea en
+// UTC y en RD (UTC-4) se veía un día menos (05/06 salía 04/06).
+const fmtFechaDMY = (f) => {
+  if (!f) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(f));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(f);
+};
+
+// Orden de las deudas: la que PRIMERO se vence va arriba (pagarés de una
+// misma factura salen 2/6, 3/6, 4/6... por su vencimiento). Desempate por
+// emisión y luego por la referencia (número de pagaré).
+const getCompraVenceTime = (compra) => {
+  const rawDate = compra.fecha_vencimiento || compra.fecha_emision;
   const time = rawDate ? new Date(rawDate).getTime() : Infinity;
   return Number.isNaN(time) ? Infinity : time;
+};
+const compararCompras = (a, b) => {
+  const dv = getCompraVenceTime(a) - getCompraVenceTime(b);
+  if (dv !== 0) return dv;
+  const de = new Date(a.fecha_emision || 0).getTime() - new Date(b.fecha_emision || 0).getTime();
+  if (de !== 0) return de;
+  return String(a.referencia || '').localeCompare(String(b.referencia || ''));
 };
 
 const PagoSuplidoresPage = () => {
@@ -110,7 +129,7 @@ const PagoSuplidoresPage = () => {
       // Ordenar por fecha de emision ascendente: la factura mas vieja primero.
       const comprasConAbono = data
         .map(c => ({ ...c, abono: 0 }))
-        .sort((a, b) => getCompraOldestTime(a) - getCompraOldestTime(b));
+        .sort(compararCompras);
       // El balance de las compras en US$ se lleva en dólares; el de las de pesos, en RD$
       const balanceAnterior = comprasConAbono.reduce((sum, c) => sum + (esFilaUSD(c) ? 0 : Number(c.monto_pendiente)), 0);
       const balanceUsd = comprasConAbono.reduce((sum, c) => sum + (esFilaUSD(c) ? Number(c.pendiente_usd) : 0), 0);
@@ -153,7 +172,7 @@ const PagoSuplidoresPage = () => {
     setCompras(prevCompras => {
       let restante = totalDisponible;
       const abonosPorCompra = new Map();
-      const ordenadas = [...prevCompras].sort((a, b) => getCompraOldestTime(a) - getCompraOldestTime(b));
+      const ordenadas = [...prevCompras].sort(compararCompras);
 
       ordenadas.forEach((compra) => {
         const esU = esFilaUSD(compra) && tasa > 0;
@@ -530,8 +549,8 @@ const PagoSuplidoresPage = () => {
                 ) : (
                   compras.map(c => (
                     <TableRow key={c.id}>
-                      <TableCell>{formatInTimeZone(new Date(c.fecha_emision), 'dd/MM/yyyy')}</TableCell>
-                      <TableCell>{formatInTimeZone(new Date(c.fecha_vencimiento), 'dd/MM/yyyy')}</TableCell>
+                      <TableCell>{fmtFechaDMY(c.fecha_emision)}</TableCell>
+                      <TableCell>{fmtFechaDMY(c.fecha_vencimiento)}</TableCell>
                       <TableCell>{c.referencia}</TableCell>
                       <TableCell>{esFilaUSD(c) ? <span className="text-emerald-800 font-semibold">US$ {formatCurrency(c.total_usd)}</span> : formatCurrency(c.monto_total)}</TableCell>
                       <TableCell className="font-semibold">
