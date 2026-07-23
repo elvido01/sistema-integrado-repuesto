@@ -425,11 +425,7 @@ export default function POSScreen() {
             <PlusCircle color="white" size={18} />
             <Text className="text-white font-medium ml-1.5 text-[13px]">Agregar más</Text>
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity>
-            <Text className="text-brand font-medium">Cambiar</Text>
-          </TouchableOpacity>
-        )}
+        ) : null}
       </View>
 
       <FlatList

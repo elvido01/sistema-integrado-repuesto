@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, ScrollView, Modal, Platform } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { FileText, PlusCircle, Search, Trash2, Plus, Minus, Share2, X, RefreshCw, CreditCard } from 'lucide-react-native';
+import { FileText, PlusCircle, Search, Trash2, Plus, Minus, Pencil, Share2, X, RefreshCw, CreditCard } from 'lucide-react-native';
 import { useCartStore } from '@/src/store/useCartStore';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { supabase } from '@/src/supabase/client';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatFechaDMY } from '@/src/utils/formatDate';
 
 const CLIENTE_GENERICO_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
 
@@ -60,6 +61,8 @@ export default function CotizacionesScreen() {
   const [loading, setLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
   const [sendingToVentaId, setSendingToVentaId] = useState<string | null>(null);
+  const [editandoCotizacionId, setEditandoCotizacionId] = useState<string | null>(null);
+  const [editandoCotizacionNumero, setEditandoCotizacionNumero] = useState<string | number | null>(null);
   const [cotizaciones, setCotizaciones] = useState<CotizacionRow[]>([]);
   const [cotizacionModal, setCotizacionModal] = useState<any | null>(null);
   const [compartiendo, setCompartiendo] = useState(false);
@@ -228,6 +231,8 @@ export default function CotizacionesScreen() {
 
   const cerrarCotizacionYLimpiar = () => {
     clearCart();
+    setEditandoCotizacionId(null);
+    setEditandoCotizacionNumero(null);
     setCotizacionModal(null);
   };
 
@@ -289,6 +294,60 @@ export default function CotizacionesScreen() {
     }
   };
 
+  const editarCotizacion = async (cotizacion: any) => {
+    if (!cotizacion?.id) return;
+    try {
+      const { data: detalles, error } = await supabase
+        .from('cotizaciones_detalle')
+        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct)')
+        .eq('cotizacion_id', cotizacion.id);
+
+      if (error) throw error;
+      if (!detalles?.length) {
+        Alert.alert('Sin detalle', 'Esta cotizacion no tiene articulos para editar.');
+        return;
+      }
+
+      clearCart();
+      setCliente(
+        cotizacion.cliente_id || null,
+        cotizacion.manual_cliente_nombre || cotizacion.cliente_nombre || 'Cliente Generico',
+        cotizacion.cliente_telefono || ''
+      );
+
+      detalles.forEach((detalle: any) => {
+        const producto = detalle.productos || {};
+        const productoParaVenta = {
+          id: detalle.producto_id,
+          codigo: detalle.codigo || producto.codigo || '',
+          descripcion: detalle.descripcion || producto.descripcion || '',
+          referencia: producto.referencia || null,
+          existencia: 0,
+          precio_venta_1: Number(detalle.precio_unitario || 0),
+          precio_venta_2: Number(detalle.precio_unitario || 0),
+          itbis_pct: Number(producto.itbis_pct ?? 0.18),
+          url_imagen: producto.imagen_url || undefined,
+        };
+
+        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1);
+        if (Number(detalle.descuento_valor || 0) > 0) {
+          updateDiscount(detalle.producto_id, Number(detalle.descuento_valor || 0));
+        }
+      });
+
+      setEditandoCotizacionId(cotizacion.id);
+      setEditandoCotizacionNumero(cotizacion.numero);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo cargar la cotizacion para editar.');
+    }
+  };
+
+  const cancelarEdicion = () => {
+    clearCart();
+    setEditandoCotizacionId(null);
+    setEditandoCotizacionNumero(null);
+  };
+
   const handleCrearCotizacion = async () => {
     if (items.length === 0) {
       Alert.alert('Carrito vacio', 'Agregue productos para crear una cotizacion.');
@@ -307,12 +366,8 @@ export default function CotizacionesScreen() {
       const fechaVencimiento = new Date();
       fechaVencimiento.setDate(fechaCotizacion.getDate() + 7);
 
-      const { data: numeroData, error: numeroError } = await supabase.rpc('get_next_cotizacion_numero');
-      if (numeroError) throw numeroError;
-
       const isGeneric = !clienteId || clienteId === CLIENTE_GENERICO_ID || clienteNombre.toUpperCase().includes('GENERICO');
       const cotizacionData = {
-        numero: numeroData,
         usuario_id: user?.id,
         fecha_cotizacion: dateOnly(fechaCotizacion),
         fecha_vencimiento: dateOnly(fechaVencimiento),
@@ -325,13 +380,35 @@ export default function CotizacionesScreen() {
         estado: 'Pendiente',
       };
 
-      const { data: cotizacion, error: cotizacionError } = await supabase
-        .from('cotizaciones')
-        .insert(cotizacionData)
-        .select()
-        .single();
+      let cotizacion: any;
+      if (editandoCotizacionId) {
+        // Editar: actualiza la cotizacion y reemplaza su detalle (conserva el numero).
+        const { data, error: updError } = await supabase
+          .from('cotizaciones')
+          .update(cotizacionData)
+          .eq('id', editandoCotizacionId)
+          .select()
+          .single();
+        if (updError) throw updError;
+        cotizacion = data;
 
-      if (cotizacionError) throw cotizacionError;
+        const { error: delError } = await supabase
+          .from('cotizaciones_detalle')
+          .delete()
+          .eq('cotizacion_id', editandoCotizacionId);
+        if (delError) throw delError;
+      } else {
+        const { data: numeroData, error: numeroError } = await supabase.rpc('get_next_cotizacion_numero');
+        if (numeroError) throw numeroError;
+
+        const { data, error: cotizacionError } = await supabase
+          .from('cotizaciones')
+          .insert({ ...cotizacionData, numero: numeroData })
+          .select()
+          .single();
+        if (cotizacionError) throw cotizacionError;
+        cotizacion = data;
+      }
 
       const detalles = items.map((item) => {
         const bruto = Number(item.precioSeleccionado || 0) * Number(item.cantidad || 0);
@@ -362,7 +439,7 @@ export default function CotizacionesScreen() {
 
       const snapshot = {
         id: cotizacion.id,
-        numero: cotizacion.numero || numeroData,
+        numero: cotizacion.numero || editandoCotizacionNumero,
         fecha: fechaCotizacion,
         fechaVencimiento: dateOnly(fechaVencimiento),
         cliente: nombreManual,
@@ -380,6 +457,8 @@ export default function CotizacionesScreen() {
         })),
       };
 
+      setEditandoCotizacionId(null);
+      setEditandoCotizacionNumero(null);
       setCotizacionModal(snapshot);
       await fetchCotizaciones();
     } catch (error: any) {
@@ -498,20 +577,29 @@ export default function CotizacionesScreen() {
                     {cot.manual_cliente_nombre || cot.cliente_nombre || 'Cliente Generico'}
                   </Text>
                   <View className="flex-row justify-between mt-1">
-                    <Text className="text-gray-400 text-xs">{cot.fecha_cotizacion || 'Sin fecha'}</Text>
+                    <Text className="text-gray-400 text-xs">{cot.fecha_cotizacion ? formatFechaDMY(cot.fecha_cotizacion) : 'Sin fecha'}</Text>
                     <Text className="text-gray-400 text-xs">{cot.estado || 'Pendiente'}</Text>
                   </View>
                   {cot.estado === 'Pendiente' && (
-                    <TouchableOpacity
-                      className={`mt-3 bg-brand rounded-lg py-2 flex-row items-center justify-center ${sendingToVentaId === cot.id ? 'opacity-60' : ''}`}
-                      disabled={sendingToVentaId === cot.id}
-                      onPress={() => enviarCotizacionAVenta(cot)}
-                    >
-                      <CreditCard color="white" size={16} />
-                      <Text className="text-white font-bold ml-2 text-[13px]">
-                        {sendingToVentaId === cot.id ? 'Enviando...' : 'Enviar a venta'}
-                      </Text>
-                    </TouchableOpacity>
+                    <View className="mt-3 flex-row gap-2">
+                      <TouchableOpacity
+                        className="flex-1 border border-orange-500 rounded-lg py-2 flex-row items-center justify-center active:bg-orange-50"
+                        onPress={() => editarCotizacion(cot)}
+                      >
+                        <Pencil color="#f97316" size={15} />
+                        <Text className="text-orange-600 font-bold ml-2 text-[13px]">Editar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className={`flex-1 bg-brand rounded-lg py-2 flex-row items-center justify-center ${sendingToVentaId === cot.id ? 'opacity-60' : ''}`}
+                        disabled={sendingToVentaId === cot.id}
+                        onPress={() => enviarCotizacionAVenta(cot)}
+                      >
+                        <CreditCard color="white" size={15} />
+                        <Text className="text-white font-bold ml-2 text-[13px]" numberOfLines={1}>
+                          {sendingToVentaId === cot.id ? 'Enviando...' : 'A venta'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </View>
               ))}
@@ -522,6 +610,20 @@ export default function CotizacionesScreen() {
 
       {items.length > 0 && (
         <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-200 px-4 pt-4" style={{ paddingBottom: Math.max(insets.bottom + 16, 24) }}>
+          {editandoCotizacionId ? (
+            <View className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 mb-3 flex-row items-center justify-between">
+              <View className="flex-row items-center">
+                <Pencil color="#f97316" size={15} />
+                <Text className="text-orange-600 font-bold ml-2 text-[13px]">
+                  Editando cotizacion #{editandoCotizacionNumero || ''}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={cancelarEdicion} className="px-2 py-1">
+                <Text className="text-gray-500 font-semibold text-[13px]">Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             className="bg-gray-100 py-3 rounded-xl flex-row justify-center items-center mb-3"
             onPress={() => router.push('/(tabs)/catalogo?modo=cotizacion')}
@@ -552,7 +654,7 @@ export default function CotizacionesScreen() {
           </View>
 
           <View className="flex-row space-x-3">
-            <TouchableOpacity className="bg-gray-100 p-4 rounded-xl flex-1 items-center justify-center" onPress={() => clearCart()}>
+            <TouchableOpacity className="bg-gray-100 p-4 rounded-xl flex-1 items-center justify-center" onPress={cancelarEdicion}>
               <Trash2 color="#ef4444" size={24} />
             </TouchableOpacity>
             <TouchableOpacity
@@ -561,7 +663,9 @@ export default function CotizacionesScreen() {
               onPress={handleCrearCotizacion}
             >
               <FileText color="white" size={24} />
-              <Text className="text-white font-bold text-lg ml-2">{loading ? 'Guardando...' : 'Guardar Cotizacion'}</Text>
+              <Text className="text-white font-bold text-lg ml-2">
+                {loading ? 'Guardando...' : editandoCotizacionId ? 'Actualizar Cotizacion' : 'Guardar Cotizacion'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -17,13 +17,74 @@ const CompraFooter = ({
   printMethod,
   setPrintMethod,
   paperSize,
-  setPaperSize
+  setPaperSize,
+  financiamiento = { activo: false, num_cuotas: 6, frecuencia: 'mensual', fecha_primera: '', cuotas: [] },
+  setFinanciamiento = () => {},
+  esUSD = false,
 }) => {
   const [activeTab, setActiveTab] = useState('pago');
 
   const handlePaymentChange = (id, field, value) => {
     setPagos(pagos.map(p => p.id === id ? { ...p, [field]: value } : p));
   };
+
+  // ===== Financiamiento por cuotas (pagarés) =====
+  const moneda = esUSD ? 'US$' : 'RD$';
+  const esCredito = compra.forma_pago === 'Credito';
+  const fmt = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const toISO = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const baseFechaISO = () => {
+    const f = compra?.fecha;
+    if (!f) return toISO(new Date());
+    if (typeof f === 'string') return f.slice(0, 10);
+    try { return toISO(new Date(f)); } catch { return toISO(new Date()); }
+  };
+  const addMonthsISO = (iso, m) => { const d = new Date(`${iso}T00:00:00`); d.setMonth(d.getMonth() + m); return toISO(d); };
+  const addDaysISO = (iso, days) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + days); return toISO(d); };
+
+  const generarPagares = () => {
+    const n = Math.max(2, parseInt(financiamiento.num_cuotas, 10) || 2);
+    const total = Number(totals.total) || 0;
+    if (total <= 0) return;
+    const fecha1 = financiamiento.fecha_primera || addMonthsISO(baseFechaISO(), 1);
+    const base = Math.floor((total / n) * 100) / 100;
+    const cuotas = [];
+    let acc = 0;
+    for (let i = 0; i < n; i++) {
+      const monto = i === n - 1 ? Number((total - acc).toFixed(2)) : base;
+      acc = Number((acc + base).toFixed(2));
+      const fecha = financiamiento.frecuencia === 'quincenal' ? addDaysISO(fecha1, 15 * i) : addMonthsISO(fecha1, i);
+      cuotas.push({ n: i + 1, fecha, monto });
+    }
+    setFinanciamiento((f) => ({ ...f, fecha_primera: fecha1, cuotas }));
+  };
+
+  const toggleFinanciar = (checked) => {
+    setFinanciamiento((f) => ({ ...f, activo: !!checked, fecha_primera: f.fecha_primera || addMonthsISO(baseFechaISO(), 1) }));
+    if (checked) setActiveTab('financiamiento');
+  };
+
+  const updateCuota = (idx, field, value) => {
+    setFinanciamiento((f) => ({ ...f, cuotas: f.cuotas.map((c, i) => (i === idx ? { ...c, [field]: value } : c)) }));
+  };
+  const removeCuota = (idx) => {
+    setFinanciamiento((f) => ({ ...f, cuotas: f.cuotas.filter((_, i) => i !== idx).map((c, i) => ({ ...c, n: i + 1 })) }));
+  };
+  const addCuota = () => {
+    setFinanciamiento((f) => {
+      const last = f.cuotas[f.cuotas.length - 1];
+      const nextFecha = last
+        ? (f.frecuencia === 'quincenal' ? addDaysISO(last.fecha, 15) : addMonthsISO(last.fecha, 1))
+        : (f.fecha_primera || addMonthsISO(baseFechaISO(), 1));
+      return { ...f, cuotas: [...f.cuotas, { n: f.cuotas.length + 1, fecha: nextFecha, monto: 0 }] };
+    });
+  };
+
+  const sumaPagares = (financiamiento.cuotas || []).reduce((s, c) => s + (Number(c.monto) || 0), 0);
+  const totalCompra = Number(totals.total) || 0;
+  const difPagares = Number((totalCompra - sumaPagares).toFixed(2));
+  const pagaresCuadran = Math.abs(difPagares) < 0.01 && (financiamiento.cuotas || []).length >= 2;
 
   const addPaymentRow = () => {
     setPagos([...pagos, { tipo: '01', referencia: '', monto: 0, id: Date.now() }]);
@@ -75,7 +136,7 @@ const CompraFooter = ({
                 className="space-y-4"
               >
                 <div className="flex items-center gap-6">
-                  <RadioGroup value={compra.forma_pago} onValueChange={v => setCompra({ ...compra, forma_pago: v })} className="flex space-x-6">
+                  <RadioGroup value={compra.forma_pago} onValueChange={v => { setCompra({ ...compra, forma_pago: v }); if (v !== 'Credito') setFinanciamiento(f => ({ ...f, activo: false })); }} className="flex space-x-6">
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="Contado" id="contado" className="h-4 w-4" />
                       <Label htmlFor="contado" className="text-xs font-bold">Contado</Label>
@@ -94,6 +155,19 @@ const CompraFooter = ({
                       disabled={compra.forma_pago !== 'Credito'}
                     />
                     <Label className="text-[11px] text-gray-500 font-bold uppercase">Dias</Label>
+                    <div className="flex items-center gap-1 ml-1">
+                      {[30, 60, 90].map(d => (
+                        <button
+                          key={d}
+                          type="button"
+                          disabled={compra.forma_pago !== 'Credito'}
+                          onClick={() => setCompra({ ...compra, dias_credito: d })}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-40 ${Number(compra.dias_credito) === d ? 'bg-morla-blue text-white border-morla-blue' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                        >
+                          {d}d
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -186,12 +260,148 @@ const CompraFooter = ({
               </motion.div>
             )}
 
-            {(activeTab === 'financiamiento' || activeTab === 'pagareses') && (
+            {activeTab === 'financiamiento' && (
               <motion.div
-                key="placeholder"
-                className="h-full flex items-center justify-center text-gray-400 italic text-xs"
+                key="financiamiento"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                className="space-y-4"
               >
-                Sección en desarrollo...
+                {!esCredito ? (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+                    Para financiar en pagarés, seleccione <b>Crédito</b> en la pestaña "Forma de Pago".
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center space-x-3 bg-white p-2 rounded border border-gray-100 shadow-sm">
+                      <Checkbox
+                        id="fin-activo"
+                        checked={financiamiento.activo}
+                        onCheckedChange={toggleFinanciar}
+                        className="h-5 w-5 border-2 border-gray-300 data-[state=checked]:bg-morla-blue data-[state=checked]:border-morla-blue"
+                      />
+                      <Label htmlFor="fin-activo" className="text-[11px] font-black text-gray-700 uppercase cursor-pointer">
+                        Financiar esta compra en pagarés ({moneda})
+                      </Label>
+                    </div>
+
+                    {financiamiento.activo && (
+                      <>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-gray-500 uppercase">N° de pagarés</Label>
+                            <Input
+                              type="number"
+                              min="2"
+                              value={financiamiento.num_cuotas}
+                              onChange={e => setFinanciamiento(f => ({ ...f, num_cuotas: parseInt(e.target.value, 10) || 0 }))}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-gray-500 uppercase">Frecuencia</Label>
+                            <Select value={financiamiento.frecuencia} onValueChange={v => setFinanciamiento(f => ({ ...f, frecuencia: v }))}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="mensual">Mensual</SelectItem>
+                                <SelectItem value="quincenal">Quincenal</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-gray-500 uppercase">1er vencimiento</Label>
+                            <Input
+                              type="date"
+                              value={financiamiento.fecha_primera}
+                              onChange={e => setFinanciamiento(f => ({ ...f, fecha_primera: e.target.value }))}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <Button onClick={generarPagares} className="h-8 text-xs bg-morla-blue text-white hover:bg-morla-blue/90">
+                            Generar {financiamiento.num_cuotas || 0} pagarés
+                          </Button>
+                          <span className="text-[11px] text-gray-500">
+                            Total a financiar: <b className="font-mono">{moneda} {fmt(totalCompra)}</b>
+                          </span>
+                        </div>
+
+                        {financiamiento.cuotas.length > 0 && (
+                          <div className={`text-[11px] font-bold ${pagaresCuadran ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {financiamiento.cuotas.length} pagarés listos — revíselos y edítelos en la pestaña "Pagareses".
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </motion.div>
+            )}
+
+            {activeTab === 'pagareses' && (
+              <motion.div
+                key="pagareses"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+              >
+                {!financiamiento.activo ? (
+                  <div className="text-xs text-gray-400 italic">Active el financiamiento en la pestaña "Financiamiento".</div>
+                ) : financiamiento.cuotas.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">Genere los pagarés en la pestaña "Financiamiento".</div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="max-h-[220px] overflow-y-auto border rounded">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-100 sticky top-0">
+                          <tr className="text-[10px] uppercase text-gray-500">
+                            <th className="p-2 text-left w-12">#</th>
+                            <th className="p-2 text-left">Vencimiento</th>
+                            <th className="p-2 text-right">Monto ({moneda})</th>
+                            <th className="p-2 w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {financiamiento.cuotas.map((c, idx) => (
+                            <tr key={idx} className="border-t">
+                              <td className="p-1.5 font-bold text-gray-600">{idx + 1}/{financiamiento.cuotas.length}</td>
+                              <td className="p-1.5">
+                                <Input type="date" value={c.fecha} onChange={e => updateCuota(idx, 'fecha', e.target.value)} className="h-7 text-xs" />
+                              </td>
+                              <td className="p-1.5">
+                                <Input
+                                  type="number"
+                                  value={c.monto}
+                                  onChange={e => updateCuota(idx, 'monto', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                  className="h-7 text-xs text-right font-mono"
+                                />
+                              </td>
+                              <td className="p-1.5 text-center">
+                                <button type="button" onClick={() => removeCuota(idx)} className="text-red-400 hover:text-red-600">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Button variant="outline" onClick={addCuota} className="h-7 text-[11px] text-blue-600 border-blue-200">
+                        <Plus className="h-3.5 w-3.5 mr-1" /> Agregar pagaré
+                      </Button>
+                      <div className="text-[11px] text-right space-y-0.5">
+                        <div>Suma pagarés: <b className="font-mono">{moneda} {fmt(sumaPagares)}</b></div>
+                        <div className={pagaresCuadran ? 'text-emerald-600 font-bold' : 'text-red-500 font-bold'}>
+                          {pagaresCuadran ? '✓ Cuadra con el total' : `Diferencia: ${moneda} ${fmt(difPagares)}`}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

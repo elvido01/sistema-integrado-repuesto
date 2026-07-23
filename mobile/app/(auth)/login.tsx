@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { supabase } from '@/src/supabase/client';
 import { toLoginEmail } from '@/src/lib/loginIdentity';
 import { Lock, User, Eye, EyeOff, Fingerprint } from 'lucide-react-native';
@@ -119,7 +119,15 @@ export default function LoginScreen() {
   }
 
   return (
-    <View className="flex-1 bg-white justify-center px-6">
+    <KeyboardAvoidingView
+      className="flex-1 bg-white"
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView
+        contentContainerClassName="flex-grow justify-center px-6 py-10"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       <View className="items-center mb-10">
         <View className="bg-brand w-24 h-24 rounded-full items-center justify-center mb-4">
           <Text className="text-white text-3xl font-bold">MF</Text>
@@ -185,6 +193,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

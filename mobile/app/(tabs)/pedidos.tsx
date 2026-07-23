@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, ScrollView, Modal, Platform } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { CreditCard, FileText, ListOrdered, Minus, Plus, PlusCircle, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react-native';
+import { CreditCard, FileText, ListOrdered, Minus, Pencil, Plus, PlusCircle, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { useCartStore } from '@/src/store/useCartStore';
@@ -67,6 +67,7 @@ export default function PedidosScreen() {
   const [loading, setLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
   const [sendingToVentaId, setSendingToVentaId] = useState<string | null>(null);
+  const [editandoPedidoId, setEditandoPedidoId] = useState<string | null>(null);
   const [pedidos, setPedidos] = useState<PedidoRow[]>([]);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [vendedorId, setVendedorId] = useState<string>('');
@@ -256,6 +257,7 @@ export default function PedidosScreen() {
     clearCart();
     setPlacaVehiculo('');
     setNotas('');
+    setEditandoPedidoId(null);
     setPedidoModal(null);
   };
 
@@ -317,6 +319,60 @@ export default function PedidosScreen() {
     }
   };
 
+  const editarPedido = async (pedido: any) => {
+    if (!pedido?.id) return;
+    try {
+      const { data: detalles, error } = await supabase
+        .from('pedidos_detalle')
+        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct)')
+        .eq('pedido_id', pedido.id);
+
+      if (error) throw error;
+      if (!detalles?.length) {
+        Alert.alert('Sin detalle', 'Este pedido no tiene articulos para editar.');
+        return;
+      }
+
+      clearCart();
+      setCliente(
+        pedido.cliente_id || null,
+        pedido.manual_cliente_nombre || pedido.cliente_nombre || 'Cliente Generico',
+        pedido.cliente_telefono || ''
+      );
+      setPlacaVehiculo(pedido.placa_vehiculo || '');
+
+      detalles.forEach((detalle: any) => {
+        const producto = detalle.productos || {};
+        const productoParaVenta = {
+          id: detalle.producto_id,
+          codigo: detalle.codigo || producto.codigo || '',
+          descripcion: detalle.descripcion || producto.descripcion || '',
+          referencia: producto.referencia || null,
+          existencia: 0,
+          precio_venta_1: Number(detalle.precio || 0),
+          precio_venta_2: Number(detalle.precio || 0),
+          itbis_pct: Number(producto.itbis_pct ?? 0.18),
+          url_imagen: producto.imagen_url || undefined,
+        };
+
+        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1);
+        if (Number(detalle.descuento || 0) > 0) {
+          updateDiscount(detalle.producto_id, Number(detalle.descuento || 0));
+        }
+      });
+
+      setEditandoPedidoId(pedido.id);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo cargar el pedido para editar.');
+    }
+  };
+
+  const cancelarEdicion = () => {
+    clearCart();
+    setPlacaVehiculo('');
+    setEditandoPedidoId(null);
+  };
+
   const handleCrearPedido = async () => {
     if (items.length === 0) {
       Alert.alert('Carrito vacio', 'Agregue productos para crear un pedido.');
@@ -340,6 +396,7 @@ export default function PedidosScreen() {
       const isGeneric = !clienteId || clienteId === CLIENTE_GENERICO_ID || clienteNombre.toUpperCase().includes('GENERICO');
 
       const pedidoData = {
+        ...(editandoPedidoId ? { id: editandoPedidoId } : {}),
         cliente_id: clienteId || CLIENTE_GENERICO_ID,
         vendedor_id: vendedorId,
         fecha: dateOnly(fechaPedido),
@@ -411,6 +468,7 @@ export default function PedidosScreen() {
         }),
       };
 
+      setEditandoPedidoId(null);
       setPedidoModal(snapshot);
       await fetchPedidos();
     } catch (error: any) {
@@ -546,16 +604,25 @@ export default function PedidosScreen() {
                     <Text className="text-gray-400 text-xs">{pedido.estado || 'Pendiente'}</Text>
                   </View>
                   {pedido.estado === 'Pendiente' && (
-                    <TouchableOpacity
-                      className={`mt-3 bg-brand rounded-lg py-2 flex-row items-center justify-center ${sendingToVentaId === pedido.id ? 'opacity-60' : ''}`}
-                      disabled={sendingToVentaId === pedido.id}
-                      onPress={() => enviarPedidoAVenta(pedido)}
-                    >
-                      <CreditCard color="white" size={16} />
-                      <Text className="text-white font-bold ml-2 text-[13px]">
-                        {sendingToVentaId === pedido.id ? 'Enviando...' : 'Enviar a venta'}
-                      </Text>
-                    </TouchableOpacity>
+                    <View className="mt-3 flex-row gap-2">
+                      <TouchableOpacity
+                        className="flex-1 border border-brand rounded-lg py-2 flex-row items-center justify-center active:bg-blue-50"
+                        onPress={() => editarPedido(pedido)}
+                      >
+                        <Pencil color="#1d4ed8" size={15} />
+                        <Text className="text-brand font-bold ml-2 text-[13px]">Editar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className={`flex-1 bg-brand rounded-lg py-2 flex-row items-center justify-center ${sendingToVentaId === pedido.id ? 'opacity-60' : ''}`}
+                        disabled={sendingToVentaId === pedido.id}
+                        onPress={() => enviarPedidoAVenta(pedido)}
+                      >
+                        <CreditCard color="white" size={15} />
+                        <Text className="text-white font-bold ml-2 text-[13px]" numberOfLines={1}>
+                          {sendingToVentaId === pedido.id ? 'Enviando...' : 'A venta'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </View>
               ))}
@@ -566,6 +633,18 @@ export default function PedidosScreen() {
 
       {items.length > 0 && (
         <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-200 px-4 pt-4" style={{ paddingBottom: Math.max(insets.bottom + 16, 24) }}>
+          {editandoPedidoId ? (
+            <View className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-3 flex-row items-center justify-between">
+              <View className="flex-row items-center">
+                <Pencil color="#1d4ed8" size={15} />
+                <Text className="text-brand font-bold ml-2 text-[13px]">Editando pedido</Text>
+              </View>
+              <TouchableOpacity onPress={cancelarEdicion} className="px-2 py-1">
+                <Text className="text-gray-500 font-semibold text-[13px]">Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             className="bg-gray-100 py-3 rounded-xl flex-row justify-center items-center mb-3"
             onPress={() => router.push('/(tabs)/catalogo?modo=pedido')}
@@ -596,7 +675,7 @@ export default function PedidosScreen() {
           </View>
 
           <View className="flex-row space-x-3">
-            <TouchableOpacity className="bg-gray-100 p-4 rounded-xl flex-1 items-center justify-center" onPress={() => clearCart()}>
+            <TouchableOpacity className="bg-gray-100 p-4 rounded-xl flex-1 items-center justify-center" onPress={cancelarEdicion}>
               <Trash2 color="#ef4444" size={24} />
             </TouchableOpacity>
             <TouchableOpacity
@@ -605,7 +684,9 @@ export default function PedidosScreen() {
               onPress={handleCrearPedido}
             >
               <FileText color="white" size={24} />
-              <Text className="text-white font-bold text-lg ml-2">{loading ? 'Guardando...' : 'Guardar Pedido'}</Text>
+              <Text className="text-white font-bold text-lg ml-2">
+                {loading ? 'Guardando...' : editandoPedidoId ? 'Actualizar Pedido' : 'Guardar Pedido'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

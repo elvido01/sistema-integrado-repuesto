@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, ScrollView, Modal, Platform } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, ScrollView, Modal, Platform, Keyboard } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FileText, Minus, Plus, PlusCircle, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
@@ -7,6 +7,7 @@ import * as Sharing from 'expo-sharing';
 import { useCartStore } from '@/src/store/useCartStore';
 import { supabase } from '@/src/supabase/client';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatFechaDMY } from '@/src/utils/formatDate';
 
 type OrdenRow = {
   id: string;
@@ -58,7 +59,21 @@ export default function OrdenCompraScreen() {
   const [editingOrdenNumero, setEditingOrdenNumero] = useState<string | number | null>(null);
   const [ordenModal, setOrdenModal] = useState<any | null>(null);
   const [compartiendo, setCompartiendo] = useState(false);
+  const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
   const ordenShotRef = useRef<ViewShot>(null);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardBottomInset(Math.max(0, event.endCoordinates?.height || 0));
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardBottomInset(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const totalItems = items.reduce((acc, item) => acc + item.cantidad, 0);
 
@@ -544,7 +559,7 @@ export default function OrdenCompraScreen() {
                     {orden.proveedores?.nombre || 'Sin suplidor'}
                   </Text>
                   <View className="flex-row justify-between mt-1">
-                    <Text className="text-gray-400 text-xs">{orden.fecha_orden || 'Sin fecha'}</Text>
+                    <Text className="text-gray-400 text-xs">{orden.fecha_orden ? formatFechaDMY(orden.fecha_orden) : 'Sin fecha'}</Text>
                     <Text className="text-gray-400 text-xs">{orden.estado || 'Pendiente'}</Text>
                   </View>
                 </TouchableOpacity>
@@ -555,7 +570,10 @@ export default function OrdenCompraScreen() {
       />
 
       {items.length > 0 && (
-        <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-200 px-4 pt-4" style={{ paddingBottom: Math.max(insets.bottom + 16, 24) }}>
+        <View
+          className="absolute left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4"
+          style={{ bottom: keyboardBottomInset, paddingBottom: keyboardBottomInset > 0 ? 12 : Math.max(insets.bottom + 16, 24) }}
+        >
           <TextInput
             className="bg-gray-100 rounded-xl px-3 py-2 text-gray-900 mb-3"
             placeholder="Notas para la orden"

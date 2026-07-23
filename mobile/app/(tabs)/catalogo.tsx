@@ -373,8 +373,6 @@ export default function CatalogoScreen() {
     );
   }, [onProductTap]);
 
-  console.log('CatalogoScreen Rendering. Items:', productos.length, 'isLoading:', isLoading);
-
   return (
     <View className="flex-1 bg-gray-50">
       {/* Barra "Volver a factura" — solo en modo venta */}
@@ -457,6 +455,14 @@ export default function CatalogoScreen() {
           </View>
         </View>
       </View>
+
+      {modoCarrito ? (
+        <View className="bg-blue-50 border-b border-blue-100 px-4 py-1.5 flex-row items-center justify-center">
+          <Text className="text-blue-700 text-[12px] font-semibold">
+            Toca dos veces un artículo para agregarlo
+          </Text>
+        </View>
+      ) : null}
 
       {isLoading && !isRefetching ? (
         <View className="flex-1 justify-center items-center">

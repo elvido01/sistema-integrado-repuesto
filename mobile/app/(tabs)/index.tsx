@@ -110,6 +110,14 @@ function MetricCard({ title, value, subtitle, tone, icon, onPress, onDoublePress
           <Text className="text-gray-500 text-[10px] mt-1" numberOfLines={2}>
             {subtitle}
           </Text>
+          {onDoublePress ? (
+            <View className="flex-row items-center mt-1">
+              <Feather name="maximize-2" color="#94a3b8" size={9} />
+              <Text className="text-slate-400 text-[9px] font-black uppercase tracking-wider ml-1">
+                Toca 2 veces
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </Wrapper>

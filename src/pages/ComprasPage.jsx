@@ -95,6 +95,15 @@ const ComprasPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [printMethod, setPrintMethod] = useState('pos');
   const [paperSize, setPaperSize] = useState('4inch');
+  // Financiamiento de la compra por cuotas (pagarés). Cada cuota se guarda como
+  // una fila 'compras' CREDITO/PENDIENTE, igual que los pagarés de Motores del
+  // Sur; el inventario/detalle se registra una sola vez (en la primera cuota).
+  const initialFinanciamiento = { activo: false, num_cuotas: 6, frecuencia: 'mensual', fecha_primera: '', cuotas: [] };
+  const [financiamiento, setFinanciamiento] = useState(initialFinanciamiento);
+  // Al editar un financiamiento existente: ids/numeros de todas sus filas-pagaré
+  // (para borrarlas y recrearlas). Solo se llena si NINGÚN pagaré tiene pagos.
+  const [financiamientoGrupo, setFinanciamientoGrupo] = useState(null);
+  const [compraConPagos, setCompraConPagos] = useState(false);
 
   const fetchInitialData = useCallback(async () => {
     const { data: provData, error: provError } = await supabase.from('proveedores').select('*');
@@ -144,6 +153,9 @@ const ComprasPage = () => {
     setCurrentDetalle(initialDetalleState);
     setEditingDetalleIndex(null);
     setPagos([{ tipo: '01', referencia: '', monto: 0, id: Date.now() }]);
+    setFinanciamiento({ activo: false, num_cuotas: 6, frecuencia: 'mensual', fecha_primera: '', cuotas: [] });
+    setFinanciamientoGrupo(null);
+    setCompraConPagos(false);
 
     // Fetch new number after reset
     const { data: nextNum, error: numError } = await supabase.rpc('get_next_compra_numero');
@@ -163,37 +175,66 @@ const ComprasPage = () => {
         .select(`*, compras_detalle(*)`)
         .eq('id', compraParaEditar.id)
         .single();
-        
+
       if (error) {
         toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar la compra.' });
         return;
       }
-      
+
+      // ¿Es parte de un financiamiento por cuotas? Los pagarés comparten el
+      // número base y llevan sufijo '-01', '-02'... (o '-AD'). Si el usuario
+      // abrió cualquiera de ellos, cargamos TODO el grupo para editarlo junto.
+      const mGrupo = String(data.numero || '').match(/^(.*)-(\d{2}|AD)$/);
+      let grupo = null;
+      let baseNum = null;
+      if (mGrupo) {
+        baseNum = mGrupo[1];
+        const { data: hermanos } = await supabase
+          .from('compras')
+          .select('*, compras_detalle(*)')
+          .eq('suplidor_id', data.suplidor_id)
+          .like('numero', `${baseNum}-%`)
+          .order('numero', { ascending: true });
+        if (hermanos && hermanos.length >= 2) grupo = hermanos;
+      }
+
+      const esGrupo = !!grupo;
+      // Editable solo si NINGÚN pagaré tiene pagos aplicados.
+      const grupoConPagos = esGrupo && grupo.some(g => Number(g.monto_pagado || 0) > 0 || (g.estado && g.estado !== 'PENDIENTE'));
+      const conPagos = esGrupo ? grupoConPagos : (Number(data.monto_pagado || 0) > 0);
+      setCompraConPagos(conPagos);
+      // La fila que tiene el detalle/inventario (normalmente '-01').
+      const filaDetalle = esGrupo
+        ? (grupo.find(g => Array.isArray(g.compras_detalle) && g.compras_detalle.length > 0) || grupo[0])
+        : data;
+
       setCompra({
-        id: data.id,
-        numero: data.numero,
-        fecha: new Date(data.fecha),
-        ncf: data.ncf || '',
+        id: filaDetalle.id,
+        numero: esGrupo ? baseNum : data.numero,   // en grupo, el número base (sin sufijo)
+        fecha: new Date(filaDetalle.fecha),
+        ncf: filaDetalle.ncf || '',
         referencia: data.referencia || '',
-        tipo_bienes_servicios: data.tipo_bienes_servicios || '09',
-        sub_tipo: data.sub_tipo || 'Compra de Merc',
+        tipo_bienes_servicios: filaDetalle.tipo_bienes_servicios || '09',
+        sub_tipo: filaDetalle.sub_tipo || 'Compra de Merc',
         suplidor_id: data.suplidor_id,
-        almacen_id: data.almacen_id || 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7',
-        itbis_incluido: data.itbis_incluido ?? false,
-        actualizar_precios: data.actualizar_precios ?? true,
-        forma_pago: data.forma_pago || 'Contado',
-        dias_credito: data.dias_credito || 0,
-        id_orden_origen: data.id_orden_origen || null,
+        almacen_id: filaDetalle.almacen_id || 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7',
+        itbis_incluido: filaDetalle.itbis_incluido ?? false,
+        actualizar_precios: filaDetalle.actualizar_precios ?? true,
+        forma_pago: esGrupo ? 'Credito' : (data.forma_pago || 'Contado'),
+        dias_credito: filaDetalle.dias_credito || 0,
+        id_orden_origen: filaDetalle.id_orden_origen || null,
       });
 
       // Compra en US$: en la BD todo está en RD$; en pantalla se edita en
       // dólares con la tasa con la que se grabó
-      const tasaCompraUSD = data.moneda === 'USD' && Number(data.tasa_cambio) > 0 ? Number(data.tasa_cambio) : 0;
+      const monedaRef = esGrupo ? filaDetalle.moneda : data.moneda;
+      const tasaRef = Number(esGrupo ? filaDetalle.tasa_cambio : data.tasa_cambio);
+      const tasaCompraUSD = monedaRef === 'USD' && tasaRef > 0 ? tasaRef : 0;
       if (tasaCompraUSD) setTasaDia(tasaCompraUSD);
       const aUSD = (v) => Number(((Number(v) || 0) / tasaCompraUSD).toFixed(2));
 
-      if (data.compras_detalle) {
-        setDetalles(data.compras_detalle.map(d => ({
+      if (filaDetalle.compras_detalle) {
+        setDetalles(filaDetalle.compras_detalle.map(d => ({
           ...d,
           costo_unitario: tasaCompraUSD ? aUSD(d.costo_unitario) : d.costo_unitario,
           importe: tasaCompraUSD ? aUSD(d.importe) : d.importe,
@@ -202,14 +243,42 @@ const ComprasPage = () => {
         })));
       }
 
-      const rawPagos = data.pagos || [];
-      if (rawPagos.length > 0) {
-          setPagos(tasaCompraUSD ? rawPagos.map(p => ({ ...p, monto: p.monto_usd ?? aUSD(p.monto) })) : rawPagos);
-      } else if (data.monto_pagado > 0) {
-          setPagos([{ tipo: '01', referencia: '', monto: tasaCompraUSD ? aUSD(data.monto_pagado) : data.monto_pagado, id: Date.now() }]);
+      if (esGrupo) {
+        // Reconstruir el calendario de pagarés desde las filas hermanas.
+        const cuotas = grupo
+          .slice()
+          .sort((a, b) => String(a.numero).localeCompare(String(b.numero), undefined, { numeric: true }))
+          .map((g, i) => {
+            const dias = Number(g.dias_credito || 0);
+            const venc = new Date(new Date(g.fecha).getTime() + dias * 86400000);
+            const monto = tasaCompraUSD ? Number(g.total_usd ?? aUSD(g.total_compra)) : Number(g.total_compra || 0);
+            const y = venc.getFullYear();
+            const m = String(venc.getMonth() + 1).padStart(2, '0');
+            const d = String(venc.getDate()).padStart(2, '0');
+            return { n: i + 1, fecha: `${y}-${m}-${d}`, monto };
+          });
+        setFinanciamiento({
+          activo: !grupoConPagos,
+          num_cuotas: cuotas.length,
+          frecuencia: 'mensual',
+          fecha_primera: cuotas[0]?.fecha || '',
+          cuotas,
+        });
+        setFinanciamientoGrupo(grupoConPagos ? null : { ids: grupo.map(g => g.id), numeros: grupo.map(g => g.numero) });
+      } else {
+        const rawPagos = data.pagos || [];
+        if (rawPagos.length > 0) {
+            setPagos(tasaCompraUSD ? rawPagos.map(p => ({ ...p, monto: p.monto_usd ?? aUSD(p.monto) })) : rawPagos);
+        } else if (data.monto_pagado > 0) {
+            setPagos([{ tipo: '01', referencia: '', monto: tasaCompraUSD ? aUSD(data.monto_pagado) : data.monto_pagado, id: Date.now() }]);
+        }
       }
-      
-      toast({ title: 'Modo Edición', description: `Editando compra ${data.numero}` });
+
+      if (esGrupo && grupoConPagos) {
+        toast({ variant: 'destructive', title: 'Financiamiento con pagos', description: `Este financiamiento (${grupo.length} pagarés) ya tiene pagos aplicados; no se puede editar.` });
+      } else {
+        toast({ title: 'Modo Edición', description: esGrupo ? `Editando financiamiento ${baseNum} (${grupo.length} pagarés)` : `Editando compra ${data.numero}` });
+      }
     };
     
     loadCompraData();
@@ -1088,7 +1157,12 @@ const ComprasPage = () => {
       if (isEditMode && compra.id) {
         queryVal = queryVal.neq('id', compra.id);
       }
-      
+      // Al editar un financiamiento, sus propias filas-pagaré comparten la
+      // referencia: excluirlas para que no se detecten como duplicado.
+      if (isEditMode && financiamientoGrupo?.ids?.length) {
+        queryVal = queryVal.not('id', 'in', `(${financiamientoGrupo.ids.join(',')})`);
+      }
+
       const { data: posiblesDuplicados, error: dupError } = await queryVal;
       
       if (!dupError && posiblesDuplicados && posiblesDuplicados.length > 0) {
@@ -1163,8 +1237,123 @@ const ComprasPage = () => {
       }
     }
 
+    // ===== Financiamiento por cuotas (pagarés) =====
+    // Cuando el suplidor factura a pagarés, la deuda se divide en N filas
+    // 'compras' CREDITO/PENDIENTE (una por cuota, con su vencimiento vía
+    // dias_credito), igual que los pagarés de Motores del Sur. El inventario,
+    // el detalle y la actualización de precios se registran UNA sola vez, en la
+    // primera cuota. La suma de las N filas = total de la compra (no duplica).
+    const financiar = compra.forma_pago === 'Credito'
+      && financiamiento?.activo
+      && Array.isArray(financiamiento?.cuotas)
+      && financiamiento.cuotas.length >= 2;
+
+    let pagareRowsExtra = [];
+    if (financiar) {
+      const cuotas = financiamiento.cuotas;
+      const sumaCuotas = cuotas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
+      if (Math.abs(sumaCuotas - Number(totals.total || 0)) > 0.01) {
+        toast({
+          variant: 'destructive',
+          title: 'Los pagarés no cuadran',
+          description: `La suma de los pagarés (${sumaCuotas.toFixed(2)}) debe ser igual al total de la compra (${Number(totals.total).toFixed(2)}).`,
+        });
+        setIsSaving(false);
+        return;
+      }
+
+      const baseNum = compra.numero || compra.referencia || 'COMPRA';
+      const fechaBase = String(compraData.fecha).slice(0, 10);
+      const diasHasta = (fstr) => {
+        const dias = Math.round(
+          (new Date(`${String(fstr).slice(0, 10)}T00:00:00`) - new Date(`${fechaBase}T00:00:00`)) / 86400000
+        );
+        return Math.max(0, dias || 0);
+      };
+      const plazo = cuotas.length;
+      const mkRow = (c, idx) => {
+        const montoDisp = Number(c.monto) || 0;
+        const montoRD = usd ? rd(montoDisp) : montoDisp;
+        return {
+          ...compraData,
+          id: undefined, // cada pagaré es una fila nueva (evita PK duplicada al editar)
+          numero: `${baseNum}-${String(idx + 1).padStart(2, '0')}`,
+          referencia: compra.referencia,
+          ncf: idx === 0 ? (compra.ncf || null) : null,
+          total_exento: montoRD,
+          total_gravado: 0,
+          descuento_total: 0,
+          itbis_total: 0,
+          total_compra: montoRD,
+          monto_pagado: 0,
+          monto_pendiente: montoRD,
+          estado: 'PENDIENTE',
+          forma_pago: 'Credito',
+          dias_credito: diasHasta(c.fecha),
+          moneda: usd ? 'USD' : 'DOP',
+          tasa_cambio: usd ? tasa : null,
+          total_usd: usd ? montoDisp : null,
+          pendiente_usd: usd ? montoDisp : null,
+          pagos: [],
+          invoice_image_path: idx === 0 ? compraData.invoice_image_path : null,
+          ocr_text: idx === 0 ? compraData.ocr_text : null,
+          extracted_json: idx === 0 ? compraData.extracted_json : null,
+          notas: `${compra.notas ? compra.notas + ' | ' : ''}Pagaré ${idx + 1}/${plazo} - factura ${compra.referencia || ''}`.trim(),
+        };
+      };
+      // La primera cuota lleva el inventario/detalle: reemplaza compraData.
+      Object.assign(compraData, mkRow(cuotas[0], 0));
+      pagareRowsExtra = cuotas.slice(1).map((c, i) => mkRow(c, i + 1));
+    }
+
+    // Editar un financiamiento (o convertir una compra a pagarés) exige
+    // recrear las filas: se borra el conjunto viejo y se inserta el nuevo.
+    const editandoGrupo = isEditMode && financiamientoGrupo?.ids?.length > 0;
+    const usaDeleteInsert = editandoGrupo || (isEditMode && financiar);
+
+    if (usaDeleteInsert && compraConPagos) {
+      toast({ variant: "destructive", title: "No se puede editar", description: "Esta compra financiada ya tiene pagos registrados." });
+      setIsSaving(false);
+      return;
+    }
+
     let savedCompra;
-    if (isEditMode) {
+    if (usaDeleteInsert) {
+      delete compraData.id; // se reinserta como fila(s) nueva(s); no reusar el id viejo
+      const oldIds = editandoGrupo ? financiamientoGrupo.ids : (compra.id ? [compra.id] : []);
+      const oldNums = editandoGrupo ? financiamientoGrupo.numeros : (compra.numero ? [compra.numero] : []);
+      for (const oid of oldIds) {
+        await supabase.from('compras_detalle').delete().eq('compra_id', oid);
+      }
+      for (const onum of oldNums) {
+        await supabase.from('inventario_movimientos').delete().eq('referencia_doc', `COMPRA-${onum}`);
+      }
+      if (oldIds.length > 0) {
+        const { error: delErr } = await supabase.from('compras').delete().in('id', oldIds);
+        if (delErr) {
+          toast({ variant: "destructive", title: "Error al reemplazar la compra", description: delErr.message });
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      const { data, error: compraError } = await supabase.from('compras').insert(compraData).select().single();
+      if (compraError) {
+        toast({ variant: "destructive", title: "Error al guardar la compra", description: compraError.message });
+        setIsSaving(false);
+        return;
+      }
+      savedCompra = data;
+
+      if (financiar && pagareRowsExtra.length > 0) {
+        const { error: extraErr } = await supabase.from('compras').insert(pagareRowsExtra);
+        if (extraErr) {
+          toast({ variant: "destructive", title: "Error al crear los pagarés", description: extraErr.message });
+          setIsSaving(false);
+          return;
+        }
+      }
+    } else if (isEditMode) {
       const { data, error: compraError } = await supabase.from('compras').update(compraData).eq('id', compra.id).select().single();
       if (compraError) {
         toast({ variant: "destructive", title: "Error al actualizar la compra", description: compraError.message });
@@ -1172,7 +1361,7 @@ const ComprasPage = () => {
         return;
       }
       savedCompra = data;
-      
+
       // Limpiar detalles y movimientos previos para repoblarlos frescos con los cambios
       await supabase.from('compras_detalle').delete().eq('compra_id', savedCompra.id);
       await supabase.from('inventario_movimientos').delete().eq('referencia_doc', `COMPRA-${savedCompra.numero || savedCompra.id}`);
@@ -1184,6 +1373,16 @@ const ComprasPage = () => {
         return;
       }
       savedCompra = data;
+
+      // Filas-pagaré restantes (cuotas 2..N): pura deuda, sin inventario.
+      if (financiar && pagareRowsExtra.length > 0) {
+        const { error: extraErr } = await supabase.from('compras').insert(pagareRowsExtra);
+        if (extraErr) {
+          toast({ variant: "destructive", title: "Error al crear los pagarés", description: extraErr.message });
+          setIsSaving(false);
+          return;
+        }
+      }
     }
 
     // La tasa usada queda registrada como la tasa del día de la empresa
@@ -1443,11 +1642,27 @@ const ComprasPage = () => {
 
       // Generate PDF
       const selectedSuplidor = proveedores.find(p => p.id === savedCompra.suplidor_id);
-      
+
+      // Al financiar, savedCompra es solo la 1ra cuota; el comprobante debe
+      // reflejar el total completo de la factura y su detalle.
+      const compraParaImprimir = financiar
+        ? {
+            ...savedCompra,
+            numero: (compra.numero || compra.referencia || savedCompra.numero),
+            total_exento: totalsGuardar.exento,
+            total_gravado: totalsGuardar.gravado,
+            descuento_total: totalsGuardar.descuento,
+            itbis_total: totalsGuardar.itbis,
+            total_compra: totalsGuardar.total,
+            monto_pagado: 0,
+            monto_pendiente: totalsGuardar.total,
+          }
+        : savedCompra;
+
       if (printMethod === 'pos') {
-        printCompraPOS(savedCompra, selectedSuplidor, detalles, paperSize);
+        printCompraPOS(compraParaImprimir, selectedSuplidor, detalles, paperSize);
       } else {
-        generateCompraPDF(savedCompra, selectedSuplidor, detalles, authUser || user, empresa);
+        generateCompraPDF(compraParaImprimir, selectedSuplidor, detalles, authUser || user, empresa);
       }
 
       resetForm();
@@ -1594,6 +1809,9 @@ const ComprasPage = () => {
               setPrintMethod={setPrintMethod}
               paperSize={paperSize}
               setPaperSize={setPaperSize}
+              financiamiento={financiamiento}
+              setFinanciamiento={setFinanciamiento}
+              esUSD={esUSD}
             />
           </div>
 
