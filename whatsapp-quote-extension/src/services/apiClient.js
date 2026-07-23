@@ -3,6 +3,61 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const SESSION_KEY = 'motoflow_quote_extension_session';
 
+// ── Sesion: se guarda en el almacenamiento de la EXTENSION ──────────────
+// Antes vivia solo en window.localStorage, que es el de web.whatsapp.com:
+// WhatsApp lo limpia por su cuenta y la sesion se perdia sola ("Conecta tu
+// usuario de Motoflow" hasta recargar y entrar de nuevo). chrome.storage.local
+// es propio de la extension y WhatsApp no lo toca.
+// Se mantiene una copia en localStorage y una cache en memoria para que las
+// lecturas sincronas (getStoredSession) sigan funcionando igual.
+const extStorage = (() => {
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.storage?.local) return chrome.storage.local;
+  } catch { /* fuera de la extension */ }
+  return null;
+})();
+
+let cachedSession = null;
+
+function readLocal() {
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function persistSession(payload) {
+  cachedSession = payload || null;
+  try { window.localStorage.setItem(SESSION_KEY, JSON.stringify(payload)); } catch { /* storage lleno */ }
+  try { extStorage?.set({ [SESSION_KEY]: payload }); } catch { /* sin permiso */ }
+}
+
+function clearSession() {
+  cachedSession = null;
+  try { window.localStorage.removeItem(SESSION_KEY); } catch { /* noop */ }
+  try { extStorage?.remove(SESSION_KEY); } catch { /* noop */ }
+}
+
+// Rehidrata la sesion desde el almacenamiento de la extension. La app la
+// llama al montar: si WhatsApp borro su localStorage, la recupera de aqui.
+export async function loadStoredSession() {
+  const local = readLocal();
+  if (local?.access_token) { cachedSession = local; return local; }
+  if (!extStorage) return null;
+  try {
+    const saved = await new Promise((resolve) => {
+      extStorage.get(SESSION_KEY, (res) => resolve(res?.[SESSION_KEY] || null));
+    });
+    if (saved?.access_token) {
+      cachedSession = saved;
+      // Devuelve la copia a localStorage para las lecturas sincronas
+      try { window.localStorage.setItem(SESSION_KEY, JSON.stringify(saved)); } catch { /* noop */ }
+      return saved;
+    }
+  } catch { /* noop */ }
+  return null;
+}
+
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
   const payload = await response.json().catch(() => null);
@@ -30,10 +85,10 @@ async function refreshSession(session) {
       headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: session.refresh_token })
     });
-    window.localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    persistSession(payload);
     return payload;
   } catch {
-    window.localStorage.removeItem(SESSION_KEY);
+    clearSession();
     throw new Error('Tu sesion expiro. Toca "Salir" y conecta de nuevo tu usuario de Motoflow.');
   }
 }
@@ -51,7 +106,7 @@ async function getValidSession() {
   const expMs = (session.expires_at || 0) * 1000;
   if (expMs && expMs - Date.now() < 60000) {
     if (!session.refresh_token) {
-      window.localStorage.removeItem(SESSION_KEY);
+      clearSession();
       throw new Error('Tu sesion expiro. Conecta de nuevo tu usuario de Motoflow.');
     }
     return refreshSession(session);
@@ -528,11 +583,10 @@ export async function searchProducts(queryOrFilters) {
 
 export function getStoredSession() {
   try {
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-
-    const session = JSON.parse(raw);
+    if (cachedSession?.access_token) return cachedSession;
+    const session = readLocal();
     if (!session?.access_token) return null;
+    cachedSession = session;
     // No se borra por expiracion: el refresh_token permite renovarla (ver getValidSession).
     return session;
   } catch {
@@ -554,12 +608,12 @@ export async function signInWithPassword(email, password) {
     body: JSON.stringify({ email, password })
   });
 
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+  persistSession(payload);
   return payload;
 }
 
 export function signOut() {
-  window.localStorage.removeItem(SESSION_KEY);
+  clearSession();
 }
 
 export async function getEmpresasUsuarioExtension() {

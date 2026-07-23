@@ -52,6 +52,23 @@ async function fetchProfileAndEmpresa(userId: string) {
   let empresaData: EmpresaConfig | null = null;
   let permissionsData: ModulePermission[] = [];
 
+  // La app movil trabaja SIEMPRE con la empresa del perfil (no tiene selector).
+  // Pero las RPC del servidor resuelven la empresa con get_user_tenant(), que
+  // respeta usuario_tenant_activo — y ese lo cambia el selector de la WEB. Si
+  // quedan desalineados, el movil muestra "CAMINERO MOTORS" pero el servidor
+  // sirve otra empresa: catalogo vacio, ventas en blanco, etc. (caso yimber:
+  // activo en Odalys, catalogo de Caminero vacio). Aqui se realinean.
+  if (tenantId) {
+    try {
+      const { data: activo } = await supabase.rpc('get_user_tenant');
+      if (activo && activo !== tenantId) {
+        await supabase.rpc('cambiar_empresa_activa', { p_tenant: tenantId });
+      }
+    } catch {
+      /* si falla, la app sigue: solo se pierde la realineacion */
+    }
+  }
+
   const { data: perms, error: permsError } = await supabase
     .from('user_module_permissions')
     .select('module_key, can_view, can_edit')
