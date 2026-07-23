@@ -553,7 +553,11 @@ const PagoSuplidoresPage = () => {
                       <TableCell>{fmtFechaDMY(c.fecha_vencimiento)}</TableCell>
                       <TableCell>{c.referencia}</TableCell>
                       <TableCell>{esFilaUSD(c) ? <span className="text-emerald-800 font-semibold">US$ {formatCurrency(c.total_usd)}</span> : formatCurrency(c.monto_total)}</TableCell>
-                      <TableCell className="font-semibold">
+                      <TableCell
+                        className="font-semibold cursor-pointer select-none hover:bg-emerald-50"
+                        title="Doble clic: pasar todo el pendiente al abono"
+                        onDoubleClick={() => handleAbonoChange(c.id, esFilaUSD(c) ? c.pendiente_usd : c.monto_pendiente)}
+                      >
                         {esFilaUSD(c) ? (
                           <span className="text-emerald-800">
                             US$ {formatCurrency(c.pendiente_usd)}
