@@ -502,7 +502,9 @@ const SanPage = () => {
               <Archive className="w-4 h-4 mr-1" />Archivar</Button>
           </>
         )}
-        {sanSel.estado === 'Cancelado' && (
+        {/* Un SAN Activo hay que cancelarlo primero; los ya terminados
+            (Completado/Archivado) se pueden borrar directo. */}
+        {['Cancelado', 'Completado', 'Archivado'].includes(sanSel.estado) && (
           <Button size="sm" variant="outline" className="text-red-600 border-red-300" disabled={busy}
             onClick={() => setElimOpen(true)}><Trash2 className="w-4 h-4 mr-1" />Eliminar</Button>
         )}
@@ -744,6 +746,10 @@ const SanPage = () => {
             "{sanSel?.nombre}" se borrará con su calendario y TODO su historial de pagos
             {Number(sanSel?.monto_ahorrado) > 0 && <> (tiene <b>{money(sanSel.monto_ahorrado)}</b> registrados)</>}.
             Esta acción no se puede deshacer. Si solo quieres corregirlo, usa Editar.
+          </p>
+          <p className="text-xs bg-emerald-50 text-emerald-800 rounded-md px-3 py-2">
+            El dinero <b>no se toca</b>: los movimientos de la cuenta bancaria (los abonos
+            y la entrada del SAN completado) se conservan en su historial.
           </p>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" disabled={busy}>Cancelar</Button></DialogClose>
