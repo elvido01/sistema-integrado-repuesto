@@ -332,6 +332,9 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     }
   }, [selectedCliente]);
 
+  // "Hoy" en hora de RD (YYYY-MM-DD) para bloquear fechas pasadas.
+  const hoyStr = formatDateForSupabase(getCurrentDateInTimeZone());
+
   const handleSave = async () => {
     if (!form.cliente_id && !form.cliente_nombre?.trim()) {
       toast({ variant: 'destructive', title: 'Datos incompletos', description: 'Debe seleccionar un cliente o escribir un nombre.' });
@@ -353,6 +356,15 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     }
     if (!form.producto_id) {
       toast({ variant: 'destructive', title: 'Datos incompletos', description: 'Debe seleccionar un vehículo del inventario.' });
+      return;
+    }
+    // No permitir fechas anteriores a hoy (evita adicional/cuota vencidos al crear).
+    if ((parseFloat(form.adicional) || 0) > 0 && form.adicional_fecha && form.adicional_fecha < hoyStr) {
+      toast({ variant: 'destructive', title: 'Fecha inválida', description: 'La fecha para pagar el adicional no puede ser anterior a hoy.' });
+      return;
+    }
+    if (form.fecha_vencimiento && form.fecha_vencimiento < hoyStr) {
+      toast({ variant: 'destructive', title: 'Fecha inválida', description: 'El vencimiento de la 1ra cuota no puede ser anterior a hoy.' });
       return;
     }
 
@@ -597,6 +609,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                       <Input
                         type="date"
                         value={form.adicional_fecha}
+                        min={hoyStr}
                         onChange={e => updateField('adicional_fecha', e.target.value)}
                         disabled={!((parseFloat(form.adicional) || 0) > 0)}
                         className="h-9 text-sm flex-1"
@@ -641,7 +654,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">Vencimiento 1ra Cuota</Label>
-                    <Input type="date" value={form.fecha_vencimiento} onChange={e => updateField('fecha_vencimiento', e.target.value)} className="h-9 text-sm" />
+                    <Input type="date" value={form.fecha_vencimiento} min={hoyStr} onChange={e => updateField('fecha_vencimiento', e.target.value)} className="h-9 text-sm" />
                   </div>
                   <div className="col-span-2 space-y-1">
                     <Label className="text-[10px] font-bold text-slate-500 uppercase">Tipo de Financiamiento</Label>
