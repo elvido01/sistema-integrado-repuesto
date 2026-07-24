@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateTransaccionesReportePDF, generateFacturaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
 import { printListaTransacciones } from '@/lib/printListaTransacciones';
-import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS, printNotaCreditoPOS } from '@/lib/printPOS';
+import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS, printNotaCreditoPOS, printFacturaPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ReporteTransaccionesDiariasPage = () => {
@@ -149,7 +149,39 @@ const ReporteTransaccionesDiariasPage = () => {
           .eq('numero', numeroInt)
           .single();
         if (error) throw error;
-        if (factura) generateFacturaPDF(factura, empresa);
+        if (!factura) return;
+        // Respetar el formato de factura de la empresa. Caminero (y otros
+        // dealers) imprimen en HOJA GRANDE (full_page/half_page); el resto en
+        // POS. La venta en vivo ya lo respeta, aquí igualamos la reimpresión.
+        const formato = empresa?.formato_factura || 'pos_4inch';
+        if (formato === 'full_page' || formato === 'half_page') {
+          // Si la venta salió de una solicitud financiada (dealer), re-adjuntar
+          // sus datos para el formato dealer (vehículo + inicial/pagarés),
+          // igual que al facturar. Se busca la solicitud por el vehículo.
+          const det0 = (factura.facturas_detalle || [])[0];
+          if (det0?.producto_id || det0?.codigo) {
+            let solQuery = supabase
+              .from('solicitudes_compras')
+              .select('*')
+              .eq('tenant_id', factura.tenant_id)
+              .order('fecha', { ascending: false })
+              .limit(1);
+            solQuery = det0.producto_id
+              ? solQuery.eq('producto_id', det0.producto_id)
+              : solQuery.eq('chasis', det0.codigo);
+            const { data: sols } = await solQuery;
+            if (sols && sols[0]) {
+              factura.solicitud = {
+                ...sols[0],
+                _placa: det0.productos?.placa || 'TRÁMITE',
+                _matricula: det0.productos?.matricula || 'TRÁMITE',
+              };
+            }
+          }
+          printFacturaPOS(factura, formato);
+        } else {
+          generateFacturaPDF(factura, empresa);
+        }
       } else if (prefix === 'DV') {
         const { data: devolucion, error } = await supabase
           .from('devoluciones')
