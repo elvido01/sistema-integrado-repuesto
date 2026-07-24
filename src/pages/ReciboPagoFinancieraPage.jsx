@@ -722,7 +722,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         try {
           printReciboPagoFinancieraPOS({
             numero: data?.numero,
-            fecha: new Date(),
+            fecha: fechaRecibo ? new Date(`${fechaRecibo}T00:00:00`) : new Date(),
             usuario: usuarioActual,
             clienteNombre: cliente?.nombre,
             clienteCodigo: cliente?.codigo || cliente?.rnc || null,
@@ -826,19 +826,22 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 <Label className="text-xs w-20">Cobrador</Label>
                 <Input value={reimpVista ? (reimpVista.pago.cobrador || '') : cobrador} onChange={(e) => setCobrador(e.target.value)} readOnly={!!reimpVista} className="h-7 text-xs" />
               </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs w-20">Fecha</Label>
-                <Input
-                  type="date"
-                  value={reimpVista ? (reimpVista.pago.fecha || '') : fechaRecibo}
-                  onChange={(e) => setFechaRecibo(e.target.value)}
-                  readOnly={!!reimpVista}
-                  className={`h-7 text-xs flex-1 ${!reimpVista && fechaRecibo && fechaRecibo !== hoy() ? 'border-amber-400 bg-amber-50 font-bold text-amber-800' : ''}`}
-                />
-                {!reimpVista && fechaRecibo && fechaRecibo !== hoy() ? (
-                  <span className="text-[10px] font-bold text-amber-700 whitespace-nowrap shrink-0">ATRASADO</span>
-                ) : null}
-              </div>
+              {/* Fecha del recibo: editable SOLO para el administrador (para
+                  atrasar pagos). El resto del personal ni la ve (usa hoy). */}
+              {esAdminUser && !reimpVista && (
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs w-20">Fecha</Label>
+                  <Input
+                    type="date"
+                    value={fechaRecibo}
+                    onChange={(e) => setFechaRecibo(e.target.value)}
+                    className={`h-7 text-xs flex-1 ${fechaRecibo && fechaRecibo !== hoy() ? 'border-amber-400 bg-amber-50 font-bold text-amber-800' : ''}`}
+                  />
+                  {fechaRecibo && fechaRecibo !== hoy() ? (
+                    <span className="text-[10px] font-bold text-amber-700 whitespace-nowrap shrink-0">ATRASADO</span>
+                  ) : null}
+                </div>
+              )}
               <div className="flex items-center gap-2 min-w-0">
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Estado<br />Cliente</span>
@@ -896,7 +899,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 </div>
                 <div className="flex items-baseline gap-2 justify-end">
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Fecha</span>
-                  <span className="font-bold">{formatFechaDMY(reimpVista ? reimpVista.pago.fecha : hoy())}</span>
+                  <span className="font-bold">{formatFechaDMY(reimpVista ? reimpVista.pago.fecha : (fechaRecibo || hoy()))}</span>
                 </div>
               </div>
               <div className="border-t pt-2 flex items-center gap-2 min-w-0">
