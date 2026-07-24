@@ -77,6 +77,12 @@ const HomePage = () => {
     flujoNeto: null
   });
 
+  // Solo empresas con financiamiento de TERCEROS (ej. Caminero): la métrica de
+  // ventas es el TOTAL vendido del mes (no las de contado, que son casi nulas)
+  // y en 2da línea lo realmente cobrado = iniciales de ventas + recibos.
+  const esVentasTerceros = empresa?.financiamiento_tipo === 'terceros';
+  const [ventasTerceros, setVentasTerceros] = useState({ mesTotal: 0, cobradoMes: 0 });
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [nombreEmpresa, setNombreEmpresa] = useState('');
@@ -233,6 +239,23 @@ const HomePage = () => {
         // "TypeError: .catch is not a function" y disparaba la alerta roja).
         supabase.rpc('rodar_ancla_caja').then(() => {}).catch(() => {});
       }
+
+      // Caminero (financiamiento terceros): ventas TOTALES del mes + cobrado
+      // (inicial + recibos). Solo se consulta para esas empresas.
+      if (empresa?.financiamiento_tipo === 'terceros') {
+        const now = new Date();
+        const mesIni = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+        const [factMes, recMes] = await Promise.all([
+          supabase.from('facturas').select('total').eq('tenant_id', tenantId)
+            .gte('fecha', mesIni).neq('estado', 'ANULADA'),
+          supabase.from('recibos_ingreso').select('monto_pagado').eq('tenant_id', tenantId)
+            .gte('fecha', mesIni).eq('anulado', false),
+        ]);
+        setVentasTerceros({
+          mesTotal: (factMes.data || []).reduce((s, f) => s + (Number(f.total) || 0), 0),
+          cobradoMes: (recMes.data || []).reduce((s, r) => s + (Number(r.monto_pagado) || 0), 0),
+        });
+      }
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
       if (!isRefresh) {
@@ -246,7 +269,7 @@ const HomePage = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [toast, tenantId]);
+  }, [toast, tenantId, empresa?.financiamiento_tipo]);
 
   // Initial load
   useEffect(() => {
@@ -650,13 +673,23 @@ const HomePage = () => {
                   transition={{ delay: 0.6, duration: 0.4 }}
                   className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6 pt-6 border-t border-gray-200"
                 >
-                  <SummaryCard
-                    title="Ventas del Día"
-                    value={`${stats.ventasHoy.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
-                    icon={TrendingUp}
-                    color="accent"
-                    description="ingresos de hoy"
-                  />
+                  {esVentasTerceros ? (
+                    <SummaryCard
+                      title="Ventas del Mes"
+                      value={ventasTerceros.mesTotal.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                      icon={TrendingUp}
+                      color="accent"
+                      description={`Inicial + recibos: RD$ ${ventasTerceros.cobradoMes.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
+                    />
+                  ) : (
+                    <SummaryCard
+                      title="Ventas del Día"
+                      value={`${stats.ventasHoy.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
+                      icon={TrendingUp}
+                      color="accent"
+                      description="ingresos de hoy"
+                    />
+                  )}
                   <SummaryCard
                     title="Inventario Crítico"
                     value={stats.stockBajo}
