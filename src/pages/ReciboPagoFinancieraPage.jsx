@@ -123,6 +123,9 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [cuentaId, setCuentaId] = useState(null); // cuenta bancaria que recibe (transferencia/cheque/tarjeta)
   const [cobrador, setCobrador] = useState(empresa?.nombre || '');
   const [comentarios, setComentarios] = useState('');
+  // Fecha del recibo. Por defecto HOY; se puede atrasar para registrar pagos
+  // que se hicieron otro día (ej. durante la prueba en doble sistema).
+  const [fechaRecibo, setFechaRecibo] = useState(hoy());
   const [imprimir, setImprimir] = useState(true);
   // Tamaño del papel del recibo — se recuerda por PC (cada caja tiene su impresora)
   const [paperSize, setPaperSize] = useState(() => localStorage.getItem('recibo_financiera_paper') || '4inch');
@@ -685,7 +688,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         p_banco: banco || null,
         p_comentarios: comentarios || null,
         p_cobrador: cobrador || null,
-        p_fecha: null,
+        p_fecha: fechaRecibo || null,
         p_prestamo_id: prestamoFiltro === 'todos' ? null : prestamoFiltro,
         p_abonos: allocations,
         p_cargos: cargosAlloc,
@@ -698,7 +701,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
           p_cuenta_id: cuentaId, p_tipo: 'ENTRADA', p_monto: montoNum,
           p_concepto: `Recibo ${data?.numero || ''} — ${cliente?.nombre || ''}`.trim(),
           p_referencia: cuenta || data?.numero || null,
-          p_origen_tipo: 'recibo', p_origen_id: data?.id || null, p_fecha: null,
+          p_origen_tipo: 'recibo', p_origen_id: data?.id || null, p_fecha: fechaRecibo || null,
         }).then(() => {}, () => {});
       }
 
@@ -749,7 +752,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
           console.error('No se pudo imprimir el recibo de pago:', printErr);
         }
       }
-      setAbonos({}); setEditKey(null); setMontoText(''); setComentarios('');
+      setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setFechaRecibo(hoy());
       await cargarEstado(cliente.id);
       await cargarProximoNumero();
     } catch (e) {
@@ -822,6 +825,19 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
               <div className="flex items-center gap-2">
                 <Label className="text-xs w-20">Cobrador</Label>
                 <Input value={reimpVista ? (reimpVista.pago.cobrador || '') : cobrador} onChange={(e) => setCobrador(e.target.value)} readOnly={!!reimpVista} className="h-7 text-xs" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs w-20">Fecha</Label>
+                <Input
+                  type="date"
+                  value={reimpVista ? (reimpVista.pago.fecha || '') : fechaRecibo}
+                  onChange={(e) => setFechaRecibo(e.target.value)}
+                  readOnly={!!reimpVista}
+                  className={`h-7 text-xs flex-1 ${!reimpVista && fechaRecibo && fechaRecibo !== hoy() ? 'border-amber-400 bg-amber-50 font-bold text-amber-800' : ''}`}
+                />
+                {!reimpVista && fechaRecibo && fechaRecibo !== hoy() ? (
+                  <span className="text-[10px] font-bold text-amber-700 whitespace-nowrap shrink-0">ATRASADO</span>
+                ) : null}
               </div>
               <div className="flex items-center gap-2 min-w-0">
                 <div className="flex items-center gap-1.5 shrink-0">
