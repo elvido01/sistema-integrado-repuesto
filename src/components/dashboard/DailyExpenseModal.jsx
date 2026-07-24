@@ -165,10 +165,13 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         if (error) throw error;
         toast({ title: 'Gasto actualizado', description: 'La caja se recalcula con el nuevo monto.' });
         setHuboCambios(true);
+        setIsSubmitting(false);
+        // Si viniste con doble clic sobre un gasto, ya terminaste: cerrar.
+        // Si abriste en "Nuevo", el modal queda abierto para seguir revisando.
+        if (gasto?.id) { onClose(true); return; }
         resetForm();
         await cargarGastosHoy();
-        setIsSubmitting(false);
-        return; // el modal queda abierto para seguir revisando
+        return;
       }
 
       const desdeBanco = pagaCon === 'banco' && cuentaId;
@@ -376,8 +379,10 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
           </DialogFooter>
         </form>
 
-        {/* Gastos ya registrados HOY — clic para corregir */}
-        {gastosHoy.length > 0 && (
+        {/* Gastos ya registrados HOY — clic para corregir. Solo cuando el
+            modal se abrió en "Nuevo": si entraste con doble clic sobre un
+            gasto, ya elegiste cuál editar y la lista sobra. */}
+        {!gasto?.id && gastosHoy.length > 0 && (
           <div className="border-t pt-3">
             <p className="text-[11px] font-bold text-slate-400 uppercase mb-1.5">Gastos de hoy (clic para editar)</p>
             <div className="max-h-40 overflow-y-auto space-y-1">
