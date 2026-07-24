@@ -233,7 +233,7 @@ const CierreCajaPage = () => {
     try {
       const { data: gastosData, error: gastosErr } = await supabase
         .from('gastos_diarios')
-        .select('monto, descripcion, tipo_gasto')
+        .select('monto, descripcion, tipo_gasto, afecta_caja, cuenta_bancaria_id')
         .eq('tenant_id', tenantId)
         .eq('fecha', fechaStr)
         .eq('anulado', false);
@@ -241,7 +241,12 @@ const CierreCajaPage = () => {
       if (gastosErr) {
         console.warn('Error cargando gastos diarios:', gastosErr.message);
       } else {
-        gastosDiarios = gastosData || [];
+        // Solo los gastos que SALIERON DE LA GAVETA cuentan en el cierre de
+        // caja. Los pagados por banco de la empresa o por un tercero (Odalys)
+        // no restan del efectivo. Ver sql/gasto_no_afecta_caja.sql
+        gastosDiarios = (gastosData || []).filter(
+          (g) => !g.cuenta_bancaria_id && g.afecta_caja !== false
+        );
       }
     } catch (e) {
       console.warn('Exception cargando gastos diarios:', e);

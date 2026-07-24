@@ -53,6 +53,14 @@ const DailyExpensesCard = ({ gastos = [], caja = 0, onAdd, onEdit }) => {
                     <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase truncate max-w-[96px]" title={g.tipo_gasto || 'Operativo'}>
                       {g.tipo_gasto || 'Operativo'}
                     </span>
+                    {(g.cuenta_bancaria_id || g.afecta_caja === false) && (
+                      <span
+                        className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase"
+                        title="No salió de la caja: no afecta el efectivo del día"
+                      >
+                        {g.cuenta_bancaria_id ? 'Banco' : 'No afecta caja'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

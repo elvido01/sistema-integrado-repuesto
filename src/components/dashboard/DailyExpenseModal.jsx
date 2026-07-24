@@ -39,10 +39,16 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     monto: '',
     descripcion: '',
   });
-  // De dónde sale el gasto: la gaveta (efectivo) o una cuenta bancaria.
-  // Sirve para gastos grandes que superan el efectivo en caja.
-  const [pagaCon, setPagaCon] = useState('efectivo'); // 'efectivo' | 'banco'
+  // De dónde sale el gasto:
+  //   'efectivo' → la gaveta (resta de la caja, como siempre)
+  //   'banco'    → una cuenta bancaria de la empresa (no resta de la caja)
+  //   'externo'  → un tercero u otra cuenta (ej. lo pagó Odalys): SÍ es gasto
+  //                de la empresa pero NO resta de la caja.
+  const [pagaCon, setPagaCon] = useState('efectivo'); // 'efectivo' | 'banco' | 'externo'
   const [cuentaId, setCuentaId] = useState('');
+  // Al editar un gasto que salió del banco no se cambia el origen aquí (habría
+  // que revertir el movimiento bancario): se bloquea el selector.
+  const [bancoLock, setBancoLock] = useState(false);
   // Gastos ya registrados hoy: clic para EDITAR (ej. el mandado costó menos)
   const [gastosHoy, setGastosHoy] = useState([]);
   const [editandoId, setEditandoId] = useState(null);
@@ -52,7 +58,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     if (!tenantId) return;
     const { data } = await supabase
       .from('gastos_diarios')
-      .select('id, fecha, tipo_gasto, monto, descripcion')
+      .select('id, fecha, tipo_gasto, monto, descripcion, afecta_caja, cuenta_bancaria_id')
       .eq('tenant_id', tenantId)
       .eq('fecha', todayISO())
       .eq('anulado', false)
@@ -65,11 +71,18 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setFormData({ fecha: todayISO(), tipo_gasto: 'Operativo', monto: '', descripcion: '' });
     setPagaCon('efectivo');
     setCuentaId('');
+    setBancoLock(false);
   };
 
   const editarGasto = (g) => {
     setEditandoId(g.id);
     setFormData({ fecha: g.fecha, tipo_gasto: g.tipo_gasto || 'Operativo', monto: String(g.monto), descripcion: g.descripcion || '' });
+    // Origen actual: banco (bloqueado), externo (no afecta caja) o efectivo.
+    if (g.cuenta_bancaria_id) {
+      setPagaCon('banco'); setCuentaId(g.cuenta_bancaria_id); setBancoLock(true);
+    } else {
+      setPagaCon(g.afecta_caja === false ? 'externo' : 'efectivo'); setCuentaId(''); setBancoLock(false);
+    }
     setTimeout(() => { montoInputRef.current?.focus(); montoInputRef.current?.select(); }, 80);
   };
 
@@ -138,13 +151,17 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setIsSubmitting(true);
     try {
       if (editandoId) {
-        // Corrección de un gasto ya registrado (ej. costó menos de lo anotado)
-        const { error } = await supabase.from('gastos_diarios').update({
+        // Corrección de un gasto ya registrado (ej. costó menos de lo anotado).
+        // Si el gasto no salió del banco, se puede cambiar entre efectivo y
+        // externo (afecta o no la caja). Los de banco no se tocan aquí.
+        const upd = {
           fecha: formData.fecha,
           tipo_gasto: formData.tipo_gasto,
           monto,
           descripcion: formData.descripcion.trim(),
-        }).eq('id', editandoId);
+        };
+        if (!bancoLock) upd.afecta_caja = pagaCon !== 'externo';
+        const { error } = await supabase.from('gastos_diarios').update(upd).eq('id', editandoId);
         if (error) throw error;
         toast({ title: 'Gasto actualizado', description: 'La caja se recalcula con el nuevo monto.' });
         setHuboCambios(true);
@@ -155,6 +172,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       }
 
       const desdeBanco = pagaCon === 'banco' && cuentaId;
+      const esExterno = pagaCon === 'externo';
       const { data: gastoCreado, error } = await supabase.from('gastos_diarios').insert({
         tenant_id: tenantId,
         fecha: formData.fecha,
@@ -163,6 +181,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         descripcion: formData.descripcion.trim(),
         usuario_id: user?.id || null,
         cuenta_bancaria_id: desdeBanco ? cuentaId : null,
+        // Banco de la empresa o tercero (Odalys): NO resta de la gaveta.
+        afecta_caja: !(desdeBanco || esExterno),
       }).select('id').single();
 
       if (error) throw error;
@@ -191,7 +211,11 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
 
       toast({
         title: 'Gasto diario registrado',
-        description: desdeBanco ? 'El gasto salió de la cuenta bancaria.' : 'El gasto fue descontado de caja.',
+        description: desdeBanco
+          ? 'El gasto salió de la cuenta bancaria.'
+          : esExterno
+            ? 'Registrado como gasto de la empresa (no afecta la caja).'
+            : 'El gasto fue descontado de caja.',
       });
 
       // Comprobante de gasto segun el formato configurado (Config. del Sistema)
@@ -283,16 +307,21 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             />
           </div>
 
-          {/* De dónde sale: la gaveta o una cuenta bancaria. Para gastos
-              grandes que superan el efectivo en caja. */}
-          {!editandoId && (
+          {/* De dónde sale: la gaveta, una cuenta bancaria de la empresa, o un
+              tercero/otra cuenta (no afecta la caja, ej. lo pagó Odalys). */}
+          {bancoLock ? (
+            <div className="rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
+              Este gasto se pagó desde una <b>cuenta bancaria</b>: no resta de la caja. El origen no se edita aquí.
+            </div>
+          ) : (
             <div className="space-y-2">
               <Label>¿De dónde sale?</Label>
-              <Select value={pagaCon} onValueChange={(v) => { setPagaCon(v); if (v === 'efectivo') setCuentaId(''); }}>
+              <Select value={pagaCon} onValueChange={(v) => { setPagaCon(v); if (v !== 'banco') setCuentaId(''); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="efectivo">Efectivo (caja del día)</SelectItem>
-                  <SelectItem value="banco">Cuenta bancaria</SelectItem>
+                  {!editandoId && <SelectItem value="banco">Cuenta bancaria de la empresa</SelectItem>}
+                  <SelectItem value="externo">Otra cuenta / tercero (no afecta caja)</SelectItem>
                 </SelectContent>
               </Select>
               {pagaCon === 'banco' && (
@@ -305,6 +334,11 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                     No resta del efectivo en caja: sale del saldo de esa cuenta.
                   </p>
                 </div>
+              )}
+              {pagaCon === 'externo' && (
+                <p className="text-[10px] text-gray-500 italic">
+                  Se registra como gasto de la empresa pero <b>no resta de la Caja</b> (lo pagó un tercero u otra cuenta, ej. Odalys). Anota en la descripción quién lo pagó.
+                </p>
               )}
             </div>
           )}
@@ -355,7 +389,14 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   className={`w-full flex items-start justify-between gap-2 text-left text-sm px-2 py-1 rounded border transition-colors ${editandoId === g.id ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
                 >
                   {/* La descripcion se lee COMPLETA: baja de linea, no se corta */}
-                  <span className="min-w-0 flex-1 break-words">{g.tipo_gasto} — {g.descripcion}</span>
+                  <span className="min-w-0 flex-1 break-words">
+                    {g.tipo_gasto} — {g.descripcion}
+                    {(g.cuenta_bancaria_id || g.afecta_caja === false) && (
+                      <span className="ml-1 inline-block text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded font-bold uppercase align-middle">
+                        {g.cuenta_bancaria_id ? 'Banco' : 'No afecta caja'}
+                      </span>
+                    )}
+                  </span>
                   <span className="font-mono font-bold shrink-0">{Number(g.monto).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
                 </button>
               ))}

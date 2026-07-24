@@ -158,7 +158,7 @@ const HomePage = () => {
         supabase.rpc('get_flujo_neto_dashboard'),     // 3
         supabase.rpc('get_caja_excedente_dashboard'), // 4  (excedente + caja de hoy)
         supabase.from('compras').select('id, numero, referencia, fecha, dias_credito, monto_pendiente, total_compra, monto_pagado, suplidor_id, proveedores(nombre)').eq('tenant_id', tenantId).ilike('forma_pago', 'CREDITO').eq('estado', 'PENDIENTE').order('fecha', { ascending: true }),  // 5  (CxP suplidores)
-        supabase.from('gastos_diarios').select('id, fecha, tipo_gasto, monto, descripcion').eq('tenant_id', tenantId).eq('fecha', todayDate).eq('anulado', false).order('created_at', { ascending: false })  // 6  (lista de gastos de hoy)
+        supabase.from('gastos_diarios').select('id, fecha, tipo_gasto, monto, descripcion, afecta_caja, cuenta_bancaria_id').eq('tenant_id', tenantId).eq('fecha', todayDate).eq('anulado', false).order('created_at', { ascending: false })  // 6  (lista de gastos de hoy)
       ]);
 
       // Lectura segura de cada resultado (fallback si esa consulta falló).
