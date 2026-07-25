@@ -17,8 +17,20 @@
 -- Resultado Caminero julio: cobros 293,500 − gastos 4,600 = 288,900.
 -- Empresas NO terceros: v_ini_ing = v_ini_act → comportamiento IDÉNTICO al
 -- anterior (sql/flujo_neto_respeta_ancla.sql), nada cambia para ellas.
+--
+-- ADEMÁS: ancla PROPIA del Flujo (independiente de la caja). Se agrega
+-- config_empresa.flujo_historial_desde: si está lleno, el flujo del mes
+-- arranca ahí (la CAJA/excedente sigue usando caja_historial_desde, no se
+-- toca). Caso MotoPréstamos: caja desde 21/07 pero el FLUJO desde 20/07.
+-- Con GREATEST(inicio de mes, ancla) rueda solo cada mes (agosto → 01/08).
+--
 -- Re-ejecutable. Correr en PRODUCCIÓN.
 -- =====================================================================
+
+-- Ancla propia del flujo del mes (independiente de la caja). NULL = usa la
+-- de la caja (caja_historial_desde).
+ALTER TABLE public.config_empresa
+  ADD COLUMN IF NOT EXISTS flujo_historial_desde date;
 
 CREATE OR REPLACE FUNCTION public.get_flujo_neto_dashboard(
   p_fecha_referencia date DEFAULT NULL
@@ -54,9 +66,10 @@ BEGIN
     RAISE EXCEPTION 'No se pudo determinar el tenant del usuario';
   END IF;
 
+  -- El flujo puede tener su propia ancla; si no, usa la de la caja.
   SELECT COALESCE(meta_flujo_neto_mensual, 0),
          COALESCE(meta_ventas, 0),
-         COALESCE(caja_historial_desde, DATE '1970-01-01'),
+         COALESCE(flujo_historial_desde, caja_historial_desde, DATE '1970-01-01'),
          (COALESCE(financiamiento_tipo, 'propio') = 'terceros')
     INTO v_meta, v_meta_ventas, v_anchor, v_es_terceros
   FROM public.config_empresa
@@ -251,6 +264,12 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.get_flujo_neto_dashboard(date) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.get_flujo_neto_dashboard(date) TO authenticated, service_role;
 
+-- MotoPréstamos Los Naranjos: el FLUJO del mes arranca el 20/07 (la caja
+-- sigue en 21/07, no se toca). En agosto rueda solo al 01/08.
+UPDATE public.config_empresa
+   SET flujo_historial_desde = DATE '2026-07-20'
+ WHERE tenant_id = '766fe3d6-6885-4f2b-b2cc-1a91db696fb4';
+
 NOTIFY pgrst, 'reload schema';
 
 DO $$ BEGIN
@@ -259,4 +278,8 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-SELECT 'Flujo Neto: terceros cuenta ingresos del mes completo y egresos desde el ancla' AS status;
+-- Verificación
+SELECT nombre, caja_historial_desde, flujo_historial_desde
+FROM public.config_empresa
+WHERE tenant_id IN ('766fe3d6-6885-4f2b-b2cc-1a91db696fb4',
+                    'b39506c3-27dc-467d-830b-096731b83113');
