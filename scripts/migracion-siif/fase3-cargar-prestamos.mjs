@@ -188,8 +188,29 @@ for (const h of headers) {
   h.esCastigo = h.tienePendiente && !!h.refPago && h.refPago < CASTIGO_CUTOFF; // incobrable por antigüedad
   h.estado = !h.tienePendiente ? 'saldado' : (h.esCastigo ? 'castigado' : 'activo');
 }
-const lista = headers.filter((h) => h.cliente_id);
-console.log(`Sin cliente: ${sinCliente} (omitidos) | a cargar: ${lista.length} | activos: ${lista.filter((h) => h.estado === 'activo').length} | castigados(<${CASTIGO_CUTOFF}): ${lista.filter((h) => h.estado === 'castigado').length}`);
+// No reimportar de SiiF un préstamo que YA existe como financiamiento a
+// terceros NATIVO en MotoFlow (creado por procesar_financiamiento_terceros:
+// legacy_id NULL + nota [FT:...]). Antes se duplicaban (ej. ERNESTINA FT-12,
+// FERNANDO FT-13): el de SiiF entraba con su legacy_id y quedaban dos.
+// Se saltan por (cliente_id + monto_capital) — la venta financiada vive en
+// MotoFlow, no se vuelve a traer de SiiF.
+const tercerosKeys = new Set();
+{
+  const { data, error } = await supabase.from('prestamos')
+    .select('cliente_id, monto_capital')
+    .eq('tenant_id', TENANT_ID)
+    .is('legacy_id', null)
+    .like('notas', '%[FT:%');
+  if (error) { console.error('terceros keys:', error.message); process.exit(1); }
+  for (const r of data || []) tercerosKeys.add(`${r.cliente_id}:${Math.round(Number(r.monto_capital))}`);
+}
+let saltadosTerceros = 0;
+const lista = headers.filter((h) => {
+  if (!h.cliente_id) return false;
+  if (tercerosKeys.has(`${h.cliente_id}:${Math.round(Number(h.monto_capital))}`)) { saltadosTerceros++; return false; }
+  return true;
+});
+console.log(`Sin cliente: ${sinCliente} (omitidos) | saltados por terceros nativo: ${saltadosTerceros} | a cargar: ${lista.length} | activos: ${lista.filter((h) => h.estado === 'activo').length} | castigados(<${CASTIGO_CUTOFF}): ${lista.filter((h) => h.estado === 'castigado').length}`);
 
 if (!COMMIT) {
   // valida cliente de ejemplo
