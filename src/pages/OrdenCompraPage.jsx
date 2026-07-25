@@ -1448,6 +1448,52 @@ const OrdenCompraPage = () => {
     }
     setIsGenerating(true);
 
+    // DEALER DE VEHÍCULOS: la orden automática normal (productos bajo el stock
+    // mínimo del suplidor) no aplica — cada moto es un producto ÚNICO por
+    // chasis, se vende una vez y nunca se repone, así que no tiene "mínimo".
+    // Aquí se sugiere por MODELO según la rotación real de los últimos 90 días.
+    if (isVehicleDealer) {
+      const { data: sug, error: sugErr } = await supabase.rpc('get_orden_automatica_dealer', {
+        p_suplidor_id: selectedProveedor.id,
+        p_dias: 30,
+      });
+      setIsGenerating(false);
+      if (sugErr) {
+        toast({ variant: 'destructive', title: 'Error', description: `No se pudo calcular la sugerencia. ${sugErr.message || ''}` });
+        return;
+      }
+      const filas = (sug || []).filter(r => Number(r.sugerido) > 0);
+      if (filas.length === 0) {
+        const top = (sug || []).slice(0, 3)
+          .map(r => `${r.modelo}: ${Number(r.stock)} en stock, ${Number(r.vendidas_90d)} vendidas 90d`)
+          .join(' · ');
+        toast({
+          title: 'No hay que pedir por ahora',
+          description: top ? `El inventario cubre la rotación. ${top}` : 'El inventario cubre la rotación de este suplidor.',
+        });
+        return;
+      }
+      const anio = new Date().getFullYear();
+      setDetalles(prev => calculateAllImportes([
+        ...prev,
+        ...filas.map(r => ({
+          id: Date.now() + Math.random(),
+          producto_id: '', codigo: `${r.marca}-${r.modelo}`.toUpperCase().replace(/\s+/g, ''),
+          descripcion: `${r.marca} ${r.modelo} ${anio}`.toUpperCase(),
+          marca_nombre: r.marca, modelo_nombre: r.modelo, anio, color: '',
+          cantidad: Number(r.sugerido), unidad: 'UND',
+          precio: Number(r.costo) || 0, descuento_pct: 0, itbis_pct: 0, importe: 0,
+          existencia: Number(r.stock) || 0,
+          decision_estado: DECISION_DEFAULT, decision_motivo: null,
+        })),
+      ]));
+      toast({
+        title: `${filas.length} modelo${filas.length !== 1 ? 's' : ''} sugerido${filas.length !== 1 ? 's' : ''}`,
+        description: `Según la rotación de 90 días, para cubrir 30 días de venta.`,
+      });
+      return;
+    }
+
     // Intentar v2 primero (con conciencia de grupos), fallback al v1 si no existe
     let data, error;
     let usedV2 = false;
