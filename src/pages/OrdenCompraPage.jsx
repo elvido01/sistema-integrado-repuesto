@@ -650,6 +650,12 @@ const OrdenCompraPage = () => {
       const autoCode = `${stagingItem.marca_nombre}-${stagingItem.modelo_nombre}`.toUpperCase().replace(/\s+/g, '');
       stagingItem.descripcion = desc;
       stagingItem.codigo = autoCode;
+      // Sin cantidad la línea entraba con importe 0 (importe = cantidad x precio).
+      // Si no se escribió, se pide 1 unidad (queda editable en la tabla).
+      if (!(parseFloat(stagingItem.cantidad) > 0)) stagingItem.cantidad = 1;
+      if (!(parseFloat(stagingItem.precio) > 0) && Number(infoModelo?.ultimo_costo) > 0) {
+        stagingItem.precio = Number(infoModelo.ultimo_costo);
+      }
     } else {
       if (!stagingItem.producto_id && !stagingItem.codigo) {
         toast({ variant: 'destructive', title: 'Error', description: 'Seleccione un producto.' });
@@ -2605,14 +2611,26 @@ const OrdenCompraPage = () => {
             <Select value={stagingItem.modelo_nombre} onValueChange={(v) => setStagingItem({ ...stagingItem, modelo_nombre: v })}>
               <SelectTrigger className="w-36 h-7 text-xs border-slate-400 bg-white"><SelectValue placeholder="Modelo" /></SelectTrigger>
               <SelectContent>
-                {catalogModelos
-                  .filter(m => m.activo
+                {(() => {
+                  const visibles = catalogModelos.filter(m => m.activo
                     && (!stagingItem.marca_nombre || catalogMarcas.find(ma => ma.nombre === stagingItem.marca_nombre && ma.id === m.marca_id))
-                    && (!catalogoSuplidor || catalogoSuplidor.modelos.includes(m.nombre)))
-                  .sort((a,b) => a.nombre.localeCompare(b.nombre))
-                  .map(m => (
-                    <SelectItem key={m.id} value={m.nombre}>{m.nombre}</SelectItem>
-                  ))}
+                    && (!catalogoSuplidor || catalogoSuplidor.modelos.includes(m.nombre)));
+                  // El MISMO motor está escrito de varias formas ("SX2",
+                  // "SX2-250CC", "SX2(250CC)"): se muestra una sola vez (se deja
+                  // el nombre más corto) para no pedirlo tres veces por error.
+                  const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/([0-9])CC/g, '$1');
+                  const unicos = new Map();
+                  for (const m of visibles) {
+                    const k = norm(m.nombre);
+                    const prev = unicos.get(k);
+                    if (!prev || m.nombre.length < prev.nombre.length) unicos.set(k, m);
+                  }
+                  return [...unicos.values()]
+                    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                    .map(m => (
+                      <SelectItem key={m.id} value={m.nombre}>{m.nombre}</SelectItem>
+                    ));
+                })()}
               </SelectContent>
             </Select>
             <Input
