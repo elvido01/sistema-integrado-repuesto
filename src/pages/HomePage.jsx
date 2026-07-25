@@ -664,6 +664,7 @@ const HomePage = () => {
                     loading={loading}
                     onRetry={() => fetchDashboardData(true)}
                     ventasMesTotal={esVentasTerceros ? ventasTerceros.mesTotal : null}
+                    cobradoMes={esVentasTerceros ? ventasTerceros.cobradoMes : null}
                   />
                 </motion.div>
 
@@ -674,23 +675,13 @@ const HomePage = () => {
                   transition={{ delay: 0.6, duration: 0.4 }}
                   className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6 pt-6 border-t border-gray-200"
                 >
-                  {esVentasTerceros ? (
-                    <SummaryCard
-                      title="Ventas del Mes"
-                      value={ventasTerceros.mesTotal.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
-                      icon={TrendingUp}
-                      color="accent"
-                      description={`Inicial + recibos: RD$ ${ventasTerceros.cobradoMes.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
-                    />
-                  ) : (
-                    <SummaryCard
-                      title="Ventas del Día"
-                      value={`${stats.ventasHoy.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
-                      icon={TrendingUp}
-                      color="accent"
-                      description="ingresos de hoy"
-                    />
-                  )}
+                  <SummaryCard
+                    title="Ventas del Día"
+                    value={`${stats.ventasHoy.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
+                    icon={TrendingUp}
+                    color="accent"
+                    description="ingresos de hoy"
+                  />
                   <SummaryCard
                     title="Inventario Crítico"
                     value={stats.stockBajo}
