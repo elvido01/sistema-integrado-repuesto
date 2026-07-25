@@ -1323,14 +1323,25 @@ const ComprasPage = () => {
     // insertaba la 1ra y luego el resto por separado: si el 2do insert
     // fallaba quedaba una compra A MEDIAS (factura huérfana, sin detalle y
     // bloqueada por "factura duplicada" al reintentar). Así es todo o nada.
-    const filasCompra = (financiar && pagareRowsExtra.length > 0)
-      ? [compraData, ...pagareRowsExtra]
-      : [compraData];
+    // OJO: supabase-js arma la lista de columnas del insert con Object.keys()
+    // de cada fila. Una clave con valor `undefined` (ej. `id: undefined` de
+    // mkRow) viaja como COLUMNA pero sin valor en el body → Postgres mete NULL
+    // y falla ("null value in column id violates not-null"). Se quitan las
+    // claves undefined para que la columna use su valor por defecto.
+    const sinUndefined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 
     // Editar un financiamiento (o convertir una compra a pagarés) exige
     // recrear las filas: se borra el conjunto viejo y se inserta el nuevo.
     const editandoGrupo = isEditMode && financiamientoGrupo?.ids?.length > 0;
     const usaDeleteInsert = editandoGrupo || (isEditMode && financiar);
+
+    // El id viejo se quita ANTES de armar las filas (son copias): al reemplazar
+    // el grupo, cada fila se reinserta nueva.
+    if (usaDeleteInsert) delete compraData.id;
+
+    const filasCompra = ((financiar && pagareRowsExtra.length > 0)
+      ? [compraData, ...pagareRowsExtra]
+      : [compraData]).map(sinUndefined);
 
     if (usaDeleteInsert && compraConPagos) {
       toast({ variant: "destructive", title: "No se puede editar", description: "Esta compra financiada ya tiene pagos registrados." });
@@ -1340,7 +1351,6 @@ const ComprasPage = () => {
 
     let savedCompra;
     if (usaDeleteInsert) {
-      delete compraData.id; // se reinserta como fila(s) nueva(s); no reusar el id viejo
       const oldIds = editandoGrupo ? financiamientoGrupo.ids : (compra.id ? [compra.id] : []);
       const oldNums = editandoGrupo ? financiamientoGrupo.numeros : (compra.numero ? [compra.numero] : []);
       for (const oid of oldIds) {
