@@ -628,7 +628,7 @@ const OrdenCompraPage = () => {
   // --- STAGING ROW HANDLERS (New) ---
   const resetStaging = () => {
     setStagingItem({
-      producto_id: '', codigo: '', descripcion: '', cantidad: 0, unidad: 'UND', precio: 0, descuento_pct: 0, itbis_pct: 0, importe: 0, existencia: 0,
+      producto_id: '', codigo: '', descripcion: '', cantidad: 1, unidad: 'UND', precio: 0, descuento_pct: 0, itbis_pct: 0, importe: 0, existencia: 0,
       marca_nombre: '', modelo_nombre: '', anio: new Date().getFullYear(), color: ''
     });
     setEditingDetalleId(null);
@@ -771,6 +771,11 @@ const OrdenCompraPage = () => {
         // Solo se filtra si el suplidor tiene historial; si no, se deja el
         // catálogo completo para no dejar al usuario sin opciones.
         setCatalogoSuplidor((marcas.length || modelos.length) ? { marcas, modelos } : null);
+        // Deja lista la marca del suplidor (la única, o la primera) para no
+        // tener que elegirla en cada línea.
+        if (marcas.length) {
+          setStagingItem(prev => (prev.marca_nombre ? prev : { ...prev, marca_nombre: [...marcas].sort()[0] }));
+        }
       });
     return () => { vivo = false; };
   }, [isVehicleDealer, selectedProveedor?.id]);
@@ -2640,12 +2645,29 @@ const OrdenCompraPage = () => {
               value={stagingItem.anio || ''}
               onChange={(e) => setStagingItem({ ...stagingItem, anio: parseInt(e.target.value) || '' })}
             />
-            <Input
-              className="w-28 h-7 text-xs border-slate-400 bg-white"
-              placeholder="Color"
-              value={stagingItem.color || ''}
-              onChange={(e) => setStagingItem({ ...stagingItem, color: e.target.value.toUpperCase() })}
-            />
+            {/* Color: lista con los colores ya registrados de ese modelo.
+                Si el modelo aún no tiene colores, queda como texto libre. */}
+            {infoModelo?.colores?.length > 0 ? (
+              <Select
+                value={stagingItem.color || '__todos__'}
+                onValueChange={(v) => setStagingItem({ ...stagingItem, color: v === '__todos__' ? '' : v })}
+              >
+                <SelectTrigger className="w-32 h-7 text-xs border-slate-400 bg-white"><SelectValue placeholder="Color" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todos__">Todos los colores</SelectItem>
+                  {infoModelo.colores.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                className="w-28 h-7 text-xs border-slate-400 bg-white"
+                placeholder="Color"
+                value={stagingItem.color || ''}
+                onChange={(e) => setStagingItem({ ...stagingItem, color: e.target.value.toUpperCase() })}
+              />
+            )}
             <Input
               type="number"
               className="w-16 h-7 text-xs border-slate-400 bg-white text-center"

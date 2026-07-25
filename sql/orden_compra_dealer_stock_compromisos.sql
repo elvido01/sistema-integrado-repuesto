@@ -66,16 +66,27 @@ BEGIN
     RETURN json_build_object('unidades', 0, 'ultimo_costo', 0, 'vendidas_90d', 0);
   END IF;
 
-  WITH coincide AS (  -- productos de ese modelo. Se compara NORMALIZADO para
-                      -- que las variantes de escritura del mismo motor cuenten
-                      -- juntas (el catálogo migrado no trae marca_id/modelo_id).
-    SELECT p.id, p.costo
+  WITH base AS (  -- productos de ese modelo (SIN filtrar color: de aquí sale
+                  -- la lista de colores para el combo). Se compara NORMALIZADO
+                  -- para que las variantes del mismo motor cuenten juntas.
+    SELECT p.id, p.costo, p.descripcion,
+           -- El color casi nunca está en la columna `color` (27 de 3,514): en
+           -- el catálogo va al final de la descripción, después del año.
+           UPPER(btrim(COALESCE(
+             NULLIF(btrim(p.color), ''),
+             substring(p.descripcion from '\d{4}\s+(.+)$')
+           ))) AS color_txt
     FROM public.productos p
     WHERE p.tenant_id = v_tenant
       AND public.mf_norm_modelo(p.descripcion) LIKE '%' || public.mf_norm_modelo(p_marca)  || '%'
       AND public.mf_norm_modelo(p.descripcion) LIKE '%' || public.mf_norm_modelo(p_modelo) || '%'
-      AND (COALESCE(btrim(p_anio), '')  = '' OR p.descripcion ILIKE '%' || btrim(p_anio) || '%')
-      AND (COALESCE(btrim(p_color), '') = '' OR public.mf_norm_modelo(p.descripcion) LIKE '%' || public.mf_norm_modelo(p_color) || '%')
+      AND (COALESCE(btrim(p_anio), '') = '' OR p.descripcion ILIKE '%' || btrim(p_anio) || '%')
+  ),
+  coincide AS (  -- + filtro de color (para stock/costo/rotación)
+    SELECT b.id, b.costo
+    FROM base b
+    WHERE COALESCE(btrim(p_color), '') = ''
+       OR public.mf_norm_modelo(b.descripcion) LIKE '%' || public.mf_norm_modelo(p_color) || '%'
   ),
   neto AS (  -- stock por producto (SALIDA ya viene en negativo)
     SELECT m.producto_id, SUM(m.cantidad) AS stock
@@ -105,7 +116,18 @@ BEGIN
     'unidades',     (SELECT COUNT(*) FROM neto WHERE stock > 0),
     'ultimo_costo', COALESCE((SELECT costo_unitario FROM costo),
                              (SELECT MAX(costo) FROM coincide), 0),
-    'vendidas_90d', (SELECT vendidas FROM ventas)
+    'vendidas_90d', (SELECT vendidas FROM ventas),
+    -- Colores ya registrados para ese modelo (para el combo de Color)
+    'colores', COALESCE((
+      SELECT json_agg(c ORDER BY c)
+      FROM (
+        SELECT DISTINCT color_txt AS c
+        FROM base
+        WHERE color_txt IS NOT NULL
+          AND length(color_txt) BETWEEN 3 AND 24
+          AND color_txt ~ '^[A-ZÁÉÍÓÚÑ /-]+$'   -- descarta basura numérica
+      ) z
+    ), '[]'::json)
   ) INTO v_result;
 
   RETURN v_result;
