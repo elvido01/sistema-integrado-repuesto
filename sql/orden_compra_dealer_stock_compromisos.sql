@@ -120,7 +120,8 @@ GRANT  EXECUTE ON FUNCTION public.mf_norm_modelo(text) TO authenticated, service
 -- 2) Compromisos de pago por mes (CxP pendientes)
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_compromisos_cxp_mensual(
-  p_meses int DEFAULT 8
+  p_meses       int  DEFAULT 8,
+  p_suplidor_id uuid DEFAULT NULL   -- si viene, SOLO ese suplidor
 )
 RETURNS json
 LANGUAGE plpgsql
@@ -145,6 +146,10 @@ BEGIN
       AND c.estado = 'PENDIENTE'
       AND c.forma_pago ILIKE '%credito%'
       AND COALESCE(c.monto_pendiente, 0) > 0
+      -- Con suplidor seleccionado se muestra SOLO su deuda: si no, se mezclaban
+      -- los "saldo inicial papel" de otros suplidores y aparecía como vencido
+      -- lo que no era de este (caso Motores del Sur, que no tiene vencidos).
+      AND (p_suplidor_id IS NULL OR c.suplidor_id = p_suplidor_id)
   ),
   por_mes AS (
     SELECT date_trunc('month', vence)::date AS mes,
@@ -174,8 +179,74 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.get_compromisos_cxp_mensual(int) FROM PUBLIC, anon;
-GRANT  EXECUTE ON FUNCTION public.get_compromisos_cxp_mensual(int) TO authenticated, service_role;
+-- La firma vieja (solo p_meses) se elimina para no dejar sobrecarga ambigua.
+DROP FUNCTION IF EXISTS public.get_compromisos_cxp_mensual(int);
+REVOKE EXECUTE ON FUNCTION public.get_compromisos_cxp_mensual(int, uuid) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.get_compromisos_cxp_mensual(int, uuid) TO authenticated, service_role;
+
+-- ------------------------------------------------------------
+-- 3) Marcas y modelos que VENDE un suplidor
+-- ------------------------------------------------------------
+-- Al elegir el suplidor en la Orden de Compra, los combos de Marca y Modelo
+-- deben mostrar solo lo que ese suplidor vende (Motores del Sur = LONCIN:
+-- LX250ZH-13 MAX, NATIVA 125 SPORT, X-SPEED 150, LX200ZH-AI/AT, SX2).
+-- Se deduce del HISTORIAL DE COMPRAS (productos.modelo_id viene vacío en el
+-- catálogo migrado; marca_id sí está). Los modelos se emparejan contra la
+-- descripción con la misma normalización del stock.
+CREATE OR REPLACE FUNCTION public.get_marcas_modelos_suplidor(
+  p_suplidor_id uuid
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_tenant uuid := public.get_user_tenant();
+  v_result json;
+BEGIN
+  IF v_tenant IS NULL THEN RAISE EXCEPTION 'No se pudo determinar el tenant'; END IF;
+  IF p_suplidor_id IS NULL THEN
+    RETURN json_build_object('marcas', '[]'::json, 'modelos', '[]'::json);
+  END IF;
+
+  WITH prods AS (  -- lo comprado a ese suplidor + lo que lo tiene asignado
+    SELECT DISTINCT p.id, p.marca_id, p.descripcion
+    FROM public.compras c
+    JOIN public.compras_detalle cd ON cd.compra_id = c.id
+    JOIN public.productos p        ON p.id = cd.producto_id
+    WHERE c.tenant_id = v_tenant AND c.suplidor_id = p_suplidor_id
+    UNION
+    SELECT p.id, p.marca_id, p.descripcion
+    FROM public.productos p
+    WHERE p.tenant_id = v_tenant AND p.suplidor_id = p_suplidor_id
+  )
+  SELECT json_build_object(
+    'marcas', COALESCE((
+      SELECT json_agg(DISTINCT m.nombre)
+      FROM prods pr
+      JOIN public.marcas m ON m.id = pr.marca_id AND m.tenant_id = v_tenant
+    ), '[]'::json),
+    'modelos', COALESCE((
+      SELECT json_agg(DISTINCT mo.nombre)
+      FROM public.modelos mo
+      WHERE mo.tenant_id = v_tenant
+        AND length(public.mf_norm_modelo(mo.nombre)) >= 3  -- evita modelos basura ("4")
+        AND EXISTS (
+          SELECT 1 FROM prods pr
+          WHERE public.mf_norm_modelo(pr.descripcion)
+                LIKE '%' || public.mf_norm_modelo(mo.nombre) || '%'
+        )
+    ), '[]'::json)
+  ) INTO v_result;
+
+  RETURN v_result;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.get_marcas_modelos_suplidor(uuid) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.get_marcas_modelos_suplidor(uuid) TO authenticated, service_role;
 
 NOTIFY pgrst, 'reload schema';
 

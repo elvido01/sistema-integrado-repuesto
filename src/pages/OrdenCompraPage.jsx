@@ -738,14 +738,36 @@ const OrdenCompraPage = () => {
 
   // Compromisos de pago por mes (CxP pendientes): para ver el flujo antes de
   // comprometer una compra nueva a pagarés.
+  // Se filtra por el suplidor elegido: si no, se mezclan los saldos iniciales
+  // de otros suplidores y aparece como "vencido" deuda que no es de este.
   const [compromisosMes, setCompromisosMes] = useState(null);
   useEffect(() => {
     let vivo = true;
-    supabase.rpc('get_compromisos_cxp_mensual', { p_meses: 8 }).then(({ data, error }) => {
+    supabase.rpc('get_compromisos_cxp_mensual', {
+      p_meses: 8,
+      p_suplidor_id: selectedProveedor?.id || null,
+    }).then(({ data, error }) => {
       if (vivo && !error) setCompromisosMes(data || null);
     });
     return () => { vivo = false; };
-  }, []);
+  }, [selectedProveedor?.id]);
+
+  // Marcas y modelos que vende el suplidor elegido (dealer de vehículos).
+  const [catalogoSuplidor, setCatalogoSuplidor] = useState(null); // { marcas:[], modelos:[] }
+  useEffect(() => {
+    if (!isVehicleDealer || !selectedProveedor?.id) { setCatalogoSuplidor(null); return; }
+    let vivo = true;
+    supabase.rpc('get_marcas_modelos_suplidor', { p_suplidor_id: selectedProveedor.id })
+      .then(({ data, error }) => {
+        if (!vivo || error) return;
+        const marcas = data?.marcas || [];
+        const modelos = data?.modelos || [];
+        // Solo se filtra si el suplidor tiene historial; si no, se deja el
+        // catálogo completo para no dejar al usuario sin opciones.
+        setCatalogoSuplidor((marcas.length || modelos.length) ? { marcas, modelos } : null);
+      });
+    return () => { vivo = false; };
+  }, [isVehicleDealer, selectedProveedor?.id]);
 
   const handleSelectProduct = (product) => {
     setStagingItem({
@@ -2573,7 +2595,9 @@ const OrdenCompraPage = () => {
             <Select value={stagingItem.marca_nombre} onValueChange={(v) => setStagingItem({ ...stagingItem, marca_nombre: v, modelo_nombre: '' })}>
               <SelectTrigger className="w-36 h-7 text-xs border-slate-400 bg-white"><SelectValue placeholder="Marca" /></SelectTrigger>
               <SelectContent>
-                {catalogMarcas.filter(m => m.activo).sort((a,b) => a.nombre.localeCompare(b.nombre)).map(m => (
+                {catalogMarcas
+                  .filter(m => m.activo && (!catalogoSuplidor || catalogoSuplidor.marcas.includes(m.nombre)))
+                  .sort((a,b) => a.nombre.localeCompare(b.nombre)).map(m => (
                   <SelectItem key={m.id} value={m.nombre}>{m.nombre}</SelectItem>
                 ))}
               </SelectContent>
@@ -2582,7 +2606,9 @@ const OrdenCompraPage = () => {
               <SelectTrigger className="w-36 h-7 text-xs border-slate-400 bg-white"><SelectValue placeholder="Modelo" /></SelectTrigger>
               <SelectContent>
                 {catalogModelos
-                  .filter(m => m.activo && (!stagingItem.marca_nombre || catalogMarcas.find(ma => ma.nombre === stagingItem.marca_nombre && ma.id === m.marca_id)))
+                  .filter(m => m.activo
+                    && (!stagingItem.marca_nombre || catalogMarcas.find(ma => ma.nombre === stagingItem.marca_nombre && ma.id === m.marca_id))
+                    && (!catalogoSuplidor || catalogoSuplidor.modelos.includes(m.nombre)))
                   .sort((a,b) => a.nombre.localeCompare(b.nombre))
                   .map(m => (
                     <SelectItem key={m.id} value={m.nombre}>{m.nombre}</SelectItem>
@@ -2963,31 +2989,45 @@ const OrdenCompraPage = () => {
               <div className="px-3 py-2 rounded-lg border border-indigo-200 bg-indigo-50/60">
                 <div className="flex items-center gap-2 mb-1">
                   <Wallet className="h-3.5 w-3.5 text-indigo-700" />
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-indigo-900">Pago comprometido por mes</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-indigo-900">
+                    Pago comprometido por mes
+                    {selectedProveedor?.nombre ? ` · ${selectedProveedor.nombre}` : ' · todos los suplidores'}
+                  </span>
                   {Number(compromisosMes.vencido) > 0 && (
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200">
                       Vencido: RD$ {Number(compromisosMes.vencido).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
                     </span>
                   )}
                 </div>
-                <div className="flex gap-3 flex-wrap">
-                  {compromisosMes.meses.map((m) => (
-                    <div key={m.mes} className="text-[11px] leading-tight">
-                      <div className="font-bold text-slate-500 uppercase">{m.mes}</div>
-                      <div className={`font-black ${Number(m.vencido) > 0 ? 'text-rose-600' : 'text-indigo-800'}`}>
-                        {Number(m.monto).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                {/* Suplidor que factura en US$: se muestra en su moneda (el
+                    equivalente en RD$ cambia con la tasa). */}
+                {(() => {
+                  const enUSD = String(selectedProveedor?.moneda || '').toUpperCase() === 'USD'
+                    && compromisosMes.meses.some(m => Number(m.monto_usd) > 0);
+                  const sim = enUSD ? 'US$' : 'RD$';
+                  const val = (m) => Number(enUSD ? m.monto_usd : m.monto) || 0;
+                  const totalUSD = compromisosMes.meses.reduce((s, m) => s + (Number(m.monto_usd) || 0), 0);
+                  return (
+                    <div className="flex gap-3 flex-wrap">
+                      {compromisosMes.meses.map((m) => (
+                        <div key={m.mes} className="text-[11px] leading-tight">
+                          <div className="font-bold text-slate-500 uppercase">{m.mes}</div>
+                          <div className={`font-black ${Number(m.vencido) > 0 ? 'text-rose-600' : 'text-indigo-800'}`}>
+                            {sim} {val(m).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                          </div>
+                          <div className="text-slate-400">{m.cuotas} cuota{Number(m.cuotas) !== 1 ? 's' : ''}</div>
+                        </div>
+                      ))}
+                      <div className="text-[11px] leading-tight border-l pl-3 border-indigo-200">
+                        <div className="font-bold text-slate-500 uppercase">Total</div>
+                        <div className="font-black text-indigo-900">
+                          {sim} {(enUSD ? totalUSD : Number(compromisosMes.total_pendiente)).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                        </div>
+                        <div className="text-slate-400">pendiente</div>
                       </div>
-                      <div className="text-slate-400">{m.cuotas} cuota{Number(m.cuotas) !== 1 ? 's' : ''}</div>
                     </div>
-                  ))}
-                  <div className="text-[11px] leading-tight border-l pl-3 border-indigo-200">
-                    <div className="font-bold text-slate-500 uppercase">Total</div>
-                    <div className="font-black text-indigo-900">
-                      {Number(compromisosMes.total_pendiente).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
-                    </div>
-                    <div className="text-slate-400">pendiente</div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             )}
 
