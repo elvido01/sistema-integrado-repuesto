@@ -49,7 +49,26 @@ const Kpi = ({ icon: Icon, label, value, sub, tone }) => {
 const ResumenCarteraPage = () => {
   const { toast } = useToast();
   const { empresa } = useAuth();
-  const { closePanel, activePanel } = usePanels();
+  const { closePanel, activePanel, openPanel } = usePanels();
+
+  // Doble clic en una línea: abre el Recibo de Pago con ese cliente ya
+  // seleccionado (mismo mecanismo que Gestión de Cobro: extraData).
+  const abrirReciboDeLinea = useCallback((r) => {
+    if (!r?.cliente_id) {
+      toast({
+        variant: 'destructive',
+        title: 'Cliente no disponible',
+        description: 'Vuelve a consultar la cartera. Si sigue igual, falta correr sql/cartera_cliente_id.sql.',
+      });
+      return;
+    }
+    openPanel('recibo-pago', {
+      clienteId: r.cliente_id,
+      prestamoId: r.prestamo_id,
+      requestedAt: Date.now(),
+      cliente: { id: r.cliente_id, codigo: r.codigo || '', nombre: r.cliente || '' },
+    });
+  }, [openPanel, toast]);
   const { setSidebarOpen } = useLayout();
 
   useEffect(() => { setSidebarOpen(false); }, [setSidebarOpen]);
@@ -203,7 +222,12 @@ const ResumenCarteraPage = () => {
                   {loading && <tr><td colSpan={9} className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></td></tr>}
                   {!loading && prestamos.length === 0 && <tr><td colSpan={9} className="p-10 text-center italic text-slate-400">Sin préstamos activos para este filtro.</td></tr>}
                   {!loading && prestamos.map((r, i) => (
-                    <tr key={r.prestamo_id} className={`border-b last:border-0 ${i % 2 === 1 ? 'bg-[#eef6ff]' : 'bg-white'}`}>
+                    <tr
+                      key={r.prestamo_id}
+                      onDoubleClick={() => abrirReciboDeLinea(r)}
+                      title="Doble clic: abrir el Recibo de Pago de este cliente"
+                      className={`border-b last:border-0 cursor-pointer hover:bg-blue-100/60 ${i % 2 === 1 ? 'bg-[#eef6ff]' : 'bg-white'}`}
+                    >
                       <td className="px-2 py-1 font-bold text-blue-900">{r.numero}</td>
                       <td className="px-2 py-1 truncate max-w-[220px]" title={r.cliente}>{r.cliente}</td>
                       <td className="px-2 py-1 capitalize">{r.tipo}</td>
