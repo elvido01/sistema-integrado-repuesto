@@ -203,7 +203,10 @@ BEGIN
   SELECT json_build_object(
     'total_pendiente', COALESCE((SELECT SUM(monto) FROM cxp), 0),
     'vencido',         COALESCE((SELECT SUM(monto) FROM cxp WHERE vence < v_hoy), 0),
-    'cuotas_tipicas',  COALESCE((SELECT n FROM moda), 6),
+    -- NULL cuando ese suplidor no tiene historial de pagarés: así el estimado
+    -- de "pago mensual" NO aparece en empresas/suplidores que no financian
+    -- (antes caía a 6 por defecto y mostraba un número inventado).
+    'cuotas_tipicas',  (SELECT n FROM moda),
     'meses', COALESCE((
       SELECT json_agg(json_build_object(
                'mes',       to_char(mes, 'YYYY-MM'),
