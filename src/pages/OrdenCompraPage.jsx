@@ -763,6 +763,18 @@ const OrdenCompraPage = () => {
     return () => { vivo = false; };
   }, [selectedProveedor?.id]);
 
+  // Tasa del día: la orden se digita en RD$, pero los compromisos de un
+  // suplidor que factura en US$ se muestran en dólares. Sirve para sumar el
+  // pagaré proyectado de esta orden a los meses que ya están comprometidos.
+  const [tasaDiaOC, setTasaDiaOC] = useState(0);
+  useEffect(() => {
+    let vivo = true;
+    supabase.rpc('get_tasa_dia').then(({ data }) => {
+      if (vivo && Number(data) > 0) setTasaDiaOC(Number(data));
+    });
+    return () => { vivo = false; };
+  }, []);
+
   // Marcas y modelos que vende el suplidor elegido (dealer de vehículos).
   const [catalogoSuplidor, setCatalogoSuplidor] = useState(null); // { marcas:[], modelos:[] }
   useEffect(() => {
@@ -3059,25 +3071,77 @@ const OrdenCompraPage = () => {
                   const sim = enUSD ? 'US$' : 'RD$';
                   const val = (m) => Number(enUSD ? m.monto_usd : m.monto) || 0;
                   const totalUSD = compromisosMes.meses.reduce((s, m) => s + (Number(m.monto_usd) || 0), 0);
+
+                  // Pagaré proyectado de ESTA orden: el total se reparte en las
+                  // cuotas típicas del suplidor y se suma a los próximos meses,
+                  // para ver cómo quedaría el pago de cada mes si se compra.
+                  const nCuotas = Number(compromisosMes.cuotas_tipicas) || 0;
+                  const totalOrdenRD = Number(totals.total_orden) || 0;
+                  const cuotaRD = nCuotas > 1 ? totalOrdenRD / nCuotas : 0;
+                  const cuota = enUSD ? (tasaDiaOC > 0 ? cuotaRD / tasaDiaOC : 0) : cuotaRD;
+                  // Se suma a partir del mes que viene, tantos meses como cuotas.
+                  const hoy = new Date();
+                  const desde = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
+                  const mesesOrden = new Set();
+                  for (let i = 0; i < nCuotas; i++) {
+                    const d = new Date(desde.getFullYear(), desde.getMonth() + i, 1);
+                    mesesOrden.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                  }
+                  const proyecta = cuota > 0;
+
                   return (
-                    <div className="flex gap-3 flex-wrap">
-                      {compromisosMes.meses.map((m) => (
-                        <div key={m.mes} className="text-[11px] leading-tight">
-                          <div className="font-bold text-slate-500 uppercase">{m.mes}</div>
-                          <div className={`font-black ${Number(m.vencido) > 0 ? 'text-rose-600' : 'text-indigo-800'}`}>
-                            {sim} {val(m).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                    <>
+                      <div className="flex gap-3 flex-wrap">
+                        {compromisosMes.meses.map((m) => {
+                          const suma = proyecta && mesesOrden.has(m.mes) ? cuota : 0;
+                          return (
+                            <div key={m.mes} className="text-[11px] leading-tight">
+                              <div className="font-bold text-slate-500 uppercase">{m.mes}</div>
+                              <div className={`font-black ${Number(m.vencido) > 0 ? 'text-rose-600' : 'text-indigo-800'}`}>
+                                {sim} {val(m).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                              </div>
+                              {suma > 0 ? (
+                                <>
+                                  <div className="text-emerald-700 font-bold">
+                                    + {suma.toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                                  </div>
+                                  <div className="font-black text-slate-900 border-t border-indigo-200 mt-0.5 pt-0.5">
+                                    {(val(m) + suma).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-slate-400">{m.cuotas} cuota{Number(m.cuotas) !== 1 ? 's' : ''}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div className="text-[11px] leading-tight border-l pl-3 border-indigo-200">
+                          <div className="font-bold text-slate-500 uppercase">Total</div>
+                          <div className="font-black text-indigo-900">
+                            {sim} {(enUSD ? totalUSD : Number(compromisosMes.total_pendiente)).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
                           </div>
-                          <div className="text-slate-400">{m.cuotas} cuota{Number(m.cuotas) !== 1 ? 's' : ''}</div>
+                          {proyecta ? (
+                            <>
+                              <div className="text-emerald-700 font-bold">
+                                + {(cuota * nCuotas).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                              </div>
+                              <div className="font-black text-slate-900 border-t border-indigo-200 mt-0.5 pt-0.5">
+                                {((enUSD ? totalUSD : Number(compromisosMes.total_pendiente)) + cuota * nCuotas)
+                                  .toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-slate-400">pendiente</div>
+                          )}
                         </div>
-                      ))}
-                      <div className="text-[11px] leading-tight border-l pl-3 border-indigo-200">
-                        <div className="font-bold text-slate-500 uppercase">Total</div>
-                        <div className="font-black text-indigo-900">
-                          {sim} {(enUSD ? totalUSD : Number(compromisosMes.total_pendiente)).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
-                        </div>
-                        <div className="text-slate-400">pendiente</div>
                       </div>
-                    </div>
+                      {proyecta && (
+                        <p className="text-[10px] text-emerald-700 mt-1">
+                          En verde: esta orden repartida en {nCuotas} pagarés de {sim} {cuota.toLocaleString('es-DO', { maximumFractionDigits: 2 })}
+                          {enUSD && tasaDiaOC > 0 ? ` (tasa ${tasaDiaOC})` : ''} · abajo el total que pagarías ese mes.
+                        </p>
+                      )}
+                    </>
                   );
                 })()}
               </div>
