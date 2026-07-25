@@ -1306,6 +1306,18 @@ const ComprasPage = () => {
       pagareRowsExtra = cuotas.slice(1).map((c, i) => mkRow(c, i + 1));
     }
 
+    // La columna `notas` de compras es opcional (ver sql/compras_notas.sql).
+    // Si la base todavía no la tiene, se quita del payload en vez de fallar
+    // ("Could not find the 'notas' column of 'compras'"): el guardado nunca se
+    // bloquea por el comentario. Al correr el SQL, las notas ya se guardan.
+    if ('notas' in compraData || pagareRowsExtra.some(r => 'notas' in r)) {
+      const { error: probeErr } = await supabase.from('compras').select('notas').limit(1);
+      if (probeErr && /notas/i.test(probeErr.message)) {
+        delete compraData.notas;
+        pagareRowsExtra.forEach(r => { delete r.notas; });
+      }
+    }
+
     // Editar un financiamiento (o convertir una compra a pagarés) exige
     // recrear las filas: se borra el conjunto viejo y se inserta el nuevo.
     const editandoGrupo = isEditMode && financiamientoGrupo?.ids?.length > 0;
