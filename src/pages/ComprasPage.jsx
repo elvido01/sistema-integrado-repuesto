@@ -1169,7 +1169,13 @@ const ComprasPage = () => {
         const refUpper = compra.referencia?.toUpperCase() || '';
         const ncfUpper = compra.ncf?.toUpperCase() || '';
         
-        const matchRef = posiblesDuplicados.some(c => c.referencia?.toUpperCase() === refUpper);
+        // En compras a pagarés la referencia guardada lleva la etiqueta
+        // ("Factura 028468 - Pagaré 2/6 (Suplidor)"), así que además de la
+        // igualdad exacta se busca el número de factura dentro de ella.
+        const matchRef = refUpper !== '' && posiblesDuplicados.some(c => {
+          const guardada = c.referencia?.toUpperCase() || '';
+          return guardada === refUpper || guardada.includes(`FACTURA ${refUpper} -`);
+        });
         const matchNCF = posiblesDuplicados.some(c => c.ncf?.toUpperCase() === ncfUpper && ncfUpper !== '');
         
         let msj = '';
@@ -1263,6 +1269,18 @@ const ComprasPage = () => {
       }
 
       const baseNum = compra.numero || compra.referencia || 'COMPRA';
+      // Etiqueta del pagaré EN `referencia`: es la columna que se ve en
+      // Cuentas por Pagar. Mismo formato que los pagarés de Motores del Sur:
+      // "Factura 27324 - Pagaré 6/6 (Motores del Sur)".
+      const suplidorNombre = (proveedores.find(p => p.id === compra.suplidor_id)?.nombre || '').trim();
+      const refPagare = (idx, total) => {
+        const fact = (compra.referencia || '').trim();
+        return [
+          fact ? `Factura ${fact}` : 'Factura',
+          `- Pagaré ${idx + 1}/${total}`,
+          suplidorNombre ? `(${suplidorNombre})` : '',
+        ].filter(Boolean).join(' ');
+      };
       const fechaBase = String(compraData.fecha).slice(0, 10);
       const diasHasta = (fstr) => {
         const dias = Math.round(
@@ -1278,7 +1296,7 @@ const ComprasPage = () => {
           ...compraData,
           id: undefined, // cada pagaré es una fila nueva (evita PK duplicada al editar)
           numero: `${baseNum}-${String(idx + 1).padStart(2, '0')}`,
-          referencia: compra.referencia,
+          referencia: refPagare(idx, plazo),
           ncf: idx === 0 ? (compra.ncf || null) : null,
           total_exento: montoRD,
           total_gravado: 0,
