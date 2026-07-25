@@ -182,20 +182,23 @@ BEGIN
     FROM cxp
     GROUP BY 1
   ),
-  -- ¿En cuántos pagarés suele financiar este suplidor? Se saca del historial:
-  -- las filas de una misma factura terminan en -01..-NN, así que el tamaño del
-  -- grupo es el número de cuotas. Se toma el más frecuente (Motores del Sur: 6).
-  grupos AS (
-    SELECT regexp_replace(c.numero, '-\d{2}$', '') AS base, COUNT(*) AS n
+  -- ¿En cuántos pagarés suele financiar este suplidor? Se lee el DENOMINADOR
+  -- de la etiqueta "Pagaré N/M" de la referencia.
+  -- OJO: NO se puede contar las filas por factura — de las facturas viejas
+  -- solo se cargaron los pagarés SIN PAGAR (FIN-27177 tiene 1 sola fila, que
+  -- es el 6/6), y contar filas daba 2 en vez de 6. El denominador sí es fiel:
+  -- Motores del Sur → {6: 16 veces, 5: 2} → 6.
+  denominadores AS (
+    SELECT substring(c.referencia from 'Pagar[^0-9]*\d+\s*/\s*(\d+)')::int AS n
     FROM public.compras c
     WHERE c.tenant_id = v_tenant
       AND (p_suplidor_id IS NULL OR c.suplidor_id = p_suplidor_id)
-      AND c.numero ~ '-\d{2}$'
-    GROUP BY 1
-    HAVING COUNT(*) > 1
+      AND c.referencia ~ 'Pagar[^0-9]*\d+\s*/\s*\d+'
   ),
   moda AS (
-    SELECT n FROM grupos GROUP BY n ORDER BY COUNT(*) DESC, n DESC LIMIT 1
+    SELECT n FROM denominadores
+    WHERE n BETWEEN 2 AND 60
+    GROUP BY n ORDER BY COUNT(*) DESC, n DESC LIMIT 1
   )
   SELECT json_build_object(
     'total_pendiente', COALESCE((SELECT SUM(monto) FROM cxp), 0),
