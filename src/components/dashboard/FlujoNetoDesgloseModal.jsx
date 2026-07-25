@@ -47,16 +47,8 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
                   {formatCurrencyDOP(Number(ventasMesTotal) || 0, { decimals: 0 })}
                 </span>
               </div>
-              {cobradoMes != null && (
-                <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-emerald-100">
-                  <span className="text-xs font-semibold text-emerald-700">Inicial + cobros a clientes</span>
-                  <span className="text-sm font-bold text-emerald-700">
-                    {formatCurrencyDOP(Number(cobradoMes) || 0, { decimals: 0 })}
-                  </span>
-                </div>
-              )}
               <p className="text-[10px] leading-snug text-emerald-700/80 mt-1">
-                Volumen vendido del mes completo (contado + crédito) y lo cobrado (inicial + recibos). El flujo de abajo es solo el efectivo del período.
+                Volumen vendido del mes completo (contado + crédito). Abajo, el efectivo cobrado del mes (inicial + recibos) menos los egresos.
               </p>
             </div>
           )}
