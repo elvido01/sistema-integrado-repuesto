@@ -34,7 +34,7 @@ const SkeletonCard = () => (
   </div>
 );
 
-const FlujoNetoCard = ({ data, loading = false, onRetry }) => {
+const FlujoNetoCard = ({ data, loading = false, onRetry, ventasMesTotal = null }) => {
   const [showDesglose, setShowDesglose] = useState(false);
 
   if (loading && !data) return <SkeletonCard />;
@@ -209,7 +209,7 @@ const FlujoNetoCard = ({ data, loading = false, onRetry }) => {
         Ver desglose <ChevronRight className="w-3.5 h-3.5" />
       </button>
 
-      <FlujoNetoDesgloseModal open={showDesglose} onOpenChange={setShowDesglose} data={data} />
+      <FlujoNetoDesgloseModal open={showDesglose} onOpenChange={setShowDesglose} data={data} ventasMesTotal={ventasMesTotal} />
     </div>
   );
 };

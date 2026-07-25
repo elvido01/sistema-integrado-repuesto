@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownCircle, ArrowUpCircle, FileText, Users, BarChart3, ShoppingCart, Briefcase } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, FileText, Users, BarChart3, ShoppingCart, Briefcase, TrendingUp } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -18,7 +18,7 @@ const Row = ({ icon: Icon, label, value, negative }) => (
   </div>
 );
 
-const FlujoNetoDesgloseModal = ({ open, onOpenChange, data }) => {
+const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = null }) => {
   const p = data?.periodo_actual || {};
   const flujo = Number(p.flujo_neto) || 0;
   const positivo = flujo >= 0;
@@ -35,6 +35,24 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data }) => {
         </DialogHeader>
 
         <div className="mt-1">
+          {/* Ventas totales del MES completo (empresas con financiamiento de
+              terceros, ej. Caminero): el volumen vendido, aparte del efectivo. */}
+          {ventasMesTotal != null && (
+            <div className="mb-3 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2.5">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+                  <TrendingUp className="w-4 h-4" /> Ventas totales (mes)
+                </span>
+                <span className="text-base font-black text-emerald-700">
+                  {formatCurrencyDOP(Number(ventasMesTotal) || 0, { decimals: 0 })}
+                </span>
+              </div>
+              <p className="text-[10px] leading-snug text-emerald-700/80 mt-0.5">
+                Volumen vendido del mes completo (contado + crédito). El flujo de abajo es solo el efectivo cobrado.
+              </p>
+            </div>
+          )}
+
           {/* Ingresos */}
           <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 mb-1">Ingresos cobrados</p>
           <Row icon={FileText} label="Ventas de contado" value={Number(p.ingreso_venta_contado) || 0} />

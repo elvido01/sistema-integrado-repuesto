@@ -663,6 +663,7 @@ const HomePage = () => {
                     data={finanzas.flujoNeto}
                     loading={loading}
                     onRetry={() => fetchDashboardData(true)}
+                    ventasMesTotal={esVentasTerceros ? ventasTerceros.mesTotal : null}
                   />
                 </motion.div>
 
