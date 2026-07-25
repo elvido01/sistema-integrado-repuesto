@@ -691,17 +691,60 @@ const OrdenCompraPage = () => {
     resetStaging();
   };
 
-  // Calcular existencia por marca/modelo/color para dealers de vehículos
-  const fetchVehicleStock = useCallback(async (marca, modelo, color) => {
-    if (!marca || !modelo) return 0;
+  // Dealer de vehículos (código único por chasis): al elegir marca+modelo se
+  // consulta el stock REAL (unidades sin vender), el último costo pagado y la
+  // rotación de 90 días. Antes se contaban las filas de productos que
+  // coincidieran por texto — incluidas las YA VENDIDAS — y ni siquiera se
+  // llamaba, por eso "Existencia" y "Precio" salían en 0.
+  const fetchVehicleStock = useCallback(async (marca, modelo, anio, color) => {
+    if (!marca || !modelo) return null;
     try {
-      let query = supabase.from('productos').select('id', { count: 'exact', head: true });
-      // Buscar por descripcion que contenga marca y modelo
-      query = query.ilike('descripcion', `%${marca}%`).ilike('descripcion', `%${modelo}%`);
-      if (color) query = query.ilike('descripcion', `%${color}%`);
-      const { count } = await query;
-      return count || 0;
-    } catch { return 0; }
+      const { data, error } = await supabase.rpc('get_stock_modelo_dealer', {
+        p_marca: marca, p_modelo: modelo,
+        p_anio: anio ? String(anio) : null, p_color: color || null,
+      });
+      if (error) return null;
+      return data || null;
+    } catch { return null; }
+  }, []);
+
+  // Consulta el stock del modelo elegido y lo refleja en la fila amarilla.
+  const [infoModelo, setInfoModelo] = useState(null); // { unidades, ultimo_costo, vendidas_90d }
+  useEffect(() => {
+    if (!isVehicleDealer) return;
+    const { marca_nombre: ma, modelo_nombre: mo, anio, color } = stagingItem;
+    if (!ma || !mo) { setInfoModelo(null); return; }
+    let vivo = true;
+    const t = setTimeout(async () => {
+      const info = await fetchVehicleStock(ma, mo, anio, color);
+      if (!vivo) return;
+      setInfoModelo(info);
+      if (info) {
+        setStagingItem(prev => (
+          (prev.marca_nombre === ma && prev.modelo_nombre === mo)
+            ? {
+                ...prev,
+                existencia: Number(info.unidades) || 0,
+                // Solo sugiere el costo si el usuario no escribió uno.
+                precio: Number(prev.precio) > 0 ? prev.precio : (Number(info.ultimo_costo) || 0),
+              }
+            : prev
+        ));
+      }
+    }, 250);
+    return () => { vivo = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVehicleDealer, stagingItem.marca_nombre, stagingItem.modelo_nombre, stagingItem.anio, stagingItem.color, fetchVehicleStock]);
+
+  // Compromisos de pago por mes (CxP pendientes): para ver el flujo antes de
+  // comprometer una compra nueva a pagarés.
+  const [compromisosMes, setCompromisosMes] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    supabase.rpc('get_compromisos_cxp_mensual', { p_meses: 8 }).then(({ data, error }) => {
+      if (vivo && !error) setCompromisosMes(data || null);
+    });
+    return () => { vivo = false; };
   }, []);
 
   const handleSelectProduct = (product) => {
@@ -2574,6 +2617,29 @@ const OrdenCompraPage = () => {
               onChange={(e) => setStagingItem({ ...stagingItem, precio: parseFloat(e.target.value) || 0 })}
             />
             <Button className="h-7 px-3 bg-morla-blue text-white" onClick={addStagingToDetails}>Ok</Button>
+            {/* Stock real del modelo elegido (unidades sin vender), último
+                costo pagado y rotación: para decidir cuánto pedir. */}
+            {infoModelo && (
+              <div className="flex items-center gap-2 ml-1 text-[11px]">
+                <span className={`px-1.5 py-0.5 rounded font-bold border ${
+                  Number(infoModelo.unidades) > 0
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                }`} title="Unidades de este modelo en inventario (sin vender)">
+                  En stock: {Number(infoModelo.unidades) || 0}
+                </span>
+                <span className="px-1.5 py-0.5 rounded font-bold bg-slate-100 text-slate-600 border border-slate-200"
+                      title="Unidades despachadas en los últimos 90 días">
+                  Vendidas 90d: {Number(infoModelo.vendidas_90d) || 0}
+                </span>
+                {Number(infoModelo.ultimo_costo) > 0 && (
+                  <span className="px-1.5 py-0.5 rounded font-bold bg-blue-50 text-blue-700 border border-blue-200"
+                        title="Costo de la última compra de este modelo">
+                    Últ. costo: {Number(infoModelo.ultimo_costo).toLocaleString('es-DO', { maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </div>
+            )}
             <Button variant="outline" className="h-7 w-7 p-0 text-red-600" onClick={resetStaging}><X className="h-4 w-4" /></Button>
           </div>
         ) : (
@@ -2891,6 +2957,40 @@ const OrdenCompraPage = () => {
                 <Cog className="h-4 w-4" />
               </Button>
             )}
+            {/* Pago comprometido por mes (CxP pendientes): lo que YA hay que
+                pagar cada mes, para no comprometer de más en esta orden. */}
+            {compromisosMes?.meses?.length > 0 && (
+              <div className="px-3 py-2 rounded-lg border border-indigo-200 bg-indigo-50/60">
+                <div className="flex items-center gap-2 mb-1">
+                  <Wallet className="h-3.5 w-3.5 text-indigo-700" />
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-indigo-900">Pago comprometido por mes</span>
+                  {Number(compromisosMes.vencido) > 0 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200">
+                      Vencido: RD$ {Number(compromisosMes.vencido).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-3 flex-wrap">
+                  {compromisosMes.meses.map((m) => (
+                    <div key={m.mes} className="text-[11px] leading-tight">
+                      <div className="font-bold text-slate-500 uppercase">{m.mes}</div>
+                      <div className={`font-black ${Number(m.vencido) > 0 ? 'text-rose-600' : 'text-indigo-800'}`}>
+                        {Number(m.monto).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                      </div>
+                      <div className="text-slate-400">{m.cuotas} cuota{Number(m.cuotas) !== 1 ? 's' : ''}</div>
+                    </div>
+                  ))}
+                  <div className="text-[11px] leading-tight border-l pl-3 border-indigo-200">
+                    <div className="font-bold text-slate-500 uppercase">Total</div>
+                    <div className="font-black text-indigo-900">
+                      {Number(compromisosMes.total_pendiente).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                    </div>
+                    <div className="text-slate-400">pendiente</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Alerta de equivalentes en la misma orden (potencial duplicacion) */}
             {equivalentesDuplicados.length > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-amber-300 bg-amber-50 animate-pulse">
