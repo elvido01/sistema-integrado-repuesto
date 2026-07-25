@@ -24,6 +24,24 @@
 -- =====================================================================
 
 -- ------------------------------------------------------------
+-- 0) Normalizador de modelo: el MISMO motor está escrito de varias formas en
+--    el catálogo migrado ("SX2 250", "SX2(250CC)", "SX2-250CC" son el mismo).
+--    Regla: mayúsculas, quitar todo lo que no sea letra/número y unificar la
+--    unidad "CC" cuando sigue a un número (250CC → 250).
+--    Verificado con datos reales de Caminero: las 4 variantes de SX2 pasan a
+--    contarse juntas (56 unidades) y los modelos DISTINTOS siguen separados
+--    (LX200ZH-AI = 46 vs LX200ZH-AT = 1).
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.mf_norm_modelo(p_txt text)
+RETURNS text
+LANGUAGE sql IMMUTABLE
+AS $$
+  SELECT regexp_replace(
+           regexp_replace(upper(COALESCE(p_txt, '')), '[^A-Z0-9]', '', 'g'),
+           '([0-9])CC', '\1', 'g');
+$$;
+
+-- ------------------------------------------------------------
 -- 1) Stock real + costo + rotación por marca/modelo
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_stock_modelo_dealer(
@@ -48,15 +66,16 @@ BEGIN
     RETURN json_build_object('unidades', 0, 'ultimo_costo', 0, 'vendidas_90d', 0);
   END IF;
 
-  WITH coincide AS (  -- productos de ese modelo (por descripción; el catálogo
-                      -- migrado no siempre trae marca_id/modelo_id)
+  WITH coincide AS (  -- productos de ese modelo. Se compara NORMALIZADO para
+                      -- que las variantes de escritura del mismo motor cuenten
+                      -- juntas (el catálogo migrado no trae marca_id/modelo_id).
     SELECT p.id, p.costo
     FROM public.productos p
     WHERE p.tenant_id = v_tenant
-      AND p.descripcion ILIKE '%' || btrim(p_marca)  || '%'
-      AND p.descripcion ILIKE '%' || btrim(p_modelo) || '%'
-      AND (COALESCE(btrim(p_anio), '')  = '' OR p.descripcion ILIKE '%' || btrim(p_anio)  || '%')
-      AND (COALESCE(btrim(p_color), '') = '' OR p.descripcion ILIKE '%' || btrim(p_color) || '%')
+      AND public.mf_norm_modelo(p.descripcion) LIKE '%' || public.mf_norm_modelo(p_marca)  || '%'
+      AND public.mf_norm_modelo(p.descripcion) LIKE '%' || public.mf_norm_modelo(p_modelo) || '%'
+      AND (COALESCE(btrim(p_anio), '')  = '' OR p.descripcion ILIKE '%' || btrim(p_anio) || '%')
+      AND (COALESCE(btrim(p_color), '') = '' OR public.mf_norm_modelo(p.descripcion) LIKE '%' || public.mf_norm_modelo(p_color) || '%')
   ),
   neto AS (  -- stock por producto (SALIDA ya viene en negativo)
     SELECT m.producto_id, SUM(m.cantidad) AS stock
@@ -95,6 +114,7 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_stock_modelo_dealer(text,text,text,text) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.get_stock_modelo_dealer(text,text,text,text) TO authenticated, service_role;
+GRANT  EXECUTE ON FUNCTION public.mf_norm_modelo(text) TO authenticated, service_role;
 
 -- ------------------------------------------------------------
 -- 2) Compromisos de pago por mes (CxP pendientes)
