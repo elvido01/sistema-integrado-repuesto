@@ -41,7 +41,18 @@ BEGIN
         AND t.cliente_id = d.cliente_id
         AND round(t.monto_capital) = round(d.monto_capital)
     )
-    AND NOT EXISTS (SELECT 1 FROM public.prestamo_pagos p WHERE p.prestamo_id = d.id);
+    -- Sin pagos aplicados: los pagos se ligan por prestamo_pago_detalle →
+    -- prestamo_cuotas (prestamo_pagos NO tiene prestamo_id, liga por cliente).
+    AND NOT EXISTS (
+      SELECT 1 FROM public.prestamo_pago_detalle pd
+      JOIN public.prestamo_cuotas pc ON pc.id = pd.cuota_id
+      WHERE pc.prestamo_id = d.id
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM public.prestamo_nota_credito_detalle nd
+      JOIN public.prestamo_cuotas pc2 ON pc2.id = nd.cuota_id
+      WHERE pc2.prestamo_id = d.id
+    );
 
   IF v_ids IS NULL THEN
     RAISE NOTICE 'No hay préstamos duplicados que borrar.';
