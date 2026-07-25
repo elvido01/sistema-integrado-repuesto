@@ -1318,6 +1318,15 @@ const ComprasPage = () => {
       }
     }
 
+    // TODAS las filas de la compra en UNA sola llamada (la 1ra lleva el
+    // inventario/detalle; en pagarés las demás son solo deuda). Antes se
+    // insertaba la 1ra y luego el resto por separado: si el 2do insert
+    // fallaba quedaba una compra A MEDIAS (factura huérfana, sin detalle y
+    // bloqueada por "factura duplicada" al reintentar). Así es todo o nada.
+    const filasCompra = (financiar && pagareRowsExtra.length > 0)
+      ? [compraData, ...pagareRowsExtra]
+      : [compraData];
+
     // Editar un financiamiento (o convertir una compra a pagarés) exige
     // recrear las filas: se borra el conjunto viejo y se inserta el nuevo.
     const editandoGrupo = isEditMode && financiamientoGrupo?.ids?.length > 0;
@@ -1349,22 +1358,13 @@ const ComprasPage = () => {
         }
       }
 
-      const { data, error: compraError } = await supabase.from('compras').insert(compraData).select().single();
+      const { data, error: compraError } = await supabase.from('compras').insert(filasCompra).select();
       if (compraError) {
         toast({ variant: "destructive", title: "Error al guardar la compra", description: compraError.message });
         setIsSaving(false);
         return;
       }
-      savedCompra = data;
-
-      if (financiar && pagareRowsExtra.length > 0) {
-        const { error: extraErr } = await supabase.from('compras').insert(pagareRowsExtra);
-        if (extraErr) {
-          toast({ variant: "destructive", title: "Error al crear los pagarés", description: extraErr.message });
-          setIsSaving(false);
-          return;
-        }
-      }
+      savedCompra = (data || []).find(r => r.numero === compraData.numero) || (data || [])[0];
     } else if (isEditMode) {
       const { data, error: compraError } = await supabase.from('compras').update(compraData).eq('id', compra.id).select().single();
       if (compraError) {
@@ -1378,23 +1378,14 @@ const ComprasPage = () => {
       await supabase.from('compras_detalle').delete().eq('compra_id', savedCompra.id);
       await supabase.from('inventario_movimientos').delete().eq('referencia_doc', `COMPRA-${savedCompra.numero || savedCompra.id}`);
     } else {
-      const { data, error: compraError } = await supabase.from('compras').insert(compraData).select().single();
+      // Compra + filas-pagaré (cuotas 2..N, pura deuda) en un solo insert.
+      const { data, error: compraError } = await supabase.from('compras').insert(filasCompra).select();
       if (compraError) {
         toast({ variant: "destructive", title: "Error al guardar la compra", description: compraError.message });
         setIsSaving(false);
         return;
       }
-      savedCompra = data;
-
-      // Filas-pagaré restantes (cuotas 2..N): pura deuda, sin inventario.
-      if (financiar && pagareRowsExtra.length > 0) {
-        const { error: extraErr } = await supabase.from('compras').insert(pagareRowsExtra);
-        if (extraErr) {
-          toast({ variant: "destructive", title: "Error al crear los pagarés", description: extraErr.message });
-          setIsSaving(false);
-          return;
-        }
-      }
+      savedCompra = (data || []).find(r => r.numero === compraData.numero) || (data || [])[0];
     }
 
     // La tasa usada queda registrada como la tasa del día de la empresa
