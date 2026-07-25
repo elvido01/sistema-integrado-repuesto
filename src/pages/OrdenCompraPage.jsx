@@ -627,10 +627,15 @@ const OrdenCompraPage = () => {
 
   // --- STAGING ROW HANDLERS (New) ---
   const resetStaging = () => {
-    setStagingItem({
+    // En dealer se CONSERVAN marca y año: normalmente se piden varias líneas
+    // de la misma marca al mismo suplidor, y volver a elegirla cada vez estorba.
+    setStagingItem(prev => ({
       producto_id: '', codigo: '', descripcion: '', cantidad: 1, unidad: 'UND', precio: 0, descuento_pct: 0, itbis_pct: 0, importe: 0, existencia: 0,
-      marca_nombre: '', modelo_nombre: '', anio: new Date().getFullYear(), color: ''
-    });
+      marca_nombre: isVehicleDealer ? (prev?.marca_nombre || '') : '',
+      modelo_nombre: '',
+      anio: isVehicleDealer ? (prev?.anio || new Date().getFullYear()) : new Date().getFullYear(),
+      color: ''
+    }));
     setEditingDetalleId(null);
     // Devolver el foco al campo de código para seguir capturando productos.
     setTimeout(() => {
@@ -957,7 +962,14 @@ const OrdenCompraPage = () => {
       precio: detalle.precio,
       descuento_pct: detalle.descuento_pct,
       itbis_pct: detalle.itbis_pct,
-      importe: detalle.importe
+      importe: detalle.importe,
+      existencia: detalle.existencia ?? 0,
+      // Datos del vehículo: sin esto, al editar una línea del dealer subían
+      // vacíos marca/modelo/año/color y se perdían al volver a dar Ok.
+      marca_nombre: detalle.marca_nombre || '',
+      modelo_nombre: detalle.modelo_nombre || '',
+      anio: detalle.anio || new Date().getFullYear(),
+      color: detalle.color || ''
     });
   };
 
@@ -3279,6 +3291,21 @@ const OrdenCompraPage = () => {
               <span className="text-morla-blue font-bold text-lg">A PEDIR</span>
               <span className="text-red-700 font-bold text-2xl tracking-tighter">{Number(totals.total_orden || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
+            {/* Estimado del pago MENSUAL si esta orden se financia como suele
+                hacerlo el suplidor (Motores del Sur: 6 pagarés). Sirve para
+                saber cuánto se le sumaría al compromiso de cada mes. */}
+            {Number(totals.total_orden) > 0 && Number(compromisosMes?.cuotas_tipicas) > 1 && (
+              <div className="flex justify-between items-center bg-indigo-50 p-2 mt-1 border border-indigo-200 rounded-sm">
+                <span className="text-indigo-900 font-bold text-[11px] uppercase leading-tight">
+                  En {compromisosMes.cuotas_tipicas} pagarés<br />
+                  <span className="font-normal text-indigo-700 normal-case">pago mensual estimado</span>
+                </span>
+                <span className="text-indigo-800 font-black text-lg tracking-tight">
+                  {(Number(totals.total_orden) / Number(compromisosMes.cuotas_tipicas))
+                    .toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
           </div>
 
         </div>
