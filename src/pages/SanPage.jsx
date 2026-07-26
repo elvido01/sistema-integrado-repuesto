@@ -43,6 +43,8 @@ const SanPage = () => {
   const [deudaForm, setDeudaForm] = useState({ nombre: '', monto: '' });
   const [deudaEditId, setDeudaEditId] = useState(null);
   const [deudasVerSaldadas, setDeudasVerSaldadas] = useState(false);
+  // La sección arranca MINIMIZADA (solo el total). Se recuerda la preferencia.
+  const [deudasAbierto, setDeudasAbierto] = useState(() => localStorage.getItem('san_deudas_abierto') === '1');
   const [atrasosMap, setAtrasosMap] = useState({}); // san_id -> días vencidos sin pagar
   // Cuenta MADRE del módulo: ahí cae el total de cada SAN completado (el
   // ingreso lo hace el servidor, aquí solo se ve el saldo). Se guarda por
@@ -499,16 +501,30 @@ const SanPage = () => {
 
         {/* ---------- Deudas personales ---------- */}
         <div className="rounded-xl border bg-card p-4 mt-4">
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Encabezado: se hace clic para abrir/cerrar. Minimizada solo se ve
+              el total, para no estorbar la vista de los SAN. */}
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 flex-wrap text-left"
+            onClick={() => setDeudasAbierto((v) => { localStorage.setItem('san_deudas_abierto', v ? '0' : '1'); return !v; })}
+            title={deudasAbierto ? 'Minimizar' : 'Ver y editar las deudas'}
+          >
             <Wallet className="w-5 h-5 text-rose-600" />
             <h2 className="font-semibold">Deudas Personales</h2>
             <span className="text-xs text-muted-foreground">se conservan para los próximos SAN</span>
+            {!deudasAbierto && deudas.filter((d) => d.activo).length > 0 && (
+              <span className="text-[11px] bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-2 py-0.5 font-bold">
+                {deudas.filter((d) => d.activo).length}
+              </span>
+            )}
             <span className="flex-1" />
             <span className="text-sm">
               Total pendiente: <b className="text-rose-600">{money(totalDeudas)}</b>
             </span>
-          </div>
+            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${deudasAbierto ? 'rotate-180' : ''}`} />
+          </button>
 
+          {deudasAbierto && (<>
           {/* alta / edición */}
           <div className="flex gap-2 flex-wrap mt-3">
             <Input
@@ -575,6 +591,7 @@ const SanPage = () => {
               {deudasVerSaldadas ? 'Ocultar saldadas' : `Ver saldadas (${deudas.filter((d) => !d.activo).length})`}
             </button>
           )}
+          </>)}
         </div>
 
         {/* modal crear */}
