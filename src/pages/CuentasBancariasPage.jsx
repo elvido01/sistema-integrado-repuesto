@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const n = (v) => Number(v || 0);
 const money = (v, mon = 'DOP') =>
@@ -406,7 +407,7 @@ export default function CuentasBancariasPage() {
                 </div>
                 <div>
                   <Label>Saldo inicial</Label>
-                  <Input type="number" value={modal.saldo_inicial} onChange={(e) => setModal({ ...modal, saldo_inicial: e.target.value })} disabled={!!modal.id} />
+                  <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(modal.saldo_inicial)} onChange={(e) => setModal({ ...modal, saldo_inicial: parseMontoInput(e.target.value) })} disabled={!!modal.id} />
                   {!!modal.id && <p className="text-[10px] text-gray-400 mt-1">El saldo actual se calcula de los movimientos.</p>}
                 </div>
               </div>
@@ -438,8 +439,8 @@ export default function CuentasBancariasPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Monto ({manual.cuenta.moneda})</Label>
-                  <Input type="number" autoFocus value={manual.monto}
-                    onChange={(e) => setManual((m) => ({ ...m, monto: e.target.value }))} />
+                  <Input type="text" inputMode="decimal" className="text-right" autoFocus value={fmtMontoInput(manual.monto)}
+                    onChange={(e) => setManual((m) => ({ ...m, monto: parseMontoInput(e.target.value) }))} />
                 </div>
                 <div>
                   <Label>Fecha</Label>

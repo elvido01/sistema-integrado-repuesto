@@ -19,6 +19,7 @@ import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } fro
 import { generateComisionPDF } from '@/components/common/pdf/comisionPDF';
 import { printPagoCompromisoPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const ROLES_ADMIN = ['admin', 'owner', 'manager', 'gerente'];
 
@@ -489,8 +490,8 @@ const PagoComisionesPage = () => {
             <div>
               <Label className="text-xs font-bold">Monto a pagar (RD$)</Label>
               <Input
-                type="number" step="0.01" value={montoPagar}
-                onChange={e => setMontoPagar(e.target.value)}
+                type="text" inputMode="decimal" value={fmtMontoInput(montoPagar)}
+                onChange={e => setMontoPagar(parseMontoInput(e.target.value))}
                 className="mt-1 text-right font-black text-lg text-green-700"
               />
             </div>

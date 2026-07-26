@@ -14,6 +14,7 @@ import { usePanels } from '@/contexts/PanelContext';
 import { Checkbox } from '@/components/ui/checkbox';
 import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const initialState = {
   numero: '',
@@ -274,7 +275,7 @@ const CuentasPorPagarPage = () => {
                         <SelectItem value="Tarjeta de Crédito">T. Crédito</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Input type="number" placeholder="Monto" value={fp.monto} onChange={(e) => handleFormaPagoChange(fp.id, 'monto', e.target.value)} className="text-right" />
+                    <Input type="text" inputMode="decimal" placeholder="Monto" value={fmtMontoInput(fp.monto)} onChange={(e) => handleFormaPagoChange(fp.id, 'monto', parseMontoInput(e.target.value))} className="text-right" />
                     <Button variant="ghost" size="icon" onClick={() => removeFormaPago(fp.id)} disabled={formasPago.length === 1}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
@@ -316,7 +317,7 @@ const CuentasPorPagarPage = () => {
                       <TableCell>{formatCurrency(c.monto_total)}</TableCell>
                       <TableCell className="font-semibold">{formatCurrency(c.monto_pendiente)}</TableCell>
                       <TableCell className="text-right">
-                        <Input type="number" value={c.abono} onChange={(e) => handleAbonoChange(c.id, e.target.value)} className="text-right h-8 bg-yellow-100" />
+                        <Input type="text" inputMode="decimal" value={fmtMontoInput(c.abono)} onChange={(e) => handleAbonoChange(c.id, parseMontoInput(e.target.value))} className="text-right h-8 bg-yellow-100" />
                       </TableCell>
                     </TableRow>
                   ))

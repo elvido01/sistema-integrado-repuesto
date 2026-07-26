@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog, Shuffle, Send } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import { normalizeTaxRate } from '@/lib/taxUtils';
 import { useNavigate } from 'react-router-dom';
 import { usePanels } from '@/contexts/PanelContext';
@@ -2746,11 +2747,11 @@ const OrdenCompraPage = () => {
               onChange={(e) => setStagingItem({ ...stagingItem, cantidad: parseFloat(e.target.value) || 0 })}
             />
             <Input
-              type="number"
+              type="text" inputMode="decimal"
               className="w-24 h-7 text-xs border-slate-400 bg-white text-right"
               placeholder="Precio"
-              value={stagingItem.precio || ''}
-              onChange={(e) => setStagingItem({ ...stagingItem, precio: parseFloat(e.target.value) || 0 })}
+              value={fmtMontoInput(stagingItem.precio || '')}
+              onChange={(e) => setStagingItem({ ...stagingItem, precio: parseFloat(parseMontoInput(e.target.value)) || 0 })}
             />
             <Button className="h-7 px-3 bg-morla-blue text-white" onClick={addStagingToDetails}>Ok</Button>
             {/* Stock real del modelo elegido (unidades sin vender), último
@@ -2840,10 +2841,10 @@ const OrdenCompraPage = () => {
               </SelectContent>
             </Select>
             <Input
-              type="number"
+              type="text" inputMode="decimal"
               className="w-24 h-7 text-xs border-slate-400 bg-white text-right"
-              value={stagingItem.precio || ''}
-              onChange={(e) => setStagingItem({ ...stagingItem, precio: parseFloat(e.target.value) || 0 })}
+              value={fmtMontoInput(stagingItem.precio || '')}
+              onChange={(e) => setStagingItem({ ...stagingItem, precio: parseFloat(parseMontoInput(e.target.value)) || 0 })}
             />
             <Input
               type="number"
@@ -3755,9 +3756,9 @@ const OrdenCompraPage = () => {
               <div className="space-y-1">
                 <Label className="text-[11px] uppercase font-bold text-slate-700">Costo (RD$)</Label>
                 <Input
-                  type="number" step="0.01" min={0}
-                  value={quickProd.costo || ''}
-                  onChange={(e) => setQuickProd(p => ({ ...p, costo: e.target.value }))}
+                  type="text" inputMode="decimal" className="text-right"
+                  value={fmtMontoInput(quickProd.costo || '')}
+                  onChange={(e) => setQuickProd(p => ({ ...p, costo: parseMontoInput(e.target.value) }))}
                   placeholder="0.00"
                 />
               </div>
@@ -3843,9 +3844,9 @@ const OrdenCompraPage = () => {
                   <div className="space-y-1">
                     <Label className="text-[11px] uppercase font-bold text-slate-700">Monto base mensual (RD$)</Label>
                     <Input
-                      type="number" min={0} step="0.01"
-                      value={configForm.monto_base_mensual}
-                      onChange={(e) => setConfigForm(p => ({ ...p, monto_base_mensual: e.target.value }))}
+                      type="text" inputMode="decimal" className="text-right"
+                      value={fmtMontoInput(configForm.monto_base_mensual)}
+                      onChange={(e) => setConfigForm(p => ({ ...p, monto_base_mensual: parseMontoInput(e.target.value) }))}
                       placeholder="Ej: 300000"
                     />
                     <p className="text-[10px] text-slate-500">Vacío = automático según ventas.</p>
@@ -3867,9 +3868,9 @@ const OrdenCompraPage = () => {
                 <div className="space-y-1">
                   <Label className="text-[11px] uppercase font-bold text-slate-700">Caja mínima de seguridad (RD$)</Label>
                   <Input
-                    type="number" min={0} step="0.01"
-                    value={configForm.caja_minima}
-                    onChange={(e) => setConfigForm(p => ({ ...p, caja_minima: e.target.value }))}
+                    type="text" inputMode="decimal" className="text-right"
+                    value={fmtMontoInput(configForm.caja_minima)}
+                    onChange={(e) => setConfigForm(p => ({ ...p, caja_minima: parseMontoInput(e.target.value) }))}
                     placeholder="Ej: 50000"
                   />
                   <p className="text-[10px] text-slate-500">Monto que SIEMPRE debe quedar en caja, no se compromete.</p>

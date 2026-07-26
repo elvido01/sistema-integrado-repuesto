@@ -15,6 +15,8 @@ import {
   KeyRound, AlertTriangle, CheckCircle2, Sparkles, Eye, EyeOff
 } from 'lucide-react';
 
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
+
 const formatRD = (n) => `RD$ ${(Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const PresupuestoInteligentePage = () => {
@@ -219,9 +221,9 @@ const PresupuestoInteligentePage = () => {
               <DollarSign className="w-3.5 h-3.5" /> Monto base mensual (RD$)
             </Label>
             <Input
-              type="number" min={0} step="0.01"
-              value={config.monto_base_mensual}
-              onChange={(e) => setConfig(p => ({ ...p, monto_base_mensual: e.target.value }))}
+              type="text" inputMode="decimal" className="text-right"
+              value={fmtMontoInput(config.monto_base_mensual)}
+              onChange={(e) => setConfig(p => ({ ...p, monto_base_mensual: parseMontoInput(e.target.value) }))}
               placeholder="Vacío = cálculo automático"
             />
             <p className="text-[10px] text-slate-500">Dejá vacío para que el sistema calcule según tus ventas.</p>
@@ -262,9 +264,9 @@ const PresupuestoInteligentePage = () => {
               <Shield className="w-3.5 h-3.5" /> Caja mínima de seguridad (RD$)
             </Label>
             <Input
-              type="number" min={0} step="0.01"
-              value={config.caja_minima}
-              onChange={(e) => setConfig(p => ({ ...p, caja_minima: e.target.value }))}
+              type="text" inputMode="decimal" className="text-right"
+              value={fmtMontoInput(config.caja_minima)}
+              onChange={(e) => setConfig(p => ({ ...p, caja_minima: parseMontoInput(e.target.value) }))}
             />
             <p className="text-[10px] text-slate-500">Monto que SIEMPRE debe permanecer disponible en caja.</p>
           </div>
@@ -322,9 +324,9 @@ const PresupuestoInteligentePage = () => {
           <div className="space-y-1.5">
             <Label className="text-xs font-bold uppercase text-slate-700">Límite de aprobación manual (RD$)</Label>
             <Input
-              type="number" min={0} step="0.01"
-              value={config.limite_aprobacion_manual}
-              onChange={(e) => setConfig(p => ({ ...p, limite_aprobacion_manual: e.target.value }))}
+              type="text" inputMode="decimal" className="text-right"
+              value={fmtMontoInput(config.limite_aprobacion_manual)}
+              onChange={(e) => setConfig(p => ({ ...p, limite_aprobacion_manual: parseMontoInput(e.target.value) }))}
             />
             <p className="text-[10px] text-slate-500">Órdenes mayores a este monto requieren PIN supervisor. 0 = sin límite.</p>
           </div>

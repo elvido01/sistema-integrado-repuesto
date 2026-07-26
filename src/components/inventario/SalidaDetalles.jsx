@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableRow, TableHeader, TableHead } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trash2, Search, FileText } from 'lucide-react';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const SalidaDetalles = ({
   currentDetalle, setCurrentDetalle, detalles, addDetalle, removeDetalle, updateDetalle, setIsSearchModalOpen,
@@ -144,7 +145,7 @@ const SalidaDetalles = ({
             <SelectItem value="PAQUETE">PAQUETE</SelectItem>
           </SelectContent>
         </Select>
-        <Input type="number" placeholder="Costo" className="text-right" value={currentDetalle.costo_unitario} onChange={e => handleInputChange('costo_unitario', e.target.value)} onKeyDown={handleKeyDown} />
+        <Input type="text" inputMode="decimal" placeholder="Costo" className="text-right" value={fmtMontoInput(currentDetalle.costo_unitario)} onChange={e => handleInputChange('costo_unitario', parseMontoInput(e.target.value))} onKeyDown={handleKeyDown} />
         <Input className="text-right bg-gray-100" placeholder="Importe" value={currentDetalle.importe.toFixed(2)} readOnly disabled />
         <Button size="sm" onClick={addDetalle}>Ok</Button>
       </div>
@@ -187,9 +188,9 @@ const SalidaDetalles = ({
                 </TableCell>
                 <TableCell className="text-right">
                   <Input
-                    type="number"
-                    value={d.costo_unitario}
-                    onChange={e => updateDetalle(d.id, 'costo_unitario', e.target.value)}
+                    type="text" inputMode="decimal"
+                    value={fmtMontoInput(d.costo_unitario)}
+                    onChange={e => updateDetalle(d.id, 'costo_unitario', parseMontoInput(e.target.value))}
                     className="h-8 text-right"
                   />
                 </TableCell>

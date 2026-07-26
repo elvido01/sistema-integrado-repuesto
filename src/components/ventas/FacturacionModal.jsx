@@ -18,6 +18,7 @@ import { useVentas } from '@/hooks/useVentas';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import CotizacionSearchModal from '@/components/ventas/CotizacionSearchModal';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymentType, setPaymentType, diasCredito, setDiasCredito, montoRecibido, setMontoRecibido, cambio, cliente, tipoPago, setTipoPago, cuentaBancoId, setCuentaBancoId }) => {
   const { toast } = useToast();
@@ -184,8 +185,8 @@ const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymen
                             <TableCell>{item.ubicacion || '-'}</TableCell>
                             <TableCell><Input type="number" value={item.cantidad} onChange={(e) => handleUpdateItem(item.id, 'cantidad', e.target.value)} className="w-full text-center" /></TableCell>
                             <TableCell>{item.unidad}</TableCell>
-                            <TableCell><Input type="number" value={item.precio} onChange={(e) => handleUpdateItem(item.id, 'precio', e.target.value)} className="w-full text-right" /></TableCell>
-                            <TableCell><Input type="number" value={item.descuento} onChange={(e) => handleUpdateItem(item.id, 'descuento', e.target.value)} className="w-full text-right" /></TableCell>
+                            <TableCell><Input type="text" inputMode="decimal" value={fmtMontoInput(item.precio)} onChange={(e) => handleUpdateItem(item.id, 'precio', parseMontoInput(e.target.value))} className="w-full text-right" /></TableCell>
+                            <TableCell><Input type="text" inputMode="decimal" value={fmtMontoInput(item.descuento)} onChange={(e) => handleUpdateItem(item.id, 'descuento', parseMontoInput(e.target.value))} className="w-full text-right" /></TableCell>
                             <TableCell className="text-right">{item.itbis.toFixed(2)}</TableCell>
                             <TableCell className="text-right font-bold">{item.importe.toFixed(2)}</TableCell>
                             <TableCell>
@@ -226,7 +227,7 @@ const FacturacionModal = ({ isOpen, onClose, onConfirm, isSaving, totals, paymen
                           </SelectContent>
                         </Select>
                       </div>
-                      <div><Label>Monto</Label><Input type="number" className="w-32" value={montoRecibido} onChange={(e) => setMontoRecibido(e.target.value)} /></div>
+                      <div><Label>Monto</Label><Input type="text" inputMode="decimal" className="w-32 text-right" value={fmtMontoInput(montoRecibido)} onChange={(e) => setMontoRecibido(parseMontoInput(e.target.value))} /></div>
                     </div>
                     {paymentType === 'contado' && tipoPago && tipoPago !== 'EFECTIVO' && (
                       <div className="my-2">

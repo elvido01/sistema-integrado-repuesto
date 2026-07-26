@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PrinterSettings from '@/components/configuracion/PrinterSettings';
 import IntegracionFiscalSettings from '@/components/configuracion/IntegracionFiscalSettings';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const WHATSAPP_EXTENSION_DOWNLOAD_VERSION = '2026-07-08-1';
 const WHATSAPP_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-whatsapp-extension.zip?v=${WHATSAPP_EXTENSION_DOWNLOAD_VERSION}`;
@@ -158,6 +159,13 @@ const ConfiguracionSistemaPage = () => {
     const handleNumberChange = (e) => {
         const { id, value } = e.target;
         setFormData(prev => ({ ...prev, [id]: parseFloat(value) || 0 }));
+    };
+
+    // Campos de DINERO: se muestran con separador de miles (1,234,567) pero en
+    // el estado siguen siendo número, que es lo que compara y guarda la página.
+    const handleMoneyChange = (e) => {
+        const { id, value } = e.target;
+        setFormData(prev => ({ ...prev, [id]: parseFloat(parseMontoInput(value)) || 0 }));
     };
 
     const handleSelectChange = (id, value) => {
@@ -498,7 +506,7 @@ const ConfiguracionSistemaPage = () => {
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Meta Original Mensual</Label>
                                 <div className="flex items-center">
                                     <div className="bg-gray-200 border border-r-0 h-10 px-3 flex items-center justify-center rounded-l-md text-xs font-bold text-gray-500">RD$</div>
-                                    <Input id="meta_ventas" type="number" value={formData.meta_ventas} onChange={handleNumberChange} className="h-10 rounded-l-none font-bold text-indigo-700 text-lg" />
+                                    <Input id="meta_ventas" type="text" inputMode="decimal" value={fmtMontoInput(formData.meta_ventas)} onChange={handleMoneyChange} className="h-10 rounded-l-none font-bold text-indigo-700 text-lg text-right" />
                                 </div>
                             </div>
 
@@ -506,7 +514,7 @@ const ConfiguracionSistemaPage = () => {
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Meta Flujo Neto Mensual (Dashboard)</Label>
                                 <div className="flex items-center">
                                     <div className="bg-gray-200 border border-r-0 h-10 px-3 flex items-center justify-center rounded-l-md text-xs font-bold text-gray-500">RD$</div>
-                                    <Input id="meta_flujo_neto_mensual" type="number" value={formData.meta_flujo_neto_mensual} onChange={handleNumberChange} className="h-10 rounded-l-none font-bold text-emerald-700 text-lg" />
+                                    <Input id="meta_flujo_neto_mensual" type="text" inputMode="decimal" value={fmtMontoInput(formData.meta_flujo_neto_mensual)} onChange={handleMoneyChange} className="h-10 rounded-l-none font-bold text-emerald-700 text-lg text-right" />
                                 </div>
                                 <p className="text-[10px] text-gray-500 italic">
                                     Meta de dinero neto (cobros − pagos) para la tarjeta "Flujo neto acumulado" en Inicio.

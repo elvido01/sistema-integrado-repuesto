@@ -17,6 +17,7 @@ import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
 import { printPagoSuplidorPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const initialState = {
   numero: '',
@@ -508,7 +509,7 @@ const PagoSuplidoresPage = () => {
                         <SelectItem value="Tarjeta de Crédito">T. Crédito</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Input type="number" placeholder="Monto" value={fp.monto} onChange={(e) => handleFormaPagoChange(fp.id, 'monto', e.target.value)} className="text-right" />
+                    <Input type="text" inputMode="decimal" placeholder="Monto" value={fmtMontoInput(fp.monto)} onChange={(e) => handleFormaPagoChange(fp.id, 'monto', parseMontoInput(e.target.value))} className="text-right" />
                     <Button variant="ghost" size="icon" onClick={() => removeFormaPago(fp.id)} disabled={formasPago.length === 1}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
@@ -566,7 +567,7 @@ const PagoSuplidoresPage = () => {
                         ) : formatCurrency(c.monto_pendiente)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Input type="number" value={c.abono} onChange={(e) => handleAbonoChange(c.id, e.target.value)} className="text-right h-8 bg-yellow-100" />
+                        <Input type="text" inputMode="decimal" value={fmtMontoInput(c.abono)} onChange={(e) => handleAbonoChange(c.id, parseMontoInput(e.target.value))} className="text-right h-8 bg-yellow-100" />
                         {esFilaUSD(c) && c.abono > 0 && tasa > 0 && (
                           <div className="text-[11px] text-gray-500 mt-0.5">US$ {formatCurrency(c.abono)} ≈ RD$ {formatCurrency(c.abono * tasa)}</div>
                         )}
