@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil, ChevronDown, Landmark, Wallet } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos, agruparEnBloques, bloquesAbiertos } from '@/lib/sanUtils';
@@ -518,13 +519,12 @@ const SanPage = () => {
               onKeyDown={(e) => { if (e.key === 'Enter') guardarDeuda(); }}
             />
             <Input
-              className="w-40"
-              type="number"
-              step="0.01"
-              min="0"
+              className="w-40 text-right"
+              type="text"
+              inputMode="decimal"
               placeholder="Monto (RD$)"
-              value={deudaForm.monto}
-              onChange={(e) => setDeudaForm((p) => ({ ...p, monto: e.target.value }))}
+              value={fmtMontoInput(deudaForm.monto)}
+              onChange={(e) => setDeudaForm((p) => ({ ...p, monto: parseMontoInput(e.target.value) }))}
               onKeyDown={(e) => { if (e.key === 'Enter') guardarDeuda(); }}
             />
             <Button onClick={guardarDeuda} disabled={busy}>
@@ -589,8 +589,8 @@ const SanPage = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-sm font-medium">Monto objetivo (RD$)</label>
-                  <Input type="number" value={crearForm.monto}
-                    onChange={(e) => setCrearForm((p) => ({ ...p, monto: e.target.value }))} /></div>
+                  <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(crearForm.monto)}
+                    onChange={(e) => setCrearForm((p) => ({ ...p, monto: parseMontoInput(e.target.value) }))} /></div>
                 <div><label className="text-sm font-medium">Cantidad de días</label>
                   <Input type="number" value={crearForm.dias}
                     onChange={(e) => setCrearForm((p) => ({ ...p, dias: e.target.value }))} /></div>
@@ -823,8 +823,8 @@ const SanPage = () => {
               </div>
               <div>
                 <label className="text-sm font-medium">Monto recibido (RD$)</label>
-                <Input type="number" autoFocus value={pagoForm.monto}
-                  onChange={(e) => setPagoForm((p) => ({ ...p, monto: e.target.value }))} />
+                <Input type="text" inputMode="decimal" className="text-right" autoFocus value={fmtMontoInput(pagoForm.monto)}
+                  onChange={(e) => setPagoForm((p) => ({ ...p, monto: parseMontoInput(e.target.value) }))} />
               </div>
               <div>
                 <label className="text-sm font-medium">Observaciones</label>
@@ -865,8 +865,8 @@ const SanPage = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-sm font-medium">Monto objetivo (RD$)</label>
-                <Input type="number" value={editForm.monto}
-                  onChange={(e) => setEditForm((p) => ({ ...p, monto: e.target.value }))} /></div>
+                <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(editForm.monto)}
+                  onChange={(e) => setEditForm((p) => ({ ...p, monto: parseMontoInput(e.target.value) }))} /></div>
               <div><label className="text-sm font-medium">Cantidad de días</label>
                 <Input type="number" value={editForm.dias}
                   onChange={(e) => setEditForm((p) => ({ ...p, dias: e.target.value }))} /></div>

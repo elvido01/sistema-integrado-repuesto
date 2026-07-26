@@ -13,6 +13,7 @@ import { imprimirInformePrestamo } from '@/lib/printInformePrestamo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { calcAmortizacion, round2 } from './amortizacion';
 import { formatFechaDMY } from '@/lib/dateUtils';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 
@@ -224,7 +225,7 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
             </div>
             <div className="space-y-1.5">
               <Label>Monto (capital)</Label>
-              <Input type="number" value={form.monto} onChange={(e) => set('monto', e.target.value)} placeholder="0.00" />
+              <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(form.monto)} onChange={(e) => set('monto', parseMontoInput(e.target.value))} placeholder="0.00" />
             </div>
             <div className="space-y-1.5">
               <Label>Tasa % por cuota</Label>
@@ -311,8 +312,8 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
                     label={null}
                   />
                   <Input
-                    type="number" placeholder="Monto" value={l.monto}
-                    onChange={(e) => setLinea(l.id, 'monto', e.target.value)}
+                    type="text" inputMode="decimal" placeholder="Monto" value={fmtMontoInput(l.monto)}
+                    onChange={(e) => setLinea(l.id, 'monto', parseMontoInput(e.target.value))}
                     className="text-right"
                   />
                   <Button variant="ghost" size="icon" className="h-9 w-9"
@@ -359,8 +360,8 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
               <div className="space-y-1">
                 <Label className="text-[11px] font-bold text-emerald-800">Cuota Ajustada</Label>
                 <Input
-                  type="number" step="0.01" value={form.cuotaAjustada}
-                  onChange={(e) => set('cuotaAjustada', e.target.value)}
+                  type="text" inputMode="decimal" value={fmtMontoInput(form.cuotaAjustada)}
+                  onChange={(e) => set('cuotaAjustada', parseMontoInput(e.target.value))}
                   placeholder={fmt(montoCuotaBase)}
                   className="h-9 font-bold border-emerald-300"
                 />

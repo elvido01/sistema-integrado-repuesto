@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Loader2, RefreshCw, Users, Wallet, HandCoins, Ban, Plus, Pencil } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import { calcularDetalleNomina, pendienteAdelanto, periodoSugerido } from '@/lib/nominaUtils';
 
 const money = (v) => `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`;
@@ -458,7 +459,7 @@ const NominaPage = () => {
                 <div><label className="text-sm font-medium">Puesto</label>
                   <Input value={empEdit.puesto || ''} onChange={(e) => setEmpEdit((p) => ({ ...p, puesto: e.target.value }))} /></div>
                 <div><label className="text-sm font-medium">Sueldo mensual (RD$)</label>
-                  <Input type="number" value={empEdit.sueldo_mensual} onChange={(e) => setEmpEdit((p) => ({ ...p, sueldo_mensual: e.target.value }))} /></div>
+                  <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(empEdit.sueldo_mensual)} onChange={(e) => setEmpEdit((p) => ({ ...p, sueldo_mensual: parseMontoInput(e.target.value) }))} /></div>
                 <div>
                   <label className="text-sm font-medium">Frecuencia de pago</label>
                   <Select value={empEdit.frecuencia_pago} onValueChange={(v) => setEmpEdit((p) => ({ ...p, frecuencia_pago: v }))}>
@@ -576,16 +577,16 @@ const NominaPage = () => {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-sm font-medium">Otros ingresos (bono/extra)</label>
-                <Input type="number" value={lineaForm.otros_ingresos}
-                  onChange={(e) => setLineaForm((p) => ({ ...p, otros_ingresos: e.target.value }))} /></div>
+                <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(lineaForm.otros_ingresos)}
+                  onChange={(e) => setLineaForm((p) => ({ ...p, otros_ingresos: parseMontoInput(e.target.value) }))} /></div>
               <div><label className="text-sm font-medium">Otros descuentos</label>
-                <Input type="number" value={lineaForm.otros_descuentos}
-                  onChange={(e) => setLineaForm((p) => ({ ...p, otros_descuentos: e.target.value }))} /></div>
+                <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(lineaForm.otros_descuentos)}
+                  onChange={(e) => setLineaForm((p) => ({ ...p, otros_descuentos: parseMontoInput(e.target.value) }))} /></div>
             </div>
             <div>
               <label className="text-sm font-medium">Descuento de adelantos en ESTA nómina</label>
-              <Input type="number" value={lineaForm.adelanto}
-                onChange={(e) => setLineaForm((p) => ({ ...p, adelanto: e.target.value }))} />
+              <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(lineaForm.adelanto)}
+                onChange={(e) => setLineaForm((p) => ({ ...p, adelanto: parseMontoInput(e.target.value) }))} />
               <p className="text-xs text-muted-foreground mt-1">
                 Bájalo para fraccionar: lo que no se descuente aquí queda pendiente para la próxima nómina.
               </p>
@@ -620,8 +621,8 @@ const NominaPage = () => {
               </Select>
             </div>
             <div><label className="text-sm font-medium">Monto (RD$)</label>
-              <Input type="number" value={adelForm.monto}
-                onChange={(e) => setAdelForm((p) => ({ ...p, monto: e.target.value }))} /></div>
+              <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(adelForm.monto)}
+                onChange={(e) => setAdelForm((p) => ({ ...p, monto: parseMontoInput(e.target.value) }))} /></div>
             <div><label className="text-sm font-medium">Nota</label>
               <Input value={adelForm.descripcion} placeholder="ej. avance para medicinas"
                 onChange={(e) => setAdelForm((p) => ({ ...p, descripcion: e.target.value }))} /></div>
