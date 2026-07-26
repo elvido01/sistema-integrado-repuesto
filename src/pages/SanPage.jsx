@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil, ChevronDown, Landmark } from 'lucide-react';
+import { Loader2, RefreshCw, PiggyBank, Plus, Check, ArrowLeft, Ban, Archive, Copy, Eye, EyeOff, PartyPopper, Trash2, Pencil, ChevronDown, Landmark, Wallet } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -37,6 +37,11 @@ const SanPage = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ nombre: '', monto: '', dias: '', inicio: '', cuenta: null });
   const [cuentasInfo, setCuentasInfo] = useState({}); // id -> { label, saldo, moneda }
+  // Deudas personales: lista propia del módulo, se conserva para futuros SAN
+  const [deudas, setDeudas] = useState([]);
+  const [deudaForm, setDeudaForm] = useState({ nombre: '', monto: '' });
+  const [deudaEditId, setDeudaEditId] = useState(null);
+  const [deudasVerSaldadas, setDeudasVerSaldadas] = useState(false);
   const [atrasosMap, setAtrasosMap] = useState({}); // san_id -> días vencidos sin pagar
   // Cuenta MADRE del módulo: ahí cae el total de cada SAN completado (el
   // ingreso lo hace el servidor, aquí solo se ve el saldo). Se guarda por
@@ -61,6 +66,11 @@ const SanPage = () => {
     const atrasos = {};
     for (const r of vencidos || []) atrasos[r.san_id] = (atrasos[r.san_id] || 0) + 1;
     setAtrasosMap(atrasos);
+
+    // Deudas personales (tabla propia; si aún no se corrió el SQL, se ignora)
+    const { data: dds, error: ddsErr } = await supabase
+      .from('san_deudas').select('*').order('created_at', { ascending: false });
+    setDeudas(ddsErr ? [] : (dds || []));
     if (error) toast({ variant: 'destructive', title: 'No se pudo cargar SAN', description: error.message });
     else setSans(data || []);
     setCuentasInfo(Object.fromEntries((ctas || []).map((c) => [c.id, {
@@ -274,6 +284,72 @@ const SanPage = () => {
     await cargar();
   };
 
+  // ------- deudas personales -------
+  // Lista propia del módulo: no pertenece a ningún SAN, se conserva para los
+  // que vengan. Sirve para ver cuánto se debe antes de comprometer un ahorro.
+  const guardarDeuda = async () => {
+    const nombre = deudaForm.nombre.trim();
+    const monto = Number(deudaForm.monto);
+    if (!nombre) {
+      toast({ variant: 'destructive', title: 'Falta el nombre', description: 'Escribe a quién o de qué es la deuda.' });
+      return;
+    }
+    if (!Number.isFinite(monto) || monto < 0) {
+      toast({ variant: 'destructive', title: 'Monto inválido', description: 'Digita un monto válido.' });
+      return;
+    }
+    setBusy(true);
+    const payload = { nombre, monto };
+    const { error } = deudaEditId
+      ? await supabase.from('san_deudas').update(payload).eq('id', deudaEditId)
+      : await supabase.from('san_deudas').insert({ ...payload, tenant_id: tenantId });
+    setBusy(false);
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo guardar la deuda',
+        description: /san_deudas/i.test(error.message)
+          ? 'Falta correr sql/san_deudas_personales.sql en la base.'
+          : error.message,
+      });
+      return;
+    }
+    setDeudaForm({ nombre: '', monto: '' });
+    setDeudaEditId(null);
+    await cargar();
+  };
+
+  const editarDeuda = (d) => {
+    setDeudaEditId(d.id);
+    setDeudaForm({ nombre: d.nombre, monto: String(d.monto ?? '') });
+  };
+
+  const alternarSaldada = async (d) => {
+    setBusy(true);
+    const { error } = await supabase.from('san_deudas').update({ activo: !d.activo }).eq('id', d.id);
+    setBusy(false);
+    if (error) toast({ variant: 'destructive', title: 'No se pudo actualizar', description: error.message });
+    else await cargar();
+  };
+
+  const eliminarDeuda = async (d) => {
+    if (!window.confirm(`¿Eliminar la deuda "${d.nombre}"?`)) return;
+    setBusy(true);
+    const { error } = await supabase.from('san_deudas').delete().eq('id', d.id);
+    setBusy(false);
+    if (error) toast({ variant: 'destructive', title: 'No se pudo eliminar', description: error.message });
+    else await cargar();
+  };
+
+  const deudasVista = useMemo(
+    () => deudas.filter((d) => (deudasVerSaldadas ? true : d.activo)),
+    [deudas, deudasVerSaldadas]
+  );
+  const totalDeudas = useMemo(
+    () => deudas.filter((d) => d.activo).reduce((s, d) => s + (Number(d.monto) || 0), 0),
+    [deudas]
+  );
+
   // ------- dashboard -------
   const dash = useMemo(() => {
     const activos = sans.filter((s) => s.estado === 'Activo');
@@ -419,6 +495,87 @@ const SanPage = () => {
             })}
           </div>
         )}
+
+        {/* ---------- Deudas personales ---------- */}
+        <div className="rounded-xl border bg-card p-4 mt-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Wallet className="w-5 h-5 text-rose-600" />
+            <h2 className="font-semibold">Deudas Personales</h2>
+            <span className="text-xs text-muted-foreground">se conservan para los próximos SAN</span>
+            <span className="flex-1" />
+            <span className="text-sm">
+              Total pendiente: <b className="text-rose-600">{money(totalDeudas)}</b>
+            </span>
+          </div>
+
+          {/* alta / edición */}
+          <div className="flex gap-2 flex-wrap mt-3">
+            <Input
+              className="flex-1 min-w-[180px]"
+              placeholder="Nombre de la deuda (ej. Préstamo a Juan)"
+              value={deudaForm.nombre}
+              onChange={(e) => setDeudaForm((p) => ({ ...p, nombre: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === 'Enter') guardarDeuda(); }}
+            />
+            <Input
+              className="w-40"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="Monto (RD$)"
+              value={deudaForm.monto}
+              onChange={(e) => setDeudaForm((p) => ({ ...p, monto: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === 'Enter') guardarDeuda(); }}
+            />
+            <Button onClick={guardarDeuda} disabled={busy}>
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
+              {deudaEditId ? 'Actualizar' : 'Agregar'}
+            </Button>
+            {deudaEditId && (
+              <Button variant="outline" onClick={() => { setDeudaEditId(null); setDeudaForm({ nombre: '', monto: '' }); }}>
+                Cancelar
+              </Button>
+            )}
+          </div>
+
+          {/* lista */}
+          {deudasVista.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center py-6">
+              Sin deudas registradas. Agrega la primera arriba.
+            </div>
+          ) : (
+            <div className="mt-3 divide-y">
+              {deudasVista.map((d) => (
+                <div key={d.id} className={`flex items-center gap-2 py-2 ${d.activo ? '' : 'opacity-50'}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className={`font-medium truncate ${d.activo ? '' : 'line-through'}`}>{d.nombre}</div>
+                    {!d.activo && <div className="text-[11px] text-emerald-700 font-bold">SALDADA</div>}
+                  </div>
+                  <div className={`font-bold whitespace-nowrap ${d.activo ? 'text-rose-600' : 'text-muted-foreground'}`}>
+                    {money(d.monto)}
+                  </div>
+                  <Button size="sm" variant="ghost" title={d.activo ? 'Marcar como saldada' : 'Marcar como pendiente'}
+                    onClick={() => alternarSaldada(d)} disabled={busy}>
+                    <Check className={`w-4 h-4 ${d.activo ? 'text-emerald-600' : 'text-muted-foreground'}`} />
+                  </Button>
+                  <Button size="sm" variant="ghost" title="Editar" onClick={() => editarDeuda(d)} disabled={busy}>
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button size="sm" variant="ghost" title="Eliminar" onClick={() => eliminarDeuda(d)} disabled={busy}>
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {deudas.some((d) => !d.activo) && (
+            <button type="button" className="text-xs text-muted-foreground hover:underline mt-2"
+              onClick={() => setDeudasVerSaldadas((v) => !v)}>
+              {deudasVerSaldadas ? 'Ocultar saldadas' : `Ver saldadas (${deudas.filter((d) => !d.activo).length})`}
+            </button>
+          )}
+        </div>
 
         {/* modal crear */}
         <Dialog open={crearOpen} onOpenChange={setCrearOpen}>
