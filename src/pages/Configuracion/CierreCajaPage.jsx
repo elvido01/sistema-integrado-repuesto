@@ -452,6 +452,14 @@ const CierreCajaPage = () => {
           p_fecha: formatDateForSupabase(fecha),
         });
         if (eMov) toast({ variant: 'destructive', title: 'Cierre grabado, pero no se registró en la cuenta', description: eMov.message });
+      } else if (efectivo > 0 && !cuentaId) {
+        // Antes esto pasaba callado y el efectivo no aparecía en ninguna cuenta
+        // (cierre del 25/07/2026 en Los Naranjos). Ahora avisa.
+        toast({
+          variant: 'destructive',
+          title: 'El efectivo NO entró a ninguna cuenta',
+          description: `Se cerró la caja con ${formatCurrency(efectivo)} pero no había cuenta seleccionada. Regístralo a mano en Cuentas Bancarias.`,
+        });
       }
 
       if (imprimir) {
