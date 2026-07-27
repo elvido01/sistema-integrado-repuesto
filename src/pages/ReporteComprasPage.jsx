@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { subDays } from 'date-fns';
-import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase, formatFechaDMY } from '@/lib/dateUtils';
 import { Calendar as CalendarIcon, Search, FileText, Barcode, Pencil, ShoppingCart, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
@@ -105,8 +105,50 @@ const ReporteComprasPage = () => {
     else fetchPagos();
   };
 
+  // Una compra financiada se guarda como un pagaré por cuota (OC-0002-01,
+  // -02...). Eso solo le sirve a Cuentas por Pagar, que necesita cada
+  // vencimiento por separado. Para el reporte, la edición y la contabilidad
+  // es UNA factura: aquí se juntan de vuelta en una sola línea con su total.
+  const comprasAgrupadas = useMemo(() => {
+    const clave = (c) => {
+      // 1) Lo más confiable: la referencia dice "Factura X - Pagaré 3/15".
+      const m = String(c.referencia || '').match(/^(.*?)\s*-\s*(?:pagar[ée]|cuota)\s+\d+\s*\/\s*\d+/i);
+      if (m) return `ref|${c.suplidor_id}|${m[1].trim().toLowerCase()}`;
+      // 2) Si no, el sufijo de dos dígitos del número. Exige el guion y
+      //    EXACTAMENTE dos dígitos al final, para no partir un FIN-5329.
+      const n = String(c.numero || '').match(/^(.*)-\d{2}$/);
+      if (n) return `num|${c.suplidor_id}|${n[1]}`;
+      // 3) Compra normal: es su propio grupo.
+      return `id|${c.id}`;
+    };
+
+    const grupos = new Map();
+    for (const c of compras) {
+      const k = clave(c);
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(c);
+    }
+
+    return [...grupos.values()]
+      .map((filas) => {
+        if (filas.length === 1) return { ...filas[0], _pagares: 1 };
+        // La fila "madre" es la que trae el detalle de productos: de ella
+        // salen la edición y el PDF. Las demás son solo cuotas.
+        const madre = filas.reduce(
+          (a, b) => ((b.compras_detalle?.length || 0) > (a.compras_detalle?.length || 0) ? b : a),
+          filas[0]);
+        return {
+          ...madre,
+          numero: String(madre.numero || '').replace(/-\d{2}$/, ''),
+          total_compra: filas.reduce((s, c) => s + Number(c.total_compra || 0), 0),
+          _pagares: filas.length,
+        };
+      })
+      .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+  }, [compras]);
+
   // Totales para el header de cada tab
-  const totalCompras = compras.reduce((sum, c) => sum + Number(c.total_compra || 0), 0);
+  const totalCompras = comprasAgrupadas.reduce((sum, c) => sum + Number(c.total_compra || 0), 0);
   const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto_pagado || 0), 0);
 
   return (
@@ -138,7 +180,7 @@ const ReporteComprasPage = () => {
             >
               <ShoppingCart className="h-4 w-4" />
               Compras
-              <span className="ml-1 text-xs bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">{compras.length}</span>
+              <span className="ml-1 text-xs bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">{comprasAgrupadas.length}</span>
             </button>
             <button
               onClick={() => setTab('pagos')}
@@ -241,13 +283,20 @@ const ReporteComprasPage = () => {
                 {loading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-400">Cargando datos...</TableCell></TableRow>
                 ) : tab === 'compras' ? (
-                  compras.length === 0 ? (
+                  comprasAgrupadas.length === 0 ? (
                     <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-400 italic">No se encontraron compras en el rango seleccionado.</TableCell></TableRow>
                   ) : (
-                    compras.map(compra => (
+                    comprasAgrupadas.map(compra => (
                       <TableRow key={compra.id}>
-                        <TableCell>{formatInTimeZone(new Date(compra.fecha), 'dd/MM/yyyy')}</TableCell>
-                        <TableCell className="font-mono">{compra.numero}</TableCell>
+                        <TableCell>{formatFechaDMY(compra.fecha)}</TableCell>
+                        <TableCell className="font-mono">
+                          {compra.numero}
+                          {compra._pagares > 1 && (
+                            <span className="ml-2 text-[10px] font-sans text-slate-400 whitespace-nowrap">
+                              {compra._pagares} pagarés
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell>{compra.proveedores?.nombre || 'N/A'}</TableCell>
                         <TableCell className="text-right font-bold">RD$ {fmt(compra.total_compra)}</TableCell>
                         <TableCell className="font-mono text-xs">{compra.ncf}</TableCell>
