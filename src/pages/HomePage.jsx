@@ -163,8 +163,9 @@ const HomePage = () => {
         supabase.rpc('get_commitments_week'),         // 2
         supabase.rpc('get_flujo_neto_dashboard'),     // 3
         supabase.rpc('get_caja_excedente_dashboard'), // 4  (excedente + caja de hoy)
-        supabase.from('compras').select('id, numero, referencia, fecha, dias_credito, monto_pendiente, total_compra, monto_pagado, suplidor_id, proveedores(nombre)').eq('tenant_id', tenantId).ilike('forma_pago', 'CREDITO').eq('estado', 'PENDIENTE').order('fecha', { ascending: true }),  // 5  (CxP suplidores)
-        supabase.from('gastos_diarios').select('id, fecha, tipo_gasto, monto, descripcion, afecta_caja, cuenta_bancaria_id').eq('tenant_id', tenantId).eq('fecha', todayDate).eq('anulado', false).order('created_at', { ascending: false })  // 6  (lista de gastos de hoy)
+        supabase.from('compras').select('id, numero, referencia, fecha, dias_credito, monto_pendiente, total_compra, monto_pagado, suplidor_id, moneda, pendiente_usd, proveedores(nombre)').eq('tenant_id', tenantId).ilike('forma_pago', 'CREDITO').eq('estado', 'PENDIENTE').order('fecha', { ascending: true }),  // 5  (CxP suplidores)
+        supabase.from('gastos_diarios').select('id, fecha, tipo_gasto, monto, descripcion, afecta_caja, cuenta_bancaria_id').eq('tenant_id', tenantId).eq('fecha', todayDate).eq('anulado', false).order('created_at', { ascending: false }),  // 6  (lista de gastos de hoy)
+        supabase.rpc('get_tasa_dia')                  // 7  (RD$ por US$ de hoy, para la CxP en dólares)
       ]);
 
       // Lectura segura de cada resultado (fallback si esa consulta falló).
@@ -176,6 +177,8 @@ const HomePage = () => {
       const cajaRes = val(4);
       const suplRes = val(5, { data: [] });
       const gDiariosHoy = val(6, { data: [] });
+      // Tasa de HOY. Si no hay, las filas en US$ caen a su monto en RD$ guardado.
+      const tasaHoy = Number(val(7).data) || 0;
 
       if (!statsRes.error && statsRes.data) setStats(statsRes.data);
 
@@ -187,7 +190,15 @@ const HomePage = () => {
         const hoy = new Date();
         const hoyStart = startOfToday();
         suplidorData = suplidorRawData.map(c => {
-          const pendiente = c.monto_pendiente !== null ? c.monto_pendiente : ((c.total_compra || 0) - (c.monto_pagado || 0));
+          // Una factura en US$ se paga comprando dólares a la tasa de HOY, no a la
+          // del día en que se facturó. `monto_pendiente` guarda el valor histórico
+          // (cada suplidor entró con su propia tasa: 58.7, 60, 61.25, 62...), así
+          // que usarlo aquí pedía caja de más. Se convierte desde los dólares, que
+          // es lo que de verdad se debe, igual que hace Pago a Suplidores.
+          const enUSD = c.moneda === 'USD' && c.pendiente_usd != null && tasaHoy > 0;
+          const pendiente = enUSD
+            ? Number(c.pendiente_usd) * tasaHoy
+            : (c.monto_pendiente !== null ? c.monto_pendiente : ((c.total_compra || 0) - (c.monto_pagado || 0)));
           // Calcular fecha de vencimiento ajustando si es necesario a UTC para problemas de timezone,
           // pero como new Date() mapea la fecha local, addDays funciona bien.
           const fechaVencimiento = c.fecha ? addDays(new Date(c.fecha + 'T00:00:00'), c.dias_credito || 0) : new Date();

@@ -66,7 +66,14 @@ const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = nul
                     </button>
                   )}
                 </div>
-                <span className={`text-sm font-black whitespace-nowrap shrink-0 ${c.isOverdue ? 'text-red-600' : 'text-slate-800'}`}>{formatCurrency(c.monto_pendiente)}</span>
+                <span className={`text-right shrink-0 ${c.isOverdue ? 'text-red-600' : 'text-slate-800'}`}>
+                  <span className="text-sm font-black whitespace-nowrap block">{formatCurrency(c.monto_pendiente)}</span>
+                  {/* La deuda en US$ vive en dólares: se muestra para que se vea
+                      que los pesos salen de la tasa de hoy, no de la factura. */}
+                  {c.moneda === 'USD' && c.pendiente_usd != null && (
+                    <span className="text-[10px] font-semibold text-gray-400 whitespace-nowrap block">US$ {formatCurrency(c.pendiente_usd)}</span>
+                  )}
+                </span>
               </div>
             </div>
           ))
