@@ -112,6 +112,16 @@ const ComprasPage = () => {
   const [financiamientoGrupo, setFinanciamientoGrupo] = useState(null);
   const [compraConPagos, setCompraConPagos] = useState(false);
 
+  // Si la RPC del consecutivo falla, el campo NUMERO se quedaba vacío y la
+  // compra se grababa sin número sin decir nada. Ahora avisa.
+  const avisarNumeroFallido = useCallback((err) => {
+    toast({
+      variant: 'destructive',
+      title: 'No se pudo generar el número de compra',
+      description: `Escríbelo a mano antes de grabar. ${err?.message || ''}`,
+    });
+  }, [toast]);
+
   const fetchInitialData = useCallback(async () => {
     const { data: provData, error: provError } = await supabase.from('proveedores').select('*');
     if (provError) toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los proveedores.' });
@@ -140,8 +150,11 @@ const ComprasPage = () => {
     const { data: nextNum, error: numError } = await supabase.rpc('get_next_compra_numero');
     if (!numError && nextNum) {
       setCompra(prev => ({ ...prev, numero: nextNum }));
+    } else if (numError) {
+      // Antes esto se tragaba el error y la compra se grababa SIN número.
+      avisarNumeroFallido(numError);
     }
-  }, [toast]);
+  }, [toast, avisarNumeroFallido]);
 
   useEffect(() => {
     fetchInitialData();
@@ -168,8 +181,10 @@ const ComprasPage = () => {
     const { data: nextNum, error: numError } = await supabase.rpc('get_next_compra_numero');
     if (!numError && nextNum) {
       setCompra(prev => ({ ...prev, numero: nextNum }));
+    } else if (numError) {
+      avisarNumeroFallido(numError);
     }
-  }, []);
+  }, [avisarNumeroFallido]);
 
   // --- EDICION DE COMPRA ---
   useEffect(() => {
