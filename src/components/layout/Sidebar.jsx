@@ -69,7 +69,10 @@ const navItems = [
     icon: Brain,
     subItems: [
       { title: 'Dashboard IA', id: 'ai-ceo', icon: Brain, tenantOnly: '00000000-0000-0000-0000-000000000001' },
-      { title: 'Gestión Empresarial IA', id: 'gestion-empresarial', icon: TrendingUp, tenantOnly: '00000000-0000-0000-0000-000000000001' },
+      // Morla + MotoPréstamos Los Naranjos. A la financiera se le habilitó SOLO
+      // este submódulo (el Dashboard IA sigue siendo exclusivo de Morla).
+      { title: 'Gestión Empresarial IA', id: 'gestion-empresarial', icon: TrendingUp,
+        tenantOnly: ['00000000-0000-0000-0000-000000000001', '766fe3d6-6885-4f2b-b2cc-1a91db696fb4'] },
     ],
   },
   {
