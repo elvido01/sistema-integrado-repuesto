@@ -93,8 +93,15 @@ const ComprasPage = () => {
   const [editingDetalleIndex, setEditingDetalleIndex] = useState(null);
   const [pagos, setPagos] = useState([{ tipo: '01', referencia: '', monto: 0, id: Date.now() }]);
   const [isSaving, setIsSaving] = useState(false);
-  const [printMethod, setPrintMethod] = useState('pos');
-  const [paperSize, setPaperSize] = useState('4inch');
+  // Formato de impresión de la compra: 'pdf' (hoja carta), 'pos_4inch' o
+  // 'pos_80mm'. Se guarda POR PC en localStorage — cada máquina tiene su
+  // impresora — y si esa PC nunca eligió, manda el default de la empresa.
+  const [printFormat, setPrintFormat] = useState(() => localStorage.getItem('compras_printFormat') || '');
+  const formatoImpresion = printFormat || empresa?.formato_compra || 'pos_4inch';
+  const cambiarPrintFormat = (v) => {
+    setPrintFormat(v);
+    localStorage.setItem('compras_printFormat', v);
+  };
   // Financiamiento de la compra por cuotas (pagarés). Cada cuota se guarda como
   // una fila 'compras' CREDITO/PENDIENTE, igual que los pagarés de Motores del
   // Sur; el inventario/detalle se registra una sola vez (en la primera cuota).
@@ -1690,10 +1697,11 @@ const ComprasPage = () => {
           }
         : savedCompra;
 
-      if (printMethod === 'pos') {
-        printCompraPOS(compraParaImprimir, selectedSuplidor, detalles, paperSize);
-      } else {
+      if (formatoImpresion === 'pdf') {
         generateCompraPDF(compraParaImprimir, selectedSuplidor, detalles, authUser || user, empresa);
+      } else {
+        printCompraPOS(compraParaImprimir, selectedSuplidor, detalles,
+          formatoImpresion === 'pos_80mm' ? '80mm' : '4inch');
       }
 
       resetForm();
@@ -1836,10 +1844,8 @@ const ComprasPage = () => {
               pagos={pagos}
               setPagos={setPagos}
               totals={totals}
-              printMethod={printMethod}
-              setPrintMethod={setPrintMethod}
-              paperSize={paperSize}
-              setPaperSize={setPaperSize}
+              printFormat={formatoImpresion}
+              setPrintFormat={cambiarPrintFormat}
               financiamiento={financiamiento}
               setFinanciamiento={setFinanciamiento}
               esUSD={esUSD}

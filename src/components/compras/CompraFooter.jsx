@@ -14,10 +14,8 @@ const CompraFooter = ({
   pagos,
   setPagos,
   totals,
-  printMethod,
-  setPrintMethod,
-  paperSize,
-  setPaperSize,
+  printFormat = 'pos_4inch',
+  setPrintFormat = () => {},
   financiamiento = { activo: false, num_cuotas: 6, frecuencia: 'mensual', fecha_primera: '', cuotas: [] },
   setFinanciamiento = () => {},
   esUSD = false,
@@ -438,33 +436,25 @@ const CompraFooter = ({
           </div>
         </div>
 
+        {/* Un solo control. Antes eran dos (método + tamaño) y la hoja carta
+            quedaba escondida detrás de "PDF", así que parecía que no existía. */}
         <div className="mt-3 pt-3 border-t space-y-2">
           <div>
-            <Label className="text-[11px] font-bold text-gray-500 uppercase mb-1 block tracking-wider">Método Impresión</Label>
-            <Select value={printMethod} onValueChange={setPrintMethod}>
+            <Label className="text-[11px] font-bold text-gray-500 uppercase mb-1 block tracking-wider">Formato de Impresión</Label>
+            <Select value={printFormat} onValueChange={setPrintFormat}>
               <SelectTrigger className="h-8 text-xs font-bold bg-white">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="pdf">📄 PDF (ESTÁNDAR)</SelectItem>
-                <SelectItem value="pos">📑 POS (TÉRMICO)</SelectItem>
+                <SelectItem value="pdf">📄 Hoja Carta (8.5 x 11)</SelectItem>
+                <SelectItem value="pos_4inch">📑 Ticket 101.6mm (4 pulgadas)</SelectItem>
+                <SelectItem value="pos_80mm">📑 Ticket 80mm (3 pulgadas)</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-[10px] text-gray-400 italic mt-1">
+              Se recuerda en esta PC. El valor por defecto se pone en Configuración del Sistema.
+            </p>
           </div>
-          {printMethod === 'pos' && (
-            <div>
-              <Label className="text-[11px] font-bold text-gray-500 uppercase mb-1 block tracking-wider">Tamaño Papel</Label>
-              <Select value={paperSize} onValueChange={setPaperSize}>
-                <SelectTrigger className="h-8 text-xs font-bold bg-white italic">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="80mm">80mm (3 pulgadas)</SelectItem>
-                  <SelectItem value="4inch">101.6mm (4 pulgadas)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
         </div>
 
         <div className="pt-4 space-y-2 border-t mt-4 border-gray-200">
