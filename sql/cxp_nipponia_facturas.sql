@@ -34,6 +34,12 @@
 -- El saldo inicial queda con US$675 (500 + 175): es el crédito que Nipponia
 -- todavía no ha aplicado. Ningún pago se pierde ni se duplica.
 --
+-- >>> NIPPONIA FACTURA EN LAS DOS MONEDAS <<<
+-- F-018819 se emitió en pesos (RD$2,102,100.00) y F-018893 en dólares
+-- (US$1,995.00, así impreso en el papel). El estado de cuenta lleva todo a
+-- US$, que es la moneda de la relación: por eso el suplidor va en USD y el
+-- dólar es lo autoritativo. El RD$ de F-018893 (a 61.25) es referencial.
+--
 -- >>> QUÉ NO SE TOCA <<<
 -- - OC-0001 (RD$1,299,180, PAGADA): no aparece en el estado de cuenta, así
 --   que está saldada. Se deja como está.
@@ -113,7 +119,7 @@ BEGIN
       'Factura ' || r.doc || ' - Cuota ' || r.cuota || '/' || r.de || ' (Nipponia Caribe)',
       CASE WHEN r.doc = 'F-018819' AND r.cuota = 1 THEN v_notas1
            WHEN r.doc = 'F-018819' THEN 'Cuota ' || r.cuota || '/5 de la factura F-018819 - detalle completo en la cuota 1'
-           ELSE 'Factura ' || r.doc || ' - tomada del estado de cuenta del 27/07/2026 (no hay papel físico)'
+           ELSE 'Factura ' || r.doc || ' (ver detalle fiscal más abajo)'
       END,
       ROUND(r.total_usd * v_tasa, 2), 0, 0, ROUND(r.total_usd * v_tasa, 2),
       'CREDITO',
@@ -184,6 +190,24 @@ BEGIN
                                 THEN 'PAGADA' ELSE 'PENDIENTE' END
    WHERE c.tenant_id = v_cam
      AND c.legacy_id LIKE 'papel:cxp:nipponia:%';
+
+  -- 5) F-018893: apareció el papel físico. Es una factura de UNA sola línea
+  --    (no va partida en cuotas), así que aquí sí se puede poner el NCF y el
+  --    desglose fiscal sin ensuciar el 606: se reporta una vez, como debe ser.
+  --    Los montos NO cambian, el total sigue siendo US$1,995.00.
+  UPDATE public.compras
+     SET ncf           = 'E310000000286',
+         total_exento  = ROUND( 163.87 * v_tasa, 2),   -- placa
+         total_gravado = ROUND(1551.81 * v_tasa, 2),
+         itbis_total   = ROUND( 279.32 * v_tasa, 2),
+         notas         = E'NCF E310000000286 - Factura emitida en US$1,995.00 (Orden 01847/C-000528)\n'
+                      || E'Desglose en US$: exento y placa 163.87 | gravado 1,551.81 | ITBIS 279.32\n'
+                      || E'RD$ referencial a tasa 61.25 - el dólar es lo autoritativo\n'
+                      || E'1 x NIPPONIA TN250 Blanco/Negro 2025\n'
+                      || E'  XF1TN250ASC000594\n'
+                      || E'Términos 30 días. e-CF firmado 23/06/2026 18:57:17, código YhBohK'
+   WHERE tenant_id = v_cam
+     AND legacy_id = 'papel:cxp:nipponia:F-018893:C1';
 END $$;
 
 DO $$ BEGIN
@@ -228,7 +252,16 @@ WHERE c.tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
   AND c.legacy_id = 'papel:cxp:2026-07-14:5';
 -- esperado: ANULADA | pendiente 0 | credito_usd 675
 
--- 4) El pago original no se rompió al partirlo: sigue sumando RD$293,000
+-- 4) F-018893: el desglose fiscal debe sumar el total, sin descuadre por redondeo
+SELECT numero, ncf, total_exento, total_gravado, itbis_total,
+       (total_exento + total_gravado + itbis_total) AS suma_desglose,
+       total_compra, total_usd
+FROM public.compras
+WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
+  AND legacy_id = 'papel:cxp:nipponia:F-018893:C1';
+-- esperado: 10,037.04 + 95,048.36 + 17,108.35 = 122,193.75 = total_compra | US$1,995
+
+-- 5) El pago original no se rompió al partirlo: sigue sumando RD$293,000
 SELECT d.pago_id, SUM(d.monto_abonado) AS suma_rd, SUM(d.abonado_usd) AS suma_usd
 FROM public.pagos_suplidores_detalle d
 WHERE d.pago_id = 'fd302cd9-07da-4314-9c60-a9a893cab3ee'
