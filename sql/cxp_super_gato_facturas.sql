@@ -16,14 +16,26 @@
 --                                                                   US$18,075
 --
 -- OJO — ESTAS 3 FACTURAS NO SON TODA LA DEUDA:
---     pendiente actual   US$ 20,820
+--     deuda original     US$ 29,920
 --     detallado ahora    US$ 18,075
 --                        ───────────
---     resto sin factura  US$  2,745   (faltan documentos por ese monto)
+--     sin documentar     US$ 11,845   ← FALTA AL MENOS UNA FACTURA
 --
--- Por eso el saldo inicial NO se anula: se REDUCE en los US$18,075 detallados
--- y queda vivo con el resto. El total pendiente de Super Gato NO cambia
--- (2,745 + 18,075 = 20,820).
+-- Por eso el saldo inicial NO se anula: queda vivo cubriendo lo que todavía
+-- no tiene papel. El total pendiente de Super Gato NO cambia.
+--
+-- >>> EL CONDUCE CNDE004729 NO ES UNA FACTURA APARTE <<<
+-- Es la entrega de la FCR005478: mismo No. externo (23008621), misma fecha y
+-- los MISMOS 4 chasis (LRPRCM900SA000515/000482, LRPRCM909SA000559,
+-- LRPRCM905SA000543). Cargarlo como compra duplicaría US$5,980 y registraría
+-- 4 motos que no existen.
+--
+-- >>> CÓMO AGREGAR LA FACTURA QUE FALTA <<<
+-- Este script RECALCULA (no resta) el saldo inicial a partir de la suma de las
+-- facturas ya detalladas, así que es seguro correrlo las veces que haga falta:
+--   1. Agrega la factura como una fila más en la lista VALUES de abajo.
+--   2. Vuelve a correr el script completo.
+-- El saldo inicial se reajusta solo y el total pendiente sigue cuadrando.
 --
 -- LOS US$9,100 YA PAGADOS SE QUEDAN DONDE ESTÁN (enganchados al saldo inicial).
 -- No se sabe a cuáles facturas correspondían, y como las 3 cargadas son las
@@ -46,11 +58,15 @@
 
 DO $$
 DECLARE
-  v_cam       uuid    := 'b39506c3-27dc-467d-830b-096731b83113';  -- CAMINERO MOTORS
-  v_gato      uuid    := '70aa4652-1a34-4633-b779-110bf1d3abcf';  -- SUPER GATO
-  v_tasa      numeric := 60.00;      -- misma tasa del saldo inicial
-  v_detallado numeric := 18075.00;   -- 6,920 + 5,980 + 5,175
-  r           record;
+  v_cam        uuid    := 'b39506c3-27dc-467d-830b-096731b83113';  -- CAMINERO MOTORS
+  v_gato       uuid    := '70aa4652-1a34-4633-b779-110bf1d3abcf';  -- SUPER GATO
+  v_si_legacy  text    := 'papel:cxp:2026-07-14:6';                -- saldo inicial SI-CXP-6
+  v_tasa       numeric := 60.00;      -- misma tasa del saldo inicial
+  v_total_orig numeric := 29920.00;   -- deuda original del saldo inicial (NO tocar)
+  v_detallado  numeric;               -- se calcula: suma de las facturas cargadas
+  v_pagado     numeric;               -- se calcula: lo ya abonado al saldo inicial
+  v_resto      numeric;
+  r            record;
 BEGIN
   -- 0) El suplidor factura en dólares
   UPDATE public.proveedores
@@ -68,6 +84,13 @@ BEGIN
 
       ('FCR005584', DATE '2025-11-25', 5175.00, '23008705',
        E'3 x BENGALA 250 (2026) @ US$1,725\n137424  LP7DCNL92T0018653  165FMM T0018653  BLANCO\n137492  LP7DCNL98T0018723  165FMM T0018723  ROJO\n137528  LP7DCNL97T0018759  165FMM T0018759  NEGRO')
+
+      -- ↓↓↓ AQUÍ VA LA FACTURA QUE FALTA (hueco de US$11,845) ↓↓↓
+      -- Copia el patrón de arriba, pon una coma al final de la línea anterior
+      -- y vuelve a correr el script completo. Se ajusta todo solo.
+      --
+      -- ,('FCR00XXXX', DATE 'AAAA-MM-DD', 0000.00, '2300XXXX',
+      --   E'N x MODELO (AÑO) @ US$0,000\ncódigo  chasis  máquina  COLOR')
     ) AS t(factura, fecha_fac, total_usd, externo, detalle)
   LOOP
     INSERT INTO public.compras (
@@ -98,25 +121,47 @@ BEGIN
     );
   END LOOP;
 
-  -- 2) El saldo inicial se REDUCE (no se anula): todavía quedan US$2,745 sin
-  --    documentar. Los US$9,100 pagados siguen enganchados aquí, así que la
-  --    fila conserva su monto_pagado y su historial en pagos_suplidores_detalle.
-  --    Guardas: solo una vez y solo si el pendiente alcanza.
+  -- 2) El saldo inicial se RECALCULA contra lo ya detallado.
+  --    No resta: reconstruye el valor desde cero cada vez. Por eso se puede
+  --    correr N veces y se puede agregar la factura que falta después.
+  SELECT COALESCE(SUM(total_usd), 0) INTO v_detallado
+    FROM public.compras
+   WHERE tenant_id = v_cam
+     AND suplidor_id = v_gato
+     AND legacy_id LIKE 'papel:cxp:factura:FCR%';
+
+  -- Lo ya pagado se lee del historial real, no se asume
+  SELECT COALESCE(SUM(d.abonado_usd), 0) INTO v_pagado
+    FROM public.pagos_suplidores_detalle d
+    JOIN public.compras c ON c.id = d.compra_id
+   WHERE c.tenant_id = v_cam AND c.legacy_id = v_si_legacy;
+
+  v_resto := v_total_orig - v_detallado;   -- lo que aún no tiene papel
+
+  IF v_resto < v_pagado THEN
+    -- Las facturas detalladas ya superan lo que queda por documentar:
+    -- el saldo inicial no puede absorberlas sin quedar negativo.
+    RAISE EXCEPTION 'Super Gato: lo detallado (US$%) deja un resto de US$% menor que lo ya pagado (US$%). Revisa las facturas antes de seguir.',
+      v_detallado, v_resto, v_pagado;
+  END IF;
+
+  --    Los US$9,100 pagados siguen enganchados aquí: la fila conserva su
+  --    monto_pagado y su historial en pagos_suplidores_detalle.
   UPDATE public.compras
-     SET total_usd       = total_usd     - v_detallado,
-         pendiente_usd   = pendiente_usd - v_detallado,
-         total_compra    = ROUND((total_usd     - v_detallado) * COALESCE(tasa_cambio, v_tasa), 2),
-         monto_pendiente = ROUND((pendiente_usd - v_detallado) * COALESCE(tasa_cambio, v_tasa), 2),
-         referencia      = referencia || ' — resto; FCR005329/005478/005584 detalladas aparte'
+     SET total_usd       = v_resto,
+         pendiente_usd   = v_resto - v_pagado,
+         total_compra    = ROUND(v_resto * COALESCE(tasa_cambio, v_tasa), 2),
+         monto_pendiente = ROUND((v_resto - v_pagado) * COALESCE(tasa_cambio, v_tasa), 2),
+         estado          = CASE WHEN v_resto - v_pagado <= 0 THEN 'PAGADA' ELSE 'PENDIENTE' END,
+         -- se reescribe entera (no se acumula sufijo al correr de nuevo)
+         referencia      = regexp_replace(referencia, '\s+—.*$', '')
+                           || ' — resto sin documentar (facturas detalladas aparte)'
    WHERE tenant_id   = v_cam
      AND suplidor_id = v_gato
-     AND legacy_id   = 'papel:cxp:2026-07-14:6'
-     AND referencia NOT LIKE '%detalladas aparte%'   -- idempotente
-     AND pendiente_usd >= v_detallado;               -- nunca dejarlo en negativo
+     AND legacy_id   = v_si_legacy;
 
-  IF NOT FOUND THEN
-    RAISE NOTICE 'Saldo inicial de Super Gato NO se tocó (ya estaba detallado, o el pendiente no alcanzaba).';
-  END IF;
+  RAISE NOTICE 'Super Gato: detallado US$% | pagado US$% | resto sin documentar US$% (pendiente US$%)',
+    v_detallado, v_pagado, v_resto, v_resto - v_pagado;
 END $$;
 
 DO $$ BEGIN
@@ -128,7 +173,7 @@ END $$;
 -- ------------------------------------------------------------
 -- VERIFICACIÓN
 -- ------------------------------------------------------------
--- 1) Las 3 facturas con su vencimiento a 6 meses
+-- 1) Las facturas cargadas con su vencimiento a 6 meses
 SELECT c.numero, c.referencia,
        c.fecha, c.dias_credito,
        (c.fecha + c.dias_credito)::date AS vence,
@@ -155,3 +200,15 @@ FROM public.compras
 WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
   AND suplidor_id = '70aa4652-1a34-4633-b779-110bf1d3abcf'
   AND estado = 'PENDIENTE';
+-- esperado: 20,820 USD / 1,249,200 RD — igual que antes de correr el script
+
+-- 4) CUÁNTO FALTA POR DOCUMENTAR (el hueco a buscar en papeles)
+SELECT 29920.00 AS deuda_original_usd,
+       COALESCE(SUM(c.total_usd), 0) AS documentado_usd,
+       29920.00 - COALESCE(SUM(c.total_usd), 0) AS falta_documentar_usd,
+       count(*) AS facturas_cargadas
+FROM public.compras c
+WHERE c.tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
+  AND c.legacy_id LIKE 'papel:cxp:factura:FCR%';
+-- hoy: documentado 18,075 | falta 11,845 | 3 facturas
+-- cuando aparezca la que falta, agrégala arriba y este hueco debe dar 0
