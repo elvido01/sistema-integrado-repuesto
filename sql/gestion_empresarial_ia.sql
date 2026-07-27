@@ -5,10 +5,15 @@
 -- facturar cada mes para cubrir lo que la empresa ya debe?"
 --
 -- Para el mes actual y los 5 siguientes (6 meses) calcula:
---   · compromisos  = compromisos fijos por pagar que vencen ese mes
---                    (nómina, alquiler, luz…; los recurrentes se proyectan)
---   · suplidores   = cuentas por pagar pendientes que vencen ese mes
---                    (cada pagaré vence en fecha + dias_credito)
+--   · compromisos  = los MENSUALES (recurrente + frecuencia mensual: préstamo,
+--                    local, luz…) se repiten en TODOS los meses de la ventana;
+--                    los demás (nómina quincenal, pagos únicos) solo caen en su
+--                    mes. Antes solo se contaban en su mes de origen y los
+--                    meses siguientes salían en cero.
+--   · suplidores   = cuentas por pagar pendientes por su mes de vencimiento
+--                    (fecha + dias_credito). El MES ACTUAL lleva además TODO
+--                    lo ya vencido de antes: esa deuda no desaparece, hay que
+--                    pagarla ahora (antes quedaba fuera del cuadro).
 --   · gastos       = gasto operativo ESTIMADO del mes = promedio diario real
 --                    de los últimos 90 días x días del mes
 --   · total_cubrir = compromisos + suplidores + gastos
@@ -68,26 +73,50 @@ BEGIN
     SELECT (v_mes_ini + (n || ' month')::interval)::date AS mes
     FROM generate_series(0, v_n - 1) n
   ),
-  compromisos_mes AS (  -- fijos por pagar (los ya pagados no cuentan)
-    SELECT date_trunc('month', c.fecha)::date AS mes,
-           SUM(c.monto)  AS monto,
-           COUNT(*)      AS cant
+  comp_activos AS (  -- compromisos aún por pagar
+    SELECT c.monto,
+           date_trunc('month', c.fecha)::date AS mes_origen,
+           -- MENSUAL = se repite todos los meses (préstamo, local, luz…).
+           -- El resto (nómina quincenal, pagos únicos) solo cae en su mes.
+           (COALESCE(c.recurrente, false) = true
+            AND lower(COALESCE(c.frecuencia, 'mensual')) = 'mensual') AS mensual
     FROM public.compromisos c
     WHERE c.tenant_id = v_tenant
       AND COALESCE(c.activo, true) = true          -- activo = aún por pagar
-      AND c.fecha >= v_mes_ini
-    GROUP BY 1
   ),
-  suplidores_mes AS (  -- CxP pendientes por mes de vencimiento
-    SELECT date_trunc('month', (co.fecha + COALESCE(co.dias_credito, 0))::date)::date AS mes,
-           SUM(COALESCE(co.monto_pendiente, 0)) AS monto,
-           COUNT(*)                              AS cant
+  compromisos_mes AS (
+    -- Los MENSUALES se proyectan a todos los meses de la ventana (desde su
+    -- mes de origen en adelante); los demás, solo en el suyo.
+    SELECT m.mes,
+           COALESCE(SUM(ca.monto), 0) AS monto,
+           COUNT(ca.monto)            AS cant
+    FROM meses m
+    LEFT JOIN comp_activos ca
+      ON (ca.mensual  AND m.mes >= LEAST(ca.mes_origen, v_mes_ini))
+      OR (NOT ca.mensual AND m.mes = ca.mes_origen)
+    GROUP BY m.mes
+  ),
+  cxp AS (  -- cada pagaré pendiente con su fecha de vencimiento
+    SELECT (co.fecha + COALESCE(co.dias_credito, 0))::date AS vence,
+           COALESCE(co.monto_pendiente, 0)                 AS monto
     FROM public.compras co
     WHERE co.tenant_id = v_tenant
       AND co.estado = 'PENDIENTE'
       AND co.forma_pago ILIKE '%credito%'
       AND COALESCE(co.monto_pendiente, 0) > 0
-    GROUP BY 1
+  ),
+  suplidores_mes AS (
+    -- El MES ACTUAL lleva lo suyo MÁS todo lo que ya venció antes (la deuda
+    -- atrasada no desaparece: hay que pagarla ahora). Los demás meses, solo
+    -- lo que vence en ese mes.
+    SELECT m.mes,
+           COALESCE(SUM(x.monto), 0) AS monto,
+           COUNT(x.monto)            AS cant
+    FROM meses m
+    LEFT JOIN cxp x
+      ON date_trunc('month', x.vence)::date = m.mes
+      OR (m.mes = v_mes_ini AND x.vence < v_mes_ini)   -- atrasado → mes actual
+    GROUP BY m.mes
   ),
   filas AS (
     SELECT
