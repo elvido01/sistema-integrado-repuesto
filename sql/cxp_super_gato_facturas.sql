@@ -24,11 +24,22 @@
 -- Por eso el saldo inicial NO se anula: queda vivo cubriendo lo que todavía
 -- no tiene papel. El total pendiente de Super Gato NO cambia.
 --
--- >>> EL CONDUCE CNDE004729 NO ES UNA FACTURA APARTE <<<
--- Es la entrega de la FCR005478: mismo No. externo (23008621), misma fecha y
--- los MISMOS 4 chasis (LRPRCM900SA000515/000482, LRPRCM909SA000559,
--- LRPRCM905SA000543). Cargarlo como compra duplicaría US$5,980 y registraría
--- 4 motos que no existen.
+-- >>> LOS CONDUCES NO SON FACTURAS APARTE <<<
+-- Super Gato emite DOS papeles por despacho: un CONDUCE y una PRE-FACTURA, y
+-- ambos llevan el MISMO "No. Externo". Ese número identifica la compra real:
+--
+--   No. Externo   Pre-factura   Conduce        Monto
+--   23008523      FCR005329     CNDE004631     US$ 6,920
+--   23008621      FCR005478     CNDE004729     US$ 5,980
+--   23008705      FCR005584     (sin foto)     US$ 5,175
+--
+-- Los conduces traen los MISMOS códigos y chasis que su pre-factura (chequeado
+-- uno por uno). Cargar un conduce como compra duplicaría el monto y registraría
+-- motos que no existen — el chasis es único, no puede estar en dos compras.
+--
+-- REGLA PARA CLASIFICAR LA PILA: si el No. Externo ya está en la tabla de
+-- arriba, ese papel YA está cargado. Solo es compra nueva si trae un No.
+-- Externo distinto.
 --
 -- >>> CÓMO AGREGAR LA FACTURA QUE FALTA <<<
 -- Este script RECALCULA (no resta) el saldo inicial a partir de la suma de las
