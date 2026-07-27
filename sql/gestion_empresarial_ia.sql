@@ -11,10 +11,14 @@
 --                    Morla eso da los mismos 93,000/mes que muestra el tablero
 --                    (las 2 quincenas de nómina de 35,000 son, juntas, el mes
 --                    completo de 70,000).
---   · suplidores   = cuentas por pagar pendientes por su mes de vencimiento
---                    (fecha + dias_credito). El MES ACTUAL lleva además TODO
---                    lo ya vencido de antes: esa deuda no desaparece, hay que
---                    pagarla ahora (antes quedaba fuera del cuadro).
+--   · suplidores   = cuentas por pagar pendientes (fecha + dias_credito).
+--                    El MES ACTUAL lleva TODO lo vencido + lo que vence hasta
+--                    el CORTE = el mayor entre el fin de mes y el domingo de
+--                    la semana en curso. Así cuadra con el widget "Compromisos
+--                    Suplidores" del tablero, que va por semana y a fin de mes
+--                    se pasa a los primeros días del mes siguiente.
+--                    Los meses siguientes EXCLUYEN lo ya contado en el corte,
+--                    para que ninguna factura se cuente dos veces.
 --   · gastos       = gasto operativo ESTIMADO del mes = promedio diario real
 --                    de los últimos 90 días x días del mes
 --   · total_cubrir = compromisos + suplidores + gastos
@@ -41,7 +45,17 @@ DECLARE
   v_tenant   uuid := public.get_user_tenant();
   v_hoy      date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
   v_mes_ini  date := date_trunc('month', (now() AT TIME ZONE 'America/Santo_Domingo')::date)::date;
+  -- Corte del mes actual: el MAYOR entre el fin de mes y el domingo de la
+  -- semana en curso. A fin de mes la semana se pasa a los primeros días del
+  -- mes siguiente y esas facturas ya hay que tenerlas listas para pagar.
+  v_corte    date;
   v_n        int  := GREATEST(COALESCE(p_meses, 6), 1);
+  -- FINANCIERA con dealer vinculado (MotoPréstamos ← Caminero): la deuda a
+  -- suplidores que importa es la del DEALER, porque es la financiera quien
+  -- pone el dinero para pagarla. El vínculo NO se adivina: sale de
+  -- config_empresa.financiera_tenant_id del dealer apuntando a esta empresa.
+  v_dealer     uuid;
+  v_dealer_nom text;
   v_gasto_d  numeric := 0;   -- gasto promedio por día (últimos 90 días)
   v_margen   numeric;        -- margen bruto (0-1) de los últimos 90 días
   v_ventas   numeric := 0;
@@ -49,6 +63,20 @@ DECLARE
   v_result   json;
 BEGIN
   IF v_tenant IS NULL THEN RAISE EXCEPTION 'No se pudo determinar el tenant'; END IF;
+
+  -- Domingo de la semana en curso (semana lunes→domingo, como el tablero)
+  v_corte := GREATEST(
+    (v_mes_ini + interval '1 month - 1 day')::date,
+    (v_hoy + (7 - EXTRACT(isodow FROM v_hoy)::int))
+  );
+
+  -- ¿Esta empresa es la financiera de algún dealer? (relación configurada)
+  SELECT ce.tenant_id, ce.nombre
+    INTO v_dealer, v_dealer_nom
+  FROM public.config_empresa ce
+  WHERE ce.financiera_tenant_id = v_tenant
+    AND COALESCE(ce.financiamiento_tipo, 'propio') = 'terceros'
+  LIMIT 1;
 
   -- Gasto operativo promedio por día (real, últimos 90 días)
   SELECT COALESCE(SUM(monto), 0) / 90.0 INTO v_gasto_d
@@ -100,26 +128,33 @@ BEGIN
       OR (NOT ca.repite AND m.mes = ca.mes_origen)
     GROUP BY m.mes
   ),
-  cxp AS (  -- cada pagaré pendiente con su fecha de vencimiento
+  cxp AS (  -- cada pagaré pendiente con su fecha de vencimiento.
+            -- En una FINANCIERA con dealer vinculado se toman las CxP del
+            -- DEALER (es la deuda real del grupo con los suplidores, que la
+            -- financiera financia). En cualquier otra empresa, las propias.
     SELECT (co.fecha + COALESCE(co.dias_credito, 0))::date AS vence,
            COALESCE(co.monto_pendiente, 0)                 AS monto
     FROM public.compras co
-    WHERE co.tenant_id = v_tenant
+    WHERE co.tenant_id = COALESCE(v_dealer, v_tenant)
       AND co.estado = 'PENDIENTE'
       AND co.forma_pago ILIKE '%credito%'
       AND COALESCE(co.monto_pendiente, 0) > 0
   ),
   suplidores_mes AS (
-    -- El MES ACTUAL lleva lo suyo MÁS todo lo que ya venció antes (la deuda
-    -- atrasada no desaparece: hay que pagarla ahora). Los demás meses, solo
-    -- lo que vence en ese mes.
+    -- MES ACTUAL = todo lo vencido + lo que vence hasta el CORTE (el domingo
+    -- de la semana en curso), para que cuadre con el widget "Compromisos
+    -- Suplidores" del tablero, que trabaja por semana y a fin de mes se pasa
+    -- a los primeros días del siguiente.
+    -- Los meses siguientes excluyen lo ya contado en el corte: así ninguna
+    -- factura se cuenta dos veces y el total de 6 meses no se infla.
     SELECT m.mes,
            COALESCE(SUM(x.monto), 0) AS monto,
            COUNT(x.monto)            AS cant
     FROM meses m
     LEFT JOIN cxp x
-      ON date_trunc('month', x.vence)::date = m.mes
-      OR (m.mes = v_mes_ini AND x.vence < v_mes_ini)   -- atrasado → mes actual
+      ON (m.mes = v_mes_ini AND x.vence <= v_corte)
+      OR (m.mes > v_mes_ini AND date_trunc('month', x.vence)::date = m.mes
+          AND x.vence > v_corte)
     GROUP BY m.mes
   ),
   filas AS (
@@ -150,6 +185,9 @@ BEGIN
     'generado',        v_hoy,
     'gasto_diario',    ROUND(v_gasto_d, 2),
     'margen_pct',      CASE WHEN v_margen IS NULL THEN NULL ELSE ROUND(v_margen * 100, 2) END,
+    -- Si las CxP vienen del dealer vinculado, se informa de quién son para
+    -- que la pantalla lo diga y nadie confunda de quién es la deuda.
+    'suplidores_de',   v_dealer_nom,
     'meses', COALESCE((
       SELECT json_agg(json_build_object(
         'mes',              to_char(f.mes, 'YYYY-MM'),

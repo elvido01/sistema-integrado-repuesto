@@ -113,7 +113,10 @@ const GestionEmpresarialPage = () => {
             <Tarjeta icon={Receipt} tono="rose" titulo="Compromisos (6m)"
               valor={money0(tot.compromisos)} detalle="Nómina, alquiler, servicios…" />
             <Tarjeta icon={Truck} tono="amber" titulo="Suplidores (6m)"
-              valor={money0(tot.suplidores)} detalle="Cuentas por pagar pendientes" />
+              valor={money0(tot.suplidores)}
+              detalle={data.suplidores_de
+                ? `Cuentas por pagar de ${data.suplidores_de}`
+                : 'Cuentas por pagar pendientes'} />
             <Tarjeta icon={Wallet} tono="slate" titulo="Gastos estimados (6m)"
               valor={money0(tot.gastos)} detalle={`≈ ${money0(data.gasto_diario)}/día (real 90 días)`} />
             <Tarjeta icon={Target} tono="indigo" titulo="Total a cubrir (6m)"
@@ -152,7 +155,12 @@ const GestionEmpresarialPage = () => {
                   <tr>
                     <th className="text-left px-3 py-2">Mes</th>
                     <th className="text-right px-3 py-2">Compromisos</th>
-                    <th className="text-right px-3 py-2">Suplidores</th>
+                    <th className="text-right px-3 py-2">
+                      Suplidores
+                      {data.suplidores_de && (
+                        <div className="font-normal normal-case text-[10px] text-amber-700">{data.suplidores_de}</div>
+                      )}
+                    </th>
                     <th className="text-right px-3 py-2">Gastos est.</th>
                     <th className="text-right px-3 py-2">Total a cubrir</th>
                     <th className="text-right px-3 py-2">Hay que facturar</th>
