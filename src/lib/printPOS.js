@@ -1,4 +1,4 @@
-import { formatInTimeZone } from './dateUtils';
+import { formatInTimeZone, formatFechaDMY } from './dateUtils';
 import { printHtmlSmart, printViaBrowser } from './printHtmlSmart';
 
 // Emite una plantilla HTML. Si el usuario activó "impresión sin diálogo" y el
@@ -2122,7 +2122,9 @@ export const printCotizacionQZ = async (cotizacion, detalles) => {
 
 export const printCompraPOS = (compra, suplidor, detalles, paperSize = '4inch') => {
   const fechaStr = compra.fecha
-    ? formatInTimeZone(new Date(compra.fecha), 'd/L/yyyy')
+    // formatFechaDMY formatea por texto: new Date('2026-07-22') se lee como
+    // medianoche UTC y al pasarlo a Santo Domingo (UTC-4) imprimia el dia anterior.
+    ? formatFechaDMY(compra.fecha)
     : 'N/A';
   const horaStr = formatInTimeZone(new Date(), 'hh:mm a');
   const numeroStr = String(compra.numero || 'N/A');
@@ -2455,7 +2457,7 @@ export const printOrdenCompraPOS = (orden, suplidor, detalles, paperSize = '4inc
 // PAGO A SUPLIDORES — POS (4" / 80mm HTML)
 // ═══════════════════════════════════════════════════════
 export const printPagoSuplidorPOS = (pago, suplidorNombre, detalles, formasPago, paperSize = '4inch') => {
-  const fechaStr = pago.fecha ? formatInTimeZone(new Date(pago.fecha), 'd/L/yyyy') : 'N/A';
+  const fechaStr = pago.fecha ? formatFechaDMY(pago.fecha) : 'N/A';
   const horaStr = formatInTimeZone(new Date(), 'hh:mm a');
   const numeroStr = String(pago.numero || 'N/A').padStart(7, '0');
 
