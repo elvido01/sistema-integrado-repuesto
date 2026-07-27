@@ -41,7 +41,9 @@ for (;;) {
   if (error) { console.error('Error leyendo productos:', error.message); process.exit(1); }
   for (const r of data) {
     if (r.legacy_id != null) byLegacy.set(Number(r.legacy_id), r.id);
-    if (r.codigo) byCodigo.set(String(r.codigo).trim(), r.id);
+    // En MAYÚSCULAS, igual que en fase1-cargar-clientes: el SiiF trae el mismo
+    // código escrito de las dos formas y casando así se creaba un duplicado.
+    if (r.codigo) byCodigo.set(String(r.codigo).trim().toUpperCase(), r.id);
   }
   if (data.length < 1000) break;
   from += 1000;
@@ -49,7 +51,7 @@ for (;;) {
 
 let nuevos = 0, actualizar = 0;
 const rows = items.map((p) => {
-  let id = byLegacy.get(Number(p.legacy_id)) || byCodigo.get(String(p.codigo).trim());
+  let id = byLegacy.get(Number(p.legacy_id)) || byCodigo.get(String(p.codigo).trim().toUpperCase());
   if (id) actualizar++; else { id = crypto.randomUUID(); nuevos++; }
   return row(p, id);
 });

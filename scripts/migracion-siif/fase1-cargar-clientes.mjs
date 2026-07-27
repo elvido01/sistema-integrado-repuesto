@@ -74,7 +74,11 @@ for (;;) {
   for (const r of data) {
     existing.push(r);
     if (r.legacy_id != null) byLegacy.set(Number(r.legacy_id), r.id);
-    if (r.codigo) byCodigo.set(String(r.codigo).trim(), r.id);
+    // El código se indexa en MAYÚSCULAS: el SiiF tiene el mismo cliente escrito
+    // "RD1447762" y "rd1447762". Casando con mayúsculas/minúsculas se creaba una
+    // ficha duplicada y los pagos nuevos caían en ella, dejando el préstamo sin
+    // historial y la última fecha de pago vieja.
+    if (r.codigo) byCodigo.set(String(r.codigo).trim().toUpperCase(), r.id);
   }
   if (data.length < 1000) break;
   from += 1000;
@@ -84,7 +88,7 @@ for (;;) {
 let nuevos = 0, actualizar = 0;
 const usedIds = new Set();
 const prelim = clientes.map((c) => {
-  let id = byLegacy.get(Number(c.legacy_id)) || byCodigo.get(String(c.codigo).trim());
+  let id = byLegacy.get(Number(c.legacy_id)) || byCodigo.get(String(c.codigo).trim().toUpperCase());
   if (id) actualizar++; else { id = crypto.randomUUID(); nuevos++; }
   usedIds.add(id);
   return { c, id };
