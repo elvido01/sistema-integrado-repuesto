@@ -233,7 +233,10 @@ const ComprasPage = () => {
       setCompra({
         id: filaDetalle.id,
         numero: esGrupo ? baseNum : data.numero,   // en grupo, el número base (sin sufijo)
-        fecha: new Date(filaDetalle.fecha),
+        // T12:00:00 a proposito: new Date('2026-07-22') se lee como medianoche
+        // UTC y en Santo Domingo (UTC-4) cae el dia 21. Al guardar se grababa
+        // corrido, asi que cada edicion retrocedia la fecha un dia.
+        fecha: new Date(`${String(filaDetalle.fecha).slice(0, 10)}T12:00:00`),
         ncf: filaDetalle.ncf || '',
         referencia: data.referencia || '',
         tipo_bienes_servicios: filaDetalle.tipo_bienes_servicios || '09',
@@ -272,7 +275,7 @@ const ComprasPage = () => {
           .sort((a, b) => String(a.numero).localeCompare(String(b.numero), undefined, { numeric: true }))
           .map((g, i) => {
             const dias = Number(g.dias_credito || 0);
-            const venc = new Date(new Date(g.fecha).getTime() + dias * 86400000);
+            const venc = new Date(new Date(`${String(g.fecha).slice(0, 10)}T12:00:00`).getTime() + dias * 86400000);
             const monto = tasaCompraUSD ? Number(g.total_usd ?? aUSD(g.total_compra)) : Number(g.total_compra || 0);
             const y = venc.getFullYear();
             const m = String(venc.getMonth() + 1).padStart(2, '0');
@@ -1296,7 +1299,14 @@ const ComprasPage = () => {
       // "Factura 27324 - Pagaré 6/6 (Motores del Sur)".
       const suplidorNombre = (proveedores.find(p => p.id === compra.suplidor_id)?.nombre || '').trim();
       const refPagare = (idx, total) => {
-        const fact = (compra.referencia || '').trim();
+        // Al EDITAR, compra.referencia ya viene con la etiqueta puesta
+        // ("Factura X - Pagaré 3/15 (Suplidor)"). Volver a envolverla dejaba
+        // "Factura Factura X - Pagaré 3/15 (...) - Pagaré 3/15 (...)".
+        // Se recorta primero a la factura pelada.
+        const fact = String(compra.referencia || '')
+          .replace(/\s*-\s*(?:pagar[ée]|cuota)\s+\d+\s*\/\s*\d+.*$/i, '')
+          .replace(/^(?:\s*factura\s+)+/i, '')   // puede venir "Factura Factura ..."
+          .trim();
         return [
           fact ? `Factura ${fact}` : 'Factura',
           `- Pagaré ${idx + 1}/${total}`,
