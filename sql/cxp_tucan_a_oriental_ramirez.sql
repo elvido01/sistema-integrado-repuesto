@@ -18,6 +18,11 @@
 -- (6618-P1 completo, 6644-P1 completo y 854 al 6618-P2), igual que en una
 -- cascada normal. El total pendiente NO cambia.
 --
+-- La fila vieja del saldo inicial se ANULA (no se borra): los pagos ya
+-- aplicados la referencian desde pagos_suplidores_detalle y borrarla romperia
+-- la integridad y el rastro de los RD$594,500 pagados. Anulada sale de la CxP
+-- (pendiente 0) pero el historial queda completo.
+--
 -- Vencimientos cada 30 días desde la fecha de la factura (confirmado con el
 -- usuario). Nota: Motores del Sur también factura su primer pagaré a ~30
 -- días (verificado en la factura 028468: dias_credito 31/62/92/123/153/184).
@@ -88,9 +93,21 @@ BEGIN
      SET suplidor_id = v_oriental
    WHERE tenant_id = v_cam AND suplidor_id = v_tucan;
 
-  -- 3) Fuera el "SALDO INICIAL papel" de TUCAN: ya está detallado arriba
-  DELETE FROM public.compras
-   WHERE tenant_id = v_cam AND suplidor_id = v_tucan;
+  -- 3) El "SALDO INICIAL papel" se ANULA, no se borra.
+  --    Los pagos ya aplicados (pagos_suplidores_detalle) apuntan a esa fila:
+  --    borrarla romperia la integridad y perderia el rastro de los RD$594,500
+  --    que ya se pagaron. Anulada queda fuera de la CxP (pendiente 0) pero el
+  --    historial sigue completo y auditable. Pasa al suplidor correcto para
+  --    que TUCAN quede libre.
+  UPDATE public.compras
+     SET suplidor_id     = v_oriental,
+         estado          = 'ANULADA',
+         monto_pendiente = 0,
+         pendiente_usd   = 0,
+         referencia      = referencia || ' — detallado en facturas VCRO-6618 y VCRO-6644'
+   WHERE tenant_id = v_cam
+     AND suplidor_id = v_tucan
+     AND referencia NOT LIKE '%VCRO-%';   -- idempotente
 
   -- 4) TUCAN desaparece como suplidor (solo si ya no lo referencia nada)
   IF NOT EXISTS (SELECT 1 FROM public.compras          WHERE suplidor_id = v_tucan)
@@ -133,3 +150,10 @@ WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
 SELECT count(*) AS tucan_restante
 FROM public.proveedores
 WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113' AND nombre = 'TUCAN';
+
+-- 4) El saldo inicial viejo queda ANULADO y con los pagos aún enlazados
+SELECT c.numero, c.estado, c.pendiente_usd, c.referencia,
+       (SELECT count(*) FROM public.pagos_suplidores_detalle d WHERE d.compra_id = c.id) AS pagos_enlazados
+FROM public.compras c
+WHERE c.tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
+  AND c.referencia LIKE '%SALDO INICIAL%VCRO%';
