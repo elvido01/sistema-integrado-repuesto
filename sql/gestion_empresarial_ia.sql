@@ -5,11 +5,12 @@
 -- facturar cada mes para cubrir lo que la empresa ya debe?"
 --
 -- Para el mes actual y los 5 siguientes (6 meses) calcula:
---   · compromisos  = los MENSUALES (recurrente + frecuencia mensual: préstamo,
---                    local, luz…) se repiten en TODOS los meses de la ventana;
---                    los demás (nómina quincenal, pagos únicos) solo caen en su
---                    mes. Antes solo se contaban en su mes de origen y los
---                    meses siguientes salían en cero.
+--   · compromisos  = todos los RECURRENTES se repiten en TODOS los meses de la
+--                    ventana (préstamo, local, luz, nómina…), sin importar la
+--                    frecuencia; los pagos únicos solo caen en su mes. Para
+--                    Morla eso da los mismos 93,000/mes que muestra el tablero
+--                    (las 2 quincenas de nómina de 35,000 son, juntas, el mes
+--                    completo de 70,000).
 --   · suplidores   = cuentas por pagar pendientes por su mes de vencimiento
 --                    (fecha + dias_credito). El MES ACTUAL lleva además TODO
 --                    lo ya vencido de antes: esa deuda no desaparece, hay que
@@ -76,24 +77,27 @@ BEGIN
   comp_activos AS (  -- compromisos aún por pagar
     SELECT c.monto,
            date_trunc('month', c.fecha)::date AS mes_origen,
-           -- MENSUAL = se repite todos los meses (préstamo, local, luz…).
-           -- El resto (nómina quincenal, pagos únicos) solo cae en su mes.
-           (COALESCE(c.recurrente, false) = true
-            AND lower(COALESCE(c.frecuencia, 'mensual')) = 'mensual') AS mensual
+           -- RECURRENTE = carga fija que se repite mes a mes, sin importar la
+           -- frecuencia. Las dos quincenas de nómina (35,000 c/u) son juntas
+           -- el mes completo (70,000), así que sumarlas UNA vez por mes da el
+           -- costo mensual correcto. Antes solo se proyectaba frecuencia
+           -- 'mensual' y las quincenales quedaban fuera (salían 58,000 en vez
+           -- de los 93,000 que muestra el tablero).
+           COALESCE(c.recurrente, false) AS repite
     FROM public.compromisos c
     WHERE c.tenant_id = v_tenant
       AND COALESCE(c.activo, true) = true          -- activo = aún por pagar
   ),
   compromisos_mes AS (
-    -- Los MENSUALES se proyectan a todos los meses de la ventana (desde su
-    -- mes de origen en adelante); los demás, solo en el suyo.
+    -- Los recurrentes se proyectan a todos los meses de la ventana; los que
+    -- no se repiten (pagos únicos) solo caen en su mes.
     SELECT m.mes,
            COALESCE(SUM(ca.monto), 0) AS monto,
            COUNT(ca.monto)            AS cant
     FROM meses m
     LEFT JOIN comp_activos ca
-      ON (ca.mensual  AND m.mes >= LEAST(ca.mes_origen, v_mes_ini))
-      OR (NOT ca.mensual AND m.mes = ca.mes_origen)
+      ON (ca.repite AND m.mes >= LEAST(ca.mes_origen, v_mes_ini))
+      OR (NOT ca.repite AND m.mes = ca.mes_origen)
     GROUP BY m.mes
   ),
   cxp AS (  -- cada pagaré pendiente con su fecha de vencimiento
