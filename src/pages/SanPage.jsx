@@ -11,9 +11,76 @@ import { formatFechaDMY } from '@/lib/dateUtils';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos, agruparEnBloques, bloquesAbiertos } from '@/lib/sanUtils';
+import { estadoDia, estadisticasSan, aplicarPagoEnCascada, planPagos, diarioMaximo, redondearDiario, agruparEnBloques, bloquesAbiertos } from '@/lib/sanUtils';
 
 const hoyTZ = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
+
+// Pago diario editable. Por defecto es meta ÷ días (3,333.33), pero se puede
+// fijar en un monto redondo para cobrar cómodo (3,300) y el ÚLTIMO día absorbe
+// la diferencia — de más o de menos. La meta NUNCA se mueve.
+const PagoDiarioBox = ({ monto, dias, diario, onChange, money }) => {
+  const m = Number(monto) || 0;
+  const n = Math.trunc(Number(dias) || 0);
+  if (m <= 0 || n <= 0) return null;
+
+  const plan = planPagos(m, n, diario);
+  const manual = Number(diario) > 0;
+  // Se muestran los montos redondos que resultan, no los múltiplos: redondear
+  // 3,333.33 a 50 y a 100 da 3,300 en ambos casos, así que sería un botón
+  // repetido. Se descartan duplicados y el que dé el mismo valor automático.
+  const sugeridos = [...new Set(
+    [50, 100, 500, 1000, 5000]
+      .filter((x) => x < m / n)
+      .map((x) => redondearDiario(m, n, x))
+  )].filter((x) => x !== plan.pagoDiario).slice(0, 3);
+  const tono = plan.valido
+    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+    : 'bg-red-50 text-red-700 border-red-200';
+
+  return (
+    <div className={`rounded-lg border p-3 space-y-2 ${tono}`}>
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium shrink-0">Pago diario (RD$)</label>
+        <Input type="text" inputMode="decimal" className="h-8 text-right bg-white"
+          value={manual ? fmtMontoInput(diario) : fmtMontoInput(String(plan.pagoDiario))}
+          onChange={(e) => onChange(parseMontoInput(e.target.value))} />
+      </div>
+
+      {n > 1 && (sugeridos.length > 0 || manual) && (
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-xs opacity-70 mr-1">Redondear a:</span>
+          {sugeridos.map((x) => (
+            <button key={x} type="button" onClick={() => onChange(String(x))}
+              className="text-xs px-2 py-0.5 rounded border border-current/30 bg-white/70 hover:bg-white font-semibold">
+              {x.toLocaleString('en-US')}
+            </button>
+          ))}
+          {manual && (
+            <button type="button" onClick={() => onChange('')}
+              className="text-xs px-2 py-0.5 rounded border border-current/30 bg-white/70 hover:bg-white">
+              Automático
+            </button>
+          )}
+        </div>
+      )}
+
+      {plan.valido ? (
+        <div className="text-sm">
+          {n > 1 ? (
+            <>{n - 1} días × <b>{money(plan.pagoDiario)}</b> + último día <b>{money(plan.ultimoDia)}</b> = {money(m)}</>
+          ) : (
+            <>Un solo día: <b>{money(plan.pagoDiario)}</b></>
+          )}
+        </div>
+      ) : (
+        <div className="text-sm font-medium">
+          Ese pago diario no cabe en {n} días: el último día quedaría en {money(plan.ultimoDia)}.
+          El máximo es {money(diarioMaximo(m, n))}.
+        </div>
+      )}
+    </div>
+  );
+};
 
 const SanPage = () => {
   const { toast } = useToast();
@@ -30,13 +97,14 @@ const SanPage = () => {
   const [tabDetalle, setTabDetalle] = useState('calendario');
 
   const [crearOpen, setCrearOpen] = useState(false);
-  const [crearForm, setCrearForm] = useState({ nombre: '', monto: '', dias: '', inicio: hoyTZ(), cuenta: null });
+  // diario: '' = automático (meta ÷ días). Con valor, se fija y el último día ajusta.
+  const [crearForm, setCrearForm] = useState({ nombre: '', monto: '', dias: '', inicio: hoyTZ(), cuenta: null, diario: '' });
   const [pagoDia, setPagoDia] = useState(null);      // cuadro tocado
   const [pagoForm, setPagoForm] = useState({ monto: '', observaciones: '' });
   const [celebrar, setCelebrar] = useState(false);
   const [elimOpen, setElimOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ nombre: '', monto: '', dias: '', inicio: '', cuenta: null });
+  const [editForm, setEditForm] = useState({ nombre: '', monto: '', dias: '', inicio: '', cuenta: null, diario: '' });
   const [cuentasInfo, setCuentasInfo] = useState({}); // id -> { label, saldo, moneda }
   // Deudas personales: lista propia del módulo, se conserva para futuros SAN
   const [deudas, setDeudas] = useState([]);
@@ -122,12 +190,19 @@ const SanPage = () => {
   }, [cargar, abrirSan]);
 
   // ------- crear -------
-  const plan = useMemo(() => planPagos(Number(crearForm.monto) || 0, Number(crearForm.dias) || 1), [crearForm]);
+  const plan = useMemo(
+    () => planPagos(Number(crearForm.monto) || 0, Number(crearForm.dias) || 1, crearForm.diario),
+    [crearForm]);
   const crear = async () => {
     const monto = Number(String(crearForm.monto).replace(/,/g, '')) || 0;
     const dias = Math.trunc(Number(crearForm.dias)) || 0;
     if (!crearForm.nombre.trim() || monto <= 0 || dias <= 0) {
       toast({ variant: 'destructive', title: 'Completa nombre, monto y días' });
+      return;
+    }
+    if (!plan.valido) {
+      toast({ variant: 'destructive', title: 'Pago diario muy alto',
+        description: `Con ${dias} días el máximo es ${money(diarioMaximo(monto, dias))}.` });
       return;
     }
     setBusy(true);
@@ -136,11 +211,12 @@ const SanPage = () => {
         p_nombre: crearForm.nombre.trim(), p_monto_objetivo: monto,
         p_dias: dias, p_fecha_inicio: crearForm.inicio || null,
         p_cuenta_bancaria_id: crearForm.cuenta || null,
+        p_pago_diario: Number(crearForm.diario) > 0 ? Number(crearForm.diario) : null,
       });
       if (error) throw error;
       toast({ title: '🎯 SAN creado', description: `Pago diario: ${money(data.pago_diario)} · meta el ${formatFechaDMY(String(data.fecha_fin))}` });
       setCrearOpen(false);
-      setCrearForm({ nombre: '', monto: '', dias: '', inicio: hoyTZ(), cuenta: null });
+      setCrearForm({ nombre: '', monto: '', dias: '', inicio: hoyTZ(), cuenta: null, diario: '' });
       const nuevo = await refrescarSel(data.san_id);
       if (!nuevo) await cargar();
     } catch (e) {
@@ -219,13 +295,22 @@ const SanPage = () => {
   };
 
   const abrirEditar = () => {
+    // Si el SAN ya venía con un diario redondeado, se precarga tal cual; si era
+    // el automático (meta ÷ días), se deja vacío para que siga siendo automático.
+    const auto = planPagos(Number(sanSel.monto_objetivo), Number(sanSel.dias));
+    const guardado = Number(sanSel.pago_diario);
     setEditForm({
       nombre: sanSel.nombre, monto: String(sanSel.monto_objetivo),
       dias: String(sanSel.dias), inicio: String(sanSel.fecha_inicio),
       cuenta: sanSel.cuenta_bancaria_id || null,
+      diario: guardado > 0 && guardado !== auto.pagoDiario ? String(guardado) : '',
     });
     setEditOpen(true);
   };
+
+  const planEdit = useMemo(
+    () => planPagos(Number(editForm.monto) || 0, Number(editForm.dias) || 1, editForm.diario),
+    [editForm]);
 
   const editar = async () => {
     const monto = Number(String(editForm.monto).replace(/,/g, '')) || 0;
@@ -234,12 +319,18 @@ const SanPage = () => {
       toast({ variant: 'destructive', title: 'Completa nombre, monto y días' });
       return;
     }
+    if (!planEdit.valido) {
+      toast({ variant: 'destructive', title: 'Pago diario muy alto',
+        description: `Con ${dias} días el máximo es ${money(diarioMaximo(monto, dias))}.` });
+      return;
+    }
     setBusy(true);
     try {
       const { data, error } = await supabase.rpc('san_editar', {
         p_san_id: sanSel.id, p_nombre: editForm.nombre.trim(),
         p_monto_objetivo: monto, p_dias: dias, p_fecha_inicio: editForm.inicio,
         p_cuenta_bancaria_id: editForm.cuenta || null,
+        p_pago_diario: Number(editForm.diario) > 0 ? Number(editForm.diario) : null,
       });
       if (error) throw error;
       toast({
@@ -621,16 +712,12 @@ const SanPage = () => {
                   onChange={(v) => setCrearForm((p) => ({ ...p, cuenta: v }))}
                   moneda="DOP" contexto="san" label={null} />
               </div>
-              {Number(crearForm.monto) > 0 && Number(crearForm.dias) > 0 && (
-                <div className="rounded-lg bg-emerald-50 text-emerald-800 p-3 text-sm">
-                  Pago diario: <b>{money(plan.pagoDiario)}</b>
-                  {plan.ultimoDia !== plan.pagoDiario && <> · último día {money(plan.ultimoDia)}</>}
-                </div>
-              )}
+              <PagoDiarioBox monto={crearForm.monto} dias={crearForm.dias} diario={crearForm.diario}
+                onChange={(v) => setCrearForm((p) => ({ ...p, diario: v }))} money={money} />
             </div>
             <DialogFooter>
               <DialogClose asChild><Button variant="outline" disabled={busy}>Cancelar</Button></DialogClose>
-              <Button onClick={crear} disabled={busy}>
+              <Button onClick={crear} disabled={busy || !plan.valido}>
                 {busy ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}Crear SAN
               </Button>
             </DialogFooter>
@@ -897,6 +984,8 @@ const SanPage = () => {
                 onChange={(v) => setEditForm((p) => ({ ...p, cuenta: v }))}
                 moneda="DOP" contexto="san" autoDefault={false} label={null} />
             </div>
+            <PagoDiarioBox monto={editForm.monto} dias={editForm.dias} diario={editForm.diario}
+              onChange={(v) => setEditForm((p) => ({ ...p, diario: v }))} money={money} />
             <p className="text-xs text-muted-foreground">
               El calendario se regenera con el plan nuevo y lo ya ahorrado
               {Number(sanSel?.monto_ahorrado) > 0 && <> (<b>{money(sanSel.monto_ahorrado)}</b>)</>} se
@@ -905,7 +994,7 @@ const SanPage = () => {
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" disabled={busy}>Cancelar</Button></DialogClose>
-            <Button onClick={editar} disabled={busy}>
+            <Button onClick={editar} disabled={busy || !planEdit.valido}>
               {busy ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Pencil className="w-4 h-4 mr-1" />}Guardar cambios
             </Button>
           </DialogFooter>

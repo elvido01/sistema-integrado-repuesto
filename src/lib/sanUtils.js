@@ -6,12 +6,37 @@
 
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
-export function planPagos(montoObjetivo, dias) {
+// diarioManual: si se pasa, ése es el pago de todos los días menos el último,
+// que absorbe lo que falte o lo que sobre. Sirve para cobrar montos redondos
+// (3,300 en vez de 3,333.33) sin mover la meta.
+export function planPagos(montoObjetivo, dias, diarioManual) {
   const objetivo = Number(montoObjetivo) || 0;
   const n = Math.max(1, Math.trunc(Number(dias) || 1));
-  const pagoDiario = round2(objetivo / n);
+  const manual = round2(Number(diarioManual) || 0);
+  // Con un solo día no hay nada que repartir: ese día es la meta completa.
+  const pagoDiario = n === 1 ? round2(objetivo)
+    : (manual > 0 ? manual : round2(objetivo / n));
   const ultimoDia = round2(objetivo - pagoDiario * (n - 1));
-  return { pagoDiario, ultimoDia, dias: n };
+  return { pagoDiario, ultimoDia, dias: n, valido: ultimoDia > 0 };
+}
+
+// Mayor pago diario posible sin que el último día quede en cero o negativo.
+// Se usa ceil()-1 y no floor(): cuando la división es exacta (7,400 en 3 días
+// da 3,700 justo) floor devolvería un valor que deja el último día en cero.
+export function diarioMaximo(montoObjetivo, dias) {
+  const objetivo = Number(montoObjetivo) || 0;
+  const n = Math.max(1, Math.trunc(Number(dias) || 1));
+  if (n === 1) return round2(objetivo);
+  return round2((Math.ceil((objetivo / (n - 1)) * 100) - 1) / 100);
+}
+
+// Redondea el pago diario HACIA ABAJO al múltiplo pedido (50, 100, 500...).
+// Hacia abajo siempre es seguro: el último día crece, nunca se vuelve negativo.
+export function redondearDiario(montoObjetivo, dias, multiplo) {
+  const n = Math.max(1, Math.trunc(Number(dias) || 1));
+  const m = Number(multiplo) || 1;
+  const base = (Number(montoObjetivo) || 0) / n;
+  return Math.max(m, Math.floor(base / m) * m);
 }
 
 // diasPendientes: [{ numero_dia, falta }] en orden (el día tocado primero,
