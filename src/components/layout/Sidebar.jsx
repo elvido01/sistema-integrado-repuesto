@@ -39,6 +39,7 @@ import {
   CalendarClock,
   PiggyBank,
   Landmark,
+  TrendingUp,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -64,10 +65,11 @@ const navItems = [
     ],
   },
   {
-    title: 'MORLA AI CEO',
+    title: 'MOTOFLOW IA CEO',
     icon: Brain,
     subItems: [
       { title: 'Dashboard IA', id: 'ai-ceo', icon: Brain, tenantOnly: '00000000-0000-0000-0000-000000000001' },
+      { title: 'Gestión Empresarial IA', id: 'gestion-empresarial', icon: TrendingUp, tenantOnly: '00000000-0000-0000-0000-000000000001' },
     ],
   },
   {

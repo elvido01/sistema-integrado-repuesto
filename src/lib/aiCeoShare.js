@@ -56,7 +56,7 @@ export function buildAiCeoWhatsAppMessage(report) {
         lines.push(`📈 Salud del negocio: *${snapshot.score}/100*`);
     }
 
-    lines.push(`_Reporte IA · ${fechaFmt} · MORLA AI CEO_`);
+    lines.push(`_Reporte IA · ${fechaFmt} · MOTOFLOW IA CEO_`);
 
     return lines.filter((l) => l != null).join('\n');
 }

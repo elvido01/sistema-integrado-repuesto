@@ -104,7 +104,7 @@ export default function AiReportViewer({ reportType = 'daily', maxItems = 1 }) {
                     <div class="accion-porque"><strong>Por qué:</strong> ${a.porque}</div>
                 </div>
             `).join('')}
-            <footer>Generado por MORLA AI CEO · Modelo: ${r.model || 'gpt-4o-mini'} · Costo análisis: $${Number(r.cost_usd || 0).toFixed(4)}</footer>
+            <footer>Generado por MOTOFLOW IA CEO · Modelo: ${r.model || 'gpt-4o-mini'} · Costo análisis: $${Number(r.cost_usd || 0).toFixed(4)}</footer>
             <script>setTimeout(() => window.print(), 300);</script>
         </body></html>`);
         w.document.close();

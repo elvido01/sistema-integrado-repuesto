@@ -37,7 +37,7 @@ const formatVoiceError = async (err) => {
   }
 
   if (/Failed to send a request to the Edge Function/i.test(rawMessage)) {
-    return 'No pude conectar con Morla AI CEO.';
+    return 'No pude conectar con MotoFlow IA CEO.';
   }
 
   return rawMessage || 'No pude consultar el sistema.';
@@ -107,7 +107,7 @@ export default function JarvisAdminAssistant() {
       });
 
       if (fnError) throw fnError;
-      if (!data?.ok) throw new Error(data?.mensaje || data?.error || 'Morla AI CEO no respondio.');
+      if (!data?.ok) throw new Error(data?.mensaje || data?.error || 'MotoFlow IA CEO no respondio.');
 
       if (data.session_id) setSessionId(data.session_id);
       setLastMessage(data.answer || '');

@@ -1,7 +1,7 @@
 // ============================================================
 // DesignProPage.jsx — Modulo "Disen~o Pro" (estilo Canva)
 // ============================================================
-// Pestan~a dentro de MORLA AI CEO. Solo plan ENTERPRISE.
+// Pestan~a dentro de MOTOFLOW IA CEO. Solo plan ENTERPRISE.
 // Vistas internas:
 //   - galeria   : grid de plantillas pre-armadas + boton "Crear con IA"
 //   - editor    : Polotno embebido para editar un disen~o concreto

@@ -52,6 +52,7 @@ import AprobacionesComprasPage from '@/pages/AprobacionesComprasPage';
 import GruposEquivalentesPage from '@/pages/GruposEquivalentesPage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
 import AICeoPage from '@/pages/AICeoPage';
+import GestionEmpresarialPage from '@/pages/GestionEmpresarialPage';
 import PlanesPage from '@/pages/PlanesPage';
 import WhatsAppCrmPage from '@/pages/WhatsAppCrmPage';
 import GpsDashboardPage from '@/pages/gps/GpsDashboardPage';
@@ -148,7 +149,8 @@ const componentMapping = {
   'aprobaciones-compras': { component: () => <Protected module="aprobaciones-compras"><AprobacionesComprasPage /></Protected>, icon: ClipboardList, name: 'Aprobaciones de Compras' },
   'grupos-equivalentes': { component: () => <Protected module="grupos-equivalentes"><GruposEquivalentesPage /></Protected>, icon: Sparkles, name: 'Productos Equivalentes' },
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
-  'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MORLA AI CEO' },
+  'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MOTOFLOW IA CEO' },
+  'gestion-empresarial': { component: () => <Protected module="gestion-empresarial"><GestionEmpresarialPage /></Protected>, icon: Brain, name: 'Gestión Empresarial IA' },
   'whatsapp-crm': { component: () => <Protected module="whatsapp-crm"><PlanGate nombre="Sales Hub / CRM"><WhatsAppCrmPage /></PlanGate></Protected>, icon: MessageCircle, name: 'Sales Hub' },
   'seguimientos-hoy': { component: () => <Protected module="clientes"><SeguimientosHoyPage /></Protected>, icon: CalendarClock, name: 'Seguimientos de Hoy' },
   'gps-dashboard': { component: () => <Protected module="gps-dashboard"><GpsDashboardPage /></Protected>, icon: RadioTower, name: 'GPS Dashboard' },

@@ -26,7 +26,7 @@ const SETTING_META = {
     llm_model:               { label: 'Modelo LLM por defecto',          help: 'gpt-4o-mini / gpt-4o / claude-haiku',        tipo: 'string' },
     email_resumen_enabled:   { label: 'Email diario habilitado',          help: 'Requiere RESEND_API_KEY como Supabase secret. true/false', tipo: 'string' },
     email_resumen_recipients:{ label: 'Email recipients (separar con ,)', help: 'Ej: dueño@morla.com, admin@morla.com',       tipo: 'string' },
-    email_from:              { label: 'Email "From"',                     help: 'Default: MORLA AI CEO <onboarding@resend.dev>', tipo: 'string' },
+    email_from:              { label: 'Email "From"',                     help: 'Default: MOTOFLOW IA CEO <onboarding@resend.dev>', tipo: 'string' },
 };
 
 export default function AiSettingsPanel() {
@@ -146,7 +146,7 @@ export default function AiSettingsPanel() {
 
             {/* Equipo de agentes */}
             <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
-                <h3 className="text-base font-bold text-slate-800 mb-3">Equipo MORLA AI CEO</h3>
+                <h3 className="text-base font-bold text-slate-800 mb-3">Equipo MOTOFLOW IA CEO</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     {agents.map((a) => (
                         <div key={a.id} className="border border-slate-200 rounded p-2 flex gap-2 items-start">

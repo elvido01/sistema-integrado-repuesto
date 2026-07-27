@@ -116,7 +116,7 @@ const NotificationBell = () => {
                                                 onDoubleClick={() => handleDoubleClick(n)}
                                                 title={
                                                     n.tipo === 'credito_vencido' ? 'Doble clic para abrir Recibo de Ingreso'
-                                                    : n.tipo === 'resumen_ai_ceo' ? 'Doble clic para abrir MORLA AI CEO'
+                                                    : n.tipo === 'resumen_ai_ceo' ? 'Doble clic para abrir MOTOFLOW IA CEO'
                                                     : 'Doble clic para ir al módulo'
                                                 }
                                                 className={`px-4 py-3.5 hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer select-none ${

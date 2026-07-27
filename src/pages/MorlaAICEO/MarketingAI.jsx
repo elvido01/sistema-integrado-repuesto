@@ -1,5 +1,5 @@
 // ============================================================
-// MarketingAI.jsx — Marketing IA / YouTube (tab de MORLA AI CEO)
+// MarketingAI.jsx — Marketing IA / YouTube (tab de MOTOFLOW IA CEO)
 // ============================================================
 // Flujo guiado: generar sugerencias -> elegir producto -> propuesta
 // -> aceptar / regenerar -> generar imagen (opt-in). No publica solo.

@@ -1,5 +1,5 @@
 // ============================================================
-// AICeoPage.jsx — MORLA AI CEO Dashboard (Fase 1)
+// AICeoPage.jsx — MOTOFLOW IA CEO Dashboard (Fase 1)
 // ============================================================
 // Centro de mando inteligente. Tres pestañas internas:
 //   1. Dashboard   → Health score + alertas críticas + reporte
@@ -148,7 +148,7 @@ export default function AICeoPage() {
 
     return (
         <>
-            <Helmet><title>MORLA AI CEO — Motoflow</title></Helmet>
+            <Helmet><title>MOTOFLOW IA CEO — Motoflow</title></Helmet>
             <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -161,7 +161,7 @@ export default function AICeoPage() {
                             <Brain className="h-7 w-7" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold text-slate-800 leading-tight">MORLA AI CEO</h1>
+                            <h1 className="text-2xl font-bold text-slate-800 leading-tight">MOTOFLOW IA CEO</h1>
                             <p className="text-xs text-slate-500">
                                 Equipo digital de inteligencia para el CEO humano · Fase 1
                             </p>
