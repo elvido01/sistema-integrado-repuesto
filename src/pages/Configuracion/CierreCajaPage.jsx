@@ -358,6 +358,7 @@ const CierreCajaPage = () => {
       totalVentasContado,
       totalVentasContadoCaja,
       totalVentasContadoMovil,
+      totalVentasContadoNoEfectivo,
       totalVentasCredito,
       totalItbis,
       totalDescuento,
@@ -378,7 +379,11 @@ const CierreCajaPage = () => {
       cantFacturas,
       // Fórmula final: Efectivo en Caja = Ventas Contado + Recibos EN EFECTIVO - Devoluciones
       //                - Pagos Suplidores (Efectivo) - Gastos - Préstamos (efectivo) - Compromisos (efectivo)
-      efectivoEnCaja: totalVentasContado + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPrestamosEfectivo - totalCompromisosEfectivo,
+      // Solo lo que de verdad entra a la GAVETA. Antes se usaba
+      // totalVentasContado, que incluye las ventas cobradas por
+      // transferencia/tarjeta y las del movil: el cierre pedia un efectivo
+      // que nunca estuvo en la caja y siempre salia faltante.
+      efectivoEnCaja: totalVentasContadoCaja + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPrestamosEfectivo - totalCompromisosEfectivo,
     });
 
     setLoadingResumen(false);
@@ -533,6 +538,7 @@ const CierreCajaPage = () => {
             <table><tbody>
               ${filaResumen('Ventas Contado Caja', resumen?.totalVentasContadoCaja)}
               ${filaResumen('Ventas Contado Móvil', resumen?.totalVentasContadoMovil)}
+              ${filaResumen('Ventas por Transferencia/Tarjeta', resumen?.totalVentasContadoNoEfectivo)}
               ${filaResumen('Ventas Crédito', resumen?.totalVentasCredito)}
               ${filaResumen('Total Ventas', resumen?.totalVentas, true)}
               ${filaResumen('Devoluciones', resumen?.totalDevoluciones)}
@@ -649,6 +655,7 @@ const CierreCajaPage = () => {
         <div class="bold" style="margin-bottom: 4px;">RESUMEN DE VENTAS</div>
         ${filaPos('Ventas Contado Caja', resumen?.totalVentasContadoCaja)}
         ${filaPos('Cuenta Contado Móvil', resumen?.totalVentasContadoMovil)}
+        ${filaPos('Ventas Transf./Tarjeta', resumen?.totalVentasContadoNoEfectivo)}
         ${filaPos('Ventas Crédito', resumen?.totalVentasCredito)}
         ${filaPos('Total Ventas', resumen?.totalVentas, { bold: true })}
         ${filaPos('Devoluciones', resumen?.totalDevoluciones)}
@@ -847,6 +854,7 @@ const CierreCajaPage = () => {
                     ['Cantidad de Facturas', resumen.cantFacturas, false, true],
                     ['Ventas Contado Caja', resumen.totalVentasContadoCaja],
                     ['Cuenta Contado Móvil', resumen.totalVentasContadoMovil],
+                    ['Ventas por Transferencia/Tarjeta', resumen.totalVentasContadoNoEfectivo],
                     ['Ventas Crédito', resumen.totalVentasCredito],
                     ['Total Ventas', resumen.totalVentas, true],
                     ['Devoluciones', resumen.totalDevoluciones],
