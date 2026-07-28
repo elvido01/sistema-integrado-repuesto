@@ -29,9 +29,17 @@
 -- US$38,236.09, o sea US$5,351.09 MÁS que la deuda. Cargarlos así inflaría la
 -- cuenta, así que quedan fuera hasta tener sus facturas:
 --
---   F30000102680  25-03-2026  12 x NEW LEAD 150      ("1150" a mano)
---   F30000105109  05-06-2026   4 x HAMMER 125        ("1250 x63 = 78,750")
---   F30000105108  05-06-2026   1 x SUPER DELIVERY    ("74,000 / 61 = 1213")
+--   doc            fecha       contenido              costo a mano        PAGOS
+--   F30000102680  25-03-2026  12 x NEW LEAD 150      "1150" (=13,800)      6
+--   F30000105109  05-06-2026   4 x HAMMER 125        "1250 x63 = 78,750"   6
+--   F30000105108  05-06-2026   1 x SUPER DELIVERY    "74,000 / 61 = 1213"  4
+--
+-- OJO CON EL PLAZO: cada conduce trae escrito abajo a la izquierda en cuántos
+-- pagos va, y NO todos son 6. El F30000105108 (SUPER DELIVERY) es a 4 PAGOS.
+-- Cuando se carguen hay que respetar el plazo de cada uno, no asumir 6.
+--
+-- Las dos facturas electrónicas que SÍ se cargan aquí no traen esa marca
+-- (solo QR y código de seguridad), así que van a 6 como se acordó.
 --
 -- >>> ITBIS / DGII 606 <<<
 -- Las facturas traen e-NCF e ITBIS. Como van partidas en 6 cuotas, el NCF NO
