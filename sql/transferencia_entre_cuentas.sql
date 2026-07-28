@@ -100,7 +100,15 @@ DECLARE
   v_txt      text;
   v_concepto text := NULLIF(btrim(COALESCE(p_concepto, '')), '');
 BEGIN
-  IF v_uid IS NULL THEN RAISE EXCEPTION 'No hay sesión de usuario'; END IF;
+  -- Diagnostico: si auth.uid() viene vacio, decir QUE se esta viendo, en vez
+  -- de un "no hay sesion" a secas que no deja avanzar.
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'auth.uid() vacío. rol=% | jwt.claims=% | jwt.sub=% | get_user_tenant=%',
+      current_user,
+      COALESCE(left(current_setting('request.jwt.claims', true), 120), '(sin claims)'),
+      COALESCE(current_setting('request.jwt.claim.sub', true), '(sin sub)'),
+      COALESCE(public.get_user_tenant()::text, '(null)');
+  END IF;
   IF p_origen_id = p_destino_id THEN
     RAISE EXCEPTION 'La cuenta de origen y la de destino son la misma';
   END IF;
