@@ -25,8 +25,12 @@
 -- verdad cuando Teruel mande el estado con DETALLE POR DOCUMENTO, como el
 -- que mandó Super Gato: ahí cada pagaré va a su mes sin inventar nada.
 --
--- Vence en 2027/10 (el último mes del calendario de Teruel) para no inflar
--- la caja que se necesita en los próximos meses por 4 dólares.
+-- >>> DONDE SE COLOCA <<<
+-- En JULIO/2026, que es el mes más cercano donde estamos POR DEBAJO de
+-- Teruel: ellos esperan US$8,310.00 ese mes y nosotros tenemos US$5,327.48.
+-- Poner ahí el ajuste reconoce la deuda cuanto antes, en vez de esconderla
+-- al final del calendario. (Los meses siguen sin cuadrar uno a uno; esto
+-- solo cierra el total — ver la nota de arriba.)
 --
 -- Idempotente por compras.legacy_id.
 -- =====================================================================
@@ -38,7 +42,7 @@ DECLARE
   v_monto numeric := 3.76;
   v_tasa  numeric := 61.00;
   v_fecha date    := DATE '2026-07-28';
-  v_vence date    := DATE '2027-10-28';
+  v_vence date    := DATE '2026-07-31';   -- julio/2026: el mes más cercano que está corto
   v_n     int;
 BEGIN
   INSERT INTO public.compras (
