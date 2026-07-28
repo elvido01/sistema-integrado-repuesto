@@ -1029,24 +1029,34 @@ export const useVentas = () => {
       // FINANCIAMIENTO TERCEROS: si la empresa financia con terceros y esta
       // venta vino de una solicitud financiada, crear el prestamo + cuentas en
       // la financiera y reasignar la CxC. Se hace al grabar (una sola vez).
+      // Se llama SIEMPRE (nueva o editada). Antes estaba detras de
+      // !editingFacturaId y por eso editar no creaba, ni corregia, ni
+      // cancelaba el prestamo: la factura y la financiera se separaban.
       if (
-        !editingFacturaId &&
-        paymentType === 'credito' &&
         solicitudCompraId &&
         empresa?.financiamiento_tipo === 'terceros' &&
         empresa?.financiera_tenant_id
       ) {
         try {
-          const { data: ftRes, error: ftErr } = await supabase.rpc('procesar_financiamiento_terceros', {
+          const { data: ftRes, error: ftErr } = await supabase.rpc('sincronizar_financiamiento_terceros', {
             p_factura_id: activeFactura.id,
             p_solicitud_id: solicitudCompraId,
             p_financiera_tenant_id: empresa.financiera_tenant_id,
+            p_es_credito: paymentType === 'credito',
           });
           if (ftErr) {
-            toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: `La factura se grabó, pero no se creó el préstamo en la financiera: ${ftErr.message}` });
+            toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: `La factura se grabó, pero no se pudo sincronizar el préstamo: ${ftErr.message}` });
             await notificarFinanciamientoFallido(activeFactura, ftErr.message);
-          } else if (ftRes?.ok) {
-            toast({ title: '🏦 Financiamiento creado', description: `Préstamo ${ftRes.prestamo_numero} en la financiera y cuentas registradas.` });
+          } else if (ftRes && ftRes.ok === false) {
+            // El prestamo ya tiene pagos: no se toca solo, hay que avisar.
+            toast({ variant: 'destructive', duration: 15000, title: '⚠ El préstamo NO se modificó', description: ftRes.motivo });
+            await notificarFinanciamientoFallido(activeFactura, ftRes.motivo);
+          } else if (ftRes?.accion === 'creado') {
+            toast({ title: '🏦 Financiamiento creado', description: `Préstamo ${ftRes.detalle?.prestamo_numero || ''} en la financiera y cuentas registradas.` });
+          } else if (ftRes?.accion === 'actualizado') {
+            toast({ duration: 12000, title: '🔄 Préstamo actualizado', description: `Se rehizo con los datos nuevos: ${ftRes.detalle?.prestamo_numero || ''} — capital RD$${Number(ftRes.detalle?.capital || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}. El anterior (${ftRes.prestamo_anterior}) y sus ${ftRes.cxp_borradas} cuentas por pagar se eliminaron.` });
+          } else if (ftRes?.accion === 'cancelado') {
+            toast({ duration: 12000, title: '🚫 Préstamo cancelado', description: `La factura pasó a CONTADO: se eliminó el préstamo ${ftRes.prestamo_numero} y sus ${ftRes.cxp_borradas} cuentas por pagar en la financiera.` });
           }
         } catch (ftCatch) {
           console.error('Error en financiamiento terceros:', ftCatch.message);
