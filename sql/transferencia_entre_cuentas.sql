@@ -23,6 +23,16 @@
 -- Las dos filas comparten el mismo origen_id, así que se pueden encontrar
 -- juntas: son las dos patas de la misma transferencia.
 --
+-- >>> POR QUE NO SE USA get_user_tenant() PARA EL PERMISO <<<
+-- Esa funcion devuelve la EMPRESA ACTIVA del usuario, que sale de
+-- usuario_tenant_activo y puede quedar sin resolver segun como se entro a la
+-- sesion (dio "No se pudo determinar el tenant" al transferir entre dos
+-- cuentas que el usuario si podia ver).
+--
+-- El permiso se valida contra el dato firme: A QUE EMPRESAS PERTENECE EL
+-- USUARIO (profiles + usuarios_empresas), mas la financiera vinculada de
+-- cualquiera de ellas. Asi no depende de cual este "activa".
+--
 -- >>> CUENTAS COMPARTIDAS <<<
 -- El modulo muestra las cuentas propias Y las de la financiera vinculada (un
 -- dealer opera las de su financiera). Por eso se aceptan las dos, con la misma
@@ -38,6 +48,32 @@
 
 -- 'transferencia_interna' ya está permitido en el CHECK de origen_tipo.
 
+-- ¿El usuario alcanza esa empresa? Por pertenencia directa (profiles o
+-- usuarios_empresas) o porque es la financiera vinculada de una suya.
+CREATE OR REPLACE FUNCTION public.usuario_alcanza_tenant(p_uid uuid, p_tenant uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT p_uid IS NOT NULL AND p_tenant IS NOT NULL AND (
+    EXISTS (SELECT 1 FROM public.profiles p
+             WHERE p.id = p_uid
+               AND (p.tenant_id = p_tenant OR COALESCE(p.is_superadmin, false)))
+    OR EXISTS (SELECT 1 FROM public.usuarios_empresas ue
+                WHERE ue.user_id = p_uid AND ue.tenant_id = p_tenant)
+    -- la financiera vinculada de cualquiera de sus empresas
+    OR EXISTS (
+      SELECT 1 FROM public.config_empresa ce
+       WHERE ce.financiera_tenant_id = p_tenant
+         AND (EXISTS (SELECT 1 FROM public.profiles p2
+                       WHERE p2.id = p_uid AND p2.tenant_id = ce.tenant_id)
+              OR EXISTS (SELECT 1 FROM public.usuarios_empresas ue2
+                          WHERE ue2.user_id = p_uid AND ue2.tenant_id = ce.tenant_id)))
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.usuario_alcanza_tenant(uuid, uuid) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.transferir_entre_cuentas(
   p_origen_id  uuid,
   p_destino_id uuid,
@@ -51,8 +87,8 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
-  v_tenant   uuid := public.get_user_tenant();
-  v_fin_link uuid := public.financiera_vinculada_tenant();
+  v_uid      uuid := auth.uid();
+  v_tenant   uuid := public.get_user_tenant();   -- solo para el rastro "vía"
   v_yo       text;
   o          record;
   d          record;
@@ -64,7 +100,7 @@ DECLARE
   v_txt      text;
   v_concepto text := NULLIF(btrim(COALESCE(p_concepto, '')), '');
 BEGIN
-  IF v_tenant IS NULL THEN RAISE EXCEPTION 'No se pudo determinar el tenant'; END IF;
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'No hay sesión de usuario'; END IF;
   IF p_origen_id = p_destino_id THEN
     RAISE EXCEPTION 'La cuenta de origen y la de destino son la misma';
   END IF;
@@ -75,15 +111,21 @@ BEGIN
   SELECT * INTO d FROM public.cuentas_bancarias WHERE id = p_destino_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Cuenta de destino no encontrada'; END IF;
 
-  -- Propias o de la financiera vinculada (misma regla del resto del módulo).
-  IF (o.tenant_id <> v_tenant AND o.tenant_id IS DISTINCT FROM v_fin_link)
-     OR (d.tenant_id <> v_tenant AND d.tenant_id IS DISTINCT FROM v_fin_link) THEN
-    RAISE EXCEPTION 'Alguna de las cuentas no es suya ni de su financiera vinculada';
+  -- El usuario debe tener acceso a las DOS cuentas: por pertenecer a la
+  -- empresa dueña, o porque esa empresa es la financiera vinculada de alguna
+  -- a la que sí pertenece.
+  IF NOT public.usuario_alcanza_tenant(v_uid, o.tenant_id) THEN
+    RAISE EXCEPTION 'No tiene acceso a la cuenta de origen (%)', o.banco;
+  END IF;
+  IF NOT public.usuario_alcanza_tenant(v_uid, d.tenant_id) THEN
+    RAISE EXCEPTION 'No tiene acceso a la cuenta de destino (%)', d.banco;
   END IF;
 
-  -- Si se mueve plata de otra empresa, dejarlo dicho en el concepto.
-  IF o.tenant_id <> v_tenant OR d.tenant_id <> v_tenant THEN
-    SELECT nombre INTO v_yo FROM public.config_empresa WHERE tenant_id = v_tenant;
+  -- Si se mueve plata entre empresas distintas, dejarlo dicho en el concepto.
+  IF o.tenant_id <> d.tenant_id
+     OR (v_tenant IS NOT NULL AND o.tenant_id <> v_tenant) THEN
+    SELECT nombre INTO v_yo FROM public.config_empresa
+     WHERE tenant_id = COALESCE(v_tenant, o.tenant_id);
     v_yo := ' · vía ' || COALESCE(v_yo, 'otra empresa');
   ELSE
     v_yo := '';
@@ -162,7 +204,18 @@ WHERE conrelid = 'public.movimientos_bancarios'::regclass
   AND conname LIKE '%origen_tipo%';
 -- esperado: la lista debe incluir 'transferencia_interna'
 
--- 3) Transferencias hechas (las dos patas juntas por origen_id)
+-- 3) DIAGNOSTICO: quien alcanza cada caja chica (si algo falla, mirar aquí)
+SELECT p.email,
+       public.usuario_alcanza_tenant(p.id, c.tenant_id) AS alcanza,
+       c.banco || ' ' || COALESCE(c.alias, '') || ' (' || c.moneda || ')' AS cuenta
+FROM public.cuentas_bancarias c
+CROSS JOIN public.profiles p
+WHERE c.banco = 'CAJA CHICA'
+  AND p.email IS NOT NULL
+ORDER BY p.email, c.moneda;
+-- el usuario que transfiere debe salir con alcanza = true en LAS DOS
+
+-- 4) Transferencias hechas (las dos patas juntas por origen_id)
 SELECT m.origen_id, m.fecha,
        string_agg(c.banco || ' ' || m.tipo || ' ' || m.moneda_txt, '  ->  ' ORDER BY m.tipo DESC) AS movimiento
 FROM (SELECT mb.*, mb.monto::text AS moneda_txt FROM public.movimientos_bancarios mb
