@@ -23,8 +23,17 @@
 -- Las dos filas comparten el mismo origen_id, así que se pueden encontrar
 -- juntas: son las dos patas de la misma transferencia.
 --
--- No permite transferir a la misma cuenta ni montos <= 0, y valida que ambas
--- cuentas sean de la empresa (o compartidas con ella).
+-- >>> CUENTAS COMPARTIDAS <<<
+-- El modulo muestra las cuentas propias Y las de la financiera vinculada (un
+-- dealer opera las de su financiera). Por eso se aceptan las dos, con la misma
+-- regla que registrar_movimiento_bancario_compartido: dueño = quien llama, o
+-- la financiera vinculada.
+--
+-- Cada movimiento se graba a nombre del DUEÑO de su cuenta, no de quien lo
+-- hace. Y si el dinero se mueve desde otra empresa, el concepto lo dice
+-- ("· via <empresa>") para que en el historial no aparezca de la nada.
+--
+-- No permite transferir a la misma cuenta ni montos <= 0.
 -- =====================================================================
 
 -- 'transferencia_interna' ya está permitido en el CHECK de origen_tipo.
@@ -43,6 +52,8 @@ SET search_path TO 'public'
 AS $$
 DECLARE
   v_tenant   uuid := public.get_user_tenant();
+  v_fin_link uuid := public.financiera_vinculada_tenant();
+  v_yo       text;
   o          record;
   d          record;
   v_fecha    date := COALESCE(p_fecha, (now() AT TIME ZONE 'America/Santo_Domingo')::date);
@@ -64,10 +75,18 @@ BEGIN
   SELECT * INTO d FROM public.cuentas_bancarias WHERE id = p_destino_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Cuenta de destino no encontrada'; END IF;
 
-  -- Ambas deben ser de la empresa. (Las cuentas compartidas entre dealer y
-  -- financiera se manejan con su propia RPC; aquí se exige mismo tenant.)
+  -- Propias o de la financiera vinculada (misma regla del resto del módulo).
+  IF (o.tenant_id <> v_tenant AND o.tenant_id IS DISTINCT FROM v_fin_link)
+     OR (d.tenant_id <> v_tenant AND d.tenant_id IS DISTINCT FROM v_fin_link) THEN
+    RAISE EXCEPTION 'Alguna de las cuentas no es suya ni de su financiera vinculada';
+  END IF;
+
+  -- Si se mueve plata de otra empresa, dejarlo dicho en el concepto.
   IF o.tenant_id <> v_tenant OR d.tenant_id <> v_tenant THEN
-    RAISE EXCEPTION 'Alguna de las cuentas no pertenece a esta empresa';
+    SELECT nombre INTO v_yo FROM public.config_empresa WHERE tenant_id = v_tenant;
+    v_yo := ' · vía ' || COALESCE(v_yo, 'otra empresa');
+  ELSE
+    v_yo := '';
   END IF;
 
   -- ---------- la conversión ----------
@@ -97,17 +116,17 @@ BEGIN
   INSERT INTO public.movimientos_bancarios
     (tenant_id, cuenta_id, tipo, monto, concepto, origen_tipo, origen_id, fecha, usuario_id)
   VALUES (
-    v_tenant, p_origen_id, 'SALIDA', v_monto,
+    o.tenant_id, p_origen_id, 'SALIDA', v_monto,
     COALESCE(v_concepto || ' — ', '') || 'Transferencia a ' || d.banco
-      || COALESCE(' ' || NULLIF(d.alias, ''), '') || v_txt,
+      || COALESCE(' ' || NULLIF(d.alias, ''), '') || v_txt || v_yo,
     'transferencia_interna', v_par, v_fecha, auth.uid());
 
   INSERT INTO public.movimientos_bancarios
     (tenant_id, cuenta_id, tipo, monto, concepto, origen_tipo, origen_id, fecha, usuario_id)
   VALUES (
-    v_tenant, p_destino_id, 'ENTRADA', v_destino,
+    d.tenant_id, p_destino_id, 'ENTRADA', v_destino,
     COALESCE(v_concepto || ' — ', '') || 'Transferencia desde ' || o.banco
-      || COALESCE(' ' || NULLIF(o.alias, ''), '') || v_txt,
+      || COALESCE(' ' || NULLIF(o.alias, ''), '') || v_txt || v_yo,
     'transferencia_interna', v_par, v_fecha, auth.uid());
 
   RETURN json_build_object(
