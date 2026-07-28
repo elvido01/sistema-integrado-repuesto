@@ -19,8 +19,13 @@
 -- con ese tipo, se lo volverían a descontar. Por eso va como tipo_gasto =
 -- 'Nómina', que ninguna consulta de adelantos mira.
 --
--- El gasto sale de la caja (afecta_caja = true) salvo que se pague desde una
--- cuenta bancaria, igual que cualquier otro gasto.
+-- >>> DE DONDE SALE LA PLATA <<<
+--   EFECTIVO      -> sin cuenta bancaria y afecta_caja = true: se descuenta
+--                    de la CAJA DEL DIA, como cualquier gasto de la gaveta.
+--   TRANSFERENCIA -> hay que decir de QUE CUENTA sale. El gasto queda con esa
+--   / CHEQUE         cuenta, no toca la caja, y ademas se registra la SALIDA
+--                    en el banco. Todo dentro de la misma transaccion: no
+--                    puede quedar el gasto sin su movimiento bancario.
 --
 -- Idempotente / re-ejecutable. Requiere sql/nomina_modulo.sql antes.
 -- =====================================================================
@@ -64,6 +69,10 @@ BEGIN
   IF d.neto <= 0 THEN
     RAISE EXCEPTION 'El neto de ese empleado es cero: no hay nada que pagar';
   END IF;
+  -- Si no es efectivo, hay que decir de qué cuenta sale.
+  IF p_cuenta_id IS NULL AND lower(COALESCE(p_forma_pago, '')) <> 'efectivo' THEN
+    RAISE EXCEPTION 'Pagando por % hay que indicar la cuenta bancaria de donde sale', p_forma_pago;
+  END IF;
 
   SELECT nombre INTO v_emp FROM public.empleados WHERE id = d.empleado_id;
   v_desc := 'Nómina ' || to_char(n.fecha_desde, 'DD/MM') || '-' || to_char(n.fecha_hasta, 'DD/MM/YYYY')
@@ -80,6 +89,20 @@ BEGIN
      round(d.neto, 2), v_desc, auth.uid(),
      d.empleado_id, p_cuenta_id, p_cuenta_id IS NULL, false)
   RETURNING id INTO v_gasto;
+
+  -- Si sale del banco, registrar la salida en la cuenta. Va aquí dentro
+  -- para que el gasto y el movimiento entren o fallen juntos.
+  IF p_cuenta_id IS NOT NULL THEN
+    PERFORM public.registrar_movimiento_bancario_compartido(
+      p_cuenta_id   => p_cuenta_id,
+      p_tipo        => 'SALIDA',
+      p_monto       => round(d.neto, 2),
+      p_concepto    => v_desc,
+      p_referencia  => NULL,
+      p_origen_tipo => 'gasto',
+      p_origen_id   => v_gasto,
+      p_fecha       => (now() AT TIME ZONE 'America/Santo_Domingo')::date);
+  END IF;
 
   UPDATE public.nomina_detalle
      SET pagado_at = now(), forma_pago = p_forma_pago, gasto_id = v_gasto
@@ -107,6 +130,7 @@ BEGIN
     'gasto_id', v_gasto,
     'descripcion', v_desc,
     'faltan', v_faltan,
+    'salio_de', CASE WHEN p_cuenta_id IS NULL THEN 'caja' ELSE 'banco' END,
     'nomina_cerrada', (v_faltan = 0));
 END $$;
 
@@ -142,7 +166,18 @@ JOIN public.empleados e ON e.id = d.empleado_id
 WHERE n.estado = 'borrador'
 ORDER BY n.numero, e.nombre;
 
--- 3) Los pagos de nómina NO deben aparecer como adelantos pendientes
+-- 3) Los pagos por banco deben tener SU movimiento; los de efectivo, ninguno
+SELECT g.descripcion, g.monto,
+       CASE WHEN g.cuenta_bancaria_id IS NULL THEN 'caja' ELSE 'banco' END AS salio_de,
+       g.afecta_caja,
+       (SELECT count(*) FROM public.movimientos_bancarios m
+         WHERE m.origen_tipo = 'gasto' AND m.origen_id = g.id) AS movimientos
+FROM public.gastos_diarios g
+WHERE g.tipo_gasto = 'Nómina' AND NOT g.anulado
+ORDER BY g.fecha DESC, g.descripcion;
+-- esperado: los de 'banco' con 1 movimiento; los de 'caja' con 0 y afecta_caja true
+
+-- 4) Los pagos de nómina NO deben aparecer como adelantos pendientes
 SELECT count(*) AS pagos_nomina_contados_como_adelanto
 FROM public.gastos_diarios
 WHERE tipo_gasto = 'Nómina'

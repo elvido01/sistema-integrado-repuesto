@@ -12,6 +12,7 @@ import { formatFechaDMY } from '@/lib/dateUtils';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import { calcularDetalleNomina, pendienteAdelanto, periodoSugerido } from '@/lib/nominaUtils';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 
 const money = (v) => `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`;
 const hoyTZ = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
@@ -141,18 +142,25 @@ const NominaPage = () => {
   // comprobante y, si era el ultimo que faltaba, cierra la nomina sola.
   const pagarEmpleado = async () => {
     if (!pagarEmp) return;
+    const efectivo = String(pagarEmp.forma).toLowerCase() === 'efectivo';
+    if (!efectivo && !pagarEmp.cuenta) {
+      toast({ variant: 'destructive', title: 'Falta la cuenta',
+        description: `Pagando por ${pagarEmp.forma} hay que indicar de qué cuenta sale.` });
+      return;
+    }
     setBusy(true);
     try {
       const { data, error } = await supabase.rpc('nomina_pagar_empleado', {
         p_detalle_id: pagarEmp.detalle.id,
         p_forma_pago: pagarEmp.forma,
+        p_cuenta_id: efectivo ? null : pagarEmp.cuenta,
       });
       if (error) throw error;
       toast({
         title: `Pagado a ${data.empleado}`,
         description: data.nomina_cerrada
-          ? `${money(data.monto)}. Era el último: la nómina queda PAGADA y se cerró su compromiso.`
-          : `${money(data.monto)}. Faltan ${data.faltan} empleado(s) por pagar.`,
+          ? `${money(data.monto)} de ${data.salio_de === 'caja' ? 'la caja del día' : 'la cuenta bancaria'}. Era el último: la nómina queda PAGADA y se cerró su compromiso.`
+          : `${money(data.monto)} de ${data.salio_de === 'caja' ? 'la caja del día' : 'la cuenta bancaria'}. Faltan ${data.faltan} empleado(s) por pagar.`,
       });
       try {
         printGastoDiarioPOS({
@@ -608,7 +616,7 @@ const NominaPage = () => {
               </div>
               <div>
                 <label className="text-sm font-medium">Forma de pago</label>
-                <Select value={pagarEmp.forma} onValueChange={(v) => setPagarEmp((x) => ({ ...x, forma: v }))}>
+                <Select value={pagarEmp.forma} onValueChange={(v) => setPagarEmp((x) => ({ ...x, forma: v, cuenta: String(v).toLowerCase() === 'efectivo' ? null : x.cuenta }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Efectivo">Efectivo</SelectItem>
@@ -617,9 +625,23 @@ const NominaPage = () => {
                   </SelectContent>
                 </Select>
               </div>
+              {/* En efectivo sale de la gaveta; por banco hay que decir de cuál
+                  cuenta, y ademas se registra la salida en el banco. */}
+              {String(pagarEmp.forma).toLowerCase() !== 'efectivo' && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <label className="text-sm font-medium text-amber-900">¿De cuál cuenta sale?</label>
+                  <CuentaBancariaSelect value={pagarEmp.cuenta || null}
+                    onChange={(v) => setPagarEmp((x) => ({ ...x, cuenta: v }))}
+                    moneda="DOP" contexto="compromiso" label={null} />
+                </div>
+              )}
+
               <p className="text-xs text-muted-foreground">
                 Se registra como <b>gasto a nombre del empleado</b> y se imprime su comprobante.
-                Cuando se pague al último que falte, la nómina se cierra sola.
+                {String(pagarEmp.forma).toLowerCase() === 'efectivo'
+                  ? ' Sale de la CAJA DEL DÍA.'
+                  : ' Sale de la cuenta bancaria y queda su movimiento registrado.'}
+                {' '}Cuando se pague al último que falte, la nómina se cierra sola.
               </p>
             </div>
           )}
