@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import {
   Landmark, Plus, Pencil, Star, StarOff, RefreshCw, Loader2, X,
-  ArrowDownCircle, ArrowUpCircle, Wallet,
+  ArrowDownCircle, ArrowUpCircle, Wallet, ArrowLeftRight,
 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -52,6 +52,7 @@ export default function CuentasBancariasPage() {
   const [saving, setSaving] = useState(false);
   const [movsDe, setMovsDe] = useState(null);      // cuenta cuyo historial se ve
   const [manual, setManual] = useState(null);      // { cuenta, tipo, monto, fecha, concepto }
+  const [transf, setTransf] = useState(null);      // { origen, destino, monto, tasa, fecha, concepto }
   const [movs, setMovs] = useState([]);
   const [loadingMovs, setLoadingMovs] = useState(false);
 
@@ -219,6 +220,51 @@ export default function CuentasBancariasPage() {
     }
   };
 
+  // Transferencia entre cuentas. Si las monedas difieren la tasa es
+  // obligatoria; el RPC la exige igual, pero se valida aquí para avisar antes
+  // de mandar y poder mostrar el convertido en vivo.
+  const cuentaDe = (id) => cuentas.find((c) => c.id === id) || null;
+  const tOrigen  = transf ? cuentaDe(transf.origen) : null;
+  const tDestino = transf ? cuentaDe(transf.destino) : null;
+  const tCambia  = !!(tOrigen && tDestino && tOrigen.moneda !== tDestino.moneda);
+  const tMonto   = n(String(transf?.monto || '').replace(/,/g, ''));
+  const tTasa    = n(String(transf?.tasa || '').replace(/,/g, ''));
+  const tRecibe  = !tOrigen || !tDestino ? 0
+    : !tCambia ? tMonto
+    : tTasa > 0 ? (tOrigen.moneda === 'USD' ? tMonto * tTasa : tMonto / tTasa)
+    : 0;
+
+  const guardarTransferencia = async () => {
+    if (!transf?.origen || !transf?.destino) { toast({ variant: 'destructive', title: 'Elige la cuenta de origen y la de destino' }); return; }
+    if (transf.origen === transf.destino) { toast({ variant: 'destructive', title: 'Son la misma cuenta' }); return; }
+    if (tMonto <= 0) { toast({ variant: 'destructive', title: 'Escribe el monto a transferir' }); return; }
+    if (tCambia && tTasa <= 0) {
+      toast({ variant: 'destructive', title: 'Falta la tasa de cambio', description: `Vas de ${tOrigen.moneda} a ${tDestino.moneda}: indica cuántos RD$ vale un US$.` });
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.rpc('transferir_entre_cuentas', {
+        p_origen_id: transf.origen,
+        p_destino_id: transf.destino,
+        p_monto: tMonto,
+        p_tasa: tCambia ? tTasa : null,
+        p_concepto: transf.concepto.trim() || null,
+        p_fecha: transf.fecha || null,
+      });
+      if (error) throw error;
+      toast({
+        title: '↔ Transferencia registrada',
+        description: `Salen ${money(data.sale.monto, data.sale.moneda)} de ${data.sale.cuenta} y entran ${money(data.entra.monto, data.entra.moneda)} a ${data.entra.cuenta}.`,
+      });
+      setTransf(null);
+      await cargar();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo transferir', description: e.message });
+    }
+    setSaving(false);
+  };
+
   const abrirManual = (c, tipo) => setManual({
     cuenta: c, tipo, monto: '', concepto: '',
     fecha: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }),
@@ -269,6 +315,10 @@ export default function CuentasBancariasPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={cargar}><RefreshCw className="w-4 h-4 mr-1" />Actualizar</Button>
+          <Button variant="outline" size="sm" disabled={cuentas.filter((c) => c.activo).length < 2}
+            onClick={() => setTransf({ origen: '', destino: '', monto: '', tasa: '', fecha: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }), concepto: '' })}>
+            <ArrowLeftRight className="w-4 h-4 mr-1" />Transferir
+          </Button>
           <Button size="sm" onClick={() => setModal({ ...CUENTA_VACIA })}><Plus className="w-4 h-4 mr-1" />Nueva cuenta</Button>
         </div>
       </div>
@@ -421,6 +471,95 @@ export default function CuentasBancariasPage() {
       </Dialog>
 
       {/* Ingreso / Retiro manual */}
+      {/* Transferencia entre cuentas */}
+      <Dialog open={!!transf} onOpenChange={(o) => !o && setTransf(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowLeftRight className="w-5 h-5 text-blue-600" />Transferir entre cuentas
+            </DialogTitle>
+          </DialogHeader>
+          {transf && (
+            <div className="space-y-3">
+              <div>
+                <Label>Sale de</Label>
+                <Select value={transf.origen} onValueChange={(v) => setTransf((t) => ({ ...t, origen: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Cuenta de origen" /></SelectTrigger>
+                  <SelectContent>
+                    {cuentas.filter((c) => c.activo).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.banco}{c.alias ? ` — ${c.alias}` : ''} ({c.moneda}) · {money(c.saldo, c.moneda)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Entra a</Label>
+                <Select value={transf.destino} onValueChange={(v) => setTransf((t) => ({ ...t, destino: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Cuenta de destino" /></SelectTrigger>
+                  <SelectContent>
+                    {cuentas.filter((c) => c.activo && c.id !== transf.origen).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.banco}{c.alias ? ` — ${c.alias}` : ''} ({c.moneda}) · {money(c.saldo, c.moneda)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Monto{tOrigen ? ` (${tOrigen.moneda})` : ''}</Label>
+                  <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(transf.monto)}
+                    onChange={(e) => setTransf((t) => ({ ...t, monto: parseMontoInput(e.target.value) }))} />
+                </div>
+                <div>
+                  <Label>Fecha</Label>
+                  <Input type="date" value={transf.fecha}
+                    onChange={(e) => setTransf((t) => ({ ...t, fecha: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* La tasa solo aparece cuando de verdad hace falta */}
+              {tCambia && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                  <Label className="text-amber-900">
+                    Tasa de cambio — RD$ por US$ <span className="font-normal">(obligatoria: vas de {tOrigen.moneda} a {tDestino.moneda})</span>
+                  </Label>
+                  <Input type="text" inputMode="decimal" className="text-right bg-white" placeholder="Ej. 61.25"
+                    value={fmtMontoInput(transf.tasa)}
+                    onChange={(e) => setTransf((t) => ({ ...t, tasa: parseMontoInput(e.target.value) }))} />
+                </div>
+              )}
+
+              {tOrigen && tDestino && tMonto > 0 && (
+                <div className={`rounded-lg p-3 text-sm ${tRecibe > 0 ? 'bg-blue-50 text-blue-900' : 'bg-red-50 text-red-700'}`}>
+                  {tRecibe > 0 ? (
+                    <>Salen <b>{money(tMonto, tOrigen.moneda)}</b> de {tOrigen.banco} y entran{' '}
+                      <b>{money(tRecibe, tDestino.moneda)}</b> a {tDestino.banco}.</>
+                  ) : (
+                    <>Falta la tasa para saber cuánto entra a {tDestino.banco}.</>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <Label>Concepto (opcional)</Label>
+                <Input value={transf.concepto} placeholder="Ej. Compra de dólares para pagar a Teruel"
+                  onChange={(e) => setTransf((t) => ({ ...t, concepto: e.target.value }))} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTransf(null)}>Cancelar</Button>
+            <Button onClick={guardarTransferencia} disabled={saving || tRecibe <= 0}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Transferir'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!manual} onOpenChange={(o) => !o && setManual(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
