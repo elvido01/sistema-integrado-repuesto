@@ -20,8 +20,15 @@
 -- el convertido. El concepto de cada movimiento dice la otra cuenta y la tasa
 -- usada, para que al leer el historial se entienda sin buscar en otro lado.
 --
--- Las dos filas comparten el mismo origen_id, así que se pueden encontrar
--- juntas: son las dos patas de la misma transferencia.
+-- Las dos filas comparten la misma REFERENCIA ('TRF-<uuid>'), así que se
+-- pueden encontrar juntas: son las dos patas de la misma transferencia.
+--
+-- OJO: el vínculo NO va en origen_id. Existe un índice único
+-- (tenant_id, origen_tipo, origen_id) para que un mismo origen no se
+-- registre dos veces; si las dos patas son de la misma empresa —que es el
+-- caso normal: mover entre dos cuentas propias— chocarían contra él. Por eso
+-- origen_id queda en NULL (el índice es parcial, solo aplica si no es nulo) y
+-- el par se identifica por la referencia.
 --
 -- >>> POR QUE NO SE USA get_user_tenant() PARA EL PERMISO <<<
 -- Esa funcion devuelve la EMPRESA ACTIVA del usuario, que sale de
@@ -164,24 +171,24 @@ BEGIN
 
   -- ---------- las dos patas ----------
   INSERT INTO public.movimientos_bancarios
-    (tenant_id, cuenta_id, tipo, monto, concepto, origen_tipo, origen_id, fecha, usuario_id)
+    (tenant_id, cuenta_id, tipo, monto, concepto, origen_tipo, referencia, fecha, usuario_id)
   VALUES (
     o.tenant_id, p_origen_id, 'SALIDA', v_monto,
     COALESCE(v_concepto || ' — ', '') || 'Transferencia a ' || d.banco
       || COALESCE(' ' || NULLIF(d.alias, ''), '') || v_txt || v_yo,
-    'transferencia_interna', v_par, v_fecha, auth.uid());
+    'transferencia_interna', 'TRF-' || v_par::text, v_fecha, auth.uid());
 
   INSERT INTO public.movimientos_bancarios
-    (tenant_id, cuenta_id, tipo, monto, concepto, origen_tipo, origen_id, fecha, usuario_id)
+    (tenant_id, cuenta_id, tipo, monto, concepto, origen_tipo, referencia, fecha, usuario_id)
   VALUES (
     d.tenant_id, p_destino_id, 'ENTRADA', v_destino,
     COALESCE(v_concepto || ' — ', '') || 'Transferencia desde ' || o.banco
       || COALESCE(' ' || NULLIF(o.alias, ''), '') || v_txt || v_yo,
-    'transferencia_interna', v_par, v_fecha, auth.uid());
+    'transferencia_interna', 'TRF-' || v_par::text, v_fecha, auth.uid());
 
   RETURN json_build_object(
     'ok', true,
-    'par_id', v_par,
+    'referencia', 'TRF-' || v_par::text,
     'sale',  json_build_object('cuenta', o.banco, 'moneda', o.moneda, 'monto', v_monto),
     'entra', json_build_object('cuenta', d.banco, 'moneda', d.moneda, 'monto', v_destino),
     'tasa', CASE WHEN o.moneda = d.moneda THEN NULL ELSE v_tasa END);
@@ -223,12 +230,15 @@ WHERE c.banco = 'CAJA CHICA'
 ORDER BY p.email, c.moneda;
 -- el usuario que transfiere debe salir con alcanza = true en LAS DOS
 
--- 4) Transferencias hechas (las dos patas juntas por origen_id)
-SELECT m.origen_id, m.fecha,
-       string_agg(c.banco || ' ' || m.tipo || ' ' || m.moneda_txt, '  ->  ' ORDER BY m.tipo DESC) AS movimiento
-FROM (SELECT mb.*, mb.monto::text AS moneda_txt FROM public.movimientos_bancarios mb
-      WHERE mb.origen_tipo = 'transferencia_interna') m
+-- 4) Transferencias hechas: cada una con SUS DOS patas
+SELECT m.referencia, m.fecha, count(*) AS patas,
+       string_agg(c.banco || COALESCE(' ' || c.alias, '') || ' ' || m.tipo || ' '
+                  || CASE WHEN c.moneda = 'USD' THEN 'US$' ELSE 'RD$' END
+                  || to_char(m.monto, 'FM999,999,990.00'),
+                  '   ->   ' ORDER BY m.tipo DESC) AS movimiento
+FROM public.movimientos_bancarios m
 JOIN public.cuentas_bancarias c ON c.id = m.cuenta_id
-GROUP BY m.origen_id, m.fecha
+WHERE m.origen_tipo = 'transferencia_interna'
+GROUP BY m.referencia, m.fecha
 ORDER BY m.fecha DESC;
--- cada transferencia debe salir con SUS DOS patas
+-- patas debe ser 2 en todas; si sale 1, algo quedó a medias
