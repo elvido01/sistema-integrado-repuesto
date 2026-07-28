@@ -7,10 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, Users, Wallet, HandCoins, Ban, Plus, Pencil } from 'lucide-react';
+import { Loader2, RefreshCw, Users, Wallet, HandCoins, Ban, Plus, Pencil, Check } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import { calcularDetalleNomina, pendienteAdelanto, periodoSugerido } from '@/lib/nominaUtils';
+import { printGastoDiarioPOS } from '@/lib/printPOS';
 
 const money = (v) => `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`;
 const hoyTZ = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
@@ -45,6 +46,7 @@ const NominaPage = () => {
   const [genOpen, setGenOpen] = useState(false);
   const [genForm, setGenForm] = useState({ frecuencia: 'quincenal', ...periodoSugerido('quincenal', hoyTZ()) });
   const [pagarOpen, setPagarOpen] = useState(false);
+  const [pagarEmp, setPagarEmp] = useState(null);   // { detalle, forma } — pago individual
   const [formaPago, setFormaPago] = useState('Efectivo');
   const [adelOpen, setAdelOpen] = useState(false);
   const [adelForm, setAdelForm] = useState({ empleado_id: '', monto: '', descripcion: '' });
@@ -131,6 +133,42 @@ const NominaPage = () => {
       setTab('nominas');
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo generar', description: e.message });
+    }
+    setBusy(false);
+  };
+
+  // Pago individual: crea el gasto a nombre del empleado, imprime su
+  // comprobante y, si era el ultimo que faltaba, cierra la nomina sola.
+  const pagarEmpleado = async () => {
+    if (!pagarEmp) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('nomina_pagar_empleado', {
+        p_detalle_id: pagarEmp.detalle.id,
+        p_forma_pago: pagarEmp.forma,
+      });
+      if (error) throw error;
+      toast({
+        title: `Pagado a ${data.empleado}`,
+        description: data.nomina_cerrada
+          ? `${money(data.monto)}. Era el último: la nómina queda PAGADA y se cerró su compromiso.`
+          : `${money(data.monto)}. Faltan ${data.faltan} empleado(s) por pagar.`,
+      });
+      try {
+        printGastoDiarioPOS({
+          fecha: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }),
+          tipo_gasto: 'Nómina',
+          descripcion: data.descripcion,
+          monto: data.monto,
+        });
+      } catch (ePrint) {
+        toast({ variant: 'destructive', title: 'Pago registrado, pero no se imprimió', description: ePrint.message });
+      }
+      setPagarEmp(null);
+      await abrirNomina(nominaSel);
+      await cargar();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo pagar', description: e.message });
     }
     setBusy(false);
   };
@@ -335,19 +373,36 @@ const NominaPage = () => {
                     </thead>
                     <tbody>
                       {detalle.map((d) => (
-                        <tr key={d.id} className="border-t">
-                          <td className="px-2 py-1">{d.empleados?.nombre}</td>
+                        <tr key={d.id}
+                          className={`border-t ${nominaSel.estado === 'borrador' && !d.pagado_at ? 'cursor-pointer hover:bg-slate-50' : ''} ${d.pagado_at ? 'bg-emerald-50/60' : ''}`}
+                          title={nominaSel.estado === 'borrador' && !d.pagado_at ? 'Doble clic para editar otros +/- y adelantos' : undefined}
+                          onDoubleClick={() => { if (nominaSel.estado === 'borrador' && !d.pagado_at) abrirLinea(d); }}>
+                          <td className="px-2 py-1">
+                            {d.empleados?.nombre}
+                            {d.pagado_at && (
+                              <span className="ml-2 text-[10px] font-bold text-emerald-700 whitespace-nowrap">
+                                ✓ pagado{d.forma_pago ? ` · ${d.forma_pago}` : ''}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-2 py-1 text-right">{money(d.sueldo_base)}</td>
                           <td className="px-2 py-1 text-right">{money(Number(d.tss_afp) + Number(d.tss_sfs))}</td>
                           <td className="px-2 py-1 text-right">{money(d.isr)}</td>
                           <td className="px-2 py-1 text-right text-amber-700">{money(d.adelantos)}</td>
                           <td className="px-2 py-1 text-right">{money(Number(d.otros_ingresos) - Number(d.otros_descuentos))}</td>
                           <td className="px-2 py-1 text-right font-semibold">{money(d.neto)}</td>
-                          <td className="px-2 py-1">
-                            {nominaSel.estado === 'borrador' && (
-                              <Button size="sm" variant="ghost" title="Editar línea (otros +/- y adelanto fraccionable)"
-                                onClick={() => abrirLinea(d)}><Pencil className="w-4 h-4" /></Button>
+                          <td className="px-2 py-1 whitespace-nowrap">
+                            {/* Se paga uno por uno: hay empresas que entregan a mano
+                                segun va llegando cada quien. Cada pago emite su
+                                comprobante de gasto a nombre del empleado. */}
+                            {nominaSel.estado === 'borrador' && !d.pagado_at && Number(d.neto) > 0 && (
+                              <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700"
+                                title={`Pagar a ${d.empleados?.nombre} y emitir su comprobante`}
+                                onClick={() => setPagarEmp({ detalle: d, forma: 'Efectivo' })}>
+                                <Wallet className="w-3.5 h-3.5 mr-1" />Pagar
+                              </Button>
                             )}
+                            {d.pagado_at && <Check className="w-4 h-4 text-emerald-600" />}
                           </td>
                         </tr>
                       ))}
@@ -541,6 +596,43 @@ const NominaPage = () => {
       </Dialog>
 
       {/* ---------- modal pagar ---------- */}
+      {/* Pago individual */}
+      <Dialog open={!!pagarEmp} onOpenChange={(o) => !o && setPagarEmp(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Pagar a {pagarEmp?.detalle?.empleados?.nombre}</DialogTitle></DialogHeader>
+          {pagarEmp && (
+            <div className="space-y-3">
+              <div className="rounded-lg bg-emerald-50 text-emerald-900 p-3">
+                <div className="text-xs uppercase font-bold tracking-wide">Neto a entregar</div>
+                <div className="text-2xl font-black">{money(pagarEmp.detalle.neto)}</div>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Forma de pago</label>
+                <Select value={pagarEmp.forma} onValueChange={(v) => setPagarEmp((x) => ({ ...x, forma: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Efectivo">Efectivo</SelectItem>
+                    <SelectItem value="Transferencia">Transferencia</SelectItem>
+                    <SelectItem value="Cheque">Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Se registra como <b>gasto a nombre del empleado</b> y se imprime su comprobante.
+                Cuando se pague al último que falte, la nómina se cierra sola.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPagarEmp(null)} disabled={busy}>Cancelar</Button>
+            <Button onClick={pagarEmpleado} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
+              {busy ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Wallet className="w-4 h-4 mr-1" />}
+              Pagar e imprimir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={pagarOpen} onOpenChange={setPagarOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Pagar nómina #{nominaSel?.numero}</DialogTitle></DialogHeader>
