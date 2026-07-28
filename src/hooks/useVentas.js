@@ -62,6 +62,7 @@ export const useVentas = () => {
   const [cambio, setCambio] = useState(0);
   const [cotizacionId, setCotizacionId] = useState(null);
   const [solicitudCompraId, setSolicitudCompraId] = useState(null); // origen financiado (terceros)
+  const [confirmarContado, setConfirmarContado] = useState(false);  // aviso al salirse del crédito
   const [printFormat, setPrintFormat] = useState(() => localStorage.getItem('ventas_printFormat') || empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser');
   const [recargo, setRecargo] = useState(0);
@@ -1347,9 +1348,28 @@ export const useVentas = () => {
     }
   }, [handleSelectCliente, resetVenta, toast]);
 
+  // Cambiar la forma de pago pasa por aquí. Si la venta vino de una solicitud
+  // financiada, salirse del crédito CANCELA el préstamo en la financiera: el
+  // RPC procesar_financiamiento_terceros solo corre al grabar en crédito, y si
+  // luego se edita la factura ya no se ejecuta (por el guard !editingFacturaId).
+  // Así se perdieron FT-12 y FT-17, que hubo que reparar a mano por SQL.
+  const cambiarFormaPago = useCallback((v) => {
+    if (v === 'contado' && paymentType === 'credito' && solicitudCompraId) {
+      setConfirmarContado(true);   // no se cambia hasta que confirme
+      return;
+    }
+    setPaymentType(v);
+  }, [paymentType, solicitudCompraId]);
+
+  const confirmarPasarAContado = useCallback(() => {
+    setPaymentType('contado');
+    setConfirmarContado(false);
+  }, []);
+
   return {
     date, setDate,
-    paymentType, setPaymentType,
+    paymentType, setPaymentType: cambiarFormaPago,
+    confirmarContado, setConfirmarContado, confirmarPasarAContado,
     diasCredito, setDiasCredito,
     items, setItems,
     itemCode, setItemCode,

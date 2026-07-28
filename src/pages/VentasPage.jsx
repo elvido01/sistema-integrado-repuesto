@@ -19,6 +19,7 @@ import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { Loader2 } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 const VentasPage = () => {
   const { toast } = useToast();
@@ -32,6 +33,7 @@ const VentasPage = () => {
   const {
     date, setDate,
     paymentType, setPaymentType,
+    confirmarContado, setConfirmarContado, confirmarPasarAContado,
     diasCredito, setDiasCredito,
     items, setItems,
     itemCode, setItemCode,
@@ -565,6 +567,37 @@ const VentasPage = () => {
         sugerencias={sugerenciasEquiv.lista}
         onSelectSugerencia={handleSelectSugerencia}
       />
+
+      {/* Pasar a contado una venta que vino de una solicitud financiada cancela
+          el prestamo en la financiera, y editarla despues NO lo crea. Por eso
+          se avisa antes en vez de dejarlo cambiar en silencio. */}
+      <AlertDialog open={confirmarContado} onOpenChange={setConfirmarContado}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Esta venta es financiada</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Viene de una <b>solicitud de compra financiada</b>. Si la grabas de
+                  CONTADO, <b>no se creara el prestamo</b> en la financiera ni la cuenta
+                  por cobrar del cliente.
+                </p>
+                <p className="font-semibold text-red-600">
+                  Y no se arregla editandola despues: el prestamo solo se crea al grabar
+                  en credito. Habria que repararlo a mano.
+                </p>
+                <p>Si de verdad el cliente pago todo de contado, continua.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Dejarla en credito</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmarPasarAContado} className="bg-red-600 hover:bg-red-700">
+              Si, pasar a contado
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
