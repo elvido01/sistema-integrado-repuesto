@@ -4,17 +4,10 @@
 -- (2026-07-28) Se pidió agregar un gasto de RD$3,600 de GPS al día
 -- 24/07/2026, que no se aplicó en su momento.
 --
--- >>> OJO — YA HAY UN GPS DE RD$3,600 EL DÍA 23 <<<
--- Caminero tiene registrado exactamente el mismo gasto el 23/07:
---
---   2026-07-23   RD$1,000  Operativo  SEGURO
---   2026-07-23   RD$3,600  Operativo  GPS      <-- este
---
--- y los dos entraron en el cierre del 23 (total_gastos_diarios 4,600).
---
--- Si el GPS se paga UNA vez y en realidad era el del 23, este script crea un
--- DUPLICADO. Si de verdad son dos cobros distintos, está correcto.
--- Al final del archivo hay la consulta para anularlo si fuera lo primero.
+-- NOTA: Caminero ya tiene otro GPS de RD$3,600 el 23/07, que entró en el
+-- cierre de ese día (junto a un SEGURO de 1,000, total 4,600). Se preguntó
+-- por si era el mismo y EL USUARIO CONFIRMÓ que el del 24 es aparte: son dos
+-- cobros distintos, no un duplicado.
 --
 -- >>> EL CIERRE DEL 24 NO ESTÁ CERRADO <<<
 -- Caminero solo tiene grabado el cierre del 23/07. El del 24 nunca se cerró
@@ -77,7 +70,7 @@ WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
   AND fecha BETWEEN DATE '2026-07-23' AND DATE '2026-07-24'
   AND NOT anulado
 ORDER BY fecha, descripcion;
--- ojo: si aparece GPS 3,600 el 23 Y el 24, confirma que de verdad son dos
+-- esperado: GPS 3,600 el 23 y el 24 (confirmado por el usuario: son dos cobros)
 
 -- 2) Cómo queda el efectivo esperado del 24 al cerrar el turno
 SELECT
@@ -97,9 +90,3 @@ WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
 ORDER BY fecha DESC;
 -- esperado: solo aparece el 2026-07-23
 
--- ------------------------------------------------------------
--- SI ERA DUPLICADO: para anular el del 24 (no borrar, anular)
--- ------------------------------------------------------------
--- UPDATE public.gastos_diarios SET anulado = true
---  WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
---    AND fecha = DATE '2026-07-24' AND monto = 3600 AND descripcion ILIKE 'GPS';
