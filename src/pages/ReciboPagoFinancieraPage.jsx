@@ -752,7 +752,11 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
           console.error('No se pudo imprimir el recibo de pago:', printErr);
         }
       }
+      // La forma de pago vuelve SIEMPRE a Efectivo. Antes se quedaba pegada la
+      // del recibo anterior y el siguiente salia por transferencia sin que
+      // nadie lo notara (asi se fue el 0147692 al banco por equivocacion).
       setAbonos({}); setEditKey(null); setMontoText(''); setComentarios(''); setFechaRecibo(hoy());
+      setForma('Efectivo'); setCuenta(''); setBanco(''); setCuentaId(null);
       await cargarEstado(cliente.id);
       await cargarProximoNumero();
     } catch (e) {
