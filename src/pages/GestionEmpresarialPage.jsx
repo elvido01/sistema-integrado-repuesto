@@ -13,7 +13,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import {
-  Loader2, RefreshCw, TrendingUp, Receipt, Truck, Wallet, Target, Info, AlertTriangle, Activity,
+  Loader2, RefreshCw, TrendingUp, Receipt, Truck, Wallet, Target, Info, AlertTriangle, Activity, Bike,
 } from 'lucide-react';
 
 const money = (v) => `RD$ ${(Number(v) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -24,27 +24,49 @@ const mesLabel = (ym) => {
   return m ? `${MESES[Number(m) - 1]} ${a}` : ym;
 };
 
-// Una linea del estado actual: concepto — cuantos — cuanto.
-// El numero va aparte del monto a proposito: "30 cuotas" y "3.4 millones"
-// se deciden distinto que un solo total.
-const FilaEstado = ({ icon: Icon, etiqueta, nota, cantidad, monto, alarma }) => (
-  <div className="flex items-center gap-3 px-3 py-2.5">
-    <Icon className={`w-4 h-4 flex-shrink-0 ${alarma ? 'text-rose-600' : 'text-emerald-600'}`} />
-    <div className="min-w-0 flex-1">
-      <div className="text-sm font-semibold text-slate-800">{etiqueta}</div>
-      {nota && <div className="text-[11px] text-slate-500 truncate">{nota}</div>}
-    </div>
-    <div className="text-right w-20 flex-shrink-0">
-      <div className={`text-lg font-black leading-none ${alarma ? 'text-rose-600' : 'text-emerald-700'}`}>{cantidad}</div>
-      <div className="text-[10px] text-slate-400 mt-0.5">{Number(cantidad) === 1 ? 'cuota' : 'cuotas'}</div>
-    </div>
-    <div className={`text-right text-lg font-black w-40 flex-shrink-0 ${alarma ? 'text-rose-600' : 'text-emerald-700'}`}>
-      {money0(monto)}
-    </div>
-  </div>
-);
+// Semaforo del cumplimiento. Los cortes no son caprichosos: por debajo de
+// 50% el mes ya no se recupera solo, y sobre 90% se considera cumplido.
+const tonoPct = (pct) => {
+  if (pct == null) return 'text-slate-400';
+  if (pct >= 90) return 'text-emerald-600';
+  if (pct >= 50) return 'text-amber-600';
+  return 'text-rose-600';
+};
+const barraPct = (pct) => (pct >= 90 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500');
 
-const Tarjeta = ({ icon: Icon, titulo, valor, detalle, tono = 'slate' }) => {
+// Una linea del cumplimiento: lo que tocaba, lo que se pago, lo que falta.
+const FilaCumplimiento = ({ icon: Icon, etiqueta, nota, cant, debia, pagado, pct }) => {
+  const falta = Math.max(0, Number(debia || 0) - Number(pagado || 0));
+  return (
+    <tr className="border-b last:border-0">
+      <td className="px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <Icon className="w-4 h-4 text-slate-400 flex-shrink-0" />
+          <div className="min-w-0">
+            <div className="font-semibold text-slate-800">
+              {etiqueta}
+              {cant != null && <span className="text-slate-400 font-normal"> · {cant}</span>}
+            </div>
+            {nota && <div className="text-[11px] text-slate-500">{nota}</div>}
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2.5 text-right text-slate-700">{money0(debia)}</td>
+      <td className="px-3 py-2.5 text-right text-emerald-700 font-semibold">{money0(pagado)}</td>
+      <td className="px-3 py-2.5 text-right text-rose-600">{money0(falta)}</td>
+      <td className="px-3 py-2.5 text-right">
+        <div className={`font-black ${tonoPct(pct)}`}>{pct != null ? `${pct}%` : '—'}</div>
+        {/* la barra hace comparable de un vistazo lo que el numero dice exacto */}
+        <div className="h-1.5 rounded-full bg-slate-200 mt-1 overflow-hidden">
+          <div className={`h-full rounded-full ${barraPct(pct)}`}
+            style={{ width: `${Math.min(100, Math.max(0, Number(pct) || 0))}%` }} />
+        </div>
+      </td>
+    </tr>
+  );
+};
+
+const Tarjeta = ({ icon: Icon, titulo, valor, detalle, tono = 'slate', pie = null }) => {
   const tonos = {
     slate:   'bg-slate-50 text-slate-700 border-slate-200',
     rose:    'bg-rose-50 text-rose-700 border-rose-200',
@@ -59,6 +81,9 @@ const Tarjeta = ({ icon: Icon, titulo, valor, detalle, tono = 'slate' }) => {
       </div>
       <div className="text-2xl font-black mt-1 leading-tight">{valor}</div>
       {detalle && <div className="text-[11px] opacity-80 mt-0.5">{detalle}</div>}
+      {pie && (
+        <div className="text-[11px] font-semibold mt-2 pt-2 border-t border-current/15">{pie}</div>
+      )}
     </div>
   );
 };
@@ -93,6 +118,9 @@ const GestionEmpresarialPage = () => {
   const estado = data?.estado_actual || {};
   const vencidasCant = Number(estado.cuotas_vencidas_cant) || 0;
   const vencidasMonto = Number(estado.cuotas_vencidas_monto) || 0;
+  const motosCant = Number(estado.motos_unidades) || 0;
+  const motosValor = Number(estado.motos_valor) || 0;
+  const grupo = Number(data?.empresas_grupo) || 1;
 
   // Escala de las barras: el mes más pesado marca el 100%
   const maxMes = useMemo(
@@ -137,39 +165,87 @@ const GestionEmpresarialPage = () => {
         <>
           {/* Resumen de los 6 meses */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Las cuotas VENCIDAS viven aquí: es un numero de alarma, no un
+                analisis. El recuadro verde quedo para el cumplimiento. */}
             <Tarjeta icon={Receipt} tono="rose" titulo="Compromisos (6m)"
-              valor={money0(tot.compromisos)} detalle="Nómina, alquiler, servicios…" />
+              valor={money0(tot.compromisos)} detalle="Nómina, alquiler, servicios…"
+              pie={vencidasCant > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <b>{vencidasCant}</b> cuotas vencidas · <b>{money0(vencidasMonto)}</b>
+                </span>
+              )} />
+            {/* Frente a lo que se debe, con que se responde */}
             <Tarjeta icon={Truck} tono="amber" titulo="Suplidores (6m)"
               valor={money0(tot.suplidores)}
               detalle={data.suplidores_de
                 ? `Cuentas por pagar de ${data.suplidores_de}`
-                : 'Cuentas por pagar pendientes'} />
+                : 'Cuentas por pagar pendientes'}
+              pie={motosCant > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <Bike className="w-3.5 h-3.5 flex-shrink-0" />
+                  <b>{motosCant}</b> motos en inventario · <b>{money0(motosValor)}</b>
+                </span>
+              )} />
             <Tarjeta icon={Wallet} tono="slate" titulo="Gastos estimados (6m)"
-              valor={money0(tot.gastos)} detalle={`≈ ${money0(data.gasto_diario)}/día (real 90 días)`} />
+              valor={money0(tot.gastos)}
+              detalle={`≈ ${money0(data.gasto_diario)}/día (real 90 días)${grupo > 1 ? ` · ${grupo} empresas` : ''}`} />
             <Tarjeta icon={Target} tono="indigo" titulo="Total a cubrir (6m)"
               valor={money0(tot.total_cubrir)} detalle="Compromisos + suplidores + gastos" />
           </div>
 
-          {/* ESTADO ACTUAL — la foto de HOY, no la proyección.
-              Aquí va lo que hay que resolver ya; abajo, lo que hay que
-              planificar. Mezclarlos era lo que hacía ilegible el mes en curso. */}
+          {/* ESTADO ACTUAL = CUMPLIMIENTO DEL MES. No "cuánto debo" (eso está
+              arriba y abajo), sino "de lo que tocaba este mes, cuánto llevo
+              pagado". Es la única cifra del panel que mide desempeño. */}
           <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <Activity className="w-5 h-5 text-emerald-700" />
               <span className="text-[11px] font-bold uppercase tracking-wide text-emerald-800">
-                Estado actual de la empresa
+                Estado actual — cumplimiento de {mesLabel(estado.mes)}
               </span>
+              <span className="flex-1" />
+              {estado.total_pct != null && (
+                <span className={`text-2xl font-black ${tonoPct(estado.total_pct)}`}>
+                  {estado.total_pct}%
+                </span>
+              )}
             </div>
 
-            <div className="rounded-lg bg-white/70 border border-emerald-200 divide-y divide-emerald-100">
-              <FilaEstado
-                icon={AlertTriangle}
-                etiqueta="Cuotas vencidas"
-                nota="Pagarés a suplidores con la fecha ya pasada"
-                cantidad={vencidasCant}
-                monto={vencidasMonto}
-                alarma={vencidasCant > 0}
-              />
+            <div className="rounded-lg bg-white/80 border border-emerald-200 overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead className="text-[10px] uppercase tracking-wide text-slate-500 border-b">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-semibold">Concepto</th>
+                    <th className="text-right px-3 py-2 font-semibold">Se debía pagar</th>
+                    <th className="text-right px-3 py-2 font-semibold">Pagado</th>
+                    <th className="text-right px-3 py-2 font-semibold">Falta</th>
+                    <th className="text-right px-3 py-2 font-semibold">Cumplimiento</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <FilaCumplimiento icon={Receipt} etiqueta="Compromisos"
+                    nota="Nómina, alquiler, servicios, préstamos"
+                    cant={estado.compromisos_cant} debia={estado.compromisos_debia}
+                    pagado={estado.compromisos_pagado} pct={estado.compromisos_pct} />
+                  <FilaCumplimiento icon={Truck} etiqueta="Pagos a suplidores"
+                    nota="Cuotas que vencen dentro del mes"
+                    cant={estado.suplidores_cant} debia={estado.suplidores_debia}
+                    pagado={estado.suplidores_pagado} pct={estado.suplidores_pct} />
+                </tbody>
+                <tfoot className="border-t-2 border-emerald-200 bg-emerald-50/60">
+                  <tr className="font-bold">
+                    <td className="px-3 py-2">Total del mes</td>
+                    <td className="px-3 py-2 text-right">{money0(estado.total_debia)}</td>
+                    <td className="px-3 py-2 text-right text-emerald-700">{money0(estado.total_pagado)}</td>
+                    <td className="px-3 py-2 text-right text-rose-600">
+                      {money0(Number(estado.total_debia || 0) - Number(estado.total_pagado || 0))}
+                    </td>
+                    <td className={`px-3 py-2 text-right ${tonoPct(estado.total_pct)}`}>
+                      {estado.total_pct != null ? `${estado.total_pct}%` : '—'}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </div>
 
