@@ -338,7 +338,7 @@ const VentasPage = () => {
         // POS, el ticket de 80mm que ya existía.
         if (printMethod === 'pdf') {
           if (printFormat === 'full_page' || printFormat === 'half_page') {
-            generateFacturaCartaPDF(facturaParaImprimir, empresa, 'descargar');
+            await generateFacturaCartaPDF(facturaParaImprimir, empresa, 'descargar');
           } else {
             generateFacturaPDF(facturaParaImprimir, empresa);
           }

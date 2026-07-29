@@ -22,6 +22,8 @@ const ConfiguracionSistemaPage = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [subiendoFirma, setSubiendoFirma] = useState(false);
+    const firmaInputRef = useRef(null);
     const fileInputRef = useRef(null);
 
     const [formData, setFormData] = useState({
@@ -39,6 +41,7 @@ const ConfiguracionSistemaPage = () => {
         moneda_precios: 'DOP - PESOS',
         modo_fecha: 1,
         logo_url: '',
+        firma_url: '',
         meta_ventas: 150000,
         meta_flujo_neto_mensual: 0,
         incremento_meta_pct: 0,
@@ -100,6 +103,7 @@ const ConfiguracionSistemaPage = () => {
                     moneda_precios: data.moneda_precios || 'DOP - PESOS',
                     modo_fecha: data.modo_fecha || 1,
                     logo_url: data.logo_url || '',
+                    firma_url: data.firma_url || '',
                     meta_ventas: data.meta_ventas || 150000,
                     meta_flujo_neto_mensual: data.meta_flujo_neto_mensual ?? 0,
                     incremento_meta_pct: data.incremento_meta_pct || 0,
@@ -283,6 +287,62 @@ const ConfiguracionSistemaPage = () => {
         }
     };
 
+    // FIRMA: va sobre la linea "Entregado por" de la factura. Es un campo
+    // aparte del logo a proposito — el logo es de la empresa y va arriba, la
+    // firma es de quien entrega y va al pie; en un mismo campo habria que
+    // elegir una.
+    const handleFirmaUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
+        if (!validTypes.includes(file.type)) {
+            toast({ variant: 'destructive', title: 'Formato no válido', description: 'Solo se permiten imágenes PNG, JPG o WebP.' });
+            return;
+        }
+        setSubiendoFirma(true);
+        try {
+            const ext = file.name.split('.').pop();
+            const fileName = `firma_empresa_${Date.now()}.${ext}`;
+            if (formData.firma_url) {
+                const oldPath = formData.firma_url.split('/product-images/')[1];
+                if (oldPath) await supabase.storage.from('product-images').remove([oldPath]);
+            }
+            const { data, error } = await supabase.storage
+                .from('product-images')
+                .upload(`company/${fileName}`, file);
+            if (error) throw error;
+            const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(data.path);
+            setFormData(prev => ({ ...prev, firma_url: urlData.publicUrl }));
+            toast({
+                title: 'Firma cargada',
+                description: file.type === 'image/png'
+                    ? 'Va a salir sobre la línea "Entregado por". Recuerda Guardar.'
+                    : 'Ojo: en JPG el fondo del papel sale como un recuadro. Un PNG sin fondo queda mejor.',
+            });
+        } catch (error) {
+            console.error('Error subiendo la firma:', error);
+            toast({ variant: 'destructive', title: 'Error', description: 'No se pudo subir la firma.' });
+        } finally {
+            setSubiendoFirma(false);
+            if (firmaInputRef.current) firmaInputRef.current.value = '';
+        }
+    };
+
+    const handleRemoveFirma = async () => {
+        if (!formData.firma_url) return;
+        setSubiendoFirma(true);
+        try {
+            const oldPath = formData.firma_url.split('/product-images/')[1];
+            if (oldPath) await supabase.storage.from('product-images').remove([oldPath]);
+            setFormData(prev => ({ ...prev, firma_url: '' }));
+            toast({ title: 'Firma eliminada', description: 'Las facturas vuelven a salir con la línea en blanco.' });
+        } catch (error) {
+            console.error('Error eliminando la firma:', error);
+        } finally {
+            setSubiendoFirma(false);
+        }
+    };
+
     const handleRemoveLogo = async () => {
         if (!formData.logo_url) return;
         setUploading(true);
@@ -338,6 +398,34 @@ const ConfiguracionSistemaPage = () => {
                                     )}
 	                                    <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
 	                                </div>
+
+                                {/* FIRMA — se estampa sobre "Entregado por" en la
+                                    factura, para no tener que imprimir, firmar
+                                    a mano y escanear antes de enviarla. */}
+                                <Label className="text-[11px] font-bold text-gray-600 uppercase block text-center pt-2">Firma para Facturas</Label>
+                                <div className="w-full h-20 bg-white border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group">
+                                    {subiendoFirma ? (
+                                        <Loader2 className="h-6 w-6 animate-spin text-morla-blue" />
+                                    ) : formData.firma_url ? (
+                                        <>
+                                            <img src={formData.firma_url} alt="Firma" className="max-w-full max-h-full object-contain p-1" />
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                                <Button size="icon" variant="destructive" className="h-7 w-7" onClick={handleRemoveFirma}><Trash2 className="w-3.5 h-3.5" /></Button>
+                                                <Button size="icon" variant="secondary" className="h-7 w-7" onClick={() => firmaInputRef.current?.click()}><Upload className="w-3.5 h-3.5" /></Button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex flex-col items-center text-center p-2 cursor-pointer" onClick={() => firmaInputRef.current?.click()}>
+                                            <Upload className="w-6 h-6 text-gray-300 mb-1" />
+                                            <span className="text-[10px] text-gray-400 font-bold uppercase">Subir firma</span>
+                                        </div>
+                                    )}
+                                    <input ref={firmaInputRef} type="file" className="hidden" accept="image/*" onChange={handleFirmaUpload} />
+                                </div>
+                                <p className="text-[9px] text-gray-500 text-center leading-tight">
+                                    Sale sobre la línea <b>Entregado por</b>. Usa PNG sin fondo: una foto en papel
+                                    imprime el recuadro del papel.
+                                </p>
 	                            </div>
 
                             {/* Main Info Section */}

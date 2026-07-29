@@ -45,12 +45,36 @@ export const tituloComprobante = (factura) => {
   return TITULOS_NCF[tipo] || 'FACTURA';
 };
 
+// La firma vive en Storage. jsPDF.addImage NO acepta una URL: necesita la
+// imagen ya en memoria, asi que se baja y se convierte a dataURL antes de
+// armar el documento. Si falla (sin red, archivo borrado), se sigue sin
+// firma: una factura sin firma es util, un PDF que no sale no.
+const cargarImagen = (url) => new Promise((resolve) => {
+  if (!url) return resolve(null);
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      resolve({ dataUrl: canvas.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight });
+    } catch (e) {
+      resolve(null);
+    }
+  };
+  img.onerror = () => resolve(null);
+  img.src = url;
+});
+
 /**
  * @param {object} factura  con facturas_detalle y clientes
  * @param {object} empresa  config_empresa
  * @param {'abrir'|'descargar'} accion
  */
-export const generateFacturaCartaPDF = (factura, empresa = {}, accion = 'abrir') => {
+export const generateFacturaCartaPDF = async (factura, empresa = {}, accion = 'abrir') => {
+  const firma = await cargarImagen(empresa.firma_url);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
@@ -235,6 +259,23 @@ export const generateFacturaCartaPDF = (factura, empresa = {}, accion = 'abrir')
 
   // ---------- FIRMAS + PIE ----------
   const yFirma = Math.max(y + 16, H - 26);
+
+  // La firma va ENCIMA de la raya, no debajo: apoyada en la linea, como se
+  // firma en papel. Se escala a lo alto disponible manteniendo la
+  // proporcion, para que no salga aplastada.
+  if (firma) {
+    const altoMax = 14;
+    const anchoMax = 54;
+    let fw = (firma.w / firma.h) * altoMax;
+    let fh = altoMax;
+    if (fw > anchoMax) { fw = anchoMax; fh = (firma.h / firma.w) * anchoMax; }
+    try {
+      doc.addImage(firma.dataUrl, 'PNG', M + 29 - fw / 2, yFirma - fh - 0.5, fw, fh);
+    } catch (e) {
+      // Una firma que no se puede dibujar no debe tumbar la factura.
+    }
+  }
+
   doc.setLineWidth(0.3);
   doc.line(M, yFirma, M + 58, yFirma);
   doc.line(R - 58, yFirma, R, yFirma);

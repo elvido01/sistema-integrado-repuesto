@@ -181,12 +181,12 @@ const ReporteTransaccionesDiariasPage = () => {
               };
             }
           }
-          if (comoPdf) generateFacturaCartaPDF(factura, empresa, 'descargar');
+          if (comoPdf) await generateFacturaCartaPDF(factura, empresa, 'descargar');
           else printFacturaPOS(factura, formato);
         } else if (comoPdf) {
           // Aunque la empresa imprima en POS, el PDF para enviar va en hoja
           // carta: un ticket de 80mm no es un documento presentable.
-          generateFacturaCartaPDF(factura, empresa, 'descargar');
+          await generateFacturaCartaPDF(factura, empresa, 'descargar');
         } else {
           generateFacturaPDF(factura, empresa);
         }
