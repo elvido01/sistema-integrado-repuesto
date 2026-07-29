@@ -481,6 +481,30 @@ const printFacturaFullPage = (factura, printFormat) => {
     ? factura.manual_cliente_nombre.toUpperCase()
     : (client.nombre || 'CLIENTE GENERICO').toUpperCase();
 
+  // El TITULO tiene que decir que comprobante es. Estaba fijo en "Factura de
+  // Consumo": una de credito fiscal impresa asi no le sirve al comprador
+  // para deducir, por mas que el NCF fuera correcto.
+  // El tipo sale del NCF mismo (B01... -> 01) y si no hay NCF, del campo.
+  const tipoComprobante = String(factura.ncf || '').length >= 3
+    ? String(factura.ncf).substring(1, 3)
+    : (factura.tipo_ncf || '');
+  const TITULOS_NCF = {
+    '01': 'FACTURA DE CRÉDITO FISCAL',
+    '02': 'Factura de Consumo',
+    '03': 'NOTA DE DÉBITO',
+    '04': 'NOTA DE CRÉDITO',
+    '11': 'COMPROBANTE DE COMPRAS',
+    '14': 'COMPROBANTE GUBERNAMENTAL',
+    '15': 'COMPROBANTE PARA EXPORTACIONES',
+  };
+  const tituloFactura = TITULOS_NCF[tipoComprobante] || 'Factura';
+
+  // El nombre del emisor con el que se autorizo el NCF manda sobre el
+  // comercial; si no viene, la razon social; si tampoco, el nombre.
+  const emisorNombre = factura.nombre_emisor_ncf || _empresaConfig.nombre;
+  const emisorRazon = (_empresaConfig.razonSocial || '').trim();
+  const mostrarRazon = emisorRazon && emisorRazon.toUpperCase() !== String(emisorNombre).trim().toUpperCase();
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -619,23 +643,49 @@ const printFacturaFullPage = (factura, printFormat) => {
           color: #888;
           margin-top: ${isHalf ? '6px' : '10px'};
         }
+        .ncf-box {
+          border: 2px solid #000;
+          padding: ${isHalf ? '3px 8px' : '5px 12px'};
+          margin: ${isHalf ? '4px 0' : '8px 0'};
+          display: flex;
+          align-items: baseline;
+          gap: 10px;
+          justify-content: center;
+        }
+        .ncf-box span {
+          font-size: ${isHalf ? '9px' : '10px'};
+          letter-spacing: 1px;
+          text-transform: uppercase;
+        }
+        .ncf-box strong {
+          font-size: ${isHalf ? '14px' : '17px'};
+          letter-spacing: 1px;
+        }
       </style>
     </head>
     <body onload="window.print()">
 
       <!-- HEADER: Empresa -->
       <div class="header">
-        <h1>${_empresaConfig.nombre}</h1>
+        <h1>${emisorNombre}</h1>
+        ${mostrarRazon ? `<p>${emisorRazon}</p>` : ''}
         ${_empresaConfig.direccion ? `<p>${_empresaConfig.direccion}</p>` : ''}
         ${_empresaConfig.ciudad ? `<p>${_empresaConfig.ciudad}</p>` : ''}
         ${_empresaConfig.telefono ? `<p>CEL / TEL: ${_empresaConfig.telefono}</p>` : ''}
       </div>
 
-      <!-- TITULO: Factura + RNC -->
+      <!-- TITULO: tipo de comprobante + RNC -->
       <div class="titulo-factura">
-        <h2>Factura de Consumo</h2>
+        <h2>${tituloFactura}</h2>
         <span class="rnc">RNC: ${_empresaConfig.rnc || 'N/A'}&nbsp;&nbsp;&nbsp;Nº ${numeroStr}</span>
       </div>
+
+      ${factura.ncf ? `
+      <!-- NCF: sin esto el comprobante no vale. No se imprimia en hoja
+           grande, solo en el ticket. -->
+      <div class="ncf-box">
+        <span>NCF</span><strong>${factura.ncf}</strong>
+      </div>` : ''}
 
       <!-- INFO CLIENTE -->
       <div class="info-grid">
