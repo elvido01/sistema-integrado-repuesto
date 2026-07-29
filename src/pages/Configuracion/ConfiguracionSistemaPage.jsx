@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { limpiarFirmaPNG } from '@/lib/firmaUtils';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -301,7 +302,14 @@ const ConfiguracionSistemaPage = () => {
         }
         setSubiendoFirma(true);
         try {
-            const ext = file.name.split('.').pop();
+            // Se le quita el fondo ANTES de subirla. Nadie tiene la firma en
+            // PNG transparente: lo que hay es una foto del papel, y pegada tal
+            // cual deja un recuadro gris encima de la línea "Entregado por".
+            // Si ya venía limpia, limpiarFirmaPNG devuelve null y se sube tal
+            // como está.
+            const limpia = await limpiarFirmaPNG(file);
+            const archivo = limpia || file;
+            const ext = limpia ? 'png' : (file.name.split('.').pop() || 'png');
             const fileName = `firma_empresa_${Date.now()}.${ext}`;
             if (formData.firma_url) {
                 const oldPath = formData.firma_url.split('/product-images/')[1];
@@ -309,15 +317,15 @@ const ConfiguracionSistemaPage = () => {
             }
             const { data, error } = await supabase.storage
                 .from('product-images')
-                .upload(`company/${fileName}`, file);
+                .upload(`company/${fileName}`, archivo, { contentType: limpia ? 'image/png' : file.type });
             if (error) throw error;
             const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(data.path);
             setFormData(prev => ({ ...prev, firma_url: urlData.publicUrl }));
             toast({
                 title: 'Firma cargada',
-                description: file.type === 'image/png'
-                    ? 'Va a salir sobre la línea "Entregado por". Recuerda Guardar.'
-                    : 'Ojo: en JPG el fondo del papel sale como un recuadro. Un PNG sin fondo queda mejor.',
+                description: limpia
+                    ? 'Se le quitó el fondo y se recortó. Va sobre la línea "Entregado por" — recuerda Guardar.'
+                    : 'Va a salir sobre la línea "Entregado por". Recuerda Guardar.',
             });
         } catch (error) {
             console.error('Error subiendo la firma:', error);
@@ -423,8 +431,8 @@ const ConfiguracionSistemaPage = () => {
                                     <input ref={firmaInputRef} type="file" className="hidden" accept="image/*" onChange={handleFirmaUpload} />
                                 </div>
                                 <p className="text-[9px] text-gray-500 text-center leading-tight">
-                                    Sale sobre la línea <b>Entregado por</b>. Usa PNG sin fondo: una foto en papel
-                                    imprime el recuadro del papel.
+                                    Sale sobre la línea <b>Entregado por</b>. Sube la <b>foto de la firma en
+                                    papel</b>: el sistema le quita el fondo y la recorta sola.
                                 </p>
 	                            </div>
 
