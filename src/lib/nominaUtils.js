@@ -126,13 +126,16 @@ export function periodoSugerido(frecuencia, hoyStr) {
   const iso = (yy, mm, dd) => `${yy}-${pad(mm)}-${pad(dd)}`;
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();  // último día del mes m (1-based)
 
-  // Semanal: el período es el MES completo — ahí es donde el dueño quiere ver
-  // el total ("se lo agrega a la nómina del mes"). Adentro se paga sábado por
-  // sábado, así que el mes vale 4 o 5 sábados según le toque.
+  // Semanal: el período es UNA SEMANA (lunes a sábado). Cada sábado es un
+  // sueldo y un compromiso propio en el dashboard, igual que el quincenal
+  // tiene el suyo el 15 y el 30. El mes suma sus 4 o 5 sábados.
   if (frecuencia === 'semanal') {
-    const ultimo = new Date(Date.UTC(y, m - 1, lastDay));
-    const ultimoSabado = lastDay - ((ultimo.getUTCDay() - 6 + 7) % 7);
-    return { desde: iso(y, m, 1), hasta: iso(y, m, lastDay), fecha_pago: iso(y, m, ultimoSabado) };
+    const base = new Date(Date.UTC(y, m - 1, d));
+    const dow = (base.getUTCDay() + 6) % 7;                  // lunes = 0
+    const lunes = new Date(base);  lunes.setUTCDate(d - dow);
+    const sabado = new Date(base); sabado.setUTCDate(d - dow + 5);
+    const fmt = (dt) => iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
+    return { desde: fmt(lunes), hasta: fmt(sabado), fecha_pago: fmt(sabado) };
   }
   if (frecuencia === 'mensual') {
     return { desde: iso(y, m, 1), hasta: iso(y, m, lastDay), fecha_pago: iso(y, m, lastDay) };

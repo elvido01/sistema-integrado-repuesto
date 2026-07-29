@@ -35,6 +35,9 @@ const DIAS_SEMANA = [
   { value: 0, label: 'Domingos' },
 ];
 const nombreDia = (d) => (DIAS_SEMANA.find((x) => x.value === (d ?? 6)) || DIAS_SEMANA[0]).label.toLowerCase();
+const diaSingular = (d) => nombreDia(d).replace(/s$/, '');
+// "1 sábado" / "5 sábados"
+const vecesDia = (d, n) => `${n} ${n === 1 ? diaSingular(d) : nombreDia(d)}`;
 
 const NominaPage = () => {
   const { toast } = useToast();
@@ -280,9 +283,9 @@ const NominaPage = () => {
   const resumen = useMemo(() => {
     const activos = empleados.filter((e) => e.activo);
     const pendiente = adelantos.reduce((s, a) => s + pendienteAdelanto(a), 0);
-    // El semanal se estima sobre el MES en curso: 4 o 5 sábados segun caiga.
-    const mes = periodoSugerido('semanal', hoyTZ());
-    const proxima = activos.reduce((s, e) => s + calcularDetalleNomina(e, { periodo: mes }).neto, 0);
+    // Cada frecuencia con SU período: el semanal vale un sábado, igual que
+    // el quincenal vale una quincena.
+    const proxima = activos.reduce((s, e) => s + calcularDetalleNomina(e, {}).neto, 0);
     const borradores = nominas.filter((n) => n.estado === 'borrador').length;
     return { activos: activos.length, pendiente, proxima, borradores };
   }, [empleados, adelantos, nominas]);
@@ -410,7 +413,7 @@ const NominaPage = () => {
                                 siempre igual, el mes cambia con 4 o 5. */}
                             {nominaSel.frecuencia === 'semanal' && Number(d.pagos_periodo) > 0 && (
                               <span className="block text-[10px] text-muted-foreground whitespace-nowrap">
-                                {d.pagos_periodo} {nombreDia(d.empleados?.dia_pago_semanal)} × {money(Number(d.sueldo_base) / Number(d.pagos_periodo))}
+                                {vecesDia(d.empleados?.dia_pago_semanal, Number(d.pagos_periodo))} × {money(Number(d.sueldo_base) / Number(d.pagos_periodo))}
                               </span>
                             )}
                           </td>
@@ -481,7 +484,7 @@ const NominaPage = () => {
                     {e.frecuencia_pago}
                     {e.frecuencia_pago === 'semanal' && (
                       <span className="block text-[10px] text-emerald-700 whitespace-nowrap">
-                        {money(Number(e.sueldo_mensual) / 4)} cada {nombreDia(e.dia_pago_semanal).replace(/s$/, '')}
+                        {money(Number(e.sueldo_mensual) / 4)} cada {diaSingular(e.dia_pago_semanal)}
                       </span>
                     )}
                   </td>
@@ -597,14 +600,14 @@ const NominaPage = () => {
                 // Semanal: lo que importa es cuánto cobra CADA día de pago y
                 // que el mes cambie solo porque tenga 4 o 5.
                 const unDia = calcularDetalleNomina(emp, {}).neto;   // sin período = 1 pago
-                const mes = periodoSugerido('semanal', hoyTZ());
+                const mes = periodoSugerido('mensual', hoyTZ());   // rango del mes en curso
                 const veces = pagosDelEmpleado(emp, mes);
                 return (
                   <p className="text-xs text-emerald-700 bg-emerald-50 rounded-lg p-2">
-                    Cobra <b>{money(unDia)}</b> cada {nombreDia(emp.dia_pago_semanal).replace(/s$/, '')}.
+                    Cobra <b>{money(unDia)}</b> cada {diaSingular(emp.dia_pago_semanal)}.
                     Este mes le tocan <b>{veces}</b> → <b>{money(unDia * veces)}</b>.
                     <span className="block text-emerald-800/70">
-                      El {nombreDia(emp.dia_pago_semanal).replace(/s$/, '')} siempre vale lo mismo; el mes cambia según tenga 4 o 5.
+                      El {diaSingular(emp.dia_pago_semanal)} siempre vale lo mismo; el mes cambia según tenga 4 o 5.
                     </span>
                   </p>
                 );
@@ -655,7 +658,7 @@ const NominaPage = () => {
                     <div key={e.id} className="flex justify-between gap-2">
                       <span>{e.nombre}</span>
                       <span className="whitespace-nowrap">
-                        {veces} {nombreDia(e.dia_pago_semanal)} × {money(Number(e.sueldo_mensual) / 4)}
+                        {vecesDia(e.dia_pago_semanal, veces)} × {money(Number(e.sueldo_mensual) / 4)}
                         {' = '}<b>{money((Number(e.sueldo_mensual) / 4) * veces)}</b>
                       </span>
                     </div>
