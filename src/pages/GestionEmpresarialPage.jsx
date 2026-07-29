@@ -247,12 +247,13 @@ const GestionEmpresarialPage = () => {
                 )}
                 <FilaPos icon={Receipt} etiqueta="Compromisos" monto={pos.compromisos}
                   nota={`${pos.compromisos_cant || 0} vivos · nómina, alquiler, préstamos`} />
-                {Number(pos.intercompania) > 0 && (
-                  /* Se muestra para que nadie crea que el número se perdió:
-                     lo que una empresa del grupo le debe a la otra no es deuda. */
-                  <FilaPos icon={ArrowLeftRight} etiqueta="Entre las empresas del grupo"
-                    monto={pos.intercompania} tachado
-                    nota="no es deuda: dinero de un bolsillo al otro" />
+                {/* DEUDAS PERSONALES (modulo SAN). Es plata que hay que
+                    devolver, asi que pesa igual que un suplidor. Ocupa el
+                    lugar de la linea "entre empresas", que ya no aportaba:
+                    se sabe que se elimina y en cuanto. */}
+                {Number(pos.deudas_personales) > 0 && (
+                  <FilaPos icon={Landmark} etiqueta="Deudas personales" monto={pos.deudas_personales}
+                    nota={`${pos.deudas_personales_cant || 0} · del módulo SAN Ahorro`} />
                 )}
                 <div className="flex items-center justify-between pt-2 mt-1 border-t font-bold">
                   <span className="text-sm">Total</span>
@@ -372,6 +373,17 @@ const GestionEmpresarialPage = () => {
               </div>
             )}
           </div>
+
+          {/* Lo que queda FUERA de los 6 meses: sin esto el total de la
+              tabla parece ser toda la deuda a suplidores, y no lo es. */}
+          {Number(data.suplidores_fuera_ventana) > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2 text-[11px] text-amber-800">
+              La tabla muestra lo que falta por pagar de estos {meses.length} meses. Fuera de esa ventana
+              —vencido de antes y cuotas de años siguientes— quedan{' '}
+              <b>{money0(data.suplidores_fuera_ventana)}</b> más, que sumados dan la deuda completa a
+              suplidores de la posición.
+            </div>
+          )}
 
           {/* Mes por mes */}
           <div className="rounded-xl border bg-card overflow-hidden">
