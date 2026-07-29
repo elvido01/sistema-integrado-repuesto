@@ -185,8 +185,15 @@ const GestionEmpresarialPage = () => {
                   nota={data.tasa_usd > 1 ? `dólares a ${data.tasa_usd}` : null} />
                 <FilaPos icon={Bike} etiqueta="Motos en inventario" monto={pos.motos_valor}
                   nota={`${pos.motos_unidades || 0} unidades al costo`} />
-                <FilaPos icon={Landmark} etiqueta="Cartera de préstamos" monto={pos.cartera_capital}
-                  nota={`${pos.cartera_cantidad || 0} activos · capital colocado`} />
+                {/* La cartera con sus tres partes, tal como la muestra su
+                    propio modulo: capital afuera + interes + mora. Si la
+                    financiera no esta activa no hay cartera, y se omite en
+                    vez de mostrar un cero que parezca un dato. */}
+                {Number(pos.cartera_total) > 0 && (
+                  <FilaPos icon={Landmark} etiqueta="Cartera de préstamos" monto={pos.cartera_total}
+                    nota={`${pos.cartera_cantidad || 0} activos · ${money0(pos.cartera_capital)} capital + ${money0(pos.cartera_interes)} interés${
+                      Number(pos.cartera_mora) > 0 ? ` + ${money0(pos.cartera_mora)} mora` : ''}`} />
+                )}
                 <FilaPos icon={Receipt} etiqueta="Por cobrar a clientes" monto={pos.por_cobrar} />
                 <div className="flex items-center justify-between pt-2 mt-1 border-t font-bold">
                   <span className="text-sm">Total</span>
