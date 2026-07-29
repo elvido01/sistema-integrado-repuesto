@@ -7,11 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Loader2, Search, PlusCircle, Edit, Trash2, Printer } from 'lucide-react';
+import { Loader2, Search, PlusCircle, Edit, Trash2, Printer, Receipt } from 'lucide-react';
 import CotizacionMagnaFormModal from '@/components/cotizaciones_magna/CotizacionMagnaFormModal';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { printCotizacionMagnaPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useFacturacion } from '@/contexts/FacturacionContext';
+import { usePanels } from '@/contexts/PanelContext';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -27,6 +29,8 @@ import {
 const CotizacionesMagnaPage = () => {
   const { empresa } = useAuth();
     const { toast } = useToast();
+    const { setPedidoParaFacturar } = useFacturacion();
+    const { openPanel } = usePanels();
 
     const [cotizaciones, setCotizaciones] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -113,6 +117,22 @@ const CotizacionesMagnaPage = () => {
         }
     };
 
+    // A FACTURACION. El modulo cotizaba y ahi se quedaba: para cobrarle a
+    // Magna habia que teclear la factura a mano, orden por orden, con el
+    // riesgo de equivocar un monto o saltarse una orden.
+    const handleFacturar = async () => {
+        if (!selectedCot) return;
+        if (selectedCot.estado === 'Facturada') {
+            toast({ variant: 'destructive', title: 'Ya está facturada', description: `La cotización #${selectedCot.numero} ya se facturó.` });
+            return;
+        }
+        // El cierre (estado = Facturada) lo hace Ventas AL GUARDAR la factura,
+        // no aqui: si se marcara ahora y la factura no se llega a guardar, la
+        // cotizacion quedaria muerta sin haber cobrado nada.
+        setPedidoParaFacturar({ ...selectedCot, type: 'cotizacion_magna' });
+        openPanel('ventas');
+    };
+
     const handleAnular = async () => {
         if (!selectedCot) return;
         try {
@@ -148,6 +168,10 @@ const CotizacionesMagnaPage = () => {
         if (e.key.toLowerCase() === 'delete' && selectedCot) {
             e.preventDefault();
             document.getElementById('magna-annul-trigger')?.click();
+        }
+        if (e.key === 'F5' && selectedCot) {
+            e.preventDefault();
+            handleFacturar();
         }
         if (e.key === 'F6' && selectedCot) {
             e.preventDefault();
@@ -327,6 +351,15 @@ const CotizacionesMagnaPage = () => {
                         >
                             <span>ENTER - Modificar</span>
                             <Edit size={18} />
+                        </Button>
+
+                        <Button
+                            onClick={handleFacturar}
+                            disabled={!selectedCot || selectedCot.estado === 'Facturada'}
+                            className="w-full justify-between bg-blue-600 hover:bg-blue-700"
+                        >
+                            <span>{selectedCot?.estado === 'Facturada' ? 'Ya facturada' : 'F5 - Facturar'}</span>
+                            <Receipt size={18} />
                         </Button>
 
                         <Button

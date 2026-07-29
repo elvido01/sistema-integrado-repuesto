@@ -51,6 +51,7 @@ const VentasPage = () => {
     handleDeleteItem,
     handleAddProductByCode,
     handleSelectCotizacion,
+    handleSelectCotizacionMagna,
     handleSelectPedido,
     currentItem,
     updateCurrentItem,
@@ -248,14 +249,16 @@ const VentasPage = () => {
 
   useEffect(() => {
     if (pedidoParaFacturar) {
-      if (pedidoParaFacturar.type === 'cotizacion') {
+      if (pedidoParaFacturar.type === 'cotizacion_magna') {
+        handleSelectCotizacionMagna(pedidoParaFacturar);
+      } else if (pedidoParaFacturar.type === 'cotizacion') {
         handleSelectCotizacion(pedidoParaFacturar);
       } else if (pedidoParaFacturar.type === 'pedido') {
         handleSelectPedido(pedidoParaFacturar);
       }
       setPedidoParaFacturar(null);
     }
-  }, [pedidoParaFacturar, handleSelectCotizacion, handleSelectPedido, setPedidoParaFacturar]);
+  }, [pedidoParaFacturar, handleSelectCotizacion, handleSelectCotizacionMagna, handleSelectPedido, setPedidoParaFacturar]);
 
   // Sincronizar el campo "CÓDIGO DEL CLIENTE" cuando cambia el cliente (al cargar
   // un pedido/cotización desde solicitud). Fallback a RNC/cédula si no hay código.

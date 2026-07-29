@@ -61,6 +61,10 @@ export const useVentas = () => {
   const [totals, setTotals] = useState({ subTotal: 0, totalDescuento: 0, totalItbis: 0, totalFactura: 0 });
   const [cambio, setCambio] = useState(0);
   const [cotizacionId, setCotizacionId] = useState(null);
+  // Las Magna viven en otra tabla (cotizaciones_magna), asi que llevan su
+  // propio marcador: con el id normal se intentaria cerrar una cotizacion
+  // que no existe en 'cotizaciones'.
+  const [cotizacionMagnaId, setCotizacionMagnaId] = useState(null);
   const [solicitudCompraId, setSolicitudCompraId] = useState(null); // origen financiado (terceros)
   const [confirmarContado, setConfirmarContado] = useState(false);  // aviso al salirse del crédito
   const [printFormat, setPrintFormat] = useState(() => localStorage.getItem('ventas_printFormat') || empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
@@ -936,6 +940,13 @@ export const useVentas = () => {
         }
       }
 
+      if (cotizacionMagnaId && !editingFacturaId) {
+        await supabase
+          .from('cotizaciones_magna')
+          .update({ estado: 'Facturada', updated_at: new Date().toISOString() })
+          .eq('id', cotizacionMagnaId);
+      }
+
       if (cotizacionId && !editingFacturaId) {
         await supabase
           .from('cotizaciones')
@@ -1285,6 +1296,99 @@ export const useVentas = () => {
     }
   }, [handleSelectCliente, resetVenta, toast]);
 
+  // COTIZACION MAGNA -> FACTURA
+  // Magna cotiza por ORDEN DE TRABAJO: cada linea trae numero de orden,
+  // chasis, valor de repuestos y valor de mano de obra. No hay productos de
+  // inventario detras, asi que las lineas se apoyan en un producto de
+  // servicio (SERV-MAGNA) y la descripcion lleva la orden y el chasis, que
+  // es como Magna concilia.
+  const handleSelectCotizacionMagna = useCallback(async (cotizacion) => {
+    try {
+      resetVenta();
+
+      const { data: servicio, error: servError } = await supabase
+        .from('productos')
+        .select('*')
+        .eq('codigo', 'SERV-MAGNA')
+        .maybeSingle();
+      if (servError) throw servError;
+      if (!servicio) {
+        toast({
+          variant: 'destructive',
+          title: 'Falta el producto de servicio',
+          description: 'Corre sql/cotizaciones_magna_a_facturacion.sql: crea SERV-MAGNA, que es el que sostiene las líneas.',
+        });
+        return;
+      }
+
+      const { data: lineas, error: detError } = await supabase
+        .from('cotizaciones_magna_detalle')
+        .select('*')
+        .eq('cotizacion_id', cotizacion.id)
+        .order('created_at', { ascending: true });
+      if (detError) throw detError;
+      if (!lineas || lineas.length === 0) {
+        toast({ variant: 'destructive', title: 'Cotización vacía', description: 'Esa cotización no tiene órdenes.' });
+        return;
+      }
+
+      const itbis_pct = normalizeItbisPct(servicio.itbis_pct);
+
+      const newItems = lineas.map((l) => {
+        // En la cotizacion los valores van SIN ITBIS (subtotal + itbis =
+        // total). La factura trabaja con precios CON ITBIS incluido, asi que
+        // se convierte aqui: si no, el ITBIS saldria descontado del monto
+        // acordado y la factura cobraria de menos.
+        const sinItbis = (Number(l.valor_repuestos) || 0) + (Number(l.valor_mano_obra) || 0);
+        const precioConItbis = sinItbis * (1 + itbis_pct);
+        const baseImponible = precioConItbis / (1 + itbis_pct);
+
+        const partes = [];
+        if (l.numero_orden) partes.push(`Orden ${l.numero_orden}`);
+        if (l.chasis) partes.push(l.chasis);
+
+        return {
+          id: servicio.id,
+          producto_id: servicio.id,
+          codigo: servicio.codigo,
+          descripcion: partes.length ? partes.join(' · ') : 'Servicio de taller',
+          cantidad: 1,
+          precio: precioConItbis,
+          descuento: 0,
+          unidad: servicio.unidad || 'UND',
+          itbis_pct,
+          itbis: precioConItbis - baseImponible,
+          importe: precioConItbis,
+          costo_unitario: 0,
+          max_descuento: 0,
+        };
+      });
+
+      setItems(newItems);
+      setCotizacionMagnaId(cotizacion.id);
+
+      // Magna no se guarda en la cotizacion (la tabla no tiene cliente), asi
+      // que el cliente se elige en la factura. Si ya existe uno que se llame
+      // Magna se preselecciona para ahorrar el paso.
+      const { data: cli } = await supabase
+        .from('clientes')
+        .select('*')
+        .ilike('nombre', '%magna%')
+        .limit(1)
+        .maybeSingle();
+      if (cli) handleSelectCliente(cli);
+
+      toast({
+        title: `Cotización Magna #${cotizacion.numero} cargada`,
+        description: cli
+          ? `${newItems.length} ${newItems.length === 1 ? 'orden' : 'órdenes'}.`
+          : `${newItems.length} ${newItems.length === 1 ? 'orden' : 'órdenes'}. Falta elegir el cliente.`,
+      });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar la cotización Magna.' });
+    }
+  }, [handleSelectCliente, resetVenta, toast]);
+
   const handleSelectPedido = useCallback(async (pedido) => {
     try {
       resetVenta(); // Clear screen first as requested
@@ -1398,6 +1502,7 @@ export const useVentas = () => {
     handleAddProductByCode,
     setCotizacionId,
     handleSelectCotizacion,
+    handleSelectCotizacionMagna,
     recargo, setRecargo,
     tipoPago, setTipoPago,
     cuentaBancoId, setCuentaBancoId,
