@@ -40,16 +40,19 @@
 -- ------------------------------------------------------------
 -- 1) La causa: el movimiento se graba bajo el dueño de la cuenta
 -- ------------------------------------------------------------
--- Reescritura directa: es más claro y menos frágil que parchear texto.
+-- Reescritura directa: más claro que parchear texto.
+-- OJO CON LA FIRMA: tiene que ser IDÉNTICA a la que ya existe. Postgres no
+-- deja quitar un DEFAULT con CREATE OR REPLACE, así que p_concepto lleva su
+-- DEFAULT NULL y p_origen_tipo su DEFAULT 'ajuste' como en el original.
 CREATE OR REPLACE FUNCTION public.registrar_movimiento_bancario(
   p_cuenta_id   uuid,
   p_tipo        text,
   p_monto       numeric,
-  p_concepto    text,
-  p_referencia  text    DEFAULT NULL,
-  p_origen_tipo text    DEFAULT NULL,
-  p_origen_id   uuid    DEFAULT NULL,
-  p_fecha       date    DEFAULT NULL
+  p_concepto    text DEFAULT NULL,
+  p_referencia  text DEFAULT NULL,
+  p_origen_tipo text DEFAULT 'ajuste',
+  p_origen_id   uuid DEFAULT NULL,
+  p_fecha       date DEFAULT NULL
 )
 RETURNS uuid
 LANGUAGE plpgsql
