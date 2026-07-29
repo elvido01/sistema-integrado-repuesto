@@ -293,13 +293,45 @@ NOTIFY pgrst, 'reload schema';
 -- VERIFICACIÓN
 -- ------------------------------------------------------------
 -- 1) LA PREGUNTA: agosto debe tener UN pago más que septiembre, de 8,000
-SELECT m->>'mes' AS mes,
-       (m->>'compromisos_cant')::int   AS pagos,
-       (m->>'compromisos')::numeric    AS compromisos
-FROM json_array_elements(
-       (public.get_gestion_empresarial_ia(6))->'meses') m;
--- esperado: agosto = septiembre + 1 pago y + 8,000
---           (4 sábados 665,964 | 5 sábados 673,964)
+--    OJO: no se llama al RPC aquí. get_gestion_empresarial_ia usa
+--    get_user_tenant(), y en el editor SQL no hay sesión → "No se pudo
+--    determinar el tenant". Esta consulta hace la misma cuenta por empresa.
+WITH meses AS (
+  SELECT (date_trunc('month', CURRENT_DATE) + (n || ' month')::interval)::date AS mes
+  FROM generate_series(0, 5) n
+),
+comp AS (   -- los compromisos fijos (sin nómina), como los proyecta la función
+  SELECT c.tenant_id, count(*) AS cant, sum(c.monto) AS monto
+  FROM public.compromisos c
+  WHERE COALESCE(c.activo, true) AND COALESCE(c.recurrente, false)
+    AND COALESCE(c.tipo, '') <> 'nomina'
+  GROUP BY 1
+)
+SELECT t.nombre AS empresa, to_char(m.mes, 'MM/YYYY') AS mes,
+       COALESCE(c.cant, 0) + SUM(
+         CASE e.frecuencia_pago
+           WHEN 'semanal'   THEN public.nomina_pagos_en_periodo(
+                                   m.mes, (m.mes + interval '1 month - 1 day')::date,
+                                   COALESCE(e.dia_pago_semanal, 6)::smallint)
+           WHEN 'quincenal' THEN 2 ELSE 1 END) AS pagos,
+       COALESCE(c.monto, 0) + SUM(
+         CASE WHEN e.frecuencia_pago = 'semanal'
+              THEN round(e.sueldo_mensual / 4.0, 2)
+                   * public.nomina_pagos_en_periodo(
+                       m.mes, (m.mes + interval '1 month - 1 day')::date,
+                       COALESCE(e.dia_pago_semanal, 6)::smallint)
+              ELSE e.sueldo_mensual END) AS compromisos
+FROM public.empleados e
+JOIN public.tenants t ON t.id = e.tenant_id
+CROSS JOIN meses m
+LEFT JOIN comp c ON c.tenant_id = e.tenant_id
+WHERE e.activo
+GROUP BY t.nombre, m.mes, c.cant, c.monto
+ORDER BY t.nombre, m.mes;
+-- esperado (Motoprestamos/Caminero): agosto = septiembre + 1 pago y + 8,000
+--   4 sábados → 18 pagos, 665,964  |  5 sábados → 19 pagos, 673,964
+-- (esta consulta usa el sueldo bruto; con empleados informales, que es el
+--  caso, bruto = neto y da idéntico a la función)
 
 -- 2) De dónde sale: los sábados de cada mes y el costo de la nómina
 SELECT to_char(d, 'MM/YYYY') AS mes,
