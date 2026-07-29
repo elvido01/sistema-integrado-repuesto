@@ -14,6 +14,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import {
   Loader2, RefreshCw, TrendingUp, Receipt, Truck, Wallet, Target, Info, AlertTriangle, Activity, Bike,
+  Scale, Landmark, ArrowLeftRight,
 } from 'lucide-react';
 
 const money = (v) => `RD$ ${(Number(v) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -23,6 +24,21 @@ const mesLabel = (ym) => {
   const [a, m] = String(ym || '').split('-');
   return m ? `${MESES[Number(m) - 1]} ${a}` : ym;
 };
+
+// Una linea de la posicion: concepto, su aclaracion, y el monto.
+const FilaPos = ({ icon: Icon, etiqueta, nota, monto, tachado }) => (
+  <div className="flex items-start gap-2 py-1.5">
+    <Icon className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+    <div className="min-w-0 flex-1">
+      <div className="text-sm text-slate-800 leading-tight">{etiqueta}</div>
+      {nota && <div className="text-[10px] text-slate-500">{nota}</div>}
+    </div>
+    <div className={`text-sm font-semibold whitespace-nowrap ${
+      tachado ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+      {money0(monto)}
+    </div>
+  </div>
+);
 
 // Semaforo del cumplimiento. Los cortes no son caprichosos: por debajo de
 // 50% el mes ya no se recupera solo, y sobre 90% se considera cumplido.
@@ -66,28 +82,6 @@ const FilaCumplimiento = ({ icon: Icon, etiqueta, nota, cant, debia, pagado, pct
   );
 };
 
-const Tarjeta = ({ icon: Icon, titulo, valor, detalle, tono = 'slate', pie = null }) => {
-  const tonos = {
-    slate:   'bg-slate-50 text-slate-700 border-slate-200',
-    rose:    'bg-rose-50 text-rose-700 border-rose-200',
-    amber:   'bg-amber-50 text-amber-700 border-amber-200',
-    indigo:  'bg-indigo-50 text-indigo-700 border-indigo-200',
-    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  };
-  return (
-    <div className={`rounded-xl border p-4 ${tonos[tono]}`}>
-      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide">
-        <Icon className="w-4 h-4" /> {titulo}
-      </div>
-      <div className="text-2xl font-black mt-1 leading-tight">{valor}</div>
-      {detalle && <div className="text-[11px] opacity-80 mt-0.5">{detalle}</div>}
-      {pie && (
-        <div className="text-[11px] font-semibold mt-2 pt-2 border-t border-current/15">{pie}</div>
-      )}
-    </div>
-  );
-};
-
 const GestionEmpresarialPage = () => {
   const { toast } = useToast();
   const [data, setData] = useState(null);
@@ -118,9 +112,14 @@ const GestionEmpresarialPage = () => {
   const estado = data?.estado_actual || {};
   const vencidasCant = Number(estado.cuotas_vencidas_cant) || 0;
   const vencidasMonto = Number(estado.cuotas_vencidas_monto) || 0;
-  const motosCant = Number(estado.motos_unidades) || 0;
-  const motosValor = Number(estado.motos_valor) || 0;
   const grupo = Number(data?.empresas_grupo) || 1;
+  const pos = data?.posicion || {};
+  const ventasMes = Number(data?.ventas_mes) || 0;
+  // Cuántas veces habría que multiplicar las ventas del mes para llegar a
+  // lo que exige la deuda. Es el número que pone el objetivo en escala.
+  const vecesVentas = ventasMes > 0
+    ? (Number(tot.facturacion_necesaria) || 0) / 6 / ventasMes
+    : null;
 
   // Escala de las barras: el mes más pesado marca el 100%
   const maxMes = useMemo(
@@ -163,35 +162,82 @@ const GestionEmpresarialPage = () => {
 
       {data && (
         <>
-          {/* Resumen de los 6 meses */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Las cuotas VENCIDAS viven aquí: es un numero de alarma, no un
-                analisis. El recuadro verde quedo para el cumplimiento. */}
-            <Tarjeta icon={Receipt} tono="rose" titulo="Compromisos (6m)"
-              valor={money0(tot.compromisos)} detalle="Nómina, alquiler, servicios…"
-              pie={vencidasCant > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                  <b>{vencidasCant}</b> cuotas vencidas · <b>{money0(vencidasMonto)}</b>
-                </span>
-              )} />
-            {/* Frente a lo que se debe, con que se responde */}
-            <Tarjeta icon={Truck} tono="amber" titulo="Suplidores (6m)"
-              valor={money0(tot.suplidores)}
-              detalle={data.suplidores_de
-                ? `Cuentas por pagar de ${data.suplidores_de}`
-                : 'Cuentas por pagar pendientes'}
-              pie={motosCant > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <Bike className="w-3.5 h-3.5 flex-shrink-0" />
-                  <b>{motosCant}</b> motos en inventario · <b>{money0(motosValor)}</b>
-                </span>
-              )} />
-            <Tarjeta icon={Wallet} tono="slate" titulo="Gastos estimados (6m)"
-              valor={money0(tot.gastos)}
-              detalle={`≈ ${money0(data.gasto_diario)}/día (real 90 días)${grupo > 1 ? ` · ${grupo} empresas` : ''}`} />
-            <Tarjeta icon={Target} tono="indigo" titulo="Total a cubrir (6m)"
-              valor={money0(tot.total_cubrir)} detalle="Compromisos + suplidores + gastos" />
+          {/* POSICIÓN DEL GRUPO — lo único de esta pantalla que NO se puede
+              deducir de la tabla de abajo. Las 4 tarjetas que había aquí eran
+              exactamente la suma de sus 4 columnas: no aportaban un dato. */}
+          <div className="rounded-xl border bg-card overflow-hidden">
+            <div className="px-4 py-2 border-b bg-slate-50 flex items-center gap-2 flex-wrap">
+              <Scale className="w-4 h-4 text-slate-600" />
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                Posición {grupo > 1 ? `del grupo · ${grupo} empresas` : 'de la empresa'}
+              </span>
+              <span className="flex-1" />
+              <span className="text-[11px] text-slate-500">al {data.generado}</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
+              {/* TENEMOS */}
+              <div className="p-4">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 mb-2">
+                  Lo que tenemos
+                </div>
+                <FilaPos icon={Wallet} etiqueta="Caja y bancos" monto={pos.caja_bancos}
+                  nota={data.tasa_usd > 1 ? `dólares a ${data.tasa_usd}` : null} />
+                <FilaPos icon={Bike} etiqueta="Motos en inventario" monto={pos.motos_valor}
+                  nota={`${pos.motos_unidades || 0} unidades al costo`} />
+                <FilaPos icon={Landmark} etiqueta="Cartera de préstamos" monto={pos.cartera_capital}
+                  nota={`${pos.cartera_cantidad || 0} activos · capital colocado`} />
+                <FilaPos icon={Receipt} etiqueta="Por cobrar a clientes" monto={pos.por_cobrar} />
+                <div className="flex items-center justify-between pt-2 mt-1 border-t font-bold">
+                  <span className="text-sm">Total</span>
+                  <span className="text-lg text-emerald-700">{money0(pos.activos)}</span>
+                </div>
+              </div>
+
+              {/* DEBEMOS */}
+              <div className="p-4">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-rose-700 mb-2">
+                  Lo que debemos
+                </div>
+                <FilaPos icon={Truck} etiqueta="Suplidores" monto={pos.suplidores}
+                  nota={`${pos.suplidores_cuotas || 0} cuotas pendientes`} />
+                {vencidasCant > 0 && (
+                  /* La parte vencida de esa misma deuda: no es otro monto, es
+                     el pedazo que ya se pasó de fecha y hay que resolver. */
+                  <div className="flex items-center gap-1.5 -mt-1 mb-1 ml-6 text-[11px] text-rose-600 font-semibold">
+                    <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                    <span>de eso, <b>{vencidasCant}</b> cuotas ya vencidas</span>
+                    <span className="flex-1" />
+                    <span>{money0(vencidasMonto)}</span>
+                  </div>
+                )}
+                <FilaPos icon={Receipt} etiqueta="Compromisos" monto={pos.compromisos}
+                  nota={`${pos.compromisos_cant || 0} vivos · nómina, alquiler, préstamos`} />
+                {Number(pos.intercompania) > 0 && (
+                  /* Se muestra para que nadie crea que el número se perdió:
+                     lo que una empresa del grupo le debe a la otra no es deuda. */
+                  <FilaPos icon={ArrowLeftRight} etiqueta="Entre las empresas del grupo"
+                    monto={pos.intercompania} tachado
+                    nota="no es deuda: dinero de un bolsillo al otro" />
+                )}
+                <div className="flex items-center justify-between pt-2 mt-1 border-t font-bold">
+                  <span className="text-sm">Total</span>
+                  <span className="text-lg text-rose-700">{money0(pos.pasivos)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className={`px-4 py-3 flex items-center gap-2 flex-wrap border-t ${
+              Number(pos.neta) >= 0 ? 'bg-emerald-50' : 'bg-rose-50'}`}>
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                Posición neta
+              </span>
+              <span className="flex-1" />
+              <span className={`text-2xl font-black ${
+                Number(pos.neta) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {Number(pos.neta) >= 0 ? '+' : ''}{money0(pos.neta)}
+              </span>
+            </div>
           </div>
 
           {/* ESTADO ACTUAL = CUMPLIMIENTO DEL MES. No "cuánto debo" (eso está
@@ -268,6 +314,29 @@ const GestionEmpresarialPage = () => {
                   a cubrir tal cual. Al registrar costos en las ventas, este número se ajusta solo.</>
               )}
             </p>
+
+            {/* El objetivo contra la realidad. Sin esto el número es una cifra
+                enorme sin escala: no se sabe si falta poco o es inalcanzable. */}
+            {vecesVentas != null && (
+              <div className="mt-2 pt-2 border-t flex items-center gap-3 flex-wrap text-[11px]">
+                <span className="text-slate-500">
+                  Hacen falta <b className="text-slate-700">{money0((Number(tot.facturacion_necesaria) || 0) / 6)}</b> al mes
+                </span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-500">
+                  este mes vas por <b className="text-slate-700">{money0(ventasMes)}</b>
+                </span>
+                <span className="flex-1" />
+                <span className={`px-2 py-0.5 rounded-full font-bold ${
+                  vecesVentas <= 1 ? 'bg-emerald-100 text-emerald-700'
+                    : vecesVentas <= 3 ? 'bg-amber-100 text-amber-700'
+                    : 'bg-rose-100 text-rose-700'}`}>
+                  {vecesVentas <= 1
+                    ? 'la meta está cubierta'
+                    : `habría que vender ${vecesVentas.toFixed(1)}× más`}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Mes por mes */}
