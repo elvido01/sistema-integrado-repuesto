@@ -15,13 +15,17 @@
 -- para que salga con FACTURA DE CRÉDITO FISCAL, que es lo que Magna
 -- necesita para deducir.
 --
--- >>> FALTA EL RNC — Y HAY QUE PONERLO ANTES DE FACTURAR <<<
--- El RNC de Magna se deja en NULL A PROPÓSITO: un RNC inventado en una
--- factura de crédito fiscal es un problema fiscal real, no un detalle de
--- captura. Se completa en Clientes → Magna, o pásamelo y lo pongo aquí.
--- Mientras esté vacío, la factura sale sin identificar al comprador.
+-- >>> DATOS FISCALES DEL COMPRADOR <<<
+--   MAGNA MOTORS, S. A.   RNC 101055571
+-- Sin el RNC del comprador la factura de crédito fiscal no le sirve a Magna
+-- para deducir, que es justamente para lo que la piden.
 --
--- Idempotente / re-ejecutable. No pisa el RNC si ya se llenó.
+-- El RNC va SIN GUIONES, como los demás clientes de crédito fiscal de Morla
+-- (PAPOLO MOTORS 132231015, HOTELES NACIONALES 101037849). Los guiones se
+-- usan aquí solo en las cédulas de personas físicas.
+--
+-- Idempotente / re-ejecutable. Si el cliente ya existía se le completan RNC
+-- y nombre solo cuando están vacíos, para no pisar una corrección manual.
 -- =====================================================================
 
 DO $$
@@ -41,19 +45,22 @@ BEGIN
       INTO v_cod
     FROM public.clientes WHERE tenant_id = v_morla;
 
-    INSERT INTO public.clientes (tenant_id, codigo, nombre, tipo_ncf, activo)
-    VALUES (v_morla, lpad(v_cod, 4, '0'), 'MAGNA', '01', true)
+    INSERT INTO public.clientes (tenant_id, codigo, nombre, rnc, tipo_ncf, activo)
+    VALUES (v_morla, lpad(v_cod, 4, '0'), 'MAGNA MOTORS, S. A.', '101055571', '01', true)
     RETURNING id INTO v_id;
-    RAISE NOTICE 'Cliente MAGNA creado con tipo_ncf 01. FALTA EL RNC.';
+    RAISE NOTICE 'Cliente MAGNA MOTORS, S. A. creado — RNC 101055571, crédito fiscal.';
   ELSE
-    -- Ya existía: solo se asegura el tipo de comprobante. El RNC y el
-    -- nombre NO se tocan, por si ya los corrigieron a mano.
-    UPDATE public.clientes SET tipo_ncf = '01', activo = true WHERE id = v_id;
-    RAISE NOTICE 'Cliente MAGNA ya existía — se dejó en tipo_ncf 01.';
-  END IF;
-
-  IF (SELECT NULLIF(btrim(COALESCE(rnc, '')), '') FROM public.clientes WHERE id = v_id) IS NULL THEN
-    RAISE WARNING 'MAGNA no tiene RNC. Complétalo antes de emitir la primera factura de crédito fiscal.';
+    -- Ya existía: se asegura el tipo de comprobante y se COMPLETAN los datos
+    -- fiscales solo si están vacíos. Si alguien ya los corrigió a mano, su
+    -- versión manda.
+    UPDATE public.clientes
+       SET tipo_ncf = '01',
+           activo   = true,
+           rnc      = COALESCE(NULLIF(btrim(COALESCE(rnc, '')), ''), '101055571'),
+           nombre   = CASE WHEN btrim(nombre) IN ('MAGNA', 'Magna', 'magna')
+                           THEN 'MAGNA MOTORS, S. A.' ELSE nombre END
+     WHERE id = v_id;
+    RAISE NOTICE 'Cliente Magna ya existía — tipo_ncf 01 y datos fiscales al día.';
   END IF;
 END $$;
 
@@ -75,7 +82,7 @@ SELECT codigo, nombre, tipo_ncf, rnc,
             ELSE 'listo' END AS situacion
 FROM public.clientes
 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND nombre ILIKE '%magna%';
--- esperado: MAGNA | tipo_ncf 01 | RNC pendiente
+-- esperado: MAGNA MOTORS, S. A. | tipo_ncf 01 | 101055571 | listo
 
 -- 2) Con qué NCF saldría su factura
 SELECT c.nombre AS cliente, c.tipo_ncf,
@@ -89,7 +96,7 @@ JOIN public.secuencias_ncf s
  AND s.activo AND s.fecha_vencimiento >= CURRENT_DATE
 WHERE c.tenant_id = '00000000-0000-0000-0000-000000000001'
   AND c.nombre ILIKE '%magna%';
--- esperado: MAGNA | 01 | B0100000001 | 15 restantes
+-- esperado: MAGNA MOTORS, S. A. | 01 | B0100000001 | 15 restantes
 -- Si NO devuelve filas, falta correr sql/ncf_repuestos_morla.sql.
 
 -- 3) Las dos cotizaciones pendientes y cómo quedarían facturadas
