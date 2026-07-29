@@ -1,8 +1,11 @@
 // GestionEmpresarialPage.jsx — Gestión Empresarial IA (submódulo de MOTOFLOW IA CEO)
-// Responde de un vistazo: "¿cuánto tengo que facturar cada mes para cubrir lo
-// que la empresa ya debe?" Proyecta 6 meses (el actual + 5) sumando los
-// compromisos fijos por pagar, las cuentas por pagar a suplidores y el gasto
-// operativo estimado a partir del historial real.
+// Dos preguntas distintas, separadas a propósito:
+//   ESTADO ACTUAL — "¿qué tengo encima HOY?" Empieza por las cuotas vencidas
+//     (cuántas y cuánto): deuda exigible, no proyección.
+//   MES POR MES  — "¿cuánto tengo que facturar para cubrir lo que viene?"
+//     6 meses, y cada fila SOLO con lo que vence dentro de ese mes.
+// Antes iban mezclados: el mes en curso arrastraba todo lo vencido y no se
+// podía distinguir lo que hay que resolver de lo que hay que planificar.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
@@ -10,7 +13,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import {
-  Loader2, RefreshCw, TrendingUp, Receipt, Truck, Wallet, Target, Info, AlertTriangle,
+  Loader2, RefreshCw, TrendingUp, Receipt, Truck, Wallet, Target, Info, AlertTriangle, Activity,
 } from 'lucide-react';
 
 const money = (v) => `RD$ ${(Number(v) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -20,6 +23,26 @@ const mesLabel = (ym) => {
   const [a, m] = String(ym || '').split('-');
   return m ? `${MESES[Number(m) - 1]} ${a}` : ym;
 };
+
+// Una linea del estado actual: concepto — cuantos — cuanto.
+// El numero va aparte del monto a proposito: "30 cuotas" y "3.4 millones"
+// se deciden distinto que un solo total.
+const FilaEstado = ({ icon: Icon, etiqueta, nota, cantidad, monto, alarma }) => (
+  <div className="flex items-center gap-3 px-3 py-2.5">
+    <Icon className={`w-4 h-4 flex-shrink-0 ${alarma ? 'text-rose-600' : 'text-emerald-600'}`} />
+    <div className="min-w-0 flex-1">
+      <div className="text-sm font-semibold text-slate-800">{etiqueta}</div>
+      {nota && <div className="text-[11px] text-slate-500 truncate">{nota}</div>}
+    </div>
+    <div className="text-right w-20 flex-shrink-0">
+      <div className={`text-lg font-black leading-none ${alarma ? 'text-rose-600' : 'text-emerald-700'}`}>{cantidad}</div>
+      <div className="text-[10px] text-slate-400 mt-0.5">{Number(cantidad) === 1 ? 'cuota' : 'cuotas'}</div>
+    </div>
+    <div className={`text-right text-lg font-black w-40 flex-shrink-0 ${alarma ? 'text-rose-600' : 'text-emerald-700'}`}>
+      {money0(monto)}
+    </div>
+  </div>
+);
 
 const Tarjeta = ({ icon: Icon, titulo, valor, detalle, tono = 'slate' }) => {
   const tonos = {
@@ -66,6 +89,10 @@ const GestionEmpresarialPage = () => {
   const meses = data?.meses || [];
   const tot = data?.totales || {};
   const margen = data?.margen_pct;
+  // Estado actual = la foto de HOY. Va arriba y no entra en ningún mes.
+  const estado = data?.estado_actual || {};
+  const vencidasCant = Number(estado.cuotas_vencidas_cant) || 0;
+  const vencidasMonto = Number(estado.cuotas_vencidas_monto) || 0;
 
   // Escala de las barras: el mes más pesado marca el 100%
   const maxMes = useMemo(
@@ -123,17 +150,40 @@ const GestionEmpresarialPage = () => {
               valor={money0(tot.total_cubrir)} detalle="Compromisos + suplidores + gastos" />
           </div>
 
-          {/* Facturación necesaria */}
+          {/* ESTADO ACTUAL — la foto de HOY, no la proyección.
+              Aquí va lo que hay que resolver ya; abajo, lo que hay que
+              planificar. Mezclarlos era lo que hacía ilegible el mes en curso. */}
           <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <TrendingUp className="w-5 h-5 text-emerald-700" />
+            <div className="flex items-center gap-2 mb-3">
+              <Activity className="w-5 h-5 text-emerald-700" />
               <span className="text-[11px] font-bold uppercase tracking-wide text-emerald-800">
+                Estado actual de la empresa
+              </span>
+            </div>
+
+            <div className="rounded-lg bg-white/70 border border-emerald-200 divide-y divide-emerald-100">
+              <FilaEstado
+                icon={AlertTriangle}
+                etiqueta="Cuotas vencidas"
+                nota="Pagarés a suplidores con la fecha ya pasada"
+                cantidad={vencidasCant}
+                monto={vencidasMonto}
+                alarma={vencidasCant > 0}
+              />
+            </div>
+          </div>
+
+          {/* Facturación necesaria — esto SÍ es proyección, va aparte */}
+          <div className="rounded-xl border bg-slate-50 px-4 py-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <TrendingUp className="w-4 h-4 text-slate-600" />
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
                 Facturación necesaria — próximos 6 meses
               </span>
               <span className="flex-1" />
-              <span className="text-3xl font-black text-emerald-700">{money0(tot.facturacion_necesaria)}</span>
+              <span className="text-2xl font-black text-slate-700">{money0(tot.facturacion_necesaria)}</span>
             </div>
-            <p className="text-[11px] text-emerald-800/80 mt-1">
+            <p className="text-[11px] text-slate-500 mt-1">
               {margen != null ? (
                 <>Calculado con el margen real de la empresa (<b>{margen}%</b> de los últimos 90 días):
                   para cubrir {money0(tot.total_cubrir)} hay que vender más, porque cada venta deja solo su margen.</>
