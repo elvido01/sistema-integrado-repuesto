@@ -1367,6 +1367,14 @@ export const useVentas = () => {
       setItems(newItems);
       setCotizacionMagnaId(cotizacion.id);
 
+      // La REFERENCIA de Magna viaja en las notas de la factura. Magna paga
+      // contra su propia orden de compra: sin ese numero en la factura, la
+      // conciliacion se hace a mano del lado de ellos y el pago se atrasa.
+      const ref = [`Cotización Magna #${cotizacion.numero}`];
+      if (cotizacion.numero_orden) ref.push(`Orden ${cotizacion.numero_orden}`);
+      if (cotizacion.chasis) ref.push(cotizacion.chasis);
+      setNotas(ref.join(' · '));
+
       // Magna no se guarda en la cotizacion (la tabla no tiene cliente), asi
       // que el cliente se elige en la factura. Si ya existe uno que se llame
       // Magna se preselecciona para ahorrar el paso.
