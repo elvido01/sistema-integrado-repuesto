@@ -34,6 +34,16 @@
 -- inventario pasa de 78 a 80 motos. Es lo correcto: nunca se vendieron, las
 -- motos están en el patio.
 --
+-- >>> TAMBIÉN SE VAN SUS RECIBOS DE INICIAL <<<
+-- Cada una tiene el recibo de sus RD$30,000 de inicial (RI-000003 y
+-- RI-000004, del 24/06/2026). Sin borrarlos la base no deja borrar la
+-- factura, y con razón: un recibo de un cobro que nunca ocurrió no puede
+-- quedar suelto — seguiría contando como dinero entrado ese día.
+--
+-- El recibo padre solo se borra si TODAS sus líneas son de estas facturas.
+-- Si alguno cobrara además otra factura de verdad, se le quita solo la
+-- línea de la prueba y el recibo se queda.
+--
 -- >>> CANDADOS <<<
 -- Solo borra facturas SIN NCF. Una factura con comprobante fiscal no se
 -- borra jamás — se anula — y si alguna de estas tuviera uno, el script se
@@ -49,6 +59,7 @@ DECLARE
   v_ft3  uuid;
   v_pt   uuid;
   v_ids  uuid[];
+  v_recibos uuid[];
   v_con_ncf int;
   v_n    int;
 BEGIN
@@ -85,10 +96,39 @@ BEGIN
     -- una persona, no un script.
     RAISE EXCEPTION 'FT-4 o FT-5 tiene NCF: no se borra una factura fiscal. Revisar a mano.';
   ELSE
+    -- 2.a) Los recibos de la inicial. Van PRIMERO: mientras exista la línea
+    --      del recibo, la base no deja borrar la factura (y hace bien).
+    --      Solo se borra el recibo completo si TODAS sus líneas son de estas
+    --      facturas; si cobraba además otra real, se le quita solo la línea.
+    SELECT array_agg(DISTINCT d.recibo_id) INTO v_recibos
+    FROM public.recibos_ingreso_detalle d
+    WHERE d.factura_id = ANY(v_ids);
+
+    DELETE FROM public.recibos_ingreso_detalle WHERE factura_id = ANY(v_ids);
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    RAISE NOTICE 'Líneas de recibo borradas: %', v_n;
+
+    IF v_recibos IS NOT NULL THEN
+      -- Por si el recibo dejó algún movimiento en el banco.
+      DELETE FROM public.movimientos_bancarios
+       WHERE origen_tipo = 'recibo' AND origen_id = ANY(v_recibos)
+         AND NOT EXISTS (SELECT 1 FROM public.recibos_ingreso_detalle d
+                          WHERE d.recibo_id = movimientos_bancarios.origen_id);
+
+      DELETE FROM public.recibos_ingreso r
+       WHERE r.id = ANY(v_recibos)
+         AND NOT EXISTS (SELECT 1 FROM public.recibos_ingreso_detalle d
+                          WHERE d.recibo_id = r.id);
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      RAISE NOTICE 'Recibos de inicial borrados: % (RI-000003, RI-000004)', v_n;
+    END IF;
+
+    -- 2.b) Las líneas de la factura: aquí es donde las motos vuelven al patio
     DELETE FROM public.facturas_detalle WHERE factura_id = ANY(v_ids);
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RAISE NOTICE 'Líneas borradas: % (sus motocicletas vuelven al inventario)', v_n;
 
+    -- 2.c) Y las facturas
     DELETE FROM public.facturas WHERE id = ANY(v_ids);
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RAISE NOTICE 'Facturas de prueba borradas: %', v_n;
@@ -145,6 +185,14 @@ WHERE p.tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
 -- esperado: 80 (antes 78) — las dos NIPPONIA BRIO-110 de las pruebas
 
 -- 4) Que no quedó rastro de las pruebas
-SELECT count(*) AS facturas_prueba FROM public.facturas
- WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113' AND numero IN (4, 5);
--- esperado: 0
+SELECT 'facturas'  AS que, count(*) AS quedan FROM public.facturas
+ WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113' AND numero IN (4, 5)
+UNION ALL
+SELECT 'recibos de su inicial', count(*) FROM public.recibos_ingreso
+ WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
+   AND numero IN ('RI-000003', 'RI-000004')
+UNION ALL
+SELECT 'clientes de prueba', count(*) FROM public.clientes
+ WHERE tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
+   AND rnc IN ('028-0099156-4', '028-0099156-8');
+-- esperado: 0 en las tres
