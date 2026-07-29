@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Loader2, RefreshCw, Users, Wallet, HandCoins, Ban, Plus, Pencil, Check } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
-import { calcularDetalleNomina, pendienteAdelanto, periodoSugerido } from '@/lib/nominaUtils';
+import { calcularDetalleNomina, pendienteAdelanto, periodoSugerido, pagosDelEmpleado } from '@/lib/nominaUtils';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 
@@ -25,8 +25,16 @@ const FRECUENCIAS = [
 
 const EMPLEADO_VACIO = {
   nombre: '', cedula: '', telefono: '', puesto: '', sueldo_mensual: '',
-  frecuencia_pago: 'quincenal', cotiza_tss: false, activo: true,
+  frecuencia_pago: 'quincenal', dia_pago_semanal: 6, cotiza_tss: false, activo: true,
 };
+
+// 0 = domingo … 6 = sábado (mismo criterio que EXTRACT(dow) en Postgres)
+const DIAS_SEMANA = [
+  { value: 6, label: 'Sábados' }, { value: 5, label: 'Viernes' }, { value: 4, label: 'Jueves' },
+  { value: 3, label: 'Miércoles' }, { value: 2, label: 'Martes' }, { value: 1, label: 'Lunes' },
+  { value: 0, label: 'Domingos' },
+];
+const nombreDia = (d) => (DIAS_SEMANA.find((x) => x.value === (d ?? 6)) || DIAS_SEMANA[0]).label.toLowerCase();
 
 const NominaPage = () => {
   const { toast } = useToast();
@@ -79,7 +87,7 @@ const NominaPage = () => {
   const abrirNomina = useCallback(async (n) => {
     setNominaSel(n);
     const { data, error } = await supabase.from('nomina_detalle')
-      .select('*, empleados(nombre, puesto)').eq('nomina_id', n.id).order('id');
+      .select('*, empleados(nombre, puesto, dia_pago_semanal)').eq('nomina_id', n.id).order('id');
     if (error) { toast({ variant: 'destructive', title: 'Error', description: error.message }); return; }
     setDetalle(data || []);
   }, [toast]);
@@ -100,6 +108,7 @@ const NominaPage = () => {
       const payload = {
         nombre: f.nombre.trim(), cedula: f.cedula || null, telefono: f.telefono || null,
         puesto: f.puesto || null, sueldo_mensual: sueldo, frecuencia_pago: f.frecuencia_pago,
+        dia_pago_semanal: Number(f.dia_pago_semanal ?? 6),
         cotiza_tss: !!f.cotiza_tss, activo: !!f.activo,
       };
       const q = f.id
@@ -271,7 +280,9 @@ const NominaPage = () => {
   const resumen = useMemo(() => {
     const activos = empleados.filter((e) => e.activo);
     const pendiente = adelantos.reduce((s, a) => s + pendienteAdelanto(a), 0);
-    const proxima = activos.reduce((s, e) => s + calcularDetalleNomina(e, {}).neto, 0);
+    // El semanal se estima sobre el MES en curso: 4 o 5 sábados segun caiga.
+    const mes = periodoSugerido('semanal', hoyTZ());
+    const proxima = activos.reduce((s, e) => s + calcularDetalleNomina(e, { periodo: mes }).neto, 0);
     const borradores = nominas.filter((n) => n.estado === 'borrador').length;
     return { activos: activos.length, pendiente, proxima, borradores };
   }, [empleados, adelantos, nominas]);
@@ -393,7 +404,16 @@ const NominaPage = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-2 py-1 text-right">{money(d.sueldo_base)}</td>
+                          <td className="px-2 py-1 text-right">
+                            {money(d.sueldo_base)}
+                            {/* De donde sale el monto: el dia de pago vale
+                                siempre igual, el mes cambia con 4 o 5. */}
+                            {nominaSel.frecuencia === 'semanal' && Number(d.pagos_periodo) > 0 && (
+                              <span className="block text-[10px] text-muted-foreground whitespace-nowrap">
+                                {d.pagos_periodo} {nombreDia(d.empleados?.dia_pago_semanal)} × {money(Number(d.sueldo_base) / Number(d.pagos_periodo))}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-2 py-1 text-right">{money(Number(d.tss_afp) + Number(d.tss_sfs))}</td>
                           <td className="px-2 py-1 text-right">{money(d.isr)}</td>
                           <td className="px-2 py-1 text-right text-amber-700">{money(d.adelantos)}</td>
@@ -457,7 +477,14 @@ const NominaPage = () => {
                   <td className="px-3 py-2">{e.puesto || '—'}</td>
                   <td className="px-3 py-2">{e.telefono || '—'}</td>
                   <td className="px-3 py-2 text-right">{money(e.sueldo_mensual)}</td>
-                  <td className="px-3 py-2">{e.frecuencia_pago}</td>
+                  <td className="px-3 py-2">
+                    {e.frecuencia_pago}
+                    {e.frecuencia_pago === 'semanal' && (
+                      <span className="block text-[10px] text-emerald-700 whitespace-nowrap">
+                        {money(Number(e.sueldo_mensual) / 4)} cada {nombreDia(e.dia_pago_semanal).replace(/s$/, '')}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{e.cotiza_tss ? 'Cotiza' : 'No'}</td>
                   <td className="px-3 py-2">
                     <span className={`px-2 py-0.5 rounded-full text-xs ${e.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
@@ -530,6 +557,18 @@ const NominaPage = () => {
                     <SelectContent>{FRECUENCIAS.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
+                {/* Al semanal se le paga un día fijo de la semana. Cuántas
+                    veces cae ese día en el mes es cuántos sueldos cobra. */}
+                {empEdit.frecuencia_pago === 'semanal' && (
+                  <div>
+                    <label className="text-sm font-medium">Cobra los</label>
+                    <Select value={String(empEdit.dia_pago_semanal ?? 6)}
+                      onValueChange={(v) => setEmpEdit((p) => ({ ...p, dia_pago_semanal: Number(v) }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>{DIAS_SEMANA.map((d) => <SelectItem key={d.value} value={String(d.value)}>{d.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="flex items-end gap-4 pb-1">
                   <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={!!empEdit.cotiza_tss}
@@ -543,15 +582,33 @@ const NominaPage = () => {
                   </label>
                 </div>
               </div>
-              {empEdit.sueldo_mensual > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Estimado por {empEdit.frecuencia_pago}: {money(calcularDetalleNomina({
-                    sueldo_mensual: Number(empEdit.sueldo_mensual) || 0,
-                    frecuencia_pago: empEdit.frecuencia_pago,
-                    cotiza_tss: !!empEdit.cotiza_tss,
-                  }, {}).neto)} neto
-                </p>
-              )}
+              {empEdit.sueldo_mensual > 0 && (() => {
+                const emp = {
+                  sueldo_mensual: Number(empEdit.sueldo_mensual) || 0,
+                  frecuencia_pago: empEdit.frecuencia_pago,
+                  dia_pago_semanal: Number(empEdit.dia_pago_semanal ?? 6),
+                  cotiza_tss: !!empEdit.cotiza_tss,
+                };
+                if (empEdit.frecuencia_pago !== 'semanal') {
+                  return <p className="text-xs text-muted-foreground">
+                    Estimado por {empEdit.frecuencia_pago}: {money(calcularDetalleNomina(emp, {}).neto)} neto
+                  </p>;
+                }
+                // Semanal: lo que importa es cuánto cobra CADA día de pago y
+                // que el mes cambie solo porque tenga 4 o 5.
+                const unDia = calcularDetalleNomina(emp, {}).neto;   // sin período = 1 pago
+                const mes = periodoSugerido('semanal', hoyTZ());
+                const veces = pagosDelEmpleado(emp, mes);
+                return (
+                  <p className="text-xs text-emerald-700 bg-emerald-50 rounded-lg p-2">
+                    Cobra <b>{money(unDia)}</b> cada {nombreDia(emp.dia_pago_semanal).replace(/s$/, '')}.
+                    Este mes le tocan <b>{veces}</b> → <b>{money(unDia * veces)}</b>.
+                    <span className="block text-emerald-800/70">
+                      El {nombreDia(emp.dia_pago_semanal).replace(/s$/, '')} siempre vale lo mismo; el mes cambia según tenga 4 o 5.
+                    </span>
+                  </p>
+                );
+              })()}
             </div>
           )}
           <DialogFooter>
@@ -584,6 +641,31 @@ const NominaPage = () => {
             </div>
             <div><label className="text-sm font-medium">Fecha de pago</label>
               <Input type="date" value={genForm.fecha_pago} onChange={(e) => setGenForm((p) => ({ ...p, fecha_pago: e.target.value }))} /></div>
+            {/* Semanal: que se vea ANTES de generar cuántos días de pago trae
+                el período y qué va a costar. */}
+            {genForm.frecuencia === 'semanal' && (() => {
+              const per = { desde: genForm.desde, hasta: genForm.hasta };
+              const lineas = empleados.filter((e) => e.activo && e.frecuencia_pago === 'semanal')
+                .map((e) => ({ e, veces: pagosDelEmpleado(e, per) }));
+              if (lineas.length === 0) return null;
+              const total = lineas.reduce((s, l) => s + calcularDetalleNomina(l.e, { periodo: per }).neto, 0);
+              return (
+                <div className="text-xs bg-emerald-50 text-emerald-800 rounded-lg p-2 space-y-1">
+                  {lineas.map(({ e, veces }) => (
+                    <div key={e.id} className="flex justify-between gap-2">
+                      <span>{e.nombre}</span>
+                      <span className="whitespace-nowrap">
+                        {veces} {nombreDia(e.dia_pago_semanal)} × {money(Number(e.sueldo_mensual) / 4)}
+                        {' = '}<b>{money((Number(e.sueldo_mensual) / 4) * veces)}</b>
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between border-t border-emerald-200 pt-1 font-semibold">
+                    <span>Neto de la nómina</span><span>{money(total)}</span>
+                  </div>
+                </div>
+              );
+            })()}
             <p className="text-xs text-muted-foreground">
               Entra todo empleado ACTIVO con esa frecuencia. Los adelantos pendientes se proponen completos
               (puedes fraccionarlos línea por línea antes de pagar). El neto aparece de una vez en Compromisos a Pagar.

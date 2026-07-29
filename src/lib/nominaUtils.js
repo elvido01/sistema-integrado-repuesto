@@ -21,15 +21,52 @@ export const ISR_2026 = [
 
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
-// 12 pagas mensuales = 24 quincenas = 52 semanas al año
-export function factorPeriodo(frecuencia) {
+// SEMANAL: se paga POR SÁBADO, no por promedio anual.
+//   sueldo del sábado = mensual / 4   (20,000 → 5,000 SIEMPRE)
+//   el período paga tantos sábados como le caigan: 4 → 20,000, 5 → 25,000
+// Antes se usaba 12/52 = 0.2307, y el mismo empleado cobraba 4,615.38 un
+// sábado y el mes de 5 sábados valía igual que el de 4.
+
+// Cuántas veces cae un día de la semana entre dos fechas 'YYYY-MM-DD'.
+// dow: 0 = domingo … 6 = sábado. Se cuenta en UTC para que no se corra un
+// día por la zona horaria de RD.
+export function pagosEnPeriodo(desde, hasta, dow = 6) {
+  const ms = (s) => {
+    const [y, m, d] = String(s || '').split('-').map(Number);
+    return (y && m && d) ? Date.UTC(y, m - 1, d) : NaN;
+  };
+  const a = ms(desde), b = ms(hasta);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return 0;
+  let n = 0;
+  for (let t = a; t <= b; t += 86400000) if (new Date(t).getUTCDay() === dow) n += 1;
+  return n;
+}
+
+// Cuántos sueldos le tocan al empleado en el período (fuera del semanal, 1).
+// Sin período definido asume UNO, igual que nomina_factor() en la base.
+export function pagosDelEmpleado(empleado, periodo) {
+  if (empleado?.frecuencia_pago !== 'semanal') return 1;
+  if (!periodo?.desde || !periodo?.hasta) return 1;
+  const dow = Number.isInteger(empleado?.dia_pago_semanal) ? empleado.dia_pago_semanal : 6;
+  return pagosEnPeriodo(periodo.desde, periodo.hasta, dow);
+}
+
+export function factorPeriodo(frecuencia, periodo, empleado) {
   if (frecuencia === 'quincenal') return 0.5;
-  if (frecuencia === 'semanal') return 12 / 52;
+  if (frecuencia === 'semanal') {
+    return pagosDelEmpleado({ ...empleado, frecuencia_pago: 'semanal' }, periodo) / 4;
+  }
   return 1;
 }
 
-export function sueldoPorPeriodo(sueldoMensual, frecuencia) {
-  return round2((Number(sueldoMensual) || 0) * factorPeriodo(frecuencia));
+export function sueldoPorPeriodo(sueldoMensual, frecuencia, periodo, empleado) {
+  const s = Number(sueldoMensual) || 0;
+  if (frecuencia === 'semanal') {
+    // Se redondea el SÁBADO y luego se multiplica: el sábado tiene que ser
+    // siempre el mismo número redondo y el mes, múltiplo exacto de él.
+    return round2(round2(s / 4) * pagosDelEmpleado({ ...empleado, frecuencia_pago: 'semanal' }, periodo));
+  }
+  return round2(s * factorPeriodo(frecuencia));
 }
 
 // TSS del MES del empleado (0 si no cotiza), con topes cotizables
@@ -52,20 +89,24 @@ export function calcularIsrMensual(baseMensual) {
 
 // Línea completa de nómina de un empleado para SU período de pago
 export function calcularDetalleNomina(empleado, extras = {}) {
-  const { adelantosDescuento = 0, otrosIngresos = 0, otrosDescuentos = 0 } = extras;
-  const factor = factorPeriodo(empleado.frecuencia_pago);
-  const sueldoBase = sueldoPorPeriodo(empleado.sueldo_mensual, empleado.frecuencia_pago);
+  const { adelantosDescuento = 0, otrosIngresos = 0, otrosDescuentos = 0, periodo = null } = extras;
+  const semanal = empleado.frecuencia_pago === 'semanal';
+  const pagos = pagosDelEmpleado(empleado, periodo);
+  const factor = factorPeriodo(empleado.frecuencia_pago, periodo, empleado);
+  const sueldoBase = sueldoPorPeriodo(empleado.sueldo_mensual, empleado.frecuencia_pago, periodo, empleado);
 
   const tssMes = calcularTssEmpleado(empleado.sueldo_mensual, empleado.cotiza_tss);
-  const tssAfp = round2(tssMes.afp * factor);
-  const tssSfs = round2(tssMes.sfs * factor);
+  // En semanal el descuento del sábado también es fijo, para que el empleado
+  // reciba el MISMO NETO todos los sábados.
+  const tssAfp = semanal ? round2(round2(tssMes.afp / 4) * pagos) : round2(tssMes.afp * factor);
+  const tssSfs = semanal ? round2(round2(tssMes.sfs / 4) * pagos) : round2(tssMes.sfs * factor);
 
   // Sin el switch TSS el empleado es informal: CERO descuentos de ley
   // (tampoco ISR, aunque el sueldo pase del tramo exento).
   const isrMes = empleado.cotiza_tss
     ? calcularIsrMensual((Number(empleado.sueldo_mensual) || 0) - tssMes.afp - tssMes.sfs)
     : 0;
-  const isr = round2(isrMes * factor);
+  const isr = semanal ? round2(round2(isrMes / 4) * pagos) : round2(isrMes * factor);
 
   const neto = round2(
     sueldoBase + (Number(otrosIngresos) || 0)
@@ -74,7 +115,7 @@ export function calcularDetalleNomina(empleado, extras = {}) {
     - (Number(otrosDescuentos) || 0)
   );
 
-  return { sueldo_base: sueldoBase, tss_afp: tssAfp, tss_sfs: tssSfs, isr, neto };
+  return { sueldo_base: sueldoBase, tss_afp: tssAfp, tss_sfs: tssSfs, isr, neto, pagos_periodo: pagos };
 }
 
 // Período sugerido al generar una nómina, con fecha de pago 15 y 30.
@@ -85,13 +126,13 @@ export function periodoSugerido(frecuencia, hoyStr) {
   const iso = (yy, mm, dd) => `${yy}-${pad(mm)}-${pad(dd)}`;
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();  // último día del mes m (1-based)
 
+  // Semanal: el período es el MES completo — ahí es donde el dueño quiere ver
+  // el total ("se lo agrega a la nómina del mes"). Adentro se paga sábado por
+  // sábado, así que el mes vale 4 o 5 sábados según le toque.
   if (frecuencia === 'semanal') {
-    const base = new Date(Date.UTC(y, m - 1, d));
-    const dow = (base.getUTCDay() + 6) % 7;                  // lunes = 0
-    const lunes = new Date(base);  lunes.setUTCDate(d - dow);
-    const sabado = new Date(base); sabado.setUTCDate(d - dow + 5);
-    const fmt = (dt) => iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
-    return { desde: fmt(lunes), hasta: fmt(sabado), fecha_pago: fmt(sabado) };
+    const ultimo = new Date(Date.UTC(y, m - 1, lastDay));
+    const ultimoSabado = lastDay - ((ultimo.getUTCDay() - 6 + 7) % 7);
+    return { desde: iso(y, m, 1), hasta: iso(y, m, lastDay), fecha_pago: iso(y, m, ultimoSabado) };
   }
   if (frecuencia === 'mensual') {
     return { desde: iso(y, m, 1), hasta: iso(y, m, lastDay), fecha_pago: iso(y, m, lastDay) };
