@@ -32,7 +32,7 @@ const renderFacturaNotas = (notas) => {
 };
 
 // ── Configuración de empresa para encabezados de impresión ──
-let _empresaConfig = { nombre: 'Sistema', direccion: '', ciudad: '', telefono: '', rnc: '', slogan: '' };
+let _empresaConfig = { nombre: 'Sistema', direccion: '', ciudad: '', telefono: '', rnc: '', slogan: '', razonSocial: '' };
 
 export const setEmpresaPrintConfig = (empresa) => {
   if (empresa) {
@@ -43,6 +43,10 @@ export const setEmpresaPrintConfig = (empresa) => {
       telefono: empresa.telefono || '',
       rnc: empresa.rnc || '',
       slogan: empresa.slogan || '',
+      // Nombre ante la DGII. En una persona fisica NO es el nombre del
+      // negocio: Repuestos Morla factura a nombre de Elvido Manuel
+      // Caminero Morla, y un comprobante fiscal tiene que decirlo.
+      razonSocial: empresa.razon_social || '',
     };
   }
 };
@@ -53,6 +57,12 @@ const getHeaderHTML = (overrideName) => {
   if (_empresaConfig.direccion) lines.push(`<p>${_empresaConfig.direccion}</p>`);
   if (_empresaConfig.ciudad) lines.push(`<p>${_empresaConfig.ciudad}</p>`);
   if (_empresaConfig.telefono) lines.push(`<p class="num">${_empresaConfig.telefono}</p>`);
+  // Solo cuando difiere del nombre comercial: si son iguales, repetirlo
+  // ensucia el ticket sin agregar nada.
+  const rs = (_empresaConfig.razonSocial || "").trim();
+  if (rs && rs.toUpperCase() !== String(name).trim().toUpperCase()) {
+    lines.push(`<p>${rs}</p>`);
+  }
   if (_empresaConfig.rnc) lines.push(`<p class="num"><strong>RNC:</strong> ${_empresaConfig.rnc}</p>`);
   return lines.join('\n        ');
 };
