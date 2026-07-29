@@ -15,7 +15,7 @@ import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } fro
 import { Calendar as CalendarIcon, Search, Printer, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
-import { generateTransaccionesReportePDF, generateFacturaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
+import { generateTransaccionesReportePDF, generateFacturaPDF, generateFacturaCartaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
 import { printListaTransacciones } from '@/lib/printListaTransacciones';
 import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS, printNotaCreditoPOS, printFacturaPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -134,7 +134,10 @@ const ReporteTransaccionesDiariasPage = () => {
     fetchTransactions();
   };
 
-  const handleRowDoubleClick = async (transaction) => {
+  // Doble clic = reimprimir. Ctrl + doble clic = BAJAR EL PDF en hoja carta,
+  // que es lo que hace falta para mandarle la factura a un cliente por
+  // correo o WhatsApp: el dialogo de impresion no deja archivo.
+  const handleRowDoubleClick = async (transaction, comoPdf = false) => {
     const parts = transaction.transaccion.split('-');
     if (parts.length < 2) return;
     const prefix = parts[0];
@@ -178,7 +181,12 @@ const ReporteTransaccionesDiariasPage = () => {
               };
             }
           }
-          printFacturaPOS(factura, formato);
+          if (comoPdf) generateFacturaCartaPDF(factura, empresa, 'descargar');
+          else printFacturaPOS(factura, formato);
+        } else if (comoPdf) {
+          // Aunque la empresa imprima en POS, el PDF para enviar va en hoja
+          // carta: un ticket de 80mm no es un documento presentable.
+          generateFacturaCartaPDF(factura, empresa, 'descargar');
         } else {
           generateFacturaPDF(factura, empresa);
         }
@@ -477,8 +485,8 @@ const ReporteTransaccionesDiariasPage = () => {
                     <TableRow
                       key={index}
                       className="hover:bg-slate-50 cursor-pointer [&>td]:py-1 [&>td]:text-[13px]"
-                      title="Doble clic: reimprimir el documento"
-                      onDoubleClick={() => handleRowDoubleClick(t)}
+                      title="Doble clic: reimprimir · Ctrl + doble clic: descargar PDF (hoja carta)"
+                      onDoubleClick={(e) => handleRowDoubleClick(t, e.ctrlKey || e.metaKey)}
                     >
                       <TableCell className="whitespace-nowrap">{formatInTimeZone(t.fecha, 'dd/MM/yyyy')}</TableCell>
                       <TableCell className="font-mono">{t.transaccion}</TableCell>

@@ -188,6 +188,7 @@ const VentasFooter = ({
               </SelectTrigger>
               <SelectContent className="bg-white border border-gray-500">
                 <SelectItem value="browser" className="text-[11px] font-bold">Navegador (HTML)</SelectItem>
+                <SelectItem value="pdf" className="text-[11px] font-bold">📄 PDF (archivo para enviar)</SelectItem>
                 <SelectItem value="agent" className="text-[11px] font-bold" disabled={!hasAgent}>
                   ⚡ Motoflow Print Agent {hasAgent ? '' : '(No detectado)'}
                 </SelectItem>

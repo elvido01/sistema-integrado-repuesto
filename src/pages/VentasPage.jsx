@@ -9,7 +9,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
 import SugerenciasEquivalentesModal from '@/components/ventas/SugerenciasEquivalentesModal';
-import { generateFacturaPDF } from '@/components/common/PDFGenerator';
+import { generateFacturaPDF, generateFacturaCartaPDF } from '@/components/common/PDFGenerator';
 import { printFacturaPOS, printFacturaQZ, printFacturaWebUsb } from '@/lib/printPOS';
 import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
 import { isSilentPrintEnabled } from '@/lib/printHtmlSmart';
@@ -331,7 +331,18 @@ const VentasPage = () => {
         // "Imprimir sin diálogo" (checkbox) → texto ESC/POS NATIVO por el agente
         // (misma fuente nativa que daba QZ Tray, pero estable y sin permiso).
         const silentOn = isSilentPrintEnabled();
-        if (printMethod === 'qz' || printMethod === 'agent' || silentOn) {
+        // PDF: no imprime, DEJA EL ARCHIVO. Es lo que hace falta para
+        // mandarle la factura a una empresa por correo o WhatsApp; el
+        // diálogo de impresión del navegador no deja nada que adjuntar.
+        // En hoja (carta/media) va el formato completo con NCF; en formato
+        // POS, el ticket de 80mm que ya existía.
+        if (printMethod === 'pdf') {
+          if (printFormat === 'full_page' || printFormat === 'half_page') {
+            generateFacturaCartaPDF(facturaParaImprimir, empresa, 'descargar');
+          } else {
+            generateFacturaPDF(facturaParaImprimir, empresa);
+          }
+        } else if (printMethod === 'qz' || printMethod === 'agent' || silentOn) {
           // printFacturaQZ usa el adapter (respeta la preferencia global).
           const previousBackend = getPreferredBackend();
           if (printMethod === 'qz') setPreferredBackend('qz');
