@@ -37,6 +37,16 @@
 -- descuentan TSS/ISR igual que en el módulo de Nómina, para proyectar el
 -- neto que de verdad sale.
 --
+-- >>> SEGUNDA VUELTA: EL 'tipo' ESTABA PISADO <<<
+-- La primera versión excluía la nómina por tipo = 'nomina'. No alcanzó: de
+-- los 7 compromisos de nómina, solo 2 decían 'nomina'; 1 decía 'Fijo' y 4
+-- habían quedado en BLANCO. El editor de compromisos del tablero no ofrece
+-- 'nomina' en su lista, así que guardar uno desde ahí lo dejaba en 'Fijo' o
+-- vacío. Esos 5 se colaban y se contaban DOS VECES — por fila y por
+-- cálculo: 154,000 y 5 pagos de más cada mes (819,964 en vez de 665,964).
+-- Ahora se reconocen por el VÍNCULO nominas.compromiso_id, que nadie puede
+-- pisar desde una pantalla, y el script repara los que ya estaban torcidos.
+--
 -- Con los datos de hoy:
 --   fijos (12 compromisos)          503,964
 --   quincenal (2 pagos)             130,000
@@ -124,6 +134,14 @@ BEGIN
       -- por filas dependía de cuántas nóminas estuvieran generadas y de la
       -- bandera 'recurrente' de cada una, y con el semanal eso nunca cuadra
       -- (un mes tiene 4 sábados y otro 5).
+      --
+      -- Se reconoce por el VÍNCULO (nominas.compromiso_id), no por el 'tipo':
+      -- el tipo es una columna que se edita desde el tablero y de hecho ya
+      -- estaba pisada — de 7 compromisos de nómina, 2 decían 'nomina', 1
+      -- 'Fijo' y 4 estaban en blanco. Filtrar por tipo dejaba 5 colándose y
+      -- se contaban DOS VECES (una por fila y otra en el cálculo): 154,000
+      -- de más al mes.
+      AND NOT EXISTS (SELECT 1 FROM public.nominas n WHERE n.compromiso_id = c.id)
       AND COALESCE(c.tipo, '') <> 'nomina'
   ),
   compromisos_mes AS (
@@ -277,9 +295,56 @@ GRANT  EXECUTE ON FUNCTION public.get_gestion_empresarial_ia(int) TO authenticat
 -- nómina marcado "recurrente" hace que al pagarlo el dashboard cree OTRO
 -- por su cuenta, encima del que crea el módulo de nómina: el mismo sueldo
 -- dos veces. La recurrencia de la nómina la maneja su ventana rodante.
-UPDATE public.compromisos
-   SET recurrente = false
- WHERE tipo = 'nomina' AND COALESCE(recurrente, false) = true;
+-- Se reparan por el vínculo, que es lo único confiable.
+UPDATE public.compromisos c
+   SET tipo = 'nomina', recurrente = false
+ WHERE EXISTS (SELECT 1 FROM public.nominas n WHERE n.compromiso_id = c.id)
+   AND (COALESCE(c.tipo, '') <> 'nomina' OR COALESCE(c.recurrente, false));
+
+-- Y el módulo las vuelve a dejar bien cada vez que sincroniza, por si alguien
+-- las edita otra vez desde el tablero.
+CREATE OR REPLACE FUNCTION public._nomina_asegurar_compromiso(p_nomina_id uuid)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public AS $$
+DECLARE
+  v_nom    record;
+  v_comp   uuid;
+  v_nombre text;
+  v_dias   text[] := ARRAY['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+BEGIN
+  SELECT * INTO v_nom FROM public.nominas WHERE id = p_nomina_id;
+  IF NOT FOUND OR v_nom.estado <> 'borrador' THEN RETURN NULL; END IF;
+
+  v_nombre := CASE WHEN v_nom.frecuencia = 'semanal'
+    THEN 'Nómina semanal ' || v_dias[extract(dow FROM v_nom.fecha_pago)::int + 1]
+         || ' ' || to_char(v_nom.fecha_pago, 'DD/MM')
+    ELSE 'Nómina ' || v_nom.frecuencia || ' ' ||
+         to_char(v_nom.fecha_desde, 'DD/MM') || '–' || to_char(v_nom.fecha_hasta, 'DD/MM')
+  END;
+
+  SELECT c.id INTO v_comp
+  FROM public.compromisos c
+  WHERE c.id = v_nom.compromiso_id AND c.activo = true;
+
+  IF FOUND THEN
+    -- recurrente = false SIEMPRE: si queda encendido, al pagarlo el tablero
+    -- crea otro por su cuenta encima del que crea la nómina.
+    UPDATE public.compromisos
+       SET monto = v_nom.total_neto, fecha = v_nom.fecha_pago,
+           tipo = 'nomina', recurrente = false, nombre = v_nombre
+     WHERE id = v_comp;
+    RETURN v_comp;
+  END IF;
+
+  INSERT INTO public.compromisos (tenant_id, nombre, monto, fecha, tipo, activo, recurrente, frecuencia, solo_admin)
+  VALUES (v_nom.tenant_id, v_nombre, v_nom.total_neto, v_nom.fecha_pago,
+          'nomina', true, false, v_nom.frecuencia, true)
+  RETURNING id INTO v_comp;
+
+  UPDATE public.nominas SET compromiso_id = v_comp WHERE id = p_nomina_id;
+  RETURN v_comp;
+END $$;
+
+REVOKE ALL ON FUNCTION public._nomina_asegurar_compromiso(uuid) FROM PUBLIC, anon, authenticated;
 
 DO $$ BEGIN
   IF to_regprocedure('public.registrar_migracion(text)') IS NOT NULL THEN
@@ -343,7 +408,19 @@ FROM generate_series(date_trunc('month', CURRENT_DATE),
                      date_trunc('month', CURRENT_DATE) + interval '5 month',
                      interval '1 month') d;
 
--- 3) Ningún compromiso de nómina quedó marcado recurrente
-SELECT count(*) AS nomina_recurrentes_pendientes
-FROM public.compromisos WHERE tipo = 'nomina' AND recurrente = true;
+-- 3) Los compromisos de nómina, con su tipo y su recurrencia en orden
+SELECT c.nombre, c.fecha, c.monto, c.tipo, c.recurrente
+FROM public.compromisos c
+JOIN public.nominas n ON n.compromiso_id = c.id
+WHERE c.activo
+ORDER BY c.fecha;
+-- esperado: TODOS con tipo 'nomina' y recurrente false
+--   (el tipo 'nomina' es lo que hace que pagar desde el tablero cierre la
+--    nómina: el trigger dispara con NEW.tipo = 'nomina')
+
+-- 4) Ninguno se cuenta dos veces
+SELECT count(*) AS nomina_colandose_como_compromiso_fijo
+FROM public.compromisos c
+WHERE c.activo AND COALESCE(c.recurrente, false)
+  AND EXISTS (SELECT 1 FROM public.nominas n WHERE n.compromiso_id = c.id);
 -- esperado: 0

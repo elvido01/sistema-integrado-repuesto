@@ -113,13 +113,23 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
     }
     setIsSubmitting(true);
 
+    // Un compromiso de NOMINA lo gobierna su modulo: 'tipo' identifica que
+    // es nomina (de ahi cuelga el trigger que cierra la nomina al pagarlo
+    // desde el tablero) y 'recurrente' tiene que ir apagado (la nomina crea
+    // sola el pago siguiente; si el tablero tambien lo renueva, sale doble).
+    // El Select de tipo no ofrece 'nomina', asi que guardar desde aqui los
+    // dejaba en 'Fijo' o en blanco y rompia las dos cosas a la vez.
+    const datos = deNomina
+      ? { ...formData, tipo: 'nomina', recurrente: false }
+      : formData;
+
     let result;
     if (compromiso && compromiso.id) {
       // Update
-      result = await supabase.from('compromisos').update(formData).eq('id', compromiso.id).select();
+      result = await supabase.from('compromisos').update(datos).eq('id', compromiso.id).select();
     } else {
       // Insert
-      result = await supabase.from('compromisos').insert({ ...formData, tenant_id: tenantId }).select();
+      result = await supabase.from('compromisos').insert({ ...datos, tenant_id: tenantId }).select();
     }
 
     const { error } = result;
@@ -168,6 +178,11 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
 
           <div className="space-y-2">
             <Label htmlFor="tipo">Tipo de Gasto</Label>
+            {deNomina ? (
+              <p className="text-sm rounded-md border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-indigo-800">
+                Nómina — lo administra su módulo. El tipo y la recurrencia no se cambian aquí.
+              </p>
+            ) : (
             <Select name="tipo" value={formData.tipo} onValueChange={(value) => handleSelectChange('tipo', value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccione el tipo" />
@@ -178,6 +193,7 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
                 <SelectItem value="Extraordinario">Extraordinario</SelectItem>
               </SelectContent>
             </Select>
+            )}
           </div>
 
           <div className="flex items-center space-x-2 pt-2">
