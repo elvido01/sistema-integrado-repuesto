@@ -54,7 +54,7 @@ BEGIN
     RAISE EXCEPTION 'Falta get_gestion_empresarial_ia — corre antes sql/gestion_posicion_grupo.sql';
   END IF;
 
-  IF position('monto_pendiente) INTO v_cxc' in v_src) > 0 THEN
+  IF position('SUM(fa.monto_pendiente)' in v_src) > 0 THEN
     RAISE NOTICE 'El por cobrar ya sale de las facturas — nada que cambiar.';
     RETURN;
   END IF;

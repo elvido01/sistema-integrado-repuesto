@@ -43,7 +43,7 @@ BEGIN
     RETURN;
   END IF;
 
-  IF position('monto_pendiente) INTO v_cxc' in v_src) = 0 THEN
+  IF position('SUM(fa.monto_pendiente)' in v_src) = 0 THEN
     RAISE EXCEPTION 'Corre antes sql/gestion_por_cobrar_real.sql';
   END IF;
 
