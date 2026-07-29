@@ -47,6 +47,14 @@
 -- Ahora se reconocen por el VÍNCULO nominas.compromiso_id, que nadie puede
 -- pisar desde una pantalla, y el script repara los que ya estaban torcidos.
 --
+-- >>> TERCERA VUELTA: LOS PAGOS SE CONTABAN POR EMPLEADO <<<
+-- El monto ya salía bien, pero la columna "pagos" contaba una línea por
+-- EMPLEADO: 7 quincenales × 2 = 14 pagos donde de la caja salen 2. Un pago
+-- es un DÍA en que hay que sacar dinero, tenga la empresa 7 empleados o 70
+-- — que es justo como se ve en Compromisos a Pagar: una línea por día de
+-- pago. Ahora se cuentan los días de pago del mes: 12 fijos + 2 quincenas +
+-- 4 o 5 sábados = 18 o 19.
+--
 -- Con los datos de hoy:
 --   fijos (12 compromisos)          503,964
 --   quincenal (2 pagos)             130,000
@@ -171,10 +179,10 @@ BEGIN
     FROM public.empleados e
     WHERE e.tenant_id = v_tenant AND e.activo = true
   ),
-  nomina_mes AS (
-    -- El costo de la nómina de CADA mes, calculado — no contado.
-    --   mensual   → su sueldo, 1 pago
-    --   quincenal → su sueldo (las 2 quincenas juntas), 2 pagos
+  nomina_monto AS (
+    -- Lo que cuesta la nómina de CADA mes, calculado — no contado.
+    --   mensual   → su sueldo
+    --   quincenal → su sueldo (las 2 quincenas juntas)
     --   semanal   → sueldo/4 × los sábados que tenga ESE mes
     SELECT m.mes,
            COALESCE(SUM(
@@ -182,15 +190,32 @@ BEGIN
                   THEN round(e.neto_mes / 4.0, 2)
                        * public.nomina_pagos_en_periodo(
                            m.mes, (m.mes + interval '1 month - 1 day')::date, e.dow)
-                  ELSE e.neto_mes END), 0) AS monto,
-           COALESCE(SUM(
-             CASE e.frecuencia_pago
-               WHEN 'semanal'   THEN public.nomina_pagos_en_periodo(
-                                       m.mes, (m.mes + interval '1 month - 1 day')::date, e.dow)
-               WHEN 'quincenal' THEN 2
-               ELSE 1 END), 0) AS cant
+                  ELSE e.neto_mes END), 0) AS monto
     FROM meses m
     LEFT JOIN emp e ON true
+    GROUP BY m.mes
+  ),
+  nomina_dias AS (
+    -- CUÁNTOS PAGOS: son DÍAS DE PAGO, no empleados. La nómina quincenal
+    -- sale de la caja 2 veces al mes tenga 7 empleados o tenga 70; contar uno
+    -- por empleado daba 14 pagos donde hay 2. Se cuentan los días en que de
+    -- verdad hay que sacar dinero, que es lo que se ve en Compromisos a
+    -- Pagar: una línea por día de pago.
+    SELECT m.mes, count(*) AS cant
+    FROM meses m
+    CROSS JOIN LATERAL generate_series(
+           m.mes::timestamp,
+           (m.mes + interval '1 month - 1 day')::timestamp,
+           interval '1 day') d
+    WHERE EXISTS (
+      SELECT 1 FROM emp e
+      WHERE (e.frecuencia_pago = 'semanal'
+             AND extract(dow FROM d)::int = e.dow)
+         OR (e.frecuencia_pago = 'quincenal'
+             AND extract(day FROM d)::int IN (
+                   15, LEAST(30, extract(day FROM (m.mes + interval '1 month - 1 day'))::int)))
+         OR (e.frecuencia_pago = 'mensual'
+             AND d::date = (m.mes + interval '1 month - 1 day')::date))
     GROUP BY m.mes
   ),
   cxp AS (  -- cada pagaré pendiente con su fecha de vencimiento.
@@ -217,14 +242,15 @@ BEGIN
     SELECT
       m.mes,
       COALESCE(cm.monto, 0) + COALESCE(nm.monto, 0) AS compromisos,
-      COALESCE(cm.cant, 0)  + COALESCE(nm.cant, 0)  AS compromisos_cant,
+      COALESCE(cm.cant, 0)  + COALESCE(nd.cant, 0)  AS compromisos_cant,
       COALESCE(sm.monto, 0) AS suplidores,
       COALESCE(sm.cant, 0)  AS suplidores_cant,
       -- gasto estimado del mes = promedio diario x días de ese mes
       ROUND(v_gasto_d * EXTRACT(day FROM (m.mes + interval '1 month - 1 day'))::numeric, 2) AS gastos
     FROM meses m
     LEFT JOIN compromisos_mes cm ON cm.mes = m.mes
-    LEFT JOIN nomina_mes      nm ON nm.mes = m.mes
+    LEFT JOIN nomina_monto    nm ON nm.mes = m.mes
+    LEFT JOIN nomina_dias     nd ON nd.mes = m.mes
     LEFT JOIN suplidores_mes  sm ON sm.mes = m.mes
   ),
   hist AS (  -- gasto REAL de los últimos 6 meses (para el historial)
@@ -373,12 +399,23 @@ comp AS (   -- los compromisos fijos (sin nómina), como los proyecta la funció
   GROUP BY 1
 )
 SELECT t.nombre AS empresa, to_char(m.mes, 'MM/YYYY') AS mes,
-       COALESCE(c.cant, 0) + SUM(
-         CASE e.frecuencia_pago
-           WHEN 'semanal'   THEN public.nomina_pagos_en_periodo(
-                                   m.mes, (m.mes + interval '1 month - 1 day')::date,
-                                   COALESCE(e.dia_pago_semanal, 6)::smallint)
-           WHEN 'quincenal' THEN 2 ELSE 1 END) AS pagos,
+       -- pagos = DÍAS de pago (no empleados): los fijos + los días en que
+       -- hay que sacar nómina, sin importar cuánta gente cobre ese día
+       COALESCE(c.cant, 0) + (
+         SELECT count(*) FROM generate_series(
+                  m.mes::timestamp,
+                  (m.mes + interval '1 month - 1 day')::timestamp,
+                  interval '1 day') d
+          WHERE EXISTS (SELECT 1 FROM public.empleados e2
+                         WHERE e2.tenant_id = t.id AND e2.activo
+                           AND ((e2.frecuencia_pago = 'semanal'
+                                 AND extract(dow FROM d)::int = COALESCE(e2.dia_pago_semanal, 6))
+                             OR (e2.frecuencia_pago = 'quincenal'
+                                 AND extract(day FROM d)::int IN (
+                                       15, LEAST(30, extract(day FROM (m.mes + interval '1 month - 1 day'))::int)))
+                             OR (e2.frecuencia_pago = 'mensual'
+                                 AND d::date = (m.mes + interval '1 month - 1 day')::date)))
+       ) AS pagos,
        COALESCE(c.monto, 0) + SUM(
          CASE WHEN e.frecuencia_pago = 'semanal'
               THEN round(e.sueldo_mensual / 4.0, 2)
@@ -391,7 +428,7 @@ JOIN public.tenants t ON t.id = e.tenant_id
 CROSS JOIN meses m
 LEFT JOIN comp c ON c.tenant_id = e.tenant_id
 WHERE e.activo
-GROUP BY t.nombre, m.mes, c.cant, c.monto
+GROUP BY t.id, t.nombre, m.mes, c.cant, c.monto
 ORDER BY t.nombre, m.mes;
 -- esperado (Motoprestamos/Caminero): agosto = septiembre + 1 pago y + 8,000
 --   4 sábados → 18 pagos, 665,964  |  5 sábados → 19 pagos, 673,964
