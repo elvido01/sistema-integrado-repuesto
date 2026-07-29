@@ -200,7 +200,28 @@ const GestionEmpresarialPage = () => {
                     nota={`${pos.cartera_cantidad || 0} activos · ${money0(pos.cartera_capital)} capital + ${money0(pos.cartera_interes)} interés${
                       Number(pos.cartera_mora) > 0 ? ` + ${money0(pos.cartera_mora)} mora` : ''}`} />
                 )}
-                <FilaPos icon={Receipt} etiqueta="Por cobrar a clientes" monto={pos.por_cobrar} />
+                {/* Caminero financia TODO por terceros: lo que se vende a
+                    credito pasa a la cartera de MotoPrestamos. Si algo queda
+                    aqui es una venta que NO genero su prestamo — ya paso con
+                    las facturas 12 y 17. Por eso es alerta, no un activo mas,
+                    y cuando esta en cero desaparece. */}
+                {Number(pos.por_cobrar) > 0 && (
+                  <div className="flex items-start gap-2 py-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-slate-800 leading-tight">
+                        Ventas a crédito sin préstamo
+                        {pos.por_cobrar_cant ? <span className="text-slate-400 font-normal"> · {pos.por_cobrar_cant}</span> : null}
+                      </div>
+                      <div className="text-[10px] text-amber-600">
+                        deberían estar en la cartera — revisar
+                      </div>
+                    </div>
+                    <div className="text-sm font-semibold whitespace-nowrap text-amber-600">
+                      {money0(pos.por_cobrar)}
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between pt-2 mt-1 border-t font-bold">
                   <span className="text-sm">Total</span>
                   <span className="text-lg text-emerald-700">{money0(pos.activos)}</span>
