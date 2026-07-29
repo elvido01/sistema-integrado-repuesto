@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 
 const money = (v) => `RD$ ${(Number(v) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const usd0 = (v) => `US$ ${(Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 const money0 = (v) => `RD$ ${(Number(v) || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}`;
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const mesLabel = (ym) => {
@@ -181,8 +182,13 @@ const GestionEmpresarialPage = () => {
                 <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 mb-2">
                   Lo que tenemos
                 </div>
+                {/* De donde sale el total: cuanto hay en pesos y cuantos
+                    dolares. Sin esto, si la tasa se mueve el numero cambia
+                    y no se sabe por que. */}
                 <FilaPos icon={Wallet} etiqueta="Caja y bancos" monto={pos.caja_bancos}
-                  nota={data.tasa_usd > 1 ? `dólares a ${data.tasa_usd}` : null} />
+                  nota={Number(pos.caja_usd) > 0
+                    ? `${money0(pos.caja_dop)} en pesos + ${usd0(pos.caja_usd)} a ${data.tasa_usd}`
+                    : (Number(pos.caja_dop) > 0 ? `${money0(pos.caja_dop)} en pesos` : null)} />
                 <FilaPos icon={Bike} etiqueta="Motos en inventario" monto={pos.motos_valor}
                   nota={`${pos.motos_unidades || 0} unidades al costo`} />
                 {/* La cartera con sus tres partes, tal como la muestra su
