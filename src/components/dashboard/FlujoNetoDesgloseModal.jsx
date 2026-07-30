@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownCircle, ArrowUpCircle, FileText, Users, BarChart3, ShoppingCart, Briefcase, TrendingUp } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, FileText, Users, BarChart3, ShoppingCart, Briefcase, TrendingUp, Building2 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -18,10 +18,16 @@ const Row = ({ icon: Icon, label, value, negative }) => (
   </div>
 );
 
-const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = null, cobradoMes = null }) => {
+const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = null, cobradoMes = null, ingresosDealer = null }) => {
   const p = data?.periodo_actual || {};
   const flujo = Number(p.flujo_neto) || 0;
   const positivo = flujo >= 0;
+  // Lo que cobró el dealer del grupo. Va aparte del total propio a
+  // propósito: ese total es el que cuadra con el flujo neto de la tarjeta de
+  // afuera, y si le sumara esto en silencio los dos números dejarían de
+  // coincidir sin que nadie sepa por qué.
+  const dealerTotal = Number(ingresosDealer?.total) || 0;
+  const flujoGrupo = flujo + dealerTotal;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -57,6 +63,29 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
           <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 mb-1">Ingresos cobrados</p>
           <Row icon={FileText} label="Ventas de contado" value={Number(p.ingreso_venta_contado) || 0} />
           <Row icon={Users} label="Cobros a clientes (recibos)" value={Number(p.ingreso_cobro_cliente) || 0} />
+
+          {/* El efectivo del dealer: la financiera no vende, pero son la
+              misma empresa y esa plata entró. Va con su propio desglose
+              porque "contado" e "inicial" no son lo mismo. */}
+          {dealerTotal > 0 && (
+            <div className="flex items-start justify-between py-2.5 border-b border-slate-100">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <Building2 className="w-4 h-4 shrink-0 text-emerald-500 mt-0.5" />
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-600 truncate">{ingresosDealer.dealer_nombre}</div>
+                  <div className="text-[10px] text-slate-400 leading-snug">
+                    Contado {formatCurrencyDOP(Number(ingresosDealer.contado) || 0, { decimals: 0 })}
+                    {' + '}iniciales y abonos {formatCurrencyDOP(Number(ingresosDealer.recibos) || 0, { decimals: 0 })}
+                    {' · '}mes completo
+                  </div>
+                </div>
+              </div>
+              <span className="text-sm font-bold shrink-0 text-slate-800">
+                {formatCurrencyDOP(dealerTotal, { decimals: 0 })}
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between py-2 border-b-2 border-slate-200">
             <span className="text-xs font-semibold text-slate-500">Total ingresos</span>
             <span className="text-sm font-black text-emerald-600">
@@ -88,6 +117,22 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
               {positivo ? '' : '-'}{formatCurrencyDOP(Math.abs(flujo), { decimals: 0 })}
             </span>
           </div>
+
+          {/* El grupo, sumado. Separado del número de arriba para que ese
+              siga cuadrando con la tarjeta del dashboard. */}
+          {dealerTotal > 0 && (
+            <div className="flex items-center justify-between mt-2 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2.5">
+              <span className="text-sm font-bold text-emerald-800">
+                Flujo neto del grupo
+                <span className="block text-[10px] font-normal text-emerald-700/80">
+                  con {ingresosDealer.dealer_nombre}
+                </span>
+              </span>
+              <span className={`text-base font-black ${flujoGrupo >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                {flujoGrupo >= 0 ? '' : '-'}{formatCurrencyDOP(Math.abs(flujoGrupo), { decimals: 0 })}
+              </span>
+            </div>
+          )}
 
           <p className="mt-3 text-[11px] leading-snug text-slate-400">
             No incluye obligaciones pendientes, ventas a crédito no cobradas, órdenes de compra sin pagar

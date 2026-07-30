@@ -82,6 +82,9 @@ const HomePage = () => {
   // y en 2da línea lo realmente cobrado = iniciales de ventas + recibos.
   const esVentasTerceros = empresa?.financiamiento_tipo === 'terceros';
   const [ventasTerceros, setVentasTerceros] = useState({ mesTotal: 0, cobradoMes: 0 });
+  // Lo que cobró el dealer del grupo, visto desde la financiera. null = esta
+  // empresa no es financiera de nadie y la fila no se muestra.
+  const [ingresosDealer, setIngresosDealer] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -267,6 +270,13 @@ const HomePage = () => {
           cobradoMes: (recMes.data || []).reduce((s, r) => s + (Number(r.monto_pagado) || 0), 0),
         });
       }
+
+      // El espejo: desde la FINANCIERA, lo que cobró su dealer. MotoPréstamos
+      // no vende, así que su "Ventas de contado" siempre decía RD$0 mientras
+      // Caminero cobraba de verdad — y son la misma empresa. Devuelve null
+      // cuando la empresa activa no es financiera de nadie.
+      const { data: dealerIng } = await supabase.rpc('get_ingresos_dealer_mes');
+      setIngresosDealer(dealerIng || null);
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
       if (!isRefresh) {
@@ -676,6 +686,7 @@ const HomePage = () => {
                     onRetry={() => fetchDashboardData(true)}
                     ventasMesTotal={esVentasTerceros ? ventasTerceros.mesTotal : null}
                     cobradoMes={esVentasTerceros ? ventasTerceros.cobradoMes : null}
+                    ingresosDealer={ingresosDealer}
                   />
                 </motion.div>
 
