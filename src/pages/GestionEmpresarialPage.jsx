@@ -354,12 +354,31 @@ const GestionEmpresarialPage = () => {
             <p className="text-[11px] text-slate-500 mt-1">
               {margen != null ? (
                 <>Calculado con el margen real de la empresa (<b>{margen}%</b> de los últimos 90 días):
-                  para cubrir {money0(tot.total_cubrir)} hay que vender más, porque cada venta deja solo su margen.</>
+                  cada venta deja solo su margen, así que hay que vender bastante más de lo que se debe.</>
               ) : (
                 <>Aún no hay datos de costo suficientes para calcular el margen, así que se muestra el monto
                   a cubrir tal cual. Al registrar costos en las ventas, este número se ajusta solo.</>
               )}
             </p>
+
+            {/* La cuenta completa, porque el numero grande no se explica solo.
+                Las cuotas de la cartera entran completas —el margen ya lo dejo
+                la venta de la moto— asi que se restan ANTES de dividir entre
+                el margen. Sin esto pedia 92 millones en vez de 52. */}
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500">
+              <span>Hay que cubrir <b className="text-slate-700">{money0(tot.total_cubrir)}</b></span>
+              {Number(tot.cobros) > 0 && (
+                <>
+                  <span className="text-slate-400">−</span>
+                  <span>la cartera debe recaudar{' '}
+                    <b className="text-emerald-700">{money0(tot.cobros)}</b>
+                    <span className="text-slate-400"> (entra completo)</span>
+                  </span>
+                  <span className="text-slate-400">=</span>
+                  <span>quedan <b className="text-slate-700">{money0(tot.falta_cubrir)}</b> que salen de vender</span>
+                </>
+              )}
+            </div>
 
             {/* El objetivo contra la realidad. Sin esto el número es una cifra
                 enorme sin escala: no se sabe si falta poco o es inalcanzable. */}
@@ -418,6 +437,12 @@ const GestionEmpresarialPage = () => {
                     </th>
                     <th className="text-right px-3 py-2">Gastos est.</th>
                     <th className="text-right px-3 py-2">Total a cubrir</th>
+                    {/* La cartera entra completa: sin esta columna, "hay que
+                        facturar" parece un numero sacado de la nada. */}
+                    <th className="text-right px-3 py-2">
+                      Cobros cartera
+                      <div className="font-normal normal-case text-[10px] text-emerald-700">entra completo</div>
+                    </th>
                     <th className="text-right px-3 py-2">Hay que facturar</th>
                   </tr>
                 </thead>
@@ -444,6 +469,10 @@ const GestionEmpresarialPage = () => {
                       </td>
                       <td className="px-3 py-2 text-right text-slate-600">{money(m.gastos)}</td>
                       <td className="px-3 py-2 text-right font-bold">{money(m.total_cubrir)}</td>
+                      <td className="px-3 py-2 text-right text-emerald-700">
+                        {Number(m.cobros) > 0 ? `− ${money(m.cobros)}` : '—'}
+                        {m.cobros_cant > 0 && <div className="text-[10px] text-muted-foreground">{m.cobros_cant} cuota{m.cobros_cant !== 1 ? 's' : ''}</div>}
+                      </td>
                       <td className="px-3 py-2 text-right font-black text-emerald-700">{money(m.facturacion_necesaria)}</td>
                     </tr>
                   ))}
@@ -455,6 +484,9 @@ const GestionEmpresarialPage = () => {
                     <td className="px-3 py-2 text-right text-amber-700">{money(tot.suplidores)}</td>
                     <td className="px-3 py-2 text-right text-slate-600">{money(tot.gastos)}</td>
                     <td className="px-3 py-2 text-right">{money(tot.total_cubrir)}</td>
+                    <td className="px-3 py-2 text-right text-emerald-700">
+                      {Number(tot.cobros) > 0 ? `− ${money(tot.cobros)}` : '—'}
+                    </td>
                     <td className="px-3 py-2 text-right text-emerald-700">{money(tot.facturacion_necesaria)}</td>
                   </tr>
                 </tfoot>
