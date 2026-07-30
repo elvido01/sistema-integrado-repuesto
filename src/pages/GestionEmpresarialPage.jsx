@@ -318,10 +318,12 @@ const GestionEmpresarialPage = () => {
                     <td className="px-3 py-2">
                       Total del mes
                       {/* SE DEBIA PAGAR es exactamente la fila de este mes en la
-                          tabla de abajo: el mismo numero mirado dos veces.
-                          Decirlo evita que parezcan contradictorios. */}
+                          tabla de abajo: el mismo numero mirado dos veces. Y es
+                          fijo — si bajara al ir pagando, no habria contra que
+                          medir lo pagado. */}
                       <span className="block text-[10px] font-normal text-slate-500">
-                        «Se debía pagar» es la fila de {mesLabel(estado.mes)} en «Mes por mes»
+                        «Se debía pagar» es la fila de {mesLabel(estado.mes)} en «Mes por mes»:
+                        la meta del mes, no baja al ir pagando
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right">{money0(estado.total_debia)}</td>
@@ -387,7 +389,7 @@ const GestionEmpresarialPage = () => {
               contradecir a Estado actual, que ya descuenta lo pagado. Y sin lo
               de la ventana, el total parece ser toda la deuda a suplidores. */}
           <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2 text-[11px] text-amber-800">
-            Cada fila es lo que <b>vence dentro de ese mes</b>, completo. La de {mesLabel(estado.mes)} es
+            Cada fila es <b>lo que hay que pagar en ese mes</b>, completo. La de {mesLabel(estado.mes)} es
             el «se debía pagar» de arriba; cuánto de eso ya se cubrió se ve en Estado actual.
             {Number(data.suplidores_fuera_ventana) > 0 && (
               <> Fuera de esta ventana de {meses.length} meses —vencido de antes y cuotas de años
