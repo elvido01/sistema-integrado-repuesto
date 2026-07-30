@@ -69,10 +69,23 @@ const InventarioFisicoPage = () => {
 
         setLoading(true);
         try {
-            const { data, error } = await supabase.rpc('get_inventario_fisico', {
+            // El filtro va al SERVIDOR, no solo a la pantalla: la API corta
+            // en 1,000 filas y el catálogo tiene 3,535, así que sin filtrar
+            // allá la consulta solo veía el primer pedazo — por eso contaba
+            // 20 motos cuando hay 117 productos con existencia.
+            let { data, error } = await supabase.rpc('get_inventario_fisico_filtrado', {
                 p_ubicacion: selectedUbicacion,
-                p_search: searchTerm
+                p_search: searchTerm,
+                p_solo_existencia: soloConExistencia,
             });
+
+            // Mientras no se corra sql/inventario_fisico_filtrado.sql
+            if (error && /get_inventario_fisico_filtrado/.test(error.message || '')) {
+                ({ data, error } = await supabase.rpc('get_inventario_fisico', {
+                    p_ubicacion: selectedUbicacion,
+                    p_search: searchTerm,
+                }));
+            }
 
             if (error) throw error;
 
@@ -86,7 +99,15 @@ const InventarioFisicoPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [selectedUbicacion, searchTerm, toast]);
+    }, [selectedUbicacion, searchTerm, soloConExistencia, toast]);
+
+    // Marcar/desmarcar el cotejo cambia lo que hay que PEDIR, no solo lo que
+    // se muestra: sin esto, quitarlo dejaría a la vista una lista filtrada.
+    const yaConsulto = products.length > 0 || selectedUbicacion !== 'none';
+    useEffect(() => {
+        if (yaConsulto && products.length > 0) fetchInventory();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [soloConExistencia]);
 
     const handleSaveProduct = useCallback(async (productData, presentations, isEditing) => {
         // MISMO PROCEDIMIENTO QUE ProductsPage.handleSaveProduct para no
@@ -450,7 +471,9 @@ const InventarioFisicoPage = () => {
                                 <Checkbox checked={soloConExistencia} onCheckedChange={(c) => setSoloConExistencia(!!c)} />
                                 <span className="text-sm font-medium text-slate-700">Solo con existencia</span>
                                 {products.length > 0 && (
-                                    <span className="text-xs text-slate-400">({conExistencia} de {products.length})</span>
+                                    <span className="text-xs text-slate-400">
+                                        {soloConExistencia ? `(${products.length})` : `(${conExistencia} de ${products.length})`}
+                                    </span>
                                 )}
                             </label>
                         </div>
@@ -461,6 +484,18 @@ const InventarioFisicoPage = () => {
                             </Button>
                         </div>
                     </div>
+
+                    {/* La API corta en 1,000 filas. Callarlo es lo que hacía
+                        que el conteo pareciera correcto cuando no lo era: el
+                        pie decía "TOTAL ARTÍCULOS: 1000" y nadie lo leía como
+                        "hay más que no estás viendo". */}
+                    {products.length >= 1000 && !soloConExistencia && (
+                        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-[13px] text-amber-800">
+                            Se están mostrando <b>los primeros 1,000 artículos</b> del catálogo, no todos.
+                            El conteo y los totales de abajo son solo de esos.
+                            {' '}Marca <b>«Solo con existencia»</b> para ver el inventario completo de verdad.
+                        </div>
+                    )}
 
                     {/* Table Area */}
                     <ScrollArea className="flex-grow border border-slate-200 rounded-lg bg-white overflow-hidden">
