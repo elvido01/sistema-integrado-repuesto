@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import {
   Loader2, RefreshCw, TrendingUp, Receipt, Truck, Wallet, Target, Info, AlertTriangle, Activity, Bike,
-  Scale, Landmark, ArrowLeftRight,
+  Scale, Landmark, ArrowLeftRight, Banknote,
 } from 'lucide-react';
 
 const money = (v) => `RD$ ${(Number(v) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -50,6 +50,56 @@ const tonoPct = (pct) => {
   return 'text-rose-600';
 };
 const barraPct = (pct) => (pct >= 90 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500');
+
+// Una barra de INGRESOS. Todas se miden contra el MISMO total —lo que el mes
+// pide— para que se vea de un vistazo qué parte cubre cada empresa; si cada
+// una se escalara a su propio máximo, dos montos muy distintos se verían
+// iguales. `partes` son los segmentos que suman el monto de la barra.
+const BarraIngreso = ({ etiqueta, monto, meta, partes = [], nota, fuerte }) => {
+  const pct = meta > 0 ? Math.min(100, (Number(monto) || 0) * 100 / meta) : 0;
+  const conValor = partes.filter((p) => Number(p.monto) > 0);
+  return (
+    <div className="py-2">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className={`${fuerte ? 'text-sm font-bold' : 'text-[12px] font-semibold'} text-slate-700`}>
+          {etiqueta}
+        </span>
+        <span className="flex-1" />
+        <span className={`${fuerte ? 'text-lg' : 'text-sm'} font-black text-emerald-700 whitespace-nowrap`}>
+          {money0(monto)}
+        </span>
+        {meta > 0 && (
+          <span className="text-[11px] font-bold text-slate-400 w-12 text-right">{pct.toFixed(1)}%</span>
+        )}
+      </div>
+      <div className="h-2.5 rounded-full bg-slate-200 mt-1 overflow-hidden flex">
+        {/* los segmentos van dentro de la misma barra: el largo total es lo
+            que entró, y cada tono dice de dónde vino */}
+        {conValor.length > 0 ? conValor.map((p) => (
+          <motion.div key={p.etiqueta} className={`h-full ${p.color}`}
+            initial={{ width: 0 }}
+            animate={{ width: `${meta > 0 ? Math.min(100, (Number(p.monto) || 0) * 100 / meta) : 0}%` }}
+            transition={{ duration: 0.6 }} />
+        )) : (
+          <motion.div className="h-full bg-emerald-500"
+            initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.6 }} />
+        )}
+      </div>
+      {(nota || partes.length > 0) && (
+        <div className="flex items-center gap-3 flex-wrap mt-1 text-[10px] text-slate-500">
+          {partes.map((p) => (
+            <span key={p.etiqueta} className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-sm ${Number(p.monto) > 0 ? p.color : 'bg-slate-300'}`} />
+              {p.etiqueta} <b className="text-slate-600">{money0(p.monto)}</b>
+              {p.cant > 0 && <span className="text-slate-400">({p.cant})</span>}
+            </span>
+          ))}
+          {nota && <span>{nota}</span>}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // Una linea del cumplimiento: lo que tocaba, lo que se pago, lo que falta.
 const FilaCumplimiento = ({ icon: Icon, etiqueta, nota, cant, debia, pagado, pct }) => {
@@ -115,6 +165,7 @@ const GestionEmpresarialPage = () => {
   const vencidasMonto = Number(estado.cuotas_vencidas_monto) || 0;
   const grupo = Number(data?.empresas_grupo) || 1;
   const pos = data?.posicion || {};
+  const ing = data?.ingresos_mes || {};
   const ventasMes = Number(data?.ventas_mes) || 0;
   // Cuántas veces habría que multiplicar las ventas del mes para llegar a
   // lo que exige la deuda. Es el número que pone el objetivo en escala.
@@ -341,67 +392,71 @@ const GestionEmpresarialPage = () => {
             </div>
           </div>
 
-          {/* Facturación necesaria — esto SÍ es proyección, va aparte */}
-          <div className="rounded-xl border bg-slate-50 px-4 py-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <TrendingUp className="w-4 h-4 text-slate-600" />
-              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
-                Facturación necesaria — próximos 6 meses
+          {/* INGRESOS DEL MES — la otra cara de Estado actual. Arriba se ve
+              cuánto pide el mes; aquí, con qué se está pagando. Va pegado
+              debajo a propósito: el mismo mes y la misma cifra de referencia
+              (el «se debía pagar»), para poder mirarlos juntos. */}
+          <div className="rounded-xl border-2 border-sky-200 bg-sky-50/60 p-4">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <Banknote className="w-5 h-5 text-sky-700" />
+              <span className="text-[11px] font-bold uppercase tracking-wide text-sky-800">
+                Ingresos del mes — {mesLabel(ing.mes || estado.mes)}
               </span>
               <span className="flex-1" />
-              <span className="text-2xl font-black text-slate-700">{money0(tot.facturacion_necesaria)}</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              {margen != null ? (
-                <>Calculado con el margen real de la empresa (<b>{margen}%</b> de los últimos 90 días):
-                  cada venta deja solo su margen, así que hay que vender bastante más de lo que se debe.</>
-              ) : (
-                <>Aún no hay datos de costo suficientes para calcular el margen, así que se muestra el monto
-                  a cubrir tal cual. Al registrar costos en las ventas, este número se ajusta solo.</>
-              )}
-            </p>
-
-            {/* La cuenta completa, porque el numero grande no se explica solo.
-                Las cuotas de la cartera entran completas —el margen ya lo dejo
-                la venta de la moto— asi que se restan ANTES de dividir entre
-                el margen. Sin esto pedia 92 millones en vez de 52. */}
-            <div className="mt-2 flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500">
-              <span>Hay que cubrir <b className="text-slate-700">{money0(tot.total_cubrir)}</b></span>
-              {Number(tot.cobros) > 0 && (
-                <>
-                  <span className="text-slate-400">−</span>
-                  <span>la cartera debe recaudar{' '}
-                    <b className="text-emerald-700">{money0(tot.cobros)}</b>
-                    <span className="text-slate-400"> (entra completo)</span>
-                  </span>
-                  <span className="text-slate-400">=</span>
-                  <span>quedan <b className="text-slate-700">{money0(tot.falta_cubrir)}</b> que salen de vender</span>
-                </>
+              {ing.pct != null && (
+                <span className={`text-2xl font-black ${tonoPct(ing.pct)}`}>{ing.pct}%</span>
               )}
             </div>
 
-            {/* El objetivo contra la realidad. Sin esto el número es una cifra
-                enorme sin escala: no se sabe si falta poco o es inalcanzable. */}
-            {vecesVentas != null && (
-              <div className="mt-2 pt-2 border-t flex items-center gap-3 flex-wrap text-[11px]">
-                <span className="text-slate-500">
-                  Hacen falta <b className="text-slate-700">{money0((Number(tot.facturacion_necesaria) || 0) / 6)}</b> al mes
-                </span>
-                <span className="text-slate-400">·</span>
-                <span className="text-slate-500">
-                  este mes vas por <b className="text-slate-700">{money0(ventasMes)}</b>
-                </span>
-                <span className="flex-1" />
-                <span className={`px-2 py-0.5 rounded-full font-bold ${
-                  vecesVentas <= 1 ? 'bg-emerald-100 text-emerald-700'
-                    : vecesVentas <= 3 ? 'bg-amber-100 text-amber-700'
-                    : 'bg-rose-100 text-rose-700'}`}>
-                  {vecesVentas <= 1
-                    ? 'la meta está cubierta'
-                    : `habría que vender ${vecesVentas.toFixed(1)}× más`}
-                </span>
+            <div className="rounded-lg bg-white/80 border border-sky-200 px-4 py-2">
+              <BarraIngreso
+                etiqueta={ing.dealer_nombre || 'Ventas'}
+                monto={ing.dealer_total}
+                meta={Number(ing.meta) || 0}
+                partes={[
+                  { etiqueta: 'Contado', monto: ing.contado, cant: ing.contado_cant, color: 'bg-emerald-600' },
+                  { etiqueta: 'Iniciales', monto: ing.iniciales, cant: ing.iniciales_cant, color: 'bg-emerald-400' },
+                  { etiqueta: 'Abonos', monto: ing.abonos, cant: ing.abonos_cant, color: 'bg-emerald-300' },
+                ]}
+              />
+              <div className="border-t" />
+              <BarraIngreso
+                etiqueta={ing.fin_nombre || 'Cobros'}
+                monto={ing.recibos}
+                meta={Number(ing.meta) || 0}
+                partes={[
+                  { etiqueta: 'Recibos de ingreso', monto: ing.recibos, cant: ing.recibos_cant, color: 'bg-sky-500' },
+                ]}
+              />
+            </div>
+
+            {/* La linea que cierra la idea: todo lo que entro contra todo lo
+                que el mes pide. Es el mismo "se debia pagar" del panel de
+                arriba, para que los dos se puedan comparar sin cuentas. */}
+            <div className="mt-2 rounded-lg bg-white border border-sky-300 px-4 py-2">
+              <BarraIngreso
+                fuerte
+                etiqueta="Total de ingresos"
+                monto={ing.total}
+                meta={Number(ing.meta) || 0}
+              />
+              <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-600 -mt-1">
+                <span>contra el «se debía pagar» de <b>{money0(ing.meta)}</b></span>
+                {Number(ing.falta) > 0 ? (
+                  <>
+                    <span className="text-slate-400">·</span>
+                    <span className="text-rose-600 font-semibold">
+                      faltan {money0(ing.falta)} por entrar
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-slate-400">·</span>
+                    <span className="text-emerald-700 font-semibold">el mes está cubierto</span>
+                  </>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
           {/* Que lee la tabla, dicho antes de la tabla: cada fila es lo que
@@ -492,6 +547,69 @@ const GestionEmpresarialPage = () => {
                 </tfoot>
               </table>
             </div>
+          </div>
+
+          {/* Facturación necesaria — esto SÍ es proyección, va aparte */}
+          <div className="rounded-xl border bg-slate-50 px-4 py-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <TrendingUp className="w-4 h-4 text-slate-600" />
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                Facturación necesaria — próximos 6 meses
+              </span>
+              <span className="flex-1" />
+              <span className="text-2xl font-black text-slate-700">{money0(tot.facturacion_necesaria)}</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {margen != null ? (
+                <>Calculado con el margen real de la empresa (<b>{margen}%</b> de los últimos 90 días):
+                  cada venta deja solo su margen, así que hay que vender bastante más de lo que se debe.</>
+              ) : (
+                <>Aún no hay datos de costo suficientes para calcular el margen, así que se muestra el monto
+                  a cubrir tal cual. Al registrar costos en las ventas, este número se ajusta solo.</>
+              )}
+            </p>
+
+            {/* La cuenta completa, porque el numero grande no se explica solo.
+                Las cuotas de la cartera entran completas —el margen ya lo dejo
+                la venta de la moto— asi que se restan ANTES de dividir entre
+                el margen. Sin esto pedia 92 millones en vez de 52. */}
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500">
+              <span>Hay que cubrir <b className="text-slate-700">{money0(tot.total_cubrir)}</b></span>
+              {Number(tot.cobros) > 0 && (
+                <>
+                  <span className="text-slate-400">−</span>
+                  <span>la cartera debe recaudar{' '}
+                    <b className="text-emerald-700">{money0(tot.cobros)}</b>
+                    <span className="text-slate-400"> (entra completo)</span>
+                  </span>
+                  <span className="text-slate-400">=</span>
+                  <span>quedan <b className="text-slate-700">{money0(tot.falta_cubrir)}</b> que salen de vender</span>
+                </>
+              )}
+            </div>
+
+            {/* El objetivo contra la realidad. Sin esto el número es una cifra
+                enorme sin escala: no se sabe si falta poco o es inalcanzable. */}
+            {vecesVentas != null && (
+              <div className="mt-2 pt-2 border-t flex items-center gap-3 flex-wrap text-[11px]">
+                <span className="text-slate-500">
+                  Hacen falta <b className="text-slate-700">{money0((Number(tot.facturacion_necesaria) || 0) / 6)}</b> al mes
+                </span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-500">
+                  este mes vas por <b className="text-slate-700">{money0(ventasMes)}</b>
+                </span>
+                <span className="flex-1" />
+                <span className={`px-2 py-0.5 rounded-full font-bold ${
+                  vecesVentas <= 1 ? 'bg-emerald-100 text-emerald-700'
+                    : vecesVentas <= 3 ? 'bg-amber-100 text-amber-700'
+                    : 'bg-rose-100 text-rose-700'}`}>
+                  {vecesVentas <= 1
+                    ? 'la meta está cubierta'
+                    : `habría que vender ${vecesVentas.toFixed(1)}× más`}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Historial real de gastos */}
