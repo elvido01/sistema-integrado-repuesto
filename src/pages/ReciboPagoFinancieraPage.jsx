@@ -577,10 +577,37 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
 
   const sumaAbonos = (mapa) => round2(filas.reduce((a, f) => a + (Number(mapa[f.key]) || 0), 0));
 
+  // No se puede SALTAR un pagaré: si queda uno anterior del mismo préstamo
+  // con saldo, el abono no va aquí. Adelantarse sí se permite —lo que no, es
+  // dejar atrás una cuota abierta—. Mismo criterio que el candado del RPC,
+  // para que la pantalla no deje hacer algo que el servidor va a rechazar.
+  // Pasó de verdad: un recibo entró a la 007/012 con la 001 a la 006 abiertas.
+  const pagareAnteriorAbierto = (r, mapa) => {
+    if (r.esCargo || r.esMora) return null;
+    const i = filas.indexOf(r);
+    for (let j = 0; j < i; j++) {
+      const p = filas[j];
+      if (p.esCargo || p.esMora || p.origen !== r.origen) continue;
+      if (round2(p.pendiente - (Number(mapa[p.key]) || 0)) > 0.005) return p;
+    }
+    return null;
+  };
+
   // Fija el abono de una fila (tope: su pendiente). Con monto fijo (se tecleó
   // un total) el Monto Pagado NO cambia: la diferencia queda "por distribuir".
   const setAbonoFila = (r, val) => {
     const n = Math.min(Math.max(round2(Number(val) || 0), 0), round2(r.pendiente));
+    if (n > 0) {
+      const previo = pagareAnteriorAbierto(r, abonos);
+      if (previo) {
+        toast({
+          variant: 'destructive',
+          title: 'Hay un pagaré anterior sin pagar',
+          description: `Antes del ${r.referencia || 'este'} hay que cubrir el ${previo.referencia}, que vence el ${formatFechaDMY(previo.vence)}.`,
+        });
+        return;
+      }
+    }
     const next = { ...abonos, [r.key]: n };
     setAbonos(next);
     if (montoObjetivo == null) {
