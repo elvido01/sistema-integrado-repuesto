@@ -20,14 +20,31 @@ const Row = ({ icon: Icon, label, value, negative }) => (
 
 const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = null, cobradoMes = null, ingresosDealer = null }) => {
   const p = data?.periodo_actual || {};
-  const flujo = Number(p.flujo_neto) || 0;
+  const num = (v) => Number(v) || 0;
+
+  // Vista de GRUPO: cuando esta empresa es la financiera de un dealer, el
+  // desglose deja de ser solo suyo. Las dos son la misma empresa, así que
+  // cada línea suma las dos mitades y el flujo neto es el combinado.
+  const d = ingresosDealer;
+  const grupo = !!d;
+
+  const ingContado = grupo ? 0 : num(p.ingreso_venta_contado);
+  const ingCobros = num(p.ingreso_cobro_cliente);
+  const ingDealer = grupo ? num(d.total) : 0;
+  const ingresos = ingCobros + ingDealer + ingContado;
+
+  const egGastos = num(p.gastos_diarios) + (grupo ? num(d.gastos) : 0);
+  const egCompromisos = num(p.compromisos_fijos_pagados) + (grupo ? num(d.compromisos) : 0);
+  // Solo los del dealer: lo que la financiera paga a "suplidores" es plata
+  // que le pasa a Caminero — de un bolsillo al otro del mismo grupo. La
+  // compra de verdad, al suplidor de afuera, la hace el dealer.
+  const egSuplidores = grupo ? num(d.suplidores) : num(p.pagos_suplidores);
+  const egCompras = num(p.compras_contado) + (grupo ? num(d.compras) : 0);
+  const egComisiones = num(p.pagos_comisiones) + (grupo ? num(d.comisiones) : 0);
+  const egresos = egGastos + egCompromisos + egSuplidores + egCompras + egComisiones;
+
+  const flujo = grupo ? (ingresos - egresos) : num(p.flujo_neto);
   const positivo = flujo >= 0;
-  // Lo que cobró el dealer del grupo. Va aparte del total propio a
-  // propósito: ese total es el que cuadra con el flujo neto de la tarjeta de
-  // afuera, y si le sumara esto en silencio los dos números dejarían de
-  // coincidir sin que nadie sepa por qué.
-  const dealerTotal = Number(ingresosDealer?.total) || 0;
-  const flujoGrupo = flujo + dealerTotal;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -61,27 +78,25 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
 
           {/* Ingresos */}
           <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 mb-1">Ingresos cobrados</p>
-          <Row icon={FileText} label="Ventas de contado" value={Number(p.ingreso_venta_contado) || 0} />
-          <Row icon={Users} label="Cobros a clientes (recibos)" value={Number(p.ingreso_cobro_cliente) || 0} />
+          {/* La financiera no vende: esa línea era siempre RD$0 y solo
+              estorbaba. Se muestra únicamente donde tiene sentido. */}
+          {!grupo && <Row icon={FileText} label="Ventas de contado" value={ingContado} />}
+          <Row icon={Users} label="Cobros a clientes (recibos)" value={ingCobros} />
 
-          {/* El efectivo del dealer: la financiera no vende, pero son la
-              misma empresa y esa plata entró. Va con su propio desglose
-              porque "contado" e "inicial" no son lo mismo. */}
-          {dealerTotal > 0 && (
+          {grupo && (
             <div className="flex items-start justify-between py-2.5 border-b border-slate-100">
               <div className="flex items-start gap-2.5 min-w-0">
                 <Building2 className="w-4 h-4 shrink-0 text-emerald-500 mt-0.5" />
                 <div className="min-w-0">
-                  <div className="text-sm text-slate-600 truncate">{ingresosDealer.dealer_nombre}</div>
+                  <div className="text-sm text-slate-600 truncate">{d.dealer_nombre}</div>
                   <div className="text-[10px] text-slate-400 leading-snug">
-                    Contado {formatCurrencyDOP(Number(ingresosDealer.contado) || 0, { decimals: 0 })}
-                    {' + '}iniciales y abonos {formatCurrencyDOP(Number(ingresosDealer.recibos) || 0, { decimals: 0 })}
-                    {' · '}mes completo
+                    Contado {formatCurrencyDOP(num(d.contado), { decimals: 0 })}
+                    {' + '}iniciales y abonos {formatCurrencyDOP(num(d.recibos), { decimals: 0 })}
                   </div>
                 </div>
               </div>
               <span className="text-sm font-bold shrink-0 text-slate-800">
-                {formatCurrencyDOP(dealerTotal, { decimals: 0 })}
+                {formatCurrencyDOP(ingDealer, { decimals: 0 })}
               </span>
             </div>
           )}
@@ -89,49 +104,46 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
           <div className="flex items-center justify-between py-2 border-b-2 border-slate-200">
             <span className="text-xs font-semibold text-slate-500">Total ingresos</span>
             <span className="text-sm font-black text-emerald-600">
-              {formatCurrencyDOP(Number(p.ingresos_cobrados) || 0, { decimals: 0 })}
+              {formatCurrencyDOP(grupo ? ingresos : (Number(p.ingresos_cobrados) || 0), { decimals: 0 })}
             </span>
           </div>
 
           {/* Egresos */}
           <p className="text-[11px] font-bold uppercase tracking-wider text-rose-600 mt-4 mb-1">Egresos pagados</p>
-          <Row icon={ArrowDownCircle} label="Gastos diarios" value={Number(p.gastos_diarios) || 0} negative />
-          <Row icon={BarChart3} label="Compromisos fijos pagados" value={Number(p.compromisos_fijos_pagados) || 0} negative />
-          <Row icon={Users} label="Pagos a suplidores" value={Number(p.pagos_suplidores) || 0} negative />
-          <Row icon={ShoppingCart} label="Compras de contado" value={Number(p.compras_contado) || 0} negative />
-          <Row icon={Briefcase} label="Pago de comisiones" value={Number(p.pagos_comisiones) || 0} negative />
+          <Row icon={ArrowDownCircle} label={grupo ? 'Gastos diarios (las dos empresas)' : 'Gastos diarios'}
+            value={egGastos} negative />
+          <Row icon={BarChart3} label="Compromisos fijos pagados" value={egCompromisos} negative />
+          <Row icon={Users} label={grupo ? `Pagos a suplidores (${d.dealer_nombre})` : 'Pagos a suplidores'}
+            value={egSuplidores} negative />
+          <Row icon={ShoppingCart} label="Compras de contado" value={egCompras} negative />
+          <Row icon={Briefcase} label="Pago de comisiones" value={egComisiones} negative />
           <div className="flex items-center justify-between py-2 border-b-2 border-slate-200">
             <span className="text-xs font-semibold text-slate-500">Total egresos</span>
             <span className="text-sm font-black text-rose-600">
-              -{formatCurrencyDOP(Number(p.total_egresos) || 0, { decimals: 0 })}
+              -{formatCurrencyDOP(grupo ? egresos : (Number(p.total_egresos) || 0), { decimals: 0 })}
             </span>
           </div>
 
           {/* Resultado */}
+          {/* Un solo flujo neto: el de las dos empresas juntas. */}
           <div className="flex items-center justify-between mt-4 rounded-lg bg-slate-50 border border-slate-100 px-3 py-3">
             <span className="flex items-center gap-2 text-sm font-bold text-slate-700">
               {positivo ? <ArrowUpCircle className="w-5 h-5 text-emerald-500" /> : <ArrowDownCircle className="w-5 h-5 text-rose-500" />}
-              Flujo neto del mes
+              {grupo ? 'Flujo neto del grupo' : 'Flujo neto del mes'}
             </span>
             <span className={`text-lg font-black ${positivo ? 'text-emerald-600' : 'text-rose-600'}`}>
               {positivo ? '' : '-'}{formatCurrencyDOP(Math.abs(flujo), { decimals: 0 })}
             </span>
           </div>
 
-          {/* El grupo, sumado. Separado del número de arriba para que ese
-              siga cuadrando con la tarjeta del dashboard. */}
-          {dealerTotal > 0 && (
-            <div className="flex items-center justify-between mt-2 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2.5">
-              <span className="text-sm font-bold text-emerald-800">
-                Flujo neto del grupo
-                <span className="block text-[10px] font-normal text-emerald-700/80">
-                  con {ingresosDealer.dealer_nombre}
-                </span>
-              </span>
-              <span className={`text-base font-black ${flujoGrupo >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                {flujoGrupo >= 0 ? '' : '-'}{formatCurrencyDOP(Math.abs(flujoGrupo), { decimals: 0 })}
-              </span>
-            </div>
+          {/* Las dos mitades no cubren el mismo rango de fechas y callarlo
+              seria hacer pasar por un solo periodo lo que no lo es. */}
+          {grupo && (
+            <p className="mt-2 text-[11px] leading-snug text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {d.dealer_nombre} se cuenta del <b>{d.desde}</b> al <b>{d.hasta}</b> (mes completo);
+              esta empresa, desde su ancla de caja ({p.fecha_inicio}). La tarjeta del dashboard sigue
+              mostrando solo el flujo de esta empresa.
+            </p>
           )}
 
           <p className="mt-3 text-[11px] leading-snug text-slate-400">
