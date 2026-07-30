@@ -5,6 +5,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -27,6 +28,10 @@ const InventarioFisicoPage = () => {
     const [selectedUbicacion, setSelectedUbicacion] = useState('none');
     const [products, setProducts] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
+    // Casi todo el catálogo está en cero: de 1000 artículos consultados,
+    // la existencia total son 18 unidades. Para contar físicamente solo
+    // estorban, así que se pueden esconder.
+    const [soloConExistencia, setSoloConExistencia] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
 
@@ -274,7 +279,17 @@ const InventarioFisicoPage = () => {
         }
     }, [toast, fetchInventory, editingProduct, almacenes]);
 
-    const filteredProducts = products;
+    // El filtro vive AQUÍ, no en cada botón: la tabla, los totales, el Excel
+    // y la impresión leen todos de `filteredProducts`, así que lo que se ve
+    // en pantalla es exactamente lo que sale impreso y exportado.
+    const filteredProducts = useMemo(
+        () => (soloConExistencia ? products.filter((p) => Number(p.existencia) > 0) : products),
+        [products, soloConExistencia]
+    );
+    const conExistencia = useMemo(
+        () => products.filter((p) => Number(p.existencia) > 0).length,
+        [products]
+    );
 
     const handleExport = () => {
         if (filteredProducts.length === 0) {
@@ -290,7 +305,12 @@ const InventarioFisicoPage = () => {
             'Existencia': p.existencia
         }));
 
-        exportToExcel(dataToExport, `Inventario_Fisico_${selectedUbicacion}`);
+        // El nombre del archivo dice si viene filtrado: si no, dos Excel del
+        // mismo día con distinto contenido son indistinguibles.
+        exportToExcel(
+            dataToExport,
+            `Inventario_Fisico_${selectedUbicacion}${soloConExistencia ? '_con_existencia' : ''}`
+        );
     };
 
     const handlePrint = () => {
@@ -321,13 +341,18 @@ const InventarioFisicoPage = () => {
       </head>
       <body onload="window.print()">
         <div class="header">
-          <h1>MotoFlow</h1>
+          <h1>${empresa?.nombre || 'MotoFlow'}</h1>
           <p>Inventario Físico por Ubicación</p>
         </div>
         <div class="info">
           Ubicación: ${selectedUbicacion === 'all' ? 'TODAS' : selectedUbicacion}<br/>
           Fecha: ${new Date().toLocaleDateString('es-DO')}<br/>
-          Artículos: ${filteredProducts.length}
+          Artículos: ${filteredProducts.length}${
+            // Que la hoja diga que viene filtrada: si no, un conteo parcial
+            // se confunde con el inventario completo.
+            soloConExistencia ? ' &nbsp;·&nbsp; SOLO ARTÍCULOS CON EXISTENCIA' : ''
+          }<br/>
+          Existencia total: ${totals}
         </div>
         <table>
           <thead>
@@ -417,6 +442,19 @@ const InventarioFisicoPage = () => {
                             </div>
                         </div>
 
+                        {/* Filtra lo ya consultado: no vuelve a pedirle nada al
+                            servidor, solo esconde los ceros. */}
+                        <div className="space-y-2">
+                            <Label className="text-slate-600 font-semibold">Mostrar</Label>
+                            <label className="flex items-center gap-2 h-10 px-3 border border-slate-300 rounded-md bg-white cursor-pointer select-none whitespace-nowrap">
+                                <Checkbox checked={soloConExistencia} onCheckedChange={(c) => setSoloConExistencia(!!c)} />
+                                <span className="text-sm font-medium text-slate-700">Solo con existencia</span>
+                                {products.length > 0 && (
+                                    <span className="text-xs text-slate-400">({conExistencia} de {products.length})</span>
+                                )}
+                            </label>
+                        </div>
+
                         <div className="flex gap-2">
                             <Button onClick={fetchInventory} disabled={loading} className="bg-morla-blue hover:bg-morla-blue/90 text-white font-bold">
                                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />} CONSULTAR
@@ -451,7 +489,11 @@ const InventarioFisicoPage = () => {
                                         <TableCell colSpan={5} className="text-center h-64 text-slate-400 italic">
                                             {selectedUbicacion === 'none' && !searchTerm
                                                 ? 'Seleccione una ubicación o ingrese un código y presione CONSULTAR.'
-                                                : 'No se encontraron artículos para esta consulta.'}
+                                                : soloConExistencia && products.length > 0
+                                                    /* Si no, parece que la consulta no trajo nada cuando en
+                                                       realidad es el filtro el que lo esconde todo. */
+                                                    ? `Los ${products.length} artículos de esta consulta están en cero. Quita «Solo con existencia» para verlos.`
+                                                    : 'No se encontraron artículos para esta consulta.'}
                                         </TableCell>
                                     </TableRow>
                                 ) : (
