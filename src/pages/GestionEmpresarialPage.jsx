@@ -681,7 +681,10 @@ const GestionEmpresarialPage = () => {
           vea que es exactamente la cifra de la fila: si no cuadrara, el
           detalle no serviría. */}
       <Dialog open={!!detalle} onOpenChange={(v) => !v && setDetalle(null)}>
-        <DialogContent className="max-w-3xl">
+        {/* Ancho casi de pantalla: con 3xl el nombre del suplidor partia en
+            cuatro lineas y la columna Pendiente quedaba fuera, obligando a
+            desplazarse en horizontal para leer la mitad de la tabla. */}
+        <DialogContent className="w-[95vw] max-w-[1400px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Truck className="w-4 h-4 text-amber-600" />
@@ -699,16 +702,18 @@ const GestionEmpresarialPage = () => {
               Ninguna cuota vence en este mes.
             </div>
           ) : (
-            <div className="max-h-[60vh] overflow-auto rounded-lg border">
+            <div className="max-h-[68vh] overflow-auto rounded-lg border">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600 text-xs sticky top-0">
                   <tr>
-                    <th className="text-left px-3 py-2">Vence</th>
-                    <th className="text-left px-3 py-2">Factura</th>
-                    <th className="text-left px-3 py-2">Suplidor</th>
-                    <th className="text-left px-3 py-2">Fecha</th>
-                    <th className="text-right px-3 py-2">Monto</th>
-                    <th className="text-right px-3 py-2">Pendiente</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Vence</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Factura</th>
+                    {/* el suplidor se lleva el espacio sobrante: es lo unico
+                        de ancho variable, el resto son fechas y montos */}
+                    <th className="text-left px-3 py-2 w-full">Suplidor</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Fecha</th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap">Monto</th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap">Pendiente</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -716,7 +721,7 @@ const GestionEmpresarialPage = () => {
                     <tr key={`${f.numero}-${i}`} className="border-t">
                       <td className="px-3 py-2 whitespace-nowrap font-semibold">{f.vence}</td>
                       <td className="px-3 py-2 whitespace-nowrap font-mono text-[12px]">{f.numero}</td>
-                      <td className="px-3 py-2">{f.suplidor}</td>
+                      <td className="px-3 py-2 w-full">{f.suplidor}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-muted-foreground text-[12px]">
                         {f.fecha}
                         {Number(f.dias_credito) > 0 && (
