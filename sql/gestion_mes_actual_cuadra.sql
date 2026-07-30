@@ -104,8 +104,11 @@ SELECT 'Suplidores',
        COALESCE(SUM(co.total_compra), 0),
        COALESCE(SUM(co.monto_pagado), 0),
        COALESCE(SUM(co.monto_pendiente), 0)
-FROM public.compras co, g, mes
+-- El LEFT JOIN va pegado a `compras`: con "FROM compras co, g, mes LEFT
+-- JOIN ..." el join se ata a `mes` y `co` queda fuera de su alcance.
+FROM public.compras co
 LEFT JOIN public.proveedores pv ON pv.id = co.suplidor_id
+CROSS JOIN g CROSS JOIN mes
 WHERE co.tenant_id = ANY(g.ids)
   AND co.forma_pago ILIKE '%credito%'
   AND COALESCE(co.estado, '') <> 'ANULADA'
