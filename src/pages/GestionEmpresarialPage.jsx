@@ -389,8 +389,9 @@ const GestionEmpresarialPage = () => {
               contradecir a Estado actual, que ya descuenta lo pagado. Y sin lo
               de la ventana, el total parece ser toda la deuda a suplidores. */}
           <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2 text-[11px] text-amber-800">
-            Cada fila es <b>lo que hay que pagar en ese mes</b>, completo. La de {mesLabel(estado.mes)} es
-            el «se debía pagar» de arriba; cuánto de eso ya se cubrió se ve en Estado actual.
+            Cada fila es <b>lo que hay que pagar en ese mes</b>, completo. La de {mesLabel(estado.mes)} son
+            sus compromisos reales —es el «se debía pagar» de arriba, y cuánto se cubrió se ve ahí—;
+            los meses que vienen son la proyección de los fijos y la nómina, porque todavía no existen.
             {Number(data.suplidores_fuera_ventana) > 0 && (
               <> Fuera de esta ventana de {meses.length} meses —vencido de antes y cuotas de años
                 siguientes— quedan <b>{money0(data.suplidores_fuera_ventana)}</b> pendientes con suplidores.</>
