@@ -7,11 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, Users, Wallet, HandCoins, Ban, Plus, Pencil, Check } from 'lucide-react';
+import { Loader2, RefreshCw, Users, Wallet, HandCoins, Ban, Plus, Pencil, Check, Printer } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import { calcularDetalleNomina, pendienteAdelanto, periodoSugerido, pagosDelEmpleado } from '@/lib/nominaUtils';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
+import { buildNominaFirmasHTML } from '@/lib/printNominaFirmas';
+import { printHtmlSmart } from '@/lib/printHtmlSmart';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 
 const money = (v) => `RD$ ${new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0)}`;
@@ -41,6 +44,7 @@ const vecesDia = (d, n) => `${n} ${n === 1 ? diaSingular(d) : nombreDia(d)}`;
 
 const NominaPage = () => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
   const [tab, setTab] = useState('nominas');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -225,6 +229,23 @@ const NominaPage = () => {
     setBusy(false);
   };
 
+  // Hoja de firmas: nombre, monto y una línea para firmar. Es el papel que
+  // se lleva a la mano al repartir el efectivo, y sustituye al Excel que se
+  // llenaba a mano cada quincena. Sale en cualquier estado —también pagada—
+  // porque a veces se reimprime para el archivo.
+  const imprimirFirmas = async () => {
+    if (!nominaSel) return;
+    if (!detalle.some((d) => Number(d.neto) > 0)) {
+      toast({ variant: 'destructive', title: 'Nada que imprimir', description: 'Ningún empleado cobra en esta nómina.' });
+      return;
+    }
+    try {
+      await printHtmlSmart(buildNominaFirmasHTML(nominaSel, detalle, empresa), { tipo: 'carta' });
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo imprimir', description: e.message });
+    }
+  };
+
   const abrirLinea = (d) => {
     setLineaForm({
       otros_ingresos: String(d.otros_ingresos || ''),
@@ -376,14 +397,22 @@ const NominaPage = () => {
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   <div className="font-semibold">Nómina #{nominaSel.numero} · {nominaSel.frecuencia}</div>
                   <span className={`px-2 py-0.5 rounded-full text-xs ${estadoTone(nominaSel.estado)}`}>{nominaSel.estado}</span>
-                  {nominaSel.estado === 'borrador' && (
-                    <div className="ml-auto flex gap-2">
-                      <Button size="sm" onClick={() => setPagarOpen(true)}><Wallet className="w-4 h-4 mr-1" />Pagar</Button>
-                      <Button size="sm" variant="outline" className="text-red-600 border-red-300" onClick={anular} disabled={busy}>
-                        <Ban className="w-4 h-4 mr-1" />Anular
-                      </Button>
-                    </div>
-                  )}
+                  <div className="ml-auto flex gap-2">
+                    {/* Imprimir va en cualquier estado: la hoja se usa al
+                        repartir, y despues se reimprime para el archivo. */}
+                    <Button size="sm" variant="outline" onClick={imprimirFirmas}
+                      title="Hoja de pago para firmar: nombre, monto y línea de firma">
+                      <Printer className="w-4 h-4 mr-1" />Imprimir
+                    </Button>
+                    {nominaSel.estado === 'borrador' && (
+                      <>
+                        <Button size="sm" onClick={() => setPagarOpen(true)}><Wallet className="w-4 h-4 mr-1" />Pagar</Button>
+                        <Button size="sm" variant="outline" className="text-red-600 border-red-300" onClick={anular} disabled={busy}>
+                          <Ban className="w-4 h-4 mr-1" />Anular
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
