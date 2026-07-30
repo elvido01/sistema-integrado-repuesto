@@ -80,7 +80,15 @@ BEGIN
            ROUND(COALESCE(co.total_compra, 0), 2)              AS total,
            ROUND(COALESCE(co.monto_pagado, 0), 2)              AS pagado,
            ROUND(COALESCE(co.monto_pendiente, 0), 2)           AS pendiente,
-           COALESCE(co.moneda, 'DOP')                          AS moneda
+           -- La mayoría de estas facturas se pactaron en DÓLARES: el RD$ es
+           -- la conversión a la tasa del día de la compra, que no es la de
+           -- hoy. Sin el monto en US$ no se sabe cuánto se debe de verdad.
+           COALESCE(co.moneda, 'DOP')                          AS moneda,
+           co.tasa_cambio                                      AS tasa,
+           CASE WHEN COALESCE(co.moneda, 'DOP') = 'USD'
+                THEN ROUND(COALESCE(co.total_usd, 0), 2) END   AS total_usd,
+           CASE WHEN COALESCE(co.moneda, 'DOP') = 'USD'
+                THEN ROUND(COALESCE(co.pendiente_usd, 0), 2) END AS pendiente_usd
     FROM public.compras co
     LEFT JOIN public.proveedores pv ON pv.id = co.suplidor_id
     WHERE co.tenant_id = ANY(v_grupo)
@@ -132,3 +140,27 @@ WHERE co.tenant_id = ANY(g.ids)
 ORDER BY vence;
 -- esperado: 11 filas y SUM(total_compra) = 2,975,290.78, el mismo número de
 -- la fila de julio en «Mes por mes». Si no cuadra, el detalle no sirve.
+
+-- 2) CUÁNTO DE ESO ESTÁ PACTADO EN DÓLARES
+SELECT COALESCE(co.moneda, 'DOP') AS moneda, COUNT(*) AS facturas,
+       ROUND(SUM(co.total_compra), 2)   AS total_rd,
+       ROUND(SUM(co.total_usd), 2)      AS total_usd,
+       ROUND(SUM(co.monto_pendiente), 2) AS pendiente_rd,
+       ROUND(SUM(co.pendiente_usd), 2)   AS pendiente_usd
+FROM public.compras co
+LEFT JOIN public.proveedores pv ON pv.id = co.suplidor_id
+WHERE co.tenant_id IN ('b39506c3-27dc-467d-830b-096731b83113',
+                       '766fe3d6-6885-4f2b-b2cc-1a91db696fb4')
+  AND co.forma_pago ILIKE '%credito%'
+  AND COALESCE(co.estado, '') <> 'ANULADA'
+  AND COALESCE(co.total_compra, 0) > 0
+  AND NOT COALESCE(co.es_saldo_inicial, false)
+  AND pv.empresa_grupo_tenant_id IS NULL
+  AND (co.fecha + COALESCE(co.dias_credito, 0))::date
+      BETWEEN date_trunc('month', CURRENT_DATE)::date
+          AND (date_trunc('month', CURRENT_DATE) + interval '1 month - 1 day')::date
+GROUP BY 1;
+-- esperado: USD 9 facturas · US$ 18,336.24 · pendiente US$ 17,482.24
+--           DOP 2 facturas (FIN-CAST-02 y OC-0001)
+-- Cada factura en US$ trae su PROPIA tasa (60.5 a 63): el RD$ es lo que
+-- costó el día de la compra, no lo que costaría hoy.

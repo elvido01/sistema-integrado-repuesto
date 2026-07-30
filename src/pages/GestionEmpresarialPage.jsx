@@ -20,6 +20,7 @@ import {
 
 const money = (v) => `RD$ ${(Number(v) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const usd0 = (v) => `US$ ${(Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+const usdMonto = (v) => `US$ ${(Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (v) => `RD$ ${(Number(v) || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}`;
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const mesLabel = (ym) => {
@@ -207,6 +208,11 @@ const GestionEmpresarialPage = () => {
 
   const detTotal = (detalle?.filas || []).reduce((a, f) => a + (Number(f.total) || 0), 0);
   const detPendiente = (detalle?.filas || []).reduce((a, f) => a + (Number(f.pendiente) || 0), 0);
+  // Casi todas estas facturas se pactaron en DÓLARES, cada una con la tasa
+  // del día en que se compró. Sumar los RD$ mezcla tasas distintas, así que
+  // el subtotal en US$ va aparte — es la deuda real con el suplidor.
+  const detUsd = (detalle?.filas || []).reduce((a, f) => a + (Number(f.total_usd) || 0), 0);
+  const detUsdPend = (detalle?.filas || []).reduce((a, f) => a + (Number(f.pendiente_usd) || 0), 0);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -728,10 +734,26 @@ const GestionEmpresarialPage = () => {
                           <span className="text-slate-400"> +{f.dias_credito}d</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{money(f.total)}</td>
+                      {/* La factura en US$ manda: el RD$ es lo que costó a la
+                          tasa de SU día, no a la de hoy. Por eso el dólar va
+                          debajo, con la tasa con que se convirtió. */}
+                      <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">
+                        {money(f.total)}
+                        {f.total_usd != null && (
+                          <div className="text-[11px] font-bold text-sky-700">
+                            {usdMonto(f.total_usd)}
+                            {Number(f.tasa) > 0 && (
+                              <span className="font-normal text-slate-400"> · a {f.tasa}</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className={`px-3 py-2 text-right whitespace-nowrap ${
                         Number(f.pendiente) > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
                         {Number(f.pendiente) > 0 ? money(f.pendiente) : 'pagada'}
+                        {Number(f.pendiente) > 0 && f.pendiente_usd != null && (
+                          <div className="text-[11px] font-bold text-sky-700">{usdMonto(f.pendiente_usd)}</div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -742,10 +764,17 @@ const GestionEmpresarialPage = () => {
                       {detalle.filas.length} cuota{detalle.filas.length !== 1 ? 's' : ''}
                       <span className="block text-[10px] font-normal text-slate-500">
                         es la columna Suplidores de {mesLabel(detalle.mes)}
+                        {detUsd > 0 && ' · cada factura en US$ se convirtió con la tasa de su día'}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-right text-amber-700">{money(detTotal)}</td>
-                    <td className="px-3 py-2 text-right text-rose-600">{money(detPendiente)}</td>
+                    <td className="px-3 py-2 text-right text-amber-700">
+                      {money(detTotal)}
+                      {detUsd > 0 && <div className="text-[11px] text-sky-700">{usdMonto(detUsd)} en dólares</div>}
+                    </td>
+                    <td className="px-3 py-2 text-right text-rose-600">
+                      {money(detPendiente)}
+                      {detUsdPend > 0 && <div className="text-[11px] text-sky-700">{usdMonto(detUsdPend)} en dólares</div>}
+                    </td>
                   </tr>
                 </tfoot>
               </table>
