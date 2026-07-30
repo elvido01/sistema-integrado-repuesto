@@ -187,23 +187,26 @@ const GestionEmpresarialPage = () => {
   const [detalle, setDetalle] = useState(null);   // { mes, filas } | null
   const [cargandoDet, setCargandoDet] = useState(false);
 
-  const verSuplidores = useCallback(async (mes) => {
-    setDetalle({ mes, filas: [] });
+  // Un solo cargador para los dos detalles: por mes y el de las vencidas.
+  // Las filas tienen la misma forma, así que la tabla del modal es la misma.
+  const abrirDetalle = useCallback(async ({ mes = null, vencidas = false }) => {
+    setDetalle({ mes, vencidas, filas: [] });
     setCargandoDet(true);
-    const { data: filas, error } = await supabase.rpc('get_gestion_suplidores_mes', { p_mes: mes });
+    const rpc = vencidas ? 'get_gestion_suplidores_vencidas' : 'get_gestion_suplidores_mes';
+    const { data: filas, error } = await supabase.rpc(rpc, vencidas ? {} : { p_mes: mes });
     setCargandoDet(false);
     if (error) {
       setDetalle(null);
       toast({
         title: 'No se pudo abrir el detalle',
-        description: error.message.includes('get_gestion_suplidores_mes')
-          ? 'Falta correr sql/gestion_detalle_suplidores_mes.sql'
+        description: error.message.includes(rpc)
+          ? `Falta correr sql/gestion_detalle_suplidores_${vencidas ? 'vencidas' : 'mes'}.sql`
           : error.message,
         variant: 'destructive',
       });
       return;
     }
-    setDetalle({ mes, filas: filas || [] });
+    setDetalle({ mes, vencidas, filas: filas || [] });
   }, [toast]);
 
   const detTotal = (detalle?.filas || []).reduce((a, f) => a + (Number(f.total) || 0), 0);
@@ -324,9 +327,13 @@ const GestionEmpresarialPage = () => {
                 {vencidasCant > 0 && (
                   /* La parte vencida de esa misma deuda: no es otro monto, es
                      el pedazo que ya se pasó de fecha y hay que resolver. */
-                  <div className="flex items-center gap-1.5 -mt-1 mb-1 ml-6 text-[11px] text-rose-600 font-semibold">
+                  <div className="flex items-center gap-1.5 -mt-1 mb-1 ml-6 text-[11px] text-rose-600 font-semibold
+                      cursor-pointer select-none rounded hover:bg-rose-50 px-1 -mx-1"
+                    onDoubleClick={() => abrirDetalle({ vencidas: true })}
+                    title="Doble clic para ver cuáles son">
                     <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                     <span>de eso, <b>{vencidasCant}</b> cuotas ya vencidas</span>
+                    <span className="text-[9px] font-normal text-rose-400">doble clic</span>
                     <span className="flex-1" />
                     <span>{money0(vencidasMonto)}</span>
                   </div>
@@ -556,7 +563,7 @@ const GestionEmpresarialPage = () => {
                       </td>
                       {/* doble clic = el detalle de las facturas del mes */}
                       <td className="px-3 py-2 text-right text-amber-700 cursor-pointer select-none hover:bg-amber-50"
-                        onDoubleClick={() => verSuplidores(m.mes)}
+                        onDoubleClick={() => abrirDetalle({ mes: m.mes })}
                         title="Doble clic para ver las facturas que vencen este mes">
                         {money(m.suplidores)}
                         {m.suplidores_cant > 0 && <div className="text-[10px] text-muted-foreground">{m.suplidores_cant} cuota{m.suplidores_cant !== 1 ? 's' : ''}</div>}
@@ -693,8 +700,9 @@ const GestionEmpresarialPage = () => {
         <DialogContent className="w-[95vw] max-w-[1400px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Truck className="w-4 h-4 text-amber-600" />
-              Facturas que vencen en {mesLabel(detalle?.mes)}
+              {detalle?.vencidas
+                ? <><AlertTriangle className="w-4 h-4 text-rose-600" />Cuotas a suplidores ya vencidas</>
+                : <><Truck className="w-4 h-4 text-amber-600" />Facturas que vencen en {mesLabel(detalle?.mes)}</>}
             </DialogTitle>
           </DialogHeader>
 
@@ -705,7 +713,9 @@ const GestionEmpresarialPage = () => {
             </div>
           ) : (detalle?.filas || []).length === 0 ? (
             <div className="py-10 text-center text-muted-foreground text-sm">
-              Ninguna cuota vence en este mes.
+              {detalle?.vencidas
+                ? 'No hay cuotas vencidas: todo lo que se pasó de fecha ya está pagado.'
+                : 'Ninguna cuota vence en este mes.'}
             </div>
           ) : (
             <div className="max-h-[68vh] overflow-auto rounded-lg border">
@@ -713,6 +723,9 @@ const GestionEmpresarialPage = () => {
                 <thead className="bg-slate-50 text-slate-600 text-xs sticky top-0">
                   <tr>
                     <th className="text-left px-3 py-2 whitespace-nowrap">Vence</th>
+                    {/* Cuánto lleva vencida decide a quién se le paga primero;
+                        sin eso la lista es un montón de fechas sin orden. */}
+                    {detalle.vencidas && <th className="text-right px-3 py-2 whitespace-nowrap">Atraso</th>}
                     <th className="text-left px-3 py-2 whitespace-nowrap">Factura</th>
                     {/* el suplidor se lleva el espacio sobrante: es lo unico
                         de ancho variable, el resto son fechas y montos */}
@@ -726,6 +739,15 @@ const GestionEmpresarialPage = () => {
                   {detalle.filas.map((f, i) => (
                     <tr key={`${f.numero}-${i}`} className="border-t">
                       <td className="px-3 py-2 whitespace-nowrap font-semibold">{f.vence}</td>
+                      {detalle.vencidas && (
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          <span className={`font-bold ${
+                            f.dias_vencida >= 90 ? 'text-rose-700'
+                              : f.dias_vencida >= 30 ? 'text-rose-500' : 'text-amber-600'}`}>
+                            {f.dias_vencida} día{f.dias_vencida === 1 ? '' : 's'}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-3 py-2 whitespace-nowrap font-mono text-[12px]">{f.numero}</td>
                       <td className="px-3 py-2 w-full">{f.suplidor}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-muted-foreground text-[12px]">
@@ -760,10 +782,12 @@ const GestionEmpresarialPage = () => {
                 </tbody>
                 <tfoot className="bg-slate-50 font-bold sticky bottom-0">
                   <tr className="border-t-2">
-                    <td className="px-3 py-2" colSpan={4}>
+                    <td className="px-3 py-2" colSpan={detalle.vencidas ? 5 : 4}>
                       {detalle.filas.length} cuota{detalle.filas.length !== 1 ? 's' : ''}
                       <span className="block text-[10px] font-normal text-slate-500">
-                        es la columna Suplidores de {mesLabel(detalle.mes)}
+                        {detalle.vencidas
+                          ? 'es la línea «cuotas ya vencidas» de la posición — lo que cuenta es el pendiente'
+                          : `es la columna Suplidores de ${mesLabel(detalle.mes)}`}
                         {detUsd > 0 && ' · cada factura en US$ se convirtió con la tasa de su día'}
                       </span>
                     </td>
