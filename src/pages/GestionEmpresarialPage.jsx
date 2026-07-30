@@ -315,7 +315,15 @@ const GestionEmpresarialPage = () => {
                 </tbody>
                 <tfoot className="border-t-2 border-emerald-200 bg-emerald-50/60">
                   <tr className="font-bold">
-                    <td className="px-3 py-2">Total del mes</td>
+                    <td className="px-3 py-2">
+                      Total del mes
+                      {/* La columna FALTA es exactamente la fila de este mes en
+                          la tabla de abajo: son el mismo numero mirado dos
+                          veces, y decirlo evita que parezcan contradictorios. */}
+                      <span className="block text-[10px] font-normal text-slate-500">
+                        lo que falta es la fila de {mesLabel(estado.mes)} en «Mes por mes»
+                      </span>
+                    </td>
                     <td className="px-3 py-2 text-right">{money0(estado.total_debia)}</td>
                     <td className="px-3 py-2 text-right text-emerald-700">{money0(estado.total_pagado)}</td>
                     <td className="px-3 py-2 text-right text-rose-600">
