@@ -12,6 +12,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Loader2, RefreshCw, TrendingUp, Receipt, Truck, Wallet, Target, Info, AlertTriangle, Activity, Bike,
   Scale, Landmark, ArrowLeftRight, Banknote,
@@ -178,6 +179,34 @@ const GestionEmpresarialPage = () => {
     () => Math.max(1, ...meses.map((m) => Number(m.total_cubrir) || 0)),
     [meses]
   );
+
+  // Detalle de las cuotas a suplidores de un mes: doble clic en su celda.
+  // No se trae junto con el panel porque son 60+ facturas en los 6 meses y
+  // casi nunca se miran; se pide solo la del mes que se abre.
+  const [detalle, setDetalle] = useState(null);   // { mes, filas } | null
+  const [cargandoDet, setCargandoDet] = useState(false);
+
+  const verSuplidores = useCallback(async (mes) => {
+    setDetalle({ mes, filas: [] });
+    setCargandoDet(true);
+    const { data: filas, error } = await supabase.rpc('get_gestion_suplidores_mes', { p_mes: mes });
+    setCargandoDet(false);
+    if (error) {
+      setDetalle(null);
+      toast({
+        title: 'No se pudo abrir el detalle',
+        description: error.message.includes('get_gestion_suplidores_mes')
+          ? 'Falta correr sql/gestion_detalle_suplidores_mes.sql'
+          : error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+    setDetalle({ mes, filas: filas || [] });
+  }, [toast]);
+
+  const detTotal = (detalle?.filas || []).reduce((a, f) => a + (Number(f.total) || 0), 0);
+  const detPendiente = (detalle?.filas || []).reduce((a, f) => a + (Number(f.pendiente) || 0), 0);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -489,6 +518,7 @@ const GestionEmpresarialPage = () => {
                       {data.suplidores_de && (
                         <div className="font-normal normal-case text-[10px] text-amber-700">{data.suplidores_de}</div>
                       )}
+                      <div className="font-normal normal-case text-[10px] text-slate-400">doble clic: ver facturas</div>
                     </th>
                     <th className="text-right px-3 py-2">Gastos est.</th>
                     <th className="text-right px-3 py-2">Total a cubrir</th>
@@ -518,7 +548,10 @@ const GestionEmpresarialPage = () => {
                         {money(m.compromisos)}
                         {m.compromisos_cant > 0 && <div className="text-[10px] text-muted-foreground">{m.compromisos_cant} pago{m.compromisos_cant !== 1 ? 's' : ''}</div>}
                       </td>
-                      <td className="px-3 py-2 text-right text-amber-700">
+                      {/* doble clic = el detalle de las facturas del mes */}
+                      <td className="px-3 py-2 text-right text-amber-700 cursor-pointer select-none hover:bg-amber-50"
+                        onDoubleClick={() => verSuplidores(m.mes)}
+                        title="Doble clic para ver las facturas que vencen este mes">
                         {money(m.suplidores)}
                         {m.suplidores_cant > 0 && <div className="text-[10px] text-muted-foreground">{m.suplidores_cant} cuota{m.suplidores_cant !== 1 ? 's' : ''}</div>}
                       </td>
@@ -643,6 +676,78 @@ const GestionEmpresarialPage = () => {
           </p>
         </>
       )}
+
+      {/* DETALLE DE SUPLIDORES DEL MES. El pie repite el total para que se
+          vea que es exactamente la cifra de la fila: si no cuadrara, el
+          detalle no serviría. */}
+      <Dialog open={!!detalle} onOpenChange={(v) => !v && setDetalle(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Truck className="w-4 h-4 text-amber-600" />
+              Facturas que vencen en {mesLabel(detalle?.mes)}
+            </DialogTitle>
+          </DialogHeader>
+
+          {cargandoDet ? (
+            <div className="py-10 text-center text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+              Buscando las facturas…
+            </div>
+          ) : (detalle?.filas || []).length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground text-sm">
+              Ninguna cuota vence en este mes.
+            </div>
+          ) : (
+            <div className="max-h-[60vh] overflow-auto rounded-lg border">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600 text-xs sticky top-0">
+                  <tr>
+                    <th className="text-left px-3 py-2">Vence</th>
+                    <th className="text-left px-3 py-2">Factura</th>
+                    <th className="text-left px-3 py-2">Suplidor</th>
+                    <th className="text-left px-3 py-2">Fecha</th>
+                    <th className="text-right px-3 py-2">Monto</th>
+                    <th className="text-right px-3 py-2">Pendiente</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detalle.filas.map((f, i) => (
+                    <tr key={`${f.numero}-${i}`} className="border-t">
+                      <td className="px-3 py-2 whitespace-nowrap font-semibold">{f.vence}</td>
+                      <td className="px-3 py-2 whitespace-nowrap font-mono text-[12px]">{f.numero}</td>
+                      <td className="px-3 py-2">{f.suplidor}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground text-[12px]">
+                        {f.fecha}
+                        {Number(f.dias_credito) > 0 && (
+                          <span className="text-slate-400"> +{f.dias_credito}d</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{money(f.total)}</td>
+                      <td className={`px-3 py-2 text-right whitespace-nowrap ${
+                        Number(f.pendiente) > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                        {Number(f.pendiente) > 0 ? money(f.pendiente) : 'pagada'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50 font-bold sticky bottom-0">
+                  <tr className="border-t-2">
+                    <td className="px-3 py-2" colSpan={4}>
+                      {detalle.filas.length} cuota{detalle.filas.length !== 1 ? 's' : ''}
+                      <span className="block text-[10px] font-normal text-slate-500">
+                        es la columna Suplidores de {mesLabel(detalle.mes)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right text-amber-700">{money(detTotal)}</td>
+                    <td className="px-3 py-2 text-right text-rose-600">{money(detPendiente)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
