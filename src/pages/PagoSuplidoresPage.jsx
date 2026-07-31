@@ -69,6 +69,10 @@ const PagoSuplidoresPage = () => {
   const [compras, setCompras] = useState([]);
   const [formasPago, setFormasPago] = useState([{ id: 1, forma: 'Efectivo', monto: 0, referencia: '' }]);
   const [cuentaId, setCuentaId] = useState(null); // cuenta de donde sale la transferencia/cheque
+  // La cuenta completa, no solo su id: hace falta su MONEDA para saber en
+  // qué se le descuenta. A una caja chica en dólares no se le pueden restar
+  // pesos.
+  const [cuentaSel, setCuentaSel] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [suplidorSearch, setSuplidorSearch] = useState('');
@@ -257,6 +261,12 @@ const PagoSuplidoresPage = () => {
       toast({ variant: 'destructive', title: 'Falta la tasa del día', description: 'Este suplidor se paga en dólares. Indica la tasa de cambio de HOY para calcular los pesos.' });
       return;
     }
+    // Sin tasa no hay forma de saber cuántos dólares salen de la cuenta, y
+    // grabarlo en pesos le dejaría el saldo inventado.
+    if (cuentaSel?.moneda === 'USD' && !(tasa > 0)) {
+      toast({ variant: 'destructive', title: 'Falta la tasa del día', description: `La cuenta ${cuentaSel.banco} está en dólares: indica la tasa de HOY para saber cuánto sale de ella.` });
+      return;
+    }
 
     setIsSaving(true);
     const pagoData = {
@@ -291,10 +301,16 @@ const PagoSuplidoresPage = () => {
         .reduce((s, f) => s + (Number(f.monto) || 0), 0);
       if (cuentaId && montoBanco > 0) {
         const ref = formasPago.find(f => f.forma === 'Transferencia' || f.forma === 'Cheque')?.referencia || String(data || '');
+        // Las formas de pago se digitan en RD$. Si la cuenta lleva dólares,
+        // lo que sale de ELLA son dólares: se convierte a la misma tasa con
+        // la que se calculó el pago, para no restarle pesos a una cuenta en
+        // US$ y dejarle el saldo inventado.
+        const esCuentaUSD = cuentaSel?.moneda === 'USD';
+        const montoCuenta = esCuentaUSD && tasa > 0 ? toMoney(montoBanco / tasa) : montoBanco;
         // RPC COMPARTIDO: la cuenta puede ser la de la financiera vinculada
         // (ej. Caminero paga desde la 004 de MotoPréstamos).
         supabase.rpc('registrar_movimiento_bancario_compartido', {
-          p_cuenta_id: cuentaId, p_tipo: 'SALIDA', p_monto: montoBanco,
+          p_cuenta_id: cuentaId, p_tipo: 'SALIDA', p_monto: montoCuenta,
           p_concepto: `Pago suplidor ${pago.suplidorNombre || ''} (${data || ''})`.trim(),
           p_referencia: ref, p_origen_tipo: 'pago_suplidor', p_origen_id: null, p_fecha: null,
         }).then(() => {}, () => {});
@@ -524,7 +540,18 @@ const PagoSuplidoresPage = () => {
               </Button>
               {formasPago.some(f => f.forma === 'Transferencia' || f.forma === 'Cheque') && (
                 <div className="mt-3">
-                  <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" contexto="pago_suplidor" label="Sale de la cuenta" />
+                  {/* Sin filtro de moneda: a un suplidor en US$ se le puede
+                      pagar comprando los dólares (cuenta en pesos) o con los
+                      dólares que ya se tienen (caja chica en US$). Con el
+                      filtro fijo en DOP la segunda ni aparecía. */}
+                  <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} onSelect={setCuentaSel}
+                    contexto="pago_suplidor" label="Sale de la cuenta" />
+                  {cuentaSel?.moneda === 'USD' && (
+                    <p className="mt-1 text-[11px] text-blue-700">
+                      Es una cuenta en dólares: se le descuenta el equivalente en US$ a la tasa de {formatCurrency(tasa)}.
+                      {!(tasa > 0) && <b className="block text-rose-600">Falta la tasa del día.</b>}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
