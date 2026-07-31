@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
+import { formatFechaDMY } from '@/lib/dateUtils';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -738,7 +739,9 @@ const GestionEmpresarialPage = () => {
                 <tbody>
                   {detalle.filas.map((f, i) => (
                     <tr key={`${f.numero}-${i}`} className="border-t">
-                      <td className="px-3 py-2 whitespace-nowrap font-semibold">{f.vence}</td>
+                      {/* Siempre día/mes/año: el RPC las manda en ISO y así
+                          salían crudas, distinto al resto del sistema. */}
+                      <td className="px-3 py-2 whitespace-nowrap font-semibold">{formatFechaDMY(f.vence)}</td>
                       {detalle.vencidas && (
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           <span className={`font-bold ${
@@ -751,7 +754,7 @@ const GestionEmpresarialPage = () => {
                       <td className="px-3 py-2 whitespace-nowrap font-mono text-[12px]">{f.numero}</td>
                       <td className="px-3 py-2 w-full">{f.suplidor}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-muted-foreground text-[12px]">
-                        {f.fecha}
+                        {formatFechaDMY(f.fecha)}
                         {Number(f.dias_credito) > 0 && (
                           <span className="text-slate-400"> +{f.dias_credito}d</span>
                         )}

@@ -4,6 +4,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
 import { formatCurrencyDOP } from '@/lib/flujoNeto';
+import { formatFechaDMY } from '@/lib/dateUtils';
 
 // Fila del desglose. Ingresos en verde, egresos en rojo con signo negativo.
 const Row = ({ icon: Icon, label, value, negative }) => (
@@ -53,7 +54,7 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
           <DialogTitle className="text-slate-900">Flujo neto — desglose del mes</DialogTitle>
           <DialogDescription>
             Ingresos cobrados menos egresos efectivamente pagados
-            {p.fecha_inicio && p.fecha_fin ? ` (${p.fecha_inicio} → ${p.fecha_fin})` : ''}.
+            {p.fecha_inicio && p.fecha_fin ? ` (${formatFechaDMY(p.fecha_inicio)} → ${formatFechaDMY(p.fecha_fin)})` : ''}.
           </DialogDescription>
         </DialogHeader>
 
@@ -140,8 +141,8 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
               seria hacer pasar por un solo periodo lo que no lo es. */}
           {grupo && (
             <p className="mt-2 text-[11px] leading-snug text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              {d.dealer_nombre} se cuenta del <b>{d.desde}</b> al <b>{d.hasta}</b> (mes completo);
-              esta empresa, desde su ancla de caja ({p.fecha_inicio}). La tarjeta del dashboard sigue
+              {d.dealer_nombre} se cuenta del <b>{formatFechaDMY(d.desde)}</b> al <b>{formatFechaDMY(d.hasta)}</b> (mes completo);
+              esta empresa, desde su ancla de caja ({formatFechaDMY(p.fecha_inicio)}). La tarjeta del dashboard sigue
               mostrando solo el flujo de esta empresa.
             </p>
           )}
