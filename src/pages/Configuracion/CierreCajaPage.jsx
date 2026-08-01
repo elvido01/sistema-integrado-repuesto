@@ -451,6 +451,12 @@ const CierreCajaPage = () => {
     // pagar empleado por empleado. Sin esto la nómina se resta dos veces.
     const efectivoDeCompromiso = (c) =>
       c.monto_efectivo !== undefined ? (parseFloat(c.monto_efectivo) || 0) : (parseFloat(c.monto) || 0);
+
+    // El que ya salió completo por los gastos de cada empleado no pinta nada
+    // en el cuadre: aporta 0 y solo estorba. Ese dinero se ve en su día, en
+    // la línea de Nómina. Se listan solo los que sí sacan efectivo hoy.
+    compromisosEfectivo = compromisosEfectivo.filter((c) => efectivoDeCompromiso(c) > 0);
+
     const totalCompromisosEfectivo = compromisosEfectivo.reduce((sum, c) => sum + efectivoDeCompromiso(c), 0);
     const totalPagosSuplidoresEfectivo = pagosSuplidores.reduce((sum, p) => {
       const efectivo = (p.formas_pago || []).filter(fp => fp.forma === 'Efectivo')
