@@ -12,7 +12,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { generateGastoDiarioPDF } from '@/components/common/pdf/gastoDiarioPDF';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
-import SearchableSelect from '@/components/common/SearchableSelect';
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
@@ -70,8 +69,13 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const [hayTerceros, setHayTerceros] = useState(false); // el catálogo existe
   const [conceptos, setConceptos] = useState([]);
   const [marcados, setMarcados] = useState({});     // { conceptoId: montoTexto }
+  // El comprador financiado vive en la financiera del grupo (MotoPréstamos),
+  // no en las 18 fichas de paso del dealer. Son 9,234: la búsqueda va al
+  // servidor. Ver sql/clientes_terceros_financiera.sql
+  const [busquedaCli, setBusquedaCli] = useState('');
   const [clientes, setClientes] = useState([]);
-  const [clienteId, setClienteId] = useState('');
+  const [buscandoCli, setBuscandoCli] = useState(false);
+  const [cliente, setCliente] = useState(null); // { id, nombre, tenant_id, origen }
 
   const totalTerceros = useMemo(
     () => Object.values(marcados).reduce((s, v) => s + (Number(v) || 0), 0),
@@ -93,16 +97,28 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setHayTerceros((data || []).length > 0);
   };
 
-  const cargarClientes = async () => {
+  // Busca en el catálogo propio Y en el de la financiera del grupo. Si el RPC
+  // no existe todavía (SQL sin correr), cae al catálogo propio: el buscador
+  // sigue sirviendo, solo que sin los clientes de la financiera.
+  const buscarClientes = async (texto) => {
     if (!tenantId) return;
-    const { data } = await supabase
-      .from('clientes')
-      .select('id, nombre')
-      .eq('tenant_id', tenantId)
-      .eq('activo', true)
-      .order('nombre', { ascending: true })
-      .limit(1000);
-    setClientes(data || []);
+    setBuscandoCli(true);
+    try {
+      const { data, error } = await supabase.rpc('buscar_clientes_con_financiera', {
+        p_busqueda: texto || '',
+        p_limite: 40,
+      });
+      if (error) throw error;
+      setClientes(data || []);
+    } catch {
+      const q = (texto || '').trim();
+      let sel = supabase.from('clientes').select('id, nombre, tenant_id').eq('tenant_id', tenantId).eq('activo', true);
+      if (q) sel = sel.ilike('nombre', `%${q}%`);
+      const { data } = await sel.order('nombre', { ascending: true }).limit(40);
+      setClientes((data || []).map((c) => ({ ...c, origen: '', es_financiera: false })));
+    } finally {
+      setBuscandoCli(false);
+    }
   };
 
   const toggleConcepto = (c) => {
@@ -133,8 +149,17 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setCuentaId('');
     setBancoLock(false);
     setMarcados({});
-    setClienteId('');
+    setCliente(null);
+    setBusquedaCli('');
   };
+
+  // Buscar mientras se escribe, sin disparar una consulta por tecla.
+  useEffect(() => {
+    if (!isOpen || modo !== 'terceros') return;
+    const t = setTimeout(() => buscarClientes(busquedaCli), busquedaCli ? 250 : 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, modo, busquedaCli, tenantId]);
 
   const editarGasto = (g) => {
     setEditandoId(g.id);
@@ -179,7 +204,6 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       setHuboCambios(false);
       cargarGastosHoy();
       cargarConceptos();
-      cargarClientes();
       setTimeout(() => {
         montoInputRef.current?.focus();
         montoInputRef.current?.select();
@@ -227,7 +251,6 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     try {
       const desdeBanco = pagaCon === 'banco' && cuentaId;
       const esExterno = pagaCon === 'externo';
-      const cliente = clientes.find((c) => c.id === clienteId);
 
       const { data: creados, error } = await supabase.from('gastos_diarios').insert(
         filas.map((f) => ({
@@ -241,7 +264,10 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
           afecta_caja: !(desdeBanco || esExterno),
           es_tercero: true,
           concepto_tercero: f.concepto.nombre,
-          cliente_id: clienteId || null,
+          // El id puede ser de la financiera del grupo: sin saber de qué
+          // empresa es, un cruce filtrado por tenant perdería la fila.
+          cliente_id: cliente?.id || null,
+          cliente_tenant_id: cliente?.tenant_id || null,
         }))
       ).select('id, monto, concepto_tercero');
 
@@ -294,7 +320,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
 
       setHuboCambios(true);
       setMarcados({});
-      setClienteId('');
+      setCliente(null);
+      setBusquedaCli('');
       await cargarGastosHoy();
     } catch (error) {
       toast({
@@ -579,16 +606,68 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                 )}
               </div>
 
+              {/* El comprador financiado está en la financiera del grupo, no
+                  en las fichas de paso del dealer: el buscador ve las dos y
+                  dice de cuál es cada quien. */}
               <div className="space-y-2">
-                <SearchableSelect
-                  label="¿De quién es? (opcional)"
-                  placeholder="Buscar cliente…"
-                  options={clientes.map((c) => ({ value: c.id, label: c.nombre }))}
-                  value={clienteId}
-                  onChange={setClienteId}
-                />
+                <Label>¿De quién es? (opcional)</Label>
+                {cliente ? (
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-indigo-900 truncate">{cliente.nombre}</p>
+                      {cliente.origen && (
+                        <p className="text-[10px] text-indigo-600 truncate">
+                          {cliente.origen}{cliente.documento ? ` · ${cliente.documento}` : ''}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setCliente(null); setBusquedaCli(''); }}
+                      className="text-[10px] font-bold uppercase text-indigo-600 hover:text-indigo-800 shrink-0"
+                    >
+                      Cambiar
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <Input
+                      value={busquedaCli}
+                      onChange={(ev) => setBusquedaCli(ev.target.value)}
+                      placeholder="Escribe el nombre o la cédula…"
+                      className="h-9"
+                    />
+                    <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+                      {buscandoCli && clientes.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-slate-400 italic">Buscando…</p>
+                      ) : clientes.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-slate-400 italic">Sin resultados.</p>
+                      ) : (
+                        clientes.map((c) => (
+                          <button
+                            key={`${c.tenant_id}-${c.id}`}
+                            type="button"
+                            onClick={() => setCliente(c)}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-indigo-50 transition-colors"
+                          >
+                            <span className="text-sm text-slate-700 truncate">{c.nombre}</span>
+                            {c.origen && (
+                              <span
+                                className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0 ${
+                                  c.es_financiera ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                }`}
+                              >
+                                {c.origen}
+                              </span>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
                 <p className="text-[10px] text-gray-500 italic">
-                  Anotar el cliente deja el rastro de a quién se le entregó cada GPS o seguro.
+                  Busca en esta empresa y en la financiera del grupo. El comprador financiado suele estar en las dos: elige el de la financiera, que es donde está su préstamo.
                 </p>
               </div>
             </>
