@@ -463,7 +463,9 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(huboCambios); }}>
-      <DialogContent className="max-w-md">
+      {/* overflow-x-hidden: nada dentro puede ensanchar el modal; si algo no
+          cabe, se recorta o baja, pero el cuadro no se sale de la pantalla. */}
+      <DialogContent className="max-w-md max-h-[92vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>
             {editandoId ? 'Editar Gasto' : modo === 'terceros' ? 'Pago a terceros' : 'Gastos Diarios'}
@@ -560,20 +562,23 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   si se corrige, ese pasa a ser el valor de ahí en adelante. */}
               <div className="space-y-2">
                 <Label>¿Qué se paga?</Label>
-                <div className="grid grid-cols-3 gap-2">
+                {/* min-w-0 en cada cuadro: sin eso el <input> impone su ancho
+                    natural (~20 caracteres) y las 3 columnas se salen del
+                    modal en vez de encogerse. */}
+                <div className="grid grid-cols-3 gap-1.5">
                   {conceptos.map((c) => {
                     const on = marcados[c.id] !== undefined;
                     return (
                       <div
                         key={c.id}
-                        className={`rounded-lg border p-2 transition-colors ${
+                        className={`min-w-0 rounded-md border px-1.5 py-1 transition-colors ${
                           on ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200'
                         }`}
                       >
                         <button
                           type="button"
                           onClick={() => toggleConcepto(c)}
-                          className={`w-full text-left text-[11px] font-bold uppercase truncate ${
+                          className={`w-full text-left text-[9px] leading-tight font-bold uppercase truncate ${
                             on ? 'text-indigo-700' : 'text-slate-500'
                           }`}
                           title={c.nombre}
@@ -588,10 +593,10 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                             value={marcados[c.id]}
                             onChange={(ev) => setMarcados((p) => ({ ...p, [c.id]: ev.target.value }))}
                             placeholder="0.00"
-                            className="h-7 mt-1 text-sm text-right font-bold"
+                            className="w-full min-w-0 h-6 px-1 mt-0.5 text-xs text-right font-bold"
                           />
                         ) : (
-                          <p className="mt-1 text-sm text-right font-bold text-slate-400">
+                          <p className="mt-0.5 h-6 flex items-center justify-end text-xs font-bold text-slate-400 truncate">
                             {Number(c.monto) > 0 ? money(c.monto) : '—'}
                           </p>
                         )}
@@ -637,7 +642,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                       placeholder="Escribe el nombre o la cédula…"
                       className="h-9"
                     />
-                    <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+                    <div className="min-w-0 max-h-36 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
                       {buscandoCli && clientes.length === 0 ? (
                         <p className="px-3 py-2 text-xs text-slate-400 italic">Buscando…</p>
                       ) : clientes.length === 0 ? (
@@ -648,12 +653,15 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                             key={`${c.tenant_id}-${c.id}`}
                             type="button"
                             onClick={() => setCliente(c)}
-                            className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-indigo-50 transition-colors"
+                            className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left hover:bg-indigo-50 transition-colors"
                           >
-                            <span className="text-sm text-slate-700 truncate">{c.nombre}</span>
+                            <span className="text-xs text-slate-700 truncate">{c.nombre}</span>
+                            {/* El nombre de la empresa es largo: se recorta,
+                                si no empuja la lista fuera del modal. */}
                             {c.origen && (
                               <span
-                                className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0 ${
+                                title={c.origen}
+                                className={`text-[9px] px-1 py-0.5 rounded font-bold uppercase shrink-0 max-w-[84px] truncate ${
                                   c.es_financiera ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
                                 }`}
                               >
