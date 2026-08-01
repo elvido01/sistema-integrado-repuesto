@@ -19,7 +19,11 @@ import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, Chevr
 import { cn } from '@/lib/utils';
 
 /* ──────────────── Denominaciones de moneda ──────────────── */
-const DENOMINACIONES = [
+// Todas las que han existido alguna vez, en orden. Los cierres viejos
+// guardaron sus cantidades con estas etiquetas, así que la lista completa se
+// sigue usando para IMPRIMIR: un cierre con billetes de 20 tiene que poder
+// reimprimirse con sus 20, aunque hoy ya no se cuenten.
+const DENOMINACIONES_TODAS = [
   { label: '2,000', value: 2000 },
   { label: '1,000', value: 1000 },
   { label: '500', value: 500 },
@@ -36,6 +40,11 @@ const DENOMINACIONES = [
   { label: 'Cheques', value: 0, tipo: 'cheque' },
   { label: 'Otros', value: 0, tipo: 'otro' },
 ];
+
+// Retiradas del conteo: no circulan o no se usan. Solo dejan de pedirse al
+// contar; lo ya grabado con ellas se sigue leyendo.
+const DENOMINACIONES_RETIRADAS = new Set(['20', 'Cent.', 'Otros']);
+const DENOMINACIONES = DENOMINACIONES_TODAS.filter(d => !DENOMINACIONES_RETIRADAS.has(d.label));
 
 const formatCurrency = (v) =>
   new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
@@ -806,7 +815,7 @@ const CierreCajaPage = () => {
             <table>
               <thead><tr><th>Denominación</th><th class="num">Cant.</th><th class="num">Valor</th></tr></thead>
               <tbody>
-                ${DENOMINACIONES.filter(d => Number(cierre.desglose[d.label] || 0) > 0).map(d => {
+                ${DENOMINACIONES_TODAS.filter(d => Number(cierre.desglose[d.label] || 0) > 0).map(d => {
                   const cant = cierre.desglose[d.label] || 0;
                   const val = d.tipo ? cant : cant * d.value;
                   return `<tr><td>${d.label}</td><td class="num">${cant}</td><td class="num">${formatCurrency(val)}</td></tr>`;
@@ -962,7 +971,7 @@ const CierreCajaPage = () => {
           <span class="text-right" style="width: 42px;">CANT.</span>
           <span class="text-right" style="width: 84px;">VALOR</span>
         </div>
-        ${DENOMINACIONES.filter(d => Number(cierre.desglose[d.label] || 0) > 0).map(d => {
+        ${DENOMINACIONES_TODAS.filter(d => Number(cierre.desglose[d.label] || 0) > 0).map(d => {
           const cant = cierre.desglose[d.label] || 0;
           const val = d.tipo ? cant : cant * d.value;
           return `<div class="row">
@@ -1321,8 +1330,11 @@ const CierreCajaPage = () => {
                       </Table>
                     </ScrollArea>
 
-                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} moneda="DOP" contexto="cierre_caja" label="Depositar el efectivo en la cuenta" />
+                    <div className="mt-2 px-2.5 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                      <CuentaBancariaSelect
+                        value={cuentaId} onChange={setCuentaId} moneda="DOP" contexto="cierre_caja"
+                        label="Depositar en" inline
+                      />
                     </div>
 
                     <div className="mt-3 flex items-center justify-between">

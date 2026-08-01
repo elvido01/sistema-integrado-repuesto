@@ -9,7 +9,10 @@ import { Landmark } from 'lucide-react';
 // suplidor). Viene con la cuenta PREDETERMINADA de la empresa ya
 // seleccionada, pero se puede cambiar. `value`/`onChange` los controla el
 // padre. Si `moneda` se pasa, solo muestra cuentas de esa moneda.
-export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda, label = 'Cuenta bancaria', autoDefault = true, contexto = null }) {
+// `inline` pone el rótulo a la izquierda y el selector a la derecha, en una
+// sola línea: donde el espacio vertical escasea (cierre de caja) apilarlos
+// gastaba un renglón entero.
+export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda, label = 'Cuenta bancaria', autoDefault = true, contexto = null, inline = false }) {
   const { tenantId, empresa } = useAuth();
   const [cuentas, setCuentas] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -69,10 +72,14 @@ export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda
   }
 
   return (
-    <div>
-      {label && <Label className="flex items-center gap-1 text-xs"><Landmark className="w-3.5 h-3.5" />{label}</Label>}
+    <div className={inline ? 'flex items-center gap-2 min-w-0' : ''}>
+      {label && (
+        <Label className={`flex items-center gap-1 text-xs ${inline ? 'shrink-0' : ''}`}>
+          <Landmark className="w-3.5 h-3.5 shrink-0" />{label}
+        </Label>
+      )}
       <Select value={value || ''} onValueChange={(id) => emitir(id)}>
-        <SelectTrigger><SelectValue placeholder="Seleccionar cuenta…" /></SelectTrigger>
+        <SelectTrigger className={inline ? 'h-8 text-xs min-w-0 flex-1' : ''}><SelectValue placeholder="Seleccionar cuenta…" /></SelectTrigger>
         <SelectContent>
           {cuentas.map((c) => (
             <SelectItem key={c.id} value={c.id}>
