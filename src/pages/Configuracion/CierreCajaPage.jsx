@@ -68,6 +68,9 @@ const CierreCajaPage = () => {
   const [saving, setSaving] = useState(false);
   const [loadingResumen, setLoadingResumen] = useState(false);
   const [imprimir, setImprimir] = useState(true);
+  // Cierres ya grabados: para volver a imprimir uno sin depender de nadie.
+  const [historial, setHistorial] = useState([]);
+  const [verHistorial, setVerHistorial] = useState(false);
   const [cuentaId, setCuentaId] = useState(null); // cuenta bancaria destino del efectivo
   // Papel del impreso del cierre — se recuerda por PC (la caja tiene térmica
   // 80mm; la oficina, impresora de hoja). Default: la config de la empresa.
@@ -563,6 +566,10 @@ const CierreCajaPage = () => {
         diferencia: desgloseTotal - (resumen?.efectivoEnCaja || 0),
         desglose: cantidades,
         usuario_id: user?.id,
+        // La foto del cierre, para poder reimprimirlo idéntico. Recalcular el
+        // día más tarde daría otro documento: los cobros siguen entrando.
+        // Ver sql/cierre_caja_detalle_para_reimprimir.sql
+        detalle: resumen || null,
       };
 
       const { data: cierreRow, error } = await supabase.from('cierres_caja').insert([cierre]).select('id').single();
@@ -655,8 +662,12 @@ const CierreCajaPage = () => {
             <div><b>Fecha:</b> ${formatInTimeZone(new Date(cierre.fecha), 'dd/MM/yyyy')}</div>
             <div><b>Turno:</b> ${cierre.turno}</div>
             <div><b>Cajero:</b> ${cierre.cajero_nombre}</div>
+            ${cierre._reimpresion ? '<div style="color:#b45309;font-weight:bold">REIMPRESIÓN</div>' : ''}
           </div>
         </div>
+        ${cierre._reimpresion ? `<div style="margin-top:8px;padding:4px 8px;border:1px solid #b45309;color:#b45309;font-size:11px">
+          Copia del cierre grabado el ${formatInTimeZone(new Date(cierre.created_at || cierre.fecha), 'dd/MM/yyyy')}. No es un cierre nuevo.
+        </div>` : ''}
 
         <div class="cols">
           <div class="col">
@@ -792,6 +803,7 @@ const CierreCajaPage = () => {
         <div class="text-center">
           <h1 class="bold">${(empresa?.nombre || 'MotoFlow').toUpperCase()}</h1>
           <p style="margin: 2px 0; font-size: 13px;">CIERRE DE CAJA</p>
+          ${cierre._reimpresion ? '<p class="bold" style="margin:2px 0;font-size:12px;">** REIMPRESION **</p>' : ''}
         </div>
         <div class="separator"></div>
         <div class="row"><span>Fecha:</span><span>${formatInTimeZone(new Date(cierre.fecha), 'dd/MM/yyyy')}</span></div>
@@ -918,6 +930,46 @@ const CierreCajaPage = () => {
     iframe.contentWindow.document.write(html);
     iframe.contentWindow.document.close();
     setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+  };
+
+  /* ── Cierres ya grabados: historial y reimpresión ── */
+  const cargarHistorial = useCallback(async () => {
+    if (!tenantId) return;
+    const { data, error } = await supabase
+      .from('cierres_caja')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(60);
+    if (!error) setHistorial(data || []);
+  }, [tenantId]);
+
+  useEffect(() => { if (verHistorial) cargarHistorial(); }, [verHistorial, cargarHistorial]);
+
+  // Los cierres viejos no guardaron la foto del resumen: se reimprimen con lo
+  // que sí quedó en columnas. Sale con menos detalle, pero con la verdad de
+  // ese día — recalcularlo hoy daría otro documento.
+  const resumenDeFila = (r) => r.detalle || ({
+    totalVentas: r.total_ventas,
+    totalVentasContado: r.total_ventas_contado,
+    totalVentasContadoCaja: r.total_ventas_contado_caja,
+    totalVentasContadoMovil: r.total_ventas_contado_movil,
+    totalVentasCredito: r.total_ventas_credito,
+    totalItbis: r.total_itbis,
+    totalDescuento: r.total_descuento,
+    totalDevoluciones: r.total_devoluciones,
+    totalRecibos: r.total_recibos,
+    totalGastosDiarios: r.total_gastos_diarios,
+    cambioEntregado: r.cambio_entregado,
+    efectivoEnCaja: r.efectivo_en_caja,
+  });
+
+  const reimprimir = (r) => {
+    try {
+      printCierreCaja({ ...r, _reimpresion: true }, resumenDeFila(r));
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo reimprimir', description: e.message });
+    }
   };
 
   /* ── Keyboard shortcuts ── */
@@ -1255,6 +1307,71 @@ const CierreCajaPage = () => {
           ) : null}
 
           {/* Bottom Actions */}
+          {/* Cierres ya grabados. Antes, una vez impreso el cierre no había
+              forma de volver a sacarlo: se imprimía solo al cerrar el turno. */}
+          <div className="mt-4 border rounded-lg">
+            <button
+              type="button"
+              onClick={() => setVerHistorial((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-gray-50 transition-colors"
+            >
+              <span className="text-sm font-semibold text-gray-700">Cierres anteriores</span>
+              <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${verHistorial ? 'rotate-180' : ''}`} />
+            </button>
+
+            {verHistorial && (
+              <div className="border-t max-h-72 overflow-y-auto">
+                {historial.length === 0 ? (
+                  <p className="px-4 py-3 text-sm text-gray-400 italic">No hay cierres grabados.</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Fecha</TableHead>
+                        <TableHead className="text-xs">Turno</TableHead>
+                        <TableHead className="text-xs">Cajero</TableHead>
+                        <TableHead className="text-xs text-right">Efectivo</TableHead>
+                        <TableHead className="text-xs text-right">Contado</TableHead>
+                        <TableHead className="text-xs text-right">Diferencia</TableHead>
+                        <TableHead className="text-xs text-right">&nbsp;</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {historial.map((r) => {
+                        const dif = Number(r.diferencia) || 0;
+                        return (
+                          <TableRow key={r.id}>
+                            <TableCell className="text-sm py-1.5">{formatFechaDMY(r.fecha)}</TableCell>
+                            <TableCell className="text-sm py-1.5">{r.turno}</TableCell>
+                            <TableCell className="text-sm py-1.5 max-w-[160px] truncate" title={r.cajero_nombre}>
+                              {r.cajero_nombre}
+                            </TableCell>
+                            <TableCell className="text-sm py-1.5 text-right font-mono">{formatCurrency(r.efectivo_en_caja)}</TableCell>
+                            <TableCell className="text-sm py-1.5 text-right font-mono">{formatCurrency(r.total_desglose)}</TableCell>
+                            <TableCell className={`text-sm py-1.5 text-right font-mono ${
+                              Math.abs(dif) < 0.005 ? 'text-green-600' : dif < 0 ? 'text-red-600' : 'text-amber-600'
+                            }`}>
+                              {formatCurrency(dif)}
+                            </TableCell>
+                            <TableCell className="text-right py-1.5">
+                              <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs"
+                                onClick={() => reimprimir(r)}>
+                                <Printer className="h-3.5 w-3.5" /> Reimprimir
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+                <p className="px-4 py-2 text-[11px] text-gray-400 italic border-t">
+                  Sale marcado como reimpresión, con las cifras del día en que se cerró. Los cierres anteriores al 01/08/2026 se reimprimen con menos detalle: no se guardaba el desglose completo.
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="mt-auto pt-4 flex justify-end items-center space-x-4 border-t">
             <Button
               variant="outline"
