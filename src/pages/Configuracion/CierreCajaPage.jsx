@@ -1264,14 +1264,14 @@ const CierreCajaPage = () => {
                 ) : (
                   /* ── Desglose de Monedas ── */
                   <div className="flex flex-col h-full">
-                    <h3 className="font-bold text-center text-sm uppercase tracking-widest text-gray-600 mb-3">
-                      DESGLOSE DE MONEDAS
-                    </h3>
-
-                    <div className="mb-3">
-                      <Label className="text-xs text-gray-500">Moneda</Label>
+                    {/* La moneda va en la misma línea del título: ocupaba un
+                        renglón entero para decir siempre lo mismo. */}
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <h3 className="font-bold text-sm uppercase tracking-widest text-gray-600">
+                        DESGLOSE DE MONEDAS
+                      </h3>
                       <Select value="DOP" disabled>
-                        <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="w-32 h-7 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent><SelectItem value="DOP">DOP - PESO</SelectItem></SelectContent>
                       </Select>
                     </div>
@@ -1279,10 +1279,10 @@ const CierreCajaPage = () => {
                     <ScrollArea className="flex-grow border rounded-lg max-h-[380px]">
                       <Table>
                         <TableHeader className="bg-gray-200 sticky top-0 z-10">
-                          <TableRow>
-                            <TableHead className="w-24 font-bold">MONEDA</TableHead>
-                            <TableHead className="w-28 font-bold text-center">CANTIDAD</TableHead>
-                            <TableHead className="text-right font-bold">VALOR</TableHead>
+                          <TableRow className="h-8">
+                            <TableHead className="w-20 h-8 py-1 font-bold text-xs">MONEDA</TableHead>
+                            <TableHead className="w-24 h-8 py-1 font-bold text-center text-xs">CANTIDAD</TableHead>
+                            <TableHead className="h-8 py-1 text-right font-bold text-xs">VALOR</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1291,25 +1291,31 @@ const CierreCajaPage = () => {
                             const val = d.tipo ? cant : cant * d.value;
                             return (
                               <TableRow key={d.label} className="hover:bg-yellow-50/50">
-                                <TableCell className="font-semibold text-right pr-4">{d.label}</TableCell>
-                                <TableCell className="text-center">
+                                <TableCell className="py-0.5 font-semibold text-right pr-4 text-sm">{d.label}</TableCell>
+                                <TableCell className="py-0.5 text-center">
                                   <Input
                                     type="number"
                                     min="0"
                                     value={cant}
                                     onChange={e => handleCantidadChange(d.label, e.target.value)}
-                                    className="w-20 mx-auto text-center h-7 text-sm"
+                                    // Al entrar en la casilla se selecciona el 0
+                                    // para que se pise al teclear. Si no, un 3
+                                    // sobre el 0 quedaba en 30 y el cuadre salía
+                                    // disparado sin que se notara.
+                                    onFocus={e => e.target.select()}
+                                    onClick={e => e.target.select()}
+                                    className="w-20 mx-auto text-center h-6 text-sm px-1"
                                   />
                                 </TableCell>
-                                <TableCell className="text-right font-mono">{formatCurrency(val)}</TableCell>
+                                <TableCell className="py-0.5 text-right font-mono text-sm">{formatCurrency(val)}</TableCell>
                               </TableRow>
                             );
                           })}
                         </TableBody>
                         <TableFooter className="sticky bottom-0 bg-yellow-100 z-10">
                           <TableRow className="font-bold">
-                            <TableCell colSpan={2} className="text-right text-red-600 uppercase">TOTAL ==&gt;</TableCell>
-                            <TableCell className="text-right text-red-600 font-mono text-base">{formatCurrency(desgloseTotal)}</TableCell>
+                            <TableCell colSpan={2} className="py-1 text-right text-red-600 uppercase text-sm">TOTAL ==&gt;</TableCell>
+                            <TableCell className="py-1 text-right text-red-600 font-mono text-base">{formatCurrency(desgloseTotal)}</TableCell>
                           </TableRow>
                         </TableFooter>
                       </Table>
