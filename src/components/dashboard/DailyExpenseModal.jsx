@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { generateGastoDiarioPDF } from '@/components/common/pdf/gastoDiarioPDF';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
+import { formatFechaDMY } from '@/lib/dateUtils';
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
@@ -104,10 +105,40 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const [buscandoCli, setBuscandoCli] = useState(false);
   const [cliente, setCliente] = useState(null); // { id, nombre, tenant_id, origen }
 
-  const totalTerceros = useMemo(
-    () => Object.values(marcados).reduce((s, v) => s + (Number(v) || 0), 0),
-    [marcados]
+  // Lo que se le cobró al cliente y todavía no se le ha entregado a quien
+  // presta el servicio. Sale de la solicitud de compra, que ya trae marcado
+  // qué extras lleva la venta. Ver sql/terceros_pendientes_de_solicitud.sql
+  const [pendientes, setPendientes] = useState([]);
+  const [pendSel, setPendSel] = useState({});   // { "solicitudId|CONCEPTO": true }
+  const [filtroPend, setFiltroPend] = useState('');
+  const [modoManual, setModoManual] = useState(false); // pago sin solicitud
+
+  const clavePend = (p) => `${p.solicitud_id}|${p.concepto}`;
+
+  const pendFiltrados = useMemo(() => {
+    const q = filtroPend.trim().toLowerCase();
+    if (!q) return pendientes;
+    return pendientes.filter(
+      (p) => (p.cliente_nombre || '').toLowerCase().includes(q)
+          || (p.concepto || '').toLowerCase().includes(q)
+          || String(p.numero || '').includes(q)
+    );
+  }, [pendientes, filtroPend]);
+
+  const totalPendientes = useMemo(
+    () => pendientes.reduce((s, p) => s + (Number(p.monto) || 0), 0),
+    [pendientes]
   );
+
+  const totalTerceros = useMemo(() => {
+    const manual = modoManual
+      ? Object.values(marcados).reduce((s, v) => s + (Number(v) || 0), 0)
+      : 0;
+    const desdePend = pendientes
+      .filter((p) => pendSel[clavePend(p)])
+      .reduce((s, p) => s + (Number(p.monto) || 0), 0);
+    return manual + desdePend;
+  }, [marcados, pendientes, pendSel, modoManual]);
 
   // Catálogo de conceptos con su monto fijo. Si la tabla todavía no existe
   // (SQL sin correr), el modo simplemente no aparece y el modal sigue igual.
@@ -122,6 +153,14 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     if (error) { setHayTerceros(false); return; }
     setConceptos(data || []);
     setHayTerceros((data || []).length > 0);
+  };
+
+  const cargarPendientes = async () => {
+    const { data, error } = await supabase.rpc('get_terceros_pendientes');
+    // Si el RPC no existe todavía, el modo manual sigue funcionando solo.
+    if (error) { setPendientes([]); setModoManual(true); return; }
+    setPendientes(data || []);
+    setModoManual((data || []).length === 0);
   };
 
   // Busca en el catálogo propio Y en el de la financiera del grupo. Si el RPC
@@ -178,6 +217,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setMarcados({});
     setCliente(null);
     setBusquedaCli('');
+    setPendSel({});
+    setFiltroPend('');
   };
 
   // Buscar mientras se escribe, sin disparar una consulta por tecla.
@@ -233,6 +274,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       setHuboCambios(false);
       cargarGastosHoy();
       cargarConceptos();
+      cargarPendientes();
       setTimeout(() => {
         montoInputRef.current?.focus();
         montoInputRef.current?.select();
@@ -254,12 +296,21 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   // normal). Cada concepto queda en su propia fila: así se sabe qué se pagó,
   // no solo cuánto salió.
   const guardarTerceros = async () => {
-    const filas = conceptos
-      .filter((c) => marcados[c.id] !== undefined)
-      .map((c) => ({ concepto: c, monto: Number(marcados[c.id]) }));
+    // Dos orígenes: lo que estaba pendiente de una venta (lo normal) y un
+    // pago suelto sin solicitud. Se pueden guardar juntos.
+    const desdePend = pendientes.filter((p) => pendSel[clavePend(p)]);
+    const filas = modoManual
+      ? conceptos
+          .filter((c) => marcados[c.id] !== undefined)
+          .map((c) => ({ concepto: c, monto: Number(marcados[c.id]) }))
+      : [];
 
-    if (filas.length === 0) {
-      toast({ variant: 'destructive', title: 'Nada marcado', description: 'Marca al menos un servicio (GPS, seguro...).' });
+    if (filas.length === 0 && desdePend.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Nada marcado',
+        description: 'Marca lo que se está entregando, de la lista de pendientes o del pago suelto.',
+      });
       return;
     }
     const sinMonto = filas.find((f) => !Number.isFinite(f.monto) || f.monto <= 0);
@@ -281,24 +332,40 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       const desdeBanco = pagaCon === 'banco' && cuentaId;
       const esExterno = pagaCon === 'externo';
 
-      const { data: creados, error } = await supabase.from('gastos_diarios').insert(
-        filas.map((f) => ({
-          tenant_id: tenantId,
-          fecha: formData.fecha,
-          tipo_gasto: 'Terceros',
+      const comun = {
+        tenant_id: tenantId,
+        fecha: formData.fecha,
+        tipo_gasto: 'Terceros',
+        usuario_id: user?.id || null,
+        cuenta_bancaria_id: desdeBanco ? cuentaId : null,
+        afecta_caja: !(desdeBanco || esExterno),
+        es_tercero: true,
+      };
+
+      const { data: creados, error } = await supabase.from('gastos_diarios').insert([
+        // Lo que venía pendiente de una venta: queda amarrado a su solicitud,
+        // que es lo que lo saca de la lista de pendientes.
+        ...desdePend.map((p) => ({
+          ...comun,
+          monto: Number(p.monto),
+          descripcion: `${p.concepto} — ${p.cliente_nombre} (Sol. ${p.numero})`,
+          concepto_tercero: p.concepto,
+          solicitud_id: p.solicitud_id,
+          cliente_id: p.cliente_id || null,
+          cliente_tenant_id: p.cliente_id ? tenantId : null,
+        })),
+        // Pago suelto, sin solicitud detrás.
+        ...filas.map((f) => ({
+          ...comun,
           monto: f.monto,
           descripcion: cliente ? `${f.concepto.nombre} — ${cliente.nombre}` : f.concepto.nombre,
-          usuario_id: user?.id || null,
-          cuenta_bancaria_id: desdeBanco ? cuentaId : null,
-          afecta_caja: !(desdeBanco || esExterno),
-          es_tercero: true,
           concepto_tercero: f.concepto.nombre,
           // El id puede ser de la financiera del grupo: sin saber de qué
           // empresa es, un cruce filtrado por tenant perdería la fila.
           cliente_id: cliente?.id || null,
           cliente_tenant_id: cliente?.tenant_id || null,
-        }))
-      ).select('id, monto, concepto_tercero');
+        })),
+      ]).select('id, monto, concepto_tercero, descripcion');
 
       if (error) throw error;
 
@@ -323,7 +390,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             p_cuenta_id: cuentaId,
             p_tipo: 'SALIDA',
             p_monto: Number(row.monto),
-            p_concepto: `Pago a terceros: ${row.concepto_tercero}${cliente ? ' — ' + cliente.nombre : ''}`,
+            p_concepto: `Pago a terceros: ${row.descripcion || row.concepto_tercero}`,
             p_referencia: null,
             p_origen_tipo: 'gasto',
             p_origen_id: row.id,
@@ -340,9 +407,10 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         }
       }
 
+      const nombres = [...desdePend.map((p) => p.concepto), ...filas.map((f) => f.concepto.nombre)];
       toast({
-        title: 'Pago a terceros registrado',
-        description: `${filas.map((f) => f.concepto.nombre).join(' + ')} · RD$${money(totalTerceros)}. ${
+        title: 'Entregado a terceros',
+        description: `${nombres.join(' + ')} · RD$${money(totalTerceros)}. ${
           desdeBanco ? 'Salió de la cuenta bancaria.' : esExterno ? 'No afecta la caja.' : 'Salió de la caja.'
         } No cuenta como gasto de la empresa.`,
       });
@@ -351,7 +419,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       setMarcados({});
       setCliente(null);
       setBusquedaCli('');
-      await cargarGastosHoy();
+      setPendSel({});
+      await Promise.all([cargarGastosHoy(), cargarPendientes()]);
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -609,7 +678,80 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             <>
               {/* Un clic por servicio. El monto viene fijo y se puede corregir:
                   si se corrige, ese pasa a ser el valor de ahí en adelante. */}
-              <div>
+              {/* LO QUE FALTA ENTREGAR. Sale de la solicitud de compra, que
+                  ya trae marcado qué extras lleva la venta. No hay que
+                  acordarse de nada: se marca lo que se está entregando. */}
+              {pendientes.length > 0 && (
+                <div className="rounded-lg border border-amber-200 overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 px-3 py-1 bg-amber-50">
+                    <span className="text-xs font-semibold text-amber-800">Falta por entregar</span>
+                    <span className="text-xs font-black text-amber-800">RD${money(totalPendientes)}</span>
+                  </div>
+                  {pendientes.length > 6 && (
+                    <div className="px-2 py-1 border-t border-amber-100">
+                      <Input
+                        value={filtroPend}
+                        onChange={(ev) => setFiltroPend(ev.target.value)}
+                        placeholder="Filtrar por cliente…"
+                        className="h-7 px-2 text-xs border-slate-200"
+                      />
+                    </div>
+                  )}
+                  <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 border-t border-amber-100">
+                    {pendFiltrados.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-slate-400 italic">Nada con ese nombre.</p>
+                    ) : pendFiltrados.map((p) => {
+                      const k = clavePend(p);
+                      const on = !!pendSel[k];
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => setPendSel((prev) => {
+                            const next = { ...prev };
+                            if (next[k]) delete next[k]; else next[k] = true;
+                            return next;
+                          })}
+                          className={`w-full flex items-center gap-2 px-2 py-1 text-left transition-colors ${on ? 'bg-indigo-50' : 'bg-white hover:bg-slate-50'}`}
+                        >
+                          <span
+                            className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center ${
+                              on ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300'
+                            }`}
+                          >
+                            {on && <Check className="w-3 h-3 text-white" />}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className={`block text-xs font-bold uppercase truncate ${on ? 'text-indigo-800' : 'text-slate-700'}`}>
+                              {p.concepto}
+                            </span>
+                            <span className="block text-[10px] text-slate-400 truncate leading-tight">
+                              {p.cliente_nombre} · {formatFechaDMY(p.fecha)}
+                            </span>
+                          </span>
+                          <span className="w-20 shrink-0 text-xs text-right font-bold text-slate-600">
+                            {money(p.monto)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Pago suelto: lo que no viene de una solicitud. Va escondido
+                  para no alargar la pantalla del caso normal. */}
+              {!modoManual && (
+                <button
+                  type="button"
+                  onClick={() => setModoManual(true)}
+                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800"
+                >
+                  + Pagar algo que no viene de una solicitud
+                </button>
+              )}
+
+              <div className={modoManual ? '' : 'hidden'}>
                 {/* Una fila por servicio, no cuadros en rejilla: en rejilla el
                     nombre y el monto compiten por un tercio del ancho y
                     cualquiera de los dos se corta. En fila, el monto tiene su
@@ -667,8 +809,9 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
 
               {/* El comprador financiado está en la financiera del grupo, no
                   en las fichas de paso del dealer: el buscador ve las dos y
-                  dice de cuál es cada quien. */}
-              <div className="space-y-1.5">
+                  dice de cuál es cada quien. Solo hace falta en el pago
+                  suelto: si viene de una solicitud, el cliente ya se sabe. */}
+              <div className={`space-y-1.5 ${modoManual ? '' : 'hidden'}`}>
                 {cliente ? (
                   <div className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5">
                     <div className="min-w-0">
