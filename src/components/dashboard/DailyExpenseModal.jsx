@@ -51,6 +51,16 @@ const siglas = (nombre) => {
   return s.slice(0, 4);
 };
 
+// Fila enmarcada: rótulo a la izquierda, control a la derecha. Es la forma
+// que ya tenía "Total a entregar" y la que se aplica a todo el formulario de
+// terceros, para que cada dato ocupe una línea y no dos.
+const FilaCampo = ({ label, children }) => (
+  <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-1.5">
+    <span className="text-xs font-semibold text-slate-600 shrink-0">{label}</span>
+    <div className="min-w-0 flex justify-end">{children}</div>
+  </div>
+);
+
 const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const { toast } = useToast();
   const { user, tenantId, empresa } = useAuth();
@@ -532,9 +542,11 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         )}
 
         <form onSubmit={handleSubmit} className={`min-w-0 py-3 ${modo === 'terceros' ? 'space-y-2.5' : 'space-y-4'}`}>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="fecha-gasto">Fecha</Label>
+          {/* En terceros, cada dato es una fila enmarcada: rótulo a la
+              izquierda, valor a la derecha. Rótulo encima del campo gastaba el
+              doble de alto y dejaba media línea vacía al lado de cada uno. */}
+          {modo === 'terceros' && (
+            <FilaCampo label="Fecha">
               <Input
                 id="fecha-gasto"
                 name="fecha"
@@ -542,10 +554,25 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                 value={formData.fecha}
                 onChange={handleChange}
                 required
+                className="h-7 w-[150px] px-2 text-xs border-slate-200"
               />
-            </div>
+            </FilaCampo>
+          )}
 
-            {modo === 'gasto' && (
+          {modo === 'gasto' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="fecha-gasto-simple">Fecha</Label>
+                <Input
+                  id="fecha-gasto-simple"
+                  name="fecha"
+                  type="date"
+                  value={formData.fecha}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="tipo-gasto">Tipo de gasto</Label>
                 <Select value={formData.tipo_gasto} onValueChange={handleTipoChange}>
@@ -559,8 +586,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   </SelectContent>
                 </Select>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {modo === 'gasto' ? (
             <div className="space-y-2">
@@ -582,13 +609,13 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             <>
               {/* Un clic por servicio. El monto viene fijo y se puede corregir:
                   si se corrige, ese pasa a ser el valor de ahí en adelante. */}
-              <div className="space-y-1.5">
-                <Label>¿Qué se paga?</Label>
+              <div>
                 {/* Una fila por servicio, no cuadros en rejilla: en rejilla el
                     nombre y el monto compiten por un tercio del ancho y
                     cualquiera de los dos se corta. En fila, el monto tiene su
                     espacio fijo y el nombre se lee entero. */}
                 <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+                  <div className="px-3 py-1 bg-slate-50 text-xs font-semibold text-slate-600">¿Qué se paga?</div>
                   {conceptos.map((c) => {
                     const on = marcados[c.id] !== undefined;
                     return (
@@ -642,9 +669,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   en las fichas de paso del dealer: el buscador ve las dos y
                   dice de cuál es cada quien. */}
               <div className="space-y-1.5">
-                <Label>¿De quién es? (opcional)</Label>
                 {cliente ? (
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5">
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5">
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-indigo-900 truncate">{cliente.nombre}</p>
                       {cliente.origen && (
@@ -663,12 +689,14 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   </div>
                 ) : (
                   <>
-                    <Input
-                      value={busquedaCli}
-                      onChange={(ev) => setBusquedaCli(ev.target.value)}
-                      placeholder="Escribe el nombre o la cédula…"
-                      className="h-8 text-sm"
-                    />
+                    <FilaCampo label="¿De quién es?">
+                      <Input
+                        value={busquedaCli}
+                        onChange={(ev) => setBusquedaCli(ev.target.value)}
+                        placeholder="Buscar cliente…"
+                        className="h-7 w-[190px] px-2 text-xs border-slate-200"
+                      />
+                    </FilaCampo>
                     {/* La lista solo aparece cuando hay algo escrito: en
                         blanco ocupaba media pantalla sin decir nada útil. */}
                     <div className={`min-w-0 max-h-32 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100 ${busquedaCli.trim() ? '' : 'hidden'}`}>
@@ -727,16 +755,31 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
               Este gasto se pagó desde una <b>cuenta bancaria</b>: no resta de la caja. El origen no se edita aquí.
             </div>
           ) : (
-            <div className="space-y-2">
-              <Label>¿De dónde sale?</Label>
-              <Select value={pagaCon} onValueChange={(v) => { setPagaCon(v); if (v !== 'banco') setCuentaId(''); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="efectivo">Efectivo (caja del día)</SelectItem>
-                  {!editandoId && <SelectItem value="banco">Cuenta bancaria de la empresa</SelectItem>}
-                  <SelectItem value="externo">Otra cuenta / tercero (no afecta caja)</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className={modo === 'terceros' ? 'space-y-1.5' : 'space-y-2'}>
+              {modo === 'terceros' ? (
+                <FilaCampo label="¿De dónde sale?">
+                  <Select value={pagaCon} onValueChange={(v) => { setPagaCon(v); if (v !== 'banco') setCuentaId(''); }}>
+                    <SelectTrigger className="h-7 w-[190px] px-2 text-xs border-slate-200"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="efectivo">Efectivo (caja del día)</SelectItem>
+                      {!editandoId && <SelectItem value="banco">Cuenta bancaria de la empresa</SelectItem>}
+                      <SelectItem value="externo">Otra cuenta / tercero (no afecta caja)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FilaCampo>
+              ) : (
+                <>
+                  <Label>¿De dónde sale?</Label>
+                  <Select value={pagaCon} onValueChange={(v) => { setPagaCon(v); if (v !== 'banco') setCuentaId(''); }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="efectivo">Efectivo (caja del día)</SelectItem>
+                      {!editandoId && <SelectItem value="banco">Cuenta bancaria de la empresa</SelectItem>}
+                      <SelectItem value="externo">Otra cuenta / tercero (no afecta caja)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
               {pagaCon === 'banco' && (
                 <div className="pt-1">
                   <CuentaBancariaSelect
@@ -769,8 +812,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
               />
             </div>
           ) : (
-            <div className="flex items-center justify-between rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-1.5">
-              <span className="text-[11px] font-bold uppercase text-indigo-700">Total a entregar</span>
+            <div className="flex items-center justify-between gap-3 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-1.5">
+              <span className="text-xs font-bold uppercase text-indigo-700 shrink-0">Total a entregar</span>
               <span className="text-base font-black text-indigo-700">RD${money(totalTerceros)}</span>
             </div>
           )}
