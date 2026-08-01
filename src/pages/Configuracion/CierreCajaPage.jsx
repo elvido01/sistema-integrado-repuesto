@@ -627,6 +627,27 @@ const CierreCajaPage = () => {
     }
   };
 
+  // La pantalla se lee igual que el papel: los renglones en cero no se
+  // muestran (salvo los marcados "siempre"), y los totales fuertes cierran
+  // cada bloque. Antes la pantalla mostraba conceptos en 0.00 que el impreso
+  // ocultaba, y al imprimir el documento no se parecía a lo que se vio.
+  const Fila = ({ label, value, bold, isCount, siempre }) =>
+    (siempre || Number(value) > 0) ? (
+      <div className={`flex justify-between items-center py-1 ${bold ? 'border-t-2 border-morla-blue pt-2' : ''}`}>
+        <span className={`text-sm ${bold ? 'font-bold text-morla-blue' : 'text-gray-600'}`}>{label}</span>
+        <span className={`font-mono text-sm ${bold ? 'font-bold text-morla-blue text-base' : 'text-gray-800'}`}>
+          {isCount ? value : formatCurrency(value)}
+        </span>
+      </div>
+    ) : null;
+
+  const LineaFuerte = ({ label, value }) => (
+    <div className="flex justify-between items-center py-1.5 mt-1 border-t-2 border-gray-800">
+      <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">{label}</span>
+      <span className="font-mono text-sm font-bold text-gray-900">{formatCurrency(value)}</span>
+    </div>
+  );
+
   // Todo lo que sale de la gaveta, y lo que entra. Se calculan una vez y se
   // usan igual en el resumen de salidas y en el recuadro final, para que no
   // puedan discrepar entre sí.
@@ -710,8 +731,9 @@ const CierreCajaPage = () => {
               ${filaResumen('Ventas por Transferencia/Tarjeta', resumen?.totalVentasContadoNoEfectivo)}
               ${filaResumen('Ventas Crédito', resumen?.totalVentasCredito)}
               ${filaResumen('Total Ventas', resumen?.totalVentas, true)}
+              ${Number(resumen?.totalRecibosMovil) > 0 ? `
               ${filaResumen('Recibos Ingreso Caja', resumen?.totalRecibosCaja)}
-              ${filaResumen('Recibos Ingreso Móvil', resumen?.totalRecibosMovil)}
+              ${filaResumen('Recibos Ingreso Móvil', resumen?.totalRecibosMovil)}` : ''}
               ${filaResumen('Recibos Ingreso (total)', resumen?.totalRecibos, true)}
               ${Number(resumen?.totalRecibosOtrasFormas) > 0 ? `
               ${filaResumen('· Recibos en Efectivo', resumen?.totalRecibosEfectivo)}
@@ -856,10 +878,11 @@ const CierreCajaPage = () => {
         ${filaPos('Ventas Transf./Tarjeta', resumen?.totalVentasContadoNoEfectivo)}
         ${filaPos('Ventas Crédito', resumen?.totalVentasCredito)}
         ${filaPos('Total Ventas', resumen?.totalVentas, { bold: true })}
+        ${Number(resumen?.totalRecibosMovil) > 0 ? `
         ${filaPos('Recibos Ingreso Caja', resumen?.totalRecibosCaja)}
-        ${filaPos('Recibos Ingreso Móvil', resumen?.totalRecibosMovil)}
-        ${Number(resumen?.totalRecibosOtrasFormas) > 0 ? `
+        ${filaPos('Recibos Ingreso Móvil', resumen?.totalRecibosMovil)}` : ''}
         ${filaPos('Recibos Ingreso (total)', resumen?.totalRecibos)}
+        ${Number(resumen?.totalRecibosOtrasFormas) > 0 ? `
         ${filaPos('&nbsp;&nbsp;En Efectivo', resumen?.totalRecibosEfectivo, { siempre: true })}
         ${filaPos('&nbsp;&nbsp;Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}` : ''}
         <div class="row total-row"><span>TOTAL INGRESO EN CAJA:</span><span>${formatCurrency(TOTAL_SISTEMA)}</span></div>
@@ -1121,46 +1144,33 @@ const CierreCajaPage = () => {
                   {selectedCajero === 'ALL' ? 'Resumen Total del Día' : 'Resumen del Turno'}
                 </h2>
                 <div className="space-y-2">
-                  {[
-                    ['Cantidad de Facturas', resumen.cantFacturas, false, true],
-                    ['Ventas Contado Caja', resumen.totalVentasContadoCaja],
-                    ['Cuenta Contado Móvil', resumen.totalVentasContadoMovil],
-                    ['Ventas por Transferencia/Tarjeta', resumen.totalVentasContadoNoEfectivo],
-                    ['Ventas Crédito', resumen.totalVentasCredito],
-                    ['Total Ventas', resumen.totalVentas, true],
-                    ['Devoluciones', resumen.totalDevoluciones],
-                    ['Recibos de Ingreso Caja', resumen.totalRecibosCaja],
-                    ['Recibos de Ingreso Móvil', resumen.totalRecibosMovil],
-                    ['Recibos de Ingreso (total)', resumen.totalRecibos],
-                    ...(Number(resumen.totalRecibosOtrasFormas) > 0 ? [
-                      ['· Recibos en Efectivo', resumen.totalRecibosEfectivo],
-                      ['· Recibos Transf/Cheque/Tarjeta', resumen.totalRecibosOtrasFormas],
-                    ] : []),
-                    ['Pagos a Suplidores (Efectivo)', resumen.totalPagosSuplidores],
-                    ['Gastos Diarios', resumen.totalGastosDiarios],
-                    ...(Number(resumen.totalPagosNomina) > 0 ? [
-                      ['Nómina (Efectivo)', resumen.totalPagosNomina],
-                    ] : []),
-                    ...(Number(resumen.totalPagosTerceros) > 0 ? [
-                      ['Pagos a terceros (GPS, seguro...)', resumen.totalPagosTerceros],
-                    ] : []),
-                    ...(Number(resumen.totalPrestamosEfectivo) > 0 ? [
-                      ['Préstamos (Efectivo)', resumen.totalPrestamosEfectivo],
-                    ] : []),
-                    ...(Number(resumen.comprasContadoEfectivo) > 0 ? [
-                      ['Compras de contado (Efectivo)', resumen.comprasContadoEfectivo],
-                    ] : []),
-                    ...(Number(resumen.totalCompromisosEfectivo) > 0 ? [
-                      ['Compromisos (Efectivo)', resumen.totalCompromisosEfectivo],
-                    ] : []),
-                  ].map(([label, value, bold, isCount]) => (
-                    <div key={label} className={`flex justify-between items-center py-1 ${bold ? 'border-t-2 border-morla-blue pt-2' : ''}`}>
-                      <span className={`text-sm ${bold ? 'font-bold text-morla-blue' : 'text-gray-600'}`}>{label}</span>
-                      <span className={`font-mono text-sm ${bold ? 'font-bold text-morla-blue text-base' : 'text-gray-800'}`}>
-                        {isCount ? value : formatCurrency(value)}
-                      </span>
-                    </div>
-                  ))}
+                  {/* ── LO QUE ENTRÓ ── */}
+                  <Fila label="Cantidad de Facturas" value={resumen.cantFacturas} isCount siempre />
+                  <Fila label="Ventas Contado Caja" value={resumen.totalVentasContadoCaja} />
+                  <Fila label="Cuenta Contado Móvil" value={resumen.totalVentasContadoMovil} />
+                  <Fila label="Ventas por Transferencia/Tarjeta" value={resumen.totalVentasContadoNoEfectivo} />
+                  <Fila label="Ventas Crédito" value={resumen.totalVentasCredito} />
+                  <Fila label="Total Ventas" value={resumen.totalVentas} bold />
+                  {/* "Caja" y "Móvil" solo cuando hubo cobros por el móvil: si
+                      no, "Caja" repite el mismo número que el total. */}
+                  {Number(resumen.totalRecibosMovil) > 0 && (
+                    <>
+                      <Fila label="Recibos de Ingreso Caja" value={resumen.totalRecibosCaja} />
+                      <Fila label="Recibos de Ingreso Móvil" value={resumen.totalRecibosMovil} />
+                    </>
+                  )}
+                  <Fila label="Recibos de Ingreso (total)" value={resumen.totalRecibos} />
+                  {Number(resumen.totalRecibosOtrasFormas) > 0 && (
+                    <>
+                      <Fila label="· Recibos en Efectivo" value={resumen.totalRecibosEfectivo} />
+                      <Fila label="· Recibos Transf/Cheque/Tarjeta" value={resumen.totalRecibosOtrasFormas} />
+                    </>
+                  )}
+                  <LineaFuerte label="Total ingreso en caja" value={totalSistemaDe(resumen)} />
+
+                  {/* ── LO QUE SALIÓ ── */}
+                  <Fila label="Gastos Diarios" value={resumen.totalGastosDiarios} />
+                  <Fila label="Nómina (Efectivo)" value={resumen.totalPagosNomina} />
 
                   {/* Los sueldos pagados hoy, uno por uno. Es lo mismo que se
                       firma en la nómina, así que se puede cotejar directo. */}
@@ -1176,6 +1186,10 @@ const CierreCajaPage = () => {
                       ))}
                     </div>
                   )}
+
+                  <Fila label="Pagos a terceros (GPS, seguro...)" value={resumen.totalPagosTerceros} />
+                  <Fila label="Préstamos (Efectivo)" value={resumen.totalPrestamosEfectivo} />
+                  <Fila label="Compromisos (Efectivo)" value={resumen.totalCompromisosEfectivo} />
 
                   {/* La nómina se abre por empleado: un RD$8,000 redondo no se
                       puede cuadrar contra los recibos que firmó cada uno. */}
@@ -1205,6 +1219,15 @@ const CierreCajaPage = () => {
                         )}
                       </div>
                     ))}
+                  {/* Salidas sin desglose propio. Ocultas si están en cero,
+                      pero el día que existan tienen que verse: si no, el gasto
+                      total saldría con dinero que la pantalla no explica. */}
+                  <Fila label="Devoluciones" value={resumen.totalDevoluciones} />
+                  <Fila label="Pagos a Suplidores (Efectivo)" value={resumen.totalPagosSuplidores} />
+                  <Fila label="Compras de contado (Efectivo)" value={resumen.comprasContadoEfectivo} />
+
+                  <LineaFuerte label="Gasto total" value={gastoTotalDe(resumen)} />
+
                   <div className="flex justify-between items-center py-2 mt-2 bg-morla-blue/10 rounded px-3 border border-morla-blue/30">
                     <span className="font-bold text-morla-blue">Efectivo en Caja</span>
                     <span className="font-bold text-morla-blue text-lg font-mono">{formatCurrency(resumen.efectivoEnCaja)}</span>
