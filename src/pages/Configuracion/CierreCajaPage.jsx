@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
+import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase, formatFechaDMY } from '@/lib/dateUtils';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -337,21 +337,51 @@ const CierreCajaPage = () => {
         if (idsNomina.length > 0) {
           const { data: nomData } = await supabase
             .from('nominas')
-            .select('id, compromiso_id, nomina_detalle(neto, empleados(nombre))')
+            .select('id, compromiso_id, nomina_detalle(neto, pagado_at, gasto_id, empleados(nombre))')
             .eq('tenant_id', tenantId)
             .in('compromiso_id', idsNomina)
             .neq('estado', 'anulada');
 
+          // Un pago por empleado ya dejó su gasto diario y ya salió de la caja
+          // EL DÍA QUE SALIÓ. Si además se cuenta el compromiso completo, la
+          // nómina se cobra dos veces y la parte de ayer cae en el día de hoy.
+          // Ver sql/compromiso_nomina_no_se_cuenta_dos_veces.sql
+          const idsGasto = (nomData || [])
+            .flatMap((n) => (n.nomina_detalle || []).map((d) => d.gasto_id))
+            .filter(Boolean);
+          const anulados = new Set();
+          if (idsGasto.length > 0) {
+            const { data: gAnul } = await supabase
+              .from('gastos_diarios').select('id, anulado').in('id', idsGasto);
+            for (const g of gAnul || []) if (g.anulado) anulados.add(g.id);
+          }
+
           const porCompromiso = {};
           for (const n of nomData || []) {
             porCompromiso[n.compromiso_id] = (n.nomina_detalle || [])
-              .map((d) => ({ nombre: d.empleados?.nombre || 'Empleado', monto: Number(d.neto) || 0 }))
+              .map((d) => ({
+                nombre: d.empleados?.nombre || 'Empleado',
+                monto: Number(d.neto) || 0,
+                // "Ya salió por su propio gasto": no debe volver a restarse aquí.
+                yaEnGastos: !!d.gasto_id && !anulados.has(d.gasto_id),
+                pagadoAt: d.pagado_at || null,
+              }))
               .filter((e) => e.monto > 0)
               .sort((a, b) => b.monto - a.monto);
           }
-          compromisosEfectivo = compromisosEfectivo.map((c) => ({
-            ...c, empleados: porCompromiso[c.id] || null,
-          }));
+
+          compromisosEfectivo = compromisosEfectivo.map((c) => {
+            const emps = porCompromiso[c.id] || null;
+            const cubierto = (emps || [])
+              .filter((e) => e.yaEnGastos)
+              .reduce((s, e) => s + e.monto, 0);
+            return {
+              ...c,
+              empleados: emps,
+              cubierto,
+              monto_efectivo: Math.max((parseFloat(c.monto) || 0) - cubierto, 0),
+            };
+          });
         }
       }
     } catch (e) {
@@ -407,7 +437,11 @@ const CierreCajaPage = () => {
     const totalGastosDiarios = gastosDiarios.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
     const totalPagosTerceros = pagosTerceros.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
     const totalPrestamosEfectivo = prestamosEfectivo.reduce((sum, p) => sum + (parseFloat(p.monto_capital) || 0), 0);
-    const totalCompromisosEfectivo = compromisosEfectivo.reduce((sum, c) => sum + (parseFloat(c.monto) || 0), 0);
+    // Del compromiso solo sale de la caja lo que no salió ya como gasto al
+    // pagar empleado por empleado. Sin esto la nómina se resta dos veces.
+    const efectivoDeCompromiso = (c) =>
+      c.monto_efectivo !== undefined ? (parseFloat(c.monto_efectivo) || 0) : (parseFloat(c.monto) || 0);
+    const totalCompromisosEfectivo = compromisosEfectivo.reduce((sum, c) => sum + efectivoDeCompromiso(c), 0);
     const totalPagosSuplidoresEfectivo = pagosSuplidores.reduce((sum, p) => {
       const efectivo = (p.formas_pago || []).filter(fp => fp.forma === 'Efectivo')
         .reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0);
@@ -656,8 +690,8 @@ const CierreCajaPage = () => {
             <div class="sec">Compromisos (Efectivo)</div>
             <table><tbody>
               ${resumen.compromisosEfectivo.map(c => `
-                <tr><td>${(c.nombre || 'COMPROMISO')}${c.tipo ? ` — ${c.tipo}` : ''}</td><td class="num">${formatCurrency(c.monto)}</td></tr>
-                ${(c.empleados || []).map(e => `<tr><td style="padding-left:14px;color:#555">· ${e.nombre}</td><td class="num" style="color:#555">${formatCurrency(e.monto)}</td></tr>`).join('')}
+                <tr><td>${(c.nombre || 'COMPROMISO')}${c.tipo ? ` — ${c.tipo}` : ''}</td><td class="num">${formatCurrency(c.monto_efectivo !== undefined ? c.monto_efectivo : c.monto)}</td></tr>
+                ${(c.empleados || []).map(e => `<tr><td style="padding-left:14px;color:#555">· ${e.nombre}${e.yaEnGastos ? ` <i>(ya salió ${e.pagadoAt ? formatFechaDMY(e.pagadoAt) : 'antes'}, en Gastos)</i>` : ''}</td><td class="num" style="color:#555">${formatCurrency(e.monto)}</td></tr>`).join('')}
               `).join('')}
               <tr class="bold"><td>Total Compromisos</td><td class="num">${formatCurrency(resumen?.totalCompromisosEfectivo)}</td></tr>
             </tbody></table>` : ''}
@@ -797,11 +831,11 @@ const CierreCajaPage = () => {
         ${resumen.compromisosEfectivo.map(c => `
           <div class="row">
             <span style="max-width: 70%;">${(c.nombre || 'COMPROMISO')}</span>
-            <span>${formatCurrency(c.monto)}</span>
+            <span>${formatCurrency(c.monto_efectivo !== undefined ? c.monto_efectivo : c.monto)}</span>
           </div>
           ${(c.empleados || []).map(e => `
           <div class="row">
-            <span style="max-width: 70%; padding-left: 8px;">· ${e.nombre}</span>
+            <span style="max-width: 70%; padding-left: 8px;">· ${e.nombre}${e.yaEnGastos ? ' (en Gastos)' : ''}</span>
             <span>${formatCurrency(e.monto)}</span>
           </div>`).join('')}`).join('')}
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
@@ -1001,10 +1035,23 @@ const CierreCajaPage = () => {
                         <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{c.nombre}</p>
                         {c.empleados.map((e, i) => (
                           <div key={`${c.id}-${i}`} className="flex justify-between items-center py-0.5">
-                            <span className="text-xs text-gray-500 truncate pr-2">{e.nombre}</span>
-                            <span className="font-mono text-xs text-gray-600 shrink-0">{formatCurrency(e.monto)}</span>
+                            <span className={`text-xs truncate pr-2 ${e.yaEnGastos ? 'text-gray-400 line-through' : 'text-gray-500'}`}>
+                              {e.nombre}
+                            </span>
+                            <span className={`font-mono text-xs shrink-0 ${e.yaEnGastos ? 'text-gray-400 line-through' : 'text-gray-600'}`}>
+                              {formatCurrency(e.monto)}
+                            </span>
                           </div>
                         ))}
+                        {/* Tachado = ese sueldo ya salió el día que se le pagó,
+                            por su propio gasto. Contarlo aquí otra vez era lo
+                            que inflaba el cuadre. */}
+                        {Number(c.cubierto) > 0 && (
+                          <p className="text-[10px] text-amber-700 leading-snug mt-0.5">
+                            {formatCurrency(c.cubierto)} ya salió como gasto el día de cada pago; aquí solo entra{' '}
+                            {formatCurrency(c.monto_efectivo)}.
+                          </p>
+                        )}
                       </div>
                     ))}
                   <div className="flex justify-between items-center py-2 mt-2 bg-morla-blue/10 rounded px-3 border border-morla-blue/30">
