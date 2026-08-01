@@ -173,7 +173,9 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   // Buscar mientras se escribe, sin disparar una consulta por tecla.
   useEffect(() => {
     if (!isOpen || modo !== 'terceros') return;
-    const t = setTimeout(() => buscarClientes(busquedaCli), busquedaCli ? 250 : 0);
+    // Sin texto no hay lista que llenar: no se consulta.
+    if (!busquedaCli.trim()) { setClientes([]); return; }
+    const t = setTimeout(() => buscarClientes(busquedaCli), 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, modo, busquedaCli, tenantId]);
@@ -529,7 +531,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="min-w-0 space-y-4 py-4">
+        <form onSubmit={handleSubmit} className={`min-w-0 py-3 ${modo === 'terceros' ? 'space-y-2.5' : 'space-y-4'}`}>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="fecha-gasto">Fecha</Label>
@@ -580,7 +582,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             <>
               {/* Un clic por servicio. El monto viene fijo y se puede corregir:
                   si se corrige, ese pasa a ser el valor de ahí en adelante. */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label>¿Qué se paga?</Label>
                 {/* Una fila por servicio, no cuadros en rejilla: en rejilla el
                     nombre y el monto compiten por un tercio del ancho y
@@ -630,8 +632,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   })}
                 </div>
                 {conceptos.some((c) => !Number(c.monto)) && (
-                  <p className="text-[10px] text-gray-500 italic">
-                    Los que muestran “—” no tienen monto todavía: al marcarlos, escribe cuánto se paga y queda guardado como su valor fijo.
+                  <p className="text-[10px] text-gray-500 italic leading-snug">
+                    El “—” es que aún no tiene monto: al marcarlo, escríbelo y queda fijo.
                   </p>
                 )}
               </div>
@@ -639,14 +641,14 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
               {/* El comprador financiado está en la financiera del grupo, no
                   en las fichas de paso del dealer: el buscador ve las dos y
                   dice de cuál es cada quien. */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label>¿De quién es? (opcional)</Label>
                 {cliente ? (
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5">
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-indigo-900 truncate">{cliente.nombre}</p>
+                      <p className="text-xs font-bold text-indigo-900 truncate">{cliente.nombre}</p>
                       {cliente.origen && (
-                        <p className="text-[10px] text-indigo-600 truncate">
+                        <p className="text-[10px] text-indigo-600 truncate leading-tight">
                           {cliente.origen}{cliente.documento ? ` · ${cliente.documento}` : ''}
                         </p>
                       )}
@@ -665,9 +667,11 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                       value={busquedaCli}
                       onChange={(ev) => setBusquedaCli(ev.target.value)}
                       placeholder="Escribe el nombre o la cédula…"
-                      className="h-9"
+                      className="h-8 text-sm"
                     />
-                    <div className="min-w-0 max-h-36 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+                    {/* La lista solo aparece cuando hay algo escrito: en
+                        blanco ocupaba media pantalla sin decir nada útil. */}
+                    <div className={`min-w-0 max-h-32 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100 ${busquedaCli.trim() ? '' : 'hidden'}`}>
                       {buscandoCli && clientes.length === 0 ? (
                         <p className="px-3 py-2 text-xs text-slate-400 italic">Buscando…</p>
                       ) : clientes.length === 0 ? (
@@ -700,18 +704,18 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                     </div>
                   </>
                 )}
-                {/* Qué quiere decir cada sigla, sacado de los resultados que
-                    hay a la vista: si no, "MPN" no le dice nada a nadie. */}
-                {!cliente && clientes.length > 0 && (
+                {/* Una sola línea de ayuda: con resultados a la vista, qué
+                    quiere decir cada sigla (si no, "MPN" no dice nada);
+                    sin buscar todavía, dónde busca y cuál elegir. */}
+                {!cliente && (
                   <p className="text-[10px] text-gray-500 leading-snug">
-                    {[...new Map(clientes.filter((c) => c.origen).map((c) => [c.origen, c])).values()]
-                      .map((c) => `${siglas(c.origen)} = ${c.origen}`)
-                      .join(' · ')}
+                    {busquedaCli.trim() && clientes.length > 0
+                      ? [...new Map(clientes.filter((c) => c.origen).map((c) => [c.origen, c])).values()]
+                          .map((c) => `${siglas(c.origen)} = ${c.origen}`)
+                          .join(' · ')
+                      : 'Busca aquí y en la financiera del grupo. Si sale en las dos, elige el de la financiera.'}
                   </p>
                 )}
-                <p className="text-[10px] text-gray-500 italic">
-                  El comprador financiado suele estar en las dos empresas: elige el de la financiera, que es donde está su préstamo.
-                </p>
               </div>
             </>
           )}
@@ -765,9 +769,9 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
               />
             </div>
           ) : (
-            <div className="flex items-center justify-between rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2.5">
-              <span className="text-xs font-bold uppercase text-indigo-700">Total a entregar</span>
-              <span className="text-lg font-black text-indigo-700">RD${money(totalTerceros)}</span>
+            <div className="flex items-center justify-between rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-1.5">
+              <span className="text-[11px] font-bold uppercase text-indigo-700">Total a entregar</span>
+              <span className="text-base font-black text-indigo-700">RD${money(totalTerceros)}</span>
             </div>
           )}
 
