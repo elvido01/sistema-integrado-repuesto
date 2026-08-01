@@ -314,7 +314,7 @@ const CierreCajaPage = () => {
       // efectivo, histórico), igual que el dashboard "caja del día".
       const { data: compData, error: compErr } = await supabase
         .from('compromisos')
-        .select('nombre, monto, tipo, forma_pago, fecha_pago')
+        .select('id, nombre, monto, tipo, forma_pago, fecha_pago')
         .eq('tenant_id', tenantId)
         .eq('activo', false)
         .gte('fecha_pago', startOfDay)
@@ -325,6 +325,34 @@ const CierreCajaPage = () => {
         compromisosEfectivo = (compData || []).filter(c =>
           String(c.forma_pago || 'Efectivo').toLowerCase().includes('efectivo')
         );
+
+        // La nómina no es una salida sola de RD$8,000: son los sueldos de dos
+        // empleados. En el cierre tiene que verse a quién se le pagó y cuánto,
+        // igual que en la nómina — un número redondo sin nombres no se puede
+        // cuadrar contra los recibos firmados.
+        const idsNomina = compromisosEfectivo
+          .filter((c) => String(c.tipo || '').toLowerCase() === 'nomina')
+          .map((c) => c.id);
+
+        if (idsNomina.length > 0) {
+          const { data: nomData } = await supabase
+            .from('nominas')
+            .select('id, compromiso_id, nomina_detalle(neto, empleados(nombre))')
+            .eq('tenant_id', tenantId)
+            .in('compromiso_id', idsNomina)
+            .neq('estado', 'anulada');
+
+          const porCompromiso = {};
+          for (const n of nomData || []) {
+            porCompromiso[n.compromiso_id] = (n.nomina_detalle || [])
+              .map((d) => ({ nombre: d.empleados?.nombre || 'Empleado', monto: Number(d.neto) || 0 }))
+              .filter((e) => e.monto > 0)
+              .sort((a, b) => b.monto - a.monto);
+          }
+          compromisosEfectivo = compromisosEfectivo.map((c) => ({
+            ...c, empleados: porCompromiso[c.id] || null,
+          }));
+        }
       }
     } catch (e) {
       console.warn('Exception cargando compromisos pagados:', e);
@@ -627,7 +655,10 @@ const CierreCajaPage = () => {
             ${(resumen?.compromisosEfectivo || []).length ? `
             <div class="sec">Compromisos (Efectivo)</div>
             <table><tbody>
-              ${resumen.compromisosEfectivo.map(c => `<tr><td>${(c.nombre || 'COMPROMISO')}${c.tipo ? ` — ${c.tipo}` : ''}</td><td class="num">${formatCurrency(c.monto)}</td></tr>`).join('')}
+              ${resumen.compromisosEfectivo.map(c => `
+                <tr><td>${(c.nombre || 'COMPROMISO')}${c.tipo ? ` — ${c.tipo}` : ''}</td><td class="num">${formatCurrency(c.monto)}</td></tr>
+                ${(c.empleados || []).map(e => `<tr><td style="padding-left:14px;color:#555">· ${e.nombre}</td><td class="num" style="color:#555">${formatCurrency(e.monto)}</td></tr>`).join('')}
+              `).join('')}
               <tr class="bold"><td>Total Compromisos</td><td class="num">${formatCurrency(resumen?.totalCompromisosEfectivo)}</td></tr>
             </tbody></table>` : ''}
 
@@ -767,7 +798,12 @@ const CierreCajaPage = () => {
           <div class="row">
             <span style="max-width: 70%;">${(c.nombre || 'COMPROMISO')}</span>
             <span>${formatCurrency(c.monto)}</span>
-          </div>`).join('')}
+          </div>
+          ${(c.empleados || []).map(e => `
+          <div class="row">
+            <span style="max-width: 70%; padding-left: 8px;">· ${e.nombre}</span>
+            <span>${formatCurrency(e.monto)}</span>
+          </div>`).join('')}`).join('')}
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
           <span>Total Compromisos:</span><span>${formatCurrency(resumen?.totalCompromisosEfectivo)}</span>
         </div>` : ''}
@@ -955,6 +991,22 @@ const CierreCajaPage = () => {
                       </span>
                     </div>
                   ))}
+
+                  {/* La nómina se abre por empleado: un RD$8,000 redondo no se
+                      puede cuadrar contra los recibos que firmó cada uno. */}
+                  {(resumen.compromisosEfectivo || [])
+                    .filter((c) => (c.empleados || []).length > 0)
+                    .map((c) => (
+                      <div key={c.id} className="mt-1 mb-1 ml-3 pl-3 border-l-2 border-gray-200">
+                        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{c.nombre}</p>
+                        {c.empleados.map((e, i) => (
+                          <div key={`${c.id}-${i}`} className="flex justify-between items-center py-0.5">
+                            <span className="text-xs text-gray-500 truncate pr-2">{e.nombre}</span>
+                            <span className="font-mono text-xs text-gray-600 shrink-0">{formatCurrency(e.monto)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
                   <div className="flex justify-between items-center py-2 mt-2 bg-morla-blue/10 rounded px-3 border border-morla-blue/30">
                     <span className="font-bold text-morla-blue">Efectivo en Caja</span>
                     <span className="font-bold text-morla-blue text-lg font-mono">{formatCurrency(resumen.efectivoEnCaja)}</span>
