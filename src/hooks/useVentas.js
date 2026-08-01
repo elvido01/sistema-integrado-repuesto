@@ -765,7 +765,25 @@ export const useVentas = () => {
       const localISO = `${selectedDate.getFullYear()}-${pad(selectedDate.getMonth() + 1)}-${pad(selectedDate.getDate())}T${pad(selectedDate.getHours())}:${pad(selectedDate.getMinutes())}:${pad(selectedDate.getSeconds())}.${pad(selectedDate.getMilliseconds(), 3)}${sign}${tzHours}:${tzMinutes}`;
 
       const totalPagosRegistrados = pagos.reduce((sum, p) => sum + Number(p.monto), 0) + (parseFloat(montoRecibido) || 0);
-      const abonoCredito = paymentType === 'credito' ? totalPagosRegistrados : 0;
+
+      // REGLA: si el "inicial" cubre el total, no es credito — es CONTADO.
+      // Se guardaba como CREDITO/ABONO con pendiente 0, asi que el cobro
+      // salia como recibo y la venta no aparecia en ninguna linea de contado.
+      // Paso con FT-20: la moto se pago completa (85,000) y quedo clasificada
+      // como inicial de una venta financiada. El margen de RD$1 absorbe los
+      // redondeos; una diferencia mayor SI es un credito y se respeta.
+      const cubreElTotal = paymentType === 'credito'
+        && totalPagosRegistrados > 0
+        && (Number(totals.totalFactura) - totalPagosRegistrados) <= 1;
+      const formaEfectiva = cubreElTotal ? 'contado' : paymentType;
+      if (cubreElTotal) {
+        toast({
+          title: 'Se registró como CONTADO',
+          description: `El inicial cubre el total (${totalPagosRegistrados.toLocaleString('es-DO', { minimumFractionDigits: 2 })}), así que no queda nada a crédito.`,
+        });
+      }
+
+      const abonoCredito = formaEfectiva === 'credito' ? totalPagosRegistrados : 0;
 
       const facturaData = {
         tenant_id: tenantId,
@@ -779,25 +797,25 @@ export const useVentas = () => {
         descuento: totals.totalDescuento,
         itbis: totals.totalItbis,
         total: totals.totalFactura,
-        forma_pago: paymentType.toUpperCase(),
-        tipo_pago: paymentType === 'contado'
+        forma_pago: formaEfectiva.toUpperCase(),
+        tipo_pago: formaEfectiva === 'contado'
           ? (pagos.length > 0 ? pagos.map(p => p.tipo).join('/') : tipoPago)
           : (abonoCredito > 0 ? 'CREDITO/ABONO' : 'CREDITO'),
-        dias_credito: paymentType === 'credito' ? diasCredito : 0,
-        monto_recibido: paymentType === 'credito'
+        dias_credito: formaEfectiva === 'credito' ? diasCredito : 0,
+        monto_recibido: formaEfectiva === 'credito'
           ? abonoCredito
           : (pagos.length > 0 ? totalPagosRegistrados : (parseFloat(montoRecibido) || 0)),
-        cambio: paymentType === 'credito'
+        cambio: formaEfectiva === 'credito'
           ? 0
           : Math.max(0, cambio),
         // NOTE: Do NOT subtract abonoCredito here — the RPC
         // crear_recibo_ingreso_y_actualizar_facturas will handle the
         // deduction. Subtracting here AND in the RPC caused the
         // double-deduction bug (negative monto_pendiente).
-        monto_pendiente: paymentType === 'credito'
+        monto_pendiente: formaEfectiva === 'credito'
           ? totals.totalFactura
           : 0,
-        estado: paymentType === 'credito' ? 'PENDIENTE' : 'PAGADA',
+        estado: formaEfectiva === 'credito' ? 'PENDIENTE' : 'PAGADA',
         usuario_id: safeUsuarioId,
         notas: notas.trim() || null
       };
@@ -972,7 +990,7 @@ export const useVentas = () => {
 
       // AUTO-CREATE Recibo de Ingreso for partial credit payment (abono)
       // Uses the same RPC as the Recibo de Ingreso module to keep data consistent
-      if (paymentType === 'credito' && abonoCredito > 0 && !editingFacturaId) {
+      if (formaEfectiva === 'credito' && abonoCredito > 0 && !editingFacturaId) {
         try {
           // IMPORTANTE: pasar arrays/objetos DIRECTOS (no JSON.stringify). El RPC
           // recibe jsonb y hace jsonb_array_elements(p_abonos_data). Si se envia
@@ -1053,7 +1071,7 @@ export const useVentas = () => {
             p_factura_id: activeFactura.id,
             p_solicitud_id: solicitudCompraId,
             p_financiera_tenant_id: empresa.financiera_tenant_id,
-            p_es_credito: paymentType === 'credito',
+            p_es_credito: formaEfectiva === 'credito',
           });
           if (ftErr) {
             toast({ variant: 'destructive', title: 'Financiamiento no registrado', description: `La factura se grabó, pero no se pudo sincronizar el préstamo: ${ftErr.message}` });
@@ -1082,7 +1100,7 @@ export const useVentas = () => {
       // saldada (la deuda vive en el prestamo, no en la CxC).
       if (
         !editingFacturaId &&
-        paymentType === 'credito' &&
+        formaEfectiva === 'credito' &&
         solicitudCompraId &&
         (empresa?.financiamiento_tipo || 'propio') === 'propio' &&
         empresa?.feat_financiera
