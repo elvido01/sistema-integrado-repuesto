@@ -113,6 +113,7 @@ const CierreCajaPage = () => {
     let pagosSuplidores = [];
     let gastosDiarios = [];
     let pagosTerceros = []; // GPS, seguro, placa...: salen de la gaveta pero no son gasto
+    let pagosNomina = [];   // sueldos pagados empleado por empleado: son nómina, no gasto diario
     let prestamosEfectivo = []; // préstamos desembolsados HOY en efectivo (financieras)
     let compromisosEfectivo = []; // compromisos pagados HOY en efectivo (salen de la caja)
 
@@ -251,8 +252,16 @@ const CierreCajaPage = () => {
         // El GPS y el seguro salen de la gaveta igual que un gasto —el cuadre
         // no cambia— pero se listan aparte: no son gastos de la empresa, son
         // dinero del cliente de paso. Ver sql/pagos_a_terceros.sql
-        gastosDiarios = deLaGaveta.filter((g) => g.es_tercero !== true);
         pagosTerceros = deLaGaveta.filter((g) => g.es_tercero === true);
+
+        // El sueldo que se le paga a un empleado es NÓMINA, aunque el módulo
+        // lo guarde como gasto diario para descontarlo de la caja. Mezclado
+        // con la gasolina y la merienda no hay forma de cuadrarlo contra la
+        // nómina ni de saber cuánto se pagó de sueldos ese día.
+        const esNomina = (g) => /n[oó]mina/i.test(String(g.tipo_gasto || ''));
+        const restantes = deLaGaveta.filter((g) => g.es_tercero !== true);
+        pagosNomina   = restantes.filter(esNomina);
+        gastosDiarios = restantes.filter((g) => !esNomina(g));
       }
     } catch (e) {
       console.warn('Exception cargando gastos diarios:', e);
@@ -436,6 +445,7 @@ const CierreCajaPage = () => {
     const totalRecibosOtrasFormas = Math.max(0, totalRecibos - totalRecibosEfectivo);
     const totalGastosDiarios = gastosDiarios.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
     const totalPagosTerceros = pagosTerceros.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
+    const totalPagosNomina = pagosNomina.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
     const totalPrestamosEfectivo = prestamosEfectivo.reduce((sum, p) => sum + (parseFloat(p.monto_capital) || 0), 0);
     // Del compromiso solo sale de la caja lo que no salió ya como gasto al
     // pagar empleado por empleado. Sin esto la nómina se resta dos veces.
@@ -473,6 +483,8 @@ const CierreCajaPage = () => {
       gastosDiarios, // detalle para el impreso del cierre
       totalPagosTerceros,
       pagosTerceros, // detalle para el impreso del cierre (GPS, seguro...)
+      totalPagosNomina,
+      pagosNomina, // detalle para el impreso del cierre (sueldos por empleado)
       totalPrestamosEfectivo,
       prestamosEfectivo, // detalle para el impreso del cierre (financieras)
       totalCompromisosEfectivo,
@@ -491,7 +503,7 @@ const CierreCajaPage = () => {
       // totalVentasContado, que incluye las ventas cobradas por
       // transferencia/tarjeta y las del movil: el cierre pedia un efectivo
       // que nunca estuvo en la caja y siempre salia faltante.
-      efectivoEnCaja: totalVentasContadoCaja + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPagosTerceros - totalPrestamosEfectivo - totalCompromisosEfectivo - comprasContadoEfectivo,
+      efectivoEnCaja: totalVentasContadoCaja + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPagosTerceros - totalPagosNomina - totalPrestamosEfectivo - totalCompromisosEfectivo - comprasContadoEfectivo,
     });
 
     setLoadingResumen(false);
@@ -658,6 +670,7 @@ const CierreCajaPage = () => {
               ${filaResumen('· Recibos Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}` : ''}
               ${filaResumen('Pagos Suplidores', resumen?.totalPagosSuplidores)}
               ${filaResumen('Gastos Diarios', resumen?.totalGastosDiarios)}
+              ${Number(resumen?.totalPagosNomina) > 0 ? filaResumen('Nómina (Efectivo)', resumen?.totalPagosNomina) : ''}
               ${Number(resumen?.totalPagosTerceros) > 0 ? filaResumen('Pagos a terceros (GPS, seguro...)', resumen?.totalPagosTerceros) : ''}
               ${Number(resumen?.totalPrestamosEfectivo) > 0 ? filaResumen('Préstamos (Efectivo)', resumen?.totalPrestamosEfectivo) : ''}
               ${Number(resumen?.comprasContadoEfectivo) > 0 ? filaResumen('Compras de contado (Efectivo)', resumen?.comprasContadoEfectivo) : ''}
@@ -670,6 +683,13 @@ const CierreCajaPage = () => {
             <table><tbody>
               ${resumen.gastosDiarios.map(g => `<tr><td>${(g.tipo_gasto || 'GASTO')}${g.descripcion ? ` — ${g.descripcion}` : ''}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
               <tr class="bold"><td>Total Gastos</td><td class="num">${formatCurrency(resumen?.totalGastosDiarios)}</td></tr>
+            </tbody></table>` : ''}
+
+            ${(resumen?.pagosNomina || []).length ? `
+            <div class="sec">Nómina pagada hoy (efectivo)</div>
+            <table><tbody>
+              ${resumen.pagosNomina.map(g => `<tr><td>${g.descripcion || 'NÓMINA'}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
+              <tr class="bold"><td>Total Nómina</td><td class="num">${formatCurrency(resumen?.totalPagosNomina)}</td></tr>
             </tbody></table>` : ''}
 
             ${(resumen?.pagosTerceros || []).length ? `
@@ -698,7 +718,7 @@ const CierreCajaPage = () => {
 
             <div class="sec">Cuadre</div>
             <table><tbody>
-              ${filaResumen('Gasto Total', (Number(resumen?.totalGastosDiarios) || 0) + (Number(resumen?.totalPagosTerceros) || 0) + (Number(resumen?.totalPrestamosEfectivo) || 0) + (Number(resumen?.totalPagosSuplidores) || 0) + (Number(resumen?.totalCompromisosEfectivo) || 0) + (Number(resumen?.comprasContadoEfectivo) || 0), true, true)}
+              ${filaResumen('Gasto Total', (Number(resumen?.totalGastosDiarios) || 0) + (Number(resumen?.totalPagosNomina) || 0) + (Number(resumen?.totalPagosTerceros) || 0) + (Number(resumen?.totalPrestamosEfectivo) || 0) + (Number(resumen?.totalPagosSuplidores) || 0) + (Number(resumen?.totalCompromisosEfectivo) || 0) + (Number(resumen?.comprasContadoEfectivo) || 0), true, true)}
               ${filaResumen('Total de Sistema', (Number(resumen?.totalVentasContado) || 0) + (Number(resumen?.totalRecibosEfectivo ?? resumen?.totalRecibos) || 0) - (Number(resumen?.totalDevoluciones) || 0), true, true)}
               ${filaResumen('Dinero en Caja', resumen?.efectivoEnCaja, true, true)}
             </tbody></table>
@@ -787,6 +807,7 @@ const CierreCajaPage = () => {
         ${filaPos('&nbsp;&nbsp;Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}` : ''}
         ${filaPos('Pagos Suplidores', resumen?.totalPagosSuplidores)}
         ${filaPos('Gastos Diarios', resumen?.totalGastosDiarios)}
+        ${Number(resumen?.totalPagosNomina) > 0 ? filaPos('Nómina (Efectivo)', resumen?.totalPagosNomina) : ''}
         ${Number(resumen?.totalPagosTerceros) > 0 ? filaPos('Pagos a terceros', resumen?.totalPagosTerceros) : ''}
         ${filaPos('Préstamos (Efectivo)', resumen?.totalPrestamosEfectivo)}
         ${Number(resumen?.comprasContadoEfectivo) > 0 ? filaPos('Compras de contado (Efectivo)', resumen?.comprasContadoEfectivo) : ''}
@@ -802,6 +823,17 @@ const CierreCajaPage = () => {
           </div>`).join('')}
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
           <span>Total Gastos:</span><span>${formatCurrency(resumen?.totalGastosDiarios)}</span>
+        </div>` : ''}
+        ${(resumen?.pagosNomina || []).length ? `
+        <div class="separator"></div>
+        <div class="bold" style="margin-bottom: 4px;">NOMINA PAGADA HOY</div>
+        ${resumen.pagosNomina.map(g => `
+          <div class="row">
+            <span style="max-width: 70%;">${g.descripcion || 'NOMINA'}</span>
+            <span>${formatCurrency(g.monto)}</span>
+          </div>`).join('')}
+        <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
+          <span>Total Nomina:</span><span>${formatCurrency(resumen?.totalPagosNomina)}</span>
         </div>` : ''}
         ${(resumen?.pagosTerceros || []).length ? `
         <div class="separator"></div>
@@ -843,7 +875,7 @@ const CierreCajaPage = () => {
         </div>` : ''}
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">CUADRE</div>
-        <div class="row"><span>Gasto Total:</span><span>${formatCurrency((Number(resumen?.totalGastosDiarios) || 0) + (Number(resumen?.totalPagosTerceros) || 0) + (Number(resumen?.totalPrestamosEfectivo) || 0) + (Number(resumen?.totalPagosSuplidores) || 0) + (Number(resumen?.totalCompromisosEfectivo) || 0) + (Number(resumen?.comprasContadoEfectivo) || 0))}</span></div>
+        <div class="row"><span>Gasto Total:</span><span>${formatCurrency((Number(resumen?.totalGastosDiarios) || 0) + (Number(resumen?.totalPagosNomina) || 0) + (Number(resumen?.totalPagosTerceros) || 0) + (Number(resumen?.totalPrestamosEfectivo) || 0) + (Number(resumen?.totalPagosSuplidores) || 0) + (Number(resumen?.totalCompromisosEfectivo) || 0) + (Number(resumen?.comprasContadoEfectivo) || 0))}</span></div>
         <div class="row"><span>Total de Sistema:</span><span>${formatCurrency((Number(resumen?.totalVentasContado) || 0) + (Number(resumen?.totalRecibosEfectivo ?? resumen?.totalRecibos) || 0) - (Number(resumen?.totalDevoluciones) || 0))}</span></div>
         <div class="row total-row"><span>Dinero en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
         <div class="separator"></div>
@@ -1005,6 +1037,9 @@ const CierreCajaPage = () => {
                     ] : []),
                     ['Pagos a Suplidores (Efectivo)', resumen.totalPagosSuplidores],
                     ['Gastos Diarios', resumen.totalGastosDiarios],
+                    ...(Number(resumen.totalPagosNomina) > 0 ? [
+                      ['Nómina (Efectivo)', resumen.totalPagosNomina],
+                    ] : []),
                     ...(Number(resumen.totalPagosTerceros) > 0 ? [
                       ['Pagos a terceros (GPS, seguro...)', resumen.totalPagosTerceros],
                     ] : []),
@@ -1025,6 +1060,21 @@ const CierreCajaPage = () => {
                       </span>
                     </div>
                   ))}
+
+                  {/* Los sueldos pagados hoy, uno por uno. Es lo mismo que se
+                      firma en la nómina, así que se puede cotejar directo. */}
+                  {(resumen.pagosNomina || []).length > 0 && (
+                    <div className="mt-1 mb-1 ml-3 pl-3 border-l-2 border-gray-200">
+                      {resumen.pagosNomina.map((g) => (
+                        <div key={g.id || g.descripcion} className="flex justify-between items-center py-0.5">
+                          <span className="text-xs text-gray-500 truncate pr-2" title={g.descripcion}>
+                            {String(g.descripcion || 'Nómina').split('—').pop().trim()}
+                          </span>
+                          <span className="font-mono text-xs text-gray-600 shrink-0">{formatCurrency(g.monto)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* La nómina se abre por empleado: un RD$8,000 redondo no se
                       puede cuadrar contra los recibos que firmó cada uno. */}
