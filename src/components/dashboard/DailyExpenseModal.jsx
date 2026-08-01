@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, HandCoins, ReceiptText } from 'lucide-react';
+import { Loader2, HandCoins, ReceiptText, Check } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -480,9 +480,12 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(huboCambios); }}>
-      {/* overflow-x-hidden: nada dentro puede ensanchar el modal; si algo no
-          cabe, se recorta o baja, pero el cuadro no se sale de la pantalla. */}
-      <DialogContent className="max-w-md max-h-[92vh] overflow-y-auto overflow-x-hidden">
+      {/* DialogContent es un GRID: sus hijos nacen con min-width:auto y no
+          encogen por debajo de su contenido, así que se salen del cuadro en
+          vez de ajustarse. Por eso el switch y el formulario llevan min-w-0.
+          Nada de overflow-x oculto: si algo no cabe hay que arreglarlo, no
+          taparlo. */}
+      <DialogContent className="max-w-md sm:max-w-md max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {editandoId ? 'Editar Gasto' : modo === 'terceros' ? 'Pago a terceros' : 'Gastos Diarios'}
@@ -491,7 +494,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             {editandoId
               ? 'Corrige el monto o la descripción del gasto seleccionado.'
               : modo === 'terceros'
-                ? 'Lo que se le cobró al cliente y hay que entregarle a quien presta el servicio. Sale de la caja, pero no es gasto de la empresa.'
+                ? 'Se cobró al cliente y se le entrega a quien presta el servicio. Sale de la caja, pero no es gasto.'
                 : 'Registra una salida de efectivo para rebajarla de caja.'}
           </DialogDescription>
         </DialogHeader>
@@ -500,7 +503,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             cambia entero: un gasto es plata de la empresa, un pago a terceros
             es plata del cliente que va de paso. */}
         {!editandoId && hayTerceros && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="min-w-0 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => setModo('gasto')}
@@ -510,7 +513,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
               }`}
             >
-              <ReceiptText className="w-4 h-4" /> Gasto
+              <ReceiptText className="w-4 h-4 shrink-0" /> Gasto
             </button>
             <button
               type="button"
@@ -521,12 +524,12 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
               }`}
             >
-              <HandCoins className="w-4 h-4" /> Pago a terceros
+              <HandCoins className="w-4 h-4 shrink-0" /> Terceros
             </button>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+        <form onSubmit={handleSubmit} className="min-w-0 space-y-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="fecha-gasto">Fecha</Label>
@@ -579,28 +582,33 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   si se corrige, ese pasa a ser el valor de ahí en adelante. */}
               <div className="space-y-2">
                 <Label>¿Qué se paga?</Label>
-                {/* min-w-0 en cada cuadro: sin eso el <input> impone su ancho
-                    natural (~20 caracteres) y las 3 columnas se salen del
-                    modal en vez de encogerse. */}
-                <div className="grid grid-cols-3 gap-1.5">
+                {/* Una fila por servicio, no cuadros en rejilla: en rejilla el
+                    nombre y el monto compiten por un tercio del ancho y
+                    cualquiera de los dos se corta. En fila, el monto tiene su
+                    espacio fijo y el nombre se lee entero. */}
+                <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 overflow-hidden">
                   {conceptos.map((c) => {
                     const on = marcados[c.id] !== undefined;
                     return (
                       <div
                         key={c.id}
-                        className={`min-w-0 rounded-md border px-1.5 py-1 transition-colors ${
-                          on ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200'
-                        }`}
+                        className={`flex items-center gap-2 px-2 py-1 transition-colors ${on ? 'bg-indigo-50' : 'bg-white'}`}
                       >
                         <button
                           type="button"
                           onClick={() => toggleConcepto(c)}
-                          className={`w-full text-left text-[9px] leading-tight font-bold uppercase truncate ${
-                            on ? 'text-indigo-700' : 'text-slate-500'
-                          }`}
-                          title={c.nombre}
+                          className="flex items-center gap-2 min-w-0 flex-1 text-left"
                         >
-                          {c.nombre}
+                          <span
+                            className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center ${
+                              on ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300'
+                            }`}
+                          >
+                            {on && <Check className="w-3 h-3 text-white" />}
+                          </span>
+                          <span className={`text-xs font-bold uppercase truncate ${on ? 'text-indigo-800' : 'text-slate-600'}`}>
+                            {c.nombre}
+                          </span>
                         </button>
                         {on ? (
                           <Input
@@ -610,12 +618,12 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                             value={marcados[c.id]}
                             onChange={(ev) => setMarcados((p) => ({ ...p, [c.id]: ev.target.value }))}
                             placeholder="0.00"
-                            className="w-full min-w-0 h-6 px-1 mt-0.5 text-xs text-right font-bold"
+                            className="w-24 shrink-0 h-7 px-2 text-xs text-right font-bold"
                           />
                         ) : (
-                          <p className="mt-0.5 h-6 flex items-center justify-end text-xs font-bold text-slate-400 truncate">
+                          <span className="w-24 shrink-0 h-7 flex items-center justify-end pr-2 text-xs font-bold text-slate-400">
                             {Number(c.monto) > 0 ? money(c.monto) : '—'}
-                          </p>
+                          </span>
                         )}
                       </div>
                     );
