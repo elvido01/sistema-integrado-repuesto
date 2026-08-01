@@ -1,9 +1,16 @@
 import React from 'react';
-import { Plus, ReceiptText, WalletCards } from 'lucide-react';
+import { Plus, ReceiptText, WalletCards, HandCoins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const DailyExpensesCard = ({ gastos = [], caja = 0, onAdd, onEdit }) => {
-  const totalGastos = gastos.reduce((sum, g) => sum + (Number(g.monto) || 0), 0);
+  // El GPS, el seguro, la placa... no son gastos de la empresa: se cobraron al
+  // cliente y se le entregan a un tercero. Salen de la caja igual, pero
+  // sumarlos aquí hacía que la empresa pareciera gastar lo que solo pasaba de
+  // mano. Van en su propia línea. Ver sql/pagos_a_terceros.sql
+  const esTercero = (g) => g?.es_tercero === true;
+  const suma = (arr) => arr.reduce((s, g) => s + (Number(g.monto) || 0), 0);
+  const totalGastos = suma(gastos.filter((g) => !esTercero(g)));
+  const totalTerceros = suma(gastos.filter(esTercero));
   const balanceDia = caja;
   const isNegative = balanceDia < 0;
 
@@ -50,8 +57,15 @@ const DailyExpensesCard = ({ gastos = [], caja = 0, onAdd, onEdit }) => {
                     <span className="text-[9px] bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded font-bold uppercase">
                       Hoy
                     </span>
-                    <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase truncate max-w-[96px]" title={g.tipo_gasto || 'Operativo'}>
-                      {g.tipo_gasto || 'Operativo'}
+                    <span
+                      className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase truncate max-w-[96px] ${
+                        esTercero(g) ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
+                      }`}
+                      title={esTercero(g)
+                        ? 'Pago a terceros: salió de la caja pero no es gasto de la empresa'
+                        : (g.tipo_gasto || 'Operativo')}
+                    >
+                      {esTercero(g) ? 'Terceros' : (g.tipo_gasto || 'Operativo')}
                     </span>
                     {(g.cuenta_bancaria_id || g.afecta_caja === false) && (
                       <span
@@ -73,6 +87,18 @@ const DailyExpensesCard = ({ gastos = [], caja = 0, onAdd, onEdit }) => {
           </div>
         )}
       </div>
+
+      {/* Sale de la caja pero no es gasto: se dice, no se esconde. Sin esta
+          línea el "Gastado hoy" no explicaría por qué bajó la caja. */}
+      {totalTerceros > 0 && (
+        <div className="shrink-0 flex items-center justify-between gap-2 rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-1.5 mb-2">
+          <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-indigo-700 min-w-0">
+            <HandCoins className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Entregado a terceros</span>
+          </span>
+          <span className="text-xs font-black text-indigo-700 shrink-0">{formatCurrency(totalTerceros)}</span>
+        </div>
+      )}
 
       <div className="mt-auto grid grid-cols-2 gap-3 pt-3 border-t border-gray-100 shrink-0">
         <div className="bg-gray-50 rounded-lg p-2 border border-gray-100">

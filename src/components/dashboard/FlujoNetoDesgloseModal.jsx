@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownCircle, ArrowUpCircle, FileText, Users, BarChart3, ShoppingCart, Briefcase, TrendingUp, Building2 } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, FileText, Users, BarChart3, ShoppingCart, Briefcase, TrendingUp, Building2, HandCoins } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -35,6 +35,10 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
   const ingresos = ingCobros + ingDealer + ingContado;
 
   const egGastos = num(p.gastos_diarios) + (grupo ? num(d.gastos) : 0);
+  // GPS, seguro, placa...: el dealer los cobró dentro del precio de la moto y
+  // se los entrega a quien presta el servicio. Salió plata, así que es egreso
+  // —el flujo neto no cambia—, pero en su línea: no es gasto de la empresa.
+  const egTerceros = grupo ? num(d.terceros) : 0;
   const egCompromisos = num(p.compromisos_fijos_pagados) + (grupo ? num(d.compromisos) : 0);
   // Solo los del dealer: lo que la financiera paga a "suplidores" es plata
   // que le pasa a Caminero — de un bolsillo al otro del mismo grupo. La
@@ -42,7 +46,7 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
   const egSuplidores = grupo ? num(d.suplidores) : num(p.pagos_suplidores);
   const egCompras = num(p.compras_contado) + (grupo ? num(d.compras) : 0);
   const egComisiones = num(p.pagos_comisiones) + (grupo ? num(d.comisiones) : 0);
-  const egresos = egGastos + egCompromisos + egSuplidores + egCompras + egComisiones;
+  const egresos = egGastos + egTerceros + egCompromisos + egSuplidores + egCompras + egComisiones;
 
   const flujo = grupo ? (ingresos - egresos) : num(p.flujo_neto);
   const positivo = flujo >= 0;
@@ -113,6 +117,9 @@ const FlujoNetoDesgloseModal = ({ open, onOpenChange, data, ventasMesTotal = nul
           <p className="text-[11px] font-bold uppercase tracking-wider text-rose-600 mt-4 mb-1">Egresos pagados</p>
           <Row icon={ArrowDownCircle} label={grupo ? 'Gastos diarios (las dos empresas)' : 'Gastos diarios'}
             value={egGastos} negative />
+          {egTerceros > 0 && (
+            <Row icon={HandCoins} label="Pagos a terceros (GPS, seguro...)" value={egTerceros} negative />
+          )}
           <Row icon={BarChart3} label="Compromisos fijos pagados" value={egCompromisos} negative />
           <Row icon={Users} label={grupo ? `Pagos a suplidores (${d.dealer_nombre})` : 'Pagos a suplidores'}
             value={egSuplidores} negative />

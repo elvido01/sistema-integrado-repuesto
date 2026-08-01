@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, HandCoins, ReceiptText } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { generateGastoDiarioPDF } from '@/components/common/pdf/gastoDiarioPDF';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
+import SearchableSelect from '@/components/common/SearchableSelect';
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
@@ -25,8 +26,14 @@ const TIPOS_GASTO = [
   'Mantenimiento',
   'Nomina',
   'Administrativo',
+  // Lo que se cobró al cliente y se le entrega a un tercero (GPS, seguro...).
+  // Lo pone el modo "Pago a terceros"; aquí está para que al editar una de
+  // esas filas el selector muestre su valor y no quede en blanco.
+  'Terceros',
   'Otro',
 ];
+
+const money = (v) => Number(v || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const { toast } = useToast();
@@ -54,11 +61,64 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const [editandoId, setEditandoId] = useState(null);
   const [huboCambios, setHuboCambios] = useState(false);
 
+  // ---- PAGO A TERCEROS ------------------------------------------------
+  // El GPS, el seguro, el casco, la placa y la matrícula NO son gastos de la
+  // empresa: se le cobran al cliente dentro del precio de la moto y hay que
+  // entregárselos a quien presta el servicio. El dinero SÍ sale de la caja,
+  // pero no debe engordar el reporte de gastos. Ver sql/pagos_a_terceros.sql
+  const [modo, setModo] = useState('gasto');        // 'gasto' | 'terceros'
+  const [hayTerceros, setHayTerceros] = useState(false); // el catálogo existe
+  const [conceptos, setConceptos] = useState([]);
+  const [marcados, setMarcados] = useState({});     // { conceptoId: montoTexto }
+  const [clientes, setClientes] = useState([]);
+  const [clienteId, setClienteId] = useState('');
+
+  const totalTerceros = useMemo(
+    () => Object.values(marcados).reduce((s, v) => s + (Number(v) || 0), 0),
+    [marcados]
+  );
+
+  // Catálogo de conceptos con su monto fijo. Si la tabla todavía no existe
+  // (SQL sin correr), el modo simplemente no aparece y el modal sigue igual.
+  const cargarConceptos = async () => {
+    if (!tenantId) return;
+    const { data, error } = await supabase
+      .from('conceptos_terceros')
+      .select('id, nombre, monto')
+      .eq('tenant_id', tenantId)
+      .eq('activo', true)
+      .order('orden', { ascending: true });
+    if (error) { setHayTerceros(false); return; }
+    setConceptos(data || []);
+    setHayTerceros((data || []).length > 0);
+  };
+
+  const cargarClientes = async () => {
+    if (!tenantId) return;
+    const { data } = await supabase
+      .from('clientes')
+      .select('id, nombre')
+      .eq('tenant_id', tenantId)
+      .eq('activo', true)
+      .order('nombre', { ascending: true })
+      .limit(1000);
+    setClientes(data || []);
+  };
+
+  const toggleConcepto = (c) => {
+    setMarcados((prev) => {
+      const next = { ...prev };
+      if (next[c.id] !== undefined) delete next[c.id];
+      else next[c.id] = String(Number(c.monto) || '');
+      return next;
+    });
+  };
+
   const cargarGastosHoy = async () => {
     if (!tenantId) return;
     const { data } = await supabase
       .from('gastos_diarios')
-      .select('id, fecha, tipo_gasto, monto, descripcion, afecta_caja, cuenta_bancaria_id')
+      .select('id, fecha, tipo_gasto, monto, descripcion, afecta_caja, cuenta_bancaria_id, es_tercero, concepto_tercero')
       .eq('tenant_id', tenantId)
       .eq('fecha', todayISO())
       .eq('anulado', false)
@@ -72,10 +132,16 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setPagaCon('efectivo');
     setCuentaId('');
     setBancoLock(false);
+    setMarcados({});
+    setClienteId('');
   };
 
   const editarGasto = (g) => {
     setEditandoId(g.id);
+    // Corregir un pago a terceros se hace con el formulario normal: solo
+    // cambian monto/descripción. La marca de tercero no se toca (el update
+    // no la incluye), así que la fila sigue fuera del reporte de gastos.
+    setModo('gasto');
     setFormData({ fecha: g.fecha, tipo_gasto: g.tipo_gasto || 'Operativo', monto: String(g.monto), descripcion: g.descripcion || '' });
     // Origen actual: banco (bloqueado), externo (no afecta caja) o efectivo.
     if (g.cuenta_bancaria_id) {
@@ -109,9 +175,11 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     if (isOpen) {
       // Doble clic en la tarjeta del dashboard: abre directo en edición
       if (gasto?.id) editarGasto(gasto);
-      else resetForm();
+      else { setModo('gasto'); resetForm(); }
       setHuboCambios(false);
       cargarGastosHoy();
+      cargarConceptos();
+      cargarClientes();
       setTimeout(() => {
         montoInputRef.current?.focus();
         montoInputRef.current?.select();
@@ -129,8 +197,121 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setFormData(prev => ({ ...prev, tipo_gasto: value }));
   };
 
+  // Guarda uno o varios pagos a terceros de un solo golpe (GPS + seguro es lo
+  // normal). Cada concepto queda en su propia fila: así se sabe qué se pagó,
+  // no solo cuánto salió.
+  const guardarTerceros = async () => {
+    const filas = conceptos
+      .filter((c) => marcados[c.id] !== undefined)
+      .map((c) => ({ concepto: c, monto: Number(marcados[c.id]) }));
+
+    if (filas.length === 0) {
+      toast({ variant: 'destructive', title: 'Nada marcado', description: 'Marca al menos un servicio (GPS, seguro...).' });
+      return;
+    }
+    const sinMonto = filas.find((f) => !Number.isFinite(f.monto) || f.monto <= 0);
+    if (sinMonto) {
+      toast({
+        variant: 'destructive',
+        title: `Falta el monto de ${sinMonto.concepto.nombre}`,
+        description: 'Escribe cuánto se paga. Queda guardado como el valor fijo para la próxima vez.',
+      });
+      return;
+    }
+    if (pagaCon === 'banco' && !cuentaId) {
+      toast({ variant: 'destructive', title: 'Falta la cuenta', description: 'Elige de qué cuenta bancaria sale el pago.' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const desdeBanco = pagaCon === 'banco' && cuentaId;
+      const esExterno = pagaCon === 'externo';
+      const cliente = clientes.find((c) => c.id === clienteId);
+
+      const { data: creados, error } = await supabase.from('gastos_diarios').insert(
+        filas.map((f) => ({
+          tenant_id: tenantId,
+          fecha: formData.fecha,
+          tipo_gasto: 'Terceros',
+          monto: f.monto,
+          descripcion: cliente ? `${f.concepto.nombre} — ${cliente.nombre}` : f.concepto.nombre,
+          usuario_id: user?.id || null,
+          cuenta_bancaria_id: desdeBanco ? cuentaId : null,
+          afecta_caja: !(desdeBanco || esExterno),
+          es_tercero: true,
+          concepto_tercero: f.concepto.nombre,
+          cliente_id: clienteId || null,
+        }))
+      ).select('id, monto, concepto_tercero');
+
+      if (error) throw error;
+
+      // Si se corrigió un monto, ese pasa a ser el valor fijo del concepto.
+      // Así casco/placa/matrícula se configuran solas la primera vez que se
+      // pagan, sin mandar a nadie a una pantalla de configuración.
+      const cambiados = filas.filter((f) => Number(f.concepto.monto) !== f.monto);
+      if (cambiados.length > 0) {
+        await Promise.all(cambiados.map((f) =>
+          supabase.from('conceptos_terceros')
+            .update({ monto: f.monto, updated_at: new Date().toISOString() })
+            .eq('id', f.concepto.id)
+        ));
+        await cargarConceptos();
+      }
+
+      // Pagado por banco: sale de la cuenta y no de la gaveta. Un movimiento
+      // por concepto, para que el estado de cuenta diga qué fue cada salida.
+      if (desdeBanco) {
+        for (const row of creados || []) {
+          const { error: movErr } = await supabase.rpc('registrar_movimiento_bancario_compartido', {
+            p_cuenta_id: cuentaId,
+            p_tipo: 'SALIDA',
+            p_monto: Number(row.monto),
+            p_concepto: `Pago a terceros: ${row.concepto_tercero}${cliente ? ' — ' + cliente.nombre : ''}`,
+            p_referencia: null,
+            p_origen_tipo: 'gasto',
+            p_origen_id: row.id,
+            p_fecha: formData.fecha || null,
+          });
+          if (movErr) {
+            toast({
+              variant: 'destructive',
+              title: 'Pago registrado, pero el banco no cuadró',
+              description: `No se descontó de la cuenta (${movErr.message}). Regístralo a mano en Cuentas Bancarias.`,
+            });
+            break;
+          }
+        }
+      }
+
+      toast({
+        title: 'Pago a terceros registrado',
+        description: `${filas.map((f) => f.concepto.nombre).join(' + ')} · RD$${money(totalTerceros)}. ${
+          desdeBanco ? 'Salió de la cuenta bancaria.' : esExterno ? 'No afecta la caja.' : 'Salió de la caja.'
+        } No cuenta como gasto de la empresa.`,
+      });
+
+      setHuboCambios(true);
+      setMarcados({});
+      setClienteId('');
+      await cargarGastosHoy();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error al guardar',
+        description: error.message || 'No se pudo registrar el pago a terceros.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (modo === 'terceros') { await guardarTerceros(); return; }
+
     const monto = Number(formData.monto);
 
     if (!tenantId) {
@@ -257,13 +438,47 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(huboCambios); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{editandoId ? 'Editar Gasto' : 'Gastos Diarios'}</DialogTitle>
+          <DialogTitle>
+            {editandoId ? 'Editar Gasto' : modo === 'terceros' ? 'Pago a terceros' : 'Gastos Diarios'}
+          </DialogTitle>
           <DialogDescription>
             {editandoId
               ? 'Corrige el monto o la descripción del gasto seleccionado.'
-              : 'Registra una salida de efectivo para rebajarla de caja.'}
+              : modo === 'terceros'
+                ? 'Lo que se le cobró al cliente y hay que entregarle a quien presta el servicio. Sale de la caja, pero no es gasto de la empresa.'
+                : 'Registra una salida de efectivo para rebajarla de caja.'}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Los dos tipos de salida son cosas distintas y por eso el formulario
+            cambia entero: un gasto es plata de la empresa, un pago a terceros
+            es plata del cliente que va de paso. */}
+        {!editandoId && hayTerceros && (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setModo('gasto')}
+              className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold uppercase transition-colors ${
+                modo === 'gasto'
+                  ? 'bg-rose-50 border-rose-300 text-rose-700'
+                  : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
+              }`}
+            >
+              <ReceiptText className="w-4 h-4" /> Gasto
+            </button>
+            <button
+              type="button"
+              onClick={() => setModo('terceros')}
+              className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold uppercase transition-colors ${
+                modo === 'terceros'
+                  ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                  : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
+              }`}
+            >
+              <HandCoins className="w-4 h-4" /> Pago a terceros
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
           <div className="grid grid-cols-2 gap-4">
@@ -279,36 +494,105 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="tipo-gasto">Tipo de gasto</Label>
-              <Select value={formData.tipo_gasto} onValueChange={handleTipoChange}>
-                <SelectTrigger id="tipo-gasto">
-                  <SelectValue placeholder="Seleccione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIPOS_GASTO.map(tipo => (
-                    <SelectItem key={tipo} value={tipo}>{tipo}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {modo === 'gasto' && (
+              <div className="space-y-2">
+                <Label htmlFor="tipo-gasto">Tipo de gasto</Label>
+                <Select value={formData.tipo_gasto} onValueChange={handleTipoChange}>
+                  <SelectTrigger id="tipo-gasto">
+                    <SelectValue placeholder="Seleccione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPOS_GASTO.map(tipo => (
+                      <SelectItem key={tipo} value={tipo}>{tipo}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="monto-gasto">Monto (DOP)</Label>
-            <Input
-              ref={montoInputRef}
-              id="monto-gasto"
-              name="monto"
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={formData.monto}
-              onChange={handleChange}
-              placeholder="0.00"
-              required
-            />
-          </div>
+          {modo === 'gasto' ? (
+            <div className="space-y-2">
+              <Label htmlFor="monto-gasto">Monto (DOP)</Label>
+              <Input
+                ref={montoInputRef}
+                id="monto-gasto"
+                name="monto"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={formData.monto}
+                onChange={handleChange}
+                placeholder="0.00"
+                required
+              />
+            </div>
+          ) : (
+            <>
+              {/* Un clic por servicio. El monto viene fijo y se puede corregir:
+                  si se corrige, ese pasa a ser el valor de ahí en adelante. */}
+              <div className="space-y-2">
+                <Label>¿Qué se paga?</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {conceptos.map((c) => {
+                    const on = marcados[c.id] !== undefined;
+                    return (
+                      <div
+                        key={c.id}
+                        className={`rounded-lg border p-2 transition-colors ${
+                          on ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleConcepto(c)}
+                          className={`w-full text-left text-[11px] font-bold uppercase truncate ${
+                            on ? 'text-indigo-700' : 'text-slate-500'
+                          }`}
+                          title={c.nombre}
+                        >
+                          {c.nombre}
+                        </button>
+                        {on ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={marcados[c.id]}
+                            onChange={(ev) => setMarcados((p) => ({ ...p, [c.id]: ev.target.value }))}
+                            placeholder="0.00"
+                            className="h-7 mt-1 text-sm text-right font-bold"
+                          />
+                        ) : (
+                          <p className="mt-1 text-sm text-right font-bold text-slate-400">
+                            {Number(c.monto) > 0 ? money(c.monto) : '—'}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {conceptos.some((c) => !Number(c.monto)) && (
+                  <p className="text-[10px] text-gray-500 italic">
+                    Los que muestran “—” no tienen monto todavía: al marcarlos, escribe cuánto se paga y queda guardado como su valor fijo.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <SearchableSelect
+                  label="¿De quién es? (opcional)"
+                  placeholder="Buscar cliente…"
+                  options={clientes.map((c) => ({ value: c.id, label: c.nombre }))}
+                  value={clienteId}
+                  onChange={setClienteId}
+                />
+                <p className="text-[10px] text-gray-500 italic">
+                  Anotar el cliente deja el rastro de a quién se le entregó cada GPS o seguro.
+                </p>
+              </div>
+            </>
+          )}
 
           {/* De dónde sale: la gaveta, una cuenta bancaria de la empresa, o un
               tercero/otra cuenta (no afecta la caja, ej. lo pagó Odalys). */}
@@ -346,17 +630,24 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="descripcion-gasto">Descripcion</Label>
-            <Textarea
-              id="descripcion-gasto"
-              name="descripcion"
-              value={formData.descripcion}
-              onChange={handleChange}
-              placeholder="Ej: Combustible, merienda, envio..."
-              required
-            />
-          </div>
+          {modo === 'gasto' ? (
+            <div className="space-y-2">
+              <Label htmlFor="descripcion-gasto">Descripcion</Label>
+              <Textarea
+                id="descripcion-gasto"
+                name="descripcion"
+                value={formData.descripcion}
+                onChange={handleChange}
+                placeholder="Ej: Combustible, merienda, envio..."
+                required
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-between rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2.5">
+              <span className="text-xs font-bold uppercase text-indigo-700">Total a entregar</span>
+              <span className="text-lg font-black text-indigo-700">RD${money(totalTerceros)}</span>
+            </div>
+          )}
 
           <DialogFooter className="pt-4 mt-4 border-t">
             {editandoId && (
@@ -396,6 +687,14 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                   {/* La descripcion se lee COMPLETA: baja de linea, no se corta */}
                   <span className="min-w-0 flex-1 break-words">
                     {g.tipo_gasto} — {g.descripcion}
+                    {g.es_tercero && (
+                      <span
+                        className="ml-1 inline-block text-[9px] bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded font-bold uppercase align-middle"
+                        title="Pago a terceros: salió de la caja pero no cuenta como gasto de la empresa"
+                      >
+                        Terceros
+                      </span>
+                    )}
                     {(g.cuenta_bancaria_id || g.afecta_caja === false) && (
                       <span className="ml-1 inline-block text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded font-bold uppercase align-middle">
                         {g.cuenta_bancaria_id ? 'Banco' : 'No afecta caja'}
