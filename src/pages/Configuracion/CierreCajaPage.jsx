@@ -1076,21 +1076,23 @@ const CierreCajaPage = () => {
       >
         <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
           {/* Title */}
-          <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
-            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">
+          <div className="bg-morla-blue text-white text-center py-1.5 rounded-t-lg mb-3">
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-base drop-shadow-sm">
               CIERRE DE CAJA
             </h1>
           </div>
 
           {/* Filters Row */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg mb-4">
+          {/* Rótulo a la izquierda y campo a la derecha: apilados gastaban una
+              franja entera arriba, que es la que le hace falta al conteo. */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-2 px-3 py-2 border rounded-lg mb-3">
             {/* Fecha */}
-            <div className="space-y-1">
-              <Label className="font-bold">Fecha</Label>
+            <div className="flex items-center gap-2 min-w-0">
+              <Label className="font-bold text-xs shrink-0">Fecha</Label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !fecha && "text-muted-foreground")}>
-                    <CalendarIcon className="mr-2 h-4 w-4" />
+                  <Button variant="outline" className={cn("flex-1 min-w-0 h-8 justify-start text-left font-normal text-sm px-2", !fecha && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                     {fecha ? formatInTimeZone(fecha, "dd/MM/yyyy") : <span>Seleccione</span>}
                   </Button>
                 </PopoverTrigger>
@@ -1099,22 +1101,23 @@ const CierreCajaPage = () => {
             </div>
 
             {/* Turno */}
-            <div className="space-y-1">
-              <Label className="font-bold">Turno</Label>
+            <div className="flex items-center gap-2 min-w-0">
+              <Label className="font-bold text-xs shrink-0">Turno</Label>
               <Input
                 type="number"
                 min="1"
                 value={turno}
                 onChange={e => setTurno(parseInt(e.target.value, 10) || 1)}
-                className="text-center font-bold text-lg"
+                onFocus={e => e.target.select()}
+                className="flex-1 min-w-0 h-8 text-center font-bold px-2"
               />
             </div>
 
             {/* Caja */}
-            <div className="space-y-1">
-              <Label className="font-bold">Caja</Label>
+            <div className="flex items-center gap-2 min-w-0">
+              <Label className="font-bold text-xs shrink-0">Caja</Label>
               <Select value="caja1" disabled>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="flex-1 min-w-0 h-8 text-sm px-2"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="caja1">Caja No. 1</SelectItem>
                 </SelectContent>
@@ -1122,10 +1125,10 @@ const CierreCajaPage = () => {
             </div>
 
             {/* Cajero */}
-            <div className="space-y-1">
-              <Label className="font-bold">Cajero</Label>
+            <div className="flex items-center gap-2 min-w-0">
+              <Label className="font-bold text-xs shrink-0">Cajero</Label>
               <Select value={selectedCajero} onValueChange={setSelectedCajero}>
-                <SelectTrigger><SelectValue placeholder="Seleccione cajero" /></SelectTrigger>
+                <SelectTrigger className="flex-1 min-w-0 h-8 text-sm px-2"><SelectValue placeholder="Seleccione cajero" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL" className="font-bold text-morla-blue">
                     📊 Todos los Cajeros (Consolidado)
