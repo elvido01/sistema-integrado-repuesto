@@ -101,12 +101,16 @@ const CierreCajaPage = () => {
     loadCajeros();
   }, [user]);
 
-  /* ── Fetch resumen del turno ── */
-  const fetchResumen = useCallback(async () => {
-    if (!fecha) return;
-    setLoadingResumen(true);
+  /* ── Fetch resumen del turno ──
+     Con p_fechaStr calcula OTRA fecha y devuelve el resumen sin tocar la
+     pantalla: así se reconstruye el desglose de un cierre viejo, que se
+     grabó antes de que se guardara la foto completa. */
+  const fetchResumen = useCallback(async (p_fechaStr) => {
+    const soloCalcular = !!p_fechaStr;
+    if (!fecha && !soloCalcular) return;
+    if (!soloCalcular) setLoadingResumen(true);
 
-    const fechaStr = formatDateForSupabase(fecha);
+    const fechaStr = p_fechaStr || formatDateForSupabase(fecha);
     const startOfDay = `${fechaStr}T00:00:00`;
     const endOfDay = `${fechaStr}T23:59:59`;
 
@@ -473,7 +477,7 @@ const CierreCajaPage = () => {
 
     const cantFacturas = ventas.length;
 
-    setResumen({
+    const calculado = {
       totalVentas,
       totalVentasContado,
       totalVentasContadoCaja,
@@ -513,9 +517,13 @@ const CierreCajaPage = () => {
       // transferencia/tarjeta y las del movil: el cierre pedia un efectivo
       // que nunca estuvo en la caja y siempre salia faltante.
       efectivoEnCaja: totalVentasContadoCaja + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPagosTerceros - totalPagosNomina - totalPrestamosEfectivo - totalCompromisosEfectivo - comprasContadoEfectivo,
-    });
+    };
 
+    if (soloCalcular) return calculado;
+
+    setResumen(calculado);
     setLoadingResumen(false);
+    return calculado;
   }, [fecha, selectedCajero, tenantId]);
 
   useEffect(() => {
@@ -659,14 +667,16 @@ const CierreCajaPage = () => {
             <div class="sub">CIERRE DE CAJA</div>
           </div>
           <div class="meta">
-            <div><b>Fecha:</b> ${formatInTimeZone(new Date(cierre.fecha), 'dd/MM/yyyy')}</div>
+            <div><b>Fecha:</b> ${formatFechaDMY(cierre.fecha)}</div>
             <div><b>Turno:</b> ${cierre.turno}</div>
             <div><b>Cajero:</b> ${cierre.cajero_nombre}</div>
             ${cierre._reimpresion ? '<div style="color:#b45309;font-weight:bold">REIMPRESIÓN</div>' : ''}
           </div>
         </div>
         ${cierre._reimpresion ? `<div style="margin-top:8px;padding:4px 8px;border:1px solid #b45309;color:#b45309;font-size:11px">
-          Copia del cierre grabado el ${formatInTimeZone(new Date(cierre.created_at || cierre.fecha), 'dd/MM/yyyy')}. No es un cierre nuevo.
+          Copia del cierre grabado el ${formatFechaDMY(cierre.created_at || cierre.fecha)}. No es un cierre nuevo.
+          ${cierre._reconstruido ? '<br>Este cierre es anterior al guardado del detalle: el desglose se reconstruyó con los movimientos de esa fecha. Los totales de caja y el conteo de billetes son los que quedaron grabados.' : ''}
+          ${cierre._descuadre ? `<br><b>Ojo:</b> hoy esa fecha da ${formatCurrency(cierre._descuadre)} de efectivo, distinto de los ${formatCurrency(cierre.efectivo_en_caja)} que se grabaron. Manda lo grabado.` : ''}
         </div>` : ''}
 
         <div class="cols">
@@ -806,7 +816,7 @@ const CierreCajaPage = () => {
           ${cierre._reimpresion ? '<p class="bold" style="margin:2px 0;font-size:12px;">** REIMPRESION **</p>' : ''}
         </div>
         <div class="separator"></div>
-        <div class="row"><span>Fecha:</span><span>${formatInTimeZone(new Date(cierre.fecha), 'dd/MM/yyyy')}</span></div>
+        <div class="row"><span>Fecha:</span><span>${formatFechaDMY(cierre.fecha)}</span></div>
         <div class="row"><span>Turno:</span><span>${cierre.turno}</span></div>
         <div class="row"><span>Cajero:</span><span>${cierre.cajero_nombre}</span></div>
         <div class="separator"></div>
@@ -946,29 +956,36 @@ const CierreCajaPage = () => {
 
   useEffect(() => { if (verHistorial) cargarHistorial(); }, [verHistorial, cargarHistorial]);
 
-  // Los cierres viejos no guardaron la foto del resumen: se reimprimen con lo
-  // que sí quedó en columnas. Sale con menos detalle, pero con la verdad de
-  // ese día — recalcularlo hoy daría otro documento.
-  const resumenDeFila = (r) => r.detalle || ({
-    totalVentas: r.total_ventas,
-    totalVentasContado: r.total_ventas_contado,
-    totalVentasContadoCaja: r.total_ventas_contado_caja,
-    totalVentasContadoMovil: r.total_ventas_contado_movil,
-    totalVentasCredito: r.total_ventas_credito,
-    totalItbis: r.total_itbis,
-    totalDescuento: r.total_descuento,
-    totalDevoluciones: r.total_devoluciones,
-    totalRecibos: r.total_recibos,
-    totalGastosDiarios: r.total_gastos_diarios,
-    cambioEntregado: r.cambio_entregado,
-    efectivoEnCaja: r.efectivo_en_caja,
-  });
+  const [reimprimiendo, setReimprimiendo] = useState(null);
 
-  const reimprimir = (r) => {
+  const reimprimir = async (r) => {
+    setReimprimiendo(r.id);
     try {
-      printCierreCaja({ ...r, _reimpresion: true }, resumenDeFila(r));
+      // Con la foto guardada se reimprime idéntico. Sin ella —los cierres
+      // anteriores a hoy— se reconstruye el desglose con los movimientos de
+      // esa fecha: es la única forma de que salga con el mismo detalle que el
+      // original y no un resumen de dos líneas.
+      const reconstruido = !r.detalle;
+      const calc = r.detalle || await fetchResumen(r.fecha);
+      if (!calc) throw new Error('No se pudo armar el desglose de esa fecha.');
+
+      // El efectivo que manda es el GRABADO, no el que dé la reconstrucción:
+      // es contra ese que se contaron los billetes y se sacó la diferencia.
+      const dif = Math.abs((Number(calc.efectivoEnCaja) || 0) - (Number(r.efectivo_en_caja) || 0));
+      const resumen = reconstruido ? { ...calc, efectivoEnCaja: r.efectivo_en_caja } : calc;
+
+      printCierreCaja({
+        ...r,
+        _reimpresion: true,
+        _reconstruido: reconstruido,
+        // Si la reconstrucción no da lo mismo, el documento lo dice. Callarlo
+        // sería hacer pasar por fiel una copia que ya no cuadra.
+        _descuadre: reconstruido && dif > 0.01 ? calc.efectivoEnCaja : null,
+      }, resumen);
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo reimprimir', description: e.message });
+    } finally {
+      setReimprimiendo(null);
     }
   };
 
@@ -1355,8 +1372,11 @@ const CierreCajaPage = () => {
                             </TableCell>
                             <TableCell className="text-right py-1.5">
                               <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs"
+                                disabled={reimprimiendo === r.id}
                                 onClick={() => reimprimir(r)}>
-                                <Printer className="h-3.5 w-3.5" /> Reimprimir
+                                {reimprimiendo === r.id
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <Printer className="h-3.5 w-3.5" />} Reimprimir
                               </Button>
                             </TableCell>
                           </TableRow>
@@ -1366,7 +1386,7 @@ const CierreCajaPage = () => {
                   </Table>
                 )}
                 <p className="px-4 py-2 text-[11px] text-gray-400 italic border-t">
-                  Sale marcado como reimpresión, con las cifras del día en que se cerró. Los cierres anteriores al 01/08/2026 se reimprimen con menos detalle: no se guardaba el desglose completo.
+                  Sale marcado como reimpresión. Los cierres grabados desde hoy salen idénticos al original; los anteriores reconstruyen el desglose con los movimientos de esa fecha, y el efectivo y el conteo de billetes son siempre los que quedaron grabados.
                 </p>
               </div>
             )}
