@@ -34,6 +34,23 @@ const TIPOS_GASTO = [
 
 const money = (v) => Number(v || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// "MotoPréstamos Los Naranjos" -> MPN · "CAMINERO MOTORS" -> CM
+// El nombre completo de la empresa no cabe al lado de cada cliente. Se saca
+// la inicial de cada palabra con peso, partiendo también las palabras
+// pegadas (MotoPréstamos = Moto + Préstamos) para no perder la P.
+const SIN_PESO = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'srl', 'sa', 'eirl']);
+const siglas = (nombre) => {
+  const s = String(nombre || '')
+    .replace(/([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])/g, '$1 $2')
+    .replace(/[.,&()]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w && !SIN_PESO.has(w.toLowerCase()))
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+  return s.slice(0, 4);
+};
+
 const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const { toast } = useToast();
   const { user, tenantId, empresa } = useAuth();
@@ -656,16 +673,17 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                             className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left hover:bg-indigo-50 transition-colors"
                           >
                             <span className="text-xs text-slate-700 truncate">{c.nombre}</span>
-                            {/* El nombre de la empresa es largo: se recorta,
-                                si no empuja la lista fuera del modal. */}
+                            {/* Solo las siglas: el nombre completo de la
+                                empresa no deja ver el del cliente. Va en el
+                                tooltip y en la ficha de abajo al elegirlo. */}
                             {c.origen && (
                               <span
                                 title={c.origen}
-                                className={`text-[9px] px-1 py-0.5 rounded font-bold uppercase shrink-0 max-w-[84px] truncate ${
+                                className={`text-[9px] px-1 py-0.5 rounded font-bold shrink-0 ${
                                   c.es_financiera ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
                                 }`}
                               >
-                                {c.origen}
+                                {siglas(c.origen)}
                               </span>
                             )}
                           </button>
@@ -674,8 +692,17 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                     </div>
                   </>
                 )}
+                {/* Qué quiere decir cada sigla, sacado de los resultados que
+                    hay a la vista: si no, "MPN" no le dice nada a nadie. */}
+                {!cliente && clientes.length > 0 && (
+                  <p className="text-[10px] text-gray-500 leading-snug">
+                    {[...new Map(clientes.filter((c) => c.origen).map((c) => [c.origen, c])).values()]
+                      .map((c) => `${siglas(c.origen)} = ${c.origen}`)
+                      .join(' · ')}
+                  </p>
+                )}
                 <p className="text-[10px] text-gray-500 italic">
-                  Busca en esta empresa y en la financiera del grupo. El comprador financiado suele estar en las dos: elige el de la financiera, que es donde está su préstamo.
+                  El comprador financiado suele estar en las dos empresas: elige el de la financiera, que es donde está su préstamo.
                 </p>
               </div>
             </>
