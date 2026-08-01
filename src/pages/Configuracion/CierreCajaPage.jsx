@@ -627,8 +627,23 @@ const CierreCajaPage = () => {
     }
   };
 
+  // Todo lo que sale de la gaveta, y lo que entra. Se calculan una vez y se
+  // usan igual en el resumen de salidas y en el recuadro final, para que no
+  // puedan discrepar entre sí.
+  const gastoTotalDe = (r) =>
+    (Number(r?.totalGastosDiarios) || 0) + (Number(r?.totalPagosNomina) || 0)
+    + (Number(r?.totalPagosTerceros) || 0) + (Number(r?.totalPrestamosEfectivo) || 0)
+    + (Number(r?.totalPagosSuplidores) || 0) + (Number(r?.totalCompromisosEfectivo) || 0)
+    + (Number(r?.comprasContadoEfectivo) || 0) + (Number(r?.totalDevoluciones) || 0);
+
+  const totalSistemaDe = (r) =>
+    (Number(r?.totalVentasContadoCaja ?? r?.totalVentasContado) || 0)
+    + (Number(r?.totalRecibosEfectivo ?? r?.totalRecibos) || 0);
+
   /* ── Print cierre (formato carta 8.5x11) ── */
   const printCierreCajaCarta = (cierre, resumen) => {
+    const GASTO_TOTAL = gastoTotalDe(resumen);
+    const TOTAL_SISTEMA = totalSistemaDe(resumen);
     // Los renglones en 0.00 no se imprimen (salvo los marcados "siempre")
     const filaResumen = (label, val, bold = false, siempre = false) =>
       (siempre || Number(val) > 0)
@@ -656,6 +671,9 @@ const CierreCajaPage = () => {
           .bold { font-weight: bold; }
           .grande { font-size: 15px; font-weight: bold; }
           .caja { border: 2px solid #000; padding: 6px 10px; display: flex; justify-content: space-between; font-size: 16px; font-weight: bold; margin-top: 10px; }
+          .cuadre-final { border: 2px solid #000; margin-top: 14px; }
+          .cuadre-final .linea { display: flex; justify-content: space-between; padding: 4px 10px; font-size: 13px; }
+          .cuadre-final .total { border-top: 2px solid #000; font-size: 16px; font-weight: bold; padding: 6px 10px; }
           .firmas { display: flex; gap: 60px; margin-top: 60px; }
           .firmas div { flex: 1; border-top: 1px solid #000; text-align: center; padding-top: 4px; font-size: 11px; }
         </style>
@@ -681,20 +699,27 @@ const CierreCajaPage = () => {
 
         <div class="cols">
           <div class="col">
-            <div class="sec">Resumen de Ventas</div>
+            <!-- Arriba SOLO lo que entró: ventas y cobros. Lo que salió va
+                 abajo, cada cosa con su desglose. Mezclar entradas y salidas
+                 en una sola lista obligaba a leerla dos veces. -->
+            <div class="sec">Entradas del día</div>
             <table><tbody>
               ${filaResumen('Ventas Contado Caja', resumen?.totalVentasContadoCaja)}
               ${filaResumen('Ventas Contado Móvil', resumen?.totalVentasContadoMovil)}
               ${filaResumen('Ventas por Transferencia/Tarjeta', resumen?.totalVentasContadoNoEfectivo)}
               ${filaResumen('Ventas Crédito', resumen?.totalVentasCredito)}
               ${filaResumen('Total Ventas', resumen?.totalVentas, true)}
-              ${filaResumen('Devoluciones', resumen?.totalDevoluciones)}
               ${filaResumen('Recibos Ingreso Caja', resumen?.totalRecibosCaja)}
               ${filaResumen('Recibos Ingreso Móvil', resumen?.totalRecibosMovil)}
-              ${filaResumen('Recibos Ingreso (total)', resumen?.totalRecibos)}
+              ${filaResumen('Recibos Ingreso (total)', resumen?.totalRecibos, true)}
               ${Number(resumen?.totalRecibosOtrasFormas) > 0 ? `
               ${filaResumen('· Recibos en Efectivo', resumen?.totalRecibosEfectivo)}
               ${filaResumen('· Recibos Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}` : ''}
+            </tbody></table>
+
+            <div class="sec">Salidas del día</div>
+            <table><tbody>
+              ${filaResumen('Devoluciones', resumen?.totalDevoluciones)}
               ${filaResumen('Pagos Suplidores', resumen?.totalPagosSuplidores)}
               ${filaResumen('Gastos Diarios', resumen?.totalGastosDiarios)}
               ${Number(resumen?.totalPagosNomina) > 0 ? filaResumen('Nómina (Efectivo)', resumen?.totalPagosNomina) : ''}
@@ -702,8 +727,8 @@ const CierreCajaPage = () => {
               ${Number(resumen?.totalPrestamosEfectivo) > 0 ? filaResumen('Préstamos (Efectivo)', resumen?.totalPrestamosEfectivo) : ''}
               ${Number(resumen?.comprasContadoEfectivo) > 0 ? filaResumen('Compras de contado (Efectivo)', resumen?.comprasContadoEfectivo) : ''}
               ${filaResumen('Compromisos (Efectivo)', resumen?.totalCompromisosEfectivo)}
+              ${filaResumen('Gasto Total', GASTO_TOTAL, true, true)}
             </tbody></table>
-            <div class="caja"><span>EFECTIVO EN CAJA</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
 
             ${(resumen?.gastosDiarios || []).length ? `
             <div class="sec">Desglose de Gastos</div>
@@ -743,12 +768,14 @@ const CierreCajaPage = () => {
               <tr class="bold"><td>Total Compromisos</td><td class="num">${formatCurrency(resumen?.totalCompromisosEfectivo)}</td></tr>
             </tbody></table>` : ''}
 
-            <div class="sec">Cuadre</div>
-            <table><tbody>
-              ${filaResumen('Gasto Total', (Number(resumen?.totalGastosDiarios) || 0) + (Number(resumen?.totalPagosNomina) || 0) + (Number(resumen?.totalPagosTerceros) || 0) + (Number(resumen?.totalPrestamosEfectivo) || 0) + (Number(resumen?.totalPagosSuplidores) || 0) + (Number(resumen?.totalCompromisosEfectivo) || 0) + (Number(resumen?.comprasContadoEfectivo) || 0), true, true)}
-              ${filaResumen('Total de Sistema', (Number(resumen?.totalVentasContado) || 0) + (Number(resumen?.totalRecibosEfectivo ?? resumen?.totalRecibos) || 0) - (Number(resumen?.totalDevoluciones) || 0), true, true)}
-              ${filaResumen('Dinero en Caja', resumen?.efectivoEnCaja, true, true)}
-            </tbody></table>
+            <!-- El cierre termina en un solo recuadro: lo que entró, lo que
+                 salió y lo que debe haber en la gaveta. La resta a la vista,
+                 en vez de un número suelto arriba que hay que ir a comprobar. -->
+            <div class="cuadre-final">
+              <div class="linea"><span>Total de Sistema</span><span>${formatCurrency(TOTAL_SISTEMA)}</span></div>
+              <div class="linea"><span>Gasto Total</span><span>- ${formatCurrency(GASTO_TOTAL)}</span></div>
+              <div class="linea total"><span>EFECTIVO EN CAJA</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
+            </div>
           </div>
 
           <div class="col">
@@ -780,6 +807,8 @@ const CierreCajaPage = () => {
   /* ── Print cierre ── */
   const printCierreCaja = (cierre, resumen) => {
     const esCarta = (papelCierre || empresa?.formato_cierre_caja || 'pos_80mm') === 'carta';
+    const GASTO_TOTAL = gastoTotalDe(resumen);
+    const TOTAL_SISTEMA = totalSistemaDe(resumen);
     // Renglones en 0.00 no se imprimen (salvo los marcados "siempre")
     const filaPos = (label, val, opts = {}) =>
       (opts.siempre || Number(val) > 0)
@@ -820,19 +849,21 @@ const CierreCajaPage = () => {
         <div class="row"><span>Turno:</span><span>${cierre.turno}</span></div>
         <div class="row"><span>Cajero:</span><span>${cierre.cajero_nombre}</span></div>
         <div class="separator"></div>
-        <div class="bold" style="margin-bottom: 4px;">RESUMEN DE VENTAS</div>
+        <div class="bold" style="margin-bottom: 4px;">ENTRADAS DEL DIA</div>
         ${filaPos('Ventas Contado Caja', resumen?.totalVentasContadoCaja)}
         ${filaPos('Cuenta Contado Móvil', resumen?.totalVentasContadoMovil)}
         ${filaPos('Ventas Transf./Tarjeta', resumen?.totalVentasContadoNoEfectivo)}
         ${filaPos('Ventas Crédito', resumen?.totalVentasCredito)}
         ${filaPos('Total Ventas', resumen?.totalVentas, { bold: true })}
-        ${filaPos('Devoluciones', resumen?.totalDevoluciones)}
         ${filaPos('Recibos Ingreso Caja', resumen?.totalRecibosCaja)}
         ${filaPos('Recibos Ingreso Móvil', resumen?.totalRecibosMovil)}
         ${Number(resumen?.totalRecibosOtrasFormas) > 0 ? `
         ${filaPos('Recibos Ingreso (total)', resumen?.totalRecibos)}
         ${filaPos('&nbsp;&nbsp;En Efectivo', resumen?.totalRecibosEfectivo, { siempre: true })}
         ${filaPos('&nbsp;&nbsp;Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}` : ''}
+        <div class="separator"></div>
+        <div class="bold" style="margin-bottom: 4px;">SALIDAS DEL DIA</div>
+        ${filaPos('Devoluciones', resumen?.totalDevoluciones)}
         ${filaPos('Pagos Suplidores', resumen?.totalPagosSuplidores)}
         ${filaPos('Gastos Diarios', resumen?.totalGastosDiarios)}
         ${Number(resumen?.totalPagosNomina) > 0 ? filaPos('Nómina (Efectivo)', resumen?.totalPagosNomina) : ''}
@@ -840,7 +871,7 @@ const CierreCajaPage = () => {
         ${filaPos('Préstamos (Efectivo)', resumen?.totalPrestamosEfectivo)}
         ${Number(resumen?.comprasContadoEfectivo) > 0 ? filaPos('Compras de contado (Efectivo)', resumen?.comprasContadoEfectivo) : ''}
         ${filaPos('Compromisos (Efectivo)', resumen?.totalCompromisosEfectivo)}
-        ${filaPos('Efectivo en Caja', resumen?.efectivoEnCaja, { total: true, siempre: true })}
+        ${filaPos('Gasto Total', GASTO_TOTAL, { bold: true, siempre: true })}
         ${(resumen?.gastosDiarios || []).length ? `
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE GASTOS</div>
@@ -902,10 +933,9 @@ const CierreCajaPage = () => {
           <span>Total Compromisos:</span><span>${formatCurrency(resumen?.totalCompromisosEfectivo)}</span>
         </div>` : ''}
         <div class="separator"></div>
-        <div class="bold" style="margin-bottom: 4px;">CUADRE</div>
-        <div class="row"><span>Gasto Total:</span><span>${formatCurrency((Number(resumen?.totalGastosDiarios) || 0) + (Number(resumen?.totalPagosNomina) || 0) + (Number(resumen?.totalPagosTerceros) || 0) + (Number(resumen?.totalPrestamosEfectivo) || 0) + (Number(resumen?.totalPagosSuplidores) || 0) + (Number(resumen?.totalCompromisosEfectivo) || 0) + (Number(resumen?.comprasContadoEfectivo) || 0))}</span></div>
-        <div class="row"><span>Total de Sistema:</span><span>${formatCurrency((Number(resumen?.totalVentasContado) || 0) + (Number(resumen?.totalRecibosEfectivo ?? resumen?.totalRecibos) || 0) - (Number(resumen?.totalDevoluciones) || 0))}</span></div>
-        <div class="row total-row"><span>Dinero en Caja:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
+        <div class="row"><span>Total de Sistema:</span><span>${formatCurrency(TOTAL_SISTEMA)}</span></div>
+        <div class="row"><span>Gasto Total:</span><span>- ${formatCurrency(GASTO_TOTAL)}</span></div>
+        <div class="row total-row"><span>EFECTIVO EN CAJA:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DINERO EN CAJA</div>
         <div class="row" style="font-size: 12px; border-bottom: 1px solid #000; margin-bottom: 2px;">
