@@ -126,6 +126,12 @@ const formatDate = (value?: string | null) => {
   return y && m && d ? `${d}/${m}/${y}` : String(value);
 };
 
+// Días que dura cada cuota según la frecuencia. Es lo que convierte "número
+// de cuotas" en "meses de plazo": 365 cuotas diarias son 12 meses, no 365.
+// Igual que en la web (src/pages/SolicitudesComprasPage.jsx): las dos
+// pantallas crean el mismo préstamo, así que tienen que dar el mismo número.
+const DIAS_POR_PERIODO: Record<string, number> = { diario: 1, semanal: 7, quincenal: 15, mensual: 30 };
+
 const addPeriod = (dateValue?: string | null, frecuencia?: string | null) => {
   const [y, m, d] = String(dateValue || todayISO()).slice(0, 10).split('-').map(Number);
   const base = Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)
@@ -166,27 +172,35 @@ const getTotals = (form: SolicitudCompra) => {
     (form.incluye_gps ? n(form.monto_gps) : 0) +
     (form.incluye_casco ? n(form.monto_casco) : 0) +
     (form.incluye_seguro ? n(form.monto_seguro) : 0);
-  const capital = n(form.valor_contado) + addons + n(form.adicional) - n(form.inicial);
-  const meses = Math.max(0, Math.trunc(n(form.tiempo_meses)));
+  // El ADICIONAL es un completivo del inicial: el cliente lo paga aparte, así
+  // que NO se financia. Aquí se estaba SUMANDO al capital, lo contrario de lo
+  // que hace la web: con un adicional de 10,000 la app financiaba 20,000 de más.
+  const capital = n(form.valor_contado) + addons - n(form.inicial) - n(form.adicional);
+  // tiempo_meses guarda el NÚMERO DE CUOTAS, no meses.
+  const nCuotas = Math.max(0, Math.trunc(n(form.tiempo_meses)));
   const tasa = n(form.tasa_interes);
+  const diasPorPeriodo = DIAS_POR_PERIODO[String(form.frecuencia || 'mensual')] || 30;
+  const plazoMeses = nCuotas * diasPorPeriodo / 30;
+  // La tasa que se teclea es MENSUAL: para otra frecuencia se lleva a la tasa
+  // del período. Aplicarla tal cual cobraba 3% DIARIO en un préstamo diario.
+  const tasaPeriodo = (tasa / 100) * diasPorPeriodo / 30;
   let totalPagares = 0;
   let cuotaBase = 0;
 
-  if (capital > 0 && meses > 0) {
+  if (capital > 0 && nCuotas > 0) {
     if (tasa > 0 && form.tipo_financiamiento === 'frances') {
-      const tasaMensual = tasa / 100;
-      cuotaBase = capital * tasaMensual / (1 - Math.pow(1 + tasaMensual, -meses));
+      cuotaBase = capital * tasaPeriodo / (1 - Math.pow(1 + tasaPeriodo, -nCuotas));
     } else if (tasa > 0) {
-      const interesTotal = capital * (tasa / 100) * meses;
-      cuotaBase = (capital + interesTotal) / meses;
+      const interesTotal = capital * (tasa / 100) * plazoMeses;
+      cuotaBase = (capital + interesTotal) / nCuotas;
     } else {
-      cuotaBase = capital / meses;
+      cuotaBase = capital / nCuotas;
     }
   }
 
   const cuotaAjustada = n(form.cuota_ajustada);
   const cuotaFinal = cuotaAjustada > 0 ? cuotaAjustada : cuotaBase;
-  totalPagares = meses > 0 ? cuotaFinal * meses : 0;
+  totalPagares = nCuotas > 0 ? cuotaFinal * nCuotas : 0;
   const cuotaBaseRounded = Math.round(cuotaBase * 100) / 100;
   const cuotaFinalRounded = Math.round(cuotaFinal * 100) / 100;
 
@@ -864,7 +878,7 @@ export default function SolicitudesCompraMobileScreen() {
                 ))}
               </View>
               <View className="flex-row gap-2">
-                <View className="flex-1"><Field label="Tasa por periodo %" value={String(form.tasa_interes || '')} onChangeText={(v) => setField('tasa_interes', v)} keyboardType="decimal-pad" /></View>
+                <View className="flex-1"><Field label="Tasa de interés % (mensual)" value={String(form.tasa_interes || '')} onChangeText={(v) => setField('tasa_interes', v)} keyboardType="decimal-pad" /></View>
                 <View className="flex-1"><Field label="Vence 1ra cuota" value={String(form.fecha_vencimiento || '')} onChangeText={(v) => setField('fecha_vencimiento', v)} placeholder="yyyy-mm-dd" /></View>
               </View>
 
