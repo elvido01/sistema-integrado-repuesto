@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { USERNAME_EMAIL_DOMAIN } from '@/lib/loginIdentity';
 
 const AuthContext = createContext(undefined);
 
@@ -13,6 +14,9 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  // true mientras el usuario viene de un enlace de recuperación y aún no ha
+  // puesto su contraseña nueva.
+  const [recuperando, setRecuperando] = useState(false);
   const [empresa, setEmpresa] = useState(null);
   const [fiscalActivo, setFiscalActivo] = useState(false);
   const [activeTenantId, setActiveTenantId] = useState(null); // empresa activa (multi-empresa)
@@ -153,6 +157,12 @@ export const AuthProvider = ({ children }) => {
           handleSession(null);
           return;
         }
+        // Volvió del correo de recuperación: hay sesión, pero NO se le abre el
+        // sistema todavía. Primero pone su contraseña nueva; si no, entraría
+        // por un enlace de correo sin haber elegido clave.
+        if (event === "PASSWORD_RECOVERY") {
+          setRecuperando(true);
+        }
         if (event === "TOKEN_REFRESHED" && !session) {
           console.warn("Invalid session detected. Forcing sign out.");
           await signOut();
@@ -222,6 +232,36 @@ export const AuthProvider = ({ children }) => {
   const tenantId = activeTenantId || profile?.tenant_id || null;
   const isSuperAdmin = profile?.is_superadmin === true;
 
+  // ── Recuperación de contraseña por correo ──────────────────────────────
+  // OJO: solo sirve con correos REALES. Los colaboradores que entran con
+  // usuario tienen un correo sintético (@usuario.motoflow.app) al que no
+  // llega nada; a esos hay que decirles que se la cambie su administrador,
+  // no mandarlos a revisar un buzón que no existe.
+  const enviarRecuperacion = useCallback(async (correo) => {
+    const email = String(correo || '').trim().toLowerCase();
+    if (!email.includes('@') || email.endsWith(`@${USERNAME_EMAIL_DOMAIN}`)) {
+      return { error: { message: 'sin_correo' } };
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/`,
+    });
+    if (error) {
+      toast({ variant: 'destructive', title: 'No se pudo enviar', description: error.message });
+    }
+    return { error };
+  }, [toast]);
+
+  const cambiarPassword = useCallback(async (nueva) => {
+    const { error } = await supabase.auth.updateUser({ password: nueva });
+    if (error) {
+      toast({ variant: 'destructive', title: 'No se pudo cambiar', description: error.message });
+      return { error };
+    }
+    setRecuperando(false);
+    toast({ title: 'Contraseña actualizada', description: 'Ya puedes usar el sistema.' });
+    return { error: null };
+  }, [toast]);
+
   const value = useMemo(() => ({
     user,
     session,
@@ -235,8 +275,11 @@ export const AuthProvider = ({ children }) => {
     signUp,
     signIn,
     signOut,
+    recuperando,
+    enviarRecuperacion,
+    cambiarPassword,
     refreshPermissions: () => user && fetchProfileAndPermissions(user.id)
-  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, fiscalActivo, signUp, signIn, signOut, fetchProfileAndPermissions]);
+  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, fiscalActivo, signUp, signIn, signOut, recuperando, enviarRecuperacion, cambiarPassword, fetchProfileAndPermissions]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

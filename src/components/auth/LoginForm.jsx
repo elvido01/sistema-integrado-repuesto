@@ -10,11 +10,13 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { toLoginEmail } from '@/lib/loginIdentity';
 
 const LoginForm = ({ onRegistrar }) => {
-  const { signIn } = useAuth();
+  const { signIn, enviarRecuperacion } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  // 'idle' | 'enviando' | 'enviado' | 'sin_correo'
+  const [recupero, setRecupero] = useState('idle');
 
   // Multi-empresa: si el usuario pertenece a 2+ empresas, elegir cuál
   const [empresas, setEmpresas] = useState([]);
@@ -93,6 +95,14 @@ const LoginForm = ({ onRegistrar }) => {
       console.error('[LoginForm] signIn error:', err);
       setLoading(false);
     }
+  };
+
+  const handleRecuperar = async () => {
+    setRecupero('enviando');
+    const { error } = await enviarRecuperacion(email);
+    if (error?.message === 'sin_correo') setRecupero('sin_correo');
+    else if (error) setRecupero('idle');
+    else setRecupero('enviado');
   };
 
   const nombreMostrado = tenantBranding?.nombre || 'MotoFlow';
@@ -217,6 +227,32 @@ const LoginForm = ({ onRegistrar }) => {
             )}
           </Button>
         </form>
+
+        {/* Recuperar contraseña. Solo funciona con correos reales: quien entra
+            con usuario no tiene buzón, y mandarlo a revisarlo sería pasearlo. */}
+        <div className="mt-4 text-center">
+          {recupero === 'enviado' ? (
+            <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+              Te enviamos un enlace a <b>{email.trim()}</b>. Ábrelo y pon tu contraseña nueva.
+              Si no llega en unos minutos, mira la carpeta de correo no deseado.
+            </p>
+          ) : recupero === 'sin_correo' ? (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-left">
+              Escribe arriba tu <b>correo completo</b> para enviarte el enlace.
+              Si entras con un nombre de usuario (sin correo), no hay a dónde enviarlo:
+              pídele a el administrador de tu empresa que te ponga una nueva.
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={handleRecuperar}
+              disabled={recupero === 'enviando'}
+              className="text-xs text-blue-500 hover:underline font-semibold disabled:opacity-60"
+            >
+              {recupero === 'enviando' ? 'Enviando…' : '¿Olvidaste tu contraseña?'}
+            </button>
+          )}
+        </div>
 
         {/* Link a registro — solo si no hay tenant detectado (es la plataforma MotoFlow) */}
         {onRegistrar && !tenantBranding && (

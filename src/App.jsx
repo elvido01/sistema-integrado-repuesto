@@ -11,6 +11,7 @@ import { WhatsAppNotificationProvider } from '@/contexts/WhatsAppNotificationCon
 import MainLayout from '@/components/layout/MainLayout';
 import SuscripcionBlocker from '@/components/common/SuscripcionBlocker';
 import LoginForm from '@/components/auth/LoginForm';
+import NuevaPasswordForm from '@/components/auth/NuevaPasswordForm';
 import RegistroEmpresaPage from '@/pages/RegistroEmpresaPage';
 import TiendaPage from '@/pages/TiendaPage';
 
@@ -51,7 +52,7 @@ function PanelDeepLinkHandler() {
 }
 
 function AppContent() {
-  const { session, loading, user, empresa } = useAuth();
+  const { session, loading, user, empresa, recuperando } = useAuth();
   const [showRegistro, setShowRegistro] = useState(
     window.location.pathname === '/registro'
   );
@@ -63,6 +64,17 @@ function AppContent() {
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
       </div>
+    );
+  }
+
+  // Vino del enlace de recuperación: hay sesión, pero primero la contraseña
+  // nueva. Va antes del check de sesión porque el enlace SÍ crea sesión.
+  if (recuperando) {
+    return (
+      <>
+        <Helmet><title>{nombreSaaS} — Nueva contraseña</title></Helmet>
+        <NuevaPasswordForm />
+      </>
     );
   }
 
