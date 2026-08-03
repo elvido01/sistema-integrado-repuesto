@@ -841,11 +841,13 @@ const ConfiguracionSistemaPage = () => {
 
                             <div className="space-y-2">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Turnos de Caja por Día</Label>
+                                {/* Los handlers de esta página leen e.target.id
+                                    (no name): sin el id, el campo no guarda. */}
                                 <Input
                                     type="number" min="1" max="12"
-                                    name="turnos_caja_dia"
+                                    id="turnos_caja_dia"
                                     value={formData.turnos_caja_dia}
-                                    onChange={handleChange}
+                                    onChange={handleNumberChange}
                                     onFocus={(e) => e.target.select()}
                                     className="h-10 border-indigo-200 bg-indigo-50/30 text-indigo-700 font-bold"
                                 />
