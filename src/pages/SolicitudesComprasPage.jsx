@@ -33,6 +33,10 @@ const toLocalMidnight = (value) => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+// Días que dura cada cuota según la frecuencia. Es lo que convierte "número
+// de cuotas" en "meses de plazo": 365 cuotas diarias son 12 meses, no 365.
+const DIAS_POR_PERIODO = { diario: 1, semanal: 7, quincenal: 15, mensual: 30 };
+
 // Formatea un valor monetario para mostrarlo con separador de miles y decimales
 // mientras se escribe (acepta number o string crudo 'YYYY.dd').
 const fmtMontoInput = (raw) => {
@@ -175,7 +179,16 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     const inic = parseFloat(form.inicial) || 0;
     const adic = parseFloat(form.adicional) || 0;
     const tasa = parseFloat(form.tasa_interes) || 0;
-    const meses = parseInt(form.tiempo_meses) || 0;
+    // OJO: tiempo_meses guarda el NÚMERO DE CUOTAS, no meses. Con frecuencia
+    // mensual da lo mismo, pero en diario no: 365 cuotas son 12 meses de
+    // plazo, no 365. Aplicar el 3% por cuota cobraba 3% DIARIO —la cuota
+    // salía en 2,605 en vez de ~300— y el total de pagarés en 951,160.
+    const nCuotas = parseInt(form.tiempo_meses) || 0;
+    const diasPorPeriodo = DIAS_POR_PERIODO[form.frecuencia] || 30;
+    const plazoMeses = nCuotas * diasPorPeriodo / 30;
+    // La tasa que se teclea es MENSUAL: para otra frecuencia se lleva a la
+    // tasa del período, en vez de usarla tal cual.
+    const tasaPeriodo = (tasa / 100) * diasPorPeriodo / 30;
 
     const addonsTotal =
       (form.incluye_placa ? parseFloat(form.monto_placa) || 0 : 0) +
@@ -189,19 +202,20 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     const montoFinanciado = valor + addonsTotal - inic - adic;
     let cuotaBase = 0;
 
-    if (meses > 0 && montoFinanciado > 0) {
+    if (nCuotas > 0 && montoFinanciado > 0) {
       if (tasa > 0) {
         if (form.tipo_financiamiento === 'simple') {
-          // Interés simple: interés total = capital × tasa_mensual × meses
-          const interesTotal = montoFinanciado * (tasa / 100) * meses;
-          cuotaBase = (montoFinanciado + interesTotal) / meses;
+          // Interés simple: interés total = capital × tasa mensual × meses de
+          // plazo. Se reparte entre las cuotas que haya, sean 12 o 365.
+          const interesTotal = montoFinanciado * (tasa / 100) * plazoMeses;
+          cuotaBase = (montoFinanciado + interesTotal) / nCuotas;
         } else {
-          // Amortización francesa (PMT, interés sobre saldo)
-          const tasaMensual = tasa / 100;
-          cuotaBase = montoFinanciado * tasaMensual / (1 - Math.pow(1 + tasaMensual, -meses));
+          // Amortización francesa (PMT, interés sobre saldo), con la tasa del
+          // período que corresponda a la frecuencia.
+          cuotaBase = montoFinanciado * tasaPeriodo / (1 - Math.pow(1 + tasaPeriodo, -nCuotas));
         }
       } else {
-        cuotaBase = montoFinanciado / meses;
+        cuotaBase = montoFinanciado / nCuotas;
       }
     }
 
@@ -209,7 +223,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     // si la pone, la cuota final pasa a ese valor y el total se recalcula.
     const adj = parseFloat(form.cuota_ajustada) || 0;
     const cuotaFinal = adj > 0 ? adj : cuotaBase;
-    const totalPagares = meses > 0 ? cuotaFinal * meses : 0;
+    const totalPagares = nCuotas > 0 ? cuotaFinal * nCuotas : 0;
 
     setForm(prev => ({
       ...prev,
@@ -222,7 +236,7 @@ const SolicitudFormModal = ({ isOpen, onClose, solicitud, onSave, clientes, vend
     form.valor_contado, form.inicial, form.adicional, form.tasa_interes, form.tiempo_meses,
     form.incluye_placa, form.incluye_gps, form.incluye_casco, form.incluye_seguro,
     form.monto_placa, form.monto_gps, form.monto_casco, form.monto_seguro,
-    form.tipo_financiamiento, form.cuota_ajustada,
+    form.tipo_financiamiento, form.cuota_ajustada, form.frecuencia,
   ]);
 
   // Redondear la cuota base hacia arriba al múltiplo elegido (1/5/10/50/100)
@@ -1262,7 +1276,7 @@ const SolicitudesComprasPage = () => {
                 if (!selectedSolicitud) return;
                 const ced = (selectedSolicitud.cliente_rnc || '').trim();
                 const nCuotas = parseInt(selectedSolicitud.tiempo_meses) || 0;
-                const diasPorPeriodo = { diario: 1, semanal: 7, quincenal: 15, mensual: 30 }[selectedSolicitud.frecuencia] || 30;
+                const diasPorPeriodo = DIAS_POR_PERIODO[selectedSolicitud.frecuencia] || 30;
                 setClientePrefill({
                   nombre: selectedSolicitud.cliente_nombre || '',
                   rnc: ced,
