@@ -71,6 +71,10 @@ const CierreCajaPage = () => {
   /* ── State ── */
   const [fecha, setFecha] = useState(getCurrentDateInTimeZone());
   const [turno, setTurno] = useState(1);
+  // Cuántas veces al día cierra caja esta empresa (Configuración del Sistema).
+  // Con 1 —el caso normal— el turno ni se pregunta.
+  const turnosPorDia = Math.max(1, parseInt(empresa?.turnos_caja_dia, 10) || 1);
+  const unTurno = turnosPorDia <= 1;
   const [cajeros, setCajeros] = useState([]);
   const [selectedCajero, setSelectedCajero] = useState('ALL');
   const [showDesglose, setShowDesglose] = useState(false);
@@ -626,7 +630,8 @@ const CierreCajaPage = () => {
       // Reset
       setCantidades(DENOMINACIONES.reduce((acc, d) => ({ ...acc, [d.label]: 0 }), {}));
       setShowDesglose(false);
-      setTurno(prev => prev + 1);
+      // Con una sola caja al día el turno no avanza: siempre es el 1.
+      if (!unTurno) setTurno(prev => Math.min(prev + 1, turnosPorDia));
       fetchResumen();
     } catch (err) {
       console.error('Error saving cierre:', err);
@@ -1100,18 +1105,22 @@ const CierreCajaPage = () => {
               </Popover>
             </div>
 
-            {/* Turno */}
-            <div className="flex items-center gap-2 min-w-0">
-              <Label className="font-bold text-xs shrink-0">Turno</Label>
-              <Input
-                type="number"
-                min="1"
-                value={turno}
-                onChange={e => setTurno(parseInt(e.target.value, 10) || 1)}
-                onFocus={e => e.target.select()}
-                className="flex-1 min-w-0 h-8 text-center font-bold px-2"
-              />
-            </div>
+            {/* Turno. Con una sola caja al día no se pregunta: nadie tiene que
+                entender qué es un turno para cerrar la suya. */}
+            {!unTurno && (
+              <div className="flex items-center gap-2 min-w-0">
+                <Label className="font-bold text-xs shrink-0">Turno</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max={turnosPorDia}
+                  value={turno}
+                  onChange={e => setTurno(parseInt(e.target.value, 10) || 1)}
+                  onFocus={e => e.target.select()}
+                  className="flex-1 min-w-0 h-8 text-center font-bold px-2"
+                />
+              </div>
+            )}
 
             {/* Caja */}
             <div className="flex items-center gap-2 min-w-0">
@@ -1250,28 +1259,22 @@ const CierreCajaPage = () => {
               {/* Actions / Desglose Card */}
               <div className="border rounded-lg p-4 flex flex-col">
                 {!showDesglose ? (
-                  <div className="flex-grow flex flex-col items-center justify-center gap-6">
+                  /* Un solo camino: contar el efectivo. El botón viejo de
+                     "Cerrar el Turno" grababa sin contar —desglose en cero y
+                     toda la caja como faltante, como el cierre del 28/07— y un
+                     cierre así no dice si sobró o faltó, dice que no se contó. */
+                  <div className="flex-grow flex flex-col items-center justify-center gap-4">
                     <Button
-                      onClick={() => {
-                        handleCerrarTurno();
-                      }}
-                      disabled={saving}
+                      onClick={() => setShowDesglose(true)}
                       size="lg"
                       className="bg-morla-blue hover:bg-morla-blue/90 text-white px-8 py-6 text-base gap-3 shadow-lg"
                     >
-                      {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Lock className="h-5 w-5" />}
-                      Cerrar el Turno
-                    </Button>
-
-                    <Button
-                      onClick={() => setShowDesglose(true)}
-                      variant="outline"
-                      size="lg"
-                      className="bg-cyan-600 hover:bg-cyan-700 text-white px-8 py-6 text-base gap-3 shadow-lg border-none"
-                    >
                       <Coins className="h-5 w-5" />
-                      Desglose de Monedas
+                      Contar Efectivo y Cerrar {unTurno ? 'Caja' : 'Turno'}
                     </Button>
+                    <p className="text-xs text-gray-400 text-center max-w-[260px]">
+                      Se cuentan los billetes y al grabar el desglose {unTurno ? 'la caja queda cerrada' : 'el turno queda cerrado'}.
+                    </p>
                   </div>
                 ) : (
                   /* ── Desglose de Monedas ── */
@@ -1367,8 +1370,8 @@ const CierreCajaPage = () => {
                         disabled={saving}
                         className="bg-morla-blue hover:bg-morla-blue/90 text-white gap-2"
                       >
-                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                        F8 - Grabar el Desglose
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                        F8 - Grabar y Cerrar {unTurno ? 'Caja' : 'Turno'}
                       </Button>
                     </div>
 

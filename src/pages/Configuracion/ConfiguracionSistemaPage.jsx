@@ -55,6 +55,7 @@ const ConfiguracionSistemaPage = () => {
         formato_precio_etiqueta: 'alpha',
         formato_comprobante_pago: 'pdf',
         formato_cierre_caja: 'pos_80mm',
+        turnos_caja_dia: 1,
         formato_compra: 'pos_4inch',
         saldo_inicial_caja: 0,
         caja_historial_desde: '1970-01-01',
@@ -117,6 +118,7 @@ const ConfiguracionSistemaPage = () => {
                     formato_precio_etiqueta: data.formato_precio_etiqueta || 'alpha',
                     formato_comprobante_pago: data.formato_comprobante_pago || 'pdf',
                     formato_cierre_caja: data.formato_cierre_caja || 'pos_80mm',
+                    turnos_caja_dia: data.turnos_caja_dia ?? 1,
                     formato_compra: data.formato_compra || 'pos_4inch',
                     saldo_inicial_caja: data.saldo_inicial_caja ?? 0,
                     caja_historial_desde: data.caja_historial_desde || '1970-01-01',
@@ -215,7 +217,10 @@ const ConfiguracionSistemaPage = () => {
                 ...dataToSave,
                 tenant_id: tenantId,
                 fecha_inicio_meta: dataToSave.fecha_inicio_meta || null,
-                caja_historial_desde: dataToSave.caja_historial_desde || '1970-01-01'
+                caja_historial_desde: dataToSave.caja_historial_desde || '1970-01-01',
+                // El input entrega texto y la columna es entera; en blanco o en
+                // 0 dejaría el cierre sin turno válido.
+                turnos_caja_dia: Math.min(12, Math.max(1, parseInt(dataToSave.turnos_caja_dia, 10) || 1)),
             };
 
             let saveError = null;
@@ -831,6 +836,21 @@ const ConfiguracionSistemaPage = () => {
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">
                                     Formato del impreso al cerrar el turno en Cierre de Caja.
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Turnos de Caja por Día</Label>
+                                <Input
+                                    type="number" min="1" max="12"
+                                    name="turnos_caja_dia"
+                                    value={formData.turnos_caja_dia}
+                                    onChange={handleChange}
+                                    onFocus={(e) => e.target.select()}
+                                    className="h-10 border-indigo-200 bg-indigo-50/30 text-indigo-700 font-bold"
+                                />
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Cuántas veces al día se cierra la caja. Con <b>1</b> no se pregunta el turno al cerrar.
                                 </p>
                             </div>
                         </div>
