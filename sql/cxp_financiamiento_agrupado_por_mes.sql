@@ -133,7 +133,8 @@ BEGIN
   FOR g IN
     SELECT c.tenant_id,
            substring(c.numero from '^(FIN-\d+)') AS pref,
-           MIN(c.suplidor_id) AS prov,
+           -- MIN() no existe para uuid: se toma el primero del grupo.
+           (array_agg(c.suplidor_id ORDER BY c.numero))[1] AS prov,
            MIN(c.fecha)       AS fecha,
            COUNT(*)           AS cuantas
     FROM public.compras c
