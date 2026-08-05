@@ -1,12 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { agentIsAvailable } from '@/services/motoflowPrintAgent';
+import { isSilentPrintEnabled, setSilentPrintEnabled } from '@/lib/printHtmlSmart';
 
 const CompraFooter = ({
   compra,
@@ -21,6 +23,21 @@ const CompraFooter = ({
   esUSD = false,
 }) => {
   const [activeTab, setActiveTab] = useState('pago');
+
+  // Motoflow Print Agent. Los tickets de compra ya salían por el agente si la
+  // PC tenía activada la impresión sin diálogo, pero en este módulo no había
+  // forma de verlo ni de encenderlo: había que ir a Configuración a buscarlo.
+  const [hayAgente, setHayAgente] = useState(false);
+  const [sinDialogo, setSinDialogo] = useState(() => isSilentPrintEnabled());
+  useEffect(() => {
+    let vivo = true;
+    agentIsAvailable().then((ok) => { if (vivo) setHayAgente(ok); }).catch(() => { if (vivo) setHayAgente(false); });
+    return () => { vivo = false; };
+  }, []);
+  const cambiarSinDialogo = (on) => {
+    setSinDialogo(!!on);
+    setSilentPrintEnabled(!!on);
+  };
 
   const handlePaymentChange = (id, field, value) => {
     setPagos(pagos.map(p => p.id === id ? { ...p, [field]: value } : p));
@@ -455,6 +472,30 @@ const CompraFooter = ({
               Se recuerda en esta PC. El valor por defecto se pone en Configuración del Sistema.
             </p>
           </div>
+
+          {/* El agente imprime el ticket directo, sin el diálogo del navegador.
+              La hoja carta sale en PDF y no pasa por él. */}
+          {printFormat !== 'pdf' && (
+            <div className={`rounded border px-2 py-1.5 ${hayAgente ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+              {hayAgente ? (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox checked={sinDialogo} onCheckedChange={cambiarSinDialogo} />
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-amber-800">
+                    <Zap className="w-3.5 h-3.5" /> Imprimir sin diálogo (Print Agent)
+                  </span>
+                </label>
+              ) : (
+                <p className="flex items-center gap-1 text-[11px] font-semibold text-gray-400">
+                  <Zap className="w-3.5 h-3.5" /> Motoflow Print Agent — no detectado en esta PC
+                </p>
+              )}
+              <p className="text-[10px] text-gray-400 italic mt-0.5">
+                {hayAgente
+                  ? 'El ticket sale solo a la impresora térmica. Se recuerda en esta PC y aplica a todo el sistema.'
+                  : 'Sin el agente, el ticket abre el diálogo de impresión del navegador.'}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="pt-4 space-y-2 border-t mt-4 border-gray-200">
