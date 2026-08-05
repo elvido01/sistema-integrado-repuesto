@@ -12,7 +12,10 @@
 const AGENT_URL = 'http://127.0.0.1:9123';
 const AGENT_PRINTERS_TIMEOUT = 5000;
 const AGENT_PRINT_TIMEOUT = 30000;
-const AGENT_TIMEOUT = 800; // ms — el agente es local, debería responder en <50ms
+// El agente es local y responde en <50ms, pero mientras imprime puede tardar
+// más en atender el /health. Con 800 ms una impresión en curso bastaba para
+// que la pantalla lo diera por apagado.
+const AGENT_TIMEOUT = 2500;
 
 export interface AgentPrinter {
     name: string;
@@ -45,13 +48,18 @@ class AgentNotAvailableError extends Error {
 
 let availabilityCache: { ts: number; available: boolean } | null = null;
 const CACHE_MS = 5000; // ré-verificar cada 5s
+// Un "sí" se puede reusar 5s sin riesgo; un "no" se reintenta enseguida,
+// porque suele venir de un tropiezo (el agente ocupado, recién encendido) y
+// quedarse pegado hace que el sistema lo dé por ausente estando presente.
+const CACHE_MS_NEGATIVO = 1000;
 
 /**
  * Verifica si el agente está corriendo. Cachea el resultado por 5 segundos
  * para evitar fetch en cada operación.
  */
 export async function agentIsAvailable(): Promise<boolean> {
-    if (availabilityCache && Date.now() - availabilityCache.ts < CACHE_MS) {
+    const ttl = availabilityCache?.available ? CACHE_MS : CACHE_MS_NEGATIVO;
+    if (availabilityCache && Date.now() - availabilityCache.ts < ttl) {
         return availabilityCache.available;
     }
     try {

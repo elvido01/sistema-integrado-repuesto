@@ -29,10 +29,22 @@ const CompraFooter = ({
   // forma de verlo ni de encenderlo: había que ir a Configuración a buscarlo.
   const [hayAgente, setHayAgente] = useState(false);
   const [sinDialogo, setSinDialogo] = useState(() => isSilentPrintEnabled());
+
+  // Se pregunta cada rato y al volver a la ventana, no una sola vez: la
+  // comprobación tiene 800 ms de tope y guarda el "no" en caché, así que si
+  // el agente tardaba un instante —o se encendió después— la pantalla se
+  // quedaba diciendo "no detectado" para siempre.
   useEffect(() => {
     let vivo = true;
-    agentIsAvailable().then((ok) => { if (vivo) setHayAgente(ok); }).catch(() => { if (vivo) setHayAgente(false); });
-    return () => { vivo = false; };
+    const mirar = () => {
+      agentIsAvailable()
+        .then((ok) => { if (vivo) setHayAgente(ok); })
+        .catch(() => { if (vivo) setHayAgente(false); });
+    };
+    mirar();
+    const t = setInterval(mirar, 10000);
+    window.addEventListener('focus', mirar);
+    return () => { vivo = false; clearInterval(t); window.removeEventListener('focus', mirar); };
   }, []);
   const cambiarSinDialogo = (on) => {
     setSinDialogo(!!on);
