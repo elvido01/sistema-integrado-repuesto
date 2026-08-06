@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { MessageCircle, Search, Send, Bot, UserRound, Loader2, FileText, RefreshCw, Power, PowerOff, CheckCircle2, QrCode, Smartphone, X, Wifi, WifiOff, PlusCircle, Trash2, Share2, Image as ImageIcon, PackagePlus, Mic, Square, Volume2, VolumeX, ChevronUp, ChevronDown, Clock3, CreditCard, Ban, ShoppingCart, AlertTriangle, CalendarClock, CheckCheck, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SlidersHorizontal, MoreVertical, Edit3, Instagram, Facebook, Inbox, UserPlus, Handshake, MapPin, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { invocarConSesion } from '@/lib/edgeInvoke';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -1321,7 +1322,7 @@ const WhatsAppCrmPage = () => {
 
     try {
       if (!isWhatsAppConversation(activeConversation)) {
-        const { error } = await supabase.from('sales_messages').insert({
+        const { data: queuedMessage, error } = await supabase.from('sales_messages').insert({
           tenant_id: tenantId,
           conversation_id: activeConversation.id,
           platform: activeConversation.platform,
@@ -1329,11 +1330,23 @@ const WhatsAppCrmPage = () => {
           message_type: 'text',
           message_text: text,
           status: 'queued',
-          raw_data: { source: 'sales_hub_internal_note', note: 'Pendiente conectar envio oficial del canal.' },
-        });
+          raw_data: { source: 'sales_hub_manual_reply' },
+        }).select('id').single();
         if (error) throw error;
-        finishOptimisticMessage(tempId, 'queued');
-        toast({ title: 'Seguimiento guardado', description: 'El canal aun no tiene envio manual activo desde Sales Hub.' });
+
+        try {
+          const dispatched = await invocarConSesion('meta-send-queued', { message_id: queuedMessage.id });
+          const status = dispatched?.message?.status || (dispatched?.ok ? 'sent' : 'failed');
+          finishOptimisticMessage(tempId, status);
+          if (status === 'sent') {
+            toast({ title: 'Mensaje enviado', description: `Respuesta enviada por ${activeConversation.platform === 'instagram' ? 'Instagram' : 'Facebook'}.` });
+          } else {
+            toast({ variant: 'destructive', title: 'No se envio por Meta', description: dispatched?.message?.raw_data?.dispatch_error || 'El mensaje quedo marcado como fallido.' });
+          }
+        } catch (dispatchError) {
+          finishOptimisticMessage(tempId, 'queued');
+          toast({ variant: 'destructive', title: 'Mensaje en cola', description: dispatchError?.message || 'No se pudo contactar el despachador Meta.' });
+        }
         return;
       }
 

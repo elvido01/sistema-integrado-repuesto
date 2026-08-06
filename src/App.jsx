@@ -14,6 +14,7 @@ import LoginForm from '@/components/auth/LoginForm';
 import NuevaPasswordForm from '@/components/auth/NuevaPasswordForm';
 import RegistroEmpresaPage from '@/pages/RegistroEmpresaPage';
 import TiendaPage from '@/pages/TiendaPage';
+import PrivacyPolicyPage from '@/pages/PrivacyPolicyPage';
 
 function PanelDeepLinkHandler() {
   const { openPanel } = usePanels();
@@ -131,6 +132,15 @@ function App() {
   const isTienda = window.location.pathname.startsWith('/tienda');
   if (isTienda) {
     return <TiendaPage />;
+  }
+
+  const publicLegalPaths = new Set([
+    '/privacy',
+    '/privacy-policy',
+    '/politica-privacidad',
+  ]);
+  if (publicLegalPaths.has(window.location.pathname)) {
+    return <PrivacyPolicyPage />;
   }
 
   return (

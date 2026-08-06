@@ -144,6 +144,10 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [editForma, setEditForma] = useState('Efectivo');
   const [editCuenta, setEditCuenta] = useState('');
   const [editBanco, setEditBanco] = useState('');
+  // Cuenta que RECIBE la plata al cambiar el recibo a transferencia/cheque.
+  // Sin esto el recibo cambiaba de etiqueta pero el dinero no entraba a
+  // ninguna cuenta: salía de la caja y no aparecía en el banco.
+  const [editCuentaId, setEditCuentaId] = useState(null);
   const [editPass, setEditPass] = useState('');
   const [editBusy, setEditBusy] = useState(false);
 
@@ -428,7 +432,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
 
   // ── Opciones > Editar (forma de pago de un recibo grabado) ──
   const abrirEditar = async () => {
-    setEditInfo(null); setEditPass(''); setEditCuenta(''); setEditBanco('');
+    setEditInfo(null); setEditPass(''); setEditCuenta(''); setEditBanco(''); setEditCuentaId(null);
     try {
       const { data } = await supabase.from('prestamo_pagos')
         .select('numero, fecha').order('fecha', { ascending: false }).limit(50);
@@ -483,9 +487,15 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         p_cuenta: editCuenta.trim() || null,
         p_banco: editBanco.trim() || null,
         p_password: esAdminUser ? null : editPass,
+        p_cuenta_id: editForma === 'Efectivo' ? null : editCuentaId,
       });
       if (error) throw error;
-      toast({ title: 'Recibo actualizado', description: `${editInfo.numero} → ${editForma}` });
+      toast({
+        title: 'Recibo actualizado',
+        description: editForma === 'Efectivo'
+          ? `${editInfo.numero} → Efectivo (vuelve a la caja)`
+          : `${editInfo.numero} → ${editForma} · entra a ${editBanco || 'la cuenta elegida'}`,
+      });
       setEditOpen(false);
       if (cliente) cargarEstado(cliente.id);
     } catch (e) {
@@ -1215,6 +1225,15 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                   </Select>
                 </div>
                 {editForma !== 'Efectivo' && (
+                  <>
+                  <CuentaBancariaSelect
+                    value={editCuentaId}
+                    onChange={setEditCuentaId}
+                    onSelect={(c) => { setEditCuenta(c?.numero_cuenta || ''); setEditBanco(c?.banco || ''); }}
+                    moneda="DOP"
+                    contexto="recibo"
+                    label="Cuenta que recibe"
+                  />
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
                       <Label>Cta./Referencia</Label>
@@ -1225,6 +1244,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                       <Input value={editBanco} onChange={(e) => setEditBanco(e.target.value)} />
                     </div>
                   </div>
+                  </>
                 )}
                 {!esAdminUser && (
                   <div className="rounded-md border border-amber-300 bg-amber-50 p-2 space-y-1.5">
