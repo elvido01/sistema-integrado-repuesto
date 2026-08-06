@@ -481,7 +481,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
     }
     setEditBusy(true);
     try {
-      const { error } = await supabase.rpc('editar_forma_pago_recibo', {
+      const { data: res, error } = await supabase.rpc('editar_forma_pago_recibo', {
         p_numero: editInfo.numero,
         p_forma: editForma,
         p_cuenta: editCuenta.trim() || null,
@@ -490,12 +490,23 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         p_cuenta_id: editForma === 'Efectivo' ? null : editCuentaId,
       });
       if (error) throw error;
-      toast({
-        title: 'Recibo actualizado',
-        description: editForma === 'Efectivo'
-          ? `${editInfo.numero} → Efectivo (vuelve a la caja)`
-          : `${editInfo.numero} → ${editForma} · entra a ${editBanco || 'la cuenta elegida'}`,
-      });
+      // recibo_caja = filas movidas en recibos_ingreso, que es lo que lee el
+      // cierre de caja. Si es 0, el pago cambió de forma pero el cuadre del
+      // día lo sigue contando como efectivo: hay que decirlo, no callarlo.
+      if (Number(res?.recibo_caja) === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Ojo: el cuadre del día NO cambió',
+          description: `${editInfo.numero} quedó como ${editForma}, pero no se encontró su recibo de ingreso, así que el cierre de caja lo sigue contando como efectivo.`,
+        });
+      } else {
+        toast({
+          title: 'Recibo actualizado',
+          description: editForma === 'Efectivo'
+            ? `${editInfo.numero} → Efectivo (vuelve a la caja)`
+            : `${editInfo.numero} → ${editForma} · sale de la caja y entra a ${editBanco || 'la cuenta elegida'}`,
+        });
+      }
       setEditOpen(false);
       if (cliente) cargarEstado(cliente.id);
     } catch (e) {
