@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/customSupabaseClient';
+import { invocarConSesion } from '@/lib/edgeInvoke';
 import { useToast } from '@/components/ui/use-toast';
 import {
     Dialog,
@@ -62,27 +62,11 @@ const EditUserModal = ({ isOpen, onClose, user, onUserUpdated }) => {
             }
 
             // Call the admin-management edge function
-            const { data, error } = await supabase.functions.invoke('admin-management', {
-                body: {
-                    action: 'update_user',
-                    targetUserId: user.id,
-                    updates
-                }
+            await invocarConSesion('admin-management', {
+                action: 'update_user',
+                targetUserId: user.id,
+                updates
             });
-
-            if (error) {
-                console.error("Invoke Error Context:", error);
-                let errorMsg = error.message;
-
-                // error.context es la Response HTTP: el cuerpo trae el
-                // mensaje real del servidor (ej. "usuario ya ocupado")
-                try {
-                    const body = await error.context?.json?.();
-                    errorMsg = body?.error || body?.message || errorMsg;
-                } catch { /* cuerpo no-JSON: se queda el mensaje genérico */ }
-
-                throw new Error(errorMsg);
-            }
 
             toast({
                 title: "Usuario Actualizado",

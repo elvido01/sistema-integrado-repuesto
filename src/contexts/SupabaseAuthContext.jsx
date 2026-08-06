@@ -132,8 +132,11 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, [fetchProfileAndPermissions]);
 
+  // scope 'local': cierra la sesión de ESTE equipo. El de fábrica es 'global',
+  // que revoca la sesión del usuario en TODOS sus equipos a la vez — salir en
+  // la caja no debe botar al mismo usuario del celular ni de la otra PC.
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     handleSession(null);
   }, [handleSession]);
 
@@ -197,7 +200,11 @@ export const AuthProvider = ({ children }) => {
   }, [toast]);
 
   const signIn = useCallback(async (email, password, tenantPreferido = null) => {
-    await supabase.auth.signOut().catch(console.error);
+    // Limpieza LOCAL antes de entrar (ver signOut). Con el 'global' de fábrica,
+    // entrar en una PC le revocaba al MISMO usuario la sesión de las demás:
+    // seguían trabajando hasta que el token vencía (1 h) y de ahí en adelante
+    // todo lo que necesitara sesión fallaba sin explicación.
+    await supabase.auth.signOut({ scope: 'local' }).catch(console.error);
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,

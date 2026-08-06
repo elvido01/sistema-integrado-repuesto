@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/customSupabaseClient';
+import { invocarConSesion } from '@/lib/edgeInvoke';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
@@ -76,8 +76,9 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
             const loginEmail = toLoginEmail(usuario);
 
             // Create user via Edge Function (uses service_role → auto-confirms email)
-            const { data, error } = await supabase.functions.invoke('admin-management', {
-                body: {
+            let data;
+            try {
+                data = await invocarConSesion('admin-management', {
                     action: 'create_user',
                     targetUserId: 'new', // placeholder, not used for create
                     updates: {
@@ -87,20 +88,12 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                         role: formData.role,
                         tenant_id: tenantId
                     }
+                });
+            } catch (err) {
+                if (/already.*registered|already exists|duplicate/i.test(err.message || '')) {
+                    throw new Error(`El usuario «${usuario}» ya existe. Elige otro nombre de usuario.`);
                 }
-            });
-
-            if (error) {
-                let errorMsg = error.message;
-                // error.context es la Response HTTP: el cuerpo trae el mensaje real
-                try {
-                    const body = await error.context?.json?.();
-                    errorMsg = body?.error || body?.message || errorMsg;
-                } catch { /* cuerpo no-JSON */ }
-                if (/already.*registered|already exists|duplicate/i.test(errorMsg || '')) {
-                    errorMsg = `El usuario «${usuario}» ya existe. Elige otro nombre de usuario.`;
-                }
-                throw new Error(errorMsg);
+                throw err;
             }
 
             toast({

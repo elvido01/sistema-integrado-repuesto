@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { invocarConSesion } from '@/lib/edgeInvoke';
 import { useToast } from '@/components/ui/use-toast';
 import { MODULES } from '@/lib/permissionsHelper';
 import { Shield, User, Check, X, Save, RefreshCw, UserPlus, Edit } from 'lucide-react';
@@ -268,20 +269,10 @@ const UsuariosPermissionsPage = () => {
     const handleDeleteUser = async (userId) => {
         setIsSaving(true);
         try {
-            const { data, error } = await supabase.functions.invoke('admin-management', {
-                body: {
-                    action: 'delete_user',
-                    targetUserId: userId
-                }
+            await invocarConSesion('admin-management', {
+                action: 'delete_user',
+                targetUserId: userId
             });
-
-            if (error) {
-                let errorMsg = error.message;
-                if (error.context?.json?.error) {
-                    errorMsg = error.context.json.error;
-                }
-                throw new Error(errorMsg);
-            }
 
             toast({
                 title: "Usuario Eliminado",

@@ -25,13 +25,28 @@ Deno.serve(async (req) => {
             }
         );
 
-        // Get the caller's JWT to verify they are an admin
-        const authHeader = req.headers.get('Authorization')!;
-        const token = authHeader.replace('Bearer ', '');
+        // Get the caller's JWT to verify they are an admin.
+        // OJO: si el navegador no tiene sesion viva, supabase-js manda la ANON
+        // KEY en lugar del token del usuario. Es un JWT valido, asi que llega
+        // hasta aqui y solo revienta en getUser. Por eso el mensaje habla de la
+        // sesion y no de permisos: quien lo ve tiene que volver a entrar.
+        const authHeader = req.headers.get('Authorization') ?? '';
+        const token = authHeader.replace('Bearer ', '').trim();
+
+        if (!token) {
+            return new Response(JSON.stringify({ error: 'Falta el token de sesion. Vuelve a entrar al sistema.' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 401,
+            });
+        }
+
         const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
 
         if (userError || !user) {
-            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            return new Response(JSON.stringify({
+                error: 'Tu sesion se vencio. Cierra sesion y vuelve a entrar para hacer este cambio.',
+                detalle: userError?.message ?? 'getUser no devolvio usuario',
+            }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 401,
             });
