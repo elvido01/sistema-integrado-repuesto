@@ -5,7 +5,10 @@ export const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
 function addPeriodo(baseDate, k, frecuencia) {
   const d = new Date(baseDate);
-  if (frecuencia === 'semanal') d.setDate(d.getDate() + (k - 1) * 7);
+  // 'diario' tiene que ir explícito: sin él caía en el else de abajo y un
+  // préstamo de 365 cuotas diarias terminaba de pagarse en 30 años.
+  if (frecuencia === 'diario') d.setDate(d.getDate() + (k - 1));
+  else if (frecuencia === 'semanal') d.setDate(d.getDate() + (k - 1) * 7);
   else if (frecuencia === 'quincenal') d.setDate(d.getDate() + (k - 1) * 15);
   else d.setMonth(d.getMonth() + (k - 1));
   return d.toISOString().slice(0, 10);
