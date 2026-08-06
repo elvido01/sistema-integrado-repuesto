@@ -240,7 +240,15 @@ async function handleMessagingEvent(supabase: any, objectType: string, platform:
   const reply = buildBetaReply(text, account.generic_reply || GENERIC_REPLY);
   if (!reply) return;
 
-  const sent = await sendMetaText(platform, accountExternalId, senderId, reply, account.access_token);
+  // Instagram se responde por el id de la PAGINA, no por el de la cuenta de
+  // Instagram: contra /{ig-id}/messages Meta contesta "(#3) Application does
+  // not have the capability to make this API call". Si no hay pagina ligada
+  // se intenta igual con el id de IG, que es mejor que no intentar.
+  const sendId = (platform === 'instagram'
+    ? await resolvePageId(supabase, account.tenant_id)
+    : null) || accountExternalId;
+
+  const sent = await sendMetaText(platform, sendId, senderId, reply, account.access_token);
   await supabase.from('sales_messages').insert({
     tenant_id: account.tenant_id,
     conversation_id: conversation.id,
@@ -248,10 +256,44 @@ async function handleMessagingEvent(supabase: any, objectType: string, platform:
     sender_type: 'assistant',
     message_type: 'text',
     message_text: reply,
-    external_message_id: sent?.message_id || sent?.recipient_id || null,
-    status: sent ? 'sent' : 'failed',
-    raw_data: { provider_response: sent, beta_mode: true },
+    external_message_id: sent.data?.message_id || sent.data?.recipient_id || null,
+    status: sent.ok ? 'sent' : 'failed',
+    // El motivo del fallo SE GUARDA. Antes aqui iba `provider_response: null`
+    // y el error de Meta solo quedaba en un console.warn: la pantalla decia
+    // "failed" sin decir por que, y habia que salir a preguntarselo a la API.
+    raw_data: {
+      provider_response: sent.data,
+      error: sent.ok ? null : (sent.data?.error?.message || `HTTP ${sent.status}`),
+      endpoint: sendId,
+      beta_mode: true,
+    },
   });
+
+  if (!sent.ok) {
+    await supabase.from('meta_webhook_events').update({
+      error_message: `respuesta no enviada: ${sent.data?.error?.message || sent.status}`,
+    }).eq('id', logId);
+  }
+}
+
+// Id de la pagina de Facebook del mismo tenant (la que manda los DM de IG).
+async function resolvePageId(supabase: any, tenantId: string) {
+  const { data } = await supabase
+    .from('sales_channels')
+    .select('external_account_id')
+    .eq('tenant_id', tenantId)
+    .eq('platform', 'facebook')
+    .eq('status', 'active')
+    .maybeSingle();
+  if (data?.external_account_id) return data.external_account_id;
+
+  const { data: social } = await supabase
+    .from('social_accounts')
+    .select('external_account_id')
+    .eq('tenant_id', tenantId)
+    .eq('platform', 'facebook')
+    .maybeSingle();
+  return social?.external_account_id || null;
 }
 
 async function resolveAccount(supabase: any, platform: string, ids: string[]) {
@@ -394,6 +436,8 @@ function buildBetaReply(text: string, configuredReply: string) {
   return String(configuredReply || GENERIC_REPLY).slice(0, 1000);
 }
 
+// Devuelve SIEMPRE {ok, status, data} para que quien llama pueda guardar el
+// motivo del fallo. Antes devolvia null y el error de Meta se perdia.
 async function sendMetaText(platform: string, accountId: string, recipientId: string, text: string, token: string) {
   const response = await fetch(`https://graph.facebook.com/v21.0/${accountId}/messages?access_token=${encodeURIComponent(token)}`, {
     method: 'POST',
@@ -407,10 +451,9 @@ async function sendMetaText(platform: string, accountId: string, recipientId: st
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    console.warn(`[meta-webhook] respuesta ${platform} fallo`, response.status, data);
-    return null;
+    console.warn(`[meta-webhook] respuesta ${platform} fallo`, response.status, JSON.stringify(data));
   }
-  return data;
+  return { ok: response.ok, status: response.status, data };
 }
 
 function serviceClient() {
