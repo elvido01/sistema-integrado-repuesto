@@ -1106,11 +1106,11 @@ const CierreCajaPage = () => {
             <button
               type="button"
               onClick={() => fetchResumen()}
-              disabled={loading}
+              disabled={loadingResumen}
               title="Actualizar los montos del día"
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-white/20 disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loadingResumen ? 'animate-spin' : ''}`} />
             </button>
           </div>
 
