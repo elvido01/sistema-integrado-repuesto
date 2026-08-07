@@ -236,7 +236,16 @@ async function handleMessagingEvent(supabase: any, objectType: string, platform:
 
   await markEvent(supabase, logId, { status: 'processed' });
 
-  if (account.auto_reply === false || !account.access_token) return;
+  // El saludo automatico esta APAGADO salvo que se pida a proposito
+  // (sales_channels.metadata.auto_reply = true). Antes bastaba con no decir
+  // nada para que el bot contestara, asi que un canal nuevo nacia hablando.
+  //
+  // Se apago por decision, no por el permiso de Instagram: mientras Hermes
+  // aprende, al cliente le contesta una persona. Un "Gracias por escribirnos"
+  // delante de cada conversacion ensucia justo los pares pregunta→respuesta
+  // que se estan recogiendo para entrenarlo, y de paso le avisa al cliente
+  // que no hay nadie del otro lado.
+  if (account.auto_reply !== true || !account.access_token) return;
   const reply = buildBetaReply(text, account.generic_reply || GENERIC_REPLY);
   if (!reply) return;
 
@@ -363,7 +372,9 @@ async function resolveAccount(supabase: any, platform: string, ids: string[]) {
         external_account_id: social.external_account_id,
         access_token: secret?.access_token || null,
         status: 'active',
-        metadata: { source: 'social_accounts', auto_reply: true },
+        // auto_reply en false: un canal que se arma solo NO debe nacer
+        // hablandole a los clientes. Se enciende a proposito o no se enciende.
+        metadata: { source: 'social_accounts', auto_reply: false },
       }, { onConflict: 'tenant_id,platform,external_account_id' })
       .select('id')
       .single();
@@ -374,7 +385,7 @@ async function resolveAccount(supabase: any, platform: string, ids: string[]) {
       social_account_id: social.id,
       external_account_id: social.external_account_id,
       access_token: secret?.access_token || null,
-      auto_reply: true,
+      auto_reply: false,
     };
   }
 
