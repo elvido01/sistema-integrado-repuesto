@@ -30,6 +30,20 @@ function persistSession(payload) {
   cachedSession = payload || null;
   try { window.localStorage.setItem(SESSION_KEY, JSON.stringify(payload)); } catch { /* storage lleno */ }
   try { extStorage?.set({ [SESSION_KEY]: payload }); } catch { /* sin permiso */ }
+  publicarConfigOmni();
+}
+
+// El puente de Instagram (public/ig-mirror.js) corre en instagram.com, donde
+// no llega el bundle ni sus variables de compilacion. Se le deja aqui la URL
+// y la anon key —las mismas que ya usa este panel— para que pueda llamar la
+// RPC del espejo con la sesion que acaba de guardarse. No se publica ningun
+// secreto: la anon key es publica por diseño y la sesion ya vivia aqui.
+const CONFIG_KEY = 'motoflow_omni_config';
+export function publicarConfigOmni() {
+  if (!extStorage || !SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+  try {
+    extStorage.set({ [CONFIG_KEY]: { url: SUPABASE_URL, anon: SUPABASE_ANON_KEY } });
+  } catch { /* sin permiso */ }
 }
 
 function clearSession() {
@@ -41,6 +55,7 @@ function clearSession() {
 // Rehidrata la sesion desde el almacenamiento de la extension. La app la
 // llama al montar: si WhatsApp borro su localStorage, la recupera de aqui.
 export async function loadStoredSession() {
+  publicarConfigOmni();
   const local = readLocal();
   if (local?.access_token) { cachedSession = local; return local; }
   if (!extStorage) return null;

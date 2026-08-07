@@ -9,6 +9,7 @@
   ],
   "host_permissions": [
     "https://web.whatsapp.com/*",
+    "https://www.instagram.com/*",
     "https://*.supabase.co/*"
   ],
   "content_scripts": [
@@ -29,6 +30,25 @@
         "jid-probe.js"
       ],
       "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "ig-mirror.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "ig-probe.js"
+      ],
+      "run_at": "document_start",
       "world": "MAIN"
     }
   ]
