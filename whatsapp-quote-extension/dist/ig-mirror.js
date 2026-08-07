@@ -79,6 +79,119 @@
     }
   };
 
+  // ══════════════════════════════════════════════════════════════════
+  // SALIDA: escribir en el chat ABIERTO lo que el vendedor dejó en cola
+  // ══════════════════════════════════════════════════════════════════
+  // Solo se escribe en la conversación que el vendedor ya tiene delante.
+  // Si no está abierta, el mensaje se queda en cola. Es deliberado: un
+  // programa que navega solo por Instagram, abre chats y escribe se
+  // comporta como un robot y se le trata como tal. Así, lo único que hace
+  // la extensión es pegar un texto que una persona ya redactó, en una
+  // ventana que esa persona ya tiene abierta.
+
+  const ENTRE_ENVIOS_MS = 9000;   // respiro entre un mensaje y el siguiente
+  const REVISAR_COLA_MS = 8000;
+  let ultimoEnvio = 0;
+  let enviando = false;
+
+  const hiloAbierto = () => {
+    const m = String(location.pathname || '').match(/\/direct\/t\/(\d+)/);
+    return m ? m[1] : null;
+  };
+
+  // El cuadro de texto de Instagram. Varias vías porque cambia de versión;
+  // la primera que aparezca gana.
+  const buscarCuadro = () => {
+    const intentos = [
+      () => document.querySelector('div[role="textbox"][contenteditable="true"]'),
+      () => document.querySelector('textarea[placeholder]'),
+      () => document.querySelector('form div[contenteditable="true"]'),
+      () => [...document.querySelectorAll('[contenteditable="true"]')].pop(),
+    ];
+    for (const f of intentos) {
+      try { const el = f(); if (el) return el; } catch { /* siguiente */ }
+    }
+    return null;
+  };
+
+  const escribir = async (cuadro, texto) => {
+    cuadro.focus();
+    // execCommand es el camino que respeta React: cambiar .textContent a mano
+    // no dispara los eventos internos de Instagram y el botón de enviar se
+    // queda apagado, con el texto en pantalla pero imposible de mandar.
+    const ok = document.execCommand('insertText', false, texto);
+    if (!ok) {
+      cuadro.textContent = texto;
+      cuadro.dispatchEvent(new InputEvent('input', { bubbles: true, data: texto }));
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    for (const tipo of ['keydown', 'keypress', 'keyup']) {
+      cuadro.dispatchEvent(new KeyboardEvent(tipo, {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true,
+      }));
+    }
+    await new Promise((r) => setTimeout(r, 600));
+    // Si el cuadro quedó vacío, el mensaje salió.
+    return !String(cuadro.textContent || '').trim();
+  };
+
+  const rpc = async (nombre, cuerpo) => {
+    const r = await fetch(`${config.url}/rest/v1/rpc/${nombre}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: config.anon,
+        Authorization: `Bearer ${sesion.access_token}`,
+      },
+      body: JSON.stringify(cuerpo),
+    });
+    if (!r.ok) throw new Error(`${nombre}: HTTP ${r.status}`);
+    return r.json();
+  };
+
+  const revisarCola = async () => {
+    if (enviando) return;
+    if (Date.now() - ultimoEnvio < ENTRE_ENVIOS_MS) return;
+    const hilo = hiloAbierto();
+    if (!hilo) return;                       // no hay chat abierto
+    if (document.hidden) return;             // pestaña en segundo plano
+    if (!(await refrescarCredenciales())) return;
+
+    enviando = true;
+    try {
+      const cola = await rpc('omni_ig_pendientes', { p_thread: hilo });
+      if (!Array.isArray(cola) || !cola.length) return;
+
+      const cuadro = buscarCuadro();
+      if (!cuadro) {
+        // Se avisa UNA vez y se deja en cola: no se descarta el mensaje del
+        // vendedor porque Instagram cambió su cuadro de texto.
+        await rpc('omni_ig_marcar', {
+          p_id: cola[0].id, p_ok: false,
+          p_error: 'No se encontró el cuadro de texto de Instagram',
+        });
+        return;
+      }
+
+      // Uno por vuelta: ráfagas de mensajes son lo que dispara las alarmas.
+      const msg = cola[0];
+      let salio = false;
+      let motivo = null;
+      try {
+        salio = await escribir(cuadro, msg.message_text);
+        if (!salio) motivo = 'El texto se escribió pero Instagram no lo envió';
+      } catch (e) {
+        motivo = String(e?.message || e);
+      }
+      await rpc('omni_ig_marcar', { p_id: msg.id, p_ok: salio, p_error: motivo });
+      ultimoEnvio = Date.now();
+    } catch { /* nunca estorbar el uso normal */ } finally {
+      enviando = false;
+    }
+  };
+
+  window.setInterval(revisarCola, REVISAR_COLA_MS);
+
   window.addEventListener('message', (ev) => {
     if (ev.source !== window) return;
     const d = ev.data;
