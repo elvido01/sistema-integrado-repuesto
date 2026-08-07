@@ -1314,6 +1314,57 @@ const WhatsAppCrmPage = () => {
     }
   };
 
+  // ── Hermes sugiere qué contestar ──────────────────────────────────────
+  // Propone, no envía. El vendedor manda tal cual, la corrige o la descarta,
+  // y esa decisión se guarda al lado de lo que escribió de verdad: comparar
+  // las dos es lo que le enseña a Hermes.
+  const [sugerencia, setSugerencia] = useState(null);
+  const [pidiendoSugerencia, setPidiendoSugerencia] = useState(false);
+
+  // Al cambiar de conversación la sugerencia vieja no sirve: era para otro.
+  useEffect(() => { setSugerencia(null); }, [selected?.id]);
+
+  const pedirSugerencia = async () => {
+    if (!selected?.id || pidiendoSugerencia) return;
+    setPidiendoSugerencia(true);
+    try {
+      const r = await invocarConSesion('hermes-sugerir', { conversation_id: selected.id });
+      if (!r?.ok) throw new Error(r?.error || 'No se pudo generar la sugerencia');
+      setSugerencia({ texto: r.sugerencia, messageId: r.message_id, productos: r.productos || [] });
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Hermes no pudo sugerir', description: e.message });
+    } finally {
+      setPidiendoSugerencia(false);
+    }
+  };
+
+  const marcarUso = (messageId, resultado) => {
+    if (!messageId) return;
+    supabase.rpc('hermes_marcar_uso', { p_message_id: messageId, p_resultado: resultado })
+      .then(() => {}, () => {}); // que falle el registro no debe estorbar la venta
+  };
+
+  const usarSugerencia = (enviarYa) => {
+    if (!sugerencia) return;
+    const { texto, messageId } = sugerencia;
+    setSugerencia(null);
+    if (enviarYa) {
+      marcarUso(messageId, 'usada');
+      sendTextToConversation(texto);
+    } else {
+      // Se pone en el cuadro para que la retoque. Si al final la cambia,
+      // el texto que se guarde como human_reply será el suyo, no el de Hermes.
+      marcarUso(messageId, 'editada');
+      setReply(texto);
+      replyInputRef.current?.focus();
+    }
+  };
+
+  const descartarSugerencia = () => {
+    if (sugerencia?.messageId) marcarUso(sugerencia.messageId, 'descartada');
+    setSugerencia(null);
+  };
+
   const sendTextToConversation = async (content) => {
     if (!selected || !content?.trim()) return;
     const text = content.trim();
@@ -2367,7 +2418,48 @@ const WhatsAppCrmPage = () => {
                     </div>
 
                     <div className="px-3 sm:px-4 py-3 border-t bg-[#f0f2f5]">
+                      {/* Hermes sugiere. NO envía: propone, y el vendedor manda,
+                          corrige o descarta. Esa decisión es la que enseña. */}
+                      {sugerencia && (
+                        <div className="mb-2 rounded-lg border border-violet-200 bg-violet-50 p-2.5">
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <Sparkles className="h-3.5 w-3.5 text-violet-600 shrink-0" />
+                            <span className="text-[11px] font-bold uppercase tracking-wide text-violet-700">Hermes sugiere</span>
+                            {!!sugerencia.productos?.length && (
+                              <span className="text-[11px] text-violet-500">
+                                · {sugerencia.productos.length} pieza{sugerencia.productos.length > 1 ? 's' : ''} encontrada{sugerencia.productos.length > 1 ? 's' : ''}
+                              </span>
+                            )}
+                            <button type="button" className="ml-auto text-slate-400 hover:text-slate-600"
+                              onClick={() => descartarSugerencia()} title="Descartar">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-sm text-slate-800 whitespace-pre-wrap">{sugerencia.texto}</p>
+                          <div className="mt-2 flex gap-2">
+                            <Button size="sm" className="h-7 text-xs bg-violet-600 hover:bg-violet-700"
+                              onClick={() => usarSugerencia(true)}>
+                              Enviar así
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs"
+                              onClick={() => usarSugerencia(false)}>
+                              Editar antes
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex min-w-0 items-end gap-2">
+                        <Button
+                          variant="ghost" size="icon"
+                          className="h-11 w-11 sm:h-12 sm:w-12 shrink-0 rounded-full text-violet-500 hover:bg-violet-50"
+                          title="Pedirle a Hermes que sugiera la respuesta"
+                          onClick={pedirSugerencia}
+                          disabled={pidiendoSugerencia}
+                        >
+                          {pidiendoSugerencia
+                            ? <Loader2 className="h-5 w-5 animate-spin" />
+                            : <Sparkles className="h-6 w-6" />}
+                        </Button>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-12 sm:w-12 shrink-0 rounded-full text-slate-500 hover:bg-white" title="Acciones rapidas">
