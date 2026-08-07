@@ -240,6 +240,24 @@ async function handleMessagingEvent(supabase: any, objectType: string, platform:
   const reply = buildBetaReply(text, account.generic_reply || GENERIC_REPLY);
   if (!reply) return;
 
+  // SOLO AL PRIMER MENSAJE. Antes se contestaba a CADA mensaje entrante: un
+  // cliente que escribe "hola", "tienen el filtro", "de la AX100" recibia el
+  // mismo "Gracias por escribirnos" tres veces seguidas. Parece un robot roto
+  // y espanta justo a quien venia a comprar. Se responde una vez y, si el
+  // cliente vuelve despues de 12 h de silencio, se le saluda de nuevo.
+  const { data: saludoPrevio } = await supabase
+    .from('sales_messages')
+    .select('id, created_at')
+    .eq('conversation_id', conversation.id)
+    .eq('sender_type', 'assistant')
+    .gte('created_at', new Date(Date.now() - 12 * 3600 * 1000).toISOString())
+    .limit(1);
+
+  if (saludoPrevio?.length) {
+    console.log('[meta-webhook] ya se saludo en las ultimas 12h, no se repite');
+    return;
+  }
+
   // Instagram se responde por el id de la PAGINA, no por el de la cuenta de
   // Instagram: contra /{ig-id}/messages Meta contesta "(#3) Application does
   // not have the capability to make this API call". Si no hay pagina ligada
