@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFoo
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase, formatFechaDMY } from '@/lib/dateUtils';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
-import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, ChevronDown } from 'lucide-react';
+import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, ChevronDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /* ──────────────── Denominaciones de moneda ──────────────── */
@@ -541,6 +541,20 @@ const CierreCajaPage = () => {
 
   useEffect(() => {
     fetchResumen();
+  }, [fetchResumen]);
+
+  // Volver a consultar al regresar a la ventana. El cierre se deja abierto en
+  // una pestaña mientras se sigue facturando, cobrando y prestando en otra:
+  // sin esto muestra los montos de cuando se abrió, y el descuadre aparece
+  // recién al contar el efectivo, cuando ya nadie recuerda qué pasó.
+  useEffect(() => {
+    const alVolver = () => { if (!document.hidden) fetchResumen(); };
+    window.addEventListener('focus', alVolver);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.removeEventListener('focus', alVolver);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
   }, [fetchResumen]);
 
   /* ── Desglose math ── */
@@ -1081,10 +1095,23 @@ const CierreCajaPage = () => {
       >
         <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
           {/* Title */}
-          <div className="bg-morla-blue text-white text-center py-1.5 rounded-t-lg mb-3">
-            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-base drop-shadow-sm">
+          <div className="bg-morla-blue text-white py-1.5 rounded-t-lg mb-3 relative">
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-base drop-shadow-sm text-center">
               CIERRE DE CAJA
             </h1>
+            {/* Los paneles son pestañas que quedan abiertas: si el cierre se
+                dejó abierto en la mañana, lo que se ve es de la mañana. Se
+                refresca solo al volver a la ventana, y este botón está para
+                cuando alguien acaba de grabar algo en otra pestaña. */}
+            <button
+              type="button"
+              onClick={() => fetchResumen()}
+              disabled={loading}
+              title="Actualizar los montos del día"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-white/20 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
           </div>
 
           {/* Filters Row */}
