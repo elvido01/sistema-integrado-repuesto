@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de Privacidad — Repuestos Morla / MotoFlow CRM</title>
+<meta name="description" content="Política de privacidad pública para el uso de Meta Login y mensajería CRM en Repuestos Morla y MotoFlow CRM.">
+<link rel="canonical" href="https://repuestos-morla.pages.dev/privacy">
+<!--
+  Copia ESTÁTICA de src/pages/PrivacyPolicyPage.jsx.
+
+  Por qué existe en HTML plano: el sitio es una SPA y /privacy caía en el
+  catch-all `/* /index.html 200`. Un navegador la veía bien, pero un rastreador
+  que no ejecuta JavaScript — como los que usa Meta en la verificación —
+  recibía un <div id="root"> vacío titulado "MotoFlow". Una política de
+  privacidad que el revisor automático ve en blanco es causa común de rechazo.
+
+  Si se edita la política, hay que editar LOS DOS archivos.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f8fafc; color: #0f172a;
+    font: 16px/1.7 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .envoltura { max-width: 56rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  header { border-bottom: 1px solid #e2e8f0; padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  .marca { color: #1d4ed8; font-size: .875rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; margin: 0; }
+  h1 { font-size: 2rem; margin: .5rem 0 0; color: #020617; line-height: 1.2; }
+  .fecha { color: #475569; font-size: .875rem; margin: .75rem 0 0; }
+  h2 { font-size: 1.25rem; margin: 2rem 0 .75rem; color: #020617; }
+  p { color: #334155; margin: 0 0 .75rem; }
+  a { color: #1d4ed8; font-weight: 600; text-underline-offset: 4px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0b1120; color: #e2e8f0; }
+    header { border-color: #1e293b; }
+    h1, h2 { color: #f8fafc; }
+    p { color: #cbd5e1; }
+    .fecha { color: #94a3b8; }
+    a { color: #93c5fd; }
+  }
+  @media (min-width: 640px) { .envoltura { padding: 3.5rem 2rem 5rem; } h1 { font-size: 2.25rem; } }
+</style>
+</head>
+<body>
+<div class="envoltura">
+  <header>
+    <p class="marca">Repuestos Morla / MotoFlow CRM</p>
+    <h1>Política de Privacidad</h1>
+    <p class="fecha">Última actualización: 6 de agosto de 2026</p>
+  </header>
+
+  <p>Esta política explica cómo Repuestos Morla y MotoFlow CRM tratan la información recibida a través de integraciones con Facebook, Instagram, WhatsApp y otros módulos del CRM usados para atención al cliente y gestión comercial.</p>
+  <p>MotoFlow CRM es una herramienta operativa para negocios de repuestos y servicios relacionados. Su uso está destinado al personal autorizado de cada negocio conectado.</p>
+
+  <h2>Datos que podemos recibir</h2>
+  <p>Cuando una página de Facebook o una cuenta profesional de Instagram se conecta a MotoFlow CRM, el sistema puede recibir identificadores de la página o cuenta, identificadores de perfil del remitente, nombre público disponible en Meta, mensajes enviados al negocio, adjuntos o referencias de medios incluidos en la conversación, marcas de tiempo y metadatos técnicos necesarios para procesar el webhook.</p>
+  <p>También se almacenan datos operativos que el personal autorizado agregue durante la atención, como notas, cotizaciones, estado de la conversación y relación con clientes o solicitudes de piezas.</p>
+
+  <h2>Finalidad del uso</h2>
+  <p>Usamos esta información para centralizar conversaciones de WhatsApp, Facebook e Instagram en el CRM, atender solicitudes de clientes, preparar cotizaciones, dar seguimiento a pedidos de repuestos y ayudar al equipo a confirmar la pieza correcta antes de responder.</p>
+  <p>No vendemos los datos recibidos por Meta ni los usamos para publicidad externa de terceros.</p>
+
+  <h2>Acceso y seguridad</h2>
+  <p>El acceso al CRM está limitado a usuarios autorizados del negocio. Los datos se almacenan en servicios protegidos con HTTPS, autenticación y controles de acceso por empresa.</p>
+  <p>Los tokens y credenciales de integración se mantienen en el backend o en servicios seguros; no se publican en el frontend.</p>
+
+  <h2>Retención</h2>
+  <p>Conservamos conversaciones y datos operativos mientras sean necesarios para la atención al cliente, seguimiento comercial, cumplimiento interno del negocio o mientras la cuenta del negocio mantenga activa la integración.</p>
+  <p>Cuando un dato ya no sea necesario o se solicite su eliminación, lo revisaremos conforme al rol del solicitante, la relación con el negocio y las obligaciones operativas aplicables.</p>
+
+  <h2>Solicitudes de eliminación</h2>
+  <p>Los usuarios pueden solicitar acceso, corrección o eliminación de información relacionada con conversaciones enviando un correo a <a href="mailto:elvidocaminero@gmail.com">elvidocaminero@gmail.com</a> e indicando el canal usado, la cuenta contactada y una descripción suficiente para ubicar la conversación.</p>
+  <p>Si el dato pertenece a una empresa usuaria de MotoFlow, la solicitud puede requerir validación con el administrador del negocio correspondiente.</p>
+
+  <h2>Contacto</h2>
+  <p>Para preguntas sobre esta política o sobre el manejo de datos en MotoFlow CRM, escriba a <a href="mailto:elvidocaminero@gmail.com">elvidocaminero@gmail.com</a>.</p>
+</div>
+</body>
+</html>

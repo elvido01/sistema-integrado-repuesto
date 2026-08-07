@@ -1,1 +1,6 @@
-/* /index.html 200
+# OJO: NO agregar reglas para /privacy. Cloudflare Pages ya sirve
+# privacy.html en /privacy por su cuenta (URLs limpias), y los archivos
+# estaticos ganan sobre este catch-all. Una regla /privacy -> /privacy.html
+# choca con esa redireccion automatica y arma un bucle infinito (HTTP 308
+# eterno, curl error 47).
+/*    /index.html    200
