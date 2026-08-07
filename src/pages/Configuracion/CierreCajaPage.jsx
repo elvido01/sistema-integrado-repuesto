@@ -49,6 +49,11 @@ const DENOMINACIONES = DENOMINACIONES_TODAS.filter(d => !DENOMINACIONES_RETIRADA
 const formatCurrency = (v) =>
   new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 
+// Una factura anulada no metió plata en la caja. Se comprueba así y no con
+// .neq('estado','ANULADA') en la consulta: en PostgREST eso descarta también
+// las filas con estado NULL, que son la mayoría de las facturas.
+const noAnulada = (f) => String(f?.estado || '').toUpperCase() !== 'ANULADA';
+
 const isMobileCashSale = (venta) => {
   const formaPago = String(venta?.forma_pago || '').toUpperCase();
   const tipoPago = String(venta?.tipo_pago || '').toUpperCase();
@@ -141,7 +146,7 @@ const CierreCajaPage = () => {
       // Ventas del día
       let ventasQuery = supabase
         .from('facturas')
-        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas')
+        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas, estado')
         .eq('tenant_id', tenantId)
         .gte('fecha', startOfDay)
         .lte('fecha', endOfDay);
@@ -154,12 +159,15 @@ const CierreCajaPage = () => {
       if (ventasErr) {
         console.warn('Error cargando ventas:', ventasErr.message);
       } else {
-        ventas = ventasData || [];
+        // Una factura anulada no entró plata a la caja. Se filtra aquí y no
+        // con .neq('estado','ANULADA') porque en PostgREST eso también
+        // descarta las que tienen estado NULL, que son la mayoría.
+        ventas = (ventasData || []).filter(noAnulada);
       }
 
       let ventasMovilesQuery = supabase
         .from('facturas')
-        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas')
+        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas, estado')
         .eq('tenant_id', tenantId)
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay);
@@ -174,6 +182,7 @@ const CierreCajaPage = () => {
       } else {
         const ventasIds = new Set(ventas.map(v => v.id));
         const ventasMovilesFaltantes = (ventasMovilesData || [])
+          .filter(noAnulada)
           .filter(v => isMobileCashSale(v) && !ventasIds.has(v.id));
         ventas = [...ventas, ...ventasMovilesFaltantes];
       }
@@ -208,6 +217,7 @@ const CierreCajaPage = () => {
         .from('recibos_ingreso')
         .select('monto_pagado, fecha, created_at, origen, formas_pago')
         .eq('tenant_id', tenantId)
+        .eq('anulado', false)
         .eq('fecha', fechaStr);
 
       if (recibosErr) {
@@ -217,6 +227,7 @@ const CierreCajaPage = () => {
           .from('recibos_ingreso')
           .select('monto_pagado, created_at, origen, formas_pago')
           .eq('tenant_id', tenantId)
+          .eq('anulado', false)
           .gte('created_at', startOfDay)
           .lte('created_at', endOfDay);
 
@@ -240,6 +251,7 @@ const CierreCajaPage = () => {
         .from('pagos_suplidores')
         .select('monto_pagado, formas_pago')
         .eq('tenant_id', tenantId)
+        .eq('anulado', false)
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay);
 
