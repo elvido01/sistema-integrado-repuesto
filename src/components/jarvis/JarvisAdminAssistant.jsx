@@ -1,28 +1,10 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Mic, MicOff } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Mic, MicOff, Settings2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces } from '@/lib/vozJarvis';
 
 const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-
-const getCastilianJarvisVoice = () => {
-  if (!('speechSynthesis' in window)) return null;
-
-  const voices = window.speechSynthesis.getVoices();
-  const byPriority = [
-    (voice) => voice.lang?.toLowerCase() === 'es-es' && /pablo|jorge|diego|male|hombre/i.test(voice.name),
-    (voice) => voice.lang?.toLowerCase() === 'es-es',
-    (voice) => voice.lang?.toLowerCase().startsWith('es-') && /pablo|jorge|diego|male|hombre/i.test(voice.name),
-    (voice) => voice.lang?.toLowerCase().startsWith('es-'),
-  ];
-
-  for (const matcher of byPriority) {
-    const voice = voices.find(matcher);
-    if (voice) return voice;
-  }
-
-  return null;
-};
 
 const formatVoiceError = async (err) => {
   const rawMessage = err?.message || String(err || '');
@@ -53,6 +35,13 @@ export default function JarvisAdminAssistant() {
   const [sessionId, setSessionId] = useState(null);
   const recognitionRef = useRef(null);
   const clearBubbleTimerRef = useRef(null);
+  const [voces, setVoces] = useState([]);
+  const [vozSel, setVozSel] = useState(vozElegida() || '');
+  const [verVoces, setVerVoces] = useState(false);
+
+  // Chrome carga las voces tarde: sin esperar el aviso, el primer mensaje
+  // sale con la voz por defecto y solo del segundo en adelante suena bien.
+  useEffect(() => alListarVoces(() => setVoces(listarVoces())), []);
 
   const allowed = useMemo(() => {
     return profile?.role === 'admin' || isSuperAdmin;
@@ -63,33 +52,27 @@ export default function JarvisAdminAssistant() {
   const activeCore = listening || loading || speaking;
 
   const speak = (text) => {
-    if (!('speechSynthesis' in window) || !text) return;
-    window.speechSynthesis.cancel();
+    if (!text) return;
     window.clearTimeout(clearBubbleTimerRef.current);
-    const utterance = new SpeechSynthesisUtterance(text);
-    const castilianVoice = getCastilianJarvisVoice();
-    utterance.lang = castilianVoice?.lang || 'es-ES';
-    utterance.voice = castilianVoice;
-    utterance.rate = 0.94;
-    utterance.pitch = 0.82;
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => {
-      setSpeaking(false);
-      setLastMessage('');
-    };
-    utterance.onerror = () => {
-      setSpeaking(false);
-      setLastMessage('');
-    };
-    window.speechSynthesis.speak(utterance);
+    hablar(text, {
+      alEmpezar: () => setSpeaking(true),
+      alTerminar: () => { setSpeaking(false); setLastMessage(''); },
+    });
     clearBubbleTimerRef.current = window.setTimeout(() => setLastMessage(''), Math.max(5000, text.length * 85));
   };
 
   const stopSpeaking = () => {
-    window.speechSynthesis?.cancel();
+    callar();
     window.clearTimeout(clearBubbleTimerRef.current);
     setSpeaking(false);
     setLastMessage('');
+  };
+
+  const cambiarVoz = (nombre) => {
+    setVozSel(nombre);
+    elegirVoz(nombre);
+    callar();
+    hablar('Sistemas en línea. A sus órdenes.', { alEmpezar: () => setSpeaking(true), alTerminar: () => setSpeaking(false) });
   };
 
   const askAiCeo = async (text) => {
@@ -190,6 +173,43 @@ export default function JarvisAdminAssistant() {
       `}</style>
 
       <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2">
+        {/* Selector de voz. Existe porque las voces dependen de lo que tenga
+            instalado ESTE Windows: no hay forma de saberlo desde el código,
+            y la diferencia entre una neuronal y una vieja es abismal. */}
+        {verVoces && (
+          <div className="w-[290px] rounded-lg border border-cyan-300/25 bg-slate-950/95 p-3 text-xs text-cyan-50 shadow-xl">
+            <div className="mb-2 font-bold uppercase tracking-wider text-cyan-300">Voz de Hermes</div>
+            {voces.length === 0 ? (
+              <p className="text-cyan-200/70">No hay voces en español instaladas en este equipo.</p>
+            ) : (
+              <>
+                <select
+                  value={vozSel}
+                  onChange={(e) => cambiarVoz(e.target.value)}
+                  className="w-full rounded border border-cyan-300/30 bg-slate-900 px-2 py-1.5 text-cyan-50"
+                >
+                  <option value="">Automática (la mejor que encuentre)</option>
+                  {voces.map((v) => (
+                    <option key={v.nombre} value={v.nombre}>
+                      {v.neuronal ? '★ ' : ''}{v.nombre} · {v.lang}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 leading-snug text-cyan-200/60">
+                  Las marcadas con ★ son neuronales y suenan a persona. Para el
+                  doblaje latino busca una de <b>México</b> (es-MX).
+                </p>
+                {!voces.some((v) => v.neuronal) && (
+                  <p className="mt-2 leading-snug text-amber-300/90">
+                    No tienes ninguna voz neuronal. Se instalan en Windows:
+                    Configuración → Hora e idioma → Voz → Agregar voces.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {(error || lastMessage) && (
           <div className={`max-w-[280px] rounded-md border px-3 py-2 text-xs shadow-xl ${
             error
@@ -225,6 +245,15 @@ export default function JarvisAdminAssistant() {
           )}
 
           {listening && <MicOff className="absolute bottom-5 right-5 z-10 h-4 w-4 text-emerald-50" />}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setVerVoces((v) => !v)}
+          title="Elegir la voz"
+          className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
         </button>
       </div>
     </>
