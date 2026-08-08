@@ -7,17 +7,21 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { setEmpresaPrintConfig } from '@/lib/printPOS';
 import { LayoutProvider } from '@/contexts/LayoutContext';
 import JarvisAdminAssistant from '@/components/jarvis/JarvisAdminAssistant';
-import { usePanels } from '@/contexts/PanelContext';
 
-// El asistente de voz (microfono) solo se muestra en estos modulos
-const JARVIS_PANELS = ['inicio', 'whatsapp-crm', 'ai-ceo'];
+// El agente acompaña en TODO el sistema, no en tres pantallas.
+//
+// Antes vivía solo en el inicio, cuando era un asesor al que uno iba a
+// consultar. Ahora abre módulos y prepara cotizaciones: si desaparece justo
+// cuando te lleva a Cotizaciones, no puedes autorizar lo que él mismo acaba
+// de proponer — que es exactamente donde hace falta.
+//
+// Quién lo ve sigue decidiéndose en el propio componente: solo admin, y solo
+// si su empresa tiene agente configurado.
 
 const MainLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { empresa } = useAuth();
-  const { activePanel } = usePanels();
   const nombreEmpresa = empresa?.nombre || 'Sistema';
-  const showJarvis = JARVIS_PANELS.includes(activePanel);
 
   useEffect(() => {
     if (empresa) setEmpresaPrintConfig(empresa);
@@ -51,7 +55,7 @@ const MainLayout = () => {
         <footer className="text-center py-2 text-[10px] text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
           © {new Date().getFullYear()} {nombreEmpresa} — Sistema de Gestión Integral
         </footer>
-        {showJarvis && <JarvisAdminAssistant />}
+        <JarvisAdminAssistant />
       </div>
     </div>
   );
