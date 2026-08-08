@@ -91,6 +91,20 @@ Deno.serve(async (req: Request) => {
             auth: { autoRefreshToken: false, persistSession: false },
         });
 
+        // Cliente con la sesión DEL USUARIO. Hace falta uno aparte porque
+        // service_role no tiene sesión: get_user_tenant() le devuelve NULL, y
+        // toda RPC que dependa de la empresa falla con "Sin sesión". Es lo que
+        // impedía proponer la cotización y lo que hacía que get_agente_ia()
+        // volviera vacío — el asistente contestaba con el prompt genérico
+        // creyéndose Hermes.
+        //
+        // El de service_role se queda para escribir el historial y el consumo,
+        // que sí deben pasar por encima de RLS.
+        const supaUser = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+            global: { headers: { Authorization: `Bearer ${token}` } },
+            auth: { autoRefreshToken: false, persistSession: false },
+        });
+
         const { data: userData, error: userErr } = await supabase.auth.getUser(token);
         if (userErr || !userData?.user) return json({ ok: false, error: 'invalid_token' }, 401);
         const user = userData.user;
@@ -157,7 +171,7 @@ Deno.serve(async (req: Request) => {
         // ── El agente de ESTA empresa ─────────────────────────────
         // Hermes es el de Repuestos Morla, no el del sistema. Cada empresa
         // define el suyo; si no tiene, se usa el asesor genérico de siempre.
-        const { data: agente } = await supabase.rpc('get_agente_ia');
+        const { data: agente } = await supaUser.rpc('get_agente_ia');
 
         // Las reglas duras van aquí, en el código, NO en la personalidad que
         // el dueño edita. Puede darle carácter a su agente; no puede darle
@@ -339,7 +353,7 @@ Deno.serve(async (req: Request) => {
                     // Se ejecuta aquí, pero SOLO guarda la propuesta. Lo que
                     // modifica el sistema lo dispara la persona al autorizar.
                     const { tipo, resumen, ...resto } = args;
-                    const { data: prop, error: e } = await supabase.rpc('agente_proponer_accion', {
+                    const { data: prop, error: e } = await supaUser.rpc('agente_proponer_accion', {
                         p_tipo: tipo, p_resumen: resumen, p_payload: resto,
                     });
                     if (e) {
