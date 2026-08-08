@@ -18,6 +18,26 @@ const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechReco
 // Ahora la respuesta tiene que ser CORTA y ser básicamente la palabra sola.
 // Una frase larga es una pregunta, no una decisión: la propuesta se queda en
 // pantalla y la persona resuelve con el botón. Ante la duda, no se toca.
+// ¿Lo que se oyó es el propio agente devuelto por el altavoz?
+//
+// Se compara por palabras compartidas y no por texto exacto, porque el
+// reconocimiento deforma lo que oye: "por un farol" volvió como "por un
+// ofarot". Con la mitad de las palabras en común ya es eco.
+function esEcoDeLoQueDijo(oido, dicho) {
+  if (!dicho) return false;
+  const norm = (s) => String(s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 3);
+
+  const a = norm(oido);
+  if (a.length === 0) return false;
+  const b = new Set(norm(dicho));
+  if (b.size === 0) return false;
+
+  const comunes = a.filter((w) => b.has(w)).length;
+  return comunes / a.length >= 0.5;
+}
+
 function veredictoDeVoz(texto) {
   const t = String(texto).toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -97,6 +117,68 @@ export default function JarvisAdminAssistant() {
   // genérico porque la tabla agentes_ia está vacía — y eso hay que verlo,
   // no adivinarlo.
   const [agenteQueContesto, setAgenteQueContesto] = useState(undefined);
+
+  // ── El canal ──────────────────────────────────────────────────────────
+  // 'hermes' es el Hermes DE VERDAD, el que vive en la PC de la tienda con
+  // su memoria de Telegram. 'local' es el asistente del servidor: contesta
+  // al instante pero es otro programa, sin esa memoria.
+  const [canal, setCanal] = useState('hermes');
+  const [hermesVivo, setHermesVivo] = useState(null);   // null = averiguando
+
+  useEffect(() => {
+    if (!agente) return;
+    let vivo = true;
+    const mirar = () => supabase.rpc('hermes_estado_canal')
+      .then(({ data }) => { if (vivo) setHermesVivo(!!data?.conectado); })
+      .catch(() => { if (vivo) setHermesVivo(false); });
+    mirar();
+    const t = setInterval(mirar, 30000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [agente]);
+
+  // Sus respuestas llegan solas: no hay que preguntar cada tanto si contestó.
+  useEffect(() => {
+    if (!agente) return;
+    const sub = supabase
+      .channel('hermes-chat-motoflow')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'hermes_chat', filter: 'rol=eq.hermes' },
+        ({ new: fila }) => {
+          setLoading(false);
+          setMensajes((m) => [...m, { id: `h-${fila.id}`, role: 'assistant', content: fila.texto }]);
+          setAgenteQueContesto(agente?.nombre || 'Hermes');
+          if (modoVozRef.current) speak(fila.texto);
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(sub); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agente]);
+
+  const enviarAHermes = async (texto, { conVoz }) => {
+    modoVozRef.current = conVoz;
+    setMensajes((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: texto }]);
+    setLoading(true);
+    setError('');
+    if (conVoz) speak('Un momento, le pregunto a Hermes.', { escucharDespues: false });
+    try {
+      const { error: e } = await supabase.rpc('hermes_escribir', {
+        p_texto: texto,
+        p_pantalla: { ...leerContexto(), modulos: leerModulos() },
+      });
+      if (e) throw e;
+      // No se apaga el "pensando": se apaga cuando LLEGA su respuesta por
+      // Realtime. Hermes puede tardar, y fingir que terminó sería mentir.
+    } catch (err) {
+      setLoading(false);
+      setError(err.message || 'No se pudo enviar el mensaje a Hermes.');
+    }
+  };
+
+  const enviar = (texto, opciones = {}) => {
+    const conVoz = opciones.conVoz !== false;
+    if (canal === 'hermes' && hermesVivo) return enviarAHermes(texto, { conVoz });
+    return askAiCeo(texto, { conVoz });
+  };
   // Se sube cada vez que el usuario interrumpe. La respuesta que venga en
   // camino con un número viejo se descarta: sin esto, cancelas y a los tres
   // segundos el agente se pone a hablar igual.
@@ -117,6 +199,12 @@ export default function JarvisAdminAssistant() {
   // vuelve a escuchar solo — hablar y que se apague no es conversar, es
   // dictar. Se apaga en cuanto se escribe algo.
   const modoVozRef = useRef(false);
+  // Cada frase hablada lleva número. Si al terminar ya no es la actual, es
+  // que la cancelaron para decir otra cosa: NO se abre el micrófono, porque
+  // la voz nueva sigue sonando y se oiría a sí mismo.
+  const hablaRef = useRef(0);
+  // Lo último que dijo, para reconocerlo si el micrófono lo capta de vuelta.
+  const ultimoDichoRef = useRef('');
 
   useEffect(() => {
     if (!sessionId) return;
@@ -144,25 +232,30 @@ export default function JarvisAdminAssistant() {
 
   const activeCore = listening || loading || speaking;
 
-  const speak = (text) => {
+  const speak = (text, { escucharDespues = true } = {}) => {
     if (!text) return;
     window.clearTimeout(clearBubbleTimerRef.current);
+    const mio = ++hablaRef.current;
+    ultimoDichoRef.current = text;
+
     hablar(text, {
       alEmpezar: () => setSpeaking(true),
       alTerminar: () => {
+        // Si ya no es la frase actual, la cancelaron para decir otra: dejar
+        // que esta abra el micrófono lo abriría encima de la nueva voz.
+        if (mio !== hablaRef.current) return;
         setSpeaking(false);
         setLastMessage('');
+
         // Si la conversación va por voz, sigue escuchando. Terminar de leer
         // cuatro opciones y apagarse obliga a pulsar el círculo para decir
-        // "el primero" — que es justo el momento en que uno tiene las manos
-        // ocupadas. La autorización tiene su propia escucha, no se pisan.
-        if (modoVozRef.current && !propuestaRef.current) {
-          window.setTimeout(() => {
-            if (!modoVozRef.current || propuestaRef.current) return;
-            esperandoAutorizacionRef.current = true;   // silencio = fin, no error
-            startListening();
-          }, 350);
-        }
+        // "el primero", justo cuando uno tiene las manos ocupadas.
+        if (!escucharDespues || !modoVozRef.current) return;
+        window.setTimeout(() => {
+          if (mio !== hablaRef.current || !modoVozRef.current) return;
+          esperandoAutorizacionRef.current = true;   // silencio = fin, no error
+          startListening();
+        }, 700);   // el altavoz tarda en callarse del todo
       },
     });
     clearBubbleTimerRef.current = window.setTimeout(() => setLastMessage(''), Math.max(5000, text.length * 85));
@@ -280,6 +373,12 @@ export default function JarvisAdminAssistant() {
     // no deja el micrófono abierto en el mostrador.
     modoVozRef.current = conVoz;
 
+    // Avisa que está trabajando. Buscar la pieza y preparar la propuesta
+    // tarda varios segundos; sin esto uno se queda mirando el círculo sin
+    // saber si oyó. No abre el micrófono al terminar: está por hablar de
+    // nuevo con la respuesta.
+    if (conVoz) speak('Un momento, por favor.', { escucharDespues: false });
+
     const turno = ++turnoRef.current;
     setLoading(true);
     setError('');
@@ -335,7 +434,11 @@ export default function JarvisAdminAssistant() {
         id: `tmp-r-${Date.now()}`, role: 'assistant',
         content: data.answer || '', herramientas: data.herramientas || [],
       }]);
-      if (conVoz) speak(data.answer || '');
+      // Con propuesta NO se habla la respuesta: ya lo dijo pedirAutorizacion.
+      // Hablar dos veces cancelaba la primera frase, y ese cancelado abría el
+      // micrófono mientras la segunda seguía sonando — el agente se oía a sí
+      // mismo, se transcribía y se contestaba solo en bucle.
+      if (conVoz && !p) speak(data.answer || '');
     } catch (err) {
       if (turno !== turnoRef.current) return;
       setError(await formatVoiceError(err));
@@ -380,6 +483,15 @@ export default function JarvisAdminAssistant() {
         .trim();
       if (!transcript) return;
 
+      // ECO. Aunque se espere a que se calle, el micrófono a veces capta la
+      // cola de su propia voz — y como suena parecido, se lo mandaría de
+      // vuelta como pregunta y se contestaría solo en bucle. Si lo que se
+      // oyó se parece demasiado a lo que acaba de decir, se descarta.
+      if (esEcoDeLoQueDijo(transcript, ultimoDichoRef.current)) {
+        console.warn('[voz] descartado por eco:', transcript);
+        return;
+      }
+
       // Con una autorización pendiente, la voz decide sobre ELLA. Si no, un
       // "sí" se le mandaría al modelo como pregunta y la propuesta quedaría
       // colgada esperando.
@@ -399,7 +511,7 @@ export default function JarvisAdminAssistant() {
         // Ni sí ni no: es una pregunta. La propuesta se queda en pantalla.
       }
 
-      askAiCeo(transcript);
+      enviar(transcript);
     };
 
     recognitionRef.current = recognition;
@@ -541,6 +653,39 @@ export default function JarvisAdminAssistant() {
                 className="ml-auto text-cyan-200/60 hover:text-cyan-100">✕</button>
             </div>
 
+            {/* Con quién se está hablando de verdad. Hermes vive en la PC de
+                la tienda: si esa máquina está apagada no hay Hermes, y hay
+                que decirlo en vez de dejar a alguien esperando. */}
+            <div className="flex items-center gap-2 border-b border-cyan-300/10 px-3 py-1.5 text-[11px]">
+              {canal === 'hermes' && hermesVivo && (
+                <span className="flex items-center gap-1 text-emerald-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  Hermes conectado · con su memoria de Telegram
+                </span>
+              )}
+              {canal === 'hermes' && hermesVivo === false && (
+                <>
+                  <span className="flex items-center gap-1 text-amber-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    Hermes no está conectado
+                  </span>
+                  <button type="button" onClick={() => setCanal('local')}
+                    className="ml-auto rounded border border-cyan-300/30 px-1.5 py-0.5 text-cyan-200/80 hover:text-cyan-100">
+                    Usar asistente rápido
+                  </button>
+                </>
+              )}
+              {canal === 'local' && (
+                <>
+                  <span className="text-cyan-200/60">Asistente rápido (no es Hermes)</span>
+                  <button type="button" onClick={() => setCanal('hermes')}
+                    className="ml-auto rounded border border-emerald-300/30 px-1.5 py-0.5 text-emerald-200/80 hover:text-emerald-100">
+                    Volver a Hermes
+                  </button>
+                </>
+              )}
+            </div>
+
             {/* Que se vea qué está mirando. Si el agente contesta algo raro,
                 lo primero que uno quiere saber es de qué pantalla habla. */}
             {leerContexto()?.titulo && (
@@ -643,7 +788,7 @@ export default function JarvisAdminAssistant() {
                 const t = texto.trim();
                 if (!t) return;
                 setTexto('');
-                askAiCeo(t, { conVoz: false });
+                enviar(t, { conVoz: false });
               }}
             >
               <input

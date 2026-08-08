@@ -197,9 +197,16 @@ Deno.serve(async (req: Request) => {
             'Este razonamiento es interno: NO lo escribas. Se ve en el resultado.',
         ].join('\n');
 
-        const systemPrompt = agente?.persona
-            ? `${agente.persona}\n${REGLAS}`
-            : `${SYSTEM_PROMPT}\n${REGLAS}`;
+        // QUÉ SABE HACER, dicho con nombre y apellido.
+        //
+        // Sin esto se negaba a presentarse: preguntarle "¿quién eres y qué
+        // puedes hacer?" le sonaba a algo que tendría que inventar, y las
+        // reglas le prohíben inventar. Pero sus capacidades no son una
+        // opinión: son la lista de herramientas que tiene enchufadas. Se le
+        // arma sola, así que el día que se agregue una al MCP, él ya sabe
+        // contarla sin que nadie le reescriba la personalidad.
+        // (El texto de capacidades se arma más abajo, cuando ya están
+        //  descubiertas las herramientas.)
 
         const userPrompt = JSON.stringify({
             estado_negocio: ctx,
@@ -305,6 +312,31 @@ Deno.serve(async (req: Request) => {
                 },
             },
         });
+
+        // QUÉ SABE HACER, con las herramientas ya descubiertas.
+        //
+        // Sin esto se negaba a presentarse: "¿quién eres y qué puedes hacer?"
+        // le sonaba a algo que tendría que inventar, y las reglas se lo
+        // prohíben. Pero sus capacidades no son una opinión: son la lista de
+        // herramientas que tiene enchufadas. Se arma sola, así que el día que
+        // se agregue una al MCP él ya sabe contarla, sin reescribirle la
+        // personalidad.
+        const capacidades = [
+            '',
+            `TE LLAMAS ${(agente?.nombre || 'Asistente').toUpperCase()}${agente?.puesto ? `, ${agente.puesto}` : ''}.`,
+            'Si te preguntan quién eres o qué sabes hacer, EXPLÍCALO con naturalidad.',
+            'Eso no es inventar: es exactamente lo que puedes hacer hoy.',
+            '',
+            herramientas.length
+                ? herramientas.map((h: any) => `· ${h.function.name}: ${h.function.description}`).join('\n')
+                : '· (sin herramientas conectadas en este momento)',
+            '',
+            'Lo que NO puedes todavía: facturar ni registrar pagos.',
+            'Al presentarte, hazlo en dos o tres líneas y con tus palabras. Nada de',
+            'listar nombres técnicos: di qué resuelves, no cómo se llama la función.',
+        ].join('\n');
+
+        const systemPrompt = (agente?.persona || SYSTEM_PROMPT) + '\n' + REGLAS + '\n' + capacidades;
 
         const mensajes: any[] = [
             { role: 'system', content: systemPrompt },
