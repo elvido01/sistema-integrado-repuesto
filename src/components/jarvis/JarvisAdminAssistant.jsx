@@ -8,6 +8,32 @@ import { usePanels } from '@/contexts/panelCore';
 
 const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
+// ¿Lo que se dijo es un sí, un no, o ninguna de las dos?
+//
+// La versión anterior buscaba "no" suelto y cancelaba la propuesta con
+// cualquier frase que lo contuviera — "no, espérate" la descartaba antes de
+// que la persona alcanzara a decidir. En español el "no" aparece por todas
+// partes, así que no sirve como señal.
+//
+// Ahora la respuesta tiene que ser CORTA y ser básicamente la palabra sola.
+// Una frase larga es una pregunta, no una decisión: la propuesta se queda en
+// pantalla y la persona resuelve con el botón. Ante la duda, no se toca.
+function veredictoDeVoz(texto) {
+  const t = String(texto).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Más de cinco palabras ya no es un "sí": es una instrucción nueva.
+  if (t.split(' ').length > 5) return null;
+
+  if (/^(si|si autorizo|autorizo|autorizado|aprobado|apruebo|confirmo|hazlo|grabalo|adelante|correcto|dale)$/.test(t)) return 'si';
+  // Solo lo inequívoco. "espera" y "para" quedan FUERA a propósito: quien
+  // dice "espera" quiere pensarlo, no descartar. Ante la duda no se toca la
+  // propuesta y decide con el botón.
+  if (/^(no|no autorizo|no lo hagas|cancela|cancelar|cancelalo|descarta|descartalo|dejalo|olvidalo|borralo)$/.test(t)) return 'no';
+  return null;
+}
+
 const formatVoiceError = async (err) => {
   const rawMessage = err?.message || String(err || '');
 
@@ -287,8 +313,8 @@ export default function JarvisAdminAssistant() {
       // "sí" se le mandaría al modelo como pregunta y la propuesta quedaría
       // colgada esperando.
       if (propuestaRef.current) {
-        const t = transcript.toLowerCase();
-        if (/\b(autorizo|autoriza|aprueba|aprobado|dale|hazlo|s[ií] gr[aá]balo|confirmo)\b/.test(t)) {
+        const v = veredictoDeVoz(transcript);
+        if (v === 'si') {
           // Lo que mueve dinero NO se autoriza de viva voz: decir "autorizo"
           // no identifica a nadie, y cualquiera junto al mostrador lo dice.
           if (propuestaRef.current.requiere_password) {
@@ -298,10 +324,8 @@ export default function JarvisAdminAssistant() {
           resolverPropuesta(true);
           return;
         }
-        if (/\b(cancela|cancelar|no|descarta|dej[aá]lo|olv[ií]dalo)\b/.test(t)) {
-          resolverPropuesta(false);
-          return;
-        }
+        if (v === 'no') { resolverPropuesta(false); return; }
+        // Ni sí ni no: es una pregunta. La propuesta se queda en pantalla.
       }
 
       askAiCeo(transcript);
