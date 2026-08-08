@@ -110,6 +110,8 @@ export default function JarvisAdminAssistant() {
   // sobre la propuesta que está en pantalla AHORA.
   const propuestaRef = useRef(null);
   useEffect(() => { propuestaRef.current = propuesta; }, [propuesta]);
+  // true mientras el micrófono se abrió SOLO para oír la autorización.
+  const esperandoAutorizacionRef = useRef(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -172,6 +174,32 @@ export default function JarvisAdminAssistant() {
     hablar(agente?.saludo || 'Sistemas en línea. A sus órdenes.', {
       alEmpezar: () => setSpeaking(true),
       alTerminar: () => setSpeaking(false),
+    });
+  };
+
+  // Lo dice en voz alta y, al terminar de hablar, se queda escuchando.
+  // El micrófono se abre DESPUÉS de callarse, nunca antes: si se abriera
+  // mientras habla, se oiría a sí mismo y tomaría su propia frase por
+  // respuesta.
+  const pedirAutorizacionHablando = (p) => {
+    const frase = p.requiere_password
+      ? `${p.resumen}. Esto mueve dinero: hay que autorizarlo en pantalla con la contraseña.`
+      : `${p.resumen}. ¿Lo autorizo?`;
+
+    hablar(frase, {
+      alEmpezar: () => setSpeaking(true),
+      alTerminar: () => {
+        setSpeaking(false);
+        // Lo que mueve dinero no se escucha: por voz se rechaza igual, así
+        // que abrir el micrófono solo invitaría a un intento fallido.
+        if (p.requiere_password) return;
+        // Un respiro para que no capture la cola de su propia voz.
+        window.setTimeout(() => {
+          if (propuestaRef.current?.accion_id !== p.accion_id) return;
+          esperandoAutorizacionRef.current = true;
+          startListening();
+        }, 350);
+      },
     });
   };
 
@@ -266,7 +294,16 @@ export default function JarvisAdminAssistant() {
       // cerrado: una autorización no puede quedar escondida detrás de un
       // círculo, y menos si el agente ya dijo de viva voz que la preparó.
       const p = (data.propuestas || [])[0];
-      if (p) { setPropuesta(p); setClave(''); setChatAbierto(true); }
+      if (p) {
+        setPropuesta(p);
+        setClave('');
+        setChatAbierto(true);
+        // La autorización SIEMPRE se pide hablando, aunque la conversación
+        // viniera por escrito: es el único momento en que el sistema va a
+        // modificar algo, y merece que la persona lo oiga aunque esté
+        // mirando otra cosa.
+        pedirAutorizacionHablando(p);
+      }
       setLastMessage(data.answer || '');
       setMensajes((m) => [...m, {
         id: `tmp-r-${Date.now()}`, role: 'assistant',
@@ -296,9 +333,17 @@ export default function JarvisAdminAssistant() {
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.onstart = () => setListening(true);
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      setListening(false);
+      // La espera termina con la escucha: el próximo micrófono ya es normal.
+      esperandoAutorizacionRef.current = false;
+    };
     recognition.onerror = (event) => {
       setListening(false);
+      // Cuando el micrófono se abrió solo para esperar la autorización, el
+      // silencio es una respuesta válida: la persona está leyendo la tarjeta.
+      // Gritarle "no pude escuchar" encima de lo que está leyendo estorba.
+      if (esperandoAutorizacionRef.current && event?.error === 'no-speech') return;
       const reason = event?.error ? ` (${event.error})` : '';
       setError(`No pude escuchar bien${reason}.`);
     };
