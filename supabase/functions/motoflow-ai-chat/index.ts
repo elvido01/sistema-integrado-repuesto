@@ -108,6 +108,8 @@ Deno.serve(async (req: Request) => {
         const body = await req.json();
         const message = String(body?.message || '').trim();
         let session_id: string | null = body?.session_id || null;
+        // Panel abierto y datos que esa pantalla ya tiene cargados.
+        const pantalla = body?.pantalla || null;
         if (!message) return json({ ok: false, error: 'mensaje_vacio' }, 400);
         if (message.length > 1000) return json({ ok: false, error: 'mensaje_muy_largo', mensaje: 'Máx 1000 caracteres' }, 400);
 
@@ -152,8 +154,35 @@ Deno.serve(async (req: Request) => {
             .map((m: any) => `${m.role.toUpperCase()}: ${m.content}`)
             .join('\n');
 
+        // ── El agente de ESTA empresa ─────────────────────────────
+        // Hermes es el de Repuestos Morla, no el del sistema. Cada empresa
+        // define el suyo; si no tiene, se usa el asesor genérico de siempre.
+        const { data: agente } = await supabase.rpc('get_agente_ia');
+
+        // Las reglas duras van aquí, en el código, NO en la personalidad que
+        // el dueño edita. Puede darle carácter a su agente; no puede darle
+        // permiso para inventar precios ni para mirar otra empresa.
+        const REGLAS = [
+            '',
+            'REGLAS QUE NO SE NEGOCIAN:',
+            '1. NUNCA inventes precios, existencias, deudas ni fechas. Consúltalos',
+            '   con las herramientas. Si no aparece, dilo y pide el dato que falta.',
+            '2. Solo ves los datos de esta empresa. No hables de otras.',
+            '3. Si te piden algo que no puedes hacer, dilo en una línea y ofrece',
+            '   la alternativa. Nada de disculpas largas.',
+            '4. Los montos en pesos dominicanos, con coma de miles: RD$ 1,400.',
+        ].join('\n');
+
+        const systemPrompt = agente?.persona
+            ? `${agente.persona}\n${REGLAS}`
+            : `${SYSTEM_PROMPT}\n${REGLAS}`;
+
         const userPrompt = JSON.stringify({
             estado_negocio: ctx,
+            // Dónde está parado el usuario ahora mismo y qué datos tiene esa
+            // pantalla cargados. Permite preguntar "¿qué es esto?" o
+            // "¿por qué no cuadra?" sin explicar de qué se habla.
+            pantalla_actual: pantalla || null,
             historial_reciente: historyMsgs,
             pregunta_nueva: message,
         });
@@ -181,7 +210,7 @@ Deno.serve(async (req: Request) => {
         }
 
         const mensajes: any[] = [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
         ];
 
@@ -195,7 +224,7 @@ Deno.serve(async (req: Request) => {
         for (let v = 0; v < MAX_VUELTAS_TOOLS; v++) {
             llm = await callLLM({
                 messages: mensajes,
-                system: SYSTEM_PROMPT,
+                system: systemPrompt,
                 user: userPrompt,
                 user_tag: tenant_id,
                 model: MODEL,

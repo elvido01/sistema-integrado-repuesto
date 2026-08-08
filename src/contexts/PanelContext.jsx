@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PanelContext, usePanels } from './panelCore';
+import { panelActivo } from '@/lib/pantallaContexto';
 import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet, PiggyBank, Landmark } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
@@ -178,6 +179,13 @@ export { PanelContext, usePanels };  // re-export desde panelCore para no romper
 export const PanelProvider = ({ children }) => {
   const [panels, setPanels] = useState([{ id: 'inicio', ...componentMapping['inicio'] }]);
   const [activePanel, setActivePanel] = useState('inicio');
+
+  // El agente sabe en qué pantalla estás. Al cambiar de panel se borran los
+  // datos del anterior: que hable del cierre de caja mientras miras Ventas
+  // sería peor que no saber nada.
+  useEffect(() => {
+    panelActivo(activePanel, componentMapping[activePanel]?.name || activePanel);
+  }, [activePanel]);
 
   const openPanel = (id, extraData = null) => {
     if (!componentMapping[id]) {

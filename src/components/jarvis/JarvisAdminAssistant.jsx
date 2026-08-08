@@ -3,6 +3,7 @@ import { Mic, MicOff, Settings2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
+import { leerContexto } from '@/lib/pantallaContexto';
 
 const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
@@ -39,6 +40,22 @@ export default function JarvisAdminAssistant() {
   const [vozSel, setVozSel] = useState(vozElegida() || '');
   const [verVoces, setVerVoces] = useState(false);
   const [aj, setAj] = useState(ajustes());
+  // El agente lo define CADA empresa. Hermes es el de Repuestos Morla, no el
+  // del sistema: Caminero y MotoPréstamos tendrán el suyo. Mientras no lo
+  // definan, no hay botón — mejor sin asistente que con uno genérico que no
+  // conoce el negocio.
+  const [agente, setAgente] = useState(null);
+  const [cargandoAgente, setCargandoAgente] = useState(true);
+
+  useEffect(() => {
+    let vivo = true;
+    supabase.rpc('get_agente_ia')
+      .then(({ data }) => { if (vivo) { setAgente(data || null); setCargandoAgente(false); } })
+      .catch(() => { if (vivo) setCargandoAgente(false); });
+    return () => { vivo = false; };
+  }, [profile?.tenant_id]);
+
+  const nombreAgente = agente?.nombre || 'Asistente';
 
   // Chrome carga las voces tarde: sin esperar el aviso, el primer mensaje
   // sale con la voz por defecto y solo del segundo en adelante suena bien.
@@ -48,7 +65,8 @@ export default function JarvisAdminAssistant() {
     return profile?.role === 'admin' || isSuperAdmin;
   }, [profile?.role, isSuperAdmin]);
 
-  if (!allowed) return null;
+  // Sin agente definido para esta empresa, no se muestra nada.
+  if (!allowed || cargandoAgente || !agente) return null;
 
   const activeCore = listening || loading || speaking;
 
@@ -71,7 +89,7 @@ export default function JarvisAdminAssistant() {
 
   const probar = () => {
     callar();
-    hablar('Sistemas en línea. A sus órdenes.', {
+    hablar(agente?.saludo || 'Sistemas en línea. A sus órdenes.', {
       alEmpezar: () => setSpeaking(true),
       alTerminar: () => setSpeaking(false),
     });
@@ -103,11 +121,13 @@ export default function JarvisAdminAssistant() {
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke('motoflow-ai-chat', {
-        body: { message, session_id: sessionId },
+        // Se manda dónde está parado el usuario: así puede preguntar
+        // "¿qué es esto?" sin explicar de qué habla.
+        body: { message, session_id: sessionId, pantalla: leerContexto() },
       });
 
       if (fnError) throw fnError;
-      if (!data?.ok) throw new Error(data?.mensaje || data?.error || 'MotoFlow IA CEO no respondio.');
+      if (!data?.ok) throw new Error(data?.mensaje || data?.error || `${nombreAgente} no respondió.`);
 
       if (data.session_id) setSessionId(data.session_id);
       setLastMessage(data.answer || '');
@@ -195,7 +215,7 @@ export default function JarvisAdminAssistant() {
             y la diferencia entre una neuronal y una vieja es abismal. */}
         {verVoces && (
           <div className="w-[290px] rounded-lg border border-cyan-300/25 bg-slate-950/95 p-3 text-xs text-cyan-50 shadow-xl">
-            <div className="mb-2 font-bold uppercase tracking-wider text-cyan-300">Voz de Hermes</div>
+            <div className="mb-2 font-bold uppercase tracking-wider text-cyan-300">Voz de {nombreAgente}</div>
             {voces.length === 0 ? (
               <p className="text-cyan-200/70">No hay voces en español instaladas en este equipo.</p>
             ) : (
@@ -275,8 +295,8 @@ export default function JarvisAdminAssistant() {
           <span className={`absolute rounded-full ${activeCore ? 'h-[29%] w-[29%] bg-emerald-300/70' : 'h-[25%] w-[25%] bg-red-500/55'}`} />
 
           {activeCore ? (
-            <span className="relative z-10 text-sm font-black uppercase tracking-[0.24em] text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.45)]">
-              JARVIS
+            <span className="relative z-10 px-1 text-center text-sm font-black uppercase tracking-[0.2em] text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.45)]">
+              {nombreAgente}
             </span>
           ) : (
             <Mic className="relative z-10 h-5 w-5 text-red-50" />
