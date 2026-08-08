@@ -3,7 +3,8 @@ import { Mic, MicOff, Settings2, MessageSquare } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
-import { leerContexto } from '@/lib/pantallaContexto';
+import { leerContexto, leerModulos } from '@/lib/pantallaContexto';
+import { usePanels } from '@/contexts/panelCore';
 
 const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
@@ -28,6 +29,7 @@ const formatVoiceError = async (err) => {
 
 export default function JarvisAdminAssistant() {
   const { profile, isSuperAdmin } = useAuth();
+  const { openPanel } = usePanels();
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -171,7 +173,11 @@ export default function JarvisAdminAssistant() {
       const { data, error: fnError } = await supabase.functions.invoke('motoflow-ai-chat', {
         // Se manda dónde está parado el usuario: así puede preguntar
         // "¿qué es esto?" sin explicar de qué habla.
-        body: { message, session_id: sessionId, pantalla: leerContexto() },
+        body: {
+          message,
+          session_id: sessionId,
+          pantalla: { ...leerContexto(), modulos: leerModulos() },
+        },
       });
 
       if (fnError) throw fnError;
@@ -182,6 +188,15 @@ export default function JarvisAdminAssistant() {
 
       if (data.session_id) setSessionId(data.session_id);
       setAgenteQueContesto(data.agente_usado ?? null);
+
+      // Navegar es lo único que el servidor no puede hacer solo. Si pidió
+      // abrir un módulo, se abre aquí. El <Protected> de cada pantalla sigue
+      // decidiendo: puede pedir abrirla, no saltarse el permiso.
+      for (const h of data.herramientas || []) {
+        if (h?.herramienta === 'abrir_modulo' && h?.argumentos?.modulo) {
+          try { openPanel(h.argumentos.modulo); } catch { /* módulo inexistente */ }
+        }
+      }
       setLastMessage(data.answer || '');
       setMensajes((m) => [...m, {
         id: `tmp-r-${Date.now()}`, role: 'assistant',
@@ -377,7 +392,8 @@ export default function JarvisAdminAssistant() {
                       con datos de una de memoria. */}
                   {m.role === 'assistant' && m.herramientas?.length > 0 && (
                     <p className="mt-0.5 text-[10px] text-cyan-200/40">
-                      consultó {[...new Set(m.herramientas)].join(', ').replace(/_/g, ' ')}
+                      consultó {[...new Set(m.herramientas.map((h) => h?.herramienta || h))]
+                        .join(', ').replace(/_/g, ' ')}
                     </p>
                   )}
                 </div>

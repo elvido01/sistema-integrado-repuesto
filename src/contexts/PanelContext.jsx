@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { PanelContext, usePanels } from './panelCore';
-import { panelActivo } from '@/lib/pantallaContexto';
+import { panelActivo, publicarModulos } from '@/lib/pantallaContexto';
 import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet, PiggyBank, Landmark } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
@@ -186,6 +186,16 @@ export const PanelProvider = ({ children }) => {
   useEffect(() => {
     panelActivo(activePanel, componentMapping[activePanel]?.name || activePanel);
   }, [activePanel]);
+
+  // La lista de módulos que existen, para que el agente pueda abrirlos por
+  // nombre. Cada uno sigue envuelto en <Protected>, así que si el usuario no
+  // tiene permiso, la pantalla se lo niega igual: el agente puede pedir
+  // abrirla, no saltarse el permiso.
+  useEffect(() => {
+    publicarModulos(
+      Object.entries(componentMapping).map(([id, m]) => ({ id, nombre: m.name || id })),
+    );
+  }, []);
 
   const openPanel = (id, extraData = null) => {
     if (!componentMapping[id]) {

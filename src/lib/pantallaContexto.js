@@ -11,7 +11,14 @@
 // deja igual el nombre del panel, que ya sirve para "¿qué es esto?".
 
 let contexto = { panel: null, titulo: null, datos: null, en: null };
+// Los módulos que existen y a los que el usuario tiene acceso. El agente los
+// necesita para poder abrirlos: sin la lista inventaría nombres de pantallas
+// que no existen. Se publica desde PanelContext, que es quien la tiene.
+let modulos = [];
 const oyentes = new Set();
+
+export function publicarModulos(lista) { modulos = lista || []; }
+export function leerModulos() { return modulos; }
 
 function avisar() {
   for (const f of oyentes) { try { f(contexto); } catch { /* un oyente roto no rompe a los demás */ } }

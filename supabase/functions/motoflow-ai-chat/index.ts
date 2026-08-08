@@ -219,6 +219,38 @@ Deno.serve(async (req: Request) => {
             console.warn('[motoflow-ai-chat] MCP no disponible:', e?.message || e);
         }
 
+        // ── Herramienta que ejecuta el NAVEGADOR, no la base ──────
+        // Abrir un módulo no se puede hacer desde el servidor. Aquí solo se
+        // registra la intención; la pantalla la lee de la respuesta y navega.
+        //
+        // Cada módulo sigue envuelto en <Protected>, así que si el usuario no
+        // tiene permiso la pantalla se lo niega igual: el agente puede PEDIR
+        // abrirla, no saltarse el permiso.
+        const modulos = Array.isArray(pantalla?.modulos) ? pantalla.modulos : [];
+        if (modulos.length) {
+            herramientas.push({
+                type: 'function',
+                function: {
+                    name: 'abrir_modulo',
+                    description:
+                        'Abre una pantalla del sistema para el usuario. Úsala cuando te pidan ir a un ' +
+                        'módulo o cuando la respuesta sea más útil viéndola ahí (ej: "abre ventas", ' +
+                        '"muéstrame el cierre de caja"). Después de abrirla, dilo en una línea.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            modulo: {
+                                type: 'string',
+                                description: 'Identificador del módulo',
+                                enum: modulos.map((m: any) => m.id).slice(0, 80),
+                            },
+                        },
+                        required: ['modulo'],
+                    },
+                },
+            });
+        }
+
         const mensajes: any[] = [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
@@ -228,7 +260,7 @@ Deno.serve(async (req: Request) => {
         // llamadas al modelo: registrar solo la última haría que el medidor
         // reporte de menos, que es peor que no medir.
         let inTot = 0, outTot = 0, costTot = 0, msTot = 0, vueltas = 0;
-        const usadas: string[] = [];
+        const usadas: any[] = [];
         let llm: any = null;
 
         for (let v = 0; v < MAX_VUELTAS_TOOLS; v++) {
@@ -255,16 +287,29 @@ Deno.serve(async (req: Request) => {
 
             mensajes.push(llm.raw_message);
             for (const c of llamadas) {
-                usadas.push(c.function?.name);
+                const nombre = c.function?.name;
+                let args: any = {};
+                try { args = JSON.parse(c.function?.arguments || '{}'); } catch { /* args vacíos */ }
+                usadas.push({ herramienta: nombre, argumentos: args });
+
                 let salida: string;
-                try {
-                    const args = JSON.parse(c.function?.arguments || '{}');
-                    const out = await mcpRpc(mcpUrl, token, 'tools/call', { name: c.function.name, arguments: args });
-                    salida = out?.content?.[0]?.text || '{}';
-                } catch (e) {
-                    // El fallo se le devuelve al modelo para que reaccione,
-                    // en vez de romper la respuesta entera.
-                    salida = JSON.stringify({ error: String(e?.message || e) });
+                if (nombre === 'abrir_modulo') {
+                    // No se ejecuta aquí: navegar es cosa del navegador. Se le
+                    // confirma al modelo para que siga y cierre la respuesta,
+                    // y la pantalla la abre al recibirla.
+                    const m = modulos.find((x: any) => x.id === args.modulo);
+                    salida = m
+                        ? JSON.stringify({ ok: true, abriendo: m.nombre })
+                        : JSON.stringify({ ok: false, error: `No existe el módulo "${args.modulo}"` });
+                } else {
+                    try {
+                        const out = await mcpRpc(mcpUrl, token, 'tools/call', { name: nombre, arguments: args });
+                        salida = out?.content?.[0]?.text || '{}';
+                    } catch (e) {
+                        // El fallo se le devuelve al modelo para que reaccione,
+                        // en vez de romper la respuesta entera.
+                        salida = JSON.stringify({ error: String(e?.message || e) });
+                    }
                 }
                 mensajes.push({ role: 'tool', tool_call_id: c.id, content: salida });
             }
