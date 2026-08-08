@@ -106,23 +106,89 @@ export function alListarVoces(cb) {
   return () => window.speechSynthesis.removeEventListener('voiceschanged', h);
 }
 
-// Ritmo y tono del personaje: pausado y grave, nunca acelerado. JARVIS no
-// tiene prisa ni levanta la voz.
-export const RITMO = 0.88;
-export const TONO = 0.78;
+// Ritmo y tono. El 0.78 de tono salió demasiado grave —"cavernoso" más que
+// "máquina"—; 0.95 deja la voz clara y solo un punto por debajo de lo
+// natural, que es como suena JARVIS. Ajustables desde el panel porque esto
+// depende de la voz instalada y no hay forma de acertarlo a ciegas.
+const RITMO_DEF = 0.92;
+const TONO_DEF = 0.95;
+const CLAVE_AJUSTES = 'motoflow_voz_ajustes';
+
+export function ajustes() {
+  try {
+    const j = JSON.parse(window.localStorage.getItem(CLAVE_AJUSTES) || '{}');
+    return {
+      ritmo: Number(j.ritmo) || RITMO_DEF,
+      tono: Number(j.tono) || TONO_DEF,
+      pitidos: j.pitidos !== false,
+    };
+  } catch { return { ritmo: RITMO_DEF, tono: TONO_DEF, pitidos: true }; }
+}
+
+export function guardarAjustes(a) {
+  try { window.localStorage.setItem(CLAVE_AJUSTES, JSON.stringify({ ...ajustes(), ...a })); } catch { /* nada */ }
+}
+
+// ── El toque metálico ───────────────────────────────────────
+// OJO: la voz NO se puede filtrar. El navegador no deja capturar la salida
+// de speechSynthesis, asi que no hay forma de meterle reverberación ni
+// ecualización — el timbre es el que traiga la voz del sistema.
+//
+// Lo que sí se puede es lo que de verdad hace reconocible a JARVIS: los
+// pitidos de la interfaz. Un blip corto al escuchar y otro al terminar.
+// Eso es Web Audio generando tonos, y no toca la voz para nada.
+let ctxAudio = null;
+function audio() {
+  try {
+    ctxAudio = ctxAudio || new (window.AudioContext || window.webkitAudioContext)();
+    if (ctxAudio.state === 'suspended') ctxAudio.resume();
+    return ctxAudio;
+  } catch { return null; }
+}
+
+function blip({ desde = 880, hasta = 1320, dur = 0.14, vol = 0.05 } = {}) {
+  const ctx = audio();
+  if (!ctx) return;
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(desde, t);
+  osc.frequency.exponentialRampToValueAtTime(hasta, t + dur);
+
+  // Pasa-banda estrecho: es lo que le da el color "digital" en vez de
+  // sonar a pitido de microondas.
+  const filtro = ctx.createBiquadFilter();
+  filtro.type = 'bandpass';
+  filtro.frequency.value = (desde + hasta) / 2;
+  filtro.Q.value = 6;
+
+  const gan = ctx.createGain();
+  gan.gain.setValueAtTime(0, t);
+  gan.gain.linearRampToValueAtTime(vol, t + 0.012);
+  gan.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+  osc.connect(filtro).connect(gan).connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + dur + 0.02);
+}
+
+export const pitidoEscucha = () => blip({ desde: 660, hasta: 1180, dur: 0.13 });
+export const pitidoFin = () => blip({ desde: 1180, hasta: 620, dur: 0.18, vol: 0.04 });
 
 export function hablar(texto, { alEmpezar, alTerminar } = {}) {
   if (!('speechSynthesis' in window) || !texto) return null;
   window.speechSynthesis.cancel();
 
+  const a = ajustes();
   const u = new SpeechSynthesisUtterance(limpiarParaVoz(texto));
   const voz = resolverVoz();
   if (voz) { u.voice = voz; u.lang = voz.lang; } else { u.lang = 'es-MX'; }
-  u.rate = RITMO;
-  u.pitch = TONO;
+  u.rate = a.ritmo;
+  u.pitch = a.tono;
   u.volume = 1;
-  u.onstart = () => alEmpezar?.();
-  u.onend = () => alTerminar?.();
+  u.onstart = () => { if (a.pitidos) blip({ desde: 980, hasta: 1460, dur: 0.1, vol: 0.035 }); alEmpezar?.(); };
+  u.onend = () => { if (a.pitidos) pitidoFin(); alTerminar?.(); };
   u.onerror = () => alTerminar?.();
   window.speechSynthesis.speak(u);
   return u;

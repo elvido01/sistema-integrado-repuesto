@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Mic, MicOff, Settings2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces } from '@/lib/vozJarvis';
+import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
 
 const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
@@ -38,6 +38,7 @@ export default function JarvisAdminAssistant() {
   const [voces, setVoces] = useState([]);
   const [vozSel, setVozSel] = useState(vozElegida() || '');
   const [verVoces, setVerVoces] = useState(false);
+  const [aj, setAj] = useState(ajustes());
 
   // Chrome carga las voces tarde: sin esperar el aviso, el primer mensaje
   // sale con la voz por defecto y solo del segundo en adelante suena bien.
@@ -68,11 +69,27 @@ export default function JarvisAdminAssistant() {
     setLastMessage('');
   };
 
+  const probar = () => {
+    callar();
+    hablar('Sistemas en línea. A sus órdenes.', {
+      alEmpezar: () => setSpeaking(true),
+      alTerminar: () => setSpeaking(false),
+    });
+  };
+
   const cambiarVoz = (nombre) => {
     setVozSel(nombre);
     elegirVoz(nombre);
-    callar();
-    hablar('Sistemas en línea. A sus órdenes.', { alEmpezar: () => setSpeaking(true), alTerminar: () => setSpeaking(false) });
+    probar();
+  };
+
+  // Se guarda y se prueba en el mismo gesto: ajustar tono a ciegas, soltar y
+  // volver a pulsar para oírlo es insoportable.
+  const cambiarAjuste = (patch) => {
+    const nuevo = { ...aj, ...patch };
+    setAj(nuevo);
+    guardarAjustes(patch);
+    probar();
   };
 
   const askAiCeo = async (text) => {
@@ -199,6 +216,27 @@ export default function JarvisAdminAssistant() {
                   Las marcadas con ★ son neuronales y suenan a persona. Para el
                   doblaje latino busca una de <b>México</b> (es-MX).
                 </p>
+
+                <div className="mt-3 space-y-2 border-t border-cyan-300/15 pt-2">
+                  <label className="block">
+                    <span className="text-cyan-200/70">Tono · {aj.tono.toFixed(2)}</span>
+                    <input type="range" min="0.6" max="1.4" step="0.05" value={aj.tono}
+                      onChange={(e) => cambiarAjuste({ tono: Number(e.target.value) })}
+                      className="w-full accent-cyan-400" />
+                  </label>
+                  <label className="block">
+                    <span className="text-cyan-200/70">Ritmo · {aj.ritmo.toFixed(2)}</span>
+                    <input type="range" min="0.6" max="1.3" step="0.02" value={aj.ritmo}
+                      onChange={(e) => cambiarAjuste({ ritmo: Number(e.target.value) })}
+                      className="w-full accent-cyan-400" />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={aj.pitidos}
+                      onChange={(e) => cambiarAjuste({ pitidos: e.target.checked })}
+                      className="accent-cyan-400" />
+                    <span className="text-cyan-200/70">Pitidos de interfaz</span>
+                  </label>
+                </div>
                 {!voces.some((v) => v.neuronal) && (
                   <p className="mt-2 leading-snug text-amber-300/90">
                     No tienes ninguna voz neuronal. Se instalan en Windows:
