@@ -155,10 +155,16 @@ export default function JarvisAdminAssistant() {
   }, [agente]);
 
   const enviarAHermes = async (texto, { conVoz }) => {
+    // Sin este candado, cualquier ruido captado mientras Hermes piensa
+    // mandaba OTRO mensaje, y cada uno volvía a decir "un momento".
+    if (loading) return;
+
     modoVozRef.current = conVoz;
     setMensajes((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: texto }]);
     setLoading(true);
     setError('');
+    // Se avisa UNA vez por espera. Repetirlo en cada vuelta es lo que sonaba
+    // a disco rayado.
     if (conVoz) speak('Un momento, le pregunto a Hermes.', { escucharDespues: false });
     try {
       const { error: e } = await supabase.rpc('hermes_escribir', {
@@ -203,6 +209,11 @@ export default function JarvisAdminAssistant() {
   // que la cancelaron para decir otra cosa: NO se abre el micrófono, porque
   // la voz nueva sigue sonando y se oiría a sí mismo.
   const hablaRef = useRef(0);
+  // Cuántas veces seguidas se abrió el micrófono SOLO. En un mostrador con
+  // ruido, cada apertura puede captar algo y disparar otro envío; sin tope,
+  // la conversación se alimenta sola. Se reinicia cuando la persona habla o
+  // escribe a propósito.
+  const seguidasRef = useRef(0);
   // Lo último que dijo, para reconocerlo si el micrófono lo capta de vuelta.
   const ultimoDichoRef = useRef('');
 
@@ -251,8 +262,12 @@ export default function JarvisAdminAssistant() {
         // cuatro opciones y apagarse obliga a pulsar el círculo para decir
         // "el primero", justo cuando uno tiene las manos ocupadas.
         if (!escucharDespues || !modoVozRef.current) return;
+        // Tres vueltas seguidas sin que nadie pulse nada ya no es una
+        // conversación: es el ruido del local realimentándose.
+        if (seguidasRef.current >= 3) { modoVozRef.current = false; return; }
         window.setTimeout(() => {
           if (mio !== hablaRef.current || !modoVozRef.current) return;
+          seguidasRef.current += 1;
           esperandoAutorizacionRef.current = true;   // silencio = fin, no error
           startListening();
         }, 700);   // el altavoz tarda en callarse del todo
@@ -527,7 +542,12 @@ export default function JarvisAdminAssistant() {
     setListening(false);
   };
 
+  // Pulsar o escribir es intención humana: reinicia el contador de vueltas
+  // automáticas. La conversación sigue mientras haya alguien empujándola.
+  const reiniciarSeguidas = () => { seguidasRef.current = 0; };
+
   const toggleVoice = () => {
+    reiniciarSeguidas();
     // MIENTRAS HABLA: se le corta la palabra y se empieza a escuchar en el
     // mismo gesto. Interrumpir a alguien es para decirle algo — obligar a un
     // clic para callarlo y otro para hablarle no es interrumpir, es esperar.
@@ -788,6 +808,7 @@ export default function JarvisAdminAssistant() {
                 const t = texto.trim();
                 if (!t) return;
                 setTexto('');
+                reiniciarSeguidas();
                 enviar(t, { conVoz: false });
               }}
             >
