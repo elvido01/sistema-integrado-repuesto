@@ -69,7 +69,12 @@ La respuesta aparece sola en la pantalla de la persona. Marca el mensaje como
 respondido: si no lo llamas, al reconectarte lo verás otra vez.
 
 AVISAR QUE ESTÁS VIVO (cada minuto)
+  BEGIN; SET TRANSACTION READ WRITE;
   SELECT hermes.latido('{"origen":"gateway"}'::jsonb);
+  COMMIT;
+El latido ESCRIBE, así que va con el SET igual que chat_responder. Sin él:
+"cannot execute INSERT in a read-only transaction" — no es falta de permiso,
+es que tu rol arranca en solo lectura.
 Sin latido, MotoFlow muestra "Hermes no está conectado" y no deja a nadie
 esperando una respuesta que no va a llegar. Es importante: tú vives en la PC
 de la tienda, y cuando esa máquina se apaga no hay asistente.
@@ -103,9 +108,15 @@ existencias los CONSULTAS siempre; nunca de memoria.
 **Del lado de Hermes** (con su rol `hermes_readonly`):
 
 ```sql
+BEGIN; SET TRANSACTION READ WRITE;
 SELECT hermes.latido('{"origen":"prueba"}'::jsonb);
-SELECT * FROM hermes.chat_pendientes();
+COMMIT;
+
+SELECT * FROM hermes.chat_pendientes();  -- esta sí es de solo lectura
 ```
+
+Su conexión sale de `MOTOFLOW_DB_URL` en el entorno de Windows de su PC, en
+formato `clave=valor` (no URL: la `@` se perdía al pasar por `setx`).
 
 **Del lado de MotoFlow** (con sesión iniciada):
 
