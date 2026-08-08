@@ -1330,7 +1330,14 @@ const WhatsAppCrmPage = () => {
     try {
       const r = await invocarConSesion('hermes-sugerir', { conversation_id: selected.id });
       if (!r?.ok) throw new Error(r?.error || 'No se pudo generar la sugerencia');
-      setSugerencia({ texto: r.sugerencia, messageId: r.message_id, productos: r.productos || [] });
+      setSugerencia({
+        texto: r.sugerencia,
+        messageId: r.message_id,
+        productos: r.productos || [],
+        // Qué consultó de verdad en el sistema. Se muestra para que el
+        // vendedor sepa si miró el inventario o contestó de memoria.
+        consultas: [...new Set((r.herramientas || []).map((h) => h.herramienta))],
+      });
     } catch (e) {
       toast({ variant: 'destructive', title: 'Hermes no pudo sugerir', description: e.message });
     } finally {
@@ -2425,9 +2432,13 @@ const WhatsAppCrmPage = () => {
                           <div className="flex items-center gap-1.5 mb-1.5">
                             <Sparkles className="h-3.5 w-3.5 text-violet-600 shrink-0" />
                             <span className="text-[11px] font-bold uppercase tracking-wide text-violet-700">Hermes sugiere</span>
-                            {!!sugerencia.productos?.length && (
-                              <span className="text-[11px] text-violet-500">
-                                · {sugerencia.productos.length} pieza{sugerencia.productos.length > 1 ? 's' : ''} encontrada{sugerencia.productos.length > 1 ? 's' : ''}
+                            {sugerencia.consultas?.length ? (
+                              <span className="text-[11px] text-violet-500 truncate">
+                                · consultó {sugerencia.consultas.join(', ').replace(/_/g, ' ')}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-amber-600">
+                                · sin consultar el sistema
                               </span>
                             )}
                             <button type="button" className="ml-auto text-slate-400 hover:text-slate-600"

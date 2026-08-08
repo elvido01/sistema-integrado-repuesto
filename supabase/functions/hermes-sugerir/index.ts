@@ -1,13 +1,19 @@
 // ============================================================
-// hermes-sugerir — Le propone al vendedor qué contestar
+// hermes-sugerir — Le propone al vendedor que contestar
 // ------------------------------------------------------------
-// NO envía nada. Redacta una respuesta y se la deja al vendedor, que la
-// manda con un clic, la corrige o la ignora. Esa decisión suya es la señal
-// de aprendizaje: se guarda al lado de lo que él escribió de verdad.
+// NO envia nada. Redacta y se la deja al vendedor, que la manda con un
+// clic, la corrige o la ignora. Esa decision suya se guarda al lado de lo
+// que escribio de verdad: comparar las dos es la señal de aprendizaje.
 //
-// El QUÉ sale del inventario (precio y existencia reales, que vienen del
-// RPC); el CÓMO sale de unos pocos ejemplos de cómo contesta la casa. Esta
-// función solo junta las dos cosas y redacta.
+// >>> AHORA CONSULTA, NO RECIBE TODO MASTICADO <<<
+// Antes se le entregaba el resultado de UNA busqueda ya hecha. Ahora se le
+// pasan las herramientas del MCP y el decide: buscar la pieza, mirar el
+// codigo exacto, consultar la deuda del cliente.
+//
+// El detalle que hace que esto valga la pena: la lista de herramientas se
+// PIDE al MCP en cada llamada (tools/list). No hay ni un nombre de
+// herramienta escrito aqui. Agregar una al MCP la pone a disposicion de
+// Hermes sin tocar este archivo — que era justo el punto de hacer el MCP.
 //
 // Body: { conversation_id }
 // ============================================================
@@ -16,6 +22,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
 const MODELO = 'gpt-4o-mini';
+const MAX_VUELTAS = 4;   // tope de idas y vueltas con las herramientas
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -43,15 +50,15 @@ Deno.serve(async (req: Request) => {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   if (!apiKey) return json({ ok: false, error: 'Falta OPENAI_API_KEY' }, 500);
 
-  // Se usa el token DEL USUARIO, no el service_role: asi el RPC resuelve su
-  // empresa con get_user_tenant() y no hay forma de leer la conversacion de
-  // otro tenant aunque manden un id ajeno.
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-    { global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: { persistSession: false, autoRefreshToken: false } },
-  );
+  const baseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const mcpUrl = `${baseUrl}/functions/v1/motoflow-mcp`;
+
+  // Token DEL USUARIO, no service_role: cada RPC resuelve su empresa con
+  // get_user_tenant() y no hay forma de leer datos de otro tenant.
+  const supabase = createClient(baseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 
   try {
     const { data: ctx, error } = await supabase.rpc('hermes_contexto_sugerencia', {
@@ -60,21 +67,23 @@ Deno.serve(async (req: Request) => {
     if (error) return json({ ok: false, error: error.message }, 400);
     if (!ctx?.ok) return json({ ok: false, error: ctx?.motivo || 'Sin contexto' }, 400);
 
-    const sugerencia = await redactar(ctx, apiKey);
-    if (!sugerencia) return json({ ok: false, error: 'La IA no devolvio texto' }, 502);
+    const { texto, usadas } = await redactar(ctx, apiKey, mcpUrl, token);
+    if (!texto) return json({ ok: false, error: 'La IA no devolvio texto' }, 502);
 
     await supabase.rpc('hermes_guardar_sugerencia', {
       p_message_id: ctx.message_id,
-      p_sugerencia: sugerencia,
-      p_datos: { productos: ctx.productos, busqueda: ctx.busqueda, modelo: MODELO },
+      p_sugerencia: texto,
+      p_datos: { herramientas_usadas: usadas, modelo: MODELO, via: 'mcp' },
     });
 
     return json({
       ok: true,
-      sugerencia,
+      sugerencia: texto,
       message_id: ctx.message_id,
       pregunta: ctx.pregunta,
-      productos: ctx.productos,
+      herramientas: usadas,
+      // Lo que el modelo consulto de verdad, para pintarlo en la pantalla.
+      productos: usadas.flatMap((u: any) => u.piezas || []),
     });
   } catch (e) {
     console.error('[hermes-sugerir]', e?.message || e);
@@ -82,63 +91,114 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function redactar(ctx: any, apiKey: string) {
-  const productos = Array.isArray(ctx.productos) ? ctx.productos : [];
+// ── El MCP ──────────────────────────────────────────────────
+async function mcp(url: string, token: string, method: string, params: any) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
+  });
+  const j = await r.json().catch(() => null);
+  if (j?.error) throw new Error(`MCP ${method}: ${j.error.message}`);
+  return j?.result;
+}
 
-  const listaPiezas = productos.length
-    ? productos.map((p: any) =>
-        `- ${p.descripcion} (código ${p.codigo || 's/c'}) · RD$ ${Number(p.precio).toLocaleString('es-DO')} · ${
-          Number(p.existencia) > 0 ? `${p.existencia} en existencia` : 'SIN EXISTENCIA'}`).join('\n')
-    : '(no se encontró ninguna pieza que coincida con lo que preguntó)';
+async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string) {
+  // Las herramientas se DESCUBREN. Nada esta escrito a mano aqui: lo que el
+  // MCP publique hoy es lo que Hermes sabe hacer hoy.
+  const lista = await mcp(mcpUrl, token, 'tools/list', {});
+  const herramientas = (lista?.tools || []).map((t: any) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.inputSchema },
+  }));
 
   const ejemplos = (Array.isArray(ctx.ejemplos) ? ctx.ejemplos : [])
     .map((e: any) => `Cliente: ${e.pregunta}\nVendedor: ${e.respuesta}`).join('\n\n');
-
   const historial = (Array.isArray(ctx.historial) ? ctx.historial : [])
     .map((h: any) => `${h.quien === 'cliente' ? 'Cliente' : 'Nosotros'}: ${h.texto}`).join('\n');
 
   const sistema = [
-    `Eres el vendedor de ${ctx.empresa || 'la tienda'}, una tienda de repuestos de motocicletas en República Dominicana.`,
+    `Eres el vendedor de ${ctx.empresa || 'la tienda'}, una tienda de repuestos de motocicletas en Republica Dominicana.`,
     `Le contestas a un cliente por ${ctx.canal || 'WhatsApp'}.`,
     '',
     'REGLAS, en orden de importancia:',
-    '1. NO inventes precios, existencias ni piezas. Usa SOLO la lista de abajo.',
-    '2. Si la lista viene vacía o ninguna pieza encaja, di que vas a verificar y',
-    '   pide el dato que falta (modelo y año de la motocicleta). NUNCA inventes.',
-    '3. Si la pieza está SIN EXISTENCIA, dilo claro; no la ofrezcas como disponible.',
-    '4. Escribe como los ejemplos: corto, directo, dominicano, sin formalidad de',
-    '   robot. Nada de "Estimado cliente" ni "quedo a sus órdenes".',
-    '5. Dos o tres líneas como máximo. Si hay varias piezas parecidas, pregunta',
-    '   cuál necesita en vez de listarlas todas.',
-    '6. Los precios en pesos, con coma de miles: RD$ 1,400.',
+    '1. CONSULTA antes de afirmar. Tienes herramientas conectadas al sistema real:',
+    '   usalas para precios, existencias y deudas. Nunca los inventes ni los',
+    '   recuerdes de otra conversacion.',
+    '2. Si la busqueda no devuelve la pieza, di que la vas a verificar y pide el',
+    '   modelo y el año de la motocicleta. Es mejor preguntar que inventar.',
+    '3. Si una pieza tiene existencia 0, dilo claro; no la ofrezcas como disponible.',
+    '4. Si hay varias parecidas, pregunta cual necesita en vez de listarlas todas.',
+    '5. Escribe como los ejemplos: corto, directo, dominicano. Nada de "Estimado',
+    '   cliente" ni "quedo a sus ordenes". Dos o tres lineas.',
+    '6. Precios en pesos, con coma de miles: RD$ 1,400.',
   ].join('\n');
 
-  const usuario = [
-    ejemplos ? `ASÍ CONTESTA LA CASA (copia el tono, no el contenido):\n\n${ejemplos}\n` : '',
-    historial ? `CONVERSACIÓN HASTA AHORA:\n${historial}\n` : '',
-    `PIEZAS EN EL SISTEMA QUE PODRÍAN SER LO QUE PIDE:\n${listaPiezas}\n`,
-    `LA PREGUNTA A CONTESTAR:\n${ctx.pregunta}\n`,
-    'Escribe SOLO el mensaje que le enviarías al cliente. Sin explicaciones ni comillas.',
-  ].filter(Boolean).join('\n');
+  const mensajes: any[] = [
+    { role: 'system', content: sistema },
+    {
+      role: 'user',
+      content: [
+        ejemplos ? `ASI CONTESTA LA CASA (copia el tono, no el contenido):\n\n${ejemplos}\n` : '',
+        historial ? `CONVERSACION HASTA AHORA:\n${historial}\n` : '',
+        `LA PREGUNTA A CONTESTAR:\n${ctx.pregunta}\n`,
+        'Consulta lo que necesites y escribe SOLO el mensaje que le enviarias al cliente.',
+      ].filter(Boolean).join('\n'),
+    },
+  ];
 
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: MODELO,
-      messages: [
-        { role: 'system', content: sistema },
-        { role: 'user', content: usuario },
-      ],
-      temperature: 0.3,   // bajo: inventar precios seria peor que sonar sosa
-      max_tokens: 220,
-    }),
-  });
+  const usadas: any[] = [];
 
-  if (!r.ok) {
-    const detalle = await r.text().catch(() => '');
-    throw new Error(`OpenAI ${r.status}: ${detalle.slice(0, 200)}`);
+  for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: MODELO,
+        messages: mensajes,
+        tools: herramientas.length ? herramientas : undefined,
+        // En la ultima vuelta se le corta el acceso a herramientas para
+        // forzar una respuesta: sin esto podria quedarse consultando.
+        tool_choice: vuelta === MAX_VUELTAS - 1 ? 'none' : 'auto',
+        temperature: 0.3,   // bajo: inventar un precio seria peor que sonar sosa
+        max_tokens: 400,
+      }),
+    });
+
+    if (!r.ok) {
+      const detalle = await r.text().catch(() => '');
+      throw new Error(`OpenAI ${r.status}: ${detalle.slice(0, 200)}`);
+    }
+
+    const data = await r.json();
+    const msg = data?.choices?.[0]?.message;
+    if (!msg) throw new Error('OpenAI no devolvio mensaje');
+
+    const llamadas = msg.tool_calls || [];
+    if (!llamadas.length) {
+      return { texto: String(msg.content || '').trim(), usadas };
+    }
+
+    mensajes.push(msg);
+
+    for (const c of llamadas) {
+      let resultado: string;
+      try {
+        const args = JSON.parse(c.function.arguments || '{}');
+        const out = await mcp(mcpUrl, token, 'tools/call', { name: c.function.name, arguments: args });
+        resultado = out?.content?.[0]?.text || '{}';
+        try {
+          const parsed = JSON.parse(resultado);
+          usadas.push({ herramienta: c.function.name, argumentos: args, ...parsed });
+        } catch { usadas.push({ herramienta: c.function.name, argumentos: args }); }
+      } catch (e) {
+        // El fallo se le DEVUELVE al modelo para que reaccione (pedir otro
+        // dato, buscar distinto) en vez de romper la sugerencia entera.
+        resultado = JSON.stringify({ error: String(e?.message || e) });
+      }
+      mensajes.push({ role: 'tool', tool_call_id: c.id, content: resultado });
+    }
   }
-  const data = await r.json();
-  return String(data?.choices?.[0]?.message?.content || '').trim();
+
+  return { texto: '', usadas };
 }
