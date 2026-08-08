@@ -28,6 +28,23 @@ const corsHeaders = {
 
 const MODEL = 'gpt-4o-mini';
 const MAX_HISTORY = 12;
+// Tope de idas y vueltas con las herramientas. En la última se le corta el
+// acceso para forzar respuesta: sin ese corte, un modelo puede quedarse
+// consultando en círculo y cada vuelta se cobra.
+const MAX_VUELTAS_TOOLS = 4;
+
+// Habla con el servidor MCP (JSON-RPC). Se pasa el token DEL USUARIO para
+// que cada consulta quede acotada a su empresa por get_user_tenant().
+async function mcpRpc(url: string, token: string, method: string, params: any) {
+    const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
+    });
+    const j = await r.json().catch(() => null);
+    if (j?.error) throw new Error(`MCP ${method}: ${j.error.message}`);
+    return j?.result;
+}
 
 const SYSTEM_PROMPT = `Eres el ASESOR EJECUTIVO IA de MotoFlow / Repuestos Morla — un sistema integrado para tienda de repuestos de motocicletas en República Dominicana.
 
@@ -141,15 +158,83 @@ Deno.serve(async (req: Request) => {
             pregunta_nueva: message,
         });
 
-        // Llamar LLM
-        const llm = await callLLM({
-            system: SYSTEM_PROMPT,
-            user: userPrompt,
-            user_tag: tenant_id,
-            model: MODEL,
-            max_tokens: 600,
-            temperature: 0.3,
-        });
+        // ── Herramientas del MCP ──────────────────────────────────
+        // Se DESCUBREN, no van escritas aquí: lo que el MCP publique hoy es
+        // lo que el asistente sabe hacer hoy. Agregar una herramienta allá la
+        // pone a disposición sin tocar este archivo.
+        //
+        // El snapshot de estado_negocio se mantiene: es la foto general.
+        // Las herramientas son para lo puntual que no cabe en una foto —
+        // "¿tenemos este cigüeñal?", "¿cuánto debe fulano?".
+        const mcpUrl = `${SUPABASE_URL}/functions/v1/motoflow-mcp`;
+        let herramientas: any[] = [];
+        try {
+            const lista = await mcpRpc(mcpUrl, token, 'tools/list', {});
+            herramientas = (lista?.tools || []).map((t: any) => ({
+                type: 'function',
+                function: { name: t.name, description: t.description, parameters: t.inputSchema },
+            }));
+        } catch (e) {
+            // Sin MCP el asistente sigue contestando con el snapshot. Perder
+            // las herramientas degrada la respuesta; tumbar el chat, no.
+            console.warn('[motoflow-ai-chat] MCP no disponible:', e?.message || e);
+        }
+
+        const mensajes: any[] = [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+        ];
+
+        // El consumo se ACUMULA. Una pregunta con herramientas son varias
+        // llamadas al modelo: registrar solo la última haría que el medidor
+        // reporte de menos, que es peor que no medir.
+        let inTot = 0, outTot = 0, costTot = 0, msTot = 0, vueltas = 0;
+        const usadas: string[] = [];
+        let llm: any = null;
+
+        for (let v = 0; v < MAX_VUELTAS_TOOLS; v++) {
+            llm = await callLLM({
+                messages: mensajes,
+                system: SYSTEM_PROMPT,
+                user: userPrompt,
+                user_tag: tenant_id,
+                model: MODEL,
+                max_tokens: 600,
+                temperature: 0.3,
+                tools: herramientas.length ? herramientas : undefined,
+                tool_choice: v === MAX_VUELTAS_TOOLS - 1 ? 'none' : 'auto',
+            });
+
+            inTot += llm.input_tokens || 0;
+            outTot += llm.output_tokens || 0;
+            costTot += llm.cost_usd || 0;
+            msTot += llm.duration_ms || 0;
+            vueltas++;
+
+            const llamadas = llm.tool_calls || [];
+            if (!llamadas.length) break;
+
+            mensajes.push(llm.raw_message);
+            for (const c of llamadas) {
+                usadas.push(c.function?.name);
+                let salida: string;
+                try {
+                    const args = JSON.parse(c.function?.arguments || '{}');
+                    const out = await mcpRpc(mcpUrl, token, 'tools/call', { name: c.function.name, arguments: args });
+                    salida = out?.content?.[0]?.text || '{}';
+                } catch (e) {
+                    // El fallo se le devuelve al modelo para que reaccione,
+                    // en vez de romper la respuesta entera.
+                    salida = JSON.stringify({ error: String(e?.message || e) });
+                }
+                mensajes.push({ role: 'tool', tool_call_id: c.id, content: salida });
+            }
+        }
+
+        llm.input_tokens = inTot;
+        llm.output_tokens = outTot;
+        llm.cost_usd = Number(costTot.toFixed(4));
+        llm.duration_ms = msTot;
 
         // Persistir mensajes
         await supabase.from('ai_chat_messages').insert([
@@ -191,7 +276,15 @@ Deno.serve(async (req: Request) => {
             cost_usd: llm.cost_usd,
             status: 'completed',
             duration_ms: llm.duration_ms,
-            metadata: { session_id, message_len: message.length },
+            metadata: {
+                session_id,
+                message_len: message.length,
+                // Con cuántas llamadas al modelo se resolvió y qué consultó.
+                // Sirve para ver si el gasto de una pregunta se disparó por
+                // un bucle largo de herramientas.
+                vueltas,
+                herramientas: usadas,
+            },
         });
 
         return json({

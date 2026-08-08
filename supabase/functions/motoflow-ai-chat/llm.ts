@@ -27,6 +27,16 @@ export interface LlmCallOptions {
     max_tokens?: number;
     /** 0.0-1.0 — default 0.2 (más determinista para agentes) */
     temperature?: number;
+    /**
+     * Conversación completa. Si se pasa, IGNORA system/user: hace falta para
+     * los bucles de herramientas, donde hay que reenviar todo el hilo
+     * (incluidos los resultados de cada llamada) en cada vuelta.
+     */
+    messages?: any[];
+    /** Herramientas en formato OpenAI. Sin esto, el modelo solo puede hablar. */
+    tools?: any[];
+    /** 'auto' | 'none' — 'none' obliga a contestar sin llamar nada más */
+    tool_choice?: 'auto' | 'none';
 }
 
 export interface LlmCallResult {
@@ -37,6 +47,10 @@ export interface LlmCallResult {
     output_tokens: number;
     cost_usd: number;
     duration_ms: number;
+    /** Herramientas que el modelo pidió llamar (vacío si contestó directo) */
+    tool_calls?: any[];
+    /** El mensaje crudo, para reenviarlo en la siguiente vuelta del bucle */
+    raw_message?: any;
 }
 
 // ────────────────────────────────────────────────
@@ -68,7 +82,9 @@ async function callOpenAI(opts: LlmCallOptions): Promise<LlmCallResult> {
     const model = opts.model || 'gpt-4o-mini';
     const body: Record<string, unknown> = {
         model,
-        messages: [
+        // opts.messages gana cuando viene: en un bucle de herramientas hay que
+        // reenviar el hilo entero, no solo system+user.
+        messages: opts.messages ?? [
             { role: 'system', content: opts.system },
             { role: 'user', content: opts.user },
         ],
@@ -77,6 +93,10 @@ async function callOpenAI(opts: LlmCallOptions): Promise<LlmCallResult> {
     };
     if (opts.user_tag) body.user = `motoflow:${opts.user_tag}`;
     if (opts.response_format === 'json') body.response_format = { type: 'json_object' };
+    if (opts.tools?.length) {
+        body.tools = opts.tools;
+        body.tool_choice = opts.tool_choice ?? 'auto';
+    }
 
     const start = Date.now();
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -94,7 +114,8 @@ async function callOpenAI(opts: LlmCallOptions): Promise<LlmCallResult> {
         throw new Error(`OpenAI ${r.status}: ${errText.slice(0, 500)}`);
     }
     const data = await r.json();
-    const content = data.choices?.[0]?.message?.content || '';
+    const msg = data.choices?.[0]?.message;
+    const content = msg?.content || '';
     const inTokens = data.usage?.prompt_tokens || 0;
     const outTokens = data.usage?.completion_tokens || 0;
     return {
@@ -105,6 +126,8 @@ async function callOpenAI(opts: LlmCallOptions): Promise<LlmCallResult> {
         output_tokens: outTokens,
         cost_usd: Number(calcCost(model, inTokens, outTokens).toFixed(4)),
         duration_ms,
+        tool_calls: msg?.tool_calls || [],
+        raw_message: msg,
     };
 }
 
