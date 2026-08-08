@@ -144,7 +144,7 @@ export default function JarvisAdminAssistant() {
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'hermes_chat', filter: 'rol=eq.hermes' },
         ({ new: fila }) => {
-          setLoading(false);
+          dejarDeEsperar();
           setMensajes((m) => [...m, { id: `h-${fila.id}`, role: 'assistant', content: fila.texto }]);
           setAgenteQueContesto(agente?.nombre || 'Hermes');
           if (modoVozRef.current) speak(fila.texto);
@@ -155,15 +155,27 @@ export default function JarvisAdminAssistant() {
   }, [agente]);
 
   const enviarAHermes = async (texto, { conVoz }) => {
-    // Sin este candado, cualquier ruido captado mientras Hermes piensa
-    // mandaba OTRO mensaje, y cada uno volvía a decir "un momento".
+    // `loading` NO sirve de candado aquí. recognition.onresult se construye
+    // una sola vez, al abrir el micrófono, y se queda con el `enviar` de ese
+    // render: su `loading` vale false para siempre, por muy ocupado que esté
+    // el agente. Los dictados entraban partidos en trozos por eso.
     //
-    // `loading` solo sirve para envíos separados en el tiempo: es estado de
-    // React y no cambia hasta el próximo render. Varias llamadas dentro del
-    // mismo tick lo ven en false todas. La referencia sí cambia en el acto,
-    // y es la que atrapa la ráfaga.
-    if (loading || enviandoRef.current) return;
-    enviandoRef.current = true;
+    // La referencia sí la ven todos los closures, y se suelta cuando LLEGA la
+    // respuesta, no cuando sale la pregunta. Soltarla al terminar el RPC
+    // dejaba la puerta abierta a los dos décimas de segundo: los trozos
+    // llegaban separados por segundos y pasaban todos.
+    if (loading || esperandoRef.current) return;
+    esperandoRef.current = true;
+
+    // Nadie espera para siempre. Si Hermes no contesta, hay que decirlo y
+    // devolver el control — con la referencia trabada y sin esto, la ventana
+    // quedaría muerta hasta recargar la página.
+    window.clearTimeout(esperaHermesRef.current);
+    esperaHermesRef.current = window.setTimeout(() => {
+      esperandoRef.current = false;
+      setLoading(false);
+      setError('Hermes no ha contestado. Puede estar ocupado o con su PC apagada.');
+    }, 45000);
 
     modoVozRef.current = conVoz;
     setMensajes((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: texto }]);
@@ -181,12 +193,8 @@ export default function JarvisAdminAssistant() {
       // No se apaga el "pensando": se apaga cuando LLEGA su respuesta por
       // Realtime. Hermes puede tardar, y fingir que terminó sería mentir.
     } catch (err) {
-      setLoading(false);
+      dejarDeEsperar();
       setError(err.message || 'No se pudo enviar el mensaje a Hermes.');
-    } finally {
-      // Se suelta al terminar el envío, no al llegar la respuesta: para
-      // entonces `loading` ya está en true de verdad y toma el relevo.
-      enviandoRef.current = false;
     }
   };
 
@@ -226,10 +234,21 @@ export default function JarvisAdminAssistant() {
   const seguidasRef = useRef(0);
   // Lo último que dijo, para reconocerlo si el micrófono lo capta de vuelta.
   const ultimoDichoRef = useRef('');
-  // Envío en curso. Es referencia y no estado a propósito: ver enviarAHermes.
-  const enviandoRef = useRef(false);
+  // Hay una pregunta en el aire esperando respuesta de Hermes. Es referencia
+  // y no estado a propósito: ver enviarAHermes.
+  const esperandoRef = useRef(false);
+  const esperaHermesRef = useRef(null);
   // Número del reconocedor activo. Solo el último tiene derecho a hablar.
   const micTurnoRef = useRef(0);
+
+  // Un solo sitio donde se deja de esperar: llegó la respuesta, falló el
+  // envío, se cortó a mano o se agotó el tiempo. Tener el candado y el reloj
+  // separados es como se queda uno de los dos puesto.
+  const dejarDeEsperar = () => {
+    window.clearTimeout(esperaHermesRef.current);
+    esperandoRef.current = false;
+    setLoading(false);
+  };
 
   useEffect(() => {
     if (!sessionId) return;
@@ -309,7 +328,10 @@ export default function JarvisAdminAssistant() {
     window.clearTimeout(clearBubbleTimerRef.current);
     setSpeaking(false);
     setListening(false);
-    setLoading(false);
+    // Detener suelta también la espera de Hermes: si no, el candado se queda
+    // trabado y la ventana no vuelve a aceptar nada.
+    micTurnoRef.current++;
+    dejarDeEsperar();
     setLastMessage('');
   };
 
