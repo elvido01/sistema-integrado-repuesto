@@ -3,6 +3,32 @@
 > Igual que `HERMES_INSTRUCCIONES_TELEGRAM.md`, pero para el canal nuevo.
 > Requiere que esté corrido `sql/hermes_canal_motoflow.sql`.
 
+## Cómo le llega esto a Hermes
+
+Hermes está en otra PC: una ruta de disco de aquí no le sirve de nada.
+La primera vez se le pasó `docs/HERMES_CANAL_MOTOFLOW.md` y contestó que el
+archivo no existía — tenía razón.
+
+Tampoco tiene un "cliente del vault" aparte. **Para él el vault es una vista
+en la misma base a la que ya está conectado con `hermes_readonly`:**
+
+```sql
+SELECT contenido FROM hermes.vault_notas
+WHERE ruta = 'agentes/hermes/canal-motoflow.md';
+```
+
+Ese `GRANT` está en `sql/vault_agentes.sql`. Es el mismo camino por el que él
+escribe: `hermes.vault_guardar_nota()`, no archivos.
+
+Así que hay dos formas, en este orden:
+
+1. **Por el vault** — se copia el bloque a `vault/agentes/hermes/`, se corre
+   `npm run vault:sync:una-vez`, y se le dice que lea esa ruta con el SELECT
+   de arriba. Sirve para cambios futuros: se edita el archivo y se le pide
+   que relea.
+2. **Pegándoselo** — el bloque de abajo cabe en un mensaje de Telegram
+   (~2.2 KB de 4 KB). Es lo que hay que hacer si su conexión está caída.
+
 ## Por qué existe
 
 Dentro de MotoFlow había un asistente con el nombre de Hermes que **no era
