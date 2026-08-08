@@ -90,15 +90,23 @@ const { data: msgs } = await s
   .order('creado_en', { ascending: false })
   .limit(6);
 
-const pendientes = (msgs || []).filter((m) => m.rol === 'usuario' && !m.respondido);
+// Se cuenta contra la tabla, NO sobre los seis que se muestran. Contándolo
+// sobre la lista recortada dijo "6 pendientes" cuando había 17, y con ese
+// número se diagnosticó mal el problema durante media hora.
+const { count: pendientes } = await s
+  .from('hermes_chat')
+  .select('id', { count: 'exact', head: true })
+  .eq('tenant_id', TENANT)
+  .eq('rol', 'usuario')
+  .eq('respondido', false);
 
 console.log('');
 if (!msgs?.length) {
   console.log('Conversación: vacía, nadie le ha escrito desde MotoFlow.');
 } else {
-  if (pendientes.length) {
+  if (pendientes) {
     // Vivo y con cola es peor que muerto: alguien está esperando en pantalla.
-    console.log(`⚠ ${pendientes.length} mensaje(s) sin contestar${vivo ? ' — y está conectado' : ''}`);
+    console.log(`⚠ ${pendientes} mensaje(s) sin contestar${vivo ? ' — y está conectado' : ''}`);
   }
   console.log('Últimos mensajes:');
   for (const m of msgs.reverse()) {

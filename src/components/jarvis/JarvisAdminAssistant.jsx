@@ -228,6 +228,8 @@ export default function JarvisAdminAssistant() {
   const ultimoDichoRef = useRef('');
   // Envío en curso. Es referencia y no estado a propósito: ver enviarAHermes.
   const enviandoRef = useRef(false);
+  // Número del reconocedor activo. Solo el último tiene derecho a hablar.
+  const micTurnoRef = useRef(0);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -499,6 +501,11 @@ export default function JarvisAdminAssistant() {
       return;
     }
 
+    // Segundo cierre, por si abort() no llega a tiempo o el navegador entrega
+    // un resultado ya en camino: cada reconocedor lleva número y solo el
+    // último manda. Sin esto, uno que sobreviva sigue hablando por su cuenta.
+    const miTurno = ++micTurnoRef.current;
+
     const recognition = new SpeechRecognitionApi();
     recognition.lang = 'es-ES';
     recognition.continuous = false;
@@ -519,6 +526,7 @@ export default function JarvisAdminAssistant() {
       setError(`No pude escuchar bien${reason}.`);
     };
     recognition.onresult = (event) => {
+      if (miTurno !== micTurnoRef.current) return;   // reconocedor viejo
       const transcript = Array.from(event.results)
         .map((result) => result[0]?.transcript || '')
         .join(' ')
