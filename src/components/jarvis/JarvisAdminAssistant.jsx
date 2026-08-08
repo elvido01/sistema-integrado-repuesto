@@ -75,6 +75,15 @@ export default function JarvisAdminAssistant() {
   // camino con un número viejo se descarta: sin esto, cancelas y a los tres
   // segundos el agente se pone a hablar igual.
   const turnoRef = useRef(0);
+  // Lo que el agente preparó y espera autorización. NADA de esto pasó aún.
+  const [propuesta, setPropuesta] = useState(null);
+  const [clave, setClave] = useState('');
+  const [autorizando, setAutorizando] = useState(false);
+  // El manejador de voz se construye una vez y se quedaría con el valor
+  // viejo: leerlo de una referencia es lo que hace que "autorizo" funcione
+  // sobre la propuesta que está en pantalla AHORA.
+  const propuestaRef = useRef(null);
+  useEffect(() => { propuestaRef.current = propuesta; }, [propuesta]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -140,6 +149,35 @@ export default function JarvisAdminAssistant() {
     });
   };
 
+  const resolverPropuesta = async (autorizar) => {
+    if (!propuesta || autorizando) return;
+    setAutorizando(true);
+    try {
+      if (!autorizar) {
+        await supabase.rpc('agente_rechazar_accion', { p_accion_id: propuesta.accion_id });
+        setMensajes((m) => [...m, { id: `r-${Date.now()}`, role: 'assistant', content: 'Descartado. No se hizo nada.' }]);
+      } else {
+        const { data, error: e } = await supabase.rpc('agente_confirmar_accion', {
+          p_accion_id: propuesta.accion_id,
+          p_password: clave || null,
+        });
+        if (e) throw e;
+        if (data?.ok === false) throw new Error(data.motivo || 'No se pudo autorizar');
+        const r = data?.resultado || {};
+        setMensajes((m) => [...m, {
+          id: `r-${Date.now()}`, role: 'assistant',
+          content: `Listo. ${r.numero ? `Cotización ${r.numero}` : 'Hecho'}${r.total ? ` · RD$ ${Number(r.total).toLocaleString('es-DO')}` : ''}`,
+        }]);
+      }
+      setPropuesta(null);
+      setClave('');
+    } catch (err) {
+      setError(err.message || 'No se pudo completar');
+    } finally {
+      setAutorizando(false);
+    }
+  };
+
   const cambiarVoz = (nombre) => {
     setVozSel(nombre);
     elegirVoz(nombre);
@@ -197,6 +235,12 @@ export default function JarvisAdminAssistant() {
           try { openPanel(h.argumentos.modulo); } catch { /* módulo inexistente */ }
         }
       }
+
+      // Si preparó algo que escribe, se abre el chat aunque estuviera
+      // cerrado: una autorización no puede quedar escondida detrás de un
+      // círculo, y menos si el agente ya dijo de viva voz que la preparó.
+      const p = (data.propuestas || [])[0];
+      if (p) { setPropuesta(p); setClave(''); setChatAbierto(true); }
       setLastMessage(data.answer || '');
       setMensajes((m) => [...m, {
         id: `tmp-r-${Date.now()}`, role: 'assistant',
@@ -237,7 +281,30 @@ export default function JarvisAdminAssistant() {
         .map((result) => result[0]?.transcript || '')
         .join(' ')
         .trim();
-      if (transcript) askAiCeo(transcript);
+      if (!transcript) return;
+
+      // Con una autorización pendiente, la voz decide sobre ELLA. Si no, un
+      // "sí" se le mandaría al modelo como pregunta y la propuesta quedaría
+      // colgada esperando.
+      if (propuestaRef.current) {
+        const t = transcript.toLowerCase();
+        if (/\b(autorizo|autoriza|aprueba|aprobado|dale|hazlo|s[ií] gr[aá]balo|confirmo)\b/.test(t)) {
+          // Lo que mueve dinero NO se autoriza de viva voz: decir "autorizo"
+          // no identifica a nadie, y cualquiera junto al mostrador lo dice.
+          if (propuestaRef.current.requiere_password) {
+            setError('Esta acción mueve dinero: hay que autorizarla en pantalla con la contraseña.');
+            return;
+          }
+          resolverPropuesta(true);
+          return;
+        }
+        if (/\b(cancela|cancelar|no|descarta|dej[aá]lo|olv[ií]dalo)\b/.test(t)) {
+          resolverPropuesta(false);
+          return;
+        }
+      }
+
+      askAiCeo(transcript);
     };
 
     recognitionRef.current = recognition;
@@ -409,6 +476,57 @@ export default function JarvisAdminAssistant() {
               )}
               <div ref={finRef} />
             </div>
+
+            {/* AUTORIZACIÓN. Los datos se muestran EN PANTALLA porque un
+                monto hablado se oye mal: "catorce mil" y "cuarenta mil" se
+                parecen demasiado para aprobarlos de oído. */}
+            {propuesta && (
+              <div className="border-t border-amber-400/30 bg-amber-500/10 p-2.5">
+                <div className="mb-1 flex items-center gap-1.5">
+                  <span className="rounded bg-amber-400/25 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-200">
+                    Requiere su autorización
+                  </span>
+                </div>
+                <p className="text-xs text-amber-50">{propuesta.resumen}</p>
+
+                {propuesta.payload?.lineas?.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {propuesta.payload.lineas.map((l, i) => (
+                      <li key={i} className="text-[11px] text-amber-100/80">
+                        · {l.cantidad} × {l.codigo}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-1.5 text-[10px] text-amber-200/70">
+                  Los precios los pone el catálogo al grabar, no el agente.
+                </p>
+
+                {propuesta.requiere_password && (
+                  <input
+                    type="password" value={clave} onChange={(e) => setClave(e.target.value)}
+                    placeholder="Contraseña administrativa"
+                    className="mt-2 w-full rounded border border-amber-400/40 bg-slate-900 px-2 py-1 text-xs text-amber-50"
+                  />
+                )}
+
+                <div className="mt-2 flex gap-2">
+                  <button type="button" disabled={autorizando}
+                    onClick={() => resolverPropuesta(true)}
+                    className="rounded bg-emerald-600 px-3 py-1 text-xs font-bold text-white disabled:opacity-50">
+                    {autorizando ? 'Grabando…' : 'Autorizar'}
+                  </button>
+                  <button type="button" disabled={autorizando}
+                    onClick={() => resolverPropuesta(false)}
+                    className="rounded border border-red-400/40 px-3 py-1 text-xs font-bold text-red-300">
+                    Descartar
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[10px] text-amber-200/50">
+                  O dilo en voz alta: «autorizo» / «cancela». Vence en 10 minutos.
+                </p>
+              </div>
+            )}
 
             <form
               className="flex gap-1.5 border-t border-cyan-300/15 p-2"

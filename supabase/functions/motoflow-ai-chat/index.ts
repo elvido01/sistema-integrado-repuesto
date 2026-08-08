@@ -251,10 +251,52 @@ Deno.serve(async (req: Request) => {
             });
         }
 
+        // ── Proponer acciones que ESCRIBEN ────────────────────────
+        // El agente no ejecuta: propone. El payload queda congelado en la
+        // base y la persona autoriza en pantalla. Se le dice explícitamente
+        // para que no prometa que ya lo hizo.
+        herramientas.push({
+            type: 'function',
+            function: {
+                name: 'proponer_accion',
+                description:
+                    'Propone una acción que MODIFICA el sistema. NO la ejecuta: queda esperando que ' +
+                    'la persona la autorice en pantalla. Úsala cuando te pidan crear algo. ' +
+                    'Después de proponerla, di en una línea qué preparaste y que falta autorizar. ' +
+                    'NUNCA digas que ya está hecho.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tipo: { type: 'string', enum: ['crear_cotizacion'],
+                                description: 'Por ahora solo cotizaciones. Facturar y cobrar no están habilitados.' },
+                        resumen: { type: 'string',
+                                   description: 'Una línea clara para que la persona sepa qué autoriza. Ej: "Cotización para Juan Pérez: 2 gomas 90/90-17"' },
+                        cliente_codigo: { type: 'string', description: 'Código del cliente si está registrado' },
+                        cliente_nombre: { type: 'string', description: 'Nombre, si no está registrado' },
+                        notas: { type: 'string' },
+                        lineas: {
+                            type: 'array',
+                            description: 'Las piezas. El precio NO se manda: lo pone el catálogo.',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    codigo: { type: 'string', description: 'Código exacto del producto' },
+                                    cantidad: { type: 'number' },
+                                },
+                                required: ['codigo', 'cantidad'],
+                            },
+                        },
+                    },
+                    required: ['tipo', 'resumen', 'lineas'],
+                },
+            },
+        });
+
         const mensajes: any[] = [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
         ];
+        const propuestas: any[] = [];
 
         // El consumo se ACUMULA. Una pregunta con herramientas son varias
         // llamadas al modelo: registrar solo la última haría que el medidor
@@ -293,7 +335,20 @@ Deno.serve(async (req: Request) => {
                 usadas.push({ herramienta: nombre, argumentos: args });
 
                 let salida: string;
-                if (nombre === 'abrir_modulo') {
+                if (nombre === 'proponer_accion') {
+                    // Se ejecuta aquí, pero SOLO guarda la propuesta. Lo que
+                    // modifica el sistema lo dispara la persona al autorizar.
+                    const { tipo, resumen, ...resto } = args;
+                    const { data: prop, error: e } = await supabase.rpc('agente_proponer_accion', {
+                        p_tipo: tipo, p_resumen: resumen, p_payload: resto,
+                    });
+                    if (e) {
+                        salida = JSON.stringify({ error: e.message });
+                    } else {
+                        propuestas.push({ ...prop, tipo, resumen, payload: resto });
+                        salida = JSON.stringify(prop);
+                    }
+                } else if (nombre === 'abrir_modulo') {
                     // No se ejecuta aquí: navegar es cosa del navegador. Se le
                     // confirma al modelo para que siga y cierre la respuesta,
                     // y la pantalla la abre al recibirla.
@@ -385,6 +440,9 @@ Deno.serve(async (req: Request) => {
             agente_usado: agente?.nombre || null,
             herramientas: usadas,
             vueltas,
+            // Lo que quedó esperando autorización. La pantalla lo muestra con
+            // los números a la vista; nada de esto pasó todavía.
+            propuestas,
         });
     } catch (err: any) {
         console.error('[motoflow-ai-chat]', err);
