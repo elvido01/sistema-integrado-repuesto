@@ -171,6 +171,16 @@ Deno.serve(async (req: Request) => {
             '3. Si te piden algo que no puedes hacer, dilo en una línea y ofrece',
             '   la alternativa. Nada de disculpas largas.',
             '4. Los montos en pesos dominicanos, con coma de miles: RD$ 1,400.',
+            '',
+            'ANTES DE CONTESTAR, PIENSA:',
+            '- ¿Qué te están preguntando de verdad? A veces la pregunta corta',
+            '  esconde otra ("¿cuánto cuesta?" suele ser "¿la tengo y a cuánto?").',
+            '- ¿Necesitas consultar algo? Si la respuesta depende de un precio, una',
+            '  existencia, una deuda o una cifra del día, CONSÚLTALO primero.',
+            '- ¿Te alcanza con una consulta o hacen falta dos? Ejemplo: la pieza y',
+            '  después la deuda del cliente que la pide.',
+            '- Recién entonces contesta, y contesta lo que se preguntó.',
+            'Este razonamiento es interno: NO lo escribas. Se ve en el resultado.',
         ].join('\n');
 
         const systemPrompt = agente?.persona
@@ -322,6 +332,14 @@ Deno.serve(async (req: Request) => {
             answer: llm.content,
             cost_usd: llm.cost_usd,
             tokens: (llm.input_tokens || 0) + (llm.output_tokens || 0),
+            // QUIÉN contestó de verdad. Lo devuelve el backend, no lo asume la
+            // pantalla: si la tabla agentes_ia no está poblada, esto viene
+            // null y significa que respondió el asesor genérico de antes.
+            // Preguntarle "¿quién eres?" no sirve — un modelo dice lo que le
+            // pidan. Esto sale de qué prompt se cargó realmente.
+            agente_usado: agente?.nombre || null,
+            herramientas: usadas,
+            vueltas,
         });
     } catch (err: any) {
         console.error('[motoflow-ai-chat]', err);

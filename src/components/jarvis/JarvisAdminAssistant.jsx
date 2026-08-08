@@ -65,6 +65,14 @@ export default function JarvisAdminAssistant() {
   const [mensajes, setMensajes] = useState([]);
   const [texto, setTexto] = useState('');
   const finRef = useRef(null);
+  // Quién contestó SEGÚN EL BACKEND. Si viene null, respondió el asesor
+  // genérico porque la tabla agentes_ia está vacía — y eso hay que verlo,
+  // no adivinarlo.
+  const [agenteQueContesto, setAgenteQueContesto] = useState(undefined);
+  // Se sube cada vez que el usuario interrumpe. La respuesta que venga en
+  // camino con un número viejo se descarta: sin esto, cancelas y a los tres
+  // segundos el agente se pone a hablar igual.
+  const turnoRef = useRef(0);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -109,6 +117,19 @@ export default function JarvisAdminAssistant() {
     setLastMessage('');
   };
 
+  // Cortar TODO: la voz que está sonando y la respuesta que viene en camino.
+  // Subir el turno hace que la respuesta en vuelo se descarte al llegar.
+  const interrumpir = () => {
+    turnoRef.current++;
+    callar();
+    try { recognitionRef.current?.abort?.(); } catch { /* no estaba oyendo */ }
+    window.clearTimeout(clearBubbleTimerRef.current);
+    setSpeaking(false);
+    setListening(false);
+    setLoading(false);
+    setLastMessage('');
+  };
+
   const probar = () => {
     callar();
     hablar(agente?.saludo || 'Sistemas en línea. A sus órdenes.', {
@@ -139,6 +160,7 @@ export default function JarvisAdminAssistant() {
     const message = String(text || '').trim();
     if (!message || loading) return;
 
+    const turno = ++turnoRef.current;
     setLoading(true);
     setError('');
     setLastMessage(message);
@@ -155,14 +177,22 @@ export default function JarvisAdminAssistant() {
       if (fnError) throw fnError;
       if (!data?.ok) throw new Error(data?.mensaje || data?.error || `${nombreAgente} no respondió.`);
 
+      // Si lo interrumpieron mientras esto viajaba, se descarta callado.
+      if (turno !== turnoRef.current) return;
+
       if (data.session_id) setSessionId(data.session_id);
+      setAgenteQueContesto(data.agente_usado ?? null);
       setLastMessage(data.answer || '');
-      setMensajes((m) => [...m, { id: `tmp-r-${Date.now()}`, role: 'assistant', content: data.answer || '' }]);
+      setMensajes((m) => [...m, {
+        id: `tmp-r-${Date.now()}`, role: 'assistant',
+        content: data.answer || '', herramientas: data.herramientas || [],
+      }]);
       if (conVoz) speak(data.answer || '');
     } catch (err) {
+      if (turno !== turnoRef.current) return;
       setError(await formatVoiceError(err));
     } finally {
-      setLoading(false);
+      if (turno === turnoRef.current) setLoading(false);
     }
   };
 
@@ -205,13 +235,16 @@ export default function JarvisAdminAssistant() {
   };
 
   const toggleVoice = () => {
-    if (listening) {
-      stopListening();
+    // Hablando o pensando, el círculo CORTA. Antes, si estaba esperando
+    // respuesta no hacía nada: pulsabas y pulsabas y el agente terminaba
+    // hablando igual unos segundos después.
+    if (speaking || loading) {
+      interrumpir();
       return;
     }
 
-    if (speaking) {
-      stopSpeaking();
+    if (listening) {
+      stopListening();
       return;
     }
 
@@ -300,6 +333,20 @@ export default function JarvisAdminAssistant() {
             <div className="flex items-center gap-2 border-b border-cyan-300/15 px-3 py-2">
               <span className="text-sm font-black uppercase tracking-widest text-cyan-300">{nombreAgente}</span>
               <span className="truncate text-[11px] text-cyan-200/50">{agente?.puesto}</span>
+              {/* Quién contestó SEGÚN EL SERVIDOR. En ámbar significa que
+                  respondió el asesor viejo porque falta correr el SQL. */}
+              {agenteQueContesto === null && (
+                <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300"
+                  title="Respondió el asesor genérico: falta correr agentes_ia_por_empresa.sql">
+                  sin agente
+                </span>
+              )}
+              {agenteQueContesto && (
+                <span className="shrink-0 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300"
+                  title="Confirmado por el servidor: se cargó la personalidad de este agente">
+                  ✓ {agenteQueContesto}
+                </span>
+              )}
               <button type="button" onClick={() => setChatAbierto(false)}
                 className="ml-auto text-cyan-200/60 hover:text-cyan-100">✕</button>
             </div>
@@ -326,9 +373,24 @@ export default function JarvisAdminAssistant() {
                       ? 'bg-cyan-500/20 text-cyan-50'
                       : 'bg-slate-800/80 text-slate-100'
                   }`}>{m.content}</span>
+                  {/* Qué consultó para contestar eso. Distingue una respuesta
+                      con datos de una de memoria. */}
+                  {m.role === 'assistant' && m.herramientas?.length > 0 && (
+                    <p className="mt-0.5 text-[10px] text-cyan-200/40">
+                      consultó {[...new Set(m.herramientas)].join(', ').replace(/_/g, ' ')}
+                    </p>
+                  )}
                 </div>
               ))}
-              {loading && <p className="text-xs text-cyan-200/50">pensando…</p>}
+              {loading && (
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-cyan-200/50">pensando…</p>
+                  <button type="button" onClick={interrumpir}
+                    className="rounded border border-red-400/40 px-1.5 py-0.5 text-[10px] font-bold text-red-300 hover:bg-red-500/15">
+                    Detener
+                  </button>
+                </div>
+              )}
               <div ref={finRef} />
             </div>
 
