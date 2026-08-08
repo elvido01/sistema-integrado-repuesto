@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Mic, MicOff, Settings2 } from 'lucide-react';
+import { Mic, MicOff, Settings2, MessageSquare } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
@@ -57,6 +57,28 @@ export default function JarvisAdminAssistant() {
 
   const nombreAgente = agente?.nombre || 'Asistente';
 
+  // ── La conversación ───────────────────────────────────────────────────
+  // El círculo solo hablaba: contestaba y la burbuja se borraba. Sin hilo
+  // visible no es un canal de comunicación, es un altavoz. La conversación
+  // ya se guardaba en ai_chat_messages; solo faltaba mostrarla.
+  const [chatAbierto, setChatAbierto] = useState(false);
+  const [mensajes, setMensajes] = useState([]);
+  const [texto, setTexto] = useState('');
+  const finRef = useRef(null);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    supabase.from('ai_chat_messages')
+      .select('id, role, content, created_at')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => setMensajes(data || []));
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (chatAbierto) finRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [mensajes, loading, chatAbierto]);
+
   // Chrome carga las voces tarde: sin esperar el aviso, el primer mensaje
   // sale con la voz por defecto y solo del segundo en adelante suena bien.
   useEffect(() => alListarVoces(() => setVoces(listarVoces())), []);
@@ -110,13 +132,17 @@ export default function JarvisAdminAssistant() {
     probar();
   };
 
-  const askAiCeo = async (text) => {
+  // conVoz=false cuando se escribe: si escribiste, no tiene por qué ponerse
+  // a hablar delante de un cliente. Y cuando toque ElevenLabs, cada frase
+  // hablada se paga — callarse en el canal escrito es gratis y correcto.
+  const askAiCeo = async (text, { conVoz = true } = {}) => {
     const message = String(text || '').trim();
     if (!message || loading) return;
 
     setLoading(true);
     setError('');
     setLastMessage(message);
+    setMensajes((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: message }]);
     stopSpeaking();
 
     try {
@@ -131,7 +157,8 @@ export default function JarvisAdminAssistant() {
 
       if (data.session_id) setSessionId(data.session_id);
       setLastMessage(data.answer || '');
-      speak(data.answer || '');
+      setMensajes((m) => [...m, { id: `tmp-r-${Date.now()}`, role: 'assistant', content: data.answer || '' }]);
+      if (conVoz) speak(data.answer || '');
     } catch (err) {
       setError(await formatVoiceError(err));
     } finally {
@@ -268,7 +295,68 @@ export default function JarvisAdminAssistant() {
           </div>
         )}
 
-        {(error || lastMessage) && (
+        {chatAbierto && (
+          <div className="flex h-[26rem] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-xl border border-cyan-300/25 bg-slate-950/95 shadow-2xl">
+            <div className="flex items-center gap-2 border-b border-cyan-300/15 px-3 py-2">
+              <span className="text-sm font-black uppercase tracking-widest text-cyan-300">{nombreAgente}</span>
+              <span className="truncate text-[11px] text-cyan-200/50">{agente?.puesto}</span>
+              <button type="button" onClick={() => setChatAbierto(false)}
+                className="ml-auto text-cyan-200/60 hover:text-cyan-100">✕</button>
+            </div>
+
+            {/* Que se vea qué está mirando. Si el agente contesta algo raro,
+                lo primero que uno quiere saber es de qué pantalla habla. */}
+            {leerContexto()?.titulo && (
+              <div className="border-b border-cyan-300/10 px-3 py-1.5 text-[11px] text-cyan-200/50">
+                viendo: <b className="text-cyan-200/80">{leerContexto().titulo}</b>
+                {leerContexto().datos ? ' · con datos' : ''}
+              </div>
+            )}
+
+            <div className="flex-1 space-y-2 overflow-y-auto px-3 py-2">
+              {mensajes.length === 0 && (
+                <p className="mt-6 text-center text-xs leading-relaxed text-cyan-200/40">
+                  Pregúntale por una pieza, cómo va el día,<br />o qué ve en esta pantalla.
+                </p>
+              )}
+              {mensajes.map((m) => (
+                <div key={m.id} className={m.role === 'user' ? 'text-right' : ''}>
+                  <span className={`inline-block max-w-[85%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-left text-xs ${
+                    m.role === 'user'
+                      ? 'bg-cyan-500/20 text-cyan-50'
+                      : 'bg-slate-800/80 text-slate-100'
+                  }`}>{m.content}</span>
+                </div>
+              ))}
+              {loading && <p className="text-xs text-cyan-200/50">pensando…</p>}
+              <div ref={finRef} />
+            </div>
+
+            <form
+              className="flex gap-1.5 border-t border-cyan-300/15 p-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const t = texto.trim();
+                if (!t) return;
+                setTexto('');
+                askAiCeo(t, { conVoz: false });
+              }}
+            >
+              <input
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                placeholder={`Escríbele a ${nombreAgente}…`}
+                className="min-w-0 flex-1 rounded-md border border-cyan-300/25 bg-slate-900 px-2.5 py-1.5 text-xs text-cyan-50 placeholder:text-cyan-200/30 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+              />
+              <button type="submit" disabled={loading || !texto.trim()}
+                className="rounded-md bg-cyan-600 px-3 text-xs font-bold text-white disabled:opacity-40">
+                Enviar
+              </button>
+            </form>
+          </div>
+        )}
+
+        {!chatAbierto && (error || lastMessage) && (
           <div className={`max-w-[280px] rounded-md border px-3 py-2 text-xs shadow-xl ${
             error
               ? 'border-red-500/40 bg-red-950/90 text-red-50'
@@ -305,14 +393,24 @@ export default function JarvisAdminAssistant() {
           {listening && <MicOff className="absolute bottom-5 right-5 z-10 h-4 w-4 text-emerald-50" />}
         </button>
 
-        <button
-          type="button"
-          onClick={() => setVerVoces((v) => !v)}
-          title="Elegir la voz"
-          className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
-        >
-          <Settings2 className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setChatAbierto((v) => !v)}
+            title={`Escribirle a ${nombreAgente}`}
+            className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setVerVoces((v) => !v)}
+            title="Elegir la voz"
+            className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </>
   );
