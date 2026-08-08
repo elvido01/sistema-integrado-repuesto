@@ -110,8 +110,13 @@ export default function JarvisAdminAssistant() {
   // sobre la propuesta que está en pantalla AHORA.
   const propuestaRef = useRef(null);
   useEffect(() => { propuestaRef.current = propuesta; }, [propuesta]);
-  // true mientras el micrófono se abrió SOLO para oír la autorización.
+  // true mientras el micrófono lo abrió el sistema y no la persona. En ese
+  // caso el silencio no es un error: simplemente no había nada que decir.
   const esperandoAutorizacionRef = useRef(false);
+  // La conversación viene por voz. Mientras sea así, al terminar de hablar
+  // vuelve a escuchar solo — hablar y que se apague no es conversar, es
+  // dictar. Se apaga en cuanto se escribe algo.
+  const modoVozRef = useRef(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -144,7 +149,21 @@ export default function JarvisAdminAssistant() {
     window.clearTimeout(clearBubbleTimerRef.current);
     hablar(text, {
       alEmpezar: () => setSpeaking(true),
-      alTerminar: () => { setSpeaking(false); setLastMessage(''); },
+      alTerminar: () => {
+        setSpeaking(false);
+        setLastMessage('');
+        // Si la conversación va por voz, sigue escuchando. Terminar de leer
+        // cuatro opciones y apagarse obliga a pulsar el círculo para decir
+        // "el primero" — que es justo el momento en que uno tiene las manos
+        // ocupadas. La autorización tiene su propia escucha, no se pisan.
+        if (modoVozRef.current && !propuestaRef.current) {
+          window.setTimeout(() => {
+            if (!modoVozRef.current || propuestaRef.current) return;
+            esperandoAutorizacionRef.current = true;   // silencio = fin, no error
+            startListening();
+          }, 350);
+        }
+      },
     });
     clearBubbleTimerRef.current = window.setTimeout(() => setLastMessage(''), Math.max(5000, text.length * 85));
   };
@@ -160,6 +179,9 @@ export default function JarvisAdminAssistant() {
   // Subir el turno hace que la respuesta en vuelo se descarte al llegar.
   const interrumpir = () => {
     turnoRef.current++;
+    // Cortar de verdad apaga también la escucha automática: si no, el
+    // micrófono se reabriría solo justo después de haberlo mandado a callar.
+    modoVozRef.current = false;
     callar();
     try { recognitionRef.current?.abort?.(); } catch { /* no estaba oyendo */ }
     window.clearTimeout(clearBubbleTimerRef.current);
@@ -253,6 +275,10 @@ export default function JarvisAdminAssistant() {
   const askAiCeo = async (text, { conVoz = true } = {}) => {
     const message = String(text || '').trim();
     if (!message || loading) return;
+
+    // Escribir corta el modo voz; hablarle lo enciende. Así el canal escrito
+    // no deja el micrófono abierto en el mostrador.
+    modoVozRef.current = conVoz;
 
     const turno = ++turnoRef.current;
     setLoading(true);
@@ -381,15 +407,28 @@ export default function JarvisAdminAssistant() {
   };
 
   const stopListening = () => {
+    // Apagar el micrófono a propósito cierra la conversación hablada. Sin
+    // esto, el círculo se volvería a encender solo en la siguiente respuesta
+    // y no habría forma de terminar.
+    modoVozRef.current = false;
     recognitionRef.current?.stop();
     setListening(false);
   };
 
   const toggleVoice = () => {
-    // Hablando o pensando, el círculo CORTA. Antes, si estaba esperando
-    // respuesta no hacía nada: pulsabas y pulsabas y el agente terminaba
-    // hablando igual unos segundos después.
-    if (speaking || loading) {
+    // MIENTRAS HABLA: se le corta la palabra y se empieza a escuchar en el
+    // mismo gesto. Interrumpir a alguien es para decirle algo — obligar a un
+    // clic para callarlo y otro para hablarle no es interrumpir, es esperar.
+    if (speaking) {
+      callar();
+      window.clearTimeout(clearBubbleTimerRef.current);
+      setSpeaking(false);
+      startListening();
+      return;
+    }
+
+    // Pensando sí solo corta: no hay nada que interrumpir todavía.
+    if (loading) {
       interrumpir();
       return;
     }
