@@ -157,7 +157,13 @@ export default function JarvisAdminAssistant() {
   const enviarAHermes = async (texto, { conVoz }) => {
     // Sin este candado, cualquier ruido captado mientras Hermes piensa
     // mandaba OTRO mensaje, y cada uno volvía a decir "un momento".
-    if (loading) return;
+    //
+    // `loading` solo sirve para envíos separados en el tiempo: es estado de
+    // React y no cambia hasta el próximo render. Varias llamadas dentro del
+    // mismo tick lo ven en false todas. La referencia sí cambia en el acto,
+    // y es la que atrapa la ráfaga.
+    if (loading || enviandoRef.current) return;
+    enviandoRef.current = true;
 
     modoVozRef.current = conVoz;
     setMensajes((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: texto }]);
@@ -177,6 +183,10 @@ export default function JarvisAdminAssistant() {
     } catch (err) {
       setLoading(false);
       setError(err.message || 'No se pudo enviar el mensaje a Hermes.');
+    } finally {
+      // Se suelta al terminar el envío, no al llegar la respuesta: para
+      // entonces `loading` ya está en true de verdad y toma el relevo.
+      enviandoRef.current = false;
     }
   };
 
@@ -216,6 +226,8 @@ export default function JarvisAdminAssistant() {
   const seguidasRef = useRef(0);
   // Lo último que dijo, para reconocerlo si el micrófono lo capta de vuelta.
   const ultimoDichoRef = useRef('');
+  // Envío en curso. Es referencia y no estado a propósito: ver enviarAHermes.
+  const enviandoRef = useRef(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -466,6 +478,21 @@ export default function JarvisAdminAssistant() {
     window.clearTimeout(clearBubbleTimerRef.current);
     setError('');
     setLastMessage('');
+
+    // Reemplazar recognitionRef NO apaga el reconocedor anterior: sigue vivo
+    // con el micrófono abierto. Y como el modo voz lo reabre solo al terminar
+    // de hablar, se acumulaban. La primera pregunta real que se le hizo a
+    // Hermes le llegó SEIS veces, una por cada reconocedor que seguía oyendo
+    // (y una cortada a media palabra, del que cerró antes).
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.abort();
+      } catch { /* ya estaba muerto: da igual */ }
+      recognitionRef.current = null;
+    }
 
     if (!SpeechRecognitionApi) {
       setError('Este navegador no soporta dictado por voz.');
