@@ -26,7 +26,11 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MODEL = 'gpt-4o-mini';
+// Por variable de entorno y no fijo aquí: cambiar de familia de modelo es de
+// las cosas que hay que poder deshacer en treinta segundos, sin desplegar.
+//   supabase secrets set JARVIS_MODEL=gpt-5.6-luna
+//   supabase secrets unset JARVIS_MODEL     (vuelve a gpt-4o-mini)
+const MODEL = Deno.env.get('JARVIS_MODEL') ?? 'gpt-4o-mini';
 const MAX_HISTORY = 12;
 // Tope de idas y vueltas con las herramientas. En la última se le corta el
 // acceso para forzar respuesta: sin ese corte, un modelo puede quedarse
@@ -374,6 +378,9 @@ Deno.serve(async (req: Request) => {
         // llamadas al modelo: registrar solo la última haría que el medidor
         // reporte de menos, que es peor que no medir.
         let inTot = 0, outTot = 0, costTot = 0, msTot = 0, vueltas = 0;
+        // Aparte, para poder comparar modelos con datos y no con impresiones:
+        // cuánta entrada vino de caché y cuánta salida se fue en razonar.
+        let cacheTot = 0, razonaTot = 0;
         const usadas: any[] = [];
         let llm: any = null;
 
@@ -392,6 +399,8 @@ Deno.serve(async (req: Request) => {
 
             inTot += llm.input_tokens || 0;
             outTot += llm.output_tokens || 0;
+            cacheTot += llm.cached_tokens || 0;
+            razonaTot += llm.reasoning_tokens || 0;
             costTot += llm.cost_usd || 0;
             msTot += llm.duration_ms || 0;
             vueltas++;
@@ -444,7 +453,10 @@ Deno.serve(async (req: Request) => {
 
         llm.input_tokens = inTot;
         llm.output_tokens = outTot;
-        llm.cost_usd = Number(costTot.toFixed(4));
+        // Seis decimales: a cuatro, una consulta de US$0.0006 se registraba
+        // como 0.0006 y una de 0.00004 como cero. Comparar dos modelos con un
+        // medidor que redondea a cero no compara nada.
+        llm.cost_usd = Number(costTot.toFixed(6));
         llm.duration_ms = msTot;
 
         // Persistir mensajes
@@ -495,6 +507,11 @@ Deno.serve(async (req: Request) => {
                 // un bucle largo de herramientas.
                 vueltas,
                 herramientas: usadas,
+                // Lo que decide si un modelo que razona sale a cuenta. Sin
+                // esto, comparar gpt-4o-mini contra gpt-5.6 sería opinar.
+                cached_tokens: cacheTot,
+                reasoning_tokens: razonaTot,
+                reasoning_effort: Deno.env.get('JARVIS_REASONING') ?? null,
             },
         });
 
