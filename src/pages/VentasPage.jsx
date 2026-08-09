@@ -18,6 +18,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
+import { escucharOrdenes } from '@/lib/puenteAgente';
 import { Loader2 } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
@@ -199,6 +200,34 @@ const VentasPage = () => {
       setLoadingNumero(false);
     }
   }, []);
+
+  // El agente deja la factura ARMADA, no la graba. Coloca las piezas, la
+  // forma de pago y lo recibido; grabar sigue siendo F10, de una persona.
+  //
+  // Se agrega unidad por unidad con handleAddProductByCode a propósito: es el
+  // mismo camino que teclear el código en la fila amarilla, así que pasa por
+  // el control de existencia, las sugerencias de equivalentes y el bloqueo de
+  // venta bajo costo. Meter las líneas por otra vía se saltaría todo eso.
+  useEffect(() => {
+    return escucharOrdenes('ventas', async (orden) => {
+      if (orden?.tipo !== 'preparar_venta') return;
+      try {
+        for (const l of orden.lineas || []) {
+          for (let i = 0; i < l.cantidad; i++) {
+            await handleAddProductByCode(l.codigo);
+          }
+        }
+        if (orden.forma_pago) setTipoPago(orden.forma_pago);
+        if (orden.recibido) setMontoRecibido(String(orden.recibido));
+        toast({
+          title: 'Factura preparada',
+          description: 'Revísala y pulsa F10 para grabar. Nada se ha guardado todavía.',
+        });
+      } catch (e) {
+        toast({ title: 'No pude preparar la factura', description: String(e?.message || e), variant: 'destructive' });
+      }
+    });
+  }, [handleAddProductByCode, setTipoPago, setMontoRecibido, toast]);
 
   useEffect(() => {
     const fetchInitialData = async () => {

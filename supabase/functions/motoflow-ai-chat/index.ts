@@ -307,6 +307,51 @@ Deno.serve(async (req: Request) => {
             });
         }
 
+        // ── Dejar la factura ARMADA en pantalla ───────────────────
+        // No escribe nada: llena la pantalla de Ventas y la persona pulsa
+        // F10. Por eso NO pasa por proponer_accion ni pide autorización —
+        // no hay nada que autorizar mientras no se grabe.
+        //
+        // Es la diferencia entre un ayudante que te adelanta el trabajo y
+        // uno que factura por su cuenta. Y como todo entra por el mismo
+        // camino que teclear el código, sigue rigiendo el control de
+        // existencia y el bloqueo de venta bajo costo.
+        herramientas.push({
+            type: 'function',
+            function: {
+                name: 'preparar_venta',
+                description:
+                    'Abre Facturación y deja la venta ARMADA con sus piezas. NO la graba: la persona revisa y pulsa F10. ' +
+                    'Úsala cuando pidan facturar o vender algo. ' +
+                    'DESPUÉS de llamarla, pregunta la forma de pago si no te la dijeron; y si es EFECTIVO, ' +
+                    'pregunta con cuánto pagan para calcular el cambio. Cuando lo sepas, vuelve a llamarla ' +
+                    'con los mismos datos más forma_pago y recibido. ' +
+                    'Los códigos son los EXACTOS de buscar_piezas: búscalos antes si no los tienes.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        lineas: {
+                            type: 'array',
+                            description: 'Las piezas. El precio lo pone el catálogo.',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    codigo: { type: 'string', description: 'El "codigo" EXACTO que devolvió buscar_piezas, copiado tal cual' },
+                                    cantidad: { type: 'number' },
+                                },
+                                required: ['codigo', 'cantidad'],
+                            },
+                        },
+                        cliente_nombre: { type: 'string', description: 'Nombre del cliente si lo dieron' },
+                        forma_pago: { type: 'string', enum: ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'],
+                                      description: 'Solo si ya te la dijeron. Si no, pregúntala.' },
+                        recibido: { type: 'number', description: 'Con cuánto paga, solo en EFECTIVO. Si no lo sabes, pregúntalo.' },
+                    },
+                    required: ['lineas'],
+                },
+            },
+        });
+
         // ── Proponer acciones que ESCRIBEN ────────────────────────
         // El agente no ejecuta: propone. El payload queda congelado en la
         // base y la persona autoriza en pantalla. Se le dice explícitamente
@@ -319,7 +364,10 @@ Deno.serve(async (req: Request) => {
                     'Propone una acción que MODIFICA el sistema. NO la ejecuta: queda esperando que ' +
                     'la persona la autorice en pantalla. Úsala cuando te pidan crear algo. ' +
                     'Después de proponerla, di en una línea qué preparaste y que falta autorizar. ' +
-                    'NUNCA digas que ya está hecho.',
+                    'NUNCA digas que ya está hecho. ' +
+                    'ANTES de proponer una cotización TIENES que haber buscado cada pieza con ' +
+                    'buscar_piezas y usar el campo "codigo" que devolvió, copiado tal cual. ' +
+                    'Si no lo tienes, búscala primero: no propongas con un código a medias.',
                 parameters: {
                     type: 'object',
                     properties: {
@@ -336,7 +384,11 @@ Deno.serve(async (req: Request) => {
                             items: {
                                 type: 'object',
                                 properties: {
-                                    codigo: { type: 'string', description: 'Código exacto del producto' },
+                                    // Se inventó "[PESA_TORNILLO_ROJA_PC]" en una propuesta real y
+                                    // llegó hasta la pantalla de autorización. Aquí es donde el
+                                    // modelo lee qué poner, así que aquí se le dice.
+                                    codigo: { type: 'string',
+                                              description: 'El campo "codigo" EXACTO que devolvió buscar_piezas, copiado tal cual (ej: "GAX046-NG", "015298"). NUNCA lo inventes ni escribas una descripción de la pieza: si no lo tienes, llama a buscar_piezas primero.' },
                                     cantidad: { type: 'number' },
                                 },
                                 required: ['codigo', 'cantidad'],
@@ -381,6 +433,9 @@ Deno.serve(async (req: Request) => {
             { role: 'user', content: userPrompt },
         ];
         const propuestas: any[] = [];
+        // Lo que hay que hacerle a una pantalla. Viaja en la respuesta y lo
+        // ejecuta el navegador, igual que abrir_modulo.
+        const ordenes: any[] = [];
 
         // El consumo se ACUMULA. Una pregunta con herramientas son varias
         // llamadas al modelo: registrar solo la última haría que el medidor
@@ -436,6 +491,38 @@ Deno.serve(async (req: Request) => {
                     } else {
                         propuestas.push({ ...prop, tipo, resumen, payload: resto });
                         salida = JSON.stringify(prop);
+                    }
+                } else if (nombre === 'preparar_venta') {
+                    // Tampoco se ejecuta aquí: llenar una pantalla es cosa del
+                    // navegador. Se valida que los códigos existan y se le
+                    // confirma al modelo, que sigue preguntando forma de pago.
+                    //
+                    // La validación va aquí y no solo en la pantalla porque si
+                    // el modelo se inventa un código, tiene que enterarse EN LA
+                    // MISMA vuelta y poder corregir. Descubrirlo cuando la
+                    // pantalla ya se abrió a medio llenar es tarde.
+                    const codigos = (args.lineas || []).map((l: any) => String(l?.codigo || '').trim()).filter(Boolean);
+                    const { data: hay } = await supaUser
+                        .from('productos').select('codigo').in('codigo', codigos);
+                    const existentes = new Set((hay || []).map((p: any) => p.codigo));
+                    const faltan = codigos.filter((c: string) => !existentes.has(c));
+                    if (!codigos.length) {
+                        salida = JSON.stringify({ ok: false, error: 'No mandaste ninguna línea.' });
+                    } else if (faltan.length) {
+                        salida = JSON.stringify({
+                            ok: false,
+                            error: `Estos códigos no existen: ${faltan.join(', ')}. Usa el "codigo" exacto de buscar_piezas.`,
+                        });
+                    } else {
+                        ordenes.push({ panel: 'ventas', orden: { tipo: 'preparar_venta', ...args } });
+                        salida = JSON.stringify({
+                            ok: true,
+                            preparada: true,
+                            lineas: codigos.length,
+                            falta: args.forma_pago
+                                ? (args.forma_pago === 'EFECTIVO' && !args.recibido ? 'preguntar con cuánto paga' : 'que la persona pulse F10')
+                                : 'preguntar la forma de pago',
+                        });
                     }
                 } else if (nombre === 'abrir_modulo') {
                     // No se ejecuta aquí: navegar es cosa del navegador. Se le
@@ -540,6 +627,9 @@ Deno.serve(async (req: Request) => {
             // Lo que quedó esperando autorización. La pantalla lo muestra con
             // los números a la vista; nada de esto pasó todavía.
             propuestas,
+            // Lo que hay que dejar preparado en una pantalla. Tampoco pasó
+            // nada: llenar una factura no es grabarla.
+            ordenes,
         });
     } catch (err: any) {
         console.error('[motoflow-ai-chat]', err);

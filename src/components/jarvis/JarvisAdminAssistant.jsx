@@ -4,6 +4,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
 import { leerContexto, leerModulos } from '@/lib/pantallaContexto';
+import { ordenarPantalla, normalizarOrdenVenta } from '@/lib/puenteAgente';
 import { usePanels } from '@/contexts/panelCore';
 
 const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -186,7 +187,7 @@ export default function JarvisAdminAssistant() {
 
     (async () => {
       const [conHermes, conJarvis] = await Promise.all([
-        supabase.from('hermes_chat').select('id, rol, texto, creado_en')
+        supabase.from('hermes_chat').select('id, rol, texto, creado_en, acciones')
           .order('id', { ascending: false }).limit(30),
         sesionRef.current
           ? supabase.from('ai_chat_messages').select('id, role, content, created_at')
@@ -248,7 +249,7 @@ export default function JarvisAdminAssistant() {
     let vivo = true;
 
     const traer = () => supabase.from('hermes_chat')
-      .select('id, rol, texto')
+      .select('id, rol, texto, acciones')
       .gt('id', ultimoIdRef.current)
       .order('id').limit(30)
       .then(({ data, error: e }) => {
@@ -437,6 +438,10 @@ export default function JarvisAdminAssistant() {
   // lo que permite que Realtime y el sondeo traigan lo mismo sin duplicarlo.
   const ultimoIdRef = useRef(0);
   const idsVistosRef = useRef(new Set());
+  // Una orden de pantalla se ejecuta UNA vez. Entre Realtime y el sondeo, la
+  // misma fila llega dos veces, y ejecutarla dos veces duplicaría las líneas
+  // de la factura sin que nadie entendiera por qué.
+  const idsEjecutadosRef = useRef(new Set());
   const idBurbuja = (f) => `${f.rol === 'hermes' ? 'h' : 'u'}-${f.id}`;
 
   const incorporar = (filas) => {
@@ -456,6 +461,19 @@ export default function JarvisAdminAssistant() {
     }
     if (!nuevas.length) return;
     setMensajes((m) => [...m, ...nuevas]);
+
+    // Hermes no puede tocar este navegador desde su PC: sus órdenes de
+    // pantalla viajan pegadas a la respuesta, en la misma fila. Aquí se
+    // desempaquetan y entran por el mismo puente que las de Jarvis.
+    for (const f of filas) {
+      if (f.rol !== 'hermes' || !f.acciones) continue;
+      if (idsEjecutadosRef.current.has(f.id)) continue;   // el sondeo repite filas
+      idsEjecutadosRef.current.add(f.id);
+      if (f.acciones?.tipo === 'preparar_venta') {
+        ordenarPantalla('ventas', normalizarOrdenVenta(f.acciones));
+        try { openPanel('ventas'); } catch { /* módulo inexistente */ }
+      }
+    }
 
     const suya = [...nuevas].reverse().find((n) => n.role === 'assistant');
     if (suya) {
@@ -703,6 +721,16 @@ export default function JarvisAdminAssistant() {
         if (h?.herramienta === 'abrir_modulo' && h?.argumentos?.modulo) {
           try { openPanel(h.argumentos.modulo); } catch { /* módulo inexistente */ }
         }
+      }
+
+      // Dejar una pantalla preparada. Se abre PRIMERO y la orden queda en el
+      // buzón del puente: la pantalla tarda en montarse, y una orden lanzada
+      // antes de que exista el oyente se perdería sin dejar rastro — factura
+      // vacía y ningún error que lo explique.
+      for (const o of data.ordenes || []) {
+        if (o?.panel !== 'ventas') continue;
+        ordenarPantalla('ventas', normalizarOrdenVenta(o.orden));
+        try { openPanel('ventas'); } catch { /* no debería, el enum lo valida */ }
       }
 
       // Si preparó algo que escribe, se abre el chat aunque estuviera
