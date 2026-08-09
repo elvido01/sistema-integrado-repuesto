@@ -256,7 +256,15 @@ export default function JarvisAdminAssistant() {
 
   const enviar = (texto, opciones = {}) => {
     const conVoz = opciones.conVoz !== false;
-    if (canal === 'hermes' && hermesVivo) return enviarAHermes(texto, { conVoz });
+    if (canal === 'hermes') {
+      if (hermesVivo) return enviarAHermes(texto, { conVoz });
+      // Antes se pasaba SOLO al asistente rápido. Y como este contesta con la
+      // persona de Hermes, quien preguntaba creía estar hablando con él: el
+      // aviso ámbar decía "no está conectado" y abajo alguien contestaba
+      // igual. Cambiar de interlocutor sin decirlo no es una comodidad.
+      setError('Hermes no está conectado: su PC está apagada. Si quieres que conteste el del servidor, pulsa «Usar asistente rápido».');
+      return undefined;
+    }
     return askAiCeo(texto, { conVoz });
   };
   // Se sube cada vez que el usuario interrumpe. La respuesta que venga en
@@ -329,7 +337,11 @@ export default function JarvisAdminAssistant() {
       if (idsVistosRef.current.has(id)) continue;
       idsVistosRef.current.add(id);
       if (f.id > ultimoIdRef.current) ultimoIdRef.current = f.id;
-      nuevas.push({ id, role: f.rol === 'hermes' ? 'assistant' : 'user', content: f.texto });
+      nuevas.push({
+        id, role: f.rol === 'hermes' ? 'assistant' : 'user', content: f.texto,
+        // Todo lo que sale de hermes_chat lo escribió Hermes desde su PC.
+        de: f.rol === 'hermes' ? 'hermes' : undefined,
+      });
     }
     if (!nuevas.length) return;
     setMensajes((m) => [...m, ...nuevas]);
@@ -578,7 +590,7 @@ export default function JarvisAdminAssistant() {
       }
       setLastMessage(data.answer || '');
       setMensajes((m) => [...m, {
-        id: `tmp-r-${Date.now()}`, role: 'assistant',
+        id: `tmp-r-${Date.now()}`, role: 'assistant', de: 'local',
         content: data.answer || '', herramientas: data.herramientas || [],
       }]);
       // Con propuesta NO se habla la respuesta: ya lo dijo pedirAutorizacion.
@@ -916,6 +928,15 @@ export default function JarvisAdminAssistant() {
                       ? 'bg-cyan-500/20 text-cyan-50'
                       : 'bg-slate-800/80 text-slate-100'
                   }`}>{m.content}</span>
+                  {/* QUIÉN contestó, en cada burbuja. Los dos hablan con la
+                      misma persona y el mismo nombre arriba: sin esto, mirando
+                      una conversación vieja no hay forma de saber a cuál de los
+                      dos se le preguntó. */}
+                  {m.role === 'assistant' && m.de && (
+                    <p className={`mt-0.5 text-[10px] ${m.de === 'hermes' ? 'text-emerald-300/70' : 'text-amber-300/60'}`}>
+                      {m.de === 'hermes' ? 'Hermes' : 'Asistente rápido — no es Hermes'}
+                    </p>
+                  )}
                   {/* Qué consultó para contestar eso. Distingue una respuesta
                       con datos de una de memoria. */}
                   {m.role === 'assistant' && m.herramientas?.length > 0 && (
