@@ -662,7 +662,11 @@ export default function JarvisAdminAssistant() {
     const turno = ++turnoRef.current;
     setLoading(true);
     setError('');
-    setLastMessage(message);
+    // El globo flotante es el eco visual de lo que se dice en voz alta:
+    // acompaña a la voz para quien no la oye bien. Escribiendo no pinta nada
+    // —la respuesta ya está en el hilo— y encima se queda flotando sobre la
+    // pantalla, tapando botones de módulos que no tienen nada que ver.
+    if (conVoz) setLastMessage(message);
     setMensajes((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: message, canalDe: 'local' }]);
     stopSpeaking();
 
@@ -715,7 +719,7 @@ export default function JarvisAdminAssistant() {
         // mirando otra cosa.
         pedirAutorizacionHablando(p, { escuchar: conVoz });
       }
-      setLastMessage(data.answer || '');
+      if (conVoz) setLastMessage(data.answer || '');
       setMensajes((m) => [...m, {
         id: `tmp-r-${Date.now()}`, role: 'assistant', de: 'local', canalDe: 'local',
         content: data.answer || '', herramientas: data.herramientas || [],
