@@ -409,6 +409,10 @@ export default function JarvisAdminAssistant() {
     callar();
     try { recognitionRef.current?.abort?.(); } catch { /* no estaba oyendo */ }
     window.clearTimeout(clearBubbleTimerRef.current);
+    // Cortar de verdad tira lo dictado a medias: si no, el reloj del silencio
+    // lo mandaría dos segundos después de haberlo mandado callar.
+    window.clearTimeout(silencioRef.current);
+    dictadoRef.current = '';
     setSpeaking(false);
     setListening(false);
     // Detener suelta también la espera de Hermes: si no, el candado se queda
@@ -581,8 +585,57 @@ export default function JarvisAdminAssistant() {
     }
   };
 
+  // Lo que se lleva dictado y el reloj del silencio. Con el reconocedor en
+  // continuo, el navegador ya no decide cuándo terminaste: se decide aquí.
+  const dictadoRef = useRef('');
+  const silencioRef = useRef(null);
+
+  // La frase quedó completa. Un solo camino de salida para las tres formas de
+  // llegar aquí: dos segundos de silencio, el navegador cerrando por su
+  // cuenta, o el micrófono apagado a mano.
+  const cerrarDictado = () => {
+    window.clearTimeout(silencioRef.current);
+    const transcript = (dictadoRef.current || '').trim();
+    dictadoRef.current = '';
+    if (!transcript) return;
+
+    try { recognitionRef.current?.stop?.(); } catch { /* ya paró */ }
+
+    // ECO. Aunque se espere a que se calle, el micrófono a veces capta la
+    // cola de su propia voz — y como suena parecido, se lo mandaría de
+    // vuelta como pregunta y se contestaría solo en bucle. Si lo que se
+    // oyó se parece demasiado a lo que acaba de decir, se descarta.
+    if (esEcoDeLoQueDijo(transcript, ultimoDichoRef.current)) {
+      console.warn('[voz] descartado por eco:', transcript);
+      return;
+    }
+
+    // Con una autorización pendiente, la voz decide sobre ELLA. Si no, un
+    // "sí" se le mandaría al modelo como pregunta y la propuesta quedaría
+    // colgada esperando.
+    if (propuestaRef.current) {
+      const v = veredictoDeVoz(transcript);
+      if (v === 'si') {
+        // Lo que mueve dinero NO se autoriza de viva voz: decir "autorizo"
+        // no identifica a nadie, y cualquiera junto al mostrador lo dice.
+        if (propuestaRef.current.requiere_password) {
+          setError('Esta acción mueve dinero: hay que autorizarla en pantalla con la contraseña.');
+          return;
+        }
+        resolverPropuesta(true);
+        return;
+      }
+      if (v === 'no') { resolverPropuesta(false); return; }
+      // Ni sí ni no: es una pregunta. La propuesta se queda en pantalla.
+    }
+
+    enviar(transcript);
+  };
+
   const startListening = () => {
     window.clearTimeout(clearBubbleTimerRef.current);
+    window.clearTimeout(silencioRef.current);
+    dictadoRef.current = '';
     setError('');
     setLastMessage('');
 
@@ -613,13 +666,20 @@ export default function JarvisAdminAssistant() {
 
     const recognition = new SpeechRecognitionApi();
     recognition.lang = 'es-ES';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    // Chrome, en modo suelto, corta en la PRIMERA pausa: uno dice "quiero
+    // saber el precio de una pieza..." y mientras piensa el nombre, ya se lo
+    // mandó a medias. En continuo no corta él, y aquí se decide que la frase
+    // terminó cuando pasan dos segundos sin oír nada nuevo.
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.onstart = () => setListening(true);
     recognition.onend = () => {
       setListening(false);
       // La espera termina con la escucha: el próximo micrófono ya es normal.
       esperandoAutorizacionRef.current = false;
+      // Si el navegador cierra por su cuenta con algo dictado a medias, se
+      // manda igual: perderlo sería peor que mandarlo corto.
+      if (miTurno === micTurnoRef.current) cerrarDictado();
     };
     recognition.onerror = (event) => {
       setListening(false);
@@ -632,41 +692,22 @@ export default function JarvisAdminAssistant() {
     };
     recognition.onresult = (event) => {
       if (miTurno !== micTurnoRef.current) return;   // reconocedor viejo
-      const transcript = Array.from(event.results)
-        .map((result) => result[0]?.transcript || '')
-        .join(' ')
-        .trim();
-      if (!transcript) return;
 
-      // ECO. Aunque se espere a que se calle, el micrófono a veces capta la
-      // cola de su propia voz — y como suena parecido, se lo mandaría de
-      // vuelta como pregunta y se contestaría solo en bucle. Si lo que se
-      // oyó se parece demasiado a lo que acaba de decir, se descarta.
-      if (esEcoDeLoQueDijo(transcript, ultimoDichoRef.current)) {
-        console.warn('[voz] descartado por eco:', transcript);
-        return;
-      }
+      // Se rearma la frase entera cada vez: Chrome reentrega los tramos ya
+      // cerrados junto al que está en curso, y quedarse solo con el último
+      // perdería el principio.
+      let texto = '';
+      for (const r of event.results) texto += (r[0]?.transcript || '') + ' ';
+      texto = texto.trim();
+      if (!texto) return;
 
-      // Con una autorización pendiente, la voz decide sobre ELLA. Si no, un
-      // "sí" se le mandaría al modelo como pregunta y la propuesta quedaría
-      // colgada esperando.
-      if (propuestaRef.current) {
-        const v = veredictoDeVoz(transcript);
-        if (v === 'si') {
-          // Lo que mueve dinero NO se autoriza de viva voz: decir "autorizo"
-          // no identifica a nadie, y cualquiera junto al mostrador lo dice.
-          if (propuestaRef.current.requiere_password) {
-            setError('Esta acción mueve dinero: hay que autorizarla en pantalla con la contraseña.');
-            return;
-          }
-          resolverPropuesta(true);
-          return;
-        }
-        if (v === 'no') { resolverPropuesta(false); return; }
-        // Ni sí ni no: es una pregunta. La propuesta se queda en pantalla.
-      }
+      dictadoRef.current = texto;
+      setLastMessage(texto);          // se ve lo que va entendiendo
 
-      enviar(transcript);
+      // Cada palabra nueva reinicia la cuenta. Dos segundos callado es haber
+      // terminado; una pausa para pensar el nombre de la pieza, no.
+      window.clearTimeout(silencioRef.current);
+      silencioRef.current = window.setTimeout(cerrarDictado, 2000);
     };
 
     recognitionRef.current = recognition;
@@ -678,6 +719,9 @@ export default function JarvisAdminAssistant() {
     // esto, el círculo se volvería a encender solo en la siguiente respuesta
     // y no habría forma de terminar.
     modoVozRef.current = false;
+    // Apagar a mano manda lo que ya dijo: en continuo, esperar los dos
+    // segundos de silencio después de pulsar sería tirar la frase.
+    cerrarDictado();
     recognitionRef.current?.stop();
     setListening(false);
   };
