@@ -118,10 +118,22 @@ async function callOpenAI(opts: LlmCallOptions): Promise<LlmCallResult> {
         // Al presupuesto normal se le suma sitio para el razonamiento: si no
         // le alcanza, gasta todo pensando y devuelve la respuesta vacía.
         body.max_completion_tokens = (opts.max_tokens ?? 1000) * 3;
-        // Configurable en caliente porque es la perilla que decide si Jarvis
-        // contesta en un segundo o en ocho. Quien pregunta está en el mostrador
-        // con un cliente delante: pensar de más también es un defecto.
-        body.reasoning_effort = Deno.env.get('JARVIS_REASONING') ?? 'low';
+        // OpenAI, textual:
+        //   "Function tools with reasoning_effort are not supported for
+        //    gpt-5.6-luna in /v1/chat/completions. To use function tools, use
+        //    /v1/responses or set reasoning_effort to 'none'."
+        //
+        // Jarvis vive de las herramientas —buscar piezas, buscar ayuda, abrir
+        // módulos— así que en esta API el razonamiento no es una opción. Se
+        // manda 'none' explícito: omitirlo deja el valor por defecto del
+        // modelo y vuelve a dar 400.
+        //
+        // Para tener las dos cosas hay que pasar a /v1/responses, que es otra
+        // forma de petición y de respuesta. Mientras tanto, sin herramientas
+        // sí se respeta lo que diga JARVIS_REASONING.
+        body.reasoning_effort = opts.tools?.length
+            ? 'none'
+            : (Deno.env.get('JARVIS_REASONING') ?? 'low');
     } else {
         body.max_tokens = opts.max_tokens ?? 1000;
         body.temperature = opts.temperature ?? 0.2;

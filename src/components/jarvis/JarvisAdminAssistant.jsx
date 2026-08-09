@@ -877,7 +877,10 @@ export default function JarvisAdminAssistant() {
           <div className="flex h-[26rem] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-xl border border-cyan-300/25 bg-slate-950/95 shadow-2xl">
             <div className="flex items-center gap-2 border-b border-cyan-300/15 px-3 py-2">
               <span className="text-sm font-black uppercase tracking-widest text-cyan-300">{nombreAgente}</span>
-              <span className="truncate text-[11px] text-cyan-200/50">{agente?.puesto}</span>
+              {/* El puesto tiene que seguir al canal, igual que el nombre. Con
+                  el de la empresa fijo se leía "JARVIS · asistente de Repuestos
+                  Morla", que es justo lo contrario de lo que se quiso separar. */}
+              <span className="truncate text-[11px] text-cyan-200/50">{agenteActivo?.puesto}</span>
               {/* Quién contestó SEGÚN EL SERVIDOR. En ámbar significa que
                   respondió el asesor viejo porque falta correr el SQL. */}
               {agenteQueContesto === null && (
@@ -1032,6 +1035,16 @@ export default function JarvisAdminAssistant() {
                 <p className="mt-1.5 text-[10px] text-amber-200/50">
                   O dilo en voz alta: «autorizo» / «cancela». Vence en 10 minutos.
                 </p>
+              </div>
+            )}
+
+            {/* El error se pintaba SOLO con el círculo cerrado. Abierto —que es
+                como se usa— un fallo no se veía: la pregunta quedaba ahí y
+                parecía que el agente la ignoraba. Se perdió media hora
+                buscando en el servidor un mensaje que el navegador ya tenía. */}
+            {error && (
+              <div className="mx-2 mb-1 rounded-md border border-red-500/40 bg-red-950/80 px-2.5 py-1.5 text-[11px] text-red-100">
+                {error}
               </div>
             )}
 

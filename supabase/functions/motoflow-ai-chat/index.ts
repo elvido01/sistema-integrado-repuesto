@@ -83,6 +83,12 @@ Deno.serve(async (req: Request) => {
         return json({ ok: false, error: 'method' }, 405);
     }
 
+    // Fuera del try para que el manejador de errores los tenga. ai_agent_runs
+    // exige tenant_id: sin esto, la inserción del error fallaba dentro del
+    // propio catch y el fallo desaparecía por completo — ni fila, ni motivo.
+    let tenantErr: string | null = null;
+    let userErrId: string | null = null;
+
     try {
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -121,6 +127,8 @@ Deno.serve(async (req: Request) => {
             .maybeSingle();
         if (profErr || !profile?.tenant_id) return json({ ok: false, error: 'sin_tenant' }, 403);
         const tenant_id = profile.tenant_id;
+        tenantErr = tenant_id;
+        userErrId = user.id;
 
         // Body
         const body = await req.json();
@@ -535,7 +543,35 @@ Deno.serve(async (req: Request) => {
         });
     } catch (err: any) {
         console.error('[motoflow-ai-chat]', err);
-        return json({ ok: false, error: 'unexpected', mensaje: err.message }, 500);
+
+        // El fallo se GUARDA, no solo se imprime. Los logs de esta función no
+        // se pueden leer con la CLI instalada, así que un error del proveedor
+        // dejaba la pantalla muda y sin rastro: ni fila, ni motivo, ni forma
+        // de saber si fue el modelo, la clave o el saldo.
+        try {
+            if (tenantErr) {
+                const sb = createClient(
+                    Deno.env.get('SUPABASE_URL')!,
+                    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+                );
+                const { error: eLog } = await sb.from('ai_agent_runs').insert({
+                    tenant_id: tenantErr,
+                    user_id: userErrId,
+                    agent_name: 'ai_ceo_chat',
+                    agent_key: 'ai_ceo_chat',
+                    model: MODEL,
+                    status: 'error',
+                    error_message: String(err?.message || err).slice(0, 1000),
+                    input_tokens: 0, output_tokens: 0, cost_usd: 0,
+                });
+                if (eLog) console.error('[motoflow-ai-chat] no se pudo registrar el fallo:', eLog.message);
+            }
+        } catch (e) { console.error('[motoflow-ai-chat] registro del fallo:', e); }
+
+        // 200 con ok:false a propósito: con 500, supabase-js devuelve el error
+        // sin el cuerpo y el motivo real nunca llega a la pantalla. Quien
+        // pregunta ve "no respondió" en vez de lo que dijo el proveedor.
+        return json({ ok: false, error: 'unexpected', mensaje: String(err?.message || err) });
     }
 });
 
