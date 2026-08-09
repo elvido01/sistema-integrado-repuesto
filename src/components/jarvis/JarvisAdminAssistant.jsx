@@ -296,6 +296,15 @@ export default function JarvisAdminAssistant() {
   const esperaHermesRef = useRef(null);
   // Número del reconocedor activo. Solo el último tiene derecho a hablar.
   const micTurnoRef = useRef(0);
+  // Lo que se lleva dictado y el reloj del silencio. Con el reconocedor en
+  // continuo, el navegador ya no decide cuándo terminaste: se decide aquí.
+  //
+  // Van AQUÍ y no junto a startListening: más abajo hay un `return null` para
+  // quien no ve el agente, y un useRef debajo de un return temprano se salta
+  // en esos renders. React cuenta los hooks y revienta la aplicación entera
+  // con el error #310 — pantalla en blanco, no un fallo del asistente.
+  const dictadoRef = useRef('');
+  const silencioRef = useRef(null);
 
   // Un solo sitio donde se deja de esperar: llegó la respuesta, falló el
   // envío, se cortó a mano o se agotó el tiempo. Tener el candado y el reloj
@@ -584,11 +593,6 @@ export default function JarvisAdminAssistant() {
       if (turno === turnoRef.current) setLoading(false);
     }
   };
-
-  // Lo que se lleva dictado y el reloj del silencio. Con el reconocedor en
-  // continuo, el navegador ya no decide cuándo terminaste: se decide aquí.
-  const dictadoRef = useRef('');
-  const silencioRef = useRef(null);
 
   // La frase quedó completa. Un solo camino de salida para las tres formas de
   // llegar aquí: dos segundos de silencio, el navegador cerrando por su
