@@ -1,6 +1,29 @@
 -- Usuario SQL de solo lectura para el agente Hermes, limitado a Repuestos Morla.
 -- Ejecutar manualmente en Supabase SQL Editor con un usuario admin/postgres.
 --
+-- =====================================================================
+-- >>> ESTE ARCHIVO YA SE EJECUTÓ. NO VOLVER A CORRERLO. <<<
+-- (2026-08-09)
+--
+-- El rol existe y está en uso: Hermes se conecta con él desde su PC y por
+-- ahí pasan el canal de MotoFlow, el vault y las vistas del schema hermes.
+-- Re-ejecutarlo hace dos daños:
+--   1. Le CAMBIA la contraseña, y Hermes se queda sin conexión hasta que
+--      alguien actualice MOTOFLOW_DB_URL en la otra máquina.
+--   2. BORRA las vistas del schema hermes. Habría que volver a correr
+--      hermes_readonly_vistas.sql, vault_agentes.sql, hermes_canal_motoflow.sql
+--      y hermes_chat_marcar.sql para devolverle los permisos.
+--
+-- ¿Solo quieres cambiarle la clave? Una línea en el SQL Editor:
+--     ALTER ROLE hermes_readonly WITH PASSWORD 'la nueva';
+-- y después actualizar MOTOFLOW_DB_URL en la PC de Hermes.
+--
+-- >>> Y LA CLAVE NUNCA SE ESCRIBE AQUÍ. <<<
+-- Este archivo va a GitHub. El marcador de abajo existe para eso: si se
+-- reemplaza por una contraseña de verdad, queda publicada y en el historial
+-- de git para siempre, donde borrarla ya no la borra.
+-- =====================================================================
+--
 -- IMPORTANTE:
 -- 1. Cambia v_password antes de ejecutar.
 -- 2. El rol NO recibe SELECT directo sobre public.
