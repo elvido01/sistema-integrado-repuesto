@@ -324,6 +324,45 @@ export default function JarvisAdminAssistant() {
   const esperaHermesRef = useRef(null);
   // Número del reconocedor activo. Solo el último tiene derecho a hablar.
   const micTurnoRef = useRef(0);
+  // ── Dónde vive el círculo ─────────────────────────────────────────────
+  // Abajo a la derecha tapaba F10 - GRABAR en Facturación y no dejaba
+  // grabar la venta. En vez de buscarle una esquina que no estorbe en
+  // ninguna de las 76 pantallas, se arrastra y se queda donde lo dejen.
+  const [pos, setPos] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('jarvis_pos') || 'null'); } catch { return null; }
+  });
+  const arrastreRef = useRef(null);
+
+  const alBajarRaton = (e) => {
+    // Solo con el botón principal y desde la barrita: si el círculo entero
+    // arrastrara, no se podría pulsar para hablar.
+    if (e.button !== 0) return;
+    const caja = e.currentTarget.parentElement.getBoundingClientRect();
+    arrastreRef.current = { dx: e.clientX - caja.left, dy: e.clientY - caja.top };
+
+    const mover = (ev) => {
+      const a = arrastreRef.current;
+      if (!a) return;
+      // Se recorta contra la ventana: soltarlo fuera lo dejaría inalcanzable
+      // y habría que borrar el almacenamiento del navegador para recuperarlo.
+      setPos({
+        x: Math.max(4, Math.min(window.innerWidth - 80, ev.clientX - a.dx)),
+        y: Math.max(4, Math.min(window.innerHeight - 80, ev.clientY - a.dy)),
+      });
+    };
+    const soltar = () => {
+      arrastreRef.current = null;
+      window.removeEventListener('mousemove', mover);
+      window.removeEventListener('mouseup', soltar);
+      setPos((p) => {
+        try { localStorage.setItem('jarvis_pos', JSON.stringify(p)); } catch { /* sin espacio: se queda esta sesión */ }
+        return p;
+      });
+    };
+    window.addEventListener('mousemove', mover);
+    window.addEventListener('mouseup', soltar);
+  };
+
   // Lo que se lleva dictado y el reloj del silencio. Con el reconocedor en
   // continuo, el navegador ya no decide cuándo terminaste: se decide aquí.
   //
@@ -814,7 +853,10 @@ export default function JarvisAdminAssistant() {
         }
       `}</style>
 
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2">
+      <div
+        className="fixed z-50 flex flex-col items-end gap-2"
+        style={pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : { right: 20, bottom: 20 }}
+      >
         {/* Selector de voz. Existe porque las voces dependen de lo que tenga
             instalado ESTE Windows: no hay forma de saberlo desde el código,
             y la diferencia entre una neuronal y una vieja es abismal. */}
@@ -1073,8 +1115,12 @@ export default function JarvisAdminAssistant() {
           </div>
         )}
 
+        {/* pointer-events-none: la burbuja quedaba encima de F10 - GRABAR y no
+            dejaba facturar. Un asistente que estorba el trabajo es peor que no
+            tenerlo, y el aviso se puede leer igual aunque los clics lo
+            atraviesen. */}
         {!chatAbierto && (error || lastMessage) && (
-          <div className={`max-w-[280px] rounded-md border px-3 py-2 text-xs shadow-xl ${
+          <div className={`pointer-events-none max-w-[280px] rounded-md border px-3 py-2 text-xs shadow-xl ${
             error
               ? 'border-red-500/40 bg-red-950/90 text-red-50'
               : 'border-cyan-300/20 bg-slate-950/90 text-cyan-50'
@@ -1082,6 +1128,15 @@ export default function JarvisAdminAssistant() {
             {error || lastMessage}
           </div>
         )}
+
+        {/* El asa para moverlo. Aparte del círculo a propósito: si arrastrara
+            el círculo entero, no se podría pulsar para hablarle. */}
+        <div
+          onMouseDown={alBajarRaton}
+          onDoubleClick={() => { setPos(null); try { localStorage.removeItem('jarvis_pos'); } catch { /* da igual */ } }}
+          title="Arrástrame para moverme · doble clic para volver a la esquina"
+          className="h-4 w-12 cursor-move rounded-full border border-cyan-300/25 bg-slate-900/80 opacity-40 transition-opacity hover:opacity-100"
+        />
 
         <button
           type="button"
