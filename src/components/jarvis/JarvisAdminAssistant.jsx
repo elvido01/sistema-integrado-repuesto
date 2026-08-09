@@ -153,6 +153,15 @@ export default function JarvisAdminAssistant() {
   const nombreEmpresa = agente?.nombre || 'el agente de la empresa';
   const nombreSistema = agenteSistema?.nombre || 'Jarvis';
 
+  // Cada canal muestra SU conversación. Mezclarlas fue un error: se leía
+  // "JARVIS" arriba y debajo las respuestas de Hermes, que son otra memoria y
+  // otro interlocutor. Cambiar de canal es cambiar con quién hablas, no
+  // seguir la misma charla con otra voz.
+  const mensajesDelCanal = useMemo(
+    () => mensajes.filter((m) => (m.canalDe || 'hermes') === canal),
+    [mensajes, canal],
+  );
+
   useEffect(() => {
     if (!agente) return;
     let vivo = true;
@@ -199,6 +208,7 @@ export default function JarvisAdminAssistant() {
           role: f.rol === 'hermes' ? 'assistant' : 'user',
           content: f.texto,
           de: f.rol === 'hermes' ? 'hermes' : undefined,
+          canalDe: 'hermes',
           en: f.creado_en,
         });
         if (f.id > ultimoIdRef.current) ultimoIdRef.current = f.id;
@@ -209,15 +219,14 @@ export default function JarvisAdminAssistant() {
           role: m.role === 'user' ? 'user' : 'assistant',
           content: m.content,
           de: m.role === 'user' ? undefined : 'local',
+          canalDe: 'local',
           en: m.created_at,
         });
       }
       if (!burbujas.length) return;
 
-      // Un solo hilo ordenado por hora: quién contestó cada cosa lo dice la
-      // etiqueta de la burbuja, no el orden.
       burbujas.sort((a, b) => new Date(a.en) - new Date(b.en));
-      const ultimas = burbujas.slice(-40);
+      const ultimas = burbujas.slice(-60);
       for (const b of ultimas) idsVistosRef.current.add(b.id);
       setMensajes(ultimas);
     })();
@@ -288,7 +297,7 @@ export default function JarvisAdminAssistant() {
     // cuanto la base lo devuelve: si no, el sondeo la traería de vuelta y la
     // pregunta aparecería dos veces.
     const idProvisional = `u-tmp-${Date.now()}`;
-    setMensajes((m) => [...m, { id: idProvisional, role: 'user', content: texto }]);
+    setMensajes((m) => [...m, { id: idProvisional, role: 'user', content: texto, canalDe: 'hermes' }]);
     setLoading(true);
     setError('');
     // Se avisa UNA vez por espera. Repetirlo en cada vuelta es lo que sonaba
@@ -442,6 +451,7 @@ export default function JarvisAdminAssistant() {
         id, role: f.rol === 'hermes' ? 'assistant' : 'user', content: f.texto,
         // Todo lo que sale de hermes_chat lo escribió Hermes desde su PC.
         de: f.rol === 'hermes' ? 'hermes' : undefined,
+        canalDe: 'hermes',
       });
     }
     if (!nuevas.length) return;
@@ -556,7 +566,16 @@ export default function JarvisAdminAssistant() {
   // El micrófono se abre DESPUÉS de callarse, nunca antes: si se abriera
   // mientras habla, se oiría a sí mismo y tomaría su propia frase por
   // respuesta.
-  const pedirAutorizacionHablando = (p) => {
+  // `escuchar` es si además hay que abrir el micrófono esperando un "autorizo".
+  // Solo cuando la conversación venía por voz: si la persona escribió, va a
+  // pulsar el botón, y abrir el micrófono solo consigue un error rojo —
+  // "not-allowed" si está bloqueado— justo encima de la tarjeta, que hace
+  // parecer que la autorización falló cuando está ahí esperando.
+  //
+  // Hablar la petición se mantiene aunque se haya escrito: es el único momento
+  // en que el sistema va a modificar algo, y merece oírse aunque la persona
+  // esté mirando otra pantalla.
+  const pedirAutorizacionHablando = (p, { escuchar = true } = {}) => {
     const frase = p.requiere_password
       ? `${p.resumen}. Esto mueve dinero: hay que autorizarlo en pantalla con la contraseña.`
       : `${p.resumen}. ¿Lo autorizo?`;
@@ -568,6 +587,7 @@ export default function JarvisAdminAssistant() {
         // Lo que mueve dinero no se escucha: por voz se rechaza igual, así
         // que abrir el micrófono solo invitaría a un intento fallido.
         if (p.requiere_password) return;
+        if (!escuchar) return;
         // Un respiro para que no capture la cola de su propia voz.
         window.setTimeout(() => {
           if (propuestaRef.current?.accion_id !== p.accion_id) return;
@@ -584,7 +604,7 @@ export default function JarvisAdminAssistant() {
     try {
       if (!autorizar) {
         await supabase.rpc('agente_rechazar_accion', { p_accion_id: propuesta.accion_id });
-        setMensajes((m) => [...m, { id: `r-${Date.now()}`, role: 'assistant', content: 'Descartado. No se hizo nada.' }]);
+        setMensajes((m) => [...m, { id: `r-${Date.now()}`, role: 'assistant', content: 'Descartado. No se hizo nada.', canalDe: canal }]);
       } else {
         const { data, error: e } = await supabase.rpc('agente_confirmar_accion', {
           p_accion_id: propuesta.accion_id,
@@ -594,7 +614,7 @@ export default function JarvisAdminAssistant() {
         if (data?.ok === false) throw new Error(data.motivo || 'No se pudo autorizar');
         const r = data?.resultado || {};
         setMensajes((m) => [...m, {
-          id: `r-${Date.now()}`, role: 'assistant',
+          id: `r-${Date.now()}`, role: 'assistant', canalDe: canal,
           content: `Listo. ${r.numero ? `Cotización ${r.numero}` : 'Hecho'}${r.total ? ` · RD$ ${Number(r.total).toLocaleString('es-DO')}` : ''}`,
         }]);
       }
@@ -643,7 +663,7 @@ export default function JarvisAdminAssistant() {
     setLoading(true);
     setError('');
     setLastMessage(message);
-    setMensajes((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: message }]);
+    setMensajes((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: message, canalDe: 'local' }]);
     stopSpeaking();
 
     try {
@@ -693,11 +713,11 @@ export default function JarvisAdminAssistant() {
         // viniera por escrito: es el único momento en que el sistema va a
         // modificar algo, y merece que la persona lo oiga aunque esté
         // mirando otra cosa.
-        pedirAutorizacionHablando(p);
+        pedirAutorizacionHablando(p, { escuchar: conVoz });
       }
       setLastMessage(data.answer || '');
       setMensajes((m) => [...m, {
-        id: `tmp-r-${Date.now()}`, role: 'assistant', de: 'local',
+        id: `tmp-r-${Date.now()}`, role: 'assistant', de: 'local', canalDe: 'local',
         content: data.answer || '', herramientas: data.herramientas || [],
       }]);
       // Con propuesta NO se habla la respuesta: ya lo dijo pedirAutorizacion.
@@ -1043,12 +1063,12 @@ export default function JarvisAdminAssistant() {
             )}
 
             <div className="flex-1 space-y-2 overflow-y-auto px-3 py-2">
-              {mensajes.length === 0 && (
+              {mensajesDelCanal.length === 0 && (
                 <p className="mt-6 text-center text-xs leading-relaxed text-cyan-200/40">
                   Pregúntale por una pieza, cómo va el día,<br />o qué ve en esta pantalla.
                 </p>
               )}
-              {mensajes.map((m) => (
+              {mensajesDelCanal.map((m) => (
                 <div key={m.id} className={m.role === 'user' ? 'text-right' : ''}>
                   <span className={`inline-block max-w-[85%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-left text-xs ${
                     m.role === 'user'
