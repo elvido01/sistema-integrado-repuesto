@@ -162,8 +162,16 @@ Deno.serve(async (req: Request) => {
             .order('created_at', { ascending: true })
             .limit(MAX_HISTORY * 2);
 
-        // Contexto del negocio
-        const { data: ctx } = await supabase.rpc('ai_chat_context_summary', { p_tenant_id: tenant_id });
+        // Contexto del negocio: la foto del día, morosos, capital muerto.
+        //
+        // Para el AI CEO ES el tema, así que va siempre. Para Jarvis casi
+        // nunca hace falta —le preguntan cómo se registra un abono, no cómo va
+        // el mes— y sin embargo viajaba en cada pregunta. Si necesita cifras
+        // del día tiene la herramienta resumen_dia, que además trae el dato
+        // fresco en vez de una foto tomada al empezar la conversación.
+        const { data: ctx } = quien === 'sistema'
+            ? { data: null }
+            : await supabase.rpc('ai_chat_context_summary', { p_tenant_id: tenant_id });
 
         // Construir prompt
         const historyMsgs = (history || [])
@@ -216,12 +224,19 @@ Deno.serve(async (req: Request) => {
         // (El texto de capacidades se arma más abajo, cuando ya están
         //  descubiertas las herramientas.)
 
+        // La lista de módulos se mandaba DOS veces: aquí completa, con id y
+        // nombre de los 76 paneles (~956 tokens), y otra vez como enum de
+        // abrir_modulo (~326). La del enum hace falta: es la que impide que se
+        // invente el nombre de una pantalla. Esta no aportaba nada y viajaba
+        // en cada pregunta, incluso en "¿dónde cuadro la caja?".
+        const { modulos: _modulos, ...pantallaSinModulos } = (pantalla || {});
+
         const userPrompt = JSON.stringify({
             estado_negocio: ctx,
             // Dónde está parado el usuario ahora mismo y qué datos tiene esa
             // pantalla cargados. Permite preguntar "¿qué es esto?" o
             // "¿por qué no cuadra?" sin explicar de qué se habla.
-            pantalla_actual: pantalla || null,
+            pantalla_actual: pantalla ? pantallaSinModulos : null,
             historial_reciente: historyMsgs,
             pregunta_nueva: message,
         });
@@ -335,8 +350,11 @@ Deno.serve(async (req: Request) => {
             'Si te preguntan quién eres o qué sabes hacer, EXPLÍCALO con naturalidad.',
             'Eso no es inventar: es exactamente lo que puedes hacer hoy.',
             '',
+            // Solo los NOMBRES. La descripción de cada herramienta ya viaja en
+            // el array `tools` de la misma llamada: repetirla aquí era pagar
+            // dos veces por el mismo texto.
             herramientas.length
-                ? herramientas.map((h: any) => `· ${h.function.name}: ${h.function.description}`).join('\n')
+                ? 'Herramientas: ' + herramientas.map((h: any) => h.function.name).join(', ')
                 : '· (sin herramientas conectadas en este momento)',
             '',
             'Lo que NO puedes todavía: facturar ni registrar pagos.',
