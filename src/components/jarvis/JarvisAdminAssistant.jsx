@@ -144,8 +144,13 @@ export default function JarvisAdminAssistant() {
     let vivo = true;
     supabase.from('hermes_chat').select('id, rol, texto')
       .order('id', { ascending: false }).limit(30)
-      .then(({ data }) => {
-        if (!vivo || !data?.length) return;
+      .then(({ data, error: e }) => {
+        if (!vivo) return;
+        // Se estuvo mirando un panel vacío sin saber que la consulta fallaba:
+        // el error se descartaba y "sin permiso" se veía igual que "sin
+        // mensajes". No son lo mismo y hay que poder distinguirlos.
+        if (e) { setError(`No puedo leer la conversación: ${e.message}`); return; }
+        if (!data?.length) return;
         const filas = [...data].reverse();
         for (const f of filas) idsVistosRef.current.add(idBurbuja(f));
         ultimoIdRef.current = filas[filas.length - 1].id;
@@ -175,7 +180,11 @@ export default function JarvisAdminAssistant() {
       .select('id, rol, texto')
       .gt('id', ultimoIdRef.current)
       .order('id').limit(30)
-      .then(({ data }) => { if (vivo) incorporar(data); });
+      .then(({ data, error: e }) => {
+        if (!vivo) return;
+        if (e) { setError(`No puedo leer la conversación: ${e.message}`); return; }
+        incorporar(data);
+      });
 
     const sub = supabase
       .channel('hermes-chat-motoflow')
@@ -222,7 +231,10 @@ export default function JarvisAdminAssistant() {
     setError('');
     // Se avisa UNA vez por espera. Repetirlo en cada vuelta es lo que sonaba
     // a disco rayado.
-    if (conVoz) speak('Un momento, le pregunto a Hermes.', { escucharDespues: false });
+    // Antes decía "un momento, le pregunto a Hermes" y sonaba a que había un
+    // intermediario preguntándole a otro. No lo hay: esto ES Hermes, la frase
+    // solo tapa el silencio mientras contesta desde su PC.
+    if (conVoz) speak('Un momento, estoy revisando.', { escucharDespues: false });
     try {
       const { data, error: e } = await supabase.rpc('hermes_escribir', {
         p_texto: texto,
