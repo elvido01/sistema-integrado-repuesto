@@ -136,21 +136,56 @@ export default function JarvisAdminAssistant() {
     return () => { vivo = false; clearInterval(t); };
   }, [agente]);
 
-  // Sus respuestas llegan solas: no hay que preguntar cada tanto si contestó.
+  // La conversación que YA existe. Sin esto, recargar la página la borraba de
+  // la vista aunque siguiera entera en la base — y con Hermes tardando lo que
+  // tarda, uno recarga.
   useEffect(() => {
     if (!agente) return;
+    let vivo = true;
+    supabase.from('hermes_chat').select('id, rol, texto')
+      .order('id', { ascending: false }).limit(30)
+      .then(({ data }) => {
+        if (!vivo || !data?.length) return;
+        const filas = [...data].reverse();
+        for (const f of filas) idsVistosRef.current.add(idBurbuja(f));
+        ultimoIdRef.current = filas[filas.length - 1].id;
+        setMensajes(filas.map((f) => ({
+          id: idBurbuja(f),
+          role: f.rol === 'hermes' ? 'assistant' : 'user',
+          content: f.texto,
+        })));
+      });
+    return () => { vivo = false; };
+  }, [agente]);
+
+  // DOS caminos para lo mismo, a propósito.
+  //
+  // Realtime es el rápido, pero se probó insertando una respuesta a mano con
+  // la pantalla abierta y no llegó nada. Mientras no se sepa por qué, no se
+  // puede colgar de él lo único que hace visible una respuesta: la persona se
+  // queda mirando "pensando..." con la contestación ya grabada en la base.
+  //
+  // El sondeo cada 4 segundos es feo y funciona. Cuando llegan por los dos,
+  // el segundo se descarta por id.
+  useEffect(() => {
+    if (!agente) return;
+    let vivo = true;
+
+    const traer = () => supabase.from('hermes_chat')
+      .select('id, rol, texto')
+      .gt('id', ultimoIdRef.current)
+      .order('id').limit(30)
+      .then(({ data }) => { if (vivo) incorporar(data); });
+
     const sub = supabase
       .channel('hermes-chat-motoflow')
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'hermes_chat', filter: 'rol=eq.hermes' },
-        ({ new: fila }) => {
-          dejarDeEsperar();
-          setMensajes((m) => [...m, { id: `h-${fila.id}`, role: 'assistant', content: fila.texto }]);
-          setAgenteQueContesto(agente?.nombre || 'Hermes');
-          if (modoVozRef.current) speak(fila.texto);
-        })
+        ({ new: fila }) => incorporar([fila]))
       .subscribe();
-    return () => { supabase.removeChannel(sub); };
+
+    const t = setInterval(traer, 4000);
+    return () => { vivo = false; clearInterval(t); supabase.removeChannel(sub); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agente]);
 
@@ -178,18 +213,27 @@ export default function JarvisAdminAssistant() {
     }, 45000);
 
     modoVozRef.current = conVoz;
-    setMensajes((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: texto }]);
+    // Se pinta al instante con un id provisional y se le pone el de la fila en
+    // cuanto la base lo devuelve: si no, el sondeo la traería de vuelta y la
+    // pregunta aparecería dos veces.
+    const idProvisional = `u-tmp-${Date.now()}`;
+    setMensajes((m) => [...m, { id: idProvisional, role: 'user', content: texto }]);
     setLoading(true);
     setError('');
     // Se avisa UNA vez por espera. Repetirlo en cada vuelta es lo que sonaba
     // a disco rayado.
     if (conVoz) speak('Un momento, le pregunto a Hermes.', { escucharDespues: false });
     try {
-      const { error: e } = await supabase.rpc('hermes_escribir', {
+      const { data, error: e } = await supabase.rpc('hermes_escribir', {
         p_texto: texto,
         p_pantalla: { ...leerContexto(), modulos: leerModulos() },
       });
       if (e) throw e;
+      if (data?.id) {
+        idsVistosRef.current.add(`u-${data.id}`);
+        if (data.id > ultimoIdRef.current) ultimoIdRef.current = data.id;
+        setMensajes((m) => m.map((x) => (x.id === idProvisional ? { ...x, id: `u-${data.id}` } : x)));
+      }
       // No se apaga el "pensando": se apaga cuando LLEGA su respuesta por
       // Realtime. Hermes puede tardar, y fingir que terminó sería mentir.
     } catch (err) {
@@ -248,6 +292,33 @@ export default function JarvisAdminAssistant() {
     window.clearTimeout(esperaHermesRef.current);
     esperandoRef.current = false;
     setLoading(false);
+  };
+
+  // Hasta dónde se leyó, y qué burbujas ya están puestas. El id de la fila es
+  // lo que permite que Realtime y el sondeo traigan lo mismo sin duplicarlo.
+  const ultimoIdRef = useRef(0);
+  const idsVistosRef = useRef(new Set());
+  const idBurbuja = (f) => `${f.rol === 'hermes' ? 'h' : 'u'}-${f.id}`;
+
+  const incorporar = (filas) => {
+    if (!filas?.length) return;
+    const nuevas = [];
+    for (const f of filas) {
+      const id = idBurbuja(f);
+      if (idsVistosRef.current.has(id)) continue;
+      idsVistosRef.current.add(id);
+      if (f.id > ultimoIdRef.current) ultimoIdRef.current = f.id;
+      nuevas.push({ id, role: f.rol === 'hermes' ? 'assistant' : 'user', content: f.texto });
+    }
+    if (!nuevas.length) return;
+    setMensajes((m) => [...m, ...nuevas]);
+
+    const suya = [...nuevas].reverse().find((n) => n.role === 'assistant');
+    if (suya) {
+      dejarDeEsperar();
+      setAgenteQueContesto(agente?.nombre || 'Hermes');
+      if (modoVozRef.current) speak(suya.content);
+    }
   };
 
   useEffect(() => {
