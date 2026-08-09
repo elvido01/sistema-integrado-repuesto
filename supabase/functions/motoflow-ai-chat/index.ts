@@ -124,6 +124,9 @@ Deno.serve(async (req: Request) => {
         let session_id: string | null = body?.session_id || null;
         // Panel abierto y datos que esa pantalla ya tiene cargados.
         const pantalla = body?.pantalla || null;
+        // Con quién se cree estar hablando. 'sistema' es Jarvis, de MotoFlow;
+        // cualquier otra cosa, el agente de la empresa.
+        const quien = body?.agente === 'sistema' ? 'sistema' : 'empresa';
         if (!message) return json({ ok: false, error: 'mensaje_vacio' }, 400);
         if (message.length > 1000) return json({ ok: false, error: 'mensaje_muy_largo', mensaje: 'Máx 1000 caracteres' }, 400);
 
@@ -168,10 +171,15 @@ Deno.serve(async (req: Request) => {
             .map((m: any) => `${m.role.toUpperCase()}: ${m.content}`)
             .join('\n');
 
-        // ── El agente de ESTA empresa ─────────────────────────────
-        // Hermes es el de Repuestos Morla, no el del sistema. Cada empresa
-        // define el suyo; si no tiene, se usa el asesor genérico de siempre.
-        const { data: agente } = await supaUser.rpc('get_agente_ia');
+        // ── Quién contesta ────────────────────────────────────────
+        // Hermes es el de Repuestos Morla; Jarvis es el de MotoFlow. Dos
+        // ranuras distintas a propósito: cuando el agente de la empresa está
+        // caído, el respaldo cargaba SU persona y contestaba "soy Hermes,
+        // parte del equipo de Repuestos Morla" estando Hermes apagado.
+        // Un suplente no se pone la camiseta con el nombre del titular.
+        const { data: agente } = quien === 'sistema'
+            ? await supaUser.rpc('get_agente_sistema')
+            : await supaUser.rpc('get_agente_ia');
 
         // Las reglas duras van aquí, en el código, NO en la personalidad que
         // el dueño edita. Puede darle carácter a su agente; no puede darle

@@ -103,7 +103,17 @@ export default function JarvisAdminAssistant() {
     return () => { vivo = false; };
   }, [profile?.tenant_id]);
 
-  const nombreAgente = agente?.nombre || 'Asistente';
+  // El de la empresa (Hermes en Morla) y el del sistema (Jarvis) son dos
+  // agentes distintos, y el nombre en pantalla tiene que seguir al canal.
+  // Poniendo siempre el de la empresa, el respaldo se hacía pasar por él.
+  const [agenteSistema, setAgenteSistema] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    supabase.rpc('get_agente_sistema')
+      .then(({ data }) => { if (vivo) setAgenteSistema(data || null); })
+      .catch(() => { /* sin Jarvis definido: se queda el nombre por defecto */ });
+    return () => { vivo = false; };
+  }, []);
 
   // ── La conversación ───────────────────────────────────────────────────
   // El círculo solo hablaba: contestaba y la burbuja se borraba. Sin hilo
@@ -124,6 +134,16 @@ export default function JarvisAdminAssistant() {
   // al instante pero es otro programa, sin esa memoria.
   const [canal, setCanal] = useState('hermes');
   const [hermesVivo, setHermesVivo] = useState(null);   // null = averiguando
+
+  // Quién es el que está al otro lado AHORA. Todo lo que se ve en pantalla
+  // —el nombre, el saludo, el marcador de agua— sale de aquí.
+  const agenteActivo = canal === 'hermes' ? agente : (agenteSistema || agente);
+  const nombreAgente = agenteActivo?.nombre || 'Asistente';
+  // Los rótulos decían "Hermes" escrito a mano. Con un agente por empresa eso
+  // solo es cierto en Repuestos Morla: el de Caminero se llamará de otra
+  // forma y leería el nombre ajeno en su propia pantalla.
+  const nombreEmpresa = agente?.nombre || 'el agente de la empresa';
+  const nombreSistema = agenteSistema?.nombre || 'Jarvis';
 
   useEffect(() => {
     if (!agente) return;
@@ -262,7 +282,7 @@ export default function JarvisAdminAssistant() {
       // persona de Hermes, quien preguntaba creía estar hablando con él: el
       // aviso ámbar decía "no está conectado" y abajo alguien contestaba
       // igual. Cambiar de interlocutor sin decirlo no es una comodidad.
-      setError('Hermes no está conectado: su PC está apagada. Si quieres que conteste el del servidor, pulsa «Usar asistente rápido».');
+      setError(`${nombreEmpresa} no está conectado: su PC está apagada. Si quieres que conteste ${nombreSistema}, púlsalo arriba.`);
       return undefined;
     }
     return askAiCeo(texto, { conVoz });
@@ -445,7 +465,7 @@ export default function JarvisAdminAssistant() {
 
   const probar = () => {
     callar();
-    hablar(agente?.saludo || 'Sistemas en línea. A sus órdenes.', {
+    hablar(agenteActivo?.saludo || 'Sistemas en línea. A sus órdenes.', {
       alEmpezar: () => setSpeaking(true),
       alTerminar: () => setSpeaking(false),
     });
@@ -553,6 +573,9 @@ export default function JarvisAdminAssistant() {
           message,
           session_id: sessionId,
           pantalla: { ...leerContexto(), modulos: leerModulos() },
+          // Esta ruta es SIEMPRE la del asistente del sistema. Quien quiera
+          // hablar con el agente de la empresa pasa por enviarAHermes.
+          agente: 'sistema',
         },
       });
 
@@ -880,27 +903,29 @@ export default function JarvisAdminAssistant() {
               {canal === 'hermes' && hermesVivo && (
                 <span className="flex items-center gap-1 text-emerald-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  Hermes conectado · con su memoria de Telegram
+                  {nombreEmpresa} conectado · con su memoria de Telegram
                 </span>
               )}
               {canal === 'hermes' && hermesVivo === false && (
                 <>
                   <span className="flex items-center gap-1 text-amber-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                    Hermes no está conectado
+                    {nombreEmpresa} no está conectado
                   </span>
                   <button type="button" onClick={() => setCanal('local')}
                     className="ml-auto rounded border border-cyan-300/30 px-1.5 py-0.5 text-cyan-200/80 hover:text-cyan-100">
-                    Usar asistente rápido
+                    Hablar con {nombreSistema}
                   </button>
                 </>
               )}
               {canal === 'local' && (
                 <>
-                  <span className="text-cyan-200/60">Asistente rápido (no es Hermes)</span>
+                  <span className="text-cyan-200/60">
+                    {nombreSistema} · asistente de MotoFlow, no es {nombreEmpresa}
+                  </span>
                   <button type="button" onClick={() => setCanal('hermes')}
                     className="ml-auto rounded border border-emerald-300/30 px-1.5 py-0.5 text-emerald-200/80 hover:text-emerald-100">
-                    Volver a Hermes
+                    Volver a {nombreEmpresa}
                   </button>
                 </>
               )}
@@ -934,7 +959,7 @@ export default function JarvisAdminAssistant() {
                       dos se le preguntó. */}
                   {m.role === 'assistant' && m.de && (
                     <p className={`mt-0.5 text-[10px] ${m.de === 'hermes' ? 'text-emerald-300/70' : 'text-amber-300/60'}`}>
-                      {m.de === 'hermes' ? 'Hermes' : 'Asistente rápido — no es Hermes'}
+                      {m.de === 'hermes' ? nombreEmpresa : `${nombreSistema} — no es ${nombreEmpresa}`}
                     </p>
                   )}
                   {/* Qué consultó para contestar eso. Distingue una respuesta

@@ -91,6 +91,25 @@ const TOOLS = [
     rpc: 'mcp_resumen_dia',
     args: (a) => ({ p_fecha: a.fecha || null }),
   },
+  {
+    name: 'buscar_ayuda',
+    description:
+      'Explica COMO SE USA MotoFlow: en que modulo se hace cada cosa y los pasos. ' +
+      'Usala siempre que pregunten "como hago...", "donde se registra...", "por que no me deja...", ' +
+      'o cuando alguien no encuentre una pantalla. Devuelve tambien la clave del modulo, ' +
+      'asi que despues de responder ofrece abrirlo con abrir_modulo. ' +
+      'Si no devuelve nada, di que no lo sabes: NO inventes pasos.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        texto: { type: 'string', description: 'La duda tal cual la dijeron. Ej: "como registro un abono", "no me deja rebajar el precio"' },
+        limite: { type: 'integer', description: 'Cuantas entradas devolver (1-10, por defecto 4)' },
+      },
+      required: ['texto'],
+    },
+    rpc: 'mcp_buscar_ayuda',
+    args: (a) => ({ p_texto: String(a.texto || ''), p_limite: a.limite ?? 4 }),
+  },
 ];
 
 const rpcResponse = (id, result) => ({ jsonrpc: '2.0', id, result });
