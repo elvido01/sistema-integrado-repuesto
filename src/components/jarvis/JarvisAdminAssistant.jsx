@@ -81,7 +81,15 @@ export default function JarvisAdminAssistant() {
   const [loading, setLoading] = useState(false);
   const [lastMessage, setLastMessage] = useState('');
   const [error, setError] = useState('');
-  const [sessionId, setSessionId] = useState(null);
+  // La sesión se recuerda entre recargas. Sin esto, cada F5 empezaba una
+  // conversación nueva: el historial seguía en la base pero sin su
+  // identificador no había forma de volver a encontrarlo, y además Jarvis
+  // perdía el hilo de lo que se venía hablando.
+  const [sessionId, setSessionId] = useState(() => {
+    try { return localStorage.getItem('jarvis_sesion') || null; } catch { return null; }
+  });
+  const sesionRef = useRef(null);
+  sesionRef.current = sessionId;
   const recognitionRef = useRef(null);
   const clearBubbleTimerRef = useRef(null);
   const [voces, setVoces] = useState([]);
@@ -159,27 +167,61 @@ export default function JarvisAdminAssistant() {
   // La conversación que YA existe. Sin esto, recargar la página la borraba de
   // la vista aunque siguiera entera en la base — y con Hermes tardando lo que
   // tarda, uno recarga.
+  // Son DOS almacenes, uno por cada interlocutor: lo de Hermes vive en
+  // hermes_chat y lo de Jarvis en ai_chat_messages. Cargar solo el primero
+  // hacía que la conversación con Jarvis pareciera perdida al recargar —
+  // estaba entera en la base (1,760 mensajes), pero nadie la iba a buscar.
   useEffect(() => {
     if (!agente) return;
     let vivo = true;
-    supabase.from('hermes_chat').select('id, rol, texto')
-      .order('id', { ascending: false }).limit(30)
-      .then(({ data, error: e }) => {
-        if (!vivo) return;
-        // Se estuvo mirando un panel vacío sin saber que la consulta fallaba:
-        // el error se descartaba y "sin permiso" se veía igual que "sin
-        // mensajes". No son lo mismo y hay que poder distinguirlos.
-        if (e) { setError(`No puedo leer la conversación: ${e.message}`); return; }
-        if (!data?.length) return;
-        const filas = [...data].reverse();
-        for (const f of filas) idsVistosRef.current.add(idBurbuja(f));
-        ultimoIdRef.current = filas[filas.length - 1].id;
-        setMensajes(filas.map((f) => ({
+
+    (async () => {
+      const [conHermes, conJarvis] = await Promise.all([
+        supabase.from('hermes_chat').select('id, rol, texto, creado_en')
+          .order('id', { ascending: false }).limit(30),
+        sesionRef.current
+          ? supabase.from('ai_chat_messages').select('id, role, content, created_at')
+              .eq('session_id', sesionRef.current)
+              .order('created_at', { ascending: false }).limit(30)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (!vivo) return;
+
+      // El error se descartaba y "sin permiso" se veía igual que "sin
+      // mensajes". No son lo mismo y hay que poder distinguirlos.
+      const e = conHermes.error || conJarvis.error;
+      if (e) { setError(`No puedo leer la conversación: ${e.message}`); return; }
+
+      const burbujas = [];
+      for (const f of conHermes.data || []) {
+        burbujas.push({
           id: idBurbuja(f),
           role: f.rol === 'hermes' ? 'assistant' : 'user',
           content: f.texto,
-        })));
-      });
+          de: f.rol === 'hermes' ? 'hermes' : undefined,
+          en: f.creado_en,
+        });
+        if (f.id > ultimoIdRef.current) ultimoIdRef.current = f.id;
+      }
+      for (const m of conJarvis.data || []) {
+        burbujas.push({
+          id: `a-${m.id}`,
+          role: m.role === 'user' ? 'user' : 'assistant',
+          content: m.content,
+          de: m.role === 'user' ? undefined : 'local',
+          en: m.created_at,
+        });
+      }
+      if (!burbujas.length) return;
+
+      // Un solo hilo ordenado por hora: quién contestó cada cosa lo dice la
+      // etiqueta de la burbuja, no el orden.
+      burbujas.sort((a, b) => new Date(a.en) - new Date(b.en));
+      const ultimas = burbujas.slice(-40);
+      for (const b of ultimas) idsVistosRef.current.add(b.id);
+      setMensajes(ultimas);
+    })();
+
     return () => { vivo = false; };
   }, [agente]);
 
@@ -624,7 +666,10 @@ export default function JarvisAdminAssistant() {
       // Si lo interrumpieron mientras esto viajaba, se descarta callado.
       if (turno !== turnoRef.current) return;
 
-      if (data.session_id) setSessionId(data.session_id);
+      if (data.session_id) {
+        setSessionId(data.session_id);
+        try { localStorage.setItem('jarvis_sesion', data.session_id); } catch { /* sin espacio: dura esta pestaña */ }
+      }
       setAgenteQueContesto(data.agente_usado ?? null);
 
       // Navegar es lo único que el servidor no puede hacer solo. Si pidió
@@ -765,6 +810,18 @@ export default function JarvisAdminAssistant() {
       // silencio es una respuesta válida: la persona está leyendo la tarjeta.
       // Gritarle "no pude escuchar" encima de lo que está leyendo estorba.
       if (esperandoAutorizacionRef.current && event?.error === 'no-speech') return;
+
+      // "not-allowed" es el micrófono bloqueado en el navegador, y decirlo así
+      // no ayuda a nadie. Importa sobre todo con una autorización en pantalla:
+      // el agente pregunta hablando, abre el micrófono, no puede oír, y desde
+      // fuera parece que no esperó la respuesta.
+      if (event?.error === 'not-allowed' || event?.error === 'service-not-allowed') {
+        setError(propuestaRef.current
+          ? 'El micrófono está bloqueado en el navegador. Autoriza con los botones de la tarjeta, o permítelo en el candado de la barra de direcciones.'
+          : 'El micrófono está bloqueado. Púlsalo en el candado de la barra de direcciones y recarga.');
+        return;
+      }
+
       const reason = event?.error ? ` (${event.error})` : '';
       setError(`No pude escuchar bien${reason}.`);
     };
