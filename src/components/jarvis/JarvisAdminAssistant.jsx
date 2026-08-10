@@ -187,7 +187,7 @@ export default function JarvisAdminAssistant() {
 
     (async () => {
       const [conHermes, conJarvis] = await Promise.all([
-        supabase.from('hermes_chat').select('id, rol, texto, creado_en, acciones')
+        supabase.from('hermes_chat').select(sinAccionesRef.current ? 'id, rol, texto, creado_en' : 'id, rol, texto, creado_en, acciones')
           .order('id', { ascending: false }).limit(30),
         sesionRef.current
           ? supabase.from('ai_chat_messages').select('id, role, content, created_at')
@@ -200,7 +200,11 @@ export default function JarvisAdminAssistant() {
       // El error se descartaba y "sin permiso" se veía igual que "sin
       // mensajes". No son lo mismo y hay que poder distinguirlos.
       const e = conHermes.error || conJarvis.error;
-      if (e) { setError(`No puedo leer la conversación: ${e.message}`); return; }
+      if (e) {
+        if (/acciones/.test(e.message || '')) { sinAccionesRef.current = true; return; }
+        setError(`No puedo leer la conversación: ${e.message}`);
+        return;
+      }
 
       const burbujas = [];
       for (const f of conHermes.data || []) {
@@ -249,12 +253,16 @@ export default function JarvisAdminAssistant() {
     let vivo = true;
 
     const traer = () => supabase.from('hermes_chat')
-      .select('id, rol, texto, acciones')
+      .select(sinAccionesRef.current ? 'id, rol, texto' : 'id, rol, texto, acciones')
       .gt('id', ultimoIdRef.current)
       .order('id').limit(30)
       .then(({ data, error: e }) => {
         if (!vivo) return;
-        if (e) { setError(`No puedo leer la conversación: ${e.message}`); return; }
+        if (e) {
+          if (/acciones/.test(e.message || '')) { sinAccionesRef.current = true; return; }
+          setError(`No puedo leer la conversación: ${e.message}`);
+          return;
+        }
         incorporar(data);
       });
 
@@ -438,6 +446,13 @@ export default function JarvisAdminAssistant() {
   // lo que permite que Realtime y el sondeo traigan lo mismo sin duplicarlo.
   const ultimoIdRef = useRef(0);
   const idsVistosRef = useRef(new Set());
+  // La columna `acciones` la agrega hermes_ordenes_pantalla.sql. Mientras no
+  // se corra, pedirla revienta la consulta CADA CUATRO SEGUNDOS y el error se
+  // queda flotando encima de la pantalla. Un despliegue del navegador no puede
+  // depender de que alguien haya corrido un SQL: se detecta una vez y se sigue
+  // sin ella, que solo significa que Hermes todavía no puede llenar la
+  // factura.
+  const sinAccionesRef = useRef(false);
   // Una orden de pantalla se ejecuta UNA vez. Entre Realtime y el sondeo, la
   // misma fila llega dos veces, y ejecutarla dos veces duplicaría las líneas
   // de la factura sin que nadie entendiera por qué.
@@ -963,14 +978,14 @@ export default function JarvisAdminAssistant() {
       `}</style>
 
       <div
-        className="fixed z-50 flex flex-col items-end gap-2"
+        className="pointer-events-none fixed z-50 flex flex-col items-end gap-2"
         style={pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : { right: 20, bottom: 20 }}
       >
         {/* Selector de voz. Existe porque las voces dependen de lo que tenga
             instalado ESTE Windows: no hay forma de saberlo desde el código,
             y la diferencia entre una neuronal y una vieja es abismal. */}
         {verVoces && (
-          <div className="w-[290px] rounded-lg border border-cyan-300/25 bg-slate-950/95 p-3 text-xs text-cyan-50 shadow-xl">
+          <div className="pointer-events-auto w-[290px] rounded-lg border border-cyan-300/25 bg-slate-950/95 p-3 text-xs text-cyan-50 shadow-xl">
             <div className="mb-2 font-bold uppercase tracking-wider text-cyan-300">Voz de {nombreAgente}</div>
             {voces.length === 0 ? (
               <p className="text-cyan-200/70">No hay voces en español instaladas en este equipo.</p>
@@ -1025,7 +1040,7 @@ export default function JarvisAdminAssistant() {
         )}
 
         {chatAbierto && (
-          <div className="flex h-[26rem] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-xl border border-cyan-300/25 bg-slate-950/95 shadow-2xl">
+          <div className="pointer-events-auto flex h-[26rem] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-xl border border-cyan-300/25 bg-slate-950/95 shadow-2xl">
             <div className="flex items-center gap-2 border-b border-cyan-300/15 px-3 py-2">
               <span className="text-sm font-black uppercase tracking-widest text-cyan-300">{nombreAgente}</span>
               {/* El puesto tiene que seguir al canal, igual que el nombre. Con
@@ -1244,14 +1259,14 @@ export default function JarvisAdminAssistant() {
           onMouseDown={alBajarRaton}
           onDoubleClick={() => { setPos(null); try { localStorage.removeItem('jarvis_pos'); } catch { /* da igual */ } }}
           title="Arrástrame para moverme · doble clic para volver a la esquina"
-          className="h-4 w-12 cursor-move rounded-full border border-cyan-300/25 bg-slate-900/80 opacity-40 transition-opacity hover:opacity-100"
+          className="pointer-events-auto h-4 w-12 cursor-move rounded-full border border-cyan-300/25 bg-slate-900/80 opacity-40 transition-opacity hover:opacity-100"
         />
 
         <button
           type="button"
           onClick={toggleVoice}
           disabled={loading}
-          className={`relative flex aspect-square items-center justify-center overflow-hidden rounded-full bg-black text-white outline-none transition-all duration-300 ${
+          className={`pointer-events-auto relative flex aspect-square items-center justify-center overflow-hidden rounded-full bg-black text-white outline-none transition-all duration-300 ${
             activeCore
               ? 'h-32 w-32 border border-emerald-300/40 shadow-[0_0_42px_rgba(16,185,129,0.45)]'
               : 'h-14 w-14 border border-red-400/35 shadow-[0_0_24px_rgba(239,68,68,0.32)] hover:scale-105'
@@ -1274,7 +1289,7 @@ export default function JarvisAdminAssistant() {
           {listening && <MicOff className="absolute bottom-5 right-5 z-10 h-4 w-4 text-emerald-50" />}
         </button>
 
-        <div className="flex items-center gap-1.5">
+        <div className="pointer-events-auto flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setChatAbierto((v) => !v)}
