@@ -224,6 +224,11 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
       setMessages((current) => current.map((message) => (
         message.id === tempId ? (saved || { ...optimisticMessage, status: 'queued' }) : message
       )));
+      // Que no se haya enviado tiene que verse. Antes la fila entraba en la
+      // bandeja y ahi se quedaba: parecia contestado sin haber salido nada.
+      if (saved?.dispatch_error) {
+        setError(`No salio por ${CHANNEL_LABELS[selected.platform] || selected.platform}: ${saved.dispatch_error}`);
+      }
       setConversations((current) => current.map((conversation) => (
         conversation.id === selected.id
           ? {

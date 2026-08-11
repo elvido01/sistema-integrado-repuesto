@@ -864,6 +864,21 @@ export async function getMirrorStatus() {
   }
 }
 
+// El ultimo comentario publico que dejo el cliente en esta conversacion.
+// Instagram exige el id exacto para responderlo: la misma persona puede
+// haber comentado en varias publicaciones.
+async function ultimoComentarioDe(conversationId, headers) {
+  const url = new URL(`${SUPABASE_URL}/rest/v1/sales_messages`);
+  url.searchParams.set('select', 'external_message_id,created_at');
+  url.searchParams.set('conversation_id', `eq.${conversationId}`);
+  url.searchParams.set('sender_type', 'eq.user');
+  url.searchParams.set('message_type', 'eq.comment');
+  url.searchParams.set('order', 'created_at.desc');
+  url.searchParams.set('limit', '1');
+  const [fila] = await fetchJson(url.toString(), { headers }).catch(() => []);
+  return fila?.external_message_id || null;
+}
+
 export async function sendOmniReply({ conversation, text }) {
   if (!conversation?.id) throw new Error('Selecciona una conversacion.');
   const cleanText = String(text || '').trim();
@@ -873,6 +888,11 @@ export async function sendOmniReply({ conversation, text }) {
   const empresa = await getCurrentEmpresa(headers).catch(() => null);
   if (!empresa?.tenant_id) throw new Error('No se pudo determinar la empresa activa.');
 
+  // Si lo ultimo que escribio el cliente fue un comentario, se le contesta
+  // por ahi: es publico, no gasta la ventana de 24h, y hoy es lo unico que
+  // Meta deja mandar sin Acceso Avanzado.
+  const comentario = await ultimoComentarioDe(conversation.id, headers);
+
   const [row] = await fetchJson(`${SUPABASE_URL}/rest/v1/sales_messages?select=*`, {
     method: 'POST',
     headers: { ...headers, Prefer: 'return=representation' },
@@ -881,17 +901,32 @@ export async function sendOmniReply({ conversation, text }) {
       conversation_id: conversation.id,
       platform: conversation.platform || 'instagram',
       sender_type: 'agent',
-      message_type: 'text',
+      message_type: comentario ? 'comment' : 'text',
       message_text: cleanText,
       status: 'queued',
-      raw_data: {
-        source: 'motoflow_omni_extension',
-        note: 'Mensaje registrado desde extension. Pendiente conectar envio oficial del canal.'
-      }
+      raw_data: comentario
+        ? { source: 'motoflow_omni_extension', responder_a: comentario }
+        : { source: 'motoflow_omni_extension' }
     })
   });
 
-  return row;
+  // Y se manda. Antes se quedaba en 'queued' para siempre: la fila entraba
+  // en la bandeja y nadie la despachaba nunca, asi que parecia enviada sin
+  // haber salido. Si Meta la rechaza, el despachador la marca 'failed' con
+  // el motivo dentro — que es lo que hay que ver, no un silencio.
+  try {
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/meta-send-queued`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message_id: row.id })
+    });
+    const d = await r.json().catch(() => null);
+    const estado = d?.message?.status || (d?.ok ? 'sent' : 'failed');
+    const motivo = d?.message?.raw_data?.dispatch_error || d?.error || null;
+    return { ...row, status: estado, dispatch_error: estado === 'sent' ? null : motivo };
+  } catch (e) {
+    return { ...row, status: 'queued', dispatch_error: e?.message || 'No se pudo contactar el despachador.' };
+  }
 }
 
 export async function linkOmniConversationQuote({ conversationId, cotizacionId, status = 'cotizacion_enviada' }) {
