@@ -1129,6 +1129,19 @@ const CierreCajaPage = () => {
           {/* Filters Row */}
           {/* Rótulo a la izquierda y campo a la derecha: apilados gastaban una
               franja entera arriba, que es la que le hace falta al conteo. */}
+          {/* Cerrar una fecha pasada es legítimo y pasa: un apagón deja el
+              cuadre para la mañana siguiente. Lo que no puede pasar es
+              hacerlo sin darse cuenta, en ninguno de los dos sentidos —
+              cerrar ayer creyendo que es hoy, o abrir el calendario en hoy y
+              grabar sin cambiarlo, dejando el día anterior sin cerrar. */}
+          {fecha && formatDateForSupabase(fecha) !== formatDateForSupabase(getCurrentDateInTimeZone()) && (
+            <div className="mb-3 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <b>Estás cerrando una fecha pasada: {formatInTimeZone(fecha, 'dd/MM/yyyy')}.</b>{' '}
+              Las cifras son las de ese día. Si ya vendiste hoy, el efectivo de
+              la gaveta incluye lo de hoy y no va a cuadrar con el conteo.
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-2 px-3 py-2 border rounded-lg mb-3">
             {/* Fecha */}
             <div className="flex items-center gap-2 min-w-0">
