@@ -10,21 +10,59 @@
 **La base está en Supabase, no en su PC.** El 08/08/2026 buscó un Postgres en
 `localhost:5432` y la autenticación falló: ahí `hermes_readonly` no existe.
 
+Desde el 11/08/2026 Hermes vive en una **aplicación gestionada de Hostinger**
+(`orchid-giraffe-371410`, terminal en *Managed applications → Hermes Agent →
+Open command line*), y eso cambió la dirección — no por gusto:
+
 ```
-host:  db.zdvxowpuklbypweyqqki.supabase.co   (proyecto zdvxowpuklbypweyqqki)
-base:  postgres     rol: hermes_readonly     sslmode: require
+host:  aws-0-us-east-2.pooler.supabase.com    (pooler de SESIÓN)
+port:  5432        base: postgres      sslmode: require
+user:  hermes_readonly.zdvxowpuklbypweyqqki   ← con el sufijo del proyecto
 ```
 
-Va en una variable de entorno de SU PC (`MOTOFLOW_DB_URL`), nunca en este
-repo. La clave la puso Elvido al correr `sql/hermes_readonly_user.sql`; si se
+> **El host directo ya no tiene IPv4.** `db.zdvxowpuklbypweyqqki.supabase.co`
+> resuelve *solo* a IPv6 (`2600:1f16:…`), y el contenedor de Hostinger no
+> tiene IPv6 operativo. "Forzar IPv4" no sirve: no hay IPv4 que forzar. El
+> pooler sí resuelve a IPv4, y por eso es el camino desde el VPS. Desde una
+> PC con IPv6 el host directo sigue valiendo.
+>
+> La región (`us-east-2`) no está escrita en ninguna parte del panel que sea
+> fácil de encontrar. Se puede averiguar sin la clave: el pooler contesta
+> *"Tenant or user not found"* si la región es la equivocada y *"password
+> authentication failed"* si es la correcta.
+
+La cadena va en `MOTOFLOW_DB_URL`, nunca en este repo, y en **formato
+`clave=valor`** — no URL. Las claves con `@` o `:` rompen el parseo de una
+URL y el error que dan no se parece a la causa.
+
+La clave la puso Elvido al correr `sql/hermes_readonly_user.sql`; si se
 pierde se cambia con un `ALTER ROLE hermes_readonly WITH PASSWORD '…'` suelto
 en el SQL Editor — **no** re-ejecutando ese script, que borra las vistas del
-schema `hermes` y hay que rehacer todos los GRANTs.
+schema `hermes` y hay que rehacer todos los GRANTs. (Si se re-ejecuta por
+error no pasa nada: se para solo en su propio guardia de `v_password`, y como
+va dentro de una transacción no llega a borrar nada.)
 
 > **Puerto 5432, no 6543.** El pooler de transacción (6543) es PgBouncer y
 > bota el `LISTEN` al soltar la conexión: `hermes_llegadas` y `hermes_chat`
-> quedarían mudos sin dar error. Directo o pooler de sesión, ambos 5432. Con
-> el pooler el usuario es `hermes_readonly.zdvxowpuklbypweyqqki`.
+> quedarían mudos sin dar error. Directo o pooler de sesión, ambos 5432.
+
+> **El núcleo de Hermes necesita un parche.** El plugin falla con
+> `type object 'Platform' has no attribute 'MOTOFLOW'` hasta que se añade
+> MOTOFLOW al enum `Platform`. Se hizo en la PC local el 08/08 y hubo que
+> repetirlo en el VPS el 11/08: el `config.yaml` viaja, el parche del núcleo
+> no. Cada actualización de Hermes probablemente lo borre, y el síntoma es
+> que el canal deja de contestar sin que nada más falle.
+
+> **No existe `hermes.hermes_chat`.** Las vistas del schema se crearon antes
+> que esa tabla y no se regeneran solas. El canal se usa por funciones:
+> `hermes.chat_pendientes(p_limite)`, `hermes.chat_responder(id, texto[,
+> acciones jsonb])` y `hermes.chat_marcar_atendidos(ids[])`.
+
+> **En psycopg 3 el LISTEN se escucha distinto.** El ejemplo de más abajo es
+> de psycopg2. En la v3 no hay `conn.poll()` ni `conn.notifies` como lista:
+> es `conn.autocommit = True`, `conn.execute("LISTEN …")` y luego iterar
+> `for aviso in conn.notifies():`. Con el ejemplo viejo conecta bien y los
+> avisos no llegan nunca, sin error.
 
 - **psycopg2 directo a Postgres** con el rol restringido `hermes_readonly`:
   lee desde el schema `hermes` (vistas ya filtradas al tenant de Morla).
