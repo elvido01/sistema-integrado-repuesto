@@ -3,7 +3,7 @@ import { Mic, MicOff, Settings2, MessageSquare } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
-import { leerContexto, leerModulos } from '@/lib/pantallaContexto';
+import { leerContexto, leerModulos, contextoParaAgente } from '@/lib/pantallaContexto';
 import { ordenarPantalla, normalizarOrdenVenta } from '@/lib/puenteAgente';
 import { usePanels } from '@/contexts/panelCore';
 
@@ -319,7 +319,9 @@ export default function JarvisAdminAssistant() {
     try {
       const { data, error: e } = await supabase.rpc('hermes_escribir', {
         p_texto: texto,
-        p_pantalla: { ...leerContexto(), modulos: leerModulos() },
+        // Con la aclaración de qué es esto y de dónde salen los datos de
+        // verdad. Sin ella, "datos: null" se leía como "no hay datos".
+        p_pantalla: contextoParaAgente(leerModulos()),
       });
       if (e) throw e;
       if (data?.id) {
