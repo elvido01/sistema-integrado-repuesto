@@ -138,9 +138,10 @@ export default function JarvisAdminAssistant() {
   const [agenteQueContesto, setAgenteQueContesto] = useState(undefined);
 
   // ── El canal ──────────────────────────────────────────────────────────
-  // 'hermes' es el Hermes DE VERDAD, el que vive en la PC de la tienda con
-  // su memoria de Telegram. 'local' es el asistente del servidor: contesta
-  // al instante pero es otro programa, sin esa memoria.
+  // 'hermes' es el Hermes DE VERDAD, el que corre fuera de MotoFlow con su
+  // propia memoria — desde el 11/08/2026 en un servidor de Hostinger, antes
+  // en la PC de la tienda. 'local' es el asistente del servidor: contesta al
+  // instante pero es otro programa, sin esa memoria.
   const [canal, setCanal] = useState('hermes');
   const [hermesVivo, setHermesVivo] = useState(null);   // null = averiguando
 
@@ -298,7 +299,7 @@ export default function JarvisAdminAssistant() {
     esperaHermesRef.current = window.setTimeout(() => {
       esperandoRef.current = false;
       setLoading(false);
-      setError('Hermes no ha contestado. Puede estar ocupado o con su PC apagada.');
+      setError('Hermes no ha contestado. Puede estar ocupado, o conectado pero sin atender la cola.');
     }, 45000);
 
     modoVozRef.current = conVoz;
@@ -342,7 +343,7 @@ export default function JarvisAdminAssistant() {
       // persona de Hermes, quien preguntaba creía estar hablando con él: el
       // aviso ámbar decía "no está conectado" y abajo alguien contestaba
       // igual. Cambiar de interlocutor sin decirlo no es una comodidad.
-      setError(`${nombreEmpresa} no está conectado: su PC está apagada. Si quieres que conteste ${nombreSistema}, púlsalo arriba.`);
+      setError(`${nombreEmpresa} no está conectado: su servidor no está dando señal. Si quieres que conteste ${nombreSistema}, púlsalo arriba.`);
       return undefined;
     }
     return askAiCeo(texto, { conVoz });
@@ -1065,14 +1066,18 @@ export default function JarvisAdminAssistant() {
                 className="ml-auto text-cyan-200/60 hover:text-cyan-100">✕</button>
             </div>
 
-            {/* Con quién se está hablando de verdad. Hermes vive en la PC de
-                la tienda: si esa máquina está apagada no hay Hermes, y hay
-                que decirlo en vez de dejar a alguien esperando. */}
+            {/* Con quién se está hablando de verdad. Hermes es un programa
+                aparte, fuera de MotoFlow: si su servidor está caído no hay
+                Hermes, y hay que decirlo en vez de dejar a alguien esperando.
+                "Su memoria" es lo que lo distingue del asistente del
+                servidor — es el mismo agente de siempre, con lo que recuerda
+                de conversaciones anteriores. Decía "memoria de Telegram" y
+                se leía como si los dos canales fueran el mismo. No lo son. */}
             <div className="flex items-center gap-2 border-b border-cyan-300/10 px-3 py-1.5 text-[11px]">
               {canal === 'hermes' && hermesVivo && (
                 <span className="flex items-center gap-1 text-emerald-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  {nombreEmpresa} conectado · con su memoria de Telegram
+                  {nombreEmpresa} conectado · con su memoria
                 </span>
               )}
               {canal === 'hermes' && hermesVivo === false && (
