@@ -295,12 +295,17 @@ export default function JarvisAdminAssistant() {
     // Nadie espera para siempre. Si Hermes no contesta, hay que decirlo y
     // devolver el control — con la referencia trabada y sin esto, la ventana
     // quedaría muerta hasta recargar la página.
+    //
+    // Dos minutos, no 45 segundos. Los 45 se pusieron cuando Hermes solo
+    // redactaba texto; desde que consulta el catálogo de verdad tarda más, y
+    // el aviso saltaba encima de respuestas que venían bien y en camino.
+    // Avisar de una caída que no ocurrió enseña a desconfiar del aviso.
     window.clearTimeout(esperaHermesRef.current);
     esperaHermesRef.current = window.setTimeout(() => {
       esperandoRef.current = false;
       setLoading(false);
       setError('Hermes no ha contestado. Puede estar ocupado, o conectado pero sin atender la cola.');
-    }, 45000);
+    }, 120000);
 
     modoVozRef.current = conVoz;
     // Se pinta al instante con un id provisional y se le pone el de la fila en
@@ -496,6 +501,11 @@ export default function JarvisAdminAssistant() {
     const suya = [...nuevas].reverse().find((n) => n.role === 'assistant');
     if (suya) {
       dejarDeEsperar();
+      // Si se agotó la espera y la respuesta llegó DESPUÉS, el aviso rojo
+      // seguía puesto encima de una respuesta correcta: decía que no había
+      // contestado mientras se leía lo que contestó. Llegó, luego ya no hay
+      // nada que avisar.
+      setError('');
       setAgenteQueContesto(agente?.nombre || 'Hermes');
       if (modoVozRef.current) speak(suya.content);
     }
