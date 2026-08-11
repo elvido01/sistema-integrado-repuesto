@@ -876,7 +876,25 @@ async function ultimoComentarioDe(conversationId, headers) {
   url.searchParams.set('order', 'created_at.desc');
   url.searchParams.set('limit', '1');
   const [fila] = await fetchJson(url.toString(), { headers }).catch(() => []);
-  return fila?.external_message_id || null;
+  if (!fila?.external_message_id) return null;
+
+  // La respuesta privada de un comentario se gasta una sola vez y caduca a
+  // los 7 dias. Mientras siga disponible es la buena: llega al buzon y abre
+  // 24h para conversar, en vez de quedarse en un comentario publico.
+  const dias = (Date.now() - new Date(fila.created_at)) / 86400000;
+  let privadaDisponible = dias <= 7;
+  if (privadaDisponible) {
+    const usada = new URL(`${SUPABASE_URL}/rest/v1/sales_messages`);
+    usada.searchParams.set('select', 'id');
+    usada.searchParams.set('conversation_id', `eq.${conversationId}`);
+    usada.searchParams.set('sender_type', 'eq.agent');
+    usada.searchParams.set('raw_data->>privado_por_comentario', `eq.${fila.external_message_id}`);
+    usada.searchParams.set('limit', '1');
+    const previas = await fetchJson(usada.toString(), { headers }).catch(() => []);
+    privadaDisponible = !previas?.length;
+  }
+
+  return { id: fila.external_message_id, privadaDisponible };
 }
 
 export async function sendOmniReply({ conversation, text }) {
@@ -888,10 +906,13 @@ export async function sendOmniReply({ conversation, text }) {
   const empresa = await getCurrentEmpresa(headers).catch(() => null);
   if (!empresa?.tenant_id) throw new Error('No se pudo determinar la empresa activa.');
 
-  // Si lo ultimo que escribio el cliente fue un comentario, se le contesta
-  // por ahi: es publico, no gasta la ventana de 24h, y hoy es lo unico que
-  // Meta deja mandar sin Acceso Avanzado.
+  // Si lo ultimo que escribio el cliente fue un comentario hay dos puertas, y
+  // el orden importa: primero la privada -- se gasta una vez y hay indicios de
+  // que contestar en publico la quema -- y el comentario publico despues, que
+  // ese se puede repetir siempre.
   const comentario = await ultimoComentarioDe(conversation.id, headers);
+  const comoComentario = Boolean(comentario) && !comentario.privadaDisponible;
+  const privadaPorComentario = comentario?.privadaDisponible ? comentario.id : null;
 
   const [row] = await fetchJson(`${SUPABASE_URL}/rest/v1/sales_messages?select=*`, {
     method: 'POST',
@@ -901,12 +922,14 @@ export async function sendOmniReply({ conversation, text }) {
       conversation_id: conversation.id,
       platform: conversation.platform || 'instagram',
       sender_type: 'agent',
-      message_type: comentario ? 'comment' : 'text',
+      message_type: comoComentario ? 'comment' : 'text',
       message_text: cleanText,
       status: 'queued',
-      raw_data: comentario
-        ? { source: 'motoflow_omni_extension', responder_a: comentario }
-        : { source: 'motoflow_omni_extension' }
+      raw_data: {
+        source: 'motoflow_omni_extension',
+        ...(comoComentario ? { responder_a: comentario.id } : {}),
+        ...(privadaPorComentario ? { privado_por_comentario: privadaPorComentario } : {})
+      }
     })
   });
 

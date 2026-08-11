@@ -1391,17 +1391,29 @@ const WhatsAppCrmPage = () => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
       if (m.role !== 'user' || m.metadata?.media_type !== 'comment') continue;
-      return { id: m.metadata?.external_message_id || null, texto: m.content };
+      return { id: m.metadata?.external_message_id || null, texto: m.content, fecha: m.created_at };
     }
     return null;
   }, [messages, selected]);
 
-  // null = nadie ha elegido todavía, así que se contesta por donde escribió
-  // el cliente la última vez. En cuanto alguien toca el interruptor manda su
-  // decisión, y no se la volvemos a cambiar hasta que abra otro chat.
+  // La respuesta privada a un comentario se gasta UNA vez y caduca a los 7
+  // días. Mientras esté disponible es la jugada buena: le llega al buzón y
+  // abre 24 horas para conversar de verdad. La pública se puede repetir
+  // siempre, así que no corre prisa.
+  const privadaDisponible = useMemo(() => {
+    if (!comentarioPendiente?.id) return false;
+    const dias = (Date.now() - new Date(comentarioPendiente.fecha)) / 86400000;
+    if (dias > 7) return false;
+    return !messages.some(m => m.role === 'agent'
+      && m.metadata?.raw_data?.privado_por_comentario === comentarioPendiente.id);
+  }, [messages, comentarioPendiente]);
+
+  // null = nadie ha elegido todavía. Por defecto se gasta primero el privado
+  // mientras exista, porque hay indicios de que contestar en público lo quema:
+  // los dos comentarios con respuesta pública ya no admitían privada.
   const [modoComentarioElegido, setModoComentarioElegido] = useState(null);
   useEffect(() => { setModoComentarioElegido(null); }, [selected?.id]);
-  const modoComentario = modoComentarioElegido ?? Boolean(comentarioPendiente);
+  const modoComentario = modoComentarioElegido ?? (Boolean(comentarioPendiente) && !privadaDisponible);
 
   const sendTextToConversation = async (content) => {
     if (!selected || !content?.trim()) return;
@@ -1415,6 +1427,9 @@ const WhatsAppCrmPage = () => {
         // no se eligen solas: el modo lo decide quien atiende, arriba en la
         // barra. Aqui solo se obedece.
         const esComentario = modoComentario && Boolean(comentarioPendiente?.id);
+        // Privado apoyado en el comentario: mismo buzón que un DM normal, pero
+        // por la única puerta que Meta tiene abierta sin Acceso Avanzado.
+        const privadaPorComentario = !esComentario && privadaDisponible ? comentarioPendiente.id : null;
 
         const { data: queuedMessage, error } = await supabase.from('sales_messages').insert({
           tenant_id: tenantId,
@@ -1424,9 +1439,11 @@ const WhatsAppCrmPage = () => {
           message_type: esComentario ? 'comment' : 'text',
           message_text: text,
           status: 'queued',
-          raw_data: esComentario
-            ? { source: 'sales_hub_manual_reply', responder_a: comentarioPendiente.id }
-            : { source: 'sales_hub_manual_reply' },
+          raw_data: {
+            source: 'sales_hub_manual_reply',
+            ...(esComentario ? { responder_a: comentarioPendiente.id } : {}),
+            ...(privadaPorComentario ? { privado_por_comentario: privadaPorComentario } : {}),
+          },
         }).select('id').single();
         if (error) throw error;
 
@@ -1437,6 +1454,8 @@ const WhatsAppCrmPage = () => {
           if (status === 'sent') {
             if (esComentario) {
               toast({ title: 'Comentario publicado', description: 'Tu respuesta ya se ve debajo de la publicacion.' });
+            } else if (privadaPorComentario) {
+              toast({ title: 'Privado enviado', description: 'Le llego al buzon. Tienes 24 horas para seguir conversando.' });
             } else {
               toast({ title: 'Mensaje enviado', description: `Respuesta enviada por ${activeConversation.platform === 'instagram' ? 'Instagram' : 'Facebook'}.` });
             }
@@ -2502,18 +2521,20 @@ const WhatsAppCrmPage = () => {
                         </div>
                       )}
                       {comentarioPendiente && (
-                        <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                          <span className="shrink-0 text-xs font-black text-amber-900">
+                        <div className={`mb-2 flex min-w-0 flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${modoComentario ? 'border-amber-200 bg-amber-50' : 'border-sky-200 bg-sky-50'}`}>
+                          <span className={`shrink-0 text-xs font-black ${modoComentario ? 'text-amber-900' : 'text-sky-900'}`}>
                             {modoComentario ? '💬 Respondes en público' : '🔒 Respondes en privado'}
                           </span>
-                          <span className="min-w-0 flex-1 truncate text-xs text-amber-700">
+                          <span className={`min-w-0 flex-1 truncate text-xs ${modoComentario ? 'text-amber-700' : 'text-sky-700'}`}>
                             {modoComentario
                               ? 'Se publica debajo de la publicacion, lo ve cualquiera.'
-                              : 'Solo llega si el cliente escribio en las ultimas 24 horas.'}
+                              : privadaDisponible
+                                ? 'Le llega al buzon y abre 24h para conversar. Solo se puede UNA vez por comentario.'
+                                : 'La privada de este comentario ya se uso o paso de 7 dias: solo llega si el cliente escribio hace menos de 24h.'}
                           </span>
                           <button
                             type="button"
-                            className="shrink-0 rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-bold text-amber-900 hover:bg-amber-100"
+                            className={`shrink-0 rounded-full border bg-white px-3 py-1 text-xs font-bold hover:bg-slate-50 ${modoComentario ? 'border-amber-300 text-amber-900' : 'border-sky-300 text-sky-900'}`}
                             onClick={() => setModoComentarioElegido(!modoComentario)}
                           >
                             Cambiar a {modoComentario ? 'privado' : 'público'}
@@ -2593,7 +2614,9 @@ const WhatsAppCrmPage = () => {
                             onChange={(e) => setReply(e.target.value)}
                             placeholder={isWhatsAppConversation(selected)
                               ? 'Escribe un mensaje'
-                              : (modoComentario && comentarioPendiente ? 'Responder el comentario en público' : 'Guardar seguimiento interno')}
+                              : (comentarioPendiente
+                                ? (modoComentario ? 'Responder el comentario en público' : 'Escribirle al privado')
+                                : 'Guardar seguimiento interno')}
                             className="min-h-[42px] max-h-28 min-w-0 resize-none rounded-2xl border-0 bg-white px-4 py-2 shadow-none focus-visible:ring-1 focus-visible:ring-emerald-500"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && !e.shiftKey) {

@@ -132,12 +132,18 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
     ? (await pageIdDelTenant(supabase, tenantId)) || accountId
     : accountId;
 
-  const sent = await sendMetaText(message.platform, senderId, recipientId, text.slice(0, 1000), token);
+  // Si la pantalla marco un comentario, el privado va por ahi. Es lo unico
+  // que Meta deja hoy, y ademas no exige que el cliente haya escrito en las
+  // ultimas 24h: el comentario mismo es el permiso.
+  const privadoPorComentario = String(message.raw_data?.privado_por_comentario || '').trim() || null;
+
+  const sent = await sendMetaText(message.platform, senderId, recipientId, text.slice(0, 1000), token, privadoPorComentario);
   if (!sent.ok) {
     return failMessage(supabase, message, `meta_${sent.status}`, {
       meta: sent.body,
       account_id: accountId,
       recipient_id: recipientId,
+      privado_por_comentario: privadoPorComentario,
       sent_by: userId,
     });
   }
@@ -345,18 +351,40 @@ async function resolveAccessToken(supabase: any, tenantId: string, platform: str
   return channel?.access_token || null;
 }
 
-async function sendMetaText(platform: string, accountId: string, recipientId: string, text: string, token: string) {
+// Dos maneras de mandar el mismo privado.
+//
+// Por persona (recipient.id) es la normal, y hoy esta cerrada: Meta responde
+// 200/2534048 porque el permiso sigue en Acceso Estandar y el cliente no
+// tiene rol en la app.
+//
+// Por comentario (recipient.comment_id) es la "respuesta privada", y esa SI
+// esta abierta -- verificado contra la API el 11/08/2026: ningun comentario
+// fallo por permisos, solo por sus dos reglas propias (7 dias desde que se
+// escribio, y una sola vez por comentario). Llega al mismo buzon y abre la
+// ventana de 24h para seguir conversando. Es la unica puerta al privado
+// mientras Meta no apruebe el Acceso Avanzado.
+async function sendMetaText(
+  platform: string,
+  accountId: string,
+  recipientId: string,
+  text: string,
+  token: string,
+  commentId?: string | null,
+) {
   const isInstagramLoginToken = platform === 'instagram' && String(token || '').startsWith('IGAA');
   const host = isInstagramLoginToken ? 'graph.instagram.com' : 'graph.facebook.com';
   const actorId = isInstagramLoginToken ? 'me' : accountId;
+
+  // La respuesta privada no admite messaging_type: no es una respuesta dentro
+  // de una conversacion, es la que la abre.
+  const payload = commentId
+    ? { recipient: { comment_id: commentId }, message: { text } }
+    : { messaging_type: 'RESPONSE', recipient: { id: recipientId }, message: { text } };
+
   const response = await fetch(`https://${host}/${META_GRAPH_VERSION}/${actorId}/messages?access_token=${encodeURIComponent(token)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_type: 'RESPONSE',
-      recipient: { id: recipientId },
-      message: { text },
-    }),
+    body: JSON.stringify(payload),
   });
 
   const body = await response.json().catch(() => null);
