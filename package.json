@@ -14,6 +14,7 @@
     "hermes:estado": "node scripts/hermes-estado.mjs",
     "meta:estado": "node scripts/meta-estado.mjs",
     "meta:token": "node scripts/meta-token.mjs",
+    "meta:comentarios": "node scripts/meta-comentarios-importar.mjs",
     "vault:sync:simular": "node scripts/vault-sync/sync.mjs --simular --una-vez",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=motoflow --branch=feat/mercancias-filtros --commit-dirty=true && npx wrangler pages deploy dist --project-name=repuestos-morla --branch=main --commit-dirty=true"
   },

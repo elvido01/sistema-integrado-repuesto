@@ -586,6 +586,10 @@ const WhatsAppCrmPage = () => {
           source: message.sender_type === 'agent' ? 'sales_hub' : activeConversation?.platform,
           media_url: message.media_url,
           media_type: message.message_type,
+          // El id que Meta le dio: para un comentario es la dirección a la
+          // que se responde. Sin esto habría que adivinar cuál de los
+          // comentarios del hilo se está contestando.
+          external_message_id: message.external_message_id,
           raw_data: message.raw_data,
         },
       })) : (msgData || []));
@@ -1377,6 +1381,28 @@ const WhatsAppCrmPage = () => {
     setSugerencia(null);
   };
 
+  // ── Comentario público o privado ──────────────────────────
+  // El último comentario que dejó el cliente en este hilo. Instagram exige
+  // el id exacto del comentario para responderlo; no basta con saber de qué
+  // conversación se trata, porque una misma persona puede haber comentado
+  // en tres publicaciones distintas.
+  const comentarioPendiente = useMemo(() => {
+    if (!selected || isWhatsAppConversation(selected)) return null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m.role !== 'user' || m.metadata?.media_type !== 'comment') continue;
+      return { id: m.metadata?.external_message_id || null, texto: m.content };
+    }
+    return null;
+  }, [messages, selected]);
+
+  // null = nadie ha elegido todavía, así que se contesta por donde escribió
+  // el cliente la última vez. En cuanto alguien toca el interruptor manda su
+  // decisión, y no se la volvemos a cambiar hasta que abra otro chat.
+  const [modoComentarioElegido, setModoComentarioElegido] = useState(null);
+  useEffect(() => { setModoComentarioElegido(null); }, [selected?.id]);
+  const modoComentario = modoComentarioElegido ?? Boolean(comentarioPendiente);
+
   const sendTextToConversation = async (content) => {
     if (!selected || !content?.trim()) return;
     const text = content.trim();
@@ -1385,15 +1411,22 @@ const WhatsAppCrmPage = () => {
 
     try {
       if (!isWhatsAppConversation(activeConversation)) {
+        // Publicar debajo del reel o mandar un privado son cosas distintas y
+        // no se eligen solas: el modo lo decide quien atiende, arriba en la
+        // barra. Aqui solo se obedece.
+        const esComentario = modoComentario && Boolean(comentarioPendiente?.id);
+
         const { data: queuedMessage, error } = await supabase.from('sales_messages').insert({
           tenant_id: tenantId,
           conversation_id: activeConversation.id,
           platform: activeConversation.platform,
           sender_type: 'agent',
-          message_type: 'text',
+          message_type: esComentario ? 'comment' : 'text',
           message_text: text,
           status: 'queued',
-          raw_data: { source: 'sales_hub_manual_reply' },
+          raw_data: esComentario
+            ? { source: 'sales_hub_manual_reply', responder_a: comentarioPendiente.id }
+            : { source: 'sales_hub_manual_reply' },
         }).select('id').single();
         if (error) throw error;
 
@@ -1402,7 +1435,11 @@ const WhatsAppCrmPage = () => {
           const status = dispatched?.message?.status || (dispatched?.ok ? 'sent' : 'failed');
           finishOptimisticMessage(tempId, status);
           if (status === 'sent') {
-            toast({ title: 'Mensaje enviado', description: `Respuesta enviada por ${activeConversation.platform === 'instagram' ? 'Instagram' : 'Facebook'}.` });
+            if (esComentario) {
+              toast({ title: 'Comentario publicado', description: 'Tu respuesta ya se ve debajo de la publicacion.' });
+            } else {
+              toast({ title: 'Mensaje enviado', description: `Respuesta enviada por ${activeConversation.platform === 'instagram' ? 'Instagram' : 'Facebook'}.` });
+            }
           } else {
             toast({ variant: 'destructive', title: 'No se envio por Meta', description: dispatched?.message?.raw_data?.dispatch_error || 'El mensaje quedo marcado como fallido.' });
           }
@@ -2464,6 +2501,25 @@ const WhatsAppCrmPage = () => {
                           </div>
                         </div>
                       )}
+                      {comentarioPendiente && (
+                        <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          <span className="shrink-0 text-xs font-black text-amber-900">
+                            {modoComentario ? '💬 Respondes en público' : '🔒 Respondes en privado'}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-xs text-amber-700">
+                            {modoComentario
+                              ? 'Se publica debajo de la publicacion, lo ve cualquiera.'
+                              : 'Solo llega si el cliente escribio en las ultimas 24 horas.'}
+                          </span>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-bold text-amber-900 hover:bg-amber-100"
+                            onClick={() => setModoComentarioElegido(!modoComentario)}
+                          >
+                            Cambiar a {modoComentario ? 'privado' : 'público'}
+                          </button>
+                        </div>
+                      )}
                       <div className="flex min-w-0 items-end gap-2">
                         <Button
                           variant="ghost" size="icon"
@@ -2535,7 +2591,9 @@ const WhatsAppCrmPage = () => {
                             ref={replyInputRef}
                             value={reply}
                             onChange={(e) => setReply(e.target.value)}
-                            placeholder={isWhatsAppConversation(selected) ? 'Escribe un mensaje' : 'Guardar seguimiento interno'}
+                            placeholder={isWhatsAppConversation(selected)
+                              ? 'Escribe un mensaje'
+                              : (modoComentario && comentarioPendiente ? 'Responder el comentario en público' : 'Guardar seguimiento interno')}
                             className="min-h-[42px] max-h-28 min-w-0 resize-none rounded-2xl border-0 bg-white px-4 py-2 shadow-none focus-visible:ring-1 focus-visible:ring-emerald-500"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && !e.shiftKey) {

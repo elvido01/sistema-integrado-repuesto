@@ -11,6 +11,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
 const META_GRAPH_VERSION = 'v21.0';
 const META_PLATFORMS = new Set(['instagram', 'facebook']);
+const SUPPORTED_TYPES = new Set(['text', 'comment']);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -87,10 +88,19 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
   if (message.status !== 'queued') return compactMessage(message);
   if (message.sender_type !== 'agent') return failMessage(supabase, message, 'sender_no_soportado');
   if (!META_PLATFORMS.has(message.platform)) return failMessage(supabase, message, 'canal_no_meta');
-  if (message.message_type !== 'text') return failMessage(supabase, message, 'tipo_no_soportado');
+  if (!SUPPORTED_TYPES.has(message.message_type)) return failMessage(supabase, message, 'tipo_no_soportado');
 
   const text = String(message.message_text || '').trim();
   if (!text) return failMessage(supabase, message, 'texto_vacio');
+
+  // Un comentario no se contesta por donde se contesta un mensaje: va a
+  // /{comentario}/replies, sale publico debajo de la publicacion, y no
+  // gasta la ventana de 24h porque no es mensajeria. Ademas es lo unico
+  // que hoy se puede responder: el privado a un desconocido sigue
+  // esperando el Acceso Avanzado de Meta.
+  if (message.message_type === 'comment') {
+    return await dispatchCommentReply(supabase, tenantId, message, text, userId);
+  }
 
   const { data: conversation, error: conversationError } = await supabase
     .from('sales_conversations')
@@ -148,6 +158,91 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
       status: 'sent',
       external_message_id: providerId,
       raw_data: rawData,
+    })
+    .eq('id', message.id)
+    .eq('tenant_id', tenantId)
+    .select('id, status, external_message_id')
+    .single();
+
+  if (updateError) throw new Error(updateError.message);
+  return updated;
+}
+
+// ------------------------------------------------------------
+// Responder un comentario publico
+// ------------------------------------------------------------
+// A que comentario se contesta: si la pantalla lo dijo, a ese. Si no,
+// al ultimo que escribio el cliente en esa conversacion. Nunca se
+// adivina mas alla de eso — antes que publicar debajo de la
+// publicacion equivocada, falla y lo dice.
+async function dispatchCommentReply(supabase: any, tenantId: string, message: any, text: string, userId: string) {
+  const { data: conversation, error: conversationError } = await supabase
+    .from('sales_conversations')
+    .select('id, tenant_id, channel_id, platform, external_conversation_id')
+    .eq('id', message.conversation_id)
+    .eq('tenant_id', tenantId)
+    .single();
+
+  if (conversationError || !conversation) {
+    return failMessage(supabase, message, conversationError?.message || 'conversacion_no_encontrada');
+  }
+
+  let commentId = String(message.raw_data?.responder_a || '').trim();
+
+  if (!commentId) {
+    const { data: ultimo } = await supabase
+      .from('sales_messages')
+      .select('external_message_id, raw_data')
+      .eq('tenant_id', tenantId)
+      .eq('conversation_id', conversation.id)
+      .eq('sender_type', 'user')
+      .eq('message_type', 'comment')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    commentId = String(ultimo?.external_message_id || '').trim();
+  }
+
+  if (!commentId) return failMessage(supabase, message, 'sin_comentario_al_que_responder');
+
+  const parsed = parseExternalConversationId(conversation.external_conversation_id);
+  const accountId = parsed?.account_id || await accountIdFromChannel(supabase, tenantId, conversation.channel_id);
+  if (!accountId) return failMessage(supabase, message, 'identidad_meta_incompleta');
+
+  const token = await resolveAccessToken(supabase, tenantId, message.platform, accountId, conversation.channel_id);
+  if (!token) return failMessage(supabase, message, 'token_meta_no_configurado');
+
+  const isInstagramLoginToken = message.platform === 'instagram' && String(token || '').startsWith('IGAA');
+  const host = isInstagramLoginToken ? 'graph.instagram.com' : 'graph.facebook.com';
+
+  const response = await fetch(`https://${host}/${META_GRAPH_VERSION}/${commentId}/replies`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text.slice(0, 2200), access_token: token }),
+  });
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    return failMessage(supabase, message, `meta_${response.status}`, {
+      meta: body,
+      responder_a: commentId,
+      sent_by: userId,
+    });
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from('sales_messages')
+    .update({
+      status: 'sent',
+      external_message_id: body?.id || null,
+      raw_data: {
+        ...(message.raw_data || {}),
+        source: 'meta_send_queued',
+        tipo: 'respuesta_a_comentario',
+        responder_a: commentId,
+        sent_by: userId,
+        provider_response: body,
+      },
     })
     .eq('id', message.id)
     .eq('tenant_id', tenantId)
