@@ -574,7 +574,12 @@ const WhatsAppCrmPage = () => {
       setMessages(loadSalesDetail ? (msgData || []).map(message => ({
         id: message.id,
         role: message.sender_type,
-        content: message.message_text || `[${message.message_type || 'mensaje'}]`,
+        // Un comentario es público: lo lee cualquiera que pase por el reel, y
+        // se contesta distinto que un privado. Quien atiende tiene que verlo
+        // de un vistazo, sin abrir el detalle.
+        content: message.message_type === 'comment'
+          ? `💬 Comentario público: ${message.message_text}`
+          : (message.message_text || `[${message.message_type || 'mensaje'}]`),
         status: message.status,
         created_at: message.created_at,
         metadata: {

@@ -80,7 +80,21 @@ async function handleWebhook(body: any) {
       ...(Array.isArray(entry?.standby) ? entry.standby : []),
     ];
 
-    if (!events.length) {
+    // COMENTARIOS. Llegaban desde siempre y se tiraban como
+    // "entry_without_messaging": en la tabla quedaron guardados "Que precio
+    // tiene ?" y "Tienen plástico del Frente lonci zxpro 150" — clientes
+    // preguntando en público que nadie vio.
+    //
+    // Meta no los manda en entry.messaging sino en entry.changes, que es otra
+    // forma con otro contenido. Por eso el bucle de mensajes no los tocaba.
+    const comentarios = (Array.isArray(entry?.changes) ? entry.changes : [])
+      .filter((c: any) => c?.field === 'comments' && c?.value);
+
+    for (const c of comentarios) {
+      await handleCommentEvent(supabase, objectType, platform, entryId, c.value);
+    }
+
+    if (!events.length && !comentarios.length) {
       await logEvent(supabase, {
         object_type: objectType,
         platform,
@@ -96,6 +110,116 @@ async function handleWebhook(body: any) {
       await handleMessagingEvent(supabase, objectType, platform, entryId, event);
     }
   }
+}
+
+// Un comentario público entra a la MISMA conversación que sus mensajes
+// privados. Deliberado: es la misma persona, y quien atienda tiene que ver de
+// una vez que comentó en el reel y después escribió por interno, no dos hilos
+// sueltos que nadie relaciona.
+//
+// NO responde nada. Ni pública ni privadamente. Esta fase es solo para verlos
+// llegar; contestar necesita el permiso instagram_manage_comments, que el
+// token todavía no tiene.
+async function handleCommentEvent(supabase: any, objectType: string, platform: 'instagram' | 'facebook', entryId: string, value: any) {
+  const commentId = String(value?.id || '');
+  const fromId    = String(value?.from?.id || '');
+  const fromName  = String(value?.from?.username || value?.from?.name || '').trim();
+  const texto     = String(value?.text || '').trim();
+
+  const logId = await logEvent(supabase, {
+    object_type: objectType,
+    platform,
+    entry_id: entryId,
+    event_type: 'comment',
+    sender_id: fromId || null,
+    recipient_id: entryId || null,
+    message_id: commentId || null,
+    status: 'received',
+    payload: value,
+  });
+
+  // Nuestros propios comentarios vuelven por el webhook. Sin esto, la tienda
+  // se abriría una conversación consigo misma cada vez que contesta —
+  // ya hay uno guardado de "repuestosmorla" respondiendo su propio reel.
+  if (!fromId || fromId === entryId) {
+    await markEvent(supabase, logId, { status: 'ignored', error_message: 'comentario_propio' });
+    return;
+  }
+  if (!texto) {
+    await markEvent(supabase, logId, { status: 'ignored', error_message: 'comentario_vacio' });
+    return;
+  }
+
+  const account = await resolveAccount(supabase, platform, [entryId]);
+  if (!account?.tenant_id) {
+    await markEvent(supabase, logId, {
+      status: 'unmatched_account',
+      error_message: `No existe cuenta para ${platform} entry=${entryId}`,
+    });
+    return;
+  }
+
+  await markEvent(supabase, logId, {
+    tenant_id: account.tenant_id,
+    channel_id: account.channel_id || null,
+    social_account_id: account.social_account_id || null,
+  });
+
+  const accountExternalId = account.external_account_id || entryId;
+  // Misma fórmula que los mensajes: así el comentario cae en la conversación
+  // que esa persona ya tenga abierta, en vez de crear una paralela.
+  const externalConversationId = `${platform}:${accountExternalId}:${fromId}`;
+  const intent = detectBasicIntent(texto);
+
+  const { data: conversation, error: convError } = await supabase
+    .from('sales_conversations')
+    .upsert({
+      tenant_id: account.tenant_id,
+      channel_id: account.channel_id || null,
+      platform,
+      external_conversation_id: externalConversationId,
+      customer_name: fromName || fromId,
+      customer_external_id: fromId,
+      status: 'nuevo',
+      intent,
+      bot_enabled: false,
+      last_message_preview: `💬 ${texto}`.slice(0, 180),
+      metadata: { source: 'meta_comments_webhook', entry_id: entryId },
+    }, { onConflict: 'tenant_id,platform,external_conversation_id' })
+    .select('id')
+    .single();
+
+  if (convError) {
+    await markEvent(supabase, logId, { status: 'error', error_message: convError.message });
+    return;
+  }
+
+  // El id del comentario es la clave de idempotencia: Meta reenvía el mismo
+  // evento si no recibe 200 a tiempo, y sin esto el comentario aparecería
+  // duplicado en la bandeja.
+  const { error: msgError } = await supabase
+    .from('sales_messages')
+    .upsert({
+      tenant_id: account.tenant_id,
+      conversation_id: conversation.id,
+      platform,
+      sender_type: 'user',
+      message_type: 'comment',
+      message_text: texto,
+      external_message_id: commentId || `${externalConversationId}:${Date.now()}`,
+      status: 'received',
+      // Se guarda entero: de aquí salen el id de la publicación y el del
+      // comentario, que son lo que hará falta para responder cuando llegue
+      // el permiso. Sin ellos habría que volver a pedírselo a Meta.
+      raw_data: value,
+    }, { onConflict: 'tenant_id,platform,external_message_id' });
+
+  if (msgError) {
+    await markEvent(supabase, logId, { status: 'error', error_message: msgError.message });
+    return;
+  }
+
+  await markEvent(supabase, logId, { status: 'processed' });
 }
 
 async function handleMessagingEvent(supabase: any, objectType: string, platform: 'instagram' | 'facebook', entryId: string, event: any) {
