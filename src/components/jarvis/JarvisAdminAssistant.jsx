@@ -79,6 +79,13 @@ export default function JarvisAdminAssistant() {
   const { openPanel } = usePanels();
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  // Modo voz a pantalla completa: la esfera y tres botones, nada más. El
+  // círculo flotante sigue existiendo para el uso rápido; esto es para
+  // cuando alguien se sienta a conversar y no quiere ver el sistema detrás.
+  const [modoLive, setModoLive] = useState(false);
+  // El botón del altavoz. Silencia la voz pero NO la conversación: se sigue
+  // escuchando y respondiendo, solo que leyendo en vez de oyendo.
+  const [mudo, setMudo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastMessage, setLastMessage] = useState('');
   const [error, setError] = useState('');
@@ -543,6 +550,16 @@ export default function JarvisAdminAssistant() {
     const mio = ++hablaRef.current;
     ultimoDichoRef.current = text;
 
+    // Silenciado: se enseña lo que diría y se sigue escuchando. Callar al
+    // agente no es apagarlo — en un local con ruido, o con un cliente
+    // delante, uno quiere leer la respuesta sin que suene.
+    if (mudo) {
+      setLastMessage(text);
+      clearBubbleTimerRef.current = window.setTimeout(() => setLastMessage(''), Math.max(5000, text.length * 85));
+      if (escucharDespues && modoVozRef.current) startListening();
+      return;
+    }
+
     hablar(text, {
       alEmpezar: () => setSpeaking(true),
       alTerminar: () => {
@@ -984,6 +1001,28 @@ export default function JarvisAdminAssistant() {
           50% { opacity: 1; transform: scale(1.06); }
         }
 
+        /* La esfera del modo voz. Tres manchas de color girando a distinta
+           velocidad detrás de un desenfoque grande: por eso la superficie
+           parece moverse sola sin que nada tenga borde. Un círculo liso se
+           ve muerto; esto respira. */
+        @keyframes orbe-respira {
+          0%, 100% { transform: scale(1); }
+          50%      { transform: scale(1.045); }
+        }
+        @keyframes orbe-gira        { to { transform: rotate(360deg); } }
+        @keyframes orbe-gira-lento  { to { transform: rotate(-360deg); } }
+        /* Escuchando: late al ritmo de quien habla, más marcado. */
+        @keyframes orbe-escucha {
+          0%, 100% { transform: scale(1);     }
+          25%      { transform: scale(1.07);  }
+          50%      { transform: scale(1.02);  }
+          75%      { transform: scale(1.09);  }
+        }
+        @keyframes orbe-entra {
+          from { opacity: 0; transform: scale(0.9); }
+          to   { opacity: 1; transform: scale(1);   }
+        }
+
         @keyframes jarvis-float {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-3px); }
@@ -1256,6 +1295,112 @@ export default function JarvisAdminAssistant() {
           </div>
         )}
 
+        {/* ── Modo voz a pantalla completa ────────────────────────────────
+            Sin hilo, sin panel, sin sistema detrás: la esfera, en qué anda, y
+            tres botones. Lo que se dice se lee grande debajo, porque en un
+            local con ruido la voz se pierde y el precio hay que verlo. */}
+        {modoLive && (
+          <div
+            className="pointer-events-auto fixed inset-0 z-[120] flex flex-col items-center justify-center gap-8 bg-slate-950/97 px-6 backdrop-blur-2xl"
+            style={{ animation: 'orbe-entra 260ms ease-out' }}
+          >
+            <div className="absolute top-5 left-0 right-0 text-center text-[11px] uppercase tracking-[0.3em] text-cyan-200/40">
+              {nombreAgente}
+            </div>
+
+            {/* La esfera. El tamaño y el ritmo dicen el estado sin una sola
+                palabra: quieta y lenta esperando, latiendo al escuchar,
+                brillando al hablar. */}
+            <div
+              className="relative flex items-center justify-center"
+              style={{
+                width: 'min(58vw, 260px)',
+                height: 'min(58vw, 260px)',
+                animation: listening
+                  ? 'orbe-escucha 2.4s ease-in-out infinite'
+                  : 'orbe-respira 4.5s ease-in-out infinite',
+              }}
+            >
+              {/* El halo. Lo que hace que se vea encendida y no pegada. */}
+              <div
+                className="absolute inset-[-18%] rounded-full opacity-70"
+                style={{
+                  background: speaking
+                    ? 'radial-gradient(circle, rgba(125,211,252,0.42) 0%, rgba(56,189,248,0.14) 45%, transparent 70%)'
+                    : 'radial-gradient(circle, rgba(148,163,184,0.28) 0%, rgba(56,189,248,0.10) 45%, transparent 70%)',
+                  filter: 'blur(18px)',
+                  transition: 'background 500ms ease',
+                }}
+              />
+
+              <div className="absolute inset-0 overflow-hidden rounded-full" style={{ filter: 'blur(26px)' }}>
+                <div className="absolute inset-0 rounded-full bg-slate-200/90" />
+                <div
+                  className="absolute left-[8%] top-[4%] h-[70%] w-[70%] rounded-full"
+                  style={{ background: 'radial-gradient(circle, #ffffff 0%, rgba(255,255,255,0) 68%)', animation: 'orbe-gira 11s linear infinite', transformOrigin: '60% 65%' }}
+                />
+                <div
+                  className="absolute right-[4%] top-[14%] h-[66%] w-[66%] rounded-full"
+                  style={{ background: 'radial-gradient(circle, #7dd3fc 0%, rgba(125,211,252,0) 66%)', animation: 'orbe-gira-lento 8s linear infinite', transformOrigin: '35% 55%' }}
+                />
+                <div
+                  className="absolute bottom-[2%] left-[16%] h-[62%] w-[62%] rounded-full"
+                  style={{ background: 'radial-gradient(circle, #c4b5fd 0%, rgba(196,181,253,0) 64%)', animation: 'orbe-gira 15s linear infinite', transformOrigin: '50% 30%' }}
+                />
+              </div>
+
+              {/* El brillo de arriba: sin esto parece un disco, no una esfera. */}
+              <div
+                className="pointer-events-none absolute inset-0 rounded-full"
+                style={{ background: 'radial-gradient(circle at 34% 26%, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0) 42%)' }}
+              />
+            </div>
+
+            <p className="text-sm text-cyan-100/70">
+              {speaking ? 'Hablando…' : listening ? 'Te escucho…' : loading ? 'Consultando…' : 'Toca el micrófono para hablar'}
+            </p>
+
+            {(lastMessage || error) && (
+              <p className={`max-w-lg text-center text-base leading-relaxed ${error ? 'text-red-300' : 'text-slate-100'}`}>
+                {error || lastMessage}
+              </p>
+            )}
+
+            <div className="flex items-center gap-5">
+              <button
+                type="button"
+                onClick={toggleVoice}
+                title={listening ? 'Dejar de escuchar' : 'Hablar'}
+                className={`flex h-14 w-14 items-center justify-center rounded-full transition-colors ${
+                  listening ? 'bg-emerald-400 text-slate-900' : 'bg-white/12 text-white hover:bg-white/20'
+                }`}
+              >
+                {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { interrumpir(); setModoLive(false); }}
+                title="Salir del modo voz"
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-white/12 text-white transition-colors hover:bg-white/20"
+              >
+                <span className="text-xl leading-none">✕</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { if (!mudo) callar(); setMudo((v) => !v); }}
+                title={mudo ? 'Volver a escucharlo' : 'Silenciar la voz (sigue contestando por escrito)'}
+                className={`flex h-14 w-14 items-center justify-center rounded-full transition-colors ${
+                  mudo ? 'bg-amber-400/90 text-slate-900' : 'bg-white/12 text-white hover:bg-white/20'
+                }`}
+              >
+                <span className="text-lg leading-none">{mudo ? '🔇' : '🔊'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* pointer-events-none: la burbuja quedaba encima de F10 - GRABAR y no
             dejaba facturar. Un asistente que estorba el trabajo es peor que no
             tenerlo, y el aviso se puede leer igual aunque los clics lo
@@ -1314,6 +1459,14 @@ export default function JarvisAdminAssistant() {
             className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
           >
             <MessageSquare className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setModoLive(true); setChatAbierto(false); if (!listening && !speaking && !loading) startListening(); }}
+            title="Hablar a pantalla completa"
+            className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
+          >
+            <span className="block h-3.5 w-3.5 rounded-full bg-gradient-to-br from-white via-sky-300 to-violet-300" />
           </button>
           <button
             type="button"
