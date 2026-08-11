@@ -65,7 +65,11 @@ if (d.data_access_expires_at) {
   const señal = dias <= 0 ? '✗ VENCIDO' : dias <= 14 ? '⚠ ' : '  ';
   console.log(`  ${señal} acceso a datos hasta ${vence.toISOString().slice(0, 10)} (${dias} días)`);
   if (dias > 0 && dias <= 14) {
-    console.log('    Renuévalo entrando de nuevo por "Conectar con Facebook" o los dos canales se caen ese día.');
+    // No hay botón de "conectar" en el sistema: el token se pega a mano.
+    // Y el que vence no es el token (es eterno) sino el acceso a datos, que
+    // solo se reinicia si una persona vuelve a autorizar la app en Facebook.
+    console.log('    El token no vence, vence el permiso de leer datos. Hay que reautorizar');
+    console.log('    en developers.facebook.com/tools/explorer y luego:  npm run meta:token -- <token>');
   }
 }
 
