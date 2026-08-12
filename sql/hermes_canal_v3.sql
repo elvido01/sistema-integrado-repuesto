@@ -133,26 +133,47 @@ DECLARE
   v_tenant uuid := '00000000-0000-0000-0000-000000000001';
 BEGIN
   RETURN QUERY
-  WITH elegidos AS (
-    SELECT c.id
+  WITH candidatos AS (
+    SELECT
+      c.id,
+      -- UNO POR CONVERSACIÓN, DENTRO DE ESTA MISMA LLAMADA.
+      -- El NOT EXISTS de abajo mira el estado ANTERIOR al UPDATE, así que
+      -- por sí solo deja pasar juntos los dos pendientes de una misma
+      -- conversación: la exclusión funcionaba entre llamadas, no dentro de
+      -- una. Numerar por conversación y quedarse con el primero lo cierra.
+      row_number() OVER (PARTITION BY c.conversation_key
+                         ORDER BY c.creado_en, c.id) AS puesto
     FROM public.hermes_chat c
     WHERE c.tenant_id = v_tenant
       AND c.rol = 'usuario'
-      AND c.estado = 'pendiente'
       -- Tres intentos y para: no se arregla a la cuarta, y reintentar para
       -- siempre es como se llena un disco.
       AND c.intentos < 3
-      -- UNA conversación en vuelo. El arrendamiento de 5 minutos rescata lo
-      -- que dejó tomado un worker que se murió — si no, esa conversación no
-      -- volvería a avanzar nunca, en silencio.
+      AND (
+        c.estado = 'pendiente'
+        -- EL ARRENDAMIENTO. Un mensaje abandonado por un worker que se
+        -- murió está en 'procesando', no en 'pendiente'. Exigiendo solo
+        -- 'pendiente' nunca podía ser candidato y esa conversación no
+        -- volvía a avanzar jamás, en silencio — que es exactamente lo que
+        -- el contrato prometía evitar.
+        OR (c.estado = 'procesando'
+            AND c.procesando_en <= now() - interval '5 minutes')
+      )
+      -- Y no se le quita el trabajo a un worker que sigue vivo.
       AND NOT EXISTS (
             SELECT 1 FROM public.hermes_chat o
             WHERE o.tenant_id = c.tenant_id
               AND o.conversation_key IS NOT DISTINCT FROM c.conversation_key
               AND o.rol = 'usuario'
+              AND o.id <> c.id
               AND o.estado = 'procesando'
               AND o.procesando_en > now() - interval '5 minutes'
           )
+  ),
+  elegidos AS (
+    SELECT c.id
+    FROM public.hermes_chat c
+    WHERE c.id IN (SELECT id FROM candidatos WHERE puesto = 1)
     ORDER BY c.creado_en, c.id
     -- Dos workers a la vez reciben mensajes distintos, nunca el mismo.
     FOR UPDATE SKIP LOCKED
