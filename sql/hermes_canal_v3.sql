@@ -46,10 +46,19 @@ ALTER TABLE public.hermes_chat
   ADD CONSTRAINT hermes_chat_estado_check
   CHECK (estado IN ('pendiente', 'procesando', 'respondido', 'error'));
 
--- Las filas que ya existen. Las de Hermes nacen respondidas: son respuestas.
+-- Las filas que ya existen. Las de Hermes son respuestas: nacen cerradas.
+--
+-- La primera versión de este relleno se dejó fuera 39 filas. Filtraba por
+-- `estado IS NULL OR (respondido AND estado = 'pendiente')`, y las
+-- respuestas de Hermes nunca tuvieron `respondido = true` —son respuestas,
+-- no preguntas— así que no entraban y se quedaban con el 'pendiente' por
+-- defecto. No rompía nada, porque chat_tomar() y chat_pendientes() filtran
+-- por rol='usuario'; pero era un dato falso esperando a que alguien
+-- consultara por estado sin filtrar por rol.
 UPDATE public.hermes_chat
-SET estado = CASE WHEN rol = 'hermes' OR respondido THEN 'respondido' ELSE 'pendiente' END
-WHERE estado IS NULL OR (respondido AND estado = 'pendiente');
+SET estado = 'respondido'
+WHERE estado <> 'respondido'
+  AND (rol = 'hermes' OR respondido);
 
 -- La clave de conversación es fija por tenant (contrato §5). Para lo viejo
 -- se deduce; para lo nuevo la manda hermes_escribir().
