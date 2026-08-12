@@ -617,6 +617,59 @@ export default function JarvisAdminAssistant() {
     setLastMessage('');
   };
 
+  // Cambiar de canal es cambiar de interlocutor, no de voz: se corta lo que
+  // estuviera pasando —la voz sonando, el micrófono abierto, la espera de la
+  // respuesta anterior—. Sin esto, el "pensando" de Hermes se queda girando
+  // encima de la conversación de Jarvis, que no ha preguntado nada.
+  //
+  // Lo que NO se cancela es el mensaje que ya salió: sigue en la cola y
+  // Hermes lo va a contestar. Su respuesta aparece en su canal cuando vuelvas.
+  const cambiarCanal = (nuevo) => {
+    if (nuevo === canal) return;
+    interrumpir();
+    setError('');
+    setAgenteQueContesto(undefined);
+    setCanal(nuevo);
+  };
+
+  // El selector, en los dos sentidos y siempre a la vista.
+  //
+  // Antes solo existía el paso a Jarvis, y SOLO si Hermes estaba caído: con
+  // Hermes conectado no había forma de elegir al otro aunque llevara dos
+  // minutos pensando. Y en modo voz no había ninguno, que es donde más falta
+  // hace — ahí no hay barra de chat a la que volver.
+  const selectorCanal = () => (
+    <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-cyan-300/20 bg-slate-900/70 p-0.5">
+      <button
+        type="button"
+        onClick={() => cambiarCanal('hermes')}
+        title={hermesVivo === false
+          ? `${nombreEmpresa} no está dando señal`
+          : `${nombreEmpresa} · con su memoria de las otras conversaciones`}
+        className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold transition ${
+          canal === 'hermes' ? 'bg-emerald-400/20 text-emerald-200' : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        {/* El punto dice si su servidor responde, se esté hablando con él o
+            no. Estando en Jarvis también importa: es como se ve que ya volvió. */}
+        <span className={`h-1.5 w-1.5 rounded-full ${
+          hermesVivo === false ? 'bg-amber-400' : hermesVivo ? 'bg-emerald-400' : 'bg-slate-500'
+        }`} />
+        {nombreEmpresa}
+      </button>
+      <button
+        type="button"
+        onClick={() => cambiarCanal('local')}
+        title={`${nombreSistema} · el asistente de MotoFlow, contesta al instante`}
+        className={`rounded-full px-2 py-0.5 text-[10px] font-bold transition ${
+          canal === 'local' ? 'bg-cyan-400/20 text-cyan-100' : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        {nombreSistema}
+      </button>
+    </div>
+  );
+
   const probar = () => {
     callar();
     hablar(agenteActivo?.saludo || 'Sistemas en línea. A sus órdenes.', {
@@ -1125,34 +1178,19 @@ export default function JarvisAdminAssistant() {
                 de conversaciones anteriores. Decía "memoria de Telegram" y
                 se leía como si los dos canales fueran el mismo. No lo son. */}
             <div className="flex items-center gap-2 border-b border-cyan-300/10 px-3 py-1.5 text-[11px]">
-              {canal === 'hermes' && hermesVivo && (
-                <span className="flex items-center gap-1 text-emerald-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  {nombreEmpresa} conectado · con su memoria
+              {selectorCanal()}
+              {canal === 'hermes' ? (
+                hermesVivo === false ? (
+                  <span className="truncate text-amber-300">sin señal de su servidor</span>
+                ) : hermesVivo ? (
+                  <span className="truncate text-emerald-300/80">con su memoria</span>
+                ) : (
+                  <span className="truncate text-slate-400">comprobando…</span>
+                )
+              ) : (
+                <span className="truncate text-cyan-200/60">
+                  asistente de MotoFlow, no es {nombreEmpresa}
                 </span>
-              )}
-              {canal === 'hermes' && hermesVivo === false && (
-                <>
-                  <span className="flex items-center gap-1 text-amber-300">
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                    {nombreEmpresa} no está conectado
-                  </span>
-                  <button type="button" onClick={() => setCanal('local')}
-                    className="ml-auto rounded border border-cyan-300/30 px-1.5 py-0.5 text-cyan-200/80 hover:text-cyan-100">
-                    Hablar con {nombreSistema}
-                  </button>
-                </>
-              )}
-              {canal === 'local' && (
-                <>
-                  <span className="text-cyan-200/60">
-                    {nombreSistema} · asistente de MotoFlow, no es {nombreEmpresa}
-                  </span>
-                  <button type="button" onClick={() => setCanal('hermes')}
-                    className="ml-auto rounded border border-emerald-300/30 px-1.5 py-0.5 text-emerald-200/80 hover:text-emerald-100">
-                    Volver a {nombreEmpresa}
-                  </button>
-                </>
               )}
             </div>
 
@@ -1304,8 +1342,15 @@ export default function JarvisAdminAssistant() {
             className="pointer-events-auto fixed inset-0 z-[120] flex flex-col items-center justify-center gap-8 bg-slate-950/97 px-6 backdrop-blur-2xl"
             style={{ animation: 'orbe-entra 260ms ease-out' }}
           >
-            <div className="absolute top-5 left-0 right-0 text-center text-[11px] uppercase tracking-[0.3em] text-cyan-200/40">
-              {nombreAgente}
+            {/* En pantalla completa el nombre no basta: hay que poder cambiar
+                de agente sin salir del modo voz. Es justo donde más falta hace
+                —si el de la empresa tarda, aquí no hay barra de chat a la que
+                volver— y donde antes no había ningún selector. */}
+            <div className="absolute top-5 left-0 right-0 flex flex-col items-center gap-2">
+              <span className="text-[11px] uppercase tracking-[0.3em] text-cyan-200/40">
+                {nombreAgente}
+              </span>
+              {selectorCanal()}
             </div>
 
             {/* La esfera. El tamaño y el ritmo dicen el estado sin una sola
