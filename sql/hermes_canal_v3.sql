@@ -349,10 +349,35 @@ REVOKE ALL ON FUNCTION hermes.chat_responder(bigint, text, jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION hermes.chat_responder(bigint, text, jsonb) TO hermes_readonly;
 
 -- ------------------------------------------------------------
+-- 7b. LA VERSIÓN DE DOS ARGUMENTOS
+-- ------------------------------------------------------------
+-- Existe hermes.chat_responder(bigint, text) desde antes. Si se dejara
+-- como estaba seguiría apuntando a la implementación vieja, sin
+-- idempotencia: bastaría con que el plugin llamara sin `acciones` para
+-- saltarse el contrato entero y volver a duplicar burbujas.
+-- Ahora delega en la buena.
+CREATE OR REPLACE FUNCTION hermes.chat_responder(p_mensaje_id bigint, p_texto text)
+RETURNS json
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$ SELECT hermes.chat_responder(p_mensaje_id, p_texto, NULL::jsonb); $$;
+
+REVOKE ALL ON FUNCTION hermes.chat_responder(bigint, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION hermes.chat_responder(bigint, text) TO hermes_readonly;
+
+-- ------------------------------------------------------------
 -- 8. chat_pendientes() — mirar la cola, no tomarla
 -- ------------------------------------------------------------
 -- Gana columnas, no pierde ninguna ni cambia el orden de las que ya
 -- devolvía: un plugin que lea por nombre no se entera.
+--
+-- Hay que BORRARLA primero: CREATE OR REPLACE no puede cambiar el tipo de
+-- retorno de una función que ya existe, y añadir columnas de salida lo
+-- cambia. Va dentro de la transacción, así que no hay instante en que la
+-- función no exista para nadie.
+DROP FUNCTION IF EXISTS hermes.chat_pendientes(integer);
+
 CREATE OR REPLACE FUNCTION hermes.chat_pendientes(p_limite integer DEFAULT 10)
 RETURNS TABLE (
   id bigint, texto text, pantalla jsonb, creado_en timestamptz,
@@ -379,6 +404,11 @@ $$;
 -- ------------------------------------------------------------
 -- 9. ESCRIBIR, CON CLAVE DE CONVERSACIÓN Y ORIGEN  (contrato §13)
 -- ------------------------------------------------------------
+-- La versión de dos argumentos se retira. Si convivieran, una llamada con
+-- dos argumentos sería ambigua y PostgREST no sabría cuál elegir: la
+-- pantalla dejaría de poder escribir con un error que no señala aquí.
+DROP FUNCTION IF EXISTS public.hermes_escribir(text, jsonb);
+
 CREATE OR REPLACE FUNCTION public.hermes_escribir(
   p_texto text,
   p_pantalla jsonb DEFAULT NULL::jsonb,
