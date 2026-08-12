@@ -91,6 +91,12 @@ BEGIN
   RETURN json_build_object('ok', true);
 END $function$;
 
+-- La sobrecarga de dos argumentos NO se restaura, aunque existiera antes.
+-- Convivía con la de tres y hacía ambigua cualquier llamada de dos
+-- argumentos (42725: is not unique). Volver a ponerla sería restaurar una
+-- mina, no un comportamiento: la de tres atiende esas llamadas igual
+-- gracias a su DEFAULT.
+
 CREATE OR REPLACE FUNCTION public.hermes_escribir(p_texto text, p_pantalla jsonb DEFAULT NULL::jsonb)
 RETURNS json
 LANGUAGE plpgsql

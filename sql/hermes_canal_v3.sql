@@ -349,22 +349,21 @@ REVOKE ALL ON FUNCTION hermes.chat_responder(bigint, text, jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION hermes.chat_responder(bigint, text, jsonb) TO hermes_readonly;
 
 -- ------------------------------------------------------------
--- 7b. LA VERSIÓN DE DOS ARGUMENTOS
+-- 7b. LA VERSIÓN DE DOS ARGUMENTOS SOBRA
 -- ------------------------------------------------------------
--- Existe hermes.chat_responder(bigint, text) desde antes. Si se dejara
--- como estaba seguiría apuntando a la implementación vieja, sin
--- idempotencia: bastaría con que el plugin llamara sin `acciones` para
--- saltarse el contrato entero y volver a duplicar burbujas.
--- Ahora delega en la buena.
-CREATE OR REPLACE FUNCTION hermes.chat_responder(p_mensaje_id bigint, p_texto text)
-RETURNS json
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$ SELECT hermes.chat_responder(p_mensaje_id, p_texto, NULL::jsonb); $$;
-
-REVOKE ALL ON FUNCTION hermes.chat_responder(bigint, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION hermes.chat_responder(bigint, text) TO hermes_readonly;
+-- Existían las dos: chat_responder(bigint, text) y chat_responder(bigint,
+-- text, jsonb DEFAULT NULL). Y eso ya estaba roto ANTES de esta migración:
+-- una llamada con dos argumentos encaja en las dos y Postgres responde
+--
+--   42725: function hermes.chat_responder(bigint, unknown) is not unique
+--
+-- Nadie lo había notado porque el plugin siempre llama con tres. Pero era
+-- una mina: el día que alguien llamara sin `acciones`, el canal se caía
+-- con un error que no dice dónde está el problema.
+--
+-- Se queda la de tres, que con su DEFAULT atiende igual las llamadas de
+-- dos argumentos. Una sola función, ninguna ambigüedad.
+DROP FUNCTION IF EXISTS hermes.chat_responder(bigint, text);
 
 -- ------------------------------------------------------------
 -- 8. chat_pendientes() — mirar la cola, no tomarla
