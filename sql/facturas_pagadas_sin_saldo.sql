@@ -16,10 +16,19 @@
 -- gestion_por_cobrar_real.sql. Mientras esos 12 arrastren saldo, cualquier
 -- reporte que sume cuentas por cobrar cuenta RD$4,406 que no existen.
 --
--- >>> ALCANCE <<<
--- Hoy solo ocurre en Repuestos Morla (12 facturas). La condición se deja
--- general —PAGADA con pendiente— porque la regla vale para cualquier
--- empresa, no porque haya más casos.
+-- >>> ALCANCE, Y POR QUÉ NO MUEVE NINGÚN CUADRE <<<
+-- Solo ocurre en Repuestos Morla (12 facturas). Ninguna otra empresa tiene
+-- una sola factura en ese estado. La condición se deja general —PAGADA con
+-- pendiente— porque la regla vale para cualquiera, no porque haya más casos.
+--
+-- Y las 12 son viejas: de julio-2025 a marzo-2026, la más reciente el
+-- 12/03/2026. Del mes en curso, ninguna. De hoy, ninguna. Los cuadres de
+-- caja además viven en `cierres_caja` con sus totales ya escritos —efectivo
+-- en caja, diferencia, desglose—: son una foto firmada, no un cálculo que
+-- se rehaga al cambiar una factura de hace cinco meses.
+--
+-- Por si acaso, el paso 0b se planta si alguna vez apareciera una del mes
+-- en curso.
 --
 -- >>> LO QUE ESTE ARCHIVO NO TOCA <<<
 -- Las 3 facturas de contado que quedaron PENDIENTE (#1, #2 y #3 del 6 y 7
@@ -36,21 +45,73 @@ BEGIN;
 -- ------------------------------------------------------------
 -- Un trigger de UPDATE en facturas podría recalcular balances de clientes
 -- o kardex al pasar por aquí, y eso ya no sería una corrección de un campo
--- suelto. Hoy no hay ninguno; si mañana lo hay, esto se para en vez de
--- enterarse después.
+-- suelto.
+--
+-- La primera versión de este freno abortaba ante CUALQUIER trigger de
+-- UPDATE, y abortó: existe `update_facturas_updated_at`, que no estaba
+-- declarado en el repo. Rendirse ante el nombre no sirve —ni para dejarlo
+-- pasar ni para pararlo—, así que ahora se le mira el cuerpo.
+--
+-- La regla: un trigger que solo sella una marca de tiempo no lee ni
+-- escribe nada. Si su código menciona una consulta, una escritura, o
+-- alguno de los campos que esta corrección toca, no es un sello y hay que
+-- leerlo a mano antes de seguir.
 DO $$
-DECLARE v_trg text;
+DECLARE
+  r        record;
+  v_malos  text := '';
+  v_vistos text := '';
 BEGIN
-  SELECT string_agg(t.tgname, ', ') INTO v_trg
-  FROM pg_trigger t
-  WHERE t.tgrelid = 'public.facturas'::regclass
-    AND NOT t.tgisinternal
-    AND (t.tgtype & 16) <> 0;          -- 16 = el bit de UPDATE
+  FOR r IN
+    SELECT t.tgname, p.prosrc
+    FROM pg_trigger t
+    JOIN pg_proc p ON p.oid = t.tgfoid
+    WHERE t.tgrelid = 'public.facturas'::regclass
+      AND NOT t.tgisinternal
+      AND (t.tgtype & 16) <> 0          -- 16 = el bit de UPDATE
+  LOOP
+    v_vistos := v_vistos || r.tgname || ' ';
+    IF r.prosrc ~* '\m(insert|update|delete|perform|select)\M'
+       OR r.prosrc ~* '(monto_pendiente|estado|balance)' THEN
+      v_malos := v_malos || r.tgname || ' ';
+    END IF;
+  END LOOP;
 
-  IF v_trg IS NOT NULL THEN
+  IF v_malos <> '' THEN
     RAISE EXCEPTION
-      'Hay triggers de UPDATE en facturas (%). Míralos antes de correr esto: si recalculan balances, la corrección deja de ser inocente.',
-      v_trg;
+      'Estos triggers de UPDATE en facturas hacen algo más que sellar la fecha: %. Léelos antes de seguir.',
+      btrim(v_malos);
+  END IF;
+
+  IF v_vistos <> '' THEN
+    RAISE NOTICE 'Triggers de UPDATE revisados y limpios (solo sellan fecha): %', btrim(v_vistos);
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------
+-- 0b. QUE NO SE MUEVA NINGÚN CUADRE
+-- ------------------------------------------------------------
+-- `cierres_caja` guarda totales cerrados —efectivo en caja, diferencia,
+-- desglose—: es una foto firmada, no un cálculo que se rehaga. Aun así, si
+-- alguna de las facturas a corregir cayera dentro de un día ya cuadrado,
+-- alguien podría comparar el papel con la pantalla y encontrar una
+-- diferencia sin explicación.
+--
+-- Hoy las 12 son de julio-2025 a marzo-2026 y ninguna es del mes en curso,
+-- así que esto no debería saltar nunca. Está para el día que sí.
+DO $$
+DECLARE v_n int;
+BEGIN
+  SELECT count(*) INTO v_n
+  FROM public.facturas f
+  WHERE f.estado = 'PAGADA'
+    AND COALESCE(f.monto_pendiente, 0) > 0
+    AND f.fecha >= date_trunc('month', now());
+
+  IF v_n > 0 THEN
+    RAISE EXCEPTION
+      'Hay % factura(s) a corregir DEL MES EN CURSO. Míralas una por una antes de tocarlas: pueden estar dentro de un cuadre ya cerrado.',
+      v_n;
   END IF;
 END $$;
 
