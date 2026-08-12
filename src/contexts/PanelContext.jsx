@@ -54,6 +54,7 @@ import GruposEquivalentesPage from '@/pages/GruposEquivalentesPage';
 import AdminDashboard from '@/pages/Admin/AdminDashboard';
 import AICeoPage from '@/pages/AICeoPage';
 import GestionEmpresarialPage from '@/pages/GestionEmpresarialPage';
+import EquipoIAPage from '@/pages/EquipoIAPage';
 import PlanesPage from '@/pages/PlanesPage';
 import WhatsAppCrmPage from '@/pages/WhatsAppCrmPage';
 import GpsDashboardPage from '@/pages/gps/GpsDashboardPage';
@@ -152,6 +153,9 @@ const componentMapping = {
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
   'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MOTOFLOW IA CEO' },
   'gestion-empresarial': { component: () => <Protected module="gestion-empresarial"><GestionEmpresarialPage /></Protected>, icon: Brain, name: 'Gestión Empresarial IA' },
+  // El permiso real vive en la base (public.equipo_ia_permitido). Aquí solo
+  // se registra el panel: la propia página enseña "es del dueño" si no toca.
+  'equipo-ia': { component: () => <EquipoIAPage />, icon: Brain, name: 'Equipo IA' },
   'whatsapp-crm': { component: () => <Protected module="whatsapp-crm"><PlanGate nombre="Sales Hub / CRM"><WhatsAppCrmPage /></PlanGate></Protected>, icon: MessageCircle, name: 'Sales Hub' },
   'seguimientos-hoy': { component: () => <Protected module="clientes"><SeguimientosHoyPage /></Protected>, icon: CalendarClock, name: 'Seguimientos de Hoy' },
   'gps-dashboard': { component: () => <Protected module="gps-dashboard"><GpsDashboardPage /></Protected>, icon: RadioTower, name: 'GPS Dashboard' },

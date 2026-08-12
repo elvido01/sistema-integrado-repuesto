@@ -40,6 +40,7 @@ import {
   PiggyBank,
   Landmark,
   TrendingUp,
+  Bot,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -73,6 +74,13 @@ const navItems = [
       // este submódulo (el Dashboard IA sigue siendo exclusivo de Morla).
       { title: 'Gestión Empresarial IA', id: 'gestion-empresarial', icon: TrendingUp,
         tenantOnly: ['00000000-0000-0000-0000-000000000001', '766fe3d6-6885-4f2b-b2cc-1a91db696fb4'] },
+      // Equipo IA: del dueño, no de un puesto. Por eso va por correo y no
+      // por rol — un admin nuevo mañana no debería heredarlo sin querer.
+      // Esto solo lo ESCONDE; quien manda es public.equipo_ia_permitido()
+      // en la base, que es donde una comprobación cuenta.
+      { title: 'Equipo IA', id: 'equipo-ia', icon: Bot,
+        tenantOnly: '00000000-0000-0000-0000-000000000001',
+        emailOnly: ['elvidocaminero@gmail.com', 'admin@repuestosmorla.com'] },
     ],
   },
   {
@@ -419,6 +427,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             if (empresa?.solo_consulta && ['pedidos', 'cotizaciones', 'cotizaciones-magna'].includes(sub.id)) return false;
             if (sub.tenantOnly && !(Array.isArray(sub.tenantOnly) ? sub.tenantOnly.includes(tenantId) : sub.tenantOnly === tenantId)) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
+            // Módulos de una persona concreta, no de un rol (ej. Equipo IA).
+            if (sub.emailOnly && !sub.emailOnly.includes((user?.email || '').toLowerCase())) return false;
             if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
             // módulos por tipo de negocio (ej. Documentos); tenantOr = tenants
             // extra que también lo ven aunque no sean de ese tipo (Caminero)
