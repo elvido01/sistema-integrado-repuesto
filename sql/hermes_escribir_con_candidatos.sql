@@ -25,8 +25,14 @@
 --
 -- >>> POR QUÉ SOLO CON PALABRAS DE COMPRA <<<
 -- Buscar en todo el catálogo por cada "hola" sería pagar un segundo por
--- nada. El disparador es estrecho a propósito: si no acierta, Hermes
--- consulta como hasta ahora y no se pierde nada.
+-- nada. Pero el disparador NO se ajusta fino: un falso positivo cuesta un
+-- segundo y unos candidatos que el agente ignora; un falso negativo
+-- cuesta el minuto entero que veníamos pagando. Ante la duda, dispara.
+--
+-- La primera versión llevaba "tienes" y "tienen" pero no "tenemos", y la
+-- frase que originó todo esto —"tenemos motul 7100"— no disparaba. Por
+-- eso ahora va por raíces (tien/teng/tenem) y por eso la verificación
+-- del final prueba dieciséis frases reales en vez de una.
 --
 -- Idempotente / re-ejecutable.
 -- =====================================================================
@@ -76,7 +82,7 @@ BEGIN
   -- solo si la frase pide precio o disponibilidad. El resto de preguntas
   -- —"cómo va el día", "quién soy"— no tocan el catálogo.
   IF v_tenant = '00000000-0000-0000-0000-000000000001'::uuid
-     AND v_texto ~* '(precio|costo|cuánto|cuanto|vale|cotiz|tienes|tienen|hay |queda|disponib|existencia|stock|busca|consigue|vend)'
+     AND v_texto ~* '(precio|costo|cuánto|cuanto|vale|cotiz|tien|teng|tenem|hay |queda|disponib|existencia|stock|inventario|busca|búsca|consigue|vend|cobr|factur)'
   THEN
     BEGIN
       SELECT jsonb_agg(to_jsonb(b))
@@ -128,7 +134,30 @@ NOTIFY pgrst, 'reload schema';
 SELECT codigo, descripcion, precio, existencia
 FROM hermes.buscar_producto('tenemos motul 7100', 6);
 
--- Y que el disparador distingue: la primera debe dar true, la segunda false.
+-- Y que el disparador acierta en las dieciséis. La columna "correcto" debe
+-- ser true en TODAS las filas; si alguna sale false, ahí está el agujero.
+WITH casos(frase, deberia) AS (VALUES
+  ('tenemos motul 7100',            true),
+  ('tienes careta de platina',      true),
+  ('cotizame el guardalodo negro',  true),
+  ('cuanto vale la bomba de freno', true),
+  ('¿tengo aceite 20w50?',          true),
+  ('que precio tiene la colita',    true),
+  ('hay disponible el amortiguador',true),
+  ('quedan tambores de cg200',      true),
+  ('busca una pastilla de freno',   true),
+  ('a como lo vendes',              true),
+  ('hola cómo va el día',           false),
+  ('cual es tu nombre',             false),
+  ('que sabes de elvido',           false),
+  ('abre el modulo de ventas',      false),
+  ('como voy con los cierres de caja', false),
+  ('buenos dias',                   false)
+)
 SELECT
-  'tenemos motul 7100' ~* '(precio|costo|cuánto|cuanto|vale|cotiz|tienes|tienen|hay |queda|disponib|existencia|stock|busca|consigue|vend)' AS pregunta_de_producto,
-  'hola cómo va el día'  ~* '(precio|costo|cuánto|cuanto|vale|cotiz|tienes|tienen|hay |queda|disponib|existencia|stock|busca|consigue|vend)' AS charla;
+  frase,
+  deberia,
+  (frase ~* '(precio|costo|cuánto|cuanto|vale|cotiz|tien|teng|tenem|hay |queda|disponib|existencia|stock|inventario|busca|búsca|consigue|vend|cobr|factur)') AS dispara,
+  (frase ~* '(precio|costo|cuánto|cuanto|vale|cotiz|tien|teng|tenem|hay |queda|disponib|existencia|stock|inventario|busca|búsca|consigue|vend|cobr|factur)') = deberia AS correcto
+FROM casos
+ORDER BY correcto, deberia DESC;
