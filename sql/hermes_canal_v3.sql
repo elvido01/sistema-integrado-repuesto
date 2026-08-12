@@ -173,7 +173,10 @@ BEGIN
   elegidos AS (
     SELECT c.id
     FROM public.hermes_chat c
-    WHERE c.id IN (SELECT id FROM candidatos WHERE puesto = 1)
+    -- `k.id` y no `id` a secas: la función devuelve RETURNS TABLE (id …),
+    -- así que `id` también es una variable de PL/pgSQL y sin calificar
+    -- Postgres no sabe a cuál de las dos te refieres.
+    WHERE c.id IN (SELECT k.id FROM candidatos k WHERE k.puesto = 1)
     ORDER BY c.creado_en, c.id
     -- Dos workers a la vez reciben mensajes distintos, nunca el mismo.
     FOR UPDATE SKIP LOCKED
