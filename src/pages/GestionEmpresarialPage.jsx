@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -138,6 +139,11 @@ const FilaCumplimiento = ({ icon: Icon, etiqueta, nota, cant, debia, pagado, pct
 
 const GestionEmpresarialPage = () => {
   const { toast } = useToast();
+  const { empresa } = useAuth();
+  // Una tienda de repuestos NO tiene cartera de préstamos. Lo que vende
+  // fiado es una cuenta por cobrar de toda la vida, no una venta a la que
+  // se le olvidó el préstamo. Ver la nota junto a la línea.
+  const financia = empresa?.tipo_negocio === 'dealer' || empresa?.tipo_negocio === 'financiera';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [falta, setFalta] = useState(false);   // el SQL aún no se ha corrido
@@ -290,27 +296,39 @@ const GestionEmpresarialPage = () => {
                     nota={`${pos.cartera_cantidad || 0} activos · ${money0(pos.cartera_capital)} capital + ${money0(pos.cartera_interes)} interés${
                       Number(pos.cartera_mora) > 0 ? ` + ${money0(pos.cartera_mora)} mora` : ''}`} />
                 )}
-                {/* Caminero financia TODO por terceros: lo que se vende a
-                    credito pasa a la cartera de MotoPrestamos. Si algo queda
-                    aqui es una venta que NO genero su prestamo — ya paso con
-                    las facturas 12 y 17. Por eso es alerta, no un activo mas,
-                    y cuando esta en cero desaparece. */}
+                {/* La misma cifra significa dos cosas distintas segun quien
+                    la mire, y por eso se pinta de dos formas.
+
+                    En un DEALER o una FINANCIERA todo lo que se vende a
+                    credito pasa a la cartera. Si algo queda aqui es una venta
+                    que NO genero su prestamo — ya paso con las facturas 12 y
+                    17 — y entonces es una alerta, no un activo.
+
+                    En una tienda de REPUESTOS no hay cartera ninguna: Morla
+                    tiene cero prestamos. Lo que se vende fiado en el mostrador
+                    es una cuenta por cobrar normal, y llamarla "deberia estar
+                    en la cartera" mandaba a buscar un error que no existe. */}
                 {Number(pos.por_cobrar) > 0 && (
-                  <div className="flex items-start gap-2 py-1.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm text-slate-800 leading-tight">
-                        Ventas a crédito sin préstamo
-                        {pos.por_cobrar_cant ? <span className="text-slate-400 font-normal"> · {pos.por_cobrar_cant}</span> : null}
+                  financia ? (
+                    <div className="flex items-start gap-2 py-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm text-slate-800 leading-tight">
+                          Ventas a crédito sin préstamo
+                          {pos.por_cobrar_cant ? <span className="text-slate-400 font-normal"> · {pos.por_cobrar_cant}</span> : null}
+                        </div>
+                        <div className="text-[10px] text-amber-600">
+                          deberían estar en la cartera — revisar
+                        </div>
                       </div>
-                      <div className="text-[10px] text-amber-600">
-                        deberían estar en la cartera — revisar
+                      <div className="text-sm font-semibold whitespace-nowrap text-amber-600">
+                        {money0(pos.por_cobrar)}
                       </div>
                     </div>
-                    <div className="text-sm font-semibold whitespace-nowrap text-amber-600">
-                      {money0(pos.por_cobrar)}
-                    </div>
-                  </div>
+                  ) : (
+                    <FilaPos icon={Receipt} etiqueta="Por cobrar a clientes" monto={pos.por_cobrar}
+                      nota={`${pos.por_cobrar_cant || 0} facturas fiadas sin saldar`} />
+                  )
                 )}
                 <div className="flex items-center justify-between pt-2 mt-1 border-t font-bold">
                   <span className="text-sm">Total</span>
