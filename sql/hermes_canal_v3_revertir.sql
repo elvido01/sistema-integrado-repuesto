@@ -27,6 +27,12 @@ BEGIN;
 -- ------------------------------------------------------------
 -- 1. LAS FUNCIONES VIEJAS, TAL CUAL ESTABAN
 -- ------------------------------------------------------------
+-- Hay que borrarla antes: la versión de v3 devuelve tres columnas más, y
+-- CREATE OR REPLACE no puede cambiar el tipo de retorno ni para añadir ni
+-- para quitar. Va dentro de la transacción, así que no hay ningún momento
+-- en que la función no exista para nadie.
+DROP FUNCTION IF EXISTS hermes.chat_pendientes(integer);
+
 CREATE OR REPLACE FUNCTION hermes.chat_pendientes(p_limite integer DEFAULT 10)
 RETURNS TABLE (
   id bigint, texto text, pantalla jsonb, creado_en timestamptz,
