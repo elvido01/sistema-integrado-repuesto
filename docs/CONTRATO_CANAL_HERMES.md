@@ -1,15 +1,19 @@
 # Contrato del canal MotoFlow ↔ Hermes
 
-> **Versión 2** · 2026-08-12 · Estados, eventos, idempotencia y orden.
+> **Versión 3** · 2026-08-12 · Estados, eventos, idempotencia, orden y
+> conversación compartida entre canales.
 >
 > Esto es lo que **las dos partes** pueden dar por cierto. MotoFlow cumple su
 > mitad; el plugin de Hermes, la suya. Lo que no esté aquí no está acordado,
 > y lo que esté aquí no se cambia sin subir la versión.
 >
-> **Cambios de v1 a v2** — cuatro estados en vez de seis (`consultando` y
-> `redactando` pasan a ser *detalle*, no estado); orden garantizado por
-> conversación; una sola conversación en vuelo por `session_key`; métricas
-> partidas entre lo que mide cada lado.
+> **v1 → v2** — cuatro estados en vez de seis (`consultando` y `redactando`
+> pasan a ser *detalle*); orden garantizado por conversación; una sola
+> conversación en vuelo; métricas partidas entre lo que mide cada lado.
+>
+> **v2 → v3** — `conversation_key` pasa a llamarse `conversation_key` y deja de
+> ser de MotoFlow: la comparten WebUI, MotoFlow y WhatsApp. Se añade el
+> origen real de cada mensaje (§13), que nunca se falsifica.
 
 ---
 
@@ -129,7 +133,7 @@ es una opinión.
 
 ## 3. Orden y exclusión — una conversación a la vez
 
-**La regla:** para un mismo `session_key` nunca hay más de un mensaje en
+**La regla:** para un mismo `conversation_key` nunca hay más de un mensaje en
 `procesando`. Los siguientes esperan, en orden de llegada.
 
 Sin esto, dos mensajes seguidos —*"cotízame la careta"* y *"y el
@@ -142,7 +146,7 @@ La operación de tomar trabajo. **Reemplaza a `chat_pendientes()` para el
 trabajo real**; `chat_pendientes()` se queda como consulta de solo lectura,
 para mirar la cola sin tocarla.
 
-Devuelve las mismas columnas que `chat_pendientes()` más `session_key`,
+Devuelve las mismas columnas que `chat_pendientes()` más `conversation_key`,
 `estado` e `intentos`, y en el mismo acto marca lo devuelto como
 `procesando`, sella `procesando_en` y sube `intentos`.
 
@@ -164,7 +168,7 @@ WHERE c.rol = 'usuario'
   AND c.intentos < 3
   AND NOT EXISTS (
         SELECT 1 FROM public.hermes_chat o
-        WHERE o.session_key = c.session_key
+        WHERE o.conversation_key = c.conversation_key
           AND o.estado = 'procesando'
           AND o.tomado_hace < interval '5 minutes'
       )
@@ -233,15 +237,28 @@ luego salió bien, eso hay que poder verlo después.
 
 ---
 
-## 5. `session_key`
+## 5. `conversation_key`
 
-Cadena que agrupa los mensajes de una conversación. **La genera MotoFlow.**
+Cadena que agrupa los mensajes de una conversación. **No es de MotoFlow**:
+la comparten los tres canales. Ver §13.
 
-- Se crea al abrir el chat y vive en `localStorage`.
-- Sobrevive a recargas y a cerrar y abrir el panel.
-- Se renueva al pulsar *"nueva conversación"* o tras **6 horas** de silencio.
-- Formato `s-<uuid v4>`. Opaco: nadie deduce nada de su contenido.
-- Pertenece a un `tenant_id`. Cruzarlo se rechaza. No es negociable.
+Para Repuestos Morla:
+
+```
+agent:main:morla:tenant:00000000-0000-0000-0000-000000000001
+```
+
+- Es **fija por tenant**, no por sesión de navegador. Sobrevive a recargas,
+  a cerrar el panel, a cambiar de dispositivo y a cambiar de canal.
+- Pertenece a un `tenant_id`, y ese tenant va dentro de la propia clave.
+  Cruzarlo se rechaza. No es negociable.
+- Opaca para quien la consume: se compara, no se interpreta.
+
+*"Nueva conversación"* deja de significar clave nueva y pasa a significar
+**corte de contexto**: se marca un hito en la conversación compartida y
+Hermes deja de arrastrar lo anterior. La clave no cambia; lo que cambia es
+desde dónde lee. Un botón de la pantalla no puede partir en dos una
+conversación que también está viva en WhatsApp.
 
 ---
 
@@ -294,7 +311,9 @@ entera** si se pasa; no es sitio para datos.
 
 ```json
 { "id": 123, "tenant_id": "0000…0001",
-  "session_key": "s-1f2c…", "texto": "tenemos motul 7100" }
+  "conversation_key": "agent:main:morla:tenant:0000…0001",
+  "origin_platform": "motoflow",
+  "texto": "tenemos motul 7100" }
 ```
 
 `texto` recortado a 300 caracteres, solo para priorizar sin ir a la base.
@@ -369,7 +388,7 @@ hermes.buscar_producto(texto, limite [, incluir_inactivos])
 hermes.catalogo_resumen()
 ```
 
-`chat_pendientes()` gana columnas en su salida (`session_key`, `estado`,
+`chat_pendientes()` gana columnas en su salida (`conversation_key`, `estado`,
 `intentos`) pero **no pierde ninguna** ni cambia el orden. Un plugin que lea
 por nombre no se entera.
 
@@ -403,6 +422,97 @@ BEGIN; SET TRANSACTION READ WRITE; SELECT hermes.chat_tomar(1); …; COMMIT;
 | 12 | `pantalla` de 20 KB | Recortado a 8 KB. El mensaje llega igual. |
 | 13 | `NOTIFY` con texto larguísimo | Recortado a 300. La conexión no se cae. |
 | 14 | `NOTIFY` perdido | `chat_tomar()` al arrancar lo recoge igual. |
+| 15 | WebUI → MotoFlow | Lo hablado allá se sabe aquí. Mismo `conversation_key`. |
+| 16 | MotoFlow → WhatsApp | Igual al revés. El origen de cada uno se conserva. |
+| 17 | WhatsApp → WebUI | Igual. Ninguno aparece como si fuera de otro canal. |
+| 18 | Dos canales a la vez | Se procesan en orden, uno espera. Nunca en paralelo. |
+| 19 | Gateway reiniciado | Retoma la conversación entera, no empieza de cero. |
+| 20 | WhatsApp de otro número | Rechazado, aunque comparta tenant. Ni entra ni contamina. |
+| 21 | Cliente del CRM escribe | Va al CRM de ventas. **Nunca** a la conversación del agente. |
+
+---
+
+## 13. Una conversación, tres canales
+
+Elvido le habla a Hermes desde la WebUI, desde MotoFlow y desde su WhatsApp.
+Es **una sola conversación**: lo que preguntó en el mostrador debe seguir
+sabiéndolo cuando siga desde el teléfono.
+
+### Dónde vive el historial
+
+**En Hermes, no en MotoFlow.** `hermes_chat` es el transporte de MotoFlow, no
+el almacén de las tres plataformas. MotoFlow no guarda —ni ve— los mensajes
+de WhatsApp ni los de la WebUI.
+
+Al revés estaría mal: MotoFlow tendría que escribir en su tabla mensajes que
+no ocurrieron en MotoFlow, y eso es exactamente falsificar el origen.
+
+Lo que MotoFlow aporta son dos cosas: **a qué conversación pertenece** su
+mensaje, y **de dónde viene de verdad**.
+
+### El origen, que nunca se falsifica
+
+Tres columnas nuevas, y su regla:
+
+| Columna | Valor desde MotoFlow |
+|---|---|
+| `origin_platform` | `motoflow` — siempre, sin excepción |
+| `origin_chat_id` | El `user_id` de quien escribe |
+| `origin_message_id` | El `id` de esta misma fila |
+
+`conversation_key` responde *"¿de qué venimos hablando?"*. El origen responde
+*"¿por dónde le contesto?"*. **Son cosas distintas y no se deducen una de la
+otra**: dos mensajes de la misma conversación pueden llegar por canales
+distintos con un minuto de diferencia.
+
+Un mensaje escrito en MotoFlow lleva `origin_platform = 'motoflow'` aunque
+Hermes lo conteste teniendo en la cabeza lo que se habló por WhatsApp. La
+respuesta vuelve por donde entró la pregunta.
+
+### La cola es de la conversación, no del canal
+
+La exclusión de §3 pasa a ser por `conversation_key`. Y como la clave es una
+sola para todo Morla, **la consecuencia hay que decirla clara**: si Elvido
+pregunta algo por WhatsApp, un mensaje suyo en MotoFlow espera turno.
+
+Es lo correcto. Una persona con tres pantallas sigue siendo una persona, y
+dos turnos simultáneos de la misma conversación se pisarían el contexto. Pero
+conviene saberlo antes de que pase, no cuando parezca que MotoFlow se colgó.
+
+### El número autorizado
+
+Solo **+1 809-390-5965** puede entrar en esta conversación por WhatsApp.
+
+Y aquí hay un riesgo que hay que nombrar, porque las dos cosas se llaman
+"WhatsApp" y no son la misma: **MotoFlow ya recibe WhatsApp de clientes** por
+`whatsapp-crm-webhook`, y ese tráfico va al CRM de ventas. No tiene nada que
+ver con esta conversación y **no debe rozarla nunca**.
+
+- La conversación del agente es **una persona** —el dueño— desde tres sitios.
+- El CRM son **cientos de clientes** escribiendo a la tienda.
+
+Compartir `tenant_id` no autoriza a nadie. Un mensaje de otro número no entra
+aunque sea del mismo tenant, aunque sea de un empleado, aunque el CRM ya lo
+tenga registrado. La autorización es por número, y la lista tiene un elemento.
+
+### Reparto
+
+| | MotoFlow | Hermes |
+|---|---|---|
+| Emitir `conversation_key` | ✓ | |
+| Declarar el origen real | ✓ | |
+| Campo en `MessageEvent` | | ✓ |
+| Sesión del gateway por `conversation_key` | | ✓ |
+| Historial unificado de los 3 canales | | ✓ |
+| Cola y lock por conversación | ✓ *(en su tabla)* | ✓ *(entre canales)* |
+| Autorización del número de WhatsApp | | ✓ |
+| Responder por el canal de origen | | ✓ |
+
+El lock aparece en las dos columnas y no es duplicado: MotoFlow garantiza el
+orden de **sus** mensajes en `hermes_chat`; Hermes garantiza que no corran dos
+turnos de la misma conversación **vengan del canal que vengan**. El de
+MotoFlow solo, sin el de Hermes, no impide que un mensaje de WhatsApp entre a
+la vez.
 
 ---
 
@@ -411,14 +521,18 @@ BEGIN; SET TRANSACTION READ WRITE; SELECT hermes.chat_tomar(1); …; COMMIT;
 **MotoFlow:** columnas y marcas de tiempo, índice único, `chat_tomar()` con
 FIFO y exclusión, arrendamiento de 5 minutos, `chat_estado()`,
 `chat_error()`, `chat_medir()`, `chat_metricas()`, idempotencia de
-`chat_responder()`, `session_key`, `pantalla` estructurado, suscripción a
-`UPDATE`, estados visibles, *"Hermes sigue trabajando…"*, y las 14 pruebas.
+`chat_responder()`, emitir `conversation_key` y el origen real, `pantalla`
+estructurado, suscripción a `UPDATE`, estados visibles, *"Hermes sigue
+trabajando…"*, y las pruebas 1 a 14 más la 21.
 
-**Hermes:** usar `chat_tomar()` en vez de `chat_pendientes()`, acusar recibo,
-actualizar `estado_detalle` en cada paso, `buscar_producto()` obligatorio
-para precio y existencia, ruta rápida para catálogo y agente completo para
-cotizaciones, no responder dos veces, reportar `chat_medir()`, y llamar a
-`chat_tomar()` al arrancar por si se perdió un aviso.
+**Hermes:** `conversation_key` en `MessageEvent`, sesión del gateway por esa
+clave, historial unificado de los tres canales, lock entre canales,
+autorización del número de WhatsApp, responder por el canal de origen, usar
+`chat_tomar()` en vez de `chat_pendientes()`, acusar recibo, actualizar
+`estado_detalle` en cada paso, `buscar_producto()` obligatorio para precio y
+existencia, ruta rápida para catálogo y agente completo para cotizaciones, no
+responder dos veces, reportar `chat_medir()`, llamar a `chat_tomar()` al
+arrancar, y las pruebas 15 a 20.
 
 **La frontera:** MotoFlow no interpreta lo que Hermes dice; Hermes no escribe
 en las tablas del negocio. Lo único que cruza es esta tabla y estas funciones.
