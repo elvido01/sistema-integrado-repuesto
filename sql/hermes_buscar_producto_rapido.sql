@@ -137,17 +137,32 @@ END $$;
 -- ------------------------------------------------------------
 -- VERIFICACIÓN — con el reloj puesto
 -- ------------------------------------------------------------
--- Antes: 2,582 ms. Si esto no baja de 300, el filtro no está entrando por
--- índice y hay que mirar el plan con EXPLAIN ANALYZE.
-\timing on
+-- El cronómetro va en SQL: \timing es de psql y el editor de Supabase no
+-- lo entiende. Así el número sale como una fila más.
+--
+-- Antes: 2,582 ms la primera, 851 ms la segunda. Si no bajan de 300, el
+-- filtro no está entrando por índice y hay que mirar el plan.
+WITH ini AS (SELECT clock_timestamp() AS t),
+     r   AS (SELECT count(*) AS n FROM hermes.buscar_producto('careta platina 125 bajaj', 6))
+SELECT 'careta platina 125 bajaj' AS busqueda, r.n AS resultados,
+       round(extract(epoch FROM clock_timestamp() - ini.t) * 1000) AS ms,
+       2582 AS ms_antes
+FROM ini, r;
+
+WITH ini AS (SELECT clock_timestamp() AS t),
+     r   AS (SELECT count(*) AS n FROM hermes.buscar_producto('tenemos motul 7100', 6))
+SELECT 'tenemos motul 7100' AS busqueda, r.n AS resultados,
+       round(extract(epoch FROM clock_timestamp() - ini.t) * 1000) AS ms,
+       851 AS ms_antes
+FROM ini, r;
+
+-- Y que sigue encontrando lo mismo que antes: 52JK0442 arriba en la
+-- primera, 784401 con 57 unidades en la segunda.
 SELECT codigo, descripcion, precio, existencia, coincidencias
 FROM hermes.buscar_producto('careta platina 125 bajaj', 6);
 
 SELECT codigo, descripcion, precio, existencia
 FROM hermes.buscar_producto('tenemos motul 7100', 6);
 
--- Y que sigue encontrando lo mismo que antes: 52JK0442 arriba en la
--- primera, 784401 (57 unidades) en la segunda.
---
--- Para ver si usa el índice:
+-- Si siguiera lenta, esto dice por qué:
 -- EXPLAIN ANALYZE SELECT * FROM hermes.buscar_producto('careta platina 125 bajaj', 6);
