@@ -377,16 +377,44 @@ BEGIN
   -- ══════════════════════════════════════════════════════════════════
   -- 21 · El CRM de clientes no roza la conversación del agente
   -- ══════════════════════════════════════════════════════════════════
+  -- La primera versión comparaba textos iguales entre sales_messages y
+  -- hermes_chat, y falló con 6 coincidencias. Ninguna era contaminación:
+  -- Elvido escribió "?" en MotoFlow y seis clientes escribieron "?" por
+  -- WhatsApp en meses distintos. Comparar textos atrapa cualquier "hola",
+  -- "ok" o "?" y no prueba nada.
+  --
+  -- La invariante de verdad es estructural: un mensaje del CRM entraría
+  -- sin usuario de MotoFlow y sin declararse como de MotoFlow. Eso no
+  -- lo produce ninguna coincidencia.
   SELECT count(*)::int INTO n
-  FROM public.sales_messages sm
-  WHERE sm.tenant_id = v_tenant
-    AND EXISTS (SELECT 1 FROM public.hermes_chat hc
-                WHERE hc.texto = sm.message_text AND hc.rol = 'usuario');
+  FROM public.hermes_chat c
+  WHERE c.tenant_id = v_tenant
+    AND c.rol = 'usuario'
+    AND (c.origin_platform IS DISTINCT FROM 'motoflow' OR c.user_id IS NULL);
   v_obt := n::text;
   v_ok := ('0' IS NOT DISTINCT FROM v_obt);
   IF v_ok THEN v_pasan := v_pasan + 1; ELSE v_fallan := v_fallan + 1; END IF;
   v_lineas := v_lineas || (CASE WHEN v_ok THEN '  ok   ' ELSE '  FALLA' END
-    || ' 21 · ' || 'Ningún mensaje del CRM de clientes entró en hermes_chat'
+    || ' 21 · ' || 'Todo lo que hay en hermes_chat se declaró de MotoFlow y tiene usuario'
+    || chr(10) || '         esperaba: ' || '0'
+    || chr(10) || '         obtuvo  : ' || COALESCE(v_obt, '(nulo)'));
+
+  -- Y el cruce temporal: un texto igual DENTRO DE CINCO MINUTOS del
+  -- mensaje del cliente sí sería sospechoso. La casualidad no acierta
+  -- también la hora.
+  SELECT count(*)::int INTO n
+  FROM public.hermes_chat c
+  JOIN public.sales_messages sm
+    ON sm.tenant_id = c.tenant_id
+   AND btrim(sm.message_text) = btrim(c.texto)
+   AND sm.created_at BETWEEN c.creado_en - interval '5 minutes'
+                         AND c.creado_en + interval '5 minutes'
+  WHERE c.tenant_id = v_tenant AND c.rol = 'usuario';
+  v_obt := n::text;
+  v_ok := ('0' IS NOT DISTINCT FROM v_obt);
+  IF v_ok THEN v_pasan := v_pasan + 1; ELSE v_fallan := v_fallan + 1; END IF;
+  v_lineas := v_lineas || (CASE WHEN v_ok THEN '  ok   ' ELSE '  FALLA' END
+    || ' 21 · ' || 'Ningún mensaje del CRM apareció en hermes_chat a la misma hora'
     || chr(10) || '         esperaba: ' || '0'
     || chr(10) || '         obtuvo  : ' || COALESCE(v_obt, '(nulo)'));
 
