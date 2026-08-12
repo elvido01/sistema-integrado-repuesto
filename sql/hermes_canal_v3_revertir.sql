@@ -24,6 +24,18 @@
 
 BEGIN;
 
+-- ╔══════════════════════════════════════════════════════════════════╗
+-- ║  FRENO DE MANO                                                   ║
+-- ║                                                                  ║
+-- ║  Para correr esta reversa, BORRA la línea de abajo.               ║
+-- ║                                                                  ║
+-- ║  Esta es la más cara de correr por accidente: se lleva por        ║
+-- ║  delante estados, intentos, errores, clave de conversación y      ║
+-- ║  origen de TODAS las filas. La de v4 ya se corrió dos veces sin   ║
+-- ║  querer; esta haría bastante más daño.                           ║
+-- ╚══════════════════════════════════════════════════════════════════╝
+DO $$ BEGIN RAISE EXCEPTION 'FRENO DE MANO: esto es la REVERSA de v3 y borra los estados, la clave de conversación y el origen de todas las filas. Si de verdad lo quieres, borra esta línea del archivo.'; END $$;
+
 -- ------------------------------------------------------------
 -- 1. LAS FUNCIONES VIEJAS, TAL CUAL ESTABAN
 -- ------------------------------------------------------------

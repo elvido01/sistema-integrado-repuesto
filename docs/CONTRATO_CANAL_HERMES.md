@@ -1,7 +1,7 @@
 # Contrato del canal MotoFlow ↔ Hermes
 
-> **Versión 3** · 2026-08-12 · Estados, eventos, idempotencia, orden y
-> conversación compartida entre canales.
+> **Versión 4** · 2026-08-12 · Estados, eventos, idempotencia, orden,
+> conversación compartida entre canales, fencing y corte de contexto.
 >
 > Esto es lo que **las dos partes** pueden dar por cierto. MotoFlow cumple su
 > mitad; el plugin de Hermes, la suya. Lo que no esté aquí no está acordado,
@@ -14,6 +14,13 @@
 > **v2 → v3** — `conversation_key` pasa a llamarse `conversation_key` y deja de
 > ser de MotoFlow: la comparten WebUI, MotoFlow y WhatsApp. Se añade el
 > origen real de cada mensaje (§13), que nunca se falsifica.
+>
+> **v3 → v4** — el arrendamiento deja de ser implícito: cada toma reparte un
+> `claim_token` y un `lease_until` que se puede renovar (§14). Y la
+> conversación gana épocas: `conversation_key` sigue siendo una sola para
+> siempre, y "Nueva conversación" avanza un `context_epoch` (§15).
+> **Las firmas de v3 siguen funcionando**; las nuevas son sobrecargas de una
+> aridad más.
 
 ---
 
@@ -429,6 +436,19 @@ BEGIN; SET TRANSACTION READ WRITE; SELECT hermes.chat_tomar(1); …; COMMIT;
 | 19 | Gateway reiniciado | Retoma la conversación entera, no empieza de cero. |
 | 20 | WhatsApp de otro número | Rechazado, aunque comparta tenant. Ni entra ni contamina. |
 | 21 | Cliente del CRM escribe | Va al CRM de ventas. **Nunca** a la conversación del agente. |
+| 22 | Arrendamiento vencido | Vuelve a la cola **con un `claim_token` nuevo**. El viejo deja de valer. |
+| 23 | `chat_renovar()` a tiempo | Estira el arrendamiento. La cola ya no lo rescata. |
+| 24 | Worker antiguo escribe | Rechazado en `chat_estado`, `chat_error` y `chat_responder`. No toca nada. |
+| 25 | Dos workers vivos | Tokens distintos. Solo uno vale a la vez. |
+| 26 | Responde tras vencer, sin relevo | **Se acepta**, con `lease_vencido: true`. Ver §14. |
+| 27 | "Nueva conversación" ×4 | Una sola época nueva. Idempotente. |
+| 28 | Corte de contexto | `conversation_key` **no cambia**. La respuesta se queda en la época de su pregunta. |
+
+Las 1 a 21 están en `sql/hermes_canal_v3_pruebas.sql`; las 22 a 28 en
+`sql/hermes_canal_v4_pruebas.sql`. Las dos son una sola sentencia que termina
+lanzando el informe como excepción, así que **no dejan ni una fila**. La nº 2
+necesita dos conexiones de verdad y vive aparte, en
+`npm run hermes:concurrencia`.
 
 ---
 
@@ -516,23 +536,190 @@ la vez.
 
 ---
 
+## 14. Fencing — quién tiene el mensaje ahora
+
+En v3 el arrendamiento existía pero era **anónimo**: a los cinco minutos el
+mensaje volvía a la cola y otro worker lo tomaba, y el primero no se enteraba.
+Si el primero seguía vivo —lento, no muerto— podía escribir igual. Nada se lo
+impedía.
+
+El daño no es teórico. El peor caso no es la respuesta duplicada, que el
+índice único ya para: es `chat_error()`. El worker viejo cree que falló,
+devuelve el mensaje a `pendiente`, y a partir de ahí la cola cree que está
+libre mientras un worker vivo lo tiene en la mano.
+
+### Las dos columnas
+
+| Columna | Qué es |
+|---|---|
+| `claim_token` | `uuid` nuevo **en cada toma**. Identifica al dueño actual. |
+| `lease_until` | Hasta cuándo vale ese claim. `now() + 5 min` al tomarlo. |
+
+`chat_tomar()` las devuelve. **Guárdalas junto al mensaje**: sin el token no
+se puede usar ninguna de las funciones nuevas.
+
+### La regla, en una frase
+
+> **Manda el token, no el reloj.**
+
+- **El token coincide** → es tuyo. Se acepta **aunque el arrendamiento haya
+  vencido**: si nadie te lo quitó, tu respuesta sigue siendo la buena.
+  `chat_responder()` la acepta y añade `lease_vencido: true` para que quede en
+  los registros.
+- **El token no coincide** → otro se hizo cargo. Se rechaza sin escribir nada
+  y la respuesta trae `abandonar: true`. Para de trabajar en ese mensaje.
+
+Rechazar por reloj tiraría a la basura respuestas correctas por llegar tarde
+—dejando al cliente sin nada para castigar a un worker por ser lento—.
+Rechazar por identidad no tira ninguna.
+
+### Las funciones
+
+```sql
+-- Renovar antes de que venza. Devuelve restan_segundos.
+SELECT hermes.chat_renovar(<id>, '<claim_token>');
+
+-- Reportar progreso Y renovar de paso: decir en qué andas es prueba de vida.
+SELECT hermes.chat_estado(<id>, 'consultando el catálogo', '<claim_token>');
+
+-- Fallar y responder, con fencing.
+SELECT hermes.chat_error(<id>, '<error>', '<claim_token>');
+SELECT hermes.chat_responder(<id>, '<texto>', <acciones>, '<claim_token>');
+
+-- Cuánto dura un arrendamiento, por si cambia.
+SELECT hermes.chat_lease();     -- interval '5 minutes'
+```
+
+`chat_estado()` **con token renueva**; la de dos argumentos no, porque sin
+token no hay forma de saber quién habla. En la práctica, un worker que reporta
+cada pocos segundos nunca pierde su claim.
+
+### Motivos de rechazo
+
+| `motivo` | Qué hacer |
+|---|---|
+| `claim_reemplazado` | **Parar.** Otro worker lo tiene. |
+| `ya_respondido` | Parar. Ya está contestado. |
+| `no_esta_en_proceso` | Parar. El mensaje volvió a la cola; se retomará solo. |
+| `claim_ya_liberado` | Nada. Suele ser tu propio `chat_error()` repetido. |
+| `inexistente` | Id equivocado o de otro tenant. |
+
+Los que hay que obedecer traen `abandonar: true`. Con mirar ese campo basta;
+el `motivo` es para los registros.
+
+Y el orden en que se comprueban no es casual: **primero el estado, después el
+token**. Al revés, un mensaje que ya volvió a la cola —y que por eso tiene el
+`claim_token` en `NULL`— se reportaría como `claim_reemplazado`, mandando a
+buscar un worker rival que no existe.
+
+### Las firmas viejas siguen valiendo
+
+`chat_estado(id, detalle)`, `chat_error(id, error)` y
+`chat_responder(id, texto, acciones)` funcionan igual que en v3, **sin
+fencing**. Se puede migrar función por función.
+
+Y una advertencia para quien toque este SQL: **las sobrecargas nuevas no
+llevan `DEFAULT` en el token, a propósito**. Con un `DEFAULT NULL`, una
+llamada de tres argumentos encajaría a la vez en la vieja y en la nueva, y
+Postgres responde `42725: is not unique`. Es la misma mina que v3 desactivó al
+borrar `chat_responder(bigint, text)`. Sin `DEFAULT`, cada aridad tiene una
+sola candidata.
+
+---
+
+## 15. Corte de contexto — "Nueva conversación"
+
+`conversation_key` es **fija por tenant y no cambia nunca**. Es lo que
+mantiene unidas la WebUI, MotoFlow y el WhatsApp autorizado (§13). Si el botón
+"Nueva conversación" emitiera una clave nueva, partiría en dos una
+conversación que también está viva en otros dos canales — y nadie pidió eso.
+
+Lo que avanza es `context_epoch`.
+
+| | Antes del corte | Después |
+|---|---|---|
+| `conversation_key` | `agent:main:morla:tenant:0000…0001` | **la misma** |
+| `context_epoch` | 3 | 4 |
+| Los mensajes viejos | están | **siguen estando** |
+
+**No se borra nada.** La historia entera se conserva en `hermes_chat` con su
+texto y su hora. Lo único que cambia es qué tramo se le da de contexto al
+modelo.
+
+### Dónde vive la época
+
+En `public.hermes_conversaciones` — una fila por conversación. Hace falta una
+tabla y no basta con `max(context_epoch)` de los mensajes: justo después de un
+corte **no hay ningún mensaje** en la época nueva.
+
+### Idempotente sin ventana de tiempo
+
+```sql
+SELECT public.hermes_nuevo_contexto();          -- desde la pantalla
+SELECT hermes.chat_nuevo_contexto('<clave>');   -- desde Hermes
+SELECT hermes.chat_contexto('<clave>');         -- mirar sin cortar
+```
+
+**Cortar un contexto que ya está vacío no hace nada.** Pulsar el botón cinco
+veces seguidas deja una sola época nueva, porque después del primer corte no
+queda ningún mensaje que archivar. No hay ventana de segundos que ajustar ni
+que documentar: la condición es el estado, no el reloj.
+
+La respuesta trae `cortado: true|false` y la época resultante.
+
+Dos cortes de verdad simultáneos tampoco avanzan dos épocas: la fila de la
+conversación se toma con `FOR UPDATE` antes de decidir.
+
+### Quién sella la época
+
+**El trigger, no las funciones.** Cualquier fila que entre en `hermes_chat`
+sin `context_epoch` sale sellada con la época actual de su conversación — da
+igual que venga de `hermes_escribir()`, de `chat_responder()`, de SQL a mano o
+del canal que se conecte mañana. Nadie tiene que acordarse.
+
+La única excepción es deliberada: **`chat_responder()` manda la época de la
+pregunta**. Una respuesta pertenece al tramo en el que se preguntó, aunque
+entre medias alguien haya pulsado el botón. Si no, aparecería sola en el tramo
+nuevo, sin la pregunta que la explica.
+
+### Lo que el corte NO hace
+
+- **No vacía la cola.** Un mensaje que estaba pendiente sigue pendiente y se
+  contesta. Era una pregunta de verdad que alguien hizo.
+- **No corta a los demás.** Cada conversación tiene su época.
+- **No toca el claim en vuelo.** Se puede cortar mientras Hermes piensa; el
+  worker termina su mensaje con normalidad.
+
+### Lo que Hermes tiene que hacer con esto
+
+`chat_tomar()` devuelve `context_epoch` en cada mensaje. **Al construir el
+contexto del modelo, incluir solo los mensajes de esa misma época.** Eso es
+todo: la clave de sesión del gateway sigue siendo `conversation_key`, sin
+tocar.
+
+---
+
 ## 12. Quién hace qué
 
 **MotoFlow:** columnas y marcas de tiempo, índice único, `chat_tomar()` con
-FIFO y exclusión, arrendamiento de 5 minutos, `chat_estado()`,
-`chat_error()`, `chat_medir()`, `chat_metricas()`, idempotencia de
-`chat_responder()`, emitir `conversation_key` y el origen real, `pantalla`
+FIFO y exclusión, arrendamiento de 5 minutos, `claim_token` y `lease_until`,
+`chat_renovar()`, fencing en `chat_estado()` / `chat_error()` /
+`chat_responder()`, `chat_medir()`, `chat_metricas()`, idempotencia de
+`chat_responder()`, emitir `conversation_key` y el origen real, sellar
+`context_epoch` por trigger, `hermes_nuevo_contexto()`, `pantalla`
 estructurado, suscripción a `UPDATE`, estados visibles, *"Hermes sigue
-trabajando…"*, y las pruebas 1 a 14 más la 21.
+trabajando…"*, y las pruebas 1 a 14 y 21 a 28.
 
 **Hermes:** `conversation_key` en `MessageEvent`, sesión del gateway por esa
 clave, historial unificado de los tres canales, lock entre canales,
 autorización del número de WhatsApp, responder por el canal de origen, usar
-`chat_tomar()` en vez de `chat_pendientes()`, acusar recibo, actualizar
-`estado_detalle` en cada paso, `buscar_producto()` obligatorio para precio y
-existencia, ruta rápida para catálogo y agente completo para cotizaciones, no
-responder dos veces, reportar `chat_medir()`, llamar a `chat_tomar()` al
-arrancar, y las pruebas 15 a 20.
+`chat_tomar()` en vez de `chat_pendientes()`, guardar el `claim_token` y
+mandarlo en cada escritura, renovar antes de que venza, parar cuando le digan
+`abandonar: true`, filtrar el contexto del modelo por `context_epoch`, acusar
+recibo, actualizar `estado_detalle` en cada paso, `buscar_producto()`
+obligatorio para precio y existencia, ruta rápida para catálogo y agente
+completo para cotizaciones, no responder dos veces, reportar `chat_medir()`,
+llamar a `chat_tomar()` al arrancar, y las pruebas 15 a 20.
 
 **La frontera:** MotoFlow no interpreta lo que Hermes dice; Hermes no escribe
 en las tablas del negocio. Lo único que cruza es esta tabla y estas funciones.
