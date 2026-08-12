@@ -63,7 +63,11 @@ export function contextoParaAgente(modulos) {
   const c = contexto;
   return {
     ...c,
-    modulos: modulos || [],
+    // La lista de módulos como JSON pesaba 3,941 caracteres —el 87% del
+    // paquete— y viajaba entera en CADA pregunta. Mil tokens de entrada
+    // para decir siempre lo mismo. Como texto plano baja a menos de la
+    // cuarta parte y se lee igual de bien: "inicio:Inicio, ventas:Ventas".
+    modulos: (modulos || []).map((m) => `${m.id}:${m.nombre}`).join(', '),
     // El nombre largo es a propósito: se lee antes que 'datos'.
     esto_es: 'Solo indica DONDE esta parado el usuario y que modulos puede abrir.',
     no_es: 'NO es la fuente de datos del negocio. Que "datos" venga en null significa que esta pantalla no publica nada, no que el dato no exista.',
