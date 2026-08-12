@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Mic, MicOff, Settings2, MessageSquare } from 'lucide-react';
+import { Mic, MicOff, Settings2, MessageSquare, Maximize2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
@@ -670,6 +670,39 @@ export default function JarvisAdminAssistant() {
     </div>
   );
 
+  // La esfera, en un solo sitio. Vive en dos tamaños muy distintos —el botón
+  // del widget y la pantalla completa— y por eso el desenfoque va como
+  // parámetro: los 26px que la hacen parecer una esfera a 260 convierten un
+  // botón de 56 en una mancha gris. Va en proporción, más o menos tamaño/10.
+  //
+  // Son capas girando a distintas velocidades detrás de un desenfoque. Eso es
+  // lo que hace que la superficie parezca moverse sola sin que nada tenga
+  // borde: un círculo liso se ve muerto.
+  const capasEsfera = (blurPx) => (
+    <>
+      <div className="absolute inset-0 overflow-hidden rounded-full" style={{ filter: `blur(${blurPx}px)` }}>
+        <div className="absolute inset-0 rounded-full bg-slate-200/90" />
+        <div
+          className="absolute left-[8%] top-[4%] h-[70%] w-[70%] rounded-full"
+          style={{ background: 'radial-gradient(circle, #ffffff 0%, rgba(255,255,255,0) 68%)', animation: 'orbe-gira 11s linear infinite', transformOrigin: '60% 65%' }}
+        />
+        <div
+          className="absolute right-[4%] top-[14%] h-[66%] w-[66%] rounded-full"
+          style={{ background: 'radial-gradient(circle, #7dd3fc 0%, rgba(125,211,252,0) 66%)', animation: 'orbe-gira-lento 8s linear infinite', transformOrigin: '35% 55%' }}
+        />
+        <div
+          className="absolute bottom-[2%] left-[16%] h-[62%] w-[62%] rounded-full"
+          style={{ background: 'radial-gradient(circle, #c4b5fd 0%, rgba(196,181,253,0) 64%)', animation: 'orbe-gira 15s linear infinite', transformOrigin: '50% 30%' }}
+        />
+      </div>
+      {/* El brillo de arriba: sin esto parece un disco, no una esfera. */}
+      <div
+        className="pointer-events-none absolute inset-0 rounded-full"
+        style={{ background: 'radial-gradient(circle at 34% 26%, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0) 42%)' }}
+      />
+    </>
+  );
+
   const probar = () => {
     callar();
     hablar(agenteActivo?.saludo || 'Sistemas en línea. A sus órdenes.', {
@@ -1045,16 +1078,10 @@ export default function JarvisAdminAssistant() {
   return (
     <>
       <style>{`
-        @keyframes jarvis-spin {
-          to { transform: rotate(360deg); }
-        }
+        /* jarvis-spin y jarvis-pulse se fueron con el micrófono: eran los
+           anillos y el latido de su núcleo rojo, y ya no los usa nadie. */
 
-        @keyframes jarvis-pulse {
-          0%, 100% { opacity: 0.68; transform: scale(0.96); }
-          50% { opacity: 1; transform: scale(1.06); }
-        }
-
-        /* La esfera del modo voz. Tres manchas de color girando a distinta
+        /* La esfera. Tres manchas de color girando a distinta
            velocidad detrás de un desenfoque grande: por eso la superficie
            parece moverse sola sin que nada tenga borde. Un círculo liso se
            ve muerto; esto respira. */
@@ -1378,27 +1405,7 @@ export default function JarvisAdminAssistant() {
                 }}
               />
 
-              <div className="absolute inset-0 overflow-hidden rounded-full" style={{ filter: 'blur(26px)' }}>
-                <div className="absolute inset-0 rounded-full bg-slate-200/90" />
-                <div
-                  className="absolute left-[8%] top-[4%] h-[70%] w-[70%] rounded-full"
-                  style={{ background: 'radial-gradient(circle, #ffffff 0%, rgba(255,255,255,0) 68%)', animation: 'orbe-gira 11s linear infinite', transformOrigin: '60% 65%' }}
-                />
-                <div
-                  className="absolute right-[4%] top-[14%] h-[66%] w-[66%] rounded-full"
-                  style={{ background: 'radial-gradient(circle, #7dd3fc 0%, rgba(125,211,252,0) 66%)', animation: 'orbe-gira-lento 8s linear infinite', transformOrigin: '35% 55%' }}
-                />
-                <div
-                  className="absolute bottom-[2%] left-[16%] h-[62%] w-[62%] rounded-full"
-                  style={{ background: 'radial-gradient(circle, #c4b5fd 0%, rgba(196,181,253,0) 64%)', animation: 'orbe-gira 15s linear infinite', transformOrigin: '50% 30%' }}
-                />
-              </div>
-
-              {/* El brillo de arriba: sin esto parece un disco, no una esfera. */}
-              <div
-                className="pointer-events-none absolute inset-0 rounded-full"
-                style={{ background: 'radial-gradient(circle at 34% 26%, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0) 42%)' }}
-              />
+              {capasEsfera(26)}
             </div>
 
             <p className="text-sm text-cyan-100/70">
@@ -1469,31 +1476,47 @@ export default function JarvisAdminAssistant() {
           className="pointer-events-auto h-4 w-12 cursor-move rounded-full border border-cyan-300/25 bg-slate-900/80 opacity-40 transition-opacity hover:opacity-100"
         />
 
+        {/* La esfera ocupa el sitio del micrófono y hace lo mismo que hacía él:
+            pulsar enciende y apaga la voz, y crece al estar activa. Los anillos
+            rojos giratorios se van con el micrófono — eran su lenguaje, no el
+            de la esfera.
+
+            Lo que SÍ se conserva es cómo se lee "apagado": el aro y el
+            resplandor siguen siendo rojos en reposo y verdes al encender, y en
+            reposo la esfera va desaturada. Sin eso habría que pulsarla para
+            saber si te está oyendo, que en un mostrador no vale. */}
         <button
           type="button"
           onClick={toggleVoice}
           disabled={loading}
-          className={`pointer-events-auto relative flex aspect-square items-center justify-center overflow-hidden rounded-full bg-black text-white outline-none transition-all duration-300 ${
+          className={`pointer-events-auto relative flex aspect-square items-center justify-center overflow-hidden rounded-full bg-slate-900 outline-none transition-all duration-300 ${
             activeCore
               ? 'h-32 w-32 border border-emerald-300/40 shadow-[0_0_42px_rgba(16,185,129,0.45)]'
-              : 'h-14 w-14 border border-red-400/35 shadow-[0_0_24px_rgba(239,68,68,0.32)] hover:scale-105'
+              : 'h-14 w-14 border border-red-400/35 shadow-[0_0_24px_rgba(239,68,68,0.32)] saturate-[0.35] opacity-90'
           }`}
-          title={activeCore ? 'Apagar voz' : 'Encender voz'}
+          // Sin hover:scale-105: la esfera ya respira con una animación de
+          // transform, y las dos peleándose por la misma propiedad daba un
+          // tirón al pasar el ratón por encima.
+          style={{
+            animation: listening
+              ? 'orbe-escucha 2.4s ease-in-out infinite'
+              : 'orbe-respira 4.5s ease-in-out infinite',
+          }}
+          title={activeCore ? `Apagar la voz de ${nombreAgente}` : `Hablarle a ${nombreAgente}`}
         >
-          <span className={`absolute rounded-full border ${activeCore ? 'h-[88%] w-[88%] border-emerald-200/25' : 'h-[84%] w-[84%] border-red-300/20'}`} style={{ animation: 'jarvis-spin 15s linear infinite' }} />
-          <span className={`absolute rounded-full border ${activeCore ? 'h-[70%] w-[70%] border-emerald-400/25' : 'h-[62%] w-[62%] border-red-400/20'}`} style={{ animation: 'jarvis-spin 9s linear infinite reverse' }} />
-          <span className={`absolute rounded-full ${activeCore ? 'h-[42%] w-[42%] bg-emerald-500/90 shadow-[0_0_44px_rgba(16,185,129,0.95)]' : 'h-[42%] w-[42%] bg-red-700/85 shadow-[0_0_28px_rgba(239,68,68,0.72)]'}`} style={{ animation: activeCore ? 'jarvis-pulse 1.1s ease-in-out infinite' : 'jarvis-pulse 2.6s ease-in-out infinite' }} />
-          <span className={`absolute rounded-full ${activeCore ? 'h-[29%] w-[29%] bg-emerald-300/70' : 'h-[25%] w-[25%] bg-red-500/55'}`} />
+          {capasEsfera(activeCore ? 12 : 6)}
 
-          {activeCore ? (
-            <span className="relative z-10 px-1 text-center text-sm font-black uppercase tracking-[0.2em] text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.45)]">
+          {activeCore && (
+            // Texto oscuro: la esfera es clara y el blanco de antes —que se
+            // leía sobre el núcleo rojo— aquí desaparecería.
+            <span className="relative z-10 px-1 text-center text-sm font-black uppercase tracking-[0.2em] text-slate-900/85 drop-shadow-[0_1px_6px_rgba(255,255,255,0.9)]">
               {nombreAgente}
             </span>
-          ) : (
-            <Mic className="relative z-10 h-5 w-5 text-red-50" />
           )}
 
-          {listening && <MicOff className="absolute bottom-5 right-5 z-10 h-4 w-4 text-emerald-50" />}
+          {listening && (
+            <MicOff className="absolute bottom-[12%] right-[12%] z-10 h-[14%] w-[14%] min-h-3 min-w-3 text-slate-700/80" />
+          )}
         </button>
 
         <div className="pointer-events-auto flex items-center gap-1.5">
@@ -1508,10 +1531,13 @@ export default function JarvisAdminAssistant() {
           <button
             type="button"
             onClick={() => { setModoLive(true); setChatAbierto(false); if (!listening && !speaking && !loading) startListening(); }}
-            title="Hablar a pantalla completa"
+            title="A pantalla completa"
             className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
           >
-            <span className="block h-3.5 w-3.5 rounded-full bg-gradient-to-br from-white via-sky-300 to-violet-300" />
+            {/* Era una esferita igual que la grande. Ahora que el botón
+                principal ES la esfera, dos esferas juntas no dicen cuál hace
+                qué: este solo agranda lo que ya hay. */}
+            <Maximize2 className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
