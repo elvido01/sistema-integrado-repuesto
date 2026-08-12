@@ -12,6 +12,7 @@
     "vault:sync": "node scripts/vault-sync/sync.mjs",
     "vault:sync:una-vez": "node scripts/vault-sync/sync.mjs --una-vez",
     "hermes:estado": "node scripts/hermes-estado.mjs",
+    "hermes:concurrencia": "node scripts/hermes-prueba-concurrencia.mjs",
     "meta:estado": "node scripts/meta-estado.mjs",
     "meta:token": "node scripts/meta-token.mjs",
     "meta:comentarios": "node scripts/meta-comentarios-importar.mjs",
