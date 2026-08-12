@@ -38,6 +38,12 @@ const money = (v) => `RD$ ${new Intl.NumberFormat('es-DO', {
   maximumFractionDigits: 0,
 }).format(Number(v) || 0)}`;
 
+// El cliente tiene que poder distinguir un aviso del sistema de un mensaje
+// que le escribio una persona. Sin esta linea, un recordatorio armado por
+// MotoFlow se lee igual que uno redactado a mano en la oficina, y el cliente
+// contesta esperando que haya alguien leyendo del otro lado.
+const FIRMA_AUTOMATICA = '\n\nEste mensaje fue generado automaticamente por el sistema.';
+
 const APP_TIME_ZONE = 'America/Santo_Domingo';
 const SUPABASE_PAGE_SIZE = 1000;
 const IN_FILTER_CHUNK_SIZE = 200;
@@ -847,9 +853,12 @@ const GestionCobroPage = () => {
   const enviarWhatsapp = () => {
     if (!selected) return;
     const phone = normalizePhone(selected.cliente?.telefono);
-    const msg = selected.recordatorio_pago
+    const cuerpo = selected.recordatorio_pago
       ? `Hola ${selected.cliente?.nombre || ''}, le recordamos que su cuota del prestamo ${selected.prestamo_numero} tiene 3 dias vencida por ${money(selected.monto_vencido)}. Por favor indiquenos cuando realizara el pago.`
       : `Hola ${selected.cliente?.nombre || ''}, le recordamos que tiene un atraso de ${money(selected.monto_vencido)} en el prestamo ${selected.prestamo_numero}. Por favor indiquenos la fecha en que realizara el pago.`;
+    // La firma va tambien en la gestion que se guarda: lo registrado tiene que
+    // ser exactamente lo que le llego al cliente, no una version limpia.
+    const msg = cuerpo + FIRMA_AUTOMATICA;
     if (!phone) {
       toast({ variant: 'destructive', title: 'Telefono faltante', description: 'Este cliente no tiene telefono registrado.' });
       return;
