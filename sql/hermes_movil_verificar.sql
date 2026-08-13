@@ -30,16 +30,24 @@ DECLARE
 
 BEGIN
   -- ── EL ÚLTIMO MENSAJE DE VOZ QUE MANDÓ EL TELÉFONO ────────────────
+  -- Las DOS superficies, no solo el movil. La esfera del navegador manda
+  -- por otro camino (hermes_escribir_voz) y deja source_surface en NULL:
+  -- filtrar por 'mobile' hacia invisible una nota grabada desde la web y
+  -- este verificador contestaba 'no hay ningun mensaje' con el audio ya
+  -- subido. Un verificador que no ve la mitad de los casos es peor que no
+  -- tener verificador.
   SELECT * INTO c FROM public.hermes_chat
   WHERE tenant_id = v_tenant
-    AND source_surface = 'mobile'
+    AND rol = 'usuario'
     AND message_type IN ('voice','mixed','image','document')
   ORDER BY id DESC LIMIT 1;
 
   IF c.id IS NULL THEN
     RAISE EXCEPTION '%', chr(10) || chr(10)
       || '  NO HAY NINGUN MENSAJE DEL TELEFONO TODAVIA.' || chr(10) || chr(10)
-      || '  Manda una nota de voz o una foto desde la app (Mas > Hermes)' || chr(10)
+      || '  Graba una nota de voz por cualquiera de las dos:' || chr(10)
+      || '    · la esfera de MotoFlow en el navegador' || chr(10)
+      || '    · la app: Mas > Hermes' || chr(10) || chr(10)
       || '  y vuelve a correr esto.' || chr(10);
   END IF;
 
@@ -79,10 +87,13 @@ BEGIN
   v_l := v_l || ((CASE WHEN v_ok THEN '  ok   ' ELSE '  FALLA' END)
     || ' 8 · Los diez campos del mensaje v5 estan completos');
 
-  v_ok := (c.origin_platform = 'motoflow' AND c.source_surface = 'mobile');
+  -- El transporte tiene que ser motoflow SIEMPRE. La superficie cambia
+  -- segun por donde entro, y las dos son validas.
+  v_ok := (c.origin_platform = 'motoflow');
   IF v_ok THEN v_pasan := v_pasan+1; ELSE v_fallan := v_fallan+1; END IF;
   v_l := v_l || ((CASE WHEN v_ok THEN '  ok   ' ELSE '  FALLA' END)
-    || ' 8b · El transporte sigue siendo motoflow; la superficie es mobile');
+    || ' 8b · El transporte es motoflow · superficie: '
+    || COALESCE(c.source_surface, 'web (la esfera)'));
 
   -- ══ PASO 9 · LO QUE RECIBE HERMES ═════════════════════════════════
   -- Se reclama de verdad para enseñarlo, y se deshace al final.
@@ -197,7 +208,8 @@ BEGIN
     chr(10) || chr(10)
     || '══════ VERIFICACION DE LA PRUEBA FISICA ══════' || chr(10)
     || '  mensaje #' || c.id || ' · ' || to_char(c.creado_en,'DD/MM HH24:MI')
-    || ' · ' || COALESCE(c.client_platform,'?') || chr(10) || chr(10)
+    || ' · ' || COALESCE(c.source_surface, 'web')
+    || COALESCE(' (' || c.client_platform || ')', '') || chr(10) || chr(10)
     || array_to_string(v_l, chr(10)) || chr(10) || chr(10)
     || '  ── JSON REAL, REDACTADO ─────────────────────────────────' || chr(10)
     || v_json || chr(10) || chr(10)
