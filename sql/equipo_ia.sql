@@ -51,10 +51,17 @@ STABLE
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
-  SELECT lower(COALESCE(
-           NULLIF(auth.jwt() ->> 'email', ''),
-           (SELECT p.email FROM public.profiles p WHERE p.id = auth.uid())
-         )) IN ('elvidocaminero@gmail.com', 'admin@repuestosmorla.com');
+  -- El COALESCE de fuera no es adorno (ver sql/equipo_ia_permiso_null.sql):
+  -- sin correo esto daba NULL, y las ocho funciones que preguntan lo hacen
+  -- con `IF NOT permitido() THEN`. `NOT NULL` es NULL, y con NULL PL/pgSQL
+  -- no entra en el IF: la comprobación se saltaba entera. Sin correo NO es
+  -- "no se sabe", es que no.
+  SELECT COALESCE(
+    lower(COALESCE(
+      NULLIF(auth.jwt() ->> 'email', ''),
+      (SELECT p.email FROM public.profiles p WHERE p.id = auth.uid())
+    )) IN ('elvidocaminero@gmail.com', 'admin@repuestosmorla.com'),
+    false);
 $$;
 
 REVOKE ALL ON FUNCTION public.equipo_ia_permitido() FROM PUBLIC, anon;
