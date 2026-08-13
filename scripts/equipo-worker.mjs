@@ -1,10 +1,22 @@
 // ============================================================
-// El Comercial-Creativo, trabajando
+// Los agentes del Equipo IA, trabajando
 // ------------------------------------------------------------
-// Hasta ahora había una ficha de puesto y una cola vacía. Esto es
-// el empleado: toma de la cola, redacta, y contesta.
+// Hasta ahora había fichas de puesto y colas vacías. Esto es el
+// empleado: toma de su cola, hace lo suyo, y contesta.
 //
-//   npm run equipo:comercial
+//   npm run equipo:comercial     el Comercial-Creativo
+//   npm run equipo:jarvis        Jarvis por la cola del equipo
+//
+// >>> OJO CON JARVIS <<<
+// Jarvis vive en DOS sitios y solo uno es este. El del widget de
+// MotoFlow es la Edge Function motoflow-ai-chat: sincrona, la llama
+// el navegador y atiende a cualquiera que entre. Esa NO puede usar
+// una suscripcion —no hay cuenta con la que autenticarse— y se
+// queda con clave de API.
+//
+// Este worker es el otro: la cola del Equipo IA, asincrona, en una
+// maquina tuya. Aqui si vale la suscripcion. Los dos Jarvis leen la
+// misma ficha, asi que pueden tener motores distintos a proposito.
 //
 // >>> LOS TRES MOTORES <<<
 // Los elige la BASE, no este archivo. Se lee la configuración del
@@ -40,7 +52,12 @@ const { Client } = require_('pg');
 
 try { process.loadEnvFile(path.join(RAIZ, 'scripts/migracion-siif/.env')); } catch { /* opcional */ }
 
-const AGENTE = 'comercial_creativo';
+const AGENTES_VALIDOS = ['comercial_creativo', 'jarvis', 'hermes'];
+const AGENTE = process.argv[2] || process.env.EQUIPO_AGENTE || 'comercial_creativo';
+if (!AGENTES_VALIDOS.includes(AGENTE)) {
+  console.log(`Agente desconocido: ${AGENTE}. Usa uno de: ${AGENTES_VALIDOS.join(', ')}`);
+  process.exit(1);
+}
 const ESPERA_VACIO_MS = Number(process.env.EQUIPO_ESPERA_MS || 8000);
 // El comando de Claude Code, configurable: sus banderas pueden cambiar y
 // no quiero que eso obligue a editar este archivo. El prompt entra por
@@ -88,7 +105,48 @@ const escribir = async (cli, sql, params) => {
   } catch (e) { await cli.query('ROLLBACK'); throw e; }
 };
 
-// ── El prompt ──────────────────────────────────────────────────────────
+// ── Lo que Jarvis consulta DE VERDAD ───────────────────────────────────
+// El modelo NO busca: busca el SQL. Jarvis pregunta al catalogo con la
+// funcion autorizada y el modelo solo ordena y redacta lo que salio.
+//
+// Esto no es desconfianza: es que "nunca inventes un precio" escrito en un
+// prompt es una peticion, y esto es una garantia. Si la consulta no
+// devuelve nada, no hay nada que el modelo pueda inventar porque no tiene
+// de donde sacarlo.
+const consultarCatalogo = async (cli, texto) => {
+  const q = String(texto || '').trim();
+  if (!q) return [];
+  try {
+    const r = await cli.query(
+      'SELECT codigo, descripcion, marca, precio, existencia, ubicacion '
+      + 'FROM hermes.buscar_producto($1, 8, false)', [q]);
+    return r.rows;
+  } catch (e) {
+    log('  no se pudo consultar el catalogo:', e.message);
+    throw e;   // sin datos NO se contesta: se reporta el fallo
+  }
+};
+
+const armarPromptJarvis = (cfg, msg, filas) => [
+  cfg.persona || 'Eres el especialista de datos de MotoFlow. Devuelves datos verificables, no opiniones.',
+  '',
+  '## Lo que te pide Hermes',
+  msg.summary,
+  '',
+  '## Lo que devolvio el catalogo AHORA MISMO',
+  'Salio de hermes.buscar_producto sobre la base de MotoFlow, en este instante.',
+  'Es lo UNICO que existe. No agregues productos, precios ni existencias que no esten aqui.',
+  '```json', JSON.stringify(filas, null, 1), '```',
+  '',
+  '## Como contestar',
+  filas.length
+    ? 'Devuelve SOLO un JSON: {"resumen":"una linea","productos":[...],"fuente":"hermes.buscar_producto","nota":"..."}. '
+      + 'En "productos" copia las filas tal cual, sin cambiar un numero.'
+    : 'El catalogo no devolvio nada. Devuelve SOLO: {"resumen":"sin resultados","productos":[],'
+      + '"fuente":"hermes.buscar_producto","nota":"que se busco y por que no hubo resultados"}.',
+].join('\n');
+
+// ── El prompt del creativo ─────────────────────────────────────────────
 // Las políticas se le enseñan como reglas, no se le piden por favor. Y los
 // datos van marcados como verificados: es lo único que puede citar.
 const armarPrompt = (cfg, msg) => {
@@ -236,7 +294,17 @@ while (corriendo) {
   }, 5 * 60 * 1000);
 
   try {
-    const prompt = armarPrompt(actual, msg);
+    let prompt;
+    if (AGENTE === 'jarvis') {
+      // El texto de la consulta sale del payload si Hermes lo mando
+      // explicito; si no, del resumen de la peticion.
+      const busca = msg.payload?.consulta || msg.payload?.texto || msg.summary;
+      const filas = await consultarCatalogo(cli, busca);
+      log(`  catalogo: ${filas.length} resultado(s)`);
+      prompt = armarPromptJarvis(actual, msg, filas);
+    } else {
+      prompt = armarPrompt(actual, msg);
+    }
     const bruto = actual.proveedor === 'claude_suscripcion'
       ? await porClaudeCode(prompt)
       : await porApi(actual, prompt);

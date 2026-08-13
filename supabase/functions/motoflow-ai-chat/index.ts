@@ -447,13 +447,45 @@ Deno.serve(async (req: Request) => {
         const usadas: any[] = [];
         let llm: any = null;
 
+        // ── CON QUÉ MODELO CONTESTA JARVIS ────────────────────────────
+        // Sale de equipo_agentes, no de una constante: cambiar de OpenAI a
+        // Claude pasa a ser un UPDATE y no un despliegue. La variable
+        // JARVIS_MODEL sigue valiendo como respaldo, para no dejar mudo el
+        // widget si la tabla no está o la fila no existe.
+        //
+        // AQUÍ NO CABE 'claude_suscripcion'. Esto corre en el servidor de
+        // Supabase y atiende a cualquiera que abra MotoFlow: no hay cuenta
+        // personal con la que autenticarse, y usar una para servir a otros
+        // no sería una optimización, sería otra cosa. Ese motor solo vale
+        // en el worker de la cola, en una máquina propia.
+        let proveedor: 'openai' | 'claude' = 'openai';
+        let modelo = MODEL;
+        try {
+            const { data: ag } = await supabase
+                .from('equipo_agentes')
+                .select('proveedor, modelo')
+                .eq('tenant_id', tenant_id)
+                .eq('clave', 'jarvis')
+                .eq('activo', true)
+                .maybeSingle();
+            if (ag?.proveedor === 'claude') proveedor = 'claude';
+            if (ag?.modelo) modelo = ag.modelo;
+            if (ag?.proveedor === 'claude_suscripcion') {
+                // Configurado para el worker, no para aquí. Se atiende igual
+                // con el respaldo en vez de dejar al usuario sin respuesta.
+                proveedor = 'openai';
+                modelo = MODEL;
+            }
+        } catch { /* sin fila: se queda el respaldo */ }
+
         for (let v = 0; v < MAX_VUELTAS_TOOLS; v++) {
             llm = await callLLM({
                 messages: mensajes,
                 system: systemPrompt,
                 user: userPrompt,
                 user_tag: tenant_id,
-                model: MODEL,
+                provider: proveedor,
+                model: modelo,
                 max_tokens: 600,
                 temperature: 0.3,
                 tools: herramientas.length ? herramientas : undefined,
