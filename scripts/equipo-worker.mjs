@@ -28,6 +28,18 @@
 //   claude              API de Anthropic. Necesita ANTHROPIC_API_KEY.
 //   openai              API de OpenAI. Necesita OPENAI_API_KEY.
 //
+// >>> EL AGENTE TIENE SU PROPIA CUENTA <<<
+// Con la suscripción, la cuenta NO sale de la base: sale de la sesión de
+// Claude Code de la máquina donde corre esto. Por eso el agente usa un
+// directorio aparte —~/.claude-agente— y no el tuyo:
+//
+//   ~/.claude          la cuenta con la que TÚ trabajas en VS Code
+//   ~/.claude-agente   la cuenta que atiende la cola
+//
+// Así el consumo del agente no se come tu cuota, se ve en qué cuenta va
+// el gasto, y cerrar sesión en una no deja muda a la otra. Se prepara una
+// sola vez con `npm run equipo:login`.
+//
 // >>> DÓNDE CORRE ESTO <<<
 // Con la suscripción, donde esté Claude Code instalado y con sesión
 // iniciada: tu PC o el VPS. No es un servicio en la nube — si la
@@ -45,6 +57,7 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { CONFIG_DIR, resolverClaude, entorno, cuenta, comoIniciarSesion } from './claude-agente.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
 const require_ = createRequire(path.join(RAIZ, 'package.json'));
@@ -63,7 +76,7 @@ const ESPERA_VACIO_MS = Number(process.env.EQUIPO_ESPERA_MS || 8000);
 // no quiero que eso obligue a editar este archivo. El prompt entra por
 // stdin, no como argumento — un copy con el catálogo dentro pasa de largo
 // el límite de longitud de la línea de comandos.
-const CLAUDE_CMD  = process.env.CLAUDE_CMD  || 'claude';
+const { cmd: CLAUDE_CMD, origen: CLAUDE_ORIGEN } = resolverClaude();
 const CLAUDE_ARGS = (process.env.CLAUDE_ARGS || '-p').split(' ').filter(Boolean);
 
 const DSN = {
@@ -196,16 +209,19 @@ const armarPrompt = (cfg, msg) => {
 
 // ── Los motores ────────────────────────────────────────────────────────
 const porClaudeCode = (prompt) => new Promise((resolve, reject) => {
+  // entorno() lleva CLAUDE_CONFIG_DIR: contesta la cuenta DEL AGENTE, no la
+  // que tengas abierta en VS Code.
   const hijo = spawn(CLAUDE_CMD, CLAUDE_ARGS, {
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: process.platform === 'win32',
+    env: entorno(),
   });
   let salida = '', err = '';
   hijo.stdout.on('data', (d) => { salida += d; });
   hijo.stderr.on('data', (d) => { err += d; });
   hijo.on('error', (e) => reject(new Error(
     `No se pudo ejecutar "${CLAUDE_CMD}": ${e.message}. `
-    + 'Instala Claude Code en esta maquina e inicia sesion, o cambia CLAUDE_CMD.')));
+    + 'Instala Claude Code en esta maquina, o apunta CLAUDE_CMD a su ruta.')));
   hijo.on('close', (code) => {
     if (code !== 0) return reject(new Error(`Claude Code salio con codigo ${code}: ${err.slice(0, 400)}`));
     resolve(salida.trim());
@@ -270,6 +286,26 @@ const { rows: [{ cfg }] } = await cli.query(
   'SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE]);
 if (!cfg) { log('ese agente no esta registrado. Corre sql/equipo_ia.sql.'); process.exit(1); }
 log(`motor: ${cfg.proveedor}${cfg.modelo ? ' · ' + cfg.modelo : ''}`);
+
+// ── Con qué cuenta va a contestar ──────────────────────────────────────
+// Se dice al arrancar y no se deduce después. La cuenta no está en la base
+// —sale de la sesión de esta máquina— así que si no se imprime aquí, no
+// hay ningún sitio donde mirarla.
+//
+// Y se comprueba ANTES de tomar trabajo: sin sesión, cada mensaje se
+// tomaría solo para fallar, gastando un intento cada vez.
+if (cfg.proveedor === 'claude_suscripcion') {
+  log(`claude: ${CLAUDE_CMD} (${CLAUDE_ORIGEN})`);
+  log(`casa:   ${CONFIG_DIR}`);
+  const c = cuenta(CLAUDE_CMD);
+  if (!c.ok) {
+    log(`sin sesion de Claude para el agente. ${c.motivo || ''}`);
+    console.log(comoIniciarSesion());
+    await cli.end();
+    process.exit(1);
+  }
+  log(`cuenta: ${c.email}${c.plan ? ' · ' + c.plan : ''}`);
+}
 
 while (corriendo) {
   let msg;
