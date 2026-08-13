@@ -75,6 +75,9 @@ const PRICES: Record<string, { input: number; output: number; cached?: number }>
     'gpt-5.6-sol':           { input: 5.00,  output: 30.00, cached: 0.50 },
     'claude-3-5-haiku-20241022': { input: 0.80, output: 4.00 },
     'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
+    'claude-haiku-4-5-20251001': { input: 1.00,  output: 5.00 },
+    'claude-sonnet-5':       { input: 3.00,  output: 15.00 },
+    'claude-opus-5':         { input: 15.00, output: 75.00 },
     'claude-opus-4-7':       { input: 15.00, output: 75.00 },
 };
 
@@ -189,18 +192,126 @@ async function callOpenAI(opts: LlmCallOptions): Promise<LlmCallResult> {
 // ────────────────────────────────────────────────
 // Claude implementation (stub — implementar cuando se necesite)
 // ────────────────────────────────────────────────
+// Los dos proveedores hablan del mismo concepto con formas distintas, y el
+// resto del código solo conoce la de OpenAI. Estas tres funciones son el
+// traductor. Sin ellas la rama de Claude contestaba, pero SIN HERRAMIENTAS —
+// o sea, hablando de memoria. Peor que no funcionar: parecía funcionar.
+
+/** tools de OpenAI → tools de Anthropic (`parameters` pasa a `input_schema`) */
+function toolsAClaude(tools?: any[]): any[] | undefined {
+    if (!tools?.length) return undefined;
+    return tools.map((t) => ({
+        name: t.function?.name ?? t.name,
+        description: t.function?.description ?? t.description ?? '',
+        input_schema: t.function?.parameters ?? t.input_schema ?? { type: 'object', properties: {} },
+    }));
+}
+
+/**
+ * El hilo de OpenAI → el de Anthropic.
+ *  - `system` va fuera de messages, en su propio campo.
+ *  - un assistant con tool_calls pasa a bloques `tool_use`.
+ *  - un `role:'tool'` pasa a un mensaje de USUARIO con bloques `tool_result`.
+ * Los tool_result consecutivos se agrupan: Anthropic los quiere juntos en un
+ * solo mensaje, y mandarlos sueltos da 400.
+ */
+function mensajesAClaude(messages: any[]): { system?: string; msgs: any[] } {
+    let system: string | undefined;
+    const msgs: any[] = [];
+
+    for (const m of messages) {
+        if (m.role === 'system') { system = [system, m.content].filter(Boolean).join('\n\n'); continue; }
+
+        if (m.role === 'tool') {
+            const bloque = {
+                type: 'tool_result',
+                tool_use_id: m.tool_call_id,
+                content: String(m.content ?? ''),
+            };
+            const ultimo = msgs[msgs.length - 1];
+            if (ultimo?.role === 'user' && Array.isArray(ultimo.content)
+                && ultimo.content.every((c: any) => c.type === 'tool_result')) {
+                ultimo.content.push(bloque);
+            } else {
+                msgs.push({ role: 'user', content: [bloque] });
+            }
+            continue;
+        }
+
+        if (m.role === 'assistant' && m.tool_calls?.length) {
+            const content: any[] = [];
+            if (m.content) content.push({ type: 'text', text: String(m.content) });
+            for (const c of m.tool_calls) {
+                let input: any = {};
+                try { input = JSON.parse(c.function?.arguments || '{}'); } catch { /* argumentos vacíos */ }
+                content.push({ type: 'tool_use', id: c.id, name: c.function?.name, input });
+            }
+            msgs.push({ role: 'assistant', content });
+            continue;
+        }
+
+        msgs.push({ role: m.role, content: String(m.content ?? '') });
+    }
+    return { system, msgs };
+}
+
+/** La respuesta de Anthropic → la forma que espera el bucle de herramientas */
+function respuestaDeClaude(data: any) {
+    const bloques: any[] = data.content || [];
+    const texto = bloques.filter((b) => b.type === 'text').map((b) => b.text).join('');
+    const usos = bloques.filter((b) => b.type === 'tool_use');
+    return {
+        content: texto,
+        tool_calls: usos.length
+            ? usos.map((u) => ({
+                id: u.id,
+                type: 'function',
+                function: { name: u.name, arguments: JSON.stringify(u.input ?? {}) },
+            }))
+            : undefined,
+        // Se guarda el mensaje EN FORMATO ANTHROPIC: es lo que hay que
+        // reenviar tal cual en la vuelta siguiente. mensajesAClaude() lo
+        // deja pasar sin tocarlo porque ya viene con `content` en bloques.
+        raw_message: { role: 'assistant', content: bloques },
+    };
+}
+
 async function callClaude(opts: LlmCallOptions): Promise<LlmCallResult> {
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!apiKey) throw new Error('ANTHROPIC_API_KEY no configurada — para usar Claude, agrégala como Supabase secret');
+    if (!apiKey) {
+        throw new Error(
+            'ANTHROPIC_API_KEY no configurada. Es una clave de API de console.anthropic.com ' +
+            'con su credito: una suscripcion de Claude no sirve aqui, no emite clave.');
+    }
 
-    const model = opts.model || 'claude-3-5-haiku-20241022';
+    const model = opts.model || 'claude-haiku-4-5-20251001';
+
+    // Con `messages` va el hilo entero (el bucle de herramientas); sin él,
+    // la pregunta suelta. Igual que en callOpenAI.
+    const crudos = opts.messages?.length
+        ? opts.messages
+        : [{ role: 'system', content: opts.system }, { role: 'user', content: opts.user }];
+    const { system, msgs } = mensajesAClaude(crudos);
+
     const body: Record<string, unknown> = {
         model,
         max_tokens: opts.max_tokens ?? 1000,
-        system: opts.system,
-        messages: [{ role: 'user', content: opts.user }],
+        messages: msgs,
         temperature: opts.temperature ?? 0.2,
     };
+    if (system) body.system = system;
+
+    const tools = toolsAClaude(opts.tools);
+    if (tools) {
+        body.tools = tools;
+        // 'none' obliga a contestar sin llamar nada más — así se corta el
+        // bucle en la última vuelta.
+        body.tool_choice = opts.tool_choice === 'none' ? { type: 'none' } : { type: 'auto' };
+    }
+    if (opts.response_format === 'json' && !tools) {
+        body.system = [system, 'Responde EXCLUSIVAMENTE con JSON válido, sin texto alrededor.']
+            .filter(Boolean).join('\n\n');
+    }
     if (opts.user_tag) body.metadata = { user_id: `motoflow:${opts.user_tag}` };
 
     const start = Date.now();
@@ -217,20 +328,29 @@ async function callClaude(opts: LlmCallOptions): Promise<LlmCallResult> {
 
     if (!r.ok) {
         const errText = await r.text();
+        // Sin la clave dentro del mensaje: los errores acaban en registros.
         throw new Error(`Claude ${r.status}: ${errText.slice(0, 500)}`);
     }
+
     const data = await r.json();
-    const content = data.content?.[0]?.text || '';
+    const { content, tool_calls, raw_message } = respuestaDeClaude(data);
     const inTokens = data.usage?.input_tokens || 0;
     const outTokens = data.usage?.output_tokens || 0;
+    // Anthropic reporta la caché aparte; los leídos NO vienen dentro de
+    // input_tokens, así que se suman para que el costo cuadre.
+    const cacheLeidos = data.usage?.cache_read_input_tokens || 0;
+
     return {
         content,
         provider: 'claude',
         model,
-        input_tokens: inTokens,
+        input_tokens: inTokens + cacheLeidos,
         output_tokens: outTokens,
-        cost_usd: Number(calcCost(model, inTokens, outTokens).toFixed(4)),
+        cached_tokens: cacheLeidos,
+        cost_usd: Number(calcCost(model, inTokens + cacheLeidos, outTokens, cacheLeidos).toFixed(4)),
         duration_ms,
+        tool_calls,
+        raw_message,
     };
 }
 
