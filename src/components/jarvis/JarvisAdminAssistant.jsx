@@ -184,6 +184,16 @@ export default function JarvisAdminAssistant() {
     return () => { vivo = false; clearInterval(t); };
   }, [agente]);
 
+  // El micrófono NO sobrevive al widget. `interrumpir` y `stopListening`
+  // ya lo sueltan, pero cerrar la pestaña con el dictado abierto no pasa
+  // por ninguno de los dos.
+  //
+  // Va AQUÍ y no junto a cerrarDictado, que es donde lo puse primero: más
+  // abajo hay un `return null` cuando el usuario no tiene permiso, y un
+  // hook después de un return temprano cambia de número entre renders.
+  // React lanza el error #310 y se lleva la pantalla entera por delante.
+  useEffect(() => () => { vozEspejo.cancelar(); }, []);
+
   // La conversación que YA existe. Sin esto, recargar la página la borraba de
   // la vista aunque siguiera entera en la base — y con Hermes tardando lo que
   // tarda, uno recarga.
@@ -962,11 +972,6 @@ export default function JarvisAdminAssistant() {
   // La frase quedó completa. Un solo camino de salida para las tres formas de
   // llegar aquí: dos segundos de silencio, el navegador cerrando por su
   // cuenta, o el micrófono apagado a mano.
-  // El micrófono NO sobrevive al widget. `interrumpir` y `stopListening`
-  // ya lo sueltan, pero cerrar la pestaña con el dictado abierto no pasa
-  // por ninguno de los dos.
-  useEffect(() => () => { vozEspejo.cancelar(); }, []);
-
   const cerrarDictado = () => {
     window.clearTimeout(silencioRef.current);
     const transcript = (dictadoRef.current || '').trim();
