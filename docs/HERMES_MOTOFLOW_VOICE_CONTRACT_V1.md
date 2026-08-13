@@ -7,10 +7,10 @@
 | | |
 |---|---|
 | Contrato | **v5** (aditivo sobre v4, que **no se tocó**) |
-| Migración | `sql/hermes_voz_v5.sql` |
-| Pruebas | `sql/hermes_voz_v5_pruebas.sql` — 28 aserciones |
+| Migración | `sql/hermes_voz_v5.sql` — **aplicada en producción el 13/08/2026** |
+| Pruebas | `sql/hermes_voz_v5_pruebas.sql` — **28/28 en verde en producción, 13/08/2026** |
 | Reversa | `sql/hermes_voz_v5_revertir.sql` (con freno de mano) |
-| Endpoint de medios | Edge Function `hermes-media` |
+| Endpoint de medios | Edge Function `hermes-media` — **desplegada y respondiendo** |
 | Conversación | `agent:main:morla:tenant:00000000-0000-0000-0000-000000000001` — **la misma de siempre** |
 
 ---
@@ -149,8 +149,19 @@ queda su sha256 — con la tabla en la mano no se descarga nada.
 
 ```http
 GET https://<proyecto>.functions.supabase.co/hermes-media/descargar
+Authorization: Bearer <SUPABASE_ANON_KEY>
 X-Media-Token: <media_token>
 ```
+
+> **Sin la cabecera `Authorization` la plataforma devuelve `401` antes de
+> llegar al código de la función**, y el cuerpo no explica nada. La anon key
+> no es un secreto (viaja en el frontend); es la puerta de la plataforma. La
+> puerta de verdad es `X-Media-Token`.
+>
+> Comprobado contra producción el 13/08/2026:
+> · sin `Authorization` → `401` de plataforma
+> · con `Authorization`, sin token → `{"error":"Falta el permiso de descarga."}`
+> · con token inventado → `{"error":"Permiso no válido.","motivo":"token_desconocido"}`
 
 Respuesta `200`: **los bytes del audio**, con `Content-Type`, `X-Media-Id`,
 `X-Sha256` y `X-Duration-Ms`.
@@ -172,6 +183,7 @@ bytes ya pasaron el control de firma de formato.
 
 ```http
 POST https://<proyecto>.functions.supabase.co/hermes-media/tts
+Authorization: Bearer <SUPABASE_ANON_KEY>
 Content-Type: audio/mpeg
 X-Mensaje-Id: 12345
 X-Claim-Token: <claim_token>

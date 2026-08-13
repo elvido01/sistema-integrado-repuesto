@@ -71,7 +71,10 @@ BEGIN
     || chr(10) || '         esperaba: ' || v_esp || chr(10) || '         obtuvo  : ' || COALESCE(v_obt,'(nulo)'));
 
   -- ══ 3 · EL BUCKET ES PRIVADO ══════════════════════════════════════
-  SELECT (public = false)::text || '/' || (file_size_limit = 8388608)::text INTO v_obt
+  -- `public::text` y no `(public = false)::text`. Lo segundo se lee al
+  -- revés —da 'true' justamente cuando el bucket ES privado— y ya costó
+  -- un susto: la prueba salió en rojo con el bucket bien puesto.
+  SELECT public::text || '/' || (file_size_limit = 8388608)::text INTO v_obt
   FROM storage.buckets WHERE id = 'hermes-voz';
   v_esp := 'false/true';
   v_ok := (v_esp IS NOT DISTINCT FROM v_obt);

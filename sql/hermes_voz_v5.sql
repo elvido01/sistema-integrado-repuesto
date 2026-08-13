@@ -423,7 +423,7 @@ BEGIN
      -- legible es mejor que una cadena vacía: si algo lo enseña sin saber
      -- de voz, se lee "(nota de voz)" y no un hueco.
      COALESCE(v_texto, '(nota de voz)'),
-     v_pantalla, v_m.conversation_key,
+     p_pantalla, v_m.conversation_key,
      'motoflow', COALESCE(p_origin_chat_id, auth.uid()::text),
      'pendiente', v_m.context_epoch,
      v_tipo, p_media_id)
@@ -546,8 +546,12 @@ BEGIN
   -- que el claim: si el reclamo se pierde por SKIP LOCKED, tampoco se
   -- emite token, y no queda un permiso suelto para un audio que atiende
   -- otro worker.
+  -- `AS mt` no es adorno: RETURNS TABLE (… media_id uuid …) declara
+  -- `media_id` como variable de la función, y un `RETURNING media_id`
+  -- suelto sale con 42702 "column reference is ambiguous". Es la misma
+  -- trampa que ya documenta chat_tomar de v4 con `k.id`.
   tokens AS (
-    INSERT INTO public.hermes_media_tokens
+    INSERT INTO public.hermes_media_tokens AS mt
       (token_sha256, media_id, mensaje_id, tenant_id, expira_en)
     -- sha256() y no digest(): el primero es de PostgreSQL y el segundo de
     -- pgcrypto, que en Supabase vive en el esquema `extensions` y con
@@ -559,7 +563,7 @@ BEGIN
     WHERE t.media_id IS NOT NULL
     ON CONFLICT (token_sha256) DO UPDATE
       SET expira_en = EXCLUDED.expira_en, usos = 0, usado_en = NULL
-    RETURNING media_id, expira_en
+    RETURNING mt.media_id, mt.expira_en
   )
   SELECT t.id, t.texto, t.pantalla, t.creado_en, t.user_id,
          COALESCE(p.full_name, p.email, '(sin nombre)'), p.email, t.rol,
