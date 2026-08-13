@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Mic, MicOff, Settings2, MessageSquare, Maximize2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { BarraVozHermes, ReproductorVoz, pararTodoAudio } from '@/components/jarvis/VozHermes';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
 import { leerContexto, leerModulos, contextoParaAgente } from '@/lib/pantallaContexto';
@@ -195,7 +196,7 @@ export default function JarvisAdminAssistant() {
 
     (async () => {
       const [conHermes, conJarvis] = await Promise.all([
-        supabase.from('hermes_chat').select(sinAccionesRef.current ? 'id, rol, texto, creado_en' : 'id, rol, texto, creado_en, acciones')
+        supabase.from('hermes_chat').select(columnasChat(true))
           .order('id', { ascending: false }).limit(30),
         sesionRef.current
           ? supabase.from('ai_chat_messages').select('id, role, content, created_at')
@@ -261,12 +262,13 @@ export default function JarvisAdminAssistant() {
     let vivo = true;
 
     const traer = () => supabase.from('hermes_chat')
-      .select(sinAccionesRef.current ? 'id, rol, texto' : 'id, rol, texto, acciones')
+      .select(columnasChat(false))
       .gt('id', ultimoIdRef.current)
       .order('id').limit(30)
       .then(({ data, error: e }) => {
         if (!vivo) return;
         if (e) {
+          if (/message_type|media_id/.test(e.message || '')) { sinVozRef.current = true; return; }
           if (/acciones/.test(e.message || '')) { sinAccionesRef.current = true; return; }
           setError(`No puedo leer la conversación: ${e.message}`);
           return;
@@ -285,6 +287,17 @@ export default function JarvisAdminAssistant() {
     return () => { vivo = false; clearInterval(t); supabase.removeChannel(sub); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agente]);
+
+  // Qué columnas pedirle a hermes_chat. Degrada sola: si la base todavía
+  // no tiene `acciones` (v3) o `media_id` (v5), se reintenta sin ellas en
+  // vez de dejar la conversación en blanco con un error de SQL.
+  const columnasChat = (conFecha) => {
+    const cols = ['id', 'rol', 'texto'];
+    if (conFecha) cols.push('creado_en');
+    if (!sinAccionesRef.current) cols.push('acciones');
+    if (!sinVozRef.current) cols.push('message_type', 'media_id');
+    return cols.join(', ');
+  };
 
   const enviarAHermes = async (texto, { conVoz }) => {
     // `loading` NO sirve de candado aquí. recognition.onresult se construye
@@ -347,6 +360,38 @@ export default function JarvisAdminAssistant() {
       dejarDeEsperar();
       setError(err.message || 'No se pudo enviar el mensaje a Hermes.');
     }
+  };
+
+  // ── La nota de voz ya se subió y ya está en la cola ──────────────────
+  // BarraVozHermes hace la subida y el hermes_escribir_voz; aquí solo se
+  // ajusta la conversación que se ve. Se registra el id ANTES de pintar
+  // nada: el sondeo corre cada cuatro segundos y sin esto la misma nota
+  // aparecería dos veces.
+  const alEnviarVoz = ({ id, mediaId, duracionMs, duplicado }) => {
+    if (!id) return;
+    setError('');
+    if (!duplicado) {
+      idsVistosRef.current.add(`u-${id}`);
+      if (id > ultimoIdRef.current) ultimoIdRef.current = id;
+      setMensajes((m) => [...m, {
+        id: `u-${id}`, role: 'user', canalDe: 'hermes',
+        content: `🎤 Nota de voz (${Math.round((duracionMs || 0) / 1000)} s)`,
+        mediaId, tipoMensaje: 'voice',
+      }]);
+    }
+    // Se espera igual que con el texto: el "pensando" se apaga cuando LLEGA
+    // la respuesta, no cuando termina la subida. Hermes todavía tiene que
+    // transcribir, pensar y hablar.
+    esperandoRef.current = true;
+    setLoading(true);
+  };
+
+  // El usuario cortó una respuesta hablada. Queda anotado en el audio, no
+  // se borra nada: la respuesta se dio, simplemente no se oyó entera.
+  const marcarInterrumpido = (mediaId) => {
+    supabase.rpc('hermes_voz_interrumpir', { p_media_id: mediaId })
+      .then(() => {})
+      .catch(() => { /* que no se pueda anotar no debe romper la reproducción */ });
   };
 
   const enviar = (texto, opciones = {}) => {
@@ -468,6 +513,10 @@ export default function JarvisAdminAssistant() {
   // sin ella, que solo significa que Hermes todavía no puede llenar la
   // factura.
   const sinAccionesRef = useRef(false);
+  // Lo mismo para las columnas de voz (v5). Mientras hermes_voz_v5.sql no
+  // esté corrido, el chat funciona exactamente como ayer: sin nota de voz
+  // y sin reproductor, pero sin un error rojo cada cuatro segundos.
+  const sinVozRef = useRef(false);
   // Una orden de pantalla se ejecuta UNA vez. Entre Realtime y el sondeo, la
   // misma fila llega dos veces, y ejecutarla dos veces duplicaría las líneas
   // de la factura sin que nadie entendiera por qué.
@@ -487,6 +536,10 @@ export default function JarvisAdminAssistant() {
         // Todo lo que sale de hermes_chat lo escribió Hermes desde su PC.
         de: f.rol === 'hermes' ? 'hermes' : undefined,
         canalDe: 'hermes',
+        // v5: la respuesta puede traer voz. `media_id` en una fila de
+        // 'usuario' es la nota que se mando; en una de 'hermes', el TTS.
+        mediaId: f.media_id || undefined,
+        tipoMensaje: f.message_type || 'text',
       });
     }
     if (!nuevas.length) return;
@@ -602,6 +655,10 @@ export default function JarvisAdminAssistant() {
     // micrófono se reabriría solo justo después de haberlo mandado a callar.
     modoVozRef.current = false;
     callar();
+    // `callar()` solo silencia la voz sintetizada del navegador. El audio
+    // TTS que mandó Hermes es un <audio> aparte y seguiría sonando: quien
+    // pulsa Detener espera silencio, no medio silencio.
+    pararTodoAudio();
     try { recognitionRef.current?.abort?.(); } catch { /* no estaba oyendo */ }
     window.clearTimeout(clearBubbleTimerRef.current);
     // Cortar de verdad tira lo dictado a medias: si no, el reloj del silencio
@@ -1252,6 +1309,14 @@ export default function JarvisAdminAssistant() {
                       {m.de === 'hermes' ? nombreEmpresa : `${nombreSistema} — no es ${nombreEmpresa}`}
                     </p>
                   )}
+                  {/* EL TEXTO SIEMPRE ESTÁ. El audio es otra forma de oír lo
+                      mismo, nunca la única: si el TTS falló, arriba sigue
+                      estando la respuesta escrita. */}
+                  {m.mediaId && (
+                    <div className={m.role === 'user' ? 'flex justify-end' : ''}>
+                      <ReproductorVoz mediaId={m.mediaId} onInterrumpido={marcarInterrumpido} />
+                    </div>
+                  )}
                   {/* Qué consultó para contestar eso. Distingue una respuesta
                       con datos de una de memoria. */}
                   {m.role === 'assistant' && m.herramientas?.length > 0 && (
@@ -1335,6 +1400,19 @@ export default function JarvisAdminAssistant() {
               </div>
             )}
 
+            {/* Solo con Hermes: el asistente rápido corre en una Edge Function
+                y no tiene STT. Enseñar el micrófono ahí sería ofrecer algo que
+                no existe. */}
+            {canal === 'hermes' && (
+              <BarraVozHermes
+                tenantId={profile?.tenant_id}
+                deshabilitado={loading}
+                contexto={contextoParaAgente(leerModulos())}
+                onError={setError}
+                onEnviar={alEnviarVoz}
+              />
+            )}
+
             <form
               className="flex gap-1.5 border-t border-cyan-300/15 p-2"
               onSubmit={(e) => {
@@ -1357,6 +1435,8 @@ export default function JarvisAdminAssistant() {
                 Enviar
               </button>
             </form>
+
+
           </div>
         )}
 
