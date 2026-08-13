@@ -13,8 +13,23 @@
 // módulo no puede saber sola.
 // ============================================================
 
+import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { CONFIG_DIR, resolverClaude, entorno, cuenta } from './claude-agente.mjs';
+
+// El mismo archivo que lee el worker. Sin esto, poner CLAUDE_CMD ahí
+// funcionaba para el worker y no para el login: la ruta de Claude quedaba
+// configurada y este script seguía diciendo "no encontrado". Pasó en el
+// VPS, donde Claude no está en el PATH y la ruta es lo unico que lo
+// encuentra.
+//
+// Va DESPUES de los imports a propósito. Los imports se evalúan antes que
+// cualquier línea de este archivo, así que CONFIG_DIR —que claude-agente
+// lee al importarse— no se puede configurar desde aquí; CLAUDE_CMD sí,
+// porque resolverClaude() lo lee al llamarla, dos líneas más abajo. El
+// worker tiene exactamente la misma limitación en el mismo orden.
+const RAIZ = path.resolve(import.meta.dirname, '..');
+try { process.loadEnvFile(path.join(RAIZ, 'scripts/migracion-siif/.env')); } catch { /* opcional */ }
 
 const soloVer = process.argv.includes('--ver');
 const { cmd, origen } = resolverClaude();
