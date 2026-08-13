@@ -235,6 +235,108 @@ respuesta es una avería.
 
 ---
 
+# §7 · PROTOCOLO DE MEDIOS — autocontenido
+
+> Esta sección es lo único que hay que leer para implementar la descarga y
+> la subida. No depende del resto del documento.
+
+## 7.1 · Descubrir el endpoint sin que nadie te lo dicte
+
+`hermes_readonly` ya puede llamar a esto:
+
+```sql
+SELECT hermes.chat_capacidades() -> 'medios';
+```
+
+Devuelve `base_url`, métodos, rutas y cabeceras exactas. **Lee de ahí en vez de
+hardcodear la URL**: el día que el proyecto cambie, el gateway se entera solo.
+
+Hoy `base_url` vale:
+
+```
+https://zdvxowpuklbypweyqqki.functions.supabase.co/hermes-media
+```
+
+## 7.2 · La credencial
+
+`Authorization: Bearer <SUPABASE_ANON_KEY>`.
+
+Es la **anon key** del proyecto — la misma que ya viaja en el bundle web y en
+la app móvil. **Es pública por diseño**, no es un secreto y no protege nada
+por sí sola: es la puerta de la plataforma. La puerta real es el
+`X-Media-Token`.
+
+Sin esa cabecera, Supabase corta con `401` **antes** de llegar al código de la
+función y el cuerpo no explica nada. Ese es el `401` que te encontraste.
+
+Está en `mobile/src/supabase/client.ts` del repo MotoFlow.
+
+## 7.3 · Descargar el audio de entrada
+
+`chat_tomar_v5` devuelve `media_token` **una sola vez**, en claro. En la base
+solo queda su sha256.
+
+```bash
+curl -sS   -H "Authorization: Bearer $ANON_KEY"   -H "X-Media-Token: $MEDIA_TOKEN"   "$BASE_URL/descargar"   -o entrada.m4a -D cabeceras.txt
+```
+
+Devuelve **los bytes**, no una URL. Cabeceras útiles: `Content-Type`,
+`X-Media-Id`, `X-Sha256`, `X-Duration-Ms`.
+
+**Comprueba el `X-Sha256` contra el archivo que recibiste** antes de pasarlo al
+STT: es lo que detecta una descarga cortada.
+
+| código | motivo | qué hacer |
+|---|---|---|
+| `401` | falta `Authorization` | añadir la anon key |
+| `403` | `token_vencido` (10 min) | volver a reclamar el mensaje |
+| `403` | `token_agotado` (3 usos) | volver a reclamar |
+| `404` | el audio ya no está | `chat_error` |
+| `422` | `firma_invalida` | `chat_error`, **no reintentar** |
+
+**Con varios adjuntos** (móvil), `chat_tomar_v5` devuelve `medios jsonb` con un
+`media_token` **por cada uno**. El token va atado al `media_id`, no al mensaje.
+
+## 7.4 · Subir el TTS
+
+```bash
+curl -sS -X POST   -H "Authorization: Bearer $ANON_KEY"   -H "Content-Type: audio/mpeg"   -H "X-Mensaje-Id: $ID"   -H "X-Claim-Token: $CLAIM_TOKEN"   -H "X-Duration-Ms: 4200"   --data-binary @respuesta.mp3   "$BASE_URL/tts"
+```
+
+Devuelve `{ "ok": true, "media_id": "…", "duplicado": false, "sha256": "…" }`.
+
+`409` con `abandonar: true` = el turno ya no es tuyo. **Para: no respondas y no
+subas nada.**
+
+La función valida la firma de formato de los bytes. Si no es audio de verdad,
+`422` y borra lo subido.
+
+## 7.5 · Responder
+
+```sql
+SELECT hermes.chat_responder_voz(
+  $mensaje_id, 'El Motul 20W50 está a RD$450.', NULL, $claim_token, $media_id);
+```
+
+**Si el TTS falló, llama igual sin `p_media_id`.** El texto es la respuesta; el
+audio es una forma de oírla. Quedarse sin voz es un inconveniente; quedarse sin
+respuesta es una avería.
+
+## 7.6 · Por qué NO necesitas `media_canjear()`
+
+Tienes razón en que tu rol no puede ejecutarla. **Es deliberado, y concederla no
+te desbloquearía.**
+
+`media_canjear()` devuelve una **ruta dentro de un bucket privado**, no el
+archivo ni una URL que sirva para bajarlo. Las credenciales del bucket las tiene
+la Edge Function y solo ella. Con un `GRANT` tendrías media ruta: podrías gastar
+los usos de un permiso sin poder descargar nada.
+
+**No hay dos rutas. Hay una: el endpoint HTTP.** Lo que faltaba era su
+dirección, y eso ya lo dice `chat_capacidades()`.
+
+---
+
 ## 8. Idempotencia y fencing
 
 | situación | qué pasa |
