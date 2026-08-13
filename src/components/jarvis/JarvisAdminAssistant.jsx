@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Mic, MicOff, Settings2, MessageSquare, Maximize2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { BarraVozHermes, ReproductorVoz, pararTodoAudio } from '@/components/jarvis/VozHermes';
+import * as vozEspejo from '@/lib/vozEspejo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
 import { leerContexto, leerModulos, contextoParaAgente } from '@/lib/pantallaContexto';
@@ -397,7 +398,11 @@ export default function JarvisAdminAssistant() {
   const enviar = (texto, opciones = {}) => {
     const conVoz = opciones.conVoz !== false;
     if (canal === 'hermes') {
-      if (hermesVivo) return enviarAHermes(texto, { conVoz });
+      // `null` es "todavia no se", no "no". Tratarlo como negativo hacia
+      // que un mensaje mandado en el primer segundo tras abrir el widget
+      // dijera "Hermes no esta conectado" con Hermes conectado — y el
+      // aviso se quedaba en pantalla aunque el latido llegara despues.
+      if (hermesVivo !== false) return enviarAHermes(texto, { conVoz });
       // Antes se pasaba SOLO al asistente rápido. Y como este contesta con la
       // persona de Hermes, quien preguntaba creía estar hablando con él: el
       // aviso ámbar decía "no está conectado" y abajo alguien contestaba
@@ -670,6 +675,7 @@ export default function JarvisAdminAssistant() {
     // Detener suelta también la espera de Hermes: si no, el candado se queda
     // trabado y la ventana no vuelve a aceptar nada.
     micTurnoRef.current++;
+    vozEspejo.cancelar();
     dejarDeEsperar();
     setLastMessage('');
   };
@@ -956,6 +962,11 @@ export default function JarvisAdminAssistant() {
   // La frase quedó completa. Un solo camino de salida para las tres formas de
   // llegar aquí: dos segundos de silencio, el navegador cerrando por su
   // cuenta, o el micrófono apagado a mano.
+  // El micrófono NO sobrevive al widget. `interrumpir` y `stopListening`
+  // ya lo sueltan, pero cerrar la pestaña con el dictado abierto no pasa
+  // por ninguno de los dos.
+  useEffect(() => () => { vozEspejo.cancelar(); }, []);
+
   const cerrarDictado = () => {
     window.clearTimeout(silencioRef.current);
     const transcript = (dictadoRef.current || '').trim();
@@ -990,6 +1001,44 @@ export default function JarvisAdminAssistant() {
       }
       if (v === 'no') { resolverPropuesta(false); return; }
       // Ni sí ni no: es una pregunta. La propuesta se queda en pantalla.
+    }
+
+    // >>> EL ORIGINAL VIAJA CON LA TRANSCRIPCION <<<
+    // Hasta ahora el modo voz mandaba solo el texto del navegador y el
+    // audio se perdia: si entendia mal, no habia a que volver. Ahora se
+    // manda UN mensaje con las dos cosas.
+    //
+    // El texto sigue yendo a proposito: el adaptador de Hermes todavia lee
+    // v4 y solo entiende texto. Quitarlo ahora dejaria el modo voz sin
+    // contestar hasta que alguien termine el otro lado — un paso atras.
+    //
+    // Si el audio falla por lo que sea, se manda el texto y ya: guardar el
+    // original es una mejora, no un requisito para poder hablar.
+    if (canal === 'hermes' && vozEspejo.espejoActivo()) {
+      vozEspejo.cerrar().then((grabado) => {
+        if (!grabado) { enviar(transcript); return; }
+        const idProvisional = `u-tmp-${Date.now()}`;
+        setMensajes((m) => [...m, { id: idProvisional, role: 'user', content: transcript, canalDe: 'hermes' }]);
+        setLoading(true);
+        esperandoRef.current = true;
+        speak('Un momento, estoy revisando.', { escucharDespues: false });
+        vozEspejo.mandarConAudio(profile?.tenant_id, grabado, transcript,
+                                 contextoParaAgente(leerModulos()))
+          .then((id) => {
+            if (!id) {
+              // El audio no se pudo adjuntar: se quita la burbuja optimista
+              // y se manda por el camino de siempre. Nunca se pierde.
+              setMensajes((m) => m.filter((x) => x.id !== idProvisional));
+              dejarDeEsperar();
+              enviar(transcript);
+              return;
+            }
+            idsVistosRef.current.add(`u-${id}`);
+            if (id > ultimoIdRef.current) ultimoIdRef.current = id;
+            setMensajes((m) => m.map((x) => (x.id === idProvisional ? { ...x, id: `u-${id}` } : x)));
+          });
+      });
+      return;
     }
 
     enviar(transcript);
@@ -1087,9 +1136,15 @@ export default function JarvisAdminAssistant() {
 
     recognitionRef.current = recognition;
     recognition.start();
+    // El original, en paralelo. Si no se puede grabar —permiso, micrófono
+    // ocupado, http sin cifrar— el dictado sigue igual: esto guarda el
+    // audio, no habilita hablar.
+    if (canal === 'hermes') vozEspejo.iniciar();
   };
 
   const stopListening = () => {
+    // cerrarDictado() de abajo se queda con el audio si hay algo dictado;
+    // si no lo hay, esta cancelacion es la que apaga el microfono.
     // Apagar el micrófono a propósito cierra la conversación hablada. Sin
     // esto, el círculo se volvería a encender solo en la siguiente respuesta
     // y no habría forma de terminar.
