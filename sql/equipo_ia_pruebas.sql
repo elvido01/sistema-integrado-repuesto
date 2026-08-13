@@ -123,7 +123,10 @@ BEGIN
     || chr(10) || '         esperaba: ' || v_esp || chr(10) || '         obtuvo  : ' || COALESCE(v_obt,'(nulo)'));
 
   -- ══ 9 · LA FUNCION DE PRECIOS EXISTE Y ES LA AUTORIZADA ═══════════
-  SELECT (to_regprocedure('hermes.buscar_producto(text,integer)') IS NOT NULL)::text || '/' ||
+  -- La firma real lleva tres argumentos. La primera version de esta prueba
+  -- buscaba (text,integer) y fallo: no era que el contrato hubiera
+  -- cambiado, era que yo lo escribi mal.
+  SELECT (to_regprocedure('hermes.buscar_producto(text,integer,boolean)') IS NOT NULL)::text || '/' ||
          (to_regprocedure('hermes.catalogo_resumen()') IS NOT NULL)::text INTO v_obt;
   v_esp := 'true/true';
   v_ok := (v_esp IS NOT DISTINCT FROM v_obt);
@@ -200,7 +203,10 @@ BEGIN
   r := hermes.equipo_delegar(w2, 'hermes', 'comercial_creativo', 'execution_request',
         'publicar la promocion', '{}'::jsonb, NULL, true);
   m2 := (r ->> 'mensaje_id')::uuid;
-  SELECT count(*)::int INTO n FROM hermes.equipo_tomar('comercial_creativo', 5);
+  -- Se mira ESE mensaje, no cuantos salieron. La primera version contaba, y
+  -- fallo con 1: lo que salio era el creative_request que dejo abierto la
+  -- prueba 6, no el bloqueado. Contar en una cola compartida no prueba nada.
+  SELECT count(*)::int INTO n FROM hermes.equipo_tomar('comercial_creativo', 5) t WHERE t.id = m2;
   v_obt := n::text;
   v_esp := '0';
   v_ok := (v_esp IS NOT DISTINCT FROM v_obt);

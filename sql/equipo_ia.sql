@@ -232,12 +232,22 @@ BEGIN
     EXECUTE format(
       'CREATE POLICY %I ON public.%I FOR SELECT USING (tenant_id = public.get_user_tenant() AND public.equipo_ia_permitido())',
       t || '_duenio', t);
+    -- Supabase concede ALL por defecto a las tablas nuevas de public
+    -- (ALTER DEFAULT PRIVILEGES del proyecto). Sin este REVOKE, anon y
+    -- authenticated nacen con INSERT, UPDATE y DELETE sobre las cuatro
+    -- tablas: 24 permisos que nadie pidió.
+    --
+    -- Hoy la RLS los frena —solo hay política de SELECT, y sin política
+    -- de escritura un INSERT se deniega—, así que no había agujero. Pero
+    -- depender de eso es depender de que nadie añada nunca una política
+    -- permisiva de más. Se quitan los permisos y ya no hay que confiar.
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.%I FROM anon, authenticated', t);
     EXECUTE format('GRANT SELECT ON public.%I TO authenticated', t);
   END LOOP;
 END $$;
--- Escribir NO se concede a nadie por tabla: todo pasa por las funciones
--- SECURITY DEFINER de abajo, que son las que comprueban quién delega a
--- quién y qué necesita aprobación.
+-- Escribir NO se concede a nadie: todo pasa por las funciones SECURITY
+-- DEFINER, que son las que comprueban quién delega a quién y qué necesita
+-- aprobación.
 
 -- ------------------------------------------------------------
 -- 7. LOS TRES, Y SUS LÍMITES  (§3, §8)
