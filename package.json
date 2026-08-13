@@ -21,7 +21,8 @@
     "meta:token": "node scripts/meta-token.mjs",
     "meta:comentarios": "node scripts/meta-comentarios-importar.mjs",
     "vault:sync:simular": "node scripts/vault-sync/sync.mjs --simular --una-vez",
-    "deploy": "npm run build && npx wrangler pages deploy dist --project-name=motoflow --branch=feat/mercancias-filtros --commit-dirty=true && npx wrangler pages deploy dist --project-name=repuestos-morla --branch=main --commit-dirty=true"
+    "deploy": "npm run build && npx wrangler pages deploy dist --project-name=motoflow --branch=feat/mercancias-filtros --commit-dirty=true && npx wrangler pages deploy dist --project-name=repuestos-morla --branch=main --commit-dirty=true",
+    "equipo": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/arrancar-equipo.ps1"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "^1.2.1",
