@@ -14,6 +14,7 @@ import { Helmet } from 'react-helmet';
 import {
   Loader2, RefreshCw, ShieldCheck, Bot, Database, Sparkles, Check, X,
   MessageSquarePlus, AlertTriangle, Clock, ChevronRight, RotateCcw, Ban, Send,
+  Cpu, Cloud, Laptop, Undo2,
 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -48,6 +49,32 @@ const ESTADO_TRABAJO = {
 const ICONO = { hermes: Bot, jarvis: Database, comercial_creativo: Sparkles };
 const NOMBRE_CORTO = { hermes: 'Hermes', jarvis: 'Jarvis', comercial_creativo: 'Comercial-Creativo', elvido: 'Elvido' };
 
+// ── Los tres motores ──────────────────────────────────────────────────
+// Lo que cada uno significa en la práctica: quién paga, dónde corre y qué
+// hace falta para que conteste. Elegir motor es elegir esas tres cosas.
+const MOTOR = {
+  openai: {
+    txt: 'OpenAI',
+    icono: Cloud,
+    resumen: 'Clave de API de OpenAI. Corre en la nube y contesta siempre.',
+    requisito: 'Necesita OPENAI_API_KEY. Ya está puesta: es la que usa el chat de hoy.',
+  },
+  claude: {
+    txt: 'Claude por API',
+    icono: Cloud,
+    resumen: 'Clave de console.anthropic.com, con su crédito aparte del de la suscripción.',
+    requisito: 'Necesita ANTHROPIC_API_KEY en los secretos de Supabase y en el worker.',
+  },
+  claude_suscripcion: {
+    txt: 'Suscripción de Claude',
+    icono: Laptop,
+    resumen: 'Tu cuenta, en una máquina tuya. No consume crédito de API.',
+    requisito: 'Necesita el worker corriendo en tu PC. Si no está, el trabajo se queda en cola.',
+  },
+};
+
+const ARRANQUE = { comercial_creativo: 'npm run equipo:comercial', jarvis: 'npm run equipo:jarvis' };
+
 const hace = (iso) => {
   if (!iso) return '—';
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -76,6 +103,8 @@ const EquipoIAPage = () => {
   const [peticion, setPeticion] = useState('');
   const [detalle, setDetalle] = useState(null);
   const [cambios, setCambios] = useState({ id: null, texto: '' });
+  const [motor, setMotor] = useState(null);
+  const [guardandoMotor, setGuardandoMotor] = useState(false);
 
   const cargar = useCallback(async (silencioso) => {
     if (!silencioso) setCargando(true);
@@ -103,6 +132,7 @@ const EquipoIAPage = () => {
   }, [cargar]);
 
   const agentes = data?.agentes || [];
+  const modelos = data?.modelos || [];
   const trabajos = data?.trabajos || [];
   const aprobaciones = data?.aprobaciones || [];
   const pendientes = useMemo(() => aprobaciones.filter((a) => a.estado === 'pending'), [aprobaciones]);
@@ -151,6 +181,66 @@ const EquipoIAPage = () => {
     const { error } = await supabase.rpc('equipo_trabajo_accion', { p_trabajo_id: id, p_accion: accion });
     if (error) toast({ variant: 'destructive', title: 'No se pudo', description: error.message });
     else cargar(true);
+  };
+
+  // ── EL MOTOR DE UN AGENTE ───────────────────────────────────────────
+  // Se abre con lo que hay puesto hoy, no con valores en blanco: cambiar de
+  // motor casi nunca es empezar de cero, es mover una cosa.
+  const abrirMotor = (a) => setMotor({
+    clave: a.clave,
+    nombre: a.nombre,
+    atiende_widget: a.atiende_widget,
+    puede_deshacer: a.puede_deshacer,
+    proveedor: a.proveedor || 'openai',
+    modelo: a.modelo || '',
+    temperatura: a.temperatura ?? 0.3,
+    max_tokens: a.max_tokens ?? 800,
+  });
+
+  const etiquetaModelo = (proveedor, modelo) => {
+    if (proveedor === 'claude_suscripcion') return 'lo decide la sesión';
+    if (!modelo) return 'por defecto del worker';
+    return modelos.find((m) => m.proveedor === proveedor && m.modelo === modelo)?.etiqueta || modelo;
+  };
+
+  const guardarMotor = async () => {
+    setGuardandoMotor(true);
+    const { data: res, error } = await supabase.rpc('equipo_motor', {
+      p_clave: motor.clave,
+      p_proveedor: motor.proveedor,
+      p_modelo: motor.proveedor === 'claude_suscripcion' ? null : (motor.modelo || null),
+      p_temperatura: Number(motor.temperatura),
+      p_max_tokens: Number(motor.max_tokens),
+    });
+    setGuardandoMotor(false);
+    if (error) {
+      toast({ variant: 'destructive', title: 'No se pudo cambiar el motor', description: error.message });
+      return;
+    }
+    // Guardar no es conectar. Si hace falta un worker, se dice aquí y no
+    // cuando el trabajo lleve media hora parado en la cola.
+    const avisos = [];
+    if (res?.necesita_worker) avisos.push(`Falta arrancar ${ARRANQUE[motor.clave] || 'el worker'} en tu PC.`);
+    if (res?.widget_degradado) avisos.push('El botón flotante sigue con OpenAI: la Edge Function no puede usar la suscripción.');
+    if (res?.aviso) avisos.push(res.aviso);
+    toast({
+      title: `${motor.nombre} pasa a ${MOTOR[motor.proveedor]?.txt || motor.proveedor}`,
+      description: avisos.length ? avisos.join(' ') : 'Toma efecto en el próximo mensaje. No hay que reiniciar nada.',
+      duration: avisos.length ? 9000 : 4000,
+    });
+    setMotor(null);
+    cargar(true);
+  };
+
+  const deshacerMotor = async (clave) => {
+    const { error } = await supabase.rpc('equipo_motor_deshacer', { p_clave: clave });
+    if (error) {
+      toast({ variant: 'destructive', title: 'No se pudo deshacer', description: error.message });
+      return;
+    }
+    toast({ title: 'Motor restaurado', description: 'Volvió a como estaba antes del último cambio.' });
+    setMotor(null);
+    cargar(true);
   };
 
   const abrirDetalle = async (id) => {
@@ -242,6 +332,47 @@ const EquipoIAPage = () => {
                   </div>
                 )}
               </dl>
+
+              {/* ── EL MOTOR ────────────────────────────────────────
+                  Solo aparece si la base ya tiene las columnas. Antes de
+                  correr la migración la tarjeta se ve como siempre en vez
+                  de enseñar un motor vacío. */}
+              {a.proveedor && (
+                <div className="mt-3 rounded-lg border bg-slate-50/70 p-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Motor</p>
+                      <p className="truncate text-[11px] font-semibold text-slate-700">
+                        <Texto>{MOTOR[a.proveedor]?.txt || a.proveedor}</Texto>
+                        <span className="font-normal text-slate-500"> · {etiquetaModelo(a.proveedor, a.modelo)}</span>
+                      </p>
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]"
+                      onClick={() => abrirMotor(a)}>
+                      <Cpu className="mr-1 h-3 w-3" /> Cambiar
+                    </Button>
+                  </div>
+
+                  {a.ejecuta_en === 'maquina_propia' && (
+                    <p className="mt-1 flex items-start gap-1 text-[10px] text-amber-700">
+                      <Laptop className="mt-px h-3 w-3 shrink-0" />
+                      Lo atiende una máquina tuya. Si el worker no está corriendo, el trabajo espera en cola.
+                    </p>
+                  )}
+
+                  {a.atiende_widget && a.proveedor_widget !== a.proveedor && (
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      El botón flotante sigue con {MOTOR[a.proveedor_widget]?.txt || a.proveedor_widget}.
+                    </p>
+                  )}
+
+                  {a.motor_email && (
+                    <p className="mt-1 truncate text-[10px] text-slate-400">
+                      Cambiado por <Texto>{a.motor_email}</Texto> {hace(a.motor_en)}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -451,6 +582,139 @@ const EquipoIAPage = () => {
           </div>
         </div>
       </div>
+
+      {/* ── CAMBIARLE EL MOTOR A UN AGENTE ────────────────────────── */}
+      <Dialog open={!!motor} onOpenChange={(v) => !v && setMotor(null)}>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              Motor de <Texto>{motor?.nombre}</Texto>
+            </DialogTitle>
+          </DialogHeader>
+
+          {motor && (
+            <div className="space-y-4">
+              {/* Los tres, con lo que cada uno cuesta y lo que exige. */}
+              <div className="space-y-2">
+                {Object.entries(MOTOR).map(([clave, m]) => {
+                  const Icon = m.icono;
+                  const puesto = motor.proveedor === clave;
+                  return (
+                    <button
+                      key={clave}
+                      type="button"
+                      onClick={() => setMotor((s) => ({ ...s, proveedor: clave, modelo: '' }))}
+                      className={`flex w-full items-start gap-2 rounded-lg border p-2.5 text-left transition ${
+                        puesto ? 'border-blue-400 bg-blue-50/60' : 'border-slate-200 hover:border-slate-300'}`}
+                    >
+                      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${puesto ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-slate-800">{m.txt}</p>
+                        <p className="text-[11px] leading-snug text-slate-600">{m.resumen}</p>
+                        <p className="mt-0.5 text-[10px] leading-snug text-slate-400">{m.requisito}</p>
+                      </div>
+                      {puesto && <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Con la suscripción no hay modelo que elegir: lo decide la
+                  sesión de Claude Code. Enseñar un desplegable muerto sería
+                  hacer creer que ahí se decide algo. */}
+              {motor.proveedor === 'claude_suscripcion' ? (
+                <p className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-600">
+                  El modelo lo decide tu sesión de Claude Code, no esta pantalla.
+                  {ARRANQUE[motor.clave] && (
+                    <> Para que empiece a contestar, arranca <code className="rounded bg-white px-1">{ARRANQUE[motor.clave]}</code> en tu PC.</>
+                  )}
+                </p>
+              ) : (
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold text-slate-600" htmlFor="motor-modelo">
+                    Modelo
+                  </label>
+                  <select
+                    id="motor-modelo"
+                    value={motor.modelo}
+                    onChange={(e) => setMotor((s) => ({ ...s, modelo: e.target.value }))}
+                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"
+                  >
+                    <option value="">Por defecto del worker</option>
+                    {modelos.filter((m) => m.proveedor === motor.proveedor).map((m) => (
+                      <option key={m.modelo} value={m.modelo}>{m.etiqueta}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[10px] leading-snug text-slate-500">
+                    <Texto>
+                      {modelos.find((m) => m.proveedor === motor.proveedor && m.modelo === motor.modelo)?.nota
+                        || 'Sin modelo fijo: cada worker usa el suyo por defecto.'}
+                    </Texto>
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold text-slate-600" htmlFor="motor-temp">
+                    Soltura al escribir
+                  </label>
+                  <input
+                    id="motor-temp" type="range" min="0" max="1" step="0.05"
+                    value={motor.temperatura}
+                    onChange={(e) => setMotor((s) => ({ ...s, temperatura: e.target.value }))}
+                    className="w-full"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    {Number(motor.temperatura).toFixed(2)} — {Number(motor.temperatura) <= 0.2
+                      ? 'literal, para consultar datos'
+                      : Number(motor.temperatura) >= 0.7 ? 'suelto, puede irse de tono' : 'equilibrado'}
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold text-slate-600" htmlFor="motor-tokens">
+                    Largo máximo
+                  </label>
+                  <input
+                    id="motor-tokens" type="number" min="100" max="8000" step="100"
+                    value={motor.max_tokens}
+                    onChange={(e) => setMotor((s) => ({ ...s, max_tokens: e.target.value }))}
+                    className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-700"
+                  />
+                  <p className="text-[10px] text-slate-500">tokens por respuesta</p>
+                </div>
+              </div>
+
+              {motor.atiende_widget && motor.proveedor === 'claude_suscripcion' && (
+                <p className="flex items-start gap-1 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  Jarvis también atiende el botón flotante, y ese corre en el servidor de Supabase:
+                  no hay cuenta con la que autenticar tu suscripción. Ese botón se queda con OpenAI
+                  para no dejar sin respuesta a la gente del mostrador.
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2 border-t pt-3">
+                <Button onClick={guardarMotor} disabled={guardandoMotor} className="flex-1">
+                  {guardandoMotor ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                  Guardar
+                </Button>
+                {motor.puede_deshacer && (
+                  <Button variant="outline" onClick={() => deshacerMotor(motor.clave)}>
+                    <Undo2 className="mr-1 h-3.5 w-3.5" /> Deshacer el último
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setMotor(null)}>Cancelar</Button>
+              </div>
+
+              <p className="text-[10px] text-slate-400">
+                Toma efecto en el próximo mensaje: el worker relee esto cada vez. Queda registrado
+                con tu correo y la hora.
+              </p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── EL HILO DE UN TRABAJO ─────────────────────────────────── */}
       <Dialog open={!!detalle} onOpenChange={(v) => !v && setDetalle(null)}>

@@ -169,6 +169,29 @@ Cambiarlas es un `UPDATE`, no un despliegue.
 
 ---
 
+## El motor de cada agente cambia en caliente
+
+`hermes.equipo_agente_config('<clave>')` devuelve `proveedor`, `modelo`,
+`max_tokens`, `temperatura` y `persona`. **Hay que leerlo en cada mensaje, no
+al arrancar**: el dueño le cambia el motor a un agente desde la pantalla del
+módulo (`public.equipo_motor`) y el cambio tiene que valer en el mensaje
+siguiente, sin reiniciar a nadie.
+
+| `proveedor` | Quién lo atiende |
+|---|---|
+| `openai` | clave de API, desde donde sea |
+| `claude` | clave de API de Anthropic |
+| `claude_suscripcion` | un proceso en una máquina del dueño (`scripts/equipo-worker.mjs`) |
+
+`modelo` en `NULL` significa *que decida el worker con su valor por defecto*,
+y es siempre `NULL` con `claude_suscripcion` — ahí lo decide la sesión.
+
+Guardar un motor **no** conecta nada: si el worker de esa máquina no está
+corriendo, el trabajo se queda en cola, visible y parado. Eso es lo correcto:
+no se responde con otro motor a espaldas de quien lo eligió.
+
+---
+
 ## Errores
 
 | `motivo` | Qué hacer |
