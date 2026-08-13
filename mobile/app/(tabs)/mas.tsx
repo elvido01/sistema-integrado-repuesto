@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users } from 'lucide-react-native';
+import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { canAccessModule } from '@/src/services/permissions';
 import { getQuickAccessTabs, saveQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
@@ -27,6 +27,9 @@ export default function MasScreen() {
   }, [user?.id]);
 
   const menuItems = [
+    // Hermes primero: es lo que se abre a diario. moduleKey propio para
+    // que se pueda quitar por permisos como cualquier otro modulo.
+    { title: 'Hermes', icon: Bot, route: '/hermes', color: '#059669', moduleKey: 'hermes-chat', quickName: 'hermes' },
     { title: 'Scanner', icon: Barcode, route: '/(tabs)/scanner', color: '#8b5cf6', moduleKey: 'scanner', quickName: 'scanner' },
     {
       title: isCamineroMotors ? 'Recibo de Pago' : 'Recibo de Ingreso',
