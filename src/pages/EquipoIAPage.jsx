@@ -14,7 +14,7 @@ import { Helmet } from 'react-helmet';
 import {
   Loader2, RefreshCw, ShieldCheck, Bot, Database, Sparkles, Check, X,
   MessageSquarePlus, AlertTriangle, Clock, ChevronRight, RotateCcw, Ban, Send,
-  Cpu, Cloud, Laptop, Undo2,
+  Cpu, Cloud, Laptop, Undo2, PlugZap,
 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -56,20 +56,20 @@ const MOTOR = {
   openai: {
     txt: 'OpenAI',
     icono: Cloud,
-    resumen: 'Clave de API de OpenAI. Corre en la nube y contesta siempre.',
+    resumen: 'El modelo sale de la API de OpenAI y se paga con crédito.',
     requisito: 'Necesita OPENAI_API_KEY. Ya está puesta: es la que usa el chat de hoy.',
   },
   claude: {
     txt: 'Claude por API',
     icono: Cloud,
-    resumen: 'Clave de console.anthropic.com, con su crédito aparte del de la suscripción.',
+    resumen: 'El modelo sale de la API de Anthropic, con crédito aparte del de la suscripción.',
     requisito: 'Necesita ANTHROPIC_API_KEY en los secretos de Supabase y en el worker.',
   },
   claude_suscripcion: {
     txt: 'Suscripción de Claude',
     icono: Laptop,
-    resumen: 'Tu cuenta, en una máquina tuya. No consume crédito de API.',
-    requisito: 'Necesita el worker corriendo en tu PC. Si no está, el trabajo se queda en cola.',
+    resumen: 'Contesta con una cuenta de Claude tuya. No gasta crédito de API.',
+    requisito: 'La cuenta se elige en la PC, no aquí: npm run equipo:login',
   },
 };
 
@@ -90,6 +90,57 @@ const Texto = ({ children, className = '' }) => (
   <span className={className}>{String(children ?? '')}</span>
 );
 
+// ── Quién atiende la cola, y con qué cuenta ───────────────────────────
+// Esto NO se elige desde el navegador y no es un descuido: la sesión de
+// Claude vive en la máquina que corre el worker. Un desplegable aquí
+// dejaría elegir una cuenta y que contestara otra. Lo que la pantalla sí
+// puede es decir cuál está puesta y cómo se cambia.
+//
+// Y ojo con lo que se dice: la cola necesita worker SIEMPRE, con cualquier
+// motor. Lo que cambia es de dónde sale el modelo y quién paga.
+const QuienAtiende = ({ w, agente, compacto }) => {
+  const cmd = ARRANQUE[agente];
+  if (!w || !w.conectado) {
+    return (
+      <div className={`rounded-lg border border-amber-200 bg-amber-50/60 p-2 ${compacto ? 'mt-1' : ''}`}>
+        <p className="flex items-start gap-1 text-[11px] font-semibold text-amber-800">
+          <PlugZap className="mt-px h-3.5 w-3.5 shrink-0" />
+          {w ? 'Nadie atendiendo ahora mismo' : 'Nunca ha arrancado un worker'}
+        </p>
+        {w && (
+          <p className="mt-0.5 text-[10px] text-amber-700">
+            El último fue <Texto>{w.cuenta || w.motor}</Texto>
+            {w.maquina ? <> desde <Texto>{w.maquina}</Texto></> : null} · {hace(w.visto_en)}
+          </p>
+        )}
+        {cmd && (
+          <p className="mt-1 text-[10px] text-amber-700">
+            Los trabajos esperan en cola hasta que arranques <code className="rounded bg-white px-1">{cmd}</code>
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-lg border border-emerald-200 bg-emerald-50/60 p-2 ${compacto ? 'mt-1' : ''}`}>
+      <p className="flex items-center gap-1 text-[11px] font-semibold text-emerald-800">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+        Atendiendo · {hace(w.visto_en)}
+      </p>
+      {w.cuenta ? (
+        <p className="mt-0.5 text-[10px] text-emerald-800">
+          Contesta con <b><Texto>{w.cuenta}</Texto></b>
+          {w.plan ? <> · <Texto>{w.plan}</Texto></> : null}
+        </p>
+      ) : (
+        <p className="mt-0.5 text-[10px] text-emerald-700">Con clave de API, sin cuenta personal</p>
+      )}
+      {w.maquina && <p className="text-[10px] text-emerald-700">Desde <Texto>{w.maquina}</Texto></p>}
+    </div>
+  );
+};
+
 const Etiqueta = ({ mapa, valor }) => {
   const e = mapa[valor] || { txt: valor || '—', cls: 'bg-slate-100 text-slate-600' };
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${e.cls}`}>{e.txt}</span>;
@@ -105,15 +156,26 @@ const EquipoIAPage = () => {
   const [cambios, setCambios] = useState({ id: null, texto: '' });
   const [motor, setMotor] = useState(null);
   const [guardandoMotor, setGuardandoMotor] = useState(false);
+  const [workers, setWorkers] = useState([]);
 
   const cargar = useCallback(async (silencioso) => {
     if (!silencioso) setCargando(true);
-    const { data: res, error } = await supabase.rpc('equipo_panel', { p_limite: 25 });
-    if (error) {
-      toast({ variant: 'destructive', title: 'No se pudo cargar el equipo', description: error.message });
+    // Dos llamadas y no una: equipo_panel ya se reescribió entera una vez
+    // para agregarle tres columnas. Una tercera copia de noventa líneas de
+    // SQL para colgarle un dato es comprar una divergencia segura a cambio
+    // de un viaje de red.
+    const [panel, ws] = await Promise.all([
+      supabase.rpc('equipo_panel', { p_limite: 25 }),
+      supabase.rpc('equipo_workers_estado'),
+    ]);
+    if (panel.error) {
+      toast({ variant: 'destructive', title: 'No se pudo cargar el equipo', description: panel.error.message });
     } else {
-      setData(res);
+      setData(panel.data);
     }
+    // Que falte el latido no rompe la pantalla: es un dato de más, y hasta
+    // que se corra su SQL esta llamada da error de función inexistente.
+    setWorkers(ws.error ? [] : (ws.data || []));
     setCargando(false);
   }, [toast]);
 
@@ -130,6 +192,17 @@ const EquipoIAPage = () => {
       .subscribe();
     return () => { supabase.removeChannel(canal); };
   }, [cargar]);
+
+  // El latido no dispara realtime a propósito: sería un refresco por minuto
+  // por worker. Se relee cada medio minuto mientras la pantalla esté
+  // abierta, que es cuando importa que "Atendiendo · hace 10 s" sea cierto.
+  useEffect(() => {
+    const t = setInterval(async () => {
+      const { data: ws, error } = await supabase.rpc('equipo_workers_estado');
+      if (!error) setWorkers(ws || []);
+    }, 30000);
+    return () => clearInterval(t);
+  }, []);
 
   const agentes = data?.agentes || [];
   const modelos = data?.modelos || [];
@@ -353,11 +426,9 @@ const EquipoIAPage = () => {
                     </Button>
                   </div>
 
-                  {a.ejecuta_en === 'maquina_propia' && (
-                    <p className="mt-1 flex items-start gap-1 text-[10px] text-amber-700">
-                      <Laptop className="mt-px h-3 w-3 shrink-0" />
-                      Lo atiende una máquina tuya. Si el worker no está corriendo, el trabajo espera en cola.
-                    </p>
+                  {/* Hermes no se atiende desde aquí: su proceso es el suyo. */}
+                  {a.clave !== 'hermes' && (
+                    <QuienAtiende w={workers.find((w) => w.agente === a.clave)} agente={a.clave} compacto />
                   )}
 
                   {a.atiende_widget && a.proveedor_widget !== a.proveedor && (
@@ -619,16 +690,38 @@ const EquipoIAPage = () => {
                 })}
               </div>
 
+              {/* Lo que el diálogo daba a entender mal: que solo la
+                  suscripción necesita worker. */}
+              <p className="rounded-lg bg-slate-50 p-2 text-[10px] leading-snug text-slate-500">
+                Con cualquiera de los tres, la cola la atiende el worker de tu PC. Lo que cambia
+                es de dónde sale el modelo y quién paga.
+              </p>
+
               {/* Con la suscripción no hay modelo que elegir: lo decide la
                   sesión de Claude Code. Enseñar un desplegable muerto sería
                   hacer creer que ahí se decide algo. */}
               {motor.proveedor === 'claude_suscripcion' ? (
-                <p className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-600">
-                  El modelo lo decide tu sesión de Claude Code, no esta pantalla.
-                  {ARRANQUE[motor.clave] && (
-                    <> Para que empiece a contestar, arranca <code className="rounded bg-white px-1">{ARRANQUE[motor.clave]}</code> en tu PC.</>
+                <div className="rounded-lg bg-slate-50 p-2">
+                  <p className="text-[11px] text-slate-600">
+                    Con la suscripción, el modelo lo decide tu sesión de Claude Code.
+                  </p>
+                  {/* La pregunta que trae a todo el mundo aquí: ¿CUÁL de mis
+                      cuentas contesta? No se elige en el navegador, así que
+                      al menos se dice cuál es y con qué se cambia. */}
+                  <p className="mt-1 text-[11px] font-semibold text-slate-700">
+                    ¿Con cuál de tus cuentas?
+                  </p>
+                  <p className="text-[11px] text-slate-600">
+                    Con la que esté iniciada en la PC que corre el worker — no se elige desde aquí.
+                    El agente tiene su propia sesión, aparte de la tuya de VS Code:
+                  </p>
+                  <code className="mt-1 block rounded bg-white px-2 py-1 text-[11px]">npm run equipo:login</code>
+                  {motor.clave !== 'hermes' && (
+                    <div className="mt-2">
+                      <QuienAtiende w={workers.find((w) => w.agente === motor.clave)} agente={motor.clave} />
+                    </div>
                   )}
-                </p>
+                </div>
               ) : (
                 <div>
                   <label className="mb-1 block text-[11px] font-bold text-slate-600" htmlFor="motor-modelo">

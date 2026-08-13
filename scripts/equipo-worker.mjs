@@ -57,6 +57,7 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { hostname } from 'node:os';
 import { CONFIG_DIR, resolverClaude, entorno, cuenta, comoIniciarSesion } from './claude-agente.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
@@ -294,6 +295,7 @@ log(`motor: ${cfg.proveedor}${cfg.modelo ? ' · ' + cfg.modelo : ''}`);
 //
 // Y se comprueba ANTES de tomar trabajo: sin sesión, cada mensaje se
 // tomaría solo para fallar, gastando un intento cada vez.
+let cuentaClaude = null;
 if (cfg.proveedor === 'claude_suscripcion') {
   log(`claude: ${CLAUDE_CMD} (${CLAUDE_ORIGEN})`);
   log(`casa:   ${CONFIG_DIR}`);
@@ -305,7 +307,31 @@ if (cfg.proveedor === 'claude_suscripcion') {
     process.exit(1);
   }
   log(`cuenta: ${c.email}${c.plan ? ' · ' + c.plan : ''}`);
+  cuentaClaude = c;
 }
+
+// ── El latido ──────────────────────────────────────────────────────────
+// La pantalla no puede saber sola si hay alguien atendiendo ni con qué
+// cuenta: eso vive en esta máquina. Se lo decimos nosotros, cada minuto.
+//
+// Sin esto, guardar "Suscripción de Claude" en el módulo es una promesa
+// sin comprobante — se ve el motor elegido y no se ve si contesta alguien.
+const latir = async () => {
+  const cfgAhora = await cli.query('SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE])
+    .then((r) => r.rows[0]?.cfg).catch(() => null);
+  await escribir(cli, 'SELECT hermes.equipo_latido($1,$2,$3,$4,$5,$6,$7)', [
+    AGENTE,
+    cuentaClaude?.email || null,
+    cuentaClaude?.plan || null,
+    hostname(),
+    cfgAhora?.proveedor || cfg.proveedor,
+    cfgAhora?.modelo || cfg.modelo || null,
+    process.version,
+  ]).catch((e) => log('no se pudo latir:', e.message));
+};
+
+await latir();
+const latido = setInterval(() => { latir(); }, 60 * 1000);
 
 while (corriendo) {
   let msg;
@@ -365,5 +391,6 @@ while (corriendo) {
   }
 }
 
+clearInterval(latido);
 await cli.end();
 log('parado.');
