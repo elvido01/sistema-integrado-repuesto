@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Tabs } from 'expo-router';
-import { Barcode, Boxes, ClipboardList, FileText, Home, List, ListOrdered, MapPin, Menu, Printer, Receipt, Settings, ShoppingCart } from 'lucide-react-native';
+import { Barcode, Bot, Boxes, ClipboardList, FileText, Home, List, ListOrdered, MapPin, Menu, Printer, Receipt, Settings, ShoppingCart } from 'lucide-react-native';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { canAccessModule } from '@/src/services/permissions';
 import { DEFAULT_QUICK_ACCESS, QUICK_ACCESS_OPTIONS, getQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
 
 type TabName =
   | 'index'
+  | 'hermes'
   | 'scanner'
   | 'catalogo'
   | 'pos'
@@ -24,12 +25,22 @@ type TabConfig = {
   title: string;
   icon: React.ComponentType<{ color?: string; size?: number }>;
   moduleKey?: string;
+  sinCabecera?: boolean;
 };
 
 const TAB_CONFIG: Record<TabName, TabConfig> = {
   index: {
     title: 'Inicio',
     icon: Home,
+  },
+  // La pantalla trae su propia cabecera (nombre, estado y el botón de
+  // conversación nueva), así que la del navegador sobra: dos cabeceras
+  // seguidas se comen media pantalla de chat.
+  hermes: {
+    title: 'Hermes',
+    icon: Bot,
+    moduleKey: 'hermes-chat',
+    sinCabecera: true,
   },
   scanner: {
     title: 'Scanner',
@@ -153,6 +164,7 @@ export default function TabLayout() {
             name={name}
             options={{
               title: config.title,
+              headerShown: !config.sinCabecera,
               tabBarIcon: ({ color }) => <Icon color={color} size={24} />,
             }}
           />

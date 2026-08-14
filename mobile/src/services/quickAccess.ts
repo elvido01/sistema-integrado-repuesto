@@ -6,8 +6,14 @@ export type QuickAccessOption = {
   moduleKey?: string;
 };
 
+// >>> POR QUÉ ESTA LISTA IMPORTA MÁS DE LO QUE PARECE <<<
+// `normalizeQuickAccess` descarta en silencio todo lo que no esté aquí.
+// Hermes salía en el menú con su botón "Fijar abajo", se guardaba... y se
+// perdía al normalizar, porque nunca se agregó a esta lista. El botón no
+// daba error: simplemente no pasaba nada, que es la peor forma de fallar.
 export const QUICK_ACCESS_OPTIONS: QuickAccessOption[] = [
   { name: 'index', label: 'Inicio' },
+  { name: 'hermes', label: 'Hermes', moduleKey: 'hermes-chat' },
   { name: 'scanner', label: 'Scanner', moduleKey: 'scanner' },
   { name: 'catalogo', label: 'Catalogo', moduleKey: 'catalogo' },
   { name: 'pos', label: 'Venta', moduleKey: 'ventas' },

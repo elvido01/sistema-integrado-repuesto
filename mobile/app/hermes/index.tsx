@@ -19,11 +19,11 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Linking,
-  Modal, Platform, Pressable, ScrollView, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView,
+  Linking, Modal, Platform, Pressable, ScrollView, Text, TextInput, View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useRouter } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Clipboard from 'expo-clipboard';
@@ -40,6 +40,7 @@ import {
   AUTORES, ESTADOS, estadoCabecera, formatearDuracion, formatearTamano,
   nombreSeguro, type MedioLocal,
 } from '../../src/features/hermes/contrato';
+import { MAX_INTENTOS } from '../../src/features/hermes/cola';
 import { useAuthStore } from '../../src/store/useAuthStore';
 
 const COLOR_HERMES = '#059669';
@@ -56,6 +57,20 @@ const Burbuja = ({
 }) => {
   const mio = m.rol === 'usuario';
   const autor = mio ? AUTORES.usuario : AUTORES.hermes;
+
+  // ── FALLAR NO ES RENDIRSE ──────────────────────────────────────────
+  // La cola reintenta sola hasta tres veces con espera creciente, así que
+  // el primer tropiezo casi nunca es el final. Enseñar "No se pudo enviar"
+  // ahí era mentir por adelantado: el mensaje salía dos segundos después y
+  // el aviso rojo se quedaba en la pantalla, de modo que un envío correcto
+  // y uno perdido se veían igual.
+  //
+  // Mientras queden intentos esto es trabajo en curso y se dice así. Solo
+  // cuando la cola ya no va a volver a intentarlo aparece el error de
+  // verdad, con su causa y con los dos botones.
+  const intentos = m.intentos ?? 0;
+  const agotado = !!m.error && intentos >= MAX_INTENTOS;
+  const reintentando = !!m.error && !agotado;
 
   return (
     <View className={`mb-3 px-3 ${mio ? 'items-end' : 'items-start'}`}>
@@ -146,10 +161,11 @@ const Burbuja = ({
             distingue entre esas dos cosas no informa: estorba. */}
         {m.pendiente && (
           <Text
-            className={m.error ? 'text-[10px] text-rose-600' : 'text-[10px] text-amber-600'}
+            className={`text-[10px] ${agotado ? 'text-rose-600' : 'text-amber-600'}`}
             numberOfLines={3}
           >
-            {m.error ? m.error
+            {agotado ? m.error
+              : reintentando ? `Reintentando… (${m.intentos} de ${MAX_INTENTOS})`
               : m.estado === 'subiendo' ? ESTADOS.subiendo
               : m.estado === 'subido' ? ESTADOS.subido
               : m.estado === 'enviando' ? ESTADOS.enviando
@@ -161,7 +177,11 @@ const Burbuja = ({
             {ESTADOS[m.estado] || ''}
           </Text>
         )}
-        {m.error && (
+        {/* Reintentar y Descartar solo cuando YA no lo va a intentar solo.
+            Ofrecerlos mientras aún quedan intentos invita a tocar un botón
+            que hace lo mismo que el programa está haciendo, y deja creer
+            que el mensaje se perdió cuando todavía va en camino. */}
+        {agotado && (
           <>
             <Pressable onPress={() => onReintentar(m.clientMessageId!)}
               accessibilityRole="button" accessibilityLabel="Reintentar el envío"
@@ -212,6 +232,11 @@ const MiniaturaImagen = ({ medio }: { medio: MedioServidor }) => {
 // ── LA PANTALLA ──────────────────────────────────────────────────────
 export default function HermesScreen() {
   const router = useRouter();
+  // La misma pantalla se abre de dos formas: a pantalla completa desde
+  // "Más", y como pestaña de abajo si la fijaste. En la pestaña no hay a
+  // dónde volver —cerrarla te dejaría en blanco—, así que la X solo sale
+  // cuando de verdad se entró desde otro sitio.
+  const enPestana = useSegments()[0] === '(tabs)';
   const perfil = useAuthStore((s) => s.profile);
   const chat = useHermesChat();
   const grab = useGrabadora();
@@ -224,6 +249,35 @@ export default function HermesScreen() {
   const listaRef = useRef<FlatList<MensajeChat>>(null);
 
   const hayRed = true; // se refina con NetInfo si el proyecto lo incorpora
+
+  // ── EL TECLADO TAPABA LO QUE SE ESCRIBÍA ───────────────────────────
+  // KeyboardAvoidingView tenía behavior=undefined en Android, o sea que no
+  // hacía nada. Antes daba igual: Android encogía la ventana solo. Con
+  // `edgeToEdgeEnabled` la app dibuja por debajo del teclado y ya nadie la
+  // encoge — el recuadro de escribir quedaba detrás de las teclas y había
+  // que escribir a ciegas.
+  //
+  // Se resuelve leyendo la altura real del teclado en vez de estimarla. Es
+  // JavaScript puro a propósito: un paquete nativo para esto obligaría a
+  // compilar y publicar en Play, y esto tiene que llegar por OTA.
+  const insets = useSafeAreaInsets();
+  const [altoTeclado, setAltoTeclado] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const abrir = Keyboard.addListener('keyboardDidShow', (e) => {
+      setAltoTeclado(e.endCoordinates.height);
+      // Que el último mensaje no se quede debajo del teclado.
+      setTimeout(() => listaRef.current?.scrollToEnd({ animated: true }), 60);
+    });
+    const cerrar = Keyboard.addListener('keyboardDidHide', () => setAltoTeclado(0));
+    return () => { abrir.remove(); cerrar.remove(); };
+  }, []);
+
+  // El SafeAreaView ya reserva abajo el hueco de la barra del sistema. Si
+  // sumáramos el teclado entero encima quedaría un vacío del tamaño de esa
+  // barra entre el recuadro y las teclas, así que se descuenta.
+  const huecoTeclado = altoTeclado > 0 ? Math.max(0, altoTeclado - insets.bottom) : 0;
 
   // Al salir de la pantalla: micrófono suelto y audio callado. Un chat que
   // se queda grabando de fondo es lo que hace que se desinstale la app.
@@ -318,14 +372,18 @@ export default function HermesScreen() {
   const cabecera = estadoCabecera(chat.conectado, hayRed, chat.procesando, false);
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50" edges={['top', 'bottom']}>
+    // Como pestaña, el hueco de abajo ya lo reserva la barra de pestañas:
+    // pedirlo otra vez dejaría el recuadro de escribir flotando.
+    <SafeAreaView className="flex-1 bg-slate-50" edges={enPestana ? ['top'] : ['top', 'bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* ── CABECERA ─────────────────────────────────────────────── */}
       <View className="flex-row items-center gap-3 border-b border-slate-200 bg-white px-3 py-2.5">
-        <Pressable onPress={() => router.back()} accessibilityLabel="Volver" hitSlop={10}>
-          <X size={22} color="#475569" />
-        </Pressable>
+        {!enPestana && (
+          <Pressable onPress={() => router.back()} accessibilityLabel="Volver" hitSlop={10}>
+            <X size={22} color="#475569" />
+          </Pressable>
+        )}
         <View className="h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: COLOR_HERMES }}>
           <Bot size={20} color="#fff" />
         </View>
@@ -363,6 +421,7 @@ export default function HermesScreen() {
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        style={{ paddingBottom: huecoTeclado }}
       >
         {chat.cargando ? (
           <View className="flex-1 items-center justify-center">
