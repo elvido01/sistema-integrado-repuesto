@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -8,11 +10,23 @@ import { getQuickAccessTabs, saveQuickAccessTabs, subscribeQuickAccess } from '@
 
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
+// De dónde salió el JavaScript que se está ejecutando. En desarrollo
+// expo-updates está apagado y no hay nada que decir; en una app instalada
+// distingue el código que vino en el APK del que se bajó después, que es
+// justo lo que hay que saber para responder "¿ya tiene el arreglo?".
+const describirJs = () => {
+  if (!Updates.isEnabled) return 'JavaScript en desarrollo';
+  if (Updates.isEmbeddedLaunch) return `Sin actualizar · runtime ${Updates.runtimeVersion || '—'}`;
+  const id = Updates.updateId ? Updates.updateId.slice(0, 8) : '—';
+  return `Actualizado · ${id} · runtime ${Updates.runtimeVersion || '—'}`;
+};
+
 export default function MasScreen() {
   const { signOut, user, tenantId, profile, permissions } = useAuthStore();
   const router = useRouter();
   const isCamineroMotors = tenantId === CAMINERO_MOTORS_TENANT;
   const [quickTabs, setQuickTabs] = useState<string[]>([]);
+  const descripcionJs = describirJs();
 
   useEffect(() => {
     let mounted = true;
@@ -118,7 +132,17 @@ export default function MasScreen() {
         <Text className="text-accent-red text-lg font-bold">Cerrar Sesion</Text>
       </TouchableOpacity>
 
-      <Text className="text-center text-gray-400 mt-8 mb-4">Motoflow Mobile v1.0.0</Text>
+      {/* ── QUÉ VERSIÓN ESTÁ CORRIENDO DE VERDAD ──────────────────────
+          Antes aquí decía "v1.0.0" escrito a mano, así que decía lo mismo
+          en todas las versiones. Cuando hubo que averiguar si el teléfono
+          tenía o no un arreglo, esta línea no sirvió de nada y hubo que
+          deducirlo cruzando builds con commits.
+          Ahora sale de la propia app: la versión, y si el JavaScript es el
+          que vino en la instalación o una actualización bajada después. */}
+      <Text className="text-center text-gray-400 mt-8 mb-1">
+        Motoflow Mobile v{Constants.expoConfig?.version || '—'}
+      </Text>
+      <Text className="text-center text-gray-300 text-[11px] mb-4">{descripcionJs}</Text>
     </ScrollView>
   );
 }
