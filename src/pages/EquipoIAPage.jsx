@@ -69,7 +69,10 @@ const MOTOR = {
     txt: 'Suscripción de Claude',
     icono: Laptop,
     resumen: 'Contesta con una cuenta de Claude tuya. No gasta crédito de API.',
-    requisito: 'La cuenta se elige en la PC, no aquí: npm run equipo:login',
+    // "La máquina que lo atiende" y no "la PC": hoy el Comercial-Creativo
+    // corre en el VPS justamente para no depender de un escritorio
+    // encendido. Decir "la PC" mandaría a buscar la sesión donde no está.
+    requisito: 'La cuenta se elige en la máquina que lo atiende, no aquí: npm run equipo:login',
   },
 };
 
@@ -96,10 +99,57 @@ const Texto = ({ children, className = '' }) => (
 // dejaría elegir una cuenta y que contestara otra. Lo que la pantalla sí
 // puede es decir cuál está puesta y cómo se cambia.
 //
-// Y ojo con lo que se dice: la cola necesita worker SIEMPRE, con cualquier
-// motor. Lo que cambia es de dónde sale el modelo y quién paga.
-const QuienAtiende = ({ w, agente, compacto }) => {
+// >>> LO QUE ESTA TARJETA DECÍA MAL (2026-08-14) <<<
+// Decía "los trabajos esperan en cola hasta que arranques npm run
+// equipo:jarvis" a un agente que se atiende SOLO desde una Edge Function.
+// Era falso y además desmentido dos renglones más arriba, donde la misma
+// tarjeta enseñaba "el último fue openai desde edge-function": nadie había
+// arrancado nada y aun así contestó.
+//
+// El origen del error es que el latido solo se escribe cuando el agente
+// trabaja. En un worker de PC eso equivale a "está vivo", porque el proceso
+// late cada minuto aunque no haga nada. En la nube NO hay proceso vivo que
+// latir: se despierta cuando entra trabajo. Un agente de nube "sin latido"
+// está en reposo, no apagado — y mandarte a encender un worker por eso te
+// hacía perder el tiempo en lo único que no hacía falta.
+//
+// Quién lo atiende sale de `ejecuta_en`, que es la MISMA columna que decide
+// de verdad el reparto (public.equipo_nube_agentes la usa para saber a
+// quién puede tomar la Edge Function). La pantalla no adivina: lee.
+const QuienAtiende = ({ w, agente, ejecutaEn, compacto }) => {
   const cmd = ARRANQUE[agente];
+
+  // ── LO ATIENDE LA NUBE ──────────────────────────────────────────────
+  // Ni verde ni ámbar a propósito. Verde diría "hay alguien atendiendo
+  // AHORA", y aquí no hay nadie esperando: hay una función que arranca
+  // cuando entra trabajo. Ámbar diría que tienes algo que hacer, y no lo
+  // tienes. Es un tercer estado y se ve como un tercer estado.
+  if (ejecutaEn === 'nube') {
+    return (
+      <div className={`rounded-lg border border-sky-200 bg-sky-50/60 p-2 ${compacto ? 'mt-1' : ''}`}>
+        <p className="flex items-start gap-1 text-[11px] font-semibold text-sky-800">
+          <Cloud className="mt-px h-3.5 w-3.5 shrink-0" />
+          Lo atiende la nube
+        </p>
+        <p className="mt-0.5 text-[10px] text-sky-700">
+          No hay que arrancar nada. Contesta con tu PC apagada.
+        </p>
+        {w?.visto_en && (
+          // "Última señal" y no "última respuesta": esto es exactamente lo
+          // que dice la fila del latido, y no más. Que sea vieja no es una
+          // avería — es que no le han pedido nada desde entonces.
+          <p className="mt-0.5 text-[10px] text-sky-700">
+            Última señal {hace(w.visto_en)}
+            {w.maquina ? <> · desde <Texto>{w.maquina}</Texto></> : null}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // ── LO ATIENDE UNA MÁQUINA ──────────────────────────────────────────
+  // Aquí sí hay un proceso que puede estar caído, y el latido significa
+  // lo que parece.
   if (!w || !w.conectado) {
     return (
       <div className={`rounded-lg border border-amber-200 bg-amber-50/60 p-2 ${compacto ? 'mt-1' : ''}`}>
@@ -293,7 +343,7 @@ const EquipoIAPage = () => {
     // Guardar no es conectar. Si hace falta un worker, se dice aquí y no
     // cuando el trabajo lleve media hora parado en la cola.
     const avisos = [];
-    if (res?.necesita_worker) avisos.push(`Falta arrancar ${ARRANQUE[motor.clave] || 'el worker'} en tu PC.`);
+    if (res?.necesita_worker) avisos.push(`La suscripción no se atiende desde la nube: hace falta ${ARRANQUE[motor.clave] || 'un worker'} en una máquina con sesión de Claude.`);
     if (res?.widget_degradado) avisos.push('El botón flotante sigue con OpenAI: la Edge Function no puede usar la suscripción.');
     if (res?.aviso) avisos.push(res.aviso);
     toast({
@@ -428,7 +478,12 @@ const EquipoIAPage = () => {
 
                   {/* Hermes no se atiende desde aquí: su proceso es el suyo. */}
                   {a.clave !== 'hermes' && (
-                    <QuienAtiende w={workers.find((w) => w.agente === a.clave)} agente={a.clave} compacto />
+                    <QuienAtiende
+                      w={workers.find((w) => w.agente === a.clave)}
+                      agente={a.clave}
+                      ejecutaEn={a.ejecuta_en}
+                      compacto
+                    />
                   )}
 
                   {a.atiende_widget && a.proveedor_widget !== a.proveedor && (
