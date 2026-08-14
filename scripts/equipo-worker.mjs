@@ -58,6 +58,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { hostname } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import { CONFIG_DIR, resolverClaude, entorno, cuenta, comoIniciarSesion } from './claude-agente.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
@@ -434,18 +435,40 @@ if (cfg.proveedor === 'claude_suscripcion') {
 //
 // Sin esto, guardar "Suscripción de Claude" en el módulo es una promesa
 // sin comprobante — se ve el motor elegido y no se ve si contesta alguien.
+// >>> Y UNA SEÑAL LOCAL, PARA EL VIGILANTE <<<
+// Un vigilante que solo comprueba que el proceso existe no sirve: lo que
+// pasó el 14/08 fue justo eso — proceso en pie, conexión muerta, cola
+// parada dos horas y todos los PID correctos.
+//
+// Este archivo se toca SOLO si la base confirmó el latido. Así su fecha
+// prueba el camino entero: conexión viva, transacción en escritura y
+// función ejecutada. Si no cambia en varios minutos, el worker está mudo
+// aunque respire, y hay que reiniciarlo.
+//
+// Se hace por archivo y no consultando la base para que el vigilante no
+// necesite credenciales: un script de arranque con la clave de la base
+// encima es superficie de ataque a cambio de nada.
+const ARCHIVO_LATIDO = process.env.EQUIPO_LATIDO_FILE
+  || path.join(RAIZ, `.latido-${AGENTE}`);
+
 const latir = async () => {
   const cfgAhora = await consultar('SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE])
     .then((r) => r.rows[0]?.cfg).catch(() => null);
-  await escribir('SELECT hermes.equipo_latido($1,$2,$3,$4,$5,$6,$7)', [
-    AGENTE,
-    cuentaClaude?.email || null,
-    cuentaClaude?.plan || null,
-    hostname(),
-    cfgAhora?.proveedor || cfg.proveedor,
-    cfgAhora?.modelo || cfg.modelo || null,
-    process.version,
-  ]).catch((e) => log('no se pudo latir:', e.message));
+  try {
+    await escribir('SELECT hermes.equipo_latido($1,$2,$3,$4,$5,$6,$7)', [
+      AGENTE,
+      cuentaClaude?.email || null,
+      cuentaClaude?.plan || null,
+      hostname(),
+      cfgAhora?.proveedor || cfg.proveedor,
+      cfgAhora?.modelo || cfg.modelo || null,
+      process.version,
+    ]);
+    await writeFile(ARCHIVO_LATIDO, `${new Date().toISOString()}\n`).catch(() => {});
+  } catch (e) {
+    // A propósito NO se toca el archivo: que se quede viejo es la señal.
+    log('no se pudo latir:', e.message);
+  }
 };
 
 await latir();

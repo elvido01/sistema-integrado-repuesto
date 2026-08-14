@@ -75,3 +75,4 @@ whatsapp-quote-extension/motoflow-whatsapp-extension.zip
 # Vault sync — estado local y conflictos
 scripts/vault-sync/.estado.json
 vault/**/*.conflicto-*.md
+.latido-*
