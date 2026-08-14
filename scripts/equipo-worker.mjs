@@ -80,17 +80,22 @@ const ESPERA_VACIO_MS = Number(process.env.EQUIPO_ESPERA_MS || 8000);
 const { cmd: CLAUDE_CMD, origen: CLAUDE_ORIGEN } = resolverClaude();
 const CLAUDE_ARGS = (process.env.CLAUDE_ARGS || '-p').split(' ').filter(Boolean);
 
-const DSN = {
-  host: process.env.EQUIPO_DB_HOST || 'aws-0-us-east-2.pooler.supabase.com',
-  port: 5432,
-  database: 'postgres',
-  user: process.env.EQUIPO_DB_USER || 'hermes_readonly.zdvxowpuklbypweyqqki',
-  password: process.env.HERMES_DB_PASSWORD,
-  ssl: { rejectUnauthorized: false },
-  connectionTimeoutMillis: 15000,
-};
+// EQUIPO_DB_URL manda si está puesta: una cadena de conexión completa es
+// lo que permite mover el worker a otro rol o a otro pooler sin tocar
+// este archivo. Si no está, se arma con las piezas de siempre.
+const DSN = process.env.EQUIPO_DB_URL
+  ? { connectionString: process.env.EQUIPO_DB_URL, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 15000 }
+  : {
+    host: process.env.EQUIPO_DB_HOST || 'aws-0-us-east-2.pooler.supabase.com',
+    port: 5432,
+    database: 'postgres',
+    user: process.env.EQUIPO_DB_USER || 'hermes_readonly.zdvxowpuklbypweyqqki',
+    password: process.env.HERMES_DB_PASSWORD,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 15000,
+  };
 
-if (!DSN.password) {
+if (!process.env.EQUIPO_DB_URL && !DSN.password) {
   console.log(`
   Falta la clave de la base.
 
@@ -106,17 +111,109 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 // ── La base ────────────────────────────────────────────────────────────
 // Una transacción por operación y READ WRITE explícito: el rol es de solo
-// lectura por defecto y estas funciones escriben.
-const conectar = async () => { const c = new Client(DSN); await c.connect(); return c; };
+// lectura por defecto y estas funciones escriben. Eso NO es un permiso que
+// falte —`SET TRANSACTION READ WRITE` lo levanta— sino un cinturón: si
+// algún día alguien manda un UPDATE suelto fuera de estas funciones, la
+// transacción lo rechaza.
+//
+// >>> POR QUÉ ESTO SE RECONECTA (2026-08-14) <<<
+// Antes había UN cliente para toda la vida del proceso, sin reconexión y
+// sin oyente de 'error'. El pooler cierra las conexiones ociosas, y el
+// worker no se enteraba: latía bien durante horas y de golpe dejaba de
+// latir y de tomar trabajo, con el proceso vivo. Desde fuera parecía un
+// problema de permisos —la cola no avanzaba y el log se llenaba de
+// errores— y no lo era.
+//
+// Un proceso que sigue en pie sin poder trabajar es peor que uno caído: al
+// caído lo levanta el supervisor.
+let cli = null;
 
-const escribir = async (cli, sql, params) => {
-  await cli.query('BEGIN');
-  await cli.query('SET TRANSACTION READ WRITE');
+const conectar = async () => {
+  const c = new Client(DSN);
+  // Sin este oyente, un corte de conexión tumba el proceso con un error no
+  // capturado. Con él, se marca muerto y la siguiente operación reconecta.
+  c.on('error', (e) => { log('conexión perdida:', e.message); if (cli === c) cli = null; });
+  await c.connect();
+  return c;
+};
+
+const cliente = async () => {
+  if (cli) return cli;
+  cli = await conectar();
+  return cli;
+};
+
+// Errores que significan "esta conexión ya no sirve", no "esta consulta
+// está mal". Solo con estos se reintenta: repetir una consulta que falló
+// por su propio contenido sería un bucle.
+const conexionMuerta = (e) => /terminat|ECONNRESET|EPIPE|ENOTFOUND|ETIMEDOUT|closed|shutdown|not queryable/i
+  .test(String(e?.message ?? ''));
+
+const conConexion = async (fn) => {
+  for (let intento = 1; intento <= 2; intento += 1) {
+    const c = await cliente();
+    try {
+      return await fn(c);
+    } catch (e) {
+      if (!conexionMuerta(e) || intento === 2) throw e;
+      log('reconectando a la base…');
+      try { await c.end(); } catch { /* ya estaba rota */ }
+      cli = null;
+    }
+  }
+  throw new Error('inalcanzable');
+};
+
+const consultar = (sql, params) => conConexion((c) => c.query(sql, params));
+
+const escribir = (sql, params) => conConexion(async (c) => {
+  await c.query('BEGIN');
+  await c.query('SET TRANSACTION READ WRITE');
   try {
-    const r = await cli.query(sql, params);
-    await cli.query('COMMIT');
+    const r = await c.query(sql, params);
+    await c.query('COMMIT');
     return r;
-  } catch (e) { await cli.query('ROLLBACK'); throw e; }
+  } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; }
+});
+
+// ── ¿PUEDE ESCRIBIR DE VERDAD? ─────────────────────────────────────────
+// Se comprueba al arrancar y no a la primera tarea. Si la conexión es de
+// solo lectura irremediable —una réplica, o un rol al que no se le deja
+// subir la transacción— hay que decirlo UNA vez y parar, no descubrirlo
+// mil veces en el log mientras la cola se queda quieta.
+const comprobarEscritura = async () => {
+  const { rows: [r] } = await consultar(
+    `SELECT current_user AS rol, pg_is_in_recovery() AS replica`);
+  let escribe = false;
+  try {
+    await conConexion(async (c) => {
+      await c.query('BEGIN');
+      await c.query('SET TRANSACTION READ WRITE');
+      const { rows: [t] } = await c.query(
+        `SELECT current_setting('transaction_read_only') AS ro`);
+      escribe = t.ro === 'off';
+      await c.query('ROLLBACK');
+    });
+  } catch (e) { log('no se pudo comprobar la escritura:', e.message); }
+
+  if (!escribe) {
+    console.log(`
+  La conexión de la base NO permite escribir.
+
+    rol conectado : ${r.rol}
+    ¿es réplica?  : ${r.replica ? 'sí' : 'no'}
+
+  El worker necesita escribir para latir, tomar de la cola y guardar la
+  respuesta. ${r.replica
+    ? 'Está apuntando a una réplica de solo lectura: hay que usar el endpoint principal.'
+    : 'Pon EQUIPO_DB_URL con un rol al que se le permita subir la transacción a escritura.'}
+
+  No arranco: dar vueltas fallando llenaría el log y dejaría la cola
+  parada sin que se vea por qué.
+`);
+    process.exit(1);
+  }
+  log(`base: ${r.rol} · escritura OK`);
 };
 
 // ── Lo que Jarvis consulta DE VERDAD ───────────────────────────────────
@@ -127,11 +224,11 @@ const escribir = async (cli, sql, params) => {
 // prompt es una peticion, y esto es una garantia. Si la consulta no
 // devuelve nada, no hay nada que el modelo pueda inventar porque no tiene
 // de donde sacarlo.
-const consultarCatalogo = async (cli, texto) => {
+const consultarCatalogo = async (texto) => {
   const q = String(texto || '').trim();
   if (!q) return [];
   try {
-    const r = await cli.query(
+    const r = await consultar(
       'SELECT codigo, descripcion, marca, precio, existencia, ubicacion '
       + 'FROM hermes.buscar_producto($1, 8, false)', [q]);
     return r.rows;
@@ -280,10 +377,10 @@ const leerRespuesta = (texto) => {
 let corriendo = true;
 process.on('SIGINT', () => { corriendo = false; log('parando…'); });
 
-const cli = await conectar();
+await comprobarEscritura();
 log(`worker de ${AGENTE} conectado`);
 
-const { rows: [{ cfg }] } = await cli.query(
+const { rows: [{ cfg }] } = await consultar(
   'SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE]);
 if (!cfg) { log('ese agente no esta registrado. Corre sql/equipo_ia.sql.'); process.exit(1); }
 log(`motor: ${cfg.proveedor}${cfg.modelo ? ' · ' + cfg.modelo : ''}`);
@@ -303,7 +400,7 @@ if (cfg.proveedor === 'claude_suscripcion') {
   if (!c.ok) {
     log(`sin sesion de Claude para el agente. ${c.motivo || ''}`);
     console.log(comoIniciarSesion());
-    await cli.end();
+    if (cli) await cli.end().catch(() => {});
     process.exit(1);
   }
   log(`cuenta: ${c.email}${c.plan ? ' · ' + c.plan : ''}`);
@@ -317,9 +414,9 @@ if (cfg.proveedor === 'claude_suscripcion') {
 // Sin esto, guardar "Suscripción de Claude" en el módulo es una promesa
 // sin comprobante — se ve el motor elegido y no se ve si contesta alguien.
 const latir = async () => {
-  const cfgAhora = await cli.query('SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE])
+  const cfgAhora = await consultar('SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE])
     .then((r) => r.rows[0]?.cfg).catch(() => null);
-  await escribir(cli, 'SELECT hermes.equipo_latido($1,$2,$3,$4,$5,$6,$7)', [
+  await escribir('SELECT hermes.equipo_latido($1,$2,$3,$4,$5,$6,$7)', [
     AGENTE,
     cuentaClaude?.email || null,
     cuentaClaude?.plan || null,
@@ -336,7 +433,7 @@ const latido = setInterval(() => { latir(); }, 60 * 1000);
 while (corriendo) {
   let msg;
   try {
-    const r = await escribir(cli, 'SELECT * FROM hermes.equipo_tomar($1, 1)', [AGENTE]);
+    const r = await escribir('SELECT * FROM hermes.equipo_tomar($1, 1)', [AGENTE]);
     msg = r.rows[0];
   } catch (e) { log('error tomando de la cola:', e.message); await new Promise((s) => setTimeout(s, 15000)); continue; }
 
@@ -345,13 +442,13 @@ while (corriendo) {
   log(`tomado ${msg.id} · ${msg.summary}`);
 
   // Se relee en cada mensaje: cambiar de motor no exige reiniciar.
-  const { rows: [{ cfg: actual }] } = await cli.query(
+  const { rows: [{ cfg: actual }] } = await consultar(
     'SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE]);
 
   // Renovar mientras piensa. El arrendamiento es de 15 min y una promo con
   // copy y concepto de arte puede pasarse.
   const renovar = setInterval(() => {
-    escribir(cli, 'SELECT hermes.equipo_renovar($1,$2)', [msg.id, msg.claim_token])
+    escribir('SELECT hermes.equipo_renovar($1,$2)', [msg.id, msg.claim_token])
       .catch((e) => log('no se pudo renovar:', e.message));
   }, 5 * 60 * 1000);
 
@@ -361,7 +458,7 @@ while (corriendo) {
       // El texto de la consulta sale del payload si Hermes lo mando
       // explicito; si no, del resumen de la peticion.
       const busca = msg.payload?.consulta || msg.payload?.texto || msg.summary;
-      const filas = await consultarCatalogo(cli, busca);
+      const filas = await consultarCatalogo(busca);
       log(`  catalogo: ${filas.length} resultado(s)`);
       prompt = armarPromptJarvis(actual, msg, filas);
     } else {
@@ -374,7 +471,7 @@ while (corriendo) {
     const { ok, datos } = leerRespuesta(bruto);
     if (!ok) log('  (contesto en texto libre, no JSON — se entrega igual)');
 
-    const r = await escribir(cli,
+    const r = await escribir(
       'SELECT hermes.equipo_responder($1,$2,$3,$4::jsonb) AS r',
       [msg.id, msg.claim_token, String(datos.resumen || 'borrador listo').slice(0, 200),
        JSON.stringify({ ...datos, motor: actual.proveedor, modelo: actual.modelo || null })]);
@@ -384,7 +481,7 @@ while (corriendo) {
     else log(`  respondido${res?.duplicado ? ' (ya estaba)' : ''}`);
   } catch (e) {
     log('  fallo:', e.message);
-    await escribir(cli, 'SELECT hermes.equipo_error($1,$2,$3)',
+    await escribir('SELECT hermes.equipo_error($1,$2,$3)',
       [msg.id, msg.claim_token, e.message]).catch(() => {});
   } finally {
     clearInterval(renovar);
@@ -392,5 +489,5 @@ while (corriendo) {
 }
 
 clearInterval(latido);
-await cli.end();
+if (cli) await cli.end().catch(() => {});
 log('parado.');
