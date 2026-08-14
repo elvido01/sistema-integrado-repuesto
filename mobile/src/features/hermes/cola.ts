@@ -50,6 +50,31 @@ export const marcar = (
 ): MensajeSaliente[] =>
   cola.map((m) => (m.clientMessageId === clientMessageId ? { ...m, ...cambios } : m));
 
+// Cambia el estado de UN archivo dentro de un mensaje. Se identifica por
+// su uri: es lo único que el teléfono conoce antes de que la base le dé
+// un media_id.
+export const marcarMedio = (
+  cola: MensajeSaliente[], clientMessageId: string, uri: string,
+  cambios: Partial<MedioLocal>,
+): MensajeSaliente[] =>
+  cola.map((m) => (m.clientMessageId === clientMessageId
+    ? { ...m, medios: m.medios.map((x) => (x.uri === uri ? { ...x, ...cambios } : x)) }
+    : m));
+
+// ── LA REGLA QUE NO SE SALTA ─────────────────────────────────────────
+// Un mensaje con adjuntos NO sale mientras alguno no esté registrado en
+// la base con su media_id.
+//
+// Sin esta regla, un fallo a mitad de la subida crea un mensaje de foto
+// SIN foto: Hermes recibe el texto, no ve adjunto, y contesta como si no
+// existiera. Desde fuera parece que "la foto no llegó"; en realidad nunca
+// se mandó y nadie puede saberlo mirando el mensaje.
+export const todosAdjuntos = (m: MensajeSaliente): boolean =>
+  m.medios.every((x) => x.estado === 'adjuntado' && !!x.mediaId);
+
+export const puedeEnviarse = (m: MensajeSaliente): boolean =>
+  m.medios.length === 0 || todosAdjuntos(m);
+
 // Confirmado = fuera de la cola. Se queda en el historial del servidor,
 // que es la fuente de verdad; mantenerlo aquí solo daría ocasión de
 // reenviarlo.
@@ -63,7 +88,8 @@ export const quitar = confirmar;
 // De uno en uno para que el orden de la conversación sea el orden en que
 // se escribió.
 export const siguiente = (cola: MensajeSaliente[]): MensajeSaliente | null => {
-  const enVuelo = cola.some((m) => m.estado === 'subiendo');
+  const enVuelo = cola.some((m) => m.estado === 'subiendo'
+    || m.estado === 'subido' || m.estado === 'enviando');
   if (enVuelo) return null;
   const candidatos = cola
     .filter((m) => (m.estado === 'pendiente' || m.estado === 'error')

@@ -18,9 +18,29 @@ export type TipoMensaje =
 export type EstadoEnvio =
   | 'pendiente'      // en la cola local, sin salir
   | 'subiendo'       // sus archivos van en camino
+  | 'subido'         // TODOS sus archivos confirmados por la base
+  | 'enviando'       // creando el mensaje que los agrupa
   | 'enviado'        // la base lo aceptó
   | 'procesando'     // Hermes lo tomó
   | 'completado'
+  | 'error';
+
+// El estado de CADA archivo, aparte del mensaje que los lleva.
+//
+// >>> POR QUÉ SE SIGUEN POR SEPARADO <<<
+// Un mensaje con tres fotos donde la segunda falla no es "un mensaje que
+// falló": son dos archivos arriba y uno que hay que reintentar. Sin
+// estado por archivo, el reintento vuelve a subir las tres, y el usuario
+// no sabe cuál dio problema.
+//
+// La regla que sostiene todo esto: un mensaje NO se envía mientras alguno
+// de sus medios no esté en 'adjuntado'. Sin esa regla se crean mensajes
+// de foto sin foto — que es justo el fallo que hubo.
+export type EstadoMedio =
+  | 'pendiente'      // elegido, sin tocar todavía
+  | 'subiendo'       // bytes en camino al bucket
+  | 'subido'         // el bucket lo tiene
+  | 'adjuntado'      // registrado en la base y con media_id
   | 'error';
 
 export type ClaseMedio = 'image' | 'voice' | 'audio' | 'document';
@@ -36,6 +56,8 @@ export interface MedioLocal {
   height?: number;
   mediaId?: string;      // lo devuelve la base al registrarlo
   sha256?: string;
+  estado?: EstadoMedio;  // sin poner = 'pendiente'
+  error?: string;        // por qué falló ESTE archivo, no el mensaje
 }
 
 export interface MensajeSaliente {
@@ -195,6 +217,8 @@ export const rutaMedio = (tenantId: string, sha: string, ext: string): string =>
 export const ESTADOS: Record<string, string> = {
   pendiente_local:  'Sin enviar',
   subiendo:         'Subiendo archivos…',
+  subido:           'Archivos listos',
+  enviando:         'Enviando…',
   enviado:          'Enviado',
   recibido:         'Hermes recibió la solicitud',
   procesando:       'Hermes está coordinando',

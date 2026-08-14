@@ -139,10 +139,20 @@ const Burbuja = ({
 
       {/* El estado real, del backend. Nunca de un temporizador. */}
       <View className="mt-0.5 flex-row items-center gap-2">
+        {/* El error se muestra TAL CUAL viene. Antes aquí había un
+            'No se pudo enviar' fijo que tapaba la causa: durante meses,
+            cada foto fallaba por un error de código y en pantalla se veía
+            igual que quedarse sin señal. Un mensaje de error que no
+            distingue entre esas dos cosas no informa: estorba. */}
         {m.pendiente && (
-          <Text className="text-[10px] text-amber-600">
-            {m.estado === 'subiendo' ? ESTADOS.subiendo
-              : m.error ? 'No se pudo enviar'
+          <Text
+            className={m.error ? 'text-[10px] text-rose-600' : 'text-[10px] text-amber-600'}
+            numberOfLines={3}
+          >
+            {m.error ? m.error
+              : m.estado === 'subiendo' ? ESTADOS.subiendo
+              : m.estado === 'subido' ? ESTADOS.subido
+              : m.estado === 'enviando' ? ESTADOS.enviando
               : ESTADOS.pendiente_local}
           </Text>
         )}

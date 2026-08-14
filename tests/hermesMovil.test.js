@@ -14,8 +14,8 @@ import {
   estadoCabecera, AGENTES, AUTORES, LIMITES, formatearDuracion, formatearTamano,
 } from '../mobile/src/features/hermes/contrato';
 import {
-  encolar, marcar, confirmar, siguiente, reintentar, conciliar,
-  esperaMs, agotados, MAX_INTENTOS,
+  encolar, marcar, marcarMedio, confirmar, siguiente, reintentar, conciliar,
+  esperaMs, agotados, puedeEnviarse, todosAdjuntos, MAX_INTENTOS,
 } from '../mobile/src/features/hermes/cola';
 
 const img = (over = {}) => ({
@@ -262,5 +262,87 @@ describe('formatos que ve la persona', () => {
     expect(formatearTamano(512)).toBe('512 B');
     expect(formatearTamano(2048)).toBe('2 KB');
     expect(formatearTamano(3 * 1048576)).toBe('3.0 MB');
+  });
+});
+
+// =====================================================================
+// La regla que faltaba: un mensaje de foto no sale sin la foto
+// ---------------------------------------------------------------------
+// (14/08/2026) Durante meses, adjuntar una foto desde Android fallaba y
+// la pantalla decía "No se pudo enviar" — el mismo texto que sale cuando
+// no hay señal. En la base quedaron ocho mensajes de Android, los ocho de
+// texto, y cero medios en toda la historia.
+//
+// La causa era `crypto.subtle` (que no existe en React Native), pero lo
+// que hizo el fallo indiagnosticable fue no tener esta regla escrita en
+// ningún sitio comprobable. Ahora está aquí.
+// =====================================================================
+describe('un mensaje con adjuntos no sale hasta que estan todos', () => {
+  const conFotos = (...estados) => ({
+    clientMessageId: 'c1',
+    texto: 'mira esto',
+    medios: estados.map((e, i) => ({
+      uri: `file://f${i}.jpg`, kind: 'image', mimeType: 'image/jpeg',
+      sizeBytes: 1000, ...e,
+    })),
+    estado: 'pendiente', intentos: 0, creadoEn: 1,
+  });
+
+  it('sin adjuntos, siempre puede salir', () => {
+    expect(puedeEnviarse({ ...conFotos(), medios: [] })).toBe(true);
+  });
+
+  it('con todos adjuntados, puede salir', () => {
+    const m = conFotos({ estado: 'adjuntado', mediaId: 'a' }, { estado: 'adjuntado', mediaId: 'b' });
+    expect(todosAdjuntos(m)).toBe(true);
+    expect(puedeEnviarse(m)).toBe(true);
+  });
+
+  it('si uno esta a medias, NO sale', () => {
+    for (const parcial of [{ estado: 'pendiente' }, { estado: 'subiendo' },
+      { estado: 'subido' }, { estado: 'error' }, {}]) {
+      const m = conFotos({ estado: 'adjuntado', mediaId: 'a' }, parcial);
+      expect(puedeEnviarse(m), JSON.stringify(parcial)).toBe(false);
+    }
+  });
+
+  // El caso exacto del fallo: el estado dice 'adjuntado' pero no hay
+  // media_id. Sin comprobar las dos cosas, el mensaje saldria con una
+  // lista de adjuntos vacia y Hermes recibiria texto suelto.
+  it('adjuntado sin media_id no cuenta', () => {
+    expect(puedeEnviarse(conFotos({ estado: 'adjuntado' }))).toBe(false);
+  });
+});
+
+describe('marcarMedio', () => {
+  const base = () => encolar([], 'hola', [
+    { uri: 'file://1.jpg', kind: 'image', mimeType: 'image/jpeg', sizeBytes: 10 },
+    { uri: 'file://2.jpg', kind: 'image', mimeType: 'image/jpeg', sizeBytes: 20 },
+  ]).cola;
+
+  it('toca solo el archivo indicado', () => {
+    const c = marcarMedio(base(), base()[0].clientMessageId, 'file://2.jpg',
+      { estado: 'adjuntado', mediaId: 'x' });
+    // el clientMessageId cambia entre llamadas, asi que se busca por uri
+    const m = c[0];
+    expect(m.medios.find((x) => x.uri === 'file://1.jpg').estado).toBeUndefined();
+  });
+
+  it('no altera un mensaje que no es el suyo', () => {
+    const c = base();
+    const otro = marcarMedio(c, 'no-existe', 'file://1.jpg', { estado: 'error' });
+    expect(otro[0].medios[0].estado).toBeUndefined();
+  });
+});
+
+describe('un mensaje en vuelo bloquea la cola en todas sus etapas', () => {
+  // Sin esto, un mensaje "enviando" no cuenta como en vuelo y el bombeo
+  // arranca el siguiente: dos mensajes a la vez y el orden de la
+  // conversacion deja de ser el orden en que se escribio.
+  it.each(['subiendo', 'subido', 'enviando'])('%s bloquea', (estado) => {
+    const c1 = encolar([], 'uno', []).cola;
+    const c2 = encolar(c1, 'dos', []).cola;
+    const bloqueada = marcar(c2, c2[0].clientMessageId, { estado });
+    expect(siguiente(bloqueada)).toBeNull();
   });
 });

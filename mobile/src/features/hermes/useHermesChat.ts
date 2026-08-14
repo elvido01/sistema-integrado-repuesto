@@ -20,7 +20,8 @@ import { supabase } from '../../supabase/client';
 import { useAuthStore } from '../../store/useAuthStore';
 import * as api from './api';
 import {
-  CLAVE_COLA, conciliar, encolar, esperaMs, marcar, quitar, siguiente,
+  CLAVE_COLA, conciliar, encolar, esperaMs, marcar, marcarMedio,
+  puedeEnviarse, quitar, siguiente,
 } from './cola';
 import type { MedioLocal, MensajeSaliente } from './contrato';
 import { validarMensaje } from './contrato';
@@ -193,17 +194,54 @@ export const useHermesChat = () => {
     }));
 
     try {
-      // Los archivos primero. El media_id se guarda en la cola para que un
-      // reintento NO vuelva a subir lo que ya subió.
+      // ── 1. LOS ARCHIVOS, UNO A UNO ────────────────────────────────
+      // El media_id se guarda en la cola para que un reintento NO vuelva
+      // a subir lo que ya subió. Y cada archivo lleva su propio estado:
+      // si de tres fotos falla la segunda, las otras dos no se repiten.
       const ids: string[] = [];
       for (const medio of m.medios) {
-        if (medio.mediaId) { ids.push(medio.mediaId); continue; }
-        const r = await api.subirMedio(tenantId, medio);
-        medio.mediaId = r.mediaId;
-        medio.sha256 = r.sha256;
-        ids.push(r.mediaId);
-        ponerCola((c) => marcar(c, m.clientMessageId, { medios: m.medios }));
+        if (medio.mediaId && medio.estado === 'adjuntado') {
+          ids.push(medio.mediaId);
+          continue;
+        }
+
+        ponerCola((c) => marcarMedio(c, m.clientMessageId, medio.uri,
+          { estado: 'subiendo', error: undefined }));
+
+        try {
+          const r = await api.subirMedio(tenantId, medio);
+          medio.mediaId = r.mediaId;
+          medio.sha256 = r.sha256;
+          medio.estado = 'adjuntado';
+          medio.error = undefined;
+          ids.push(r.mediaId);
+          ponerCola((c) => marcarMedio(c, m.clientMessageId, medio.uri, {
+            mediaId: r.mediaId, sha256: r.sha256, estado: 'adjuntado', error: undefined,
+          }));
+        } catch (e: any) {
+          // El fallo se anota EN el archivo y se vuelve a lanzar. Lo
+          // primero da un mensaje útil ("no se pudo subir la segunda
+          // foto"); lo segundo impide que el mensaje salga sin ella.
+          medio.estado = 'error';
+          medio.error = e?.message || 'No se pudo subir el archivo';
+          ponerCola((c) => marcarMedio(c, m.clientMessageId, medio.uri,
+            { estado: 'error', error: medio.error }));
+          throw e;
+        }
       }
+
+      // ── 2. LA REGLA, COMPROBADA ANTES DE ENVIAR ───────────────────
+      // El bucle de arriba ya lanza si algo falla, así que esto no
+      // debería saltar nunca. Está porque un mensaje de foto sin foto es
+      // invisible: llega, se contesta, y nadie ve que faltaba algo. Si
+      // algún día alguien toca el bucle, que falle aquí y no en silencio.
+      const listo = { ...m, medios: m.medios };
+      if (!puedeEnviarse(listo)) {
+        throw new Error('No se pudo adjuntar todos los archivos');
+      }
+
+      // ── 3. EL MENSAJE QUE LOS AGRUPA ──────────────────────────────
+      ponerCola((c) => marcar(c, m.clientMessageId, { estado: 'enviando' }));
 
       const res = await api.enviarMensaje({
         clientMessageId: m.clientMessageId,
@@ -218,8 +256,12 @@ export const useHermesChat = () => {
       if (res.id > ultimoIdRef.current) ultimoIdRef.current = res.id - 1;
       await cargar(true);
     } catch (e: any) {
+      // Se guarda el mensaje REAL. La versión anterior lo perdía y la
+      // pantalla pintaba "No se pudo enviar" para todo: un fallo de
+      // código y un túnel sin señal se veían igual, y el de código
+      // sobrevivió meses por eso.
       ponerCola((c) => marcar(c, m.clientMessageId, {
-        estado: 'error', error: e.message || 'No se pudo enviar.',
+        estado: 'error', error: e?.message || 'No se pudo enviar',
       }));
     } finally {
       enviandoRef.current = false;
