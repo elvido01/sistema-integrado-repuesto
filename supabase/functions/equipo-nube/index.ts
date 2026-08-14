@@ -243,6 +243,13 @@ Deno.serve(async (req: Request) => {
           if (agente === 'jarvis') {
             const busca = msg.payload?.consulta || msg.payload?.texto || msg.summary;
             const filas = await rpc('equipo_nube_catalogo', { p_texto: String(busca ?? '') });
+            // Se anota qué se preguntó y cuanto salio. Sin esto, las
+            // consultas que se quedan en cero no dejan rastro y no hay
+            // como saber que hay que arreglar. Aparte y sin await: anotar
+            // no puede tumbar una respuesta.
+            sb.rpc('registrar_busqueda', {
+              p_origen: 'agente', p_texto: String(busca ?? ''), p_resultados: (filas ?? []).length,
+            }).then(() => {}, () => {});
             prompt = promptJarvis(cfg, msg, filas ?? []);
           } else {
             prompt = promptCreativo(cfg, msg);

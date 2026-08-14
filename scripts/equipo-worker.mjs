@@ -244,6 +244,14 @@ const consultarCatalogo = async (texto) => {
     const r = await consultar(
       'SELECT codigo, descripcion, marca, precio, existencia, ubicacion '
       + 'FROM hermes.buscar_producto($1, 8, false)', [q]);
+    // Se anota qué preguntó y cuánto salió. Las búsquedas del agente son
+    // las que vienen en lenguaje de cliente ("algo para que no se
+    // recaliente"), justo las que peor resuelve la búsqueda por palabras:
+    // sin registro no hay forma de saber cuántas se quedan en nada.
+    // Va aparte y con el error tragado — anotar no puede tumbar una
+    // respuesta a un cliente.
+    escribir('SELECT public.registrar_busqueda($1,$2,$3)', ['agente', q, r.rows.length])
+      .catch(() => {});
     return r.rows;
   } catch (e) {
     log('  no se pudo consultar el catalogo:', e.message);

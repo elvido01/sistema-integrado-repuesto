@@ -196,6 +196,23 @@ const ProductSearchModal = ({
           }
         }
 
+        // ── LO QUE SE BUSCA Y NO APARECE ────────────────────────────
+        // Se anota DESPUÉS del rescate de agotados para que quede el
+        // resultado definitivo y no el intermedio.
+        //
+        // Es un disparo al aire, sin await y con el error tragado: el
+        // mostrador no se puede parar porque falle una anotación. Y por
+        // eso mismo no va dentro del buscador de la base, que es el
+        // camino más caliente del sistema.
+        if (isNewSearch && debouncedSearchTerm) {
+          const total = Number(newProducts[0]?.total_count ?? newProducts.length);
+          supabase.rpc('registrar_busqueda', {
+            p_origen: 'vendedor',
+            p_texto: debouncedSearchTerm,
+            p_resultados: Number.isFinite(total) ? total : newProducts.length,
+          }).then(() => {}, () => {});
+        }
+
         setProducts((prev) => (isNewSearch ? newProducts : [...prev, ...newProducts]));
         if (isNewSearch) {
           setSelectedIndex(-1);
