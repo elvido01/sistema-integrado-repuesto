@@ -166,14 +166,24 @@ const conConexion = async (fn) => {
 
 const consultar = (sql, params) => conConexion((c) => c.query(sql, params));
 
+// BEGIN y SET van DENTRO del try, y esto no es cosmético. Estaban fuera, y
+// si `SET TRANSACTION READ WRITE` fallaba no se hacía ROLLBACK: la
+// transacción quedaba abierta y abortada, y desde ese momento CUALQUIER
+// consulta en esa conexión respondía "current transaction is aborted".
+// El worker quedaba mudo para siempre con el proceso en pie — un error de
+// un segundo se convertía en una avería permanente.
 const escribir = (sql, params) => conConexion(async (c) => {
-  await c.query('BEGIN');
-  await c.query('SET TRANSACTION READ WRITE');
   try {
+    await c.query('BEGIN');
+    await c.query('SET TRANSACTION READ WRITE');
     const r = await c.query(sql, params);
     await c.query('COMMIT');
     return r;
-  } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; }
+  } catch (e) {
+    // El ROLLBACK no puede tapar el error original si él mismo falla.
+    await c.query('ROLLBACK').catch(() => {});
+    throw e;
+  }
 });
 
 // ── ¿PUEDE ESCRIBIR DE VERDAD? ─────────────────────────────────────────
@@ -187,12 +197,15 @@ const comprobarEscritura = async () => {
   let escribe = false;
   try {
     await conConexion(async (c) => {
-      await c.query('BEGIN');
-      await c.query('SET TRANSACTION READ WRITE');
-      const { rows: [t] } = await c.query(
-        `SELECT current_setting('transaction_read_only') AS ro`);
-      escribe = t.ro === 'off';
-      await c.query('ROLLBACK');
+      try {
+        await c.query('BEGIN');
+        await c.query('SET TRANSACTION READ WRITE');
+        const { rows: [t] } = await c.query(
+          `SELECT current_setting('transaction_read_only') AS ro`);
+        escribe = t.ro === 'off';
+      } finally {
+        await c.query('ROLLBACK').catch(() => {});
+      }
     });
   } catch (e) { log('no se pudo comprobar la escritura:', e.message); }
 
