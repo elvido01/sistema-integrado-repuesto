@@ -78,6 +78,15 @@ const MOTOR = {
 
 const ARRANQUE = { comercial_creativo: 'npm run equipo:comercial', jarvis: 'npm run equipo:jarvis' };
 
+// "1565 minutos" no le dice nada a nadie; "26 horas" sí. La cifra cruda se
+// queda en la base para quien la necesite.
+const tiempoParado = (minutos) => {
+  const m = Math.max(0, Number(minutos) || 0);
+  if (m < 60) return `${m} min`;
+  if (m < 1440) return `${Math.floor(m / 60)} h`;
+  return `${Math.floor(m / 1440)} d`;
+};
+
 const hace = (iso) => {
   if (!iso) return '—';
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -207,6 +216,7 @@ const EquipoIAPage = () => {
   const [motor, setMotor] = useState(null);
   const [guardandoMotor, setGuardandoMotor] = useState(false);
   const [workers, setWorkers] = useState([]);
+  const [atascos, setAtascos] = useState([]);
 
   const cargar = useCallback(async (silencioso) => {
     if (!silencioso) setCargando(true);
@@ -214,9 +224,12 @@ const EquipoIAPage = () => {
     // para agregarle tres columnas. Una tercera copia de noventa líneas de
     // SQL para colgarle un dato es comprar una divergencia segura a cambio
     // de un viaje de red.
-    const [panel, ws] = await Promise.all([
+    const [panel, ws, at] = await Promise.all([
       supabase.rpc('equipo_panel', { p_limite: 25 }),
       supabase.rpc('equipo_workers_estado'),
+      // El reloj. Va aparte por lo mismo que el latido: equipo_panel ya se
+      // reescribió entera una vez para colgarle columnas.
+      supabase.rpc('equipo_atascos', { p_minutos: 30 }),
     ]);
     if (panel.error) {
       toast({ variant: 'destructive', title: 'No se pudo cargar el equipo', description: panel.error.message });
@@ -226,6 +239,7 @@ const EquipoIAPage = () => {
     // Que falte el latido no rompe la pantalla: es un dato de más, y hasta
     // que se corra su SQL esta llamada da error de función inexistente.
     setWorkers(ws.error ? [] : (ws.data || []));
+    setAtascos(at.error ? [] : (at.data || []));
     setCargando(false);
   }, [toast]);
 
@@ -630,8 +644,11 @@ const EquipoIAPage = () => {
             )}
 
             <div className="space-y-2">
-              {activos.map((t) => (
-                <div key={t.id} className="rounded-lg border p-3 hover:border-blue-200">
+              {activos.map((t) => {
+                const atasco = atascos.find((a) => a.id === t.id);
+                return (
+                <div key={t.id} className={`rounded-lg border p-3 hover:border-blue-200 ${
+                  atasco ? 'border-amber-300 bg-amber-50/40' : ''}`}>
                   <div className="mb-1 flex flex-wrap items-center gap-2">
                     <Etiqueta mapa={ESTADO_TRABAJO} valor={t.estado} />
                     <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">
@@ -640,10 +657,28 @@ const EquipoIAPage = () => {
                     <span className="text-[10px] text-slate-400"><Clock className="mr-1 inline h-3 w-3" />{hace(t.creado_en)}</span>
                   </div>
 
+                  {/* ── EL RELOJ ────────────────────────────────────────
+                      Sin esto, un trabajo parado 25 horas se veía igual
+                      que uno parado 25 segundos: los dos ponían "en
+                      curso". Pasó el 14/08 y se descubrió al día
+                      siguiente mirando una captura de pantalla. */}
+                  {atasco && (
+                    <p className="mb-2 flex items-start gap-1 rounded bg-amber-100/70 p-2 text-[10px] font-semibold text-amber-900">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                      Atascado: {tiempoParado(atasco.minutos)} sin moverse
+                      {atasco.lo_tiene ? <> · lo tiene <b>{NOMBRE_CORTO[atasco.lo_tiene] || atasco.lo_tiene}</b></> : null}
+                    </p>
+                  )}
+
                   <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
                     {t.esperando_a && <span>Esperando a <b>{NOMBRE_CORTO[t.esperando_a] || t.esperando_a}</b></span>}
                     <span>{t.mensajes} mensajes internos</span>
                     {Number(t.intentos) > 1 && <span className="text-amber-600">{t.intentos} intentos</span>}
+                    {Number(atasco?.rondas) > 0 && (
+                      <span className="text-violet-700">
+                        correcciones: {atasco.rondas} de {atasco.max_rondas}
+                      </span>
+                    )}
                   </div>
 
                   {t.error && (
@@ -668,7 +703,8 @@ const EquipoIAPage = () => {
                     </Button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
