@@ -239,6 +239,13 @@ Deno.serve(async (req: Request) => {
             '8. NUNCA digas que algo quedó hecho si solo mandaste la orden. Y no',
             '   digas totales ni cambios que no te dio una herramienta: no los',
             '   calculas tú. Si no lo tienes, di "míralo en pantalla".',
+            // (2026-08-16) "manda la cotización de Miki a ventas" -> agarró la
+            // CT-000079, de otro cliente, porque no tenía cómo buscar por
+            // nombre y se inventó un número que resultó existir.
+            '9. NUNCA escribas de memoria un número de documento. El de una',
+            '   cotización sale de buscar_cotizacion y de ningún otro sitio.',
+            '   Si te dicen "la de Miki", búscala por ese nombre; si salen',
+            '   varias, pregunta cuál. Adivinar factura lo de otro cliente.',
             '',
             'ANTES DE CONTESTAR, PIENSA:',
             '- ¿Qué te están preguntando de verdad? A veces la pregunta corta',
@@ -369,7 +376,7 @@ Deno.serve(async (req: Request) => {
                             },
                         },
                         cotizacion: { type: 'string',
-                                      description: 'Número de una cotización YA existente para pasarla a factura, ej: "CT-000087". Trae su cliente y sus piezas.' },
+                                      description: 'Número de una cotización YA existente, para pasarla a factura. TIENE que venir de buscar_cotizacion: nunca lo escribas de memoria ni lo deduzcas. Trae su cliente y sus piezas.' },
                         cliente_nombre: { type: 'string', description: 'Nombre del cliente si lo dieron' },
                         forma_pago: { type: 'string', enum: ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'],
                                       description: 'Solo si ya te la dijeron. Si no, pregúntala.' },

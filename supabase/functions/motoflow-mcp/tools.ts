@@ -156,6 +156,25 @@ export const TOOLS = [
     args: (a) => ({ p_dias: a.dias ?? 60, p_limite: a.limite ?? 10 }),
   },
   {
+    name: 'buscar_cotizacion',
+    description:
+      'Encuentra una cotizacion PENDIENTE por el nombre del cliente o por su numero, y devuelve numero, ' +
+      'fecha, cliente y total. Sin busqueda, las ultimas. ' +
+      'Usala SIEMPRE que te hablen de "la cotizacion de fulano" o te pidan pasar una cotizacion a factura: ' +
+      'el numero tiene que salir de aqui. NUNCA lo escribas de memoria ni lo deduzcas — hay cientos y ' +
+      'acertar el de otro cliente factura la mercancia equivocada. ' +
+      'Las ya facturadas o anuladas no aparecen a proposito.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        busqueda: { type: 'string', description: 'Nombre del cliente o numero. Ej: "Miki", "CT-000089"' },
+        limite: { type: 'integer', description: 'Cuantas devolver (1-20, por defecto 8)' },
+      },
+    },
+    rpc: 'mcp_buscar_cotizacion',
+    args: (a) => ({ p_busqueda: a.busqueda || null, p_limite: a.limite ?? 8 }),
+  },
+  {
     name: 'buscar_documento',
     description:
       'Busca UN numero en facturas, cotizaciones, compras y recibos, y dice que es cada coincidencia con su ' +
