@@ -115,6 +115,9 @@ export default function JarvisAdminAssistant() {
   // círculo flotante sigue existiendo para el uso rápido; esto es para
   // cuando alguien se sienta a conversar y no quiere ver el sistema detrás.
   const [modoLive, setModoLive] = useState(false);
+  // Si ya saludó en ESTA conversación. Se reinicia al cambiar de agente,
+  // porque hablar con Hermes y hablar con Jarvis son dos conversaciones.
+  const yaSaludoRef = useRef(false);
   // El botón del altavoz. Silencia la voz pero NO la conversación: se sigue
   // escuchando y respondiendo, solo que leyendo en vez de oyendo.
   const [mudo, setMudo] = useState(false);
@@ -487,6 +490,9 @@ export default function JarvisAdminAssistant() {
   // sobre la propuesta que está en pantalla AHORA.
   const propuestaRef = useRef(null);
   useEffect(() => { propuestaRef.current = propuesta; }, [propuesta]);
+
+  // Cambiar de agente empieza otra conversación: el siguiente saluda.
+  useEffect(() => { yaSaludoRef.current = false; }, [canal]);
   // true mientras el micrófono lo abrió el sistema y no la persona. En ese
   // caso el silencio no es un error: simplemente no había nada que decir.
   const esperandoAutorizacionRef = useRef(false);
@@ -1755,7 +1761,23 @@ export default function JarvisAdminAssistant() {
           </button>
           <button
             type="button"
-            onClick={() => { setModoLive(true); setChatAbierto(false); if (!listening && !speaking && !loading) startListening(); }}
+            onClick={() => {
+              setModoLive(true);
+              setChatAbierto(false);
+              if (listening || speaking || loading) return;
+              // La PRIMERA vez de cada conversación saluda; después abre el
+              // micrófono y ya. Repetir el saludo cada vez que se vuelve a la
+              // esfera —dentro de la misma conversación— sería un loro.
+              //
+              // El saludo sale de la ficha del agente, que se edita sin
+              // desplegar. Lo de aquí es solo el respaldo por si está vacía.
+              if (!yaSaludoRef.current) {
+                yaSaludoRef.current = true;
+                speak(agenteActivo?.saludo || '¿En qué le puedo servir, señor?');
+                return;
+              }
+              startListening();
+            }}
             title="A pantalla completa"
             className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
           >
