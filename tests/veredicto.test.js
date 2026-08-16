@@ -22,6 +22,13 @@ describe('veredictoDeVoz — autoriza', () => {
       'dale', 'hazlo', 'adelante', 'ok', 'procede',
     ]) expect(veredictoDeVoz(t), t).toBe('si');
   });
+
+  it('el dictado parte el pronombre: "autoriza lo"', () => {
+    // Así llegó de verdad desde el micrófono. El pronombre puede quedar
+    // delante o detrás, y las dos formas significan lo mismo.
+    for (const t of ['autoriza lo', 'autoriza la', 'aprueba lo', 'confirma lo', 'autoriza eso'])
+      expect(veredictoDeVoz(t), t).toBe('si');
+  });
 });
 
 describe('veredictoDeVoz — descarta', () => {

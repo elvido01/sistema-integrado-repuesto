@@ -72,7 +72,7 @@ export function veredictoDeVoz(texto) {
   // dice "espera" quiere pensarlo, no descartar. Ante la duda no se toca la
   // propuesta y decide con el botón.
   if (/^(no|no gracias|no autorizo|no lo hagas|dejalo|olvidalo|borralo)$/.test(t)) return 'no';
-  if (/^(no\s+)?(lo\s+|la\s+)?(cancel|descart|anul|rechaz)\w*$/.test(t)) return 'no';
+  if (/^(no\s+)?(lo\s+|la\s+)?(cancel|descart|anul|rechaz)\w*(\s+(lo|la|eso|esa|esta|este))?$/.test(t)) return 'no';
 
   if (/^(si|ok|oka|okay|okey|dale|hazlo|grabalo|adelante|correcto|procede|listo)$/.test(t)) return 'si';
   // Por RAÍZ y no por lista cerrada. (2026-08-16) La lista tenía "autorizo" y
@@ -80,7 +80,9 @@ export function veredictoDeVoz(texto) {
   // modelo, que contestó proponiendo una cotización de otro cliente. Una
   // palabra de más en la conjugación no puede costar eso.
   // Cubre autorizo/autorizalo/autorizala/autorizarlo, apruebalo, confirmalo.
-  if (/^(si,?\s+)?(lo\s+|la\s+)?(autoriz|aprueb|aprob|confirm)\w*$/.test(t)) return 'si';
+  // El pronombre puede ir DELANTE o DETRÁS: el dictado por voz parte
+  // "autorízalo" en dos palabras — "autoriza lo" — y así llegó escrito.
+  if (/^(si,?\s+)?(lo\s+|la\s+)?(autoriz|aprueb|aprob|confirm)\w*(\s+(lo|la|eso|esa|esta|este))?$/.test(t)) return 'si';
 
   return null;
 }
@@ -901,7 +903,14 @@ export default function JarvisAdminAssistant() {
         const r = data?.resultado || {};
         setMensajes((m) => [...m, {
           id: `r-${Date.now()}`, role: 'assistant', canalDe: canal,
-          content: `Listo. ${r.numero ? `Cotización ${r.numero}` : 'Hecho'}${r.total ? ` · RD$ ${Number(r.total).toLocaleString('es-DO')}` : ''}`,
+          // Se dice el NÚMERO y se ofrece lo siguiente. Antes era un "Listo."
+          // seco y había que adivinar qué venía después; y como el agente
+          // tampoco lo sabía, mandaba a abrir el módulo de Cotizaciones para
+          // "revisar y autorizar" algo que ya estaba autorizado.
+          content: r.numero
+            ? `La cotización ${r.numero} fue realizada${r.total ? ` por RD$ ${Number(r.total).toLocaleString('es-DO')}` : ''}.`
+              + `\n¿Desea algo más? Si quiere, la envío a facturar de una vez.`
+            : 'Hecho.',
         }]);
       }
       setPropuesta(null);

@@ -246,6 +246,13 @@ Deno.serve(async (req: Request) => {
             '   cotización sale de buscar_cotizacion y de ningún otro sitio.',
             '   Si te dicen "la de Miki", búscala por ese nombre; si salen',
             '   varias, pregunta cuál. Adivinar factura lo de otro cliente.',
+            // (2026-08-16) Abría Cotizaciones "para que puedas revisar y
+            // autorizar", teniendo la tarjeta de autorización en el mismo chat.
+            '10. Una propuesta se autoriza EN EL CHAT, con el botón que sale',
+            '    debajo o diciendo "autorizo". NUNCA abras Cotizaciones para',
+            '    que la autoricen: ya está delante. Después de autorizada, di',
+            '    el número y ofrece enviarla a facturar; no mandes a ningún',
+            '    módulo a hacer lo que ya está hecho.',
             '',
             'ANTES DE CONTESTAR, PIENSA:',
             '- ¿Qué te están preguntando de verdad? A veces la pregunta corta',
