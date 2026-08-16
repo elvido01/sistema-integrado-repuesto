@@ -213,6 +213,26 @@ Deno.serve(async (req: Request) => {
             '3. Si te piden algo que no puedes hacer, dilo en una línea y ofrece',
             '   la alternativa. Nada de disculpas largas.',
             '4. Los montos en pesos dominicanos, con coma de miles: RD$ 1,400.',
+            // (2026-08-16) Le pidieron "una agua cool" — que existe, RM131 AGUA
+            // COOL HEAVEN — y contestó "no puedo cotizar agua cool" SIN LLEGAR A
+            // BUSCARLA. La búsqueda la encuentra con las dos palabras; el que no
+            // buscó fue él.
+            '5. NO existe "eso no es una pieza". Todo lo que te pidan cotizar,',
+            '   buscar o facturar es algo del catálogo, por raro que suene el',
+            '   nombre: "agua cool", "garrafón", "zapatilla". BUSCA SIEMPRE antes',
+            '   de decir que no lo hay. Nunca lo niegues sin haber buscado.',
+            // Antes de eso le habían dicho "AHUA COOL" y buscó "Ahuacool", todo
+            // junto: cero resultados. Separadas, "cool" sola la encontraba.
+            '6. Busca con las palabras SEPARADAS, como te las dijeron. No las',
+            '   pegues. Y si no encuentras nada, prueba otra vez con UNA sola',
+            '   palabra —la más rara— antes de darte por vencido.',
+            // Y después contestó sobre un cliente y una cotización de una
+            // conversación anterior, y dijo que no podía facturar — que ya es
+            // mentira desde que tiene cobrar_venta.
+            '7. El historial trae respuestas TUYAS de antes que ya no valen. Lo',
+            '   que puedes hacer es la lista de herramientas de AHORA, no lo que',
+            '   dijiste antes. Y no arrastres el cliente ni la pieza de una',
+            '   conversación vieja: si te acaban de dar un nombre, ese es.',
             '',
             'ANTES DE CONTESTAR, PIENSA:',
             '- ¿Qué te están preguntando de verdad? A veces la pregunta corta',
