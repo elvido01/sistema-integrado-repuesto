@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   sueldoPorPeriodo,
   factorPeriodo,
+  tarifaSabado,
   calcularTssEmpleado,
   calcularIsrMensual,
   calcularDetalleNomina,
@@ -11,13 +12,33 @@ import {
 } from '../src/lib/nominaUtils.js';
 
 describe('sueldoPorPeriodo / factorPeriodo', () => {
-  it('mensual, quincenal y semanal (12 pagas / 52 semanas)', () => {
+  // El semanal NO se deriva del mensual salvo que el empleado no tenga su
+  // tarifa puesta. Dividir entre 4 o entre 52/12 se lleva un sueldo mensual
+  // entero de diferencia al año, y cuál de los dos es el bueno depende de
+  // cómo le paga el dueño a cada persona — no de la aritmética.
+  it('mensual y quincenal se derivan; el semanal cae a sueldo/4 sin tarifa propia', () => {
     expect(sueldoPorPeriodo(26000, 'mensual')).toBe(26000);
     expect(sueldoPorPeriodo(26000, 'quincenal')).toBe(13000);
-    expect(sueldoPorPeriodo(26000, 'semanal')).toBe(6000); // 26000*12/52
+    expect(sueldoPorPeriodo(26000, 'semanal')).toBe(6500); // 26000/4, un sábado
     expect(factorPeriodo('mensual')).toBe(1);
     expect(factorPeriodo('quincenal')).toBe(0.5);
-    expect(factorPeriodo('semanal')).toBeCloseTo(12 / 52, 10);
+    expect(factorPeriodo('semanal')).toBeCloseTo(0.25, 10); // un sábado = un cuarto de mes
+  });
+});
+
+describe('tarifa semanal propia del empleado', () => {
+  it('si el empleado tiene su tarifa, manda esa y no se calcula nada', () => {
+    const emp = { sueldo_mensual: 26000, sueldo_semanal: 6000 };
+    expect(tarifaSabado(26000, emp)).toBe(6000);
+    expect(sueldoPorPeriodo(26000, 'semanal', undefined, emp)).toBe(6000);
+  });
+  it('sin tarifa propia cae a sueldo/4', () => {
+    expect(tarifaSabado(26000, { sueldo_mensual: 26000 })).toBe(6500);
+    expect(tarifaSabado(26000, null)).toBe(6500);
+  });
+  it('una tarifa en cero o basura no cuenta como puesta', () => {
+    expect(tarifaSabado(26000, { sueldo_semanal: 0 })).toBe(6500);
+    expect(tarifaSabado(26000, { sueldo_semanal: null })).toBe(6500);
   });
 });
 
@@ -68,7 +89,7 @@ describe('calcularDetalleNomina', () => {
       { sueldo_mensual: 12000, frecuencia_pago: 'semanal', cotiza_tss: false },
       {}
     );
-    expect(d.sueldo_base).toBeCloseTo(12000 * 12 / 52, 2);
+    expect(d.sueldo_base).toBe(3000); // 12000/4, sin tarifa propia
     expect(d.tss_afp).toBe(0);
     expect(d.isr).toBe(0);
     expect(d.neto).toBe(d.sueldo_base);

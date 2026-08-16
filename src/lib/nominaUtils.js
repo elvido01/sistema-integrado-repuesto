@@ -59,12 +59,32 @@ export function factorPeriodo(frecuencia, periodo, empleado) {
   return 1;
 }
 
+// Lo que cobra el empleado CADA sábado.
+//
+// >>> POR QUÉ ESTO NO SE DERIVA SIEMPRE (2026-08-15) <<<
+// Dividir el sueldo mensual entre 4 y dividirlo entre 52/12 dan números
+// distintos, y la diferencia no es un redondeo: a RD$26,000 mensuales son
+// RD$6,500 o RD$6,000 por semana, o sea RD$26,000 al año — un sueldo
+// mensual entero. No hay una respuesta correcta en abstracto: depende de
+// cómo le paga el dueño a CADA persona.
+//
+// Así que si el empleado tiene su tarifa semanal puesta, manda esa y no se
+// calcula nada. Solo cuando no la tiene se divide entre 4, que es como se
+// venía haciendo y tiene su motivo: el sábado sale redondo y el mes es
+// múltiplo exacto de él.
+export function tarifaSabado(sueldoMensual, empleado) {
+  const propia = Number(empleado?.sueldo_semanal) || 0;
+  if (propia > 0) return round2(propia);
+  return round2((Number(sueldoMensual) || 0) / 4);
+}
+
 export function sueldoPorPeriodo(sueldoMensual, frecuencia, periodo, empleado) {
   const s = Number(sueldoMensual) || 0;
   if (frecuencia === 'semanal') {
     // Se redondea el SÁBADO y luego se multiplica: el sábado tiene que ser
     // siempre el mismo número redondo y el mes, múltiplo exacto de él.
-    return round2(round2(s / 4) * pagosDelEmpleado({ ...empleado, frecuencia_pago: 'semanal' }, periodo));
+    return round2(tarifaSabado(s, empleado)
+      * pagosDelEmpleado({ ...empleado, frecuencia_pago: 'semanal' }, periodo));
   }
   return round2(s * factorPeriodo(frecuencia));
 }
