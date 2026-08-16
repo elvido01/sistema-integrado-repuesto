@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { generateFacturaPDF } from '@/components/common/PDFGenerator';
@@ -58,8 +58,8 @@ export const useVentas = () => {
   const [cliente, setCliente] = useState(CLIENTE_GENERICO);
   const [manualClienteNombre, setManualClienteNombre] = useState('');
   const [vendedor, setVendedor] = useState(null);
-  const [totals, setTotals] = useState({ subTotal: 0, totalDescuento: 0, totalItbis: 0, totalFactura: 0 });
-  const [cambio, setCambio] = useState(0);
+  // `totals` y `cambio` NO se guardan aquí: se derivan de los items más abajo.
+  // El porqué está explicado donde se calculan.
   const [cotizacionId, setCotizacionId] = useState(null);
   // Las Magna viven en otra tabla (cotizaciones_magna), asi que llevan su
   // propio marcador: con el id normal se intentaria cerrar una cotizacion
@@ -418,7 +418,35 @@ export const useVentas = () => {
     }));
   }, [loadNcfPreview]);
 
-  useEffect(() => {
+  // =====================================================================
+  // LOS TOTALES SE DERIVAN, NO SE GUARDAN
+  // ---------------------------------------------------------------------
+  // (2026-08-16) Esto era un useState rellenado por un efecto, y `cambio`
+  // otro efecto que dependía de él. La cadena tenía DOS renders de retraso:
+  //
+  //     items  ──render──▶  totals  ──render──▶  cambio
+  //
+  // Con una persona tecleando no se nota: entre poner las líneas y pulsar
+  // F10 pasan segundos. Un agente lo hace en milisegundos, y ahí el retraso
+  // se ve. FT-3504 se grabó con la línea correcta (importe 20.00) y la
+  // cabecera EN CERO —sub 0, ITBIS 0, TOTAL 0—, se imprimió así y así entró
+  // en la lista de transacciones: el detalle lo armó `items`, que ya estaba,
+  // y la cabecera `totals`, que todavía valía cero.
+  //
+  // Y las dos defensas de handleSave lo dejaron pasar por el mismo motivo:
+  // "factura vacía" mira items —que estaba lleno— y "monto insuficiente"
+  // compara contra un total de cero, que cualquier pago supera.
+  //
+  // >>> POR QUÉ useMemo Y NO OTRO PARCHE <<<
+  // Derivado, `totals` es correcto en el MISMO render en que cambian los
+  // items. No hay ventana en la que estén en desacuerdo, así que no hay nada
+  // que esperar ni contra qué protegerse. Se cierra la clase entera de fallo,
+  // no el caso de hoy.
+  //
+  // El sistema hoy lo usan personas, pero va a usarlo un agente como si fuera
+  // una: cualquier cosa que dependa del ritmo humano es una bomba de tiempo.
+  // =====================================================================
+  const totals = useMemo(() => {
     // Calcular totales desde precio + cantidad + descuento de cada item
     // (no depender del campo importe cacheado, que en algunas rutas — cambio
     // de cliente, carga de pedido — quedaba como bruto sin descuento aplicado).
@@ -447,20 +475,23 @@ export const useVentas = () => {
 
     const finalTotal = (calculated.totalFactura || 0) + Number(recargo || 0);
 
-    setTotals({
+    return {
       subTotal: calculated.subTotal || 0,
       totalDescuento: calculated.totalDescuento || 0,
       totalItbis: calculated.totalItbis || 0,
       totalFactura: finalTotal
-    });
+    };
   }, [items, recargo]);
 
-  useEffect(() => {
+  // Igual que arriba: derivado, no guardado. Era un efecto que corría un
+  // render DESPUÉS de que totals cambiara, así que al grabar en el acto el
+  // cambio salía calculado contra el total anterior. En FT-3504 se imprimió
+  // "CAMBIO: 0.00" habiendo pagado 50 por una factura de 20.
+  const cambio = useMemo(() => {
     const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
     const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
-    const total = totals.totalFactura;
     // Permitir negativos para mostrar "faltante" como cambio negativo
-    setCambio(recibido - total);
+    return recibido - totals.totalFactura;
   }, [montoRecibido, pagos, totals.totalFactura]);
 
   const addProductToInvoice = useCallback((product) => {
