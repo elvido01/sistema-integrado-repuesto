@@ -484,7 +484,26 @@ const VentasPage = () => {
     const montoListo = !cobroPedido.recibido
       || Number(montoRecibido) === Number(cobroPedido.recibido);
 
-    if (!formaLista || !montoListo) {
+    // >>> Y QUE LOS TOTALES YA ESTÉN CALCULADOS <<<
+    // (2026-08-16) FT-3504 se grabó con la línea correcta (importe 20.00) y la
+    // cabecera EN CERO: sub 0, ITBIS 0, TOTAL 0. Salió impresa así y así entró
+    // en la lista de transacciones.
+    //
+    // `totals` no se deriva de `items` al vuelo: es un useState que rellena un
+    // efecto DESPUÉS del render en que cambian las líneas. Al cobrar en el
+    // mismo turno, F10 se pulsaba en ese hueco — el detalle lo arma `items`,
+    // que ya estaba, y la cabecera `totals`, que aún valía cero.
+    //
+    // Ninguna de las dos defensas de handleSave lo veía: "factura vacía" mira
+    // items, y "monto insuficiente" compara contra un total de cero, que
+    // cualquier pago supera.
+    //
+    // (Una factura legítima de total cero —todo con 100% de descuento— se
+    // quedaría esperando y saltaría el aviso de los 3 segundos. Es preferible
+    // a grabar una de verdad en cero.)
+    const totalesListos = items.length > 0 && Number(totals?.totalFactura) > 0;
+
+    if (!formaLista || !montoListo || !totalesListos) {
       // Un reloj de verdad, no una comprobación de fecha: si el estado no
       // llega, este efecto no se vuelve a ejecutar solo y la espera quedaría
       // colgada en silencio. Cuando el estado sí llega, el efecto se repite y
@@ -494,7 +513,7 @@ const VentasPage = () => {
         toast({
           variant: 'destructive',
           title: 'No grabé la factura',
-          description: 'La pantalla no llegó a tomar la forma de pago. Revísala y pulsa F10.',
+          description: 'La pantalla no terminó de armarse. Revísala y pulsa F10.',
         });
       }, 3000);
       return () => clearTimeout(reloj);
@@ -502,7 +521,7 @@ const VentasPage = () => {
 
     setCobroPedido(null);
     handleConfirmAndPrint();
-  }, [cobroPedido, tipoPago, montoRecibido, handleConfirmAndPrint, toast]);
+  }, [cobroPedido, tipoPago, montoRecibido, items, totals, handleConfirmAndPrint, toast]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
