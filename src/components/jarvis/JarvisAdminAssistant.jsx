@@ -423,6 +423,28 @@ export default function JarvisAdminAssistant() {
 
   const enviar = (texto, opciones = {}) => {
     const conVoz = opciones.conVoz !== false;
+
+    // ── ESCRITO VALE IGUAL QUE HABLADO ──────────────────────────
+    // (2026-08-16) Con la tarjeta de autorización en pantalla, decir
+    // «autorizo» funcionaba y ESCRIBIRLO no: el texto se iba al modelo, que
+    // contestaba "no puedo autorizar la cotización directamente, ve a
+    // Cotizaciones" — mandando a otro módulo teniendo el botón al lado.
+    //
+    // La misma palabra no puede valer por el micrófono y no por el teclado.
+    // Se usa el mismo lector de siempre, así que lo que se acepta y lo que
+    // no es idéntico en los dos caminos: solo lo inequívoco, y una frase
+    // larga sigue siendo una instrucción nueva, no una decisión.
+    //
+    // Que "sí" cuente no es un atajo: la tarjeta está delante con el resumen
+    // y los montos, y quien la mira ya decidió. Lo que mueve dinero sigue
+    // pidiendo contraseña dentro de agente_confirmar_accion.
+    if (propuesta && !autorizando) {
+      const veredicto = veredictoDeVoz(texto);
+      if (veredicto) {
+        resolverPropuesta(veredicto === 'si');
+        return;
+      }
+    }
     if (canal === 'hermes') {
       // `null` es "todavia no se", no "no". Tratarlo como negativo hacia
       // que un mensaje mandado en el primer segundo tras abrir el widget
