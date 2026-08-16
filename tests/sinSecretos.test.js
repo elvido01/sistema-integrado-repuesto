@@ -44,11 +44,23 @@ const BINARIOS = new Set([
 
 const MAX_BYTES = 3_000_000;
 
+// La configuración de Claude Code NO está versionada (.claude/ va en
+// .gitignore), así que `git ls-files` no la ve. Y sin embargo ahí aparecieron
+// DOS tokens de administración escritos dentro de reglas de permisos: uno
+// nunca salió a GitHub y aun así estaba en el disco de la máquina.
+// Se vigila aparte, por nombre.
+const NO_VERSIONADOS = [
+  '.claude/settings.json',
+  '.claude/settings.local.json',
+];
+
 function archivosDelRepo() {
-  return execFileSync('git', ['ls-files'], { cwd: RAIZ, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+  const versionados = execFileSync('git', ['ls-files'], { cwd: RAIZ, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
     .split('\n')
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter(Boolean);
+
+  return [...versionados, ...NO_VERSIONADOS]
     .filter((f) => !EXENTOS.has(f))
     .filter((f) => !BINARIOS.has(extname(f).toLowerCase()));
 }
