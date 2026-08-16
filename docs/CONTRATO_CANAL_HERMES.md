@@ -366,8 +366,51 @@ Lo que viene en `acciones` es una **propuesta**. Nunca se ejecuta sola.
 | `caducada` | 15 minutos sin decidir. |
 
 Preparar una pantalla con líneas cargadas **no** es definitivo: nadie facturó
-nada y todo es reversible. Facturar, cobrar, descontar inventario o
-escribirle a un cliente **sí**, y esos exigen confirmación de una persona.
+nada y todo es reversible. Descontar inventario o escribirle a un cliente
+**sí**, y esos exigen confirmación de una persona.
+
+### 9.1 Órdenes de pantalla: `preparar_venta` y `cobrar_venta`
+
+*(2026-08-16 — cambia lo que decía este documento sobre facturar.)*
+
+`acciones` acepta **un objeto o un arreglo**. El arreglo importa: preparar y
+cobrar tienen que poder ir en el MISMO mensaje. Partirlo en dos vueltas mete
+un turno de conversación entremedio, y ese turno es justo donde un agente se
+pierde y acaba facturando la cotización de otro cliente. Pasó, con capturas.
+
+```jsonc
+[
+  { "tipo": "preparar_venta",
+    "cotizacion": "CT-000089" },          // o "lineas": [{codigo, cantidad}]
+  { "tipo": "cobrar_venta",
+    "forma_pago": "EFECTIVO",
+    "recibido": 50 }                       // obligatorio si es EFECTIVO
+]
+```
+
+Se atienden **en fila**, en el orden en que llegan: la pantalla no empieza una
+hasta terminar la anterior. Sin eso, preparar —que es asíncrono— terminaba
+después de cobrar y le borraba el monto recibido.
+
+> **`cobrar_venta` GRABA E IMPRIME, sin confirmación aparte.** El dueño lo
+> pidió así el 16/08: *"cuando yo le dé el monto, graba la factura y que se
+> imprima. Quiero ese ciclo completo."*
+>
+> No se salta ningún control: **no escribe en la base**, pulsa F10 en la
+> pantalla que ya está a la vista. Pasa por lo mismo que si lo pulsara una
+> persona — existencia, bloqueo de venta bajo costo, crédito del cliente,
+> "monto insuficiente", NCF e impresión. Lo único que cambia es quién pulsa.
+>
+> La confirmación es el momento en que la persona dice con cuánto le pagan.
+> No hay un segundo "¿seguro?".
+
+Reglas que valen para Hermes igual que para Jarvis:
+
+- El número de cotización sale de `buscar_cotizacion`, **nunca de memoria**.
+  Hay cientos y acertar el de otro cliente factura la mercancía equivocada.
+- Mandar la orden **no es** haberla grabado. Grabar ocurre en la pantalla y
+  puede fallar ahí. No digas que está hecha, ni digas totales ni cambios: no
+  los sabes.
 
 La cotización tiene vida propia, fuera del chat:
 

@@ -567,10 +567,24 @@ export default function JarvisAdminAssistant() {
       if (f.rol !== 'hermes' || !f.acciones) continue;
       if (idsEjecutadosRef.current.has(f.id)) continue;   // el sondeo repite filas
       idsEjecutadosRef.current.add(f.id);
-      if (f.acciones?.tipo === 'preparar_venta') {
-        ordenarPantalla('ventas', normalizarOrdenVenta(f.acciones));
-        try { openPanel('ventas'); } catch { /* módulo inexistente */ }
+      // Una acción o VARIAS. Hermes tiene que poder mandar preparar la venta y
+      // cobrarla en el mismo mensaje, igual que hace Jarvis: si tuviera que
+      // partirlo en dos vueltas, entre una y otra se cuela un turno de
+      // conversación — y ese turno es justo donde el agente se pierde y acaba
+      // facturando la cotización de otro cliente.
+      //
+      // Se acepta el objeto suelto además del arreglo para no romper lo que
+      // Hermes ya sabe mandar hoy.
+      const acciones = Array.isArray(f.acciones) ? f.acciones : [f.acciones];
+      let abrir = false;
+      for (const a of acciones) {
+        if (a?.tipo !== 'preparar_venta' && a?.tipo !== 'cobrar_venta') continue;
+        ordenarPantalla('ventas', normalizarOrdenVenta(a));
+        abrir = true;
       }
+      // Se abre UNA vez, después de encolarlas: el puente las guarda en fila y
+      // la pantalla las atiende en orden al montarse.
+      if (abrir) { try { openPanel('ventas'); } catch { /* módulo inexistente */ } }
     }
 
     const suya = [...nuevas].reverse().find((n) => n.role === 'assistant');
