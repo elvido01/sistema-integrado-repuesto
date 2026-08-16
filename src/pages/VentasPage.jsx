@@ -211,7 +211,12 @@ const VentasPage = () => {
   // el control de existencia, las sugerencias de equivalentes y el bloqueo de
   // venta bajo costo. Meter las líneas por otra vía se saltaría todo eso.
   useEffect(() => {
-    return escucharOrdenes('ventas', async (orden) => {
+    // Las órdenes se atienden EN FILA. El agente manda preparar y cobrar de un
+    // tirón; preparar va a buscar la cotización y tarda, así que sin esta fila
+    // cobrar se ejecutaba primero, ponía el monto recibido, y al terminar
+    // preparar lo borraba con su resetVenta(). La pantalla quedaba con la
+    // mercancía puesta y RECIBIDO en cero, y la factura sin grabar.
+    const atender = async (orden) => {
       // ── PASO 2: cobrar ──────────────────────────────────────
       // No se graba aquí. Se anota lo pedido y el efecto de abajo espera a
       // que la pantalla lo refleje de verdad antes de pulsar F10.
@@ -263,6 +268,11 @@ const VentasPage = () => {
       } catch (e) {
         toast({ title: 'No pude preparar la factura', description: String(e?.message || e), variant: 'destructive' });
       }
+    };
+
+    let fila = Promise.resolve();
+    return escucharOrdenes('ventas', (orden) => {
+      fila = fila.then(() => atender(orden)).catch((e) => console.error('[ventas] orden', e));
     });
   }, [handleAddProductByCode, handleSelectCotizacion, resetVenta, setManualClienteNombre,
       setTipoPago, setMontoRecibido, toast]);

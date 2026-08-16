@@ -23,10 +23,18 @@
 // =====================================================================
 
 const oyentes = new Map();   // panel -> función
-const buzon = new Map();     // panel -> orden esperando
+const buzon = new Map();     // panel -> [órdenes esperando]
 
-// La deja para el panel indicado. Si ya está escuchando, le llega ahora; si
-// todavía se está montando, la encuentra al suscribirse.
+// >>> POR QUÉ UNA COLA Y NO UNA SOLA ORDEN <<<
+// (2026-08-16) Era `buzon.set(panel, orden)`: UNA por panel. Cuando el agente
+// mandó las dos de un tirón —preparar la venta y cobrarla— la segunda pisó a
+// la primera y la factura se cobró sin haberse llenado.
+//
+// Y aun llegando las dos, el orden importa: preparar es asíncrono (va a
+// buscar la cotización) y terminaba DESPUÉS de cobrar, borrándole el monto
+// recibido que cobrar acababa de poner. La pantalla quedaba con la mercancía
+// puesta y RECIBIDO en cero. Por eso además se entregan EN FILA: quien las
+// recibe espera a terminar una antes de empezar la siguiente.
 export function ordenarPantalla(panel, orden) {
   if (!panel || !orden) return;
   const oyente = oyentes.get(panel);
@@ -34,19 +42,25 @@ export function ordenarPantalla(panel, orden) {
     try { oyente(orden); } catch (e) { console.error('[puente] la pantalla falló al recibir la orden:', e); }
     return;
   }
-  buzon.set(panel, orden);
+  const cola = buzon.get(panel) || [];
+  cola.push(orden);
+  buzon.set(panel, cola);
 }
 
 // La llama cada pantalla que sabe recibir órdenes. Devuelve la baja.
 export function escucharOrdenes(panel, fn) {
   oyentes.set(panel, fn);
 
-  const pendiente = buzon.get(panel);
-  if (pendiente) {
+  const pendientes = buzon.get(panel);
+  if (pendientes?.length) {
     buzon.delete(panel);
     // En el siguiente ciclo: durante el primer render la pantalla todavía no
     // tiene sus manejadores listos y agregar productos ahí se pierde.
-    setTimeout(() => { try { fn(pendiente); } catch (e) { console.error('[puente]', e); } }, 0);
+    setTimeout(() => {
+      for (const o of pendientes) {
+        try { fn(o); } catch (e) { console.error('[puente]', e); }
+      }
+    }, 0);
   }
 
   return () => { if (oyentes.get(panel) === fn) oyentes.delete(panel); };

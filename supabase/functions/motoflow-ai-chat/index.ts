@@ -233,6 +233,12 @@ Deno.serve(async (req: Request) => {
             '   que puedes hacer es la lista de herramientas de AHORA, no lo que',
             '   dijiste antes. Y no arrastres el cliente ni la pieza de una',
             '   conversación vieja: si te acaban de dar un nombre, ese es.',
+            // (2026-08-16) Dijo "la factura ha sido grabada e impresa, el total
+            // es RD$177 y el cambio RD$127". Ni se grabó, ni el total era ese,
+            // ni ese cambio sale de esos números.
+            '8. NUNCA digas que algo quedó hecho si solo mandaste la orden. Y no',
+            '   digas totales ni cambios que no te dio una herramienta: no los',
+            '   calculas tú. Si no lo tienes, di "míralo en pantalla".',
             '',
             'ANTES DE CONTESTAR, PIENSA:',
             '- ¿Qué te están preguntando de verdad? A veces la pregunta corta',
@@ -611,7 +617,13 @@ Deno.serve(async (req: Request) => {
                             ordenes.push({ panel: 'ventas', orden: { tipo: 'preparar_venta', cotizacion, ...args } });
                             salida = JSON.stringify({
                                 ok: true, preparada: true, desde_cotizacion: cotizacion,
+                                // El cliente VIAJA de vuelta para que el modelo
+                                // pueda comprobar que agarró la cotización que
+                                // le pidieron. Mandó la de otro cliente y no
+                                // tenía cómo notarlo.
+                                cliente: cot.manual_cliente_nombre || null,
                                 total: cot.total_cotizacion,
+                                comprueba: 'Si este cliente NO es el que te pidieron, pídele el número correcto antes de seguir.',
                                 falta: args.forma_pago
                                     ? (args.forma_pago === 'EFECTIVO' && !args.recibido ? 'preguntar con cuánto paga' : 'llamar a cobrar_venta')
                                     : 'preguntar la forma de pago',
@@ -657,10 +669,23 @@ Deno.serve(async (req: Request) => {
                         });
                     } else {
                         ordenes.push({ panel: 'ventas', orden: { tipo: 'cobrar_venta', forma_pago: forma, recibido: args.recibido } });
+                        // NO se dice "ok". Esto solo manda la orden; grabar
+                        // ocurre en la pantalla y puede fallar ahí mismo por
+                        // existencia, crédito o monto insuficiente.
+                        //
+                        // (2026-08-16) Devolvía ok:true y el modelo contestó
+                        // "la factura ha sido grabada e impresa, el total es
+                        // RD$177 y el cambio RD$127" — con la pantalla sin
+                        // grabar y esos dos números inventados. Decir que algo
+                        // pasó cuando no pasó es peor que no hacerlo.
                         salida = JSON.stringify({
-                            ok: true,
-                            grabando: true,
-                            aviso: 'La pantalla la está grabando e imprimiendo. Di que quedó hecha y, si hay cambio, cuánto.',
+                            enviada: true,
+                            hecho: false,
+                            instruccion:
+                                'La orden va en camino a la pantalla. NO digas que la factura está hecha, '
+                                + 'grabada ni impresa: eso lo confirma la pantalla, no tú. '
+                                + 'NUNCA digas el total ni el cambio — no los sabes y no puedes calcularlos. '
+                                + 'Di solo: "Va, mira la pantalla" o similar, en una línea.',
                         });
                     }
                 } else if (nombre === 'abrir_modulo') {
