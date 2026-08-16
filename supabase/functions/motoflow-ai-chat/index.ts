@@ -358,8 +358,10 @@ Deno.serve(async (req: Request) => {
                     'Úsala cuando pidan facturar o vender algo, o cuando pidan pasar una cotización a Ventas. ' +
                     'Manda "lineas" con las piezas, O "cotizacion" con el número de una cotización ya hecha — nunca las dos. ' +
                     'Los códigos son los EXACTOS de buscar_piezas: búscalos antes si no los tienes. ' +
-                    'DESPUÉS de llamarla pregunta la forma de pago, y si es EFECTIVO pregunta con cuánto pagan. ' +
-                    'Cuando lo tengas, llama a cobrar_venta — NO vuelvas a llamar a esta.',
+                    'IMPORTANTÍSIMO: si la persona YA te dijo cómo paga —"me pagaron con 50 en efectivo"— mándalo ' +
+                    'AQUÍ en forma_pago y recibido, y la venta se cobra sola en el mismo paso. No preguntes lo que ya te dijeron. ' +
+                    'Solo si NO te lo dijeron: pregunta la forma de pago, y si es EFECTIVO con cuánto pagan, ' +
+                    'y entonces llama a cobrar_venta — NO vuelvas a llamar a esta.',
                 parameters: {
                     type: 'object',
                     properties: {
@@ -607,6 +609,36 @@ Deno.serve(async (req: Request) => {
                     const cotizacion = String(args.cotizacion || '').trim();
                     const codigos = (args.lineas || []).map((l: any) => String(l?.codigo || '').trim()).filter(Boolean);
 
+                    // ── SI YA SABE COMO LE PAGARON, SE COBRA DE UNA VEZ ────
+                    // (2026-08-16) "factúrala, me pagaron con 50 pesos en
+                    // efectivo": el modelo mandó la forma de pago y el monto
+                    // en esta misma llamada — la pantalla quedó con MIKI, el
+                    // agua cool, RECIBIDO 50 y CAMBIO 30, todo correcto— y
+                    // aun así preguntó "¿es efectivo?". Al contestarle "sí",
+                    // se perdió y propuso una cotización de otro cliente.
+                    //
+                    // El segundo turno era el problema. Si en la orden ya
+                    // viene todo lo que hace falta, no hay nada que
+                    // preguntar: se manda cobrar detrás de preparar. La cola
+                    // de la pantalla garantiza que se atienden en ese orden.
+                    const formaDada = String(args.forma_pago || '').toUpperCase();
+                    const cobrarYa = ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'].includes(formaDada)
+                        && (formaDada !== 'EFECTIVO' || Number(args.recibido) > 0);
+
+                    const encolarCobro = () => {
+                        if (!cobrarYa) return;
+                        ordenes.push({
+                            panel: 'ventas',
+                            orden: { tipo: 'cobrar_venta', forma_pago: formaDada, recibido: args.recibido },
+                        });
+                        usadas.push({ herramienta: 'cobrar_venta', argumentos: { forma_pago: formaDada, recibido: args.recibido } });
+                    };
+
+                    const queFalta = cobrarYa
+                        ? 'NADA. Ya va a cobrarse: NO preguntes la forma de pago, NO digas que está grabada, '
+                          + 'NO digas totales ni cambios. Una línea: "Va, mira la pantalla".'
+                        : (formaDada === 'EFECTIVO' ? 'preguntar con cuánto paga' : 'preguntar la forma de pago');
+
                     if (cotizacion) {
                         // Se comprueba AQUÍ que exista y que no esté ya facturada.
                         // Descubrirlo cuando la pantalla ya se abrió es tarde: el
@@ -622,8 +654,9 @@ Deno.serve(async (req: Request) => {
                             salida = JSON.stringify({ ok: false, error: `La cotización ${cotizacion} ya fue facturada.` });
                         } else {
                             ordenes.push({ panel: 'ventas', orden: { tipo: 'preparar_venta', cotizacion, ...args } });
+                            encolarCobro();
                             salida = JSON.stringify({
-                                ok: true, preparada: true, desde_cotizacion: cotizacion,
+                                ok: true, preparada: true, cobrando: cobrarYa, desde_cotizacion: cotizacion,
                                 // El cliente VIAJA de vuelta para que el modelo
                                 // pueda comprobar que agarró la cotización que
                                 // le pidieron. Mandó la de otro cliente y no
@@ -631,9 +664,7 @@ Deno.serve(async (req: Request) => {
                                 cliente: cot.manual_cliente_nombre || null,
                                 total: cot.total_cotizacion,
                                 comprueba: 'Si este cliente NO es el que te pidieron, pídele el número correcto antes de seguir.',
-                                falta: args.forma_pago
-                                    ? (args.forma_pago === 'EFECTIVO' && !args.recibido ? 'preguntar con cuánto paga' : 'llamar a cobrar_venta')
-                                    : 'preguntar la forma de pago',
+                                falta: queFalta,
                             });
                         }
                     } else if (!codigos.length) {
@@ -650,13 +681,13 @@ Deno.serve(async (req: Request) => {
                         });
                     } else {
                         ordenes.push({ panel: 'ventas', orden: { tipo: 'preparar_venta', ...args } });
+                        encolarCobro();
                         salida = JSON.stringify({
                             ok: true,
                             preparada: true,
+                            cobrando: cobrarYa,
                             lineas: codigos.length,
-                            falta: args.forma_pago
-                                ? (args.forma_pago === 'EFECTIVO' && !args.recibido ? 'preguntar con cuánto paga' : 'llamar a cobrar_venta')
-                                : 'preguntar la forma de pago',
+                            falta: queFalta,
                         });
                     }
                     }
