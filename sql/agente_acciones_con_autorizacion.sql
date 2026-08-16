@@ -196,6 +196,16 @@ END $$;
 -- ------------------------------------------------------------
 -- La primera porque es la más reversible: no mueve inventario, no emite
 -- comprobante fiscal y se borra sin consecuencias.
+--
+-- >>> ESTA FUNCIÓN SE ARREGLÓ DOS VECES DESPUÉS <<<
+-- Lo de abajo YA INCLUYE ambos arreglos, así que re-ejecutar este archivo es
+-- seguro. Se dejan anotados porque cada uno costó un error en producción:
+--
+--   · el estado va 'Pendiente', no 'PENDIENTE'. Con mayúsculas la cotización
+--     existía pero era invisible en su propio módulo.
+--   · el ITBIS se DESPEJA del precio, no se suma. Ver
+--     sql/agente_cotizacion_itbis_incluido.sql, que es dónde está explicado
+--     por qué: el agente anunció RD$11,800 por una pieza de RD$10,000.
 CREATE OR REPLACE FUNCTION public._agente_ejecutar_cotizacion(p_tenant uuid, p_payload jsonb)
 RETURNS json
 LANGUAGE plpgsql
@@ -207,8 +217,9 @@ DECLARE
   v_num    text;
   v_cli    uuid;
   l        jsonb;
-  v_sub    numeric := 0;
-  v_itbis  numeric := 0;
+  v_sub    numeric := 0;   -- base imponible: el precio sin el ITBIS que trae dentro
+  v_itbis  numeric := 0;   -- el impuesto contenido en el precio
+  v_total  numeric := 0;   -- lo que paga el cliente = suma de los importes
   v_lineas int := 0;
 BEGIN
   IF jsonb_array_length(COALESCE(p_payload -> 'lineas', '[]'::jsonb)) = 0 THEN
@@ -229,7 +240,7 @@ BEGIN
   ) VALUES (
     p_tenant, v_num, current_date, current_date + 15, v_cli,
     NULLIF(btrim(COALESCE(p_payload ->> 'cliente_nombre', '')), ''),
-    0, 0, 0, 0, 'PENDIENTE',
+    0, 0, 0, 0, 'Pendiente',
     btrim(COALESCE(p_payload ->> 'notas', '') || ' [creada por el agente]'),
     auth.uid()
   ) RETURNING id INTO v_id;
@@ -238,8 +249,10 @@ BEGIN
     DECLARE
       v_prod  record;
       v_cant  numeric := GREATEST(COALESCE((l ->> 'cantidad')::numeric, 1), 0.0001);
+      v_pct   numeric;
       v_pu    numeric;
       v_imp   numeric;
+      v_base  numeric;
       v_iv    numeric;
     BEGIN
       SELECT id, codigo, descripcion, precio, itbis_pct INTO v_prod
@@ -254,7 +267,16 @@ BEGIN
       -- se viera el bueno.
       v_pu  := COALESCE(v_prod.precio, 0);
       v_imp := round(v_pu * v_cant, 2);
-      v_iv  := round(v_imp * COALESCE(v_prod.itbis_pct, 0), 2);
+
+      -- Algunas filas viejas guardan la tasa como 18 en vez de 0.18, igual
+      -- que contempla normalizeTaxRate() en src/lib/taxUtils.js.
+      v_pct := COALESCE(v_prod.itbis_pct, 0);
+      IF v_pct > 1 THEN v_pct := v_pct / 100; END IF;
+
+      -- El ITBIS ya viene DENTRO del precio: se despeja dividiendo, no se
+      -- suma encima. Sumarlo cobraba el impuesto dos veces.
+      v_base := round(v_imp / (1 + v_pct), 2);
+      v_iv   := round(v_imp - v_base, 2);
 
       INSERT INTO public.cotizaciones_detalle (
         tenant_id, cotizacion_id, producto_id, codigo, descripcion,
@@ -264,19 +286,23 @@ BEGIN
         v_cant, v_pu, 0, 0, v_iv, v_imp
       );
 
-      v_sub := v_sub + v_imp;
+      v_sub   := v_sub + v_base;
       v_itbis := v_itbis + v_iv;
+      v_total := v_total + v_imp;
       v_lineas := v_lineas + 1;
     END;
   END LOOP;
 
   UPDATE public.cotizaciones
   SET subtotal = round(v_sub, 2), itbis_total = round(v_itbis, 2),
-      total_cotizacion = round(v_sub + v_itbis, 2)
+      total_cotizacion = round(v_total, 2)
   WHERE id = v_id;
 
+  -- 'total' es lo que el agente dice en el chat ("Listo. Cotización X ·
+  -- RD$ ..."). Tiene que ser lo mismo que el documento.
   RETURN json_build_object('cotizacion_id', v_id, 'numero', v_num,
-    'lineas', v_lineas, 'total', round(v_sub + v_itbis, 2));
+    'lineas', v_lineas, 'subtotal', round(v_sub, 2), 'itbis', round(v_itbis, 2),
+    'total', round(v_total, 2));
 END $$;
 
 REVOKE EXECUTE ON FUNCTION public._agente_ejecutar_cotizacion(uuid, jsonb) FROM PUBLIC, anon, authenticated;
