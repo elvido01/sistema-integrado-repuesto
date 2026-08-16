@@ -1771,6 +1771,11 @@ export default function JarvisAdminAssistant() {
               //
               // El saludo sale de la ficha del agente, que se edita sin
               // desplegar. Lo de aquí es solo el respaldo por si está vacía.
+              // Sin esto el saludo salía y el micrófono NO se abría después:
+              // speak() solo se queda escuchando si el modo voz está marcado,
+              // y abrir la esfera no lo marcaba. Se saludaba y se quedaba
+              // mudo esperando algo que nadie iba a disparar.
+              modoVozRef.current = true;
               if (!yaSaludoRef.current) {
                 yaSaludoRef.current = true;
                 speak(agenteActivo?.saludo || '¿En qué le puedo servir, señor?');
