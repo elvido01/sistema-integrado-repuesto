@@ -321,18 +321,18 @@ Deno.serve(async (req: Request) => {
             function: {
                 name: 'preparar_venta',
                 description:
-                    'Abre Facturación y deja la venta ARMADA con sus piezas. NO la graba: la persona revisa y pulsa F10. ' +
-                    'Úsala cuando pidan facturar o vender algo. ' +
-                    'DESPUÉS de llamarla, pregunta la forma de pago si no te la dijeron; y si es EFECTIVO, ' +
-                    'pregunta con cuánto pagan para calcular el cambio. Cuando lo sepas, vuelve a llamarla ' +
-                    'con los mismos datos más forma_pago y recibido. ' +
-                    'Los códigos son los EXACTOS de buscar_piezas: búscalos antes si no los tienes.',
+                    'PASO 1 de facturar: abre Facturación y deja la venta ARMADA. NO la graba. ' +
+                    'Úsala cuando pidan facturar o vender algo, o cuando pidan pasar una cotización a Ventas. ' +
+                    'Manda "lineas" con las piezas, O "cotizacion" con el número de una cotización ya hecha — nunca las dos. ' +
+                    'Los códigos son los EXACTOS de buscar_piezas: búscalos antes si no los tienes. ' +
+                    'DESPUÉS de llamarla pregunta la forma de pago, y si es EFECTIVO pregunta con cuánto pagan. ' +
+                    'Cuando lo tengas, llama a cobrar_venta — NO vuelvas a llamar a esta.',
                 parameters: {
                     type: 'object',
                     properties: {
                         lineas: {
                             type: 'array',
-                            description: 'Las piezas. El precio lo pone el catálogo.',
+                            description: 'Las piezas. El precio lo pone el catálogo. Vacío si mandas "cotizacion".',
                             items: {
                                 type: 'object',
                                 properties: {
@@ -342,12 +342,46 @@ Deno.serve(async (req: Request) => {
                                 required: ['codigo', 'cantidad'],
                             },
                         },
+                        cotizacion: { type: 'string',
+                                      description: 'Número de una cotización YA existente para pasarla a factura, ej: "CT-000087". Trae su cliente y sus piezas.' },
                         cliente_nombre: { type: 'string', description: 'Nombre del cliente si lo dieron' },
                         forma_pago: { type: 'string', enum: ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'],
                                       description: 'Solo si ya te la dijeron. Si no, pregúntala.' },
                         recibido: { type: 'number', description: 'Con cuánto paga, solo en EFECTIVO. Si no lo sabes, pregúntalo.' },
                     },
-                    required: ['lineas'],
+                },
+            },
+        });
+
+        // ── PASO 2: cobrar, grabar e imprimir ─────────────────────
+        // (2026-08-16) "quiero ese ciclo completo".
+        //
+        // Aquí SÍ se emite la factura. Y sin embargo esto no se salta ningún
+        // control, porque no escribe en la base: pulsa F10 en la pantalla que
+        // ya está a la vista. Pasa por lo mismo que si lo pulsara una persona
+        // — existencia, bloqueo de venta bajo costo, crédito del cliente,
+        // "monto insuficiente", NCF y la impresión.
+        //
+        // Lo único que cambia es quién pulsa. Por eso va aparte y con nombre
+        // propio: en el registro de herramientas se lee "cobrar_venta" y se
+        // sabe exactamente cuándo el agente facturó.
+        herramientas.push({
+            type: 'function',
+            function: {
+                name: 'cobrar_venta',
+                description:
+                    'PASO 2 de facturar: pone la forma de pago y GRABA E IMPRIME la factura que ya está en pantalla. ' +
+                    'Esto SÍ emite el comprobante — no lo llames sin haber llamado antes a preparar_venta. ' +
+                    'Si la forma de pago es EFECTIVO tienes que traer "recibido", el monto con el que paga; ' +
+                    'si no lo sabes, PREGÚNTALO y no llames a esta herramienta todavía. ' +
+                    'Después de llamarla di el número de factura y el cambio si lo hubo.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        forma_pago: { type: 'string', enum: ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'] },
+                        recibido: { type: 'number', description: 'Con cuánto paga. Obligatorio en EFECTIVO.' },
+                    },
+                    required: ['forma_pago'],
                 },
             },
         });
@@ -421,7 +455,11 @@ Deno.serve(async (req: Request) => {
                 ? 'Herramientas: ' + herramientas.map((h: any) => h.function.name).join(', ')
                 : '· (sin herramientas conectadas en este momento)',
             '',
-            'Lo que NO puedes todavía: facturar ni registrar pagos.',
+            'Facturar SÍ puedes, y en dos pasos que no se saltan:',
+            'preparar_venta deja la venta armada en pantalla; después preguntas la',
+            'forma de pago y, si es efectivo, con cuánto pagan; y recién entonces',
+            'cobrar_venta la graba y la imprime. Nunca cobres sin haber preparado.',
+            'Lo que NO puedes todavía: registrar pagos de facturas viejas.',
             'Al presentarte, hazlo en dos o tres líneas y con tus palabras. Nada de',
             'listar nombres técnicos: di qué resuelves, no cómo se llama la función.',
         ].join('\n');
@@ -533,14 +571,40 @@ Deno.serve(async (req: Request) => {
                     // el modelo se inventa un código, tiene que enterarse EN LA
                     // MISMA vuelta y poder corregir. Descubrirlo cuando la
                     // pantalla ya se abrió a medio llenar es tarde.
+                    const cotizacion = String(args.cotizacion || '').trim();
                     const codigos = (args.lineas || []).map((l: any) => String(l?.codigo || '').trim()).filter(Boolean);
+
+                    if (cotizacion) {
+                        // Se comprueba AQUÍ que exista y que no esté ya facturada.
+                        // Descubrirlo cuando la pantalla ya se abrió es tarde: el
+                        // modelo tiene que poder corregir en la misma vuelta.
+                        const { data: cot } = await supaUser
+                            .from('cotizaciones')
+                            .select('numero, estado, total_cotizacion, manual_cliente_nombre')
+                            .eq('numero', cotizacion)
+                            .maybeSingle();
+                        if (!cot) {
+                            salida = JSON.stringify({ ok: false, error: `No existe la cotización "${cotizacion}".` });
+                        } else if (String(cot.estado || '').toLowerCase() === 'facturada') {
+                            salida = JSON.stringify({ ok: false, error: `La cotización ${cotizacion} ya fue facturada.` });
+                        } else {
+                            ordenes.push({ panel: 'ventas', orden: { tipo: 'preparar_venta', cotizacion, ...args } });
+                            salida = JSON.stringify({
+                                ok: true, preparada: true, desde_cotizacion: cotizacion,
+                                total: cot.total_cotizacion,
+                                falta: args.forma_pago
+                                    ? (args.forma_pago === 'EFECTIVO' && !args.recibido ? 'preguntar con cuánto paga' : 'llamar a cobrar_venta')
+                                    : 'preguntar la forma de pago',
+                            });
+                        }
+                    } else if (!codigos.length) {
+                        salida = JSON.stringify({ ok: false, error: 'No mandaste ninguna línea ni número de cotización.' });
+                    } else {
                     const { data: hay } = await supaUser
                         .from('productos').select('codigo').in('codigo', codigos);
                     const existentes = new Set((hay || []).map((p: any) => p.codigo));
                     const faltan = codigos.filter((c: string) => !existentes.has(c));
-                    if (!codigos.length) {
-                        salida = JSON.stringify({ ok: false, error: 'No mandaste ninguna línea.' });
-                    } else if (faltan.length) {
+                    if (faltan.length) {
                         salida = JSON.stringify({
                             ok: false,
                             error: `Estos códigos no existen: ${faltan.join(', ')}. Usa el "codigo" exacto de buscar_piezas.`,
@@ -552,8 +616,31 @@ Deno.serve(async (req: Request) => {
                             preparada: true,
                             lineas: codigos.length,
                             falta: args.forma_pago
-                                ? (args.forma_pago === 'EFECTIVO' && !args.recibido ? 'preguntar con cuánto paga' : 'que la persona pulse F10')
+                                ? (args.forma_pago === 'EFECTIVO' && !args.recibido ? 'preguntar con cuánto paga' : 'llamar a cobrar_venta')
                                 : 'preguntar la forma de pago',
+                        });
+                    }
+                    }
+                } else if (nombre === 'cobrar_venta') {
+                    // Tampoco graba aquí: manda la orden y la PANTALLA pulsa
+                    // F10. Lo que sí se hace aquí es negarse a cobrar en
+                    // efectivo sin saber con cuánto pagan — si no, la pantalla
+                    // rebota con "monto insuficiente" y el agente ya habría
+                    // dicho que la factura está hecha.
+                    const forma = String(args.forma_pago || '').toUpperCase();
+                    if (!['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'].includes(forma)) {
+                        salida = JSON.stringify({ ok: false, error: 'Falta la forma de pago.' });
+                    } else if (forma === 'EFECTIVO' && !(Number(args.recibido) > 0)) {
+                        salida = JSON.stringify({
+                            ok: false,
+                            error: 'En efectivo hace falta saber con cuánto pagan. Pregúntalo y vuelve a llamarme.',
+                        });
+                    } else {
+                        ordenes.push({ panel: 'ventas', orden: { tipo: 'cobrar_venta', forma_pago: forma, recibido: args.recibido } });
+                        salida = JSON.stringify({
+                            ok: true,
+                            grabando: true,
+                            aviso: 'La pantalla la está grabando e imprimiendo. Di que quedó hecha y, si hay cambio, cuánto.',
                         });
                     }
                 } else if (nombre === 'abrir_modulo') {

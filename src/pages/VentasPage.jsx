@@ -30,6 +30,8 @@ const VentasPage = () => {
   const [isEditingNumero, setIsEditingNumero] = useState(false);
   const [editNumero, setEditNumero] = useState('');
   const [clienteCodigoInput, setClienteCodigoInput] = useState('');
+  // Lo que el agente pidió cobrar, esperando a que la pantalla lo refleje.
+  const [cobroPedido, setCobroPedido] = useState(null);
 
   const {
     date, setDate,
@@ -210,24 +212,61 @@ const VentasPage = () => {
   // venta bajo costo. Meter las líneas por otra vía se saltaría todo eso.
   useEffect(() => {
     return escucharOrdenes('ventas', async (orden) => {
+      // ── PASO 2: cobrar ──────────────────────────────────────
+      // No se graba aquí. Se anota lo pedido y el efecto de abajo espera a
+      // que la pantalla lo refleje de verdad antes de pulsar F10.
+      if (orden?.tipo === 'cobrar_venta') {
+        if (orden.forma_pago) setTipoPago(orden.forma_pago);
+        if (orden.recibido) setMontoRecibido(String(orden.recibido));
+        setCobroPedido({ ...orden, pedidoEn: Date.now() });
+        return;
+      }
+
       if (orden?.tipo !== 'preparar_venta') return;
       try {
-        for (const l of orden.lineas || []) {
-          for (let i = 0; i < l.cantidad; i++) {
-            await handleAddProductByCode(l.codigo);
+        // Se limpia SIEMPRE antes de llenar. Sin esto, preparar la venta dos
+        // veces —que es justo lo que pasa cuando el agente corrige algo—
+        // dejaba las cantidades duplicadas: la segunda pasada agregaba encima
+        // de la primera y nadie lo notaba hasta ver el total.
+        resetVenta();
+
+        if (orden.cotizacion) {
+          // Pasar una cotización a factura sin volver a teclearla. Es el
+          // mismo camino que el botón del módulo de Cotizaciones.
+          const { data: cot, error } = await supabase
+            .from('cotizaciones')
+            .select('*')
+            .eq('numero', orden.cotizacion)
+            .maybeSingle();
+          if (error) throw error;
+          if (!cot) throw new Error(`No encontré la cotización ${orden.cotizacion}.`);
+          await handleSelectCotizacion(cot);
+        } else {
+          // Unidad por unidad con handleAddProductByCode a propósito: es el
+          // mismo camino que teclear el código en la fila amarilla, así que
+          // pasa por el control de existencia, las sugerencias de
+          // equivalentes y el bloqueo de venta bajo costo.
+          for (const l of orden.lineas || []) {
+            for (let i = 0; i < l.cantidad; i++) {
+              await handleAddProductByCode(l.codigo);
+            }
           }
+          if (orden.cliente_nombre) setManualClienteNombre(orden.cliente_nombre);
         }
+
         if (orden.forma_pago) setTipoPago(orden.forma_pago);
         if (orden.recibido) setMontoRecibido(String(orden.recibido));
         toast({
           title: 'Factura preparada',
-          description: 'Revísala y pulsa F10 para grabar. Nada se ha guardado todavía.',
+          description: 'Revísala. Nada se ha guardado todavía.',
         });
       } catch (e) {
         toast({ title: 'No pude preparar la factura', description: String(e?.message || e), variant: 'destructive' });
       }
     });
-  }, [handleAddProductByCode, setTipoPago, setMontoRecibido, toast]);
+  }, [handleAddProductByCode, handleSelectCotizacion, resetVenta, setManualClienteNombre,
+      setTipoPago, setMontoRecibido, toast]);
+
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -418,10 +457,47 @@ const VentasPage = () => {
     }, activeVendedor?.nombre, selectedVendedor);
   };
 
+  // ── Grabar solo cuando la pantalla YA dice lo que se pidió ────
+  // handleSave lee la forma de pago y lo recibido del estado del hook. Poner
+  // el estado y grabar en la misma vuelta grabaría con los valores VIEJOS: la
+  // factura saldría a crédito, o daría "monto insuficiente" teniendo el
+  // dinero puesto. Así que se espera a que el estado llegue de verdad, y
+  // recién ahí se pulsa F10 por dentro.
+  //
+  // Va aquí abajo y no junto al resto de las órdenes porque necesita
+  // handleConfirmAndPrint, que se define más arriba de esta línea y no
+  // existe todavía cuando se monta aquel efecto.
+  useEffect(() => {
+    if (!cobroPedido) return;
+
+    const formaLista = !cobroPedido.forma_pago || tipoPago === cobroPedido.forma_pago;
+    const montoListo = !cobroPedido.recibido
+      || Number(montoRecibido) === Number(cobroPedido.recibido);
+
+    if (!formaLista || !montoListo) {
+      // Un reloj de verdad, no una comprobación de fecha: si el estado no
+      // llega, este efecto no se vuelve a ejecutar solo y la espera quedaría
+      // colgada en silencio. Cuando el estado sí llega, el efecto se repite y
+      // la limpieza cancela el reloj antes de que suene.
+      const reloj = setTimeout(() => {
+        setCobroPedido(null);
+        toast({
+          variant: 'destructive',
+          title: 'No grabé la factura',
+          description: 'La pantalla no llegó a tomar la forma de pago. Revísala y pulsa F10.',
+        });
+      }, 3000);
+      return () => clearTimeout(reloj);
+    }
+
+    setCobroPedido(null);
+    handleConfirmAndPrint();
+  }, [cobroPedido, tipoPago, montoRecibido, handleConfirmAndPrint, toast]);
+
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       if (activePanel !== 'ventas') return;
-      
+
       if (e.key === 'F3') {
         e.preventDefault();
         setIsProductSearchModalOpen(true);

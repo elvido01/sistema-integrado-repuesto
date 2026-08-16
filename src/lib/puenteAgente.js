@@ -52,14 +52,44 @@ export function escucharOrdenes(panel, fn) {
   return () => { if (oyentes.get(panel) === fn) oyentes.delete(panel); };
 }
 
+const FORMAS = ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'];
+
+const formaValida = (v) => (FORMAS.includes(String(v || '').toUpperCase())
+  ? String(v).toUpperCase()
+  : null);
+
+const montoValido = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+
 // Las órdenes que llegan de un agente vienen de un modelo de lenguaje, así
 // que se limpian antes de tocar una pantalla. No es desconfianza del agente:
 // es que un número de más aquí es una factura mal hecha delante de un cliente.
+//
+// Dos pasos, y separados a propósito:
+//
+//   preparar_venta  deja la pantalla armada. No graba.
+//   cobrar_venta    pone la forma de pago y GRABA E IMPRIME.
+//
+// >>> POR QUÉ NO ES UNA SOLA ORDEN CON UN INTERRUPTOR <<<
+// Porque "grabar: false" y "grabar: true" se parecen demasiado para algo que
+// emite un comprobante fiscal. Con dos nombres distintos, el modelo tiene que
+// decir en voz alta cuál de las dos cosas quiere, y la que factura se lee
+// entera en el registro de herramientas usadas.
 export function normalizarOrdenVenta(cruda) {
   const o = cruda || {};
+
+  if (o.tipo === 'cobrar_venta') {
+    return {
+      tipo: 'cobrar_venta',
+      forma_pago: formaValida(o.forma_pago),
+      recibido: montoValido(o.recibido),
+    };
+  }
+
   const lineas = Array.isArray(o.lineas) ? o.lineas : [];
   return {
     tipo: 'preparar_venta',
+    // Número de cotización, para pasarla a factura sin volver a teclear nada.
+    cotizacion: o.cotizacion ? String(o.cotizacion).trim().slice(0, 40) : null,
     lineas: lineas.slice(0, 25).map((l) => ({
       codigo: String(l?.codigo || '').trim(),
       // Tope de 50: pedir 5,000 unidades por un error de dictado dejaría la
@@ -67,9 +97,7 @@ export function normalizarOrdenVenta(cruda) {
       cantidad: Math.min(Math.max(parseInt(l?.cantidad, 10) || 1, 1), 50),
     })).filter((l) => l.codigo),
     cliente_nombre: o.cliente_nombre ? String(o.cliente_nombre).slice(0, 120) : null,
-    forma_pago: ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'].includes(String(o.forma_pago || '').toUpperCase())
-      ? String(o.forma_pago).toUpperCase()
-      : null,
-    recibido: Number.isFinite(Number(o.recibido)) && Number(o.recibido) > 0 ? Number(o.recibido) : null,
+    forma_pago: formaValida(o.forma_pago),
+    recibido: montoValido(o.recibido),
   };
 }
