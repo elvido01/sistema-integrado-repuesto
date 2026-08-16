@@ -1,6 +1,21 @@
 // Create admin RPCs in production, adapted for actual prod schema
 // (profiles instead of usuarios_empresas, facturas without tenant_id filter)
-const TOKEN = 'sbp_7dd6d35c4dfe60c44628b58b40274becf961eb9d';
+// >>> EL TOKEN NO VA AQUÍ <<<
+// Estuvo escrito en esta línea y commiteado hasta el 2026-08-16. Un token de
+// administración no es una clave de lectura: da acceso total al proyecto —
+// leer, crear y BORRAR bases enteras — y este archivo corre contra
+// producción. Ese token ya está revocado; el nuevo se pasa por el entorno y
+// no vuelve a entrar al repositorio.
+//
+//   PowerShell:  $env:SUPABASE_ACCESS_TOKEN = "sbp_..."
+//   bash:        export SUPABASE_ACCESS_TOKEN="sbp_..."
+//
+// Se saca de https://supabase.com/dashboard/account/tokens
+const TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+if (!TOKEN) {
+  console.error('Falta SUPABASE_ACCESS_TOKEN en el entorno. Este script escribe en PRODUCCIÓN.');
+  process.exit(1);
+}
 const PROD  = 'zdvxowpuklbypweyqqki';
 const API   = 'https://api.supabase.com/v1';
 const H     = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };

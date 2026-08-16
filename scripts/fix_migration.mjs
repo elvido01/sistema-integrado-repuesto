@@ -1,6 +1,16 @@
 // Fix: sequences + ARRAY types for failed tables
-const TOKEN = 'sbp_7dd6d35c4dfe60c44628b58b40274becf961eb9d';
+// El token va por el entorno, nunca escrito aquí: uno de administración da
+// acceso total al proyecto y este archivo estuvo commiteado con el suyo
+// dentro hasta el 2026-08-16 (ya revocado).
+//   $env:SUPABASE_ACCESS_TOKEN = "sbp_..."   ·   https://supabase.com/dashboard/account/tokens
+const TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+if (!TOKEN) {
+  console.error('Falta SUPABASE_ACCESS_TOKEN en el entorno.');
+  process.exit(1);
+}
 const PROD = 'zdvxowpuklbypweyqqki';
+// OJO: motoflow-dev se borró el 2026-07-12. Este script apunta a un proyecto
+// que ya no existe y fallará.
 const DEV  = 'vvxoxhowupkehycnpwaa';
 const API  = 'https://api.supabase.com/v1';
 const H    = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };

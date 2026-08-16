@@ -1,8 +1,18 @@
 // Schema migration: PRODUCTION → DEV via Supabase database/query API
 import fs from 'fs';
 
-const ACCESS_TOKEN = 'sbp_7dd6d35c4dfe60c44628b58b40274becf961eb9d';
+// El token va por el entorno, nunca escrito aquí: uno de administración da
+// acceso total al proyecto y este archivo estuvo commiteado con el suyo
+// dentro hasta el 2026-08-16 (ya revocado).
+//   $env:SUPABASE_ACCESS_TOKEN = "sbp_..."   ·   https://supabase.com/dashboard/account/tokens
+const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+if (!ACCESS_TOKEN) {
+  console.error('Falta SUPABASE_ACCESS_TOKEN en el entorno.');
+  process.exit(1);
+}
 const PROD_REF = 'zdvxowpuklbypweyqqki';
+// OJO: motoflow-dev se borró el 2026-07-12. Este script apunta a un proyecto
+// que ya no existe y fallará; se conserva por lo que documenta del ETL.
 const DEV_REF  = 'vvxoxhowupkehycnpwaa';
 const API = 'https://api.supabase.com/v1';
 
