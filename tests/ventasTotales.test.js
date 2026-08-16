@@ -10,6 +10,27 @@
 // alguien vuelva a tocarla se entere aquí y no en un comprobante fiscal.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+const FUENTE = readFileSync(join(import.meta.dirname, '..', 'src', 'hooks', 'useVentas.js'), 'utf8');
+
+describe('los totales se derivan en el render, no en un efecto', () => {
+  // No hay forma de montar el hook aquí (no está @testing-library), así que se
+  // fija la invariante sobre la fuente. Es lo que separa "correcto en el mismo
+  // render" de "correcto un render después", y un render después fue FT-3504.
+  it('totals y cambio son useMemo', () => {
+    expect(FUENTE).toMatch(/const\s+totals\s*=\s*useMemo\(/);
+    expect(FUENTE).toMatch(/const\s+cambio\s*=\s*useMemo\(/);
+  });
+
+  it('no existen setTotals ni setCambio', () => {
+    // Si vuelven, vuelve el retraso de un render — y con él una cabecera en
+    // cero sobre una factura con líneas.
+    expect(FUENTE).not.toMatch(/setTotals/);
+    expect(FUENTE).not.toMatch(/setCambio/);
+  });
+});
 
 // La misma cuenta que hace el useMemo de useVentas: el precio TRAE el ITBIS
 // dentro, así que la base se despeja dividiendo, nunca sumando encima.
