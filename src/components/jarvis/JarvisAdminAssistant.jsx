@@ -11,6 +11,22 @@ import { usePanels } from '@/contexts/panelCore';
 
 const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
+// ── Cuando el que falla es el MOTOR del agente, no MotoFlow ──────────
+// (2026-08-16) Se le pidió una cotización a Hermes y contestó "The model
+// provider is rate-limiting requests. Please wait a moment and try again."
+// Es verdad y está bien que se vea tal cual, pero está en inglés, no dice de
+// quién es la culpa, y sobre todo no dice qué hacer — mientras el otro agente
+// está a un clic, funcionando.
+//
+// Se detecta por lo que dice el proveedor, no por un código: estos mensajes
+// llegan como texto dentro de la respuesta y no hay campo que los marque.
+// Por eso la lista es de frases y no de números.
+export function sinMotor(texto) {
+  const t = String(texto || '').toLowerCase();
+  if (t.length > 400) return false;   // una respuesta larga no es un error
+  return /rate-limit|rate limit|quota|credit balance|insufficient_quota|overloaded|too many requests|429|no tiene cr[eé]dito/.test(t);
+}
+
 // ¿Lo que se dijo es un sí, un no, o ninguna de las dos?
 //
 // La versión anterior buscaba "no" suelto y cancelaba la propuesta con
@@ -1374,6 +1390,18 @@ export default function JarvisAdminAssistant() {
                       ? 'bg-cyan-500/20 text-cyan-50'
                       : 'bg-slate-800/80 text-slate-100'
                   }`}>{m.content}</span>
+                  {/* CUANDO EL QUE FALLA ES EL MOTOR DEL AGENTE, NO MOTOFLOW.
+                      (2026-08-16) Hermes contestó "The model provider is
+                      rate-limiting requests" — en inglés, y sin decir qué
+                      hacer. El texto original se queda: es la verdad y no se
+                      esconde. Debajo va lo que falta, que es la salida. */}
+                  {m.role === 'assistant' && sinMotor(m.content) && (
+                    <p className="mt-1 rounded bg-amber-500/15 px-2 py-1 text-[11px] text-amber-200">
+                      Eso no es MotoFlow: es el motor de {nombreEmpresa} el que no
+                      está respondiendo. Cambia a <b>{nombreSistema}</b> en el
+                      interruptor de arriba y sigue trabajando.
+                    </p>
+                  )}
                   {/* QUIÉN contestó, en cada burbuja. Los dos hablan con la
                       misma persona y el mismo nombre arriba: sin esto, mirando
                       una conversación vieja no hay forma de saber a cuál de los
