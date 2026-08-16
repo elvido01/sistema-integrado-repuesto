@@ -57,7 +57,7 @@ function esEcoDeLoQueDijo(oido, dicho) {
   return comunes / a.length >= 0.5;
 }
 
-function veredictoDeVoz(texto) {
+export function veredictoDeVoz(texto) {
   const t = String(texto).toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -65,11 +65,23 @@ function veredictoDeVoz(texto) {
   // Más de cinco palabras ya no es un "sí": es una instrucción nueva.
   if (t.split(' ').length > 5) return null;
 
-  if (/^(si|si autorizo|autorizo|autorizado|aprobado|apruebo|confirmo|hazlo|grabalo|adelante|correcto|dale)$/.test(t)) return 'si';
+  // El NO se mira primero: "no autorizo" empieza por una palabra de rechazo y
+  // no puede caer nunca del otro lado por un descuido del orden.
+  //
   // Solo lo inequívoco. "espera" y "para" quedan FUERA a propósito: quien
   // dice "espera" quiere pensarlo, no descartar. Ante la duda no se toca la
   // propuesta y decide con el botón.
-  if (/^(no|no autorizo|no lo hagas|cancela|cancelar|cancelalo|descarta|descartalo|dejalo|olvidalo|borralo)$/.test(t)) return 'no';
+  if (/^(no|no gracias|no autorizo|no lo hagas|dejalo|olvidalo|borralo)$/.test(t)) return 'no';
+  if (/^(no\s+)?(lo\s+|la\s+)?(cancel|descart|anul|rechaz)\w*$/.test(t)) return 'no';
+
+  if (/^(si|ok|oka|okay|okey|dale|hazlo|grabalo|adelante|correcto|procede|listo)$/.test(t)) return 'si';
+  // Por RAÍZ y no por lista cerrada. (2026-08-16) La lista tenía "autorizo" y
+  // "autorizado" pero no "autorízalo", que es como lo dice la gente: se fue al
+  // modelo, que contestó proponiendo una cotización de otro cliente. Una
+  // palabra de más en la conjugación no puede costar eso.
+  // Cubre autorizo/autorizalo/autorizala/autorizarlo, apruebalo, confirmalo.
+  if (/^(si,?\s+)?(lo\s+|la\s+)?(autoriz|aprueb|aprob|confirm)\w*$/.test(t)) return 'si';
+
   return null;
 }
 
