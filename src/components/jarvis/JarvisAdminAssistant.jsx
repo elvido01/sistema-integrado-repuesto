@@ -1268,7 +1268,28 @@ export default function JarvisAdminAssistant() {
       return;
     }
 
-    if (!loading) startListening();
+    if (loading) return;
+
+    // ── EL SALUDO, AL TOCAR LA ESFERA ───────────────────────────
+    // (2026-08-16) "quiero que al darle click a la esfera de Jarvis este
+    // conteste". Hasta aquí la esfera abría el micrófono en silencio: había
+    // que tocarla, esperar a que creciera y adivinar que ya estaba oyendo.
+    //
+    // Solo la PRIMERA vez de cada conversación. Repetirlo cada vez que se
+    // vuelve a la esfera sería un loro.
+    //
+    // El texto sale de la ficha del agente (agente_sistema.saludo), que se
+    // edita sin desplegar; lo de aquí es el respaldo si está vacía. Y como
+    // speak() abre el micrófono al terminar de hablar, la persona puede
+    // contestarle al saludo sin tocar nada más.
+    modoVozRef.current = true;
+    if (!yaSaludoRef.current) {
+      yaSaludoRef.current = true;
+      speak(agenteActivo?.saludo || '¿En qué le puedo servir, señor?');
+      return;
+    }
+
+    startListening();
   };
 
   return (
@@ -1764,24 +1785,9 @@ export default function JarvisAdminAssistant() {
             onClick={() => {
               setModoLive(true);
               setChatAbierto(false);
-              if (listening || speaking || loading) return;
-              // La PRIMERA vez de cada conversación saluda; después abre el
-              // micrófono y ya. Repetir el saludo cada vez que se vuelve a la
-              // esfera —dentro de la misma conversación— sería un loro.
-              //
-              // El saludo sale de la ficha del agente, que se edita sin
-              // desplegar. Lo de aquí es solo el respaldo por si está vacía.
-              // Sin esto el saludo salía y el micrófono NO se abría después:
-              // speak() solo se queda escuchando si el modo voz está marcado,
-              // y abrir la esfera no lo marcaba. Se saludaba y se quedaba
-              // mudo esperando algo que nadie iba a disparar.
-              modoVozRef.current = true;
-              if (!yaSaludoRef.current) {
-                yaSaludoRef.current = true;
-                speak(agenteActivo?.saludo || '¿En qué le puedo servir, señor?');
-                return;
-              }
-              startListening();
+              // El saludo NO va aquí: va en toggleVoice, que es lo que llama
+              // la esfera. Puesto en los dos sitios saludaría dos veces.
+              if (!listening && !speaking && !loading) toggleVoice();
             }}
             title="A pantalla completa"
             className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
