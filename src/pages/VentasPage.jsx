@@ -19,6 +19,7 @@ import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { escucharOrdenes } from '@/lib/puenteAgente';
+import { publicarDatos } from '@/lib/pantallaContexto';
 import { Loader2 } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { esClienteGenerico } from '@/lib/clienteGenerico';
@@ -204,6 +205,46 @@ const VentasPage = () => {
     }
   }, []);
 
+  // Las líneas de AHORA, para el oyente de órdenes. Va por ref y no por
+  // dependencia a propósito: ver más abajo, junto al escucharOrdenes.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  // ── LO QUE JARVIS VE DE ESTA PANTALLA ──────────────────────────────
+  //
+  // (2026-08-17) "Mira la pantalla, hay un error, cámbiate la mercancía",
+  // estando parado en Ventas. Jarvis contestó "eso se hace en Ventas, ¿te lo
+  // abro?" — y tenía razón en no saber qué decir: `pantalla_actual.datos`
+  // llegaba en null. La tubería de publicar contexto existía desde hacía
+  // meses y NINGUNA pantalla la usaba; era código muerto.
+  //
+  // Esto viaja en cada pregunta y se paga por token, así que va lo justo:
+  // qué líneas hay, de quién es y cuánto suma. Sin ubicaciones, sin ids, sin
+  // el objeto entero. Con eso alcanza para "quita el tanque" y para "¿cuánto
+  // llevo?", que es lo que se pregunta delante de un cliente.
+  useEffect(() => {
+    publicarDatos({
+      venta_en_pantalla: {
+        cliente: manualClienteNombre || cliente?.nombre || 'CONSUMIDOR FINAL',
+        // Numeradas, y con el MISMO criterio que usa el chat para "el número
+        // dos": el orden en que se ven en la rejilla.
+        lineas: (items || []).slice(0, 15).map((it, i) => ({
+          n: i + 1,
+          codigo: it.codigo,
+          descripcion: it.descripcion,
+          cantidad: Number(it.cantidad || 0),
+          precio: Number(it.precio || 0),
+        })),
+        total: Number(totals?.totalFactura ?? 0),
+        forma_pago: tipoPago || null,
+        recibido: Number(montoRecibido || 0) || null,
+        // Que se note que NO está grabada: sin esto el modelo dice "la
+        // factura quedó hecha" mirando una pantalla llena que nadie guardó.
+        estado: 'sin grabar — se graba con F10',
+      },
+    });
+  }, [items, cliente, manualClienteNombre, totals, tipoPago, montoRecibido]);
+
   // El agente deja la factura ARMADA, no la graba. Coloca las piezas, la
   // forma de pago y lo recibido; grabar sigue siendo F10, de una persona.
   //
@@ -225,6 +266,43 @@ const VentasPage = () => {
         if (orden.forma_pago) setTipoPago(orden.forma_pago);
         if (orden.recibido) setMontoRecibido(String(orden.recibido));
         setCobroPedido({ ...orden, pedidoEn: Date.now() });
+        return;
+      }
+
+      // ── CORREGIR lo que ya está armado ──────────────────────────
+      // NO limpia la pantalla, y esa es toda la diferencia: quita las líneas
+      // que se pidieron y agrega las nuevas encima de lo que hay. Antes, para
+      // cambiar una pieza, la única orden disponible era preparar_venta, que
+      // arranca con resetVenta() — o sea, rehacer la factura entera con el
+      // cliente y la forma de pago otra vez.
+      if (orden?.tipo === 'corregir_venta') {
+        try {
+          const antes = itemsRef.current || [];
+          const codigo = (v) => String(v || '').trim().toUpperCase();
+          const quitar = new Set((orden.quitar || []).map(codigo));
+
+          for (const it of antes) {
+            if (quitar.has(codigo(it.codigo))) handleDeleteItem(it.id);
+          }
+          for (const l of orden.agregar || []) {
+            for (let i = 0; i < l.cantidad; i++) await handleAddProductByCode(l.codigo);
+          }
+
+          // Que se diga cuando se pidió quitar algo que no estaba. Callarlo
+          // deja creer que se corrigió, y lo que se ve en pantalla es lo que
+          // se va a facturar.
+          const noEstaban = [...quitar].filter(
+            (c) => !antes.some((it) => codigo(it.codigo) === c));
+          toast({
+            title: noEstaban.length ? 'Corregí lo que pude' : 'Factura corregida',
+            description: noEstaban.length
+              ? `No estaba en la factura: ${noEstaban.join(', ')}. Revísala; nada se ha guardado.`
+              : 'Revísala. Nada se ha guardado todavía.',
+            variant: noEstaban.length ? 'destructive' : undefined,
+          });
+        } catch (e) {
+          toast({ title: 'No pude corregir la factura', description: String(e?.message || e), variant: 'destructive' });
+        }
         return;
       }
 
@@ -275,8 +353,11 @@ const VentasPage = () => {
     return escucharOrdenes('ventas', (orden) => {
       fila = fila.then(() => atender(orden)).catch((e) => console.error('[ventas] orden', e));
     });
-  }, [handleAddProductByCode, handleSelectCotizacion, resetVenta, setManualClienteNombre,
-      setTipoPago, setMontoRecibido, toast]);
+    // `items` NO va aquí: entra por itemsRef. Ponerlo en las dependencias
+    // volvería a montar el oyente con cada línea agregada, y con él la fila
+    // que garantiza que preparar termine antes de que empiece cobrar.
+  }, [handleAddProductByCode, handleSelectCotizacion, handleDeleteItem, resetVenta,
+      setManualClienteNombre, setTipoPago, setMontoRecibido, toast]);
 
 
   useEffect(() => {

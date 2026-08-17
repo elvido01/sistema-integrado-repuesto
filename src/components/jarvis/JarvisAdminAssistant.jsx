@@ -7,7 +7,8 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
 import { leerContexto, leerModulos, contextoParaAgente } from '@/lib/pantallaContexto';
 import { transcribir, elegirTexto } from '@/lib/oidoJarvis';
-import { glosarioDeAhora } from '@/lib/jarvisContexto';
+import { glosarioDeAhora, terminosDeAhora } from '@/lib/jarvisContexto';
+import { corregirConGlosario } from '@/lib/glosarioVoz';
 import { ordenarPantalla, normalizarOrdenVenta } from '@/lib/puenteAgente';
 import { usePanels } from '@/contexts/panelCore';
 
@@ -1192,15 +1193,23 @@ export default function JarvisAdminAssistant() {
     if (vozEspejo.espejoActivo()) {
       vozEspejo.cerrar().then(async (grabado) => {
         if (!grabado) { enviar(transcript); return; }
+        const terminos = terminosDeAhora(mensajes);
         const oido = await transcribir(grabado, glosarioDeAhora(mensajes));
         const elegido = elegirTexto(oido?.texto, transcript);
+        // El glosario se le pide al transcriptor ANTES de oír y eso es una
+        // sugerencia, no una regla: con "Sander" en la lista escribió
+        // "Sandel" igual. Aquí se corrige después, que es donde sí se puede.
+        const texto = corregirConGlosario(elegido.texto, terminos);
         if (oido && elegido.de === 'servidor' && oido.texto !== transcript) {
           console.info('[oido] navegador:', transcript, '· servidor:', oido.texto);
+        }
+        if (texto !== elegido.texto) {
+          console.info('[oido] corregido con el glosario:', elegido.texto, '→', texto);
         }
         // enviar() vuelve a leer el veredicto con el texto bueno: si Chrome
         // oyó algo indeciso y el servidor entendió «autorízalo», la
         // autorización se resuelve igual.
-        enviar(elegido.texto, {
+        enviar(texto, {
           voz: {
             fuente: 'voz',
             de: elegido.de,
@@ -1208,6 +1217,10 @@ export default function JarvisAdminAssistant() {
             ms: oido?.ms || null,
             segundos: oido?.segundos ?? Math.round((grabado.duracionMs || 0) / 1000),
             dictado_navegador: transcript,
+            // Lo que salió del oído antes de corregir. Sin esto, en la caja
+            // negra no hay forma de saber si una palabra rara la puso el
+            // transcriptor o la puso esta corrección.
+            antes_de_corregir: texto !== elegido.texto ? elegido.texto : undefined,
           },
         });
       }).catch(() => enviar(transcript));

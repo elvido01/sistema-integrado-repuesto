@@ -88,8 +88,36 @@ const montoValido = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number
 // emite un comprobante fiscal. Con dos nombres distintos, el modelo tiene que
 // decir en voz alta cuál de las dos cosas quiere, y la que factura se lee
 // entera en el registro de herramientas usadas.
+// Una línea pedida por un agente: código y cantidad, con los mismos topes
+// que las de preparar. Se usa desde dos sitios y estaba copiada.
+const lineasValidas = (v) => (Array.isArray(v) ? v : []).slice(0, 25).map((l) => ({
+  codigo: String(l?.codigo || '').trim(),
+  // Tope de 50: pedir 5,000 unidades por un error de dictado dejaría la
+  // pantalla colgada agregando líneas una por una.
+  cantidad: Math.min(Math.max(parseInt(l?.cantidad, 10) || 1, 1), 50),
+})).filter((l) => l.codigo);
+
 export function normalizarOrdenVenta(cruda) {
   const o = cruda || {};
+
+  // >>> CORREGIR NO ES VOLVER A PREPARAR <<<
+  // (2026-08-17) "Hay un error, cámbiate la mercancía" no tenía respuesta
+  // posible: la única orden que tocaba las líneas era preparar_venta, y esa
+  // empieza con resetVenta(). Para cambiar UNA pieza había que rehacer la
+  // factura entera, con el cliente y la forma de pago otra vez.
+  //
+  // Esta quita y agrega sobre lo que ya está, sin tocar lo demás. Y no
+  // graba: sigue haciendo falta F10, igual que las otras dos.
+  if (o.tipo === 'corregir_venta') {
+    return {
+      tipo: 'corregir_venta',
+      quitar: (Array.isArray(o.quitar) ? o.quitar : [])
+        .slice(0, 25)
+        .map((l) => String(l?.codigo || l || '').trim())
+        .filter(Boolean),
+      agregar: lineasValidas(o.agregar),
+    };
+  }
 
   if (o.tipo === 'cobrar_venta') {
     return {
@@ -104,12 +132,7 @@ export function normalizarOrdenVenta(cruda) {
     tipo: 'preparar_venta',
     // Número de cotización, para pasarla a factura sin volver a teclear nada.
     cotizacion: o.cotizacion ? String(o.cotizacion).trim().slice(0, 40) : null,
-    lineas: lineas.slice(0, 25).map((l) => ({
-      codigo: String(l?.codigo || '').trim(),
-      // Tope de 50: pedir 5,000 unidades por un error de dictado dejaría la
-      // pantalla colgada agregando líneas una por una.
-      cantidad: Math.min(Math.max(parseInt(l?.cantidad, 10) || 1, 1), 50),
-    })).filter((l) => l.codigo),
+    lineas: lineasValidas(lineas),
     cliente_nombre: o.cliente_nombre ? String(o.cliente_nombre).slice(0, 120) : null,
     forma_pago: formaValida(o.forma_pago),
     recibido: montoValido(o.recibido),

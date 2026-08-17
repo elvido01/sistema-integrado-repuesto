@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 
 // Copia literal de la de supabase/functions/motoflow-ai-chat/index.ts
 const VERBO_DESTRUCTIVO = /^(anular|eliminar|borrar|cancelar|revertir|castigar|cerrar|ajustar|cambiar|pagar|desembolsar|transferir)$/;
-const VERBO_ESCRIBE = /^(crear|guardar|grabar|facturar|registrar|actualizar|modificar|preparar|cobrar)$/;
+const VERBO_ESCRIBE = /^(crear|guardar|grabar|facturar|registrar|actualizar|modificar|preparar|cobrar|corregir)$/;
 
 function nivelDeRiesgo(nombre) {
   const partes = (nombre || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -51,6 +51,11 @@ describe('nivel 2 — escribir lo normal', () => {
     for (const t of [
       'crear_cotizacion', 'crear_pedido', 'facturar_cotizacion',
       'registrar_pago', 'preparar_venta', 'cobrar_venta', 'actualizar_cliente',
+      // Cambia la mercancía de la factura en pantalla. No graba —eso sigue
+      // siendo F10— pero tampoco es una consulta: si quedara en nivel 1 se
+      // leería como que solo mira, y lo que hace es tocar lo que se va a
+      // cobrar.
+      'corregir_venta',
     ]) expect(nivelDeRiesgo(t), t).toBe(2);
   });
 });

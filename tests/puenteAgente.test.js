@@ -69,3 +69,47 @@ describe('normalizarOrdenVenta — cobrar', () => {
     expect(normalizarOrdenVenta({ tipo: 'cobrar_venta', forma_pago: 'CRIPTO' }).forma_pago).toBeNull();
   });
 });
+
+// (2026-08-17) "Hay un error, cámbiate la mercancía", con la factura armada.
+// No había forma de hacerlo: la única orden que tocaba las líneas era
+// preparar_venta, y esa empieza con resetVenta(). Corregir una pieza obligaba
+// a rehacer la factura entera, con el cliente y la forma de pago otra vez.
+describe('normalizarOrdenVenta — corregir', () => {
+  it('quita por código y agrega en la misma orden', () => {
+    const o = normalizarOrdenVenta({
+      tipo: 'corregir_venta',
+      quitar: [{ codigo: ' 52JK0550 ' }, 'GX9036'],
+      agregar: [{ codigo: ' I-7633 ', cantidad: '2' }],
+    });
+    expect(o.tipo).toBe('corregir_venta');
+    // Acepta el código suelto o dentro de un objeto: el modelo manda las dos
+    // formas y obligarlo a una sola es una vuelta perdida.
+    expect(o.quitar).toEqual(['52JK0550', 'GX9036']);
+    expect(o.agregar).toEqual([{ codigo: 'I-7633', cantidad: 2 }]);
+  });
+
+  it('NO arrastra líneas de preparar', () => {
+    // Si `lineas` se colara, corregir volvería a agregar la mercancía encima
+    // de la que ya está y la factura saldría al doble — el mismo fallo que
+    // ya costó una vez con cobrar.
+    const o = normalizarOrdenVenta({
+      tipo: 'corregir_venta', lineas: [{ codigo: 'X', cantidad: 1 }],
+      quitar: ['A'],
+    });
+    expect(o.lineas).toBeUndefined();
+    expect(o.cotizacion).toBeUndefined();
+  });
+
+  it('las cantidades de lo que se agrega tienen los mismos topes', () => {
+    const o = normalizarOrdenVenta({
+      tipo: 'corregir_venta', agregar: [{ codigo: 'X', cantidad: 5000 }],
+    });
+    expect(o.agregar[0].cantidad).toBe(50);
+  });
+
+  it('con listas vacías o basura no revienta', () => {
+    const o = normalizarOrdenVenta({ tipo: 'corregir_venta', quitar: null, agregar: 'nada' });
+    expect(o.quitar).toEqual([]);
+    expect(o.agregar).toEqual([]);
+  });
+});

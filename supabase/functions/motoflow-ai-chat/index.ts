@@ -71,7 +71,7 @@ async function listaDeHerramientas(mcpUrl: string, token: string) {
 // `cartera_cobrar`. La diferencia está en el orden: `pagar_suplidor` hace
 // algo, `cuentas_pagar` cuenta algo.
 const VERBO_DESTRUCTIVO = /^(anular|eliminar|borrar|cancelar|revertir|castigar|cerrar|ajustar|cambiar|pagar|desembolsar|transferir)$/;
-const VERBO_ESCRIBE = /^(crear|guardar|grabar|facturar|registrar|actualizar|modificar|preparar|cobrar)$/;
+const VERBO_ESCRIBE = /^(crear|guardar|grabar|facturar|registrar|actualizar|modificar|preparar|cobrar|corregir)$/;
 
 function nivelDeRiesgo(nombre: string): 1 | 2 | 3 {
     const partes = (nombre || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -384,6 +384,15 @@ Deno.serve(async (req: Request) => {
             // Cotizaciones y esto se seguía colando en los demás módulos.
             '13. Mira `pantalla_actual`: NUNCA ofrezcas abrir el módulo donde la',
             '    persona ya está parada. Si ya está ahí, resuelve o di qué tocar.',
+            // (2026-08-17) "No, tiene un error, te estoy pidiendo el caliper
+            // número 2 y me hablas de un tanque" -> buscó en el catálogo el
+            // texto "caliper número 2". Una queja no es una búsqueda.
+            '14. Cuando te digan que te equivocaste ("no", "está mal", "eso no',
+            '    es", "te pedí otra cosa"): NO conviertas la queja en una',
+            '    búsqueda. Mira `en_curso.ultimo_intento` —lo que hiciste— y',
+            '    `en_curso.ultima_lista` —lo que le enseñaste—, y corrige sobre',
+            '    eso. Si aun así no sabes qué falló, pregunta en UNA línea. Lo',
+            '    que nunca: repetir la misma consulta con las palabras del reclamo.',
             '',
             'ANTES DE CONTESTAR, PIENSA:',
             '- ¿Qué te están preguntando de verdad? A veces la pregunta corta',
@@ -530,6 +539,51 @@ Deno.serve(async (req: Request) => {
                         forma_pago: { type: 'string', enum: ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'CHEQUE'],
                                       description: 'Solo si ya te la dijeron. Si no, pregúntala.' },
                         recibido: { type: 'number', description: 'Con cuánto paga, solo en EFECTIVO. Si no lo sabes, pregúntalo.' },
+                    },
+                },
+            },
+        });
+
+        // ── ARREGLAR lo que ya está en pantalla ───────────────────
+        // (2026-08-17) "Hay un error, cámbiate la mercancía", estando en
+        // Ventas con la factura armada. No había forma: la única herramienta
+        // que tocaba las líneas era preparar_venta, y esa empieza borrando
+        // todo. Para cambiar UNA pieza había que rehacer la factura entera.
+        //
+        // Tampoco graba. Quita y agrega sobre lo que hay, y F10 sigue siendo
+        // de una persona.
+        herramientas.push({
+            type: 'function',
+            function: {
+                name: 'corregir_venta',
+                description:
+                    'Cambia la mercancía de la venta que YA está armada en pantalla, SIN rehacerla. ' +
+                    'Úsala cuando digan que hay un error en lo que se puso, que sobra o falta una pieza, ' +
+                    'o que cambies una por otra ("quita el tanque", "ese no es, pon el otro caliper"). ' +
+                    'Mira `pantalla_actual.venta_en_pantalla.lineas` para saber qué hay puesto y con qué código. ' +
+                    'Para CAMBIAR una pieza por otra: manda la vieja en "quitar" y la nueva en "agregar", en la misma llamada. ' +
+                    'NO uses preparar_venta para corregir: esa borra la factura y hay que empezar de cero. ' +
+                    'No graba nada; después dile que lo revise en pantalla.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        quitar: {
+                            type: 'array',
+                            description: 'Códigos que hay que sacar de la factura. Cópialos de pantalla_actual.venta_en_pantalla.lineas, no los inventes.',
+                            items: { type: 'string' },
+                        },
+                        agregar: {
+                            type: 'array',
+                            description: 'Piezas que hay que poner. Los códigos son los EXACTOS de buscar_piezas.',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    codigo: { type: 'string', description: 'El "codigo" EXACTO que devolvió buscar_piezas, copiado tal cual' },
+                                    cantidad: { type: 'number' },
+                                },
+                                required: ['codigo', 'cantidad'],
+                            },
+                        },
                     },
                 },
             },
@@ -813,6 +867,12 @@ Deno.serve(async (req: Request) => {
                 let args: any = {};
                 try { args = JSON.parse(c.function?.arguments || '{}'); } catch { /* args vacíos */ }
                 usadas.push({ herramienta: nombre, argumentos: args });
+                // Lo que INTENTÓ, no lo que le salió. Cuando la persona dice
+                // "no, te equivocaste", el modelo necesita ver qué hizo para
+                // poder corregirlo; sin esto convertía la queja en una
+                // búsqueda ("caliper número 2" contra el catálogo) y volvía a
+                // errar por el mismo sitio.
+                estadoSesion.ultimo_intento = { herramienta: nombre, argumentos: args };
 
                 let salida: string;
                 if (nombre === 'proponer_accion') {
@@ -921,6 +981,41 @@ Deno.serve(async (req: Request) => {
                             falta: queFalta,
                         });
                     }
+                    }
+                } else if (nombre === 'corregir_venta') {
+                    // Como preparar_venta, la ejecuta la pantalla. Lo que se
+                    // hace aquí es lo mismo: comprobar los códigos que se van
+                    // a AGREGAR antes de tocar nada, para que un código
+                    // inventado se descubra en esta vuelta y no con la factura
+                    // a medio corregir delante del cliente.
+                    const quitar = (args.quitar || []).map((c: any) => String(c || '').trim()).filter(Boolean);
+                    const nuevos = (args.agregar || []).map((l: any) => String(l?.codigo || '').trim()).filter(Boolean);
+
+                    if (!quitar.length && !nuevos.length) {
+                        salida = JSON.stringify({ ok: false, error: 'No dijiste qué quitar ni qué agregar.' });
+                    } else {
+                        let faltan: string[] = [];
+                        if (nuevos.length) {
+                            const { data: hay } = await supaUser
+                                .from('productos').select('codigo').in('codigo', nuevos);
+                            const existentes = new Set((hay || []).map((p: any) => p.codigo));
+                            faltan = nuevos.filter((c: string) => !existentes.has(c));
+                        }
+                        if (faltan.length) {
+                            salida = JSON.stringify({
+                                ok: false,
+                                error: `Estos códigos no existen: ${faltan.join(', ')}. Usa el "codigo" exacto de buscar_piezas.`,
+                            });
+                        } else {
+                            ordenes.push({ panel: 'ventas', orden: { tipo: 'corregir_venta', quitar, agregar: args.agregar || [] } });
+                            salida = JSON.stringify({
+                                ok: true, corregida: true, quitadas: quitar.length, agregadas: nuevos.length,
+                                // Que no diga que quedó grabada. Es el error que
+                                // ya cometió una vez, con total y cambio inventados.
+                                falta: 'NADA por tu parte. NO digas que está grabada ni des totales: la pantalla se acaba '
+                                     + 'de corregir y la graba una persona con F10. Una línea: "Listo, míralo en pantalla".',
+                            });
+                        }
                     }
                 } else if (nombre === 'cobrar_venta') {
                     // Tampoco graba aquí: manda la orden y la PANTALLA pulsa
@@ -1058,6 +1153,9 @@ Deno.serve(async (req: Request) => {
             // blanca se guardaba y se borraba en el mismo viaje, y "el número
             // dos" volvía a no apuntar a nada.
             'ultima_lista',
+            // Qué intentó en la vuelta anterior. Es lo que hace falta para
+            // entender un "no, eso no es".
+            'ultimo_intento',
         ];
         const memoria = Object.fromEntries(
             Object.entries(estadoSesion || {})
@@ -1108,6 +1206,11 @@ Deno.serve(async (req: Request) => {
                 // las dos versiones de la MISMA frase.
                 oido_de: voz?.de || undefined,
                 dictado_navegador: voz?.dictado_navegador || undefined,
+                // Cómo venía la frase ANTES de que el glosario la corrigiera.
+                // Solo aparece cuando de verdad se cambió algo. Sin esto, una
+                // palabra rara en la transcripción no se puede atribuir: no se
+                // sabría si la puso el transcriptor o la puso la corrección.
+                antes_de_corregir: voz?.antes_de_corregir || undefined,
                 // Lo que quedó en memoria al final del turno.
                 en_curso: Object.keys(memoria).length ? memoria : undefined,
                 // Con cuántas llamadas al modelo se resolvió y qué consultó.

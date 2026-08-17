@@ -26,7 +26,7 @@
 // más lento y más propenso a agarrarse de lo que no toca.
 
 import { leerContexto, leerModulos, contextoParaAgente } from '@/lib/pantallaContexto';
-import { armarGlosario, terminosDeConversacion } from '@/lib/glosarioVoz';
+import { armarGlosario, terminosDeGlosario, terminosDeConversacion } from '@/lib/glosarioVoz';
 
 // Cuántos mensajes de la charla se miran para sacar pistas. Seis es lo que
 // dura una tarea normal: "busca la cotización de Sander" → … → "factúrala".
@@ -78,5 +78,21 @@ export function glosarioDeAhora(mensajes = []) {
     return armarGlosario(leerContexto(), terminosDeConversacion(mensajes, 12));
   } catch {
     return armarGlosario(null, []);
+  }
+}
+
+/**
+ * Los mismos términos, pero en lista.
+ *
+ * El glosario en texto sirve para PEDIRLE al transcriptor que los reconozca;
+ * la lista sirve para CORREGIRLO cuando no lo hizo. Salen del mismo sitio a
+ * propósito: corregir contra una lista distinta de la que se le sugirió sería
+ * inventar palabras que nadie mencionó.
+ */
+export function terminosDeAhora(mensajes = []) {
+  try {
+    return terminosDeGlosario(leerContexto(), terminosDeConversacion(mensajes, 12));
+  } catch {
+    return [];
   }
 }

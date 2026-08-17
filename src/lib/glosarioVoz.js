@@ -105,7 +105,7 @@ function deObjeto(obj, prof = 0) {
  * @param {string[]} recientes     terminos de la conversacion / ultima busqueda
  * @returns {string} texto para el parametro `prompt` del STT
  */
-export function armarGlosario(ctx = null, recientes = []) {
+export function terminosDeGlosario(ctx = null, recientes = []) {
   try {
     const dePantalla = unicos([
       ...(Array.isArray(recientes) ? recientes : []),
@@ -123,16 +123,21 @@ export function armarGlosario(ctx = null, recientes = []) {
       elegidas.push(t);
       largo += t.length + 2;
     }
-
-    // El encabezado importa tanto como la lista: le dice al modelo en que
-    // idioma y de que se esta hablando, que es la mitad del trabajo.
-    return [
-      'Español de República Dominicana. Taller y venta de motocicletas y repuestos.',
-      `Términos: ${elegidas.join(', ')}.`,
-    ].join(' ');
+    return elegidas;
   } catch {
-    return 'Español de República Dominicana. Venta de motocicletas y repuestos.';
+    return [];
   }
+}
+
+export function armarGlosario(ctx = null, recientes = []) {
+  const elegidas = terminosDeGlosario(ctx, recientes);
+  if (!elegidas.length) return 'Español de República Dominicana. Venta de motocicletas y repuestos.';
+  // El encabezado importa tanto como la lista: le dice al modelo en que
+  // idioma y de que se esta hablando, que es la mitad del trabajo.
+  return [
+    'Español de República Dominicana. Taller y venta de motocicletas y repuestos.',
+    `Términos: ${elegidas.join(', ')}.`,
+  ].join(' ');
 }
 
 /**
@@ -157,4 +162,112 @@ export function terminosDeConversacion(mensajes = [], cuantos = 12) {
   }
 }
 
-export const _internos = { NUCLEO, TOPE_CHARS, util, unicos, deObjeto };
+// ── CORREGIR DESPUES DE OIR ──────────────────────────────────────────
+//
+// >>> POR QUE NO BASTA CON EL GLOSARIO <<<
+// (2026-08-17) El glosario se le da al transcriptor ANTES de escuchar, y
+// eso es una SUGERENCIA, no una regla. Con "Sander" en la lista, el
+// servidor escribio igual "Sandel". Peor: Chrome lo habia oido bien, y el
+// desempate se queda con el del servidor.
+//
+// Aqui se arregla despues, que es donde si se puede: si una palabra dicha
+// se parece muchisimo a un termino que esta EN PANTALLA o que se acaba de
+// nombrar, era ese termino. "Sandel" -> "Sander".
+//
+// >>> DELIBERADAMENTE CORTO DE ALCANCE <<<
+// Distancia 1 en palabras de 5+ letras, distancia 2 solo de 8 en adelante.
+// Con eso entra "Sandel"->"Sander" y "platino"->"platina", y NO entra
+// "frudo"->"Pruss", que esta a 3 de distancia. Preferimos dejar pasar un
+// fallo a inventar una correccion: cambiar la palabra equivocada en una
+// orden de facturar cuesta mas que transcribirla mal, porque la busqueda
+// del catalogo aguanta una letra mala y una palabra cambiada no.
+
+const sinTildes = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+// Distancia de edicion con corte: en cuanto se pasa del tope se abandona,
+// que es lo normal — casi ninguna pareja de palabras se parece.
+function distancia(a, b, tope) {
+  if (Math.abs(a.length - b.length) > tope) return tope + 1;
+  let previa = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const fila = [i];
+    let mejor = i;
+    for (let j = 1; j <= b.length; j++) {
+      const coste = a[i - 1] === b[j - 1] ? 0 : 1;
+      fila[j] = Math.min(previa[j] + 1, fila[j - 1] + 1, previa[j - 1] + coste);
+      if (fila[j] < mejor) mejor = fila[j];
+    }
+    if (mejor > tope) return tope + 1;
+    previa = fila;
+  }
+  return previa[b.length];
+}
+
+const topeDe = (largo) => (largo >= 8 ? 2 : largo >= 5 ? 1 : 0);
+
+/**
+ * Cambia las palabras que casi son un termino conocido por el termino.
+ *
+ * Nunca lanza y, ante la duda, devuelve lo que le dieron: una correccion
+ * inventada es peor que una palabra mal oida.
+ *
+ * @param {string}   texto     lo que se transcribio
+ * @param {string[]} terminos  los de terminosDeGlosario()
+ */
+export function corregirConGlosario(texto, terminos = []) {
+  try {
+    const t = String(texto ?? '');
+    if (!t.trim() || !Array.isArray(terminos) || !terminos.length) return t;
+
+    // Solo terminos de UNA palabra: los compuestos no se pueden casar contra
+    // una palabra suelta sin adivinar donde empieza y termina.
+    const candidatos = terminos
+      .filter((x) => x && !/\s/.test(x) && x.length >= 5)
+      .map((x) => ({ original: x, plano: sinTildes(x) }));
+    if (!candidatos.length) return t;
+
+    // Como se escribe de verdad cada termino, buscable sin tildes.
+    const canonica = new Map();
+    for (const c of candidatos) if (!canonica.has(c.plano)) canonica.set(c.plano, c.original);
+
+    // Se respeta como venia dictada la palabra si iba toda en mayusculas.
+    const comoVenia = (palabra, termino) => (
+      palabra === palabra.toUpperCase() && palabra !== palabra.toLowerCase()
+        ? termino.toUpperCase()
+        : termino
+    );
+
+    return t.replace(/[\p{L}\p{N}-]+/gu, (palabra) => {
+      const plano = sinTildes(palabra);
+      if (plano.length < 5) return palabra;
+
+      // Ya ES el termino: no hay nada que adivinar. Se devuelve como lo
+      // escribe la casa —"cotizacion" -> "cotización"— y sobre todo se sale
+      // de aqui, porque sin esta salida dos terminos parecidos entre si se
+      // corregian el uno al otro segun el orden de la lista.
+      if (canonica.has(plano)) return comoVenia(palabra, canonica.get(plano));
+
+      const tope = topeDe(plano.length);
+      if (tope < 1) return palabra;
+
+      let mejor = null;
+      let mejorD = tope + 1;
+      let empate = false;
+      for (const c of candidatos) {
+        const d = distancia(plano, c.plano, tope);
+        if (d > tope) continue;
+        if (d < mejorD) { mejorD = d; mejor = c; empate = false; }
+        else if (d === mejorD && c.plano !== mejor?.plano) empate = true;
+      }
+      // Dos candidatos igual de cerca: no hay forma de saber cual, y elegir
+      // a cara o cruz es exactamente lo que no queremos.
+      if (!mejor || empate) return palabra;
+
+      return comoVenia(palabra, mejor.original);
+    });
+  } catch {
+    return String(texto ?? '');
+  }
+}
+
+export const _internos = { NUCLEO, TOPE_CHARS, util, unicos, deObjeto, distancia, topeDe };
