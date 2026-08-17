@@ -188,4 +188,47 @@ export const TOOLS = [
     rpc: 'mcp_buscar_documento',
     args: (a) => ({ p_numero: String(a.numero || '') }),
   },
+  // ── EL RESOLVEDOR DE ENTIDADES ────────────────────────────────────
+  // (2026-08-17) Existe por un error concreto: no había forma de buscar una
+  // cotización por nombre de cliente, así que al pedirle "la de Sander" el
+  // modelo se sacó un número — y resultó existir. Cotizó al cliente
+  // equivocado. El fallo no fue del modelo: fue dejarle escribir un id.
+  //
+  // Estas dos herramientas hacen que los identificadores SALGAN de la base.
+  {
+    name: 'resolver_entidad',
+    description:
+      'Convierte un NOMBRE en el identificador de verdad. Usala SIEMPRE antes de operar sobre un cliente, ' +
+      'cotizacion, producto o factura del que solo sabes el nombre o una parte del numero. ' +
+      'Responde una de tres cosas: no existe (dilo, no inventes), es esta (sigue solo), ' +
+      'o hay varias (enseñalas y pregunta cual — NO elijas tu). ' +
+      'NUNCA escribas un id de tu cabeza: si no salio de aqui o de otra herramienta, no existe.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tipo: { type: 'string', enum: ['cliente', 'cotizacion', 'producto', 'factura'] },
+        texto: { type: 'string', description: 'El nombre o numero tal cual lo dijeron. Ej: "Sander", "CT-000097"' },
+        limite: { type: 'integer', description: 'Cuantas opciones devolver si hay varias (1-20, por defecto 6)' },
+      },
+      required: ['tipo', 'texto'],
+    },
+    rpc: 'mcp_resolver_entidad',
+    args: (a) => ({ p_tipo: String(a.tipo || ''), p_texto: String(a.texto || ''), p_limite: a.limite ?? 6 }),
+  },
+  {
+    name: 'verificar_entidad',
+    description:
+      'Comprueba que un identificador existe y es de ESTA empresa antes de usarlo. ' +
+      'Si vuelve existe=false, ese id no vale: no lo uses, busca por nombre con resolver_entidad.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tipo: { type: 'string', enum: ['cliente', 'cotizacion', 'producto', 'factura'] },
+        id: { type: 'string', description: 'El id o el numero de documento' },
+      },
+      required: ['tipo', 'id'],
+    },
+    rpc: 'mcp_verificar_entidad',
+    args: (a) => ({ p_tipo: String(a.tipo || ''), p_id: String(a.id || '') }),
+  },
 ];

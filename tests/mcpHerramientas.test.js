@@ -24,7 +24,15 @@ const SQL = join(RAIZ, 'sql');
 function firmasEnSql() {
   const firmas = {};
   for (const archivo of readdirSync(SQL).filter((f) => f.endsWith('.sql'))) {
-    const texto = readFileSync(join(SQL, archivo), 'utf8');
+    // Fuera los comentarios de línea ANTES de mirar la firma.
+    //
+    // (2026-08-17) Sin esto, un comentario detrás de un parámetro escondía
+    // el SIGUIENTE: al partir por comas, el trozo empezaba por "--" y se
+    // descartaba entero. Pasó con mcp_resolver_entidad, que perdió p_texto
+    // y dio un fallo que parecía del catálogo y era del lector. Una prueba
+    // que acusa al código equivocado es peor que no tenerla.
+    const texto = readFileSync(join(SQL, archivo), 'utf8')
+      .split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
     const re = /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.(mcp_\w+)\s*\(([^)]*)\)/gi;
     let m;
     while ((m = re.exec(texto)) !== null) {

@@ -26,6 +26,67 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ── CACHE: SOLO LO QUE NO CADUCA (Fase 16) ────────────────────────────
+// El catálogo de herramientas se pedía al MCP en CADA pregunta. Es una ida
+// y vuelta HTTP entera para recibir siempre lo mismo: la lista solo cambia
+// cuando alguien despliega el MCP.
+//
+// >>> LO QUE NO SE CACHEA, Y POR QUE <<<
+// Precios, existencia, cartera, estado de una factura: nada de eso entra
+// aquí ni entrará. Un precio de hace cinco minutos servido como actual es
+// peor que tardar cinco segundos más — con el bloqueo de venta bajo costo,
+// un costo viejo deja pasar una factura que no debía pasar.
+//
+// Aquí solo vive la FORMA de las herramientas, nunca datos del negocio. Y
+// el resultado no depende del usuario ni de la empresa: es el mismo
+// catálogo para todos, así que cachearlo no puede filtrar nada entre
+// empresas. Si dependiera del tenant, esto sería un agujero, no una mejora.
+const CACHE_TOOLS_MS = 5 * 60 * 1000;
+let toolsCache: { en: number; datos: any } | null = null;
+
+async function listaDeHerramientas(mcpUrl: string, token: string) {
+    const ahora = Date.now();
+    if (toolsCache && ahora - toolsCache.en < CACHE_TOOLS_MS) return toolsCache.datos;
+    const datos = await mcpRpc(mcpUrl, token, 'tools/list', {});
+    toolsCache = { en: ahora, datos };
+    return datos;
+}
+
+// ── NIVEL DE RIESGO DE CADA HERRAMIENTA (Fase 10) ─────────────────────
+// Se clasifica por lo que HACE, no por quién la llama:
+//
+//   1 LECTURA          buscar, consultar, resolver  → corre sola
+//   2 ESCRITURA        crear cotización, pedido     → corre si es inequívoco
+//   3 ALTO IMPACTO     anular, eliminar, precios,   → NO la ejecuta el modelo
+//                      cualquier cosa financiera
+//
+// El nivel 3 no se "confirma con más ganas": no pasa por aquí. Va por
+// agente_proponer_accion, que enseña los números en pantalla y pide
+// contraseña. La diferencia importa — una confirmación que el propio
+// modelo puede pedirse a sí mismo no es un control.
+// Se mira el VERBO, que en estos nombres va primero — no la palabra suelta
+// en cualquier posición. Con la versión anterior, `cuentas_pagar` (el
+// listado de cuentas por pagar, una consulta) salía nivel 3 por llevar
+// "pagar" dentro, y Jarvis no habría podido ni leerlas. Lo mismo con
+// `cartera_cobrar`. La diferencia está en el orden: `pagar_suplidor` hace
+// algo, `cuentas_pagar` cuenta algo.
+const VERBO_DESTRUCTIVO = /^(anular|eliminar|borrar|cancelar|revertir|castigar|cerrar|ajustar|cambiar|pagar|desembolsar|transferir)$/;
+const VERBO_ESCRIBE = /^(crear|guardar|grabar|facturar|registrar|actualizar|modificar|preparar|cobrar)$/;
+
+function nivelDeRiesgo(nombre: string): 1 | 2 | 3 {
+    const partes = (nombre || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const primero = partes[0] || '';
+    if (VERBO_DESTRUCTIVO.test(primero)) return 3;
+    // Escribe Y menciona algo destructivo ("crear_nota_para_anular"): sube a
+    // 3. Ante la duda, el nivel más alto: equivocarse hacia arriba cuesta un
+    // clic; hacia abajo cuesta una factura anulada sin permiso.
+    if (VERBO_ESCRIBE.test(primero) && partes.some((t) => VERBO_DESTRUCTIVO.test(t))) return 3;
+    if (VERBO_ESCRIBE.test(primero)) return 2;
+    // Lo que no lleva verbo de acción es un informe. Una herramienta nueva de
+    // consulta no debería quedar trabada esperando que alguien la clasifique.
+    return 1;
+}
+
 // Por variable de entorno y no fijo aquí: cambiar de familia de modelo es de
 // las cosas que hay que poder deshacer en treinta segundos, sin desplegar.
 //   supabase secrets set JARVIS_MODEL=gpt-5.6-luna
@@ -329,7 +390,7 @@ Deno.serve(async (req: Request) => {
         const mcpUrl = `${SUPABASE_URL}/functions/v1/motoflow-mcp`;
         let herramientas: any[] = [];
         try {
-            const lista = await mcpRpc(mcpUrl, token, 'tools/list', {});
+            const lista = await listaDeHerramientas(mcpUrl, token);
             herramientas = (lista?.tools || []).map((t: any) => ({
                 type: 'function',
                 function: { name: t.name, description: t.description, parameters: t.inputSchema },
@@ -811,7 +872,47 @@ Deno.serve(async (req: Request) => {
                     salida = m
                         ? JSON.stringify({ ok: true, abriendo: m.nombre })
                         : JSON.stringify({ ok: false, error: `No existe el módulo "${args.modulo}"` });
+                } else if (nivelDeRiesgo(nombre) === 3) {
+                    // NIVEL 3: no se ejecuta desde aquí, ni con confirmación del
+                    // propio modelo. Se le dice por qué y por dónde va.
+                    salida = JSON.stringify({
+                        ok: false,
+                        bloqueado: 'nivel_3',
+                        error: `"${nombre}" es una acción de alto impacto y no se ejecuta desde el chat. ` +
+                               'Propónla con proponer_accion: se muestra en pantalla con los montos y el usuario la autoriza.',
+                    });
                 } else {
+                    // ── EL ID TIENE QUE EXISTIR (Fase 7) ────────────────
+                    // Antes de tocar nada, cualquier identificador que venga
+                    // del modelo se comprueba contra la base. Si se lo
+                    // inventó —o es de otra empresa— la herramienta ni se
+                    // llama y se le dice que lo busque por nombre.
+                    //
+                    // Ya pasó: sin herramienta para buscar cotización por
+                    // cliente, el modelo escribió un número que existía y
+                    // cotizó al cliente equivocado.
+                    const TIPOS: Record<string, string> = {
+                        cliente_id: 'cliente', cotizacion_id: 'cotizacion',
+                        producto_id: 'producto', factura_id: 'factura',
+                    };
+                    let cortado: string | null = null;
+                    for (const [campo, tipo] of Object.entries(TIPOS)) {
+                        const val = args?.[campo];
+                        if (!val || typeof val !== 'string') continue;
+                        try {
+                            const { data: v } = await supaUser.rpc('mcp_verificar_entidad',
+                                { p_tipo: tipo, p_id: String(val) });
+                            if (v && v.existe === false) {
+                                cortado = JSON.stringify({
+                                    ok: false, error: `El ${tipo} "${val}" no existe en esta empresa.`,
+                                    que_hacer: `Búscalo por nombre con resolver_entidad(tipo="${tipo}", texto="..."). NO uses ese identificador.`,
+                                });
+                                break;
+                            }
+                        } catch { /* si la comprobación falla, manda la RLS de la tool */ }
+                    }
+                    if (cortado) { salida = cortado; mensajes.push({ role: 'tool', tool_call_id: c.id, content: salida }); continue; }
+
                     try {
                         const out = await mcpRpc(mcpUrl, token, 'tools/call', { name: nombre, arguments: args });
                         salida = out?.content?.[0]?.text || '{}';
