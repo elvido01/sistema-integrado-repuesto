@@ -14,8 +14,9 @@
 //   bash:        export SUPABASE_ACCESS_TOKEN="sbp_..."
 
 import { readFileSync } from 'fs';
+import { leerToken } from './secretoLocal.mjs';
 
-const TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+const TOKEN = leerToken('SUPABASE_ACCESS_TOKEN');
 const PROD = 'zdvxowpuklbypweyqqki';
 const archivo = process.argv[2];
 
