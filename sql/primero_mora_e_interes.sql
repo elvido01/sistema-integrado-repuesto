@@ -311,11 +311,23 @@ NOTIFY pgrst, 'reload schema';
 -- VERIFICACION — las 3 deben decir OK
 -- =====================================================================
 
+-- Primero, que se vea que la funcion esta y con que firma. Si esta lista
+-- sale vacia, el CREATE no entro y no hay nada que verificar mas abajo.
+SELECT p.oid::regprocedure AS firma,
+       position('No se puede abonar al capital' in pg_get_functiondef(p.oid)) > 0 AS tiene_la_regla
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND p.proname = 'registrar_pago_prestamo'
+ORDER BY 1;
+
+-- OJO: aqui se juntan TODAS las versiones de la funcion con string_agg, y
+-- no se filtra por firma. La version anterior filtraba por
+-- pg_get_function_identity_arguments LIKE 'uuid, numeric, date%': si eso no
+-- calzaba, el CTE salia vacio y los tres chequeos devolvian NULL — que se
+-- lee como fallo sin serlo. Con string_agg siempre hay una fila.
 WITH def AS (
-  SELECT pg_get_functiondef(p.oid) AS src
+  SELECT COALESCE(string_agg(pg_get_functiondef(p.oid), E'\n'), '') AS src
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public' AND p.proname = 'registrar_pago_prestamo'
-    AND pg_get_function_identity_arguments(p.oid) LIKE 'uuid, numeric, date%'
 ),
 chequeos AS (
   SELECT 1 AS n, 'la regla esta puesta en el camino de abonos marcados' AS chequeo,
