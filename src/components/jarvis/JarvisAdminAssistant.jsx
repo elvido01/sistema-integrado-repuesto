@@ -6,6 +6,8 @@ import * as vozEspejo from '@/lib/vozEspejo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
 import { leerContexto, leerModulos, contextoParaAgente } from '@/lib/pantallaContexto';
+import { transcribir, elegirTexto } from '@/lib/oidoJarvis';
+import { glosarioDeAhora } from '@/lib/jarvisContexto';
 import { ordenarPantalla, normalizarOrdenVenta } from '@/lib/puenteAgente';
 import { usePanels } from '@/contexts/panelCore';
 
@@ -475,7 +477,7 @@ export default function JarvisAdminAssistant() {
       setError(`${nombreEmpresa} no está conectado: su servidor no está dando señal. Si quieres que conteste ${nombreSistema}, púlsalo arriba.`);
       return undefined;
     }
-    return askAiCeo(texto, { conVoz });
+    return askAiCeo(texto, { conVoz, voz: opciones.voz });
   };
   // Se sube cada vez que el usuario interrumpe. La respuesta que venga en
   // camino con un número viejo se descarta: sin esto, cancelas y a los tres
@@ -946,7 +948,8 @@ export default function JarvisAdminAssistant() {
   // conVoz=false cuando se escribe: si escribiste, no tiene por qué ponerse
   // a hablar delante de un cliente. Y cuando toque ElevenLabs, cada frase
   // hablada se paga — callarse en el canal escrito es gratis y correcto.
-  const askAiCeo = async (text, { conVoz = true } = {}) => {
+  const askAiCeo = async (text, opciones = {}) => {
+    const { conVoz = true } = opciones;
     const message = String(text || '').trim();
     if (!message || loading) return;
 
@@ -979,6 +982,10 @@ export default function JarvisAdminAssistant() {
           message,
           session_id: sessionId,
           pantalla: { ...leerContexto(), modulos: leerModulos() },
+          // De dónde salió la frase y qué costó oírla. Solo viaja cuando la
+          // nota de voz pasó por el servidor; escribiendo no va nada, y el
+          // chat escrito manda exactamente el mismo cuerpo de siempre.
+          voz: opciones.voz || undefined,
           // Esta ruta es SIEMPRE la del asistente del sistema. Quien quiera
           // hablar con el agente de la empresa pasa por enviarAHermes.
           agente: 'sistema',
@@ -1125,6 +1132,41 @@ export default function JarvisAdminAssistant() {
       return;
     }
 
+    // >>> JARVIS OYE EN EL SERVIDOR <<<
+    // El dictado de Chrome ya está hecho y es la red de abajo. Aquí se
+    // intenta la buena: el audio va al servidor con el glosario de lo que
+    // hay en pantalla, y vuelve el texto de un modelo que sí sabe que
+    // existen "Pruss 200", "millero" y "CT-000097".
+    //
+    // Si eso falla, tarda o no hay clave del proveedor, `transcribir`
+    // devuelve null y se manda lo de Chrome. El usuario no se entera y el
+    // modo voz nunca se queda mudo: oír mejor es una mejora, poder hablar
+    // es el requisito.
+    if (vozEspejo.espejoActivo()) {
+      vozEspejo.cerrar().then(async (grabado) => {
+        if (!grabado) { enviar(transcript); return; }
+        const oido = await transcribir(grabado, glosarioDeAhora(mensajes));
+        const elegido = elegirTexto(oido?.texto, transcript);
+        if (oido && elegido.de === 'servidor' && oido.texto !== transcript) {
+          console.info('[oido] navegador:', transcript, '· servidor:', oido.texto);
+        }
+        // enviar() vuelve a leer el veredicto con el texto bueno: si Chrome
+        // oyó algo indeciso y el servidor entendió «autorízalo», la
+        // autorización se resuelve igual.
+        enviar(elegido.texto, {
+          voz: {
+            fuente: 'voz',
+            de: elegido.de,
+            modelo: oido?.modelo || null,
+            ms: oido?.ms || null,
+            segundos: oido?.segundos ?? Math.round((grabado.duracionMs || 0) / 1000),
+            dictado_navegador: transcript,
+          },
+        });
+      }).catch(() => enviar(transcript));
+      return;
+    }
+
     enviar(transcript);
   };
 
@@ -1223,7 +1265,11 @@ export default function JarvisAdminAssistant() {
     // El original, en paralelo. Si no se puede grabar —permiso, micrófono
     // ocupado, http sin cifrar— el dictado sigue igual: esto guarda el
     // audio, no habilita hablar.
-    if (canal === 'hermes') vozEspejo.iniciar();
+    // El grabador arranca para los DOS. Antes solo para Hermes, porque el
+    // audio se guardaba para que él lo oyera luego. Ahora Jarvis también lo
+    // necesita: es lo que manda al servidor para que lo transcriba de
+    // verdad, en vez de fiarse de lo que oyó Chrome.
+    vozEspejo.iniciar();
   };
 
   const stopListening = () => {

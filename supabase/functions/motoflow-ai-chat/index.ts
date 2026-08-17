@@ -136,11 +136,26 @@ Deno.serve(async (req: Request) => {
         let session_id: string | null = body?.session_id || null;
         // Panel abierto y datos que esa pantalla ya tiene cargados.
         const pantalla = body?.pantalla || null;
+        // De dónde salió la frase. Solo llega cuando la nota de voz pasó por
+        // jarvis-transcribir; escribiendo no viene nada y todo lo de abajo
+        // queda en null, igual que antes de existir la voz.
+        const voz = body?.voz || null;
+        const fuente = voz ? 'voz' : 'texto';
         // Con quién se cree estar hablando. 'sistema' es Jarvis, de MotoFlow;
         // cualquier otra cosa, el agente de la empresa.
         const quien = body?.agente === 'sistema' ? 'sistema' : 'empresa';
         if (!message) return json({ ok: false, error: 'mensaje_vacio' }, 400);
         if (message.length > 1000) return json({ ok: false, error: 'mensaje_muy_largo', mensaje: 'Máx 1000 caracteres' }, 400);
+
+        // ── MEMORIA CORTA DE LA CONVERSACIÓN ───────────────────────────
+        // "Busca la cotización de Sander" … "mándala a facturar". Entre las
+        // dos frases hay que recordar que "la" es CT-000097.
+        //
+        // Vive en ai_chat_sessions.estado y la escribe el SERVIDOR con lo que
+        // devolvieron las herramientas, nunca con lo que dijo el modelo. Esa
+        // distinción es la que impide que un identificador inventado se
+        // convierta en el "recuerdo" con el que se factura después.
+        let estadoSesion: Record<string, any> = {};
 
         // Sesión: usar la existente o crear una nueva
         if (!session_id) {
@@ -159,11 +174,12 @@ Deno.serve(async (req: Request) => {
             // Verificar que la sesión pertenece al tenant
             const { data: existing } = await supabase
                 .from('ai_chat_sessions')
-                .select('id')
+                .select('id, estado')
                 .eq('id', session_id)
                 .eq('tenant_id', tenant_id)
                 .maybeSingle();
             if (!existing) return json({ ok: false, error: 'sesion_no_encontrada' }, 404);
+            estadoSesion = existing.estado || {};
         }
 
         // Historial reciente
@@ -289,8 +305,17 @@ Deno.serve(async (req: Request) => {
             // pantalla cargados. Permite preguntar "¿qué es esto?" o
             // "¿por qué no cuadra?" sin explicar de qué se habla.
             pantalla_actual: pantalla ? pantallaSinModulos : null,
+            // Lo que quedó vivo de la conversación: sobre qué cliente,
+            // cotización o producto se viene hablando. Es lo que convierte
+            // "mándala a facturar" en algo ejecutable. Solo va si hay algo:
+            // un objeto de nulls le enseña al modelo a no mirarlo.
+            en_curso: Object.keys(estadoSesion || {}).length ? estadoSesion : null,
             historial_reciente: historyMsgs,
             pregunta_nueva: message,
+            // Que sepa que lo oyó, no que lo leyó. Un "sí" dictado puede venir
+            // con ruido alrededor, y una palabra rara es más probable que sea
+            // una transcripción imperfecta que una orden nueva.
+            llego_por: fuente,
         });
 
         // ── Herramientas del MCP ──────────────────────────────────
@@ -558,6 +583,51 @@ Deno.serve(async (req: Request) => {
             }
         } catch { /* sin fila: se queda el respaldo */ }
 
+        // ── LO QUE SE RECUERDA, SALE DE LO QUE DEVOLVIÓ LA HERRAMIENTA ──
+        // (Fases 5 y 7) El modelo NO escribe esta memoria. Se lee del
+        // resultado real de la tool, que ya vino filtrado por tenant desde el
+        // MCP. Así "la" de "mándala a facturar" apunta a una cotización que
+        // existe de verdad y es de esta empresa — no a un número que el
+        // modelo recordó de otra conversación o se inventó.
+        //
+        // Ya pasó una vez: sin herramienta para buscar una cotización por
+        // nombre de cliente, el modelo se sacó un número que resultó existir,
+        // y cotizó al cliente equivocado. La cura no es un modelo más listo:
+        // es no dejarle escribir los identificadores.
+        const soloUno = (arr: any[]) => (Array.isArray(arr) && arr.length === 1 ? arr[0] : null);
+        function recordarDeResultado(herramienta: string, salidaJson: string) {
+            try {
+                const d = JSON.parse(salidaJson || '{}');
+                if (d?.ok === false || d?.error) return;
+                // Un resultado con UNA coincidencia se adopta; con varias no se
+                // elige por el modelo — se deja que pregunte cuál.
+                const fila = Array.isArray(d) ? soloUno(d)
+                    : soloUno(d?.datos) ?? soloUno(d?.resultados) ?? soloUno(d?.items) ?? d;
+                if (!fila || typeof fila !== 'object') return;
+
+                const nuevo: Record<string, any> = {};
+                if (fila.cliente_id || fila.id && /client/i.test(herramienta)) {
+                    nuevo.cliente_id = fila.cliente_id || fila.id;
+                    nuevo.cliente_nombre = fila.cliente_nombre || fila.nombre || null;
+                }
+                if (fila.cotizacion_id || fila.numero_cotizacion || /cotizacion/i.test(herramienta)) {
+                    nuevo.cotizacion_id = fila.cotizacion_id || (/cotizacion/i.test(herramienta) ? fila.id : null);
+                    nuevo.cotizacion_numero = fila.numero_cotizacion || fila.numero || null;
+                }
+                if (fila.producto_id || /producto|pieza/i.test(herramienta)) {
+                    nuevo.producto_id = fila.producto_id || (/producto|pieza/i.test(herramienta) ? fila.id : null);
+                    nuevo.producto_nombre = fila.descripcion || fila.producto || null;
+                }
+                if (fila.factura_numero || fila.ncf) {
+                    nuevo.factura_numero = fila.factura_numero || fila.numero || null;
+                }
+                for (const [k, val] of Object.entries(nuevo)) {
+                    if (val != null && val !== '') estadoSesion[k] = val;
+                }
+                estadoSesion.ultima_accion = herramienta;
+            } catch { /* un resultado que no es JSON no aporta memoria */ }
+        }
+
         for (let v = 0; v < MAX_VUELTAS_TOOLS; v++) {
             llm = await callLLM({
                 messages: mensajes,
@@ -752,6 +822,7 @@ Deno.serve(async (req: Request) => {
                     }
                 }
                 mensajes.push({ role: 'tool', tool_call_id: c.id, content: salida });
+                recordarDeResultado(nombre, salida);
             }
         }
 
@@ -782,11 +853,23 @@ Deno.serve(async (req: Request) => {
             },
         ]);
 
-        // Touch session updated_at
+        // Touch session updated_at + la memoria corta.
+        // Se recorta a lo que cabe en una tarea: si creciera sin freno, en la
+        // pregunta veinte viajaría el recuerdo de la primera y el modelo se
+        // agarraría de lo viejo.
+        const CAMPOS_MEMORIA = [
+            'cliente_id', 'cliente_nombre', 'cotizacion_id', 'cotizacion_numero',
+            'producto_id', 'producto_nombre', 'factura_numero', 'ultima_accion',
+        ];
+        const memoria = Object.fromEntries(
+            Object.entries(estadoSesion || {})
+                .filter(([k, v]) => CAMPOS_MEMORIA.includes(k) && v != null && v !== ''),
+        );
         await supabase
             .from('ai_chat_sessions')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', session_id);
+            .update({ updated_at: new Date().toISOString(), estado: memoria })
+            .eq('id', session_id)
+            .eq('tenant_id', tenant_id);
 
         // Log de uso
         await supabase.from('ai_agent_runs').insert({
@@ -803,9 +886,32 @@ Deno.serve(async (req: Request) => {
             cost_usd: llm.cost_usd,
             status: 'completed',
             duration_ms: llm.duration_ms,
+            // ── PARA PODER AVERIGUAR POR QUÉ FALLÓ ──────────────────
+            // (Fase 12) "Jarvis se equivocó" no se arregla: hay seis capas y
+            // sin esto no se sabe cuál falló. Con estas columnas se puede
+            // preguntar "¿cuántas órdenes de voz fallaron por el oído esta
+            // semana?" con un WHERE, y decidir con datos si hace falta subir
+            // el cerebro o si el problema sigue siendo escuchar.
+            fuente,
+            modulo: pantalla?.panel || null,
+            herramienta: usadas.length ? usadas[usadas.length - 1].herramienta : null,
+            intencion: usadas.length ? usadas.map((u: any) => u.herramienta).join(' → ') : null,
+            transcripcion_modelo: voz?.modelo || null,
+            transcripcion_ms: voz?.ms || null,
+            audio_segundos: voz?.segundos ?? null,
             metadata: {
                 session_id,
                 message_len: message.length,
+                // La transcripción va aquí y no en columna: es texto libre del
+                // usuario y no se filtra por él.
+                transcripcion: voz ? message : undefined,
+                // Con qué se quedó y qué había oído el navegador. Es lo que
+                // permite juzgar si el oído nuevo mejoró de verdad, comparando
+                // las dos versiones de la MISMA frase.
+                oido_de: voz?.de || undefined,
+                dictado_navegador: voz?.dictado_navegador || undefined,
+                // Lo que quedó en memoria al final del turno.
+                en_curso: Object.keys(memoria).length ? memoria : undefined,
                 // Con cuántas llamadas al modelo se resolvió y qué consultó.
                 // Sirve para ver si el gasto de una pregunta se disparó por
                 // un bucle largo de herramientas.
@@ -861,6 +967,11 @@ Deno.serve(async (req: Request) => {
                     model: MODEL,
                     status: 'error',
                     error_message: String(err?.message || err).slice(0, 1000),
+                    // Culpa provisional, para no dejar la fila sin clasificar.
+                    // Todo lo que revienta aquí es infraestructura: el modelo,
+                    // el MCP o la base. Si al revisarla resulta ser otra cosa,
+                    // se corrige a mano con jarvis_marcar_error().
+                    error_categoria: 'BACKEND_ERROR',
                     input_tokens: 0, output_tokens: 0, cost_usd: 0,
                 });
                 if (eLog) console.error('[motoflow-ai-chat] no se pudo registrar el fallo:', eLog.message);
