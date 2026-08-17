@@ -230,8 +230,24 @@ const DevolucionesPage = () => {
         tenant_id: tenantId,
         fecha_devolucion: formatDateForSupabase(fecha),
         factura_id: factura.id,
-        cliente_id: cliente.id,
-        cliente_info: { nombre: cliente.nombre, rnc: cliente.rnc, direccion: cliente.direccion, telefono: cliente.telefono },
+        // >>> UNA VENTA DE CONTADO NO TIENE CLIENTE, Y ESO ES NORMAL <<<
+        // (2026-08-17) Grabar una devolución reventaba con "Cannot read
+        // properties of null (reading 'id')". La factura traía el uuid de
+        // ceros —el "Cliente Genérico"— pero esa fila pertenece a Repuestos
+        // Morla, y la pantalla la busca filtrando por LA EMPRESA DEL USUARIO.
+        // Desde Caminero no aparece, `cliente` queda null, y aquí se caía.
+        //
+        // Se guarda null a propósito, y no el uuid de ceros: apuntar al
+        // cliente de otra empresa es justo lo que no debe hacerse, y hay
+        // llave foránea contra `clientes`. Null dice la verdad — no había
+        // cliente registrado — y el nombre queda igual en cliente_info.
+        cliente_id: cliente?.id ?? null,
+        cliente_info: cliente
+          ? { nombre: cliente.nombre, rnc: cliente.rnc, direccion: cliente.direccion, telefono: cliente.telefono }
+          : {
+              nombre: factura.manual_cliente_nombre?.trim() || 'Consumidor final',
+              rnc: null, direccion: null, telefono: null,
+            },
         subtotal: totals.subtotal,
         descuento_total: totals.descuento,
         itbis_total: totals.itbis,
@@ -285,21 +301,27 @@ const DevolucionesPage = () => {
           .eq('id', factura.id);
         if (facturaUpdateError) throw facturaUpdateError;
 
-        const { data: pendientesCliente, error: balanceError } = await supabase
-          .from('facturas')
-          .select('monto_pendiente')
-          .eq('tenant_id', tenantId)
-          .eq('cliente_id', cliente.id)
-          .eq('estado', 'PENDIENTE');
-        if (balanceError) throw balanceError;
+        // El balance solo se recalcula si hay a QUIÉN recalcularlo. Sin
+        // cliente registrado no hay cuenta que cuadrar, y sin este guardia
+        // se caía igual que arriba — solo que en una factura a crédito, que
+        // es cuando más duele.
+        if (cliente?.id) {
+          const { data: pendientesCliente, error: balanceError } = await supabase
+            .from('facturas')
+            .select('monto_pendiente')
+            .eq('tenant_id', tenantId)
+            .eq('cliente_id', cliente.id)
+            .eq('estado', 'PENDIENTE');
+          if (balanceError) throw balanceError;
 
-        const balance = (pendientesCliente || []).reduce((sum, f) => sum + (Number(f.monto_pendiente) || 0), 0);
-        const { error: clienteUpdateError } = await supabase
-          .from('clientes')
-          .update({ balance })
-          .eq('tenant_id', tenantId)
-          .eq('id', cliente.id);
-        if (clienteUpdateError) throw clienteUpdateError;
+          const balance = (pendientesCliente || []).reduce((sum, f) => sum + (Number(f.monto_pendiente) || 0), 0);
+          const { error: clienteUpdateError } = await supabase
+            .from('clientes')
+            .update({ balance })
+            .eq('tenant_id', tenantId)
+            .eq('id', cliente.id);
+          if (clienteUpdateError) throw clienteUpdateError;
+        }
       }
 
       toast({ title: '✅ Éxito', description: 'Devolución guardada y artículos reintegrados al inventario.' });

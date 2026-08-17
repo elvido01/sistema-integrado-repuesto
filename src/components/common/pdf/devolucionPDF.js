@@ -12,10 +12,14 @@ export const generateDevolucionPDF = (devolucion, factura, cliente, details) => 
   doc.setFont('helvetica', 'bold');
   doc.text("CLIENTE:", 14, 80);
   doc.setFont('helvetica', 'normal');
-  doc.text(cliente.nombre || '', 14, 86);
-  doc.text(`RNC: ${cliente.rnc || ''}`, 14, 92);
-  doc.text(cliente.direccion || '', 14, 98);
-  doc.text(`Tel: ${cliente.telefono || ''}`, 14, 104);
+  // Una venta de contado no tiene cliente registrado, y eso es normal. Antes
+  // esto reventaba el impreso: la devolución quedaba GRABADA y el comprobante
+  // no salía, que es la peor combinación — el cliente se va sin papel de algo
+  // que sí pasó.
+  doc.text(cliente?.nombre || 'Consumidor final', 14, 86);
+  doc.text(`RNC: ${cliente?.rnc || ''}`, 14, 92);
+  doc.text(cliente?.direccion || '', 14, 98);
+  doc.text(`Tel: ${cliente?.telefono || ''}`, 14, 104);
 
   // Devolucion Info
   doc.setFont('helvetica', 'bold');

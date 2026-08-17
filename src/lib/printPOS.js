@@ -860,14 +860,14 @@ export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
 
         <div class="client-info-row" style="margin-top: 4px;">
           <span class="bold">Cliente :</span>
-          <span class="bold">${(cliente.nombre || 'CLIENTE GENERICO').toUpperCase()}</span>
+          <span class="bold">${(cliente?.nombre || factura.manual_cliente_nombre || 'CLIENTE GENERICO').toUpperCase()}</span>
         </div>
 
         <div class="client-info-row">
-          <span>Direccion : ${cliente.direccion || 'N/A'}</span>
+          <span>Direccion : ${cliente?.direccion || 'N/A'}</span>
         </div>
         <div class="client-info-row">
-          <span>Tel. : ${cliente.telefono || 'N/A'}</span>
+          <span>Tel. : ${cliente?.telefono || 'N/A'}</span>
         </div>
       </div>
 
