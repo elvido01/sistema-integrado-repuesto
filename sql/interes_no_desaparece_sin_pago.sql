@@ -211,15 +211,21 @@ BEGIN
     SELECT
       p.id AS prestamo_id, p.numero AS prestamo_numero, p.fecha_inicio,
       SUM(GREATEST(q.capital - q.capital_pagado, 0)) AS cap_base,
-      COALESCE(
-        -- 1) el interes ya materializado (lo cobro un recibo o lo rebajo una NC)
-        MAX(q.fecha_vencimiento) FILTER (WHERE q.interes > 0),
-        -- 2) si nunca se materializo: hasta donde esta cobrado. NO el ultimo
-        --    pago del cliente — ese era el bug del 2026-08-17.
-        CASE WHEN p.es_solo_interes
-             THEN GREATEST(COALESCE(p.interes_cobrado_hasta, p.fecha_inicio),
-                           p.fecha_inicio) END
-      ) AS ult_int_venc,
+      -- El ancla es la MAS RECIENTE entre el interes ya materializado (lo cobro
+      -- un recibo o lo rebajo una NC) y la fecha hasta donde esta cobrado.
+      -- GREATEST y no COALESCE a proposito: si algun dia se REPONE un interes
+      -- viejo como cuota (para devolver lo que se esfumo antes del arreglo),
+      -- esa cuota lleva la fecha del dia en que se perdio. Con COALESCE esa
+      -- fecha vieja ganaria, el reloj retrocederia y se le cobraria al cliente
+      -- otra vez el tramo que se decidio congelar. GREATEST lo impide: la
+      -- cuota repuesta se cobra, pero no reabre el pasado.
+      -- (GREATEST ignora los NULL; devuelve NULL solo si todos lo son.)
+      CASE WHEN p.es_solo_interes
+           THEN GREATEST(MAX(q.fecha_vencimiento) FILTER (WHERE q.interes > 0),
+                         COALESCE(p.interes_cobrado_hasta, p.fecha_inicio),
+                         p.fecha_inicio)
+           ELSE MAX(q.fecha_vencimiento) FILTER (WHERE q.interes > 0)
+      END AS ult_int_venc,
       MAX(p.tasa_interes) AS tasa,
       -- 30 = mes comercial (prestamos nuevos) · 365 = como siempre (los viejos)
       MAX(COALESCE(p.base_interes_dias, 365)) AS base_dias
