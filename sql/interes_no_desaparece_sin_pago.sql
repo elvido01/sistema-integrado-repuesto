@@ -143,11 +143,12 @@ BEGIN
   FROM public.config_empresa WHERE tenant_id = v_tenant LIMIT 1;
   v_emp_mora := COALESCE(v_emp_mora, 0);
 
-  -- NOTA: aqui vivia v_ult_pago (el ultimo pago del cliente en CUALQUIER
-  -- prestamo). Era el ancla del interes corriente, y por eso un pago a un
-  -- prestamo borraba el interes de otro. Ya no se usa: el ancla es
+  -- NOTA: aqui se buscaba el ultimo pago del cliente (en CUALQUIER prestamo)
+  -- para usarlo de ancla del interes corriente. Por eso un pago a un prestamo
+  -- borraba el interes de otro. Ya no se consulta: el ancla es
   -- prestamos.interes_cobrado_hasta, que solo avanza cuando el interes se
-  -- cobra o se rebaja por nota de credito.
+  -- cobra o se rebaja por nota de credito. Esta funcion ya no lee la tabla de
+  -- pagos, y la verificacion del final lo comprueba.
 
   -- Cargos manuales pendientes (Otras Transacciones)
   SELECT
@@ -355,32 +356,46 @@ NOTIFY pgrst, 'reload schema';
 COMMIT;
 
 -- =====================================================================
--- VERIFICACION (correr despues, leer los "esperado")
+-- VERIFICACION
+-- ---------------------------------------------------------------------
+-- Una sola consulta a proposito: pegando el archivo completo en el editor
+-- de Supabase, esto es lo ultimo que corre y por lo tanto lo que queda en
+-- pantalla. Las cinco lineas deben decir OK.
 -- =====================================================================
 
--- 1) La funcion ya no mira el ultimo pago del cliente
-SELECT position('v_ult_pago' in pg_get_functiondef(p.oid)) = 0 AS ancla_corregida,
-       position('interes_cobrado_hasta' in pg_get_functiondef(p.oid)) > 0 AS usa_columna_nueva
-FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = 'public' AND p.proname = 'get_prestamos_cliente';
--- esperado: true, true
+WITH def AS (
+  SELECT pg_get_functiondef(p.oid) AS src
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'get_prestamos_cliente'
+),
+chequeos AS (
+  SELECT 1 AS n,
+         'la funcion ya no lee la tabla de pagos' AS chequeo,
+         (position('prestamo_pagos' in (SELECT src FROM def)) = 0)::text AS resultado,
+         'true' AS esperado
+  UNION ALL
+  SELECT 2, 'el ancla nueva esta en uso',
+         (position('interes_cobrado_hasta' in (SELECT src FROM def)) > 0)::text, 'true'
+  UNION ALL
+  SELECT 3, 'prestamos a solo interes que quedaron sin ancla',
+         (SELECT count(*)::text FROM public.prestamos
+           WHERE es_solo_interes AND interes_cobrado_hasta IS NULL), '0'
+  UNION ALL
+  SELECT 4, 'ancla del PT-0026576 (congelada: no se le cobra lo perdido)',
+         COALESCE((SELECT interes_cobrado_hasta::text FROM public.prestamos
+                    WHERE numero = 'PT-0026576'), 'no existe'),
+         (CURRENT_DATE)::text
+  UNION ALL
+  SELECT 5, 'interes evaporado despues del arreglo',
+         (SELECT count(*)::text FROM public.v_interes_evaporado
+           WHERE fecha > CURRENT_DATE), '0'
+)
+SELECT n, chequeo, resultado, esperado,
+       CASE WHEN resultado = esperado THEN 'OK' ELSE '*** FALLO ***' END AS estado
+FROM chequeos ORDER BY n;
 
--- 2) Todos los prestamos a solo interes quedaron anclados
-SELECT count(*) FILTER (WHERE interes_cobrado_hasta IS NULL) AS sin_ancla,
-       count(*)                                              AS total_solo_interes
-FROM public.prestamos WHERE es_solo_interes;
--- esperado: sin_ancla = 0
-
--- 3) El caso que lo destapo: PT-0026576 debe volver a acumular interes
---    desde su ancla, y ya no lo pierde cuando pagan el otro prestamo.
-SELECT numero, monto_capital, tasa_interes, fecha_inicio, interes_cobrado_hasta
-FROM public.prestamos WHERE numero = 'PT-0026576';
--- esperado: ancla 2026-08-17 (congelado: no se le cobra lo perdido)
---           desde el 18/08 vuelve a correr a 10,000 x 5% mensual
-
--- 4) El vigilante: nada nuevo puede aparecer aqui
-SELECT fecha, recibo, cliente, total_pagado, desaparecido
-FROM public.v_interes_evaporado
-WHERE fecha > '2026-08-17'
-ORDER BY fecha DESC;
--- esperado: 0 filas, siempre. Si sale una, el interes volvio a esfumarse.
+-- Si alguna dice FALLO, no sigas: avisame con la fila que salio.
+--
+-- De aqui en adelante, el vigilante se mira asi (debe salir VACIO):
+--   SELECT * FROM public.v_interes_evaporado WHERE fecha > '2026-08-17'
+--   ORDER BY fecha DESC;
