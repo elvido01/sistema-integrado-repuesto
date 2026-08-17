@@ -18,6 +18,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { generatePedidoPDF } from '@/components/common/PDFGenerator';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { usePanels } from '@/contexts/PanelContext';
+import { IDS_GENERICOS, ID_GENERICO_FINAL } from '@/lib/clienteGenerico';
 
 // Input numerico con formato de miles (es-DO).
 // Cuando NO esta focuseado muestra "1,561.39"; al editar elimina las comas
@@ -269,7 +270,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
 
   const selectedCliente = useMemo(() => clientes.find(c => c.id === currentPedido?.cliente_id), [clientes, currentPedido?.cliente_id]);
   const isGenericClient = useMemo(() => {
-    const genericIds = ['2749fa36-3d7c-4bdf-ad61-df88eda8365a', '00000000-0000-0000-0000-000000000000'];
+    const genericIds = IDS_GENERICOS;
     if (!currentPedido?.cliente_id) return true;
     if (genericIds.includes(currentPedido.cliente_id)) return true;
     return selectedCliente?.nombre?.toUpperCase().includes('GENERICO') || false;
@@ -290,7 +291,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
     setIsSubmitting(true);
 
     // If no specific client is selected, use the official generic client ID
-    const FINAL_GENERIC_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
+    const FINAL_GENERIC_ID = ID_GENERICO_FINAL;
     const finalClienteId = currentPedido.cliente_id || FINAL_GENERIC_ID;
 
     // Recalculate totals cleanly to avoid stale/NaN values

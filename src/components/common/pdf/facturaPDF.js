@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { formatCurrency } from './pdfUtils';
+import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
 export const generateFacturaPDF = (factura, empresa = {}) => {
   // Papel térmico de 80mm (3.15 pulgadas) = ~226.77pt
@@ -83,7 +84,7 @@ export const generateFacturaPDF = (factura, empresa = {}) => {
     currentY += 12;
 
     // Cliente
-    const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+    const genericIds = IDS_GENERICOS;
     const isGeneric = !cliente.id || genericIds.includes(cliente.id) || (cliente.nombre?.toUpperCase().includes('GENERICO'));
     doc.setFont('helvetica', 'bold');
     doc.text("Cliente :", labelX, currentY);

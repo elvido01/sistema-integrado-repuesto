@@ -20,6 +20,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
 const money = (v) => new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -156,7 +157,7 @@ export const generateFacturaCartaPDF = async (factura, empresa = {}, accion = 'a
   y = Math.max(yEmisorFin, by + boxH) + 7;
 
   // ---------- SEÑORES (el cliente) ----------
-  const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+  const genericIds = IDS_GENERICOS;
   const isGeneric = !cliente.id || genericIds.includes(cliente.id)
     || (cliente.nombre || '').toUpperCase().includes('GENERICO');
   const clienteNombre = (isGeneric && factura.manual_cliente_nombre)

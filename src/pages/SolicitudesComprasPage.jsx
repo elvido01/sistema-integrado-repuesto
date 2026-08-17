@@ -20,6 +20,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteFormModal from '@/components/catalogo/ClienteFormModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import { usePanels } from '@/contexts/PanelContext';
+import { ID_GENERICO_FINAL } from '@/lib/clienteGenerico';
 
 // Normaliza una fecha (Date, 'YYYY-MM-DD' o timestamp ISO) al inicio del día local.
 // Devuelve null si es inválida. Evita el "Invalid time value" y desfases de zona.
@@ -970,7 +971,7 @@ const SolicitudesComprasPage = () => {
         s.notas,
       ].filter(Boolean).join(' | ');
 
-      const FINAL_GENERIC_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
+      const FINAL_GENERIC_ID = ID_GENERICO_FINAL;
       const pedidoData = {
         cliente_id: clienteId || FINAL_GENERIC_ID,
         manual_cliente_nombre: s.cliente_nombre || null,

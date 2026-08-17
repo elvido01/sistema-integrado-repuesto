@@ -21,6 +21,7 @@ import { usePanels } from '@/contexts/PanelContext';
 import { escucharOrdenes } from '@/lib/puenteAgente';
 import { Loader2 } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { esClienteGenerico } from '@/lib/clienteGenerico';
 
 const VentasPage = () => {
   const { toast } = useToast();
@@ -341,8 +342,7 @@ const VentasPage = () => {
   // Sincronizar el campo "CÓDIGO DEL CLIENTE" cuando cambia el cliente (al cargar
   // un pedido/cotización desde solicitud). Fallback a RNC/cédula si no hay código.
   useEffect(() => {
-    const GENERIC = '00000000-0000-0000-0000-000000000000';
-    if (!cliente || cliente.id === GENERIC) {
+    if (!cliente || esClienteGenerico(cliente)) {
       setClienteCodigoInput('');
     } else {
       setClienteCodigoInput(cliente.codigo || cliente.rnc || '');

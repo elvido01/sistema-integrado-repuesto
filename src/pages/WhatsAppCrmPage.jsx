@@ -21,6 +21,7 @@ import { useWhatsAppNotifications } from '@/contexts/WhatsAppNotificationContext
 import { usePanels } from '@/contexts/PanelContext';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { useLayout } from '@/contexts/LayoutContext';
+import { ID_GENERICO_FINAL } from '@/lib/clienteGenerico';
 
 const scoreStyles = {
   hot: 'bg-red-100 text-red-800 border-red-200',
@@ -194,7 +195,7 @@ const quickReplyTemplates = [
   },
 ];
 
-const genericClientId = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
+const genericClientId = ID_GENERICO_FINAL;
 
 const formatMoney = (value) =>
   new Intl.NumberFormat('es-DO', {

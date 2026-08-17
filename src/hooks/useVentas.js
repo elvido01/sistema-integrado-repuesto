@@ -5,9 +5,10 @@ import { generateFacturaPDF } from '@/components/common/PDFGenerator';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 import { emitInventarioActualizado } from '@/lib/catalogEvents';
+import { IDS_GENERICOS, ID_GENERICO_BASE } from '@/lib/clienteGenerico';
 
 const CLIENTE_GENERICO = {
-  id: '00000000-0000-0000-0000-000000000000',
+  id: ID_GENERICO_BASE,
   nombre: 'CLIENTE GENERICO',
   rnc: '000000000',
   direccion: 'N/A',
@@ -779,7 +780,7 @@ export const useVentas = () => {
       }
 
       const safeCliente = cliente || CLIENTE_GENERICO;
-      const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+      const genericIds = IDS_GENERICOS;
       const isGeneric = !safeCliente.id || genericIds.includes(safeCliente.id) || (safeCliente.nombre?.toUpperCase().includes('GENERICO'));
 
       // Construir la fecha con la hora actual local (America/Santo_Domingo = UTC-4)
@@ -1295,7 +1296,7 @@ export const useVentas = () => {
     try {
       resetVenta(); // Clear screen first as requested
 
-      const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+      const genericIds = IDS_GENERICOS;
       if (!cotizacion.cliente_id || genericIds.includes(cotizacion.cliente_id)) {
         handleSelectCliente(CLIENTE_GENERICO);
       } else {
@@ -1450,7 +1451,7 @@ export const useVentas = () => {
     try {
       resetVenta(); // Clear screen first as requested
 
-      const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+      const genericIds = IDS_GENERICOS;
       if (!pedido.cliente_id || genericIds.includes(pedido.cliente_id)) {
         handleSelectCliente(CLIENTE_GENERICO);
       } else {

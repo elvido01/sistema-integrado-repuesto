@@ -1,5 +1,6 @@
 import { formatInTimeZone, formatFechaDMY } from './dateUtils';
 import { printHtmlSmart, printViaBrowser } from './printHtmlSmart';
+import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
 // Emite una plantilla HTML. Si el usuario activó "impresión sin diálogo" y el
 // agente está corriendo, sale por el agente (silencioso); si no, por el
@@ -174,7 +175,7 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
           <span>Cliente :</span>
           <span>
             ${(() => {
-      const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+      const genericIds = IDS_GENERICOS;
       const isGeneric = !client.id || genericIds.includes(client.id) || (client.nombre?.toUpperCase().includes('GENERICO'));
       return (isGeneric && factura.manual_cliente_nombre)
         ? factura.manual_cliente_nombre.toUpperCase()
@@ -475,7 +476,7 @@ const printFacturaFullPage = (factura, printFormat) => {
   const isHalf = printFormat === 'half_page';
   const pageSize = isHalf ? '8.5in 5.5in' : '8.5in 11in';
 
-  const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+  const genericIds = IDS_GENERICOS;
   const isGeneric = !client.id || genericIds.includes(client.id) || (client.nombre?.toUpperCase().includes('GENERICO'));
   const clienteName = (isGeneric && factura.manual_cliente_nombre)
     ? factura.manual_cliente_nombre.toUpperCase()

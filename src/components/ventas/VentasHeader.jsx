@@ -9,6 +9,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { esClienteGenerico } from '@/lib/clienteGenerico';
 
 const VentasHeader = ({
   cliente,
@@ -44,7 +45,7 @@ const VentasHeader = ({
   const nombreEmpresa = empresa?.nombre || 'Sistema';
 
   const isGeneric = !cliente?.id ||
-    ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'].includes(cliente.id) ||
+    esClienteGenerico(cliente) ||
     cliente.nombre?.toUpperCase().includes('GENERICO');
 
   const handleClienteCodigoKeyDown = (e) => {

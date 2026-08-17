@@ -11,6 +11,7 @@ import { Search, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
@@ -251,7 +252,7 @@ const DocumentSearchModal = ({
                                         <TableCell className="p-1 text-[11px] border-r border-gray-200">{doc.cliente_id?.split('-')[0] || 'GENERICO'}</TableCell>
                                         <TableCell className="p-1 text-[11px] border-r border-gray-200 truncate">
                                             {(() => {
-                                                const genericIds = ['2749fa36-3d7c-4bdf-ad61-df88eda8365a', '00000000-0000-0000-0000-000000000000'];
+                                                const genericIds = IDS_GENERICOS;
                                                 const isGeneric = !doc.cliente_id || genericIds.includes(doc.cliente_id) || doc.clientes?.nombre?.toUpperCase().includes('GENERICO');
                                                 return (isGeneric && doc.manual_cliente_nombre) ? doc.manual_cliente_nombre.toUpperCase() : (doc.clientes?.nombre || 'CLIENTE GENERICO').toUpperCase();
                                             })()}

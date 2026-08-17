@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { generateHeader, formatCurrency, formatDate } from './pdfUtils';
+import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
 const CLIENTE_GENERICO_INFO = {
   nombre: 'Cliente Genérico',
@@ -13,7 +14,7 @@ export const generateCotizacionPDF = (cotizacion, cliente, details) => {
   const doc = new jsPDF();
   generateHeader(doc, "COTIZACIÓN", cotizacion.numero);
 
-  const genericIds = ['00000000-0000-0000-0000-000000000000', '2749fa36-3d7c-4bdf-ad61-df88eda8365a'];
+  const genericIds = IDS_GENERICOS;
   const isGeneric = !cliente?.id || genericIds.includes(cliente.id) || (cliente.nombre?.toUpperCase().includes('GENERICO'));
 
   const displayNombre = (isGeneric && cotizacion.manual_cliente_nombre)

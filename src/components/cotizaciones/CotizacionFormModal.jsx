@@ -18,6 +18,7 @@ import { es } from 'date-fns/locale';
 import { generateCotizacionPDF } from '@/components/common/PDFGenerator';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
+import { IDS_GENERICOS, ID_GENERICO_BASE, ID_GENERICO_FINAL, esClienteGenerico } from '@/lib/clienteGenerico';
 
 // Input con formato de miles es-DO (oculta la coma al editar)
 const MoneyInput = React.forwardRef(({ value, onChange, className = '', ...rest }, ref) => {
@@ -47,7 +48,7 @@ const MoneyInput = React.forwardRef(({ value, onChange, className = '', ...rest 
 MoneyInput.displayName = 'MoneyInput';
 
 const CLIENTE_GENERICO = {
-  id: '00000000-0000-0000-0000-000000000000',
+  id: ID_GENERICO_BASE,
   nombre: 'Cliente Genérico',
   rnc: '000000000',
   direccion: 'N/A',
@@ -395,7 +396,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
 
     try {
       // If no specific client is selected or it's empty, use the official generic client ID
-      const FINAL_GENERIC_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
+      const FINAL_GENERIC_ID = ID_GENERICO_FINAL;
       const finalClienteId = cliente?.id || FINAL_GENERIC_ID;
 
       const cotizacionData = {
@@ -408,7 +409,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
         itbis_total: totals.itbis_total,
         total_cotizacion: totals.total_cotizacion,
         notas,
-        manual_cliente_nombre: (finalClienteId === FINAL_GENERIC_ID || finalClienteId === '00000000-0000-0000-0000-000000000000') ? manualClienteNombre : null,
+        manual_cliente_nombre: esClienteGenerico(finalClienteId) ? manualClienteNombre : null,
         estado: editingCotizacion ? editingCotizacion.estado : 'Pendiente',
       };
 
@@ -482,7 +483,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
 
   const { empresa } = useAuth();
   const isGenericClient = (() => {
-    const genericIds = ['2749fa36-3d7c-4bdf-ad61-df88eda8365a', '00000000-0000-0000-0000-000000000000'];
+    const genericIds = IDS_GENERICOS;
     return !cliente?.id || genericIds.includes(cliente.id) || cliente.nombre?.toUpperCase().includes('GENERICO');
   })();
 

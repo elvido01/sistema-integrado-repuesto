@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/customSupabaseClient';
+import { ID_GENERICO_FINAL } from '@/lib/clienteGenerico';
 
 /**
  * Fetch solicitudes with optional estado filter.
@@ -169,7 +170,7 @@ export async function enviarSolicitudAPedido(solicitud, userId) {
     const importe = subtotal + itbis;
 
     // 2. Prepare Order Data
-    const FINAL_GENERIC_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
+    const FINAL_GENERIC_ID = ID_GENERICO_FINAL;
     const clientName = solicitud.cliente_nombre ? `${solicitud.cliente_nombre} ${solicitud.cliente_telefono || ''}`.trim() : null;
     
     const pedidoData = {
