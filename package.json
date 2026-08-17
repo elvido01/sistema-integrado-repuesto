@@ -9,6 +9,7 @@
     "preview": "vite preview --port 5173",
     "predev": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\kill-port.ps1 5173",
     "test": "vitest",
+    "sql": "node scripts/aplicar-sql.mjs",
     "vault:sync": "node scripts/vault-sync/sync.mjs",
     "vault:sync:una-vez": "node scripts/vault-sync/sync.mjs --una-vez",
     "hermes:estado": "node scripts/hermes-estado.mjs",
