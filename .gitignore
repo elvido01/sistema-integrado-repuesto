@@ -13,6 +13,13 @@ node_modules/
 # misc
 .DS_Store
 .env
+# Un respaldo de un archivo de secretos SIGUE SIENDO un archivo de secretos.
+# (2026-08-17) Al corregir un token a mano se dejó un .env.bak que .gitignore
+# no cubría. Se borró en el momento, pero el agujero estaba abierto: la fuga
+# del token de agosto empezó igual, con una copia que nadie miró.
+.env.bak
+.env.*.bak
+*.env.bak
 .env.local
 .env.txt
 .env.development.local
