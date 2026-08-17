@@ -243,6 +243,13 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
                   <SelectItem value="mensual">Mensual</SelectItem>
                   <SelectItem value="quincenal">Quincenal</SelectItem>
                   <SelectItem value="semanal">Semanal</SelectItem>
+                  {/* Diario faltaba SOLO aquí. El motor ya sabía: amortizacion.js
+                      lo reparte y calc_amortizacion en la base también, desde
+                      sql/fix_prestamo_diario_fechas.sql (2026-08-06). Sin esta
+                      línea, un préstamo diario había que meterlo por otro lado
+                      — y así nació PT-0026602, con 365 cuotas repartidas a un
+                      mes cada una: terminaba en 2056. */}
+                  <SelectItem value="diario">Diario</SelectItem>
                 </SelectContent>
               </Select>
             </div>
