@@ -13,6 +13,10 @@ import { usePanels } from '@/contexts/panelCore';
 
 const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
+// Cuánto dura una conversación con Jarvis antes de empezar limpia. Una
+// jornada de tienda; lo de ayer no tiene por qué opinar sobre lo de hoy.
+const HORAS_SESION = 12;
+
 // ── Cuando el que falla es el MOTOR del agente, no MotoFlow ──────────
 // (2026-08-16) Se le pidió una cotización a Hermes y contestó "The model
 // provider is rate-limiting requests. Please wait a moment and try again."
@@ -130,8 +134,28 @@ export default function JarvisAdminAssistant() {
   // conversación nueva: el historial seguía en la base pero sin su
   // identificador no había forma de volver a encontrarlo, y además Jarvis
   // perdía el hilo de lo que se venía hablando.
+  //
+  // >>> PERO NO PARA SIEMPRE <<<
+  // (2026-08-17) `jarvis_sesion` no caducaba nunca. La del dueño llevaba
+  // OCHO DÍAS y 130 mensajes, y una conversación de ocho días no es una
+  // conversación: es un archivo. Aunque el historial se lea bien —que hasta
+  // hoy tampoco—, arrastrar el cliente y la pieza de anteayer hasta la frase
+  // de ahora es justo lo que hacía que "autoriza lo" autorizara lo de otro.
+  //
+  // Doce horas: se cierra la tienda y al día siguiente se empieza limpio.
+  // Lo de antes no se borra, sigue entero en la base; solo deja de pesar.
   const [sessionId, setSessionId] = useState(() => {
-    try { return localStorage.getItem('jarvis_sesion') || null; } catch { return null; }
+    try {
+      const id = localStorage.getItem('jarvis_sesion');
+      if (!id) return null;
+      const desde = Number(localStorage.getItem('jarvis_sesion_ts') || 0);
+      if (!desde || Date.now() - desde > HORAS_SESION * 3600_000) {
+        localStorage.removeItem('jarvis_sesion');
+        localStorage.removeItem('jarvis_sesion_ts');
+        return null;
+      }
+      return id;
+    } catch { return null; }
   });
   const sesionRef = useRef(null);
   sesionRef.current = sessionId;
@@ -660,14 +684,31 @@ export default function JarvisAdminAssistant() {
     }
   };
 
-  useEffect(() => {
-    if (!sessionId) return;
-    supabase.from('ai_chat_messages')
-      .select('id, role, content, created_at')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true })
-      .then(({ data }) => setMensajes(data || []));
-  }, [sessionId]);
+  // Empezar de cero. NO borra nada: la conversación anterior queda entera en
+  // ai_chat_messages. Lo único que se suelta es el hilo, que es justo lo que
+  // estorba cuando ya no se está hablando de lo mismo.
+  const nuevaConversacion = () => {
+    stopSpeaking();
+    // Se van SOLO las burbujas de Jarvis. Las de Hermes son otra memoria y
+    // otro interlocutor: empezar de nuevo con uno no borra al otro de la
+    // pantalla.
+    setMensajes((m) => m.filter((x) => (x.canalDe || 'hermes') !== 'local'));
+    setSessionId(null);
+    setError('');
+    setLastMessage('');
+    try {
+      localStorage.removeItem('jarvis_sesion');
+      localStorage.removeItem('jarvis_sesion_ts');
+    } catch { /* sin almacenamiento: se acaba con la pestaña igual */ }
+  };
+
+  // (2026-08-17) Aquí había un SEGUNDO cargador de la conversación, más viejo
+  // que el de arriba y peor: traía la sesión ENTERA sin límite —130 mensajes—,
+  // no marcaba `canalDe`, así que los mensajes de Jarvis se pintaban en el
+  // canal de Hermes, y al pisar `setMensajes` de golpe borraba las burbujas
+  // que el cargador bueno acababa de armar. Los dos corrían al montar y ganaba
+  // el que contestara último. El de la línea 245 ya hace esto bien: con tope,
+  // con canal y sin repetir ids.
 
   useEffect(() => {
     if (chatAbierto) finRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1000,7 +1041,13 @@ export default function JarvisAdminAssistant() {
 
       if (data.session_id) {
         setSessionId(data.session_id);
-        try { localStorage.setItem('jarvis_sesion', data.session_id); } catch { /* sin espacio: dura esta pestaña */ }
+        try {
+          localStorage.setItem('jarvis_sesion', data.session_id);
+          // La marca se refresca en CADA mensaje, no solo al crear: las doce
+          // horas se cuentan desde que se dejó de hablar, no desde que se
+          // empezó. Si no, una charla larga se cortaba sola a media tarea.
+          localStorage.setItem('jarvis_sesion_ts', String(Date.now()));
+        } catch { /* sin espacio: dura esta pestaña */ }
       }
       setAgenteQueContesto(data.agente_usado ?? null);
 
@@ -1456,8 +1503,20 @@ export default function JarvisAdminAssistant() {
                   ✓ {agenteQueContesto}
                 </span>
               )}
+              {/* Soltar el hilo sin borrar nada. Hace falta un botón porque
+                  las doce horas resuelven el "me fui y volví mañana", pero no
+                  el "acabo de terminar con este cliente y entra el siguiente",
+                  que en un mostrador pasa cada rato. */}
+              {canal === 'local' && (
+                <button type="button" onClick={nuevaConversacion} disabled={loading}
+                  title="Empezar una conversación nueva. Lo anterior no se borra; deja de arrastrarse."
+                  aria-label="Empezar una conversación nueva"
+                  className="ml-auto shrink-0 rounded border border-cyan-300/25 px-1.5 py-0.5 text-[10px] font-bold text-cyan-200/70 hover:bg-cyan-500/15 hover:text-cyan-100 disabled:opacity-40">
+                  Nueva
+                </button>
+              )}
               <button type="button" onClick={() => setChatAbierto(false)}
-                className="ml-auto text-cyan-200/60 hover:text-cyan-100">✕</button>
+                className={`${canal === 'local' ? '' : 'ml-auto '}text-cyan-200/60 hover:text-cyan-100`}>✕</button>
             </div>
 
             {/* Con quién se está hablando de verdad. Hermes es un programa

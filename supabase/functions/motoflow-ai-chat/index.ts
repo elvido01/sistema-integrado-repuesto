@@ -98,6 +98,19 @@ const MAX_HISTORY = 12;
 // consultando en círculo y cada vuelta se cobra.
 const MAX_VUELTAS_TOOLS = 4;
 
+// "hace 3 min", "hace 5 h", "hace 2 d". Va delante de cada línea del
+// historial para que se note lo viejo: una conversación que sigue abierta
+// desde ayer no es la misma conversación, y el modelo tiene que poder verlo.
+function haceCuanto(iso: string): string {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (!isFinite(ms) || ms < 60000) return 'ahora';
+    const min = Math.floor(ms / 60000);
+    if (min < 60) return `hace ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `hace ${h} h`;
+    return `hace ${Math.floor(h / 24)} d`;
+}
+
 // Habla con el servidor MCP (JSON-RPC). Se pasa el token DEL USUARIO para
 // que cada consulta quede acotada a su empresa por get_user_tenant().
 async function mcpRpc(url: string, token: string, method: string, params: any) {
@@ -243,13 +256,30 @@ Deno.serve(async (req: Request) => {
             estadoSesion = existing.estado || {};
         }
 
-        // Historial reciente
+        // ── HISTORIAL RECIENTE ─────────────────────────────────────────
+        //
+        // >>> DESCENDENTE, Y NO ES UN DETALLE <<<
+        // (2026-08-17) Esto pedía `ascending: true` con `limit(24)`. Eso NO
+        // trae los 24 últimos mensajes: trae los 24 PRIMEROS. Y el `.slice(-12)`
+        // de abajo se quedaba con los mensajes 13 al 24 — o sea, el principio
+        // de la conversación.
+        //
+        // La sesión del dueño llevaba 130 mensajes y ocho días abierta, así
+        // que Jarvis llevaba una semana contestando desde el mensaje 24, del
+        // 16/08 a las 12:52. Todo lo demás le era invisible.
+        //
+        // Ahí estaba el "no entiende lo que le digo": le enseñaba una lista de
+        // calipers, le decían "cotízame el número dos", y el número dos de la
+        // única lista que él veía era un tanque de gasolina de tres días
+        // antes. No se equivocaba — contestaba bien a lo que le mostrábamos.
+        //
+        // Se piden los ÚLTIMOS y se les da la vuelta para leerlos en orden.
         const { data: history } = await supabase
             .from('ai_chat_messages')
-            .select('role, content')
+            .select('role, content, created_at')
             .eq('session_id', session_id)
-            .order('created_at', { ascending: true })
-            .limit(MAX_HISTORY * 2);
+            .order('created_at', { ascending: false })
+            .limit(MAX_HISTORY);
 
         // Contexto del negocio: la foto del día, morosos, capital muerto.
         //
@@ -262,10 +292,16 @@ Deno.serve(async (req: Request) => {
             ? { data: null }
             : await supabase.rpc('ai_chat_context_summary', { p_tenant_id: tenant_id });
 
-        // Construir prompt
+        // Construir prompt.
+        //
+        // Con CUÁNDO se dijo cada cosa. Sin la hora, una lista de hace tres
+        // minutos y otra de hace tres días se leen exactamente igual, y el
+        // modelo no tiene con qué preferir la reciente. Relativo y no fecha:
+        // lo que importa no es el día, es si esto todavía es la conversación.
         const historyMsgs = (history || [])
-            .slice(-MAX_HISTORY)
-            .map((m: any) => `${m.role.toUpperCase()}: ${m.content}`)
+            .slice()
+            .reverse()
+            .map((m: any) => `[${haceCuanto(m.created_at)}] ${m.role.toUpperCase()}: ${m.content}`)
             .join('\n');
 
         // ── Quién contesta ────────────────────────────────────────
@@ -330,6 +366,24 @@ Deno.serve(async (req: Request) => {
             '    que la autoricen: ya está delante. Después de autorizada, di',
             '    el número y ofrece enviarla a facturar; no mandes a ningún',
             '    módulo a hacer lo que ya está hecho.',
+            // (2026-08-17) Le enseñó tres calipers numerados, le dijeron
+            // "cotízame el número dos" y preparó un tanque de gasolina: buscó
+            // el "dos" en una lista vieja del historial. Los números que la
+            // gente nombra son los de `en_curso.ultima_lista`, que los pone el
+            // servidor sobre el resultado real — no los del párrafo que
+            // escribiste tú.
+            '11. "El número dos", "el segundo", "el primero", "ese": la lista es',
+            '    `en_curso.ultima_lista` y NINGUNA otra. Copia el "codigo" de esa',
+            '    opción tal cual. Si esa lista no está, di que no la tienes y pide',
+            '    que te repitan la pieza. NUNCA elijas por parecido ni de memoria.',
+            '12. Cuando enseñes varias opciones, numéralas 1, 2, 3 EN EL MISMO',
+            '    ORDEN en que te llegaron de la herramienta. Ese es el orden que',
+            '    la persona va a nombrar después.',
+            // (2026-08-17) "Mira la pantalla, hay un error" estando en Ventas
+            // -> "eso se hace en Ventas, ¿te lo abro?". La regla 10 cubría
+            // Cotizaciones y esto se seguía colando en los demás módulos.
+            '13. Mira `pantalla_actual`: NUNCA ofrezcas abrir el módulo donde la',
+            '    persona ya está parada. Si ya está ahí, resuelve o di qué tocar.',
             '',
             'ANTES DE CONTESTAR, PIENSA:',
             '- ¿Qué te están preguntando de verdad? A veces la pregunta corta',
@@ -655,16 +709,55 @@ Deno.serve(async (req: Request) => {
         // nombre de cliente, el modelo se sacó un número que resultó existir,
         // y cotizó al cliente equivocado. La cura no es un modelo más listo:
         // es no dejarle escribir los identificadores.
-        const soloUno = (arr: any[]) => (Array.isArray(arr) && arr.length === 1 ? arr[0] : null);
+        // >>> LA LISTA QUE EL USUARIO ACABA DE VER, NUMERADA AQUÍ <<<
+        // (2026-08-17) "Cotízame el número dos" preparaba cualquier cosa. Los
+        // números que la gente lee los inventaba el modelo al redactar el
+        // párrafo: la herramienta devuelve piezas SIN numerar, así que el "2"
+        // no apuntaba a ningún sitio y se resolvía por parecido contra
+        // cualquier lista que quedara en el historial.
+        //
+        // Ahora la numeración se decide sobre el resultado REAL de la
+        // herramienta y viaja en `en_curso`. El ordinal deja de depender de
+        // que el modelo recuerde en qué orden escribió su propio texto.
+        const CLAVES_LISTA = ['piezas', 'datos', 'resultados', 'items', 'cotizaciones', 'clientes'];
+        const MAX_OPCIONES = 8;
+        const listaDeResultado = (d: any): any[] | null => {
+            if (Array.isArray(d)) return d;
+            for (const k of CLAVES_LISTA) if (Array.isArray(d?.[k])) return d[k];
+            return null;
+        };
+
         function recordarDeResultado(herramienta: string, salidaJson: string) {
             try {
                 const d = JSON.parse(salidaJson || '{}');
                 if (d?.ok === false || d?.error) return;
+
+                const lista = listaDeResultado(d);
+                if (lista?.length) {
+                    estadoSesion.ultima_lista = {
+                        de: herramienta,
+                        opciones: lista.slice(0, MAX_OPCIONES).map((x: any, i: number) => ({
+                            n: i + 1,
+                            codigo: x?.codigo ?? x?.numero ?? x?.numero_cotizacion ?? x?.id ?? null,
+                            que: x?.descripcion ?? x?.nombre ?? x?.cliente_nombre ?? null,
+                            precio: x?.precio ?? x?.total ?? null,
+                            existencia: x?.existencia ?? null,
+                        })),
+                    };
+                }
+
                 // Un resultado con UNA coincidencia se adopta; con varias no se
-                // elige por el modelo — se deja que pregunte cuál.
-                const fila = Array.isArray(d) ? soloUno(d)
-                    : soloUno(d?.datos) ?? soloUno(d?.resultados) ?? soloUno(d?.items) ?? d;
-                if (!fila || typeof fila !== 'object') return;
+                // elige por el modelo — se deja que pregunte cuál, y para eso
+                // tiene la lista de arriba.
+                //
+                // Antes, cuando venían varias, el `?? d` de esta línea caía en
+                // el objeto ENVOLTORIO ({busqueda, palabras, encontradas,
+                // piezas}) y se leían campos que ahí no existen. Por eso el
+                // `estado` de una sesión de 130 mensajes era, entero,
+                // {"ultima_accion":"cobrar_venta"}: la memoria anclada nunca
+                // llegó a guardar nada y el modelo caía siempre en la prosa.
+                const fila = lista ? (lista.length === 1 ? lista[0] : null) : d;
+                if (!fila || typeof fila !== 'object') { estadoSesion.ultima_accion = herramienta; return; }
 
                 const nuevo: Record<string, any> = {};
                 if (fila.cliente_id || fila.id && /client/i.test(herramienta)) {
@@ -961,6 +1054,10 @@ Deno.serve(async (req: Request) => {
         const CAMPOS_MEMORIA = [
             'cliente_id', 'cliente_nombre', 'cotizacion_id', 'cotizacion_numero',
             'producto_id', 'producto_nombre', 'factura_numero', 'ultima_accion',
+            // La lista numerada de la última búsqueda. Sin esto en la lista
+            // blanca se guardaba y se borraba en el mismo viaje, y "el número
+            // dos" volvía a no apuntar a nada.
+            'ultima_lista',
         ];
         const memoria = Object.fromEntries(
             Object.entries(estadoSesion || {})
