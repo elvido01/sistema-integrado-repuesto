@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getOmniConversations, getOmniMessages, sendOmniReply, updateOmniConversationStatus } from '../../services/apiClient.js';
+import { esperaRespuesta } from '../../channels/channelRegistry.js';
 
 const CHANNEL_LABELS = {
   unified: 'Bandeja integrada',
@@ -84,9 +85,12 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
 
   const title = CHANNEL_LABELS[channel] || CHANNEL_LABELS.unified;
 
+  // "No leidos" estaba aqui y devolvia SIEMPRE una lista vacia: leia
+  // conversation.unread_count, un campo que sales_conversations_view no
+  // tiene y nunca tuvo. Un filtro que no filtra nada es peor que no
+  // tenerlo — quien lo pulsa cree que no hay nada pendiente.
   const filterOptions = [
     { key: 'todos', label: 'Todos' },
-    { key: 'no_leidos', label: 'No leidos' },
     { key: 'sin_responder', label: 'Sin responder' },
     { key: 'mios', label: 'Asignadas a mi' },
     { key: 'seguimientos', label: 'Seguimientos' }
@@ -160,20 +164,16 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   }, [selected]);
 
   const visibleConversations = useMemo(() => {
-    const hasUnread = (conversation) => Number(conversation.unread_count || conversation.unread || 0) > 0;
     const isAssignedToMe = (conversation) => Boolean(conversation.assigned_to_me || conversation.mine || conversation.assigned_to);
     const isFollowup = (conversation) => ['seguimiento', 'seguimiento_futuro', 'pendiente_revision'].includes(conversation.status);
-    const needsReply = (conversation) => {
-      const lastCustomer = conversation.last_customer_message_at || conversation.last_inbound_at || conversation.last_message_at;
-      const lastAgent = conversation.last_agent_message_at || conversation.last_outbound_at;
-      if (!lastCustomer) return false;
-      if (!lastAgent) return true;
-      return new Date(lastCustomer).getTime() > new Date(lastAgent).getTime();
-    };
 
     return conversations.filter((conversation) => {
-      if (listFilter === 'no_leidos') return hasUnread(conversation);
-      if (listFilter === 'sin_responder') return needsReply(conversation);
+      // El mismo criterio que el número de la barra, de una sola fuente: si
+      // el filtro dijera una cosa y el contador otra, no habría forma de
+      // saber cuál de los dos mirar. Antes esta copia leía
+      // `last_customer_message_at`, que la vista no publica, y acertaba de
+      // rebote por el fallback a `last_message_at`.
+      if (listFilter === 'sin_responder') return esperaRespuesta(conversation);
       if (listFilter === 'mios') return isAssignedToMe(conversation);
       if (listFilter === 'seguimientos') return isFollowup(conversation);
       return true;
@@ -191,10 +191,10 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   }
 
   function handleSelectConversation(conversation) {
-    setSelected({ ...conversation, unread_count: 0, unread: 0 });
-    setConversations((current) => current.map((item) => (
-      item.id === conversation.id ? { ...item, unread_count: 0, unread: 0 } : item
-    )));
+    // Abrir ya no "marca como leída": no había tal cosa que marcar — ponía a
+    // cero dos campos que la vista no publica. Lo que baja el número es
+    // CONTESTAR, y eso ocurre al enviar la respuesta.
+    setSelected(conversation);
   }
 
   async function handleSendReply(event) {
@@ -334,7 +334,10 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
           {visibleConversations.map((conversation) => {
             const active = selected?.id === conversation.id;
             const platform = conversation.platform || 'instagram';
-            const unread = Number(conversation.unread_count || conversation.unread || 0);
+            // Aquí había un contador de no leídos que siempre valía 0, por lo
+            // mismo: el campo no existe. El punto marca las que esperan
+            // respuesta, que es lo que sí se sabe y lo que hay que atender.
+            const espera = esperaRespuesta(conversation);
             const waiting = getWaitingLabel(conversation);
             return (
               <button
@@ -350,7 +353,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                 </span>
                 <span className="mf-omni-conv-side">
                   <i>{CHANNEL_BADGES[platform] || platform.slice(0, 2).toUpperCase()}</i>
-                  {unread > 0 && <em>{unread > 99 ? '99+' : unread}</em>}
+                  {espera && <em title="Escribió y no se le ha contestado">•</em>}
                   <small>{formatTime(conversation.last_message_at)}</small>
                   {waiting && <small>{waiting}</small>}
                 </span>

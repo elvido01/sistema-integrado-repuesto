@@ -2051,6 +2051,27 @@ export default function App() {
     }
   }
 
+  // >>> LA BANDEJA MANDA FILAS DE UN SOLO CANAL, Y FILTRADAS <<<
+  // Esto era `setOmniConversationsPreview` a secas, o sea REEMPLAZAR. Pero
+  // OmniInbox carga lo del canal abierto y con la búsqueda aplicada: al
+  // entrar a Instagram, el rail se quedaba solo con las de Instagram y el
+  // número de Facebook caía a cero; al escribir en el buscador, los números
+  // pasaban a contar los resultados de la búsqueda.
+  //
+  // Se mezcla por id: lo que llega actualiza lo que había —así, al contestar,
+  // la conversación deja de estar pendiente y el número baja— y lo que no
+  // viene en esta carga se queda como estaba en vez de desaparecer.
+  function mezclarConversacionesDelRail(filas) {
+    setOmniConversationsPreview((actuales) => {
+      const porId = new Map((actuales || []).map((c) => [c.id, c]));
+      for (const fila of filas || []) {
+        if (!fila?.id) continue;
+        porId.set(fila.id, { ...(porId.get(fila.id) || {}), ...fila });
+      }
+      return [...porId.values()];
+    });
+  }
+
   const omniCounts = getChannelCounts({ morosos, omniConversations: omniConversationsPreview });
   const isSocialChannelActive = [
     CHANNEL_TYPES.UNIFIED,
@@ -2095,7 +2116,7 @@ export default function App() {
           <OmniInbox
             channel={activeChannel}
             onQuoteConversation={handleOmniQuoteConversation}
-            onConversationsChange={setOmniConversationsPreview}
+            onConversationsChange={mezclarConversacionesDelRail}
             onSelectedConversationChange={setOmniSelectedConversation}
           />
         </div>
