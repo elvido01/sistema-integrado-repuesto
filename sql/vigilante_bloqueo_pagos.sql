@@ -21,6 +21,22 @@
 -- mora: si manana cambian, el vigilante cambia solo. Una copia de esa
 -- aritmetica seria un segundo sitio donde equivocarse.
 --
+-- >>> QUE SIGNIFICA "PRIMERO SU INTERES/MORA" <<<
+-- NO significa que el prestamo no se pueda cobrar. Significa que a ESE
+-- prestamo no se le puede echar dinero al CAPITAL sin cubrir antes su
+-- propio interes corriente y su propia mora.
+--
+-- Con el PT-0026375 de ANDRES CARPIO, que debe 124.51 de interes:
+--     paga 100     -> todo al interes                        ENTRA
+--     paga 124.51  -> cubre el interes justo                 ENTRA
+--     paga 200     -> 124.51 al interes, 75.49 al capital    ENTRA
+--     paga 200 marcando los 200 como CAPITAL                 se rechaza
+--
+-- Y si el cajero solo teclea el monto y deja que el sistema reparta, no se
+-- bloquea nunca: ese camino ya va en orden -- mora, interes, capital -- y ni
+-- siquiera pasa por la validacion. El rechazo aparece solo cuando alguien
+-- marca las casillas a mano y pone capital dejando el interes colgando.
+--
 -- >>> COMO SE LEE <<<
 -- Un prestamo BLOQUEA cuando tiene interes corriente o mora propios sin
 -- cobrar. Eso es correcto y es la regla del dueno: a ese prestamo hay que
@@ -80,8 +96,8 @@ SELECT
   pp.interes_corriente,
   pp.mora,
   CASE WHEN pp.interes_corriente > 0.01 OR pp.mora > 0.01
-       THEN 'BLOQUEA su capital (correcto: hay que cobrarle lo suyo)'
-       ELSE 'libre' END AS situacion,
+       THEN 'PRIMERO su interes/mora, despues el capital'
+       ELSE 'capital libre' END AS situacion,
   COUNT(*) OVER (PARTITION BY pp.cliente_id) AS prestamos_del_cliente
 FROM por_prestamo pp
 JOIN public.clientes cl ON cl.id = pp.cliente_id
@@ -162,8 +178,8 @@ mixtos AS (
 )
 SELECT cl.nombre AS cliente, pp.prestamo, pp.ic AS interes_corriente, pp.mora,
        CASE WHEN pp.ic > 0.01 OR pp.mora > 0.01
-            THEN 'bloqueado'
-            ELSE 'LIBRE (tiene que poder pagarse)' END AS situacion
+            THEN 'PRIMERO su interes/mora'
+            ELSE 'capital libre (tiene que poder pagarse hoy)' END AS situacion
 FROM pp
 JOIN mixtos m ON m.cliente_id = pp.cliente_id
 JOIN public.clientes cl ON cl.id = pp.cliente_id
