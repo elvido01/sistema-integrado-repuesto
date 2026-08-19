@@ -13,9 +13,25 @@ import PrinterSettings from '@/components/configuracion/PrinterSettings';
 import IntegracionFiscalSettings from '@/components/configuracion/IntegracionFiscalSettings';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
-const WHATSAPP_EXTENSION_DOWNLOAD_VERSION = '2026-07-08-1';
-const WHATSAPP_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-whatsapp-extension.zip?v=${WHATSAPP_EXTENSION_DOWNLOAD_VERSION}`;
-const OMNI_BETA_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-omni-beta-extension.zip?v=${WHATSAPP_EXTENSION_DOWNLOAD_VERSION}`;
+// La versión de la extensión sale del manifest, que es lo que de verdad se
+// instala en Chrome.
+//
+// >>> POR QUE NO UNA CONSTANTE A MANO <<<
+// (2026-08-19) Aquí había un `'2026-07-08-1'` escrito a mano que servía de
+// rompe-caché. Llevaba seis semanas sin tocarse: se reemplazaba el ZIP en el
+// servidor y el navegador seguía entregando el de julio, porque la URL no
+// había cambiado. Quien "actualizaba" se bajaba lo mismo de siempre y no
+// tenía forma de notarlo — la pantalla tampoco enseñaba ninguna versión.
+//
+// Leyéndola del manifest, la URL cambia sola en cuanto sube la versión.
+import extensionManifest from '../../../whatsapp-quote-extension/public/manifest.json';
+import omniBetaManifest from '../../../whatsapp-quote-extension/public/manifest.beta.json';
+
+const versionDe = (m) => m?.version_name || m?.version || '?';
+const EXTENSION_VERSION = versionDe(extensionManifest);
+const OMNI_BETA_VERSION = versionDe(omniBetaManifest);
+const WHATSAPP_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-whatsapp-extension.zip?v=${EXTENSION_VERSION}`;
+const OMNI_BETA_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-omni-beta-extension.zip?v=${OMNI_BETA_VERSION}`;
 
 const ConfiguracionSistemaPage = () => {
     const { toast } = useToast();
@@ -931,6 +947,7 @@ const ConfiguracionSistemaPage = () => {
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
                             >
                                 <Download className="w-3 h-3" /> Descargar extension actual (ZIP)
+                                <span className="font-mono font-normal opacity-80">v{EXTENSION_VERSION}</span>
                             </a>
                             <a
                                 href={OMNI_BETA_EXTENSION_DOWNLOAD_URL}
@@ -938,8 +955,17 @@ const ConfiguracionSistemaPage = () => {
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded text-[11px] font-bold"
                             >
                                 <Download className="w-3 h-3" /> Descargar Omni Beta (ZIP)
+                                <span className="font-mono font-normal opacity-80">v{OMNI_BETA_VERSION}</span>
                             </a>
                         </div>
+                        {/* La misma versión se lee dentro del panel de WhatsApp Web. Es la
+                            única forma de saber si la recarga de Chrome entró de verdad. */}
+                        <p className="text-[11px] text-slate-500">
+                            El panel dentro de WhatsApp Web enseña su versión arriba a la izquierda.
+                            Si después de instalar no dice <b className="font-mono">{EXTENSION_VERSION}</b>,
+                            la recarga no entró: ve a <span className="font-mono">chrome://extensions</span>,
+                            quita la anterior y vuelve a cargar la carpeta del ZIP.
+                        </p>
 
                         <div className="flex items-center gap-3 flex-wrap pt-2 border-t mt-1">
                             <Label htmlFor="cobranza_hora_corte" className="text-xs font-bold text-slate-700">

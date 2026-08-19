@@ -1,4 +1,17 @@
-export const OMNI_BETA_VERSION = '2.1.2-beta.1';
+import manifest from '../../public/manifest.json';
+
+// La version que se enseña en el panel sale del MANIFEST, no de una copia
+// a mano.
+//
+// >>> POR QUE <<<
+// (2026-08-19) El numero vivia en tres sitios: manifest.json, manifest.beta.json
+// y esta constante. Se desincronizaron los tres a la vez — el panel decia
+// 2.1.0, el manifest 2.1.2 y el beta seguia en 2.1.0 — y la version es
+// justo el dato que sirve para saber si la recarga entro. Un numero que
+// puede mentir sobre eso es peor que no tenerlo.
+//
+// Ahora hay un solo sitio que tocar: la `version_name` del manifest.
+export const OMNI_BETA_VERSION = manifest.version_name || manifest.version;
 export const OMNI_SAFE_MODE_KEY = 'motoflow_omni_safe_mode';
 
 const truthy = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase());
