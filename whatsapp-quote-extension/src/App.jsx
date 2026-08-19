@@ -1,4 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
+import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
+import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
 import { castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
@@ -397,6 +400,12 @@ export default function App() {
   const [availableProducts, setAvailableProducts] = useState([]);
   const [availableProductsLoading, setAvailableProductsLoading] = useState(false);
   const [omniConversationsPreview, setOmniConversationsPreview] = useState([]);
+  // Los seguimientos que tocan hoy. Viven aqui arriba y no dentro del panel
+  // de cobranza porque el numero del riel los necesita, y ese se pinta
+  // aunque el panel este cerrado.
+  const [seguimientos, setSeguimientos] = useState([]);
+  const [seguimientoAbierto, setSeguimientoAbierto] = useState(false);
+  const [seguimientoOcupado, setSeguimientoOcupado] = useState(false);
   const [cobroFilter, setCobroFilter] = useState('');
   const [cobroView, setCobroView] = useState('todos');
   const [debtModalOpen, setDebtModalOpen] = useState(false);
@@ -713,6 +722,21 @@ export default function App() {
       .then((items) => setVendors(items || []))
       .catch(() => setVendors([]));
   }, [session?.access_token]);
+
+  // Lo que toca perseguir hoy. Se pide una vez al entrar y despues de cada
+  // cambio: son pocas filas y la RPC ya trae los atrasados de primero.
+  const recargarSeguimientos = useCallback(async () => {
+    if (!session?.access_token || empresaPending) { setSeguimientos([]); return; }
+    try {
+      setSeguimientos(await getSeguimientosPendientes());
+    } catch {
+      // Un fallo aqui no puede tapar la bandeja ni la cobranza: se queda sin
+      // la lista y ya. Es informacion de apoyo, no el trabajo del dia.
+      setSeguimientos([]);
+    }
+  }, [session?.access_token, empresaPending]);
+
+  useEffect(() => { recargarSeguimientos(); }, [recargarSeguimientos]);
 
   useEffect(() => {
     if (!session?.access_token || empresaPending) {
@@ -1911,6 +1935,47 @@ export default function App() {
     handleOmniQuickStatus('cerrado', 'Conversacion marcada como atendida.');
   }
 
+  // ── SEGUIMIENTO DE VENTA ────────────────────────────────────────
+  // El boton viejo solo ponia status='seguimiento' en la conversacion: una
+  // etiqueta sin fecha, sin pieza y sin nota. Se uso UNA vez desde mayo.
+  async function handleGuardarSeguimientoVenta(datos) {
+    setSeguimientoOcupado(true);
+    try {
+      await crearSeguimiento(datos);
+      setSeguimientoAbierto(false);
+      await recargarSeguimientos();
+      // El estado de la conversacion lo mueve el servidor; aqui se refleja
+      // para no tener que recargar la bandeja entera.
+      if (datos.conversationId) {
+        const marcar = (c) => (c?.id === datos.conversationId ? { ...c, status: 'seguimiento' } : c);
+        setOmniSelectedConversation(marcar);
+        setOmniQuoteConversation(marcar);
+        setOmniConversationsPreview((lista) => lista.map(marcar));
+      }
+      setNotice('Seguimiento guardado. Sale en la pestana de deuda el dia que toca.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo guardar el seguimiento.');
+    } finally {
+      setSeguimientoOcupado(false);
+    }
+  }
+
+  // Cerrar o mover de fecha desde la lista.
+  async function handleCerrarSeguimiento(seguimiento, estado, nuevaFecha = null) {
+    setSeguimientoOcupado(true);
+    try {
+      await cerrarSeguimiento({ id: seguimiento.id, estado, nuevaFecha });
+      await recargarSeguimientos();
+      setNotice(estado === 'comprado' ? 'Marcado como comprado.'
+              : estado === 'perdido'  ? 'Marcado como perdido.'
+              : 'Movido de fecha.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo actualizar el seguimiento.');
+    } finally {
+      setSeguimientoOcupado(false);
+    }
+  }
+
   async function handleOmniQuickStatus(status, successMessage) {
     const conversation = omniSelectedConversation || omniQuoteConversation;
     if (!conversation?.id) return;
@@ -2072,7 +2137,7 @@ export default function App() {
     });
   }
 
-  const omniCounts = getChannelCounts({ morosos, omniConversations: omniConversationsPreview });
+  const omniCounts = getChannelCounts({ morosos, omniConversations: omniConversationsPreview, seguimientos });
   const isSocialChannelActive = [
     CHANNEL_TYPES.UNIFIED,
     CHANNEL_TYPES.INSTAGRAM,
@@ -2299,10 +2364,19 @@ export default function App() {
                 <button type="button" onClick={() => handleOmniQuoteConversation(commercialConversation)}>Cotizar</button>
                 <button type="button" disabled={!commercialConversation.cliente_id && !commercialConversation.customer_id} onClick={handleGoCobranza}>Ver deuda</button>
                 <button type="button" onClick={handleOpenOutOfStock}>Producto agotado</button>
-                <button type="button" onClick={() => handleOmniQuickStatus('seguimiento', 'Conversacion marcada para seguimiento.')}>Crear seguimiento</button>
+                <button type="button" onClick={() => setSeguimientoAbierto(true)}>Crear seguimiento</button>
                 <button type="button" onClick={() => setNotice('Historial comercial disponible al asociar el cliente de Motoflow.')}>Ver historial</button>
                 <button type="button" onClick={handleMarkOmniAttended}>Marcar atendido</button>
               </div>
+              <SeguimientoForm
+                isOpen={seguimientoAbierto}
+                conversacion={commercialConversation}
+                nombreSugerido={getOmniConversationName(commercialConversation)}
+                telefonoSugerido={commercialConversation.customer_phone || ''}
+                guardando={seguimientoOcupado}
+                onCerrar={() => setSeguimientoAbierto(false)}
+                onGuardar={handleGuardarSeguimientoVenta}
+              />
             </>
           ) : (
             <div className="mf-social-empty-commercial">
@@ -2429,6 +2503,12 @@ export default function App() {
 
         return (
           <section className="mf-cobranza mf-cobranza-menu-only">
+            <SeguimientosHoy
+              seguimientos={seguimientos}
+              ocupado={seguimientoOcupado}
+              onCerrar={handleCerrarSeguimiento}
+              onRecargar={recargarSeguimientos}
+            />
             <div className="mf-cobranza-tabs" aria-label="Menu principal de deuda">
               <div className="mf-cobranza-tabs-scroll">
                 {GESTION_COBRO_TABS.map((tab) => (

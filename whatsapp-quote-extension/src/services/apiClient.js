@@ -1276,3 +1276,77 @@ export async function logConversationEvent(event) {
     body: JSON.stringify(payload)
   });
 }
+
+// ── SEGUIMIENTO DE VENTA ──────────────────────────────────────────────
+// (2026-08-19) El cliente que pregunta por una pieza y no compra se perdia:
+// 202 de 207 conversaciones seguian en estado 'nuevo' y crm_seguimiento --
+// la tabla hecha para esto, con fecha_seguimiento y proxima_accion -- llevaba
+// un mes con UNA fila, que era una prueba.
+//
+// El vocabulario NO es libre: la tabla tiene tres CHECK y son los que manda.
+//   estado     nuevo, interesado, precio_enviado, pendiente_pago,
+//              prometio_pasar, comprado, perdido, agotado_solicitado
+//   prioridad  alta, media, baja
+// Instagram, Facebook y TikTok entran todas como canal 'redes'; el servidor
+// hace ese mapeo, aqui no se toca.
+
+/**
+ * Crea un seguimiento. Sin fecha no se crea: un seguimiento sin fecha es un
+ * recordatorio que nadie va a mirar, y el servidor lo rechaza.
+ */
+export async function crearSeguimiento({
+  fecha, conversationId = null, producto = null, codigoProducto = null,
+  accion = null, notas = null, prioridad = 'media', estado = 'nuevo',
+  clienteNombre = null, telefono = null, clienteId = null,
+}) {
+  if (!fecha) throw new Error('Dime para que dia hay que volver a buscarlo.');
+  const headers = await getAuthHeaders();
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/crm_seguimiento_crear`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_fecha: fecha,
+      p_conversation_id: conversationId,
+      p_producto: producto,
+      p_codigo_producto: codigoProducto,
+      p_accion: accion,
+      p_notas: notas,
+      p_prioridad: prioridad,
+      p_estado: estado,
+      p_cliente_nombre: clienteNombre,
+      p_telefono: telefono,
+      p_cliente_id: clienteId,
+    }),
+  });
+}
+
+/**
+ * Los que tocan hoy, con los atrasados de primero.
+ * @param {string|null} hasta  fecha limite (YYYY-MM-DD). Por defecto, hoy.
+ */
+export async function getSeguimientosPendientes(hasta = null) {
+  const headers = await getAuthHeaders();
+  const filas = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/crm_seguimientos_pendientes`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_hasta: hasta }),
+  });
+  return Array.isArray(filas) ? filas : [];
+}
+
+/**
+ * Cerrarlo (comprado / perdido) o moverlo de fecha.
+ * Para dejarlo abierto hace falta `nuevaFecha`, o el servidor lo rechaza:
+ * sin fecha nueva no se entiende para cuando queda.
+ */
+export async function cerrarSeguimiento({ id, estado, nota = null, nuevaFecha = null }) {
+  if (!id) throw new Error('Falta el seguimiento.');
+  const headers = await getAuthHeaders();
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/crm_seguimiento_cerrar`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_id: id, p_estado: estado, p_nota: nota, p_nueva_fecha: nuevaFecha,
+    }),
+  });
+}

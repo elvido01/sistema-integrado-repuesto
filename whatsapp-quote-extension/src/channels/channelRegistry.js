@@ -55,7 +55,7 @@ export function esperaRespuesta(conversation) {
   return new Date(delCliente).getTime() > new Date(nuestro).getTime();
 }
 
-export function getChannelCounts({ morosos, omniConversations } = {}) {
+export function getChannelCounts({ morosos, omniConversations, seguimientos } = {}) {
   const clientes = morosos?.clientes || [];
   const pendientes = (omniConversations || []).filter(esperaRespuesta);
   const enEsperaDe = (plataforma) => pendientes.filter((c) => c.platform === plataforma).length;
@@ -68,8 +68,14 @@ export function getChannelCounts({ morosos, omniConversations } = {}) {
     // La Bandeja no lleva número a propósito: no es un canal, es la vista de
     // los otros. Lo suyo ya está contado en IG y FB.
     [CHANNEL_TYPES.UNIFIED]: 0,
-    [CHANNEL_TYPES.FOLLOWUPS]: clientes.filter((cliente) => (
-      cliente.tiene_promesa || cliente.seg_fecha || cliente.por_reenviar
-    )).length
+    // SG son las dos cosas que hay que perseguir hoy, y se ven juntas al
+    // pulsarlo: arriba a quien llamar por una pieza, abajo a quien cobrarle.
+    // Contar solo una de las dos volveria a dejar un numero que no cuadra con
+    // lo que se ve, que es como el de Instagram dejo de mirarse.
+    [CHANNEL_TYPES.FOLLOWUPS]:
+      clientes.filter((cliente) => (
+        cliente.tiene_promesa || cliente.seg_fecha || cliente.por_reenviar
+      )).length
+      + (Array.isArray(seguimientos) ? seguimientos.length : 0)
   };
 }

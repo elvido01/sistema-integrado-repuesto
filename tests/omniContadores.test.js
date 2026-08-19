@@ -115,3 +115,35 @@ describe('el número de cada canal', () => {
     expect(c[CHANNEL_TYPES.FOLLOWUPS]).toBe(2);
   });
 });
+
+// (2026-08-19) El SG del riel contaba solo cobranza. Ahora tambien los
+// seguimientos de venta, porque al pulsarlo se ven las dos cosas: arriba a
+// quien llamar por una pieza, abajo a quien cobrarle. Un numero que no cuadra
+// con lo que se ve deja de mirarse -- es lo que le paso al de Instagram.
+describe('el numero de Seguimientos', () => {
+  const conMorosos = { clientes: [{ tiene_promesa: true }, { seg_fecha: '2026-08-20' }, {}] };
+
+  it('suma la cobranza y los seguimientos de venta', () => {
+    const c = getChannelCounts({
+      morosos: conMorosos,
+      seguimientos: [{ id: 'a' }, { id: 'b' }],
+    });
+    expect(c[CHANNEL_TYPES.FOLLOWUPS]).toBe(4);   // 2 de cobranza + 2 de venta
+  });
+
+  it('sin seguimientos sigue contando solo la cobranza', () => {
+    // La firma cambio; lo viejo tiene que seguir funcionando igual.
+    expect(getChannelCounts({ morosos: conMorosos })[CHANNEL_TYPES.FOLLOWUPS]).toBe(2);
+  });
+
+  it('con basura en seguimientos no revienta ni inventa', () => {
+    for (const v of [null, undefined, 'dos', {}, 7]) {
+      expect(getChannelCounts({ morosos: conMorosos, seguimientos: v })[CHANNEL_TYPES.FOLLOWUPS],
+             String(v)).toBe(2);
+    }
+  });
+
+  it('solo seguimientos, sin cobranza', () => {
+    expect(getChannelCounts({ seguimientos: [{ id: 'a' }] })[CHANNEL_TYPES.FOLLOWUPS]).toBe(1);
+  });
+});

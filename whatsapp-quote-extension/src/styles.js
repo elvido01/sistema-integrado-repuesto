@@ -2951,6 +2951,75 @@ export const styles = `
     cursor: pointer;
   }
 
+
+  /* ── SEGUIMIENTO DE VENTA ─────────────────────────────────────────
+     Formulario y lista. Compacto a proposito: esto vive en una barra
+     lateral de 360px encima de WhatsApp Web, no en una pantalla. */
+
+  .mf-seg-form {
+    display: flex; flex-direction: column; gap: 6px;
+    margin-top: 8px; padding: 10px;
+    border: 1px solid #cbd5e1; border-radius: 8px; background: #f8fafc;
+  }
+  .mf-seg-head { display: flex; align-items: center; gap: 8px; }
+  .mf-seg-head strong { flex: 1; font-size: 12px; }
+  .mf-seg-head button {
+    border: none; background: none; cursor: pointer; color: #64748b; font-size: 13px;
+  }
+  .mf-seg-de { margin: 0; font-size: 11px; color: #475569; }
+  .mf-seg-lbl { font-size: 11px; color: #475569; margin-top: 2px; }
+  .mf-seg-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .mf-seg-form input, .mf-seg-form select {
+    width: 100%; padding: 6px 8px; font-size: 12px;
+    border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;
+  }
+  .mf-seg-atajos { display: flex; flex-wrap: wrap; gap: 4px; }
+  .mf-seg-atajos button {
+    padding: 4px 8px; font-size: 11px; cursor: pointer;
+    border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; color: #334155;
+  }
+  /* El elegido tiene que verse de un vistazo: el atajo llena el calendario de
+     abajo, y sin esta marca no se sabe cual quedo puesto. */
+  .mf-seg-atajos button.is-on { background: #0f766e; border-color: #0f766e; color: #fff; }
+  .mf-seg-error { margin: 0; font-size: 11px; color: #b91c1c; }
+  .mf-seg-pie { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+  .mf-seg-pie button {
+    padding: 6px 10px; font-size: 12px; cursor: pointer;
+    border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;
+  }
+  .mf-seg-pie .mf-seg-ok { background: #0f766e; border-color: #0f766e; color: #fff; font-weight: 600; }
+  .mf-seg-pie button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .mf-seg-hoy {
+    margin: 0 0 10px; padding: 8px;
+    border: 1px solid #99f6e4; border-radius: 8px; background: #f0fdfa;
+  }
+  .mf-seg-hoy-head { display: flex; align-items: center; gap: 8px; }
+  .mf-seg-hoy-head strong { flex: 1; font-size: 12px; color: #0f766e; }
+  .mf-seg-hoy-head button { border: none; background: none; cursor: pointer; color: #0f766e; }
+  .mf-seg-atraso {
+    font-size: 10px; font-style: normal; font-weight: 700;
+    padding: 2px 6px; border-radius: 999px; background: #fee2e2; color: #b91c1c;
+  }
+  .mf-seg-hoy-lista { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .mf-seg-hoy-lista li {
+    padding: 6px 8px; border-radius: 6px; background: #fff; border: 1px solid #ccfbf1;
+  }
+  /* Un seguimiento atrasado no puede verse igual que uno de hoy. */
+  .mf-seg-hoy-lista li.is-atrasado { border-color: #fecaca; background: #fff7f7; }
+  .mf-seg-hoy-fila { display: flex; align-items: baseline; gap: 6px; }
+  .mf-seg-hoy-fila b { flex: 1; font-size: 12px; }
+  .mf-seg-cuando { font-size: 10px; color: #64748b; white-space: nowrap; }
+  .mf-seg-pieza { margin: 2px 0 0; font-size: 11px; color: #0f172a; font-weight: 600; }
+  .mf-seg-meta { margin: 2px 0 0; font-size: 10px; color: #64748b; }
+  .mf-seg-accion { margin: 2px 0 0; font-size: 10px; color: #334155; font-style: italic; }
+  .mf-seg-hoy-acciones, .mf-seg-mover { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .mf-seg-hoy-acciones button, .mf-seg-mover button {
+    padding: 3px 8px; font-size: 11px; cursor: pointer;
+    border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155;
+  }
+  .mf-seg-hoy-acciones button:disabled, .mf-seg-mover button:disabled { opacity: .5; cursor: not-allowed; }
+
   @media (max-width: 760px) {
     .mf-panel {
       width: calc(100vw - 16px);
