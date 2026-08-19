@@ -1,14 +1,16 @@
 -- =====================================================================
 -- Un ancla en el futuro no puede dejar el Dashboard en blanco
 -- ---------------------------------------------------------------------
--- (2026-08-19) El dueño estaba editando "Saldo Inicial Caja (Dashboard)" y
--- el Dashboard entero se quedo en cero: ingresos 0, egresos 0, flujo neto
--- 0. Ese mismo dia se habian facturado RD$9,838.25.
+-- (2026-08-19) El Dashboard entero se quedo en cero: ingresos 0, egresos 0,
+-- flujo neto 0. Ese mismo dia se habian facturado RD$9,838.25.
 --
--- Lo que paso: al lado del saldo hay otro campo, "Historial Caja Desde", y
--- se le quedo en 2026-08-20 — mañana. Los dos estan pegados en la pantalla
--- y un <input type=date> cambia de valor con la rueda del raton, asi que se
--- movio sin tocarlo a proposito.
+-- Lo que paso: "Historial Caja Desde" quedo en 2026-08-20 — mañana —
+-- tecleada por error. La causa da igual y por eso no se apunta a nadie: el
+-- campo aceptaba cualquier fecha, incluida una que todavia no ha llegado, y
+-- ninguna pantalla decia que eso rompiera nada.
+--
+-- (Ese campo y "Saldo Inicial Caja" son independientes: cada uno hace lo
+-- suyo. Aqui no se toca esa separacion, solo se le pone tope al primero.)
 --
 -- Con esa fecha, get_flujo_neto_dashboard calculaba
 --
@@ -93,9 +95,8 @@ BEGIN
 
   -- >>> EL ANCLA NUNCA PUEDE SER DE MAÑANA <<<
   -- (2026-08-19) A REPUESTOS MORLA se le quedo `caja_historial_desde` en
-  -- 2026-08-20 estando a 19. Los dos campos estan pegados en la pantalla de
-  -- configuracion y un `type=date` cambia con la rueda del raton, asi que se
-  -- movio sin querer mientras se editaba el saldo inicial.
+  -- 2026-08-20 estando a 19, tecleada por error. El campo aceptaba fechas
+  -- que todavia no han llegado y nada avisaba de lo que eso provocaba.
   --
   -- El resultado fue un dashboard entero en cero: el periodo quedaba
   -- "20/08 → 19/08", un rango al reves donde no cabe ni un movimiento. Y no
@@ -323,9 +324,8 @@ BEGIN
 
   -- >>> EL ANCLA NUNCA PUEDE SER DE MAÑANA <<<
   -- (2026-08-19) A REPUESTOS MORLA se le quedo `caja_historial_desde` en
-  -- 2026-08-20 estando a 19. Los dos campos estan pegados en la pantalla de
-  -- configuracion y un `type=date` cambia con la rueda del raton, asi que se
-  -- movio sin querer mientras se editaba el saldo inicial.
+  -- 2026-08-20 estando a 19, tecleada por error. El campo aceptaba fechas
+  -- que todavia no han llegado y nada avisaba de lo que eso provocaba.
   --
   -- El resultado fue un dashboard entero en cero: el periodo quedaba
   -- "20/08 → 19/08", un rango al reves donde no cabe ni un movimiento. Y no

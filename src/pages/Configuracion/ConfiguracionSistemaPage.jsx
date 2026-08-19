@@ -658,13 +658,12 @@ const ConfiguracionSistemaPage = () => {
 
                             <div className="space-y-1.5">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Historial Caja Desde</Label>
-                                {/* `max` en hoy: este campo esta pegado al del saldo inicial y un
-                                    <input type=date> cambia de valor con la rueda del raton. El
-                                    19/08/2026 se movio sin querer a "mañana" mientras se editaba el
-                                    saldo, y el Dashboard entero se quedo en cero — el periodo pasaba
-                                    a ser "20/08 → 19/08", un rango al reves. Peor aun, lo contaba
-                                    como "Sin movimientos registrados", que es lo mismo que diria si
-                                    el negocio no hubiera vendido nada. */}
+                                {/* `max` en hoy: el 19/08/2026 esta fecha quedo en "mañana" por un
+                                    error de tecleo y el Dashboard entero se fue a cero — el periodo
+                                    pasaba a ser "20/08 → 19/08", un rango al reves. Peor aun, lo
+                                    contaba como "Sin movimientos registrados", que es lo mismo que
+                                    diria si el negocio no hubiera vendido nada. Una fecha que no ha
+                                    llegado no puede ser el punto de partida de nada. */}
                                 <Input
                                     id="caja_historial_desde"
                                     type="date"
