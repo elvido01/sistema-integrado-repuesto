@@ -977,6 +977,44 @@ export async function sendOmniReply({ conversation, text }) {
   }
 }
 
+// ── HERMES SUGIERE, LA PERSONA DECIDE ───────────────────────────────
+// La funcion `hermes-sugerir` REDACTA y no manda nada. Consulta el
+// inventario de verdad por el MCP (precio, existencia, deuda) antes de
+// escribir, asi que no inventa lo que no puede saber.
+//
+// Devuelve tambien el message_id de la pregunta: es lo que despues permite
+// decir si la sugerencia se uso tal cual, se edito o se tiro. Esa decision
+// es la unica señal de aprendizaje que hay, asi que se pide de vuelta.
+export async function sugerirRespuesta({ conversationId }) {
+  if (!conversationId) throw new Error('Selecciona una conversacion.');
+  const headers = await getAuthHeaders();
+
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/hermes-sugerir`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ conversation_id: conversationId })
+  });
+  const d = await r.json().catch(() => null);
+  if (!d?.ok) throw new Error(d?.error || 'Hermes no pudo redactar una respuesta.');
+  return d;   // { sugerencia, message_id, pregunta, herramientas, productos }
+}
+
+// Que paso con la sugerencia: 'usada' | 'editada' | 'descartada'.
+//
+// Sin esto el bucle no cierra: Hermes seguiria proponiendo lo mismo sin
+// enterarse de que se le corrige. Y el porcentaje de "usada sin tocar" es
+// el numero que decide si algun dia esto puede contestar solo.
+export async function marcarUsoSugerencia({ messageId, resultado }) {
+  if (!messageId || !resultado) return null;
+  const headers = await getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/hermes_marcar_uso`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_message_id: messageId, p_resultado: resultado })
+  });
+}
+
 export async function linkOmniConversationQuote({ conversationId, cotizacionId, status = 'cotizacion_enviada' }) {
   if (!conversationId || !cotizacionId) return null;
   const headers = await getAuthHeaders();

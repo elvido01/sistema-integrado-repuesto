@@ -338,6 +338,25 @@ export const styles = `
     font-weight: 700;
   }
 
+  .mf-omni-sugerencia-fuentes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px 0;
+    font-size: 10px;
+    color: #64746c;
+  }
+
+  .mf-omni-sugerencia-fuentes b {
+    padding: 2px 6px;
+    border: 1px solid #d7e8e0;
+    border-radius: 999px;
+    background: #f2faf6;
+    color: #126f64;
+    font-weight: 800;
+  }
+
   .mf-omni-head-actions {
     display: flex;
     align-items: center;

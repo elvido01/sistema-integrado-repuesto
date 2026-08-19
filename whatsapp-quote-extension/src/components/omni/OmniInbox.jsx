@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, sendOmniReply, updateOmniConversationStatus } from '../../services/apiClient.js';
+import { DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, marcarUsoSugerencia, sendOmniReply, sugerirRespuesta, updateOmniConversationStatus } from '../../services/apiClient.js';
 import { esperaRespuesta, estaSinVer } from '../../channels/channelRegistry.js';
 
 const CHANNEL_LABELS = {
@@ -84,6 +84,11 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  // Lo que Hermes propuso y todavia no se ha resuelto. Se guarda el TEXTO
+  // original para poder comparar: si sale igual es 'usada', si sale cambiado
+  // es 'editada'. Esa diferencia es el material de aprendizaje.
+  const [sugerencia, setSugerencia] = useState(null);   // { texto, messageId, productos }
+  const [sugiriendo, setSugiriendo] = useState(false);
 
   const title = CHANNEL_LABELS[channel] || CHANNEL_LABELS.unified;
 
@@ -210,6 +215,17 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   }
 
   function handleSelectConversation(conversation) {
+    // Irse a otra conversacion dejando la sugerencia sin mandar cuenta como
+    // descartarla. Callarselo dejaria a Hermes creyendo que aun se esta
+    // pensando, cuando en realidad no sirvio.
+    if (sugerencia && conversation?.id !== selected?.id) {
+      if (sugerencia.messageId) {
+        marcarUsoSugerencia({ messageId: sugerencia.messageId, resultado: 'descartada' }).catch(() => {});
+      }
+      setSugerencia(null);
+      setReplyText('');
+    }
+
     setSelected(conversation);
 
     // El punto se apaga AQUI, en la pantalla, sin esperar al servidor: si se
@@ -229,6 +245,37 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
       // Que no se pueda dejar escrito no es motivo para molestar a nadie:
       // lo peor que pasa es que el punto vuelva al recargar la bandeja.
     });
+  }
+
+  async function handleSugerir() {
+    if (!selected?.id || sugiriendo) return;
+    setSugiriendo(true);
+    setError('');
+    try {
+      const d = await sugerirRespuesta({ conversationId: selected.id });
+      // Va DIRECTO a la caja de texto, no a un panel aparte: lo que se busca
+      // es que se corrija encima, no que se copie y pegue.
+      setReplyText(d.sugerencia || '');
+      setSugerencia({
+        texto: d.sugerencia || '',
+        messageId: d.message_id || null,
+        productos: Array.isArray(d.productos) ? d.productos : [],
+      });
+    } catch (err) {
+      setError(err.message || 'Hermes no pudo redactar una respuesta.');
+    } finally {
+      setSugiriendo(false);
+    }
+  }
+
+  // Se tira la sugerencia sin mandarla: tambien es informacion. Que Hermes
+  // proponga algo que nunca se usa es lo que hay que poder ver.
+  function descartarSugerencia() {
+    if (sugerencia?.messageId) {
+      marcarUsoSugerencia({ messageId: sugerencia.messageId, resultado: 'descartada' }).catch(() => {});
+    }
+    setSugerencia(null);
+    setReplyText('');
   }
 
   async function handleSendReply(event) {
@@ -252,6 +299,20 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     setError('');
     setReplyText('');
     setMessages((current) => [...current, optimisticMessage]);
+
+    // >>> AQUI SE CIERRA EL BUCLE <<<
+    // Se manda tal cual = 'usada'. Se toco una coma = 'editada'. Sin esta
+    // comparacion Hermes propondria lo mismo para siempre sin enterarse de
+    // que se le corrige, y el porcentaje de "usada sin tocar" -- el numero
+    // que decide si algun dia puede contestar solo -- no existiria.
+    //
+    // Se hace ANTES de esperar el envio: lo que se esta juzgando es la
+    // redaccion, no si la red social acepto el mensaje.
+    if (sugerencia?.messageId) {
+      const resultado = text === (sugerencia.texto || '').trim() ? 'usada' : 'editada';
+      marcarUsoSugerencia({ messageId: sugerencia.messageId, resultado }).catch(() => {});
+      setSugerencia(null);
+    }
 
     try {
       const saved = await sendOmniReply({ conversation: selected, text });
@@ -464,6 +525,23 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                 })}
               </div>
 
+              {/* Lo que Hermes MIRO de verdad antes de escribir. Se enseña para
+                  que el precio se pueda verificar de un vistazo: una sugerencia
+                  que no se puede comprobar hay que reescribirla entera, y
+                  entonces no ahorra nada. */}
+              {sugerencia?.productos?.length > 0 && (
+                <div className="mf-omni-sugerencia-fuentes">
+                  <span>Hermes miró:</span>
+                  {sugerencia.productos.slice(0, 4).map((p, i) => (
+                    <b key={i}>
+                      {p.codigo || p.descripcion}
+                      {p.precio != null && ` · RD$${Number(p.precio).toLocaleString('es-DO')}`}
+                      {p.existencia != null && ` · ${Number(p.existencia) > 0 ? `${p.existencia} en stock` : 'agotado'}`}
+                    </b>
+                  ))}
+                </div>
+              )}
+
               <form className="mf-omni-reply" onSubmit={handleSendReply}>
                 <textarea
                   value={replyText}
@@ -471,9 +549,22 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                   placeholder={`Responder por ${selectedMeta.platform === 'instagram' ? 'Instagram' : selectedMeta.platform === 'facebook' ? 'Facebook' : 'este canal'}...`}
                   rows="2"
                 />
+                <button
+                  type="button"
+                  onClick={handleSugerir}
+                  disabled={sugiriendo || sending}
+                  title="Hermes lee la conversación, consulta el inventario y redacta. No envía nada: tú decides."
+                >
+                  {sugiriendo ? 'Redactando...' : '✨ Sugerir'}
+                </button>
                 <button type="submit" disabled={sending || !replyText.trim()}>
                   {sending ? 'Guardando...' : 'Responder'}
                 </button>
+                {sugerencia && (
+                  <button type="button" onClick={descartarSugerencia} title="Tirar la sugerencia sin mandarla">
+                    Descartar
+                  </button>
+                )}
                 <button type="button" onClick={() => onQuoteConversation?.(selected)}>
                   Cotizar desde chat
                 </button>
