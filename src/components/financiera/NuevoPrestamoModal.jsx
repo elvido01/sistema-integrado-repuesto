@@ -12,18 +12,36 @@ import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { imprimirInformePrestamo } from '@/lib/printInformePrestamo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { calcAmortizacion, round2 } from './amortizacion';
-import { formatFechaDMY } from '@/lib/dateUtils';
+import { formatFechaDMY, formatDateForSupabase, getCurrentDateInTimeZone } from '@/lib/dateUtils';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 
-const proximoMes = () => {
-  const d = new Date();
-  d.setMonth(d.getMonth() + 1);
-  return d.toISOString().slice(0, 10);
+// Hoy en Santo Domingo. Se apoya en dateUtils y no en toISOString(), que
+// devuelve UTC: en RD (UTC-4) eso adelanta el día desde las ocho de la noche y
+// un préstamo originado un jueves a las 9 pm salía fechado el viernes.
+//
+// Y no se calcula a mano con el reloj del navegador porque el sistema corre en
+// varias PC: si una tiene la zona horaria mal puesta, dateUtils acierta igual.
+const hoyLocal = () => formatDateForSupabase(getCurrentDateInTimeZone());
+
+// Suma un mes a una fecha YYYY-MM-DD. Aritmética de calendario pura — aquí no
+// hay zona horaria de por medio porque no hay hora.
+const mesDespues = (iso) => {
+  const [a, m, dd] = String(iso || '').split('-').map(Number);
+  const base = (a && m && dd) ? new Date(a, m - 1, dd) : new Date();
+  base.setMonth(base.getMonth() + 1);
+  const mes = String(base.getMonth() + 1).padStart(2, '0');
+  const dia = String(base.getDate()).padStart(2, '0');
+  return `${base.getFullYear()}-${mes}-${dia}`;
 };
 
-const initial = {
+const proximoMes = () => mesDespues(hoyLocal());
+
+// Funcion y no objeto: si fuera un objeto, hoyLocal() se evaluaria UNA vez al
+// cargar el modulo. En una tienda la pestana se queda abierta de un dia para
+// otro, y despues de medianoche el formulario propondria la fecha de ayer.
+const initial = () => ({
   tipo: 'financiamiento',
   metodo: 'simple',
   frecuencia: 'mensual',
@@ -31,12 +49,13 @@ const initial = {
   tasa: '',
   plazo: '',
   mora: '',
+  fechaInicio: hoyLocal(),   // cuando EMPEZO el prestamo, no cuando se digita
   fechaPrimera: proximoMes(),
   garantia: '',
   notas: '',
   cuotaAjustada: '', // cuota redondeada por el operador (opcional)
   desembolso: 'efectivo', // efectivo resta de la caja del día; transferencia/cheque del excedente
-};
+});
 
 const NuevoPrestamoModal = ({ isOpen, onClose }) => {
   const { toast } = useToast();
@@ -50,6 +69,21 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
   const [lineas, setLineas] = useState([{ id: 1, cuenta_id: '', monto: '' }]);
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  // Al cambiar la fecha del préstamo, la primera cuota lo sigue — pero SOLO si
+  // nadie la había movido a mano. Arrastrarla siempre le borraría al operador
+  // la fecha que acaba de teclear; no arrastrarla nunca deja un préstamo
+  // fechado hace dos semanas con la primera cuota a un mes de HOY, que son dos
+  // semanas regaladas.
+  const cambiarFechaInicio = (nueva) => {
+    setForm((p) => ({
+      ...p,
+      fechaInicio: nueva,
+      fechaPrimera: p.fechaPrimera === mesDespues(p.fechaInicio)
+        ? mesDespues(nueva)
+        : p.fechaPrimera,
+    }));
+  };
 
   const porBanco = form.desembolso === 'transferencia' || form.desembolso === 'cheque';
   const capital = Number(form.monto) || 0;
@@ -95,7 +129,7 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
     set('cuotaAjustada', String(Math.ceil(montoCuotaBase / mult) * mult));
   };
 
-  const reset = () => { setForm(initial); setCliente(null); setLineas([{ id: 1, cuenta_id: '', monto: '' }]); };
+  const reset = () => { setForm(initial()); setCliente(null); setLineas([{ id: 1, cuenta_id: '', monto: '' }]); };
 
   const handleGuardar = async () => {
     if (!cliente?.id) { toast({ variant: 'destructive', title: 'Selecciona un cliente' }); return; }
@@ -141,6 +175,7 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
         p_mora_pct: Number(form.mora) || 0,
         p_tipo: form.tipo,
         p_fecha_primera: form.fechaPrimera || null,
+        p_fecha_inicio: form.fechaInicio || null,
         p_garantia: form.garantia || null,
         p_notas: form.notas || null,
         p_cuota_ajustada: adj > 0 ? adj : null,
@@ -267,6 +302,23 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
             <div className="space-y-1.5">
               <Label>Mora % (por mes atraso)</Label>
               <Input type="number" value={form.mora} onChange={(e) => set('mora', e.target.value)} placeholder="Ej: 5" />
+            </div>
+            {/* La fecha en que el préstamo EMPEZÓ, que no siempre es hoy: uno
+                mal digitado se anula con nota de crédito y se vuelve a entrar
+                con el monto bueno, pero conservando su fecha original. Si
+                entra fechado hoy, el cliente se ahorra los días corridos y el
+                papel dice una fecha que no es la que firmó. */}
+            <div className="space-y-1.5">
+              <Label>Fecha del préstamo</Label>
+              <Input
+                type="date"
+                value={form.fechaInicio}
+                max={hoyLocal()}
+                onChange={(e) => cambiarFechaInicio(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                Hoy por defecto. Se puede atrasar; no adelantar.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>1ª cuota vence</Label>
