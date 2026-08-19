@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, sendOmniReply, updateOmniConversationStatus } from '../../services/apiClient.js';
+import { DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, sendOmniReply, updateOmniConversationStatus } from '../../services/apiClient.js';
 import { esperaRespuesta, estaSinVer } from '../../channels/channelRegistry.js';
 
 const CHANNEL_LABELS = {
@@ -331,7 +331,13 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
       <header className="mf-omni-inbox-head">
         <div>
           <strong>{title}</strong>
-          <span>{visibleConversations.length} de {conversations.length} conversaciones</span>
+          {/* Que la ventana se DIGA. Sin esto, quien vio ayer 413 conversaciones
+              y hoy ve 19 piensa que se borraron, y esa es la clase de susto que
+              hace desconfiar de todo lo demas. */}
+          <span>
+            {visibleConversations.length} de {conversations.length} conversaciones
+            {!search.trim() && ` · últimos ${DIAS_EN_BANDEJA} días`}
+          </span>
         </div>
         <div className="mf-omni-head-actions">
           {/* Solo aparece si hay algo que apagar: un boton que no hace nada
@@ -377,7 +383,13 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
       <div className="mf-omni-layout">
         <div className="mf-omni-list">
           {loading && !conversations.length && <p className="mf-muted">Cargando bandeja...</p>}
-          {!loading && !conversations.length && <p className="mf-muted">No hay conversaciones para este canal.</p>}
+          {!loading && !conversations.length && (
+            <p className="mf-muted">
+              {search.trim()
+                ? 'No hay conversaciones que coincidan con esa búsqueda.'
+                : `Ninguna conversación en los últimos ${DIAS_EN_BANDEJA} días. Las de antes siguen ahí: búscalas por nombre o por número.`}
+            </p>
+          )}
           {!loading && conversations.length > 0 && !visibleConversations.length && <p className="mf-muted">No hay conversaciones en este filtro.</p>}
 
           {visibleConversations.map((conversation) => {

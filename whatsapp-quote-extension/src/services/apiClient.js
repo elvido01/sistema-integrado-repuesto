@@ -760,6 +760,22 @@ export async function getVendors() {
   return fetchJson(url.toString(), { headers });
 }
 
+// Cuantos dias de conversaciones se traen a la bandeja.
+//
+// >>> POR QUE HAY UNA VENTANA <<<
+// (2026-08-19) Habia 413 conversaciones de TikTok y solo 19 con movimiento
+// en los ultimos 15 dias. Las otras 394 se cargaban en cada apertura del
+// panel para no ser miradas nunca: pesaban en la pagina y, peor, tapaban
+// las de hoy en una lista donde hay que bajar sin parar.
+//
+// Ese arrastre tambien era el 99+ del riel: contaba 339 sin abrir de meses
+// atras, un aviso que no se puede apagar contestando ni mirando, o sea un
+// aviso que no sirve.
+//
+// No se borra nada: lo viejo sigue en la base y sale AL BUSCAR (mas abajo
+// la busqueda se salta la ventana a proposito).
+export const DIAS_EN_BANDEJA = 15;
+
 export async function getOmniConversations({ channel = 'unified', search = '', limit = 60 } = {}) {
   const headers = await getAuthHeaders();
   const empresa = await getCurrentEmpresa(headers).catch(() => null);
@@ -774,6 +790,15 @@ export async function getOmniConversations({ channel = 'unified', search = '', l
   }
 
   const cleanSearch = String(search || '').trim();
+
+  // La ventana se aplica a la lista, NO a la busqueda: quien escribe un
+  // nombre esta buscando a alguien concreto y muchas veces es justo el de
+  // hace dos meses. Recortarle ahi seria decirle "no existe".
+  if (!cleanSearch) {
+    const desde = new Date(Date.now() - DIAS_EN_BANDEJA * 24 * 60 * 60 * 1000).toISOString();
+    url.searchParams.set('last_message_at', `gte.${desde}`);
+  }
+
   if (cleanSearch) {
     const safeSearch = cleanSearch.replace(/[(),]/g, ' ');
     url.searchParams.set('or', [

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
 import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
-import { asociarClienteConversacion, castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
@@ -2160,13 +2160,24 @@ export default function App() {
   // la conversación deja de estar pendiente y el número baja— y lo que no
   // viene en esta carga se queda como estaba en vez de desaparecer.
   function mezclarConversacionesDelRail(filas) {
+    // La bandeja tambien manda los RESULTADOS DE UNA BUSQUEDA, que se saltan
+    // la ventana de dias a proposito. Sin este recorte, buscar a un cliente
+    // de junio metia su conversacion en el riel y ahi se quedaba: el numero
+    // subia solo y ya no cuadraba con ninguna lista. Se cuenta lo mismo que
+    // se ve, o el numero se deja de mirar.
+    const limite = Date.now() - DIAS_EN_BANDEJA * 24 * 60 * 60 * 1000;
+    const enVentana = (c) => {
+      const t = c?.last_message_at ? new Date(c.last_message_at).getTime() : NaN;
+      return Number.isFinite(t) && t >= limite;
+    };
+
     setOmniConversationsPreview((actuales) => {
       const porId = new Map((actuales || []).map((c) => [c.id, c]));
       for (const fila of filas || []) {
         if (!fila?.id) continue;
         porId.set(fila.id, { ...(porId.get(fila.id) || {}), ...fila });
       }
-      return [...porId.values()];
+      return [...porId.values()].filter(enVentana);
     });
   }
 
