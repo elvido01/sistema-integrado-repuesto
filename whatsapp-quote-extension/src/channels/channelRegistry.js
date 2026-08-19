@@ -64,7 +64,7 @@ export function getChannelCounts({ morosos, omniConversations, seguimientos } = 
     [CHANNEL_TYPES.WHATSAPP]: 0,
     [CHANNEL_TYPES.INSTAGRAM]: enEsperaDe(CHANNEL_TYPES.INSTAGRAM),
     [CHANNEL_TYPES.FACEBOOK]: enEsperaDe(CHANNEL_TYPES.FACEBOOK),
-    [CHANNEL_TYPES.TIKTOK]: 0,
+    [CHANNEL_TYPES.TIKTOK]: enEsperaDe(CHANNEL_TYPES.TIKTOK),
     // La Bandeja no lleva número a propósito: no es un canal, es la vista de
     // los otros. Lo suyo ya está contado en IG y FB.
     [CHANNEL_TYPES.UNIFIED]: 0,

@@ -1,16 +1,17 @@
 {
   "manifest_version": 3,
   "name": "MotoFlow Omni Beta",
-  "description": "Extension multicanal beta de MotoFlow sobre WhatsApp Web.",
-  "version": "2.0.0.1",
-  "version_name": "2.0.0-beta.1",
+  "description": "Extension multicanal beta de MotoFlow: WhatsApp, Instagram y TikTok.",
+  "version": "2.1.0.0",
+  "version_name": "2.1.0-beta.1",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://web.whatsapp.com/*",
     "https://www.instagram.com/*",
-    "https://*.supabase.co/*"
+    "https://*.supabase.co/*",
+    "https://www.tiktok.com/*"
   ],
   "content_scripts": [
     {
@@ -47,6 +48,26 @@
       ],
       "js": [
         "ig-probe.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.tiktok.com/*"
+      ],
+      "js": [
+        "tt-mirror.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.tiktok.com/*"
+      ],
+      "js": [
+        "tt-protobuf.js",
+        "tt-probe.js"
       ],
       "run_at": "document_start",
       "world": "MAIN"

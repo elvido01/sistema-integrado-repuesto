@@ -767,7 +767,7 @@ export async function getOmniConversations({ channel = 'unified', search = '', l
   url.searchParams.set('select', '*');
   if (empresa?.tenant_id) url.searchParams.set('tenant_id', `eq.${empresa.tenant_id}`);
 
-  if (channel === 'instagram' || channel === 'facebook' || channel === 'youtube') {
+  if (['instagram', 'facebook', 'youtube', 'tiktok'].includes(channel)) {
     url.searchParams.set('platform', `eq.${channel}`);
   } else {
     url.searchParams.set('platform', 'neq.whatsapp');

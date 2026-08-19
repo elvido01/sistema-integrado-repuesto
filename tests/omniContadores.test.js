@@ -100,6 +100,22 @@ describe('el número de cada canal', () => {
     expect(c[CHANNEL_TYPES.FACEBOOK]).toBe(2);
   });
 
+  it('TikTok cuenta igual que los demás', () => {
+    // (2026-08-19) TT estaba clavado en 0: la pestaña existía en la barra
+    // desde el principio pero nunca hubo nada detrás. Ahora hay espejo.
+    const c = getChannelCounts({
+      omniConversations: [
+        conversacion({ platform: 'tiktok', last_agent_message_at: null }),
+        conversacion({ platform: 'tiktok', last_user_message_at: HOY, last_agent_message_at: AYER }),
+        conversacion({ platform: 'tiktok' }),
+        conversacion({ platform: 'instagram', last_agent_message_at: null }),
+      ],
+    });
+    expect(c[CHANNEL_TYPES.TIKTOK]).toBe(2);
+    expect(c[CHANNEL_TYPES.INSTAGRAM]).toBe(1);
+    expect(c[CHANNEL_TYPES.UNIFIED]).toBe(0);
+  });
+
   it('sin datos devuelve ceros y no explota', () => {
     const c = getChannelCounts();
     expect(c[CHANNEL_TYPES.INSTAGRAM]).toBe(0);

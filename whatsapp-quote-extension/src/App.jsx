@@ -2141,7 +2141,8 @@ export default function App() {
   const isSocialChannelActive = [
     CHANNEL_TYPES.UNIFIED,
     CHANNEL_TYPES.INSTAGRAM,
-    CHANNEL_TYPES.FACEBOOK
+    CHANNEL_TYPES.FACEBOOK,
+    CHANNEL_TYPES.TIKTOK
   ].includes(activeChannel);
   const isOmniInboxActive = session && !empresaPending && isSocialChannelActive;
   const commercialConversation = omniQuoteConversation || (isSocialChannelActive ? omniSelectedConversation : null);

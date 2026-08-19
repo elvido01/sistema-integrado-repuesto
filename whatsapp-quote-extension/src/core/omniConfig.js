@@ -11,12 +11,13 @@ export function isOmniBetaEnabled() {
 export function getDefaultOmniFlags() {
   const igEnv = import.meta.env.VITE_MOTOFLOW_IG_ENABLED;
   const fbEnv = import.meta.env.VITE_MOTOFLOW_FB_ENABLED;
+  const ttEnv = import.meta.env.VITE_MOTOFLOW_TT_ENABLED;
 
   return {
     omni_enabled: isOmniBetaEnabled(),
     instagram_enabled: igEnv === undefined ? true : truthy(igEnv),
     facebook_enabled: fbEnv === undefined ? true : truthy(fbEnv),
-    tiktok_enabled: false,
+    tiktok_enabled: ttEnv === undefined ? true : truthy(ttEnv),
     unified_inbox_enabled: true,
     social_notifications_enabled: true,
     social_quotations_enabled: false
