@@ -28,6 +28,11 @@ import extensionManifest from '../../../whatsapp-quote-extension/public/manifest
 import omniBetaManifest from '../../../whatsapp-quote-extension/public/manifest.beta.json';
 
 const versionDe = (m) => m?.version_name || m?.version || '?';
+
+// Hoy en hora de Republica Dominicana. Con toISOString() serian las 8 de la
+// noche de aqui y ya el dia siguiente alla — el campo aceptaria exactamente
+// la fecha futura que deja el Dashboard en blanco.
+const hoyISO = new Date().toLocaleDateString('en-CA');
 const EXTENSION_VERSION = versionDe(extensionManifest);
 const OMNI_BETA_VERSION = versionDe(omniBetaManifest);
 const WHATSAPP_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-whatsapp-extension.zip?v=${EXTENSION_VERSION}`;
@@ -653,9 +658,17 @@ const ConfiguracionSistemaPage = () => {
 
                             <div className="space-y-1.5">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Historial Caja Desde</Label>
+                                {/* `max` en hoy: este campo esta pegado al del saldo inicial y un
+                                    <input type=date> cambia de valor con la rueda del raton. El
+                                    19/08/2026 se movio sin querer a "mañana" mientras se editaba el
+                                    saldo, y el Dashboard entero se quedo en cero — el periodo pasaba
+                                    a ser "20/08 → 19/08", un rango al reves. Peor aun, lo contaba
+                                    como "Sin movimientos registrados", que es lo mismo que diria si
+                                    el negocio no hubiera vendido nada. */}
                                 <Input
                                     id="caja_historial_desde"
                                     type="date"
+                                    max={hoyISO}
                                     value={formData.caja_historial_desde || '1970-01-01'}
                                     onChange={handleInputChange}
                                     className="h-10 font-bold text-emerald-700"
@@ -663,6 +676,12 @@ const ConfiguracionSistemaPage = () => {
                                 <p className="text-[10px] text-gray-500 italic">
                                     El Dashboard ignora movimientos anteriores a esta fecha para reconstruir la caja.
                                 </p>
+                                {formData.caja_historial_desde > hoyISO && (
+                                    <p className="text-[10px] font-bold text-red-600">
+                                        Esa fecha no ha llegado. Mientras siga así el Dashboard no puede
+                                        contar nada: ponla en hoy o antes.
+                                    </p>
+                                )}
                             </div>
                             
                             <div className="space-y-1.5">
