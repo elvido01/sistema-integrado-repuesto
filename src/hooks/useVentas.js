@@ -5,7 +5,8 @@ import { generateFacturaPDF } from '@/components/common/PDFGenerator';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 import { emitInventarioActualizado } from '@/lib/catalogEvents';
-import { IDS_GENERICOS, ID_GENERICO_BASE } from '@/lib/clienteGenerico';
+import { IDS_GENERICOS, ID_GENERICO_BASE, esClienteGenerico } from '@/lib/clienteGenerico';
+import { CANALES_ORIGEN } from '@/lib/canalesOrigen';
 
 const CLIENTE_GENERICO = {
   id: ID_GENERICO_BASE,
@@ -30,6 +31,8 @@ export const useVentas = () => {
   const { toast } = useToast();
   const { user, empresa, tenantId } = useAuth();
   const hasSuplidoresLocales = !!empresa?.feat_suplidores_locales;
+  // Piloto "de donde vino la venta". Apagado, esta pantalla no cambia en nada.
+  const pideCanalOrigen = !!empresa?.feat_origen_venta;
 
   // Si el financiamiento (propio/terceros) falla al facturar, dejar constancia
   // PERSISTENTE en la campana: el toast se esfuma y la venta queda sin préstamo
@@ -75,6 +78,10 @@ export const useVentas = () => {
   const [cuentaBancoId, setCuentaBancoId] = useState(null); // cuenta destino si el contado no es efectivo
   const [pagos, setPagos] = useState([]); // [{ tipo, ref, monto }]
   const [notas, setNotas] = useState('');
+  // De donde vino esta venta. El vendedor lo confirma; el sistema lo propone
+  // cuando ya sabe la respuesta (ver `canalSugerido`).
+  const [canalOrigen, setCanalOrigen] = useState('');
+  const [canalSugerido, setCanalSugerido] = useState(null); // { canal, porque }
   const [ncfPreview, setNcfPreview] = useState(null); // { ncf: 'B0100000334', tipo_ncf: '01' }
 
   /* Edit Mode State */
@@ -345,6 +352,8 @@ export const useVentas = () => {
     setPedidoId(null);
     setManualClienteNombre('');
     setNotas('');
+    setCanalOrigen('');
+    setCanalSugerido(null);
     loadNcfPreview(CLIENTE_GENERICO.tipo_ncf);
   }, [loadNcfPreview]);
 
@@ -364,6 +373,38 @@ export const useVentas = () => {
     // === Preview NCF: mostrar el próximo NCF sin consumirlo ===
     const tipoNcf = finalCliente.tipo_ncf || '02';
     await loadNcfPreview(tipoNcf);
+
+    // === De donde vino: el sistema propone, el vendedor confirma ===
+    // Un campo que hay que llenar a mano en cada venta se llena mal a los
+    // tres dias — todo el mundo elige la primera opcion. Si ya hay un
+    // seguimiento o una conversacion de este cliente, la respuesta se
+    // sabe: se propone y solo hay que confirmarla.
+    //
+    // El generico no se consulta: no es una persona, es "consumidor final".
+    if (pideCanalOrigen) {
+      setCanalOrigen('');
+      setCanalSugerido(null);
+      if (finalCliente.id && !esClienteGenerico(finalCliente.id)) {
+        try {
+          const { data: sug } = await supabase.rpc('sugerir_canal_origen', {
+            p_cliente_id: finalCliente.id,
+          });
+          // Solo se propone lo que se puede confirmar de un clic. Las filas
+          // viejas traen 'redes' —las tres juntas—, y proponer eso dejaria
+          // el campo con un valor que ningun boton enseña marcado y que
+          // ademas no contesta la pregunta. Mejor en blanco: que lo elija.
+          const ofrecido = CANALES_ORIGEN.some(c => c.valor === sug?.canal);
+          if (sug?.canal && ofrecido) {
+            setCanalOrigen(sug.canal);
+            setCanalSugerido(sug);
+          }
+        } catch (e) {
+          // Una sugerencia que falla no puede frenar una venta: se sigue
+          // con el campo vacio y el vendedor lo elige a mano.
+          console.warn('No se pudo sugerir el canal de origen:', e?.message);
+        }
+      }
+    }
 
     // Re-apply price level to existing items when client changes
     const currentItems = itemsRef.current;
@@ -417,7 +458,7 @@ export const useVentas = () => {
         max_descuento: maxDesc,
       };
     }));
-  }, [loadNcfPreview]);
+  }, [loadNcfPreview, pideCanalOrigen]);
 
   // =====================================================================
   // LOS TOTALES SE DERIVAN, NO SE GUARDAN
@@ -743,6 +784,23 @@ export const useVentas = () => {
       toast({ title: 'Error de crédito', description: 'Este cliente no tiene crédito autorizado.', variant: 'destructive' });
       return;
     }
+    // El canal se exige AQUI y no en la base a proposito. La base lo acepta
+    // vacio porque el precio de equivocarse alli es un cliente esperando en
+    // el mostrador mientras la venta no graba por un dato de mercadeo. Aqui
+    // se puede exigir porque siempre hay salida: "Otro" es una respuesta
+    // valida y esta a un clic.
+    //
+    // Va antes de tocar la base — y tambien cubre F10 y al agente, que no
+    // pasan por el boton del pie.
+    if (pideCanalOrigen && !editingFacturaId && !canalOrigen) {
+      toast({
+        title: '¿De dónde vino este cliente?',
+        description: 'Marca el canal en el pie de la pantalla para poder grabar. Si no sabes, elige "Otro".',
+        variant: 'destructive',
+        duration: 6000,
+      });
+      return;
+    }
     // Bloqueo total: ninguna linea puede facturarse por debajo del costo minimo.
     for (const it of items) {
       const bc = checkBajoCosto(it);
@@ -849,7 +907,10 @@ export const useVentas = () => {
           : 0,
         estado: formaEfectiva === 'credito' ? 'PENDIENTE' : 'PAGADA',
         usuario_id: safeUsuarioId,
-        notas: notas.trim() || null
+        notas: notas.trim() || null,
+        // Solo las empresas del piloto mandan la columna. Para el resto el
+        // payload sigue siendo exactamente el de antes.
+        ...(pideCanalOrigen ? { canal_origen: canalOrigen || null } : {}),
       };
 
       // === Asignar NCF automático según tipo_ncf del cliente (01, 02, 31, 32...) ===
@@ -1582,5 +1643,8 @@ export const useVentas = () => {
     manualClienteNombre,
     setManualClienteNombre,
     ncfPreview,
+    pideCanalOrigen,
+    canalOrigen, setCanalOrigen,
+    canalSugerido,
   };
 };

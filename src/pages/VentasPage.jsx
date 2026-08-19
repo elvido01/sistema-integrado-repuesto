@@ -76,6 +76,9 @@ const VentasPage = () => {
     manualClienteNombre,
     setManualClienteNombre,
     ncfPreview,
+    pideCanalOrigen,
+    canalOrigen, setCanalOrigen,
+    canalSugerido,
   } = useVentas();
 
   const { activePanel } = usePanels();
@@ -753,6 +756,10 @@ const VentasPage = () => {
         grabarBtnRef={grabarBtnRef}
         notas={notas}
         setNotas={setNotas}
+        pideCanalOrigen={pideCanalOrigen}
+        canalOrigen={canalOrigen}
+        setCanalOrigen={setCanalOrigen}
+        canalSugerido={canalSugerido}
       />
 
       <ProductSearchModal

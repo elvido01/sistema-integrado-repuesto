@@ -12,6 +12,7 @@ import MarketingMetricsDashboard from '@/components/ai-marketing/MarketingMetric
 import SocialPostRankingTable from '@/components/ai-marketing/SocialPostRankingTable';
 import ProductImpactCard from '@/components/ai-marketing/ProductImpactCard';
 import AgentLearningPanel from '@/components/ai-marketing/AgentLearningPanel';
+import VentasPorCanalCard from '@/components/ai-marketing/VentasPorCanalCard';
 import ContentRecommendationPanel from '@/components/ai-marketing/ContentRecommendationPanel';
 import {
     getDashboardTotals, getTopPerformingPosts, generateMarketingLearning,
@@ -19,7 +20,7 @@ import {
 } from '@/services/socialMetricsService';
 
 export default function MarketingMetrics() {
-    const { tenantId } = useAuth();
+    const { tenantId, empresa } = useAuth();
     const { toast } = useToast();
     const [totals, setTotals] = useState(null);
     const [ranking, setRanking] = useState([]);
@@ -81,6 +82,11 @@ export default function MarketingMetrics() {
                     <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Actualizar
                 </Button>
             </div>
+
+            {/* De donde vino la venta (piloto: feat_origen_venta).
+                Va arriba del todo porque es lo unico aqui medido en pesos y
+                declarado por quien facturo; lo demas es impacto estimado. */}
+            {empresa?.feat_origen_venta && <VentasPorCanalCard />}
 
             {/* Dashboard */}
             <MarketingMetricsDashboard totals={totals} />

@@ -17,9 +17,13 @@
 import React, { useState } from 'react';
 import { comoSeLee, diasDesde, atajosDeFecha } from '../../lib/fechasSeguimiento.js';
 
+// 'redes' sigue aqui por las filas de antes del 19/08/2026, cuando las tres
+// redes se guardaban en la misma bolsa. Las nuevas ya vienen separadas.
 const CANALES = {
-  whatsapp: 'WhatsApp', redes: 'Redes', tienda: 'Tienda',
+  whatsapp: 'WhatsApp', tienda: 'Tienda',
+  instagram: 'Instagram', facebook: 'Facebook', tiktok: 'TikTok',
   telefono: 'Teléfono', referido: 'Referido', otro: 'Otro',
+  redes: 'Redes (viejo)',
 };
 
 const ESTADOS = {

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
 import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
-import { castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { asociarClienteConversacion, castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
@@ -387,6 +387,9 @@ export default function App() {
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerResults, setCustomerResults] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  // Que conversacion quedo esperando un cliente. Sin esto, elegir un cliente
+  // para cotizar tambien lo engancharia a la ultima conversacion abierta.
+  const [conversacionEsperandoCliente, setConversacionEsperandoCliente] = useState(null);
   const [customerPhone, setCustomerPhone] = useState('');
   const [vendors, setVendors] = useState([]);
   const [selectedVendorId, setSelectedVendorId] = useState('');
@@ -1158,16 +1161,41 @@ export default function App() {
     setNotice('Sesion cerrada en la extension.');
   }
 
-  function handleSelectCustomer(customer) {
+  async function handleSelectCustomer(customer) {
     setSelectedCustomer(customer);
     setCustomerQuery(customer.nombre || '');
     setCustomerPhone(customer.telefono || customerPhone);
     setCustomerResults([]);
+
+    // >>> AQUI ES DONDE SE GUARDA <<<
+    // "Asociar cliente" existia desde hace meses y no escribia nada: cambiaba
+    // de pestana, ponia el nombre en la caja de busqueda y ahi moria. La
+    // conversacion seguia sin dueno, y sin dueno una venta de Instagram o de
+    // TikTok no se puede atribuir a nada: esos canales no traen telefono, y
+    // el telefono era el unico puente que habia.
+    if (!conversacionEsperandoCliente || !customer?.id) return;
+    const conversationId = conversacionEsperandoCliente;
+    try {
+      const res = await asociarClienteConversacion({ conversationId, clienteId: customer.id });
+      const marcar = (c) => (c?.id === conversationId
+        ? { ...c, cliente_id: customer.id, cliente_nombre: customer.nombre || null,
+            customer_phone: c.customer_phone || customer.telefono || null }
+        : c);
+      setOmniSelectedConversation(marcar);
+      setOmniQuoteConversation(marcar);
+      setOmniConversationsPreview((lista) => lista.map(marcar));
+      setNotice(`Conversacion asociada a ${res?.cliente || customer.nombre || 'el cliente'}.`);
+    } catch (error) {
+      setNotice(error.message || 'No se pudo asociar el cliente a la conversacion.');
+    } finally {
+      setConversacionEsperandoCliente(null);
+    }
   }
 
   function clearSelectedCustomer() {
     setSelectedCustomer(null);
     setCustomerResults([]);
+    setConversacionEsperandoCliente(null);
   }
 
   function handleGoCobranza() {
@@ -1920,6 +1948,7 @@ export default function App() {
 
   function handleOmniQuoteConversation(conversation) {
     if (!conversation?.id) return;
+    setConversacionEsperandoCliente(null);
     setOmniQuoteConversation(conversation);
     setActiveChannel(conversation.platform || CHANNEL_TYPES.UNIFIED);
     setMode('cotizar');
@@ -2004,6 +2033,10 @@ export default function App() {
     setCustomerQuery(getOmniConversationName(conversation));
     setCustomerPhone(conversation.customer_phone || conversation.phone || '');
     setSelectedCustomer(null);
+    // La conversacion queda apuntada: el enganche lo hace handleSelectCustomer
+    // cuando el cliente ya se eligio, que es el unico momento en que se sabe
+    // a quien asociarla.
+    setConversacionEsperandoCliente(conversation.id);
     setNotice('Busca y selecciona el cliente de Motoflow para asociar esta conversacion.');
   }
 

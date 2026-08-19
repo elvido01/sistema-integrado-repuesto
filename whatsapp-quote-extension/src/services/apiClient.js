@@ -971,6 +971,36 @@ export async function linkOmniConversationQuote({ conversationId, cotizacionId, 
   return row;
 }
 
+// Enganchar una conversacion a un cliente de MotoFlow.
+//
+// >>> POR QUE UN RPC Y NO UN PATCH <<<
+// Los de arriba escriben directo sobre sales_conversations. Este no puede:
+// hay que comprobar antes que el cliente sea de la MISMA empresa que la
+// conversacion, y esa comprobacion no se le puede pedir a quien llama —
+// desde aqui siempre se podria mandar el id de un cliente ajeno. El RPC
+// mira las dos filas contra el tenant de la sesion y ademas copia el
+// telefono del cliente cuando la conversacion no trae ninguno, que es el
+// caso de Instagram y TikTok y justo lo que despues permite cruzar la venta.
+export async function asociarClienteConversacion({ conversationId, clienteId }) {
+  if (!conversationId || !clienteId) throw new Error('Falta la conversacion o el cliente.');
+  const headers = await getAuthHeaders();
+
+  const res = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/sales_conversacion_asociar_cliente`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_conversation_id: conversationId,
+      p_cliente_id: clienteId
+    })
+  });
+
+  // El RPC contesta { ok:false, motivo } en vez de reventar, para poder
+  // explicar el porque. Aqui se convierte en error para que quien llama no
+  // tenga que acordarse de mirar el `ok`.
+  if (res && res.ok === false) throw new Error(res.motivo || 'No se pudo asociar el cliente.');
+  return res;
+}
+
 export async function updateOmniConversationStatus({ conversationId, status }) {
   if (!conversationId || !status) throw new Error('Selecciona una conversacion y un estado.');
   const headers = await getAuthHeaders();
@@ -1287,8 +1317,9 @@ export async function logConversationEvent(event) {
 //   estado     nuevo, interesado, precio_enviado, pendiente_pago,
 //              prometio_pasar, comprado, perdido, agotado_solicitado
 //   prioridad  alta, media, baja
-// Instagram, Facebook y TikTok entran todas como canal 'redes'; el servidor
-// hace ese mapeo, aqui no se toca.
+// El canal sale de la plataforma del hilo y lo pone el servidor, aqui no se
+// toca. Desde el 19/08/2026 cada red va con su nombre (antes las tres caian
+// en 'redes', que era justo lo que impedia saber cual de ellas trae gente).
 
 /**
  * Crea un seguimiento. Sin fecha no se crea: un seguimiento sin fecha es un
