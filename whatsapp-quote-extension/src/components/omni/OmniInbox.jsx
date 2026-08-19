@@ -6,12 +6,14 @@ const CHANNEL_LABELS = {
   unified: 'Bandeja integrada',
   instagram: 'Instagram',
   facebook: 'Facebook',
+  tiktok: 'TikTok',
   youtube: 'YouTube'
 };
 
 const CHANNEL_BADGES = {
   instagram: 'IG',
   facebook: 'FB',
+  tiktok: 'TT',
   youtube: 'YT',
   whatsapp: 'WA'
 };
