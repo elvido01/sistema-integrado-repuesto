@@ -1,4 +1,4 @@
-export const OMNI_BETA_VERSION = '2.1.1-beta.1';
+export const OMNI_BETA_VERSION = '2.1.2-beta.1';
 export const OMNI_SAFE_MODE_KEY = 'motoflow_omni_safe_mode';
 
 const truthy = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase());

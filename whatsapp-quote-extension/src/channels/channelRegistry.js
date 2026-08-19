@@ -55,9 +55,33 @@ export function esperaRespuesta(conversation) {
   return new Date(delCliente).getTime() > new Date(nuestro).getTime();
 }
 
+/**
+ * ¿Hay algo aqui que todavia no se ha MIRADO?
+ *
+ * Distinto de esperaRespuesta a proposito. Aquello solo se apaga
+ * contestando, y a un mensaje de hace un mes ya no se contesta: la bandeja
+ * de TikTok llego a 86 puntos rojos permanentes, que es lo mismo que
+ * ninguno — el numero deja de mirarse y el que si importa se pierde dentro.
+ *
+ * Esto se apaga al abrir la conversacion, y se vuelve a encender solo si
+ * despues llega un mensaje mas nuevo que esa visita.
+ */
+export function estaSinVer(conversation) {
+  const delCliente = conversation?.last_user_message_at
+    || conversation?.last_customer_message_at
+    || conversation?.last_inbound_at;
+  if (!delCliente) return false;
+  const visto = conversation?.visto_at;
+  if (!visto) return true;
+  return new Date(delCliente).getTime() > new Date(visto).getTime();
+}
+
 export function getChannelCounts({ morosos, omniConversations, seguimientos } = {}) {
   const clientes = morosos?.clientes || [];
-  const pendientes = (omniConversations || []).filter(esperaRespuesta);
+  // El numero del canal cuenta lo mismo que pintan los puntos de la lista.
+  // Si contara otra cosa volveria a pasar lo de Instagram: un numero que no
+  // cuadra con lo que se ve es un numero que se deja de mirar.
+  const pendientes = (omniConversations || []).filter(estaSinVer);
   const enEsperaDe = (plataforma) => pendientes.filter((c) => c.platform === plataforma).length;
 
   return {

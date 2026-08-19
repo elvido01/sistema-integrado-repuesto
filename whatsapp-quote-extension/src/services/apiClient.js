@@ -1001,6 +1001,34 @@ export async function asociarClienteConversacion({ conversationId, clienteId }) 
   return res;
 }
 
+// "Esto ya lo vi". Apaga el punto de la lista hasta que llegue algo nuevo.
+//
+// Se llama en cada clic de la bandeja, asi que NO devuelve la fila: la
+// respuesta solo trae la hora, y quien llama ya sabe pintar con eso. El RPC
+// ademas se guarda de escribir cuando no hay nada nuevo que ver.
+export async function marcarConversacionVista({ conversationId }) {
+  if (!conversationId) return null;
+  const headers = await getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/sales_conversacion_marcar_vista`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_conversation_id: conversationId })
+  });
+}
+
+// "Ya mire todas las de este canal". Para el arranque, cuando hay un mes de
+// conversaciones viejas encendidas y abrirlas una por una no es una opcion.
+export async function marcarCanalVisto({ platform = null } = {}) {
+  const headers = await getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/sales_conversaciones_marcar_vistas`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_platform: platform })
+  });
+}
+
 export async function updateOmniConversationStatus({ conversationId, status }) {
   if (!conversationId || !status) throw new Error('Selecciona una conversacion y un estado.');
   const headers = await getAuthHeaders();

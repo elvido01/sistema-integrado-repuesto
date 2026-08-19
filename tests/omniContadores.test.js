@@ -9,13 +9,18 @@
 //   2. La Bandeja repetía el número de Instagram, porque la Bandeja ES
 //      Instagram + Facebook + TikTok.
 //
-// Y de fondo: `unread_count` no existe. sales_conversations_view no tiene
-// estado de lectura, así que el filtro "No leídos" devolvía vacío siempre.
-// Lo que sí está en los datos es quién habló de último.
+// Y de fondo: `unread_count` no existe. Lo que sí estaba en los datos era
+// quién habló de último, y de ahí salió esperaRespuesta.
+//
+// (2026-08-19) Ahora sí hay estado de lectura: sales_conversations.visto_at,
+// que se escribe al abrir la conversación. Son dos preguntas distintas y
+// conviven — `esperaRespuesta` es "falta contestarle" y manda en el filtro
+// "Sin responder"; `estaSinVer` es "no lo has abierto" y manda en el punto
+// de la lista y en el número del canal.
 
 import { describe, it, expect } from 'vitest';
 import {
-  getChannelCounts, esperaRespuesta, CHANNEL_TYPES,
+  getChannelCounts, esperaRespuesta, estaSinVer, CHANNEL_TYPES,
 } from '../whatsapp-quote-extension/src/channels/channelRegistry.js';
 
 const AYER = '2026-08-16T10:00:00Z';
@@ -61,14 +66,57 @@ describe('cuándo una conversación pide algo', () => {
   });
 });
 
+describe('cuándo una conversación está sin ver', () => {
+  // (2026-08-19) El dueño mandó una captura de TikTok: 86 puntos rojos,
+  // casi todos de julio. El punto significaba "escribió y no se le ha
+  // contestado", así que solo se apagaba CONTESTANDO — y a un mensaje de
+  // hace un mes ya no se contesta. 86 avisos permanentes son lo mismo que
+  // ninguno: el número deja de mirarse y el que sí importa se pierde.
+  //
+  // Por eso el punto pasó a decir "no lo has abierto". Ver no es contestar,
+  // y las dos cosas siguen existiendo: esperaRespuesta manda en el filtro
+  // "Sin responder", estaSinVer manda en el punto y en el número del canal.
+
+  it('escribió y nunca se abrió: sin ver', () => {
+    expect(estaSinVer(conversacion({ visto_at: null }))).toBe(true);
+  });
+
+  it('se abrió después de su mensaje: visto', () => {
+    expect(estaSinVer(conversacion({ last_user_message_at: AYER, visto_at: HOY }))).toBe(false);
+  });
+
+  it('se abrió, y DESPUES volvió a escribir: sin ver otra vez', () => {
+    // Lo que hace que el aviso siga sirviendo: apagarlo no es apagarlo para
+    // siempre, es apagarlo hasta que esa persona vuelva a hablar.
+    expect(estaSinVer(conversacion({ last_user_message_at: HOY, visto_at: AYER }))).toBe(true);
+  });
+
+  it('contestada pero nunca abierta: sigue sin ver', () => {
+    // Contestar ya no apaga el punto. Suena raro y es a propósito: lo que el
+    // dueño mira de un vistazo es qué le falta por MIRAR. Si además quiere
+    // saber qué quedó sin respuesta, eso vive en su filtro.
+    expect(estaSinVer(conversacion({ last_agent_message_at: HOY, visto_at: null }))).toBe(true);
+  });
+
+  it('nunca escribió: no hay nada que ver', () => {
+    expect(estaSinVer(conversacion({ last_user_message_at: null, visto_at: null }))).toBe(false);
+  });
+
+  it('con basura no revienta', () => {
+    for (const v of [null, undefined, {}, 0]) expect(estaSinVer(v)).toBe(false);
+  });
+});
+
 describe('el número de cada canal', () => {
+  // El número cuenta LO MISMO que pintan los puntos de la lista. Si contara
+  // otra cosa volvería a pasar lo de Instagram: un número que no cuadra con
+  // lo que se ve es un número que se deja de mirar.
   const nueve = [
-    ...Array.from({ length: 5 }, () => conversacion({ last_agent_message_at: null })),
-    ...Array.from({ length: 4 }, () => conversacion()),
+    ...Array.from({ length: 5 }, () => conversacion({ visto_at: null })),
+    ...Array.from({ length: 4 }, () => conversacion({ visto_at: HOY })),
   ];
 
-  it('cuenta las que esperan, no las que hay', () => {
-    // El caso exacto de la captura: 9 conversaciones, 5 sin contestar.
+  it('cuenta las que faltan por ver, no las que hay', () => {
     const c = getChannelCounts({ omniConversations: nueve });
     expect(c[CHANNEL_TYPES.INSTAGRAM]).toBe(5);
   });
@@ -80,20 +128,32 @@ describe('el número de cada canal', () => {
     expect(c[CHANNEL_TYPES.UNIFIED]).toBe(0);
   });
 
-  it('con todo contestado no queda ningún número', () => {
-    // Es lo que el dueño esperaba ver y no veía.
-    const c = getChannelCounts({ omniConversations: [conversacion(), conversacion()] });
+  it('con todo abierto no queda ningún número', () => {
+    const c = getChannelCounts({
+      omniConversations: [conversacion({ visto_at: HOY }), conversacion({ visto_at: HOY })],
+    });
     expect(c[CHANNEL_TYPES.INSTAGRAM]).toBe(0);
     expect(c[CHANNEL_TYPES.UNIFIED]).toBe(0);
+  });
+
+  it('abrir una baja el número en uno', () => {
+    // Es el gesto entero visto desde el riel: el dueño abre una de las
+    // viejas de TikTok y el 86 tiene que pasar a 85.
+    const antes = [conversacion({ platform: 'tiktok', visto_at: null }),
+                   conversacion({ platform: 'tiktok', visto_at: null })];
+    expect(getChannelCounts({ omniConversations: antes })[CHANNEL_TYPES.TIKTOK]).toBe(2);
+
+    const despues = [{ ...antes[0], visto_at: HOY }, antes[1]];
+    expect(getChannelCounts({ omniConversations: despues })[CHANNEL_TYPES.TIKTOK]).toBe(1);
   });
 
   it('cada canal cuenta lo suyo', () => {
     const c = getChannelCounts({
       omniConversations: [
-        conversacion({ platform: 'instagram', last_agent_message_at: null }),
-        conversacion({ platform: 'facebook', last_agent_message_at: null }),
-        conversacion({ platform: 'facebook', last_agent_message_at: null }),
-        conversacion({ platform: 'facebook' }),
+        conversacion({ platform: 'instagram', visto_at: null }),
+        conversacion({ platform: 'facebook', visto_at: null }),
+        conversacion({ platform: 'facebook', visto_at: null }),
+        conversacion({ platform: 'facebook', visto_at: HOY }),
       ],
     });
     expect(c[CHANNEL_TYPES.INSTAGRAM]).toBe(1);
@@ -105,10 +165,10 @@ describe('el número de cada canal', () => {
     // desde el principio pero nunca hubo nada detrás. Ahora hay espejo.
     const c = getChannelCounts({
       omniConversations: [
-        conversacion({ platform: 'tiktok', last_agent_message_at: null }),
-        conversacion({ platform: 'tiktok', last_user_message_at: HOY, last_agent_message_at: AYER }),
-        conversacion({ platform: 'tiktok' }),
-        conversacion({ platform: 'instagram', last_agent_message_at: null }),
+        conversacion({ platform: 'tiktok', visto_at: null }),
+        conversacion({ platform: 'tiktok', last_user_message_at: HOY, visto_at: AYER }),
+        conversacion({ platform: 'tiktok', visto_at: HOY }),
+        conversacion({ platform: 'instagram', visto_at: null }),
       ],
     });
     expect(c[CHANNEL_TYPES.TIKTOK]).toBe(2);

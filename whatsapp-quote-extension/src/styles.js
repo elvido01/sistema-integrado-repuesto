@@ -338,6 +338,13 @@ export const styles = `
     font-weight: 700;
   }
 
+  .mf-omni-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
   .mf-omni-inbox-head button,
   .mf-omni-reply button {
     height: 30px;

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getOmniConversations, getOmniMessages, sendOmniReply, updateOmniConversationStatus } from '../../services/apiClient.js';
-import { esperaRespuesta } from '../../channels/channelRegistry.js';
+import { getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, sendOmniReply, updateOmniConversationStatus } from '../../services/apiClient.js';
+import { esperaRespuesta, estaSinVer } from '../../channels/channelRegistry.js';
 
 const CHANNEL_LABELS = {
   unified: 'Bandeja integrada',
@@ -192,11 +192,43 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     return `${Math.floor(hours / 24)}d`;
   }
 
+  async function handleMarcarTodoVisto() {
+    const ahora = new Date().toISOString();
+    // La Bandeja (unified) no es una plataforma: manda null y el servidor
+    // entiende "todo lo que no es WhatsApp", que es justo lo que enseña.
+    const platform = ['instagram', 'facebook', 'tiktok', 'youtube'].includes(channel) ? channel : null;
+    setConversations((lista) => {
+      const siguiente = lista.map((c) => (estaSinVer(c) ? { ...c, visto_at: ahora } : c));
+      onConversationsChange?.(siguiente);
+      return siguiente;
+    });
+    try {
+      await marcarCanalVisto({ platform });
+    } catch (err) {
+      setError(err.message || 'No se pudo marcar el canal como visto.');
+    }
+  }
+
   function handleSelectConversation(conversation) {
-    // Abrir ya no "marca como leída": no había tal cosa que marcar — ponía a
-    // cero dos campos que la vista no publica. Lo que baja el número es
-    // CONTESTAR, y eso ocurre al enviar la respuesta.
     setSelected(conversation);
+
+    // El punto se apaga AQUI, en la pantalla, sin esperar al servidor: si se
+    // esperara, el aviso seguiria encendido un segundo despues de abrir la
+    // conversacion y parece que el clic no hizo nada. Lo de abajo solo lo
+    // deja escrito para la proxima vez que se abra la bandeja.
+    if (!conversation?.id || !estaSinVer(conversation)) return;
+    const ahora = new Date().toISOString();
+    const marcar = (c) => (c?.id === conversation.id ? { ...c, visto_at: ahora } : c);
+    setConversations((lista) => {
+      const siguiente = lista.map(marcar);
+      onConversationsChange?.(siguiente);   // el numero del canal baja con el punto
+      return siguiente;
+    });
+
+    marcarConversacionVista({ conversationId: conversation.id }).catch(() => {
+      // Que no se pueda dejar escrito no es motivo para molestar a nadie:
+      // lo peor que pasa es que el punto vuelva al recargar la bandeja.
+    });
   }
 
   async function handleSendReply(event) {
@@ -292,6 +324,8 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     }
   }
 
+  const sinVerCount = conversations.filter(estaSinVer).length;
+
   return (
     <section className="mf-omni-inbox">
       <header className="mf-omni-inbox-head">
@@ -299,9 +333,22 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
           <strong>{title}</strong>
           <span>{visibleConversations.length} de {conversations.length} conversaciones</span>
         </div>
-        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading}>
-          {loading ? '...' : 'Actualizar'}
-        </button>
+        <div className="mf-omni-head-actions">
+          {/* Solo aparece si hay algo que apagar: un boton que no hace nada
+              cuando se pulsa es peor que no estar. */}
+          {sinVerCount > 0 && (
+            <button
+              type="button"
+              onClick={handleMarcarTodoVisto}
+              title="Apaga el punto de las que ya no vas a contestar. No cierra nada ni cambia su estado."
+            >
+              Marcar {sinVerCount} como visto
+            </button>
+          )}
+          <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading}>
+            {loading ? '...' : 'Actualizar'}
+          </button>
+        </div>
       </header>
 
       <div className="mf-omni-search">
@@ -336,10 +383,13 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
           {visibleConversations.map((conversation) => {
             const active = selected?.id === conversation.id;
             const platform = conversation.platform || 'instagram';
-            // Aquí había un contador de no leídos que siempre valía 0, por lo
-            // mismo: el campo no existe. El punto marca las que esperan
-            // respuesta, que es lo que sí se sabe y lo que hay que atender.
-            const espera = esperaRespuesta(conversation);
+            // El punto marca lo que todavía no se ha MIRADO, no lo que falta
+            // por contestar. Antes era lo segundo y solo se apagaba
+            // contestando: a un mensaje de hace un mes ya no se contesta, así
+            // que TikTok acumuló 86 puntos fijos y el aviso dejó de avisar.
+            // "Sin responder" sigue estando, en su filtro, para quien busque
+            // justo eso.
+            const espera = estaSinVer(conversation);
             const waiting = getWaitingLabel(conversation);
             return (
               <button
@@ -355,7 +405,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                 </span>
                 <span className="mf-omni-conv-side">
                   <i>{CHANNEL_BADGES[platform] || platform.slice(0, 2).toUpperCase()}</i>
-                  {espera && <em title="Escribió y no se le ha contestado">•</em>}
+                  {espera && <em title="No lo has abierto todavía">•</em>}
                   <small>{formatTime(conversation.last_message_at)}</small>
                   {waiting && <small>{waiting}</small>}
                 </span>
