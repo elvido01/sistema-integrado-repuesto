@@ -3,7 +3,7 @@ import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
 import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
 import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
-import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
+import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import { formatQuoteMessage } from './utils/cotizacionTexto.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
@@ -2048,23 +2048,34 @@ export default function App() {
   // fuera de ella— lo cierra el servidor cuando el espejo trae la respuesta.
   async function handleSugerirWhatsApp() {
     if (sugiriendoWa) return;
-    // El numero, del sitio mas fiable al menos: el del panel si ya se lleno,
-    // y si no el que se lee del chat abierto — que es el mismo que usa el
-    // espejo para crear la conversacion, asi que cuadra por construccion.
-    // `getCurrentChat()` no sirve: devuelve el NOMBRE, que en un contacto
-    // guardado no es un numero.
-    let telefono = customerPhone || '';
-    if (!telefono) {
-      try { telefono = readCurrentConversation({ maxMessages: 1 })?.convo?.phone || ''; } catch { /* sin chat abierto */ }
+    // >>> LA IDENTIDAD SALE DEL CHAT ABIERTO, NUNCA DEL PANEL <<<
+    // Aqui se leia `customerPhone`, que es el campo de la COTIZACION y se
+    // queda con el ultimo cliente que se busco. En la prueba del 20/08 el
+    // chat abierto era "Enrique Ismael" y el panel decia "Juan Narciso
+    // Padua": si ese campo hubiera tenido numero, Hermes habria redactado
+    // leyendo la conversacion de OTRO cliente. Peor que no funcionar.
+    //
+    // `identidadDelChat()` da la misma llave que usa el espejo, que vale
+    // tambien cuando el contacto esta guardado y no se ve ningun numero.
+    let ident;
+    try { ident = identidadDelChat(); } catch { ident = null; }
+
+    if (ident?.grupo) {
+      setNotice('Hermes no contesta en grupos.');
+      return;
     }
-    if (!telefono) {
+    if (!ident?.externalId) {
       setNotice('Abre el chat del cliente para que Hermes sepa a quien le contesta.');
       return;
     }
+
     setSugiriendoWa(true);
     setNotice('Hermes esta leyendo la conversacion...');
     try {
-      const conversationId = await conversacionDeWhatsApp({ telefono });
+      const conversationId = await conversacionDeWhatsApp({
+        telefono: ident.phone || null,
+        externalId: ident.externalId,
+      });
       if (!conversationId) {
         setNotice('Esa conversacion todavia no esta en MotoFlow. Deja que el espejo la suba y vuelve a intentarlo.');
         return;

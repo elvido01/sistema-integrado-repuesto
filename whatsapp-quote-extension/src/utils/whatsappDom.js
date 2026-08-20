@@ -43,6 +43,54 @@ export function getCurrentChat() {
   return { id, name };
 }
 
+/**
+ * Con quien se esta hablando en el chat abierto, sin leer los mensajes.
+ *
+ * >>> POR QUE EXISTE APARTE <<<
+ * (2026-08-20) El boton de Sugerir preguntaba el telefono, y con un contacto
+ * GUARDADO no hay telefono: el titulo es un nombre. El chat de prueba se
+ * llamaba "Enrique Ismael Tvs 100 Santo DOMINGO" — tres digitos, ningun
+ * numero — asi que el boton no hacia nada.
+ *
+ * El espejo nunca tuvo ese problema porque no identifica por telefono sino
+ * por `external_conversation_id`, que cae en el nombre cuando no hay numero.
+ * Esa misma regla es la que hace falta, y por eso ahora vive en un solo
+ * sitio en vez de copiada.
+ *
+ * `rows` es opcional: solo sirve para el rescate por data-id viejo.
+ */
+export function identidadDelChat(nombre = null, rows = []) {
+  const name = nombre != null ? nombre : getCurrentChat().name;
+
+  let jid = null;
+  let phone = '';
+  const probe = (Date.now() - jidActivo.at) < 20000 ? parseJid(jidActivo.jid) : { phone: null, tipo: 'desconocido' };
+  if (probe.tipo === 'grupo') return { grupo: true, jid: null, phone: '', nameKey: null, externalId: null, name };
+  if (probe.tipo === 'individual') { jid = jidActivo.jid; phone = probe.phone; }
+  if (!phone) {
+    const digits = normalizarDigitosIntl(name);
+    if (digits.length >= 7) phone = digits;
+  }
+  if (!phone) {
+    for (const row of rows || []) {
+      const t = extraerTelefonoLegacyDataId(getDataId(row));
+      if (t) { phone = t; break; }
+    }
+  }
+
+  const nameKey = `whatsapp:name:${slugNombreChat(name)}`;
+  return {
+    grupo: false,
+    jid: jid || null,
+    phone: phone || '',
+    nameKey,
+    // Exactamente lo que guarda el espejo. Es la llave con la que se
+    // encuentra la conversacion, tenga telefono o no.
+    externalId: phone ? `whatsapp:${phone}` : nameKey,
+    name,
+  };
+}
+
 // Lee la conversación de WhatsApp ABIERTA (contacto + mensajes visibles)
 // para espejarla a Sales Hub. NO invasivo: solo lee lo que está en pantalla
 // (no hace scroll). El dedup por data-id (external_message_id) del lado del
@@ -127,27 +175,13 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
   //  2) Título del encabezado si es un número (contacto no guardado).
   //  3) data-id legacy de algún mensaje (formatos viejos de WA Web).
   // Grupos (@g.us): NO se espejan — no hay destinatario individual válido.
-  let jid = null;
-  let phone = '';
-  const probe = (Date.now() - jidActivo.at) < 20000 ? parseJid(jidActivo.jid) : { phone: null, tipo: 'desconocido' };
-  if (probe.tipo === 'grupo') {
+  const ident = identidadDelChat(name, rows);
+  if (ident.grupo) {
     diag.grupo = true;
     return { diag, convo: null };
   }
-  if (probe.tipo === 'individual') { jid = jidActivo.jid; phone = probe.phone; }
-  if (!phone) {
-    const digits = normalizarDigitosIntl(name);
-    if (digits.length >= 7) phone = digits;
-  }
-  if (!phone) {
-    for (const row of rows) {
-      const t = extraerTelefonoLegacyDataId(getDataId(row));
-      if (t) { phone = t; break; }
-    }
-  }
+  const { jid, phone, nameKey, externalId: convId } = ident;
   diag.telefono = phone || null;
-  const nameKey = `whatsapp:name:${slugNombreChat(name)}`;
-  const convId = phone ? `whatsapp:${phone}` : nameKey;
 
   const detectMedia = (row) => {
     if (row.querySelector('img[src^="blob:"]')) return 'image';

@@ -1007,14 +1007,14 @@ export async function sugerirRespuesta({ conversationId }) {
 // En WhatsApp Web lo unico que se sabe del chat abierto es el numero, y
 // `hermes-sugerir` pide el id de la conversacion espejada. El servidor lo
 // resuelve normalizando el telefono igual que el resto del CRM.
-export async function conversacionDeWhatsApp({ telefono }) {
-  if (!telefono) return null;
+export async function conversacionDeWhatsApp({ telefono = null, externalId = null }) {
+  if (!telefono && !externalId) return null;
   const headers = await getAuthHeaders();
 
   return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/sales_conversacion_de_whatsapp`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ p_telefono: telefono })
+    body: JSON.stringify({ p_telefono: telefono, p_external_id: externalId })
   });
 }
 
