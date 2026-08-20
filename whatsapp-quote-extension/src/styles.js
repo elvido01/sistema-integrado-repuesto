@@ -1676,6 +1676,15 @@ export const styles = `
     box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
   }
 
+  /* La fila lleva ahora dos botones: el de agregar y el de mandar la foto.
+     El borde de abajo pasa a la fila para que no se corte entre los dos. */
+  .mf-result-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid #edf2ef;
+    background: #ffffff;
+  }
+
   .mf-results button {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -1683,11 +1692,30 @@ export const styles = `
     width: 100%;
     padding: 10px;
     border: 0;
-    border-bottom: 1px solid #edf2ef;
     background: #ffffff;
     color: #13211a;
     text-align: left;
     cursor: pointer;
+  }
+
+  .mf-foto-button {
+    width: 44px;
+    flex-shrink: 0;
+    border: 0;
+    border-left: 1px solid #edf2ef;
+    background: #f7fbf9;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .mf-foto-button:hover:not(:disabled) {
+    background: #e6f5ee;
+  }
+
+  .mf-foto-button:disabled {
+    cursor: wait;
+    opacity: 0.5;
   }
 
   .mf-results button:hover {

@@ -350,6 +350,7 @@ export default function App() {
   const [omniQuoteConversation, setOmniQuoteConversation] = useState(null);
   const [omniSelectedConversation, setOmniSelectedConversation] = useState(null);
   const [sugiriendoWa, setSugiriendoWa] = useState(false);
+  const [fotoEnviando, setFotoEnviando] = useState(null);
   // De que conversacion se esta cotizando. La explicita manda, pero si se
   // llego aqui por otro camino (por ejemplo "Asociar cliente", que cambia a
   // modo cotizar sin fijar nada) vale la que este abierta en la bandeja.
@@ -2039,6 +2040,43 @@ export default function App() {
     }
   }
 
+  // ── Mandar la foto del catalogo ─────────────────────────────────
+  // Lo que ya hace la app movil. Vender un repuesto por chat es casi
+  // siempre confirmar que es LA pieza: el cliente manda una foto de la suya
+  // y espera ver la nuestra. Escribir "MILLERO DIGITAL XPRESS-125 G2 PC
+  // RACING" no contesta esa pregunta; la foto si.
+  //
+  // Va como IMAGEN, no como documento: por el input de documentos llegaria
+  // como un archivo que hay que descargar para verlo.
+  async function enviarFotoDelCatalogo(product) {
+    const url = product?.imagen_url || product?.url_imagen || '';
+    if (!url) return;
+    if (fotoEnviando) return;
+
+    setFotoEnviando(product.id || product.codigo || url);
+    setNotice('Bajando la foto...');
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`No se pudo bajar la foto (${r.status})`);
+      const blob = await r.blob();
+
+      // El nombre del archivo es lo unico que el cliente lee si la imagen
+      // tarda en cargar, asi que lleva el codigo de la pieza.
+      const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+      const nombre = `${(product.codigo || 'pieza').replace(/[^\w.-]+/g, '_')}.${ext}`;
+      const file = new File([blob], nombre, { type: blob.type || 'image/jpeg' });
+
+      const ok = await attachFileToWhatsApp(file, { comoImagen: true });
+      setNotice(ok
+        ? 'Foto lista en el chat: revisa y dale enviar.'
+        : 'No pude adjuntarla. Abre un chat y vuelve a intentarlo.');
+    } catch (e) {
+      setNotice(e.message || 'No se pudo mandar la foto.');
+    } finally {
+      setFotoEnviando(null);
+    }
+  }
+
   // ── Sugerir dentro de WhatsApp Web ──────────────────────────────
   // WhatsApp no usa la bandeja Omni: se contesta en la caja de WhatsApp, asi
   // que aqui no hay donde poner el borrador. Se PEGA en esa caja, que es lo
@@ -2872,18 +2910,38 @@ export default function App() {
         )}
         {products.length > 0 && (
           <div className="mf-results">
-            {products.map((product) => (
-              <button key={product.id || product.codigo} type="button" onClick={() => addProduct(product)}>
-                <span>
-                  <strong>{product.codigo || 'SIN CODIGO'}</strong>
-                  <small>{product.descripcion || product.nombre}</small>
-                </span>
-                <span>
-                  <strong>{money.format(normalizeNumber(product.precio ?? product.precio_venta ?? product.precio1, 0))}</strong>
-                  <small>Exist. {normalizeNumber(product.existencia, 0)}</small>
-                </span>
-              </button>
-            ))}
+            {products.map((product) => {
+              const foto = product.imagen_url || product.url_imagen || '';
+              const enviandoEsta = fotoEnviando === (product.id || product.codigo || foto);
+              return (
+                <div className="mf-result-row" key={product.id || product.codigo}>
+                  <button type="button" onClick={() => addProduct(product)}>
+                    <span>
+                      <strong>{product.codigo || 'SIN CODIGO'}</strong>
+                      <small>{product.descripcion || product.nombre}</small>
+                    </span>
+                    <span>
+                      <strong>{money.format(normalizeNumber(product.precio ?? product.precio_venta ?? product.precio1, 0))}</strong>
+                      <small>Exist. {normalizeNumber(product.existencia, 0)}</small>
+                    </span>
+                  </button>
+                  {/* Solo si la pieza TIENE foto. Un boton que no puede hacer
+                      nada en la mayoria de las filas ensucia la lista y hace
+                      dudar de si funciona. */}
+                  {foto && (
+                    <button
+                      className="mf-foto-button"
+                      type="button"
+                      onClick={() => enviarFotoDelCatalogo(product)}
+                      disabled={!!fotoEnviando}
+                      title="Mandar la foto del catálogo a este chat"
+                    >
+                      {enviandoEsta ? '…' : '📷'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
         <button className="mf-advanced-button" type="button" onClick={() => setAdvancedOpen(true)} disabled={!session}>

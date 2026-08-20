@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "MotoFlow Omni Beta",
   "description": "Extension multicanal beta de MotoFlow: WhatsApp, Instagram y TikTok.",
-  "version": "2.1.9.0",
-  "version_name": "2.1.9-beta.1",
+  "version": "2.1.10.0",
+  "version_name": "2.1.10-beta.1",
   "permissions": [
     "storage"
   ],

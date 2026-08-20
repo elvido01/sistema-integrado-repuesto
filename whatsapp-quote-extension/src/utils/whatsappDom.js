@@ -472,23 +472,36 @@ export function getWhatsAppDraftText() {
 // Devuelve true si encontro el chat + un input de documentos y le inyecto
 // el archivo (aparece el preview para revisar y enviar). Si el chat aun no
 // carga o no hay input adecuado, devuelve false (para reintentar / respaldo).
-export async function attachFileToWhatsApp(file) {
+export async function attachFileToWhatsApp(file, { comoImagen = false } = {}) {
   // El footer del chat solo existe cuando hay una conversacion abierta.
   if (!findMessageBox()) return false;
 
   const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
   if (!inputs.length) return false;
 
+  const acceptDe = (inp) => (inp.getAttribute('accept') || '').toLowerCase();
+
   // Preferimos el input de DOCUMENTOS (acepta cualquier archivo), no el de
   // solo imagenes/videos.
   const isDocInput = (inp) => {
-    const accept = (inp.getAttribute('accept') || '').toLowerCase();
+    const accept = acceptDe(inp);
     if (!accept) return true;
     if (accept.includes('*')) return true;
     return !(accept.includes('image') || accept.includes('video'));
   };
 
-  const input = inputs.find(isDocInput) || inputs[inputs.length - 1];
+  // >>> UNA FOTO NO VA POR EL INPUT DE DOCUMENTOS <<<
+  // (2026-08-20) Por ahi llega como archivo adjunto: el cliente ve un icono
+  // con un nombre y tiene que descargarlo para verlo. La foto del catalogo
+  // se manda para que se VEA en el chat, asi que va por el input de imagenes.
+  const isMediaInput = (inp) => {
+    const accept = acceptDe(inp);
+    return accept.includes('image') || accept.includes('video');
+  };
+
+  const input = comoImagen
+    ? (inputs.find(isMediaInput) || inputs.find(isDocInput) || inputs[inputs.length - 1])
+    : (inputs.find(isDocInput) || inputs[inputs.length - 1]);
   if (!input) return false;
 
   try {
