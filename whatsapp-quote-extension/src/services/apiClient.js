@@ -1015,6 +1015,10 @@ export async function marcarUsoSugerencia({ messageId, resultado }) {
   });
 }
 
+// OJO: solo engancha si YA sabes el id de la conversacion, y ademas mueve el
+// estado. Para colgar una cotizacion usa `engancharCotizacion`, que tambien
+// sabe buscarla por telefono. Esto se queda porque cambia `status`, que
+// aquello no toca.
 export async function linkOmniConversationQuote({ conversationId, cotizacionId, status = 'cotizacion_enviada' }) {
   if (!conversationId || !cotizacionId) return null;
   const headers = await getAuthHeaders();
@@ -1089,6 +1093,33 @@ export async function marcarCanalVisto({ platform = null } = {}) {
     method: 'POST',
     headers,
     body: JSON.stringify({ p_platform: platform })
+  });
+}
+
+// Cuelga la cotizacion de la conversacion que la produjo.
+//
+// >>> POR QUE SUSTITUYE A linkOmniConversationQuote <<<
+// Aquel solo servia si la cotizacion se empezaba desde la BANDEJA Omni, que
+// es el camino menos usado. Cotizando desde un chat de WhatsApp Web — lo que
+// se hace todo el dia — la cotizacion nacia suelta: 27 en 60 dias, 0
+// enganchadas. Y de ese enlace depende saber de que canal vino la venta.
+//
+// Ahora se manda lo que se tenga (el id si se sabe, el telefono si no) y el
+// servidor busca. Emparejar por telefono exige normalizarlo igual que el
+// resto del CRM, y esa regla vive alli, no aqui.
+export async function engancharCotizacion({ cotizacionId, conversationId = null, telefono = null, platform = null }) {
+  if (!cotizacionId) return null;
+  const headers = await getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/sales_enganchar_cotizacion`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_cotizacion_id: cotizacionId,
+      p_conversation_id: conversationId,
+      p_telefono: telefono,
+      p_platform: platform
+    })
   });
 }
 

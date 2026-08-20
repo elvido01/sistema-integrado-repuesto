@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
 import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
-import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, linkOmniConversationQuote, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, engancharCotizacion, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
@@ -1062,10 +1062,19 @@ export default function App() {
         detalles
       });
 
-      if (omniQuoteConversation?.id && cotizacion?.id) {
-        await linkOmniConversationQuote({
-          conversationId: omniQuoteConversation.id,
-          cotizacionId: cotizacion.id
+      // Se engancha SIEMPRE, no solo viniendo de la bandeja. De este enlace
+      // depende que la venta sepa de que canal vino: sin el, una cotizacion
+      // hecha desde un chat de TikTok o WhatsApp acaba contada como tienda.
+      //
+      // Si no se sabe el id de la conversacion se manda el telefono y el
+      // servidor la busca. Que no la encuentre no es un fallo: un cliente del
+      // mostrador no tiene conversacion, y esa venta ES de la tienda.
+      if (cotizacion?.id) {
+        await engancharCotizacion({
+          cotizacionId: cotizacion.id,
+          conversationId: omniQuoteConversation?.id || null,
+          telefono: customerPhone || selectedCustomer?.telefono || null,
+          platform: omniQuoteConversation?.platform || (omniQuoteConversation ? null : 'whatsapp'),
         }).catch(() => null);
       }
 
