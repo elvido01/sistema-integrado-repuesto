@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
 import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
-import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, engancharCotizacion, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
@@ -367,6 +367,7 @@ export default function App() {
   const [chat, setChat] = useState(() => getCurrentChat());
   const [omniQuoteConversation, setOmniQuoteConversation] = useState(null);
   const [omniSelectedConversation, setOmniSelectedConversation] = useState(null);
+  const [sugiriendoWa, setSugiriendoWa] = useState(false);
   // De que conversacion se esta cotizando. La explicita manda, pero si se
   // llego aqui por otro camino (por ejemplo "Asociar cliente", que cambia a
   // modo cotizar sin fijar nada) vale la que este abierta en la bandeja.
@@ -2056,6 +2057,48 @@ export default function App() {
     }
   }
 
+  // ── Sugerir dentro de WhatsApp Web ──────────────────────────────
+  // WhatsApp no usa la bandeja Omni: se contesta en la caja de WhatsApp, asi
+  // que aqui no hay donde poner el borrador. Se PEGA en esa caja, que es lo
+  // mismo que hace la cotizacion, y desde ahi se corrige y se manda a mano.
+  //
+  // Que paso con la sugerencia no lo sabe la extension —el envio ocurre
+  // fuera de ella— lo cierra el servidor cuando el espejo trae la respuesta.
+  async function handleSugerirWhatsApp() {
+    if (sugiriendoWa) return;
+    // El numero, del sitio mas fiable al menos: el del panel si ya se lleno,
+    // y si no el que se lee del chat abierto — que es el mismo que usa el
+    // espejo para crear la conversacion, asi que cuadra por construccion.
+    // `getCurrentChat()` no sirve: devuelve el NOMBRE, que en un contacto
+    // guardado no es un numero.
+    let telefono = customerPhone || '';
+    if (!telefono) {
+      try { telefono = readCurrentConversation({ maxMessages: 1 })?.convo?.phone || ''; } catch { /* sin chat abierto */ }
+    }
+    if (!telefono) {
+      setNotice('Abre el chat del cliente para que Hermes sepa a quien le contesta.');
+      return;
+    }
+    setSugiriendoWa(true);
+    setNotice('Hermes esta leyendo la conversacion...');
+    try {
+      const conversationId = await conversacionDeWhatsApp({ telefono });
+      if (!conversationId) {
+        setNotice('Esa conversacion todavia no esta en MotoFlow. Deja que el espejo la suba y vuelve a intentarlo.');
+        return;
+      }
+      const d = await sugerirRespuesta({ conversationId });
+      const ok = await pasteTextIntoWhatsApp(d.sugerencia || '');
+      setNotice(ok
+        ? 'Listo: revisa el texto antes de mandarlo.'
+        : 'Hermes redacto, pero no pude pegarlo. Copialo a mano: ' + (d.sugerencia || ''));
+    } catch (err) {
+      setNotice(err.message || 'Hermes no pudo redactar una respuesta.');
+    } finally {
+      setSugiriendoWa(false);
+    }
+  }
+
   function handleAssociateOmniCustomer() {
     const conversation = omniSelectedConversation || omniQuoteConversation;
     if (!conversation) return;
@@ -2365,6 +2408,19 @@ export default function App() {
           >
             Producto agotado
           </button>
+          {/* Solo en WhatsApp: en la bandeja Omni el boton ya esta dentro,
+              encima de su propia caja de respuesta. */}
+          {activeChannel === CHANNEL_TYPES.WHATSAPP && (
+            <button
+              className="mf-tab-sugerir"
+              type="button"
+              onClick={handleSugerirWhatsApp}
+              disabled={sugiriendoWa}
+              title="Hermes lee la conversación, consulta el inventario y escribe el borrador en la caja de WhatsApp. No envía nada."
+            >
+              {sugiriendoWa ? 'Redactando...' : '✨ Sugerir'}
+            </button>
+          )}
         </nav>
       )}
 

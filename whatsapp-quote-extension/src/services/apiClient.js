@@ -1004,6 +1004,20 @@ export async function sugerirRespuesta({ conversationId }) {
 // Sin esto el bucle no cierra: Hermes seguiria proponiendo lo mismo sin
 // enterarse de que se le corrige. Y el porcentaje de "usada sin tocar" es
 // el numero que decide si algun dia esto puede contestar solo.
+// En WhatsApp Web lo unico que se sabe del chat abierto es el numero, y
+// `hermes-sugerir` pide el id de la conversacion espejada. El servidor lo
+// resuelve normalizando el telefono igual que el resto del CRM.
+export async function conversacionDeWhatsApp({ telefono }) {
+  if (!telefono) return null;
+  const headers = await getAuthHeaders();
+
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/sales_conversacion_de_whatsapp`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_telefono: telefono })
+  });
+}
+
 export async function marcarUsoSugerencia({ messageId, resultado }) {
   if (!messageId || !resultado) return null;
   const headers = await getAuthHeaders();

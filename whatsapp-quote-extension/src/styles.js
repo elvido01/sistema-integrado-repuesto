@@ -338,6 +338,16 @@ export const styles = `
     font-weight: 700;
   }
 
+  /* La rejilla es de tres columnas; este va en su propia fila entera. No es
+     un cuarto boton apretado: es la accion nueva y la que mas se va a usar. */
+  .mf-tab-sugerir {
+    grid-column: 1 / -1;
+    background: #f3ecff;
+    color: #6b3fa0;
+    border-color: #ddc9f5;
+    font-weight: 900;
+  }
+
   .mf-canal-cotizacion {
     display: inline-block;
     margin-top: 2px;
