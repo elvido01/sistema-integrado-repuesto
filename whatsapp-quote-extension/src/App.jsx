@@ -5,6 +5,7 @@ import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from '
 import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
+import { formatQuoteMessage } from './utils/cotizacionTexto.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
 import OmniInbox from './components/omni/OmniInbox.jsx';
 import QuickOutOfStockForm from './components/out-of-stock/QuickOutOfStockForm.jsx';
@@ -326,25 +327,6 @@ function readHistory(chat) {
 
 function writeHistory(chat, nextHistory) {
   window.localStorage.setItem(getHistoryStorageKey(chat), JSON.stringify(nextHistory.slice(0, 8)));
-}
-
-function formatQuoteMessage(chat, lines, totals) {
-  const rows = lines
-    .map((line) => {
-      const qty = normalizeNumber(line.cantidad, 1);
-      return `${line.descripcion}  ${qty} x ${money.format(line.precio)}`;
-    })
-    .join('\n');
-
-  return [
-    'Hola, esta es tu cotizacion:',
-    '',
-    rows,
-    '',
-    `Total: ${money.format(totals.total)}`,
-    '',
-    'Quedo atento para confirmar disponibilidad y entrega.'
-  ].join('\n');
 }
 
 function serializeLines(lines) {
