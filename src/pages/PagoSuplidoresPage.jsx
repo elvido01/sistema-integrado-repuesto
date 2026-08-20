@@ -63,7 +63,7 @@ const compararCompras = (a, b) => {
 
 const PagoSuplidoresPage = () => {
   const { toast } = useToast();
-  const { empresa } = useAuth();
+  const { empresa, tenantId } = useAuth();
   const { closePanel } = usePanels();
   const [pago, setPago] = useState(initialState);
   const [suplidores, setSuplidores] = useState([]);
@@ -316,6 +316,49 @@ const PagoSuplidoresPage = () => {
           p_concepto: `Pago suplidor ${pago.suplidorNombre || ''} (${data || ''})`.trim(),
           p_referencia: ref, p_origen_tipo: 'pago_suplidor', p_origen_id: null, p_fecha: null,
         }).then(() => {}, () => {});
+      }
+
+      // >>> QUE EL DINERO LLEGUE A LA OTRA EMPRESA <<<
+      // Si lo que se paga son cuentas por pagar nacidas de un financiamiento
+      // del dealer, ese pago es un INGRESO para el dealer y hay que abonarlo
+      // a sus facturas. Nadie va a ir a la otra empresa a hacer ese recibo a
+      // mano: se olvida, y el hueco entre los dos libros se abre en silencio
+      // (llegó a RD$144,400 antes de que alguien lo notara).
+      //
+      // El RPC se encarga de decidir si aplica: si el pago no viene de un
+      // financiamiento, contesta que no y aquí no se dice nada.
+      try {
+        const { data: pagoRow } = await supabase
+          .from('pagos_suplidores')
+          .select('id')
+          .eq('numero', data)
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+
+        if (pagoRow?.id) {
+          // Efectivo: las dos empresas comparten las cuentas físicas, así que
+          // acreditar una cuenta haría desaparecer la salida que acaba de
+          // registrarse. El dinero salió del banco y quedó en mano.
+          const { data: sinc } = await supabase.rpc('sincronizar_pago_a_dealer', {
+            p_pago_id: pagoRow.id,
+            p_forma: 'Efectivo',
+          });
+          if (sinc?.ok && !sinc?.ya_estaba) {
+            toast({
+              title: 'Registrado también en el dealer',
+              description: `Recibo ${sinc.recibo} por RD$ ${Number(sinc.total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })} abonado a ${sinc.facturas} factura(s).`,
+            });
+          }
+        }
+      } catch (e) {
+        // Que falle no puede tumbar un pago ya grabado. Se avisa para que se
+        // corrija, porque si nadie lo ve los dos libros se separan.
+        toast({
+          variant: 'destructive',
+          title: 'El pago se grabó, pero no llegó al dealer',
+          description: `${e.message}. Regístralo en la otra empresa o vuelve a intentarlo.`,
+          duration: 9000,
+        });
       }
 
       // La tasa usada queda como la tasa del día de la empresa
