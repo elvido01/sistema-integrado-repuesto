@@ -11,6 +11,16 @@ import QuickOutOfStockForm from './components/out-of-stock/QuickOutOfStockForm.j
 import { CHANNEL_TYPES, getChannelCounts, getInitialChannel } from './channels/channelRegistry.js';
 import { getDefaultOmniFlags, OMNI_BETA_VERSION, readSafeMode, writeSafeMode } from './core/omniConfig.js';
 
+// Como se llama cada canal cuando se le enseña al vendedor. Los valores son
+// los de sales_conversations.platform, que son los mismos que acepta
+// facturas.canal_origen — por eso se pueden comparar sin traducir.
+const CANAL_ETIQUETA = {
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  tiktok: 'TikTok',
+};
+
 const money = new Intl.NumberFormat('es-DO', {
   style: 'currency',
   currency: 'DOP',
@@ -357,6 +367,14 @@ export default function App() {
   const [chat, setChat] = useState(() => getCurrentChat());
   const [omniQuoteConversation, setOmniQuoteConversation] = useState(null);
   const [omniSelectedConversation, setOmniSelectedConversation] = useState(null);
+  // De que conversacion se esta cotizando. La explicita manda, pero si se
+  // llego aqui por otro camino (por ejemplo "Asociar cliente", que cambia a
+  // modo cotizar sin fijar nada) vale la que este abierta en la bandeja.
+  //
+  // Sin este respaldo, cotizar a un cliente de TikTok caia en el camino "sin
+  // conversacion", que busca por telefono y solo mira WhatsApp: la venta se
+  // habria contado como WhatsApp siendo de TikTok.
+  const conversacionDeLaCotizacion = omniQuoteConversation || omniSelectedConversation || null;
   const activeQuoteChat = omniQuoteConversation
     ? { id: `omni:${omniQuoteConversation.id}`, name: getOmniConversationName(omniQuoteConversation) }
     : chat;
@@ -1072,9 +1090,13 @@ export default function App() {
       if (cotizacion?.id) {
         await engancharCotizacion({
           cotizacionId: cotizacion.id,
-          conversationId: omniQuoteConversation?.id || null,
+          conversationId: conversacionDeLaCotizacion?.id || null,
           telefono: customerPhone || selectedCustomer?.telefono || null,
-          platform: omniQuoteConversation?.platform || (omniQuoteConversation ? null : 'whatsapp'),
+          // Solo se nombra el canal cuando NO hay conversacion, que es el
+          // camino de WhatsApp Web. Habiendo id, el canal lo pone el
+          // servidor leyendo la conversacion: adivinarlo aqui es como se
+          // cuentan las ventas en el canal equivocado.
+          platform: conversacionDeLaCotizacion ? null : 'whatsapp',
         }).catch(() => null);
       }
 
@@ -2046,6 +2068,10 @@ export default function App() {
     // cuando el cliente ya se eligio, que es el unico momento en que se sabe
     // a quien asociarla.
     setConversacionEsperandoCliente(conversation.id);
+    // Se cotiza DE ESTA conversacion. Antes se cambiaba a modo cotizar sin
+    // decir de cual, y la cotizacion que saliera despues se colgaba por
+    // telefono del hilo de WhatsApp del mismo cliente.
+    setOmniQuoteConversation(conversation);
     setNotice('Busca y selecciona el cliente de Motoflow para asociar esta conversacion.');
   }
 
@@ -2449,6 +2475,13 @@ export default function App() {
               Datos Motoflow
               <small>
                 {selectedCustomer?.nombre || customerQuery || activeQuoteChat.name || 'Cliente sin asignar'} · {STATUS_OPTIONS.find((item) => item.key === quoteStatus)?.label || 'Cotizado'}
+              </small>
+              {/* De que canal quedara contada la venta si esta cotizacion se
+                  factura. Se enseña ANTES de mandarla porque en el reporte ya
+                  no se puede distinguir un TikTok mal contado de un WhatsApp
+                  de verdad: los dos dicen "WhatsApp". */}
+              <small className="mf-canal-cotizacion">
+                Se contará como {CANAL_ETIQUETA[conversacionDeLaCotizacion?.platform] || 'Tienda'}
               </small>
             </span>
             <b>{motoflowDetailsOpen ? 'Ocultar' : 'Editar'}</b>

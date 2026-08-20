@@ -60,6 +60,17 @@ BEGIN
 
   -- 2) Si no, por telefono. Es el caso de cotizar desde un chat de WhatsApp
   --    Web: hay numero pero nadie sabe el id de la conversacion espejada.
+  --
+  -- >>> EL TELEFONO SOLO IDENTIFICA EN WHATSAPP <<<
+  -- En TikTok e Instagram el numero NO es de la conversacion: llega ahi
+  -- porque `sales_conversacion_asociar_cliente` copia el del cliente cuando
+  -- la conversacion no traia ninguno. Emparejar por el cruzaria canales —
+  -- una cotizacion de WhatsApp podria colgarse de un hilo de TikTok del
+  -- mismo cliente, y la venta acabaria contada en el canal equivocado.
+  -- Justo el error que este campo existe para no cometer.
+  --
+  -- Por eso, buscando por telefono sin decir canal, solo se mira WhatsApp.
+  -- Los demas canales se enganchan por id o no se enganchan.
   IF v_conv IS NULL AND COALESCE(btrim(p_telefono), '') <> '' THEN
     v_tel := public.crm_whatsapp_phone_key(p_telefono);
     IF COALESCE(v_tel, '') <> '' THEN
@@ -67,9 +78,9 @@ BEGIN
       FROM public.sales_conversations sc
       WHERE sc.tenant_id = v_tenant
         AND public.crm_whatsapp_phone_key(sc.customer_phone) = v_tel
-        AND (p_platform IS NULL OR sc.platform = p_platform)
-      -- La mas reciente: si el mismo numero escribio por dos canales, la
-      -- venta viene de la conversacion viva, no de la de hace meses.
+        AND sc.platform = COALESCE(p_platform, 'whatsapp')
+      -- La mas reciente de ese canal: si hay varias, la venta viene de la
+      -- conversacion viva, no de la de hace meses.
       ORDER BY sc.last_message_at DESC NULLS LAST
       LIMIT 1;
       v_como := 'telefono';

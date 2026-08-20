@@ -338,6 +338,17 @@ export const styles = `
     font-weight: 700;
   }
 
+  .mf-canal-cotizacion {
+    display: inline-block;
+    margin-top: 2px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: #2a4d8f;
+    font-size: 10px;
+    font-weight: 800;
+  }
+
   .mf-omni-sugerencia-fuentes {
     display: flex;
     flex-wrap: wrap;
