@@ -17,7 +17,7 @@ import {
 import { Loader2, X, AlertCircle, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
-import { CANALES_ORIGEN } from '@/lib/canalesOrigen';
+import { CANAL_POR_DEFECTO, emojiCanal, nombreCanal } from '@/lib/canalesOrigen';
 
 const VentasFooter = ({
   cliente,
@@ -49,8 +49,6 @@ const VentasFooter = ({
   setNotas,
   pideCanalOrigen = false,
   canalOrigen = '',
-  setCanalOrigen,
-  canalSugerido = null,
 }) => {
   const { empresa } = useAuth();
   const nombreEmpresa = empresa?.nombre || 'Sistema';
@@ -207,51 +205,21 @@ const VentasFooter = ({
         </div>
       )}
 
-      {/* ===== ¿De dónde vino este cliente? (piloto: feat_origen_venta) =====
-          Va ARRIBA y a todo lo ancho, no metido en una esquina: es obligatorio
-          para grabar, y un campo obligatorio escondido es un campo que se
-          llena a la fuerza con lo primero que aparezca.
+      {/* ===== De dónde vino esta venta =====
+          Aquí hubo ocho botones y un "Falta marcarlo para grabar". Duró un
+          día: en el mostrador cada clic cuesta y hay un cliente delante
+          esperando. El canal ahora sale solo de la cotización cuando la venta
+          viene del Sales Hub, y todo lo demás es la tienda.
 
-          Botones y no un desplegable porque se factura de pie y con prisa:
-          un clic frente a tres, y las ocho respuestas se ven de un vistazo
-          sin abrir nada. */}
-      {pideCanalOrigen && (
-        <div className="flex items-center gap-1 px-2 py-1 border-b-2 border-gray-500 bg-[#fffbe6]">
-          <span className="text-[10px] font-black text-[#0a1e3a] uppercase whitespace-nowrap">
-            ¿De dónde vino?
+          Solo se AVISA, y solo cuando no es la tienda: enseñar un dato no
+          cuesta un clic; pedirlo sí. */}
+      {pideCanalOrigen && canalOrigen && canalOrigen !== CANAL_POR_DEFECTO && (
+        <div className="flex items-center gap-1.5 px-2 py-1 border-b-2 border-gray-500 bg-[#eef7ff]">
+          <span className="text-[10px] font-black text-[#0a1e3a] uppercase">Vino por</span>
+          <span className="text-[11px] font-black text-[#0a1e3a]">
+            {emojiCanal(canalOrigen)} {nombreCanal(canalOrigen)}
           </span>
-          <div className="flex flex-wrap items-center gap-0.5">
-            {CANALES_ORIGEN.map(c => {
-              const activo = canalOrigen === c.valor;
-              return (
-                <button
-                  key={c.valor}
-                  type="button"
-                  title={c.label}
-                  onClick={() => setCanalOrigen && setCanalOrigen(activo ? '' : c.valor)}
-                  className={`h-6 px-1.5 text-[10px] font-bold uppercase border rounded-none transition-colors ${
-                    activo
-                      ? 'bg-[#0a1e3a] text-white border-[#0a1e3a]'
-                      : 'bg-white text-gray-700 border-gray-400 hover:bg-gray-100'
-                  }`}
-                >
-                  <span className="mr-0.5">{c.emoji}</span>{c.corto}
-                </button>
-              );
-            })}
-          </div>
-          {/* El "porque" de la sugerencia es lo que la hace corregible: sin él
-              el vendedor no sabe si confirmar o cambiarla. */}
-          {canalSugerido?.canal && canalSugerido.canal === canalOrigen && (
-            <span className="text-[10px] font-bold text-green-700 whitespace-nowrap ml-auto">
-              ✓ {canalSugerido.porque}
-            </span>
-          )}
-          {!canalOrigen && (
-            <span className="text-[10px] font-bold text-red-600 whitespace-nowrap ml-auto">
-              Falta marcarlo para grabar
-            </span>
-          )}
+          <span className="text-[10px] text-gray-500 italic ml-1">según la cotización</span>
         </div>
       )}
 

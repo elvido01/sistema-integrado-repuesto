@@ -6,11 +6,18 @@
 // que se podía hacer sin un hilo entre la conversación y la factura, pero es
 // una deducción, y el propio módulo lo advierte al pie.
 //
-// Esta tarjeta es lo contrario: no deduce nada. Muestra lo que el vendedor
-// marcó en el mostrador al grabar la factura. Por eso puede decir pesos y no
-// "score", y por eso enseña también las que nadie anotó — un reporte que
-// esconde su propio hueco no sirve para decidir, y ese hueco es además la
-// medida de si la costumbre está agarrando.
+// Esta tarjeta es lo contrario: no deduce nada. Por eso puede decir pesos y
+// no "score".
+//
+// (2026-08-20) El canal ya no lo marca nadie a mano. Se pidió un día con
+// ocho botones en el pie de Facturación y se quitó: en el mostrador cada
+// clic cuesta. Ahora sale de la cotización cuando la venta viene del Sales
+// Hub, y lo demás es la tienda. Un dato que nadie teclea no miente; un
+// desplegable con "Tienda" de primero, a los tres días, sí.
+//
+// "Sin anotar" se sigue enseñando, pero ya no mide una costumbre: son las
+// facturas anteriores al 20/08/2026, cuando el campo no existía. Se muestran
+// porque un reporte que esconde su propio hueco no sirve para decidir.
 // ============================================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -53,12 +60,12 @@ export default function VentasPorCanalCard() {
   useEffect(() => { cargar(); }, [cargar]);
 
   // El total que sirve de base para los porcentajes incluye lo no anotado:
-  // dividir solo entre lo marcado inflaría cada canal y haría creer que se
-  // tiene la foto completa cuando falta la mitad.
+  // dividir solo entre lo atribuido inflaría cada canal y haría creer que se
+  // tiene la foto completa cuando falta un pedazo.
   const totalGeneral = filas.reduce((s, f) => s + Number(f.total || 0), 0);
-  const anotado = filas.filter(f => f.canal !== 'sin_anotar')
-                       .reduce((s, f) => s + Number(f.total || 0), 0);
-  const cobertura = totalGeneral > 0 ? (anotado / totalGeneral) * 100 : 0;
+  const atribuido = filas.filter(f => f.canal !== 'sin_anotar')
+                         .reduce((s, f) => s + Number(f.total || 0), 0);
+  const sinAnotar = totalGeneral - atribuido;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4">
@@ -131,12 +138,16 @@ export default function VentasPorCanalCard() {
             </table>
           </div>
 
-          {/* La cobertura es el dato honesto: sin ella, un canal con el 60%
-              de lo anotado parece el rey aunque solo se anote 1 de cada 5. */}
+          {/* Decir de dónde sale cada número es lo que lo hace usable: sin
+              esto, "Tienda" con el 90% parecería un hallazgo cuando en
+              realidad es el cajón donde cae todo lo que no vino cotizado. */}
           <p className="text-[11px] text-slate-500 mt-2">
-            Se anotó el origen en el <b>{cobertura.toFixed(0)}%</b> de lo facturado
-            (RD$ {pesos(anotado)} de RD$ {pesos(totalGeneral)}).
-            {cobertura < 80 && ' Mientras esto no suba, los porcentajes de arriba son de una muestra, no del total.'}
+            El canal sale de la cotización cuando la venta viene del Sales Hub.
+            Todo lo demás cuenta como <b>Tienda</b>: nadie lo teclea al facturar.
+            {sinAnotar > 0 && (
+              <> Las <b>RD$ {pesos(sinAnotar)}</b> sin anotar son facturas anteriores
+              al 20/08/2026, cuando el campo todavía no existía.</>
+            )}
           </p>
         </>
       )}

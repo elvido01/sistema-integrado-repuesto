@@ -14,7 +14,18 @@
 // con el seguimiento que la produjo sin traducir nada por el camino.
 // Cambiar uno aquí sin cambiar el CHECK rompe la grabación.
 
-/** Lo que se le ofrece al vendedor, en el orden en que se le ofrece. */
+/**
+ * El canal de una venta cuando nadie dice lo contrario.
+ *
+ * (2026-08-20) Antes esto se preguntaba con ocho botones en el pie de
+ * Facturacion, obligatorios para grabar. Duro un dia: en el mostrador cada
+ * clic cuesta y hay un cliente delante esperando. Ahora el canal sale de la
+ * cotizacion cuando la venta viene del Sales Hub, y lo demas es la tienda —
+ * que ademas es la verdad casi siempre.
+ */
+export const CANAL_POR_DEFECTO = 'tienda';
+
+/** El vocabulario completo. Los reportes lo leen; ya nadie lo teclea. */
 export const CANALES_ORIGEN = Object.freeze([
   { valor: 'tienda',    label: 'Vino a la tienda', corto: 'Tienda',    emoji: '🏪' },
   { valor: 'whatsapp',  label: 'WhatsApp',         corto: 'WhatsApp',  emoji: '💬' },
