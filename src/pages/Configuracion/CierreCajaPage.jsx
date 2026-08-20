@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase, formatFechaDMY } from '@/lib/dateUtils';
+import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase, formatFechaDMY, rangoDelDia } from '@/lib/dateUtils';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, ChevronDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -129,8 +129,12 @@ const CierreCajaPage = () => {
     if (!soloCalcular) setLoadingResumen(true);
 
     const fechaStr = p_fechaStr || formatDateForSupabase(fecha);
-    const startOfDay = `${fechaStr}T00:00:00`;
-    const endOfDay = `${fechaStr}T23:59:59`;
+    // Los extremos del día EN HORA DE AQUÍ. Antes se mandaba
+    // '2026-08-20T00:00:00' pelado y la base, que está en UTC, lo leía como
+    // las 8:00 PM de ayer: la ventana entera iba corrida cuatro horas. Una
+    // moto facturada a las 9 de la noche no aparecía en el cierre de esa
+    // noche, y sí aparecía en el del día siguiente. Ver rangoDelDia().
+    const { desde: startOfDay, hasta: endOfDay } = rangoDelDia(fechaStr);
 
     let ventas = [];
     let devoluciones = [];
@@ -197,8 +201,7 @@ const CierreCajaPage = () => {
         .select('total_devolucion, facturas!inner(forma_pago)')
         .eq('tenant_id', tenantId)
         .ilike('facturas.forma_pago', 'contado')
-        .gte('fecha_devolucion', startOfDay)
-        .lte('fecha_devolucion', endOfDay);
+        .eq('fecha_devolucion', fechaStr);
 
       if (devErr) {
         console.warn('Error cargando devoluciones:', devErr.message);
@@ -309,8 +312,8 @@ const CierreCajaPage = () => {
         .select('numero, total_compra, forma_pago, estado, pagos, created_at')
         .eq('tenant_id', tenantId)
         .ilike('forma_pago', 'contado')
-        .gte('created_at', `${fechaStr}T00:00:00`)
-        .lte('created_at', `${fechaStr}T23:59:59.999`);
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
       if (compErr) {
         console.warn('Error cargando compras de contado:', compErr.message);
       } else {

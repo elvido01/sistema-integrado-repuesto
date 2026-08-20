@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Download, FileText, Loader2, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { rangoDeFechas } from '@/lib/dateUtils';
 import {
   generar606, generar607, generar608,
   downloadTxt, nombreArchivoDgii, fmtMonto, cleanRncCedula, tipoIdentificacion, fmtFecha,
@@ -19,12 +20,16 @@ const MESES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
+// El primer y el último día del mes, como texto. Se arma con aritmética de
+// calendario y no pasando un Date por toISOString(): eso convierte a UTC, y
+// aquí el 31 a las 23:59 es el 1ro del mes siguiente en UTC. El 607 de
+// agosto salía incluyendo el 1ro de septiembre.
 const rangoMes = (year, month) => {
-  const desde = new Date(year, month - 1, 1);
-  const hasta = new Date(year, month, 0, 23, 59, 59);
+  const dd = (n) => String(n).padStart(2, '0');
+  const ultimo = new Date(year, month, 0).getDate();
   return {
-    desde: desde.toISOString().slice(0, 10),
-    hasta: hasta.toISOString().slice(0, 10),
+    desde: `${year}-${dd(month)}-01`,
+    hasta: `${year}-${dd(month)}-${dd(ultimo)}`,
   };
 };
 
@@ -52,8 +57,8 @@ const ReportesDGIIPage = () => {
       const { data: vRaw, error: ev } = await supabase
         .from('facturas')
         .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
-        .gte('fecha', desde)
-        .lte('fecha', hasta + 'T23:59:59')
+        .gte('fecha', rangoDeFechas(desde, hasta).desde)
+        .lte('fecha', rangoDeFechas(desde, hasta).hasta)
         .neq('estado', 'ANULADA')
         .order('fecha', { ascending: true });
       if (ev) throw ev;
@@ -92,8 +97,8 @@ const ReportesDGIIPage = () => {
       const { data: aRaw, error: ea } = await supabase
         .from('facturas')
         .select('id, numero, fecha, ncf, updated_at, estado')
-        .gte('fecha', desde)
-        .lte('fecha', hasta + 'T23:59:59')
+        .gte('fecha', rangoDeFechas(desde, hasta).desde)
+        .lte('fecha', rangoDeFechas(desde, hasta).hasta)
         .eq('estado', 'ANULADA')
         .order('fecha', { ascending: true });
       if (ea) throw ea;

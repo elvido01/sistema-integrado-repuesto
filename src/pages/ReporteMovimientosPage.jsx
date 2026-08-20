@@ -26,7 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { formatDateForSupabase, formatInTimeZone, getCurrentDateInTimeZone } from '@/lib/dateUtils';
+import { formatDateForSupabase, formatInTimeZone, getCurrentDateInTimeZone, rangoDelDia } from '@/lib/dateUtils';
 
 const fmtNumber = (value) => Number(value || 0).toLocaleString('es-DO', {
   minimumFractionDigits: 2,
@@ -128,11 +128,13 @@ const MovimientoMercanciasPage = () => {
         .order('fecha', { ascending: true })
         .limit(10000);
 
+      // inventario_movimientos.fecha lleva hora: los extremos van en
+      // instantes de aquí, no en texto sin zona. Ver rangoDeFechas().
       if (filters.dateRange?.from) {
-        query = query.gte('fecha', formatDateForSupabase(filters.dateRange.from));
+        query = query.gte('fecha', rangoDelDia(formatDateForSupabase(filters.dateRange.from)).desde);
       }
       if (filters.dateRange?.to) {
-        query = query.lte('fecha', `${formatDateForSupabase(filters.dateRange.to)}T23:59:59`);
+        query = query.lte('fecha', rangoDelDia(formatDateForSupabase(filters.dateRange.to)).hasta);
       }
       if (filters.productoId) {
         query = query.eq('producto_id', filters.productoId);

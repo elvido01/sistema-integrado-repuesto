@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Download, FileSpreadsheet, Loader2, RefreshCw, TrendingUp } from 'lucide-react';
 import ExcelJS from 'exceljs';
-import { formatDateForSupabase } from '@/lib/dateUtils';
+import { formatDateForSupabase, rangoDeFechas } from '@/lib/dateUtils';
 
 const hoyISO = () => new Date().toISOString().slice(0, 10);
 const primerDiaMesISO = () => {
@@ -106,8 +106,11 @@ const EstadoResultadosPage = () => {
       const [facturasRes, devolucionesRes, compromisosRes, transaccionesRes] = await Promise.all([
         supabase.from('facturas')
           .select('id, numero, fecha, subtotal, descuento, recargo, itbis, total, estado, clientes(nombre), facturas_detalle(cantidad, costo_unitario, importe, productos(costo))')
-          .gte('fecha', desde)
-          .lte('fecha', `${hasta}T23:59:59`)
+          // facturas.fecha lleva hora: el periodo va en instantes de aquí.
+          // Con '2026-08-31T23:59:59' pelado se perdían las ventas del
+          // último día después de las 8 PM. Ver rangoDeFechas().
+          .gte('fecha', rangoDeFechas(desde, hasta).desde)
+          .lte('fecha', rangoDeFechas(desde, hasta).hasta)
           .neq('estado', 'ANULADA')
           .order('fecha', { ascending: true }),
         supabase.from('devoluciones')

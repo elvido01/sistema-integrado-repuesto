@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { rangoDelDia } from '@/lib/dateUtils';
 
 const todayISO = () => format(new Date(), 'yyyy-MM-dd');
 const n = (value) => Number(value || 0);
@@ -28,8 +29,9 @@ const RentabilidadDiariaPage = () => {
     if (!tenantId || !fecha) return;
     setLoading(true);
     try {
-      const desde = `${fecha}T00:00:00`;
-      const hasta = `${fecha}T23:59:59`;
+      // facturas.fecha lleva hora. Sin la zona, el día iba de las 8 PM de
+      // ayer a las 8 PM de hoy. Ver rangoDelDia().
+      const { desde, hasta } = rangoDelDia(fecha);
       const [facturasRes, devolucionesRes] = await Promise.all([
         supabase
           .from('facturas')

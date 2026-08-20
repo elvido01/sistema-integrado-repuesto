@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FileSpreadsheet, Loader2, BookOpen, Download } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { rangoDeFechas } from '@/lib/dateUtils';
 
 const hoyISO = () => new Date().toISOString().slice(0, 10);
 const primerDiaMesISO = () => {
@@ -66,10 +67,15 @@ const LibrosContablesPage = () => {
     if (!tenantId) return;
     setLoading(true);
     try {
+      // facturas.fecha e inventario_movimientos.fecha llevan hora, así que
+      // el periodo va en instantes de aquí. Las otras tres (compras,
+      // recibos_ingreso, pagos_suplidores) guardan fecha sin hora y se
+      // comparan con el texto tal cual.
+      const periodo = rangoDeFechas(desde, hasta);
       const [v, c, ri, ps, im] = await Promise.all([
         supabase.from('facturas')
           .select('id, numero, fecha, ncf, subtotal, descuento, itbis, total, forma_pago, tipo_pago, estado, clientes(nombre, rnc)')
-          .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59')
+          .gte('fecha', periodo.desde).lte('fecha', periodo.hasta)
           .order('fecha', { ascending: true }),
         supabase.from('compras')
           .select('id, numero, fecha, ncf, total_exento, total_gravado, itbis_total, total_compra, forma_pago, itbis_retenido_pct, isr_retenido_pct, proveedores(nombre, rnc)')
@@ -87,7 +93,7 @@ const LibrosContablesPage = () => {
           .order('fecha', { ascending: true }),
         supabase.from('inventario_movimientos')
           .select('id, fecha, tipo, cantidad, costo_unitario, referencia_doc, productos(codigo, descripcion)')
-          .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59')
+          .gte('fecha', periodo.desde).lte('fecha', periodo.hasta)
           .order('fecha', { ascending: true })
           .limit(5000),
       ]);
