@@ -17,6 +17,7 @@ import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
 import { printPagoSuplidorPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
+import CorregirFormaPagoModal from '@/components/suplidores/CorregirFormaPagoModal';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const initialState = {
@@ -69,6 +70,7 @@ const PagoSuplidoresPage = () => {
   const [compras, setCompras] = useState([]);
   const [formasPago, setFormasPago] = useState([{ id: 1, forma: 'Efectivo', monto: 0, referencia: '' }]);
   const [cuentaId, setCuentaId] = useState(null); // cuenta de donde sale la transferencia/cheque
+  const [corregirAbierto, setCorregirAbierto] = useState(false);
   // La cuenta completa, no solo su id: hace falta su MONEDA para saber en
   // qué se le descuenta. A una caja chica en dólares no se le pueden restar
   // pesos.
@@ -403,8 +405,19 @@ const PagoSuplidoresPage = () => {
         className="p-1 md:p-4 bg-gray-100 min-h-full flex flex-col"
       >
         <div className="bg-white p-4 rounded-lg shadow-md flex-grow flex flex-col">
-          <div className="bg-morla-blue text-white text-center py-2 rounded-t-lg mb-4">
-            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">PAGO A SUPLIDORES</h1>
+          <div className="bg-morla-blue text-white py-2 rounded-t-lg mb-4 relative">
+            <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm text-center">PAGO A SUPLIDORES</h1>
+            {/* Equivocarse de forma de pago no cambia cuanto se pago ni a
+                quien: solo de donde salio. Eso se arregla aqui, sin anular
+                nada y sin que nadie tenga que escribir SQL. */}
+            <button
+              type="button"
+              onClick={() => setCorregirAbierto(true)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold uppercase tracking-wide bg-white/15 hover:bg-white/25 px-3 py-1 rounded transition-colors"
+              title="Cambiar de qué cuenta salió un pago ya hecho"
+            >
+              Corregir forma de pago
+            </button>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-4">
@@ -676,6 +689,10 @@ const PagoSuplidoresPage = () => {
           </div>
         </div>
       </motion.div>
+      <CorregirFormaPagoModal
+        open={corregirAbierto}
+        onClose={() => setCorregirAbierto(false)}
+      />
     </>
   );
 };

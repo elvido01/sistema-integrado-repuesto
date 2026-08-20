@@ -1,0 +1,226 @@
+// ============================================================
+// CorregirFormaPagoModal.jsx — Arreglar de dónde salió un pago
+// ------------------------------------------------------------
+// (2026-08-20) MotoPréstamos le pagó RD$90,000 a Caminero Motors y al
+// digitarlo quedó como EFECTIVO, siendo una salida de la cuenta de Odalys.
+// Hubo que arreglarlo escribiendo SQL contra producción — que es como se
+// arregla algo exactamente una vez: a la segunda nadie se acuerda de que
+// también había que tocar el movimiento bancario, y queda un pago corregido
+// a medias.
+//
+// >>> LO QUE SE PUEDE CAMBIAR AQUÍ, Y LO QUE NO <<<
+// Solo la forma de pago y la cuenta. El monto y las compras a las que se
+// aplicó no se tocan, y no es pereza: cambiar el monto obliga a rehacer el
+// detalle y el balance del suplidor, y eso ya es un pago distinto, no una
+// corrección. Para eso está anular y volver a hacerlo.
+//
+// Equivocarse de forma de pago no cambia cuánto se pagó ni a quién: solo de
+// dónde salió. Por eso se arregla sin deshacer nada.
+// ============================================================
+import React, { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/customSupabaseClient';
+import { useToast } from '@/components/ui/use-toast';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Loader2, RefreshCw, Wallet } from 'lucide-react';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
+import { formatInTimeZone } from '@/lib/dateUtils';
+
+const FORMAS = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
+const SALE_DE_CUENTA = (forma) => forma === 'Transferencia' || forma === 'Cheque';
+
+const pesos = (n) => Number(n || 0).toLocaleString('es-DO', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
+
+const formaActual = (formasPago) => {
+  const arr = Array.isArray(formasPago) ? formasPago : [];
+  if (!arr.length) return '—';
+  return arr.map((f) => f?.forma).filter(Boolean).join(' / ') || '—';
+};
+
+export default function CorregirFormaPagoModal({ open, onClose, onCorregido }) {
+  const { toast } = useToast();
+  const [pagos, setPagos] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [seleccion, setSeleccion] = useState(null);
+  const [forma, setForma] = useState('Efectivo');
+  const [referencia, setReferencia] = useState('');
+  const [cuentaId, setCuentaId] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    try {
+      const { data, error } = await supabase.rpc('get_pagos_suplidores_recientes', { p_limit: 30 });
+      if (error) throw error;
+      setPagos(Array.isArray(data) ? data : []);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo cargar', description: e.message });
+    } finally {
+      setCargando(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { if (open) { cargar(); setSeleccion(null); } }, [open, cargar]);
+
+  const elegir = (p) => {
+    setSeleccion(p);
+    const arr = Array.isArray(p.formas_pago) ? p.formas_pago : [];
+    setForma(arr[0]?.forma || 'Efectivo');
+    setReferencia(arr[0]?.referencia || '');
+    setCuentaId(p.cuenta_id || null);
+  };
+
+  const guardar = async () => {
+    if (!seleccion) return;
+    if (SALE_DE_CUENTA(forma) && !cuentaId) {
+      toast({ variant: 'destructive', title: 'Falta la cuenta', description: 'Dime de qué cuenta salió el dinero.' });
+      return;
+    }
+    setGuardando(true);
+    try {
+      // Una sola forma por el monto completo: es lo que cubre el error que
+      // esto viene a arreglar (se eligió mal de dónde salió). Repartir un
+      // pago entre varias cuentas se hace al crearlo.
+      const formas = [{
+        id: 1,
+        forma,
+        monto: Number(seleccion.monto_pagado) || 0,
+        referencia: referencia.trim(),
+      }];
+
+      const { data, error } = await supabase.rpc('corregir_forma_pago_suplidor', {
+        p_pago_id: seleccion.id,
+        p_formas_pago: formas,
+        p_cuenta_id: SALE_DE_CUENTA(forma) ? cuentaId : null,
+      });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.motivo || 'No se pudo corregir');
+
+      toast({
+        title: `${data.numero} corregido`,
+        description: SALE_DE_CUENTA(forma)
+          ? `Ahora sale de la cuenta por RD$ ${pesos(data.monto_banco)}.`
+          : 'Ahora figura como efectivo: no toca ninguna cuenta.',
+      });
+      await cargar();
+      setSeleccion(null);
+      onCorregido?.();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se corrigió', description: e.message });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose?.()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-morla-blue" /> Corregir forma de pago
+          </DialogTitle>
+        </DialogHeader>
+
+        <p className="text-xs text-slate-500 -mt-2">
+          Cambia de dónde salió el dinero. El monto y las facturas a las que se aplicó
+          no se tocan: para eso hay que anular el pago y volver a hacerlo.
+        </p>
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-600 uppercase">Últimos pagos</span>
+          <Button size="sm" variant="outline" onClick={cargar} disabled={cargando}>
+            <RefreshCw className={`h-4 w-4 ${cargando ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+
+        <div className="max-h-[240px] overflow-y-auto border rounded-md">
+          {pagos.length === 0 && !cargando && (
+            <p className="text-sm text-slate-500 p-4 text-center">No hay pagos registrados.</p>
+          )}
+          {pagos.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => elegir(p)}
+              disabled={p.anulado}
+              className={`w-full text-left px-3 py-2 border-b last:border-b-0 text-sm flex items-center gap-3 transition-colors
+                ${seleccion?.id === p.id ? 'bg-blue-50' : 'hover:bg-slate-50'}
+                ${p.anulado ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              <span className="font-mono font-bold text-morla-blue w-[92px] flex-shrink-0">{p.numero}</span>
+              <span className="flex-1 truncate">{p.suplidor || 'Sin suplidor'}</span>
+              <span className="text-slate-500 w-[70px] flex-shrink-0">{formatInTimeZone(p.fecha, 'dd/MM/yy')}</span>
+              <span className="font-bold w-[110px] text-right flex-shrink-0">RD$ {pesos(p.monto_pagado)}</span>
+              {/* De dónde salió: sin esto hay que adivinar cuál de los pagos
+                  "Transferencia" es el que está mal. */}
+              <span className="text-[11px] text-slate-500 w-[170px] truncate flex-shrink-0">
+                {formaActual(p.formas_pago)}
+                {p.cuenta_nombre ? ` · ${p.cuenta_nombre}` : ''}
+              </span>
+              {p.anulado && <span className="text-[10px] font-bold text-red-500">ANULADO</span>}
+            </button>
+          ))}
+        </div>
+
+        {seleccion && (
+          <div className="border rounded-md p-3 space-y-3 bg-slate-50">
+            <p className="text-sm">
+              <b className="font-mono">{seleccion.numero}</b> — {seleccion.suplidor} —
+              <b> RD$ {pesos(seleccion.monto_pagado)}</b>
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Forma de pago</Label>
+                <Select value={forma} onValueChange={setForma}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {FORMAS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Referencia</Label>
+                <Input value={referencia} onChange={(e) => setReferencia(e.target.value)}
+                       className="h-9" placeholder="No. de transferencia, cheque..." />
+              </div>
+            </div>
+
+            {SALE_DE_CUENTA(forma) && (
+              // autoDefault en false: en una corrección, una cuenta
+              // preseleccionada sola es exactamente cómo nació el error que
+              // se viene a arreglar. Aquí se elige a propósito.
+              <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId}
+                                    moneda="DOP" contexto="pagos"
+                                    autoDefault={false}
+                                    label="Sale de la cuenta" />
+            )}
+
+            {/* Lo que va a pasar, dicho antes de que pase. Este botón mueve el
+                saldo de una cuenta: enterarse después no sirve de nada. */}
+            <p className="text-[11px] text-slate-500">
+              {SALE_DE_CUENTA(forma)
+                ? `Se le restarán RD$ ${pesos(seleccion.monto_pagado)} a la cuenta elegida${seleccion.cuenta_nombre ? `, y se le devolverán a ${seleccion.cuenta_nombre}` : ''}.`
+                : `Dejará de restarle a ${seleccion.cuenta_nombre || 'cualquier cuenta'} y pasará a contar como efectivo del día.`}
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setSeleccion(null)} disabled={guardando}>
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={guardar} disabled={guardando}>
+                {guardando ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Corregir
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
