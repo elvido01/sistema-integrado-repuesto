@@ -654,10 +654,20 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             >
               {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
+            {/* >>> PLEGADO NO SE CIERRA SESION <<<
+                Aquí había un botón que llamaba a signOut() directo. Un icono
+                de 40px, sin texto y sin confirmación, en el borde de la
+                pantalla: el sitio exacto donde se hace clic sin querer. Y lo
+                que se pierde no es un clic, es la sesión — con la factura a
+                medias, si estabas facturando.
+
+                Ahora abre el menú, igual que el botón de arriba. Salir sigue
+                estando a un clic de distancia, pero después de ver la palabra
+                "Cerrar Sesión" escrita. */}
             <button
-              onClick={async () => await signOut()}
-              className="h-10 w-10 p-0 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-              title="Cerrar Sesión"
+              onClick={() => setSidebarOpen(true)}
+              className="h-10 w-10 p-0 flex items-center justify-center rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-100 transition-colors"
+              title="Abrir el menú (para cerrar sesión, ábrelo primero)"
             >
               <LogOut className="w-5 h-5" />
             </button>
