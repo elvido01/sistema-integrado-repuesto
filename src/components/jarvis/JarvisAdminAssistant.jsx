@@ -201,6 +201,16 @@ export default function JarvisAdminAssistant() {
   const [mensajes, setMensajes] = useState([]);
   const [texto, setTexto] = useState('');
   const finRef = useRef(null);
+  // Hasta hoy Hermes solo hablaba cuando le hablaban, así que un mensaje
+  // suyo siempre llegaba con la pantalla abierta y mirándola. Los
+  // centinelas cambian eso: avisan solos, a cualquier hora, y sin este
+  // contador el aviso caería dentro de una ventana cerrada que nadie abre.
+  const [noLeidos, setNoLeidos] = useState(0);
+  // El sondeo se arma una sola vez y se queda con el `chatAbierto` de ese
+  // render — para siempre false. La referencia sí la ven todos los
+  // closures. Es el mismo motivo por el que `loading` no sirve de candado
+  // en el dictado, unas líneas más abajo.
+  const chatAbiertoRef = useRef(false);
   // Quién contestó SEGÚN EL BACKEND. Si viene null, respondió el asesor
   // genérico porque la tabla agentes_ia está vacía — y eso hay que verlo,
   // no adivinarlo.
@@ -674,6 +684,12 @@ export default function JarvisAdminAssistant() {
 
     const suya = [...nuevas].reverse().find((n) => n.role === 'assistant');
     if (suya) {
+      // Con la ventana cerrada, el globito rojo es lo único que hay: sin
+      // él un aviso de los centinelas se queda escrito en la base sin que
+      // nadie se entere, que es exactamente lo que se vino a evitar.
+      if (!chatAbiertoRef.current) {
+        setNoLeidos((n) => n + nuevas.filter((x) => x.role === 'assistant').length);
+      }
       dejarDeEsperar();
       // Si se agotó la espera y la respuesta llegó DESPUÉS, el aviso rojo
       // seguía puesto encima de una respuesta correcta: decía que no había
@@ -714,6 +730,14 @@ export default function JarvisAdminAssistant() {
   useEffect(() => {
     if (chatAbierto) finRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [mensajes, loading, chatAbierto]);
+
+  // Abrir el chat ES haberlo leído. No hace falta un botón de "marcar como
+  // leído": pedir un gesto extra para apagar un aviso es cómo se llega a
+  // 297 avisos pendientes que nadie toca.
+  useEffect(() => {
+    chatAbiertoRef.current = chatAbierto;
+    if (chatAbierto) setNoLeidos(0);
+  }, [chatAbierto]);
 
   // Chrome carga las voces tarde: sin esperar el aviso, el primer mensaje
   // sale con la voz por defecto y solo del segundo en adelante suena bien.
@@ -1893,10 +1917,21 @@ export default function JarvisAdminAssistant() {
           <button
             type="button"
             onClick={() => setChatAbierto((v) => !v)}
-            title={`Escribirle a ${nombreAgente}`}
-            className="rounded-full border border-cyan-300/25 bg-slate-950/80 p-1.5 text-cyan-200/70 hover:text-cyan-100"
+            title={noLeidos > 0
+              ? `${nombreAgente} tiene ${noLeidos} aviso(s) sin leer`
+              : `Escribirle a ${nombreAgente}`}
+            className={`relative rounded-full border bg-slate-950/80 p-1.5 hover:text-cyan-100 ${
+              noLeidos > 0
+                ? 'border-red-400/60 text-red-200 shadow-[0_0_12px_rgba(239,68,68,0.45)]'
+                : 'border-cyan-300/25 text-cyan-200/70'
+            }`}
           >
             <MessageSquare className="h-3.5 w-3.5" />
+            {noLeidos > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+                {noLeidos > 9 ? '9+' : noLeidos}
+              </span>
+            )}
           </button>
           <button
             type="button"
