@@ -151,6 +151,59 @@ const OrdenCompraPage = () => {
     })();
     return () => { cancel = true; };
   }, [selectedProveedor?.id]);
+
+  // Lo que este suplidor pidio y nunca trajo. Se carga con el suplidor
+  // porque el unico momento en que ese dato sirve es este: cuando lo tienes
+  // al frente. Guardado en un reporte que hay que ir a buscar, no lo mira
+  // nadie.
+  const [noSuplido, setNoSuplido] = useState([]);
+  const [verNoSuplido, setVerNoSuplido] = useState(false);
+  const cargarNoSuplido = useCallback(async () => {
+    if (!selectedProveedor?.id) { setNoSuplido([]); return; }
+    const { data, error } = await supabase.rpc('get_no_suplido_por_suplidor', {
+      p_suplidor_id: selectedProveedor.id,
+      p_dias: 365,
+    });
+    if (!error) setNoSuplido(Array.isArray(data) ? data : []);
+  }, [selectedProveedor?.id]);
+  useEffect(() => { cargarNoSuplido(); }, [cargarNoSuplido]);
+
+  const noSuplidoTotal = useMemo(
+    () => noSuplido.reduce((s, l) => s + (Number(l.importe) || 0), 0),
+    [noSuplido]
+  );
+
+  // Volver a pedir lo que no trajo: entra a la orden de hoy como una linea
+  // mas. Se salta las que ya estan puestas para no duplicar.
+  const reclamarNoSuplido = (lineas) => {
+    const nuevas = lineas
+      .filter((l) => !detalles.find((d) => d.producto_id === l.producto_id || d.codigo === l.codigo))
+      .map((l) => ({
+        id: Date.now() + Math.random(),
+        producto_id: l.producto_id,
+        codigo: l.codigo,
+        descripcion: l.descripcion,
+        cantidad: Number(l.falto) || 1,
+        unidad: 'UND',
+        precio: Number(l.costo) || 0,
+        descuento_pct: 0,
+        itbis_pct: Number(l.itbis_pct) || 0,
+        importe: 0,
+        decision_estado: DECISION_DEFAULT,
+        decision_motivo: null,
+      }));
+    if (nuevas.length === 0) {
+      toast({ title: 'Ya estaban', description: 'Todas esas lineas ya estan en la orden.' });
+      return;
+    }
+    setDetalles((prev) => calculateAllImportes([...prev, ...nuevas]));
+    setVerNoSuplido(false);
+    toast({
+      title: `${nuevas.length} linea(s) reclamadas`,
+      description: 'Se agregaron a la orden de hoy con la cantidad que falto.',
+    });
+  };
+
   const [orden, setOrden] = useState({
     numero: '',
     fecha_orden: getCurrentDateInTimeZone(),
@@ -3253,6 +3306,24 @@ const OrdenCompraPage = () => {
               </div>
             )}
 
+            {/* Lo que este suplidor no ha traido. Aparece con el suplidor
+                elegido, que es cuando lo tienes al frente y puedes
+                reclamarlo. */}
+            {noSuplido.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setVerNoSuplido(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-rose-300 bg-rose-50 text-[11px] text-rose-800 hover:bg-rose-100 transition-colors"
+                title="Lineas que le pediste a este suplidor y nunca llegaron. Clic para verlas y volver a pedirlas."
+              >
+                <span>📋</span>
+                <span>
+                  No ha traido <b>{noSuplido.length}</b> linea(s) ·{' '}
+                  <b>RD$ {noSuplidoTotal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+                </span>
+              </button>
+            )}
+
             {/* Boton Optimizar Compra (Fase B v2) — aparece cuando la orden excede el presupuesto disponible */}
             {presupuestoV2 && Number(totals.total_orden) > Number(presupuestoV2.disponible || 0) && Number(presupuestoV2.disponible || 0) > 0 && (
               <Button
@@ -4037,6 +4108,72 @@ const OrdenCompraPage = () => {
       {/* ════════════════════════════════════════════════════ */}
       {/* Modal Optimizar Compra — Fase B v2                   */}
       {/* ════════════════════════════════════════════════════ */}
+      {/* ── Lo que el suplidor no trajo ── */}
+      <Dialog open={verNoSuplido} onOpenChange={(open) => { if (!open) setVerNoSuplido(false); }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              📋 Lo que {selectedProveedor?.nombre || 'este suplidor'} no ha traído
+            </DialogTitle>
+            <DialogDescription>
+              Líneas que le pediste y nunca llegaron, del último año. Las de arriba
+              son las más recientes.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[45vh] overflow-y-auto border rounded-md">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-100 sticky top-0">
+                <tr className="text-left">
+                  <th className="px-2 py-1.5 font-bold">Código</th>
+                  <th className="px-2 py-1.5 font-bold">Descripción</th>
+                  <th className="px-2 py-1.5 font-bold">Orden</th>
+                  <th className="px-2 py-1.5 font-bold text-right">Faltó</th>
+                  <th className="px-2 py-1.5 font-bold text-right">Importe</th>
+                  <th className="px-2 py-1.5 font-bold text-right">Días</th>
+                </tr>
+              </thead>
+              <tbody>
+                {noSuplido.map((l) => (
+                  <tr key={l.detalle_id} className="border-t hover:bg-slate-50">
+                    <td className="px-2 py-1 font-mono text-xs">{l.codigo}</td>
+                    <td className="px-2 py-1 truncate max-w-[280px]" title={l.descripcion}>{l.descripcion}</td>
+                    <td className="px-2 py-1 text-xs text-slate-500">
+                      {l.orden}
+                      {/* "cerrada" = ya se dio por perdida; "pendiente" = todavía la debe */}
+                      {l.situacion === 'cerrada' && <span className="ml-1 text-[10px] text-slate-400">(cerrada)</span>}
+                    </td>
+                    <td className="px-2 py-1 text-right font-bold">{Number(l.falto)}</td>
+                    <td className="px-2 py-1 text-right">
+                      {Number(l.importe).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className={`px-2 py-1 text-right ${Number(l.dias) > 45 ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                      {l.dias}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-amber-50 sticky bottom-0">
+                <tr className="font-bold border-t-2">
+                  <td colSpan={4} className="px-2 py-1.5 text-right uppercase text-xs">Total sin traer</td>
+                  <td className="px-2 py-1.5 text-right">
+                    RD$ {noSuplidoTotal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setVerNoSuplido(false)}>Cerrar</Button>
+            <Button onClick={() => reclamarNoSuplido(noSuplido)}>
+              Volver a pedir todo ({noSuplido.length})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={optimModalOpen} onOpenChange={(open) => { if (!open) { setOptimModalOpen(false); setPreviewOptim(null); } }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
