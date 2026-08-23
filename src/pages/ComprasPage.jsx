@@ -1495,10 +1495,13 @@ const ComprasPage = () => {
           p_suplidor_id: savedCompra.suplidor_id,
         });
         if (cierre?.ok && cierre.ordenes > 0) {
+          const reclamadas = Number(cierre.reclamadas || 0);
           toast({
             title: `${cierre.ordenes} orden(es) cerrada(s)`,
-            description: `${cierre.numeros?.join(', ')} — ${cierre.lineas} linea(s) por ${Number(cierre.unidades || 0)} unidad(es) que nunca llegaron. Vuelven a poder pedirse.`,
-            duration: 9000,
+            description: reclamadas > 0
+              ? `${cierre.numeros?.join(', ')} — ${Number(cierre.unidades || 0)} unidad(es) que nunca llegaron. Las ${reclamadas} que faltaron ya estan en el borrador de este suplidor, marcadas "Pend. ult. compra".`
+              : `${cierre.numeros?.join(', ')} — ${cierre.lineas} linea(s) cerradas.`,
+            duration: 10000,
           });
         }
       } catch (err) {
