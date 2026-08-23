@@ -70,6 +70,28 @@ const getDetalleBase = (detalle) => {
   return subtotal - (subtotal * (descuento / 100));
 };
 
+// Como se reparte una linea entre base e ITBIS.
+//
+// (2026-08-23) `productos.costo` se guarda CON ITBIS — lo escribe
+// ComprasPage al recibir la mercancia ("costo real con descuento e ITBIS").
+// La orden llena el precio desde ahi y le sumaba 18% encima: cada orden
+// salia inflada un 18%. En una sola orden de MAGNA eran RD$3,188.19 de mas,
+// en el papel que se le entrega al suplidor y en el presupuesto de caja.
+//
+//   incluido = true   el precio YA trae el ITBIS: se extrae, no se suma.
+//   incluido = false  el precio es neto: se le agrega encima.
+//   aplicar  = false  no hay ITBIS: todo exento.
+export const desgloseLinea = (detalle, aplicarItbis, itbisIncluido) => {
+  const bruto = getDetalleBase(detalle);
+  const pct = normalizeTaxRate(detalle.itbis_pct);
+  if (!aplicarItbis || pct <= 0) return { base: bruto, itbis: 0, importe: bruto };
+  if (itbisIncluido) {
+    const base = bruto / (1 + pct);
+    return { base, itbis: bruto - base, importe: bruto };
+  }
+  return { base: bruto, itbis: bruto * pct, importe: bruto * (1 + pct) };
+};
+
 const stripReceptionFields = (detalle) => {
   const {
     cantidad_pedida,
@@ -893,13 +915,8 @@ const OrdenCompraPage = () => {
     setDetalles((prev) => calculateAllImportes([...prev, newDetalle]));
   };
 
-  const calculateImporte = (detalle) => {
-    const itbisPct = normalizeTaxRate(detalle.itbis_pct);
-    const baseItbis = getDetalleBase(detalle);
-    const montoItbis = orden.aplicar_itbis ? baseItbis * itbisPct : 0;
-
-    return baseItbis + montoItbis;
-  };
+  const calculateImporte = (detalle) =>
+    desgloseLinea(detalle, orden.aplicar_itbis, orden.itbis_incluido).importe;
 
   const calculateAllImportes = (list) => list.map((d) => ({ ...d, importe: calculateImporte(d) }));
 
@@ -1235,7 +1252,7 @@ const OrdenCompraPage = () => {
 
   useEffect(() => {
     setDetalles((prev) => calculateAllImportes(prev));
-  }, [orden.aplicar_itbis]);
+  }, [orden.aplicar_itbis, orden.itbis_incluido]);
 
   const draftData = useMemo(() => ({
     selectedProveedor,
@@ -1267,17 +1284,18 @@ const OrdenCompraPage = () => {
 
       descuento_total += descMonto;
 
+      const g = desgloseLinea(d, orden.aplicar_itbis, orden.itbis_incluido);
       if (itbisPct > 0 && orden.aplicar_itbis) {
-        total_gravado += base;
-        itbis_total += base * itbisPct;
+        total_gravado += g.base;
+        itbis_total += g.itbis;
       } else {
-        total_exento += base;
+        total_exento += g.base;
       }
     });
 
     const total_orden = total_gravado + total_exento + itbis_total;
     return { total_exento, total_gravado, descuento_total, itbis_total, total_orden };
-  }, [detalles, orden.aplicar_itbis]);
+  }, [detalles, orden.aplicar_itbis, orden.itbis_incluido]);
 
   const decisionTotals = useMemo(() => {
     return detalles.reduce((acc, d) => {
@@ -2935,7 +2953,7 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 text-center text-blue-700 font-bold">{d.cantidad}</TableCell>
                         <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-mono">{Number(d.precio || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
+                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{desgloseLinea(d, orden.aplicar_itbis, orden.itbis_incluido).itbis.toFixed(2)}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-bold text-slate-800">{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                       </>
                     ) : (
@@ -3019,7 +3037,7 @@ const OrdenCompraPage = () => {
                         <TableCell className="py-0 px-2 text-center font-bold" style={{ color: (d.existencia ?? 0) <= 0 ? '#dc2626' : '#059669' }}>{d.existencia ?? 0}</TableCell>
                         <TableCell className="py-0 px-2 text-right font-mono">{Number(d.precio || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-0 px-2 text-right text-slate-500">{d.descuento_pct}%</TableCell>
-                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{(orden.aplicar_itbis ? normalizeTaxRate(d.itbis_pct) * getDetalleBase(d) : 0).toFixed(2)}</TableCell>
+                        <TableCell className="py-0 px-2 text-right text-slate-500 text-[10px]">{desgloseLinea(d, orden.aplicar_itbis, orden.itbis_incluido).itbis.toFixed(2)}</TableCell>
                         <TableCell className={`py-0 px-2 text-right font-bold ${pedidoHoy ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{Number(d.importe || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="py-0 px-1 text-center" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                           <Select value={decision} onValueChange={(value) => handleDecisionDetalle(d.id, value)}>
@@ -3380,15 +3398,33 @@ const OrdenCompraPage = () => {
         </div>
 
         <div className="p-3 border border-slate-300 rounded-sm bg-slate-50/50 space-y-2 relative shadow-md">
-          <div className="flex flex-col space-y-1.5 mb-2 border-b border-slate-200 pb-2">
-            <div className="flex items-center space-x-2">
-              <Checkbox id="f-itbis" checked={orden.aplicar_itbis} onCheckedChange={(c) => setOrden({ ...orden, aplicar_itbis: !!c })} />
-              <Label htmlFor="f-itbis" className="text-xs font-medium">Aplicar ITBIS</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox id="f-incluido" checked={orden.itbis_incluido} onCheckedChange={(c) => setOrden({ ...orden, itbis_incluido: !!c })} />
-              <Label htmlFor="f-incluido" className="text-xs font-medium">ITBIS incluido?</Label>
-            </div>
+          {/* Antes eran dos casillas, "Aplicar ITBIS" e "ITBIS incluido?", que
+              se leian como lo mismo. Son tres situaciones distintas y ahora se
+              eligen de una: el precio ya trae ITBIS, no lo trae, o no hay. */}
+          <div className="flex flex-col space-y-1 mb-2 border-b border-slate-200 pb-2">
+            <Label className="text-[10px] font-bold text-slate-500 uppercase">Precios del suplidor</Label>
+            <Select
+              value={!orden.aplicar_itbis ? 'exento' : (orden.itbis_incluido ? 'incluido' : 'mas_itbis')}
+              onValueChange={(v) => setOrden({
+                ...orden,
+                aplicar_itbis: v !== 'exento',
+                itbis_incluido: v === 'incluido',
+              })}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="incluido">Ya incluyen ITBIS</SelectItem>
+                <SelectItem value="mas_itbis">Sin ITBIS (se le suma)</SelectItem>
+                <SelectItem value="exento">Exento (sin ITBIS)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-500 leading-tight">
+              {!orden.aplicar_itbis
+                ? 'No se cobra ITBIS en esta orden.'
+                : orden.itbis_incluido
+                  ? 'El costo que ves viene de la última factura, con su ITBIS dentro. Se desglosa, no se suma.'
+                  : 'Al costo que ves se le agrega el ITBIS encima.'}
+            </p>
           </div>
 
           <div className="flex flex-col space-y-0.5 text-[12px]">
