@@ -1483,6 +1483,35 @@ const ComprasPage = () => {
         });
       }
 
+      // El suplidor vino y trajo lo que trajo. Las ordenes suyas que ya
+      // pasaron su ventana (entrega + un ciclo de compras) se dan por
+      // cerradas: lo que no vino, no vino.
+      //
+      // Sin esto la orden solo cerraba si llegaba TODO, y como nunca llega
+      // todo, ninguna cerraba: 53 de 58 ordenes vivas para siempre, con sus
+      // lineas contando como mercancia en camino y tapando el proximo pedido.
+      try {
+        const { data: cierre } = await supabase.rpc('cerrar_ordenes_vencidas_del_suplidor', {
+          p_suplidor_id: savedCompra.suplidor_id,
+        });
+        if (cierre?.ok && cierre.ordenes > 0) {
+          toast({
+            title: `${cierre.ordenes} orden(es) cerrada(s)`,
+            description: `${cierre.numeros?.join(', ')} — ${cierre.lineas} linea(s) por ${Number(cierre.unidades || 0)} unidad(es) que nunca llegaron. Vuelven a poder pedirse.`,
+            duration: 9000,
+          });
+        }
+      } catch (err) {
+        // Que falle no puede tumbar una compra ya guardada, pero tampoco
+        // puede pasar callado: si nadie lo ve, las ordenes se acumulan otra vez.
+        console.error('Error cerrando ordenes vencidas:', err);
+        toast({
+          variant: 'destructive',
+          title: 'No se cerraron las ordenes viejas',
+          description: 'La compra se guardo bien. Revisa las ordenes pendientes del suplidor.',
+        });
+      }
+
       const movimientos = detallesGuardar.map(d => ({
         producto_id: d.producto_id,
         tipo: 'ENTRADA',
