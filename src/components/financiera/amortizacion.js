@@ -14,9 +14,25 @@ function addPeriodo(baseDate, k, frecuencia) {
   return d.toISOString().slice(0, 10);
 }
 
+// Cuánto mes cabe en una cuota. La tasa SIEMPRE se piensa por mes; lo que
+// cambia con la frecuencia es el trozo de mes que dura cada cuota.
+//
+// (2026-08-24) Sin esto, un préstamo de 15,000 al 10% en 60 cuotas diarias
+// cobraba 10% DIARIO: 90,000 de interés sobre 15,000 de capital. El campo
+// decía "Tasa % por cuota" y la fórmula le hacía caso al pie de la letra.
+// Lo correcto son 60 de 300 — el 10% mensual por los dos meses que dura.
+export const mesesPorCuota = (frecuencia) => {
+  if (frecuencia === 'diario') return 1 / 30;
+  if (frecuencia === 'semanal') return 7 / 30;
+  if (frecuencia === 'quincenal') return 0.5;
+  return 1;   // mensual: la cuota ES el mes
+};
+
 export function calcAmortizacion({ monto, tasa, plazo, metodo, frecuencia, fechaPrimera, cuotaAjustada }) {
   const P = Number(monto) || 0;
-  const i = (Number(tasa) || 0) / 100;
+  // Tasa DEL PERIODO, no la mensual pelada. Espejo exacto de la RPC
+  // calc_amortizacion: si los dos no dan lo mismo, la vista previa miente.
+  const i = ((Number(tasa) || 0) / 100) * mesesPorCuota(frecuencia);
   const n = parseInt(plazo, 10) || 0;
   if (P <= 0 || n <= 0) return [];
 

@@ -36,6 +36,22 @@ const mesDespues = (iso) => {
   return `${base.getFullYear()}-${mes}-${dia}`;
 };
 
+// Cuándo vence la PRIMERA cuota, según cada cuánto se cobra.
+//
+// (2026-08-24) Antes siempre proponía un mes, fuera cual fuera la
+// frecuencia: un préstamo diario abierto el 24/08 pedía su primera cuota el
+// 24/09. Un mes entero sin cobrar en un préstamo que se cobra todos los días.
+const unPeriodoDespues = (iso, frecuencia) => {
+  if (frecuencia === 'mensual') return mesDespues(iso);
+  const dias = frecuencia === 'diario' ? 1 : frecuencia === 'semanal' ? 7 : 15;
+  const [a, m, dd] = String(iso || '').split('-').map(Number);
+  const base = (a && m && dd) ? new Date(a, m - 1, dd) : new Date();
+  base.setDate(base.getDate() + dias);
+  const mes = String(base.getMonth() + 1).padStart(2, '0');
+  const dia = String(base.getDate()).padStart(2, '0');
+  return `${base.getFullYear()}-${mes}-${dia}`;
+};
+
 const proximoMes = () => mesDespues(hoyLocal());
 
 // Funcion y no objeto: si fuera un objeto, hoyLocal() se evaluaria UNA vez al
@@ -79,8 +95,21 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
     setForm((p) => ({
       ...p,
       fechaInicio: nueva,
-      fechaPrimera: p.fechaPrimera === mesDespues(p.fechaInicio)
-        ? mesDespues(nueva)
+      fechaPrimera: p.fechaPrimera === unPeriodoDespues(p.fechaInicio, p.frecuencia)
+        ? unPeriodoDespues(nueva, p.frecuencia)
+        : p.fechaPrimera,
+    }));
+  };
+
+  // Cambiar la frecuencia mueve la primera cuota con ella, bajo la misma
+  // regla: solo si nadie la había tocado a mano. Pasar a diario y dejar la
+  // primera cuota a un mes es regalar el mes.
+  const cambiarFrecuencia = (nueva) => {
+    setForm((p) => ({
+      ...p,
+      frecuencia: nueva,
+      fechaPrimera: p.fechaPrimera === unPeriodoDespues(p.fechaInicio, p.frecuencia)
+        ? unPeriodoDespues(p.fechaInicio, nueva)
         : p.fechaPrimera,
     }));
   };
@@ -263,7 +292,7 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
               <Input type="text" inputMode="decimal" className="text-right" value={fmtMontoInput(form.monto)} onChange={(e) => set('monto', parseMontoInput(e.target.value))} placeholder="0.00" />
             </div>
             <div className="space-y-1.5">
-              <Label>Tasa % por cuota</Label>
+              <Label>Tasa % mensual</Label>
               <Input type="number" value={form.tasa} onChange={(e) => set('tasa', e.target.value)} placeholder="Ej: 5" />
             </div>
             <div className="space-y-1.5">
@@ -272,7 +301,7 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
             </div>
             <div className="space-y-1.5">
               <Label>Frecuencia</Label>
-              <Select value={form.frecuencia} onValueChange={(v) => set('frecuencia', v)}>
+              <Select value={form.frecuencia} onValueChange={cambiarFrecuencia}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mensual">Mensual</SelectItem>
