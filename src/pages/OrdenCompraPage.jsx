@@ -40,6 +40,10 @@ const DECISION_OPTIONS = {
   // Entra solo: es lo que el suplidor quedó debiendo de la compra anterior.
   // Se distingue del resto porque no lo pidió el cálculo, lo debe él.
   pendiente_ult_compra: { label: 'Pendiente de la última compra (no lo trajo)', short: 'Pend. últ. compra', cls: 'bg-rose-50 text-rose-700 border-rose-300' },
+  // También entra solo, pero por el otro extremo del circulo: se acabó
+  // vendiéndolo. No lo pidió el cálculo de reposición — lo pidió el
+  // mostrador, en el momento en que salió la última unidad.
+  agotado_en_venta: { label: 'Se acabó vendiéndolo', short: 'Se acabó', cls: 'bg-orange-50 text-orange-700 border-orange-300' },
   no_disponible: { label: 'No lo tiene suplidor', short: 'No disponible', cls: 'bg-red-50 text-red-700 border-red-200' },
   pospuesto_presupuesto: { label: 'Pospuesto por presupuesto', short: 'Presupuesto', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   poca_rotacion: { label: 'Poca rotacion', short: 'Poca rotacion', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
@@ -47,7 +51,7 @@ const DECISION_OPTIONS = {
 };
 
 // Va en la orden: tanto lo pendiente de confirmar como lo ya confirmado
-const isDetallePedidoHoy = (detalle) => ['pedir_hoy', 'pedido', 'pendiente_ult_compra'].includes(detalle?.decision_estado || DECISION_DEFAULT);
+const isDetallePedidoHoy = (detalle) => ['pedir_hoy', 'pedido', 'pendiente_ult_compra', 'agotado_en_venta'].includes(detalle?.decision_estado || DECISION_DEFAULT);
 
 import SuplidorVirtualPage from '@/pages/SuplidorVirtualPage';
 import AciertoComprasPage from '@/pages/AciertoComprasPage';
