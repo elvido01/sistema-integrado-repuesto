@@ -94,6 +94,10 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   // para que ProductBasicInfo dispare el auto-cálculo de Mín/Máx incluso
   // cuando el padre re-fetchea el producto y nos sobrescribe los valores.
   const [loadVersion, setLoadVersion] = useState(0);
+  // Ya se avisó de que este producto va sin suplidor. Se guarda en una
+  // referencia y no en estado porque cambiarlo no tiene que repintar nada, y
+  // F10 llama al submit desde un closure viejo que no vería el estado.
+  const avisoSinSuplidorRef = useRef(false);
 
   const populateForm = useCallback(async (p) => {
     console.log("populateForm received object (p):", p);
@@ -180,6 +184,9 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
 
   useEffect(() => {
     if (isOpen) {
+      // Cada producto es una decisión nueva: haber aceptado dejar el
+      // anterior sin suplidor no vale para el siguiente.
+      avisoSinSuplidorRef.current = false;
       if (product) {
         setIsEditing(!!product.id);
         populateForm(product);
@@ -188,6 +195,12 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       }
     }
   }, [isOpen, product, populateForm, resetForm]);
+
+  // Si acaba de elegir suplidor, el aviso queda saldado: que no se lo coma
+  // un "ya te lo dije" de antes de rellenarlo.
+  useEffect(() => {
+    if (formData.suplidor_id) avisoSinSuplidorRef.current = false;
+  }, [formData.suplidor_id]);
 
 
   const handleFetchProductByCode = useCallback(async (codigo) => {
@@ -270,6 +283,26 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
 
     if (!formData.descripcion.trim()) {
       toast({ variant: "destructive", title: "Error de validación", description: "La descripción es requerida" });
+      return;
+    }
+
+    // Sin suplidor, el producto queda invisible para siempre: el cálculo de
+    // reposición trabaja POR SUPLIDOR, así que uno sin dueño no se le ocurre
+    // a nadie hasta que un cliente lo pide y no hay. Hoy hay 55 así y 23 ya
+    // están agotados — y crecían dos por día.
+    //
+    // NO se bloquea. Estar creando una pieza con el cliente delante y que el
+    // sistema te pare a rellenar un campo sería peor que el problema. Se
+    // avisa una vez, con la consecuencia dicha, y el segundo guardado pasa
+    // igual. Además la mayoría se arregla sola: al digitar la compra, el
+    // producto aprende su suplidor (trigger trg_adoptar_suplidor_compra).
+    if (!formData.suplidor_id && !avisoSinSuplidorRef.current) {
+      avisoSinSuplidorRef.current = true;
+      toast({
+        variant: 'destructive',
+        title: 'Este producto no se va a reponer solo',
+        description: 'Sin suplidor no entra en ninguna orden de compra automática. Elige uno — o guarda otra vez para dejarlo así.',
+      });
       return;
     }
 
