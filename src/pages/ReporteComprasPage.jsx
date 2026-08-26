@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateCompraPDF, generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import CorregirFormaPagoModal from '@/components/suplidores/CorregirFormaPagoModal';
 
 const fmt = (n) => Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -28,6 +29,11 @@ const ReporteComprasPage = () => {
   const [compras, setCompras] = useState([]);
   const [pagos, setPagos] = useState([]);
   const [proveedores, setProveedores] = useState([]);
+  // (2026-08-26) El corrector de forma de pago ya existia, pero solo se
+  // llegaba a el desde Pago a Suplidores y por una lista de los ultimos 30.
+  // Aqui hay filtro por fecha y por suplidor, que es donde de verdad se
+  // encuentra el pago que salio mal.
+  const [pagoACorregir, setPagoACorregir] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
     proveedorId: 'all',
@@ -360,6 +366,20 @@ const ReporteComprasPage = () => {
                             >
                               <FileText className="h-4 w-4" />
                             </Button>
+                            {/* Se pago en efectivo y quedo como transferencia
+                                (o al reves). No cambia cuanto ni a quien: solo
+                                de donde salio, asi que se arregla sin anular. */}
+                            {!pago.anulado && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-slate-500 hover:bg-slate-100"
+                                title="Corregir forma de pago (efectivo / transferencia / cheque)"
+                                onClick={() => setPagoACorregir(pago)}
+                              >
+                                <Wallet className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -371,6 +391,13 @@ const ReporteComprasPage = () => {
           </div>
         </div>
       </motion.div>
+
+      <CorregirFormaPagoModal
+        open={!!pagoACorregir}
+        pagoInicial={pagoACorregir}
+        onClose={() => setPagoACorregir(null)}
+        onCorregido={fetchPagos}
+      />
     </>
   );
 };

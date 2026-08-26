@@ -42,7 +42,24 @@ const formaActual = (formasPago) => {
   return arr.map((f) => f?.forma).filter(Boolean).join(' / ') || '—';
 };
 
-export default function CorregirFormaPagoModal({ open, onClose, onCorregido }) {
+// Una fila del Reporte viene del select de Supabase; la lista de aqui viene
+// del RPC. Se llevan al mismo molde para no tener dos formas de leer un pago.
+const normalizar = (p) => (p ? {
+  id: p.id,
+  numero: p.numero,
+  fecha: p.fecha,
+  monto_pagado: p.monto_pagado,
+  formas_pago: p.formas_pago,
+  anulado: p.anulado,
+  suplidor: p.suplidor || p.proveedores?.nombre || '',
+  cuenta_id: p.cuenta_id ?? null,
+  cuenta_nombre: p.cuenta_nombre ?? null,
+} : null);
+
+// pagoInicial: se entro desde una fila concreta (el Reporte), asi que ya se
+// sabe cual es y no hay que buscarlo en la lista. Eso ademas alcanza pagos
+// mas viejos que los 30 ultimos, que desde aqui no se podian tocar.
+export default function CorregirFormaPagoModal({ open, onClose, onCorregido, pagoInicial = null }) {
   const { toast } = useToast();
   const [pagos, setPagos] = useState([]);
   const [cargando, setCargando] = useState(false);
@@ -65,15 +82,33 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido }) {
     }
   }, [toast]);
 
-  useEffect(() => { if (open) { cargar(); setSeleccion(null); } }, [open, cargar]);
-
-  const elegir = (p) => {
+  const elegir = useCallback((p) => {
     setSeleccion(p);
-    const arr = Array.isArray(p.formas_pago) ? p.formas_pago : [];
+    const arr = Array.isArray(p?.formas_pago) ? p.formas_pago : [];
     setForma(arr[0]?.forma || 'Efectivo');
     setReferencia(arr[0]?.referencia || '');
-    setCuentaId(p.cuenta_id || null);
-  };
+    setCuentaId(p?.cuenta_id || null);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    cargar();
+    if (pagoInicial) elegir(normalizar(pagoInicial));
+    else setSeleccion(null);
+  }, [open, cargar, pagoInicial, elegir]);
+
+  // El Reporte no sabe de que cuenta salio el pago: eso vive en el
+  // movimiento bancario y solo lo saca el RPC. Si el pago esta entre los
+  // recientes se completa, y sin pisar nada de lo que ya se haya tecleado.
+  useEffect(() => {
+    if (!pagoInicial) return;
+    const conCuenta = pagos.find((p) => p.id === pagoInicial.id);
+    if (!conCuenta) return;
+    setSeleccion((s) => (s && s.id === conCuenta.id && s.cuenta_nombre == null
+      ? { ...s, cuenta_id: conCuenta.cuenta_id, cuenta_nombre: conCuenta.cuenta_nombre }
+      : s));
+    setCuentaId((c) => c ?? conCuenta.cuenta_id ?? null);
+  }, [pagos, pagoInicial]);
 
   const guardar = async () => {
     if (!seleccion) return;
@@ -108,8 +143,10 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido }) {
           : 'Ahora figura como efectivo: no toca ninguna cuenta.',
       });
       await cargar();
-      setSeleccion(null);
       onCorregido?.();
+      // Desde una fila del Reporte no hay a donde volver dentro del modal.
+      if (pagoInicial) onClose?.();
+      else setSeleccion(null);
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se corrigió', description: e.message });
     } finally {
@@ -131,41 +168,48 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido }) {
           no se tocan: para eso hay que anular el pago y volver a hacerlo.
         </p>
 
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-600 uppercase">Últimos pagos</span>
-          <Button size="sm" variant="outline" onClick={cargar} disabled={cargando}>
-            <RefreshCw className={`h-4 w-4 ${cargando ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
+        {/* Entrando desde una fila del Reporte ya se sabe cual es: la lista
+            de los ultimos 30 solo estorbaria, y ademas no lo alcanzaria si
+            el pago es viejo. */}
+        {!pagoInicial && (
+          <>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-600 uppercase">Últimos pagos</span>
+            <Button size="sm" variant="outline" onClick={cargar} disabled={cargando}>
+              <RefreshCw className={`h-4 w-4 ${cargando ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
 
-        <div className="max-h-[240px] overflow-y-auto border rounded-md">
-          {pagos.length === 0 && !cargando && (
-            <p className="text-sm text-slate-500 p-4 text-center">No hay pagos registrados.</p>
-          )}
-          {pagos.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => elegir(p)}
-              disabled={p.anulado}
-              className={`w-full text-left px-3 py-2 border-b last:border-b-0 text-sm flex items-center gap-3 transition-colors
-                ${seleccion?.id === p.id ? 'bg-blue-50' : 'hover:bg-slate-50'}
-                ${p.anulado ? 'opacity-40 cursor-not-allowed' : ''}`}
-            >
-              <span className="font-mono font-bold text-morla-blue w-[92px] flex-shrink-0">{p.numero}</span>
-              <span className="flex-1 truncate">{p.suplidor || 'Sin suplidor'}</span>
-              <span className="text-slate-500 w-[70px] flex-shrink-0">{formatInTimeZone(p.fecha, 'dd/MM/yy')}</span>
-              <span className="font-bold w-[110px] text-right flex-shrink-0">RD$ {pesos(p.monto_pagado)}</span>
-              {/* De dónde salió: sin esto hay que adivinar cuál de los pagos
-                  "Transferencia" es el que está mal. */}
-              <span className="text-[11px] text-slate-500 w-[170px] truncate flex-shrink-0">
-                {formaActual(p.formas_pago)}
-                {p.cuenta_nombre ? ` · ${p.cuenta_nombre}` : ''}
-              </span>
-              {p.anulado && <span className="text-[10px] font-bold text-red-500">ANULADO</span>}
-            </button>
-          ))}
-        </div>
+          <div className="max-h-[240px] overflow-y-auto border rounded-md">
+            {pagos.length === 0 && !cargando && (
+              <p className="text-sm text-slate-500 p-4 text-center">No hay pagos registrados.</p>
+            )}
+            {pagos.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => elegir(p)}
+                disabled={p.anulado}
+                className={`w-full text-left px-3 py-2 border-b last:border-b-0 text-sm flex items-center gap-3 transition-colors
+                  ${seleccion?.id === p.id ? 'bg-blue-50' : 'hover:bg-slate-50'}
+                  ${p.anulado ? 'opacity-40 cursor-not-allowed' : ''}`}
+              >
+                <span className="font-mono font-bold text-morla-blue w-[92px] flex-shrink-0">{p.numero}</span>
+                <span className="flex-1 truncate">{p.suplidor || 'Sin suplidor'}</span>
+                <span className="text-slate-500 w-[70px] flex-shrink-0">{formatInTimeZone(p.fecha, 'dd/MM/yy')}</span>
+                <span className="font-bold w-[110px] text-right flex-shrink-0">RD$ {pesos(p.monto_pagado)}</span>
+                {/* De dónde salió: sin esto hay que adivinar cuál de los pagos
+                    "Transferencia" es el que está mal. */}
+                <span className="text-[11px] text-slate-500 w-[170px] truncate flex-shrink-0">
+                  {formaActual(p.formas_pago)}
+                  {p.cuenta_nombre ? ` · ${p.cuenta_nombre}` : ''}
+                </span>
+                {p.anulado && <span className="text-[10px] font-bold text-red-500">ANULADO</span>}
+              </button>
+            ))}
+          </div>
+          </>
+        )}
 
         {seleccion && (
           <div className="border rounded-md p-3 space-y-3 bg-slate-50">
@@ -210,7 +254,8 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido }) {
             </p>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setSeleccion(null)} disabled={guardando}>
+              <Button variant="outline" size="sm" disabled={guardando}
+                      onClick={() => (pagoInicial ? onClose?.() : setSeleccion(null))}>
                 Cancelar
               </Button>
               <Button size="sm" onClick={guardar} disabled={guardando}>
