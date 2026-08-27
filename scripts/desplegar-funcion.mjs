@@ -45,7 +45,13 @@ const cli = CANDIDATOS.find((c) => c === 'supabase' || existsSync(c)) || 'supaba
 
 console.log(`\n  Desplegando ${funcion} a ${PROD}...\n`);
 
-const hijo = spawn(cli, ['functions', 'deploy', funcion, '--project-ref', PROD], {
+// Lo que venga despues del nombre se le pasa tal cual al CLI. Hace falta
+// para --no-verify-jwt: un webhook que recibe de fuera (TikTok, Meta) no
+// puede exigir un JWT que el que llama no tiene, y sin esto responde 401 a
+// todo y la plataforma da la URL por muerta.
+const extras = process.argv.slice(3);
+
+const hijo = spawn(cli, ['functions', 'deploy', funcion, '--project-ref', PROD, ...extras], {
   cwd: RAIZ,
   // El token va SOLO aquí: ni en el comando, ni en el historial, ni en ps.
   env: { ...process.env, SUPABASE_ACCESS_TOKEN: TOKEN },

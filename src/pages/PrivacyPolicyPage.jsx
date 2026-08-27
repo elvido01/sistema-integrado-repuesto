@@ -12,8 +12,8 @@ const sections = [
   {
     title: 'Finalidad del uso',
     body: [
-      'Usamos esta informacion para centralizar conversaciones de WhatsApp, Facebook e Instagram en el CRM, atender solicitudes de clientes, preparar cotizaciones, dar seguimiento a pedidos de repuestos y ayudar al equipo a confirmar la pieza correcta antes de responder.',
-      'No vendemos los datos recibidos por Meta ni los usamos para publicidad externa de terceros.',
+      'Usamos esta informacion para centralizar conversaciones de WhatsApp, Facebook, Instagram y TikTok en el CRM, atender solicitudes de clientes, preparar cotizaciones, dar seguimiento a pedidos de repuestos y ayudar al equipo a confirmar la pieza correcta antes de responder.',
+      'No vendemos los datos recibidos por Meta ni por TikTok, ni los usamos para publicidad externa de terceros.',
     ],
   },
   {
@@ -67,8 +67,8 @@ function PrivacyPolicyPage() {
           <p>
             Esta politica explica como Repuestos Morla y MotoFlow CRM tratan la
             informacion recibida a traves de integraciones con Facebook,
-            Instagram, WhatsApp y otros modulos del CRM usados para atencion al
-            cliente y gestion comercial.
+            Instagram, WhatsApp, TikTok y otros modulos del CRM usados para
+            atencion al cliente y gestion comercial.
           </p>
           <p>
             MotoFlow CRM es una herramienta operativa para negocios de repuestos
