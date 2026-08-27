@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, marcarUsoSugerencia, sendOmniReply, sugerirRespuesta, updateOmniConversationStatus } from '../../services/apiClient.js';
 import { esperaRespuesta, estaSinVer } from '../../channels/channelRegistry.js';
 
@@ -82,6 +82,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   const [error, setError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [replyText, setReplyText] = useState('');
+  const replyRef = useRef(null);
   const [sending, setSending] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   // Lo que Hermes propuso y todavia no se ha resuelto. Se guarda el TEXTO
@@ -246,6 +247,20 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
       // lo peor que pasa es que el punto vuelva al recargar la bandeja.
     });
   }
+
+  // El cuadro se ajusta a lo que tiene dentro. Como la fila de responder es
+  // la ultima del grid, crecer la empuja hacia arriba: la sugerencia se lee
+  // entera de un vistazo en vez de por una rendija de dos lineas.
+  //
+  // Se suman los bordes porque con box-sizing: border-box el alto los incluye
+  // y scrollHeight no: sin eso queda 2px corto y siempre asoma un pelo de
+  // scroll aunque el texto quepa.
+  useEffect(() => {
+    const el = replyRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
+  }, [replyText, selected?.id]);
 
   async function handleSugerir() {
     if (!selected?.id || sugiriendo) return;
@@ -544,6 +559,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
 
               <form className="mf-omni-reply" onSubmit={handleSendReply}>
                 <textarea
+                  ref={replyRef}
                   value={replyText}
                   onChange={(event) => setReplyText(event.target.value)}
                   placeholder={`Responder por ${selectedMeta.platform === 'instagram' ? 'Instagram' : selectedMeta.platform === 'facebook' ? 'Facebook' : 'este canal'}...`}

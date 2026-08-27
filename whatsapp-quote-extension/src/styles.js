@@ -687,7 +687,13 @@ export const styles = `
     width: 100%;
     min-width: 0;
     min-height: 48px;
-    max-height: 92px;
+    /* (2026-08-27) Estaba en 92px: dos lineas y media. Una sugerencia de
+       Hermes con su lista de piezas no cabe, y habia que leerla por una
+       rendija con scroll. La fila de responder es la ultima del grid, asi
+       que al crecer empuja hacia ARRIBA y se come alto de los mensajes,
+       no del alto de la ventana. El tope va contra la pantalla para que en
+       un monitor bajito no se trague el hilo entero. */
+    max-height: min(320px, 45vh);
     resize: vertical;
     padding: 8px 9px;
     border: 1px solid #cfdcd6;
