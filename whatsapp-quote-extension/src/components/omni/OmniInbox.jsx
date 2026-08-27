@@ -531,10 +531,22 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
 
                 {messages.map((message) => {
                   const outgoing = ['agent', 'assistant', 'system'].includes(message.sender_type);
+                  // Un mensaje que no salio se veia identico a uno entregado:
+                  // globo verde, su hora, y ya. El aviso de arriba dura hasta
+                  // el siguiente refresco; el globo se queda mintiendo para
+                  // siempre. En TikTok eso son 13 clientes esperando una
+                  // respuesta que el vendedor da por mandada.
+                  const noSalio = outgoing && message.status === 'failed';
                   return (
-                    <article key={message.id} className={outgoing ? 'is-outgoing' : 'is-incoming'}>
+                    <article
+                      key={message.id}
+                      className={`${outgoing ? 'is-outgoing' : 'is-incoming'}${noSalio ? ' is-failed' : ''}`}
+                    >
                       <p>{getMessageBody(message)}</p>
-                      <small>{formatTime(message.created_at)}</small>
+                      <small>
+                        {formatTime(message.created_at)}
+                        {noSalio && ' · ⚠ NO SALIÓ'}
+                      </small>
                     </article>
                   );
                 })}

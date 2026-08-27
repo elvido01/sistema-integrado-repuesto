@@ -665,6 +665,19 @@ export const styles = `
     overflow-wrap: anywhere;
   }
 
+  /* El que no salio. Tiene que cantar a la vista: es un cliente esperando
+     una respuesta que nadie recibio, no un detalle de estado. */
+  .mf-omni-messages article.is-failed {
+    background: #fff1f0;
+    border: 1px solid #f3b0ab;
+    box-shadow: none;
+  }
+
+  .mf-omni-messages article.is-failed small {
+    color: #b42318;
+    font-weight: 800;
+  }
+
   .mf-omni-messages article small {
     display: block;
     margin-top: 4px;
