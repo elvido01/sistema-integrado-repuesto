@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -86,6 +86,18 @@ const PagoSuplidoresPage = () => {
 
   const esFilaUSD = useCallback((c) => c.moneda === 'USD' && Number(c.pendiente_usd) > 0, []);
 
+  // (2026-08-27) El campo de monto de la forma de pago no dejaba teclear.
+  // Escribir ahi reparte el monto entre las facturas; con un suplidor en US$
+  // ese reparto redondea a centavos de DOLAR y al volver a pesos ya no da lo
+  // mismo. El efecto de abajo devolvia ese numero al campo y te borraba la
+  // tecla: escribias 2 y aparecia 1.77.
+  //
+  // La bandera dice quien esta mandando. Si el monto se esta tecleando a
+  // mano, el campo es de quien escribe y no se le devuelve nada. En cuanto
+  // se toca la columna Abono —o se carga otro pago— vuelve a mandar el
+  // total, que es lo que siempre hizo.
+  const montoTecleado = useRef(false);
+
   const filteredSuplidores = useMemo(() => {
     const q = suplidorSearch.trim().toLowerCase();
     if (!q) return suplidores;
@@ -115,6 +127,7 @@ const PagoSuplidoresPage = () => {
   }, [fetchInitialData]);
 
   const handleSuplidorSelect = async (suplidorId) => {
+    montoTecleado.current = false;
     if (!suplidorId) {
       setPago(prev => ({ ...prev, suplidorId: null, suplidorNombre: '', balanceAnterior: 0, balanceUsd: 0 }));
       setCompras([]);
@@ -159,6 +172,7 @@ const PagoSuplidoresPage = () => {
   };
 
   const handleAbonoChange = (compraId, abono) => {
+    montoTecleado.current = false;
     const abonoValue = parseFloat(abono) || 0;
     setCompras(compras.map(c => {
       if (c.id === compraId) {
@@ -214,7 +228,7 @@ const PagoSuplidoresPage = () => {
     const balanceActual = pago.balanceAnterior - totalAbonosDop;
     const balanceActualUsd = (pago.balanceUsd || 0) - totalAbonosUsd;
     setPago(prev => ({ ...prev, totalPagado: totalAbonos, totalPagadoUsd: totalAbonosUsd, balanceActual, balanceActualUsd }));
-    if (formasPago.length === 1) {
+    if (formasPago.length === 1 && !montoTecleado.current) {
       setFormasPago([{ ...formasPago[0], monto: totalAbonos }]);
     }
   }, [totalAbonos, totalAbonosDop, totalAbonosUsd, pago.balanceAnterior, pago.balanceUsd]);
@@ -224,9 +238,23 @@ const PagoSuplidoresPage = () => {
     setFormasPago(nextFormasPago);
 
     if (field === 'monto') {
+      montoTecleado.current = true;
       const totalFormas = nextFormasPago.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
       distribuirPagoEnCompras(totalFormas);
     }
+  };
+
+  // Al soltar el campo, el monto se cuadra con lo que de verdad se repartio.
+  // Con facturas en dolares casi nunca da al centavo: pedir 28,960 cuando lo
+  // repartible son 28,959.60 dejaria el pago diciendo una cosa y el detalle
+  // otra, y el guardado lo rechazaria sin que se entienda por que. Se ajusta
+  // solo cuando hay una sola forma; si el pago se reparte entre varias, cada
+  // una es una decision y no se toca.
+  const cuadrarMonto = () => {
+    montoTecleado.current = false;
+    if (formasPago.length !== 1) return;
+    if (Math.abs(Number(formasPago[0].monto) - totalAbonos) <= 0.005) return;
+    setFormasPago([{ ...formasPago[0], monto: totalAbonos }]);
   };
 
   const addFormaPago = () => {
@@ -255,7 +283,17 @@ const PagoSuplidoresPage = () => {
       toast({ variant: 'destructive', title: 'Error de validación', description: 'Debe ingresar al menos un abono.' });
       return;
     }
-    if (Math.abs(totalAbonos - totalPagadoFormas) > 0.01) {
+    // Guardar con F10 sin salir del campo no dispara el cuadre del onBlur, y
+    // con facturas en dolares la diferencia de centavos rebotaria el guardado
+    // por algo que el usuario no puede arreglar tecleando. Se cuadra aqui,
+    // que es la misma regla: una sola forma sigue al total repartido.
+    const formasFinales = (formasPago.length === 1
+      && Math.abs(Number(formasPago[0].monto) - totalAbonos) > 0.005)
+      ? [{ ...formasPago[0], monto: totalAbonos }]
+      : formasPago;
+    const sumaFormas = formasFinales.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
+
+    if (Math.abs(totalAbonos - sumaFormas) > 0.01) {
       toast({ variant: 'destructive', title: 'Error de validación', description: 'El total de formas de pago no coincide con el total a pagar.' });
       return;
     }
@@ -276,7 +314,7 @@ const PagoSuplidoresPage = () => {
       suplidor_id: pago.suplidorId,
       total_pagado: totalAbonos,
       concepto: 'Pago a suplidor',
-      formas_pago: formasPago,
+      formas_pago: formasFinales,
       // Pago en dólares: tasa de HOY y total en US$ (la diferencia cambiaria
       // la calcula y guarda el RPC contra la tasa de cada compra)
       tasa_cambio: totalAbonosUsd > 0 ? tasa : null,
@@ -298,11 +336,13 @@ const PagoSuplidoresPage = () => {
       if (error) throw error;
 
       // Salida de la cuenta bancaria por la porción no-efectivo (transferencia/cheque).
-      const montoBanco = formasPago
+      // Sobre formasFinales, no sobre lo tecleado: si no, la cuenta se
+      // movería por un monto distinto al que quedó guardado en el pago.
+      const montoBanco = formasFinales
         .filter(f => f.forma === 'Transferencia' || f.forma === 'Cheque')
         .reduce((s, f) => s + (Number(f.monto) || 0), 0);
       if (cuentaId && montoBanco > 0) {
-        const ref = formasPago.find(f => f.forma === 'Transferencia' || f.forma === 'Cheque')?.referencia || String(data || '');
+        const ref = formasFinales.find(f => f.forma === 'Transferencia' || f.forma === 'Cheque')?.referencia || String(data || '');
         // Las formas de pago se digitan en RD$. Si la cuenta lleva dólares,
         // lo que sale de ELLA son dólares: se convierte a la misma tasa con
         // la que se calculó el pago, para no restarle pesos a una cuenta en
@@ -377,7 +417,7 @@ const PagoSuplidoresPage = () => {
             { ...pagoData, numero: data },
             pago.suplidorNombre,
             enrichedDetalles,
-            formasPago,
+            formasFinales,
             empresa
           );
         } else {
@@ -385,7 +425,7 @@ const PagoSuplidoresPage = () => {
             { ...pagoData, numero: data },
             pago.suplidorNombre,
             enrichedDetalles,
-            formasPago,
+            formasFinales,
             paperSize
           );
         }
@@ -414,6 +454,7 @@ const PagoSuplidoresPage = () => {
   };
 
   const resetForm = useCallback(() => {
+    montoTecleado.current = false;
     setPago(initialState);
     setCompras([]);
     setFormasPago([{ id: 1, forma: 'Efectivo', monto: 0, referencia: '' }]);
@@ -581,7 +622,7 @@ const PagoSuplidoresPage = () => {
                         <SelectItem value="Tarjeta de Crédito">T. Crédito</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Input type="text" inputMode="decimal" placeholder="Monto" value={fmtMontoInput(fp.monto)} onChange={(e) => handleFormaPagoChange(fp.id, 'monto', parseMontoInput(e.target.value))} className="text-right" />
+                    <Input type="text" inputMode="decimal" placeholder="Monto" value={fmtMontoInput(fp.monto)} onChange={(e) => handleFormaPagoChange(fp.id, 'monto', parseMontoInput(e.target.value))} onBlur={cuadrarMonto} className="text-right" />
                     <Button variant="ghost" size="icon" onClick={() => removeFormaPago(fp.id)} disabled={formasPago.length === 1}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
@@ -591,6 +632,14 @@ const PagoSuplidoresPage = () => {
                   </div>
                 ))}
               </div>
+              {/* El ajuste al soltar el campo se ve como un salto de centavos.
+                  Dicho antes, no parece que el campo este fallando otra vez. */}
+              {monedaUSD && (
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Las facturas son en US$: al salir del campo el monto se cuadra
+                  con los centavos que de verdad se pueden repartir.
+                </p>
+              )}
               <Button variant="outline" size="sm" onClick={addFormaPago} className="mt-2 w-full">
                 <PlusCircle className="h-4 w-4 mr-2" /> Añadir Forma de Pago
               </Button>
