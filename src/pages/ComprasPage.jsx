@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
+import { factorDePaquete } from '@/lib/paqueteDeCompra';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -803,6 +804,18 @@ const ComprasPage = () => {
 
     const { invoice, items: extractedItems } = data;
 
+    // Lo que este suplidor ya nos enseño: cuantas unidades trae un "1" suyo.
+    // Se pide UNA vez, no codigo por codigo. Si falla, se sigue sin ello: el
+    // OCR tiene que funcionar aunque esto no conteste.
+    let paquetesSuplidor = {};
+    if (compra.suplidor_id) {
+      try {
+        const { data: paq } = await supabase.rpc('get_paquetes_suplidor', { p_suplidor_id: compra.suplidor_id });
+        if (paq && typeof paq === 'object') paquetesSuplidor = paq;
+      } catch { /* sin memoria del suplidor se sigue igual */ }
+    }
+    let lineasAbiertas = 0;
+
     // El suplidor ya fue seleccionado previamente (requerido antes de subir foto)
     // Solo actualizamos datos de encabezado de la factura
 
@@ -884,8 +897,20 @@ const ComprasPage = () => {
       }
 
       if (productoItbis !== null) itbis_pct = productoItbis;
-      const costo = item.unit_cost || productoCosto;
-      const cantidad = item.qty || 0;
+      let costo = item.unit_cost || productoCosto;
+      let cantidad = item.qty || 0;
+
+      // ABRIR EL PAQUETE. La factura dice 1 caja de 100 tornillos a 583; en
+      // inventario entran 100 tornillos a 5.83. El importe de la linea NO
+      // cambia —583 sigue siendo 583— asi que lo que se le paga al suplidor
+      // es exactamente lo que dice su factura. Si eso cambiara, esto estaria
+      // mal y habria que quitarlo.
+      const paquete = factorDePaquete(item, paquetesSuplidor);
+      if (paquete.factor > 1 && cantidad > 0 && costo > 0) {
+        cantidad = cantidad * paquete.factor;
+        costo = costo / paquete.factor;
+        lineasAbiertas += 1;
+      }
 
       // La base se calcula restando el descuento
       const baseCalculo = cantidad * costo * (1 - discount_pct);
@@ -909,7 +934,11 @@ const ComprasPage = () => {
         itbis_pct,
         importe,
         producto_id,
-        is_matched: matched
+        is_matched: matched,
+        // Se deja anotado para poder decirlo en pantalla: una cantidad que
+        // cambia sola sin avisar da mas miedo que confianza.
+        paquete_abierto: paquete.factor > 1 ? paquete.factor : null,
+        paquete_origen: paquete.origen
       };
     }));
 
@@ -917,7 +946,9 @@ const ComprasPage = () => {
 
     toast({
       title: "Factura Procesada",
-      description: `Se extrajeron ${processedItems.length} items. Por favor revise los datos.`
+      description: lineasAbiertas > 0
+        ? `${processedItems.length} items. ${lineasAbiertas} venian en paquete y se abrieron a unidades. Revise los datos.`
+        : `Se extrajeron ${processedItems.length} items. Por favor revise los datos.`
     });
   };
 
@@ -1469,6 +1500,18 @@ const ComprasPage = () => {
     if (detallesError) {
       toast({ variant: "destructive", title: "Error al guardar detalles de la compra", description: detallesError.message });
     } else {
+      // Lo que se corrigio a mano queda aprendido para la proxima factura de
+      // este suplidor. Solo se guarda cuando la cantidad se multiplica y el
+      // costo se divide por el MISMO numero: esa coincidencia es la firma de
+      // abrir un paquete, y deja el importe de la linea intacto. Cualquier
+      // otra correccion no se aprende — seria ensenarle a repetir un error.
+      try {
+        await supabase.rpc('aprender_paquetes_de_compra', { p_compra_id: savedCompra.id });
+      } catch (err) {
+        // Que no aprenda no puede tumbar una compra ya guardada.
+        console.error('[Compras] no se pudo aprender el paquete:', err);
+      }
+
       // ============================================
       // RECEPCION CONTRA ORDENES ENVIADAS/PARCIALES
       // ============================================
