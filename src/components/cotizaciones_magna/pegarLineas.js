@@ -85,9 +85,16 @@ export function parsearLineasPegadas(texto) {
       if (n.length >= (orden.length || 0)) orden = n;
     }
 
-    // El mismo chasis dos veces puede ser legítimo —una moto que vuelve por
-    // otra garantía— pero también puede ser un dígito mal copiado. Se avisa
-    // y se importa: quien decide es el que conoce el taller.
+    // El mismo chasis dos veces es NORMAL: una moto vuelve al taller por otra
+    // reparación y cada visita es su propia orden. Confirmado por el dueño
+    // con MD2A76BX9TWG47363, que tuvo dos (órdenes 1631 y 2744).
+    //
+    // Por eso esto avisa pero JAMAS descarta. Quitar el repetido "por
+    // limpieza" seria borrar una reparación de la factura de Magna.
+    //
+    // Se sigue diciendo porque el otro caso —un dígito mal copiado que hace
+    // que dos motos distintas parezcan la misma— se ve exactamente igual, y
+    // ese sí hay que cazarlo.
     if (vistos.has(chasis)) {
       repetidos.push(`${chasis} (órdenes ${vistos.get(chasis)} y ${orden || '?'})`);
     } else {

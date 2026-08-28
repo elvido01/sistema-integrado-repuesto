@@ -113,7 +113,10 @@ const CotizacionMagnaFormModal = ({ isOpen, onClose, editingCotizacion }) => {
         // de 17 sin avisar es perder dos motos de la factura.
         const avisos = [];
         if (ignoradas.length) avisos.push(`${ignoradas.length} linea(s) sin chasis reconocible: ${ignoradas[0].slice(0, 40)}...`);
-        if (repetidos.length) avisos.push(`Chasis repetido: ${repetidos.join('; ')}`);
+        // Una moto que vuelve al taller es normal y cada visita lleva su
+        // propia orden: se dice como dato, no como problema. Lo unico que
+        // hay que mirar es que las dos ordenes sean de verdad distintas.
+        if (repetidos.length) avisos.push(`La misma moto entra dos veces, una por reparacion: ${repetidos.join('; ')}`);
 
         toast({
             variant: ignoradas.length ? 'destructive' : 'default',
