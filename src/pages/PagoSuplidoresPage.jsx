@@ -342,6 +342,18 @@ const PagoSuplidoresPage = () => {
 
       if (error) throw error;
 
+      // >>> EL ID DEL PAGO, ANTES DE NADA <<<
+      // El NUMERO no identifica un pago: cada empresa numera desde 1, asi que
+      // PS-000003 existe en tres. Con las cuentas compartidas entre Caminero y
+      // MotoPréstamos, atar el movimiento por el número dejaba que corregir el
+      // de una le borrara el suyo a la otra. El id sí es único.
+      const { data: pagoRow } = await supabase
+        .from('pagos_suplidores')
+        .select('id')
+        .eq('numero', data)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+
       // Salida de la cuenta bancaria por la porción no-efectivo (transferencia/cheque).
       // Sobre formasFinales, no sobre lo tecleado: si no, la cuenta se
       // movería por un monto distinto al que quedó guardado en el pago.
@@ -358,7 +370,11 @@ const PagoSuplidoresPage = () => {
         supabase.rpc('registrar_movimiento_bancario_compartido', {
           p_cuenta_id: cuentaId, p_tipo: 'SALIDA', p_monto: montoCuenta,
           p_concepto: `Pago suplidor ${pago.suplidorNombre || ''} (${data || ''})`.trim(),
-          p_referencia: ref, p_origen_tipo: 'pago_suplidor', p_origen_id: null, p_fecha: null,
+          // Con origen_id el movimiento queda atado al pago: el indice unico
+          // (tenant, origen_tipo, origen_id) ademas hace idempotente el
+          // guardado, asi que un doble clic no saca el dinero dos veces.
+          p_referencia: ref, p_origen_tipo: 'pago_suplidor',
+          p_origen_id: pagoRow?.id ?? null, p_fecha: null,
         }).then(() => {}, () => {});
       }
 
@@ -372,13 +388,6 @@ const PagoSuplidoresPage = () => {
       // El RPC se encarga de decidir si aplica: si el pago no viene de un
       // financiamiento, contesta que no y aquí no se dice nada.
       try {
-        const { data: pagoRow } = await supabase
-          .from('pagos_suplidores')
-          .select('id')
-          .eq('numero', data)
-          .eq('tenant_id', tenantId)
-          .maybeSingle();
-
         if (pagoRow?.id) {
           // Efectivo: las dos empresas comparten las cuentas físicas, así que
           // acreditar una cuenta haría desaparecer la salida que acaba de
