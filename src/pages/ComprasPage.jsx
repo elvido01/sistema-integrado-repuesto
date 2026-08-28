@@ -810,12 +810,21 @@ const ComprasPage = () => {
     // Se pide UNA vez, no codigo por codigo. Si falla, se sigue sin ello: el
     // OCR tiene que funcionar aunque esto no conteste.
     let paquetesSuplidor = {};
+    // Y como llama este suplidor a nuestras piezas. Su "003730" es nuestro
+    // "TVS003730"; su "1-5765" es nuestro "I-5765". Sin esto esas lineas
+    // salen en rojo y hay que buscarlas a mano, factura tras factura.
+    let codigosSuplidor = {};
     if (compra.suplidor_id) {
       try {
-        const { data: paq } = await supabase.rpc('get_paquetes_suplidor', { p_suplidor_id: compra.suplidor_id });
+        const [{ data: paq }, { data: cods }] = await Promise.all([
+          supabase.rpc('get_paquetes_suplidor', { p_suplidor_id: compra.suplidor_id }),
+          supabase.rpc('get_codigos_suplidor', { p_suplidor_id: compra.suplidor_id }),
+        ]);
         if (paq && typeof paq === 'object') paquetesSuplidor = paq;
+        if (cods && typeof cods === 'object') codigosSuplidor = cods;
       } catch { /* sin memoria del suplidor se sigue igual */ }
     }
+    let lineasPorMemoria = 0;
     let lineasAbiertas = 0;
 
     // El suplidor ya fue seleccionado previamente (requerido antes de subir foto)
@@ -851,11 +860,26 @@ const ComprasPage = () => {
         // Corrección de OCR: Si la IA lee '1-' o 'l-' al inicio de un código, reemplazarlo por 'I-' mayúscula
         item.code = item.code.replace(/^[1l]-/i, 'I-');
 
-        const { data: product } = await supabase
+        let { data: product } = await supabase
           .from('productos')
           .select('id, descripcion, costo, itbis_pct, referencia, suplidor_id, marca_id, modelos_ids')
           .ilike('codigo', item.code)
           .maybeSingle();
+
+        // No emparejo por codigo. Puede que ya sepamos que ESE codigo de
+        // ESTE suplidor es una pieza nuestra: se aprendio de una factura
+        // anterior donde alguien la busco a mano.
+        if (!product) {
+          const memoria = codigosSuplidor[String(item.code).trim().toUpperCase()];
+          if (memoria?.producto_id) {
+            const { data: porMemoria } = await supabase
+              .from('productos')
+              .select('id, descripcion, costo, itbis_pct, referencia, suplidor_id, marca_id, modelos_ids')
+              .eq('id', memoria.producto_id)
+              .maybeSingle();
+            if (porMemoria) { product = porMemoria; lineasPorMemoria += 1; }
+          }
+        }
 
         if (product) {
           producto_id = product.id;
@@ -948,9 +972,12 @@ const ComprasPage = () => {
 
     toast({
       title: "Factura Procesada",
-      description: lineasAbiertas > 0
-        ? `${processedItems.length} items. ${lineasAbiertas} venian en paquete y se abrieron a unidades. Revise los datos.`
-        : `Se extrajeron ${processedItems.length} items. Por favor revise los datos.`
+      description: [
+        `${processedItems.length} items.`,
+        lineasAbiertas > 0 ? `${lineasAbiertas} venian en paquete y se abrieron a unidades.` : '',
+        lineasPorMemoria > 0 ? `${lineasPorMemoria} se reconocieron por el codigo del suplidor.` : '',
+        'Revise los datos.',
+      ].filter(Boolean).join(' ')
     });
   };
 
@@ -1508,7 +1535,10 @@ const ComprasPage = () => {
       // abrir un paquete, y deja el importe de la linea intacto. Cualquier
       // otra correccion no se aprende — seria ensenarle a repetir un error.
       try {
-        await supabase.rpc('aprender_paquetes_de_compra', { p_compra_id: savedCompra.id });
+        await Promise.all([
+          supabase.rpc('aprender_paquetes_de_compra', { p_compra_id: savedCompra.id }),
+          supabase.rpc('aprender_codigos_de_compra', { p_compra_id: savedCompra.id }),
+        ]);
       } catch (err) {
         // Que no aprenda no puede tumbar una compra ya guardada.
         console.error('[Compras] no se pudo aprender el paquete:', err);

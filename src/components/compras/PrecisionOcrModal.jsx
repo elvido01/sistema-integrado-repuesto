@@ -96,9 +96,13 @@ export default function PrecisionOcrModal({ open, onClose }) {
                 </div>
               </div>
               <div className="bg-white p-3">
-                <div className="text-2xl font-black text-slate-700 tabular-nums">{num(datos.paquetes_aprendidos)}</div>
-                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Paquetes que ya sabe</div>
-                <div className="text-xs text-slate-500">códigos que no vuelve a preguntar</div>
+                <div className="text-2xl font-black text-slate-700 tabular-nums">
+                  {num(Number(datos.paquetes_aprendidos || 0) + Number(datos.codigos_aprendidos || 0))}
+                </div>
+                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Cosas que ya sabe</div>
+                <div className="text-xs text-slate-500">
+                  {num(datos.paquetes_aprendidos)} paquetes · {num(datos.codigos_aprendidos)} códigos de suplidor
+                </div>
               </div>
             </div>
 
@@ -165,9 +169,9 @@ export default function PrecisionOcrModal({ open, onClose }) {
               <div className="flex gap-2 items-start border rounded-lg p-3 bg-amber-50 border-amber-200">
                 <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-slate-700">
-                  <b>{num(datos.lineas_perdidas)} líneas</b> están en compras guardadas pero la IA no
-                  las leyó de la foto. Una línea que falta pesa más que un precio mal leído: el precio
-                  se ve al revisar, la línea que no está no se echa de menos.
+                  <b>{num(datos.lineas_perdidas)} líneas</b> están en compras guardadas y no salieron
+                  de la foto. Solo cuentan las que tampoco aparecen en el texto crudo y cuyo código no
+                  conocemos todavía: si el suplidor la llama de otra forma y ya lo aprendimos, no falta.
                 </p>
               </div>
             )}
