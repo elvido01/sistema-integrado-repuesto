@@ -4,7 +4,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Save, X, PlusCircle, Trash2 } from 'lucide-react';
+import { Loader2, Save, X, PlusCircle, Trash2, ClipboardPaste } from 'lucide-react';
+import { parsearLineasPegadas } from './pegarLineas';
 import {
     Dialog,
     DialogContent,
@@ -23,6 +24,11 @@ const CotizacionMagnaFormModal = ({ isOpen, onClose, editingCotizacion }) => {
 
     const [lines, setLines] = useState([emptyLine()]);
     const [notas, setNotas] = useState('');
+    const [pegando, setPegando] = useState(false);
+    const [pegado, setPegado] = useState('');
+    // En una cotizacion de garantia la mano de obra es la misma para todas
+    // las motos. Se pide una vez aqui en vez de repetirla 17 veces.
+    const [manoObraPegada, setManoObraPegada] = useState('');
 
     // Load existing detail lines when editing
     useEffect(() => {
@@ -56,6 +62,9 @@ const CotizacionMagnaFormModal = ({ isOpen, onClose, editingCotizacion }) => {
             setLines([emptyLine()]);
             setNotas('');
         }
+        setPegando(false);
+        setPegado('');
+        setManoObraPegada('');
     }, [isOpen, editingCotizacion]);
 
     const handleLineChange = (idx, field, value) => {
@@ -63,6 +72,55 @@ const CotizacionMagnaFormModal = ({ isOpen, onClose, editingCotizacion }) => {
     };
 
     const addLine = () => setLines(prev => [...prev, emptyLine()]);
+
+    // Lo pegado se lee por la FORMA del dato, no por la posicion de la
+    // columna: la lista llega como Magna la mande. El detalle esta en
+    // pegarLineas.js.
+    const importarPegado = () => {
+        const { lineas, ignoradas, repetidos } = parsearLineasPegadas(pegado);
+
+        if (!lineas.length) {
+            toast({
+                variant: 'destructive',
+                title: 'No se encontro ningun chasis',
+                description: 'Pega la lista con el chasis y el numero de orden. Sirve tal cual venga: de Excel, de un correo o de una tabla.',
+            });
+            return;
+        }
+
+        const manoObra = manoObraPegada.trim();
+        const nuevas = lineas.map(l => ({
+            ...emptyLine(),
+            numero_orden: l.numero_orden,
+            chasis: l.chasis,
+            valor_mano_obra: manoObra,
+        }));
+
+        // Las lineas vacias que ya estaban no aportan nada; se van para que
+        // lo pegado no quede colgando debajo de una fila en blanco.
+        setLines(prev => {
+            const conDatos = prev.filter(l =>
+                l.numero_orden.trim() || l.chasis.trim()
+                || (parseFloat(l.valor_repuestos) || 0) > 0
+                || (parseFloat(l.valor_mano_obra) || 0) > 0);
+            return [...conDatos, ...nuevas];
+        });
+
+        setPegando(false);
+        setPegado('');
+
+        // Lo que no se pudo leer y lo repetido se dicen SIEMPRE. Importar 15
+        // de 17 sin avisar es perder dos motos de la factura.
+        const avisos = [];
+        if (ignoradas.length) avisos.push(`${ignoradas.length} linea(s) sin chasis reconocible: ${ignoradas[0].slice(0, 40)}...`);
+        if (repetidos.length) avisos.push(`Chasis repetido: ${repetidos.join('; ')}`);
+
+        toast({
+            variant: ignoradas.length ? 'destructive' : 'default',
+            title: `${nuevas.length} linea(s) agregadas`,
+            description: avisos.length ? avisos.join(' · ') : 'Revisa los montos antes de guardar.',
+        });
+    };
 
     const removeLine = (idx) => {
         if (lines.length <= 1) return;
@@ -180,10 +238,58 @@ const CotizacionMagnaFormModal = ({ isOpen, onClose, editingCotizacion }) => {
                         <div>
                             <div className="flex items-center justify-between mb-2">
                                 <Label className="text-sm font-bold">Líneas de Cotización</Label>
-                                <Button type="button" size="sm" variant="outline" onClick={addLine} className="h-7 text-xs gap-1">
-                                    <PlusCircle className="w-3.5 h-3.5" /> Agregar Línea
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                    <Button type="button" size="sm" variant="outline" onClick={() => setPegando(v => !v)} className="h-7 text-xs gap-1">
+                                        <ClipboardPaste className="w-3.5 h-3.5" /> Pegar lista
+                                    </Button>
+                                    <Button type="button" size="sm" variant="outline" onClick={addLine} className="h-7 text-xs gap-1">
+                                        <PlusCircle className="w-3.5 h-3.5" /> Agregar Línea
+                                    </Button>
+                                </div>
                             </div>
+
+                            {/* Teclear 17 chasis de 17 caracteres es donde se cuela
+                                el error que nadie ve: un digito cambiado no rompe
+                                nada, se factura, y aparece cuando Magna rechaza la
+                                linea semanas despues. */}
+                            {pegando && (
+                                <div className="mb-3 border rounded-lg p-3 bg-slate-50 space-y-2">
+                                    <p className="text-xs text-slate-600">
+                                        Pega la lista tal cual venga —de Excel, de un correo o de una tabla—.
+                                        Da igual el orden de las columnas y las que sobren: el chasis se
+                                        reconoce por sus 17 caracteres.
+                                    </p>
+                                    <textarea
+                                        value={pegado}
+                                        onChange={e => setPegado(e.target.value)}
+                                        rows={6}
+                                        autoFocus
+                                        placeholder={'1631   MD2A76BX9TWG47363\n1634   MD2A76BX8TWE47302'}
+                                        className="w-full text-xs font-mono border rounded p-2 bg-white focus:outline-none focus:ring-1 focus:ring-morla-blue"
+                                    />
+                                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                                        <div className="flex items-center gap-2">
+                                            <Label className="text-xs whitespace-nowrap">Mano de obra por moto</Label>
+                                            <Input
+                                                type="number" min="0" step="0.01"
+                                                value={manoObraPegada}
+                                                onChange={e => setManoObraPegada(e.target.value)}
+                                                placeholder="310"
+                                                className="h-8 w-28 text-sm text-right"
+                                            />
+                                            <span className="text-[11px] text-slate-500">se pone en todas</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Button type="button" size="sm" variant="ghost" onClick={() => { setPegando(false); setPegado(''); }} className="h-8 text-xs">
+                                                Cancelar
+                                            </Button>
+                                            <Button type="button" size="sm" onClick={importarPegado} disabled={!pegado.trim()} className="h-8 text-xs">
+                                                Agregar líneas
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="border rounded-lg overflow-hidden">
                                 {/* Header */}
