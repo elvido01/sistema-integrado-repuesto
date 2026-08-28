@@ -132,6 +132,10 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
     '5. Escribe como los ejemplos: corto, directo, dominicano. Nada de "Estimado',
     '   cliente" ni "quedo a sus ordenes". Dos o tres lineas.',
     '6. Precios en pesos, con coma de miles: RD$ 1,400.',
+    '7. Si la busqueda trae "piezas_en_la_vieja", esas estan en el ALMACEN VIEJO.',
+    '   No estan en el mostrador y no se pueden facturar ahi: hay que traerlas.',
+    '   Ofrecelas asi: "esa la tengo en el almacen viejo, deja que te la busco".',
+    '   Nunca digas que no tienes una pieza si aparece en esa lista con existencia.',
   ].join('\n');
 
   const mensajes: any[] = [
