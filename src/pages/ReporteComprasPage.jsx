@@ -77,8 +77,8 @@ const ReporteComprasPage = () => {
         *,
         proveedores (id, nombre),
         pagos_suplidores_detalle (
-          id, compra_id, monto_abonado,
-          compras (id, numero, fecha, referencia, monto_pendiente, total_compra)
+          id, compra_id, monto_abonado, abonado_usd,
+          compras (id, numero, fecha, referencia, monto_pendiente, total_compra, pendiente_usd)
         )
       `)
       .order('fecha', { ascending: false });
@@ -351,6 +351,11 @@ const ReporteComprasPage = () => {
                                     fecha_emision: d.compras?.fecha,
                                     referencia: d.compras?.referencia || d.compras?.numero,
                                     monto_pendiente: d.compras?.monto_pendiente || 0,
+                                    // Sin esto el reimpreso de un pago en US$ salia todo en
+                                    // pesos: el mismo pago decia dos cosas distintas segun
+                                    // desde donde se imprimiera.
+                                    abonado_usd: d.abonado_usd,
+                                    pendiente_usd: d.compras?.pendiente_usd,
                                   }));
                                   generatePagoSuplidorPDF(
                                     { ...pago, total_pagado: pago.monto_pagado },

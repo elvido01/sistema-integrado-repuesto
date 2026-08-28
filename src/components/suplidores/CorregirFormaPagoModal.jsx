@@ -28,9 +28,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Loader2, RefreshCw, Wallet } from 'lucide-react';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { hayQuePreguntarCuenta, salidaParaLaCuenta } from '@/lib/saleDeLaCuenta';
 
 const FORMAS = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
-const SALE_DE_CUENTA = (forma) => forma === 'Transferencia' || forma === 'Cheque';
+// (2026-08-28) Antes esto era `forma === Transferencia || Cheque` a secas y
+// el selector traía moneda="DOP" clavado: pagándole a TERUEL en dólares en
+// efectivo no había forma de decir que salieron de la caja en dólares —la
+// cuenta ni siquiera aparecía en la lista—. La regla vive ahora en
+// saleDeLaCuenta.js, la misma que usa la pantalla de pago.
+const SALE_DE_CUENTA = (forma, hayDolares = false) =>
+  hayQuePreguntarCuenta([{ forma }], hayDolares);
+
+const dolares = (n) => Number(n || 0).toLocaleString('es-DO', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
 
 const pesos = (n) => Number(n || 0).toLocaleString('es-DO', {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -54,6 +65,10 @@ const normalizar = (p) => (p ? {
   suplidor: p.suplidor || p.proveedores?.nombre || '',
   cuenta_id: p.cuenta_id ?? null,
   cuenta_nombre: p.cuenta_nombre ?? null,
+  // Sin la tasa no se puede saber cuántos dólares salen de una caja en
+  // dólares, y grabarlo en pesos le dejaría el saldo inventado.
+  total_usd: p.total_usd ?? null,
+  tasa_cambio: p.tasa_cambio ?? null,
 } : null);
 
 // pagoInicial: se entro desde una fila concreta (el Reporte), asi que ya se
@@ -67,7 +82,15 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido, pag
   const [forma, setForma] = useState('Efectivo');
   const [referencia, setReferencia] = useState('');
   const [cuentaId, setCuentaId] = useState(null);
+  const [cuentaSel, setCuentaSel] = useState(null); // completa: hace falta su MONEDA
   const [guardando, setGuardando] = useState(false);
+
+  // Un pago en dólares: la deuda vivía en US$ y se pagó a una tasa. Eso es lo
+  // que convierte al efectivo en una salida de cuenta.
+  const enDolares = Number(seleccion?.total_usd) > 0 && Number(seleccion?.tasa_cambio) > 0;
+  const salida = salidaParaLaCuenta(
+    [{ forma, monto: Number(seleccion?.monto_pagado) || 0 }],
+    cuentaSel, seleccion?.tasa_cambio);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -88,6 +111,7 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido, pag
     setForma(arr[0]?.forma || 'Efectivo');
     setReferencia(arr[0]?.referencia || '');
     setCuentaId(p?.cuenta_id || null);
+    setCuentaSel(null);
   }, []);
 
   useEffect(() => {
@@ -112,7 +136,7 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido, pag
 
   const guardar = async () => {
     if (!seleccion) return;
-    if (SALE_DE_CUENTA(forma) && !cuentaId) {
+    if (SALE_DE_CUENTA(forma, enDolares) && !cuentaId) {
       toast({ variant: 'destructive', title: 'Falta la cuenta', description: 'Dime de qué cuenta salió el dinero.' });
       return;
     }
@@ -131,16 +155,19 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido, pag
       const { data, error } = await supabase.rpc('corregir_forma_pago_suplidor', {
         p_pago_id: seleccion.id,
         p_formas_pago: formas,
-        p_cuenta_id: SALE_DE_CUENTA(forma) ? cuentaId : null,
+        // La cuenta va siempre que se haya elegido: el RPC decide si le
+        // toca el saldo (una caja en dólares sí, aunque sea efectivo; una
+        // cuenta en pesos con efectivo no, que ya lo resta el cierre).
+        p_cuenta_id: SALE_DE_CUENTA(forma, enDolares) ? cuentaId : null,
       });
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.motivo || 'No se pudo corregir');
 
       toast({
         title: `${data.numero} corregido`,
-        description: SALE_DE_CUENTA(forma)
-          ? `Ahora sale de la cuenta por RD$ ${pesos(data.monto_banco)}.`
-          : 'Ahora figura como efectivo: no toca ninguna cuenta.',
+        description: Number(data.monto_cuenta) > 0
+          ? `Ahora sale de ${data.cuenta || 'la cuenta'} por ${data.moneda_cuenta === 'USD' ? `US$ ${dolares(data.monto_cuenta)}` : `RD$ ${pesos(data.monto_cuenta)}`}.`
+          : 'Ahora figura como efectivo en pesos: no toca ninguna cuenta, lo resta el cierre de caja.',
       });
       await cargar();
       onCorregido?.();
@@ -235,23 +262,37 @@ export default function CorregirFormaPagoModal({ open, onClose, onCorregido, pag
               </div>
             </div>
 
-            {SALE_DE_CUENTA(forma) && (
+            {SALE_DE_CUENTA(forma, enDolares) && (
               // autoDefault en false: en una corrección, una cuenta
               // preseleccionada sola es exactamente cómo nació el error que
               // se viene a arreglar. Aquí se elige a propósito.
-              <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId}
-                                    moneda="DOP" contexto="pagos"
+              //
+              // Y sin filtro de moneda: con moneda="DOP" la caja en dólares
+              // ni salía en la lista, que es justo la que hacía falta para
+              // arreglar un pago hecho con billetes verdes.
+              <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} onSelect={setCuentaSel}
+                                    contexto="pago_suplidor"
                                     autoDefault={false}
-                                    label="Sale de la cuenta" />
+                                    label={forma === 'Efectivo' ? 'Sale de la caja en dólares' : 'Sale de la cuenta'} />
             )}
 
             {/* Lo que va a pasar, dicho antes de que pase. Este botón mueve el
                 saldo de una cuenta: enterarse después no sirve de nada. */}
             <p className="text-[11px] text-slate-500">
-              {SALE_DE_CUENTA(forma)
-                ? `Se le restarán RD$ ${pesos(seleccion.monto_pagado)} a la cuenta elegida${seleccion.cuenta_nombre ? `, y se le devolverán a ${seleccion.cuenta_nombre}` : ''}.`
-                : `Dejará de restarle a ${seleccion.cuenta_nombre || 'cualquier cuenta'} y pasará a contar como efectivo del día.`}
+              {salida.faltaTasa
+                ? <b className="text-rose-600">Este pago no tiene tasa del día guardada: no se puede saber cuántos dólares salieron de la caja.</b>
+                : salida.monto > 0
+                  ? `Se le restarán ${cuentaSel?.moneda === 'USD' ? `US$ ${dolares(salida.monto)}` : `RD$ ${pesos(salida.monto)}`} a la cuenta elegida${seleccion.cuenta_nombre ? `, y se le devolverán a ${seleccion.cuenta_nombre}` : ''}.`
+                  : `Dejará de restarle a ${seleccion.cuenta_nombre || 'cualquier cuenta'} y pasará a contar como efectivo del día.`}
             </p>
+
+            {enDolares && (
+              <p className="text-[11px] text-blue-700">
+                Este pago fue de US$ {dolares(seleccion.total_usd)} a la tasa de {pesos(seleccion.tasa_cambio)}.
+                Si los dólares salieron de una caja en dólares, elígela aquí aunque la
+                forma diga Efectivo: es el único sitio donde el cierre de caja no los ve.
+              </p>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" disabled={guardando}

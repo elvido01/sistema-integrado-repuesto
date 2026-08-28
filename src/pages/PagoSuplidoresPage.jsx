@@ -17,6 +17,7 @@ import { generatePagoSuplidorPDF } from '@/components/common/PDFGenerator';
 import { printPagoSuplidorPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
+import { salidaParaLaCuenta, hayQuePreguntarCuenta } from '@/lib/saleDeLaCuenta';
 import CorregirFormaPagoModal from '@/components/suplidores/CorregirFormaPagoModal';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
@@ -220,6 +221,12 @@ const PagoSuplidoresPage = () => {
     return compras.reduce((sum, c) => sum + (esFilaUSD(c) ? Number(c.abono) : 0), 0);
   }, [compras, esFilaUSD]);
   // Total que sale de caja/banco en RD$ (los US$ se compran a la tasa del día)
+  // Pago solo en efectivo: cambia el rótulo de la cuenta ("sale de la caja
+  // en dólares" y no "sale de la cuenta", que suena a transferencia).
+  const soloEfectivo = useMemo(
+    () => formasPago.length > 0 && formasPago.every((f) => f.forma === 'Efectivo'),
+    [formasPago]);
+
   const totalAbonos = useMemo(() => {
     return toMoney(totalAbonosDop + totalAbonosUsd * (tasa || 0));
   }, [totalAbonosDop, totalAbonosUsd, tasa]);
@@ -338,17 +345,14 @@ const PagoSuplidoresPage = () => {
       // Salida de la cuenta bancaria por la porción no-efectivo (transferencia/cheque).
       // Sobre formasFinales, no sobre lo tecleado: si no, la cuenta se
       // movería por un monto distinto al que quedó guardado en el pago.
-      const montoBanco = formasFinales
-        .filter(f => f.forma === 'Transferencia' || f.forma === 'Cheque')
-        .reduce((s, f) => s + (Number(f.monto) || 0), 0);
-      if (cuentaId && montoBanco > 0) {
+      // Las formas de pago se digitan en RD$. Si la cuenta lleva dólares, lo
+      // que sale de ELLA son dólares: se convierte a la misma tasa con la que
+      // se calculó el pago, para no restarle pesos a una cuenta en US$ y
+      // dejarle el saldo inventado. Y el efectivo cuenta como salida cuando
+      // la cuenta es en divisa: ver src/lib/saleDeLaCuenta.js.
+      const { monto: montoCuenta } = salidaParaLaCuenta(formasFinales, cuentaSel, tasa);
+      if (cuentaId && montoCuenta > 0) {
         const ref = formasFinales.find(f => f.forma === 'Transferencia' || f.forma === 'Cheque')?.referencia || String(data || '');
-        // Las formas de pago se digitan en RD$. Si la cuenta lleva dólares,
-        // lo que sale de ELLA son dólares: se convierte a la misma tasa con
-        // la que se calculó el pago, para no restarle pesos a una cuenta en
-        // US$ y dejarle el saldo inventado.
-        const esCuentaUSD = cuentaSel?.moneda === 'USD';
-        const montoCuenta = esCuentaUSD && tasa > 0 ? toMoney(montoBanco / tasa) : montoBanco;
         // RPC COMPARTIDO: la cuenta puede ser la de la financiera vinculada
         // (ej. Caminero paga desde la 004 de MotoPréstamos).
         supabase.rpc('registrar_movimiento_bancario_compartido', {
@@ -643,18 +647,30 @@ const PagoSuplidoresPage = () => {
               <Button variant="outline" size="sm" onClick={addFormaPago} className="mt-2 w-full">
                 <PlusCircle className="h-4 w-4 mr-2" /> Añadir Forma de Pago
               </Button>
-              {formasPago.some(f => f.forma === 'Transferencia' || f.forma === 'Cheque') && (
+              {hayQuePreguntarCuenta(formasPago, totalAbonosUsd > 0) && (
                 <div className="mt-3">
                   {/* Sin filtro de moneda: a un suplidor en US$ se le puede
                       pagar comprando los dólares (cuenta en pesos) o con los
                       dólares que ya se tienen (caja chica en US$). Con el
-                      filtro fijo en DOP la segunda ni aparecía. */}
+                      filtro fijo en DOP la segunda ni aparecía.
+
+                      Y con efectivo también se pregunta cuando hay dólares:
+                      los billetes verdes salen de la caja en dólares, que es
+                      el único sitio donde viven (el cierre de caja es en
+                      pesos y no los ve). Ver src/lib/saleDeLaCuenta.js. */}
                   <CuentaBancariaSelect value={cuentaId} onChange={setCuentaId} onSelect={setCuentaSel}
-                    contexto="pago_suplidor" label="Sale de la cuenta" />
+                    contexto="pago_suplidor"
+                    label={soloEfectivo ? 'Sale de la caja en dólares' : 'Sale de la cuenta'} />
                   {cuentaSel?.moneda === 'USD' && (
                     <p className="mt-1 text-[11px] text-blue-700">
                       Es una cuenta en dólares: se le descuenta el equivalente en US$ a la tasa de {formatCurrency(tasa)}.
                       {!(tasa > 0) && <b className="block text-rose-600">Falta la tasa del día.</b>}
+                    </p>
+                  )}
+                  {soloEfectivo && cuentaSel && cuentaSel.moneda === 'DOP' && (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Es una cuenta en pesos: el efectivo en pesos ya lo resta el cierre
+                      de caja, así que a esta cuenta no se le toca el saldo.
                     </p>
                   )}
                 </div>

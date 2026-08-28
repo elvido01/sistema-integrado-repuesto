@@ -70,7 +70,13 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
             formatDate(d.fecha_emision),
             d.referencia || 'N/A',
             filaUSD ? `US$ ${formatCurrency(d.pendiente_usd)}` : formatCurrency(d.monto_pendiente),
-            filaUSD ? `US$ ${formatCurrency(d.abonado_usd)} = RD$ ${formatCurrency(d.monto_abonado)}` : formatCurrency(d.monto_abonado)
+            // El salto va puesto a proposito: dejado a la columna, partia por
+            // donde le tocaba ("US$ 1,146.28 = RD$" / "67,515.89") y el
+            // numero en pesos quedaba huerfano en la linea de abajo.
+            filaUSD
+                ? `US$ ${formatCurrency(d.abonado_usd)}
+= RD$ ${formatCurrency(d.monto_abonado)}`
+                : formatCurrency(d.monto_abonado)
         ];
     });
 
@@ -111,24 +117,37 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
     currentY = doc.lastAutoTable.finalY + 15;
 
     // --- Totals ---
-    const totalsX = 140;
-    doc.setFontSize(11);
+    // (2026-08-28) "TOTAL PAGADO RD$:" salia montado encima del numero: la
+    // etiqueta arrancaba en un x fijo (140) y con un total de siete cifras el
+    // valor empezaba antes de que la etiqueta terminara. En un comprobante que
+    // se firma, el total ilegible es justo lo que no puede pasar.
+    //
+    // Se dibuja al reves: primero se mide el valor mas ancho, y las etiquetas
+    // se alinean a la DERECHA justo antes de donde empieza la columna de
+    // numeros. Asi no hay monto que las alcance.
+    const filas = esPagoUSD
+        ? [
+            ['TOTAL EN US$:', `US$ ${formatCurrency(pago.total_usd)}`, 10],
+            ['TASA DEL DIA:', formatCurrency(pago.tasa_cambio), 10],
+            ['TOTAL PAGADO RD$:', formatCurrency(pago.total_pagado), 11],
+          ]
+        : [['TOTAL PAGADO:', formatCurrency(pago.total_pagado), 11]];
+
+    const valorX = pageWidth - margin;
+    const anchoValor = Math.max(...filas.map(([, valor, tam]) => {
+        doc.setFontSize(tam);
+        return doc.getTextWidth(valor);
+    }));
+    const etiquetaX = valorX - anchoValor - 4;  // 4mm de aire entre las dos
+
     doc.setFont('helvetica', 'bold');
-    if (esPagoUSD) {
-        doc.setFontSize(10);
-        doc.text("TOTAL EN US$:", totalsX, currentY);
-        doc.text(`US$ ${formatCurrency(pago.total_usd)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 6;
-        doc.text("TASA DEL DIA:", totalsX, currentY);
-        doc.text(formatCurrency(pago.tasa_cambio), pageWidth - margin, currentY, { align: 'right' });
-        currentY += 7;
-        doc.setFontSize(11);
-        doc.text("TOTAL PAGADO RD$:", totalsX, currentY);
-        doc.text(formatCurrency(pago.total_pagado), pageWidth - margin, currentY, { align: 'right' });
-    } else {
-        doc.text("TOTAL PAGADO:", totalsX, currentY);
-        doc.text(formatCurrency(pago.total_pagado), pageWidth - margin, currentY, { align: 'right' });
-    }
+    filas.forEach(([etiqueta, valor, tam], i) => {
+        const y = currentY + (i === 2 ? 13 : i * 6);
+        doc.setFontSize(tam);
+        doc.text(etiqueta, etiquetaX, y, { align: 'right' });
+        doc.text(valor, valorX, y, { align: 'right' });
+        currentY = y;
+    });
 
     // --- Signatures ---
     const signatureY = currentY + 30;
