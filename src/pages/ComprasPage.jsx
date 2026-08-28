@@ -3,10 +3,11 @@ import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { factorDePaquete } from '@/lib/paqueteDeCompra';
+import PrecisionOcrModal from '@/components/compras/PrecisionOcrModal';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Save, X, Loader2 } from 'lucide-react';
+import { Save, X, Loader2, TrendingUp } from 'lucide-react';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useCompras } from '@/contexts/ComprasContext';
@@ -49,6 +50,7 @@ const ComprasPage = () => {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isSuplidorModalOpen, setIsSuplidorModalOpen] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [precisionAbierta, setPrecisionAbierta] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isEditSuplidorModalOpen, setIsEditSuplidorModalOpen] = useState(false);
   const [tempProductData, setTempProductData] = useState(null);
@@ -1849,6 +1851,7 @@ const ComprasPage = () => {
         onClose={() => setIsInvoiceModalOpen(false)}
         onDataExtracted={handleDataExtracted}
       />
+      <PrecisionOcrModal open={precisionAbierta} onClose={() => setPrecisionAbierta(false)} />
       <ProductFormModal
         isOpen={isProductModalOpen}
         onClose={() => setIsProductModalOpen(false)}
@@ -1884,6 +1887,17 @@ const ComprasPage = () => {
             }}
           >
             <ImagePlus className="mr-1.5 h-3.5 w-3.5" /> Subir Factura
+          </Button>
+          {/* "Siento que no aprende" era una sensacion sin numero detras.
+              Aqui esta el numero, y la tendencia mes a mes. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white/70 hover:text-white hover:bg-white/10 h-7 text-[10px] font-bold uppercase"
+            title="Cuanto acierta el OCR y si esta mejorando"
+            onClick={() => setPrecisionAbierta(true)}
+          >
+            <TrendingUp className="mr-1.5 h-3.5 w-3.5" /> Precisión
           </Button>
         </div>
       </div>
