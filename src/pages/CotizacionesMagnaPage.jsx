@@ -7,10 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Loader2, Search, PlusCircle, Edit, Trash2, Printer, Receipt } from 'lucide-react';
+import { Loader2, Search, PlusCircle, Edit, Trash2, Printer, Receipt, Download } from 'lucide-react';
 import CotizacionMagnaFormModal from '@/components/cotizaciones_magna/CotizacionMagnaFormModal';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { printCotizacionMagnaPOS } from '@/lib/printPOS';
+import { generateCotizacionMagnaPDF } from '@/components/common/pdf/cotizacionMagnaPDF';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { usePanels } from '@/contexts/PanelContext';
@@ -98,20 +99,42 @@ const CotizacionesMagnaPage = () => {
         if (!selectedCot || isPrinting) return;
         setIsPrinting(true);
         try {
-            // Ensure we have detail lines
-            let lines = detailLines;
-            if (!lines || lines.length === 0) {
-                const { data } = await supabase
-                    .from('cotizaciones_magna_detalle')
-                    .select('*')
-                    .eq('cotizacion_id', selectedCot.id)
-                    .order('created_at', { ascending: true });
-                lines = data || [];
-            }
-            printCotizacionMagnaPOS(selectedCot, paperSize, lines);
+            printCotizacionMagnaPOS(selectedCot, paperSize, await cargarLineas());
         } catch (err) {
             console.error('[Print Magna] Error:', err);
             toast({ variant: 'destructive', title: 'Error de impresión', description: err?.message || 'No se pudo imprimir.' });
+        } finally {
+            setIsPrinting(false);
+        }
+    };
+
+    // Las lineas se cargan igual para imprimir que para el PDF: si cada uno
+    // las buscara a su manera, un dia dirian cosas distintas.
+    const cargarLineas = async () => {
+        if (detailLines && detailLines.length) return detailLines;
+        const { data } = await supabase
+            .from('cotizaciones_magna_detalle')
+            .select('*')
+            .eq('cotizacion_id', selectedCot.id)
+            .order('created_at', { ascending: true });
+        return data || [];
+    };
+
+    // Imprimir no es compartir: para mandarle la cotizacion a Magna habia que
+    // sacarle una foto al papel o pelear con el "imprimir a PDF" del navegador.
+    const handleDescargarPDF = async () => {
+        if (!selectedCot || isPrinting) return;
+        setIsPrinting(true);
+        try {
+            const lines = await cargarLineas();
+            if (!lines.length) {
+                toast({ variant: 'destructive', title: 'Sin lineas', description: 'Esa cotizacion no tiene lineas que mostrar.' });
+                return;
+            }
+            generateCotizacionMagnaPDF(selectedCot, lines);
+        } catch (err) {
+            console.error('[PDF Magna] Error:', err);
+            toast({ variant: 'destructive', title: 'No se pudo generar el PDF', description: err?.message || 'Error desconocido.' });
         } finally {
             setIsPrinting(false);
         }
@@ -176,6 +199,10 @@ const CotizacionesMagnaPage = () => {
         if (e.key === 'F6' && selectedCot) {
             e.preventDefault();
             handlePrint();
+        }
+        if (e.key === 'F7' && selectedCot) {
+            e.preventDefault();
+            handleDescargarPDF();
         }
     }, [selectedCot]);
 
@@ -371,6 +398,15 @@ const CotizacionesMagnaPage = () => {
                             <Printer size={18} />
                         </Button>
 
+                        <Button
+                            onClick={handleDescargarPDF}
+                            disabled={!selectedCot || isPrinting}
+                            className="w-full justify-between bg-slate-700 hover:bg-slate-800"
+                        >
+                            <span>F7 - Descargar PDF</span>
+                            <Download size={18} />
+                        </Button>
+
                         <div className="mt-3 pt-3 border-t space-y-2">
                             <div>
                                 <Label className="text-[11px] font-bold text-gray-500 uppercase mb-1 block">Tamaño Papel</Label>
@@ -422,6 +458,7 @@ const CotizacionesMagnaPage = () => {
                         <p>• Haga doble clic para editar</p>
                         <p>• Busque por orden o chasis</p>
                         <p>• Encabezado: Motopréstamos Los Naranjos</p>
+                        <p>• F7 baja el PDF para mandarlo</p>
                     </div>
                 </div>
 
