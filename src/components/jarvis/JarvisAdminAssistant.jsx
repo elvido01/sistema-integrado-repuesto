@@ -369,6 +369,37 @@ export default function JarvisAdminAssistant() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agente]);
 
+  // ── LA TARJETA DE HERMES ────────────────────────────────────────
+  // (2026-08-29) Las propuestas de Jarvis vienen DENTRO de su respuesta y se
+  // pintan al momento. Las de Hermes no pueden: él contesta por hermes_chat
+  // desde el VPS y la fila de agente_acciones se queda ahí sin que nadie la
+  // mire. Sin esto, Hermes propone y en pantalla no pasa nada — que desde
+  // fuera se ve igual que si no hubiera hecho nada.
+  //
+  // Solo levanta la tarjeta si no hay otra puesta: dos a la vez no se pueden
+  // atender y la segunda taparía a la primera.
+  const idPropuestaVistaRef = useRef(null);
+  useEffect(() => {
+    if (!agente) return;
+    let vivo = true;
+
+    const mirar = () => supabase.rpc('agente_accion_pendiente').then(({ data, error: e }) => {
+      if (!vivo || e || !data) return;
+      if (propuestaRef.current) return;
+      if (idPropuestaVistaRef.current === data.accion_id) return;   // ya se descartó
+      idPropuestaVistaRef.current = data.accion_id;
+      setPropuesta(data);
+      setClave('');
+      // Una autorización no puede quedar escondida detrás de un círculo.
+      setChatAbierto(true);
+    }, () => {});
+
+    mirar();
+    const t = setInterval(mirar, 5000);
+    return () => { vivo = false; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agente]);
+
   // Qué columnas pedirle a hermes_chat. Degrada sola: si la base todavía
   // no tiene `acciones` (v3) o `media_id` (v5), se reintenta sin ellas en
   // vez de dejar la conversación en blanco con un error de SQL.
