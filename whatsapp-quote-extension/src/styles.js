@@ -665,6 +665,33 @@ export const styles = `
     overflow-wrap: anywhere;
   }
 
+  /* El reproductor va al ancho de la burbuja: un control cortado no se puede
+     arrastrar, y arrastrar es justo lo que se hace con una nota de voz. */
+  .mf-omni-messages article .mf-omni-media-audio {
+    display: block;
+    width: 100%;
+    min-width: 200px;
+    height: 32px;
+    margin-top: 4px;
+  }
+
+  .mf-omni-messages article .mf-omni-media-img {
+    display: block;
+    max-width: 100%;
+    max-height: 220px;
+    border-radius: 6px;
+    margin-top: 4px;
+    cursor: zoom-in;
+  }
+
+  .mf-omni-messages article .mf-omni-media-link {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #075e54;
+    text-decoration: underline;
+  }
+
   /* El que no salio. Tiene que cantar a la vista: es un cliente esperando
      una respuesta que nadie recibio, no un detalle de estado. */
   .mf-omni-messages article.is-failed {

@@ -298,6 +298,14 @@ async function handleMessagingEvent(supabase: any, objectType: string, platform:
   }
 
   const externalMessageId = messageId || `${platform}:${accountExternalId}:${senderId}:${event?.timestamp || Date.now()}`;
+
+  // La copia propia del adjunto. La URL de Meta viene firmada y caduca; el
+  // evento crudo la conserva en raw_data por si hiciera falta rastrearla.
+  const urlPropia = media.url
+    ? await guardarAdjunto(supabase, account.tenant_id, platform,
+                           media.type || 'file', media.url, externalMessageId)
+    : null;
+
   const { data: savedMessage, error: msgError } = await supabase
     .from('sales_messages')
     .upsert({
@@ -307,7 +315,7 @@ async function handleMessagingEvent(supabase: any, objectType: string, platform:
       sender_type: 'user',
       message_type: media.type || 'text',
       message_text: text || media.label || '',
-      media_url: media.url,
+      media_url: urlPropia || media.url,
       external_message_id: externalMessageId,
       status: 'received',
       raw_data: event,
@@ -541,6 +549,65 @@ async function markEvent(supabase: any, id: string | null, patch: Record<string,
 
 function platformFromObject(objectType: string): 'instagram' | 'facebook' {
   return String(objectType || '').includes('instagram') ? 'instagram' : 'facebook';
+}
+
+// ── QUE EL ADJUNTO NO SE EVAPORE ────────────────────────────
+// (2026-08-29) La nota de voz de un cliente de Instagram se guardaba como la
+// URL que manda Meta: lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=…&
+// signature=…  Esa direccion viene FIRMADA y es temporal. Mientras dura, el
+// audio se oye; el dia que caduca, en la bandeja queda una linea que dice
+// "[Audio]" y ya no hay archivo detras. Nadie se entera hasta que alguien va
+// a buscar lo que dijo el cliente y no esta.
+//
+// El webhook de WhatsApp de mayo ya hacia esto bien (downloadWhatsAppMedia):
+// se baja el archivo y se guarda en el bucket propio. Aqui faltaba.
+//
+// Si la copia falla se guarda la URL de Meta igual: un audio que se oye hoy
+// y a lo mejor no en un mes es mucho mejor que ningun audio.
+const BUCKET_MEDIOS = 'whatsapp-media';
+
+function extensionDeMime(mime: string, tipo: string) {
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('mpeg')) return 'mp3';
+  if (mime.includes('webm')) return 'webm';
+  if (mime.includes('mp4')) return tipo === 'audio' ? 'm4a' : 'mp4';
+  if (mime.includes('jpeg')) return 'jpg';
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('webp')) return 'webp';
+  if (mime.includes('pdf')) return 'pdf';
+  return tipo === 'audio' ? 'm4a' : 'bin';
+}
+
+async function guardarAdjunto(
+  supabase: any, tenantId: string, plataforma: string,
+  tipo: string, urlMeta: string, idMensaje: string,
+): Promise<string | null> {
+  try {
+    const r = await fetch(urlMeta);
+    if (!r.ok) return null;
+
+    const mime = r.headers.get('content-type') || 'application/octet-stream';
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    // Un adjunto vacio no es un adjunto, y uno enorme no cabe en una bandeja.
+    if (!bytes.length || bytes.length > 25 * 1024 * 1024) return null;
+
+    // Llave determinista: el webhook puede reintentar el mismo evento y no
+    // tiene por que dejar dos copias del mismo audio.
+    const llave = String(idMensaje || Date.now()).replace(/[^A-Za-z0-9._-]+/g, '_').slice(-100);
+    const ruta = `${tenantId}/${plataforma}/${llave}.${extensionDeMime(mime, tipo)}`;
+
+    const { error } = await supabase.storage
+      .from(BUCKET_MEDIOS)
+      .upload(ruta, bytes, { contentType: mime, upsert: true });
+    if (error) return null;
+
+    const { data } = supabase.storage.from(BUCKET_MEDIOS).getPublicUrl(ruta);
+    return data?.publicUrl || null;
+  } catch {
+    // Copiar el adjunto NUNCA puede tumbar la entrada del mensaje: sin esto,
+    // un fallo de red de Meta haria perder la conversacion entera.
+    return null;
+  }
 }
 
 function detectEventType(event: any) {

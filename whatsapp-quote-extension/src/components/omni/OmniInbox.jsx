@@ -71,6 +71,38 @@ function getMessageBody(message) {
   return message?.message_text || (message?.media_url ? `[${message.message_type || 'media'}]` : 'Mensaje sin texto');
 }
 
+// (2026-08-29) Un cliente mandó una nota de voz por Instagram y en la bandeja
+// salía la palabra "[Audio]" y nada más. El archivo estaba —la URL de Meta
+// respondía 200 con 162 KB— pero nadie dibujaba el reproductor: el vendedor
+// veía que había un audio y no tenía forma de oírlo.
+//
+// El texto se sigue enseñando cuando lo hay: en WhatsApp una foto suele venir
+// con su pie ("¿tienen esta?") y esa línea es la mitad del mensaje.
+const ADJUNTO_MUDO = /^\[(audio|imagen|image|video|sticker|archivo|file|document|media)\]$/i;
+
+function MediaDelMensaje({ message }) {
+  const url = message?.media_url;
+  if (!url || typeof url !== 'string' || !/^https?:\/\//.test(url)) return null;
+  const tipo = String(message.message_type || '').toLowerCase();
+
+  if (tipo === 'audio' || tipo === 'ptt' || tipo === 'voice') {
+    // preload="none": una conversación con veinte notas de voz no puede
+    // ponerse a descargarlas todas por abrirla.
+    return <audio controls preload="none" src={url} className="mf-omni-media-audio" />;
+  }
+  if (tipo === 'image' || tipo === 'sticker') {
+    return (
+      <a href={url} target="_blank" rel="noreferrer">
+        <img src={url} alt="" loading="lazy" className="mf-omni-media-img" />
+      </a>
+    );
+  }
+  if (tipo === 'video') {
+    return <video controls preload="none" src={url} className="mf-omni-media-img" />;
+  }
+  return <a href={url} target="_blank" rel="noreferrer" className="mf-omni-media-link">Abrir adjunto</a>;
+}
+
 export default function OmniInbox({ channel, onQuoteConversation, onConversationsChange, onSelectedConversationChange }) {
   const [search, setSearch] = useState('');
   const [listFilter, setListFilter] = useState('todos');
@@ -542,7 +574,12 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                       key={message.id}
                       className={`${outgoing ? 'is-outgoing' : 'is-incoming'}${noSalio ? ' is-failed' : ''}`}
                     >
-                      <p>{getMessageBody(message)}</p>
+                      {/* Con reproductor, "[Audio]" sobra y estorba. Un pie de
+                          foto de verdad, en cambio, se queda: en WhatsApp es
+                          medio mensaje. */}
+                      {!(message.media_url && ADJUNTO_MUDO.test((getMessageBody(message) || '').trim()))
+                        && <p>{getMessageBody(message)}</p>}
+                      <MediaDelMensaje message={message} />
                       <small>
                         {formatTime(message.created_at)}
                         {noSalio && ' · ⚠ NO SALIÓ'}
