@@ -136,17 +136,52 @@
     return { cadenas: cadenas, numeros: numeros };
   }
 
+  // La dirección de una imagen, venga como venga.
+  //
+  // (2026-08-29) Cuatro imágenes de TikTok quedaron guardadas con la url
+  // literal "[object Object]". El culpable era un String() sobre `j.url`
+  // dando por hecho que era texto: en TikTok ese campo llega a veces como
+  // objeto ({url_list: [...], uri: ...}) y String() de un objeto no falla,
+  // devuelve "[object Object]" tan tranquilo. Se guardaba, y la imagen no se
+  // veía nunca sin que nadie supiera por qué.
+  //
+  // Se exige http(s) a la salida: `uri` suele traer una clave de TOS, no una
+  // dirección. Guardar null es mejor que guardar una mentira — un null dice
+  // "no la tengo", la cadena rota hace perder la tarde buscando el fallo.
+  function urlDeImagen(v, hondo) {
+    hondo = hondo || 0;
+    if (!v || hondo > 4) return null;
+    if (typeof v === 'string') return /^https?:\/\//i.test(v) ? v : null;
+    if (Array.isArray(v)) {
+      for (var i = 0; i < v.length; i++) {
+        var u = urlDeImagen(v[i], hondo + 1);
+        if (u) return u;
+      }
+      return null;
+    }
+    if (typeof v === 'object') {
+      return urlDeImagen(v.url_list, hondo + 1)
+          || urlDeImagen(v.url, hondo + 1)
+          || urlDeImagen(v.download_url, hondo + 1)
+          || urlDeImagen(v.thumb_url, hondo + 1)
+          || urlDeImagen(v.uri, hondo + 1);
+    }
+    return null;
+  }
+
   // Lo que el vendedor va a leer. Solo se nombra lo que se sabe; lo que no,
   // se anota como adjunto para que al menos conste que llegó algo.
   function leerContenido(j) {
     if (typeof j.text === 'string' && j.text.trim()) {
       return { texto: j.text, tipo: 'text', media: null };
     }
-    const img = j.url
-      || (j.display_image && j.display_image.url_list && j.display_image.url_list[0])
-      || (j.image && j.image.url_list && j.image.url_list[0])
-      || null;
-    if (img) return { texto: '[Imagen]', tipo: 'image', media: String(img) };
+    const img = urlDeImagen(j.url) || urlDeImagen(j.display_image) || urlDeImagen(j.image);
+    if (img) return { texto: '[Imagen]', tipo: 'image', media: img };
+    // Vino imagen pero sin dirección utilizable: sigue siendo una imagen y
+    // hay que decirlo, solo que sin archivo detrás.
+    if (j.url || j.display_image || j.image) {
+      return { texto: '[Imagen]', tipo: 'image', media: null };
+    }
     if (j.tos_key || j.tos_uri) return { texto: '[Imagen]', tipo: 'image', media: null };
     if (j.emoji_id || j.sticker_id) return { texto: '[Sticker]', tipo: 'text', media: null };
     if (typeof j.tips === 'string' && j.tips.trim()) {
@@ -306,7 +341,9 @@
         de: (miId && m.emisor && m.emisor === miId) ? 'agent' : 'user',
         texto: m.texto,
         tipo: m.tipo,
-        media_url: m.media,
+        // Segundo cinturón: aunque leerContenido se equivoque un día, de aquí
+        // no sale nada que no sea una dirección de verdad.
+        media_url: (typeof m.media === 'string' && /^https?:\/\//i.test(m.media)) ? m.media : null,
         ts: m.ts
       });
     }

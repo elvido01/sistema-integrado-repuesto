@@ -147,6 +147,53 @@ describe('lo que no es texto', () => {
     expect(m.media_url).toBe('https://p16.tiktok.com/foo.jpg');
   });
 
+  // (2026-08-29) Cuatro imagenes quedaron guardadas con la url literal
+  // "[object Object]". El culpable era un String() sobre j.url dando por
+  // hecho que era texto: en TikTok ese campo llega a veces como objeto, y
+  // String() de un objeto no falla — devuelve "[object Object]" y sigue.
+  it('la url que viene como objeto se resuelve, no se estampa', () => {
+    const r = TT.extraerHilos(respuesta(mensaje({
+      json: { url: { url_list: ['https://p16.tiktok.com/real.jpg'], uri: 'tos-maliva/abc' } },
+    })));
+    const m = r.hilos[0].messages[0];
+    expect(m.tipo).toBe('image');
+    expect(m.media_url).toBe('https://p16.tiktok.com/real.jpg');
+  });
+
+  it('display_image e image tambien se resuelven', () => {
+    const a = TT.extraerHilos(respuesta(mensaje({
+      json: { display_image: { url_list: ['https://p16.tiktok.com/d.jpg'] } },
+    })));
+    expect(a.hilos[0].messages[0].media_url).toBe('https://p16.tiktok.com/d.jpg');
+
+    const b = TT.extraerHilos(respuesta(mensaje({
+      json: { image: { url_list: ['https://p16.tiktok.com/i.jpg'] } },
+    })));
+    expect(b.hilos[0].messages[0].media_url).toBe('https://p16.tiktok.com/i.jpg');
+  });
+
+  it('una clave de TOS no es una direccion: mejor null que mentira', () => {
+    // `uri` suele traer una clave interna. Guardarla haria que la bandeja
+    // intentara pintar una imagen que no existe.
+    const r = TT.extraerHilos(respuesta(mensaje({
+      json: { url: { uri: 'tos-maliva/oQIBAAgAA' } },
+    })));
+    const m = r.hilos[0].messages[0];
+    expect(m.texto).toBe('[Imagen]');   // que llego una imagen, se dice igual
+    expect(m.tipo).toBe('image');
+    expect(m.media_url).toBe(null);
+  });
+
+  it('NUNCA sale un [object Object]', () => {
+    // La prueba que habria evitado las cuatro filas rotas.
+    for (const url of [{}, { url_list: [] }, { a: { b: { c: {} } } }, []]) {
+      const r = TT.extraerHilos(respuesta(mensaje({ json: { url } })));
+      const m = r.hilos[0]?.messages[0];
+      // O una direccion de verdad, o null. Nunca un objeto estampado.
+      if (m) expect(m.media_url === null || m.media_url.startsWith('http')).toBe(true);
+    }
+  });
+
   it('un video compartido se anota aunque no viaje el contenido', () => {
     // Que conste que llegó algo vale más que un hueco en la conversación.
     const r = TT.extraerHilos(respuesta(mensaje({ json: { aweme_id: '73991' } })));
