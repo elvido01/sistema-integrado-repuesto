@@ -981,10 +981,16 @@ export default function JarvisAdminAssistant() {
           // seco y había que adivinar qué venía después; y como el agente
           // tampoco lo sabía, mandaba a abrir el módulo de Cotizaciones para
           // "revisar y autorizar" algo que ya estaba autorizado.
+          // (2026-08-29) "Hecho." a secas era el final de todas las acciones
+          // que no fueran cotización — y era justo la pregunta del dueño:
+          // "¿cómo sé dónde mandó Hermes la promoción?". Si el ejecutor sabe
+          // dónde quedó, se dice. Nadie tiene que ir a buscarlo.
           content: r.numero
             ? `La cotización ${r.numero} fue realizada${r.total ? ` por RD$ ${Number(r.total).toLocaleString('es-DO')}` : ''}.`
               + `\n¿Desea algo más? Si quiere, la envío a facturar de una vez.`
-            : 'Hecho.',
+            : r.donde_verlo
+              ? `Encargado.\n${r.donde_verlo}`
+              : 'Hecho.',
         }]);
       }
       setPropuesta(null);
