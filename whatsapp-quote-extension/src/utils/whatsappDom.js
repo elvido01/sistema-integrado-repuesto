@@ -183,6 +183,12 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
   const { jid, phone, nameKey, externalId: convId } = ident;
   diag.telefono = phone || null;
 
+  // La foto, no solo el hecho de que hubo una. Un blob: solo vale dentro de
+  // esta pestaña, asi que se devuelve el <img> para que quien pueda hacerlo
+  // (fotoDelChat) lo copie antes de que la fila se recicle. Ver
+  // src/utils/fotoDelChat.js.
+  const fotoDe = (row) => row.querySelector('img[src^="blob:"]') || null;
+
   const detectMedia = (row) => {
     if (row.querySelector('img[src^="blob:"]')) return 'image';
     if (row.querySelector('[data-icon="audio"], [data-icon="ptt"], [data-icon="ptt-status"], [aria-label*="voz" i]')) return 'audio';
@@ -211,14 +217,19 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     // filas de fecha/sistema ("viernes", "Llamada") no tienen texto ni media útil
     if (!text && mediaType === 'text') continue;
     seen.add(dataId);
-    messages.push({
+    const msg = {
       external_message_id: `${convId}:${dataId}`,
       direction: getDirection(row, dataId),
       text,
       message_type: mediaType,
       ts: parseTs(pre),
       pre: cleanText(pre) || null,
-    });
+    };
+    // Se cuelga el elemento, NO se sube aqui: leer el DOM tiene que seguir
+    // siendo sincrono y barato. Quien lo suba lo borra antes de mandar el
+    // payload — un nodo del DOM no se puede serializar a JSON.
+    if (mediaType === 'image') msg._img = fotoDe(row);
+    messages.push(msg);
   }
   diag.parsed = messages.length;
   if (!messages.length) return { diag, convo: null };

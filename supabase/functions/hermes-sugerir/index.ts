@@ -73,7 +73,12 @@ Deno.serve(async (req: Request) => {
     await supabase.rpc('hermes_guardar_sugerencia', {
       p_message_id: ctx.message_id,
       p_sugerencia: texto,
-      p_datos: { herramientas_usadas: usadas, modelo: MODELO, via: 'mcp' },
+      p_datos: {
+        herramientas_usadas: usadas, modelo: MODELO, via: 'mcp',
+        // Queda escrito si miro la foto: sin esto no hay forma de saber
+        // despues si verla mejoro la respuesta o solo encarecio la llamada.
+        fotos_vistas: (ctx.fotos || []).length, hubo_foto: !!ctx.hubo_foto,
+      },
     });
 
     return json({
@@ -81,6 +86,8 @@ Deno.serve(async (req: Request) => {
       sugerencia: texto,
       message_id: ctx.message_id,
       pregunta: ctx.pregunta,
+      fotos: ctx.fotos || [],
+      hubo_foto: !!ctx.hubo_foto,
       herramientas: usadas,
       // Lo que el modelo consulto de verdad, para pintarlo en la pantalla.
       productos: usadas.flatMap((u: any) => u.piezas || []),
@@ -112,6 +119,13 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
     function: { name: t.name, description: t.description, parameters: t.inputSchema },
   }));
 
+  // Las fotos que el cliente mando y SI se pudieron guardar. Las que llegaron
+  // antes de que el espejo supiera copiarlas no tienen archivo: de esas solo
+  // se sabe que existieron (ctx.hubo_foto), y eso tambien hay que decirlo —
+  // callarlo es lo que hacia que contestara a otra pregunta.
+  const fotos = (Array.isArray(ctx.fotos) ? ctx.fotos : [])
+    .filter((f: any) => typeof f?.url === 'string' && f.url.startsWith('http'));
+
   const ejemplos = (Array.isArray(ctx.ejemplos) ? ctx.ejemplos : [])
     .map((e: any) => `Cliente: ${e.pregunta}\nVendedor: ${e.respuesta}`).join('\n\n');
   const historial = (Array.isArray(ctx.historial) ? ctx.historial : [])
@@ -136,18 +150,48 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
     '   No estan en el mostrador y no se pueden facturar ahi: hay que traerlas.',
     '   Ofrecelas asi: "esa la tengo en el almacen viejo, deja que te la busco".',
     '   Nunca digas que no tienes una pieza si aparece en esa lista con existencia.',
+    ...(fotos.length ? [
+      '8. EL CLIENTE MANDO UNA FOTO y la estas viendo. Mirala y di QUE PIEZA es',
+      '   antes de preguntar nada: para eso la mando, porque no sabe como se',
+      '   llama. Buscala con las herramientas usando el nombre que le des TU,',
+      '   no el que escribio el.',
+      '   Si de la foto no se distingue, dilo asi: "en la foto no distingo bien",',
+      '   y pide otra o el modelo. Nunca finjas que la viste.',
+    ] : ctx.hubo_foto ? [
+      '8. El cliente mando una FOTO que TU NO PUEDES VER. No la describas ni',
+      '   adivines que trae. Dile que la viste llegar pero necesitas que te diga',
+      '   que pieza es, o el modelo y el año de la moto.',
+    ] : []),
   ].join('\n');
+
+  // El texto va primero y la foto despues: con la imagen delante, el modelo
+  // tiende a describirla en vez de contestar lo que se le pregunta.
+  const encargo = [
+    ejemplos ? `ASI CONTESTA LA CASA (copia el tono, no el contenido):\n\n${ejemplos}\n` : '',
+    historial ? `CONVERSACION HASTA AHORA:\n${historial}\n` : '',
+    `LA PREGUNTA A CONTESTAR:\n${ctx.pregunta}\n`,
+    fotos.length
+      ? `El cliente mando ${fotos.length === 1 ? 'esta foto' : 'estas fotos'}. Mirala${fotos.length === 1 ? '' : 's'} antes de contestar.\n`
+      : '',
+    'Consulta lo que necesites y escribe SOLO el mensaje que le enviarias al cliente.',
+  ].filter(Boolean).join('\n');
 
   const mensajes: any[] = [
     { role: 'system', content: sistema },
     {
       role: 'user',
-      content: [
-        ejemplos ? `ASI CONTESTA LA CASA (copia el tono, no el contenido):\n\n${ejemplos}\n` : '',
-        historial ? `CONVERSACION HASTA AHORA:\n${historial}\n` : '',
-        `LA PREGUNTA A CONTESTAR:\n${ctx.pregunta}\n`,
-        'Consulta lo que necesites y escribe SOLO el mensaje que le enviarias al cliente.',
-      ].filter(Boolean).join('\n'),
+      content: fotos.length
+        ? [
+            { type: 'text', text: encargo },
+            // detail 'low' a proposito: una pieza de moto se reconoce de sobra
+            // a 512px y cuesta una fraccion. Esto se dispara decenas de veces
+            // al dia, y el precio por foto decide si se puede dejar puesto.
+            ...fotos.map((f: any) => ({
+              type: 'image_url',
+              image_url: { url: f.url, detail: 'low' },
+            })),
+          ]
+        : encargo,
     },
   ];
 

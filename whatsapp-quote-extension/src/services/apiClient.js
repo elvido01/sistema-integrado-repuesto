@@ -1,3 +1,4 @@
+import { copiarFoto, nombreDeArchivo } from '../utils/fotoDelChat.js';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -825,6 +826,80 @@ export async function getOmniMessages(conversationId) {
   url.searchParams.set('limit', '120');
 
   return fetchJson(url.toString(), { headers });
+}
+
+// ── LAS FOTOS DEL CHAT ──────────────────────────────────────
+// (2026-08-29) El espejo apuntaba "aqui hubo una foto" y tiraba los bytes,
+// asi que Hermes contestaba a ciegas. Esto las rescata del DOM y las sube al
+// bucket whatsapp-media, donde ya viven las que entraron por el webhook
+// oficial en mayo. Ver src/utils/fotoDelChat.js para el porque del canvas.
+//
+// Solo las del CLIENTE: las nuestras ya sabemos lo que dicen, y subirlas
+// seria pagar ancho de banda por nada.
+
+// Lo ya subido en esta sesion. El espejo relee el mismo chat cada 20s; sin
+// esto subiria la misma foto 180 veces al dia.
+const fotosSubidas = new Map();   // external_message_id -> url
+
+async function subirFoto(blob, ruta, headers) {
+  const url = `${SUPABASE_URL}/storage/v1/object/whatsapp-media/${ruta}`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      apikey: headers.apikey,
+      Authorization: headers.Authorization,
+      'Content-Type': 'image/jpeg',
+      'x-upsert': 'true',       // la llave es determinista: repetir es reponer
+      'cache-control': '31536000',
+    },
+    body: blob,
+  });
+  if (!r.ok) {
+    const detalle = await r.text().catch(() => '');
+    throw new Error(`storage ${r.status}: ${detalle.slice(0, 160)}`);
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/whatsapp-media/${ruta}`;
+}
+
+// Rellena media_url en los mensajes que traen foto y limpia el nodo del DOM
+// (no se puede serializar). Devuelve cuantas subio, para el latido.
+export async function adjuntarFotos(convo) {
+  const pendientes = (convo?.messages || []).filter((m) => m._img);
+  if (!pendientes.length) return 0;
+
+  let headers = null;
+  let tenantId = null;
+  let subidas = 0;
+
+  for (const m of pendientes) {
+    const img = m._img;
+    delete m._img;                       // pase lo que pase, el payload va limpio
+    if (m.direction !== 'in') continue;  // solo lo que manda el cliente
+
+    const yaEsta = fotosSubidas.get(m.external_message_id);
+    if (yaEsta) { m.media_url = yaEsta; continue; }
+
+    try {
+      const blob = await copiarFoto(img);
+      if (!blob) continue;               // aun cargando, o el canvas se nego
+
+      if (!headers) {
+        headers = await getAuthHeaders();
+        tenantId = (await getCurrentEmpresa(headers))?.tenant_id || null;
+      }
+      if (!tenantId) return subidas;     // sin empresa no hay carpeta donde ponerla
+
+      const ruta = nombreDeArchivo(tenantId, m.external_message_id);
+      const url = await subirFoto(blob, ruta, headers);
+      fotosSubidas.set(m.external_message_id, url);
+      m.media_url = url;
+      subidas += 1;
+    } catch {
+      // Que una foto no suba no puede tumbar el espejo: la conversacion se
+      // copia igual, solo que esa linea va sin imagen.
+    }
+  }
+  return subidas;
 }
 
 // Espeja a Sales Hub la conversación de WhatsApp abierta (contacto +
