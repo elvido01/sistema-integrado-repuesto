@@ -85,6 +85,16 @@ export function BorradorPromocion({ contenido, aprobacionId, onGuardado }) {
         </a>
       )}
 
+      {/* Qué motor escribió esto. Solo se enseña cuando contestó el respaldo:
+          la suscripción es lo normal y no merece un cartel, pero la API
+          cuesta por token y eso el dueño tiene que verlo sin abrir el JSON. */}
+      {typeof contenido.motor === 'string' && /respaldo/i.test(contenido.motor) && (
+        <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">
+          Lo escribió el motor de respaldo: la suscripción de Claude no estaba
+          disponible, así que se pagó por uso.
+        </p>
+      )}
+
       {propuesta && (
         <p className="rounded bg-white/70 p-2 text-[11px] leading-snug text-slate-700">{propuesta}</p>
       )}

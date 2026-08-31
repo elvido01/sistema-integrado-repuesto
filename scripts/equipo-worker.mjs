@@ -629,9 +629,38 @@ while (corriendo) {
         ...estiloRefs.map((r) => `· ${r.nota || 'sin nota del dueño'}`)].join('\n');
     }
 
-    const bruto = actual.proveedor === 'claude_suscripcion'
-      ? await porClaudeCode(prompt)
-      : await porApi(actual, prompt, estiloRefs);
+    // ── EL RESPALDO ───────────────────────────────────────────────
+    // El 31/08 una factura sin pagar dejó la suscripción en pausa y con ella
+    // el marketing entero: el creativo gastó sus tres intentos y el trabajo
+    // murió. Hacer que el dueño cambie el motor a mano cada vez que eso pase
+    // es pedirle que vigile una tuberia.
+    //
+    // Si la suscripcion no esta disponible y hay clave de API, se contesta
+    // igual y se DICE con que. Nunca en silencio: el borrador llega marcado
+    // con el motor que lo escribio, porque uno cuesta por token y el otro no.
+    let bruto;
+    let motorUsado = actual.proveedor;
+
+    if (actual.proveedor === 'claude_suscripcion') {
+      try {
+        bruto = await porClaudeCode(prompt);
+      } catch (e) {
+        const respaldo = process.env.ANTHROPIC_API_KEY ? 'claude'
+          : process.env.OPENAI_API_KEY ? 'openai' : null;
+        // Solo se cae al respaldo por fallos de ACCESO. Si Claude Code
+        // revienta por otra cosa, que se vea: taparlo con la API costaria
+        // dinero y escondería una averia de verdad.
+        const esAcceso = /subscription|organization|logged ?in|log ?in|auth|usage limit|rate limit|paused/i
+          .test(String(e?.message || ''));
+        if (!respaldo || !esAcceso) throw e;
+        log(`  la suscripcion no responde; sigo por API ${respaldo}`);
+        log(`  motivo: ${String(e.message).slice(0, 160)}`);
+        bruto = await porApi({ ...actual, proveedor: respaldo, modelo: null }, prompt, estiloRefs);
+        motorUsado = `${respaldo} (respaldo: la suscripcion no estaba disponible)`;
+      }
+    } else {
+      bruto = await porApi(actual, prompt, estiloRefs);
+    }
 
     const { ok, datos } = leerRespuesta(bruto);
     if (!ok) log('  (contesto en texto libre, no JSON — se entrega igual)');
@@ -680,7 +709,7 @@ while (corriendo) {
     const r = await escribir(
       'SELECT hermes.equipo_responder($1,$2,$3,$4::jsonb) AS r',
       [msg.id, msg.claim_token, String(datos.resumen || 'borrador listo').slice(0, 200),
-       JSON.stringify({ ...datos, motor: actual.proveedor, modelo: actual.modelo || null })]);
+       JSON.stringify({ ...datos, motor: motorUsado, modelo: actual.modelo || null })]);
 
     const res = r.rows[0].r;
     if (res?.abandonar) log('  el claim ya era de otro: se descarta');
