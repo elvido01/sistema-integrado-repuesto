@@ -30,9 +30,16 @@ function fotoDe(contenido) {
   }
 }
 
-export function BorradorPromocion({ contenido }) {
+export function BorradorPromocion({ contenido, aprobacionId, onGuardado }) {
   const [crudo, setCrudo] = useState(false);
   const [arte, setArte] = useState(null);
+  // El texto lo escribe el dueño. Hasta ahora solo podía aprobar o rechazar
+  // el del creativo: cambiar una palabra costaba una ronda entera con el
+  // agente. Es su negocio y su voz.
+  const [editando, setEditando] = useState(false);
+  const [borrador, setBorrador] = useState({});
+  const [guardando, setGuardando] = useState(false);
+  const [fallo, setFallo] = useState('');
 
   // La pieza montada vive en la base (bytes), no en una URL: el creativo la
   // guarda por el mismo carril que las imágenes de Hermes, sin llaves de
@@ -52,6 +59,18 @@ export function BorradorPromocion({ contenido }) {
 
   const { copy, propuesta, advertencias, requerimientos_visuales: requisitos,
           canal_sugerido: canal } = contenido;
+
+  const guardar = async () => {
+    setGuardando(true);
+    setFallo('');
+    const { error } = await supabase.rpc('equipo_aprobacion_editar', {
+      p_aprobacion_id: aprobacionId, p_copy: borrador,
+    });
+    setGuardando(false);
+    if (error) { setFallo(error.message); return; }
+    setEditando(false);
+    if (onGuardado) onGuardado();
+  };
   // Si hay pieza montada, esa manda: la foto suelta del producto era el
   // material de partida, no el entregable.
   const foto = arte || fotoDe(contenido);
@@ -70,17 +89,60 @@ export function BorradorPromocion({ contenido }) {
         <p className="rounded bg-white/70 p-2 text-[11px] leading-snug text-slate-700">{propuesta}</p>
       )}
 
-      {copy && typeof copy === 'object' && Object.entries(copy).map(([canalId, texto]) => {
+      {copy && typeof copy === 'object' && Object.entries(editando ? borrador : copy).map(([canalId, texto]) => {
         const c = CANALES[canalId] || { nombre: canalId, color: 'bg-slate-100 text-slate-700' };
         return (
           <div key={canalId} className="rounded bg-white p-2">
             <span className={`mb-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold ${c.color}`}>
               {c.nombre}
             </span>
-            <p className="text-[11px] leading-snug text-slate-800">{texto}</p>
+            {editando ? (
+              <textarea
+                value={typeof texto === 'string' ? texto : JSON.stringify(texto)}
+                onChange={(e) => setBorrador((s) => ({ ...s, [canalId]: e.target.value }))}
+                rows={3}
+                className="w-full rounded border border-slate-300 p-1.5 text-[11px] leading-snug text-slate-800"
+              />
+            ) : (
+              <p className="text-[11px] leading-snug text-slate-800">
+                {typeof texto === 'string' ? texto : JSON.stringify(texto)}
+              </p>
+            )}
           </div>
         );
       })}
+
+      {/* Solo donde hay una aprobación viva que reescribir. En el historial
+          el texto se lee, no se toca. */}
+      {aprobacionId && copy && typeof copy === 'object' && (
+        <div className="flex flex-wrap items-center gap-2">
+          {editando ? (
+            <>
+              <button type="button" disabled={guardando} onClick={guardar}
+                className="rounded bg-violet-600 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50">
+                {guardando ? 'Guardando…' : 'Guardar mis textos'}
+              </button>
+              <button type="button" disabled={guardando}
+                onClick={() => { setEditando(false); setFallo(''); }}
+                className="text-[10px] font-semibold text-slate-500 hover:underline disabled:opacity-50">
+                dejarlo como estaba
+              </button>
+            </>
+          ) : (
+            <button type="button"
+              onClick={() => { setBorrador({ ...copy }); setEditando(true); }}
+              className="text-[10px] font-semibold text-violet-600 hover:underline">
+              escribir yo el título y la descripción
+            </button>
+          )}
+          {contenido.copy_editado_por_el_dueno && !editando && (
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
+              texto tuyo
+            </span>
+          )}
+          {fallo && <span className="text-[10px] text-red-600">{fallo}</span>}
+        </div>
+      )}
 
       {canal && (
         <p className="text-[10px] text-slate-500">Canal sugerido: <b>{canal}</b></p>

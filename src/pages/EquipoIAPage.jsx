@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { BorradorPromocion } from '@/components/equipo/BorradorPromocion';
 import { EspecificacionesArte } from '@/components/equipo/EspecificacionesArte';
 import { ReferenciasArte } from '@/components/equipo/ReferenciasArte';
+import { RecomendacionesDelDia } from '@/components/equipo/RecomendacionesDelDia';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -524,6 +525,7 @@ const EquipoIAPage = () => {
       <div className="grid gap-4 lg:grid-cols-5">
         {/* ── B · PEDIRLE ALGO A HERMES ────────────────────────────── */}
         <div className="lg:col-span-2">
+          <RecomendacionesDelDia onEncargado={() => cargar(true)} />
           <EspecificacionesArte />
           <ReferenciasArte />
 
@@ -589,7 +591,8 @@ const EquipoIAPage = () => {
                   )}
 
                   {ap.contenido && Object.keys(ap.contenido).length > 0 && (
-                    <BorradorPromocion contenido={ap.contenido} />
+                    <BorradorPromocion contenido={ap.contenido} aprobacionId={ap.id}
+                      onGuardado={() => cargar(true)} />
                   )}
 
                   {cambios.id === ap.id ? (
