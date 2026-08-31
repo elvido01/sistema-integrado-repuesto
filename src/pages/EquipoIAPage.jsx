@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { BorradorPromocion } from '@/components/equipo/BorradorPromocion';
+import { EspecificacionesArte } from '@/components/equipo/EspecificacionesArte';
+import { ReferenciasArte } from '@/components/equipo/ReferenciasArte';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -521,6 +524,9 @@ const EquipoIAPage = () => {
       <div className="grid gap-4 lg:grid-cols-5">
         {/* ── B · PEDIRLE ALGO A HERMES ────────────────────────────── */}
         <div className="lg:col-span-2">
+          <EspecificacionesArte />
+          <ReferenciasArte />
+
           <div className="rounded-xl border bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center gap-2">
               <MessageSquarePlus className="h-4 w-4 text-slate-500" />
@@ -583,9 +589,7 @@ const EquipoIAPage = () => {
                   )}
 
                   {ap.contenido && Object.keys(ap.contenido).length > 0 && (
-                    <pre className="mb-2 max-h-40 overflow-auto rounded bg-white p-2 text-[10px] text-slate-700">
-                      {JSON.stringify(ap.contenido, null, 1)}
-                    </pre>
+                    <BorradorPromocion contenido={ap.contenido} />
                   )}
 
                   {cambios.id === ap.id ? (
@@ -613,13 +617,18 @@ const EquipoIAPage = () => {
                         onClick={() => decidir(ap.id, 'approved')}>
                         <Check className="mr-1 h-3 w-3" /> Aprobar
                       </Button>
-                      <Button size="sm" variant="outline" className="flex-1 border-red-200 text-red-700"
-                        onClick={() => decidir(ap.id, 'rejected')}>
-                        <X className="mr-1 h-3 w-3" /> Rechazar
-                      </Button>
+                      {/* El orden importa: "pedir cambios" es lo que se
+                          quiere nueve de cada diez veces, y descartar cierra
+                          el trabajo entero. Poner el rojo en medio invitaba a
+                          usarlo para decir "esto no me gusta". */}
                       <Button size="sm" variant="outline" className="flex-1"
                         onClick={() => setCambios({ id: ap.id, texto: '' })}>
-                        Cambios
+                        Pedir cambios
+                      </Button>
+                      <Button size="sm" variant="outline" className="flex-1 border-red-200 text-red-700"
+                        title="Cierra el trabajo entero. Si solo quieres otra versión, usa Pedir cambios."
+                        onClick={() => decidir(ap.id, 'rejected')}>
+                        <X className="mr-1 h-3 w-3" /> Descartar todo
                       </Button>
                     </div>
                   )}

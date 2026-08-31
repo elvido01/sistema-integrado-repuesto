@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Mic, MicOff, Settings2, MessageSquare, Maximize2 } from 'lucide-react';
+import { Mic, MicOff, Settings2, MessageSquare, Maximize2, Minimize2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { BarraVozHermes, ReproductorVoz, pararTodoAudio } from '@/components/jarvis/VozHermes';
+import { ImagenHermes, ImagenPorUrl, urlDeImagenEnTexto } from '@/components/jarvis/ImagenHermes';
 import * as vozEspejo from '@/lib/vozEspejo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
@@ -129,6 +130,31 @@ export default function JarvisAdminAssistant() {
   // escuchando y respondiendo, solo que leyendo en vez de oyendo.
   const [mudo, setMudo] = useState(false);
   const [loading, setLoading] = useState(false);
+  // En qué paso va. El adaptador ya lo escribe en hermes_chat.estado_detalle
+  // en cada envío no final; hasta ahora la pantalla no lo miraba y una
+  // promoción de tres minutos parecía un cuelgue.
+  const [paso, setPaso] = useState('');
+  // El borrador que el equipo dejó esperando firma. Se decide aquí mismo: si
+  // Hermes te lo trae al chat y para aprobarlo hay que irse a otra pantalla,
+  // no te lo ha entregado del todo.
+  const [borrador, setBorrador] = useState(null);
+  // La ventana chica basta para preguntar un precio, pero no para leer un
+  // borrador con tres copys y una pieza montada. Se agranda y se queda así.
+  const [chatGrande, setChatGrande] = useState(false);
+  // Y si aun asi el boton se pierde de vista —una pantalla rara, un zoom del
+  // navegador—, Escape la devuelve a su tamaño. Siempre tiene que haber una
+  // salida que no dependa de acertarle a un icono.
+  useEffect(() => {
+    if (!chatGrande) return undefined;
+    const alTeclear = (e) => { if (e.key === 'Escape') setChatGrande(false); };
+    window.addEventListener('keydown', alTeclear);
+    return () => window.removeEventListener('keydown', alTeclear);
+  }, [chatGrande]);
+  const [firmando, setFirmando] = useState(false);
+  // "Cambios" sin decir QUE cambiar es un boton mudo: el creativo remonta de
+  // memoria y vuelve a entregar lo mismo. Se pide el texto antes de mandarlo.
+  const [pidiendoCambios, setPidiendoCambios] = useState(false);
+  const [notaCambios, setNotaCambios] = useState('');
   const [lastMessage, setLastMessage] = useState('');
   const [error, setError] = useState('');
   // La sesión se recuerda entre recargas. Sin esto, cada F5 empezaba una
@@ -291,6 +317,7 @@ export default function JarvisAdminAssistant() {
       // mensajes". No son lo mismo y hay que poder distinguirlos.
       const e = conHermes.error || conJarvis.error;
       if (e) {
+        if (/imagen_id/.test(e.message || '')) { sinImagenRef.current = true; return; }
         if (/acciones/.test(e.message || '')) { sinAccionesRef.current = true; return; }
         setError(`No puedo leer la conversación: ${e.message}`);
         return;
@@ -304,6 +331,7 @@ export default function JarvisAdminAssistant() {
           content: f.texto,
           de: f.rol === 'hermes' ? 'hermes' : undefined,
           canalDe: 'hermes',
+          imagenId: f.imagen_id || undefined,
           en: f.creado_en,
         });
         if (f.id > ultimoIdRef.current) ultimoIdRef.current = f.id;
@@ -349,6 +377,7 @@ export default function JarvisAdminAssistant() {
       .then(({ data, error: e }) => {
         if (!vivo) return;
         if (e) {
+          if (/imagen_id/.test(e.message || '')) { sinImagenRef.current = true; return; }
           if (/message_type|media_id/.test(e.message || '')) { sinVozRef.current = true; return; }
           if (/acciones/.test(e.message || '')) { sinAccionesRef.current = true; return; }
           setError(`No puedo leer la conversación: ${e.message}`);
@@ -395,10 +424,48 @@ export default function JarvisAdminAssistant() {
     }, () => {});
 
     mirar();
-    const t = setInterval(mirar, 5000);
+    const mirarBorrador = () => supabase.rpc('equipo_panel', { p_limite: 5 })
+      .then(({ data, error: e }) => {
+        if (!vivo || e) return;
+        const p = (data?.aprobaciones || []).find((a) => a.estado === 'pending');
+        setBorrador(p || null);
+      });
+    mirarBorrador();
+
+    const t = setInterval(() => { mirar(); mirarBorrador(); }, 5000);
     return () => { vivo = false; clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agente]);
+
+  // ── EN QUÉ PASO VA ───────────────────────────────────────────────────
+  // Mientras Hermes trabaja, se le pregunta a su propio mensaje. No es un
+  // canal nuevo: el adaptador ya venía escribiendo cada paso en
+  // `estado_detalle`, y `lease_until` dice si sigue vivo. Con eso, esperar
+  // deja de ser mirar una pantalla muda.
+  useEffect(() => {
+    if (!loading) { setPaso(''); return undefined; }
+    let vivo = true;
+
+    const preguntar = () => {
+      const id = idPendienteRef.current;
+      if (!id) return;
+      supabase.from('hermes_chat')
+        .select('estado, estado_detalle, lease_until')
+        .eq('id', id).maybeSingle()
+        .then(({ data, error: e }) => {
+          if (!vivo || e || !data) return;
+          pendienteRef.current = data;
+          // El detalle solo se enseña mientras esté trabajando. Dejar el
+          // último paso colgado después de contestar haría creer que sigue.
+          if (data.estado === 'pendiente') setPaso('en cola, terminando lo anterior');
+          else setPaso(data.estado === 'procesando' ? (data.estado_detalle || '') : '');
+        });
+    };
+
+    preguntar();
+    const t = setInterval(preguntar, 4000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [loading]);
 
   // Qué columnas pedirle a hermes_chat. Degrada sola: si la base todavía
   // no tiene `acciones` (v3) o `media_id` (v5), se reintenta sin ellas en
@@ -408,7 +475,33 @@ export default function JarvisAdminAssistant() {
     if (conFecha) cols.push('creado_en');
     if (!sinAccionesRef.current) cols.push('acciones');
     if (!sinVozRef.current) cols.push('message_type', 'media_id');
+    if (!sinImagenRef.current) cols.push('imagen_id');
     return cols.join(', ');
+  };
+
+  // Firmar el borrador del equipo, sin salir del chat.
+  const firmarBorrador = async (decision, comentario = null) => {
+    if (!borrador || firmando) return;
+    setFirmando(true);
+    const { data, error: e } = await supabase.rpc('equipo_decidir', {
+      p_aprobacion_id: borrador.id, p_decision: decision, p_comentario: comentario,
+    });
+    setFirmando(false);
+    if (e) { setError(`No se pudo registrar la decisión: ${e.message}`); return; }
+    // Se quita al momento: esperar al sondeo deja el botón vivo cinco
+    // segundos y se aprueba dos veces sin querer.
+    setBorrador(null);
+    setPidiendoCambios(false);
+    setNotaCambios('');
+    setMensajes((m) => [...m, {
+      id: `firma-${Date.now()}`, role: 'assistant', de: 'hermes', canalDe: 'hermes',
+      content: decision === 'approved'
+        ? '✅ Aprobado. El Comercial-Creativo puede seguir con la publicación.'
+        : decision === 'rejected'
+          ? '❌ Rechazado. Ese trabajo se cierra: para retomarlo hay que pedirlo de nuevo.'
+          : `✏️ Se lo devolví al Comercial-Creativo con tus indicaciones${
+              data?.ronda ? ` (ronda ${data.ronda})` : ''}. Te traigo la pieza corregida aquí mismo.`,
+    }]);
   };
 
   const enviarAHermes = async (texto, { conVoz }) => {
@@ -432,12 +525,30 @@ export default function JarvisAdminAssistant() {
     // redactaba texto; desde que consulta el catálogo de verdad tarda más, y
     // el aviso saltaba encima de respuestas que venían bien y en camino.
     // Avisar de una caída que no ocurrió enseña a desconfiar del aviso.
-    window.clearTimeout(esperaHermesRef.current);
-    esperaHermesRef.current = window.setTimeout(() => {
+    // Y ni siquiera dos minutos a secas. Preparar una promoción con imagen
+    // pasa de tres, y el aviso saltaba encima de un turno que estaba vivo y
+    // avanzando. Ahora, antes de darlo por muerto, se mira su `lease_until`:
+    // mientras Hermes siga renovando el turno, se le espera. Solo se avisa
+    // cuando de verdad dejó de dar señales.
+    const vigilar = () => {
+      const p = pendienteRef.current;
+      // `pendiente` es que todavía no le ha tocado: hace cola detrás de otra
+      // pregunta de la misma conversación. Eso no es un fallo, y decir que no
+      // ha contestado cuando ni siquiera ha empezado es lo mismo que mentir.
+      const trabajando = p && (
+        p.estado === 'pendiente'
+        || (p.estado === 'procesando' && p.lease_until
+            && new Date(p.lease_until).getTime() > Date.now() - 60000));
+      if (trabajando) {
+        esperaHermesRef.current = window.setTimeout(vigilar, 30000);
+        return;
+      }
       esperandoRef.current = false;
       setLoading(false);
       setError('Hermes no ha contestado. Puede estar ocupado, o conectado pero sin atender la cola.');
-    }, 120000);
+    };
+    window.clearTimeout(esperaHermesRef.current);
+    esperaHermesRef.current = window.setTimeout(vigilar, 120000);
 
     modoVozRef.current = conVoz;
     // Se pinta al instante con un id provisional y se le pone el de la fila en
@@ -462,6 +573,8 @@ export default function JarvisAdminAssistant() {
       });
       if (e) throw e;
       if (data?.id) {
+        idPendienteRef.current = data.id;
+        pendienteRef.current = null;
         idsVistosRef.current.add(`u-${data.id}`);
         if (data.id > ultimoIdRef.current) ultimoIdRef.current = data.id;
         setMensajes((m) => m.map((x) => (x.id === idProvisional ? { ...x, id: `u-${data.id}` } : x)));
@@ -482,6 +595,8 @@ export default function JarvisAdminAssistant() {
   const alEnviarVoz = ({ id, mediaId, duracionMs, duplicado }) => {
     if (!id) return;
     setError('');
+    idPendienteRef.current = id;
+    pendienteRef.current = null;
     if (!duplicado) {
       idsVistosRef.current.add(`u-${id}`);
       if (id > ultimoIdRef.current) ultimoIdRef.current = id;
@@ -658,6 +773,15 @@ export default function JarvisAdminAssistant() {
   // esté corrido, el chat funciona exactamente como ayer: sin nota de voz
   // y sin reproductor, pero sin un error rojo cada cuatro segundos.
   const sinVozRef = useRef(false);
+  // Y lo mismo para la imagen. Es una columna nueva en hermes_chat: si el
+  // navegador tiene el dist viejo contra una base ya migrada, o al revés, el
+  // chat sigue funcionando sin foto en vez de quedarse en blanco.
+  const sinImagenRef = useRef(false);
+  // El mensaje que está contestando ahora mismo, para poder preguntar por él.
+  const idPendienteRef = useRef(null);
+  // Lo último que se supo de ese turno. Lo mira el reloj de la espera para
+  // no dar por muerto a alguien que está trabajando.
+  const pendienteRef = useRef(null);
   // Una orden de pantalla se ejecuta UNA vez. Entre Realtime y el sondeo, la
   // misma fila llega dos veces, y ejecutarla dos veces duplicaría las líneas
   // de la factura sin que nadie entendiera por qué.
@@ -680,6 +804,8 @@ export default function JarvisAdminAssistant() {
         // v5: la respuesta puede traer voz. `media_id` en una fila de
         // 'usuario' es la nota que se mando; en una de 'hermes', el TTS.
         mediaId: f.media_id || undefined,
+        // La foto que preparó él (un borrador de promoción, por ejemplo).
+        imagenId: f.imagen_id || undefined,
         tipoMensaje: f.message_type || 'text',
       });
     }
@@ -1556,7 +1682,12 @@ export default function JarvisAdminAssistant() {
         )}
 
         {chatAbierto && (
-          <div className="pointer-events-auto flex h-[26rem] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-xl border border-cyan-300/25 bg-slate-950/95 shadow-2xl">
+          // Agrandada NO cuelga de la esfera. La columna se apila hacia
+          // arriba desde donde esté el orbe, asi que una ventana alta se salia
+          // por el techo de la pantalla y se llevaba consigo la cabecera: el
+          // boton de reducir quedaba fuera del viewport, imposible de pulsar.
+          // Fijada al viewport siempre tiene sus cuatro bordes dentro.
+          <div className={`pointer-events-auto flex flex-col overflow-hidden rounded-xl border border-cyan-300/25 bg-slate-950/95 shadow-2xl ${chatGrande ? "fixed right-4 top-4 bottom-24 z-[60] w-[46rem] max-w-[calc(100vw-2rem)]" : "h-[26rem] w-[22rem] max-w-[calc(100vw-2.5rem)]"}`}>
             <div className="flex items-center gap-2 border-b border-cyan-300/15 px-3 py-2">
               <span className="text-sm font-black uppercase tracking-widest text-cyan-300">{nombreAgente}</span>
               {/* El puesto tiene que seguir al canal, igual que el nombre. Con
@@ -1589,8 +1720,26 @@ export default function JarvisAdminAssistant() {
                   Nueva
                 </button>
               )}
-              <button type="button" onClick={() => setChatAbierto(false)}
-                className={`${canal === 'local' ? '' : 'ml-auto '}text-cyan-200/60 hover:text-cyan-100`}>✕</button>
+              {/* Agrandar la conversación. No es lo mismo que el modo voz: eso
+                  cierra el chat y pone la esfera; esto deja lo mismo, más
+                  grande, para poder LEER. */}
+              {/* Los dos controles van juntos a la derecha. Con ml-auto en
+                  ambos, el de agrandar se quedaba varado en mitad de la
+                  cabecera y el ✕ en la esquina: parecian de cosas distintas.
+                  Y ya grande lleva su nombre escrito, porque un icono de
+                  flechitas no dice "esto lo devuelve a chico". */}
+              <div className={`${canal === 'local' ? '' : 'ml-auto '}flex shrink-0 items-center gap-1.5`}>
+                <button type="button" onClick={() => setChatGrande((v) => !v)}
+                  title={chatGrande ? 'Volver al tamaño normal' : 'Agrandar la conversación'}
+                  aria-label={chatGrande ? 'Volver al tamaño normal' : 'Agrandar la conversación'}
+                  className="flex items-center gap-1 rounded border border-cyan-300/25 px-1.5 py-1 text-cyan-200/70 hover:bg-cyan-500/15 hover:text-cyan-100">
+                  {chatGrande ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                  {chatGrande && <span className="text-[10px] font-bold uppercase tracking-wide">Reducir</span>}
+                </button>
+                <button type="button" onClick={() => setChatAbierto(false)}
+                  title="Cerrar la conversación"
+                  className="text-cyan-200/60 hover:text-cyan-100">✕</button>
+              </div>
             </div>
 
             {/* Con quién se está hablando de verdad. Hermes es un programa
@@ -1668,6 +1817,20 @@ export default function JarvisAdminAssistant() {
                       <ReproductorVoz mediaId={m.mediaId} onInterrumpido={marcarInterrumpido} />
                     </div>
                   )}
+                  {/* Y lo mismo con la foto: el texto de arriba dice qué es.
+                      Una promoción que no se puede leer sin abrir la imagen
+                      no sirve en un teléfono a media luz. */}
+                  {m.imagenId && (
+                    <div className={m.role === 'user' ? 'flex justify-end' : ''}>
+                      <ImagenHermes imagenId={m.imagenId} />
+                    </div>
+                  )}
+                  {/* Un borrador del equipo trae su foto como URL dentro del
+                      texto. Se pinta: un enlace de cien caracteres no se
+                      mira desde un teléfono. */}
+                  {!m.imagenId && m.role === 'assistant' && urlDeImagenEnTexto(m.content) && (
+                    <ImagenPorUrl url={urlDeImagenEnTexto(m.content)} />
+                  )}
                   {/* Qué consultó para contestar eso. Distingue una respuesta
                       con datos de una de memoria. */}
                   {m.role === 'assistant' && m.herramientas?.length > 0 && (
@@ -1680,7 +1843,11 @@ export default function JarvisAdminAssistant() {
               ))}
               {loading && (
                 <div className="flex items-center gap-2">
-                  <p className="text-xs text-cyan-200/50">pensando…</p>
+                  {/* El paso de verdad cuando lo hay. "pensando…" durante tres
+                      minutos no distingue trabajar de estar colgado. */}
+                  <p className="text-xs text-cyan-200/50">
+                    {paso ? `⚙️ ${paso}…` : 'pensando…'}
+                  </p>
                   <button type="button" onClick={interrumpir}
                     className="rounded border border-red-400/40 px-1.5 py-0.5 text-[10px] font-bold text-red-300 hover:bg-red-500/15">
                     Detener
@@ -1689,6 +1856,71 @@ export default function JarvisAdminAssistant() {
               )}
               <div ref={finRef} />
             </div>
+
+            {/* LA FIRMA DEL BORRADOR. Hermes te lo trae; si para firmarlo hay
+                que irse a Equipo IA, no te lo ha entregado del todo. */}
+            {borrador && (
+              <div className="border-t border-violet-400/30 bg-violet-500/10 p-2.5">
+                <div className="mb-1 flex items-center gap-1.5">
+                  <span className="rounded bg-violet-400/25 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-violet-200">
+                    Esperando tu firma
+                  </span>
+                  <span className="text-[10px] text-violet-200/70">riesgo {borrador.riesgo}</span>
+                </div>
+                <p className="text-xs font-bold text-violet-50">{borrador.accion}</p>
+                {borrador.impacto && (
+                  <p className="mt-0.5 text-[10px] text-violet-200/70">{borrador.impacto}</p>
+                )}
+                {/* Tres botones y solo uno decía algo claro. Se pulsaba
+                    Rechazar para decir "esto no me gusta" —y Rechazar cierra
+                    el trabajo entero, con su concepto ya aprobado y sus
+                    piezas—. Ahora el del medio pide el texto y devuelve la
+                    pieza al creativo, y el rojo avisa de lo que hace. */}
+                {pidiendoCambios ? (
+                  <div className="mt-2">
+                    <textarea
+                      value={notaCambios}
+                      onChange={(e) => setNotaCambios(e.target.value)}
+                      rows={3}
+                      autoFocus
+                      placeholder="Qué hay que cambiar. Ej.: el título muy pegado al frasco, y el precio más grande."
+                      className="w-full rounded border border-violet-400/40 bg-slate-950/70 p-2 text-[11px] text-violet-50 placeholder:text-violet-300/40"
+                    />
+                    <div className="mt-1.5 flex flex-wrap gap-2">
+                      <button type="button" disabled={firmando || !notaCambios.trim()}
+                        onClick={() => firmarBorrador('changes_requested', notaCambios.trim())}
+                        className="rounded bg-violet-600 px-3 py-1 text-xs font-bold text-white disabled:opacity-50">
+                        {firmando ? 'Enviando…' : 'Devolver al creativo'}
+                      </button>
+                      <button type="button" disabled={firmando}
+                        onClick={() => { setPidiendoCambios(false); setNotaCambios(''); }}
+                        className="rounded border border-violet-400/30 px-3 py-1 text-xs font-bold text-violet-200/70 disabled:opacity-50">
+                        Volver
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" disabled={firmando}
+                      onClick={() => firmarBorrador('approved')}
+                      className="rounded bg-emerald-600 px-3 py-1 text-xs font-bold text-white disabled:opacity-50">
+                      {firmando ? 'Grabando…' : 'Aprobar'}
+                    </button>
+                    <button type="button" disabled={firmando}
+                      onClick={() => setPidiendoCambios(true)}
+                      className="rounded border border-violet-400/40 px-3 py-1 text-xs font-bold text-violet-200 disabled:opacity-50">
+                      Pedir cambios
+                    </button>
+                    <button type="button" disabled={firmando}
+                      onClick={() => firmarBorrador('rejected')}
+                      title="Cierra el trabajo entero. Si solo quieres otra versión, usa Pedir cambios."
+                      className="rounded border border-red-400/40 px-3 py-1 text-xs font-bold text-red-300 disabled:opacity-50">
+                      Descartar todo
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* AUTORIZACIÓN. Los datos se muestran EN PANTALLA porque un
                 monto hablado se oye mal: "catorce mil" y "cuarenta mil" se

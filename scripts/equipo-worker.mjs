@@ -60,6 +60,10 @@ import { createRequire } from 'node:module';
 import { hostname } from 'node:os';
 import { writeFile } from 'node:fs/promises';
 import { CONFIG_DIR, resolverClaude, entorno, cuenta, comoIniciarSesion } from './claude-agente.mjs';
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { montarArte } from './arteCreativo.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
 const require_ = createRequire(path.join(RAIZ, 'package.json'));
@@ -279,6 +283,50 @@ const armarPromptJarvis = (cfg, msg, filas) => [
       + '"fuente":"hermes.buscar_producto","nota":"que se busco y por que no hubo resultados"}.',
 ].join('\n');
 
+// ── Las referencias que dejó el dueño ──────────────────────────────────
+// El brief las nombra por su imagen_id, no por URL: viven en la base, en
+// bytes, porque el creativo entra como rol de base y no tiene sesion con la
+// que pedirle nada a Storage.
+//
+// Dos usos y dos destinos distintos:
+//   FONDO  -> se le pasa al montador y la pieza se dibuja encima.
+//   ESTILO -> se escribe a disco y se le pone delante para que la MIRE.
+//             Con el motor de suscripcion (claude -p) eso significa darle la
+//             ruta: sabe abrir imagenes. Con los motores de API todavia no
+//             la ve, y por eso la nota del dueño viaja siempre en texto.
+const referenciasDe = async (texto) => {
+  const refs = [];
+  const re = /^·\s*(FONDO|ESTILO)\s+imagen_id=([0-9a-f-]{36})(?:\s+—\s*(.*))?$/gim;
+  let m;
+  while ((m = re.exec(String(texto || ''))) !== null) {
+    refs.push({ uso: m[1].toLowerCase(), id: m[2], nota: (m[3] || '').trim() || null });
+  }
+  if (!refs.length) return [];
+  for (const r of refs) {
+    try {
+      const q = await consultar('SELECT public.hermes_imagen_ver($1) AS r', [r.id]);
+      const d = q.rows[0]?.r;
+      if (d?.ok) { r.b64 = d.b64; r.mime = d.mime_type; }
+    } catch (e) {
+      log(`  no se pudo leer la referencia ${r.id}: ${e.message}`);
+    }
+  }
+  return refs.filter((r) => r.b64);
+};
+
+// La de estilo hay que ponerla donde el creativo pueda abrirla.
+const dejarEnDisco = (ref) => {
+  const ext = ref.mime === 'image/jpeg' ? 'jpg' : ref.mime === 'image/webp' ? 'webp' : 'png';
+  const ruta = join(tmpdir(), `referencia-${ref.id}.${ext}`);
+  writeFileSync(ruta, Buffer.from(ref.b64, 'base64'));
+  return ruta;
+};
+
+// ¿Le piden la pieza final o todavía el concepto? Lo dice el encargo. Es la
+// diferencia entre describir el arte y montarlo.
+const pideArte = (msg) => /ARTE FINAL/i.test(
+  String(msg?.payload?.texto || '') + ' ' + String(msg?.peticion || ''));
+
 // ── El prompt del creativo ─────────────────────────────────────────────
 // Las políticas se le enseñan como reglas, no se le piden por favor. Y los
 // datos van marcados como verificados: es lo único que puede citar.
@@ -324,6 +372,22 @@ const armarPrompt = (cfg, msg) => {
     'Devuelve SOLO un JSON con esta forma, sin texto alrededor:',
     '{"resumen":"una linea","propuesta":"...","copy":{"whatsapp":"...","instagram":"...","facebook":"..."},',
     ' "canal_sugerido":"...","requerimientos_visuales":["..."],"advertencias":["..."],"estado":"borrador"}',
+      ...(pideArte(msg) ? [
+      '',
+      '## ESTA VEZ MONTAS EL ARTE',
+      'Te piden la pieza final, no otro concepto. Ya NO describas como deberia',
+      'quedar: decide los valores y el montador la dibuja con ellos.',
+      'Anade al JSON un objeto "arte" y pon "estado":"arte".',
+      '{"arte":{"titulo":"MAX 3 LINEAS CORTAS","subtitulo":"una linea o null",',
+      ' "precio":"400.00","fondo":"#0b1e3a","acento":"#f5a623"}}',
+      '- El titulo es lo que se LEE en la pieza, no la descripcion del catalogo.',
+      '  Cortalo si hace falta: en un telefono no se lee un renglon de 40 letras.',
+      '- fondo y acento en hexadecimal. El acento es el color del precio.',
+      '- La foto real, el logo, el telefono y la empresa NO los pones tu: los pone',
+      '  el montador con los materiales que te entregaron. No inventes URLs.',
+      '- En "copy" entrega, para CADA red, el TITULO y la DESCRIPCION listos para',
+      '  copiar y pegar.',
+    ] : []),
   ].join('\n');
 };
 
@@ -343,14 +407,25 @@ const porClaudeCode = (prompt) => new Promise((resolve, reject) => {
     `No se pudo ejecutar "${CLAUDE_CMD}": ${e.message}. `
     + 'Instala Claude Code en esta maquina, o apunta CLAUDE_CMD a su ruta.')));
   hijo.on('close', (code) => {
-    if (code !== 0) return reject(new Error(`Claude Code salio con codigo ${code}: ${err.slice(0, 400)}`));
+    // Claude Code escribe sus quejas —limite de uso, sesion caducada, una
+    // bandera que ya no existe— por STDOUT, no por stderr. Guardando solo
+    // stderr el fallo llegaba a la pantalla del dueño como "codigo 1:" y
+    // dos puntos: un error que no dice nada cuesta mas que no tenerlo,
+    // porque parece que ya lo estas mirando.
+    if (code !== 0) {
+      const dijo = (err.trim() || salida.trim() || '(no dijo nada)').slice(0, 400);
+      return reject(new Error(`Claude Code salio con codigo ${code}: ${dijo}`));
+    }
     resolve(salida.trim());
   });
   hijo.stdin.write(prompt);
   hijo.stdin.end();
 });
 
-const porApi = async (cfg, prompt) => {
+// `imagenes` son las referencias de estilo del dueño. Las dos APIs saben
+// mirar, pero cada una pide el bloque a su manera; sin esto, cambiar de motor
+// costaba perder la referencia visual y quedarse solo con la nota escrita.
+const porApi = async (cfg, prompt, imagenes = []) => {
   if (cfg.proveedor === 'claude') {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) throw new Error('Falta ANTHROPIC_API_KEY para el proveedor "claude".');
@@ -361,7 +436,15 @@ const porApi = async (cfg, prompt) => {
         model: cfg.modelo || 'claude-haiku-4-5-20251001',
         max_tokens: cfg.max_tokens || 800,
         temperature: Number(cfg.temperatura ?? 0.6),
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{
+          role: 'user',
+          content: imagenes.length
+            ? [...imagenes.map((im) => ({
+                type: 'image',
+                source: { type: 'base64', media_type: im.mime || 'image/png', data: im.b64 },
+              })), { type: 'text', text: prompt }]
+            : prompt,
+        }],
       }),
     });
     if (!r.ok) throw new Error(`Anthropic ${r.status}: ${(await r.text()).slice(0, 300)}`);
@@ -378,7 +461,16 @@ const porApi = async (cfg, prompt) => {
       model: cfg.modelo || 'gpt-4o-mini',
       max_tokens: cfg.max_tokens || 800,
       temperature: Number(cfg.temperatura ?? 0.6),
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{
+        role: 'user',
+        content: imagenes.length
+          ? [{ type: 'text', text: prompt },
+             ...imagenes.map((im) => ({
+               type: 'image_url',
+               image_url: { url: `data:${im.mime || 'image/png'};base64,${im.b64}` },
+             }))]
+          : prompt,
+      }],
     }),
   });
   if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 300)}`);
@@ -508,12 +600,82 @@ while (corriendo) {
     } else {
       prompt = armarPrompt(actual, msg);
     }
+
+    // Las referencias del dueño. Se resuelven ANTES de pensar: la de estilo
+    // tiene que estar delante del creativo cuando decide, no despues.
+    const refs = AGENTE === 'jarvis' ? []
+      : await referenciasDe(String(msg.payload?.texto || msg.peticion || ''));
+    const fondoRef = refs.find((r) => r.uso === 'fondo') || null;
+    const estiloRefs = refs.filter((r) => r.uso === 'estilo');
+    if (refs.length) log(`  referencias: ${refs.map((r) => r.uso).join(', ')}`);
+
+    if (estiloRefs.length && actual.proveedor === 'claude_suscripcion') {
+      const lineas = estiloRefs.map((r) => {
+        const ruta = dejarEnDisco(r);
+        return `· ${ruta}${r.nota ? ` — ${r.nota}` : ''}`;
+      });
+      prompt += ['', '## LA REFERENCIA QUE DEJO EL DUEÑO',
+        'Abre estos archivos y MIRALOS antes de decidir nada. Es el liston:',
+        ...lineas,
+        'Imita su estructura y su aire (jerarquia, contraste, donde pesa cada',
+        'cosa). NO imites su producto ni copies sus textos.'].join('\n');
+    } else if (estiloRefs.length) {
+      // Por API la imagen viaja dentro del propio mensaje, asi que aqui solo
+      // hace falta decirle QUE mirar: la nota del dueño es lo que el pixel
+      // no dice.
+      prompt += ['', '## LA REFERENCIA QUE DEJO EL DUEÑO',
+        'Va adjunta a este mensaje. MIRALA: es el liston. Imita su estructura',
+        'y su aire, no su producto ni sus textos.',
+        ...estiloRefs.map((r) => `· ${r.nota || 'sin nota del dueño'}`)].join('\n');
+    }
+
     const bruto = actual.proveedor === 'claude_suscripcion'
       ? await porClaudeCode(prompt)
-      : await porApi(actual, prompt);
+      : await porApi(actual, prompt, estiloRefs);
 
     const { ok, datos } = leerRespuesta(bruto);
     if (!ok) log('  (contesto en texto libre, no JSON — se entrega igual)');
+
+    // ── EL MONTAJE ────────────────────────────────────────────────
+    // Él decide (título, colores, precio); esto solo dibuja con la foto y
+    // el logo que le entregaron. Si falla, se entrega el borrador SIN arte
+    // y se dice por qué: quedarse sin pieza es un contratiempo, perder el
+    // trabajo entero por no poder dibujarla es una avería.
+    if (datos && datos.arte && typeof datos.arte === 'object') {
+      try {
+        const texto = String(msg.payload?.texto || msg.peticion || '');
+        const urls = texto.match(/https?:\/\/[^\s"']+\.(?:png|jpe?g|webp)/gi) || [];
+        const fotoUrl = urls.find((u) => !/logo/i.test(u)) || null;
+        const logoUrl = urls.find((u) => /logo/i.test(u)) || null;
+        const tel = (texto.match(/\d{3}-\d{3}-\d{4}/) || [])[0] || null;
+        const emp = (texto.match(/Empresa:\s*(.+)/i) || [])[1]?.trim() || null;
+
+        const guardar = async (formato) => {
+          const { png } = await montarArte({
+            ...datos.arte, foto_url: fotoUrl, logo_url: logoUrl,
+            telefono: tel, empresa: emp, formato,
+            // El fondo NO lo elige el modelo: lo eligio el dueño al subirlo.
+            fondo_b64: fondoRef ? fondoRef.b64 : null,
+          });
+          const r = await escribir(
+            'SELECT hermes.equipo_guardar_arte($1,$2,$3,$4,$5) AS r',
+            [msg.id, msg.claim_token, png.toString('base64'), 'image/png', `arte-${formato}.png`]);
+          const res = r.rows[0].r;
+          if (!res?.ok) throw new Error(res?.motivo || 'no se pudo guardar el arte');
+          log(`  arte ${formato}: ${(png.length / 1024).toFixed(0)} KB`);
+          return res.imagen_id;
+        };
+
+        datos.arte_imagen_id = await guardar('feed');
+        datos.arte_historia_id = await guardar('historia');
+        datos.estado = 'arte';
+      } catch (e) {
+        log('  no se pudo montar el arte:', e.message);
+        datos.estado = 'borrador';
+        datos.advertencias = [...(datos.advertencias || []),
+          `No se pudo montar el arte: ${e.message}`];
+      }
+    }
 
     const r = await escribir(
       'SELECT hermes.equipo_responder($1,$2,$3,$4::jsonb) AS r',

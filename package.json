@@ -73,6 +73,7 @@
     "react-helmet-async": "^2.0.5",
     "react-hook-form": "^7.49.2",
     "react-router-dom": "^6.16.0",
+    "sharp": "^0.35.4",
     "tailwind-merge": "^1.1.4",
     "xlsx": "^0.18.5",
     "zustand": "^4.5.2"
