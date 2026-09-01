@@ -9,6 +9,13 @@
 -- Correrlo para "reinstalar el disparador" deja el circuito sin supervisor y
 -- no se nota hasta que sale una promoción con un precio inventado.
 --
+-- Y hay una segunda mina, al final del archivo: el bloque que rellena las
+-- aprobaciones que faltaban. Se escribió para EL DÍA QUE NACIÓ, cuando había
+-- borradores anteriores al disparador. Hoy recorre TODO el histórico y le
+-- fabrica una tarjeta "Publicar" a cada borrador viejo que no tenga una,
+-- incluidos los de trabajos ya cancelados o cerrados. El 01/09 resucitó siete
+-- promociones de golpe en la mesa del dueño.
+--
 -- Si hay que restaurarlo:  sql/rescatar_el_borrador_a_la_mesa.sql
 -- ============================================================
 
