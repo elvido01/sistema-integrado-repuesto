@@ -1,4 +1,18 @@
 -- ============================================================
+-- >>> NO CORRAS ESTE ARCHIVO. HISTÓRICO. (aviso del 01/09/2026) <<<
+-- ============================================================
+-- La `equipo_borrador_a_la_mesa` que hay viva en producción es MUCHO más
+-- nueva que la de aquí abajo. La de este archivo no revisa nada: no compara
+-- el precio contra el catálogo, no devuelve el borrador con reparos, no avisa
+-- al chat y no distingue "Aprobar el concepto" de "Publicar".
+--
+-- Correrlo para "reinstalar el disparador" deja el circuito sin supervisor y
+-- no se nota hasta que sale una promoción con un precio inventado.
+--
+-- Si hay que restaurarlo:  sql/rescatar_el_borrador_a_la_mesa.sql
+-- ============================================================
+
+-- ============================================================
 -- EL BORRADOR LLEGA A TU MESA
 -- ============================================================
 -- Último tramo del circuito, la misma noche del 30/08/2026.
