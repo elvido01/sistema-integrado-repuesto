@@ -1,4 +1,18 @@
 -- ============================================================
+-- >>> NO CORRAS ESTE ARCHIVO. HISTÓRICO. (aviso del 01/09/2026) <<<
+-- ============================================================
+-- La `equipo_cerrar_al_aprobar` viva en producción es más nueva que la de
+-- aquí abajo. La de este archivo escribe el encargo de ARTE FINAL a mano; la
+-- viva llama a `hermes.equipo_brief_arte()`, que además le manda al creativo
+-- las REGLAS DE LA CASA y las REFERENCIAS que subió el dueño.
+--
+-- Correrlo no rompe nada visible: las promociones siguen saliendo, solo que
+-- dejan de respetar las reglas y las referencias, en silencio.
+--
+-- Si hay que restaurarlo:  sql/rescatar_al_firmar_el_concepto.sql
+-- ============================================================
+
+-- ============================================================
 -- APROBADO ES EL FINAL (POR AHORA)
 -- ============================================================
 -- Al firmar el borrador, `equipo_decidir` hace dos cosas: destraba el mensaje
