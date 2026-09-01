@@ -63,10 +63,23 @@ export function RecomendacionesDelDia({ onEncargado }) {
       toast({ variant: 'destructive', title: 'No se pudo encargar', description: error.message });
       return;
     }
-    toast({
-      title: 'Encargado al Comercial-Creativo',
-      description: 'Cuando termine, aparece en "Esperando tu aprobación".',
-    });
+    // Un ok que no hizo nada es peor que un error: el error se ve. La base
+    // es idempotente por pieza, enfoque y día, así que volver a mandar lo
+    // mismo devuelve el trabajo de antes SIN encargar nada — y hasta hoy
+    // esto cantaba "Encargado" igual. El dueño se quedaba mirando un panel
+    // vacío convencido de que venía en camino.
+    if (data?.duplicado) {
+      toast({
+        title: 'Eso ya se encargó hoy',
+        description: 'Mira "Esperando tu aprobación": el borrador es el mismo. '
+          + 'Si quieres otro distinto, cámbiale el enfoque.',
+      });
+    } else {
+      toast({
+        title: data?.revivido ? 'Reenviado al Comercial-Creativo' : 'Encargado al Comercial-Creativo',
+        description: 'Cuando termine, aparece en "Esperando tu aprobación".',
+      });
+    }
     setEnfoque('');
     cargar();
     if (onEncargado) onEncargado(data?.trabajo_id);
