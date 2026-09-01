@@ -151,8 +151,42 @@ const cliente = async () => {
 // Errores que significan "esta conexión ya no sirve", no "esta consulta
 // está mal". Solo con estos se reintenta: repetir una consulta que falló
 // por su propio contenido sería un bucle.
-const conexionMuerta = (e) => /terminat|ECONNRESET|EPIPE|ENOTFOUND|ETIMEDOUT|closed|shutdown|not queryable/i
+//
+// Los dos últimos no son cortes de red: son la conexión en estado sucio
+// —transacción abortada, o transacción que se quedó en solo lectura—. Antes
+// no estaban, y eran justo los que dejaban al worker mudo para siempre: la
+// conexión seguía "viva" para `pg`, así que no se reconectaba nunca y todas
+// las consultas siguientes morían igual. Reconectar es lo único que lo cura.
+const conexionMuerta = (e) => /terminat|ECONNRESET|EPIPE|ENOTFOUND|ETIMEDOUT|closed|shutdown|not queryable|transaction is aborted|read-only transaction/i
   .test(String(e?.message ?? ''));
+
+// ── UNA SOLA FILA HACIA LA BASE ────────────────────────────────────────
+// >>> POR QUÉ ESTO EXISTE (2026-09-01) <<<
+// `pg` encola las consultas de un cliente, así que dos `c.query()` sueltos
+// no se pisan. Pero una TRANSACCIÓN no es una consulta: son cuatro
+// (BEGIN / SET / lo suyo / COMMIT) y entre ellas cabe cualquier otra cosa.
+//
+// El latido corre en un setInterval de 60 segundos sobre esta misma
+// conexión. Si su BEGIN cae mientras el ciclo está dentro de la suya, los
+// dos quedan en la MISMA transacción y el `SET TRANSACTION READ WRITE` del
+// segundo falla con "must be set before any query". A partir de ahí la
+// transacción está abortada y el worker se queda mudo con el proceso en
+// pie — que es la peor forma de caerse, porque al caído lo levanta el
+// supervisor y a este no lo levanta nadie.
+//
+// Pasó el 01/09: dejó de tomar trabajo y de latir a las 18:22 y siguió
+// respirando una hora larga sin que se notara.
+//
+// La fila NO abarca al modelo: `claude -p` tarda minutos y no toca la base.
+// Solo se serializa lo que habla con Postgres.
+let cola = Promise.resolve();
+const enFila = (fn) => {
+  const turno = cola.then(fn, fn);
+  // El .catch mantiene la cadena viva: sin esto, un fallo deja la fila
+  // rechazada para siempre y no vuelve a pasar nadie.
+  cola = turno.then(() => {}, () => {});
+  return turno;
+};
 
 const conConexion = async (fn) => {
   for (let intento = 1; intento <= 2; intento += 1) {
@@ -169,7 +203,7 @@ const conConexion = async (fn) => {
   throw new Error('inalcanzable');
 };
 
-const consultar = (sql, params) => conConexion((c) => c.query(sql, params));
+const consultar = (sql, params) => enFila(() => conConexion((c) => c.query(sql, params)));
 
 // BEGIN y SET van DENTRO del try, y esto no es cosmético. Estaban fuera, y
 // si `SET TRANSACTION READ WRITE` fallaba no se hacía ROLLBACK: la
@@ -177,7 +211,7 @@ const consultar = (sql, params) => conConexion((c) => c.query(sql, params));
 // consulta en esa conexión respondía "current transaction is aborted".
 // El worker quedaba mudo para siempre con el proceso en pie — un error de
 // un segundo se convertía en una avería permanente.
-const escribir = (sql, params) => conConexion(async (c) => {
+const escribir = (sql, params) => enFila(() => conConexion(async (c) => {
   try {
     await c.query('BEGIN');
     await c.query('SET TRANSACTION READ WRITE');
@@ -189,7 +223,7 @@ const escribir = (sql, params) => conConexion(async (c) => {
     await c.query('ROLLBACK').catch(() => {});
     throw e;
   }
-});
+}));
 
 // ── ¿PUEDE ESCRIBIR DE VERDAD? ─────────────────────────────────────────
 // Se comprueba al arrancar y no a la primera tarea. Si la conexión es de
