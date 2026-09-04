@@ -76,7 +76,12 @@ export const printInformePrestamo = ({ empresa, prestamo, cliente, valorCuota, t
           <div class="kv"><span class="k">Prestamo No. :</span><span class="v">${prestamo?.numero || ''}</span></div>
           <div class="kv"><span class="k">Fecha :</span><span class="v">${fdate(prestamo?.fecha_inicio)}</span></div>
           <div class="kv"><span class="k">Capital Prestado :</span><span class="v">${fmt(prestamo?.monto_capital)}</span></div>
-          <div class="kv"><span class="k">Tasa de Interes :</span><span class="v">${fmt(prestamo?.tasa_interes)}% ${cap(prestamo?.frecuencia)}</span></div>
+          <!-- La tasa guardada es SIEMPRE mensual: la amortización la
+               reparte por período (ver mesesPorCuota en amortizacion.js).
+               Rotularla con la frecuencia de PAGO hacía que un préstamo
+               diario imprimiera "3.00% Diario" — 840% al año, en el papel
+               que se le entrega al cliente. La forma de pago va abajo. -->
+          <div class="kv"><span class="k">Tasa de Interes :</span><span class="v">${fmt(prestamo?.tasa_interes)}% Mensual</span></div>
           <div class="kv"><span class="k">Cargos por Atraso :</span><span class="v">${fmt(prestamo?.mora_pct)}%</span></div>
           <div class="kv"><span class="k">Tipo de Prestamo :</span><span class="v">${cap(prestamo?.tipo)} (${prestamo?.metodo_interes === 'simple' ? 'Interes Simple' : cap(prestamo?.metodo_interes)})</span></div>
           <div class="kv"><span class="k">Cant. de Cuotas :</span><span class="v">${prestamo?.plazo_cuotas || ''}</span></div>
