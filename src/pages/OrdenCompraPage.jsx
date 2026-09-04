@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog, Shuffle, Send } from 'lucide-react';
+import { Save, X, Loader2, Plus, Trash2, Bot, FileDown, Search, ArrowRightCircle, ShoppingCart, PackageX, Wallet, Brain, KeyRound, Lock, AlertTriangle, Settings as Cog, Shuffle, Send, Share2 } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
@@ -27,6 +27,7 @@ import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 import SuplidorVirtualMenu from '@/components/compras/SuplidorVirtualMenu';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import { getPresupuestoCompras, analizarOrdenActual, asesorCompras } from '@/services/comprasInteligentesService';
+import { generarImagenesPedido, compartirImagenes } from '@/lib/pedidoImagen';
 
 const PRIO_BADGE = {
   urgente: { txt: 'URGENTE', cls: 'bg-red-100 text-red-700' },
@@ -2243,6 +2244,65 @@ const OrdenCompraPage = () => {
     setIsSaving(false);
   };
 
+  // ---------------------------------------------------------------
+  // MANDARLE EL PEDIDO AL SUPLIDOR POR WHATSAPP
+  // ---------------------------------------------------------------
+  // Antes: abrir el PDF, capturar la pantalla, y si el pedido era largo,
+  // tres o cuatro capturas que el suplidor tenía que ir cosiendo. Ahora
+  // sale una sola imagen (o varias numeradas, si no cabe) con lo único
+  // que él necesita: código, descripción y cantidad. Los precios se
+  // quedan en casa.
+  const [compartiendo, setCompartiendo] = useState(false);
+
+  const compartirPedidoWhatsApp = async (ordenRef, suplidorRef, lineas) => {
+    const filas = (lineas || []).filter(isDetallePedidoHoy);
+    if (filas.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No hay nada que mandar',
+        description: 'Esta orden no tiene ninguna línea marcada para pedir.',
+      });
+      return;
+    }
+
+    setCompartiendo(true);
+    try {
+      const imagenes = await generarImagenesPedido({
+        orden: ordenRef,
+        suplidor: suplidorRef,
+        empresa,
+        detalles: filas,
+      });
+
+      const nombre = ['Pedido', ordenRef?.numero ? `ORD-${String(ordenRef.numero).padStart(4, '0')}` : null,
+        suplidorRef?.nombre]
+        .filter(Boolean).join('-').replace(/[^w.-]+/g, '_');
+
+      const r = await compartirImagenes(imagenes, nombre);
+      const sobran = r.cantidad > 1 ? ` Son ${r.cantidad} imágenes: las demás se descargaron.` : '';
+
+      if (r.via === 'portapapeles') {
+        toast({
+          title: '📋 Pedido copiado como imagen',
+          description: `Pégalo en el chat de WhatsApp con Ctrl+V.${sobran}`,
+          duration: 7000,
+        });
+      } else if (r.via === 'descarga') {
+        toast({
+          title: '⬇️ Pedido descargado como imagen',
+          description: 'Arrástralo al chat de WhatsApp. (El navegador no dejó copiarlo solo.)',
+          duration: 7000,
+        });
+      } else if (r.via === 'share') {
+        toast({ title: '✅ Pedido compartido', description: `${r.cantidad} imagen(es) enviadas.` });
+      }
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo armar la imagen', description: e.message });
+    } finally {
+      setCompartiendo(false);
+    }
+  };
+
   const handleKeyDown = useCallback(
     (e) => {
       if (e.key === 'F10') { e.preventDefault(); handleSave(); }
@@ -2293,6 +2353,21 @@ const OrdenCompraPage = () => {
           }}>
             <FileDown className="h-5 w-5 mb-0.5 text-red-600" />
             IMPRIMIR
+          </Button>
+          <Button
+            variant="ghost"
+            className="h-10 flex flex-col items-center px-2 py-1 text-[10px]"
+            disabled={!selectedOrderID || compartiendo}
+            title="Manda el pedido por WhatsApp como imagen: código, descripción y cantidad. Sin precios."
+            onClick={() => {
+              const current = orders.find(o => o.id === selectedOrderID);
+              if (current) compartirPedidoWhatsApp(current, current.proveedores, previewDetails);
+            }}
+          >
+            {compartiendo
+              ? <Loader2 className="h-5 w-5 mb-0.5 text-emerald-600 animate-spin" />
+              : <Share2 className="h-5 w-5 mb-0.5 text-emerald-600" />}
+            WHATSAPP
           </Button>
           <Button variant="ghost" className="h-10 flex flex-col items-center px-2 py-1 text-[10px]" disabled={!selectedOrderID} onClick={handleProcessToCompra}>
             <ShoppingCart className="h-5 w-5 mb-0.5 text-orange-600" />
@@ -3507,6 +3582,17 @@ const OrdenCompraPage = () => {
             title="Mandar la orden a Cola de Aprobaciones sin importar si excede o no el presupuesto"
           >
             📋 Pedir Aprobación
+          </Button>
+          <Button
+            variant="outline"
+            className="h-9 px-5 text-xs uppercase font-bold border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+            onClick={() => compartirPedidoWhatsApp(orden, selectedProveedor, detalles)}
+            disabled={compartiendo || detalles.length === 0}
+            title="Manda el pedido por WhatsApp como imagen: código, descripción y cantidad. Sin precios."
+          >
+            {compartiendo
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <Share2 className="mr-2 h-4 w-4" />} WhatsApp
           </Button>
           <Button className="h-9 px-8 bg-morla-blue hover:bg-morla-blue/90 text-white text-xs uppercase font-bold shadow-lg" onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} F10 - Continuar
