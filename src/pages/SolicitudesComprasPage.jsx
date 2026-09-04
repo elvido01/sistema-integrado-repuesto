@@ -38,6 +38,35 @@ const toLocalMidnight = (value) => {
 // de cuotas" en "meses de plazo": 365 cuotas diarias son 12 meses, no 365.
 const DIAS_POR_PERIODO = { diario: 1, semanal: 7, quincenal: 15, mensual: 30 };
 
+// >>> "tiempo_meses" NO SON MESES: SON CUOTAS <<<
+// La columna se llamó así cuando todo era mensual y daba igual. Con cuotas
+// diarias deja de dar igual: una solicitud de 365 cuotas de RD$300 se
+// enseñaba —y se IMPRIMÍA, en el papel que firma el cliente— como
+// "Tiempo: 365 meses" y "Cuota Mensual: RD$300". Ni el plazo ni la cuota
+// eran ciertos. El nombre de la columna no se toca (la usan la aprobación,
+// el pedido y los pagarés); lo que se arregla es lo que se lee.
+const FRECUENCIA_TXT = {
+  diario:    { cuota: 'Diaria',    plural: 'cuotas diarias',     pagares: 'DIARIOS' },
+  semanal:   { cuota: 'Semanal',   plural: 'cuotas semanales',   pagares: 'SEMANALES' },
+  quincenal: { cuota: 'Quincenal', plural: 'cuotas quincenales', pagares: 'QUINCENALES' },
+  mensual:   { cuota: 'Mensual',   plural: 'cuotas mensuales',   pagares: 'MENSUALES' },
+};
+
+const frecTxt = (sol) => FRECUENCIA_TXT[sol?.frecuencia] || FRECUENCIA_TXT.mensual;
+
+// "365 cuotas diarias (≈ 12 meses)". Con frecuencia mensual el paréntesis
+// sobra, porque cuota y mes son la misma cosa.
+const textoPlazo = (sol) => {
+  const n = parseInt(sol?.tiempo_meses) || 0;
+  if (!n) return '—';
+  const etiqueta = `${n} ${frecTxt(sol).plural}`;
+  if ((sol?.frecuencia || 'mensual') === 'mensual') return etiqueta;
+  const meses = Math.round((n * (DIAS_POR_PERIODO[sol.frecuencia] || 30)) / 30);
+  return meses > 0 ? `${etiqueta} (≈ ${meses} ${meses === 1 ? 'mes' : 'meses'})` : etiqueta;
+};
+
+const etiquetaCuota = (sol) => `Cuota ${frecTxt(sol).cuota}`;
+
 // Formatea un valor monetario para mostrarlo con separador de miles y decimales
 // mientras se escribe (acepta number o string crudo 'YYYY.dd').
 const fmtMontoInput = (raw) => {
@@ -967,7 +996,7 @@ const SolicitudesComprasPage = () => {
         s.incluye_casco ? 'INCLUYE CASCO' : null,
         s.incluye_seguro ? 'INCLUYE SEGURO' : null,
         inicial > 0 ? `INICIAL = ${inicial.toFixed(2)}` : null,
-        meses > 0 && cuota > 0 ? `PENDIENTE ${meses} PAGARES DE ${cuota.toFixed(2)}` : null,
+        meses > 0 && cuota > 0 ? `PENDIENTE ${meses} PAGARES ${frecTxt(s).pagares} DE ${cuota.toFixed(2)}` : null,
         s.notas,
       ].filter(Boolean).join(' | ');
 
@@ -1185,12 +1214,12 @@ const SolicitudesComprasPage = () => {
                     <span className="font-bold">RD$ {Number(selectedSolicitud.financiamiento || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 font-bold uppercase block">Cuota Mensual</span>
+                    <span className="text-slate-400 font-bold uppercase block">{etiquetaCuota(selectedSolicitud)}</span>
                     <span className="font-bold text-blue-700">RD$ {Number(selectedSolicitud.cuota_mensual || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 font-bold uppercase block">Tiempo</span>
-                    <span className="font-semibold">{selectedSolicitud.tiempo_meses || 0} meses</span>
+                    <span className="font-semibold">{textoPlazo(selectedSolicitud)}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 font-bold uppercase block">Tasa Interés</span>
@@ -1362,13 +1391,13 @@ const SolicitudesComprasPage = () => {
                   <div><span class="label">Inicial:</span> <span class="value">RD$ ${fmtMoney(s.inicial)}</span></div>
                   <div><span class="label">Adicional:</span> <span class="value">RD$ ${fmtMoney(s.adicional)}${s.adicional_fecha ? ` (pagar antes de ${formatFechaDMY(s.adicional_fecha)})` : ''}</span></div>
                   <div><span class="label">Tasa de Interés:</span> <span class="value">${s.tasa_interes || 0}%</span></div>
-                  <div><span class="label">Tiempo:</span> <span class="value">${s.tiempo_meses || 0} meses</span></div>
+                  <div><span class="label">Tiempo:</span> <span class="value">${textoPlazo(s)}</span></div>
                   <div><span class="label">Incluye Placa:</span> <span class="value">${s.incluye_placa ? 'SÍ' : 'NO'}</span></div>
                 </div>
                 <div class="summary">
                   <div class="row"><span>Financiamiento:</span> <strong>RD$ ${fmtMoney(s.financiamiento)}</strong></div>
                   <div class="row"><span>Total de Pagarés:</span> <strong>RD$ ${fmtMoney(s.total_pagares)}</strong></div>
-                  <div class="row total"><span>Cuota Mensual:</span> <span>RD$ ${fmtMoney(s.cuota_mensual)}</span></div>
+                  <div class="row total"><span>${etiquetaCuota(s)}:</span> <span>RD$ ${fmtMoney(s.cuota_mensual)}</span></div>
                 </div>
               </div>
               ${s.notas ? `<div class="section"><div class="section-title">Notas</div><p style="font-size:12px">${s.notas}</p></div>` : ''}
