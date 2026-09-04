@@ -28,9 +28,11 @@
 -- interés, cuya "cuota" es un globo al vencimiento. De esos no se puede
 -- deducir nada, así que se quedan como están.
 --
--- Alcance: SOLO MotoPréstamos Los Naranjos, que es lo autorizado el 04/09/2026.
--- INVERSIONES LOS NARANJOS (7) y MOTO PRESTAMOS ODALYS (7, todos activos)
--- tienen lo mismo y esperan su turno.
+-- Alcance: las TRES financieras del grupo. Se corrió primero MotoPréstamos
+-- (86 préstamos) el 04/09/2026 y, autorizado el mismo día, se amplió a
+-- INVERSIONES LOS NARANJOS (7) y MOTO PRESTAMOS ODALYS (7) — esas catorce,
+-- todas ACTIVAS. Volver a correrlo entero no repite nada: el UPDATE solo
+-- alcanza a los que siguen diciendo 'mensual'.
 --
 -- >>> LA COMPROBACIÓN NO SE LEVANTA EN VERDE <<<
 -- Al revés que en las migraciones de estructura de este repo, aquí el bloque
@@ -46,7 +48,11 @@ WITH saltos AS (
          c.fecha_vencimiento - lag(c.fecha_vencimiento)
            OVER (PARTITION BY c.prestamo_id ORDER BY c.numero_cuota) AS d
   FROM public.prestamo_cuotas c
-  WHERE c.tenant_id = '766fe3d6-6885-4f2b-b2cc-1a91db696fb4'
+  WHERE c.tenant_id IN (
+      '766fe3d6-6885-4f2b-b2cc-1a91db696fb4',   -- MotoPréstamos Los Naranjos
+      'c07a1d07-1e2f-4b3c-9d4a-107a10500007',   -- INVERSIONES LOS NARANJOS
+      'c05a1d05-0d1e-4a2b-8c3f-0da1e5000005'    -- MOTO PRESTAMOS ODALYS
+    )
 ),
 ritmo AS (
   SELECT prestamo_id,
@@ -67,7 +73,11 @@ UPDATE public.prestamos p
    SET frecuencia = plan.nueva
   FROM plan
  WHERE p.id = plan.prestamo_id
-   AND p.tenant_id = '766fe3d6-6885-4f2b-b2cc-1a91db696fb4'
+   AND p.tenant_id IN (
+      '766fe3d6-6885-4f2b-b2cc-1a91db696fb4',   -- MotoPréstamos Los Naranjos
+      'c07a1d07-1e2f-4b3c-9d4a-107a10500007',   -- INVERSIONES LOS NARANJOS
+      'c05a1d05-0d1e-4a2b-8c3f-0da1e5000005'    -- MOTO PRESTAMOS ODALYS
+    )
    AND p.frecuencia = 'mensual'
    AND NOT COALESCE(p.es_solo_interes, false);
 
