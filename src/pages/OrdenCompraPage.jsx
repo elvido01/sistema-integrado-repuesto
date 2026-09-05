@@ -25,6 +25,7 @@ import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import SuplidorSearchModal from '@/components/compras/SuplidorSearchModal';
 // import AgenteCambioSuplidor from '@/components/compras/AgenteCambioSuplidor'; // desactivado temporalmente
 import SuplidorVirtualMenu from '@/components/compras/SuplidorVirtualMenu';
+import SugerenciasSuplidorVirtual from '@/components/compras/SugerenciasSuplidorVirtual';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import { getPresupuestoCompras, analizarOrdenActual, asesorCompras } from '@/services/comprasInteligentesService';
 import { generarImagenesPedido, compartirImagenes } from '@/lib/pedidoImagen';
@@ -196,6 +197,8 @@ const OrdenCompraPage = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [mostrarInteligente, setMostrarInteligente] = useState(false);
   const [sugerenciaCompra, setSugerenciaCompra] = useState(null);
+  // Sube de número cuando hay que volver a preguntar por los pendientes.
+  const [svRecargar, setSvRecargar] = useState(0);
   const [prioridadMap, setPrioridadMap] = useState({});
   const [analisisItems, setAnalisisItems] = useState([]);
   const [presData, setPresData] = useState(null);
@@ -1465,6 +1468,31 @@ const OrdenCompraPage = () => {
     }
   };
 
+  // Los pendientes del Suplidor Virtual entran como líneas normales de la orden.
+  // Van sin producto_id a propósito: son piezas que ni siquiera existen en el
+  // catálogo (por eso se anotaron a mano). El precio queda en 0 para que se
+  // escriba el que dé el suplidor.
+  const agregarPendientesVirtuales = (lista) => {
+    const nuevos = (lista || []).map((it) => ({
+      id: Date.now() + Math.random(),
+      producto_id: it.producto_id || null,
+      codigo: it.codigo || '',
+      descripcion: String(it.descripcion || '').toUpperCase(),
+      cantidad: Number(it.cantidad_sugerida) > 0 ? Number(it.cantidad_sugerida) : 1,
+      unidad: 'UND',
+      precio: Number(it.precio_referencia) || 0,
+      descuento_pct: 0,
+      itbis_pct: 0,
+      importe: 0,
+      existencia: 0,
+      decision_estado: DECISION_DEFAULT,
+      decision_motivo: null,
+      _sv_item_id: it.id,        // para amarrarlo al grabar
+    }));
+    if (!nuevos.length) return;
+    setDetalles(prev => calculateAllImportes([...prev, ...nuevos]));
+  };
+
   const handleOrdenAutomatica = async () => {
     if (!selectedProveedor) {
       toast({
@@ -2158,6 +2186,36 @@ const OrdenCompraPage = () => {
         }
       }
 
+      // Los pendientes del Suplidor Virtual que entraron aquí quedan amarrados a
+      // la orden: cuando la mercancía se reciba, se marcan comprados solos.
+      const pendientesMetidos = detalles.filter(d => d._sv_item_id);
+      if (pendientesMetidos.length > 0) {
+        const idsPend = [...new Set(pendientesMetidos.map(d => d._sv_item_id))];
+        const ahora = new Date().toISOString();
+        const { data: amarrados, error: svErr } = await supabase
+          .from('suplidor_virtual_items')
+          .update({ orden_compra_pedida_id: savedOrden.id, pedida_at: ahora, updated_at: ahora })
+          .in('id', idsPend)
+          .select('id');
+
+        if (svErr || !amarrados || amarrados.length === 0) {
+          toast({
+            variant: 'destructive',
+            title: 'Ojo con el Suplidor Virtual',
+            description: svErr?.message || 'La orden se grabó, pero los pendientes siguen figurando como no pedidos.',
+          });
+        } else if (selectedProveedor?.id) {
+          // Que los haya metido en la orden de este suplidor es la mejor
+          // enseñanza que hay: pesa más que la estadística la próxima vez.
+          await Promise.all(idsPend.map(id => supabase.rpc('aprender_suplidor_virtual', {
+            p_item_id: id,
+            p_suplidor_id: selectedProveedor.id,
+            p_acierto: true,
+          })));
+        }
+        setSvRecargar(v => v + 1);
+      }
+
       // Manejo post-save segun como se llego aqui
       if (pinGateInfo?.via_workflow) {
         // Fase C: enviar a cola de aprobaciones (no grabar directo)
@@ -2768,6 +2826,15 @@ const OrdenCompraPage = () => {
           </div>
         </div>
       </div>
+
+      {/* LO QUE ESTÁ ANOTADO EN EL SUPLIDOR VIRTUAL Y PARECE DE ESTE SUPLIDOR */}
+      <SugerenciasSuplidorVirtual
+        suplidorId={selectedProveedor?.id || null}
+        suplidorNombre={selectedProveedor?.nombre || ''}
+        descripcionesEnOrden={detalles.map(d => d.descripcion)}
+        onAgregar={agregarPendientesVirtuales}
+        recargar={svRecargar}
+      />
 
       {/* YELLOW STAGING ROW + TABLE */}
       <div className="border border-slate-300 rounded-sm overflow-hidden mb-3 shadow-sm">

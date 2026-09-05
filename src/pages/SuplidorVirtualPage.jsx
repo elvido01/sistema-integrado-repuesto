@@ -48,6 +48,8 @@ export default function SuplidorVirtualPage({ onBack = null }) {
     const [filtroSuplidor, setFiltroSuplidor] = useState('');
     const [busqueda, setBusqueda] = useState('');
     const [suplidores, setSuplidores] = useState([]);
+    // De quién parece cada pendiente (mismo motor que usa la Orden de Compra).
+    const [sugerencias, setSugerencias] = useState({});
     const [notaGeneral, setNotaGeneral] = useState('');
     const notaStorageKey = useMemo(
         () => `suplidor_virtual_nota_general_${tenantId || 'local'}`,
@@ -99,6 +101,19 @@ export default function SuplidorVirtualPage({ onBack = null }) {
     }, [tenantId]);
 
     useEffect(() => { cargar(); }, [cargar]);
+
+    // Quién parece dueño de cada pendiente. Si el SQL no está corrido, la
+    // pantalla sigue funcionando exactamente igual que antes.
+    useEffect(() => {
+        if (!tenantId) return;
+        supabase.rpc('get_sugerencias_suplidor_virtual', { p_suplidor_id: null })
+            .then(({ data, error }) => {
+                if (error) { console.warn('[SuplidorVirtual] sin sugerencias:', error.message); return; }
+                const mapa = {};
+                (data || []).forEach((r) => { mapa[r.id] = r; });
+                setSugerencias(mapa);
+            });
+    }, [tenantId, items]);
 
     useEffect(() => {
         setNotaGeneral(localStorage.getItem(notaStorageKey) || '');
@@ -263,6 +278,7 @@ export default function SuplidorVirtualPage({ onBack = null }) {
                                 <TableHead className="w-28">Código</TableHead>
                                 <TableHead>Descripción</TableHead>
                                 <TableHead className="w-40">Suplidor original</TableHead>
+                                <TableHead className="w-48">Parece de</TableHead>
                                 <TableHead className="w-20 text-center">Cant.</TableHead>
                                 <TableHead className="w-28 text-right">Precio ref.</TableHead>
                                 <TableHead className="w-32 text-center">Marcado</TableHead>
@@ -273,11 +289,11 @@ export default function SuplidorVirtualPage({ onBack = null }) {
                         </TableHeader>
                         <TableBody>
                             {loading ? (
-                                <TableRow><TableCell colSpan={9} className="text-center py-10 text-slate-500">
+                                <TableRow><TableCell colSpan={10} className="text-center py-10 text-slate-500">
                                     <Loader2 className="h-5 w-5 animate-spin inline mr-2" /> Cargando...
                                 </TableCell></TableRow>
                             ) : itemsFiltrados.length === 0 ? (
-                                <TableRow><TableCell colSpan={9} className="text-center py-10 text-slate-400 italic">
+                                <TableRow><TableCell colSpan={10} className="text-center py-10 text-slate-400 italic">
                                     No hay items {filtroEstado !== 'todos' ? ESTADO_LABELS[filtroEstado]?.label.toLowerCase() : ''}.
                                 </TableCell></TableRow>
                             ) : (
@@ -293,6 +309,21 @@ export default function SuplidorVirtualPage({ onBack = null }) {
                                             <TableCell className="font-mono font-semibold text-slate-700">{it.codigo || '—'}</TableCell>
                                             <TableCell className="uppercase truncate max-w-[300px]">{it.descripcion || '—'}</TableCell>
                                             <TableCell className="text-slate-600 truncate max-w-[160px]">{it.suplidor_original?.nombre || '—'}</TableCell>
+                                            <TableCell className="text-slate-600">
+                                                {sugerencias[it.id]?.suplidor_sugerido ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="truncate max-w-[150px] font-semibold text-slate-700"
+                                                              title={sugerencias[it.id]?.motivo || ''}>
+                                                            {sugerencias[it.id].suplidor_sugerido}
+                                                        </span>
+                                                        <span className="text-[9px] font-bold px-1 py-0.5 rounded border bg-slate-50 text-slate-500 border-slate-200">
+                                                            {sugerencias[it.id].confianza}%
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-300">—</span>
+                                                )}
+                                            </TableCell>
                                             <TableCell className="text-center font-semibold">{Number(it.cantidad_sugerida || 0).toFixed(2)}</TableCell>
                                             <TableCell className="text-right font-mono">{it.precio_referencia != null ? Number(it.precio_referencia).toFixed(2) : '—'}</TableCell>
                                             <TableCell className="text-center text-slate-500">
@@ -304,9 +335,11 @@ export default function SuplidorVirtualPage({ onBack = null }) {
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-center">
-                                                {isPendiente ? (
+                                                {isPendiente && dias === null ? (
+                                                    <span className="text-slate-500" title="Nota escrita a mano: se queda hasta que la compres o la canceles">no vence</span>
+                                                ) : isPendiente ? (
                                                     <span className={`font-bold ${dias <= 7 ? 'text-red-600' : 'text-slate-700'}`}>
-                                                        {dias != null && dias >= 0 ? `${dias}d` : 'venc.'}
+                                                        {dias >= 0 ? `${dias}d` : 'venc.'}
                                                     </span>
                                                 ) : (
                                                     <span className="text-slate-400">—</span>
@@ -367,6 +400,7 @@ export default function SuplidorVirtualPage({ onBack = null }) {
 
             <p className="text-[10px] text-slate-400 mt-3 italic">
                 💡 Tip: durante los 30 días que un producto está pendiente, la "Orden Automática" no lo sugerirá para su suplidor original. Si necesitas que vuelva antes, cancélalo aquí.
+                Las notas escritas a mano NO vencen, y aparecen solas dentro de la Orden de Compra del suplidor que dice la columna "Parece de".
             </p>
         </div>
     );
