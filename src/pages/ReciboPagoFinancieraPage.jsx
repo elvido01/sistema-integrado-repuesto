@@ -564,6 +564,9 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       }
       out.push({
         key: `${c.cuota_id}-fin`, cuota_id: c.cuota_id, esMora: false, esCargo: false,
+        // Lo marca get_prestamos_cliente. Sin esto la pantalla trata el
+        // >>INTERES<< como un pagaré más y lo bloquea. Ver abajo.
+        esInteresCorriente: !!c.es_interes_corriente,
         fecha: c.fecha || '', vence: c.fecha_vencimiento, origen: cleanLoanNumber(c.prestamo_numero),
         referencia: c.referencia, descripcion: 'Financiamiento',
         monto: round2(c.monto_cuota), pendiente: round2(Number(c.capital_pend) + Number(c.interes_pend)),
@@ -603,12 +606,20 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   // dejar atrás una cuota abierta—. Mismo criterio que el candado del RPC,
   // para que la pantalla no deje hacer algo que el servidor va a rechazar.
   // Pasó de verdad: un recibo entró a la 007/012 con la 001 a la 006 abiertas.
+  //
+  // >>> EL INTERÉS CORRIENTE NO ES UN PAGARÉ <<<
+  // Es lo que corre al día de hoy, y el servidor EXIGE cobrarlo antes de
+  // dejar tocar capital. Tratarlo como un pagaré más dejaba al cliente sin
+  // poder pagar NADA: SANTIAGO MARTINEZ (PT-0025393) no podía abonar sus
+  // 2,059.34 de interés porque la pantalla le exigía cubrir antes la cuota
+  // 001/012... que el servidor rechazaba por tener ese interés sin cobrar.
+  // La pantalla y la base decían lo contrario y el cobro quedaba trancado.
   const pagareAnteriorAbierto = (r, mapa) => {
-    if (r.esCargo || r.esMora) return null;
+    if (r.esCargo || r.esMora || r.esInteresCorriente) return null;
     const i = filas.indexOf(r);
     for (let j = 0; j < i; j++) {
       const p = filas[j];
-      if (p.esCargo || p.esMora || p.origen !== r.origen) continue;
+      if (p.esCargo || p.esMora || p.esInteresCorriente || p.origen !== r.origen) continue;
       if (round2(p.pendiente - (Number(mapa[p.key]) || 0)) > 0.005) return p;
     }
     return null;
@@ -642,7 +653,16 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const distribuirTotal = (total) => {
     let rest = round2(Number(total) || 0);
     const next = {};
-    filas.forEach((r) => {
+    // Primero lo que SE EVAPORA —mora e interés corriente—, que es la misma
+    // regla del servidor: no deja abonar capital de un préstamo mientras
+    // queden esos dos. Repartir en el orden en que se ven las filas dejaba
+    // el >>INTERES<< para el final (va al pie de la tabla) y el F10 rebotaba
+    // con "quedan X de interés corriente sin cobrar". El sort es estable:
+    // dentro de cada grupo el orden de siempre, la más vieja primero.
+    const primeroLoQueSeEvapora = [...filas].sort(
+      (a, b) => (a.esMora || a.esInteresCorriente ? 0 : 1) - (b.esMora || b.esInteresCorriente ? 0 : 1)
+    );
+    primeroLoQueSeEvapora.forEach((r) => {
       const ab = Math.min(rest, r.pendiente);
       if (ab > 0) next[r.key] = round2(ab);
       rest = round2(rest - ab);
