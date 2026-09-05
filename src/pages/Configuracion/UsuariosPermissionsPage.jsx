@@ -209,12 +209,24 @@ const UsuariosPermissionsPage = () => {
         setIsSaving(true);
         try {
             // 1. Update Profile Role
-            const { error: profileError } = await supabase
+            //
+            // >>> CERO FILAS NO ES UN ERROR <<<
+            // PostgREST contesta 204 sin error cuando el UPDATE no alcanza
+            // ninguna fila —porque RLS no deja ver esa fila, por ejemplo—.
+            // Sin el .select() esto cantaba "Éxito" sobre un cambio que
+            // nunca ocurrió: el rol de yimber de leon volvía a SUPERVISOR
+            // en cuanto se recargaba. Se pide la fila de vuelta y, si no
+            // viene, se dice la verdad.
+            const { data: filasTocadas, error: profileError } = await supabase
                 .from('profiles')
                 .update({ role: selectedUser.role })
-                .eq('id', selectedUser.id);
+                .eq('id', selectedUser.id)
+                .select('id');
 
             if (profileError) throw profileError;
+            if (!filasTocadas || filasTocadas.length === 0) {
+                throw new Error('La base no dejó cambiarle el rol a este usuario. Revisa que su perfil pertenezca a esta empresa o que tengas permiso de administrador aquí.');
+            }
 
             // 2. Upsert Permissions
             if (!isFullAccessRole(selectedUser.role)) {
@@ -259,7 +271,9 @@ const UsuariosPermissionsPage = () => {
             toast({
                 variant: "destructive",
                 title: "Error",
-                description: "No se pudieron guardar los cambios."
+                // El motivo real, no una frase de relleno: sin esto todos
+                // los fallos se veían iguales y no se podía diagnosticar.
+                description: error?.message || "No se pudieron guardar los cambios."
             });
         } finally {
             setIsSaving(false);
