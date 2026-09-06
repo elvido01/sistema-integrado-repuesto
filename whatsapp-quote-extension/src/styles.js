@@ -135,6 +135,74 @@ export const styles = `
     border-bottom: 1px solid #dbe7e1;
   }
 
+  /* Los chats que el espejo todavia no ha copiado. Verde suave, no alarma:
+     no hay nada roto, hay trabajo esperando. */
+  .mf-sin-copiar {
+    padding: 8px 14px 10px;
+    background: #eef7f2;
+    border-bottom: 1px solid #d5e8de;
+  }
+
+  .mf-sin-copiar header {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 6px;
+  }
+
+  .mf-sin-copiar strong {
+    font-size: 11px;
+    font-weight: 900;
+    color: #0a7a55;
+  }
+
+  .mf-sin-copiar small {
+    font-size: 10px;
+    color: #5b6b63;
+  }
+
+  .mf-sin-copiar div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .mf-sin-copiar button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 3px 7px;
+    border: 1px solid #b8d8cc;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #126f64;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .mf-sin-copiar button span {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mf-sin-copiar button b {
+    min-width: 15px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #0a7a55;
+    color: #ffffff;
+    font-size: 9px;
+    text-align: center;
+  }
+
+  .mf-sin-copiar button:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
   .mf-omni-left-dock {
     position: fixed;
     top: 280px;

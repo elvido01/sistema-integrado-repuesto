@@ -133,6 +133,10 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
     tickRows: main.querySelectorAll('[data-icon^="msg-"]').length, // ticks = salientes
     tailOut: main.querySelectorAll('[data-icon="tail-out"]').length,
     tailIn: main.querySelectorAll('[data-icon="tail-in"]').length,
+    // Cuantos chats ve sin leer en la lista de la izquierda. Va en el latido
+    // para poder comprobar desde la base que el lector nuevo esta encontrando
+    // la insignia, sin tener que pedirle a nadie que abra la consola.
+    sinLeer: leerChatsSinLeer().chats.length,
   };
 
   diag.rowsFound = rows.length;
@@ -245,6 +249,45 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
       messages,
     },
   };
+}
+
+// Los chats que WhatsApp marca como NO LEÍDOS en la lista de la izquierda.
+//
+// Eso es, exactamente, lo que al espejo le falta por copiar: el espejo solo
+// lee el chat que está ABIERTO, y abrir un chat es justo lo que lo marca como
+// leído. Así que "no leído" y "sin copiar" son la misma lista.
+//
+// Ojo con lo que NO ve: la lista de WhatsApp está virtualizada, solo existen
+// en el DOM las filas visibles. Los no leídos suben solos al tope (se ordena
+// por último mensaje), así que en la práctica se ven todos; pero si alguien
+// baja mucho la lista, esto cuenta lo que hay a la vista y nada más.
+export function leerChatsSinLeer({ max = 10 } = {}) {
+  const pane = document.querySelector('#pane-side');
+  if (!pane) return { disponible: false, chats: [] };
+
+  const vistos = new Set();
+  const chats = [];
+
+  for (const fila of Array.from(pane.querySelectorAll('[role="listitem"], [role="row"]'))) {
+    // La insignia verde se rotula "N mensajes no leídos" (o "unread"). Se
+    // busca por el ROTULO y no por clase ni testid: los nombres internos de
+    // WhatsApp cambian cada dos por tres, el rotulo (que es accesibilidad)
+    // se mantiene.
+    const marca = Array.from(fila.querySelectorAll('[aria-label]'))
+      .map((n) => n.getAttribute('aria-label') || '')
+      .find((t) => /no le[ií]d|unread/i.test(t));
+    if (!marca) continue;
+
+    const nombre = fila.querySelector('span[title]')?.getAttribute('title')
+      || cleanText(fila.querySelector('span[dir="auto"]')?.textContent || '');
+    if (!nombre || vistos.has(nombre)) continue;
+
+    vistos.add(nombre);
+    chats.push({ nombre, cantidad: Number((marca.match(/\d+/) || [])[0]) || 1 });
+    if (chats.length >= max) break;
+  }
+
+  return { disponible: true, chats };
 }
 
 export function openWhatsAppChatViaInternalLink(phone, text = '') {

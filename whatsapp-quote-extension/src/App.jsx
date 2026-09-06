@@ -3,7 +3,7 @@ import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
 import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
 import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, adjuntarFotos, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
-import { attachFileToWhatsApp, getCurrentChat, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
+import { attachFileToWhatsApp, getCurrentChat, leerChatsSinLeer, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import { formatQuoteMessage } from './utils/cotizacionTexto.js';
 import ChannelRail from './components/omni/ChannelRail.jsx';
@@ -479,7 +479,53 @@ export default function App() {
     return () => { cancelled = true; window.clearInterval(interval); };
   }, [chat.id, activeChannel, session?.access_token, empresaPending, safeMode]);
 
+  // Que se VEA lo que falta por copiar. El espejo solo lee el chat abierto, y
+  // hasta ahora la unica forma de saber que habia clientes esperando era
+  // acordarse de mirar WhatsApp. Se lee del DOM (gratis, sin red) cada 5s.
+  useEffect(() => {
+    if (safeMode) return undefined;
+    if (!session?.access_token || empresaPending) { setChatsSinCopiar([]); return undefined; }
+
+    let cancelado = false;
+    const mirar = () => {
+      const { disponible, chats } = leerChatsSinLeer();
+      if (cancelado || !disponible) return;
+      setChatsSinCopiar((antes) => {
+        const igual = antes.length === chats.length
+          && antes.every((c, i) => c.nombre === chats[i].nombre && c.cantidad === chats[i].cantidad);
+        return igual ? antes : chats;
+      });
+    };
+    mirar();
+    const reloj = window.setInterval(mirar, 5000);
+    return () => { cancelado = true; window.clearInterval(reloj); };
+  }, [session?.access_token, empresaPending, safeMode]);
+
+  // Abrir el chat ES copiarlo: al cambiar chat.id corre el espejo de arriba.
+  // Lo unico que hace falta aqui es traerlo al frente y ponerse en el canal
+  // de WhatsApp, porque fuera de ese canal el espejo no copia.
+  const abrirChatSinCopiar = async (nombre) => {
+    if (!nombre || abriendoChat) return;
+    setAbriendoChat(nombre);
+    setActiveChannel(CHANNEL_TYPES.WHATSAPP);
+    try {
+      const r = await openWhatsAppChatViaSearch(nombre);
+      if (!r?.ok) {
+        setNotice(`No se pudo abrir "${nombre}" desde aqui. Abrelo a mano en la lista de WhatsApp y se copia solo.`);
+      }
+    } catch {
+      setNotice(`No se pudo abrir "${nombre}" desde aqui. Abrelo a mano en la lista de WhatsApp.`);
+    } finally {
+      setAbriendoChat('');
+    }
+  };
+
   // Estado del espejo (chip visible): se consulta al entrar y cada 60s.
+  // Los chats que WhatsApp tiene marcados como no leidos: eso es justo lo que
+  // al espejo le falta por copiar. Ver leerChatsSinLeer().
+  const [chatsSinCopiar, setChatsSinCopiar] = useState([]);
+  const [abriendoChat, setAbriendoChat] = useState('');
+
   const [mirrorStatus, setMirrorStatus] = useState(null);
   useEffect(() => {
     if (!session?.access_token || empresaPending) { setMirrorStatus(null); return; }
@@ -2424,6 +2470,35 @@ export default function App() {
           <button className="mf-safe-button" type="button" onClick={handleRestoreWhatsApp} title="Desmontar temporalmente MotoFlow Omni">
             Restaurar WhatsApp
           </button>
+        </section>
+      )}
+
+      {/* LO QUE FALTA POR COPIAR. El espejo lee el chat que este ABIERTO, asi
+          que un chat sin abrir es un cliente que el sistema no ha visto. Antes
+          no habia forma de saberlo sin ponerse a mirar WhatsApp; ahora estan
+          aqui y se abren de un toque. */}
+      {session && !empresaPending && chatsSinCopiar.length > 0 && (
+        <section className="mf-sin-copiar">
+          <header>
+            <strong>
+              {chatsSinCopiar.length} chat{chatsSinCopiar.length !== 1 ? 's' : ''} con mensajes nuevos
+            </strong>
+            <small>Todavia no entran al sistema. Toca uno y se copia solo.</small>
+          </header>
+          <div>
+            {chatsSinCopiar.map((c) => (
+              <button
+                key={c.nombre}
+                type="button"
+                disabled={!!abriendoChat}
+                onClick={() => abrirChatSinCopiar(c.nombre)}
+                title={`Abrir "${c.nombre}" para que el espejo lo copie`}
+              >
+                <span>{abriendoChat === c.nombre ? 'Abriendo...' : c.nombre}</span>
+                <b>{c.cantidad}</b>
+              </button>
+            ))}
+          </div>
         </section>
       )}
 
