@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Link2, Loader2, RefreshCw, Sparkles, CheckCircle2, X, Repeat2 } from 'lucide-react';
+import { Link2, Loader2, RefreshCw, Sparkles, CheckCircle2, X, Repeat2, Palette } from 'lucide-react';
 
 const formatRD = (n) => `RD$ ${(Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`;
 
@@ -126,6 +126,9 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
       if (Number(data?.ya_en_otro) > 0) {
         partes.push(`${data.ya_en_otro} ya estaban en otro grupo y se quedaron ahí`);
       }
+      // Que quede dicho en el momento: un grupo de colores NO junta existencia,
+      // y eso cambia lo que la orden automática va a pedir mañana.
+      if (data?.combina_stock === false) partes.push('cada color se sigue comprando por su cuenta');
       toast({ title: data?.nuevo ? '✅ Grupo creado' : '✅ Piezas sumadas al grupo', description: partes.join(' · ') });
       quitarDeLaLista(sug.id);
       onCambio?.();
@@ -228,6 +231,7 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
   // confirma en masa, porque apagar un codigo se decide de a uno.
   const dobles = sugerencias.filter((s) => s.senal === 'ambas' && s.tipo !== 'duplicado').length;
   const duplicados = sugerencias.filter((s) => s.tipo === 'duplicado').length;
+  const variantes = sugerencias.filter((s) => s.tipo === 'variante').length;
 
   return (
     <div className="space-y-3">
@@ -249,6 +253,12 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
               <p className="text-[10px] text-rose-700 font-bold mt-0.5">
                 {duplicados} de esos no son equivalentes: son la MISMA pieza con código nuevo.
                 Ahí se reemplaza, no se agrupa.
+              </p>
+            )}
+            {variantes > 0 && (
+              <p className="text-[10px] text-indigo-700 font-bold mt-0.5">
+                {variantes} son el mismo repuesto en otro color: se agrupan para ofrecerlos al
+                vender, pero cada color se sigue comprando por su cuenta.
               </p>
             )}
           </div>
@@ -309,6 +319,13 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
                     <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-300"
                           title="Misma marca y misma referencia: es la misma pieza cargada dos veces">
                       MISMA PIEZA · CÓDIGO NUEVO
+                    </span>
+                  )}
+                  {s.tipo === 'variante' && (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 border border-indigo-300 inline-flex items-center gap-1"
+                          title="Mismo repuesto en otro color. Se agrupan para ofrecerlos al vender, pero la existencia NO se suma al calcular la compra: cada color se repone solo.">
+                      <Palette className="w-2.5 h-2.5" />
+                      MISMO REPUESTO · OTRO COLOR
                     </span>
                   )}
                   {s.grupo_id && (
@@ -387,10 +404,16 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
                     className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px]"
                     disabled={procesando || marcados.length < 2}
                     onClick={() => confirmar(s)}
-                    title={marcados.length < 2 ? 'Un grupo necesita al menos 2 piezas' : 'Crear el grupo con lo marcado'}
+                    title={marcados.length < 2
+                      ? 'Un grupo necesita al menos 2 piezas'
+                      : (s.tipo === 'variante'
+                        ? 'Quedan ofreciéndose entre sí al vender. La existencia NO se suma: cada color se sigue pidiendo por su cuenta.'
+                        : 'Crear el grupo con lo marcado')}
                   >
                     <CheckCircle2 className="w-3 h-3 mr-1" />
-                    {s.grupo_id ? 'Sumar al grupo' : 'Confirmar grupo'} ({marcados.length})
+                    {s.tipo === 'variante'
+                      ? `Agrupar para vender (${marcados.length})`
+                      : `${s.grupo_id ? 'Sumar al grupo' : 'Confirmar grupo'} (${marcados.length})`}
                   </Button>
                 )}
                 <Button

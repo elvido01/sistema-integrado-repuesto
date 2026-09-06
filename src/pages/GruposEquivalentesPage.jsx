@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import {
   Link2, Plus, RefreshCw, Loader2, Trash2, Search, Sparkles,
-  CheckCircle2, X, Star, ChevronRight, AlertTriangle
+  CheckCircle2, X, Star, ChevronRight, AlertTriangle, Palette, Layers
 } from 'lucide-react';
 import SugerenciasEquivalentes from '@/components/products/SugerenciasEquivalentes';
 
@@ -48,7 +48,7 @@ export default function GruposEquivalentesPage() {
       const { data, error } = await supabase
         .from('producto_grupos')
         .select(`
-          id, nombre, descripcion, created_at,
+          id, nombre, descripcion, created_at, combina_stock,
           producto_grupo_miembros(
             producto_id, prioridad,
             productos(codigo, descripcion, costo, precio)
@@ -111,6 +111,28 @@ export default function GruposEquivalentesPage() {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
       setCreando(false);
+    }
+  };
+
+  // Un grupo de colores se agrupa para VENDER, pero cada color se compra por
+  // su cuenta: si se sumara la existencia, el sistema creería que hay tanques
+  // negros porque hay azules y nunca volvería a pedir los negros. El sistema lo
+  // detecta solo por la descripción, pero la última palabra es del dueño.
+  const alternarCombina = async (grupo) => {
+    try {
+      const { error } = await supabase.rpc('set_grupo_combina_stock', {
+        p_grupo_id: grupo.id, p_combina: !grupo.combina_stock,
+      });
+      if (error) throw error;
+      toast({
+        title: grupo.combina_stock ? 'Cada pieza se compra por su cuenta' : 'La existencia del grupo se suma',
+        description: grupo.combina_stock
+          ? 'La orden automática dejará de tapar una pieza con la existencia de otra de este grupo.'
+          : 'La orden automática volverá a contar la existencia de todo el grupo junta.',
+      });
+      fetchGrupos();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
     }
   };
 
@@ -193,6 +215,22 @@ export default function GruposEquivalentesPage() {
                     <div>
                       <h3 className="font-bold text-sm text-slate-800">{g.nombre}</h3>
                       {g.descripcion && <p className="text-[11px] text-slate-500 italic">{g.descripcion}</p>}
+                      <button
+                        type="button"
+                        onClick={() => alternarCombina(g)}
+                        className={`mt-1 text-[9px] font-black px-1.5 py-0.5 rounded border inline-flex items-center gap-1 ${
+                          g.combina_stock
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                            : 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100'
+                        }`}
+                        title={g.combina_stock
+                          ? 'La existencia de todo el grupo se suma al calcular la compra. Tocá para que cada pieza se compre por su cuenta.'
+                          : 'Mismo repuesto en otro color: se ofrecen al vender, pero cada uno se compra por su cuenta. Tocá para volver a sumar la existencia.'}
+                      >
+                        {g.combina_stock
+                          ? <><Layers className="w-2.5 h-2.5" /> EXISTENCIA COMPARTIDA</>
+                          : <><Palette className="w-2.5 h-2.5" /> CADA COLOR SE COMPRA SOLO</>}
+                      </button>
                     </div>
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => borrarGrupo(g.id)}>
                       <Trash2 className="w-3 h-3" />
