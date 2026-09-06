@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Link2, Loader2, RefreshCw, Sparkles, CheckCircle2, X } from 'lucide-react';
+import { Link2, Loader2, RefreshCw, Sparkles, CheckCircle2, X, Repeat2 } from 'lucide-react';
 
 const formatRD = (n) => `RD$ ${(Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`;
 
@@ -44,6 +44,9 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
   // Qué piezas de cada propuesta siguen marcadas: { sugerencia_id: [producto_id] }
   const [seleccion, setSeleccion] = useState({});
   const [procesando, setProcesando] = useState(false);
+  // En un duplicado no se marca "quienes entran" sino CUAL SE QUEDA:
+  // { sugerencia_id: producto_id }
+  const [sobrevive, setSobrevive] = useState({});
 
   // Lo que el motor dejó pendiente. No se calcula al vuelo: eso es lo que
   // hacía el sugeridor viejo y terminaba en timeout.
@@ -56,8 +59,15 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
       setSugerencias(filas);
       // Todo entra marcado: lo normal es confirmar, no armar el grupo de cero.
       const marcas = {};
-      filas.forEach((s) => { marcas[s.id] = (s.miembros || []).map((m) => m.producto_id); });
+      const quedan = {};
+      filas.forEach((s) => {
+        marcas[s.id] = (s.miembros || []).map((m) => m.producto_id);
+        // El primero viene ordenado por ventas: el codigo vivo es el que se
+        // queda, salvo que el dueno diga otra cosa.
+        quedan[s.id] = (s.miembros || [])[0]?.producto_id || null;
+      });
       setSeleccion(marcas);
+      setSobrevive(quedan);
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
@@ -140,6 +150,48 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
     }
   };
 
+  // REEMPLAZAR. El codigo nuevo se queda con lo que esta vivo (existencia,
+  // grupo, ordenes por llegar, codigos del suplidor) y el viejo se apaga
+  // dejando rastro. El historial de facturas NO se toca: cada una dice lo que
+  // dijo. Ver fusionar_productos().
+  const reemplazar = async (sug) => {
+    const quedaId = sobrevive[sug.id] || (sug.miembros || [])[0]?.producto_id;
+    const otros = (sug.miembros || []).filter((m) => m.producto_id !== quedaId);
+    if (!quedaId || otros.length === 0) return;
+
+    const queda = (sug.miembros || []).find((m) => m.producto_id === quedaId);
+    const aviso = otros.length === 1
+      ? `Se queda ${queda?.codigo} y se apaga ${otros[0].codigo}. ¿Seguimos?`
+      : `Se queda ${queda?.codigo} y se apagan ${otros.length} códigos viejos. ¿Seguimos?`;
+    if (!window.confirm(aviso)) return;
+
+    setProcesando(true);
+    try {
+      let movido = 0;
+      for (const o of otros) {
+        const { data, error } = await supabase.rpc('fusionar_productos', {
+          p_sobrevive: quedaId,
+          p_absorbido: o.producto_id,
+          p_sugerencia_id: sug.id,
+        });
+        if (error) throw error;
+        movido += Number(data?.existencia_movida) || 0;
+      }
+      toast({
+        title: `✅ ${queda?.codigo} se quedó con todo`,
+        description: movido !== 0
+          ? `${otros.length} código(s) apagado(s) · ${movido} unidades pasaron al código nuevo.`
+          : `${otros.length} código(s) apagado(s). El historial de facturas queda como está.`,
+      });
+      quitarDeLaLista(sug.id);
+      onCambio?.();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo reemplazar', description: err.message });
+    } finally {
+      setProcesando(false);
+    }
+  };
+
   // Las que coinciden por descripción Y por referencia son las seguras: se
   // confirman de un golpe, tal como vienen, para no revisar 400 tarjetas.
   const confirmarLasDobles = async () => {
@@ -172,7 +224,10 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
   };
 
   const totalPiezas = sugerencias.reduce((t, s) => t + (s.miembros || []).length, 0);
-  const dobles = sugerencias.filter((s) => s.senal === 'ambas').length;
+  // El boton de golpe solo mira los EQUIVALENTES: un duplicado nunca se
+  // confirma en masa, porque apagar un codigo se decide de a uno.
+  const dobles = sugerencias.filter((s) => s.senal === 'ambas' && s.tipo !== 'duplicado').length;
+  const duplicados = sugerencias.filter((s) => s.tipo === 'duplicado').length;
 
   return (
     <div className="space-y-3">
@@ -190,6 +245,12 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
               Salen de la descripción sin la marca ni el color, y de la referencia. Nada se agrupa
               solo: destildá lo que no vaya y confirmá.
             </p>
+            {duplicados > 0 && (
+              <p className="text-[10px] text-rose-700 font-bold mt-0.5">
+                {duplicados} de esos no son equivalentes: son la MISMA pieza con código nuevo.
+                Ahí se reemplaza, no se agrupa.
+              </p>
+            )}
           </div>
           {dobles > 0 && (
             <Button
@@ -244,6 +305,12 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
                       {Number(s.vendidas_180d)} vendidas 180d
                     </span>
                   )}
+                  {s.tipo === 'duplicado' && (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-300"
+                          title="Misma marca y misma referencia: es la misma pieza cargada dos veces">
+                      MISMA PIEZA · CÓDIGO NUEVO
+                    </span>
+                  )}
                   {s.grupo_id && (
                     <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-300">
                       SUMAR A: {s.grupo_nombre}
@@ -254,23 +321,44 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
 
               <div className="space-y-0.5 mb-2">
                 {miembros.map((m) => {
-                  const dentro = marcados.includes(m.producto_id);
+                  const esDup = s.tipo === 'duplicado';
+                  const queda = esDup && (sobrevive[s.id] || miembros[0]?.producto_id) === m.producto_id;
+                  const dentro = esDup ? queda : marcados.includes(m.producto_id);
                   return (
                     <label
                       key={m.producto_id}
                       className={`flex items-center gap-2 px-1.5 py-1 rounded cursor-pointer text-[11px] ${
-                        dentro ? 'bg-slate-50' : 'bg-white opacity-50 line-through'
+                        dentro ? 'bg-slate-50' : (esDup ? 'bg-white text-slate-400' : 'bg-white opacity-50 line-through')
                       }`}
+                      title={esDup ? (queda ? 'Este código se queda' : 'Este código se apaga') : undefined}
                     >
-                      <input
-                        type="checkbox"
-                        checked={dentro}
-                        onChange={() => alternarMiembro(s.id, m.producto_id)}
-                        className="accent-purple-600"
-                      />
+                      {esDup ? (
+                        <input
+                          type="radio"
+                          name={`queda-${s.id}`}
+                          checked={queda}
+                          onChange={() => setSobrevive((prev) => ({ ...prev, [s.id]: m.producto_id }))}
+                          className="accent-emerald-600"
+                        />
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={dentro}
+                          onChange={() => alternarMiembro(s.id, m.producto_id)}
+                          className="accent-purple-600"
+                        />
+                      )}
                       <span className="font-mono font-bold text-slate-600 w-20 shrink-0 truncate">{m.codigo}</span>
                       <span className="flex-1 truncate text-slate-700">{m.descripcion}</span>
                       {m.marca && <span className="text-[10px] text-slate-400 shrink-0 hidden sm:inline">{m.marca}</span>}
+                      <span className={`text-[10px] shrink-0 ${Number(m.ventas_180d) > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}
+                            title="Unidades vendidas en 180 días">
+                        {Number(m.ventas_180d) || 0} vend
+                      </span>
+                      <span className={`text-[10px] shrink-0 ${Number(m.stock) > 0 ? 'text-slate-600' : 'text-slate-400'}`}
+                            title="Existencia">
+                        {Number(m.stock) || 0} exist
+                      </span>
                       <span className="font-mono text-slate-600 shrink-0">{formatRD(m.precio)}</span>
                       {m.ya_en_grupo && (
                         <span className="text-[9px] text-blue-600 font-bold shrink-0" title="Ya pertenece a un grupo">EN GRUPO</span>
@@ -280,17 +368,31 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
                 })}
               </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px]"
-                  disabled={procesando || marcados.length < 2}
-                  onClick={() => confirmar(s)}
-                  title={marcados.length < 2 ? 'Un grupo necesita al menos 2 piezas' : 'Crear el grupo con lo marcado'}
-                >
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                  {s.grupo_id ? 'Sumar al grupo' : 'Confirmar grupo'} ({marcados.length})
-                </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                {s.tipo === 'duplicado' ? (
+                  <Button
+                    size="sm"
+                    className="h-7 bg-rose-600 hover:bg-rose-700 text-white text-[10px]"
+                    disabled={procesando || miembros.length < 2}
+                    onClick={() => reemplazar(s)}
+                    title="El código marcado se queda con la existencia, el grupo, las órdenes por llegar y los códigos del suplidor. El otro se apaga (no se borra)."
+                  >
+                    <Repeat2 className="w-3 h-3 mr-1" />
+                    Dejar {miembros.find((m) => (sobrevive[s.id] || miembros[0]?.producto_id) === m.producto_id)?.codigo}
+                    {miembros.length > 2 ? ` y apagar ${miembros.length - 1}` : ' y apagar el otro'}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px]"
+                    disabled={procesando || marcados.length < 2}
+                    onClick={() => confirmar(s)}
+                    title={marcados.length < 2 ? 'Un grupo necesita al menos 2 piezas' : 'Crear el grupo con lo marcado'}
+                  >
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    {s.grupo_id ? 'Sumar al grupo' : 'Confirmar grupo'} ({marcados.length})
+                  </Button>
+                )}
                 <Button
                   size="sm" variant="outline"
                   className="h-7 text-[10px] border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-700"
@@ -298,7 +400,8 @@ export default function SugerenciasEquivalentes({ onCambio, columnas = 2 }) {
                   onClick={() => rechazar(s)}
                   title="No son la misma pieza. No se vuelve a proponer."
                 >
-                  <X className="w-3 h-3 mr-1" /> No son iguales
+                  <X className="w-3 h-3 mr-1" />
+                  {s.tipo === 'duplicado' ? 'No es el mismo' : 'No son iguales'}
                 </Button>
               </div>
             </div>
