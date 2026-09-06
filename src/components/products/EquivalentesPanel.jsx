@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Link2, X, Loader2, CheckCircle2, RefreshCw, Sparkles, Star, Trash2, ChevronRight } from 'lucide-react';
+import SugerenciasEquivalentes from '@/components/products/SugerenciasEquivalentes';
 
 export default function EquivalentesPanel({
   agrupandoMode,
@@ -27,10 +28,6 @@ export default function EquivalentesPanel({
   const [descGrupo, setDescGrupo] = useState('');
   const [creando, setCreando] = useState(false);
 
-  // Sugerencias IA
-  const [minSimilitud, setMinSimilitud] = useState(0.4);
-  const [sugerencias, setSugerencias] = useState([]);
-  const [loadingSug, setLoadingSug] = useState(false);
 
   // Ver mis grupos
   const [grupos, setGrupos] = useState([]);
@@ -178,42 +175,6 @@ export default function EquivalentesPanel({
     }
   };
 
-  const cargarSugerencias = async () => {
-    setLoadingSug(true);
-    try {
-      const { data, error } = await supabase.rpc('sugerir_grupos_por_similitud', {
-        p_min_similarity: minSimilitud,
-        p_limit: 100,
-      });
-      if (error) throw error;
-      setSugerencias(data || []);
-      toast({ title: '✨ Análisis completo', description: `${data?.length || 0} pares similares encontrados.` });
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.message });
-    } finally {
-      setLoadingSug(false);
-    }
-  };
-
-  const aceptarSugerencia = async (sug) => {
-    const nombre = (sug.descripcion_a.length < sug.descripcion_b.length ? sug.descripcion_a : sug.descripcion_b).slice(0, 40);
-    try {
-      const { error } = await supabase.rpc('crear_grupo_con_productos', {
-        p_nombre: nombre,
-        p_descripcion: `Similitud automática: ${(sug.similitud * 100).toFixed(0)}%`,
-        p_producto_ids: [sug.producto_a_id, sug.producto_b_id],
-        p_prioridades: [1, 2],
-      });
-      if (error) throw error;
-      toast({ title: '✅ Grupo creado', description: nombre });
-      setSugerencias(prev => prev.filter(s =>
-        !(s.producto_a_id === sug.producto_a_id && s.producto_b_id === sug.producto_b_id)
-      ));
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.message });
-    }
-  };
-
   return (
     <>
       {/* ════════════════════════════════════════════════════ */}
@@ -331,103 +292,18 @@ export default function EquivalentesPanel({
       {/* Modal: Sugerencias IA por similitud trigram          */}
       {/* ════════════════════════════════════════════════════ */}
       <Dialog open={sugerenciasOpen} onOpenChange={(open) => { if (!open) onCloseSugerencias(); }}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-5xl max-h-[88vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-emerald-700 flex items-center gap-2">
-              <Sparkles className="w-5 h-5" /> Sugerencias automáticas de productos equivalentes
+            <DialogTitle className="text-purple-700 flex items-center gap-2">
+              <Sparkles className="w-5 h-5" /> Grupos sugeridos por el sistema
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Detección por similitud de texto (trigramas). Sin costo. Detecta pares con descripciones parecidas que aún no están agrupados.
+              Salen de tu propio catalogo: misma pieza y misma medida, sin mirar marca ni color.
+              Destilda lo que no vaya y confirma — lo que rechaces no se vuelve a proponer.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-2 flex items-center gap-3">
-            <Sparkles className="w-5 h-5 text-emerald-700" />
-            <div className="flex-1">
-              <p className="text-xs text-emerald-900 font-bold">Cómo funciona</p>
-              <p className="text-[10px] text-emerald-700">
-                A mayor similitud = más probable que sean lo mismo. 40% es buen balance entre cobertura y precisión.
-              </p>
-            </div>
-            <Label className="text-[11px] uppercase font-bold text-emerald-700">Min. similitud</Label>
-            <select
-              value={minSimilitud}
-              onChange={(e) => setMinSimilitud(parseFloat(e.target.value))}
-              className="text-xs border border-emerald-300 rounded px-2 py-1 bg-white"
-            >
-              <option value={0.3}>30% (más resultados)</option>
-              <option value={0.4}>40% (recomendado)</option>
-              <option value={0.5}>50% (más preciso)</option>
-              <option value={0.6}>60% (alta precisión)</option>
-            </select>
-            <Button
-              onClick={cargarSugerencias}
-              disabled={loadingSug}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {loadingSug ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
-              Analizar catálogo
-            </Button>
-          </div>
-
-          <div className="max-h-[60vh] overflow-y-auto border border-slate-200 rounded">
-            {loadingSug ? (
-              <div className="p-8 text-center"><Loader2 className="w-6 h-6 mx-auto animate-spin" /></div>
-            ) : sugerencias.length === 0 ? (
-              <div className="p-8 text-center text-sm text-slate-500">
-                Hacé click en <b>Analizar catálogo</b> para que el sistema busque pares similares.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader className="bg-slate-100 sticky top-0">
-                  <TableRow>
-                    <TableHead className="text-[10px] uppercase">Producto A</TableHead>
-                    <TableHead className="text-[10px] uppercase">Producto B</TableHead>
-                    <TableHead className="text-center text-[10px] uppercase">Similitud</TableHead>
-                    <TableHead className="text-right text-[10px] uppercase">Vtas 30d</TableHead>
-                    <TableHead className="text-center text-[10px] uppercase">Acción</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sugerencias.map(s => (
-                    <TableRow key={`${s.producto_a_id}-${s.producto_b_id}`}>
-                      <TableCell className="text-xs">
-                        <p className="font-mono font-bold text-purple-700">{s.codigo_a}</p>
-                        <p className="text-[10px] text-slate-500 truncate max-w-[280px]">{s.descripcion_a}</p>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <p className="font-mono font-bold text-purple-700">{s.codigo_b}</p>
-                        <p className="text-[10px] text-slate-500 truncate max-w-[280px]">{s.descripcion_b}</p>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                          s.similitud >= 0.6 ? 'bg-emerald-100 text-emerald-700' :
-                          s.similitud >= 0.45 ? 'bg-blue-100 text-blue-700' :
-                          'bg-slate-100 text-slate-600'
-                        }`}>
-                          {(s.similitud * 100).toFixed(0)}%
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">{s.ventas_combinadas_30d}</TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          size="sm"
-                          onClick={() => aceptarSugerencia(s)}
-                          className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px]"
-                        >
-                          <CheckCircle2 className="w-3 h-3 mr-1" /> Agrupar
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={onCloseSugerencias}>Cerrar</Button>
-          </DialogFooter>
+          <SugerenciasEquivalentes columnas={1} />
         </DialogContent>
       </Dialog>
 
