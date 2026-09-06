@@ -378,6 +378,16 @@ export const styles = `
     font-weight: 800;
   }
 
+  /* El aviso de que por este canal no está entrando nada. Ámbar, no rojo:
+     no está roto, es que falta abrir la pestaña de la red. */
+  .mf-omni-frio {
+    display: block;
+    margin-top: 2px;
+    color: #b06a00;
+    font-size: 10px;
+    font-weight: 800;
+  }
+
   .mf-omni-head-actions {
     display: flex;
     align-items: center;

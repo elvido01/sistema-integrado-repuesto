@@ -10,6 +10,24 @@ const CHANNEL_LABELS = {
   youtube: 'YouTube'
 };
 
+// Cada cuánto se vuelve a preguntar. La bandeja se mira como se mira
+// WhatsApp: si hay que darle a "Actualizar" para enterarse, no es una
+// bandeja, es una foto de cuando la abriste.
+const REFRESCO_LISTA_MS = 20000;
+const REFRESCO_HILO_MS  = 8000;
+
+// De dónde entra cada canal. El espejo copia lo que el vendedor tiene
+// ABIERTO en la pestaña de la red: sin esa pestaña no entra nada, y eso
+// antes no se veía por ningún lado (la bandeja se quedaba quieta y parecía
+// que no había clientes escribiendo).
+const DE_DONDE_ENTRA = {
+  tiktok:    'abre www.tiktok.com en una pestaña',
+  instagram: 'abre instagram.com en una pestaña',
+  facebook:  'abre facebook.com en una pestaña',
+  whatsapp:  'abre el chat en WhatsApp Web',
+};
+const HORAS_PARA_AVISAR = 6;
+
 const CHANNEL_BADGES = {
   instagram: 'IG',
   facebook: 'FB',
@@ -17,6 +35,18 @@ const CHANNEL_BADGES = {
   youtube: 'YT',
   whatsapp: 'WA'
 };
+
+// ¿Es la misma lista de mensajes? Comparar el largo no basta: un mensaje que
+// pasa de "enviado" a "NO SALIÓ" no cambia la cuenta y hay que repintarlo.
+function mismosMensajes(a = [], b = []) {
+  if (a.length !== b.length) return false;
+  for (let i = a.length - 1; i >= 0; i -= 1) {
+    if (a[i]?.id !== b[i]?.id) return false;
+    if (a[i]?.status !== b[i]?.status) return false;
+    if (a[i]?.media_url !== b[i]?.media_url) return false;
+  }
+  return true;
+}
 
 const STATUS_LABELS = {
   nuevo: 'Nuevo',
@@ -122,6 +152,11 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   // es 'editada'. Esa diferencia es el material de aprendizaje.
   const [sugerencia, setSugerencia] = useState(null);   // { texto, messageId, productos }
   const [sugiriendo, setSugiriendo] = useState(false);
+  // El cuadro de mensajes y si el vendedor lo tiene pegado abajo. Si está
+  // leyendo algo de más arriba, un mensaje nuevo no le puede arrancar la
+  // vista de las manos; si está al final, tiene que verlo entrar.
+  const hiloRef = useRef(null);
+  const pegadoAbajoRef = useRef(true);
 
   const title = CHANNEL_LABELS[channel] || CHANNEL_LABELS.unified;
 
@@ -166,6 +201,39 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     };
   }, [channel, search, refreshKey]);
 
+  // Lo que el refresco callado necesita saber sin re-crear el temporizador
+  // en cada tecla: si dependiera de props, el intervalo se reiniciaría solo y
+  // no llegaría a cumplirse nunca.
+  const vivoRef = useRef({ channel, search, onConversationsChange });
+  vivoRef.current = { channel, search, onConversationsChange };
+
+  // REFRESCO CALLADO DE LA LISTA. No toca `loading` (el botón no parpadea),
+  // no borra el error de la pantalla y, sobre todo, NO cambia de
+  // conversación: solo actualiza los datos de la que ya está abierta. Se
+  // detiene cuando la pestaña no está a la vista para no pedir por gusto.
+  useEffect(() => {
+    let vivo = true;
+    const tic = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const { channel: ch, search: bu, onConversationsChange: avisar } = vivoRef.current;
+      try {
+        const rows = await getOmniConversations({ channel: ch, search: bu });
+        // Si mientras se pedía cambió el canal o la búsqueda, esto ya no vale.
+        if (!vivo || vivoRef.current.channel !== ch || vivoRef.current.search !== bu) return;
+        setConversations(rows || []);
+        avisar?.(rows || []);
+        setSelected((actual) => {
+          if (!actual) return actual;
+          return (rows || []).find((row) => row.id === actual.id) || actual;
+        });
+      } catch {
+        // Un refresco que falla no molesta a nadie: el siguiente lo intenta.
+      }
+    };
+    const id = window.setInterval(tic, REFRESCO_LISTA_MS);
+    return () => { vivo = false; window.clearInterval(id); };
+  }, []);
+
   useEffect(() => {
     onSelectedConversationChange?.(selected || null);
   }, [selected?.id, selected?.status]);
@@ -194,6 +262,38 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     };
   }, [selected?.id]);
 
+  // REFRESCO CALLADO DEL HILO ABIERTO. Sin esto, el vendedor con la
+  // conversación delante no se entera de que el cliente acaba de escribir:
+  // los mensajes solo entraban al elegir la conversación de nuevo.
+  // Se repinta únicamente si algo cambió de verdad (llegó uno, o uno pasó a
+  // fallado) para no romper el scroll ni la selección de texto.
+  useEffect(() => {
+    const id = selected?.id;
+    if (!id) return undefined;
+    let vivo = true;
+    const tic = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      try {
+        const rows = await getOmniMessages(id);
+        if (!vivo || !rows) return;
+        setMessages((prev) => (mismosMensajes(prev, rows) ? prev : rows));
+      } catch {
+        // callado a propósito: el siguiente intento lo arregla
+      }
+    };
+    const t = window.setInterval(tic, REFRESCO_HILO_MS);
+    return () => { vivo = false; window.clearInterval(t); };
+  }, [selected?.id]);
+
+  // Al abrir una conversación se empieza por lo último, como cualquier chat.
+  useEffect(() => { pegadoAbajoRef.current = true; }, [selected?.id]);
+
+  useEffect(() => {
+    const el = hiloRef.current;
+    if (!el || !pegadoAbajoRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, selected?.id]);
+
   const selectedMeta = useMemo(() => {
     if (!selected) return null;
     return {
@@ -202,6 +302,24 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
       status: STATUS_LABELS[selected.status] || selected.status || 'Nuevo'
     };
   }, [selected]);
+
+  // Hace cuánto que no entra un mensaje por este canal. El espejo solo copia
+  // lo que el vendedor tiene ABIERTO en la pestaña de la red; sin esa pestaña
+  // la bandeja se queda quieta y hasta ahora no lo decía en ninguna parte:
+  // parecía que nadie estaba escribiendo.
+  const frescura = useMemo(() => {
+    const ultimo = conversations.reduce((max, c) => {
+      const t = new Date(c.last_message_at || 0).getTime();
+      return Number.isFinite(t) && t > max ? t : max;
+    }, 0);
+    if (!ultimo) return null;
+    const horas = (Date.now() - ultimo) / 3600000;
+    if (horas < HORAS_PARA_AVISAR) return null;
+    return {
+      texto: horas < 48 ? `${Math.round(horas)} h` : `${Math.round(horas / 24)} d`,
+      comoEntra: DE_DONDE_ENTRA[channel] || null,
+    };
+  }, [conversations, channel]);
 
   const visibleConversations = useMemo(() => {
     const isAssignedToMe = (conversation) => Boolean(conversation.assigned_to_me || conversation.mine || conversation.assigned_to);
@@ -446,6 +564,15 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
             {visibleConversations.length} de {conversations.length} conversaciones
             {!search.trim() && ` · últimos ${DIAS_EN_BANDEJA} días`}
           </span>
+          {frescura && (
+            <span
+              className="mf-omni-frio"
+              title="Los mensajes se copian de la pestaña de la red que tengas abierta. Si esa pestaña está cerrada, aquí no entra nada nuevo."
+            >
+              ⚠ No entra nada hace {frescura.texto}
+              {frescura.comoEntra ? ` · ${frescura.comoEntra}` : ''}
+            </span>
+          )}
         </div>
         <div className="mf-omni-head-actions">
           {/* Solo aparece si hay algo que apagar: un boton que no hace nada
@@ -557,7 +684,14 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                 <b>{CHANNEL_BADGES[selectedMeta.platform] || selectedMeta.platform.slice(0, 2).toUpperCase()}</b>
               </header>
 
-              <div className="mf-omni-messages">
+              <div
+                className="mf-omni-messages"
+                ref={hiloRef}
+                onScroll={(event) => {
+                  const el = event.currentTarget;
+                  pegadoAbajoRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 48;
+                }}
+              >
                 {detailLoading && <p className="mf-muted">Cargando mensajes...</p>}
                 {!detailLoading && !messages.length && <p className="mf-muted">Esta conversacion no tiene mensajes guardados.</p>}
 

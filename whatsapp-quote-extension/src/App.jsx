@@ -441,7 +441,13 @@ export default function App() {
   useEffect(() => {
     if (safeMode) return;
     if (!session?.access_token || empresaPending) return;
-    if (activeChannel !== CHANNEL_TYPES.WHATSAPP) return;
+
+    // El LATIDO se manda desde cualquier canal: es la señal de "la extensión
+    // está viva". Antes solo latía en el canal WhatsApp, así que trabajar un
+    // rato en la bandeja de TikTok dejaba el espejo en "en pausa" — decía que
+    // estaba apagado cuando lo único que pasaba es que se estaba mirando otra
+    // cosa. Copiar la conversación, en cambio, sigue siendo solo de WhatsApp.
+    const enWhatsApp = activeChannel === CHANNEL_TYPES.WHATSAPP;
 
     let cancelled = false;
     const runMirror = async () => {
@@ -451,13 +457,18 @@ export default function App() {
         // Las fotos, antes del espejo: el <img> vive en una fila del DOM que
         // WhatsApp recicla al desplazar, así que si no se copian ahora se
         // pierden. Además deja el payload limpio de nodos del DOM.
-        if (convo) {
+        if (convo && enWhatsApp) {
           try { diag.fotos = await adjuntarFotos(convo); }
           catch { diag.fotos = 0; }
         }
-        // latido SIEMPRE (aunque no lea): así se detecta el DOM roto en silencio
-        await sendMirrorHeartbeat(diag);
-        if (convo && !cancelled) await mirrorWhatsAppConversation(convo);
+        // Latido SIEMPRE (aunque no lea): así se detecta el DOM roto en
+        // silencio. Fuera del canal WhatsApp va sin diagnóstico: el vendedor
+        // no tiene ningún chat delante, y decir que sí lo tiene haría saltar
+        // la alarma roja de "espejo sin leer" sin que nada esté roto.
+        await sendMirrorHeartbeat(
+          enWhatsApp ? diag : { chatOpen: false, rowsFound: 0, parsed: 0, probe: null }
+        );
+        if (convo && enWhatsApp && !cancelled) await mirrorWhatsAppConversation(convo);
       } catch {
         // silencioso: el espejo nunca debe estorbar el uso normal
       }
@@ -756,17 +767,31 @@ export default function App() {
       return;
     }
 
+    // Los numeros del riel se cargaban UNA sola vez, al entrar. El vendedor
+    // dejaba el panel abierto todo el dia y seguia viendo los de la mañana:
+    // un contador que no cuenta es peor que ninguno. Ahora se vuelven a pedir
+    // cada minuto, y solo con la pestaña a la vista.
     let active = true;
-    getOmniConversations({ channel: CHANNEL_TYPES.UNIFIED, limit: 200 })
-      .then((rows) => {
-        if (active) setOmniConversationsPreview(rows || []);
-      })
-      .catch(() => {
-        if (active) setOmniConversationsPreview([]);
-      });
+    const traer = (primeraVez = false) => {
+      if (!primeraVez && typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      getOmniConversations({ channel: CHANNEL_TYPES.UNIFIED, limit: 200 })
+        .then((rows) => {
+          if (active) setOmniConversationsPreview(rows || []);
+        })
+        .catch(() => {
+          // Al entrar, un fallo deja la lista vacia (no hay nada que mostrar).
+          // Ya andando, se deja lo que habia: borrar los numeros por un
+          // tropiezo de red haria creer que se apagaron los canales.
+          if (active && primeraVez) setOmniConversationsPreview([]);
+        });
+    };
+
+    traer(true);
+    const reloj = window.setInterval(traer, 60000);
 
     return () => {
       active = false;
+      window.clearInterval(reloj);
     };
   }, [session?.access_token, empresaPending]);
 
@@ -2381,6 +2406,10 @@ export default function App() {
               ok:          { t: 'Espejo ✓', c: '#0a7a55', title: 'WhatsApp capturando al día' },
               inactivo:    { t: 'Espejo en pausa', c: '#888', title: 'No llegan latidos: abre WhatsApp Web e inicia sesión' },
               dom_roto:    { t: '⚠ Espejo sin leer', c: '#c0201a', title: 'Abriste chats pero no se leen mensajes — WhatsApp pudo cambiar su estructura. Avísale al equipo.' },
+              // No está roto: es que no tiene nada que copiar. El espejo lee
+              // el chat que tengas DELANTE, y dentro de la bandeja Omni no
+              // hay ninguno abierto.
+              sin_chat:    { t: 'Espejo sin chat', c: '#888', title: `El espejo copia el chat que tengas abierto en WhatsApp Web, y hace ${mirrorStatus?.horas_sin_chat ?? '?'} h que no abres uno. Abre un chat y se copia solo.` },
               sin_captura: { t: '⚠ Sin capturas', c: '#c07a00', title: `Hace ${mirrorStatus?.horas_sin_captura ?? '?'} h que no entra un mensaje nuevo` },
             };
             const m = map[est];
