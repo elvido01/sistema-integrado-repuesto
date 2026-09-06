@@ -17,10 +17,25 @@ import {
 
 const TABS = [
   { key: 'grupos', label: 'Mis Grupos' },
-  { key: 'sugerencias', label: 'Sugerencias Inteligentes' },
+  { key: 'sugerencias', label: 'Sugeridos por el sistema' },
 ];
 
 const formatRD = (n) => `RD$ ${(Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`;
+
+// De donde salio cada propuesta. Se ensena SIEMPRE: "misma referencia" es la
+// senal mas floja y el dueno tiene derecho a saber cual esta mirando antes de
+// confirmar.
+const SENAL_TXT = {
+  ambas: 'DESCRIPCION + REFERENCIA',
+  descripcion: 'MISMA DESCRIPCION',
+  referencia: 'MISMA REFERENCIA',
+};
+
+const SENAL_ESTILO = {
+  ambas: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+  descripcion: 'bg-blue-100 text-blue-700 border-blue-300',
+  referencia: 'bg-amber-100 text-amber-800 border-amber-300',
+};
 
 export default function GruposEquivalentesPage() {
   const { toast } = useToast();
@@ -31,7 +46,9 @@ export default function GruposEquivalentesPage() {
   const [loadingGrupos, setLoadingGrupos] = useState(true);
   const [sugerencias, setSugerencias] = useState([]);
   const [loadingSug, setLoadingSug] = useState(false);
-  const [minSimilitud, setMinSimilitud] = useState(0.4);
+  // Que piezas de cada propuesta siguen marcadas: { sugerencia_id: [producto_id] }
+  const [seleccion, setSeleccion] = useState({});
+  const [procesando, setProcesando] = useState(false);
 
   // Modal nuevo grupo
   const [crearModalOpen, setCrearModalOpen] = useState(false);
@@ -68,23 +85,134 @@ export default function GruposEquivalentesPage() {
 
   useEffect(() => { fetchGrupos(); }, [fetchGrupos]);
 
-  // Cargar sugerencias on-demand
-  const cargarSugerencias = async () => {
+  // Las propuestas que el motor dejo pendientes. No las calcula al vuelo: eso
+  // es lo que hacia el sugeridor viejo y terminaba en timeout.
+  const cargarSugerencias = useCallback(async () => {
     setLoadingSug(true);
     try {
-      const { data, error } = await supabase.rpc('sugerir_grupos_por_similitud', {
-        p_min_similarity: minSimilitud,
-        p_limit: 100,
-      });
+      const { data, error } = await supabase.rpc('get_sugerencias_equivalentes', { p_limite: 300 });
       if (error) throw error;
-      setSugerencias(data || []);
-      toast({ title: '✨ Análisis completo', description: `${data?.length || 0} pares de productos similares encontrados.` });
+      const filas = data || [];
+      setSugerencias(filas);
+      // Todo entra marcado: lo normal es confirmar, no armar el grupo de cero.
+      const marcas = {};
+      filas.forEach((s) => { marcas[s.id] = (s.miembros || []).map((m) => m.producto_id); });
+      setSeleccion(marcas);
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
       setLoadingSug(false);
     }
+  }, [toast]);
+
+  useEffect(() => { if (tab === 'sugerencias') cargarSugerencias(); }, [tab, cargarSugerencias]);
+
+  const recalcular = async () => {
+    setLoadingSug(true);
+    try {
+      const { data, error } = await supabase.rpc('recalcular_sugerencias_equivalentes', {});
+      if (error) throw error;
+      toast({
+        title: 'Catalogo revisado',
+        description: `${data?.grupos ?? 0} grupos propuestos sobre ${data?.productos ?? 0} piezas.`,
+      });
+      await cargarSugerencias();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+      setLoadingSug(false);
+    }
   };
+
+  const alternarMiembro = (sugId, prodId) => {
+    setSeleccion((prev) => {
+      const actual = prev[sugId] || [];
+      return {
+        ...prev,
+        [sugId]: actual.includes(prodId) ? actual.filter((x) => x !== prodId) : [...actual, prodId],
+      };
+    });
+  };
+
+  const quitarDeLaLista = (sugId) => {
+    setSugerencias((prev) => prev.filter((s) => s.id !== sugId));
+    setSeleccion((prev) => { const c = { ...prev }; delete c[sugId]; return c; });
+  };
+
+  const confirmar = async (sug) => {
+    const ids = seleccion[sug.id] || [];
+    if (ids.length < 2) return;
+    setProcesando(true);
+    try {
+      const { data, error } = await supabase.rpc('confirmar_sugerencia_equivalentes', {
+        p_sugerencia_id: sug.id,
+        p_producto_ids: ids,
+        p_nombre: sug.nombre,
+      });
+      if (error) throw error;
+      const fuera = (sug.miembros || []).length - ids.length;
+      // Se dice lo que de verdad paso, incluido lo que NO se pudo mover.
+      const partes = [`${data?.agregados ?? ids.length} piezas`];
+      if (fuera > 0) partes.push(`${fuera} descartada${fuera !== 1 ? 's' : ''} (no vuelven a proponerse)`);
+      if (Number(data?.ya_en_otro) > 0) {
+        partes.push(`${data.ya_en_otro} ya estaban en otro grupo y se quedaron ahi`);
+      }
+      toast({ title: data?.nuevo ? 'Grupo creado' : 'Piezas sumadas al grupo', description: partes.join(' · ') });
+      quitarDeLaLista(sug.id);
+      fetchGrupos();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo confirmar', description: err.message });
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const rechazar = async (sug) => {
+    setProcesando(true);
+    try {
+      const { error } = await supabase.rpc('rechazar_sugerencia_equivalentes', { p_sugerencia_id: sug.id });
+      if (error) throw error;
+      toast({ title: 'Anotado', description: 'Esas piezas no se vuelven a proponer juntas.' });
+      quitarDeLaLista(sug.id);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  // Las que coinciden por descripcion Y por referencia son las seguras: se
+  // confirman de un golpe, tal como vienen, para no revisar 400 tarjetas.
+  const confirmarLasDobles = async () => {
+    const lista = sugerencias.filter((s) => s.senal === 'ambas');
+    if (!lista.length) return;
+    setProcesando(true);
+    let hechas = 0;
+    let fallos = 0;
+    for (const s of lista) {
+      const ids = seleccion[s.id] || [];
+      if (ids.length < 2) continue;
+      try {
+        const { error } = await supabase.rpc('confirmar_sugerencia_equivalentes', {
+          p_sugerencia_id: s.id, p_producto_ids: ids, p_nombre: s.nombre,
+        });
+        if (error) throw error;
+        hechas += 1;
+      } catch (_) {
+        fallos += 1;
+      }
+    }
+    setProcesando(false);
+    toast({
+      title: `${hechas} grupos confirmados`,
+      description: fallos > 0 ? `${fallos} no se pudieron: quedan en la lista.` : 'Los de doble senal quedaron listos.',
+      variant: fallos > 0 ? 'destructive' : undefined,
+    });
+    await cargarSugerencias();
+    fetchGrupos();
+  };
+
+  const totalPiezas = sugerencias.reduce((t, s) => t + (s.miembros || []).length, 0);
+  const dobles = sugerencias.filter((s) => s.senal === 'ambas').length;
 
   // Buscar productos en el modal de crear
   const buscarProductos = async (q) => {
@@ -130,25 +258,6 @@ export default function GruposEquivalentesPage() {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
       setCreando(false);
-    }
-  };
-
-  // Aceptar sugerencia: crear grupo con esos 2 productos
-  const aceptarSugerencia = async (sug) => {
-    const nombre = (sug.descripcion_a.length < sug.descripcion_b.length ? sug.descripcion_a : sug.descripcion_b).slice(0, 40);
-    try {
-      const { error } = await supabase.rpc('crear_grupo_con_productos', {
-        p_nombre: nombre,
-        p_descripcion: `Similitud automática: ${(sug.similitud * 100).toFixed(0)}%`,
-        p_producto_ids: [sug.producto_a_id, sug.producto_b_id],
-        p_prioridades: [1, 2],
-      });
-      if (error) throw error;
-      toast({ title: '✅ Grupo creado', description: nombre });
-      setSugerencias(prev => prev.filter(s => s.producto_a_id !== sug.producto_a_id || s.producto_b_id !== sug.producto_b_id));
-      fetchGrupos();
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.message });
     }
   };
 
@@ -221,7 +330,7 @@ export default function GruposEquivalentesPage() {
             <div className="bg-white rounded-lg border border-slate-200 p-8 text-center text-sm text-slate-500">
               <Link2 className="w-10 h-10 mx-auto text-slate-300 mb-2" />
               <p>Aún no tenés grupos creados.</p>
-              <p className="text-[11px] mt-1">Probá la pestaña <b>Sugerencias Inteligentes</b> para que el sistema te proponga grupos automáticamente.</p>
+              <p className="text-[11px] mt-1">Mirá la pestaña <b>Sugeridos por el sistema</b>: ya hay grupos propuestos con tu propio catálogo.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -254,90 +363,140 @@ export default function GruposEquivalentesPage() {
           )
         )}
 
-        {/* === TAB: SUGERENCIAS === */}
+        {/* === TAB: SUGERIDOS POR EL SISTEMA === */}
         {tab === 'sugerencias' && (
           <div className="space-y-3">
+            {/* De donde salen y que hacer con ellas */}
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-              <div className="flex items-center gap-3">
-                <Sparkles className="w-5 h-5 text-purple-700" />
-                <div className="flex-1">
-                  <p className="text-xs text-purple-900 font-bold">Detección por similitud de texto (gratis, sin IA paga)</p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <Sparkles className="w-5 h-5 text-purple-700 shrink-0" />
+                <div className="flex-1 min-w-[260px]">
+                  <p className="text-xs text-purple-900 font-bold">
+                    {sugerencias.length > 0
+                      ? `${sugerencias.length} grupos propuestos · ${totalPiezas} piezas`
+                      : 'Grupos propuestos a partir de tu propio catalogo'}
+                  </p>
                   <p className="text-[10px] text-purple-700">
-                    Encuentra pares de productos con descripciones parecidas que aún no están agrupados.
+                    Salen de la descripcion sin la marca ni el color, y de la referencia. Nada se agrupa
+                    solo: destilda lo que no vaya y confirma.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Label className="text-[11px] uppercase font-bold text-purple-700">Min. similitud</Label>
-                  <select
-                    value={minSimilitud}
-                    onChange={(e) => setMinSimilitud(parseFloat(e.target.value))}
-                    className="text-xs border border-purple-300 rounded px-2 py-1 bg-white"
+                {dobles > 0 && (
+                  <Button
+                    onClick={confirmarLasDobles}
+                    disabled={procesando}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    title="Las que coinciden por descripcion Y por referencia a la vez"
                   >
-                    <option value={0.3}>30% (más sugerencias)</option>
-                    <option value={0.4}>40% (recomendado)</option>
-                    <option value={0.5}>50% (más preciso)</option>
-                    <option value={0.6}>60% (alta precisión)</option>
-                  </select>
-                  <Button onClick={cargarSugerencias} disabled={loadingSug} className="bg-purple-600 hover:bg-purple-700 text-white">
-                    {loadingSug ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
-                    Analizar
+                    <CheckCircle2 className="w-4 h-4 mr-1" /> Confirmar las {dobles} de doble senal
                   </Button>
-                </div>
+                )}
+                <Button onClick={recalcular} disabled={loadingSug || procesando}
+                        className="bg-purple-600 hover:bg-purple-700 text-white">
+                  {loadingSug ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+                  Recalcular
+                </Button>
               </div>
             </div>
 
-            {sugerencias.length === 0 && !loadingSug && (
+            {loadingSug && (
+              <div className="p-8 text-center"><Loader2 className="w-6 h-6 mx-auto animate-spin text-purple-600" /></div>
+            )}
+
+            {!loadingSug && sugerencias.length === 0 && (
               <div className="bg-white rounded-lg border border-slate-200 p-8 text-center text-sm text-slate-500">
-                Sin sugerencias todavía. Hacé click en <b>Analizar</b> para que el sistema busque productos similares.
+                <Link2 className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                <p>No hay nada propuesto ahora mismo.</p>
+                <p className="text-[11px] mt-1">
+                  Se recalcula solo cada madrugada. Si acabas de cargar mercancia, toca <b>Recalcular</b>.
+                </p>
               </div>
             )}
 
-            {sugerencias.length > 0 && (
-              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-                <Table>
-                  <TableHeader className="bg-slate-100 sticky top-0">
-                    <TableRow>
-                      <TableHead className="text-[10px] uppercase">Producto A</TableHead>
-                      <TableHead className="text-[10px] uppercase">Producto B</TableHead>
-                      <TableHead className="text-center text-[10px] uppercase">Similitud</TableHead>
-                      <TableHead className="text-right text-[10px] uppercase">Ventas 30d</TableHead>
-                      <TableHead className="text-center text-[10px] uppercase">Acción</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sugerencias.map(s => (
-                      <TableRow key={`${s.producto_a_id}-${s.producto_b_id}`}>
-                        <TableCell className="text-xs">
-                          <p className="font-mono font-bold">{s.codigo_a}</p>
-                          <p className="text-[10px] text-slate-500 truncate max-w-[250px]">{s.descripcion_a}</p>
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <p className="font-mono font-bold">{s.codigo_b}</p>
-                          <p className="text-[10px] text-slate-500 truncate max-w-[250px]">{s.descripcion_b}</p>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                            s.similitud >= 0.6 ? 'bg-emerald-100 text-emerald-700' :
-                            s.similitud >= 0.45 ? 'bg-blue-100 text-blue-700' :
-                            'bg-slate-100 text-slate-600'
-                          }`}>
-                            {(s.similitud * 100).toFixed(0)}%
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              {sugerencias.map((s) => {
+                const marcados = seleccion[s.id] || [];
+                const miembros = s.miembros || [];
+                return (
+                  <div key={s.id} className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-sm text-slate-800 truncate">{s.nombre}</h3>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${SENAL_ESTILO[s.senal] || SENAL_ESTILO.referencia}`}>
+                            {SENAL_TXT[s.senal] || s.senal} · {s.confianza}%
                           </span>
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-xs">{s.ventas_combinadas_30d}</TableCell>
-                        <TableCell className="text-center">
-                          <Button size="sm" onClick={() => aceptarSugerencia(s)} className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px]">
-                            <CheckCircle2 className="w-3 h-3 mr-1" /> Agrupar
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+                          <span className="text-[10px] text-slate-500">{miembros.length} piezas</span>
+                          {Number(s.vendidas_180d) > 0 && (
+                            <span className="text-[10px] text-emerald-700 font-bold">
+                              {Number(s.vendidas_180d)} vendidas 180d
+                            </span>
+                          )}
+                          {s.grupo_id && (
+                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-300">
+                              SUMAR A: {s.grupo_nombre}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-0.5 mb-2">
+                      {miembros.map((m) => {
+                        const dentro = marcados.includes(m.producto_id);
+                        return (
+                          <label
+                            key={m.producto_id}
+                            className={`flex items-center gap-2 px-1.5 py-1 rounded cursor-pointer text-[11px] ${
+                              dentro ? 'bg-slate-50' : 'bg-white opacity-50 line-through'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={dentro}
+                              onChange={() => alternarMiembro(s.id, m.producto_id)}
+                              className="accent-purple-600"
+                            />
+                            <span className="font-mono font-bold text-slate-600 w-20 shrink-0 truncate">{m.codigo}</span>
+                            <span className="flex-1 truncate text-slate-700">{m.descripcion}</span>
+                            {m.marca && <span className="text-[10px] text-slate-400 shrink-0">{m.marca}</span>}
+                            <span className="font-mono text-slate-600 shrink-0">{formatRD(m.precio)}</span>
+                            {m.ya_en_grupo && (
+                              <span className="text-[9px] text-blue-600 font-bold shrink-0" title="Ya pertenece a un grupo">EN GRUPO</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px]"
+                        disabled={procesando || marcados.length < 2}
+                        onClick={() => confirmar(s)}
+                        title={marcados.length < 2 ? 'Un grupo necesita al menos 2 piezas' : 'Crear el grupo con lo marcado'}
+                      >
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        {s.grupo_id ? 'Sumar al grupo' : 'Confirmar grupo'} ({marcados.length})
+                      </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        className="h-7 text-[10px] border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-700"
+                        disabled={procesando}
+                        onClick={() => rechazar(s)}
+                        title="No son la misma pieza. No se vuelve a proponer."
+                      >
+                        <X className="w-3 h-3 mr-1" /> No son iguales
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
+
       </motion.div>
 
       {/* Modal crear grupo manual */}
