@@ -929,6 +929,11 @@ export async function mirrorWhatsAppConversation(payload) {
 // Latido del espejo: se manda en CADA corrida (aunque no lea nada), con el
 // diagnóstico { chatOpen, rowsFound, parsed }. Permite detectar que el espejo
 // se rompió en silencio. Degradación segura si la RPC no existe.
+//
+// DEVUELVE si el latido LLEGO. El panel necesita saberlo: la base solo
+// recuerda el último latido guardado, y al despertar la pestaña ese recuerdo
+// es viejo aunque el espejo esté latiendo delante. Sin esta respuesta el chip
+// acusa de "en pausa" a un espejo vivo.
 export async function sendMirrorHeartbeat(diag = {}) {
   const headers = await getAuthHeaders();
   try {
@@ -942,10 +947,14 @@ export async function sendMirrorHeartbeat(diag = {}) {
         p_probe: diag.probe || null,
       })
     });
+    return true;
   } catch (error) {
     const msg = String(error?.message || '');
-    if (/omni_mirror_heartbeat/i.test(msg) && /schema cache|function|does not exist/i.test(msg)) return;
+    // La RPC vieja no desplegada no es "sin conexión": la extensión llegó al
+    // servidor, es el servidor el que no la tiene. No se acusa a la red.
+    if (/omni_mirror_heartbeat/i.test(msg) && /schema cache|function|does not exist/i.test(msg)) return true;
     // no relanzar: el latido nunca debe estorbar
+    return false;
   }
 }
 

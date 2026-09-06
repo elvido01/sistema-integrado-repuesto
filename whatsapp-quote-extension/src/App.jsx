@@ -451,8 +451,21 @@ export default function App() {
 
     let cancelled = false;
     const runMirror = async () => {
+      // La lectura del DOM va en su PROPIO try. Estaba dentro del try grande,
+      // así que si WhatsApp cambiaba algo y el lector reventaba, el latido
+      // tampoco salía — y el panel decía "en pausa" cuando lo que había era un
+      // lector roto. Ahora el latido sale igual y el chip puede decir la
+      // verdad: vivo, pero sin leer.
+      let diag = { chatOpen: false, rowsFound: 0, parsed: 0, probe: null };
+      let convo = null;
       try {
-        const { diag, convo } = readCurrentConversation();
+        const leido = readCurrentConversation();
+        diag = leido.diag || diag;
+        convo = leido.convo || null;
+      } catch {
+        // lector roto: el latido sigue saliendo
+      }
+      try {
         if (cancelled) return;
         // Las fotos, antes del espejo: el <img> vive en una fila del DOM que
         // WhatsApp recicla al desplazar, así que si no se copian ahora se
@@ -465,9 +478,20 @@ export default function App() {
         // silencio. Fuera del canal WhatsApp va sin diagnóstico: el vendedor
         // no tiene ningún chat delante, y decir que sí lo tiene haría saltar
         // la alarma roja de "espejo sin leer" sin que nada esté roto.
-        await sendMirrorHeartbeat(
+        const llego = await sendMirrorHeartbeat(
           enWhatsApp ? diag : { chatOpen: false, rowsFound: 0, parsed: 0, probe: null }
         );
+        // Se guarda para el chip: esto es lo que ESTE panel sabe de sí mismo,
+        // y pesa más que lo que la base recuerde. Solo se refresca cuando
+        // cambia algo o cada 45 s, para no repintar el panel cada 20.
+        if (!cancelled) {
+          const abierto = enWhatsApp && !!diag.chatOpen;
+          setLatido((prev) => (
+            prev && prev.ok === llego && prev.chatOpen === abierto && Date.now() - prev.at < 45000
+              ? prev
+              : { at: Date.now(), ok: llego, chatOpen: abierto }
+          ));
+        }
         if (convo && enWhatsApp && !cancelled) await mirrorWhatsAppConversation(convo);
       } catch {
         // silencioso: el espejo nunca debe estorbar el uso normal
@@ -527,6 +551,11 @@ export default function App() {
   const [abriendoChat, setAbriendoChat] = useState('');
 
   const [mirrorStatus, setMirrorStatus] = useState(null);
+  // Lo que este panel sabe de su PROPIO latido: { at, ok, chatOpen }. La base
+  // solo guarda el último latido que recibió, y al abrir WhatsApp Web (o al
+  // despertar la PC) ese recuerdo tiene horas: durante un minuto el chip
+  // decía "en pausa" con el espejo latiendo delante.
+  const [latido, setLatido] = useState(null);
   useEffect(() => {
     if (!session?.access_token || empresaPending) { setMirrorStatus(null); return; }
     let cancelled = false;
@@ -2446,7 +2475,15 @@ export default function App() {
         <section className="mf-omni-status">
           <span className="mf-omni-version">{OMNI_BETA_VERSION}</span>
           {(() => {
-            const est = mirrorStatus?.estado;
+            // Manda el latido propio sobre la memoria del servidor: si el mío
+            // salió hace 20 segundos, el espejo NO está en pausa por mucho que
+            // la base todavía recuerde el latido de anoche.
+            const fresco = latido && Date.now() - latido.at < 120000;
+            let est = mirrorStatus?.estado;
+            if (fresco && !latido.ok) est = 'sin_conexion';
+            else if (fresco && latido.ok && (!est || est === 'inactivo' || est === 'desconocido')) {
+              est = latido.chatOpen ? 'ok' : 'sin_chat';
+            }
             if (!est || est === 'desconocido') return null;
             const map = {
               ok:          { t: 'Espejo ✓', c: '#0a7a55', title: 'WhatsApp capturando al día' },
@@ -2455,8 +2492,13 @@ export default function App() {
               // No está roto: es que no tiene nada que copiar. El espejo lee
               // el chat que tengas DELANTE, y dentro de la bandeja Omni no
               // hay ninguno abierto.
-              sin_chat:    { t: 'Espejo sin chat', c: '#888', title: `El espejo copia el chat que tengas abierto en WhatsApp Web, y hace ${mirrorStatus?.horas_sin_chat ?? '?'} h que no abres uno. Abre un chat y se copia solo.` },
+              sin_chat:    { t: 'Espejo sin chat', c: '#888', title: mirrorStatus?.horas_sin_chat != null
+                ? `El espejo copia el chat que tengas abierto en WhatsApp Web, y hace ${mirrorStatus.horas_sin_chat} h que no abres uno. Abre un chat y se copia solo.`
+                : 'El espejo copia el chat que tengas abierto en WhatsApp Web. Abre un chat y se copia solo.' },
               sin_captura: { t: '⚠ Sin capturas', c: '#c07a00', title: `Hace ${mirrorStatus?.horas_sin_captura ?? '?'} h que no entra un mensaje nuevo` },
+              // Esto SI es un problema y hay que distinguirlo de "en pausa":
+              // la extensión está corriendo pero su latido no llega a MotoFlow.
+              sin_conexion: { t: '⚠ Espejo sin conexión', c: '#c0201a', title: 'La extensión está viva pero el latido no llega a MotoFlow: revisa el internet, o sal y vuelve a entrar en el panel.' },
             };
             const m = map[est];
             if (!m) return null;
