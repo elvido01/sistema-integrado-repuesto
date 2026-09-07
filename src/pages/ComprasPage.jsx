@@ -713,38 +713,129 @@ const ComprasPage = () => {
 
       if (!isEditing) delete productPayload.id;
 
-      // Candado: el código es único por empresa (dealers/financieras usan el
-      // chasis como código y NO puede repetirse)
+      // Engancha la línea de la factura a una ficha del catálogo. `deLaFactura`
+      // = el costo que manda es el de la factura; se usa al enganchar una ficha
+      // que YA existía, porque su costo viejo no puede pisar lo que el suplidor
+      // está cobrando hoy. Al crear, en cambio, el costo del formulario ES el
+      // de la factura y tiene que bajar a la línea.
+      const engancharLinea = (prod, deLaFactura) => {
+        if (activeLineId === 'staging') {
+          // Producto creado desde la casilla amarilla (código nuevo digitado a
+          // mano): se llena la casilla y solo falta cantidad + botón verde
+          handleProductSelect(prod);
+          return;
+        }
+        // (si la compra se digita en US$, el costo del catálogo RD$ se convierte a dólares)
+        const costoCatalogo = esUSD && tasaDia > 0
+          ? Number(((prod.costo || 0) / tasaDia).toFixed(2))
+          : prod.costo;
+        setDetalles(prev => prev.map(d =>
+          d.id === activeLineId
+            ? {
+                ...d,
+                producto_id: prod.id,
+                is_matched: true,
+                codigo: prod.codigo || d.codigo,
+                descripcion: prod.descripcion || d.descripcion,
+                referencia: prod.referencia || d.referencia,
+                costo_unitario: deLaFactura
+                  ? (d.costo_unitario || costoCatalogo)
+                  : (costoCatalogo || d.costo_unitario),
+                itbis_pct: prod.itbis_pct ?? d.itbis_pct,
+              }
+            : d
+        ));
+      };
+
+      // El código es único por empresa. Pero que ya exista significa cosas
+      // distintas según el negocio:
+      //  · dealer/financiera: el código es el CHASIS. Repetido = error de
+      //    verdad, y ahí hay que frenar.
+      //  · repuestos: el OCR leyó mal el código y el dueño lo corrigió. Frenar
+      //    ahí lo dejaba sin salida (pasó con 1001260, que era 001260). La
+      //    línea se engancha a la ficha que ya está y no se crea nada nuevo.
+      const codigoEsChasis = empresa?.tipo_negocio === 'dealer' || empresa?.tipo_negocio === 'financiera';
+
       if (!isEditing && productPayload.codigo) {
         const { data: existentes } = await supabase
           .from('productos')
-          .select('id, codigo, descripcion')
+          .select('id, codigo, descripcion, referencia, costo, itbis_pct')
           .ilike('codigo', productPayload.codigo.trim())
           .limit(1);
-        if (existentes && existentes.length > 0) {
+        const yaEsta = existentes?.[0];
+
+        if (yaEsta && codigoEsChasis) {
           toast({
             variant: 'destructive',
             title: 'Código duplicado',
-            description: `El código "${productPayload.codigo}" ya existe en el catálogo (${existentes[0].descripcion}). Cada unidad debe tener su código único.`,
+            description: `El código "${productPayload.codigo}" ya existe en el catálogo (${yaEsta.descripcion}). Cada unidad debe tener su código único.`,
+          });
+          return;
+        }
+
+        if (yaEsta) {
+          engancharLinea(yaEsta, true);
+          setIsProductModalOpen(false);
+          toast({
+            title: 'Ese código ya estaba en el catálogo',
+            description: `La línea quedó enganchada a ${yaEsta.codigo} — ${yaEsta.descripcion}. No se creó nada nuevo.`,
           });
           return;
         }
       }
 
-      // Insertar nuevo producto
-      const { data: savedProduct, error } = await supabase
-        .from('productos')
-        .insert(productPayload)
-        .select()
-        .single();
+      // CREAR o ACTUALIZAR. El OCR lee mal un código (le puso un 1 delante a
+      // 001260) y el dueño lo corrige aquí; entonces el formulario encuentra
+      // la ficha que YA existe y se pone en modo edición. Antes esto insertaba
+      // igual y reventaba con "productos_codigo_tenant_unique": la línea se
+      // quedaba sin enganchar y no había forma de arreglarla desde la factura.
+      let savedProduct;
 
-      if (error) throw error;
+      // OJO: `id` ya salió del payload en el destructuring de arriba, así que
+      // el que manda es el del producto que el formulario cargó.
+      if (isEditing && productData.id) {
+        const { data, error } = await supabase
+          .from('productos')
+          .update(productPayload)
+          .eq('id', productData.id)
+          .select()
+          .single();
+        if (error) throw error;
+        // Un update que no devuelve fila no guardó nada (RLS). Que se diga.
+        if (!data) throw new Error('No se pudo actualizar esa ficha: no es de esta empresa.');
+        savedProduct = data;
+      } else {
+        const { data, error } = await supabase
+          .from('productos')
+          .insert(productPayload)
+          .select()
+          .single();
+        if (error) throw error;
+        savedProduct = data;
+      }
 
       // Guardar presentaciones si existen
       if (savedProduct && presentations.length > 0) {
+        // Sobre una ficha que ya existía, las presentaciones que el dueño quitó
+        // hay que borrarlas; y las que conservó llevan su id para que se
+        // ACTUALICEN — sin el id se duplicarían los precios de esa ficha.
+        const keepIds = presentations
+          .map((p) => p.id)
+          .filter((id) => id && !id.toString().startsWith('new-'));
+
+        if (isEditing) {
+          let deleteQuery = supabase
+            .from('presentaciones')
+            .delete()
+            .eq('producto_id', savedProduct.id);
+          if (keepIds.length > 0) deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.join(',')})`);
+          const { error: delError } = await deleteQuery;
+          if (delError) throw delError;
+        }
+
         const presentationsToUpsert = presentations.map((p) => {
           const { id, ...rest } = p;
-          return {
+          const payload = {
             ...rest,
             producto_id: savedProduct.id,
             cantidad: parseNumeric(p.cantidad),
@@ -754,44 +845,30 @@ const ComprasPage = () => {
             descuento_pct: parseNumeric(p.descuento_pct),
             precio_final: parseNumeric(p.precio_final),
           };
+          if (id && !id.toString().startsWith('new-')) payload.id = id;
+          return payload;
         });
 
         const { error: presError } = await supabase.from('presentaciones').upsert(presentationsToUpsert);
         if (presError) throw presError;
       }
 
-      if (activeLineId === 'staging') {
-        // Producto creado desde la casilla amarilla (código nuevo digitado a
-        // mano): se llena la casilla y solo falta cantidad + botón verde
-        handleProductSelect(savedProduct);
-      } else {
-        // VINCULAR EN LA TABLA DE COMPRA — reflejar todos los cambios hechos en el formulario
-        // (si la compra se digita en US$, el costo del catálogo RD$ se convierte a dólares)
-        const costoLinea = esUSD && tasaDia > 0
-          ? Number(((savedProduct.costo || 0) / tasaDia).toFixed(2))
-          : savedProduct.costo;
-        setDetalles(prev => prev.map(d =>
-          d.id === activeLineId
-            ? {
-                ...d,
-                producto_id: savedProduct.id,
-                is_matched: true,
-                codigo: savedProduct.codigo || d.codigo,
-                descripcion: savedProduct.descripcion || d.descripcion,
-                referencia: savedProduct.referencia || d.referencia,
-                costo_unitario: costoLinea || d.costo_unitario,
-                itbis_pct: savedProduct.itbis_pct ?? d.itbis_pct,
-              }
-            : d
-        ));
-      }
+      // VINCULAR EN LA TABLA DE COMPRA — reflejar todos los cambios hechos en
+      // el formulario. Sobre una ficha que ya existía manda el costo de la
+      // factura; sobre una recién creada, el que se acaba de teclear.
+      engancharLinea(savedProduct, isEditing);
 
       setIsProductModalOpen(false);
-      toast({ title: 'Éxito', description: 'Producto creado y vinculado a la compra correctamente.' });
+      toast({
+        title: 'Éxito',
+        description: isEditing
+          ? `La línea quedó enganchada a ${savedProduct.codigo}, que ya estaba en el catálogo.`
+          : 'Producto creado y vinculado a la compra correctamente.',
+      });
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Error al crear producto',
+        title: isEditing ? 'Error al guardar el producto' : 'Error al crear producto',
         description: error.message,
       });
     }
