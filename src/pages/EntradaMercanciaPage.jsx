@@ -4,12 +4,13 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Save, X, Loader2, Plus, FilePlus } from 'lucide-react';
+import { Save, X, Loader2, Plus, FilePlus, Printer } from 'lucide-react';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { usePanels } from '@/contexts/PanelContext';
 import EntradaHeader from '@/components/inventario/EntradaHeader';
 import EntradaDetalles from '@/components/inventario/EntradaDetalles';
 import EntradaFooter from '@/components/inventario/EntradaFooter';
+import ReimprimirDocumentoModal from '@/components/inventario/ReimprimirDocumentoModal';
 import SalidaFooter from '@/components/inventario/SalidaFooter';
 import { generateEntradaPDF } from '@/components/common/PDFGenerator';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -33,7 +34,10 @@ const initialState = {
   concepto: 'AJUSTE DE INVENTARIO',
   almacen_id: '', // Dinámico
   notas: '',
-  imprimir: false,
+  // Marcado de entrada: la entrada de mercancía se firma y se archiva, así que
+  // el papel se quiere casi siempre. Si en una no hace falta, se destilda; la
+  // siguiente vuelve a arrancar marcada.
+  imprimir: true,
 };
 
 const initialDetalleState = {
@@ -53,6 +57,7 @@ const EntradaMercanciaPage = () => {
   const [almacenes, setAlmacenes] = useState([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [isReimprimirOpen, setIsReimprimirOpen] = useState(false);
 
   const [entrada, setEntrada] = useState(initialState);
   const [detalles, setDetalles] = useState([]);
@@ -273,6 +278,12 @@ const EntradaMercanciaPage = () => {
       </Helmet>
       <ProductSearchModal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} onSelectProduct={handleProductSelect} />
 
+      <ReimprimirDocumentoModal
+        tipo="entrada"
+        isOpen={isReimprimirOpen}
+        onClose={() => setIsReimprimirOpen(false)}
+      />
+
       <AlertDialog open={isConfirming} onOpenChange={setIsConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -326,9 +337,15 @@ const EntradaMercanciaPage = () => {
           />
 
           <div className="mt-6 flex justify-between items-center">
-            <Button variant="outline" onClick={resetForm} disabled={isSaving}>
-              <FilePlus className="mr-2 h-4 w-4" /> Nuevo
-            </Button>
+            <div className="flex space-x-2">
+              <Button variant="outline" onClick={resetForm} disabled={isSaving}>
+                <FilePlus className="mr-2 h-4 w-4" /> Nuevo
+              </Button>
+              <Button variant="outline" onClick={() => setIsReimprimirOpen(true)} disabled={isSaving}
+                      title="Volver a imprimir el comprobante de una entrada ya grabada">
+                <Printer className="mr-2 h-4 w-4" /> Reimprimir
+              </Button>
+            </div>
             <div className="flex space-x-4">
               <Button variant="outline" onClick={() => closePanel('entrada-mercancia')} disabled={isSaving}>
                 <X className="mr-2 h-4 w-4" /> ESC - Salir

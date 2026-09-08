@@ -13,6 +13,12 @@ const formatCurrency = (value) => {
 const formatDate = (date) => {
     if (!date) return 'N/A';
     try {
+        // Una fecha pelada ('2026-09-08') no lleva hora. Pasarla por new Date()
+        // la lee como medianoche UTC, que aqui son las 8 PM del DIA ANTERIOR: el
+        // comprobante salia fechado un dia antes y con una hora inventada.
+        const texto = String(date).trim();
+        const soloFecha = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (soloFecha) return `${soloFecha[3]}/${soloFecha[2]}/${soloFecha[1]}`;
         return formatInTimeZone(new Date(date), 'dd/MM/yyyy hh:mm a');
     } catch (e) {
         return 'N/A';
