@@ -109,8 +109,14 @@ const ProductFilters = ({
           <Button variant="outline" onClick={onExport}>
             <Download className="w-4 h-4 mr-2" /> Exportar
           </Button>
-          <Button variant="outline" onClick={handleImportClick}>
-            <Upload className="w-4 h-4 mr-2" /> Importar
+          {/* El boton decia solo "Importar" y no se sabia ni que archivo pedia
+              ni que hacia: no carga articulos nuevos, ACTUALIZA existencias. */}
+          <Button
+            variant="outline"
+            onClick={handleImportClick}
+            title="Archivo .csv con una fila de titulos y dos columnas: codigo y existencia (tambien vale Stock). Actualiza la existencia de artículos que YA están en el catálogo; no crea artículos nuevos."
+          >
+            <Upload className="w-4 h-4 mr-2" /> Importar existencias (CSV)
           </Button>
           <input
             type="file"

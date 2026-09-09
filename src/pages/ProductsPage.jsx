@@ -610,24 +610,64 @@ const ProductsPage = ({ extraData }) => {
         skipEmptyLines: true,
         complete: async (results) => {
           try {
+            // Los títulos se leen con manga ancha. El Excel que sale de
+            // "Exportar" trae `Codigo` y `Stock` — con mayúscula y con otro
+            // nombre — así que exigir `codigo`/`existencia` exactos rompía el
+            // circuito obvio: exporto, corrijo en Excel, importo.
+            const normalizar = (t) => String(t || '')
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .trim().toLowerCase();
+
+            const COL_CODIGO = ['codigo', 'sku', 'articulo', 'item'];
+            const COL_EXIST = ['existencia', 'stock', 'cantidad', 'exist', 'inventario'];
+
+            const valorDe = (row, nombres) => {
+              for (const clave of Object.keys(row)) {
+                if (nombres.includes(normalizar(clave))) return row[clave];
+              }
+              return undefined;
+            };
+
             const updates = results.data
-              .filter((row) => row.codigo && row.existencia !== undefined)
               .map((row) => ({
-                codigo: row.codigo,
-                existencia: parseFloat(row.existencia),
+                codigo: valorDe(row, COL_CODIGO),
+                existencia: valorDe(row, COL_EXIST),
+              }))
+              .filter((r) => String(r.codigo || '').trim() !== ''
+                && r.existencia !== undefined && r.existencia !== null
+                && String(r.existencia).trim() !== ''
+                && !isNaN(parseFloat(r.existencia)))
+              .map((r) => ({
+                codigo: String(r.codigo).trim(),
+                existencia: parseFloat(r.existencia),
               }));
 
             if (updates.length > 0) {
               setLoading(true);
-              const { error } = await supabase.rpc('ajustar_inventario_batch', { p_ajustes: updates });
+              const { data, error } = await supabase.rpc('ajustar_inventario_batch', { p_ajustes: updates });
               if (error) throw error;
-              toast({ title: 'Importación Exitosa', description: `${updates.length} existencias han sido actualizadas.` });
+
+              // Se dice lo que la BASE hizo, no lo que el archivo traía. Antes
+              // avisaba "120 existencias actualizadas" contando las líneas,
+              // aunque no hubiera casado ni un código.
+              const movidas = Number(data?.actualizadas) || 0;
+              const faltan = data?.codigos_no_encontrados || [];
+              const partes = [`${movidas} existencia${movidas === 1 ? '' : 's'} actualizada${movidas === 1 ? '' : 's'}`];
+              if (Number(data?.sin_cambio) > 0) partes.push(`${data.sin_cambio} ya estaban igual`);
+              if (Number(data?.no_encontrados) > 0) {
+                partes.push(`${data.no_encontrados} no están en el catálogo: ${faltan.slice(0, 8).join(', ')}${faltan.length > 8 ? '…' : ''}`);
+              }
+              toast({
+                title: movidas > 0 ? 'Importación lista' : 'No se actualizó ninguna existencia',
+                description: partes.join(' · '),
+                variant: movidas > 0 ? undefined : 'destructive',
+              });
               refreshProducts();
             } else {
               toast({
                 variant: 'destructive',
-                title: 'Archivo Inválido',
-                description: 'El archivo CSV debe tener columnas "codigo" y "existencia".',
+                title: 'Ese archivo no trae nada que actualizar',
+                description: 'Tiene que ser un .csv con una fila de títulos y dos columnas: código (o SKU) y existencia (o Stock). El resto de las columnas se ignoran.',
               });
             }
           } catch (err) {
