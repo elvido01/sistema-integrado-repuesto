@@ -75,6 +75,7 @@ SELECT f.tenant_id, d.producto_id, 'SALIDA', -d.cantidad,
   FROM public.facturas f
   JOIN public.facturas_detalle d ON d.factura_id = f.id
  WHERE COALESCE(f.notas, '') ILIKE '%POS_MOVIL%'
+   AND UPPER(COALESCE(f.estado, '')) <> 'ANULADA'   -- anulada sin salida: no hay nada que restar
    AND d.producto_id IS NOT NULL
    AND COALESCE(d.cantidad, 0) <> 0
    -- ya tiene su salida (la app nueva, o una corrida anterior de este archivo)
@@ -100,6 +101,7 @@ BEGIN
     FROM public.facturas f
     JOIN public.facturas_detalle d ON d.factura_id = f.id
    WHERE COALESCE(f.notas, '') ILIKE '%POS_MOVIL%'
+     AND UPPER(COALESCE(f.estado, '')) <> 'ANULADA'
      AND d.producto_id IS NOT NULL
      AND COALESCE(d.cantidad, 0) <> 0
      AND NOT EXISTS (
