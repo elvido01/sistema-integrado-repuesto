@@ -69,6 +69,9 @@ export default function POSScreen() {
     pedidoOrigenNumero,
   } = useCartStore();
   const [loading, setLoading] = useState(false);
+  // `disabled={loading}` llega un render tarde: dos toques seguidos en Cobrar
+  // alcanzaban a grabar dos facturas (FT-3906 y FT-3907, 10/09/2026, 1 minuto).
+  const cobrandoRef = useRef(false);
   const [montoPagado, setMontoPagado] = useState<string>('');
   const [facturaModal, setFacturaModal] = useState<any | null>(null);
   const ticketRef = useRef<ViewShot>(null);
@@ -135,6 +138,8 @@ export default function POSScreen() {
       return;
     }
 
+    if (cobrandoRef.current) return;
+    cobrandoRef.current = true;
     setLoading(true);
     try {
       // 0. Intentar asignar NCF tipo 02 (Consumidor Final) — el POS móvil
@@ -197,6 +202,16 @@ export default function POSScreen() {
 
       if (ventaError) throw ventaError;
 
+      // El costo se lee de la ficha al facturar: lo que llega de una
+      // cotización o un pedido entra al carrito sin costo.
+      const idsProductos = [...new Set(items.map((it) => it.id).filter(Boolean))];
+      const costos = new Map<string, number>();
+      if (idsProductos.length) {
+        const { data: fichas } = await supabase.from('productos').select('id, costo').in('id', idsProductos);
+        (fichas || []).forEach((p: any) => costos.set(p.id, Number(p.costo) || 0));
+      }
+      const costoDe = (item: any) => costos.get(item.id) ?? (Number(item.costo) || 0);
+
       // 2. Guardar Detalles
       const detalles = lineasCalculadas.map(({ item, totals }) => ({
         tenant_id: tenantId,
@@ -209,9 +224,37 @@ export default function POSScreen() {
         descuento: totals.descuento,
         itbis: totals.itbis,
         importe: totals.importe,
+        costo_unitario: costoDe(item),
       }));
       const { error: detallesError } = await supabase.from('facturas_detalle').insert(detalles);
       if (detallesError) throw detallesError;
+
+      // 3. Descontar del inventario. La existencia es la suma del kardex y
+      //    hasta el 11/09/2026 el POS móvil no escribía esta salida: sus 49
+      //    facturas no restaron nada. Misma forma que la web (useVentas).
+      //    Si falla NO se lanza: la factura ya existe y un "Error" invitaría
+      //    a cobrar otra vez.
+      const movimientos = lineasCalculadas
+        .filter(({ item }) => item.id)
+        .map(({ item, totals }) => ({
+          tenant_id: tenantId,
+          producto_id: item.id,
+          tipo: 'SALIDA',
+          cantidad: -totals.cantidad,
+          costo_unitario: costoDe(item),
+          referencia_doc: `FT-${venta.numero}`,
+          usuario_id: user?.id,
+          fecha: fechaVenta,
+        }));
+      if (movimientos.length) {
+        const { error: invError } = await supabase.from('inventario_movimientos').insert(movimientos);
+        if (invError) {
+          Alert.alert(
+            'Factura grabada, inventario sin descontar',
+            `FT-${venta.numero}: ${invError.message}. Avise para corregir la existencia.`,
+          );
+        }
+      }
 
       if (cotizacionOrigenId) {
         const { error: cotError } = await supabase
@@ -229,7 +272,7 @@ export default function POSScreen() {
         if (pedidoError) throw pedidoError;
       }
 
-      // 3. Preparar snapshot de la factura para el modal
+      // 4. Preparar snapshot de la factura para el modal
       const numeroFactura = venta.numero || String(venta.id).slice(0, 8).toUpperCase();
       setFacturaModal({
         numero: numeroFactura,
@@ -255,6 +298,7 @@ export default function POSScreen() {
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Error al procesar la venta');
     } finally {
+      cobrandoRef.current = false;
       setLoading(false);
     }
   };
