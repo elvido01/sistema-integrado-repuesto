@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -53,6 +53,18 @@ const MoneyInput = React.forwardRef(({ value, onChange, className = '', ...rest 
 });
 MoneyInput.displayName = 'MoneyInput';
 
+// Huella de lo que el usuario puede cambiar en un pedido. Se compara al
+// salir: si difiere de la de cuando se abrió, hay trabajo sin grabar.
+const firmaPedido = (p, detalles) => JSON.stringify({
+  c: p?.cliente_id || '',
+  n: p?.notas || '',
+  m: p?.manual_cliente_nombre || '',
+  pl: p?.placa_vehiculo || '',
+  v: p?.vendedor_id || '',
+  f: p?.fecha || '',
+  d: (detalles || []).map((d) => [d.producto_id, Number(d.cantidad) || 0, Number(d.precio) || 0, Number(d.descuento) || 0]),
+});
+
 const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores }) => {
   const { toast } = useToast();
   const { profile , empresa} = useAuth();
@@ -66,6 +78,12 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
   const [stagingItem, setStagingItem] = useState(null);
   const [itemCode, setItemCode] = useState('');
 
+  // Cómo quedó el pedido al abrirlo. Salir sin grabar solo se pregunta si
+  // hay algo distinto de esto: un pedido abierto y cerrado tal cual no
+  // molesta a nadie. Vacío = todavía cargando.
+  const inicialRef = useRef('');
+  const [confirmarSalida, setConfirmarSalida] = useState(false);
+
   useEffect(() => {
     if (pedido) {
       const fetchPedidoCompleto = async () => {
@@ -77,24 +95,30 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
           .select('*')
           .eq('id', pedido.id)
           .maybeSingle();
-        setCurrentPedido({ ...pedido, ...(pedidoCompleto || {}) });
+        const completo = { ...pedido, ...(pedidoCompleto || {}) };
+        setCurrentPedido(completo);
 
         const { data } = await supabase.from('pedidos_detalle').select('*, productos(ubicacion)').eq('pedido_id', pedido.id);
         const detailsWithLocation = (data || []).map(d => ({ ...d, ubicacion: d.productos?.ubicacion || '' }));
         setDetalles(detailsWithLocation);
+        inicialRef.current = firmaPedido(completo, detailsWithLocation);
       };
+      inicialRef.current = '';
       fetchPedidoCompleto();
     } else {
-      setCurrentPedido({
+      const nuevo = {
         cliente_id: '',
         notas: '',
         manual_cliente_nombre: '',
         placa_vehiculo: '',
         vendedor_id: vendedores.length > 0 ? vendedores[0].id : '',
         fecha: getCurrentDateInTimeZone(),
-      });
+      };
+      setCurrentPedido(nuevo);
       setDetalles([]);
+      inicialRef.current = firmaPedido(nuevo, []);
     }
+    setConfirmarSalida(false);
   }, [pedido, isOpen]);
 
   const handleUpdateDetail = (id, field, value) => {
@@ -348,13 +372,80 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
     }
   };
 
+  // ── SALIR SIN PERDER EL PEDIDO ──
+  // El buscador se cierra solo al elegir la pieza (Enter o doble clic). El
+  // Escape que viene detrás —el reflejo de "cerrar el buscador"— ya no caía
+  // en el buscador sino aquí, y el pedido se cerraba SIN PREGUNTAR llevándose
+  // todo lo capturado. Igual un clic en la franja oscura de alrededor.
+  // Reproducido con los diálogos reales de Radix en un navegador (11/09/2026).
+  const hayCambios = () => {
+    if (stagingItem) return true;
+    if (!inicialRef.current) return false; // todavía cargando
+    return firmaPedido(currentPedido, detalles) !== inicialRef.current;
+  };
+
+  const pedirSalir = () => {
+    if (hayCambios()) setConfirmarSalida(true);
+    else onClose();
+  };
+
+  // Lo que la pantalla promete: "TECLA F3 PARA BUSCAR" y "F10 - Grabar".
+  // Ninguna de las dos estaba conectada — F3 abría el buscar de Chrome y F10
+  // su menú. F9 se queda porque ya había quien la usaba.
+  const handleTeclasPedido = (e) => {
+    if (e.key === 'F3' || e.key === 'F9') {
+      e.preventDefault();
+      setIsProductSearchOpen(true);
+    } else if (e.key === 'F10') {
+      e.preventDefault();
+      if (!isSubmitting) handleSave();
+    }
+  };
+
   if (!isOpen || !currentPedido) return null;
 
   return (
     <>
       <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleAddProduct} sessionKey={modalSessionKey} />
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-[98vw] w-[1500px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl [&>button]:text-white [&>button]:opacity-80 [&>button]:hover:opacity-100 [&>button]:top-3 [&>button]:right-3 [&>button]:z-50">
+
+      <AlertDialog open={confirmarSalida} onOpenChange={setConfirmarSalida}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Salir sin grabar el pedido?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {detalles.length > 0
+                ? `Tiene ${detalles.length} renglón${detalles.length === 1 ? '' : 'es'} sin grabar. Si sale ahora, se pierde${detalles.length === 1 ? '' : 'n'}.`
+                : 'Hay cambios que todavía no se han grabado. Si sale ahora, se pierden.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            {/* Radix pone el foco en Cancelar al abrir: un Enter o un Escape de
+                reflejo dejan el pedido donde estaba. Borrar exige ir a buscarlo. */}
+            <AlertDialogCancel>Seguir en el pedido</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => { setConfirmarSalida(false); onClose(); }}
+            >
+              Salir sin grabar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={isOpen} onOpenChange={(abierto) => { if (!abierto) pedirSalir(); }}>
+        <DialogContent
+          onKeyDown={handleTeclasPedido}
+          onEscapeKeyDown={(e) => {
+            // Con trabajo sin grabar, Escape pregunta en vez de cerrar.
+            if (hayCambios()) {
+              e.preventDefault();
+              setConfirmarSalida(true);
+            }
+          }}
+          // Un clic en la franja oscura nunca bota un pedido con cambios.
+          onPointerDownOutside={(e) => { if (hayCambios()) e.preventDefault(); }}
+          onInteractOutside={(e) => { if (hayCambios()) e.preventDefault(); }}
+          className="max-w-[98vw] w-[1500px] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 border-none shadow-2xl [&>button]:text-white [&>button]:opacity-80 [&>button]:hover:opacity-100 [&>button]:top-3 [&>button]:right-3 [&>button]:z-50">
 
           {/* Header dark estilo Facturacion */}
           <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between border-b border-slate-700">
@@ -653,7 +744,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
 
             {/* Fila inferior: botones a la derecha */}
             <div className="bg-slate-100 border-t border-slate-300 px-3 py-1.5 flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={onClose} className="h-9 px-4 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-200">
+              <Button variant="outline" onClick={pedirSalir} className="h-9 px-4 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-200">
                 <X className="w-4 h-4 mr-1.5" /> ESC - Salir
               </Button>
               <Button onClick={handleSave} disabled={isSubmitting} className="h-9 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md">
