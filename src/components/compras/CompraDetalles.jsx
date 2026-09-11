@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, Search } from 'lucide-react';
 
+// Montos con coma de miles: 1,281.00. La cantidad NO pasa por aquí.
+const fmt = (n) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetalle, removeDetalle, onEditLine, setIsSearchModalOpen, onCreateProduct, itbisIncluido, onSearchByCode }) => {
 
   const handleInputChange = (field, value) => {
@@ -139,7 +142,7 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
           </Button>
         </div>
         <div className="flex items-center justify-end px-2 text-xs font-bold text-gray-700 font-mono bg-white/30">
-          {calculateImporte()}
+          {fmt(calculateImporte())}
         </div>
         <div className="flex items-center justify-center bg-white/10 opacity-30">
           <Trash2 className="h-3 w-3 text-gray-400" />
@@ -190,7 +193,7 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
                   <TableCell className="p-0 px-2 text-[11px] h-9">{d.descripcion}</TableCell>
                   <TableCell className="w-[70px] p-0 px-2 text-center text-[11px] h-9 font-mono">{Number(d.cantidad).toFixed(2)}</TableCell>
                   <TableCell className="w-[70px] p-0 px-2 text-center text-[11px] h-9">{d.unidad}</TableCell>
-                  <TableCell className="w-[100px] p-0 px-2 text-right text-[11px] h-9 font-mono">{Number(d.costo_unitario).toFixed(2)}</TableCell>
+                  <TableCell className="w-[100px] p-0 px-2 text-right text-[11px] h-9 font-mono">{fmt(d.costo_unitario)}</TableCell>
                   <TableCell className="w-[80px] p-0 px-2 text-right text-[11px] h-9 font-mono text-gray-500">
                     {d.descuento_pct > 0 ? `${Number(d.descuento_pct).toFixed(0)}%` : '-'}
                   </TableCell>
@@ -202,14 +205,14 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
                       const itbis = d.itbis_pct > 0
                         ? (itbisIncluido ? (base - (base / (1 + d.itbis_pct))) : (base * d.itbis_pct))
                         : 0;
-                      return itbis.toFixed(2);
+                      return fmt(itbis);
                     })()}
                   </TableCell>
                   <TableCell className="w-[40px] p-0 h-9 text-center">
                     <div className="w-2 h-2 rounded-full bg-green-500/20 mx-auto border border-green-500/30"></div>
                   </TableCell>
                   <TableCell className="w-[120px] p-0 px-2 text-right text-[11px] font-bold h-9 font-mono text-gray-800">
-                    {Number(d.importe).toFixed(2)}
+                    {fmt(d.importe)}
                   </TableCell>
                   <TableCell className="w-[40px] p-0 h-9 text-center">
                     <Button

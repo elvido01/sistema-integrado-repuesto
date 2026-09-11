@@ -243,11 +243,11 @@ const CompraFooter = ({
                   <div className="space-y-1">
                     <div className="flex justify-between items-center px-1">
                       <span className="text-[10px] font-bold text-gray-500 uppercase">Total Pagado :</span>
-                      <span className="text-sm font-bold text-morla-blue font-mono">{totalPagado.toFixed(2)}</span>
+                      <span className="text-sm font-bold text-morla-blue font-mono">{fmt(totalPagado)}</span>
                     </div>
                     <div className="flex justify-between items-center px-1">
                       <span className="text-[10px] font-bold text-gray-500 uppercase">Pendiente :</span>
-                      <span className="text-sm font-bold text-red-500 font-mono">{pendiente.toFixed(2)}</span>
+                      <span className="text-sm font-bold text-red-500 font-mono">{fmt(pendiente)}</span>
                     </div>
                   </div>
                   <div className="space-y-1">
@@ -440,19 +440,19 @@ const CompraFooter = ({
         <div className="space-y-1.5">
           <div className="flex justify-between items-center text-xs text-gray-600">
             <span className="uppercase font-bold">Total Exento</span>
-            <span className="font-mono font-bold tracking-tight">{totals.exento.toFixed(2)}</span>
+            <span className="font-mono font-bold tracking-tight">{fmt(totals.exento)}</span>
           </div>
           <div className="flex justify-between items-center text-xs text-gray-600">
             <span className="uppercase font-bold">Total Gravado</span>
-            <span className="font-mono font-bold tracking-tight">{totals.gravado.toFixed(2)}</span>
+            <span className="font-mono font-bold tracking-tight">{fmt(totals.gravado)}</span>
           </div>
           <div className="flex justify-between items-center text-xs text-gray-600">
             <span className="uppercase font-bold">Descuento</span>
-            <span className="font-mono font-bold tracking-tight text-red-500">{totals.descuento.toFixed(2)}</span>
+            <span className="font-mono font-bold tracking-tight text-red-500">{fmt(totals.descuento)}</span>
           </div>
           <div className="flex justify-between items-center text-xs text-gray-600">
             <span className="uppercase font-bold">ITBIS</span>
-            <span className="font-mono font-bold tracking-tight">{totals.itbis.toFixed(2)}</span>
+            <span className="font-mono font-bold tracking-tight">{fmt(totals.itbis)}</span>
           </div>
         </div>
 
