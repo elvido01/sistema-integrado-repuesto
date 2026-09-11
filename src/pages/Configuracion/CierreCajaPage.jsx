@@ -71,7 +71,7 @@ const isMobileCashSale = (venta) => {
 const CierreCajaPage = () => {
   const { toast } = useToast();
   const { user, profile, empresa, tenantId } = useAuth();
-  const { closePanel } = usePanels();
+  const { closePanel, activePanel } = usePanels();
 
   /* ── State ── */
   const [fecha, setFecha] = useState(getCurrentDateInTimeZone());
@@ -1084,6 +1084,11 @@ const CierreCajaPage = () => {
   /* ── Keyboard shortcuts ── */
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Las pestañas escondidas siguen montadas y oyen el teclado: sin esto,
+      // un Escape apretado en OTRA pestaña cerraba el cierre de caja.
+      if (activePanel !== 'cierre-caja') return;
+      // Si un diálogo ya usó este Escape (Radix lo marca), era para él.
+      if (e.key === 'Escape' && e.defaultPrevented) return;
       if (e.key === 'F8' && showDesglose) {
         e.preventDefault();
         handleCerrarTurno();
@@ -1096,7 +1101,7 @@ const CierreCajaPage = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showDesglose, handleCerrarTurno, closePanel]);
+  }, [showDesglose, handleCerrarTurno, closePanel, activePanel]);
 
   return (
     <>

@@ -51,7 +51,7 @@ const initialDetalleState = {
 const SalidaMercanciaPage = () => {
   const { toast } = useToast();
   const { empresa } = useAuth();
-  const { closePanel } = usePanels();
+  const { closePanel, activePanel } = usePanels();
   const [almacenes, setAlmacenes] = useState([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -422,6 +422,11 @@ const SalidaMercanciaPage = () => {
   };
 
   const handleKeyDown = useCallback((e) => {
+    // Igual que en la entrada: escondida, esta pestaña oía las teclas de las
+    // demás — Escape la cerraba y F3 abría su buscador encima de otra pantalla.
+    if (activePanel !== 'salida-mercancia') return;
+    // Si un diálogo ya usó este Escape (Radix lo marca), era para él.
+    if (e.key === 'Escape' && e.defaultPrevented) return;
     if (e.key === 'F10') {
       e.preventDefault();
       handleConfirmSave();
@@ -434,7 +439,7 @@ const SalidaMercanciaPage = () => {
       e.preventDefault();
       setIsSearchModalOpen(true);
     }
-  }, [closePanel, handleConfirmSave]);
+  }, [closePanel, handleConfirmSave, activePanel]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

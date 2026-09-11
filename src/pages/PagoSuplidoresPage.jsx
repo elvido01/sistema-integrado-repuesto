@@ -65,7 +65,7 @@ const compararCompras = (a, b) => {
 const PagoSuplidoresPage = () => {
   const { toast } = useToast();
   const { empresa, tenantId } = useAuth();
-  const { closePanel } = usePanels();
+  const { closePanel, activePanel } = usePanels();
   const [pago, setPago] = useState(initialState);
   const [suplidores, setSuplidores] = useState([]);
   const [compras, setCompras] = useState([]);
@@ -476,6 +476,10 @@ const PagoSuplidoresPage = () => {
   }, [fetchInitialData]);
 
   const handleKeyDown = useCallback((e) => {
+    // Escondida, esta pestaña oía las teclas de las demás: F10 grababa el
+    // pago y Escape la cerraba desde otra pantalla.
+    if (activePanel !== 'pago-suplidores') return;
+    if (e.key === 'Escape' && e.defaultPrevented) return; // era de un diálogo
     if (e.key === 'F10') {
       e.preventDefault();
       handleSave();
@@ -484,7 +488,7 @@ const PagoSuplidoresPage = () => {
       e.preventDefault();
       closePanel('pago-suplidores');
     }
-  }, [handleSave, closePanel]);
+  }, [handleSave, closePanel, activePanel]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { usePanels } from '@/contexts/PanelContext';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -35,6 +36,7 @@ const DevolucionesPage = () => {
   const { empresa, tenantId } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { activePanel } = usePanels();
   const [isSaving, setIsSaving] = useState(false);
   const [facturaNumero, setFacturaNumero] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -395,9 +397,13 @@ const DevolucionesPage = () => {
   };
 
   const handleKeyDown = useCallback((e) => {
+    // Escondida, esta pestaña oía las teclas de las demás: F10 grababa la
+    // devolución y Escape movía el historial del navegador desde otra pantalla.
+    if (activePanel !== 'devoluciones') return;
+    if (e.key === 'Escape' && e.defaultPrevented) return; // era de un diálogo
     if (e.key === 'F10') { e.preventDefault(); document.getElementById('save-trigger')?.click(); }
     if (e.key === 'Escape') { e.preventDefault(); navigate(-1); }
-  }, [navigate]);
+  }, [navigate, activePanel]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

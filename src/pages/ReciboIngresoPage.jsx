@@ -32,7 +32,7 @@ const initialState = {
 const ReciboIngresoPage = ({ extraData }) => {
   const { toast } = useToast();
   const { empresa, tenantId } = useAuth();
-  const { closePanel } = usePanels();
+  const { closePanel, activePanel } = usePanels();
   const [recibo, setRecibo] = useState(initialState);
   const [clientes, setClientes] = useState([]);
   const [facturas, setFacturas] = useState([]);
@@ -332,6 +332,10 @@ const ReciboIngresoPage = ({ extraData }) => {
   };
 
   const handleKeyDown = useCallback((e) => {
+    // Escondida, esta pestaña oía las teclas de las demás: F10 grababa el
+    // recibo, F3 abría su buscador y Escape la cerraba desde otra pantalla.
+    if (activePanel !== 'recibo-ingreso') return;
+    if (e.key === 'Escape' && e.defaultPrevented) return; // era de un diálogo
     if (e.key === 'F3') {
       e.preventDefault();
       setIsClienteSearchModalOpen(true);
@@ -344,7 +348,7 @@ const ReciboIngresoPage = ({ extraData }) => {
       e.preventDefault();
       closePanel('recibo-ingreso');
     }
-  }, [handleSave, closePanel, setIsClienteSearchModalOpen]);
+  }, [handleSave, closePanel, setIsClienteSearchModalOpen, activePanel]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

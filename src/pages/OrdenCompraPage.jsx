@@ -136,7 +136,7 @@ const OrdenCompraPage = () => {
   // Compra Inteligente = función Plus: solo planes PRO y ENTERPRISE (y super admin).
   const puedeCompraInteligente = isSuperAdmin || ['PRO', 'ENTERPRISE'].includes((planActual || '').toUpperCase());
   const navigate = useNavigate();
-  const { openPanel } = usePanels();
+  const { openPanel, activePanel } = usePanels();
   const { setOrdenParaFacturar } = useCompras();
   const isVehicleDealer = tenantId === CAMINERO_MOTORS_TENANT;
   const { marcas: catalogMarcas = [], modelos: catalogModelos = [] } = useCatalogData() ?? {};
@@ -2363,10 +2363,16 @@ const OrdenCompraPage = () => {
 
   const handleKeyDown = useCallback(
     (e) => {
+      // Escondida, esta pestaña oía las teclas de las demás: un F10 apretado
+      // en Ventas o en Pedidos grababa TAMBIÉN la orden de compra.
+      if (activePanel !== 'orden-compra') return;
+      if (e.key === 'Escape' && e.defaultPrevented) return; // era de un diálogo
       if (e.key === 'F10') { e.preventDefault(); handleSave(); }
       if (e.key === 'Escape') { e.preventDefault(); navigate(-1); }
     },
-    [navigate]
+    // handleSave va en la lista: sin él, F10 llamaba a la versión del PRIMER
+    // render, que ve el formulario como estaba al abrir la pantalla.
+    [navigate, activePanel, handleSave]
   );
 
   useEffect(() => {

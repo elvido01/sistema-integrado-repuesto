@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { usePanels } from '@/contexts/PanelContext';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -24,6 +25,7 @@ import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 const ROLES_ADMIN = ['admin', 'owner', 'manager', 'gerente'];
 
 const PagoComisionesPage = () => {
+  const { activePanel } = usePanels();
   const { empresa, profile } = useAuth();
   const { toast } = useToast();
   // ... (state follows)
@@ -237,6 +239,9 @@ const PagoComisionesPage = () => {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Escondida, esta pestaña oía las teclas de las demás: F10 consultaba y
+      // F5 mandaba a imprimir comisiones desde otra pantalla.
+      if (activePanel !== 'pago-comisiones-vendedor') return;
       if (e.key === 'F10') {
         e.preventDefault();
         handleConsultar();
@@ -248,7 +253,7 @@ const PagoComisionesPage = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleConsultar]);
+  }, [handleConsultar, activePanel]);
 
   const currentVendedorName = vendedores.find(v => v.id === selectedVendedor)?.nombre || '';
 

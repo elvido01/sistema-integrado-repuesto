@@ -1926,6 +1926,12 @@ const ComprasPage = () => {
   };
 
   const handleKeyDown = useCallback((e) => {
+    // Escondida, esta pestaña oía las teclas de las demás: un F10 apretado en
+    // Ventas o en Pedidos grababa TAMBIÉN la compra, y F3 abría su buscador
+    // encima de otra pantalla.
+    if (activePanel !== 'compras') return;
+    // Si un diálogo ya usó este Escape (Radix lo marca), era para él.
+    if (e.key === 'Escape' && e.defaultPrevented) return;
     if (e.key === 'F10') {
       e.preventDefault();
       handleSave();
@@ -1938,7 +1944,7 @@ const ComprasPage = () => {
       e.preventDefault();
       setIsSearchModalOpen(true);
     }
-  }, [navigate, handleSave]);
+  }, [navigate, handleSave, activePanel]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

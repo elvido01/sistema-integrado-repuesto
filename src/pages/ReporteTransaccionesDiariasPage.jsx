@@ -23,7 +23,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 const ReporteTransaccionesDiariasPage = () => {
   const { toast } = useToast();
   const { empresa } = useAuth();
-  const { closePanel } = usePanels();
+  const { closePanel, activePanel } = usePanels();
   const [transactions, setTransactions] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -296,6 +296,10 @@ const ReporteTransaccionesDiariasPage = () => {
   };
 
   const handleKeyDown = useCallback((e) => {
+    // Escondida, esta pestaña oía las teclas de las demás: F5 mandaba a
+    // imprimir el reporte y Escape la cerraba desde otra pantalla.
+    if (activePanel !== 'reporte-transacciones-diarias') return;
+    if (e.key === 'Escape' && e.defaultPrevented) return; // era de un diálogo
     if (e.key === 'F10') {
       e.preventDefault();
       handleConsultar();
@@ -308,7 +312,7 @@ const ReporteTransaccionesDiariasPage = () => {
       e.preventDefault();
       closePanel('reporte-transacciones-diarias');
     }
-  }, [closePanel, fetchTransactions, toast]);
+  }, [closePanel, fetchTransactions, toast, activePanel]);
 
   const TIPO_LABEL = {
     all: 'Todas', FT: 'VENTAS', DV: 'DEVOLUCIONES', PG: 'RECIBO DE INGRESO', NC: 'NOTAS DE CREDITO', AB: 'OTRAS TRANSACCIONES',
