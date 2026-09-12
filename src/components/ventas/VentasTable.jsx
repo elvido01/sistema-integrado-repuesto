@@ -258,8 +258,7 @@ const VentasTable = ({
                   <ContextMenuContent className="w-56" style={{ zIndex: 10000 }}>
                     <ContextMenuItem
                       className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
-                      onSelect={(e) => {
-                        e.preventDefault();
+                      onSelect={() => {
                         handleSendToOrden(item);
                       }}
                       disabled={!!sendingToOrder}

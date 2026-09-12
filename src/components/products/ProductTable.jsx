@@ -196,8 +196,7 @@ const ProductTable = ({
                       <>
                         <ContextMenuItem
                           className="font-bold text-emerald-700 cursor-pointer flex items-center gap-2 py-2"
-                          onSelect={(e) => {
-                            e.preventDefault();
+                          onSelect={() => {
                             handleMoverAMorlaNuevo(product);
                           }}
                           disabled={!!moviendo}
@@ -210,8 +209,7 @@ const ProductTable = ({
                     )}
                     <ContextMenuItem
                       className="font-bold text-blue-700 cursor-pointer flex items-center gap-2 py-2"
-                      onSelect={(e) => {
-                        e.preventDefault();
+                      onSelect={() => {
                         handleSendToOrden(product);
                       }}
                       disabled={!!sendingToOrder}
@@ -222,8 +220,7 @@ const ProductTable = ({
                     <ContextMenuSeparator />
                     <ContextMenuItem
                       className="font-bold text-gray-700 cursor-pointer flex items-center gap-2 py-2"
-                      onSelect={(e) => {
-                        e.preventDefault();
+                      onSelect={() => {
                         setTimeout(() => {
                           onPrintLabel && onPrintLabel(product);
                         }, 0);
@@ -234,8 +231,7 @@ const ProductTable = ({
                     </ContextMenuItem>
                     <ContextMenuItem
                       className="font-bold text-violet-700 cursor-pointer flex items-center gap-2 py-2"
-                      onSelect={(e) => {
-                        e.preventDefault();
+                      onSelect={() => {
                         setTimeout(() => {
                           onImageStudio && onImageStudio(product);
                         }, 0);
@@ -249,8 +245,7 @@ const ProductTable = ({
                         className={`font-bold cursor-pointer flex items-center gap-2 py-2 ${
                           product.ecommerce_visible ? 'text-orange-600' : 'text-green-600'
                         }`}
-                        onSelect={(e) => {
-                          e.preventDefault();
+                        onSelect={() => {
                           onToggleEcommerce(product);
                         }}
                       >
