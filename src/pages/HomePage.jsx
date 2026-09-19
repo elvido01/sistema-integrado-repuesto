@@ -509,20 +509,80 @@ const HomePage = () => {
       });
       if (error) throw error;
 
+      // >>> EL ID DEL PAGO, ANTES DE NADA <<<
+      // El numero no identifica un pago: cada empresa numera desde 1. Hace
+      // falta el id para dos cosas que antes no se hacian aqui: atar el
+      // movimiento bancario y avisarle al dealer.
+      const { data: pagoRow } = await supabase
+        .from('pagos_suplidores')
+        .select('id')
+        .eq('numero', data)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+
       // Si fue transferencia/cheque, restar de la cuenta bancaria.
       if (cuenta_bancaria_id) {
         supabase.rpc('registrar_movimiento_bancario', {
           p_cuenta_id: cuenta_bancaria_id, p_tipo: 'SALIDA', p_monto: monto_abonado,
           p_concepto: `Pago suplidor ${c.suplidor_nombre || c.proveedores?.nombre || ''} — ${c.numero || c.referencia || ''}`.trim(),
           p_referencia: referencia_pago || String(data || ''),
-          p_origen_tipo: 'pago_suplidor', p_origen_id: null, p_fecha: null,
+          // Con origen_id el movimiento queda atado al pago, y el indice unico
+          // (tenant, origen_tipo, origen_id) hace idempotente el guardado: un
+          // doble clic ya no saca el dinero del banco dos veces. Iba en null.
+          p_origen_tipo: 'pago_suplidor', p_origen_id: pagoRow?.id ?? null, p_fecha: null,
         }).then(() => {}, () => {});
       }
 
-      toast({
-        title: "Pago a suplidor registrado",
-        description: `Pago ${data} aplicado a factura ${c.numero || c.referencia} (${forma_pago}).`,
-      });
+      // >>> QUE EL DINERO LLEGUE A LA OTRA EMPRESA <<<
+      // Esta pantalla registraba el pago y ahi terminaba. Por eso PS-000004
+      // (RD$35,000 a Caminero Motors, 09/09/2026) nunca le entro al dealer:
+      // su CxP tenia la factura bien enganchada, pero nadie mando el aviso.
+      // Dos minutos despues el mismo usuario pago desde Pago a Suplidores y
+      // ese si cruzo. Ahora las dos pantallas hacen lo mismo.
+      let dealer = null;
+      try {
+        if (pagoRow?.id) {
+          const { data: sinc } = await supabase.rpc('sincronizar_pago_a_dealer', {
+            p_pago_id: pagoRow.id,
+            p_forma: 'Efectivo',
+          });
+          dealer = sinc || null;
+        }
+      } catch (e) {
+        dealer = { codigo: 'excepcion', motivo: e.message };
+      }
+
+      const rd = (n) => `RD$ ${Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const fueraDealer = Number(dealer?.fuera || 0);
+      const dealerMal = !!dealer && (
+        dealer.codigo === 'financiamiento_sin_enganche' ||
+        dealer.codigo === 'clientes_distintos' ||
+        dealer.codigo === 'no_es_de_esta_empresa' ||
+        dealer.codigo === 'excepcion' ||
+        (dealer.ok && fueraDealer > 0.01)
+      );
+      if (dealerMal) {
+        toast({
+          variant: 'destructive',
+          duration: 12000,
+          title: dealer.ok
+            ? 'El pago se grabó, pero al dealer no le llegó todo'
+            : 'El pago se grabó, pero no llegó al dealer',
+          description: dealer.ok
+            ? `Pago ${data}: se pagaron ${rd(dealer.pagado)} y a la otra empresa le entraron ${rd(dealer.total)}. Quedaron fuera ${rd(fueraDealer)}.`
+            : `Pago ${data}: ${dealer.motivo || 'no se pudo registrar el ingreso en la otra empresa'}.`,
+        });
+      } else if (dealer?.ok && dealer.codigo === 'ok') {
+        toast({
+          title: 'Pago registrado y avisado al dealer',
+          description: `Pago ${data} por ${rd(dealer.pagado)}. Recibo ${dealer.recibo} abonado en la otra empresa.`,
+        });
+      } else {
+        toast({
+          title: "Pago a suplidor registrado",
+          description: `Pago ${data} aplicado a factura ${c.numero || c.referencia} (${forma_pago}).`,
+        });
+      }
 
       // Comprobante de pago a suplidor (PDF o ticket POS según configuración).
       try {

@@ -387,6 +387,12 @@ const PagoSuplidoresPage = () => {
       //
       // El RPC se encarga de decidir si aplica: si el pago no viene de un
       // financiamiento, contesta que no y aquí no se dice nada.
+      // El aviso NO se da aquí: solo cabe un toast a la vez (TOAST_LIMIT = 1
+      // en use-toast.js) y el 'Éxito' de más abajo borraba este medio renglón
+      // después, antes de que se llegara a pintar. Por eso PS-000006 pudo
+      // sincronizar RD$49,516.67 de un pago de RD$59,000 sin que nadie se
+      // enterara. Se guarda lo que pasó y se dice todo junto, una sola vez.
+      let dealer = null;
       try {
         if (pagoRow?.id) {
           // Efectivo: las dos empresas comparten las cuentas físicas, así que
@@ -396,28 +402,49 @@ const PagoSuplidoresPage = () => {
             p_pago_id: pagoRow.id,
             p_forma: 'Efectivo',
           });
-          if (sinc?.ok && !sinc?.ya_estaba) {
-            toast({
-              title: 'Registrado también en el dealer',
-              description: `Recibo ${sinc.recibo} por RD$ ${Number(sinc.total || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })} abonado a ${sinc.facturas} factura(s).`,
-            });
-          }
+          dealer = sinc || null;
         }
       } catch (e) {
         // Que falle no puede tumbar un pago ya grabado. Se avisa para que se
         // corrija, porque si nadie lo ve los dos libros se separan.
-        toast({
-          variant: 'destructive',
-          title: 'El pago se grabó, pero no llegó al dealer',
-          description: `${e.message}. Regístralo en la otra empresa o vuelve a intentarlo.`,
-          duration: 9000,
-        });
+        dealer = { codigo: 'excepcion', motivo: e.message };
       }
 
       // La tasa usada queda como la tasa del día de la empresa
       if (totalAbonosUsd > 0 && tasa > 0) supabase.rpc('set_tasa_dia', { p_tasa: tasa }).then(() => {}, () => {});
 
-      toast({ title: 'Éxito', description: `Pago ${data} guardado correctamente.` });
+      // UN SOLO AVISO, con las dos cosas: el pago y lo que le llegó al dealer.
+      // Un pago que cruza a medias tiene que verse distinto de uno completo.
+      const rd = (n) => `RD$ ${Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const fueraDealer = Number(dealer?.fuera || 0);
+      const dealerMal = !!dealer && (
+        dealer.codigo === 'financiamiento_sin_enganche' ||   // cuotas del dealer sin su factura
+        dealer.codigo === 'clientes_distintos' ||
+        dealer.codigo === 'no_es_de_esta_empresa' ||
+        dealer.codigo === 'excepcion' ||
+        (dealer.ok && fueraDealer > 0.01)                    // cruzó, pero corto
+      );
+      // 'no_aplica' y 'sin_dealer' son lo normal pagándole a cualquier otro
+      // suplidor: ahí no hay nada que decir.
+      if (dealerMal) {
+        toast({
+          variant: 'destructive',
+          duration: 12000,
+          title: dealer.ok
+            ? 'El pago se grabó, pero al dealer no le llegó todo'
+            : 'El pago se grabó, pero no llegó al dealer',
+          description: dealer.ok
+            ? `Pago ${data}: se pagaron ${rd(dealer.pagado)} y a la otra empresa le entraron ${rd(dealer.total)}. Quedaron fuera ${rd(fueraDealer)}.`
+            : `Pago ${data}: ${dealer.motivo || 'no se pudo registrar el ingreso en la otra empresa'}.`,
+        });
+      } else if (dealer?.ok && dealer.codigo === 'ok') {
+        toast({
+          title: 'Pago guardado y registrado en el dealer',
+          description: `Pago ${data} por ${rd(dealer.pagado)}. Recibo ${dealer.recibo} abonado a ${dealer.facturas} factura(s) de la otra empresa.`,
+        });
+      } else {
+        toast({ title: 'Éxito', description: `Pago ${data} guardado correctamente.` });
+      }
 
       if (pago.imprimir) {
         const enrichedDetalles = detallesData.map(d => {
