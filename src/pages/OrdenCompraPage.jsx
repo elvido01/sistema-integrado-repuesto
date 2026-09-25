@@ -371,6 +371,11 @@ const OrdenCompraPage = () => {
   // habia forma de darles de alta desde aqui — el modal abria en blanco y
   // creaba OTRA linea, dejando la de arriba huerfana. Ahora completa la suya.
   const abrirCodigoParaLinea = (d) => {
+    // Si ESA misma línea está cargada en la fila amarilla, se suelta primero:
+    // al dar Ok, la fila amarilla reescribe la línea entera con lo que tiene
+    // dentro (producto_id null, código vacío) y borraría el código recién
+    // puesto sin decir nada.
+    if (editingDetalleId === d.id) resetStaging();
     setQuickProd({
       codigo: d.codigo || '',
       descripcion: d.descripcion || '',
@@ -401,18 +406,57 @@ const OrdenCompraPage = () => {
       //    mayúscula, así que buscar exacto crearía un gemelo de cada uno.
       let { data: yaExiste } = await supabase
         .from('productos')
-        .select('id, codigo, descripcion, costo, precio, itbis_pct')
+        .select('id, codigo, descripcion, costo, precio, itbis_pct, activo')
         .eq('tenant_id', tenantId)
         .eq('codigo', codigoLimpio)
         .maybeSingle();
       if (!yaExiste) {
         const { data: otroCaso } = await supabase
           .from('productos')
-          .select('id, codigo, descripcion, costo, precio, itbis_pct')
+          .select('id, codigo, descripcion, costo, precio, itbis_pct, activo')
           .eq('tenant_id', tenantId)
           .ilike('codigo', codigoLimpio)
-          .limit(1);
-        yaExiste = otroCaso?.[0] || null;
+          .limit(5);
+        // ilike trata _ y % como comodines: se comprueba que el código sea el
+        // mismo de verdad, y no uno que casó por comodín.
+        yaExiste = (otroCaso || []).find(p => String(p.codigo || '').toUpperCase() === codigoLimpio) || null;
+      }
+
+      // >>> UN PRODUCTO DESACTIVADO NO SE ENGANCHA <<<
+      // Hay 1,754 apagados en el catálogo y TODOS conservan su código: son
+      // justo los códigos viejos que apagó fusionar_productos al pasar a los
+      // del suplidor. Engancharlos se ve bien hoy y mañana la línea desaparece
+      // sola, porque al reabrir la orden se filtran las líneas de productos
+      // inactivos (filter(d => d._activo) más abajo).
+      if (yaExiste && yaExiste.activo === false) {
+        toast({
+          variant: 'destructive',
+          duration: 10000,
+          title: 'Ese código es de un producto desactivado',
+          description: `${yaExiste.codigo} — ${yaExiste.descripcion}. Se descontinuó o se fusionó con otro. Reactívalo desde Mercancías, o usa el código nuevo.`,
+        });
+        return;
+      }
+
+      // >>> Y TAMPOCO DOS VECES EN LA MISMA ORDEN <<<
+      // Las otras dos vías de agregar ya chequean duplicados; ésta no lo hacía
+      // porque antes SIEMPRE creaba un producto nuevo. Desde que engancha el
+      // que ya existe sí puede pasar, y la orden le pediría el doble al
+      // suplidor. Solo cabe si el producto ya existía: uno recién creado no
+      // puede estar en la orden.
+      if (yaExiste) {
+        const yaEnOrden = (detallesRef.current || detalles).find(
+          x => x.producto_id === yaExiste.id && x.id !== quickProdLinea
+        );
+        if (yaEnOrden) {
+          toast({
+            variant: 'destructive',
+            duration: 10000,
+            title: 'Esa pieza ya está en la orden',
+            description: `${yaExiste.codigo} — ${yaExiste.descripcion} ya ocupa una línea. Súmale la cantidad ahí${quickProdLinea ? ' y borra esta línea' : ''}.`,
+          });
+          return;
+        }
       }
 
       let nuevo = yaExiste;
@@ -444,8 +488,23 @@ const OrdenCompraPage = () => {
       // 2. A la orden: completando SU línea si se vino de una, o agregando una
       //    nueva si se abrió desde la fila amarilla.
       const cant = Number(quickProd.cantidad) || 1;
-      const itbisPct = Number(quickProd.itbis_pct) || 0;
-      const precio = Number(quickProd.costo) || 0;
+      // Enganchando un producto que YA existe manda la ficha cuando el
+      // formulario viene en cero: las líneas del Suplidor Virtual nacen con
+      // precio 0 a propósito, y la orden salía pidiéndole al suplidor la pieza
+      // a costo 0 y sin ITBIS aunque el catálogo los tuviera.
+      const itbisPct = Number(quickProd.itbis_pct) > 0
+        ? Number(quickProd.itbis_pct)
+        : (Number(yaExiste?.itbis_pct) || 0);
+      const precio = Number(quickProd.costo) > 0
+        ? Number(quickProd.costo)
+        : (Number(yaExiste?.costo) || 0);
+      // Y la existencia es la del kardex, no 0: si no, la columna dice que no
+      // hay ninguna de una pieza que sí está en almacén.
+      let existenciaLinea = 0;
+      if (yaExiste) {
+        const { data: stockVal } = await supabase.rpc('get_stock_actual', { producto_uuid: yaExiste.id });
+        existenciaLinea = Number(stockVal) || 0;
+      }
       // La unidad sale del formulario, no del producto: es de la LINEA de la
       // orden y el producto que vuelve de la base no la trae.
       const unidadLinea = quickProd.unidad || 'UND';
@@ -462,6 +521,7 @@ const OrdenCompraPage = () => {
                 unidad: unidadLinea,
                 precio,
                 itbis_pct: itbisPct,
+                existencia: existenciaLinea,
                 _is_new_product: !yaExiste,
               }
             : x
@@ -478,7 +538,7 @@ const OrdenCompraPage = () => {
           descuento_pct: 0,
           itbis_pct: itbisPct,
           importe: cant * precio,
-          existencia: 0,
+          existencia: existenciaLinea,
           decision_estado: DECISION_DEFAULT,
           decision_motivo: null,
           _is_new_product: !yaExiste,
@@ -492,6 +552,9 @@ const OrdenCompraPage = () => {
         description: `${nuevo.codigo} — ${nuevo.descripcion}`,
       });
       setQuickProdModalOpen(false);
+      // Radix no dispara onOpenChange cuando se cierra por código, así que
+      // esto hay que soltarlo a mano o la próxima apertura hereda la línea.
+      setQuickProdLinea(null);
       // Focus de vuelta al codigo input para seguir dictando
       setTimeout(() => document.getElementById('staging-codigo-input')?.focus(), 100);
     } catch (err) {
@@ -3199,6 +3262,7 @@ const OrdenCompraPage = () => {
                             {/* Sin producto: viene del Suplidor Virtual, anotada a
                                 mano y sin catalogar. Aquí se le pone el código. */}
                             {!d.producto_id ? (
+                              <>
                               <button
                                 onClick={(e) => { e.stopPropagation(); abrirCodigoParaLinea(d); }}
                                 className="px-1.5 py-0 rounded text-[10px] font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300 flex items-center gap-0.5"
@@ -3206,6 +3270,12 @@ const OrdenCompraPage = () => {
                               >
                                 <Plus className="w-3 h-3" /> código
                               </button>
+                              {/* El código que trajo del suplidor se sigue
+                                  viendo: es el que hay que reutilizar. */}
+                              {d.codigo && (
+                                <span className="text-slate-400 text-[10px] font-mono">{d.codigo}</span>
+                              )}
+                              </>
                             ) : d.codigo}
                             {equivalentesMap[d.producto_id] && (
                               <Popover>

@@ -547,6 +547,12 @@ const HomePage = () => {
             p_forma: 'Efectivo',
           });
           dealer = sinc || null;
+        } else {
+          // Sin el id no se pudo ni atar el movimiento del banco ni preguntar
+          // si había que avisarle al dealer. Callarse aquí es exactamente como
+          // empezó todo esto: el pago se graba, el aviso no sale, y el hueco
+          // entre los dos libros se abre en silencio.
+          dealer = { codigo: 'sin_pago_id' };
         }
       } catch (e) {
         dealer = { codigo: 'excepcion', motivo: e.message };
@@ -559,18 +565,24 @@ const HomePage = () => {
         dealer.codigo === 'clientes_distintos' ||
         dealer.codigo === 'no_es_de_esta_empresa' ||
         dealer.codigo === 'excepcion' ||
+        dealer.codigo === 'sin_pago_id' ||   // ni se pudo preguntar
         (dealer.ok && fueraDealer > 0.01)
       );
       if (dealerMal) {
+        const sinId = dealer.codigo === 'sin_pago_id';
         toast({
           variant: 'destructive',
           duration: 12000,
-          title: dealer.ok
-            ? 'El pago se grabó, pero al dealer no le llegó todo'
-            : 'El pago se grabó, pero no llegó al dealer',
-          description: dealer.ok
-            ? `Pago ${data}: se pagaron ${rd(dealer.pagado)} y a la otra empresa le entraron ${rd(dealer.total)}. Quedaron fuera ${rd(fueraDealer)}.`
-            : `Pago ${data}: ${dealer.motivo || 'no se pudo registrar el ingreso en la otra empresa'}.`,
+          title: sinId
+            ? 'El pago se grabó, pero no se pudo comprobar el aviso al dealer'
+            : dealer.ok
+              ? 'El pago se grabó, pero al dealer no le llegó todo'
+              : 'El pago se grabó, pero no llegó al dealer',
+          description: sinId
+            ? `Pago ${data}: no apareció en la base al releerlo, así que no se le preguntó si había que avisarle a la otra empresa. Compruébalo antes de cerrar el día.`
+            : dealer.ok
+              ? `Pago ${data}: se pagaron ${rd(dealer.pagado)} y a la otra empresa le entraron ${rd(dealer.total)}. Quedaron fuera ${rd(fueraDealer)}.`
+              : `Pago ${data}: ${dealer.motivo || 'no se pudo registrar el ingreso en la otra empresa'}.`,
         });
       } else if (dealer?.ok && dealer.codigo === 'ok') {
         toast({
