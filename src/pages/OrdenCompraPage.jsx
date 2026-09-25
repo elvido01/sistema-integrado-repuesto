@@ -347,6 +347,11 @@ const OrdenCompraPage = () => {
   });
   const [creandoProducto, setCreandoProducto] = useState(false);
 
+  // Cuando se le esta poniendo el codigo a una linea que YA esta en la orden
+  // (las del Suplidor Virtual entran sin producto_id), aqui va su id. En null
+  // el modal agrega una linea nueva, como siempre.
+  const [quickProdLinea, setQuickProdLinea] = useState(null);
+
   const abrirNuevoProducto = () => {
     setQuickProd({
       codigo: stagingItem.codigo || '',
@@ -356,6 +361,25 @@ const OrdenCompraPage = () => {
       unidad: 'UND',
       cantidad: 1,
     });
+    setQuickProdLinea(null);
+    setQuickProdModalOpen(true);
+  };
+
+  // >>> PONERLE EL CODIGO A UNA LINEA SIN PRODUCTO <<<
+  // Los pendientes del Suplidor Virtual entran a proposito sin producto_id:
+  // son piezas anotadas a mano que no estan en el catalogo. Hasta ahora no
+  // habia forma de darles de alta desde aqui — el modal abria en blanco y
+  // creaba OTRA linea, dejando la de arriba huerfana. Ahora completa la suya.
+  const abrirCodigoParaLinea = (d) => {
+    setQuickProd({
+      codigo: d.codigo || '',
+      descripcion: d.descripcion || '',
+      costo: Number(d.precio) || 0,
+      itbis_pct: Number(d.itbis_pct) || 0,
+      unidad: d.unidad || 'UND',
+      cantidad: Number(d.cantidad) || 1,
+    });
+    setQuickProdLinea(d.id);
     setQuickProdModalOpen(true);
   };
 
@@ -366,51 +390,105 @@ const OrdenCompraPage = () => {
     }
     setCreandoProducto(true);
     try {
-      // 1. Crear el producto
-      const { data: nuevo, error: prodErr } = await supabase
-        .from('productos')
-        .insert({
-          tenant_id: tenantId,
-          codigo: quickProd.codigo.trim().toUpperCase(),
-          descripcion: quickProd.descripcion.trim().toUpperCase(),
-          costo: Number(quickProd.costo) || 0,
-          precio: Number(quickProd.costo) || 0,  // precio default = costo (se ajusta despues)
-          itbis_pct: Number(quickProd.itbis_pct) || 0,
-          // NI `unidad` NI `existencia`: la tabla productos no tiene esas
-          // columnas. La unidad vive en la linea de la orden, y la existencia
-          // es la suma del kardex (get_stock_actual), no un campo del producto.
-          // Mandarlas hacia "Could not find the 'existencia' column of
-          // 'productos' in the schema cache" y el alta rapida no creaba nada.
-          activo: true,
-          suplidor_id: selectedProveedor?.id || null,
-        })
-        .select()
-        .single();
-      if (prodErr) throw prodErr;
+      const codigoLimpio = quickProd.codigo.trim().toUpperCase();
 
-      // 2. Agregar como linea a la OC actual
+      // 1. ¿Ese código ya existe? Se engancha el que hay en vez de reventar
+      //    con "duplicate key productos_codigo_tenant_unique" y dejar al
+      //    usuario sin salida. Pasa seguido: la pieza se anotó a mano en el
+      //    Suplidor Virtual sin saber que ya estaba en el catálogo.
+      //    Casa exacto primero y, si no, sin importar mayúsculas: el catálogo
+      //    tiene códigos en minúscula (m764, i-2616) y aquí se teclea en
+      //    mayúscula, así que buscar exacto crearía un gemelo de cada uno.
+      let { data: yaExiste } = await supabase
+        .from('productos')
+        .select('id, codigo, descripcion, costo, precio, itbis_pct')
+        .eq('tenant_id', tenantId)
+        .eq('codigo', codigoLimpio)
+        .maybeSingle();
+      if (!yaExiste) {
+        const { data: otroCaso } = await supabase
+          .from('productos')
+          .select('id, codigo, descripcion, costo, precio, itbis_pct')
+          .eq('tenant_id', tenantId)
+          .ilike('codigo', codigoLimpio)
+          .limit(1);
+        yaExiste = otroCaso?.[0] || null;
+      }
+
+      let nuevo = yaExiste;
+      if (!nuevo) {
+        // 1b. Crear el producto
+        const { data: creado, error: prodErr } = await supabase
+          .from('productos')
+          .insert({
+            tenant_id: tenantId,
+            codigo: codigoLimpio,
+            descripcion: quickProd.descripcion.trim().toUpperCase(),
+            costo: Number(quickProd.costo) || 0,
+            precio: Number(quickProd.costo) || 0,  // precio default = costo (se ajusta despues)
+            itbis_pct: Number(quickProd.itbis_pct) || 0,
+            // NI `unidad` NI `existencia`: la tabla productos no tiene esas
+            // columnas. La unidad vive en la linea de la orden, y la existencia
+            // es la suma del kardex (get_stock_actual), no un campo del producto.
+            // Mandarlas daba "Could not find the 'existencia' column of
+            // 'productos' in the schema cache" y el alta rapida no creaba nada.
+            activo: true,
+            suplidor_id: selectedProveedor?.id || null,
+          })
+          .select()
+          .single();
+        if (prodErr) throw prodErr;
+        nuevo = creado;
+      }
+
+      // 2. A la orden: completando SU línea si se vino de una, o agregando una
+      //    nueva si se abrió desde la fila amarilla.
       const cant = Number(quickProd.cantidad) || 1;
       const itbisPct = Number(quickProd.itbis_pct) || 0;
       const precio = Number(quickProd.costo) || 0;
-      setDetalles(prev => [...prev, {
-        id: `new-${Date.now()}`,
-        producto_id: nuevo.id,
-        codigo: nuevo.codigo,
-        descripcion: nuevo.descripcion,
-        cantidad: cant,
-        // Del formulario, no del producto: la unidad es de la LINEA de la
-        // orden. El producto que acaba de volver de la base no la trae.
-        unidad: quickProd.unidad || 'UND',
-        precio,
-        descuento_pct: 0,
-        itbis_pct: itbisPct,
-        importe: cant * precio,
-        existencia: 0,
-        _is_new_product: true,
-      }]);
+      // La unidad sale del formulario, no del producto: es de la LINEA de la
+      // orden y el producto que vuelve de la base no la trae.
+      const unidadLinea = quickProd.unidad || 'UND';
+
+      if (quickProdLinea) {
+        setDetalles(prev => calculateAllImportes(prev.map(x => (
+          x.id === quickProdLinea
+            ? {
+                ...x,                      // conserva _sv_item_id y la decisión
+                producto_id: nuevo.id,
+                codigo: nuevo.codigo,
+                descripcion: nuevo.descripcion || x.descripcion,
+                cantidad: cant,
+                unidad: unidadLinea,
+                precio,
+                itbis_pct: itbisPct,
+                _is_new_product: !yaExiste,
+              }
+            : x
+        ))));
+      } else {
+        setDetalles(prev => calculateAllImportes([...prev, {
+          id: `new-${Date.now()}`,
+          producto_id: nuevo.id,
+          codigo: nuevo.codigo,
+          descripcion: nuevo.descripcion,
+          cantidad: cant,
+          unidad: unidadLinea,
+          precio,
+          descuento_pct: 0,
+          itbis_pct: itbisPct,
+          importe: cant * precio,
+          existencia: 0,
+          decision_estado: DECISION_DEFAULT,
+          decision_motivo: null,
+          _is_new_product: !yaExiste,
+        }]));
+      }
 
       toast({
-        title: '✅ Producto creado y agregado',
+        title: yaExiste
+          ? (quickProdLinea ? '🔗 Se le puso un código que ya existía' : '🔗 Ese código ya existía: se enganchó')
+          : (quickProdLinea ? '✅ Producto creado y código puesto' : '✅ Producto creado y agregado'),
         description: `${nuevo.codigo} — ${nuevo.descripcion}`,
       });
       setQuickProdModalOpen(false);
@@ -3118,7 +3196,17 @@ const OrdenCompraPage = () => {
                       <>
                         <TableCell className="py-0 px-2 text-slate-700 font-medium">
                           <div className="flex items-center gap-1">
-                            {d.codigo}
+                            {/* Sin producto: viene del Suplidor Virtual, anotada a
+                                mano y sin catalogar. Aquí se le pone el código. */}
+                            {!d.producto_id ? (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); abrirCodigoParaLinea(d); }}
+                                className="px-1.5 py-0 rounded text-[10px] font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300 flex items-center gap-0.5"
+                                title="Esta pieza no tiene código. Clic para crearla y ponerle el suyo."
+                              >
+                                <Plus className="w-3 h-3" /> código
+                              </button>
+                            ) : d.codigo}
                             {equivalentesMap[d.producto_id] && (
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -3928,14 +4016,17 @@ const OrdenCompraPage = () => {
       {/* ════════════════════════════════════════════════════ */}
       {/* Modal Quick Product: crear producto sin salir de la OC */}
       {/* ════════════════════════════════════════════════════ */}
-      <Dialog open={quickProdModalOpen} onOpenChange={(open) => { if (!open) setQuickProdModalOpen(false); }}>
+      <Dialog open={quickProdModalOpen} onOpenChange={(open) => { if (!open) { setQuickProdModalOpen(false); setQuickProdLinea(null); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-emerald-700">
-              <Plus className="w-5 h-5" /> Producto Nuevo Rápido
+              <Plus className="w-5 h-5" />
+              {quickProdLinea ? 'Ponerle código a esta línea' : 'Producto Nuevo Rápido'}
             </DialogTitle>
             <DialogDescription className="text-slate-600 text-xs">
-              Creá el producto y agregalo a esta orden en un solo paso. Después podés afinar precio/categoría desde Mercancías.
+              {quickProdLinea
+                ? 'Esta pieza entró sin código (viene del Suplidor Virtual). Escribile el código y queda creada y amarrada a esta misma línea. Si el código ya existe, se engancha ese producto.'
+                : 'Creá el producto y agregalo a esta orden en un solo paso. Después podés afinar precio/categoría desde Mercancías.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -3996,7 +4087,7 @@ const OrdenCompraPage = () => {
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setQuickProdModalOpen(false)} disabled={creandoProducto}>
+            <Button variant="outline" onClick={() => { setQuickProdModalOpen(false); setQuickProdLinea(null); }} disabled={creandoProducto}>
               Cancelar (ESC)
             </Button>
             <Button
@@ -4005,7 +4096,7 @@ const OrdenCompraPage = () => {
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               {creandoProducto ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              Crear y agregar a la orden
+              {quickProdLinea ? 'Guardar el código' : 'Crear y agregar a la orden'}
             </Button>
           </DialogFooter>
         </DialogContent>
