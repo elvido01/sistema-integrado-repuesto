@@ -376,8 +376,11 @@ const OrdenCompraPage = () => {
           costo: Number(quickProd.costo) || 0,
           precio: Number(quickProd.costo) || 0,  // precio default = costo (se ajusta despues)
           itbis_pct: Number(quickProd.itbis_pct) || 0,
-          unidad: quickProd.unidad || 'UND',
-          existencia: 0,
+          // NI `unidad` NI `existencia`: la tabla productos no tiene esas
+          // columnas. La unidad vive en la linea de la orden, y la existencia
+          // es la suma del kardex (get_stock_actual), no un campo del producto.
+          // Mandarlas hacia "Could not find the 'existencia' column of
+          // 'productos' in the schema cache" y el alta rapida no creaba nada.
           activo: true,
           suplidor_id: selectedProveedor?.id || null,
         })
@@ -395,7 +398,9 @@ const OrdenCompraPage = () => {
         codigo: nuevo.codigo,
         descripcion: nuevo.descripcion,
         cantidad: cant,
-        unidad: nuevo.unidad,
+        // Del formulario, no del producto: la unidad es de la LINEA de la
+        // orden. El producto que acaba de volver de la base no la trae.
+        unidad: quickProd.unidad || 'UND',
         precio,
         descuento_pct: 0,
         itbis_pct: itbisPct,
