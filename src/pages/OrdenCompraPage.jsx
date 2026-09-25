@@ -1132,7 +1132,16 @@ const OrdenCompraPage = () => {
 
   const handleEditDetalle = (detalle) => {
     // If there's already an item being edited, commit it back first
-    if (editingDetalleId && stagingItem.producto_id) {
+    // >>> TAMBIEN LAS QUE NO TIENEN PRODUCTO <<<
+    // Pedia producto_id para devolver el cambio, y hay dos clases de linea que
+    // no lo tienen: las del Suplidor Virtual (piezas anotadas a mano, sin
+    // catalogar) y las del dealer de vehiculos antes de grabar (el producto
+    // por chasis se crea al guardar la orden). En esas, editar y pasar a otra
+    // linea sin dar Ok tiraba el cambio sin decir nada. Lo que hace falta no
+    // es el producto, es que la fila amarilla traiga algo que devolver: si
+    // esta vacia no se pisa nada.
+    const hayQueDevolver = !!(stagingItem.producto_id || stagingItem.codigo || stagingItem.descripcion);
+    if (editingDetalleId && hayQueDevolver) {
       setDetalles(prev => {
         const updated = prev.map(d => d.id === editingDetalleId ? { ...d, ...stagingItem, id: d.id } : d);
         return calculateAllImportes(updated);
