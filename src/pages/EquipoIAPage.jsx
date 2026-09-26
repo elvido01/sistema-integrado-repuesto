@@ -107,6 +107,19 @@ const hace = (iso) => {
   return `hace ${Math.floor(s / 86400)} d`;
 };
 
+const enlaceVideoVerificado = (video) => {
+  try {
+    const url = new URL(video.external_url);
+    if (url.protocol !== 'https:') return null;
+    const host = url.hostname.toLowerCase();
+    const esTikTok = host === 'tiktok.com' || host.endsWith('.tiktok.com');
+    const esYouTube = host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be';
+    return video.platform === 'tiktok' ? (esTikTok ? url.href : null) : (esYouTube ? url.href : null);
+  } catch {
+    return null;
+  }
+};
+
 // Nada de lo que llega del backend se pinta como HTML. Es texto que
 // escribió un modelo: tratarlo como marcado sería abrirle la pantalla.
 const Texto = ({ children, className = '' }) => (
@@ -230,6 +243,8 @@ const EquipoIAPage = () => {
   const [atascos, setAtascos] = useState([]);
   const [destinos, setDestinos] = useState([]);
   const [errorDestinos, setErrorDestinos] = useState(false);
+  const [videosMetricool, setVideosMetricool] = useState([]);
+  const [errorMetricool, setErrorMetricool] = useState(false);
 
   const cargar = useCallback(async (silencioso) => {
     if (!silencioso) setCargando(true);
@@ -237,7 +252,7 @@ const EquipoIAPage = () => {
     // para agregarle tres columnas. Una tercera copia de noventa líneas de
     // SQL para colgarle un dato es comprar una divergencia segura a cambio
     // de un viaje de red.
-    const [panel, ws, at, pub] = await Promise.all([
+    const [panel, ws, at, pub, videos] = await Promise.all([
       supabase.rpc('equipo_panel', { p_limite: 25 }),
       supabase.rpc('equipo_workers_estado'),
       // El reloj. Va aparte por lo mismo que el latido: equipo_panel ya se
@@ -246,6 +261,14 @@ const EquipoIAPage = () => {
       supabase.from('hermes_publication_targets')
         .select('id,platform,placement,status,external_url,error_message,updated_at,hermes_publication_jobs(title,scheduled_for)')
         .order('updated_at', { ascending: false }).limit(24),
+      supabase.from('social_posts')
+        .select('id,platform,post_type,title,external_url,published_at,verified_at')
+        .in('platform', ['tiktok', 'youtube'])
+        .in('source_provider', ['metricool', 'metricool_analytics'])
+        .eq('status', 'publicado')
+        .not('external_url', 'is', null)
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .order('verified_at', { ascending: false }).limit(20),
     ]);
     if (panel.error) {
       toast({ variant: 'destructive', title: 'No se pudo cargar el equipo', description: panel.error.message });
@@ -258,6 +281,8 @@ const EquipoIAPage = () => {
     setAtascos(at.error ? [] : (at.data || []));
     setDestinos(pub.error ? [] : (pub.data || []));
     setErrorDestinos(Boolean(pub.error));
+    setVideosMetricool(videos.error ? [] : (videos.data || []).filter((video) => enlaceVideoVerificado(video)));
+    setErrorMetricool(Boolean(videos.error));
     setCargando(false);
   }, [toast]);
 
@@ -445,6 +470,11 @@ const EquipoIAPage = () => {
       <section className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Estado de publicaciones">
         <h2 className="text-sm font-bold text-slate-800">Publicaciones por red y formato</h2>
         <p className="mb-3 text-xs text-slate-500">Cada destino se comprueba por separado. “Sin confirmar” todavía no cuenta como publicado.</p>
+        <button type="button" className="mb-4 rounded bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 underline"
+          onClick={() => document.getElementById('videos-metricool')?.scrollIntoView({ behavior: 'smooth' })}>
+          Ver TikTok ({videosMetricool.filter((v) => v.platform === 'tiktok').length}) y YouTube ({videosMetricool.filter((v) => v.platform === 'youtube').length}) ↓
+        </button>
+        <h3 className="mb-2 text-xs font-bold text-slate-700">Órdenes de Equipo IA</h3>
         {errorDestinos ? (
           <p className="text-xs text-amber-700">No se pudo consultar el estado de las publicaciones. Actualiza la página o revisa el acceso.</p>
         ) : destinos.length === 0 ? (
@@ -467,6 +497,33 @@ const EquipoIAPage = () => {
             ))}
           </div>
         )}
+        <div id="videos-metricool" className="mt-5 border-t border-slate-200 pt-4">
+          <h3 className="text-xs font-bold text-slate-700">TikTok y YouTube publicados mediante Metricool</h3>
+          <p className="mb-3 text-xs text-slate-500">Videos verificados en las redes. Su presencia aquí no significa que formaran parte de una orden de Hermes.</p>
+          {errorMetricool ? (
+            <p className="text-xs text-amber-700">No se pudo consultar el historial de Metricool en MotoFlow.</p>
+          ) : videosMetricool.length === 0 ? (
+            <p className="text-xs text-slate-500">Todavía no hay videos de TikTok o YouTube verificados en este registro.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {videosMetricool.map((video) => (
+                <div key={video.id} className="rounded-lg border border-slate-200 p-2 text-xs">
+                  <p className="truncate font-semibold text-slate-700"><Texto>{video.title || 'Video sin título'}</Texto></p>
+                  <p className="text-slate-500">
+                    {video.platform === 'tiktok' ? 'TikTok · video vertical' : video.post_type === 'short' ? 'YouTube · Short' : 'YouTube · video'}
+                  </p>
+                  <p className="text-slate-400">
+                    {video.published_at
+                      ? `Publicado ${new Date(video.published_at).toLocaleDateString('es-DO', { timeZone: 'America/Santo_Domingo' })}`
+                      : `Fecha de publicación no informada · verificado ${new Date(video.verified_at).toLocaleDateString('es-DO', { timeZone: 'America/Santo_Domingo' })}`}
+                  </p>
+                  <p className="font-semibold text-emerald-700">Publicado y verificado</p>
+                  <a className="text-blue-700 underline" href={enlaceVideoVerificado(video)} target="_blank" rel="noreferrer">Ver video</a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* ── A · LAS TRES TARJETAS ──────────────────────────────────── */}
