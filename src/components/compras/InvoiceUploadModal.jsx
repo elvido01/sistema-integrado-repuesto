@@ -72,9 +72,17 @@ const InvoiceUploadModal = ({ isOpen, onClose, onDataExtracted }) => {
                 throw new Error(errorBody?.error || functionError.message || "Error desconocido en el servidor.");
             }
 
+            // Cuál de los dos motores la leyó. Si entró por Gemini es porque
+            // Google Vision está caído (la facturación del proyecto), y eso
+            // hay que decirlo: la factura entra igual, pero conviene repasar
+            // los números y arreglar la cuenta cuando se pueda.
+            const porGemini = data?.motor === 'gemini';
             toast({
                 title: "Éxito",
-                description: "Datos extraídos correctamente de la factura.",
+                duration: porGemini ? 12000 : undefined,
+                description: porGemini
+                    ? 'Leída con Gemini porque Google Vision no respondió. Repasá cantidades y costos antes de guardar.'
+                    : "Datos extraídos correctamente de la factura.",
             });
 
             onDataExtracted({
