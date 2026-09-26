@@ -31,7 +31,11 @@ export default function AgentLearningPanel({ learning, onGenerate, generating })
                         <div>
                             <p className="text-xs font-bold text-emerald-700 flex items-center gap-1 mb-1"><TrendingUp className="h-3.5 w-3.5" /> Mejor rendimiento</p>
                             <ul className="text-sm text-slate-600 space-y-1">
-                                {learning.top_contenidos.slice(0, 5).map((c, i) => <li key={i}>• {c.detalle} <span className="text-slate-400">— {c.por_que}</span></li>)}
+                                {learning.top_contenidos.slice(0, 5).map((c, i) => (
+                                    <li key={i}>• {c.detalle || c.title || 'Publicación sin título'}
+                                        <span className="text-slate-400"> — {c.por_que || [c.platform, c.views == null ? null : `${Number(c.views).toLocaleString('es-DO')} vistas`].filter(Boolean).join(' · ')}</span>
+                                    </li>
+                                ))}
                             </ul>
                         </div>
                     )}

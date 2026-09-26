@@ -52,7 +52,7 @@ export default function SocialAccountsConnector() {
     return (
         <div className="bg-white rounded-xl border border-slate-200 p-4">
             <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><Link2 className="h-5 w-5 text-violet-600" /> Cuentas sociales</h3>
-            <p className="text-xs text-slate-500 mb-4">Registra tus cuentas (handle/usuario). La conexión automática por API llega en la Fase 2b.</p>
+            <p className="text-xs text-slate-500 mb-4">Las cuentas registradas manualmente no autorizan publicar ni sincronizar métricas desde MotoFlow.</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {PLATFORMS.map(({ key, label, icon: Icon, color }) => {
@@ -62,7 +62,7 @@ export default function SocialAccountsConnector() {
                             <div className="flex items-center gap-2 mb-2">
                                 <Icon className={`h-5 w-5 ${color}`} />
                                 <span className="font-bold text-slate-700 text-sm">{label}</span>
-                                {acc && <span className="ml-auto text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">conectada</span>}
+                                {acc && <span className={`ml-auto text-[10px] font-bold uppercase px-2 py-0.5 rounded ${acc.status === 'connected' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{acc.status === 'connected' ? 'conectada' : 'solo registrada'}</span>}
                             </div>
                             {acc ? (
                                 <div className="flex items-center justify-between">

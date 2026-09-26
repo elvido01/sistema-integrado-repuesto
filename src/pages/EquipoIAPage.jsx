@@ -50,6 +50,13 @@ const ESTADO_TRABAJO = {
   expired:            { txt: 'Vencido',              cls: 'bg-slate-200 text-slate-500' },
 };
 
+const ESTADO_PUBLICACION = {
+  published: 'Publicado', failed: 'Falló', awaiting_confirmation: 'Sin confirmar',
+  awaiting_approval: 'Espera aprobación', awaiting_upload: 'Espera archivo',
+  scheduled: 'Programado', queued: 'En cola', processing: 'Publicando',
+  draft: 'Borrador', cancelled: 'Cancelado',
+};
+
 const ICONO = { hermes: Bot, jarvis: Database, comercial_creativo: Sparkles };
 const NOMBRE_CORTO = { hermes: 'Hermes', jarvis: 'Jarvis', comercial_creativo: 'Comercial-Creativo', elvido: 'Elvido' };
 
@@ -221,6 +228,8 @@ const EquipoIAPage = () => {
   const [guardandoMotor, setGuardandoMotor] = useState(false);
   const [workers, setWorkers] = useState([]);
   const [atascos, setAtascos] = useState([]);
+  const [destinos, setDestinos] = useState([]);
+  const [errorDestinos, setErrorDestinos] = useState(false);
 
   const cargar = useCallback(async (silencioso) => {
     if (!silencioso) setCargando(true);
@@ -228,12 +237,15 @@ const EquipoIAPage = () => {
     // para agregarle tres columnas. Una tercera copia de noventa líneas de
     // SQL para colgarle un dato es comprar una divergencia segura a cambio
     // de un viaje de red.
-    const [panel, ws, at] = await Promise.all([
+    const [panel, ws, at, pub] = await Promise.all([
       supabase.rpc('equipo_panel', { p_limite: 25 }),
       supabase.rpc('equipo_workers_estado'),
       // El reloj. Va aparte por lo mismo que el latido: equipo_panel ya se
       // reescribió entera una vez para colgarle columnas.
       supabase.rpc('equipo_atascos', { p_minutos: 30 }),
+      supabase.from('hermes_publication_targets')
+        .select('id,platform,placement,status,external_url,error_message,updated_at,hermes_publication_jobs(title,scheduled_for)')
+        .order('updated_at', { ascending: false }).limit(24),
     ]);
     if (panel.error) {
       toast({ variant: 'destructive', title: 'No se pudo cargar el equipo', description: panel.error.message });
@@ -244,6 +256,8 @@ const EquipoIAPage = () => {
     // que se corra su SQL esta llamada da error de función inexistente.
     setWorkers(ws.error ? [] : (ws.data || []));
     setAtascos(at.error ? [] : (at.data || []));
+    setDestinos(pub.error ? [] : (pub.data || []));
+    setErrorDestinos(Boolean(pub.error));
     setCargando(false);
   }, [toast]);
 
@@ -427,6 +441,33 @@ const EquipoIAPage = () => {
           <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
         </Button>
       </div>
+
+      <section className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Estado de publicaciones">
+        <h2 className="text-sm font-bold text-slate-800">Publicaciones por red y formato</h2>
+        <p className="mb-3 text-xs text-slate-500">Cada destino se comprueba por separado. “Sin confirmar” todavía no cuenta como publicado.</p>
+        {errorDestinos ? (
+          <p className="text-xs text-amber-700">No se pudo consultar el estado de las publicaciones. Actualiza la página o revisa el acceso.</p>
+        ) : destinos.length === 0 ? (
+          <p className="text-xs text-slate-500">Todavía no hay destinos registrados en este módulo.</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {destinos.map((d) => (
+              <div key={d.id} className="rounded-lg border border-slate-200 p-2 text-xs">
+                <p className="truncate font-semibold text-slate-700"><Texto>{d.hermes_publication_jobs?.title || 'Publicación'}</Texto></p>
+                <p className="text-slate-500 capitalize"><Texto>{d.platform}</Texto> · <Texto>{d.placement}</Texto></p>
+                <p className="text-slate-400">Actualizado {hace(d.updated_at)}</p>
+                <p className={`font-semibold ${d.status === 'published' ? 'text-emerald-700' : d.status === 'failed' ? 'text-red-700' : 'text-amber-700'}`}>
+                  {ESTADO_PUBLICACION[d.status] || d.status}
+                </p>
+                {d.status === 'published' && d.external_url && (
+                  <a className="text-blue-700 underline" href={d.external_url} target="_blank" rel="noreferrer">Ver publicación</a>
+                )}
+                {d.status === 'failed' && d.error_message && <p className="mt-1 text-red-700"><Texto>{d.error_message}</Texto></p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* ── A · LAS TRES TARJETAS ──────────────────────────────────── */}
       <div className="mb-4 grid gap-3 md:grid-cols-3">

@@ -12,7 +12,7 @@ const CLASIF_BADGE = {
 
 export default function SocialPostRankingTable({ rows }) {
     if (!rows || rows.length === 0) {
-        return <p className="text-center text-slate-400 py-8 text-sm">Sin datos de rendimiento todavía. Registra publicaciones y métricas.</p>;
+        return <p className="text-center text-slate-400 py-8 text-sm">Aún no hay publicaciones con métricas verificadas.</p>;
     }
     return (
         <div className="overflow-x-auto">
@@ -23,7 +23,6 @@ export default function SocialPostRankingTable({ rows }) {
                         <th className="py-2 px-2">Publicación</th>
                         <th className="py-2 px-2">Canal</th>
                         <th className="py-2 px-2 text-right">Vistas</th>
-                        <th className="py-2 px-2 text-right">Score</th>
                         <th className="py-2 px-2 text-right">Impacto</th>
                         <th className="py-2 px-2">Clasif.</th>
                         <th></th>
@@ -38,8 +37,7 @@ export default function SocialPostRankingTable({ rows }) {
                                 <div className="text-xs text-slate-400 truncate max-w-[200px]">{r.productos?.descripcion || 'General'}</div>
                             </td>
                             <td className="py-2 px-2"><span className="text-xs bg-slate-100 px-2 py-0.5 rounded">{r.platform}</span></td>
-                            <td className="py-2 px-2 text-right">{Number(r.metric?.views || 0).toLocaleString('es-DO')}</td>
-                            <td className="py-2 px-2 text-right font-bold text-violet-700">{r.metric?.performance_score || 0}</td>
+                            <td className="py-2 px-2 text-right">{r.metric?.views == null ? '—' : Number(r.metric.views).toLocaleString('es-DO')}</td>
                             <td className="py-2 px-2 text-right">{r.impact?.sales_impact_score ?? '—'}</td>
                             <td className="py-2 px-2">{r.impact?.clasificacion && <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${CLASIF_BADGE[r.impact.clasificacion] || 'bg-slate-100'}`}>{r.impact.clasificacion.replace('_', ' ')}</span>}</td>
                             <td className="py-2 px-2">{r.external_url && <a href={r.external_url} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-violet-600"><ExternalLink className="h-4 w-4" /></a>}</td>

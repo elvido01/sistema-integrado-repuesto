@@ -95,12 +95,13 @@ export async function saveManualMetrics(tenantId, postId, m) {
 
 export async function getLatestMetrics(tenantId, postIds) {
     if (!postIds?.length) return {};
-    const { data } = await supabase
-        .from('social_post_metrics')
-        .select('post_id, views, likes, comments, shares, saves, clicks, performance_score, engagement_rate, captured_at')
-        .in('post_id', postIds).order('captured_at', { ascending: false });
+    const { data, error } = await supabase
+        .from('social_performance_latest')
+        .select('post_id, views, reach, likes, comments, shares, saves, clicks, captured_at, origen')
+        .eq('tenant_id', tenantId).in('post_id', postIds);
+    if (error) throw error;
     const latest = {};
-    for (const m of data || []) if (!latest[m.post_id]) latest[m.post_id] = m;
+    for (const m of data || []) if (m.captured_at) latest[m.post_id] = m;
     return latest;
 }
 
@@ -141,8 +142,9 @@ export async function getTopPerformingPosts(tenantId, limit = 20) {
     const ids = posts.map((p) => p.id);
     const [metrics, impacts] = await Promise.all([getLatestMetrics(tenantId, ids), getImpacts(tenantId, ids)]);
     return posts
-        .map((p) => ({ ...p, metric: metrics[p.id] || {}, impact: impacts[p.id] || {} }))
-        .sort((a, b) => (b.metric.performance_score || 0) - (a.metric.performance_score || 0))
+        .filter((p) => Boolean(metrics[p.id]))
+        .map((p) => ({ ...p, metric: metrics[p.id], impact: impacts[p.id] || {} }))
+        .sort((a, b) => Number(b.metric.views ?? b.metric.reach ?? -1) - Number(a.metric.views ?? a.metric.reach ?? -1))
         .slice(0, limit);
 }
 
@@ -150,12 +152,16 @@ export async function getDashboardTotals(tenantId) {
     const posts = await listSocialPosts(tenantId);
     const ids = posts.map((p) => p.id);
     const metrics = await getLatestMetrics(tenantId, ids);
-    const t = { posts: posts.length, views: 0, likes: 0, comments: 0, shares: 0, clicks: 0, porPlataforma: {} };
+    const t = { posts: posts.length, measuredPosts: 0, lastCapturedAt: null, views: null, likes: null, comments: null, shares: null, clicks: null, porPlataforma: {} };
     for (const p of posts) {
-        const m = metrics[p.id] || {};
-        t.views += Number(m.views || 0); t.likes += Number(m.likes || 0);
-        t.comments += Number(m.comments || 0); t.shares += Number(m.shares || 0);
-        t.clicks += Number(m.clicks || 0);
+        const m = metrics[p.id];
+        if (m) {
+            t.measuredPosts += 1;
+            if (!t.lastCapturedAt || m.captured_at > t.lastCapturedAt) t.lastCapturedAt = m.captured_at;
+            for (const field of ['views', 'likes', 'comments', 'shares', 'clicks']) {
+                if (m[field] != null) t[field] = Number(t[field] || 0) + Number(m[field]);
+            }
+        }
         t.porPlataforma[p.platform] = (t.porPlataforma[p.platform] || 0) + 1;
     }
     return t;

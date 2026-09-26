@@ -99,7 +99,8 @@ export default function MarketingMetrics() {
 
             {/* Ranking */}
             <div className="bg-white rounded-xl border border-slate-200 p-4">
-                <h3 className="font-bold text-slate-800 mb-3">Ranking de publicaciones</h3>
+                <h3 className="font-bold text-slate-800 mb-1">Publicaciones medidas</h3>
+                <p className="text-xs text-slate-500 mb-3">Ordenadas por vistas disponibles. Compara resultados dentro de cada red.</p>
                 <SocialPostRankingTable rows={ranking} />
             </div>
 
