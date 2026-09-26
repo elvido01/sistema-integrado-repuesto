@@ -8,7 +8,7 @@ Inventario funcional de los paneles. Si abres `componentMapping` en [PanelContex
 |---|---|---|
 | **Ventas** | [VentasPage.jsx](../src/pages/VentasPage.jsx) | Facturación POS (B01-B02), código + Enter, F10 grabar, sugerencia de equivalentes al agotar stock |
 | **Recibo de Ingreso** | [ReciboIngresoPage.jsx](../src/pages/ReciboIngresoPage.jsx) | Cobros a clientes, aplicación a facturas/abonos |
-| **Compras** | [ComprasPage.jsx](../src/pages/ComprasPage.jsx) | Recepción de mercancía con OCR de factura suplidor (`extract_purchase_from_image`) |
+| **Compras** | [ComprasPage.jsx](../src/pages/ComprasPage.jsx) | Recepción de mercancía con OCR de factura suplidor (`extract-purchase-from-image`) |
 | **Pedidos** | [PedidosPage.jsx](../src/pages/PedidosPage.jsx) | Pedidos a facturar después |
 | **Cotizaciones** | [CotizacionPage.jsx](../src/pages/CotizacionPage.jsx) | Cotizaciones con retención de 15 días |
 | **Orden de Compra** | [OrdenCompraPage.jsx](../src/pages/OrdenCompraPage.jsx) | OC manuales + Orden Automática (reposición) + Compra Inteligente v2 + Reorganizar por suplidor |

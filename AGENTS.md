@@ -61,11 +61,11 @@ Mobile screens with fixed bottom actions (Guardar, Cancelar, Compartir, Finaliza
 The purchase flow has three entry points, all landing in `ComprasPage.jsx`:
 - **Manual entry**: typing a code in the yellow staging row triggers `handleSearchByCode` (looks up product by code, fills cost/description/itbis)
 - **Product search modal**: `handleProductSelect` fills staging row from the modal result
-- **Invoice OCR**: `handleDataExtracted` calls the `extract_purchase_from_image` Edge Function, then matches returned codes against `productos` table — if matched, uses the stored `costo`; if unmatched, the line shows red and a `+` button to open `ProductFormModal` and create/link the product. Saving from that modal (F10) syncs `costo_unitario`, `descripcion`, `codigo` back to the compra line via `handleSaveProductFromOCR`.
+- **Invoice OCR**: `handleDataExtracted` calls the `extract-purchase-from-image` Edge Function, then matches returned codes against `productos` table — if matched, uses the stored `costo`; if unmatched, the line shows red and a `+` button to open `ProductFormModal` and create/link the product. Saving from that modal (F10) syncs `costo_unitario`, `descripcion`, `codigo` back to the compra line via `handleSaveProductFromOCR`.
 
 ### Supabase Edge Functions
 Located in `supabase/functions/`:
-- `extract_purchase_from_image` — OCR via Google Vision + GPT to extract invoice line items from images
+- `extract-purchase-from-image` — OCR via Google Vision + Gemini to extract invoice line items from images
 - `admin-management` — super-admin operations
 - `emitir-fiscal` — fiscal document emission
 

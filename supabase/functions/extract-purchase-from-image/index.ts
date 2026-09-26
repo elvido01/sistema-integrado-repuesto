@@ -33,14 +33,27 @@ Deno.serve(async (req: Request) => {
 
             if (downloadError) throw new Error(`Error al descargar imagen: ${image_path}`);
 
-            const base64Image = btoa(
-                new Uint8Array(await fileData.arrayBuffer()).reduce(
-                    (data, byte) => data + String.fromCharCode(byte),
-                    ''
-                )
-            );
+            // A base64 por trozos. El reduce de antes concatenaba un string
+            // por BYTE (O(n^2)): con una foto de 3 MB son millones de
+            // concatenaciones antes siquiera de llamar a Google.
+            const bytes = new Uint8Array(await fileData.arrayBuffer());
+            if (!bytes.length) {
+                throw new Error(`La imagen ${image_path} llegó vacía del almacenamiento.`);
+            }
+            // Vision no pasa de 20 MB por imagen y base64 infla un 33%.
+            if (bytes.length > 15 * 1024 * 1024) {
+                throw new Error(`La imagen pesa ${(bytes.length / 1048576).toFixed(1)} MB y Google Vision no acepta más de ~15 MB. Tómala de nuevo con menos resolución.`);
+            }
+            let binario = '';
+            for (let i = 0; i < bytes.length; i += 0x8000) {
+                binario += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+            }
+            const base64Image = btoa(binario);
 
             const GOOGLE_VISION_API_KEY = Deno.env.get('GOOGLE_VISION_API_KEY');
+            if (!GOOGLE_VISION_API_KEY) {
+                throw new Error('Falta GOOGLE_VISION_API_KEY en las variables de la función.');
+            }
             const visionResponse = await fetch(
                 `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`,
                 {
@@ -54,11 +67,29 @@ Deno.serve(async (req: Request) => {
                 }
             );
 
-            const visionResult = await visionResponse.json();
-            fullOcrText += (visionResult.responses?.[0]?.fullTextAnnotation?.text || "") + "\n\n";
+            // >>> LO QUE CONTESTE GOOGLE SE DICE, NO SE TIRA <<<
+            // Esto era `visionResult.responses?.[0]?.fullTextAnnotation?.text || ""`.
+            // Si Google contestaba "clave no válida", "API deshabilitada" o
+            // "billing", el texto quedaba vacío y el usuario leía siempre lo
+            // mismo — "No se pudo extraer texto de las imágenes" — que manda a
+            // mirar la foto cuando el problema está en la cuenta de Google.
+            const crudo = await visionResponse.text();
+            let visionResult: any = {};
+            try { visionResult = JSON.parse(crudo); } catch { /* no vino JSON */ }
+            const errVision = visionResult?.error || visionResult?.responses?.[0]?.error;
+            if (!visionResponse.ok || errVision) {
+                const detalle = errVision?.message || crudo.slice(0, 300) || `HTTP ${visionResponse.status}`;
+                console.error(`[VISION] ${visionResponse.status} — ${detalle}`);
+                throw new Error(`Google Vision rechazó la imagen (HTTP ${visionResponse.status}): ${detalle}`);
+            }
+            const texto = visionResult?.responses?.[0]?.fullTextAnnotation?.text || "";
+            console.log(`[LOG] OCR de ${image_path}: ${texto.length} caracteres`);
+            fullOcrText += texto + "\n\n";
         }
 
-        if (!fullOcrText.trim()) throw new Error("No se pudo extraer texto de las imágenes.");
+        if (!fullOcrText.trim()) {
+            throw new Error("Google Vision respondió sin error pero no encontró ni una letra en la(s) imagen(es). Revisa que la foto esté enfocada, derecha y completa.");
+        }
 
         // 2. Data Extraction with CONFIRMED Gemini Models
         const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');

@@ -7,7 +7,7 @@ Todas en `supabase/functions/<nombre>/index.ts` (Deno). Variables de entorno en 
 | Función | Para qué | Notas |
 |---|---|---|
 | `admin-management` | Operaciones super-admin (crear tenant, asignar plan) | Service role |
-| `extract_purchase_from_image` | OCR factura suplidor → líneas de compra | Google Vision + GPT-4o-mini |
+| `extract-purchase-from-image` | OCR factura suplidor → líneas de compra | Google Vision + Gemini (2.5-flash, 3-flash, flash-latest) |
 | `emitir-fiscal` | Emite e-CF firmado a DGII | Firma XAdES-BES, llama TesteCF/CerteCF/eCF |
 | `dgii-callback` | Webhook respuesta DGII | Loguea en `dgii_callbacks_log`, actualiza `dgii_documentos_fiscales` |
 | `motoflow-ai-chat` | Chat con asistente IA del módulo AI CEO | gpt-4o-mini |
@@ -78,7 +78,7 @@ Ver [memory/reference_dgii_endpoints.md](../memory/reference_dgii_endpoints.md) 
 
 ## Google Vision
 
-Usado por `extract_purchase_from_image`. Detecta texto en imágenes de facturas suplidor (OCR). Key en secrets de la edge function.
+Usado por `extract-purchase-from-image`. Detecta texto en imágenes de facturas suplidor (OCR). Key en secrets de la edge function.
 
 ## Meta (WhatsApp Business + FB/IG)
 
