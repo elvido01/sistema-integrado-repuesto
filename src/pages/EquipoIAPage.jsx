@@ -57,6 +57,8 @@ const ESTADO_PUBLICACION = {
   draft: 'Borrador', cancelled: 'Cancelado',
 };
 
+const PUBLICACIONES_RECIENTES = 3;
+
 const ICONO = { hermes: Bot, jarvis: Database, comercial_creativo: Sparkles };
 const NOMBRE_CORTO = { hermes: 'Hermes', jarvis: 'Jarvis', comercial_creativo: 'Comercial-Creativo', elvido: 'Elvido' };
 
@@ -245,6 +247,8 @@ const EquipoIAPage = () => {
   const [errorDestinos, setErrorDestinos] = useState(false);
   const [videosMetricool, setVideosMetricool] = useState([]);
   const [errorMetricool, setErrorMetricool] = useState(false);
+  const [verOrdenesAnteriores, setVerOrdenesAnteriores] = useState(false);
+  const [verVideosAnteriores, setVerVideosAnteriores] = useState(false);
 
   const cargar = useCallback(async (silencioso) => {
     if (!silencioso) setCargando(true);
@@ -259,8 +263,8 @@ const EquipoIAPage = () => {
       // reescribió entera una vez para colgarle columnas.
       supabase.rpc('equipo_atascos', { p_minutos: 30 }),
       supabase.from('hermes_publication_targets')
-        .select('id,platform,placement,status,external_url,error_message,updated_at,hermes_publication_jobs(title,scheduled_for)')
-        .order('updated_at', { ascending: false }).limit(24),
+        .select('id,job_id,platform,placement,status,external_url,error_message,created_at,updated_at,hermes_publication_jobs(title,created_at,scheduled_for)')
+        .order('created_at', { ascending: false }).limit(100),
       supabase.from('social_posts')
         .select('id,platform,post_type,title,external_url,published_at,verified_at')
         .in('platform', ['tiktok', 'youtube'])
@@ -268,7 +272,7 @@ const EquipoIAPage = () => {
         .eq('status', 'publicado')
         .not('external_url', 'is', null)
         .order('published_at', { ascending: false, nullsFirst: false })
-        .order('verified_at', { ascending: false }).limit(20),
+        .order('verified_at', { ascending: false }).limit(100),
     ]);
     if (panel.error) {
       toast({ variant: 'destructive', title: 'No se pudo cargar el equipo', description: panel.error.message });
@@ -320,6 +324,25 @@ const EquipoIAPage = () => {
     () => trabajos.filter((t) => !['completed', 'cancelled', 'expired'].includes(t.estado)),
     [trabajos],
   );
+
+  // Una orden puede tener varios destinos. Contamos las tres órdenes más
+  // recientes, no las tres tarjetas; updated_at cambia durante la verificación.
+  const destinosOrdenados = useMemo(() => [...destinos].sort((a, b) => {
+    const fechaA = a.hermes_publication_jobs?.created_at || a.created_at || '';
+    const fechaB = b.hermes_publication_jobs?.created_at || b.created_at || '';
+    return fechaB.localeCompare(fechaA) || (a.job_id || a.id).localeCompare(b.job_id || b.id);
+  }), [destinos]);
+  const ordenesRecientes = useMemo(() => new Set(
+    [...new Set(destinosOrdenados.map((d) => d.job_id || d.id))].slice(0, PUBLICACIONES_RECIENTES),
+  ), [destinosOrdenados]);
+  const destinosVisibles = verOrdenesAnteriores
+    ? destinosOrdenados
+    : destinosOrdenados.filter((d) => ordenesRecientes.has(d.job_id || d.id));
+  // Mantener ambas redes a la vista, aunque una tenga más videos recientes.
+  const videosVisibles = verVideosAnteriores ? videosMetricool : videosMetricool.filter((video) => {
+    const anteriores = videosMetricool.filter((v) => v.platform === video.platform);
+    return anteriores.indexOf(video) < PUBLICACIONES_RECIENTES;
+  });
 
   const pedir = async () => {
     const texto = peticion.trim();
@@ -474,14 +497,15 @@ const EquipoIAPage = () => {
           onClick={() => document.getElementById('videos-metricool')?.scrollIntoView({ behavior: 'smooth' })}>
           Ver TikTok ({videosMetricool.filter((v) => v.platform === 'tiktok').length}) y YouTube ({videosMetricool.filter((v) => v.platform === 'youtube').length}) ↓
         </button>
-        <h3 className="mb-2 text-xs font-bold text-slate-700">Órdenes de Equipo IA</h3>
+        <h3 className="mb-1 text-xs font-bold text-slate-700">Órdenes de Equipo IA</h3>
+        <p className="mb-2 text-xs text-slate-500">Se muestran las {PUBLICACIONES_RECIENTES} órdenes más recientes con todos sus destinos.</p>
         {errorDestinos ? (
           <p className="text-xs text-amber-700">No se pudo consultar el estado de las publicaciones. Actualiza la página o revisa el acceso.</p>
         ) : destinos.length === 0 ? (
           <p className="text-xs text-slate-500">Todavía no hay destinos registrados en este módulo.</p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {destinos.map((d) => (
+            {destinosVisibles.map((d) => (
               <div key={d.id} className="rounded-lg border border-slate-200 p-2 text-xs">
                 <p className="truncate font-semibold text-slate-700"><Texto>{d.hermes_publication_jobs?.title || 'Publicación'}</Texto></p>
                 <p className="text-slate-500 capitalize"><Texto>{d.platform}</Texto> · <Texto>{d.placement}</Texto></p>
@@ -497,16 +521,28 @@ const EquipoIAPage = () => {
             ))}
           </div>
         )}
+        {!errorDestinos && destinosVisibles.length < destinos.length && (
+          <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
+            onClick={() => setVerOrdenesAnteriores(true)}>
+            Ver órdenes anteriores
+          </button>
+        )}
+        {!errorDestinos && verOrdenesAnteriores && destinos.length > 0 && (
+          <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
+            onClick={() => setVerOrdenesAnteriores(false)}>
+            Ocultar órdenes anteriores
+          </button>
+        )}
         <div id="videos-metricool" className="mt-5 border-t border-slate-200 pt-4">
           <h3 className="text-xs font-bold text-slate-700">TikTok y YouTube publicados mediante Metricool</h3>
-          <p className="mb-3 text-xs text-slate-500">Videos verificados en las redes. Su presencia aquí no significa que formaran parte de una orden de Hermes.</p>
+          <p className="mb-3 text-xs text-slate-500">Se muestran los {PUBLICACIONES_RECIENTES} videos más recientes de cada red. Su presencia aquí no significa que formaran parte de una orden de Hermes.</p>
           {errorMetricool ? (
             <p className="text-xs text-amber-700">No se pudo consultar el historial de Metricool en MotoFlow.</p>
           ) : videosMetricool.length === 0 ? (
             <p className="text-xs text-slate-500">Todavía no hay videos de TikTok o YouTube verificados en este registro.</p>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {videosMetricool.map((video) => (
+              {videosVisibles.map((video) => (
                 <div key={video.id} className="rounded-lg border border-slate-200 p-2 text-xs">
                   <p className="truncate font-semibold text-slate-700"><Texto>{video.title || 'Video sin título'}</Texto></p>
                   <p className="text-slate-500">
@@ -522,6 +558,18 @@ const EquipoIAPage = () => {
                 </div>
               ))}
             </div>
+          )}
+          {!errorMetricool && videosVisibles.length < videosMetricool.length && (
+            <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
+              onClick={() => setVerVideosAnteriores(true)}>
+              Ver videos anteriores
+            </button>
+          )}
+          {!errorMetricool && verVideosAnteriores && videosMetricool.length > 0 && (
+            <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
+              onClick={() => setVerVideosAnteriores(false)}>
+              Ocultar videos anteriores
+            </button>
           )}
         </div>
       </section>
