@@ -37,6 +37,23 @@ const get = async (url, token) => {
   return { ok: r.ok && !body?.error, status: r.status, body, error: body?.error?.message };
 };
 
+// Lo que contesta la plataforma se ESCRIBE: de ahi lo lee el publicador para
+// decidir si programa esa red o la deja a la vista como "sin autorizar".
+// Si no se guardara, cada vez habria que acordarse de correr esto a mano.
+const anotar = async (cuenta, puede, detalle) => {
+  const { error: e } = await supabase
+    .from('social_accounts')
+    .update({
+      publicacion_habilitada: puede,
+      verificado_at: new Date().toISOString(),
+      verificacion_detalle: String(detalle || '').slice(0, 500),
+    })
+    .eq('id', cuenta.id)
+    .select('id');
+  if (e) console.log(`    (no se pudo anotar en la base: ${e.message})`);
+  else console.log(`    anotado: publicacion_habilitada = ${puede}`);
+};
+
 const { data: cuentas, error } = await supabase
   .from('social_accounts')
   .select('id, tenant_id, platform, account_name, external_account_id, status, connected_at')
@@ -57,6 +74,7 @@ for (const c of cuentas) {
   const sec = porCuenta.get(c.id);
   if (!sec?.access_token) {
     console.log('  ✗ SIN TOKEN: no se puede publicar por API. Falta conectar la cuenta.');
+    await anotar(c, false, 'Sin token guardado: la cuenta nunca se conecto por API.');
     continue;
   }
   const token = sec.access_token;
@@ -64,7 +82,12 @@ for (const c of cuentas) {
 
   if (c.platform === 'facebook') {
     const yo = await get(`https://graph.facebook.com/${V}/me?fields=id,name`, token);
-    if (!yo.ok) { console.log(`  ✗ TOKEN MUERTO: ${yo.error || yo.status}`); continue; }
+    if (!yo.ok) {
+      console.log(`  ✗ TOKEN MUERTO: ${yo.error || yo.status}`);
+      await anotar(c, false, yo.error || `HTTP ${yo.status}`);
+      continue;
+    }
+    await anotar(c, true, `Token vivo: responde como ${yo.body.name}`);
     console.log(`  ✓ Token vivo — responde como: ${yo.body.name} (${yo.body.id})`);
     if (yo.body.id !== c.external_account_id) {
       console.log(`  ⚠ OJO: la tabla apunta a ${c.external_account_id} y el token es de ${yo.body.id}`);
@@ -85,7 +108,11 @@ for (const c of cuentas) {
     const host = esIgApi ? 'graph.instagram.com' : 'graph.facebook.com';
     const ident = esIgApi ? 'me' : c.external_account_id;
     const yo = await get(`https://${host}/${V}/${ident}?fields=id,username`, token);
-    if (!yo.ok) { console.log(`  ✗ TOKEN MUERTO: ${yo.error || yo.status}`); continue; }
+    if (!yo.ok) {
+      console.log(`  ✗ TOKEN MUERTO: ${yo.error || yo.status}`);
+      await anotar(c, false, yo.error || `HTTP ${yo.status}`);
+      continue;
+    }
     console.log(`  ✓ Token vivo — cuenta: @${yo.body.username} (${yo.body.id})`);
     // Este endpoint exige el MISMO permiso que publicar, y no publica nada:
     // si contesta, la cuenta puede publicar; si no, dice por qué no.
@@ -93,13 +120,16 @@ for (const c of cuentas) {
     if (cupo.ok) {
       const q = cupo.body?.data?.[0];
       console.log(`  ✓ PUEDE PUBLICAR — usadas ${q?.quota_usage ?? '?'} de ${q?.config?.quota_total ?? '?'} en 24 h`);
+      await anotar(c, true, `Puede publicar: ${q?.quota_usage ?? '?'} de ${q?.config?.quota_total ?? '?'} en 24 h`);
     } else {
       console.log(`  ✗ NO PUEDE PUBLICAR: ${cupo.error || cupo.status}`);
+      await anotar(c, false, cupo.error || `HTTP ${cupo.status}`);
     }
   }
 
   if (c.platform === 'tiktok' || c.platform === 'youtube') {
     console.log('  (hay token guardado: comprobación específica pendiente de implementar)');
+    await anotar(c, false, 'Token guardado pero sin comprobacion implementada para esta red.');
   }
 }
 
