@@ -105,21 +105,88 @@ no puede marcarlos como publicados; tiene que decir exactamente eso.
 
 ---
 
-## 5. Lo que tienes que hacer tú (nadie más puede)
+## 5. Lo que tienes que hacer tú, paso a paso
 
-1. **Reconectar Meta.** Es lo único que desbloquea las cuatro publicaciones de
-   Facebook e Instagram. Al reconectar hay que conceder `pages_manage_posts`,
-   `pages_manage_engagement` e `instagram_business_content_publish`. Si eso
-   añade algún permiso que hoy no tienes concedido, dime antes: no lo pido yo.
-2. **TikTok**: cuenta Business + cuenta de desarrollador + el video de demo, y
-   enviar la app a auditoría del Content Posting API.
-3. **YouTube**: OAuth del canal (scope `youtube.upload`) y enviar el proyecto a
-   la auditoría de Google para que los videos dejen de subir en privado.
+Nada de esto lo puedo hacer yo: hace falta una persona delante del diálogo de
+cada plataforma.
 
-Mientras 2 y 3 no pasen, el módulo queda funcionando para los destinos
-autorizados y esos dos se muestran como lo que son: **sin autorizar**.
+### 5.1 · Meta — destraba 4 de los 6 destinos (30 minutos)
 
----
+El token de la página **no vence**; lo que vence es el *acceso a datos*, y Meta
+lo corta a los 60 días de la última vez que una persona autorizó la app. Ese
+contador **solo se reinicia con un humano delante**.
+
+1. Entra a <https://developers.facebook.com/tools/explorer>.
+2. Arriba a la derecha, elige la app **MotoFlow CRM**.
+3. En *Permissions*, marca — además de los que ya estén marcados, no quites
+   ninguno, que el CRM los usa:
+   - `pages_show_list`
+   - `pages_read_engagement`
+   - `pages_manage_posts`        ← publicar en el feed y en la historia
+   - `pages_manage_engagement`
+   - `instagram_basic`
+   - `instagram_content_publish` ← publicar en Instagram
+4. **Generate Access Token** y acepta el diálogo de Facebook. Ese clic es el
+   que reinicia los 60 días.
+5. Cambia el desplegable de *User Token* a **Page Token** → **Repuestos
+   Morla** → copia el token entero.
+6. En la PC del sistema:
+
+   ```bash
+   npm run meta:token -- EAAG...elTokenCompleto
+   ```
+
+   No lo guarda a ciegas: comprueba que sea de la app correcta, que alcance la
+   página y la cuenta de Instagram, y te dice qué permisos ganas o pierdes.
+   Escribe en las cuatro filas donde vive el token — incluida la del
+   publicador.
+7. Comprueba:
+
+   ```bash
+   node scripts/social-estado.mjs
+   ```
+
+   Facebook e Instagram tienen que decir **"Token vivo"** y **"PUEDE
+   PUBLICAR"**. Ese comando además escribe el resultado en la base, y es lo
+   que hace que el módulo deje de marcar esos destinos como *sin autorizar*.
+
+> Si Meta no te deja marcar `instagram_content_publish`, es que ese permiso
+> necesita pasar por App Review (Acceso Avanzado). Avísame antes de pedirlo:
+> es una solicitud formal a Meta y no la mando yo por mi cuenta.
+
+### 5.2 · TikTok — semanas, porque hay auditoría de por medio
+
+1. En la app de TikTok: *Configuración → Cuenta → Cambiar a cuenta Business*.
+2. Regístrate en <https://developers.tiktok.com> y crea una app.
+3. Añádele el producto **Content Posting API** y pide el scope
+   `video.publish`.
+4. Graba el video de demostración que exigen: tiene que verse el flujo entero,
+   desde que se elige el contenido hasta que se publica.
+5. Manda la app a **auditoría** (Direct Post).
+
+Hasta que la aprueben, todo lo que suba la API queda **en privado**: no es un
+fallo nuestro, es su regla para apps sin auditar.
+
+### 5.3 · YouTube — igual, auditoría de Google
+
+1. En Google Cloud Console, habilita **YouTube Data API v3** en el proyecto.
+2. *Pantalla de consentimiento de OAuth* → externa → añade el scope
+   `https://www.googleapis.com/auth/youtube.upload`.
+3. Crea un **ID de cliente de OAuth** y pásamelo (el *client secret* lo guardo
+   del lado servidor, nunca en el navegador).
+4. Manda el proyecto a **verificación**. Sin ella, `videos.insert` sube los
+   videos **siempre en privado**.
+
+El cupo, para que lo tengas: **100 subidas al día**.
+
+### 5.4 · Lo de Google Vision, que sigue abierto
+
+Del arreglo de ayer: el OCR de facturas está funcionando **por el camino de
+respaldo** (Gemini lee la imagen). Para que vuelva Vision, que lee mejor una
+factura fotografiada, hay que reactivar la facturación del proyecto
+**48355204741**:
+<https://console.developers.google.com/billing/enable?project=48355204741>.
+Con 25 facturas al mes estás muy por debajo de las 1,000 gratis.
 
 ## 6. Plan por fases
 
@@ -168,9 +235,37 @@ muertos.
 
 ---
 
-## 8. Lo que NO se ha hecho todavía
+## 8. Lo que está construido y lo que falta
 
-Todo lo de las fases 1 a 4. Esta entrega es la auditoría, la herramienta que
-prueba el estado de conexión y el cierre de los agujeros de `publish-design`.
-Construir el publicador encima de cuatro tokens muertos sería construir sobre
-arena: el primer paso es reconectar Meta.
+**Construido y en producción (27/09/2026):**
+
+- La cola de promociones sobre el motor que ya existía: una promoción es un
+  `publication_bundle_id` con un trabajo **por red** —así cada una lleva su
+  propio texto— y seis destinos con estado, id y enlace propios.
+- Seis RPCs (`promo_crear`, `promo_confirmar_existencia`, `promo_aprobar`,
+  `promo_programar`, `promo_reintentar`, `promo_panel`), todas con la empresa
+  resuelta por `get_user_tenant()` y exigiendo dueño o administrador, con
+  auditoría de quién hizo qué en `publicacion_auditoria`.
+- El disparador que impide **republicar un destino confirmado** o reescribirle
+  el id.
+- `scripts/social-estado.mjs`: le pregunta a cada plataforma y **escribe la
+  respuesta** en `social_accounts.publicacion_habilitada`. Una red sin eso no
+  se programa.
+- Los adaptadores por red (`supabase/functions/_shared/adaptadores.mjs`) con
+  el token en la cabecera y nunca en la URL, y TikTok/YouTube marcados como
+  *sin autorizar* — no pueden devolver un id, así que no pueden aparecer como
+  publicados.
+- El formulario en Equipo IA, con la confirmación de existencia a mano y el
+  aviso de precio mientras se escribe.
+- **Pruebas**: 11 comprobaciones del simulacro SQL (corre contra producción y
+  se borra sola) y 13 pruebas de los adaptadores en vitest. 505 pruebas en
+  total, todas verdes.
+
+**Falta:**
+
+- El trabajador que saca de la cola y llama a los adaptadores. No se ha escrito
+  a propósito: con las cuatro redes caídas no hay forma de probarlo de verdad,
+  y un publicador que nunca publicó no es un publicador. Se escribe el día que
+  Meta vuelva.
+- Los adaptadores de TikTok y YouTube de verdad, cuando pasen sus auditorías.
+- Las métricas por publicación (`social_posts` ya se llena solo desde el motor).
