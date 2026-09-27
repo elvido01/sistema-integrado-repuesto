@@ -30,6 +30,9 @@ const normalizeItbisPct = (value) => {
 export const useVentas = () => {
   const { toast } = useToast();
   const { user, empresa, tenantId } = useAuth();
+  // El perfil del cajero no cambia mientras dure la sesión: se pregunta una
+  // vez y se guarda aquí. Antes se consultaba en cada factura.
+  const perfilRef = useRef(null);
   const hasSuplidoresLocales = !!empresa?.feat_suplidores_locales;
   // Piloto "de donde vino la venta". Apagado, esta pantalla no cambia en nada.
   const pideCanalOrigen = !!empresa?.feat_origen_venta;
@@ -683,20 +686,26 @@ export const useVentas = () => {
     const enviados = [];
     const sinSuplidor = [];
 
-    for (const producto of productos) {
-      if (!producto.activo) continue;
+    // Las existencias, TODAS A LA VEZ. Esto preguntaba una por una, en fila:
+    // una venta de ocho renglones eran ocho viajes al servidor esperándose
+    // unos a otros. Ahora salen juntos y se espera una sola vez.
+    const activos = productos.filter((p) => p.activo);
+    const existencias = await Promise.all(activos.map(async (p) => {
+      const { data, error } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
+      return { id: p.id, existencia: Number(data || 0), error };
+    }));
+    const existenciaPorId = new Map(existencias.map((e) => [e.id, e]));
+
+    for (const producto of activos) {
       const minStock = Number(producto.min_stock || 0);
+      const medida = existenciaPorId.get(producto.id);
 
-      const { data: existenciaData, error: stockError } = await supabase.rpc('get_stock_actual', {
-        producto_uuid: producto.id,
-      });
-
-      if (stockError) {
-        console.warn('[Ventas] No se pudo calcular existencia para reposicion:', producto.codigo, stockError.message);
+      if (medida?.error) {
+        console.warn('[Ventas] No se pudo calcular existencia para reposicion:', producto.codigo, medida.error.message);
         continue;
       }
 
-      const existenciaFinal = Number(existenciaData || 0);
+      const existenciaFinal = medida?.existencia ?? 0;
       // Saltar si el producto aun tiene stock suficiente:
       //  - Con min_stock configurado: skip si existencia > min_stock.
       //  - Sin min_stock: solo repone cuando llega a 0 o negativo (el producto
@@ -777,12 +786,27 @@ export const useVentas = () => {
 
     setIsSaving(true);
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      // >>> DOS VIAJES AL SERVIDOR QUE NO HACIAN FALTA <<<
+      // Esto llamaba a auth.getUser() y consultaba `perfiles` EN CADA VENTA.
+      // El usuario ya lo tiene el contexto —es el mismo objeto, vivo— y el
+      // perfil no cambia mientras dure la sesión: se pregunta una vez y se
+      // guarda. En el mostrador, cada viaje de ida y vuelta es un cliente
+      // esperando de pie.
+      let authUser = user;
+      if (!authUser) {
+        const { data: { user: recargado } } = await supabase.auth.getUser();
+        authUser = recargado;
+      }
       if (!authUser) throw new Error('Sesión expirada. Por favor, inicie sesión nuevamente.');
       let finalVendedorName = selectedVendedorName || 'N/A';
 
       // Verificar si el perfil existe para el FK de facturas.usuario_id
-      const { data: profile } = await supabase.from('perfiles').select('id, nombre_completo').eq('id', authUser.id).maybeSingle();
+      if (!perfilRef.current || perfilRef.current.id !== authUser.id) {
+        const { data: perfilBuscado } = await supabase
+          .from('perfiles').select('id, nombre_completo').eq('id', authUser.id).maybeSingle();
+        perfilRef.current = perfilBuscado || { id: authUser.id, nombre_completo: null, _noExiste: true };
+      }
+      const profile = perfilRef.current?._noExiste ? null : perfilRef.current;
       const safeUsuarioId = profile ? authUser.id : null;
       if (!selectedVendedorName && profile) {
         finalVendedorName = profile.nombre_completo;
@@ -950,8 +974,6 @@ export const useVentas = () => {
         };
       });
 
-      const { error: detallesError } = await supabase.from('facturas_detalle').insert(detallesData);
-      if (detallesError) throw detallesError;
 
       const inventarioMovimientos = items.map(item => ({
         tenant_id: tenantId,
@@ -963,8 +985,115 @@ export const useVentas = () => {
         usuario_id: authUser.id,
         fecha: new Date(),
       }));
-      await supabase.from('inventario_movimientos').insert(inventarioMovimientos);
+      // Los dos a la vez: ninguno depende del otro, los dos solo necesitan el
+      // id de la factura. Eran dos viajes al servidor en fila; ahora es uno.
+      const [{ error: detallesError }, { error: movimientosError }] = await Promise.all([
+        supabase.from('facturas_detalle').insert(detallesData),
+        supabase.from('inventario_movimientos').insert(inventarioMovimientos),
+      ]);
+      if (detallesError) throw detallesError;
+      if (movimientosError) {
+        // La factura ya existe: no se tumba la venta, pero esto NO se calla.
+        // Una salida de inventario que no se escribe deja la existencia
+        // inflada y nadie se entera hasta el conteo físico.
+        console.error('[Ventas] inventario sin descontar:', movimientosError.message);
+        toast({
+          variant: 'destructive',
+          duration: 15000,
+          title: 'Factura grabada, inventario SIN descontar',
+          description: `FT-${activeFactura.numero}: ${movimientosError.message}. Avise para corregir la existencia.`,
+        });
+      }
 
+      // ═══════════════════════════════════════════════════════════════════
+      //  EL PAPEL, YA
+      // ═══════════════════════════════════════════════════════════════════
+      //  Hasta aquí la factura YA EXISTE, con sus líneas y su salida de
+      //  inventario. Todo lo que venía después —reposición automática,
+      //  pedidos, cotizaciones, CRM, recibos, financiamiento, notificaciones—
+      //  no cambia ni una letra de lo que se imprime, y sin embargo el cliente
+      //  del mostrador esperaba de pie a que terminara: eran entre 12 y 20
+      //  viajes al servidor EN FILA antes de que saliera el papel, y la
+      //  reposición automática sola hace una consulta POR CADA PRODUCTO
+      //  vendido.
+      //
+      //  Así que se imprime aquí, y lo demás sigue corriendo detrás.
+      //
+      //  Y se imprime con lo que YA SE TIENE en memoria, sin volver a pedir la
+      //  factura a la base con sus cuatro tablas pegadas: los datos que salen
+      //  en el ticket son exactamente los que se acaban de grabar.
+      const pendienteImpreso = abonoCredito > 0
+        ? Math.max(0, totals.totalFactura - abonoCredito)
+        : activeFactura.monto_pendiente;
+
+      const facturaParaImprimir = {
+        ...activeFactura,
+        monto_pendiente: pendienteImpreso,
+        // El ticket lee el itbis de cada línea en `productos.itbis_pct`, que es
+        // como venía del join. Se arma igual desde lo que hay en el carrito.
+        facturas_detalle: detallesData.map((d, i) => ({
+          ...d,
+          productos: { itbis_pct: normalizeItbisPct(items[i]?.itbis_pct) },
+        })),
+        clientes: safeCliente,
+        perfiles: { nombre_completo: finalVendedorName, email: authUser.email || null },
+        ...(ncfData?.nombre_emisor ? { nombre_emisor_ncf: ncfData.nombre_emisor } : {}),
+      };
+
+      // La única cosa que sí hay que esperar antes de imprimir: la factura de
+      // dealer lleva impresos el vehículo y sus pagarés, y eso vive en la
+      // solicitud. Es la venta de un motor, no la del mostrador.
+      if (solicitudCompraId) {
+        try {
+          const { data: solData } = await supabase
+            .from('solicitudes_compras').select('*').eq('id', solicitudCompraId).maybeSingle();
+          if (solData) {
+            let _placa = 'TRÁMITE', _matricula = 'TRÁMITE';
+            if (solData.producto_id) {
+              const { data: prod } = await supabase
+                .from('productos').select('placa, matricula').eq('id', solData.producto_id).maybeSingle();
+              if (prod?.placa) _placa = prod.placa;
+              if (prod?.matricula) _matricula = prod.matricula;
+            }
+            facturaParaImprimir.solicitud = { ...solData, _placa, _matricula };
+          }
+        } catch (e) {
+          console.warn('[Ventas] no se pudo adjuntar la solicitud al ticket:', e.message);
+        }
+      }
+
+      // Si la impresora falla, la venta NO se deshace ni se queda a medias: la
+      // factura ya está grabada y lo de abajo tiene que correr igual. Antes un
+      // error aquí se tragaba todo lo que venía después.
+      if (onSuccess) {
+        try {
+          await onSuccess(facturaParaImprimir);
+        } catch (errImpresion) {
+          console.error('[Ventas] no se pudo imprimir:', errImpresion);
+          toast({
+            variant: 'destructive',
+            duration: 12000,
+            title: 'La factura se grabó, pero no se imprimió',
+            description: `FT-${activeFactura.numero}: ${errImpresion?.message || errImpresion}. Se puede reimprimir desde la lista de facturas.`,
+          });
+        }
+      }
+
+      // El mostrador queda libre: el cajero ya puede empezar la próxima venta
+      // mientras lo de abajo termina solo.
+      emitInventarioActualizado(items.map(i => i.producto_id).filter(Boolean));
+      resetVenta();
+      setIsSaving(false);
+
+      // ═══════════════════════════════════════════════════════════════════
+      //  LO QUE NO SALE EN EL PAPEL, DETRÁS
+      // ═══════════════════════════════════════════════════════════════════
+      //  Ojo: esto NO es "menos importante". El financiamiento, el recibo del
+      //  abono y la reposición tienen que pasar igual, y si algo falla se
+      //  avisa igual — por eso los toast y la notificación persistente siguen
+      //  donde estaban. Lo único que cambia es que el cliente ya se fue con su
+      //  factura en la mano.
+      const enSegundoPlano = async () => {
       // Venta de CONTADO cobrada por método NO efectivo (transferencia/tarjeta/
       // cheque): el dinero entra a una cuenta bancaria, no a la gaveta.
       // Se usa el RPC COMPARTIDO para que la cuenta pueda ser la de la
@@ -1181,49 +1310,11 @@ export const useVentas = () => {
         }
       }
 
-      if (onSuccess) {
-        const { data: fullFacturaData } = await supabase
-          .from('facturas')
-          .select('*, facturas_detalle(*, productos(itbis_pct)), clientes(*), perfiles:usuario_id(email, nombre_completo)')
-          .eq('id', activeFactura.id)
-          .single();
-        const facturaForPrint = fullFacturaData || activeFactura;
-        // Asegurar que los datos del cliente siempre estén presentes en el recibo
-        if (!facturaForPrint.clientes || !facturaForPrint.clientes.nombre) {
-          facturaForPrint.clientes = safeCliente;
-        }
-        // Inyectar nombre del emisor NCF para el recibo (no se guarda en DB)
-        if (ncfData?.nombre_emisor) {
-          facturaForPrint.nombre_emisor_ncf = ncfData.nombre_emisor;
-        }
-        // Si la venta vino de una solicitud financiada, adjuntar sus datos para
-        // imprimir la factura estilo dealer (vehiculo + inicial/pagares).
-        if (solicitudCompraId) {
-          const { data: solData } = await supabase
-            .from('solicitudes_compras')
-            .select('*')
-            .eq('id', solicitudCompraId)
-            .maybeSingle();
-          if (solData) {
-            let _placa = 'TRÁMITE', _matricula = 'TRÁMITE';
-            if (solData.producto_id) {
-              const { data: prod } = await supabase
-                .from('productos')
-                .select('placa, matricula')
-                .eq('id', solData.producto_id)
-                .maybeSingle();
-              if (prod?.placa) _placa = prod.placa;
-              if (prod?.matricula) _matricula = prod.matricula;
-            }
-            facturaForPrint.solicitud = { ...solData, _placa, _matricula };
-          }
-        }
-        onSuccess(facturaForPrint);
-      }
-      // Avisar a otros paneles abiertos (ej. Orden de Compra) que el stock bajó,
-      // antes de resetVenta() que limpia los items.
-      emitInventarioActualizado(items.map(i => i.producto_id).filter(Boolean));
-      resetVenta();
+      };
+
+      // Si algo de esto revienta, la venta ya está hecha y el papel ya salió:
+      // se anota y se sigue. Lo que importa de verdad ya avisó por su cuenta.
+      enSegundoPlano().catch((e) => console.warn('[Ventas] tarea de fondo:', e?.message || e));
     } catch (error) {
       console.error('Error saving invoice:', error);
       toast({ title: 'Error al guardar', description: error.message, variant: 'destructive' });
