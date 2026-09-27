@@ -752,7 +752,7 @@ export const useVentas = () => {
     }
   }, [toast]);
 
-  const handleSave = async (onSuccess, selectedVendedorName = null, selectedVendedorId = null) => {
+  const handleSave = async (onSuccess, selectedVendedorName = null, selectedVendedorId = null, metodoImpresion = null) => {
     if (items.length === 0) {
       toast({ title: 'Factura vacía', description: 'No se puede guardar una factura sin artículos.', variant: 'destructive' });
       return;
@@ -785,6 +785,17 @@ export const useVentas = () => {
     }
 
     setIsSaving(true);
+    // >>> EL CRONOMETRO <<<
+    // "Sigue tardando mucho" no se arregla adivinando: del lado del servidor
+    // ya está medido y no es él. Cada venta anota sola cuánto tardó cada
+    // tramo y se guarda en venta_tiempos DESPUES de que salió el papel —
+    // medir no puede costarle tiempo a lo que se mide.
+    const reloj = { inicio: performance.now(), ultimo: performance.now(), etapas: {} };
+    const marca = (etapa) => {
+      const ahora = performance.now();
+      reloj.etapas[etapa] = Math.round(ahora - reloj.ultimo);
+      reloj.ultimo = ahora;
+    };
     try {
       // >>> DOS VIAJES AL SERVIDOR QUE NO HACIAN FALTA <<<
       // Esto llamaba a auth.getUser() y consultaba `perfiles` EN CADA VENTA.
@@ -895,6 +906,7 @@ export const useVentas = () => {
       const tipoNcfCliente = safeCliente.tipo_ncf || '02';
       if (!editingFacturaId && tipoNcfCliente) {
         const { data: ncfResult, error: ncfError } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: tipoNcfCliente });
+        marca('ncf');
         if (ncfError) throw ncfError;
         if (ncfResult && ncfResult.success) {
           facturaData.ncf = ncfResult.ncf;
@@ -947,6 +959,7 @@ export const useVentas = () => {
           .single();
         if (insertError) throw insertError;
         activeFactura = data;
+        marca('factura');
       }
 
       const detallesData = items.map(item => {
@@ -991,6 +1004,7 @@ export const useVentas = () => {
         supabase.from('facturas_detalle').insert(detallesData),
         supabase.from('inventario_movimientos').insert(inventarioMovimientos),
       ]);
+      marca('lineas');
       if (detallesError) throw detallesError;
       if (movimientosError) {
         // La factura ya existe: no se tumba la venta, pero esto NO se calla.
@@ -1067,7 +1081,7 @@ export const useVentas = () => {
       // error aquí se tragaba todo lo que venía después.
       if (onSuccess) {
         try {
-          await onSuccess(facturaParaImprimir);
+          await onSuccess(facturaParaImprimir, marca);
         } catch (errImpresion) {
           console.error('[Ventas] no se pudo imprimir:', errImpresion);
           toast({
@@ -1078,6 +1092,9 @@ export const useVentas = () => {
           });
         }
       }
+
+      marca('impresion');
+      const totalMs = Math.round(performance.now() - reloj.inicio);
 
       // El mostrador queda libre: el cajero ya puede empezar la próxima venta
       // mientras lo de abajo termina solo.
@@ -1094,6 +1111,17 @@ export const useVentas = () => {
       //  donde estaban. Lo único que cambia es que el cliente ya se fue con su
       //  factura en la mano.
       const enSegundoPlano = async () => {
+        // La medición primero, que es un insert suelto y no depende de nada.
+        supabase.from('venta_tiempos').insert({
+          tenant_id: tenantId,
+          factura_numero: activeFactura?.numero ? String(activeFactura.numero) : null,
+          lineas: items.length,
+          total_ms: totalMs,
+          etapas: reloj.etapas,
+          metodo_impresion: metodoImpresion || null,
+          usuario_id: authUser.id,
+        }).then(() => {}, () => {});
+
       // Venta de CONTADO cobrada por método NO efectivo (transferencia/tarjeta/
       // cheque): el dinero entra a una cuenta bancaria, no a la gaveta.
       // Se usa el RPC COMPARTIDO para que la cuenta pueda ser la de la

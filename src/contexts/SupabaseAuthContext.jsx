@@ -19,6 +19,9 @@ export const AuthProvider = ({ children }) => {
   const [recuperando, setRecuperando] = useState(false);
   const [empresa, setEmpresa] = useState(null);
   const [fiscalActivo, setFiscalActivo] = useState(false);
+  // 'pruebas' o 'produccion'. No es lo mismo: en pruebas, la emisión no puede
+  // hacer esperar al cliente del mostrador.
+  const [fiscalModo, setFiscalModo] = useState(null);
   const [activeTenantId, setActiveTenantId] = useState(null); // empresa activa (multi-empresa)
 
   const fetchProfileAndPermissions = useCallback(async (userId) => {
@@ -97,13 +100,15 @@ export const AuthProvider = ({ children }) => {
       if (activeTid) {
         const { data: integData } = await supabase
           .from('integraciones_fiscales')
-          .select('activo')
+          .select('activo, modo')
           .eq('tenant_id', activeTid)
           .eq('activo', true)
           .maybeSingle();
         setFiscalActivo(!!integData);
+        setFiscalModo(integData?.modo || null);
       } else {
         setFiscalActivo(false);
+        setFiscalModo(null);
       }
 
       setProfile(profileData);
@@ -279,6 +284,7 @@ export const AuthProvider = ({ children }) => {
     isSuperAdmin,
     empresa,
     fiscalActivo,
+    fiscalModo,
     signUp,
     signIn,
     signOut,
@@ -286,7 +292,7 @@ export const AuthProvider = ({ children }) => {
     enviarRecuperacion,
     cambiarPassword,
     refreshPermissions: () => user && fetchProfileAndPermissions(user.id)
-  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, fiscalActivo, signUp, signIn, signOut, recuperando, enviarRecuperacion, cambiarPassword, fetchProfileAndPermissions]);
+  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, fiscalActivo, fiscalModo, signUp, signIn, signOut, recuperando, enviarRecuperacion, cambiarPassword, fetchProfileAndPermissions]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -26,7 +26,7 @@ import { esClienteGenerico } from '@/lib/clienteGenerico';
 
 const VentasPage = () => {
   const { toast } = useToast();
-  const { user, profile, empresa, fiscalActivo } = useAuth();
+  const { user, profile, empresa, fiscalActivo, fiscalModo } = useAuth();
   const grabarBtnRef = useRef(null);
   /* UI state for invoice editing search */
   const [isEditingNumero, setIsEditingNumero] = useState(false);
@@ -432,7 +432,7 @@ const VentasPage = () => {
     }
   }, [cliente]);
 
-  const emitirECF = async (facturaId, facturaNumero) => {
+  const emitirECF = async (facturaId, facturaNumero, { silencioso = false } = {}) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/emitir-fiscal`, {
@@ -445,15 +445,19 @@ const VentasPage = () => {
       });
       const result = await resp.json();
       if (result.ok) {
-        toast({ title: 'e-CF Emitido', description: `Factura #${facturaNumero} emitida fiscalmente. NCF: ${result.ncf || result.proveedor_number || 'OK'}` });
+        if (!silencioso) toast({ title: 'e-CF Emitido', description: `Factura #${facturaNumero} emitida fiscalmente. NCF: ${result.ncf || result.proveedor_number || 'OK'}` });
         return result;
       } else {
-        toast({ variant: 'destructive', title: 'Error e-CF', description: result.error || 'No se pudo emitir el e-CF. Puede reintentarlo desde el historial.', duration: 8000 });
+        // En pruebas no se le pinta un cuadro rojo al cajero por cada venta:
+        // el fallo queda en documentos_fiscales, que es donde se trabaja la
+        // integración. Un aviso que sale siempre deja de ser un aviso.
+        if (!silencioso) toast({ variant: 'destructive', title: 'Error e-CF', description: result.error || 'No se pudo emitir el e-CF. Puede reintentarlo desde el historial.', duration: 8000 });
+        else console.warn('[e-CF pruebas] no emitido:', result.error);
         return null;
       }
     } catch (err) {
       console.error('[e-CF] Error:', err);
-      toast({ variant: 'destructive', title: 'Error e-CF', description: 'Error de conexión al emitir e-CF. La factura fue guardada correctamente.', duration: 8000 });
+      if (!silencioso) toast({ variant: 'destructive', title: 'Error e-CF', description: 'Error de conexión al emitir e-CF. La factura fue guardada correctamente.', duration: 8000 });
       return null;
     }
   };
@@ -471,13 +475,32 @@ const VentasPage = () => {
       return;
     }
     const activeVendedor = vendedores.find(v => v.id === selectedVendedor);
-    handleSave(async (facturaData) => {
+    handleSave(async (facturaData, marca) => {
       if (facturaData) {
         let facturaParaImprimir = facturaData;
 
-        // Emitir e-CF antes de imprimir para que el comprobante salga con e-NCF.
-        if (fiscalActivo && facturaData.id) {
+        // >>> EN PRUEBAS, EL MOSTRADOR NO ESPERA <<<
+        // La emisión a la DGII se espera SOLO en producción, porque ahí el
+        // e-NCF va impreso en el papel y sin él la factura no vale.
+        //
+        // En modo pruebas no vale nada: son 389 emisiones fallidas en 30 días
+        // contra el ambiente de test (TesteCF), todas con el mismo error, y
+        // cada una de ellas era medio segundo —a veces seis— de un cliente
+        // esperando de pie por un comprobante que no existe. Se sigue
+        // emitiendo, porque así avanza la integración y los fallos quedan
+        // registrados en documentos_fiscales, pero por detrás.
+        const esperarFiscal = fiscalActivo && fiscalModo === 'produccion';
+
+        if (fiscalActivo && facturaData.id && !esperarFiscal) {
+          emitirECF(facturaData.id, facturaData.numero, { silencioso: true })
+            .catch((e) => console.warn('[e-CF pruebas]', e?.message || e));
+        }
+
+        if (esperarFiscal && facturaData.id) {
           const fiscal = await emitirECF(facturaData.id, facturaData.numero);
+          // La única espera obligatoria antes del papel. Se mide aparte para
+          // saber cuánto pesa.
+          marca?.('fiscal');
           if (fiscal?.ncf || fiscal?.proveedor_number) {
             facturaParaImprimir = {
               ...facturaData,
@@ -547,7 +570,10 @@ const VentasPage = () => {
         fetchNextNumero();
         setTimeout(() => document.getElementById('input-codigo')?.focus(), 150);
       }
-    }, activeVendedor?.nombre, selectedVendedor);
+    }, activeVendedor?.nombre, selectedVendedor,
+       // Cómo se imprimió, para poder comparar: el agente, el diálogo del
+       // navegador y el PDF no tardan lo mismo ni de lejos.
+       isSilentPrintEnabled() ? 'silencioso' : printMethod);
   };
 
   // ── Grabar solo cuando la pantalla YA dice lo que se pidió ────
