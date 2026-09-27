@@ -1,0 +1,202 @@
+import { describe, it, expect } from 'vitest';
+import {
+  facebookFeed,
+  facebookHistoria,
+  instagramFeed,
+  tiktokVideo,
+  youtubeShort,
+  publicarDestino,
+  publicarPromocion,
+  adaptadorDePrueba,
+} from '../supabase/functions/_shared/adaptadores.mjs';
+
+// Un `fetch` de mentira que apunta todo lo que le piden y contesta lo que se
+// le diga. Ninguna de estas pruebas toca la red ni una cuenta de verdad.
+function fetchFalso(respuestas) {
+  const pedidos = [];
+  let i = 0;
+  const fn = async (url, init) => {
+    pedidos.push({ url, init, cuerpo: init?.body ? JSON.parse(init.body) : null });
+    const r = Array.isArray(respuestas) ? respuestas[i++] : respuestas;
+    return {
+      ok: r.ok !== false,
+      status: r.status ?? (r.ok === false ? 400 : 200),
+      json: async () => r.body ?? {},
+    };
+  };
+  fn.pedidos = pedidos;
+  return fn;
+}
+
+const MEDIA = { imagen: 'https://ejemplo/arte.png', video: 'https://ejemplo/v.mp4' };
+
+describe('Facebook', () => {
+  it('publica en el feed y devuelve id y enlace', async () => {
+    const f = fetchFalso({ body: { post_id: '123_456' } });
+    const r = await facebookFeed({ fetchFn: f, token: 'T', cuentaId: 'PAG', media: MEDIA, texto: 'Hola RD$ 1,500' });
+    expect(r.ok).toBe(true);
+    expect(r.external_post_id).toBe('123_456');
+    expect(r.external_url).toContain('123_456');
+  });
+
+  it('un 200 sin id NO es un exito', async () => {
+    const f = fetchFalso({ body: {} });
+    const r = await facebookFeed({ fetchFn: f, token: 'T', cuentaId: 'PAG', media: MEDIA, texto: 'x' });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/sin id/i);
+  });
+
+  it('reconoce el token vencido y lo dice', async () => {
+    const f = fetchFalso({
+      ok: false, status: 400,
+      body: { error: { message: 'Error validating access token: Session has expired', code: 190 } },
+    });
+    const r = await facebookFeed({ fetchFn: f, token: 'T', cuentaId: 'PAG', media: MEDIA, texto: 'x' });
+    expect(r.ok).toBe(false);
+    expect(r.token_vencido).toBe(true);
+    expect(r.error).toMatch(/expired/i);
+  });
+
+  it('la historia va en dos pasos: sube sin publicar y luego la convierte', async () => {
+    const f = fetchFalso([{ body: { id: 'FOTO1' } }, { body: { post_id: 'HIST1' } }]);
+    const r = await facebookHistoria({ fetchFn: f, token: 'T', cuentaId: 'PAG', media: MEDIA });
+    expect(r.ok).toBe(true);
+    expect(f.pedidos[0].cuerpo.published).toBe(false);
+    expect(f.pedidos[1].url).toContain('photo_stories');
+    expect(f.pedidos[1].cuerpo.photo_id).toBe('FOTO1');
+    expect(r.external_post_id).toBe('HIST1');
+  });
+});
+
+describe('Instagram', () => {
+  it('si falla el contenedor NO llega a publicar', async () => {
+    const f = fetchFalso({ ok: false, status: 400, body: { error: { message: 'mal la imagen', code: 100 } } });
+    const r = await instagramFeed({ fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'x' });
+    expect(r.ok).toBe(false);
+    expect(r.paso).toBe('contenedor');
+    expect(f.pedidos).toHaveLength(1);       // no hubo segundo paso
+  });
+
+  it('publica cuando los dos pasos salen', async () => {
+    const f = fetchFalso([{ body: { id: 'CONT1' } }, { body: { id: 'MEDIA1' } }]);
+    const r = await instagramFeed({ fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'x' });
+    expect(r.ok).toBe(true);
+    expect(r.creation_id).toBe('CONT1');
+    expect(r.external_post_id).toBe('MEDIA1');
+    expect(f.pedidos[1].cuerpo.creation_id).toBe('CONT1');
+  });
+});
+
+describe('El token nunca viaja en la URL', () => {
+  it('va en la cabecera Authorization, no en el query string', async () => {
+    const f = fetchFalso([{ body: { id: 'C' } }, { body: { id: 'M' } }]);
+    await instagramFeed({ fetchFn: f, token: 'SECRETO', cuentaId: 'IG', media: MEDIA, texto: 'x' });
+    for (const p of f.pedidos) {
+      expect(p.url).not.toContain('access_token');
+      expect(p.url).not.toContain('SECRETO');
+      expect(p.init.headers.Authorization).toBe('Bearer SECRETO');
+    }
+  });
+});
+
+describe('TikTok y YouTube', () => {
+  it('nunca dicen que publicaron, y explican que falta', async () => {
+    for (const adaptador of [tiktokVideo, youtubeShort]) {
+      const r = await adaptador();
+      expect(r.ok).toBe(false);
+      expect(r.sin_autorizar).toBe(true);
+      expect(r.error).toMatch(/auditor/i);
+      expect(r.external_post_id).toBeUndefined();
+    }
+  });
+});
+
+describe('publicarDestino', () => {
+  it('un destino que ya tiene id NO se vuelve a publicar', async () => {
+    const f = fetchFalso({ body: { post_id: 'NUEVO' } });
+    const r = await publicarDestino({
+      fetchFn: f,
+      destino: { platform: 'facebook', placement: 'feed', external_post_id: 'VIEJO' },
+      cuenta: { token: 'T', external_account_id: 'PAG' },
+      media: MEDIA, texto: 'x',
+    });
+    expect(r.ok).toBe(true);
+    expect(r.ya_estaba).toBe(true);
+    expect(r.external_post_id).toBe('VIEJO');
+    expect(f.pedidos).toHaveLength(0);       // ni se intento
+  });
+
+  it('un destino bloqueado no se intenta', async () => {
+    const f = fetchFalso({ body: {} });
+    const r = await publicarDestino({
+      fetchFn: f,
+      destino: { platform: 'facebook', placement: 'feed', bloqueo_motivo: 'token vencido' },
+      cuenta: { token: 'T' }, media: MEDIA, texto: 'x',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.sin_autorizar).toBe(true);
+    expect(f.pedidos).toHaveLength(0);
+  });
+});
+
+describe('Una promocion entera', () => {
+  const seisDestinos = [
+    { id: 1, platform: 'facebook', placement: 'feed' },
+    { id: 2, platform: 'facebook', placement: 'story' },
+    { id: 3, platform: 'instagram', placement: 'feed' },
+    { id: 4, platform: 'instagram', placement: 'story' },
+    { id: 5, platform: 'tiktok', placement: 'reel' },
+    { id: 6, platform: 'youtube', placement: 'short' },
+  ];
+  const cuentas = {
+    facebook: { token: 'T', external_account_id: 'PAG' },
+    instagram: { token: 'T', external_account_id: 'IG' },
+  };
+  // En el mundo de mentira las cuatro redes tienen token: asi la prueba mide
+  // lo que quiere medir (que un fallo no arrastra a los demas) y no se cuela
+  // el "no hay token" de TikTok y YouTube.
+  const cuatroCuentas = {
+    ...cuentas,
+    tiktok: { token: 'T', external_account_id: 'TK' },
+    youtube: { token: 'T', external_account_id: 'YT' },
+  };
+
+  it('lo que falla no detiene a los demas, y el estado es PARCIAL', async () => {
+    const falso = adaptadorDePrueba({
+      'instagram:story': { ok: false, error: 'se cayo Instagram' },
+      porDefecto: { ok: true },
+    });
+    const adaptadores = Object.fromEntries(
+      seisDestinos.map((d) => [`${d.platform}:${d.placement}`, falso]),
+    );
+    const r = await publicarPromocion({ fetchFn: null, destinos: seisDestinos, cuentas: cuatroCuentas, media: MEDIA, textos: {}, adaptadores });
+    expect(r.publicados).toBe(5);
+    expect(r.fallidos).toBe(1);
+    expect(r.estado).toBe('PARCIAL');
+    expect(r.resultados.find((x) => x.id === 4).error).toMatch(/Instagram/);
+    expect(r.resultados.filter((x) => x.ok).map((x) => x.id)).toEqual([1, 2, 3, 5, 6]);
+  });
+
+  it('con los adaptadores de verdad, TikTok y YouTube quedan sin autorizar', async () => {
+    const f = fetchFalso({ body: { post_id: 'X', id: 'X' } });
+    const r = await publicarPromocion({ fetchFn: f, destinos: seisDestinos, cuentas, media: MEDIA, textos: {} });
+    expect(r.sin_autorizar).toBe(2);
+    expect(r.estado).toBe('PARCIAL');
+    const tk = r.resultados.find((x) => x.platform === 'tiktok');
+    expect(tk.ok).toBe(false);
+    expect(tk.external_post_id).toBeUndefined();
+  });
+
+  it('el reintento de una parcial no vuelve a tocar lo que ya salio', async () => {
+    const yaPublicados = seisDestinos.map((d) => (
+      d.id === 4 ? d : { ...d, external_post_id: `YA-${d.id}` }
+    ));
+    const falso = adaptadorDePrueba({ porDefecto: { ok: true } });
+    const adaptadores = Object.fromEntries(
+      seisDestinos.map((d) => [`${d.platform}:${d.placement}`, falso]),
+    );
+    const r = await publicarPromocion({ fetchFn: null, destinos: yaPublicados, cuentas, media: MEDIA, textos: {}, adaptadores });
+    expect(falso.llamadas).toEqual(['instagram:story']);   // solo el que faltaba
+    expect(r.resultados.filter((x) => x.ya_estaba)).toHaveLength(5);
+  });
+});

@@ -10,6 +10,7 @@
 // pinta estados propios miente en cuanto el backend se cae.
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import PromocionPublicar from '@/components/equipo/PromocionPublicar';
 import { Helmet } from 'react-helmet';
 import {
   Loader2, RefreshCw, ShieldCheck, Bot, Database, Sparkles, Check, X,
@@ -489,6 +490,8 @@ const EquipoIAPage = () => {
           <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
         </Button>
       </div>
+
+      <PromocionPublicar />
 
       <section className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Estado de publicaciones">
         <h2 className="text-sm font-bold text-slate-800">Publicaciones por red y formato</h2>
