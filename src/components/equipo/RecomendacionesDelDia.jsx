@@ -42,24 +42,43 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos }) {
   // El encargo en curso: se sigue aquí mismo hasta que la pieza llega. Ya no
   // va a "Esperando tu aprobación" ni por el canal de Hermes.
   const [encargo, setEncargo] = useState(null);
-  // Los que el dueño cerró con la X mientras esperaba: no se le vuelven a
-  // poner delante cada vez que el panel se refresca.
-  const [ignorados, setIgnorados] = useState(() => new Set());
+  // Los que el dueño ya cerró o ya usó: no se le vuelven a poner delante
+  // cada vez que el panel se refresca, ni al volver a abrir la página. Se
+  // guardan en este navegador; si no se puede, se recuerdan hasta recargar.
+  const [ignorados, setIgnorados] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('equipo_encargos_cerrados') || '[]')); }
+    catch { return new Set(); }
+  });
+  const ignorar = (id) => setIgnorados((s) => {
+    const n = new Set(s).add(id);
+    try { localStorage.setItem('equipo_encargos_cerrados', JSON.stringify([...n].slice(-50))); } catch { /* sin almacenamiento */ }
+    return n;
+  });
 
   // >>> SI LA PÁGINA SE RECARGÓ A MITAD DE UN ENCARGO, SE RETOMA <<<
   // La tarjeta del encargo vive en la memoria de la pantalla. Sin esto, un F5
   // mientras el creativo trabaja la hacía desaparecer, y la pieza quedaba
   // solo en "Esperando tu aprobación" — donde aprobarla NO llena el
   // formulario de publicar.
+  //
+  // Y lo mismo con una pieza YA ACEPTADA en las últimas 12 horas: el
+  // formulario de publicar vive en la memoria de la pantalla y se vacía al
+  // recargar. La pieza ya no sale en la barra (lo encargado se esconde 14
+  // días), así que sin esto no había forma de recuperarla.
   useEffect(() => {
     if (encargo || !Array.isArray(trabajos)) return;
-    const vivo = trabajos.find((w) => w.origin_platform === 'panel'
-      && w.tipo === 'promocion'
+    const ahora = Date.now();
+    const delPanel = (w) => w.origin_platform === 'panel' && w.tipo === 'promocion' && !ignorados.has(w.id);
+    const vivo = trabajos.find((w) => delPanel(w)
       && ['pending', 'processing', 'waiting_approval'].includes(w.estado)
-      && !ignorados.has(w.id)
-      && Date.now() - new Date(w.creado_en).getTime() < 24 * 3600 * 1000);
+      && ahora - new Date(w.creado_en).getTime() < 24 * 3600 * 1000);
+    const aceptada = !vivo && trabajos.find((w) => delPanel(w)
+      && w.estado === 'completed'
+      && w.resultado?.estado === 'arte' && w.resultado?.arte_imagen_id
+      && w.terminado_en && ahora - new Date(w.terminado_en).getTime() < 12 * 3600 * 1000);
+    const retomar = vivo || aceptada;
     // Sin las piezas: la tarjeta las busca por el código que va en el pedido.
-    if (vivo) setEncargo({ trabajoId: vivo.id, productos: [] });
+    if (retomar) setEncargo({ trabajoId: retomar.id, productos: [] });
   }, [trabajos, encargo, ignorados]);
 
   const cargar = useCallback(() => {
@@ -245,9 +264,13 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos }) {
           key={encargo.trabajoId}
           trabajoId={encargo.trabajoId}
           productos={encargo.productos}
-          onUsar={(prefill) => { if (onUsar) onUsar(prefill); setEncargo(null); }}
+          onUsar={(prefill) => {
+            if (onUsar) onUsar(prefill);
+            ignorar(encargo.trabajoId);
+            setEncargo(null);
+          }}
           onCerrar={() => {
-            setIgnorados((s) => new Set(s).add(encargo.trabajoId));
+            ignorar(encargo.trabajoId);
             setEncargo(null);
           }}
         />
