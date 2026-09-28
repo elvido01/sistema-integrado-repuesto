@@ -21,10 +21,18 @@ import { Sparkles, RefreshCw } from 'lucide-react';
 // ámbar existe para cuando Hermes propone por su cuenta.
 
 const MAX = 2;
+const POR_TANDA = 5;
 
 export function RecomendacionesDelDia({ onEncargado }) {
   const { toast } = useToast();
-  const [lista, setLista] = useState([]);
+  // >>> LA LISTA ENTERA, DE CINCO EN CINCO <<<
+  // Antes se pedían 5 y el botón de refrescar volvía a pedir las mismas 5:
+  // el dueño le daba y no cambiaba nada. Ahora se pide la lista completa
+  // —ya viene ordenada por rondas: la mejor de cada tipo, después la segunda
+  // de cada tipo...— y el botón pasa a la tanda siguiente. Al llegar al final
+  // vuelve a pedirla, por si algo cambió mientras tanto.
+  const [todas, setTodas] = useState([]);
+  const [tanda, setTanda] = useState(0);
   const [cargando, setCargando] = useState(true);
   const [elegidos, setElegidos] = useState([]);
   const [enfoque, setEnfoque] = useState('');
@@ -33,16 +41,29 @@ export function RecomendacionesDelDia({ onEncargado }) {
 
   const cargar = useCallback(() => {
     setCargando(true);
-    supabase.rpc('equipo_candidatos_promocion', { p_limite: 5 })
+    supabase.rpc('equipo_candidatos_promocion', { p_limite: 40 })
       .then(({ data, error }) => {
         setCargando(false);
         if (error) return;
-        setLista(Array.isArray(data) ? data : []);
+        setTodas(Array.isArray(data) ? data : []);
+        setTanda(0);
         setElegidos([]);
       });
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  const totalTandas = Math.max(1, Math.ceil(todas.length / POR_TANDA));
+  const lista = todas.slice(tanda * POR_TANDA, (tanda + 1) * POR_TANDA);
+
+  // Lo elegido se conserva al pasar de tanda: así se puede escoger una de la
+  // primera y otra de la tercera. Abajo se dice cuáles, porque la elegida
+  // puede no estar a la vista.
+  const otras = () => {
+    if (tanda + 1 < totalTandas) setTanda((t) => t + 1);
+    else cargar();
+  };
+  const nombresElegidos = todas.filter((p) => elegidos.includes(p.id)).map((p) => p.descripcion);
 
   const alternar = (id) => setElegidos((s) => {
     if (s.includes(id)) return s.filter((x) => x !== id);
@@ -98,10 +119,16 @@ export function RecomendacionesDelDia({ onEncargado }) {
           Elige una o dos y se las mando al Comercial-Creativo. No se publica nada:
           vuelve a ti para que lo apruebes.
         </p>
-        <button type="button" onClick={cargar} disabled={cargando}
-          title="Volver a mirar el catálogo"
-          className="text-slate-400 hover:text-slate-700 disabled:opacity-40">
+        {todas.length > POR_TANDA && (
+          <span className="text-[10px] text-slate-400">
+            {tanda + 1} de {totalTandas}
+          </span>
+        )}
+        <button type="button" onClick={otras} disabled={cargando}
+          title={tanda + 1 < totalTandas ? 'Ver otras cinco' : 'Volver a las primeras'}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40">
           <RefreshCw className={`h-3.5 w-3.5 ${cargando ? 'animate-spin' : ''}`} />
+          {tanda + 1 < totalTandas ? 'Otras' : 'Primeras'}
         </button>
       </div>
 
@@ -157,6 +184,10 @@ export function RecomendacionesDelDia({ onEncargado }) {
       {elegidos.length > 0 && (
         // Formato, enfoque y botón en una sola fila debajo de las tarjetas.
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2">
+          <span className="max-w-full truncate text-[10px] font-semibold text-violet-700"
+            title={nombresElegidos.join(' · ')}>
+            Elegidas: {nombresElegidos.join(' · ')}
+          </span>
           <div className="flex gap-1">
             {[['historia', 'Historia 9:16'], ['feed', 'Feed cuadrado']].map(([v, txt]) => (
               <button key={v} type="button" onClick={() => setFormato(v)}
