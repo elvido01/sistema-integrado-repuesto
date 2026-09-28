@@ -24,7 +24,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Search, Upload, CheckCircle2, AlertTriangle, Clock, RotateCcw, Ban } from 'lucide-react';
+import { Loader2, Search, Upload, CheckCircle2, AlertTriangle, Clock, RotateCcw, Ban, Film } from 'lucide-react';
+import { videoDesdeImagen, formatoDeVideo } from '@/lib/videoDesdeImagen';
 
 const REDES = [
   { platform: 'facebook', placement: 'feed', nombre: 'Facebook · feed', media: 'imagen_feed' },
@@ -78,6 +79,28 @@ export default function PromocionPublicar({ prefill = null }) {
   const [elegidos, setElegidos] = useState(() => REDES.map((r) => `${r.platform}:${r.placement}`));
   const [cuando, setCuando] = useState('');
   const [bundle, setBundle] = useState(null);
+  const [creandoVideo, setCreandoVideo] = useState(false);
+
+  // >>> EL VIDEO VERTICAL, CON LA IMAGEN DE LA HISTORIA <<<
+  // TikTok y YouTube Shorts piden video y el creativo entrega imágenes. El
+  // dueño pidió usar la misma imagen vertical: se graba un video de 8 s con
+  // ella (con un acercamiento lento) y se sube igual que lo demás.
+  const crearVideo = useCallback(async (urlHistoria) => {
+    if (!urlHistoria) return;
+    setCreandoVideo(true);
+    try {
+      const { blob, mime, ext } = await videoDesdeImagen(urlHistoria);
+      const ruta = `promos/${Date.now()}-${Math.random().toString(36).slice(2)}-vertical.${ext}`;
+      const { error } = await supabase.storage.from('ai-marketing').upload(ruta, blob, { contentType: mime });
+      if (error) throw error;
+      const { data } = supabase.storage.from('ai-marketing').getPublicUrl(ruta);
+      setMedia((m) => ({ ...m, video: data.publicUrl }));
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo crear el video', description: e.message, duration: 10000 });
+    } finally {
+      setCreandoVideo(false);
+    }
+  }, [toast]);
 
   // >>> LO QUE LLEGA DE LA PIEZA ACEPTADA <<<
   // Cuando el dueño acepta el arte del Comercial-Creativo arriba, el formulario
@@ -102,13 +125,23 @@ export default function PromocionPublicar({ prefill = null }) {
       setTextos((t) => {
         const nuevos = { ...t };
         Object.entries(prefill.textos).forEach(([red, txt]) => { if (txt) nuevos[red] = txt; });
+        // TikTok y YouTube: el creativo solo escribe para Facebook e
+        // Instagram. Se les pone el de Instagram, que es el que más se les
+        // parece; el dueño lo cambia si quiere. Solo si están vacíos.
+        const base = nuevos.instagram || nuevos.facebook || '';
+        ['tiktok', 'youtube'].forEach((red) => { if (!nuevos[red] && base) nuevos[red] = base; });
         return nuevos;
       });
     }
     // Es una promoción nueva: la anterior, si había, no se toca.
     setBundle(null);
     setCuando('');
-  }, [prefill]);
+    // Con la historia en la mano, el video vertical sale solo.
+    if (prefill.media?.imagen_historia && !prefill.media?.video && formatoDeVideo()) {
+      setMedia((m) => ({ ...m, video: '' }));
+      crearVideo(prefill.media.imagen_historia);
+    }
+  }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const habilitada = useMemo(() => {
     const m = {};
@@ -310,14 +343,34 @@ export default function PromocionPublicar({ prefill = null }) {
             <label key={campo} className="cursor-pointer rounded border border-dashed p-2 text-center text-[11px] hover:bg-slate-50">
               <input type="file" className="hidden" accept={campo === 'video' ? 'video/*' : 'image/*'}
                 onChange={(e) => subir(campo, e.target.files?.[0])} />
-              {subiendo === campo
-                ? <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+              {subiendo === campo || (campo === 'video' && creandoVideo)
+                ? (
+                  <span className="text-violet-700">
+                    <Loader2 className="mx-auto mb-1 h-4 w-4 animate-spin" />
+                    {campo === 'video' && creandoVideo ? 'Creando el video (8 s)…' : 'Subiendo…'}
+                  </span>
+                )
                 : media[campo]
                   ? <span className="font-bold text-emerald-700"><CheckCircle2 className="mx-auto mb-1 h-4 w-4" />{etiqueta} ✓</span>
                   : <span className="text-slate-500"><Upload className="mx-auto mb-1 h-4 w-4" />{etiqueta}</span>}
             </label>
           ))}
         </div>
+        {/* El video también se puede hacer a mano con la historia, o volver a
+            hacer, sin tener que subir nada. */}
+        {media.imagen_historia && !creandoVideo && formatoDeVideo() && (
+          <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px]">
+            <button type="button" onClick={() => crearVideo(media.imagen_historia)}
+              className="flex items-center gap-1 rounded border border-violet-300 bg-violet-50 px-2 py-1 font-semibold text-violet-700 hover:bg-violet-100">
+              <Film className="h-3.5 w-3.5" />
+              {media.video ? 'Rehacer el video con la imagen de la historia' : 'Crear el video con la imagen de la historia'}
+            </button>
+            {media.video && (
+              <a href={media.video} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver el video</a>
+            )}
+            <span className="text-slate-400">Para TikTok y YouTube Short, mientras no haya video de verdad.</span>
+          </div>
+        )}
         <div className="grid gap-2 md:grid-cols-2">
           {['facebook', 'instagram', 'tiktok', 'youtube'].map((plat) => (
             <div key={plat}>
@@ -325,6 +378,15 @@ export default function PromocionPublicar({ prefill = null }) {
                 <span>Texto de {plat}</span>
                 {textos[plat] && !precioEnTexto(textos[plat], precio) && (
                   <span className="text-red-600">no dice el precio</span>
+                )}
+                {/* El creativo escribe para Facebook e Instagram, no para
+                    TikTok ni YouTube: con un clic se trae el de Instagram. */}
+                {!textos[plat] && ['tiktok', 'youtube'].includes(plat) && (textos.instagram || textos.facebook) && (
+                  <button type="button"
+                    onClick={() => setTextos((t) => ({ ...t, [plat]: t.instagram || t.facebook }))}
+                    className="font-semibold text-violet-600 hover:underline">
+                    usar el de {textos.instagram ? 'Instagram' : 'Facebook'}
+                  </button>
                 )}
               </div>
               <textarea rows={3} className="w-full rounded border px-2 py-1 text-xs"
