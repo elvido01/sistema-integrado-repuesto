@@ -97,6 +97,8 @@ export default function PromocionPublicar({ prefill = null }) {
   const [cuando, setCuando] = useState('');
   const [bundle, setBundle] = useState(null);
   const [creandoVideo, setCreandoVideo] = useState(false);
+  // Programar desde el historial una promoción ya aprobada: { id, cuando }.
+  const [programandoHist, setProgramandoHist] = useState(null);
 
   // >>> EL VIDEO VERTICAL, CON LA IMAGEN DE LA HISTORIA <<<
   // TikTok y YouTube Shorts piden video y el creativo entrega imágenes. El
@@ -301,6 +303,37 @@ export default function PromocionPublicar({ prefill = null }) {
           : 'Míralo abajo, en el historial.',
       });
       limpiar();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo', description: e.message, duration: 10000 });
+    } finally {
+      setTrabajando(false);
+      cargar();
+    }
+  };
+
+  // >>> LAS APROBADAS QUE SE QUEDARON SIN FECHA <<<
+  // Con los cuatro botones de antes, "Aprobar" no publicaba: faltaba
+  // "Programar". El 28/09 el amortiguador se aprobó dos veces y se quedó en
+  // borrador para siempre, porque aprobado sin fecha nunca sale. Desde el
+  // historial se les da la salida que les faltó, con las mismas funciones.
+  const sacar = async (bundleId, cuandoLocal = null) => {
+    if (trabajando) return;
+    setTrabajando(true);
+    try {
+      const { data, error } = cuandoLocal
+        ? await supabase.rpc('promo_programar', {
+          p_bundle_id: bundleId, p_cuando: new Date(`${cuandoLocal}:00-04:00`).toISOString(),
+        })
+        : await supabase.rpc('promo_publicar_ahora', { p_bundle_id: bundleId });
+      if (error) throw error;
+      const bloqueados = Number(data?.sin_autorizar || 0);
+      toast({
+        title: cuandoLocal
+          ? `Programada para el ${new Date(data?.cuando).toLocaleString('es-DO', { timeZone: 'America/Santo_Domingo' })}`
+          : 'Sale en un minuto',
+        description: bloqueados ? `${bloqueados} destino(s) sin autorizar no salen.` : undefined,
+      });
+      setProgramandoHist(null);
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo', description: e.message, duration: 10000 });
     } finally {
@@ -549,6 +582,32 @@ export default function PromocionPublicar({ prefill = null }) {
                 {p.programada ? `programada ${new Date(p.programada).toLocaleString('es-DO')}` : 'sin programar'}
                 {p.existencia_confirmada ? ' · existencia confirmada' : ' · SIN confirmar existencia'}
               </div>
+              {p.estado === 'APROBADO' && !p.programada && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+                  <span className="flex-1">Aprobada pero sin fecha: así no sale nunca.</span>
+                  <Button size="sm" disabled={trabajando} onClick={() => sacar(p.bundle_id)}
+                    className="h-7 bg-emerald-600 px-2 text-[11px] text-white hover:bg-emerald-700">
+                    Publicar ahora
+                  </Button>
+                  {programandoHist?.id === p.bundle_id ? (
+                    <>
+                      <input type="datetime-local" className="rounded border px-1 py-0.5 text-[11px]"
+                        value={programandoHist.cuando}
+                        onChange={(e) => setProgramandoHist({ id: p.bundle_id, cuando: e.target.value })} />
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                        disabled={trabajando || !programandoHist.cuando}
+                        onClick={() => sacar(p.bundle_id, programandoHist.cuando)}>
+                        Programar
+                      </Button>
+                    </>
+                  ) : (
+                    <button type="button" className="font-semibold underline"
+                      onClick={() => setProgramandoHist({ id: p.bundle_id, cuando: '' })}>
+                      Programar…
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="mt-1 grid gap-1 md:grid-cols-2">
                 {(p.destinos || []).map((d) => (
                   <div key={d.id} className="rounded bg-slate-50 px-2 py-1 text-[11px]">
