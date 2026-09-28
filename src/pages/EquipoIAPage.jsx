@@ -252,6 +252,8 @@ const EquipoIAPage = () => {
   const [verVideosAnteriores, setVerVideosAnteriores] = useState(false);
   // La pieza aceptada arriba llena el formulario de publicar de abajo.
   const [prefillPromo, setPrefillPromo] = useState(null);
+  // "Verla arriba" desde la bandeja: lleva el encargo al paso 2.
+  const [enfocarPromo, setEnfocarPromo] = useState(null);
 
   const cargar = useCallback(async (silencioso) => {
     if (!silencioso) setCargando(true);
@@ -323,6 +325,19 @@ const EquipoIAPage = () => {
   const trabajos = data?.trabajos || [];
   const aprobaciones = data?.aprobaciones || [];
   const pendientes = useMemo(() => aprobaciones.filter((a) => a.estado === 'pending'), [aprobaciones]);
+  // >>> UNA PROMOCIÓN SE APRUEBA EN UN SOLO SITIO (28/09/2026) <<<
+  // Las del panel ("Qué promocionar hoy") salían dos veces: aquí, con Aprobar
+  // / Pedir cambios / Descartar todo, y arriba en el paso 2 con la imagen
+  // grande. Dos permisos para lo mismo. El dueño eligió que se queden solo
+  // arriba: aquí siguen apareciendo, para no perderlas de vista, pero sin
+  // botones de decidir; llevan al paso 2. Las que llegan por el chat de
+  // Hermes no las sigue el panel, y esas sí se deciden aquí como siempre.
+  const promoDelPanel = useMemo(() => {
+    const ids = new Set(trabajos
+      .filter((w) => w.tipo === 'promocion' && w.origin_platform === 'panel')
+      .map((w) => w.id));
+    return (ap) => ids.has(ap.trabajo_id);
+  }, [trabajos]);
   const activos = useMemo(
     () => trabajos.filter((t) => !['completed', 'cancelled', 'expired'].includes(t.estado)),
     [trabajos],
@@ -498,6 +513,7 @@ const EquipoIAPage = () => {
           había que bajar la pantalla para ver el resto. */}
       <RecomendacionesDelDia
         trabajos={data?.trabajos}
+        enfocar={enfocarPromo}
         onEncargado={() => cargar(true)}
         onUsar={(p) => {
           // Objeto nuevo cada vez: aceptar la misma pieza dos veces vuelve a
@@ -735,7 +751,19 @@ const EquipoIAPage = () => {
             )}
 
             <div className="space-y-3">
-              {pendientes.map((ap) => (
+              {pendientes.map((ap) => (promoDelPanel(ap) ? (
+                <div key={ap.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                  <p className="text-xs font-bold text-slate-800"><Texto>{ap.trabajo_titulo || ap.accion}</Texto></p>
+                  <p className="mt-1 text-[11px] text-slate-600">
+                    Las promociones se aprueban arriba, en el <b>paso 2</b>: ahí ves la imagen grande y, al
+                    aprobarla, el formulario de publicar se llena solo.
+                  </p>
+                  <Button size="sm" variant="outline" className="mt-2"
+                    onClick={() => setEnfocarPromo({ trabajoId: ap.trabajo_id, en: Date.now() })}>
+                    Verla arriba
+                  </Button>
+                </div>
+              ) : (
                 <div key={ap.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
                   <div className="mb-1 flex items-start justify-between gap-2">
                     <p className="text-xs font-bold text-slate-800"><Texto>{ap.accion}</Texto></p>
@@ -801,7 +829,7 @@ const EquipoIAPage = () => {
                     </div>
                   )}
                 </div>
-              ))}
+              )))}
             </div>
           </div>
         </div>

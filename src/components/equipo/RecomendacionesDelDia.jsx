@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,7 +24,7 @@ import { EncargoArte } from '@/components/equipo/EncargoArte';
 const MAX = 2;
 const POR_TANDA = 5;
 
-export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos }) {
+export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar }) {
   const { toast } = useToast();
   // >>> LA LISTA ENTERA, DE CINCO EN CINCO <<<
   // Antes se pedían 5 y el botón de refrescar volvía a pedir las mismas 5:
@@ -80,6 +80,18 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos }) {
     // Sin las piezas: la tarjeta las busca por el código que va en el pedido.
     if (retomar) setEncargo({ trabajoId: retomar.id, productos: [] });
   }, [trabajos, encargo, ignorados]);
+
+  // >>> CUANDO LA LISTA GENERAL MANDA AQUÍ <<<
+  // Las promociones del panel ya no se aprueban en "Esperando tu
+  // aprobación": se aprueban aquí, en el paso 2. Aquella lista solo avisa y
+  // trae el encargo hasta esta tarjeta — aunque el dueño lo hubiera cerrado,
+  // porque ahora lo está pidiendo él.
+  const caja = useRef(null);
+  useEffect(() => {
+    if (!enfocar?.trabajoId) return;
+    setEncargo((e) => (e?.trabajoId === enfocar.trabajoId ? e : { trabajoId: enfocar.trabajoId, productos: [] }));
+    caja.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [enfocar]);
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -157,13 +169,13 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos }) {
   };
 
   return (
-    <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div ref={caja} className="mb-4 scroll-mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       {/* El título, el para qué y el refresco, todo en un renglón: la barra
           está arriba del todo y cada línea que ocupe empuja lo demás. */}
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
           <Sparkles className="h-4 w-4 text-violet-500" />
-          Qué promocionar hoy
+          Paso 1 · Qué promocionar hoy
         </span>
         <p className="flex-1 text-[11px] text-slate-500">
           Elige una o dos y se las mando al Comercial-Creativo. No se publica nada:
@@ -272,6 +284,11 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos }) {
           onCerrar={() => {
             ignorar(encargo.trabajoId);
             setEncargo(null);
+          }}
+          // El trabado queda cerrado y se sigue el nuevo, con las mismas piezas.
+          onReencargado={(nuevoId) => {
+            ignorar(encargo.trabajoId);
+            setEncargo({ trabajoId: nuevoId, productos: encargo.productos });
           }}
         />
       )}

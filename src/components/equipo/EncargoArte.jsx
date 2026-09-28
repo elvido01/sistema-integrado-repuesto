@@ -71,7 +71,12 @@ function Pieza({ imagenId, etiqueta, onCargada }) {
   );
 }
 
-export function EncargoArte({ trabajoId, productos, onUsar, onCerrar }) {
+// Cuánto tiempo sin movimiento se considera trabado. Una pieza normal tarda
+// minuto y medio; el arrendamiento del worker es de doce. Ocho minutos quieto
+// no es "está trabajando", es que algo se cayó.
+const TRABADO_MIN = 8;
+
+export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencargado }) {
   const { toast } = useToast();
   const [detalle, setDetalle] = useState(null);
   const [trabajando, setTrabajando] = useState(false);
@@ -114,6 +119,25 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar }) {
   }, [trabajo?.peticion, productos]);
   const enMesa = [...aprobaciones].reverse().find((a) => a.estado === 'pending' && esArte(a.contenido));
   const terminado = ['cancelled', 'failed', 'completed'].includes(trabajo?.estado);
+
+  // >>> LO QUE ANTES SE QUEDABA GIRANDO PARA SIEMPRE (28/09) <<<
+  // Si el creativo devuelve un texto sin imagen, Hermes lo rechaza y deja una
+  // aprobación de CONCEPTO esperando. No es arte, así que no está "en la
+  // mesa"; y el trabajo sigue en waiting_approval, así que tampoco está
+  // "terminado". La tarjeta no tenía qué enseñar y giraba sin fin: nadie iba
+  // a contestar nunca. Ahora se dice qué pasó y se ofrece encargarlo de nuevo.
+  const pendiente = [...aprobaciones].reverse().find((a) => a.estado === 'pending');
+  const sinPieza = !enMesa && !!pendiente && !esArte(pendiente.contenido);
+  const reparos = Array.isArray(pendiente?.datos_usados?.reparos) ? pendiente.datos_usados.reparos : [];
+
+  // Y si no llega nada: sin pieza, sin texto, sin terminar y sin moverse.
+  const ultimoMovimiento = Math.max(
+    new Date(trabajo?.creado_en || 0).getTime(),
+    ...(detalle?.mensajes || []).map((m) => new Date(m.completed_at || m.claimed_at || m.created_at || 0).getTime()),
+  );
+  const minutosQuieto = ultimoMovimiento > 0 ? Math.floor((Date.now() - ultimoMovimiento) / 60000) : 0;
+  const esperando = !enMesa && !sinPieza && !terminado;
+  const trabado = esperando && !!trabajo && minutosQuieto >= TRABADO_MIN;
   // Una pieza que ya se aceptó y se vuelve a pedir el mismo día (por ejemplo
   // porque se recargó la página y se perdió el formulario): se enseña igual y
   // se puede volver a usar. No se vuelve a aprobar: ya lo está.
@@ -123,6 +147,8 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar }) {
 
   // Se mira cada tres segundos mientras el creativo trabaja. En cuanto la
   // pieza está en la mesa, o el trabajo terminó, se deja de preguntar.
+  // Con un texto sin imagen se SIGUE mirando: si luego llega una pieza, la
+  // tarjeta cambia sola (una pieza pendiente manda sobre el texto).
   useEffect(() => {
     mirar();
     if (enMesa || terminado) return undefined;
@@ -139,11 +165,43 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar }) {
   const rehaciendo = (detalle?.mensajes || [])
     .filter((m) => m.to_agent === 'comercial_creativo').length > 1;
 
-  const decidir = async (decision, texto) => {
+  const decidir = async (decision, texto, aprobacionId = enMesa?.id) => {
     const { error } = await supabase.rpc('equipo_decidir', {
-      p_aprobacion_id: enMesa.id, p_decision: decision, p_comentario: texto || null,
+      p_aprobacion_id: aprobacionId, p_decision: decision, p_comentario: texto || null,
     });
     if (error) throw error;
+  };
+
+  // Volver a pedirlo NO es llamar otra vez a equipo_encargar_promocion: esa es
+  // idempotente por pieza y día, y un encargo que "terminó" entregando un
+  // texto no revive — contestaría "ya existe" sin hacer nada. Esto cierra el
+  // trabado y abre uno nuevo con la misma petición y el encargo de arte
+  // completo (sql/encargar_de_nuevo_lo_que_se_trabo.sql).
+  const reencargar = async () => {
+    if (trabajando) return;
+    setTrabajando(true);
+    try {
+      const { data, error } = await supabase.rpc('equipo_reencargar_promocion', { p_trabajo_id: trabajoId });
+      if (error) throw error;
+      toast({ title: 'Encargado de nuevo', description: 'Te enseño la pieza aquí mismo en cuanto esté.' });
+      if (onReencargado && data?.trabajo_id) onReencargado(data.trabajo_id);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo encargar de nuevo', description: e.message, duration: 10000 });
+    } finally {
+      setTrabajando(false);
+    }
+  };
+
+  const descartarSinPieza = async () => {
+    if (!pendiente || trabajando) return;
+    setTrabajando(true);
+    try {
+      await decidir('rejected', null, pendiente.id);
+      onCerrar();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo descartar', description: e.message });
+      setTrabajando(false);
+    }
   };
 
   const subir = async (imagenId, nombre) => {
@@ -188,7 +246,7 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar }) {
           instagram: textoDe(c.copy?.instagram),
         },
       });
-      toast({ title: 'Listo para publicar', description: 'Llené el formulario de abajo con la pieza. Confirma la existencia y sigue.' });
+      toast({ title: 'Imagen aprobada', description: 'Paso 3, abajo: ya está lleno. Marca el estante y publica o programa.' });
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo usar la pieza', description: e.message, duration: 10000 });
     } finally {
@@ -229,7 +287,9 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar }) {
   return (
     <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/40 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="truncate text-xs font-bold text-slate-800">Encargo: {nombre}</span>
+        <span className="truncate text-xs font-bold text-slate-800">
+          <span className="text-violet-700">Paso 2 · La imagen</span> — {nombre}
+        </span>
         {!enMesa && (
           <button type="button" onClick={onCerrar} title="Dejar de mirar este encargo"
             className="text-slate-400 hover:text-slate-700">
@@ -239,24 +299,70 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar }) {
       </div>
 
       {/* ── Esperando ── */}
-      {!enMesa && !terminado && (
-        <div className="flex items-center gap-2 py-4 text-xs text-slate-600">
-          <Loader2 className="h-4 w-4 animate-spin text-violet-500" />
-          {rehaciendo
-            ? 'El Comercial-Creativo está rehaciendo la pieza…'
-            : 'El Comercial-Creativo está montando la pieza. Suele tardar menos de un minuto…'}
+      {esperando && (
+        <div className="py-4 text-xs text-slate-600">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-violet-500" />
+            {rehaciendo
+              ? 'El Comercial-Creativo está rehaciendo la pieza…'
+              : 'El Comercial-Creativo está montando la pieza. Suele tardar menos de dos minutos…'}
+          </div>
+          {trabado && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span className="flex-1">Lleva {minutosQuieto} minutos sin moverse. Una pieza normal tarda uno o dos: algo se cayó.</span>
+              <Button size="sm" variant="outline" disabled={trabajando} onClick={reencargar}>
+                {trabajando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-1 h-3.5 w-3.5" />}
+                Encargar de nuevo
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Devolvió un texto sin imagen ── */}
+      {sinPieza && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <b>El Comercial-Creativo devolvió un texto sin imagen.</b> No hay pieza que aprobar.
+            </span>
+          </div>
+          {reparos.length > 0 && (
+            <ul className="mt-1 list-disc pl-8 text-[11px]">
+              {reparos.map((r, i) => <li key={i}>{r}</li>)}
+            </ul>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button size="sm" disabled={trabajando} onClick={reencargar}
+              className="bg-violet-600 text-white hover:bg-violet-700">
+              {trabajando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-1 h-3.5 w-3.5" />}
+              Encargar de nuevo
+            </Button>
+            <button type="button" disabled={trabajando} onClick={descartarSinPieza}
+              className="text-[11px] font-semibold text-slate-500 hover:text-red-600 hover:underline disabled:opacity-40">
+              Descartar
+            </button>
+          </div>
         </div>
       )}
 
       {/* ── Terminó sin pieza ── */}
       {!pieza && terminado && (
-        <div className="flex items-start gap-2 py-2 text-xs text-slate-600">
+        <div className="flex flex-wrap items-start gap-2 py-2 text-xs text-slate-600">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-          <span>
+          <span className="flex-1">
             {trabajo?.estado === 'completed'
               ? 'Este encargo ya se cerró.'
               : `El encargo terminó sin pieza (${trabajo?.estado}).${trabajo?.error ? ` ${trabajo.error}` : ''}`}
           </span>
+          {trabajo?.estado !== 'completed' && (
+            <Button size="sm" variant="outline" disabled={trabajando} onClick={reencargar}>
+              {trabajando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-1 h-3.5 w-3.5" />}
+              Encargar de nuevo
+            </Button>
+          )}
         </div>
       )}
 
@@ -307,17 +413,17 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar }) {
               <Button size="sm" disabled={trabajando} onClick={usar}
                 className="bg-emerald-600 text-white hover:bg-emerald-700">
                 {trabajando ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
-                Usar esta imagen
+                Aprobar la imagen
               </Button>
               <Button size="sm" variant="outline" disabled={trabajando} onClick={() => setPidiendoOtra(true)}>
-                <RotateCcw className="mr-1 h-3.5 w-3.5" /> Pedir otra
+                <RotateCcw className="mr-1 h-3.5 w-3.5" /> Pedir cambios
               </Button>
               <button type="button" disabled={trabajando} onClick={descartar}
                 className="text-[11px] font-semibold text-slate-500 hover:text-red-600 hover:underline disabled:opacity-40">
                 Descartar
               </button>
               <span className="text-[10px] text-slate-400">
-                Aceptarla no publica nada: llena el formulario de abajo.
+                Aprobarla no publica nada: pasa al paso 3, abajo.
               </span>
             </div>
           )}

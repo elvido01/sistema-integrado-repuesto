@@ -1,16 +1,23 @@
 // ════════════════════════════════════════════════════════════════════════
 //  PROMOCIÓN — de la pieza a los seis destinos, con una sola hora
 // ════════════════════════════════════════════════════════════════════════
-//  El orden no es decorativo, es el del negocio:
+//  Es el PASO 3 del camino del dueño (28/09/2026), que es lineal:
 //
-//    pieza → existencia CONFIRMADA A MANO → arte y textos → aprobar → hora
+//    1 elijo el producto → 2 apruebo o corrijo la imagen
+//    → 3 publico ahora o programo → 4 historial con sus números
+//
+//  Antes este formulario tenía cuatro botones (Crear borrador, Confirmar
+//  existencia, Aprobar, Programar): cuatro permisos para una sola decisión.
+//  Quedan dos, "Publicar ahora" y "Programar", y cada uno da solo los pasos
+//  de antes, en el mismo orden y con las mismas reglas de la base.
 //
 //  Dos cosas que no se negocian, y que por eso están dentro y no en un
 //  documento que nadie lee:
 //
 //   · La existencia se confirma mirando el estante. La cifra del sistema se
 //     enseña como referencia y nada más: promocionar algo que no hay es peor
-//     que no promocionar. Sin la confirmación, el botón de aprobar no existe.
+//     que no promocionar. Sin marcar "fui al estante", los dos botones están
+//     apagados (y la base, además, no deja aprobar sin eso).
 //
 //   · El precio va en el TEXTO de cada red, no encima del arte. El aviso
 //     aparece mientras se escribe, y la base lo vuelve a comprobar al crear.
@@ -49,6 +56,16 @@ const COLOR_ESTADO = {
 };
 
 const rd = (n) => `RD$ ${Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Los números de un destino publicado, tal como los trae Metricool. Cada red
+// da campos distintos (Facebook impresiones, Instagram vistas): se enseña lo
+// que haya y nada más, sin rellenar con ceros lo que la red no mide.
+const METRICAS = [
+  ['vistas', 'vistas'], ['alcance', 'alcance'], ['impresiones', 'impresiones'],
+  ['me_gusta', 'me gusta'], ['comentarios', 'coment.'], ['compartidos', 'compart.'],
+  ['guardados', 'guard.'], ['clics', 'clics'],
+];
+const num = (n) => Number(n || 0).toLocaleString('es-DO');
 
 /** El precio, tal como hay que poder encontrarlo dentro del texto. */
 const precioEnTexto = (texto, precio) => {
@@ -207,6 +224,9 @@ export default function PromocionPublicar({ prefill = null }) {
 
   const problemas = useMemo(() => {
     const p = [];
+    // El estante primero: es lo único que ninguna máquina puede comprobar.
+    if (!producto) p.push('Falta elegir la pieza.');
+    else if (!existenciaOk) p.push('Falta marcar "Fui al estante y la pieza está".');
     if (!titulo.trim()) p.push('Falta el título.');
     if (!destinos.length) p.push('No hay ni un destino elegido.');
     plataformasElegidas.forEach((plat) => {
@@ -217,28 +237,76 @@ export default function PromocionPublicar({ prefill = null }) {
     if (destinos.some((d) => d.placement === 'story') && !media.imagen_historia) p.push('Falta la imagen de la historia.');
     if (destinos.some((d) => ['reel', 'short'].includes(d.placement)) && !media.video) p.push('Falta el video vertical.');
     return p;
-  }, [titulo, destinos, plataformasElegidas, textos, precio, media]);
+  }, [producto, existenciaOk, titulo, destinos, plataformasElegidas, textos, precio, media]);
 
-  const crear = async () => {
+  const limpiar = () => {
+    setBundle(null); setProducto(null); setTitulo(''); setBusqueda('');
+    setTextos({ facebook: '', instagram: '', tiktok: '', youtube: '' });
+    setMedia({ imagen_feed: '', imagen_historia: '', video: '' });
+    setExistenciaOk(false); setCuando('');
+  };
+
+  // >>> UN CLIC, LOS PASOS DE SIEMPRE <<<
+  // Crear → confirmar existencia → aprobar → publicar ahora | programar.
+  // Son las mismas funciones de la base que antes tenían un botón cada una;
+  // sus reglas no se tocan. Si algo falla a mitad, lo ya creado se conserva
+  // (`bundle`) y el siguiente clic sigue desde ahí: confirmar y aprobar se
+  // pueden repetir sin efecto, y crear no se repite.
+  //
+  // "Publicar ahora" no manda la hora desde aquí: la pone el servidor
+  // (promo_publicar_ahora, un minuto de SU reloj). Con el de la PC atrasado,
+  // "dentro de un minuto" llegaría como pasado y la base lo rechazaría.
+  const lanzar = async (modo) => {
+    if (trabajando || problemas.length > 0) return;
+    if (modo === 'programar' && !cuando) return;
     setTrabajando(true);
     try {
-      const { data, error } = await supabase.rpc('promo_crear', {
-        p_titulo: titulo.trim(),
-        p_producto_id: producto?.id || null,
-        p_precio: Number(precio) || null,
-        p_textos: textos,
-        p_media: media,
-        p_destinos: destinos,
-        p_idempotency_key: null,
-        p_design_id: null,
+      let id = bundle;
+      if (!id) {
+        const { data, error } = await supabase.rpc('promo_crear', {
+          p_titulo: titulo.trim(),
+          p_producto_id: producto?.id || null,
+          p_precio: Number(precio) || null,
+          p_textos: textos,
+          p_media: media,
+          p_destinos: destinos,
+          p_idempotency_key: null,
+          p_design_id: null,
+        });
+        if (error) throw error;
+        id = data.bundle_id;
+        setBundle(id);
+      }
+      const pasos = [
+        ['promo_confirmar_existencia', { p_bundle_id: id }],
+        ['promo_aprobar', { p_bundle_id: id }],
+        modo === 'ahora'
+          ? ['promo_publicar_ahora', { p_bundle_id: id }]
+          // Hora de Santo Domingo, con su huso pegado. Aquí no hay horario de verano.
+          : ['promo_programar', { p_bundle_id: id, p_cuando: new Date(`${cuando}:00-04:00`).toISOString() }],
+      ];
+      let res = null;
+      for (const [rpc, args] of pasos) {
+        const { data, error } = await supabase.rpc(rpc, args);
+        if (error) throw error;
+        res = data;
+      }
+      const bloqueados = Number(res?.sin_autorizar || 0);
+      toast({
+        title: modo === 'ahora'
+          ? 'Sale en un minuto'
+          : `Programada para el ${new Date(res?.cuando).toLocaleString('es-DO', { timeZone: 'America/Santo_Domingo' })}`,
+        description: bloqueados
+          ? `${bloqueados} destino(s) sin autorizar no salen. Lo demás, míralo abajo en el historial.`
+          : 'Míralo abajo, en el historial.',
       });
-      if (error) throw error;
-      setBundle(data.bundle_id);
-      toast({ title: 'Promoción creada', description: `${(data.destinos || []).length} destino(s). Ahora confirma la existencia.` });
-      cargar();
+      limpiar();
     } catch (e) {
-      toast({ variant: 'destructive', title: 'No se pudo crear', description: e.message, duration: 10000 });
-    } finally { setTrabajando(false); }
+      toast({ variant: 'destructive', title: 'No se pudo', description: e.message, duration: 10000 });
+    } finally {
+      setTrabajando(false);
+      cargar();
+    }
   };
 
   const paso = async (rpc, args, ok) => {
@@ -253,19 +321,15 @@ export default function PromocionPublicar({ prefill = null }) {
     } finally { setTrabajando(false); }
   };
 
-  const programar = async () => {
-    if (!cuando) return;
-    // Hora de Santo Domingo, con su huso pegado. Aquí no hay horario de verano.
-    const iso = new Date(`${cuando}:00-04:00`).toISOString();
-    await paso('promo_programar', { p_bundle_id: bundle, p_cuando: iso }, 'Programada');
-  };
 
   return (
     <section id="publicar-promocion" className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Publicar una promoción">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-bold text-slate-800">Publicar una promoción</h2>
-          <p className="text-xs text-slate-500">Una hora, seis destinos, cada uno con su propio estado.</p>
+          <h2 className="text-sm font-bold text-slate-800">Paso 3 · Publica ahora o prográmala</h2>
+          <p className="text-xs text-slate-500">
+            Con la imagen aprobada arriba esto ya viene lleno: revisa, marca el estante y elige cuándo sale.
+          </p>
         </div>
         <div className="flex flex-wrap gap-1">
           {redesEstado.map((r) => (
@@ -291,9 +355,9 @@ export default function PromocionPublicar({ prefill = null }) {
         </div>
       )}
 
-      {/* ── 1. La pieza ── */}
+      {/* ── La pieza ── */}
       <div className="mb-3 rounded border border-slate-200 p-3">
-        <div className="mb-2 text-xs font-bold text-slate-700">1 · La pieza</div>
+        <div className="mb-2 text-xs font-bold text-slate-700">La pieza</div>
         <div className="flex flex-wrap gap-2">
           <input className="min-w-[220px] flex-1 rounded border px-2 py-1 text-xs" placeholder="Código o descripción"
             value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
@@ -333,9 +397,9 @@ export default function PromocionPublicar({ prefill = null }) {
         )}
       </div>
 
-      {/* ── 2. Arte y textos ── */}
+      {/* ── Arte y textos ── */}
       <div className="mb-3 rounded border border-slate-200 p-3">
-        <div className="mb-2 text-xs font-bold text-slate-700">2 · Arte y texto</div>
+        <div className="mb-2 text-xs font-bold text-slate-700">Arte y texto</div>
         <input className="mb-2 w-full rounded border px-2 py-1 text-xs" placeholder="Título interno de la promoción"
           value={titulo} onChange={(e) => setTitulo(e.target.value)} />
         <div className="mb-2 grid gap-2 md:grid-cols-3">
@@ -397,9 +461,9 @@ export default function PromocionPublicar({ prefill = null }) {
         </div>
       </div>
 
-      {/* ── 3. Destinos y hora ── */}
+      {/* ── Destinos y hora ── */}
       <div className="mb-3 rounded border border-slate-200 p-3">
-        <div className="mb-2 text-xs font-bold text-slate-700">3 · Destinos y hora</div>
+        <div className="mb-2 text-xs font-bold text-slate-700">Destinos y hora</div>
         <div className="mb-2 flex flex-wrap gap-2">
           {REDES.map((r) => {
             const clave = `${r.platform}:${r.placement}`;
@@ -429,68 +493,104 @@ export default function PromocionPublicar({ prefill = null }) {
         </ul>
       )}
 
+      {/* Dos botones, una decisión: cuándo sale. Programar pide la hora de
+          arriba; publicar ahora no la mira. */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={trabajando || problemas.length > 0 || !!bundle} onClick={crear}>
-          {trabajando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null} Crear borrador
+        <Button size="sm" disabled={trabajando || problemas.length > 0} onClick={() => lanzar('ahora')}
+          className="bg-emerald-600 text-white hover:bg-emerald-700">
+          {trabajando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
+          Publicar ahora
         </Button>
-        <Button size="sm" variant="outline" disabled={!bundle || trabajando || !existenciaOk}
-          onClick={() => paso('promo_confirmar_existencia', { p_bundle_id: bundle }, 'Existencia confirmada')}>
-          Confirmar existencia
-        </Button>
-        <Button size="sm" variant="outline" disabled={!bundle || trabajando}
-          onClick={() => paso('promo_aprobar', { p_bundle_id: bundle }, 'Aprobada')}>
-          Aprobar
-        </Button>
-        <Button size="sm" variant="outline" disabled={!bundle || trabajando || !cuando} onClick={programar}>
-          Programar
+        <Button size="sm" variant="outline" disabled={trabajando || problemas.length > 0 || !cuando}
+          title={!cuando ? 'Pon la hora en "Destinos y hora"' : undefined}
+          onClick={() => lanzar('programar')}>
+          <Clock className="mr-1 h-3.5 w-3.5" />
+          {cuando ? 'Programar' : 'Programar (pon la hora)'}
         </Button>
         {bundle && (
-          <button type="button" className="text-[11px] text-slate-500 underline"
-            onClick={() => { setBundle(null); setProducto(null); setTitulo(''); setTextos({ facebook: '', instagram: '', tiktok: '', youtube: '' }); setMedia({ imagen_feed: '', imagen_historia: '', video: '' }); setExistenciaOk(false); setCuando(''); }}>
-            empezar otra
-          </button>
+          <span className="text-[11px] text-slate-500">
+            Ya se creó y un paso falló: al pulsar otra vez sigue desde ahí.
+            {' '}Si cambiaste algo arriba,{' '}
+            <button type="button" className="underline" onClick={limpiar}>empieza otra</button>.
+          </span>
         )}
       </div>
 
-      {/* ── Las últimas promociones ── */}
-      <h3 className="mb-2 text-xs font-bold text-slate-700">Últimas promociones</h3>
+      {/* ── Paso 4: el historial, con lo que pasó de verdad ── */}
+      <h3 className="mb-1 text-xs font-bold text-slate-700">Paso 4 · Historial y resultados</h3>
+      <p className="mb-2 text-[10px] text-slate-500">
+        Los números los trae Metricool cuando pasa por las cuentas; no son al instante. Las historias no traen números.
+      </p>
       {promos.length === 0 && <p className="text-xs text-slate-500">Todavía no hay ninguna.</p>}
       <div className="space-y-2">
-        {promos.map((p) => (
-          <div key={p.bundle_id} className="rounded border border-slate-200 p-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-bold text-slate-800">{p.titulo}</div>
-              <span className={`rounded border px-2 py-0.5 text-[10px] font-bold ${COLOR_ESTADO[p.estado] || ''}`}>{p.estado}</span>
-            </div>
-            <div className="text-[10px] text-slate-500">
-              {p.precio ? `${rd(p.precio)} · ` : ''}
-              {p.programada ? `programada ${new Date(p.programada).toLocaleString('es-DO')}` : 'sin programar'}
-              {p.existencia_confirmada ? ' · existencia confirmada' : ' · SIN confirmar existencia'}
-            </div>
-            <div className="mt-1 grid gap-1 md:grid-cols-2">
-              {(p.destinos || []).map((d) => (
-                <div key={d.id} className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1 text-[11px]">
-                  <span className="font-medium text-slate-700">{d.platform} · {d.placement}</span>
-                  <span className="flex items-center gap-2">
-                    {d.external_url && (
-                      <a href={d.external_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver</a>
-                    )}
-                    {d.estado === 'FALLO' && (
-                      <button type="button" className="text-amber-700 underline"
-                        onClick={() => paso('promo_reintentar', { p_bundle_id: p.bundle_id, p_target_id: d.id }, 'Reintentando')}>
-                        <RotateCcw className="inline h-3 w-3" /> reintentar
-                      </button>
-                    )}
-                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${COLOR_ESTADO[d.estado] || ''}`}
-                      title={d.bloqueo_motivo || d.error || ''}>
-                      {d.estado}
+        {promos.map((p) => {
+          // El total de la promoción: lo que se sabe, sumado. Las redes que
+          // no dan un campo no suman cero, simplemente no cuentan.
+          const medidos = (p.destinos || []).filter((d) => d.metricas);
+          const alcance = medidos.reduce((s, d) => s + Number(d.metricas.alcance || 0), 0);
+          const vistas = medidos.reduce((s, d) => s + Number(d.metricas.vistas || 0), 0);
+          return (
+            <div key={p.bundle_id} className="rounded border border-slate-200 p-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-bold text-slate-800">{p.titulo}</div>
+                <span className="flex items-center gap-2">
+                  {medidos.length > 0 && (
+                    <span className="text-[10px] font-semibold text-violet-700">
+                      {alcance > 0 && `alcance ${num(alcance)}`}
+                      {alcance > 0 && vistas > 0 && ' · '}
+                      {vistas > 0 && `${num(vistas)} vistas`}
                     </span>
-                  </span>
-                </div>
-              ))}
+                  )}
+                  <span className={`rounded border px-2 py-0.5 text-[10px] font-bold ${COLOR_ESTADO[p.estado] || ''}`}>{p.estado}</span>
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-500">
+                {p.precio ? `${rd(p.precio)} · ` : ''}
+                {p.programada ? `programada ${new Date(p.programada).toLocaleString('es-DO')}` : 'sin programar'}
+                {p.existencia_confirmada ? ' · existencia confirmada' : ' · SIN confirmar existencia'}
+              </div>
+              <div className="mt-1 grid gap-1 md:grid-cols-2">
+                {(p.destinos || []).map((d) => (
+                  <div key={d.id} className="rounded bg-slate-50 px-2 py-1 text-[11px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-700">{d.platform} · {d.placement}</span>
+                      <span className="flex items-center gap-2">
+                        {d.external_url && (
+                          <a href={d.external_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver</a>
+                        )}
+                        {d.estado === 'FALLO' && (
+                          <button type="button" className="text-amber-700 underline"
+                            onClick={() => paso('promo_reintentar', { p_bundle_id: p.bundle_id, p_target_id: d.id }, 'Reintentando')}>
+                            <RotateCcw className="inline h-3 w-3" /> reintentar
+                          </button>
+                        )}
+                        <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${COLOR_ESTADO[d.estado] || ''}`}
+                          title={d.bloqueo_motivo || d.error || ''}>
+                          {d.estado}
+                        </span>
+                      </span>
+                    </div>
+                    {d.estado === 'PUBLICADO' && (
+                      d.metricas ? (
+                        <div className="mt-0.5 flex flex-wrap gap-x-2 text-[10px] text-slate-600"
+                          title={`Medido el ${new Date(d.metricas.medido_en).toLocaleString('es-DO')}`}>
+                          {METRICAS.filter(([k]) => d.metricas[k] !== null && d.metricas[k] !== undefined)
+                            .map(([k, etiqueta]) => (
+                              <span key={k}><b className="text-slate-800">{num(d.metricas[k])}</b> {etiqueta}</span>
+                            ))}
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 text-[10px] text-slate-400">
+                          {d.placement === 'story' ? 'Las historias no traen números.' : 'Todavía sin medir.'}
+                        </div>
+                      )
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {promos.length >= 3 && (
         <button type="button" className="mt-2 text-[11px] text-blue-700 underline" onClick={() => setVerAnteriores((v) => !v)}>
