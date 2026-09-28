@@ -45,6 +45,22 @@ async function meta(fetchFn, url, token, cuerpo) {
   return { http: r.status, ok: r.ok && !body?.error, body, err: body?.error || null };
 }
 
+/** Una lectura a Meta (GET), con el token también en la cabecera. */
+async function metaLeer(fetchFn, url, token) {
+  const r = await fetchFn(url, { method: 'GET', headers: { Authorization: `Bearer ${token}` } });
+  let body = null;
+  try { body = await r.json(); } catch { /* puede no venir JSON */ }
+  return { http: r.status, ok: r.ok && !body?.error, body, err: body?.error || null };
+}
+
+/** Instagram todavía no terminó de procesar el contenedor: se reintenta. */
+function noEstaLista(err) {
+  if (!err) return false;
+  return Number(err.code) === 9007 || Number(err.error_subcode) === 2207027;
+}
+
+const pausa = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
 function fallo(res, paso) {
   return {
     ok: false,
@@ -83,7 +99,7 @@ export async function facebookHistoria({ fetchFn, token, cuentaId, media }) {
 }
 
 // ── INSTAGRAM (siempre dos pasos: contenedor y publicación) ─────────────
-async function instagram({ fetchFn, token, cuentaId, contenedor }) {
+async function instagram({ fetchFn, token, cuentaId, contenedor, esperar = pausa }) {
   const host = String(token).startsWith('IGAA') ? 'graph.instagram.com' : 'graph.facebook.com';
   const ident = String(token).startsWith('IGAA') ? 'me' : cuentaId;
 
@@ -92,18 +108,33 @@ async function instagram({ fetchFn, token, cuentaId, contenedor }) {
   const creationId = c.body?.id;
   if (!creationId) return { ok: false, paso: 'contenedor', http: c.http, error: 'Instagram no devolvió el id del contenedor.' };
 
-  const p = await meta(fetchFn, `https://${host}/${V_META}/${ident}/media_publish`, token, { creation_id: creationId });
+  // Instagram a veces necesita un momento para procesar la imagen del
+  // contenedor, y el segundo paso contesta "media not ready" (9007). Eso NO
+  // es un fallo: se espera y se reintenta. Hasta tres veces; si no, sí falla.
+  let p = null;
+  for (let intento = 0; intento < 4; intento += 1) {
+    if (intento > 0) await esperar(3000);
+    p = await meta(fetchFn, `https://${host}/${V_META}/${ident}/media_publish`, token, { creation_id: creationId });
+    if (p.ok || !noEstaLista(p.err)) break;
+  }
   if (!p.ok) return fallo(p, 'publicar');
   const id = p.body?.id;
   if (!id) return { ok: false, paso: 'publicar', http: p.http, error: 'Instagram contestó 200 pero sin id.' };
-  return { ok: true, external_post_id: String(id), external_url: `https://www.instagram.com/p/${id}/`, creation_id: creationId };
+
+  // El enlace NO se arma a mano: instagram.com/p/<...> lleva el código corto
+  // de la publicación, no este id, y armado a mano daba un enlace roto. Se le
+  // pide a Instagram. Si no lo da, queda sin enlace — publicado igual, porque
+  // el id sí es de verdad; lo que nunca se hace es inventar la URL.
+  const l = await metaLeer(fetchFn, `https://${host}/${V_META}/${id}?fields=permalink`, token);
+  const permalink = l.ok ? (l.body?.permalink || null) : null;
+  return { ok: true, external_post_id: String(id), external_url: permalink, creation_id: creationId };
 }
 
-export const instagramFeed = ({ fetchFn, token, cuentaId, media, texto }) =>
-  instagram({ fetchFn, token, cuentaId, contenedor: { image_url: media.imagen, caption: texto } });
+export const instagramFeed = ({ fetchFn, token, cuentaId, media, texto, esperar }) =>
+  instagram({ fetchFn, token, cuentaId, esperar, contenedor: { image_url: media.imagen, caption: texto } });
 
-export const instagramHistoria = ({ fetchFn, token, cuentaId, media }) =>
-  instagram({ fetchFn, token, cuentaId, contenedor: { image_url: media.imagen, media_type: 'STORIES' } });
+export const instagramHistoria = ({ fetchFn, token, cuentaId, media, esperar }) =>
+  instagram({ fetchFn, token, cuentaId, esperar, contenedor: { image_url: media.imagen, media_type: 'STORIES' } });
 
 // ── TIKTOK Y YOUTUBE: todavía no ────────────────────────────────────────
 // No es que falte escribir el código: es que la plataforma no deja. Se

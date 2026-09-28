@@ -17,7 +17,9 @@ function fetchFalso(respuestas) {
   let i = 0;
   const fn = async (url, init) => {
     pedidos.push({ url, init, cuerpo: init?.body ? JSON.parse(init.body) : null });
-    const r = Array.isArray(respuestas) ? respuestas[i++] : respuestas;
+    // Si se acaban las respuestas del guion, contesta vacío: una llamada de
+    // más no puede tumbar la prueba, pero sí se ve en `pedidos`.
+    const r = (Array.isArray(respuestas) ? respuestas[i++] : respuestas) || { body: {} };
     return {
       ok: r.ok !== false,
       status: r.status ?? (r.ok === false ? 400 : 200),
@@ -77,13 +79,59 @@ describe('Instagram', () => {
     expect(f.pedidos).toHaveLength(1);       // no hubo segundo paso
   });
 
-  it('publica cuando los dos pasos salen', async () => {
-    const f = fetchFalso([{ body: { id: 'CONT1' } }, { body: { id: 'MEDIA1' } }]);
+  it('publica cuando los dos pasos salen, y el enlace se lo pide a Instagram', async () => {
+    const f = fetchFalso([
+      { body: { id: 'CONT1' } },
+      { body: { id: 'MEDIA1' } },
+      { body: { permalink: 'https://www.instagram.com/p/Cx9AbCd/' } },
+    ]);
     const r = await instagramFeed({ fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'x' });
     expect(r.ok).toBe(true);
     expect(r.creation_id).toBe('CONT1');
     expect(r.external_post_id).toBe('MEDIA1');
     expect(f.pedidos[1].cuerpo.creation_id).toBe('CONT1');
+    // El enlace es el que dio Instagram, no uno armado con el id.
+    expect(f.pedidos[2].init.method).toBe('GET');
+    expect(f.pedidos[2].url).toContain('MEDIA1?fields=permalink');
+    expect(r.external_url).toBe('https://www.instagram.com/p/Cx9AbCd/');
+  });
+
+  it('si Instagram no da el enlace, queda sin enlace: nunca uno inventado', async () => {
+    const f = fetchFalso([{ body: { id: 'CONT1' } }, { body: { id: 'MEDIA1' } }, { body: {} }]);
+    const r = await instagramFeed({ fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'x' });
+    expect(r.ok).toBe(true);                 // publicado igual: el id es de verdad
+    expect(r.external_post_id).toBe('MEDIA1');
+    expect(r.external_url).toBeNull();
+  });
+
+  it('"media not ready" no es un fallo: espera y reintenta', async () => {
+    const noLista = { ok: false, status: 400, body: { error: { message: 'Media ID is not available', code: 9007, error_subcode: 2207027 } } };
+    const f = fetchFalso([
+      { body: { id: 'CONT1' } },
+      noLista,
+      noLista,
+      { body: { id: 'MEDIA1' } },
+      { body: { permalink: 'https://www.instagram.com/p/Zz/' } },
+    ]);
+    const esperas = [];
+    const r = await instagramFeed({
+      fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'x',
+      esperar: async (ms) => { esperas.push(ms); },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.external_post_id).toBe('MEDIA1');
+    expect(esperas).toHaveLength(2);         // dos reintentos, con su pausa
+  });
+
+  it('si nunca queda lista, falla — no se queda reintentando para siempre', async () => {
+    const noLista = { ok: false, status: 400, body: { error: { message: 'Media ID is not available', code: 9007 } } };
+    const f = fetchFalso([{ body: { id: 'CONT1' } }, noLista, noLista, noLista, noLista, noLista]);
+    const r = await instagramFeed({
+      fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'x', esperar: async () => {},
+    });
+    expect(r.ok).toBe(false);
+    expect(r.paso).toBe('publicar');
+    expect(f.pedidos).toHaveLength(5);       // contenedor + 4 intentos
   });
 });
 
