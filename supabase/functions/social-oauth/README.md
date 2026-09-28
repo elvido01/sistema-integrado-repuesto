@@ -36,7 +36,7 @@ Registrar los callbacks exactos en las consolas de los proveedores.
 
 ## Trabajo que falta (no marcar como completo)
 
-1. Crear y guardar credenciales; habilitar YouTube Data API y configurar consentimiento/scopes.
+1. Credencial web «MotoFlow Equipo IA — YouTube» creada y guardada en secretos de Supabase (28/09). YouTube Data API aún deshabilitada: pendiente de aceptación de sus términos por el usuario. Completar scopes/consentimiento y credenciales TikTok.
 2. Terminar ficha y revisión de TikTok: icono, políticas actualizadas, demo auténtica y Direct Post.
 3. Agregar conexión/revocación a la UI sin cambiar el flujo del usuario, y probar OAuth real.
 4. Renovación segura de tokens, adaptadores de video, persistencia de solicitudes pendientes y verificación final.
