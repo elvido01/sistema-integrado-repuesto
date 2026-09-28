@@ -56,7 +56,7 @@ const precioEnTexto = (texto, precio) => {
   return String(texto || '').replace(/,/g, '').includes(entero);
 };
 
-export default function PromocionPublicar() {
+export default function PromocionPublicar({ prefill = null }) {
   const { toast } = useToast();
 
   const [redesEstado, setRedesEstado] = useState([]);
@@ -78,6 +78,37 @@ export default function PromocionPublicar() {
   const [elegidos, setElegidos] = useState(() => REDES.map((r) => `${r.platform}:${r.placement}`));
   const [cuando, setCuando] = useState('');
   const [bundle, setBundle] = useState(null);
+
+  // >>> LO QUE LLEGA DE LA PIEZA ACEPTADA <<<
+  // Cuando el dueño acepta el arte del Comercial-Creativo arriba, el formulario
+  // se llena con la pieza, su precio, el título, las dos imágenes y el texto
+  // de Facebook e Instagram. Lo que falte —el video, los textos de TikTok y
+  // YouTube— lo pone él.
+  //
+  // Lo que NUNCA se llena solo: "fui al estante y la pieza está". La cifra del
+  // sistema no prueba nada, y aceptar una imagen tampoco.
+  useEffect(() => {
+    if (!prefill) return;
+    if (prefill.producto) {
+      setProducto(prefill.producto);
+      setPrecio(String(prefill.producto.precio ?? ''));
+      setBusqueda(prefill.producto.codigo || '');
+      setResultados([]);
+    }
+    setExistenciaOk(false);
+    if (prefill.titulo) setTitulo(prefill.titulo);
+    if (prefill.media) setMedia((m) => ({ ...m, ...prefill.media }));
+    if (prefill.textos) {
+      setTextos((t) => {
+        const nuevos = { ...t };
+        Object.entries(prefill.textos).forEach(([red, txt]) => { if (txt) nuevos[red] = txt; });
+        return nuevos;
+      });
+    }
+    // Es una promoción nueva: la anterior, si había, no se toca.
+    setBundle(null);
+    setCuando('');
+  }, [prefill]);
 
   const habilitada = useMemo(() => {
     const m = {};
@@ -197,7 +228,7 @@ export default function PromocionPublicar() {
   };
 
   return (
-    <section className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Publicar una promoción">
+    <section id="publicar-promocion" className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Publicar una promoción">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-bold text-slate-800">Publicar una promoción</h2>

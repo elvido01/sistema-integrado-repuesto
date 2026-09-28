@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { Sparkles, RefreshCw } from 'lucide-react';
+import { EncargoArte } from '@/components/equipo/EncargoArte';
 
 // Qué promocionar hoy.
 //
@@ -23,7 +24,7 @@ import { Sparkles, RefreshCw } from 'lucide-react';
 const MAX = 2;
 const POR_TANDA = 5;
 
-export function RecomendacionesDelDia({ onEncargado }) {
+export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos }) {
   const { toast } = useToast();
   // >>> LA LISTA ENTERA, DE CINCO EN CINCO <<<
   // Antes se pedían 5 y el botón de refrescar volvía a pedir las mismas 5:
@@ -38,6 +39,28 @@ export function RecomendacionesDelDia({ onEncargado }) {
   const [enfoque, setEnfoque] = useState('');
   const [formato, setFormato] = useState('historia');
   const [enviando, setEnviando] = useState(false);
+  // El encargo en curso: se sigue aquí mismo hasta que la pieza llega. Ya no
+  // va a "Esperando tu aprobación" ni por el canal de Hermes.
+  const [encargo, setEncargo] = useState(null);
+  // Los que el dueño cerró con la X mientras esperaba: no se le vuelven a
+  // poner delante cada vez que el panel se refresca.
+  const [ignorados, setIgnorados] = useState(() => new Set());
+
+  // >>> SI LA PÁGINA SE RECARGÓ A MITAD DE UN ENCARGO, SE RETOMA <<<
+  // La tarjeta del encargo vive en la memoria de la pantalla. Sin esto, un F5
+  // mientras el creativo trabaja la hacía desaparecer, y la pieza quedaba
+  // solo en "Esperando tu aprobación" — donde aprobarla NO llena el
+  // formulario de publicar.
+  useEffect(() => {
+    if (encargo || !Array.isArray(trabajos)) return;
+    const vivo = trabajos.find((w) => w.origin_platform === 'panel'
+      && w.tipo === 'promocion'
+      && ['pending', 'processing', 'waiting_approval'].includes(w.estado)
+      && !ignorados.has(w.id)
+      && Date.now() - new Date(w.creado_en).getTime() < 24 * 3600 * 1000);
+    // Sin las piezas: la tarjeta las busca por el código que va en el pedido.
+    if (vivo) setEncargo({ trabajoId: vivo.id, productos: [] });
+  }, [trabajos, encargo, ignorados]);
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -73,6 +96,11 @@ export function RecomendacionesDelDia({ onEncargado }) {
 
   const encargar = async () => {
     if (!elegidos.length || enviando) return;
+    // Las piezas elegidas, ANTES de recargar la lista: el formulario de
+    // publicar las necesita (código, precio, existencia del sistema) y
+    // cargar() vacía la selección.
+    const piezasElegidas = todas.filter((p) => elegidos.includes(p.id))
+      .sort((a, b) => Number(b.precio || 0) - Number(a.precio || 0));
     setEnviando(true);
     const { data, error } = await supabase.rpc('equipo_encargar_promocion', {
       p_producto_ids: elegidos,
@@ -92,14 +120,17 @@ export function RecomendacionesDelDia({ onEncargado }) {
     if (data?.duplicado) {
       toast({
         title: 'Eso ya se encargó hoy',
-        description: 'Mira "Esperando tu aprobación": el borrador es el mismo. '
-          + 'Si quieres otro distinto, cámbiale el enfoque.',
+        description: 'Te enseño aquí mismo cómo va. Si quieres otro distinto, cámbiale el enfoque.',
       });
     } else {
       toast({
         title: data?.revivido ? 'Reenviado al Comercial-Creativo' : 'Encargado al Comercial-Creativo',
-        description: 'Cuando termine, aparece en "Esperando tu aprobación".',
+        description: 'Te enseño la pieza aquí mismo en cuanto esté.',
       });
+    }
+    // Duplicado o no, hay un trabajo: se sigue igual.
+    if (data?.trabajo_id) {
+      setEncargo({ trabajoId: data.trabajo_id, productos: piezasElegidas });
     }
     setEnfoque('');
     cargar();
@@ -205,6 +236,21 @@ export function RecomendacionesDelDia({ onEncargado }) {
               : `Encargar ${elegidos.length === 1 ? 'esta pieza' : 'estas dos'} al Comercial-Creativo`}
           </Button>
         </div>
+      )}
+
+      {/* La pieza del encargo, aquí mismo: sin pasar por el canal de Hermes.
+          Al usarla, llena el formulario de "Publicar una promoción". */}
+      {encargo && (
+        <EncargoArte
+          key={encargo.trabajoId}
+          trabajoId={encargo.trabajoId}
+          productos={encargo.productos}
+          onUsar={(prefill) => { if (onUsar) onUsar(prefill); setEncargo(null); }}
+          onCerrar={() => {
+            setIgnorados((s) => new Set(s).add(encargo.trabajoId));
+            setEncargo(null);
+          }}
+        />
       )}
     </div>
   );

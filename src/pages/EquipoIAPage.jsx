@@ -250,6 +250,8 @@ const EquipoIAPage = () => {
   const [errorMetricool, setErrorMetricool] = useState(false);
   const [verOrdenesAnteriores, setVerOrdenesAnteriores] = useState(false);
   const [verVideosAnteriores, setVerVideosAnteriores] = useState(false);
+  // La pieza aceptada arriba llena el formulario de publicar de abajo.
+  const [prefillPromo, setPrefillPromo] = useState(null);
 
   const cargar = useCallback(async (silencioso) => {
     if (!silencioso) setCargando(true);
@@ -494,9 +496,19 @@ const EquipoIAPage = () => {
       {/* Lo primero que se mira cada mañana: arriba y en fila, las cinco
           de un vistazo. Antes vivía apilado en la columna de la izquierda y
           había que bajar la pantalla para ver el resto. */}
-      <RecomendacionesDelDia onEncargado={() => cargar(true)} />
+      <RecomendacionesDelDia
+        trabajos={data?.trabajos}
+        onEncargado={() => cargar(true)}
+        onUsar={(p) => {
+          // Objeto nuevo cada vez: aceptar la misma pieza dos veces vuelve a
+          // llenar el formulario.
+          setPrefillPromo({ ...p, _en: Date.now() });
+          setTimeout(() => document.getElementById('publicar-promocion')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+        }}
+      />
 
-      <PromocionPublicar />
+      <PromocionPublicar prefill={prefillPromo} />
 
       <section className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Estado de publicaciones">
         <h2 className="text-sm font-bold text-slate-800">Publicaciones por red y formato</h2>
