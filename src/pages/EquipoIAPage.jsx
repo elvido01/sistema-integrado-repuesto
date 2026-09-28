@@ -491,6 +491,11 @@ const EquipoIAPage = () => {
         </Button>
       </div>
 
+      {/* Lo primero que se mira cada mañana: arriba y en fila, las cinco
+          de un vistazo. Antes vivía apilado en la columna de la izquierda y
+          había que bajar la pantalla para ver el resto. */}
+      <RecomendacionesDelDia onEncargado={() => cargar(true)} />
+
       <PromocionPublicar />
 
       <section className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Estado de publicaciones">
@@ -674,7 +679,6 @@ const EquipoIAPage = () => {
       <div className="grid gap-4 lg:grid-cols-5">
         {/* ── B · PEDIRLE ALGO A HERMES ────────────────────────────── */}
         <div className="lg:col-span-2">
-          <RecomendacionesDelDia onEncargado={() => cargar(true)} />
           <EspecificacionesArte />
           <ReferenciasArte />
 
