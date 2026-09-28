@@ -77,24 +77,56 @@ export async function callLLM(opts: {
 }
 
 // ────────────────────────────────────────────────
-// Generación de imágenes (gpt-image-1) — devuelve base64
+// Generación de imágenes — devuelve base64
 // ────────────────────────────────────────────────
+// Es EL puente de la casa a la API de imágenes de OpenAI: la clave vive aquí,
+// en los secretos de Supabase, y no en ningún otro sitio. El Marketing IA lo
+// usa desde el principio; desde el 28/09/2026 también el Comercial-Creativo
+// (función creativo-escena), que antes habría necesitado una segunda copia de
+// la clave en el servidor.
+//
+// Sin `referencias` hace lo de siempre: imagen desde texto con gpt-image-1.
+// Con `referencias` (la foto real del producto, por ejemplo) usa /edits: el
+// modelo parte de esas imágenes en vez de inventarlas.
 export async function generateImage(opts: {
     prompt: string;
-    size?: '1024x1024' | '1024x1536' | '1536x1024';
+    size?: string;
     quality?: 'low' | 'medium' | 'high';
-}): Promise<{ b64: string; cost_usd: number }> {
+    model?: string;
+    referencias?: { bytes: Uint8Array; mime: string; nombre: string }[];
+}): Promise<{ b64: string; cost_usd: number; model: string; exacto: boolean }> {
     const apiKey = Deno.env.get('OPENAI_API_KEY');
     if (!apiKey) throw new Error('OPENAI_API_KEY no está configurada en Supabase secrets');
 
     const size = opts.size || '1024x1024';
     const quality = opts.quality || 'medium';
+    const model = opts.model || 'gpt-image-1';
+    const refs = opts.referencias || [];
 
-    const r = await fetch('https://api.openai.com/v1/images/generations', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'gpt-image-1', prompt: opts.prompt, size, quality, n: 1 }),
-    });
+    let r: Response;
+    if (refs.length) {
+        const form = new FormData();
+        form.append('model', model);
+        form.append('prompt', opts.prompt);
+        form.append('size', size);
+        form.append('quality', quality);
+        form.append('n', '1');
+        form.append('output_format', 'png');
+        for (const ref of refs) {
+            form.append('image[]', new Blob([ref.bytes], { type: ref.mime }), ref.nombre);
+        }
+        r = await fetch('https://api.openai.com/v1/images/edits', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+            body: form,
+        });
+    } else {
+        r = await fetch('https://api.openai.com/v1/images/generations', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, prompt: opts.prompt, size, quality, n: 1 }),
+        });
+    }
 
     if (!r.ok) {
         const errText = await r.text();
@@ -104,7 +136,20 @@ export async function generateImage(opts: {
     const b64 = data.data?.[0]?.b64_json;
     if (!b64) throw new Error('La IA no devolvió ninguna imagen');
 
-    // Costo aproximado gpt-image-1 (medium 1024): ~$0.04. high: ~$0.07.
-    const cost = quality === 'high' ? 0.07 : quality === 'low' ? 0.015 : 0.04;
-    return { b64, cost_usd: cost };
+    // El costo, por los tokens que devuelve OpenAI cuando los devuelve
+    // (gpt-image-2: US$8/M de imagen de entrada, US$5/M de texto, US$30/M de
+    // salida). Si no los devuelve, una estimación por calidad y tamaño.
+    const u = data.usage;
+    if (u && Number.isFinite(u.output_tokens)) {
+        const imgIn = Number(u.input_tokens_details?.image_tokens || 0);
+        const txtIn = Number(u.input_tokens_details?.text_tokens ?? Math.max(0, (u.input_tokens || 0) - imgIn));
+        const cost = imgIn * 8e-6 + txtIn * 5e-6 + Number(u.output_tokens) * 30e-6;
+        return { b64, cost_usd: Math.round(cost * 10000) / 10000, model, exacto: true };
+    }
+    const [w, h] = String(size).split('x').map(Number);
+    const escala = (w && h) ? (w * h) / (1024 * 1024) : 1;
+    const base = model.startsWith('gpt-image-2')
+        ? (quality === 'high' ? 0.211 : quality === 'low' ? 0.006 : 0.053)
+        : (quality === 'high' ? 0.07 : quality === 'low' ? 0.015 : 0.04);
+    return { b64, cost_usd: Math.round(base * escala * 10000) / 10000, model, exacto: false };
 }

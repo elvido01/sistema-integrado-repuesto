@@ -713,25 +713,62 @@ while (corriendo) {
         const tel = (texto.match(/\d{3}-\d{3}-\d{4}/) || [])[0] || null;
         const emp = (texto.match(/Empresa:\s*(.+)/i) || [])[1]?.trim() || null;
 
+        // Si GPT Image no pudo y se usó la plantilla, se dice: el dueño tiene
+        // que saber por qué esa pieza salió más sencilla.
+        const avisosArte = [];
+
+        // >>> LA ESCENA, POR EL PUENTE DE LA CASA <<<
+        // No se llama a OpenAI desde aquí: la escena la genera la Edge
+        // Function creativo-escena con la clave de Supabase (el dueño pidió
+        // "utiliza esa misma ruta") y la anota con su costo. Este proceso solo
+        // pide a la base un permiso de un solo uso, atado al encargo que tiene
+        // tomado, y llama con él.
+        const pedirEscena = async ({ formato, ...resto }) => {
+          const p = await escribir('SELECT hermes.equipo_permiso_escena($1,$2,$3) AS r',
+            [msg.id, msg.claim_token, formato]);
+          const permiso = p.rows[0].r;
+          if (!permiso?.ok) throw new Error(permiso?.motivo || 'la base no dio permiso para la escena');
+          // Una imagen en calidad media tarda de medio minuto a minuto y medio.
+          const corte = new AbortController();
+          const reloj = setTimeout(() => corte.abort(), 170_000);
+          try {
+            const r = await fetch(permiso.url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-permiso-escena': permiso.token },
+              body: JSON.stringify(resto),
+              signal: corte.signal,
+            });
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j?.ok || !j.b64) throw new Error(j?.error || `HTTP ${r.status}`);
+            log(`  escena ${formato}: US$${j.cost_usd}`);
+            return Buffer.from(j.b64, 'base64');
+          } finally {
+            clearTimeout(reloj);
+          }
+        };
         const guardar = async (formato) => {
-          const { png } = await montarArte({
+          const { png, aviso } = await montarArte({
             ...datos.arte, foto_url: fotoUrl, logo_url: logoUrl,
             telefono: tel, empresa: emp, formato,
             // El fondo NO lo elige el modelo: lo eligio el dueño al subirlo.
             fondo_b64: fondoRef ? fondoRef.b64 : null,
-          });
+          }, { pedirEscena });
           const r = await escribir(
             'SELECT hermes.equipo_guardar_arte($1,$2,$3,$4,$5) AS r',
             [msg.id, msg.claim_token, png.toString('base64'), 'image/png', `arte-${formato}.png`]);
           const res = r.rows[0].r;
           if (!res?.ok) throw new Error(res?.motivo || 'no se pudo guardar el arte');
-          log(`  arte ${formato}: ${(png.length / 1024).toFixed(0)} KB`);
+          log(`  arte ${formato}: ${(png.length / 1024).toFixed(0)} KB${aviso ? ' (plantilla de respaldo)' : ''}`);
+          if (aviso && !avisosArte.includes(aviso)) avisosArte.push(aviso);
           return res.imagen_id;
         };
 
         datos.arte_imagen_id = await guardar('feed');
         datos.arte_historia_id = await guardar('historia');
         datos.estado = 'arte';
+        if (avisosArte.length) {
+          datos.advertencias = [...(datos.advertencias || []), ...avisosArte];
+        }
       } catch (e) {
         log('  no se pudo montar el arte:', e.message);
         datos.estado = 'borrador';

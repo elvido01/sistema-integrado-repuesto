@@ -78,14 +78,187 @@ async function bajar(url) {
   return Buffer.from(await r.arrayBuffer());
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  v3 — LA ESCENA LA HACE GPT IMAGE 2
+// ════════════════════════════════════════════════════════════════════════
+//  28/09/2026. El dueño comparó la pesita que salía de aquí con una banda de
+//  freno que hizo él en ChatGPT y la conclusión fue la misma que con el
+//  tanque XPRESS: la plantilla no aguanta. Una foto de catálogo pegada sobre
+//  un degradado no es una escena, por muchas capas que se le pongan.
+//
+//  Así que el trabajo se reparte según lo que cada uno hace bien:
+//
+//   · GPT Image 2 hace la ESCENA: fondo, luces, podio, humo y el producto
+//     SACADO DE SU FOTO REAL (se le pasa como imagen de referencia, con la
+//     orden de no redibujarlo). Es lo que un modelo de imagen hace mejor que
+//     nadie.
+//   · Aquí se escribe ENCIMA lo que no puede salir mal: el logo oficial, el
+//     titular y el teléfono. Un modelo de imagen a veces escribe mal una
+//     letra o un número, y en un teléfono eso no se puede permitir. Por eso
+//     se le prohíbe poner texto en la escena.
+//
+//  El PRECIO no se dibuja: lo pidió el dueño ("el precio en el texto, nunca
+//  como etiqueta sobre el arte"), y una imagen con precio queda mal el día
+//  que el precio cambia. Va en el texto de cada red.
+//
+//  POR EL PUENTE DE LA CASA: esto NO llama a OpenAI. La escena la genera la
+//  Edge Function creativo-escena con el motor del Marketing IA y la clave
+//  de los secretos de Supabase —el dueño pidió "utiliza esa misma ruta"—, y
+//  queda anotada con su costo en ai_agent_runs. Aquí se recibe una función
+//  `pedirEscena` que la trae; quien la arma (equipo-worker.mjs) sabe cómo
+//  pedir el permiso a la base. Así este archivo no sabe de claves ni de red.
+//
+//  Calidad media por decisión del dueño: ~US$0.13 por pieza entera (feed +
+//  historia). Si la escena falla —cupo, saldo, lo que sea— la pieza sale
+//  igual con la plantilla de siempre y se avisa en las advertencias:
+//  quedarse sin pieza es peor que una pieza sencilla.
+// ════════════════════════════════════════════════════════════════════════
+
+/**
+ * Viste la escena: logo, titular, cinta de la marca y pie con el teléfono.
+ * Todo texto sale de aquí, no del modelo. Sin precio (ver arriba).
+ */
+export async function vestirEscena({ escena, logo, ficha, formato }) {
+  const { ancho: W, alto: H } = FORMATOS[formato] || FORMATOS.feed;
+  const vertical = H > W;
+  const acento = hex(ficha.acento, '#f5a623');
+  const margen = Math.round(W * 0.06);
+
+  const base = await sharp(escena).resize(W, H, { fit: 'cover', position: 'centre' }).png().toBuffer();
+  const capas = [];
+
+  // Velos arriba y abajo: la escena es del modelo y no se sabe qué colores
+  // trae; el texto blanco tiene que leerse sobre cualquier cosa.
+  const velo = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="arriba" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#000" stop-opacity="0.70"/>
+        <stop offset="1" stop-color="#000" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="abajo" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#000" stop-opacity="0"/>
+        <stop offset="1" stop-color="#000" stop-opacity="0.80"/>
+      </linearGradient>
+    </defs>
+    <rect width="${W}" height="${Math.round(H * (vertical ? 0.36 : 0.42))}" fill="url(#arriba)"/>
+    <rect y="${Math.round(H * (vertical ? 0.80 : 0.74))}" width="${W}" height="${Math.round(H * (vertical ? 0.20 : 0.26))}" fill="url(#abajo)"/>
+  </svg>`;
+  capas.push({ input: Buffer.from(velo), left: 0, top: 0 });
+
+  // ── Logo ──
+  // En el cuadrado, más chico: con el del vertical, el titular bajaba hasta
+  // la zona del producto y la cinta le quedaba encima (pesita, 28/09).
+  let y = vertical ? margen : Math.round(margen * 0.8);
+  if (logo) {
+    const anchoLogo = Math.round(W * (vertical ? 0.28 : 0.16));
+    const puesto = await sharp(logo).resize(anchoLogo, null, { fit: 'inside' }).png().toBuffer();
+    const alto = (await sharp(puesto).metadata()).height || 0;
+    capas.push({ input: puesto, left: Math.round((W - anchoLogo) / 2), top: y });
+    y += alto + Math.round(H * 0.012);
+  }
+
+  // ── Titular: dos renglones como mucho, con la palabra de acento ──
+  const texto = [];
+  const tam = Math.round(W * (vertical ? 0.088 : 0.068));
+  const lineas = repartirEnLineas(ficha.titulo, Math.max(8, Math.floor(W * 0.9 / (tam * 0.6)))).slice(0, 2);
+  const acentoNorm = String(ficha.titulo_acento || '').trim().toUpperCase();
+  const limpia = (t) => t.toUpperCase().replace(/[^0-9A-ZÁÉÍÓÚÑ]/gi, '');
+  lineas.forEach((l, i) => {
+    const cuerpo = l.split(' ').map((t, j) =>
+      `<tspan fill="${acentoNorm && limpia(t) === limpia(acentoNorm) ? acento : '#ffffff'}">${j ? ' ' : ''}${escapar(t.toUpperCase())}</tspan>`).join('');
+    texto.push(`<text x="${W / 2}" y="${y + tam + i * Math.round(tam * 1.04)}" xml:space="preserve" font-size="${tam}" font-weight="bold" filter="url(#sombra)">${cuerpo}</text>`);
+  });
+  y += tam + (lineas.length - 1) * Math.round(tam * 1.04);
+
+  // ── La cinta de la marca ──
+  if (ficha.subtitulo) {
+    const tc = Math.round(tam * 0.40);
+    const ac = Math.round(tc * 1.9);
+    const cy = y + Math.round(tc * 0.9);
+    const anchoCinta = Math.min(W - margen * 2, anchoAprox(ficha.subtitulo, tc) + tc * 2);
+    const x0 = Math.round((W - anchoCinta) / 2);
+    const corte = Math.round(ac * 0.32);
+    texto.push(
+      `<polygon points="${x0 + corte},${cy} ${x0 + anchoCinta},${cy} ${x0 + anchoCinta - corte},${cy + ac} ${x0},${cy + ac}" fill="${acento}"/>`,
+      `<text x="${W / 2}" y="${cy + Math.round(ac * 0.7)}" font-size="${tc}" font-weight="bold" letter-spacing="${Math.round(tc * 0.05)}" fill="#0a0a0a">${escapar(String(ficha.subtitulo).toUpperCase())}</text>`);
+  }
+
+  // ── El pie: teléfono y ciudad ──
+  // El texto tiene que CABER en su cápsula. Con el tamaño fijo, en la
+  // historia el teléfono se salía por los dos lados (pesita, 28/09): el
+  // ancho estimado se quedaba corto. Ahora se achica la letra hasta que
+  // cabe, con un ancho por letra generoso (la DejaVu negrita es ancha).
+  const pie = [ficha.telefono, ficha.ciudad || ficha.empresa].filter(Boolean);
+  if (pie.length) {
+    const linea = pie.join('  |  ');
+    const anchoLetra = 0.64;
+    const maxBarra = W - margen * 2;
+    let tamPie = Math.round(W * (vertical ? 0.050 : 0.042));
+    const relleno = () => Math.round(tamPie * 1.1);
+    while (tamPie > 20 && linea.length * tamPie * anchoLetra + relleno() * 2 > maxBarra) tamPie -= 1;
+    const altoBarra = Math.round(tamPie * 2.3);
+    const barraY = H - altoBarra - Math.round(H * 0.025);
+    const anchoBarra = Math.min(maxBarra, Math.round(linea.length * tamPie * anchoLetra + relleno() * 2));
+    const bx = Math.round((W - anchoBarra) / 2);
+    texto.push(
+      `<rect x="${bx}" y="${barraY}" width="${anchoBarra}" height="${altoBarra}" rx="${Math.round(altoBarra / 2)}" fill="#05101f" opacity="0.88" stroke="${acento}" stroke-width="3"/>`,
+      `<text x="${W / 2}" y="${barraY + Math.round(altoBarra * 0.66)}" font-size="${tamPie}" font-weight="bold" letter-spacing="1" fill="#ffffff">${escapar(linea)}</text>`);
+  }
+
+  const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs><filter id="sombra" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="${Math.round(tam * 0.05)}" stdDeviation="${Math.round(tam * 0.06)}" flood-color="#000" flood-opacity="0.85"/>
+    </filter></defs>
+    <g font-family="${TIPO}" text-anchor="middle">${texto.join('\n')}</g>
+  </svg>`;
+  capas.push({ input: Buffer.from(svg), left: 0, top: 0 });
+
+  const png = await sharp(base).composite(capas).png({ compressionLevel: 9 }).toBuffer();
+  return { png, ancho: W, alto: H };
+}
+
 /**
  * Monta la pieza. `ficha` es lo que decide el creativo:
  *   { titulo, titulo_acento, subtitulo, tagline, precio, telefono, empresa,
  *     ciudad, bullets:[], sello, fondo, acento, fondo_url, fondo_b64,
  *     foto_url, logo_url, formato }
- * Devuelve { png, ancho, alto }.
+ * Devuelve { png, ancho, alto, motor, aviso }.
+ *
+ * Con `pedirEscena` (la trae el puente, ver arriba): escena de GPT Image 2
+ * vestida aquí. Sin ella, o si falla: la plantilla de siempre.
+ *
+ * `pedirEscena({ formato, foto_url, fondo, acento, fondo_b64 })` → Buffer PNG.
  */
-export async function montarArte(ficha = {}) {
+export async function montarArte(ficha = {}, { pedirEscena = null } = {}) {
+  const formato = FORMATOS[ficha.formato] ? ficha.formato : 'feed';
+
+  if (pedirEscena && process.env.ARTE_CON_IA !== '0') {
+    try {
+      if (!ficha.foto_url) throw new Error('sin foto real del producto no se monta el arte');
+      const [escena, logo] = await Promise.all([
+        pedirEscena({
+          formato,
+          foto_url: ficha.foto_url,
+          fondo: hex(ficha.fondo, '#0b1e3a'),
+          acento: hex(ficha.acento, '#f5a623'),
+          fondo_b64: ficha.fondo_b64 || null,
+        }),
+        bajar(ficha.logo_url),
+      ]);
+      const hecho = await vestirEscena({ escena, logo, ficha, formato });
+      return { ...hecho, motor: 'gpt-image-2' };
+    } catch (e) {
+      const aviso = `La escena no salió con GPT Image 2 (${String(e.message).slice(0, 160)}); se montó con la plantilla.`;
+      const hecho = await montarPlantilla({ ...ficha, precio: '' });
+      return { ...hecho, motor: 'plantilla', aviso };
+    }
+  }
+  const hecho = await montarPlantilla({ ...ficha, precio: '' });
+  return { ...hecho, motor: 'plantilla' };
+}
+
+/** La plantilla de siempre (v2). Queda de respaldo. */
+async function montarPlantilla(ficha = {}) {
   const formato = FORMATOS[ficha.formato] || FORMATOS.feed;
   const { ancho: W, alto: H } = formato;
   const vertical = H > W;
