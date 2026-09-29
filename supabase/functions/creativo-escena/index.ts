@@ -11,6 +11,12 @@
 //  uso que le da la base al creativo (hermes.equipo_permiso_escena) y que
 //  aquí se canjea. Sin permiso no se genera nada: cada imagen cuesta.
 //
+//  >>> SE DESPLIEGA CON --no-verify-jwt <<<
+//    node scripts/desplegar-funcion.mjs creativo-escena --no-verify-jwt
+//  El creativo no tiene sesión: entra con el permiso. Sin la opción, Supabase
+//  exige un JWT, responde 401 a todo y cada pieza sale con la plantilla
+//  (pasó el 29/09 al redesplegar sin ella).
+//
 //  Cuerpo: { foto_url, fondo, acento, fondo_b64?, titulo?, subtitulo?, sello? }
 //  Respuesta: { ok, b64, cost_usd, texto_en_escena }
 //
