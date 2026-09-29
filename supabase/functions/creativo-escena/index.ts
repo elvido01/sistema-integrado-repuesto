@@ -17,7 +17,7 @@
 //  exige un JWT, responde 401 a todo y cada pieza sale con la plantilla
 //  (pasó el 29/09 al redesplegar sin ella).
 //
-//  Cuerpo: { foto_url, fondo, acento, fondo_b64?, titulo?, subtitulo?, sello? }
+//  Cuerpo: { foto_url, fondo, acento, fondo_b64?, titulo?, subtitulo?, sello?, logo_url? }
 //  Respuesta: { ok, b64, cost_usd, texto_en_escena }
 //
 //  Cada escena queda anotada en ai_agent_runs (agent_key comercial_creativo)
@@ -36,6 +36,12 @@
 //  solo se ponen el logo OFICIAL y el teléfono, que no pueden salir mal. El
 //  dueño aprueba cada pieza en el Paso 2 antes de publicar: una letra mal
 //  escrita en el titular se ve ahí y se pide otra.
+//
+//  El LOGO también lo pone el modelo (29/09, ronda 2 del Motul 7100): se le
+//  pidió dejar libre la franja de arriba para pegar ahí el oficial, no la
+//  respetó y el logo pegado tapó el titular. Ahora el logo oficial va como
+//  referencia y el modelo lo coloca, como en las piezas modelo. Encima solo
+//  queda el teléfono.
 //
 //  Y el modelo ve el LISTÓN: las piezas buenas del dueño viven en el bucket
 //  privado `equipo-estilo`, carpeta de su empresa, y van como referencias de
@@ -109,12 +115,13 @@ function promptEscena({ vertical, fondo, acento, tieneFondo }) {
 const limpio = (t: unknown, max: number) =>
   String(t ?? '').replace(/["\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
-function promptConTexto({ vertical, fondo, acento, tieneFondo, nEstilo, titulo, subtitulo, sello }) {
-  // Lo de arriba lo ocupa el logo oficial y lo de abajo la barra del
-  // teléfono, que se ponen después: el modelo tiene que dejarlos libres.
-  const arriba = vertical ? 22 : 26;
+function promptConTexto({ vertical, fondo, acento, tieneFondo, tieneLogo, nEstilo, titulo, subtitulo, sello }) {
+  // Lo de abajo lo ocupa la barra del teléfono, que se pone después.
   const abajo = vertical ? 10 : 13;
-  const primeraEstilo = tieneFondo ? 3 : 2;
+  // El orden de las referencias: producto, logo, fondo, estilo.
+  const nLogo = tieneLogo ? 2 : 0;
+  const nFondo = tieneFondo ? (tieneLogo ? 3 : 2) : 0;
+  const primeraEstilo = 2 + (tieneLogo ? 1 : 0) + (tieneFondo ? 1 : 0);
   const estilo = nEstilo
     ? `Reference images ${primeraEstilo} to ${primeraEstilo + nEstilo - 1} are finished ads from OUR OWN store: copy their visual style exactly `
       + '(dark blue background with orange neon light streaks, glossy dark podium with glowing orange rim, cinematic haze, '
@@ -128,15 +135,18 @@ function promptConTexto({ vertical, fondo, acento, tieneFondo, nEstilo, titulo, 
     'Premium social media advertisement for a motorcycle spare parts store.',
     'Use the product from the FIRST reference image EXACTLY as it is: same shape, colors, packaging,',
     'printed labels and proportions. Do not redraw, restyle, simplify or replace the product.',
-    tieneFondo ? 'Build the background from the SECOND reference image (same mood and colors, blurred).' : '',
+    tieneLogo ? `Reference image ${nLogo} is OUR OFFICIAL LOGO: place it at the top center, about ${vertical ? 30 : 24}% of the image width, `
+      + 'reproduced EXACTLY (same shield shape, colors, stars and letters). Do not draw any other logo.' : '',
+    tieneFondo ? `Build the background from reference image ${nFondo} (same mood and colors, blurred).` : '',
     estilo,
     `Colors: background based on ${fondo}, accent ${acento}.`,
     'Write ONLY these texts, in Spanish, spelled EXACTLY letter by letter, nothing else:',
     `HEADLINE: "${titulo}" (the product model or the last word in the orange-gold gradient, the rest in silver-white metallic).`,
     subtitulo ? `SUBTITLE between thin lines, small spaced capitals: "${subtitulo}".` : '',
     `BUTTON: "${sello}".`,
-    `Layout: keep the top ${arriba}% as empty background (our official logo is added there later; do NOT draw any logo, badge or shield).`,
-    'Headline right below that empty area, the product large and centered on the podium below the headline,',
+    tieneLogo ? 'Layout: the logo at the top, the headline right BELOW the logo (never behind or over it),'
+      : 'Layout: do NOT draw any logo, badge or shield; the headline at the top,',
+    'the product large and centered on the podium below the headline,',
     'the text never covering the product,',
     `the button under the podium, and the bottom ${abajo}% as empty dark background (a footer with the phone is added later).`,
     'No phone numbers, prices, URLs, watermarks or any other text. The product may show its own printed packaging text.',
@@ -196,6 +206,17 @@ Deno.serve(async (req: Request) => {
     const mimeFoto = rf.headers.get('content-type') || 'image/jpeg';
 
     const referencias = [{ bytes: foto, mime: mimeFoto, nombre: 'producto' }];
+    // El logo, solo del almacenamiento propio (igual que la foto) y solo
+    // cuando el modelo escribe el titular: en el modo viejo lo pega el montador.
+    const logoUrl = String(body?.logo_url || '');
+    let tieneLogo = false;
+    if (body?.titulo && logoUrl.startsWith(ORIGEN_FOTOS)) {
+      const rl = await fetch(logoUrl);
+      if (rl.ok) {
+        referencias.push({ bytes: new Uint8Array(await rl.arrayBuffer()), mime: rl.headers.get('content-type') || 'image/png', nombre: 'logo.png' });
+        tieneLogo = true;
+      }
+    }
     if (body?.fondo_b64) {
       const bin = atob(String(body.fondo_b64));
       const bytes = new Uint8Array(bin.length);
@@ -218,6 +239,7 @@ Deno.serve(async (req: Request) => {
       prompt: conTexto
         ? promptConTexto({
           ...comun,
+          tieneLogo,
           nEstilo: estilo.length,
           titulo,
           subtitulo: limpio(body?.subtitulo, 60),
@@ -243,7 +265,7 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    return json({ ok: true, b64: img.b64, cost_usd: img.cost_usd, texto_en_escena: conTexto });
+    return json({ ok: true, b64: img.b64, cost_usd: img.cost_usd, texto_en_escena: conTexto, logo_en_escena: tieneLogo });
   } catch (e) {
     const mensaje = String(e?.message || e).slice(0, 400);
     await anotarGasto(sb, {

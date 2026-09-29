@@ -149,10 +149,10 @@ export async function vestirEscena({ escena, logo, ficha, formato, textoEnEscena
   // En el cuadrado, más chico: con el del vertical, el titular bajaba hasta
   // la zona del producto y la cinta le quedaba encima (pesita, 28/09).
   let y = vertical ? margen : Math.round(margen * 0.8);
-  if (logo) {
-    // Con el titular del modelo el logo preside, como en las piezas modelo;
-    // el modelo le deja libre el 22% (vertical) o el 26% (cuadrado) de arriba.
-    const anchoLogo = Math.round(W * (textoEnEscena ? (vertical ? 0.30 : 0.19) : (vertical ? 0.28 : 0.16)));
+  // Con el titular del modelo, el logo también lo pone el modelo (ver
+  // montarArte): aquí solo queda el teléfono.
+  if (logo && !textoEnEscena) {
+    const anchoLogo = Math.round(W * (vertical ? 0.28 : 0.16));
     const puesto = await sharp(logo).resize(anchoLogo, null, { fit: 'inside' }).png().toBuffer();
     const alto = (await sharp(puesto).metadata()).height || 0;
     capas.push({ input: puesto, left: Math.round((W - anchoLogo) / 2), top: y });
@@ -251,6 +251,9 @@ export async function montarArte(ficha = {}, { pedirEscena = null } = {}) {
           titulo: ficha.titulo || null,
           subtitulo: ficha.subtitulo || null,
           sello: ficha.sello || null,
+          // El logo también lo coloca el modelo: pegado encima tapaba el
+          // titular (Motul 7100, 29/09). Va el OFICIAL como referencia.
+          logo_url: ficha.titulo ? (ficha.logo_url || null) : null,
         }),
         bajar(ficha.logo_url),
       ]);
