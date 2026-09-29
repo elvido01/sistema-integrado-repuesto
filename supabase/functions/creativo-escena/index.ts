@@ -43,6 +43,13 @@
 //  referencia y el modelo lo coloca, como en las piezas modelo. Encima solo
 //  queda el teléfono.
 //
+//  Y el TELÉFONO también (29/09, noche): la barra que pegaba el montador
+//  salía con "REPUESTOS MORLA" y sin el número en el servidor, aunque en
+//  local salía bien, y además tapaba el botón. Ahora el número se lee aquí
+//  de config_empresa —la fuente de verdad, no el texto del encargo— y el
+//  modelo dibuja la barra con el ícono de WhatsApp, como en la pieza modelo
+//  del candado. El dueño lo revisa en grande antes de aprobar.
+//
 //  Y el modelo ve el LISTÓN: las piezas buenas del dueño viven en el bucket
 //  privado `equipo-estilo`, carpeta de su empresa, y van como referencias de
 //  estilo (hasta REFS_ESTILO, al azar para que no salgan todas iguales).
@@ -115,9 +122,7 @@ function promptEscena({ vertical, fondo, acento, tieneFondo }) {
 const limpio = (t: unknown, max: number) =>
   String(t ?? '').replace(/["\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
-function promptConTexto({ vertical, fondo, acento, tieneFondo, tieneLogo, nEstilo, titulo, subtitulo, sello }) {
-  // Lo de abajo lo ocupa la barra del teléfono, que se pone después.
-  const abajo = vertical ? 10 : 13;
+function promptConTexto({ vertical, fondo, acento, tieneFondo, tieneLogo, nEstilo, titulo, subtitulo, sello, telefono }) {
   // El orden de las referencias: producto, logo, fondo, estilo.
   const nLogo = tieneLogo ? 2 : 0;
   const nFondo = tieneFondo ? (tieneLogo ? 3 : 2) : 0;
@@ -144,12 +149,15 @@ function promptConTexto({ vertical, fondo, acento, tieneFondo, tieneLogo, nEstil
     `HEADLINE: "${titulo}" (the product model or the last word in the orange-gold gradient, the rest in silver-white metallic).`,
     subtitulo ? `SUBTITLE between thin lines, small spaced capitals: "${subtitulo}".` : '',
     `BUTTON: "${sello}".`,
+    telefono ? `FOOTER: "${telefono}" — exactly these digits and dashes — next to a small green WhatsApp icon, `
+      + 'inside a dark rounded bar with a thin orange border at the very bottom.' : '',
     tieneLogo ? 'Layout: the logo at the top, the headline right BELOW the logo (never behind or over it),'
       : 'Layout: do NOT draw any logo, badge or shield; the headline at the top,',
     'the product large and centered on the podium below the headline,',
     'the text never covering the product,',
-    `the button under the podium, and the bottom ${abajo}% as empty dark background (a footer with the phone is added later).`,
-    'No phone numbers, prices, URLs, watermarks or any other text. The product may show its own printed packaging text.',
+    telefono ? 'the button under the podium, and the footer bar below the button, never overlapping it.'
+      : 'the button under the podium.',
+    'No prices, URLs, watermarks, other phone numbers or any other text. The product may show its own printed packaging text.',
     'Sharp focus on the product, high contrast, professional commercial look.',
   ].filter(Boolean).join(' ');
 }
@@ -226,6 +234,15 @@ Deno.serve(async (req: Request) => {
 
     const titulo = limpio(body?.titulo, 60);
     const conTexto = !!titulo;
+    // El teléfono, de la ficha de la empresa. Solo si tiene forma de teléfono:
+    // lo que va escrito en la pieza no puede ser cualquier cosa.
+    let telefono = '';
+    if (conTexto) {
+      const { data: emp } = await sb.from('config_empresa').select('telefono')
+        .eq('tenant_id', permiso.tenant_id).maybeSingle();
+      const t = String(emp?.telefono || '').trim();
+      if (/^[0-9()+\-\s]{7,20}$/.test(t)) telefono = t;
+    }
     const estilo = conTexto ? await referenciasDeEstilo(sb, permiso.tenant_id) : [];
     referencias.push(...estilo);
 
@@ -244,6 +261,7 @@ Deno.serve(async (req: Request) => {
           titulo,
           subtitulo: limpio(body?.subtitulo, 60),
           sello: limpio(body?.sello, 24) || 'YA DISPONIBLE',
+          telefono,
         })
         : promptEscena(comun),
       size: TAM[formato],
@@ -261,7 +279,7 @@ Deno.serve(async (req: Request) => {
       duration_ms: Date.now() - t0,
       metadata: {
         formato, mensaje_id: permiso.mensaje_id, calidad: CALIDAD, costo_exacto: img.exacto,
-        texto_en_escena: conTexto, refs_estilo: estilo.map((r) => r.nombre),
+        texto_en_escena: conTexto, telefono_en_escena: !!telefono, refs_estilo: estilo.map((r) => r.nombre),
       },
     });
 

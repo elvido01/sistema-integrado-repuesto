@@ -192,7 +192,10 @@ export async function vestirEscena({ escena, logo, ficha, formato, textoEnEscena
   // historia el teléfono se salía por los dos lados (pesita, 28/09): el
   // ancho estimado se quedaba corto. Ahora se achica la letra hasta que
   // cabe, con un ancho por letra generoso (la DejaVu negrita es ancha).
-  const pie = [ficha.telefono, ficha.ciudad || ficha.empresa].filter(Boolean);
+  // Con el titular del modelo, la barra del teléfono también la dibuja él
+  // (creativo-escena la lee de config_empresa): la pegada aquí tapaba el
+  // botón y en el servidor salía sin el número.
+  const pie = textoEnEscena ? [] : [ficha.telefono, ficha.ciudad || ficha.empresa].filter(Boolean);
   if (pie.length) {
     const linea = pie.join('  |  ');
     const anchoLetra = 0.64;
