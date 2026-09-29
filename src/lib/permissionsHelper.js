@@ -95,5 +95,11 @@ export const MODULES = [
     { key: 'vendedores', label: 'Catálogo - Vendedores' },
     { key: 'cambio-codigo', label: 'Inventario - Cambio de Código' },
     { key: 'prestamos', label: 'Financiera - Préstamos' },
-    { key: 'gestion-cobro', label: 'Financiera - Gestion de Cobro' },
+    { key: 'resumen-cartera', label: 'Financiera - Resumen de Cartera' },
+    { key: 'nota-credito', label: 'Financiera - Nota de Crédito (solo gerentes)' },
+    { key: 'gestion-cobro', label: 'Financiera - Gestión de Cobro' },
+    { key: 'cuentas-incobrables', label: 'Financiera - Cuentas Incobrables' },
+    { key: 'otras-transacciones', label: 'Financiera - Otras Transacciones' },
+    { key: 'historico-cliente', label: 'Financiera - Histórico de Cliente' },
+    { key: 'lista-chasis-prestamos', label: 'Financiera - Lista de Chasis en Préstamos' },
 ];
