@@ -39,6 +39,18 @@ export default function ConectarRedes() {
       </Button>
       <span className="text-slate-500">Autoriza tu cuenta sin salir de esta promoción.</span>
     </div>
+    {/* Google lo exige para la auditoría de YouTube: junto a la función de
+        YouTube, los Términos de YouTube y nuestra política de privacidad. */}
+    <p className="mt-2 text-[11px] text-slate-500">
+      Esta función usa los YouTube API Services. Al conectar YouTube aceptas los{' '}
+      <a href="https://www.youtube.com/t/terms" target="_blank" rel="noreferrer" className="underline">Términos de Servicio de YouTube</a>
+      {' '}y nuestra{' '}
+      <a href="/privacy" target="_blank" rel="noreferrer" className="underline">Política de Privacidad</a>
+      {' '}(ver también la{' '}
+      <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className="underline">Política de Privacidad de Google</a>
+      ). Puedes retirar el acceso en{' '}
+      <a href="https://security.google.com/settings/security/permissions" target="_blank" rel="noreferrer" className="underline">tu cuenta de Google</a>.
+    </p>
     {message && <p role="status" className="mt-2 text-slate-700">{message}</p>}
   </div>;
 }

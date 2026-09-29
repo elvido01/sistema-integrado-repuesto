@@ -274,6 +274,11 @@ const LoginForm = ({ onRegistrar }) => {
           <p className="text-[10px] text-gray-400">
             © 2026 {nombreMostrado} — Todos los derechos reservados
           </p>
+          <p className="mt-1 text-[10px] text-gray-400">
+            <a href="/privacy" target="_blank" rel="noreferrer" className="underline">Política de Privacidad</a>
+            {' · '}
+            <a href="/terms" target="_blank" rel="noreferrer" className="underline">Términos del Servicio</a>
+          </p>
         </div>
       </motion.div>
     </div>
