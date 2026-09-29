@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, CheckCircle2, RotateCcw, X, AlertTriangle } from 'lucide-react';
 
@@ -59,14 +60,27 @@ function Pieza({ imagenId, etiqueta, onCargada }) {
     return () => { vivo = false; };
   }, [imagenId, onCargada]);
 
+  // En miniatura no se ve si una letra salió mal: un clic la abre en grande.
+  const [grande, setGrande] = useState(false);
+
   return (
     <div className="flex flex-col items-center gap-1">
       <div className="flex h-56 w-full items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
         {src
-          ? <img src={src} alt={etiqueta} className="max-h-56 w-auto object-contain" />
+          ? (
+            <button type="button" onClick={() => setGrande(true)} title="Ver en grande" className="cursor-zoom-in">
+              <img src={src} alt={etiqueta} className="max-h-56 w-auto object-contain" />
+            </button>
+          )
           : <Loader2 className="h-5 w-5 animate-spin text-slate-400" />}
       </div>
-      <span className="text-[10px] font-semibold text-slate-500">{etiqueta}</span>
+      <span className="text-[10px] font-semibold text-slate-500">{etiqueta} · clic para ver en grande</span>
+      <Dialog open={grande} onOpenChange={setGrande}>
+        <DialogContent className="max-w-[95vw] border-0 bg-slate-950 p-2 sm:max-w-fit">
+          <DialogTitle className="sr-only">{etiqueta}</DialogTitle>
+          {src && <img src={src} alt={etiqueta} className="max-h-[90vh] w-auto object-contain" />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
