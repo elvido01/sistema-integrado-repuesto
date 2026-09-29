@@ -67,6 +67,8 @@ describe('Facebook', () => {
     expect(f.pedidos[1].url).toContain('photo_stories');
     expect(f.pedidos[1].cuerpo.photo_id).toBe('FOTO1');
     expect(r.external_post_id).toBe('HIST1');
+    // El enlace es el de las historias de la página: el del id no abre.
+    expect(r.external_url).toBe('https://www.facebook.com/stories/PAG');
   });
 });
 

@@ -97,7 +97,9 @@ export async function facebookHistoria({ fetchFn, token, cuentaId, media }) {
   if (!hist.ok) return fallo(hist, 'historia');
   const id = hist.body?.post_id || hist.body?.id;
   if (!id) return { ok: false, paso: 'historia', http: hist.http, error: 'Facebook no devolvió el id de la historia.' };
-  return { ok: true, external_post_id: String(id), external_url: `https://facebook.com/${id}` };
+  // facebook.com/<id de la historia> no abre nada ("Este contenido no está
+  // disponible", 29/09): las historias se ven desde las de la página, 24 horas.
+  return { ok: true, external_post_id: String(id), external_url: `https://www.facebook.com/stories/${cuentaId}` };
 }
 
 // ── INSTAGRAM (siempre dos pasos: contenedor y publicación) ─────────────
