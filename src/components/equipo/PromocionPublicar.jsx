@@ -29,6 +29,7 @@
 // ════════════════════════════════════════════════════════════════════════
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
+import ConectarRedes from './ConectarRedes';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, Search, Upload, CheckCircle2, AlertTriangle, Clock, RotateCcw, Ban, Film } from 'lucide-react';
@@ -387,6 +388,8 @@ export default function PromocionPublicar({ prefill = null }) {
           </span>
         </div>
       )}
+
+      <ConectarRedes />
 
       {/* ── La pieza ── */}
       <div className="mb-3 rounded border border-slate-200 p-3">
