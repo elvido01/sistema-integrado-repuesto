@@ -126,6 +126,25 @@ export async function youtubeShort({ fetchFn, token, media, texto = '', privacid
 }
 
 /**
+ * ¿Ya lo puso público el dueño? Mientras Google no apruebe la auditoría todo
+ * sube privado, y el dueño lo abre a mano en YouTube Studio. Esto lo nota:
+ * videos.list con part=status cuesta 1 unidad de cuota.
+ * Devuelve { ok, privacidad } — privacidad 'eliminado' si YouTube ya no lo
+ * tiene — o { ok:false, error, token_vencido }.
+ */
+export async function privacidadVideoYoutube({ fetchFn, token, id }) {
+  const r = await fetchFn(
+    `https://www.googleapis.com/youtube/v3/videos?part=status&id=${encodeURIComponent(id)}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return { ok: false, error: await errorDe(r), token_vencido: r.status === 401 };
+  let j = null;
+  try { j = await r.json(); } catch { /* sin cuerpo */ }
+  const v = j?.items?.[0];
+  if (!v) return { ok: true, privacidad: 'eliminado' };
+  return { ok: true, privacidad: v.status?.privacyStatus || null };
+}
+
+/**
  * Un acceso nuevo a partir del permiso renovable. Las credenciales van en el
  * CUERPO del POST, nunca en la URL.
  * Devuelve { access_token, expires_at } o lanza; `e.token_vencido` si el

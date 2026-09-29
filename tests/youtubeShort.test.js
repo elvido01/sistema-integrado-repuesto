@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   youtubeShort, renovarAccesoGoogle, accesoVigenteGoogle, tituloDesdeTexto, descripcionDesdeTexto,
+  privacidadVideoYoutube,
 } from '../supabase/functions/_shared/youtube.mjs';
 import { cuentaConAcceso } from '../supabase/functions/_shared/cuentaSocial.mjs';
 
@@ -176,5 +177,29 @@ describe('cuentaConAcceso', () => {
     const c = await cuentaConAcceso({ sb, fetchFn: f, tenantId: 'T', platform: 'facebook' });
     expect(c.token).toBe('META');
     expect(f.pedidos).toHaveLength(0);
+  });
+});
+
+describe('privacidadVideoYoutube: ¿ya lo puso público el dueño?', () => {
+  it('lee la privacidad del video con part=status y el token en la cabecera', async () => {
+    const f = fetchFalso([{ body: { items: [{ id: 'abc', status: { privacyStatus: 'public' } }] } }]);
+    const r = await privacidadVideoYoutube({ fetchFn: f, token: 'tok', id: 'abc' });
+    expect(r).toEqual({ ok: true, privacidad: 'public' });
+    expect(f.pedidos[0].url).toContain('part=status');
+    expect(f.pedidos[0].url).toContain('id=abc');
+    expect(f.pedidos[0].url).not.toContain('tok');
+    expect(f.pedidos[0].init.headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('si YouTube ya no lo tiene, lo dice como eliminado', async () => {
+    const f = fetchFalso([{ body: { items: [] } }]);
+    expect(await privacidadVideoYoutube({ fetchFn: f, token: 't', id: 'x' })).toEqual({ ok: true, privacidad: 'eliminado' });
+  });
+
+  it('un 401 no cambia nada y avisa que el acceso venció', async () => {
+    const f = fetchFalso([{ status: 401, body: { error: { message: 'Invalid Credentials' } } }]);
+    const r = await privacidadVideoYoutube({ fetchFn: f, token: 't', id: 'x' });
+    expect(r.ok).toBe(false);
+    expect(r.token_vencido).toBe(true);
   });
 });

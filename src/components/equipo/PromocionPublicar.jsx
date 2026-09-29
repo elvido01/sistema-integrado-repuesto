@@ -55,6 +55,7 @@ const COLOR_ESTADO = {
   FALLO: 'bg-red-100 text-red-800 border-red-300',
   'SIN CONFIRMAR': 'bg-amber-100 text-amber-800 border-amber-300',
   'SIN AUTORIZAR': 'bg-zinc-200 text-zinc-700 border-zinc-400',
+  PRIVADO: 'bg-amber-100 text-amber-800 border-amber-300',
 };
 
 // Un color por estado de la cuenta (ver src/lib/estadoRedesSociales.js).
@@ -680,6 +681,18 @@ export default function PromocionPublicar({ prefill = null }) {
                         </span>
                       </span>
                     </div>
+                    {/* Hasta la auditoría de Google, YouTube sube en privado:
+                        el dueño lo abre a mano y el publicador lo nota solo. */}
+                    {d.estado === 'PRIVADO' && d.external_post_id && (
+                      <div className="mt-0.5 text-[10px] text-amber-800">
+                        Subido en privado: nadie lo ve todavía.{' '}
+                        <a href={`https://studio.youtube.com/video/${encodeURIComponent(d.external_post_id)}/edit`}
+                          target="_blank" rel="noreferrer" className="font-semibold underline">
+                          Abrir en YouTube Studio y ponerlo público
+                        </a>
+                        . MotoFlow lo nota solo en unos 5 minutos.
+                      </div>
+                    )}
                     {d.estado === 'PUBLICADO' && (
                       d.metricas ? (
                         <div className="mt-0.5 flex flex-wrap gap-x-2 text-[10px] text-slate-600"

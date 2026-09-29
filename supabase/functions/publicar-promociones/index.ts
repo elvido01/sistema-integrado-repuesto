@@ -22,6 +22,42 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { publicarDestino } from '../_shared/adaptadores.mjs';
 import { cuentaConAcceso } from '../_shared/cuentaSocial.mjs';
+import { privacidadVideoYoutube } from '../_shared/youtube.mjs';
+
+// Cada cuánto se vuelve a preguntar por un Short privado. La cuota diaria es
+// de 10.000 unidades y cada pregunta cuesta 1: no hay prisa por gastar menos.
+const VIGILAR_CADA_MS = 5 * 60 * 1000;
+
+/**
+ * Los Shorts que siguen privados: si el dueño ya los puso públicos en YouTube
+ * Studio, se anota y el historial pasa de PRIVADO a PUBLICADO solo.
+ */
+async function vigilarPrivadosYoutube(sb: any) {
+  const antes = new Date(Date.now() - VIGILAR_CADA_MS).toISOString();
+  const { data: privados, error } = await sb.from('hermes_publication_targets')
+    .select('id, tenant_id, external_post_id')
+    .eq('platform', 'youtube').eq('status', 'published')
+    .in('privacidad', ['private', 'unlisted'])
+    .not('external_post_id', 'is', null)
+    .or(`last_checked_at.is.null,last_checked_at.lt.${antes}`)
+    .limit(10);
+  if (error || !privados?.length) return 0;
+  const tokens = new Map();
+  for (const t of privados) {
+    if (!tokens.has(t.tenant_id)) tokens.set(t.tenant_id, await cuentaDe(sb, t.tenant_id, 'youtube'));
+    const cuenta = tokens.get(t.tenant_id);
+    const ahora = new Date().toISOString();
+    if (!cuenta?.token) {
+      await sb.from('hermes_publication_targets').update({ last_checked_at: ahora }).eq('id', t.id);
+      continue;
+    }
+    const v = await privacidadVideoYoutube({ fetchFn: fetch, token: cuenta.token, id: t.external_post_id });
+    await sb.from('hermes_publication_targets')
+      .update(v.ok ? { privacidad: v.privacidad, last_checked_at: ahora } : { last_checked_at: ahora })
+      .eq('id', t.id);
+  }
+  return privados.length;
+}
 
 const WORKER = 'motoflow-publicador-v1';
 
@@ -63,13 +99,16 @@ Deno.serve(async () => {
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
 
+  // Antes de publicar lo nuevo, se mira si el dueño ya abrió lo privado.
+  const vigilados = await vigilarPrivadosYoutube(sb);
+
   const { data: trabajos, error } = await sb.rpc('promo_reclamar', { p_worker: WORKER, p_limite: 5 });
   if (error) {
     console.error('[publicador] no se pudo reclamar:', error.message);
     return json({ ok: false, error: error.message }, 500);
   }
   if (!Array.isArray(trabajos) || trabajos.length === 0) {
-    return json({ ok: true, trabajos: 0 });
+    return json({ ok: true, trabajos: 0, vigilados });
   }
 
   const informe = [];
@@ -114,6 +153,15 @@ Deno.serve(async () => {
         token_vencido: !!r.token_vencido,
       };
       const rep = await reportar(sb, job.id, resultado);
+      // YouTube sube privado hasta la auditoría de Google: se anota, para que
+      // la pantalla diga PRIVADO y lleve al dueño a YouTube Studio.
+      if (r.ok && r.privacidad) {
+        const { error: ePriv } = await sb.from('hermes_publication_targets')
+          .update({ privacidad: r.privacidad, last_checked_at: new Date().toISOString() })
+          .eq('job_id', job.id).eq('platform', destino.platform).eq('placement', destino.placement)
+          .select('id');
+        if (ePriv) console.error('[publicador] no se anotó la privacidad:', ePriv.message);
+      }
       informe.push({ job: job.id, destino: `${destino.platform}:${destino.placement}`, ok: r.ok, error: resultado.error, rep });
     }
   }
