@@ -666,7 +666,14 @@ export default function PromocionPublicar({ prefill = null }) {
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-slate-700">{d.platform} · {d.placement}</span>
                       <span className="flex items-center gap-2">
-                        {d.external_url && (
+                        {/* Privado: el enlace útil es el de YouTube Studio, donde
+                            se pone público; ver el Short no sirve para nada. */}
+                        {d.estado === 'PRIVADO' && d.external_post_id ? (
+                          <a href={`https://studio.youtube.com/video/${encodeURIComponent(d.external_post_id)}/edit`}
+                            target="_blank" rel="noreferrer" className="font-semibold text-amber-700 underline">
+                            ponerlo público
+                          </a>
+                        ) : d.external_url && (
                           <a href={d.external_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver</a>
                         )}
                         {d.estado === 'FALLO' && (
