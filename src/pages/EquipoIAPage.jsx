@@ -23,6 +23,7 @@ import { BorradorPromocion } from '@/components/equipo/BorradorPromocion';
 import { EspecificacionesArte } from '@/components/equipo/EspecificacionesArte';
 import { ReferenciasArte } from '@/components/equipo/ReferenciasArte';
 import { RecomendacionesDelDia } from '@/components/equipo/RecomendacionesDelDia';
+import { PiezasModelo } from '@/components/equipo/PiezasModelo';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -527,6 +528,8 @@ const EquipoIAPage = () => {
             ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
         }}
       />
+
+      <PiezasModelo />
 
       <PromocionPublicar prefill={prefillPromo} />
 
