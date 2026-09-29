@@ -45,3 +45,14 @@ Registrar los callbacks exactos en las consolas de los proveedores.
 7. No activar cron/publicación de estas redes hasta completar pruebas y autorización explícita de contenido.
 
 No modificar archivos dist/ ni whatsapp-quote-extension/: contienen trabajo ajeno.
+
+## YouTube: subida real y prueba privada (29/09/2026)
+
+- `_shared/youtube.mjs`: subida reanudable de Shorts (privado por defecto) y renovación del
+  acceso con el permiso guardado; `_shared/cuentaSocial.mjs`: cuenta `connected` + acceso
+  vigente, compartida por el publicador y la prueba. 15 pruebas en `tests/youtubeShort.test.js`.
+- `publicar-promociones` pasa el video al destino de YouTube. Sigue sin publicar ahí mientras
+  `publicacion_habilitada = false` (no se cambió).
+- `youtube-prueba-privada` (solo rol service_role, solo videos del storage propio, siempre privado)
+  subió el Short `macsyw1zJ1U` en privado al canal UCpzCEh9wP212K8p8QP_YvFQ; oEmbed 403 = no público.
+- Falta: auditoría de Google para videos públicos y la decisión del dueño de habilitar la cuenta.

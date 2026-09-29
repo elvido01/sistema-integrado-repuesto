@@ -21,31 +21,22 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { publicarDestino } from '../_shared/adaptadores.mjs';
+import { cuentaConAcceso } from '../_shared/cuentaSocial.mjs';
 
 const WORKER = 'motoflow-publicador-v1';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), { status, headers: { 'content-type': 'application/json' } });
 
+// La cuenta y su acceso se leen en _shared/cuentaSocial.mjs (solo cuentas
+// conectadas; YouTube renueva su acceso de una hora). El token no sale de aquí.
 async function cuentaDe(sb: any, tenantId: string, platform: string) {
-  // limit(1) y no maybeSingle(): con dos cuentas de la misma red, maybeSingle
-  // revienta en vez de publicar.
-  const { data: cuentas } = await sb
-    .from('social_accounts')
-    .select('id, external_account_id, publicacion_habilitada')
-    .eq('tenant_id', tenantId)
-    .eq('platform', platform)
-    .order('connected_at', { ascending: false })
-    .limit(1);
-  const c = cuentas?.[0];
-  if (!c?.id) return null;
-  const { data: sec } = await sb
-    .from('social_account_secrets')
-    .select('access_token')
-    .eq('account_id', c.id)
-    .maybeSingle();
-  if (!sec?.access_token) return null;
-  return { external_account_id: c.external_account_id, token: sec.access_token, habilitada: c.publicacion_habilitada };
+  try {
+    return await cuentaConAcceso({ sb, fetchFn: fetch, tenantId, platform, env: (k: string) => Deno.env.get(k) });
+  } catch (e) {
+    // Renovar el acceso falló: la ronda sigue con las demás redes.
+    return { error: e?.message || String(e), token_vencido: !!e?.token_vencido };
+  }
 }
 
 /** Anotar lo que pasó. Si falla, se reintenta: lo que ya salió TIENE que quedar escrito. */
@@ -95,15 +86,21 @@ Deno.serve(async () => {
         ? (cfg.imagen_historia || job.media_url)
         : (cfg.imagen_feed || job.media_url);
 
+      // El video (TikTok, YouTube) viaja en channel_config.video; si el
+      // trabajo es de video, también en media_url.
+      const video = cfg.video || (job.media_type === 'video' ? job.media_url : null);
+
       let r;
-      if (!cuenta) {
+      if (cuenta?.error) {
+        r = { ok: false, error: cuenta.error, token_vencido: cuenta.token_vencido };
+      } else if (!cuenta) {
         r = { ok: false, error: `No hay cuenta de ${plataforma} conectada con token.` };
       } else if (cuenta.habilitada === false) {
         // Se apagó entre que se programó y ahora (p. ej. el token venció en
         // otro destino): no se insiste contra una cuenta muerta.
         r = { ok: false, error: `La cuenta de ${plataforma} está marcada como no habilitada. Reconectar.` };
       } else {
-        r = await publicarDestino({ fetchFn: fetch, destino, cuenta, media: { imagen }, texto });
+        r = await publicarDestino({ fetchFn: fetch, destino, cuenta, media: { imagen, video }, texto });
       }
 
       const resultado = {

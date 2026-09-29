@@ -148,14 +148,18 @@ describe('El token nunca viaja en la URL', () => {
 });
 
 describe('TikTok y YouTube', () => {
-  it('nunca dicen que publicaron, y explican que falta', async () => {
-    for (const adaptador of [tiktokVideo, youtubeShort]) {
-      const r = await adaptador();
-      expect(r.ok).toBe(false);
-      expect(r.sin_autorizar).toBe(true);
-      expect(r.error).toMatch(/auditor/i);
-      expect(r.external_post_id).toBeUndefined();
-    }
+  it('TikTok nunca dice que publicó, y explica que falta', async () => {
+    const r = await tiktokVideo();
+    expect(r.ok).toBe(false);
+    expect(r.sin_autorizar).toBe(true);
+    expect(r.error).toMatch(/auditor/i);
+    expect(r.external_post_id).toBeUndefined();
+  });
+
+  // Desde el 29/09/2026 YouTube sube de verdad (en privado por defecto); sus
+  // pruebas están en tests/youtubeShort.test.js. Aquí: que ya no es un "todavía no".
+  it('YouTube ya no es un adaptador de "todavía no"', () => {
+    expect(youtubeShort.sinAutorizar).toBeUndefined();
   });
 });
 
@@ -225,14 +229,18 @@ describe('Una promocion entera', () => {
     expect(r.resultados.filter((x) => x.ok).map((x) => x.id)).toEqual([1, 2, 3, 5, 6]);
   });
 
-  it('con los adaptadores de verdad, TikTok y YouTube quedan sin autorizar', async () => {
+  it('con los adaptadores de verdad, TikTok queda sin autorizar y YouTube sin cuenta no sube', async () => {
     const f = fetchFalso({ body: { post_id: 'X', id: 'X' } });
     const r = await publicarPromocion({ fetchFn: f, destinos: seisDestinos, cuentas, media: MEDIA, textos: {} });
-    expect(r.sin_autorizar).toBe(2);
+    expect(r.sin_autorizar).toBe(1);
     expect(r.estado).toBe('PARCIAL');
     const tk = r.resultados.find((x) => x.platform === 'tiktok');
     expect(tk.ok).toBe(false);
     expect(tk.external_post_id).toBeUndefined();
+    const yt = r.resultados.find((x) => x.platform === 'youtube');
+    expect(yt.ok).toBe(false);
+    expect(yt.error).toMatch(/token/i);
+    expect(f.pedidos.some((p) => String(p.url).includes('googleapis'))).toBe(false);
   });
 
   it('el reintento de una parcial no vuelve a tocar lo que ya salio', async () => {

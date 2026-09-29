@@ -23,6 +23,8 @@
 //      fallo, por mucho que el HTTP diga 200.
 // ════════════════════════════════════════════════════════════════════════
 
+import { youtubeShort } from './youtube.mjs';
+
 export const V_META = 'v22.0';
 
 /** Meta avisa del token muerto con el código 190 (y subcódigos 463/467). */
@@ -136,7 +138,7 @@ export const instagramFeed = ({ fetchFn, token, cuentaId, media, texto, esperar 
 export const instagramHistoria = ({ fetchFn, token, cuentaId, media, esperar }) =>
   instagram({ fetchFn, token, cuentaId, esperar, contenedor: { image_url: media.imagen, media_type: 'STORIES' } });
 
-// ── TIKTOK Y YOUTUBE: todavía no ────────────────────────────────────────
+// ── TIKTOK: todavía no ──────────────────────────────────────────────────
 // No es que falte escribir el código: es que la plataforma no deja. Se
 // devuelve `sin_autorizar` para que el destino se muestre como lo que es y
 // JAMÁS como publicado.
@@ -150,14 +152,12 @@ export async function tiktokVideo() {
   };
 }
 
-export async function youtubeShort() {
-  return {
-    ok: false,
-    sin_autorizar: true,
-    error: 'YouTube no está autorizado. Los proyectos sin verificar suben SIEMPRE en privado '
-      + 'hasta pasar la auditoría de Google. Falta además el OAuth del canal (scope youtube.upload).',
-  };
-}
+// YouTube ya sube de verdad (29/09/2026): el canal está conectado por OAuth
+// con youtube.upload. Vive en youtube.mjs y sube en PRIVADO por defecto;
+// Google además fuerza privado mientras el proyecto no pase su auditoría.
+// Que una promoción real salga a YouTube sigue dependiendo de la cuenta
+// (`publicacion_habilitada`), que el publicador revisa antes de llamar aquí.
+export { youtubeShort };
 
 // ── El de mentira, para probar y para ensayar sin publicar ──────────────
 export function adaptadorDePrueba(guion = {}) {
@@ -177,10 +177,9 @@ export function adaptadorDePrueba(guion = {}) {
   return fn;
 }
 
-// Marcados a proposito: el que llama no tiene que adivinar por el resultado
-// que estos dos no publican todavia.
+// Marcado a proposito: el que llama no tiene que adivinar por el resultado
+// que TikTok no publica todavia.
 tiktokVideo.sinAutorizar = true;
-youtubeShort.sinAutorizar = true;
 
 // ── El mapa ─────────────────────────────────────────────────────────────
 export const ADAPTADORES = {
