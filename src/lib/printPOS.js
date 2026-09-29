@@ -52,6 +52,9 @@ export const setEmpresaPrintConfig = (empresa) => {
   }
 };
 
+// Los PDF (pedido, cotización, recibo...) usan la misma empresa que los tickets.
+export const getEmpresaPrintConfig = () => _empresaConfig;
+
 const getHeaderHTML = (overrideName) => {
   const name = overrideName || _empresaConfig.nombre;
   const lines = [`<h1 class="bold">${name}</h1>`];

@@ -1,31 +1,52 @@
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { getEmpresaPrintConfig } from '@/lib/printPOS';
 
 export const ITBIS_RATE = 0.18;
 export const PAGE_WIDTH = 595.28; // A4 width in points
 export const MARGIN = 40;
 
+// >>> LA CABECERA DICE DE QUIÉN ES EL DOCUMENTO (29/09/2026) <<<
+// Decía "MotoFlow" fijo: un pedido de Repuestos Morla salía con el nombre del
+// sistema, no el de la empresa. Ahora sale la empresa activa (la misma que
+// usan los tickets, cargada en MainLayout con setEmpresaPrintConfig).
+//
+// Y medía en PUNTOS (PAGE_WIDTH 595, margen 40) sobre documentos creados con
+// `new jsPDF()`, que miden en MILÍMETROS (A4 = 210). El título y el número se
+// imprimían fuera del papel, y el nombre empezaba a 4 cm del borde. Aquí se
+// mide el papel del propio documento, sea cual sea su unidad.
 export const generateHeader = (doc, title, number, config = {}) => {
-  const { logoUrl } = config;
+  const ancho = doc.internal.pageSize.getWidth();
+  const mm = doc.internal.scaleFactor ? 72 / 25.4 / doc.internal.scaleFactor : 1; // 1 mm en unidades del doc
+  const margen = 14 * mm;
 
-  if (logoUrl) {
-    // Custom logo logic can be added here
-  }
+  const empresa = getEmpresaPrintConfig();
+  const nombre = (config.nombre || (empresa.nombre !== 'Sistema' ? empresa.nombre : '') || 'MotoFlow').trim();
+  const datos = [empresa.rnc && `RNC: ${empresa.rnc}`, empresa.telefono && `Tel: ${empresa.telefono}`]
+    .filter(Boolean).join('   ');
 
-  doc.setFontSize(20);
-  doc.setTextColor(37, 99, 235); // motoflow-blue #2563EB
+  // El nombre ocupa como mucho la mitad izquierda, para no pisar el título.
+  doc.setFontSize(16);
+  doc.setTextColor(37, 99, 235);
   doc.setFont('helvetica', 'bold');
-  doc.text("MotoFlow", MARGIN, 50);
+  const lineas = doc.splitTextToSize(nombre, ancho / 2 - margen).slice(0, 2);
+  doc.text(lineas, margen, 45);
+  if (datos) {
+    doc.setFontSize(9);
+    doc.setTextColor(90, 90, 90);
+    doc.setFont('helvetica', 'normal');
+    doc.text(datos, margen, 45 + 7 * lineas.length);
+  }
 
   doc.setFontSize(16);
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'bold');
-  doc.text(title, PAGE_WIDTH - MARGIN, 50, { align: 'right' });
+  doc.text(title, ancho - margen, 50, { align: 'right' });
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Nº: ${number || 'N/A'}`, PAGE_WIDTH - MARGIN, 65, { align: 'right' });
-  
+  doc.text(`Nº: ${number || 'N/A'}`, ancho - margen, 65, { align: 'right' });
+
   doc.setDrawColor(200, 200, 200);
-  doc.line(MARGIN, 75, PAGE_WIDTH - MARGIN, 75);
+  doc.line(margen, 75, ancho - margen, 75);
 };
 
 export const generateClientInfo = (doc, client, startY = 90) => {
