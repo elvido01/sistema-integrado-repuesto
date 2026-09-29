@@ -118,7 +118,7 @@ async function bajar(url) {
  * Viste la escena: logo, titular, cinta de la marca y pie con el teléfono.
  * Todo texto sale de aquí, no del modelo. Sin precio (ver arriba).
  */
-export async function vestirEscena({ escena, logo, ficha, formato }) {
+export async function vestirEscena({ escena, logo, ficha, formato, textoEnEscena = false }) {
   const { ancho: W, alto: H } = FORMATOS[formato] || FORMATOS.feed;
   const vertical = H > W;
   const acento = hex(ficha.acento, '#f5a623');
@@ -140,7 +140,7 @@ export async function vestirEscena({ escena, logo, ficha, formato }) {
         <stop offset="1" stop-color="#000" stop-opacity="0.80"/>
       </linearGradient>
     </defs>
-    <rect width="${W}" height="${Math.round(H * (vertical ? 0.36 : 0.42))}" fill="url(#arriba)"/>
+    <rect width="${W}" height="${Math.round(H * (textoEnEscena ? 0.20 : (vertical ? 0.36 : 0.42)))}" fill="url(#arriba)"/>
     <rect y="${Math.round(H * (vertical ? 0.80 : 0.74))}" width="${W}" height="${Math.round(H * (vertical ? 0.20 : 0.26))}" fill="url(#abajo)"/>
   </svg>`;
   capas.push({ input: Buffer.from(velo), left: 0, top: 0 });
@@ -150,7 +150,9 @@ export async function vestirEscena({ escena, logo, ficha, formato }) {
   // la zona del producto y la cinta le quedaba encima (pesita, 28/09).
   let y = vertical ? margen : Math.round(margen * 0.8);
   if (logo) {
-    const anchoLogo = Math.round(W * (vertical ? 0.28 : 0.16));
+    // Con el titular del modelo el logo preside, como en las piezas modelo;
+    // el modelo le deja libre el 22% (vertical) o el 26% (cuadrado) de arriba.
+    const anchoLogo = Math.round(W * (textoEnEscena ? (vertical ? 0.30 : 0.19) : (vertical ? 0.28 : 0.16)));
     const puesto = await sharp(logo).resize(anchoLogo, null, { fit: 'inside' }).png().toBuffer();
     const alto = (await sharp(puesto).metadata()).height || 0;
     capas.push({ input: puesto, left: Math.round((W - anchoLogo) / 2), top: y });
@@ -158,9 +160,11 @@ export async function vestirEscena({ escena, logo, ficha, formato }) {
   }
 
   // ── Titular: dos renglones como mucho, con la palabra de acento ──
+  // Si el modelo ya lo escribió en la escena, aquí no se repite.
   const texto = [];
   const tam = Math.round(W * (vertical ? 0.088 : 0.068));
-  const lineas = repartirEnLineas(ficha.titulo, Math.max(8, Math.floor(W * 0.9 / (tam * 0.6)))).slice(0, 2);
+  const lineas = textoEnEscena ? []
+    : repartirEnLineas(ficha.titulo, Math.max(8, Math.floor(W * 0.9 / (tam * 0.6)))).slice(0, 2);
   const acentoNorm = String(ficha.titulo_acento || '').trim().toUpperCase();
   const limpia = (t) => t.toUpperCase().replace(/[^0-9A-ZÁÉÍÓÚÑ]/gi, '');
   lineas.forEach((l, i) => {
@@ -168,10 +172,10 @@ export async function vestirEscena({ escena, logo, ficha, formato }) {
       `<tspan fill="${acentoNorm && limpia(t) === limpia(acentoNorm) ? acento : '#ffffff'}">${j ? ' ' : ''}${escapar(t.toUpperCase())}</tspan>`).join('');
     texto.push(`<text x="${W / 2}" y="${y + tam + i * Math.round(tam * 1.04)}" xml:space="preserve" font-size="${tam}" font-weight="bold" filter="url(#sombra)">${cuerpo}</text>`);
   });
-  y += tam + (lineas.length - 1) * Math.round(tam * 1.04);
+  if (lineas.length) y += tam + (lineas.length - 1) * Math.round(tam * 1.04);
 
   // ── La cinta de la marca ──
-  if (ficha.subtitulo) {
+  if (ficha.subtitulo && !textoEnEscena) {
     const tc = Math.round(tam * 0.40);
     const ac = Math.round(tc * 1.9);
     const cy = y + Math.round(tc * 0.9);
@@ -242,10 +246,15 @@ export async function montarArte(ficha = {}, { pedirEscena = null } = {}) {
           fondo: hex(ficha.fondo, '#0b1e3a'),
           acento: hex(ficha.acento, '#f5a623'),
           fondo_b64: ficha.fondo_b64 || null,
+          // v4: el titular lo escribe el modelo, con la letra de las piezas
+          // modelo del dueño (ver creativo-escena). Aquí ya no se dibuja.
+          titulo: ficha.titulo || null,
+          subtitulo: ficha.subtitulo || null,
+          sello: ficha.sello || null,
         }),
         bajar(ficha.logo_url),
       ]);
-      const hecho = await vestirEscena({ escena, logo, ficha, formato });
+      const hecho = await vestirEscena({ escena, logo, ficha, formato, textoEnEscena: !!ficha.titulo });
       return { ...hecho, motor: 'gpt-image-2' };
     } catch (e) {
       const aviso = `La escena no salió con GPT Image 2 (${String(e.message).slice(0, 160)}); se montó con la plantilla.`;
