@@ -27,8 +27,9 @@
 //  si alguien programa desde una laptop con el reloj en otro país, la
 //  promoción saldría a deshora.
 // ════════════════════════════════════════════════════════════════════════
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { indicadoresRedes } from '@/lib/estadoRedesSociales';
 import ConectarRedes from './ConectarRedes';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -56,7 +57,15 @@ const COLOR_ESTADO = {
   'SIN AUTORIZAR': 'bg-zinc-200 text-zinc-700 border-zinc-400',
 };
 
-const rd = (n) => `RD$ ${Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Un color por estado de la cuenta (ver src/lib/estadoRedesSociales.js).
+const COLOR_RED = {
+  lista: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+  pendiente: 'border-amber-300 bg-amber-50 text-amber-800',
+  sin_conectar: 'border-zinc-300 bg-zinc-100 text-zinc-600',
+  reconectar: 'border-red-300 bg-red-50 text-red-700',
+};
+
+const rd = (n) => `RD$${Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Los números de un destino publicado, tal como los trae Metricool. Cada red
 // da campos distintos (Facebook impresiones, Instagram vistas): se enseña lo
@@ -163,15 +172,21 @@ export default function PromocionPublicar({ prefill = null }) {
     }
   }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const habilitada = useMemo(() => {
-    const m = {};
-    redesEstado.forEach((r) => { m[r.platform] = r.publicacion_habilitada; });
-    return m;
-  }, [redesEstado]);
+  // Una cuenta por red (la conexión vigente manda sobre el registro manual
+  // antiguo) y lo que se puede decir de ella. La MISMA cuenta decide el
+  // indicador de arriba y si el destino queda bloqueado abajo.
+  // Ver src/lib/estadoRedesSociales.js.
+  const indicadores = useMemo(() => indicadoresRedes(redesEstado), [redesEstado]);
+  const indicadorDe = useMemo(
+    () => Object.fromEntries(indicadores.map((i) => [i.platform, i])),
+    [indicadores],
+  );
 
+  // Sin tokens: esta pantalla solo necesita saber el estado.
   const cargar = useCallback(async () => {
     const [{ data: cuentas }, { data: panel }] = await Promise.all([
-      supabase.from('social_accounts').select('platform, account_name, publicacion_habilitada, verificado_at, verificacion_detalle'),
+      supabase.from('social_accounts')
+        .select('id, platform, account_name, external_account_id, status, connected_at, publicacion_habilitada, verificado_at, verificacion_detalle'),
       supabase.rpc('promo_panel', { p_limite: verAnteriores ? 25 : 3 }),
     ]);
     setRedesEstado(cuentas || []);
@@ -180,6 +195,29 @@ export default function PromocionPublicar({ prefill = null }) {
   }, [verAnteriores]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  // >>> AL VOLVER DE AUTORIZAR, Y CON "ACTUALIZAR" <<<
+  // La autorización se hace en otra ventana (ConectarRedes) para no perder la
+  // promoción a medio llenar. Al volver a esta pestaña se relee el estado; y
+  // el botón Actualizar de la página avisa con un evento. Solo se recargan
+  // las cuentas y el historial: el formulario no se toca.
+  const ultimaLectura = useRef(0);
+  useEffect(() => {
+    const releer = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (Date.now() - ultimaLectura.current < 3000) return;
+      ultimaLectura.current = Date.now();
+      cargar();
+    };
+    window.addEventListener('focus', releer);
+    document.addEventListener('visibilitychange', releer);
+    window.addEventListener('equipo-ia:actualizar', cargar);
+    return () => {
+      window.removeEventListener('focus', releer);
+      document.removeEventListener('visibilitychange', releer);
+      window.removeEventListener('equipo-ia:actualizar', cargar);
+    };
+  }, [cargar]);
 
   const buscar = async () => {
     if (!busqueda.trim()) return;
@@ -366,19 +404,27 @@ export default function PromocionPublicar({ prefill = null }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-1">
-          {redesEstado.map((r) => (
-            <span key={r.platform}
-              title={r.verificacion_detalle || 'sin comprobar'}
-              className={`rounded border px-2 py-0.5 text-[10px] font-bold ${r.publicacion_habilitada
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                : 'border-red-300 bg-red-50 text-red-700'}`}>
-              {r.platform}: {r.publicacion_habilitada ? 'puede publicar' : 'sin autorizar'}
+          {indicadores.map((i) => (
+            <span key={i.platform}
+              title={i.detalle || 'sin comprobar'}
+              className={`rounded border px-2 py-0.5 text-[10px] font-bold ${COLOR_RED[i.clave]}`}>
+              {i.platform}: {i.etiqueta}
             </span>
           ))}
         </div>
       </div>
 
-      {!cargando && !redesEstado.some((r) => r.publicacion_habilitada) && (
+      {/* El porqué de lo que no está listo, a la vista y no solo al pasar el
+          mouse: "conectado" y "puede publicar" no son lo mismo. */}
+      {indicadores.some((i) => !i.puede && i.detalle) && (
+        <ul className="mb-3 space-y-0.5 text-[11px] text-slate-600">
+          {indicadores.filter((i) => !i.puede && i.detalle).map((i) => (
+            <li key={i.platform}><b className="capitalize">{i.platform}</b> · {i.etiqueta}: {i.detalle}</li>
+          ))}
+        </ul>
+      )}
+
+      {!cargando && !indicadores.some((i) => i.puede) && (
         <div className="mb-3 flex items-start gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
@@ -503,7 +549,9 @@ export default function PromocionPublicar({ prefill = null }) {
         <div className="mb-2 flex flex-wrap gap-2">
           {REDES.map((r) => {
             const clave = `${r.platform}:${r.placement}`;
-            const bloqueada = habilitada[r.platform] === false;
+            // La misma cuenta que pinta el indicador. Sin ninguna fila de esa
+            // red no se marca aquí (igual que antes): la base lo decide al crear.
+            const bloqueada = indicadorDe[r.platform] ? !indicadorDe[r.platform].puede : false;
             return (
               <label key={clave}
                 className={`flex items-center gap-1 rounded border px-2 py-1 text-[11px] ${bloqueada ? 'border-zinc-300 bg-zinc-100 text-zinc-500' : 'border-slate-300'}`}>

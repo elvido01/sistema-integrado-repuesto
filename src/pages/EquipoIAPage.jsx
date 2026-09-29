@@ -503,7 +503,11 @@ const EquipoIAPage = () => {
             Hermes coordina · Jarvis consulta MotoFlow · Comercial-Creativo prepara el contenido
           </p>
         </div>
-        <Button variant="outline" onClick={() => cargar()}>
+        <Button variant="outline" onClick={() => {
+          cargar();
+          // El formulario de publicar relee el estado de las redes sin perder lo escrito.
+          window.dispatchEvent(new CustomEvent('equipo-ia:actualizar'));
+        }}>
           <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
         </Button>
       </div>
