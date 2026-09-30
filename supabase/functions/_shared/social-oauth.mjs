@@ -1,6 +1,9 @@
 // OAuth helpers shared by the server and offline tests. Never log provider bodies.
 export const SOCIAL_SCOPES = {
-  tiktok: ['user.info.basic', 'video.publish'],
+  // video.upload y NO video.publish: sin la auditoría de TikTok, publicar
+  // directo exige poner la cuenta ENTERA en privado. Con upload el video va
+  // a la bandeja del dueño y lo publica él desde el teléfono.
+  tiktok: ['user.info.basic', 'video.upload'],
   youtube: ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'],
 };
 

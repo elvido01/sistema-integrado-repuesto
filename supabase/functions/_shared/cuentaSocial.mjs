@@ -13,6 +13,7 @@
 //    minutos se renueva con el permiso guardado y se escribe el nuevo.
 // ════════════════════════════════════════════════════════════════════════
 import { accesoVigenteGoogle } from './youtube.mjs';
+import { accesoVigenteTikTok } from './tiktok.mjs';
 
 export async function cuentaConAcceso({ sb, fetchFn, tenantId, platform, env = () => undefined }) {
   const { data: cuentas } = await sb
@@ -48,6 +49,23 @@ export async function cuentaConAcceso({ sb, fetchFn, tenantId, platform, env = (
         // Si no se guarda, el acceso sirve igual para esta vez; la próxima se
         // vuelve a renovar. Se avisa, sin el token.
         if (error) console.error('[cuentaSocial] no se guardó el acceso renovado:', error.message);
+      },
+    });
+  }
+  // TikTok: acceso de 24 horas, y al renovar puede rotar el permiso
+  // renovable. Si no se guarda el nuevo, mañana no se puede renovar.
+  if (platform === 'tiktok') {
+    token = await accesoVigenteTikTok({
+      fetchFn,
+      secreto: sec,
+      clientKey: env('TIKTOK_CLIENT_ID'),
+      clientSecret: env('TIKTOK_CLIENT_SECRET'),
+      guardar: async (nuevo) => {
+        const { error } = await sb.from('social_account_secrets')
+          .update({ access_token: nuevo.access_token, refresh_token: nuevo.refresh_token, expires_at: nuevo.expires_at, updated_at: new Date().toISOString() })
+          .eq('account_id', c.id)
+          .select('account_id');
+        if (error) console.error('[cuentaSocial] no se guardó el acceso renovado de TikTok:', error.message);
       },
     });
   }

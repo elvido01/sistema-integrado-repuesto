@@ -18,7 +18,7 @@ describe('Social OAuth', () => {
     if (platform === 'youtube') {
       expect(url.searchParams.get('code_challenge_method')).toBe('S256');
       expect(url.searchParams.get('access_type')).toBe('offline');
-    } else expect(url.searchParams.get('scope')).toBe('user.info.basic,video.publish');
+    } else expect(url.searchParams.get('scope')).toBe('user.info.basic,video.upload');
   });
   it('generates unguessable state and a stable PKCE digest', async () => {
     expect(randomSecret()).toMatch(/^[a-f0-9]{64}$/);

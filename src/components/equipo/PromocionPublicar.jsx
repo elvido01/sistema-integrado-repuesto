@@ -56,6 +56,7 @@ const COLOR_ESTADO = {
   'SIN CONFIRMAR': 'bg-amber-100 text-amber-800 border-amber-300',
   'SIN AUTORIZAR': 'bg-zinc-200 text-zinc-700 border-zinc-400',
   PRIVADO: 'bg-amber-100 text-amber-800 border-amber-300',
+  'EN TU TIKTOK': 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300',
 };
 
 // Un color por estado de la cuenta (ver src/lib/estadoRedesSociales.js).
@@ -698,6 +699,14 @@ export default function PromocionPublicar({ prefill = null }) {
                           Abrir en YouTube Studio y ponerlo público
                         </a>
                         . MotoFlow lo nota solo en unos 5 minutos.
+                      </div>
+                    )}
+                    {/* TikTok no publica solo: el video llega como borrador a
+                        la bandeja de la app y el dueño lo publica desde ahí. */}
+                    {d.estado === 'EN TU TIKTOK' && (
+                      <div className="mt-0.5 text-[10px] text-fuchsia-800">
+                        Está como borrador en tu TikTok. Abre la app en el teléfono, toca la notificación
+                        (o la bandeja de entrada), ponle música si quieres y publícalo.
                       </div>
                     )}
                     {d.estado === 'PUBLICADO' && (

@@ -150,12 +150,12 @@ describe('El token nunca viaja en la URL', () => {
 });
 
 describe('TikTok y YouTube', () => {
-  it('TikTok nunca dice que publicó, y explica que falta', async () => {
-    const r = await tiktokVideo();
+  it('TikTok sin video no pide nada a la red y explica que falta', async () => {
+    const f = fetchFalso({ body: {} });
+    const r = await tiktokVideo({ fetchFn: f, token: 'T', media: { imagen: 'x' } });
     expect(r.ok).toBe(false);
-    expect(r.sin_autorizar).toBe(true);
-    expect(r.error).toMatch(/auditor/i);
-    expect(r.external_post_id).toBeUndefined();
+    expect(r.error).toMatch(/video/i);
+    expect(f.pedidos.length).toBe(0);
   });
 
   // Desde el 29/09/2026 YouTube sube de verdad (en privado por defecto); sus
@@ -231,14 +231,15 @@ describe('Una promocion entera', () => {
     expect(r.resultados.filter((x) => x.ok).map((x) => x.id)).toEqual([1, 2, 3, 5, 6]);
   });
 
-  it('con los adaptadores de verdad, TikTok queda sin autorizar y YouTube sin cuenta no sube', async () => {
+  it('con los adaptadores de verdad, TikTok y YouTube sin cuenta no suben', async () => {
     const f = fetchFalso({ body: { post_id: 'X', id: 'X' } });
     const r = await publicarPromocion({ fetchFn: f, destinos: seisDestinos, cuentas, media: MEDIA, textos: {} });
-    expect(r.sin_autorizar).toBe(1);
     expect(r.estado).toBe('PARCIAL');
     const tk = r.resultados.find((x) => x.platform === 'tiktok');
     expect(tk.ok).toBe(false);
+    expect(tk.error).toMatch(/token/i);
     expect(tk.external_post_id).toBeUndefined();
+    expect(f.pedidos.some((p) => String(p.url).includes('tiktokapis'))).toBe(false);
     const yt = r.resultados.find((x) => x.platform === 'youtube');
     expect(yt.ok).toBe(false);
     expect(yt.error).toMatch(/token/i);

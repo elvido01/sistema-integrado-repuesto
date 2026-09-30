@@ -24,6 +24,7 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { youtubeShort } from './youtube.mjs';
+import { tiktokBandeja } from './tiktok.mjs';
 
 export const V_META = 'v22.0';
 
@@ -140,19 +141,13 @@ export const instagramFeed = ({ fetchFn, token, cuentaId, media, texto, esperar 
 export const instagramHistoria = ({ fetchFn, token, cuentaId, media, esperar }) =>
   instagram({ fetchFn, token, cuentaId, esperar, contenedor: { image_url: media.imagen, media_type: 'STORIES' } });
 
-// ── TIKTOK: todavía no ──────────────────────────────────────────────────
-// No es que falte escribir el código: es que la plataforma no deja. Se
-// devuelve `sin_autorizar` para que el destino se muestre como lo que es y
-// JAMÁS como publicado.
-export async function tiktokVideo() {
-  return {
-    ok: false,
-    sin_autorizar: true,
-    error: 'TikTok no está autorizado. Su Content Posting API deja publicar solo en privado '
-      + '("all content posted by unaudited clients will be restricted to private viewing mode") '
-      + 'hasta que la app pase la auditoría. Faltan además cuenta Business, cuenta de desarrollador y el video de demo.',
-  };
-}
+// ── TIKTOK: a la bandeja del dueño ──────────────────────────────────────
+// Desde el 30/09/2026 el video va como BORRADOR a la bandeja de TikTok del
+// dueño (video.upload), que lo publica él desde el teléfono. Vive en
+// tiktok.mjs. La publicación directa no se usa: sin la auditoría exige poner
+// la cuenta entera en privado. Que una promoción salga a TikTok sigue
+// dependiendo de la cuenta conectada y habilitada, como las demás redes.
+export const tiktokVideo = tiktokBandeja;
 
 // YouTube ya sube de verdad (29/09/2026): el canal está conectado por OAuth
 // con youtube.upload. Vive en youtube.mjs y sube en PRIVADO por defecto;
@@ -178,10 +173,6 @@ export function adaptadorDePrueba(guion = {}) {
   fn.llamadas = llamadas;
   return fn;
 }
-
-// Marcado a proposito: el que llama no tiene que adivinar por el resultado
-// que TikTok no publica todavia.
-tiktokVideo.sinAutorizar = true;
 
 // ── El mapa ─────────────────────────────────────────────────────────────
 export const ADAPTADORES = {

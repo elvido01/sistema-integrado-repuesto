@@ -23,7 +23,7 @@ el único origen predeterminado es `https://repuestos-morla.pages.dev`.
 Añadir los dominios de clientes únicamente después de comprobar su control.
 
 YouTube solicita youtube.upload + youtube.readonly para identificar el canal y comprobar publicaciones.
-TikTok solicita user.info.basic + video.publish.
+TikTok solicita user.info.basic + video.upload (el video va a la bandeja del dueño; video.publish exige la cuenta entera en privado sin auditoría).
 Registrar los callbacks exactos en las consolas de los proveedores.
 
 ## Verificado
