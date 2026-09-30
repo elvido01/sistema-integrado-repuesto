@@ -1102,6 +1102,23 @@ export async function conversacionDeWhatsApp({ telefono = null, externalId = nul
   });
 }
 
+// ¿El cliente escribio despues de nuestra ultima respuesta? Decide si vale la
+// pena que Hermes redacte solo al abrir el chat: sugerir en una conversacion
+// ya contestada es gastar y estorbar. `clave` identifica el mensaje que espera
+// respuesta, para no redactar dos veces lo mismo.
+export async function conversacionEsperaRespuesta({ conversationId }) {
+  if (!conversationId) return { espera: false, clave: null };
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/sales_conversations`);
+  url.searchParams.set('id', `eq.${conversationId}`);
+  url.searchParams.set('select', 'last_user_message_at,last_agent_message_at');
+  const filas = await fetchJson(url.toString(), { headers });
+  const c = Array.isArray(filas) ? filas[0] : null;
+  const cliente = c?.last_user_message_at ? Date.parse(c.last_user_message_at) : 0;
+  const nuestro = c?.last_agent_message_at ? Date.parse(c.last_agent_message_at) : 0;
+  return { espera: cliente > nuestro, clave: c?.last_user_message_at || null };
+}
+
 export async function marcarUsoSugerencia({ messageId, resultado }) {
   if (!messageId || !resultado) return null;
   const headers = await getAuthHeaders();

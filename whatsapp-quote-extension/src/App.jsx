@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
 import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
-import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, adjuntarFotos, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
+import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, conversacionEsperaRespuesta, marcarUsoSugerencia, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, adjuntarFotos, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, leerChatsSinLeer, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
 import { formatQuoteMessage } from './utils/cotizacionTexto.js';
@@ -350,6 +350,12 @@ export default function App() {
   const [omniQuoteConversation, setOmniQuoteConversation] = useState(null);
   const [omniSelectedConversation, setOmniSelectedConversation] = useState(null);
   const [sugiriendoWa, setSugiriendoWa] = useState(false);
+  // El borrador que Hermes deja listo al abrir un chat que espera respuesta:
+  // { chatId, texto, messageId, promo }. Ver el efecto "Respuesta en un toque".
+  const [borradorWa, setBorradorWa] = useState(null);
+  const [redactandoWa, setRedactandoWa] = useState(false);
+  const borradoresHechos = useRef(new Map());   // conversacion+mensaje -> respuesta de Hermes
+  const chatAbiertoRef = useRef(null);
   const [fotoEnviando, setFotoEnviando] = useState(null);
   // De que conversacion se esta cotizando. La explicita manda, pero si se
   // llego aqui por otro camino (por ejemplo "Asociar cliente", que cambia a
@@ -835,6 +841,68 @@ export default function App() {
   }, [session?.access_token, empresaPending]);
 
   useEffect(() => { recargarSeguimientos(); }, [recargarSeguimientos]);
+
+  // ── Respuesta en un toque (WhatsApp) ────────────────────────────
+  // (30/09/2026) El boton "Sugerir" se uso 12 veces en seis semanas: pedir
+  // la sugerencia era un paso mas, y en el mostrador no hay pasos de sobra.
+  // Ahora, al abrir el chat de un cliente que ESPERA respuesta, Hermes
+  // redacta solo y deja una tarjeta con "Pegar" (y "Mandar arte" si pregunta
+  // por algo en promocion). No pega nada por su cuenta: el vendedor puede
+  // estar escribiendo otra cosa.
+  //
+  // Espera 3 s a que el espejo suba lo nuevo del chat: sin eso, el ultimo
+  // mensaje del cliente aun no esta en la base y Hermes contesta a lo de antes.
+  // Cada mensaje del cliente se redacta UNA vez: volver al mismo chat reusa.
+  useEffect(() => {
+    chatAbiertoRef.current = chat?.id || null;
+    setBorradorWa((b) => (b && b.chatId === chat?.id ? b : null));
+    if (safeMode || activeChannel !== CHANNEL_TYPES.WHATSAPP) return undefined;
+    if (!session?.access_token || empresaPending || !chat?.id) return undefined;
+
+    const chatId = chat.id;
+    const t = window.setTimeout(async () => {
+      let ident;
+      try { ident = identidadDelChat(); } catch { ident = null; }
+      if (!ident?.externalId || ident.grupo) return;
+      try {
+        const conversationId = await conversacionDeWhatsApp({ telefono: ident.phone || null, externalId: ident.externalId });
+        if (!conversationId || chatAbiertoRef.current !== chatId) return;
+        const { espera, clave } = await conversacionEsperaRespuesta({ conversationId });
+        if (!espera || chatAbiertoRef.current !== chatId) return;
+
+        const llave = `${conversationId}|${clave}`;
+        let d = borradoresHechos.current.get(llave);
+        if (!d) {
+          setRedactandoWa(true);
+          d = await sugerirRespuesta({ conversationId });
+          borradoresHechos.current.set(llave, d);
+        }
+        if (chatAbiertoRef.current !== chatId || !d?.sugerencia) return;
+        setBorradorWa({ chatId, texto: d.sugerencia, messageId: d.message_id || null, promo: d.promo || null });
+      } catch {
+        // Sin borrador no pasa nada: queda el boton Sugerir de siempre.
+      } finally {
+        setRedactandoWa(false);
+      }
+    }, 3000);
+    return () => window.clearTimeout(t);
+  }, [chat?.id, activeChannel, session?.access_token, empresaPending, safeMode]);
+
+  async function pegarBorradorWa() {
+    if (!borradorWa?.texto) return;
+    const ok = await pasteTextIntoWhatsApp(borradorWa.texto);
+    setNotice(ok ? 'Listo: revisa el texto antes de mandarlo.' : 'No pude pegarlo. Copialo a mano: ' + borradorWa.texto);
+    // Lo que pase despues (usada o editada) lo cierra el servidor cuando el
+    // espejo trae lo que de verdad se mando.
+    if (ok) setBorradorWa(null);
+  }
+
+  function descartarBorradorWa() {
+    if (borradorWa?.messageId) {
+      marcarUsoSugerencia({ messageId: borradorWa.messageId, resultado: 'descartada' }).catch(() => {});
+    }
+    setBorradorWa(null);
+  }
 
   useEffect(() => {
     if (!session?.access_token || empresaPending) {
@@ -2606,6 +2674,33 @@ export default function App() {
             </button>
           )}
         </nav>
+      )}
+
+      {/* Respuesta en un toque: Hermes ya la redacto al abrir el chat. */}
+      {activeChannel === CHANNEL_TYPES.WHATSAPP && redactandoWa && !borradorWa && (
+        <div className="mf-borrador mf-borrador-pensando">✨ Hermes está redactando la respuesta…</div>
+      )}
+      {activeChannel === CHANNEL_TYPES.WHATSAPP && borradorWa && borradorWa.chatId === chat?.id && (
+        <div className="mf-borrador">
+          <div className="mf-borrador-titulo">✨ Respuesta lista</div>
+          <p className="mf-borrador-texto">{borradorWa.texto}</p>
+          {borradorWa.promo && (
+            <p className="mf-borrador-promo">
+              🔥 Está en promoción: {borradorWa.promo.descripcion}
+              {borradorWa.promo.precio ? ` · RD$${Number(borradorWa.promo.precio).toLocaleString('en-US')}` : ''}
+            </p>
+          )}
+          <div className="mf-borrador-acciones">
+            <button type="button" className="mf-borrador-pegar" onClick={pegarBorradorWa}>Pegar en el chat</button>
+            {borradorWa.promo?.imagen_url && (
+              <button type="button" disabled={!!fotoEnviando}
+                onClick={() => enviarFotoDelCatalogo({ imagen_url: borradorWa.promo.imagen_url, codigo: borradorWa.promo.codigo || 'promocion', id: 'promo' })}>
+                Mandar arte
+              </button>
+            )}
+            <button type="button" onClick={descartarBorradorWa} title="No sirve: descartarla">✕</button>
+          </div>
+        </div>
       )}
 
       {(!session || empresaPending) && (

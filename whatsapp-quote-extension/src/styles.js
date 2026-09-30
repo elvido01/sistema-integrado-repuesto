@@ -416,6 +416,51 @@ export const styles = `
     font-weight: 900;
   }
 
+  /* Respuesta en un toque: la tarjeta que Hermes deja lista al abrir el chat. */
+  .mf-borrador {
+    margin: 6px 8px;
+    padding: 8px;
+    border: 1px solid #ddc9f5;
+    border-radius: 8px;
+    background: #faf6ff;
+    font-size: 12px;
+  }
+  .mf-borrador-pensando { color: #6b3fa0; font-weight: 700; }
+  .mf-borrador-titulo { color: #6b3fa0; font-weight: 900; margin-bottom: 4px; }
+  .mf-borrador-texto { margin: 0 0 6px; white-space: pre-wrap; color: #1f2937; }
+  .mf-borrador-promo {
+    margin: 0 0 6px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: #fff4e5;
+    color: #9a4d00;
+    font-weight: 700;
+  }
+  .mf-borrador-acciones { display: flex; gap: 6px; }
+  .mf-tiktok-esperan {
+    display: block;
+    width: calc(100% - 16px);
+    margin: 4px 8px;
+    padding: 6px 8px;
+    border: 1px solid #f5c26b;
+    border-radius: 8px;
+    background: #fff4e5;
+    color: #9a4d00;
+    font-weight: 800;
+    text-align: left;
+    cursor: pointer;
+  }
+  .mf-borrador-acciones button {
+    padding: 4px 8px;
+    border: 1px solid #ddc9f5;
+    border-radius: 6px;
+    background: #fff;
+    color: #6b3fa0;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .mf-borrador-acciones .mf-borrador-pegar { flex: 1; background: #6b3fa0; color: #fff; border-color: #6b3fa0; }
+
   .mf-canal-cotizacion {
     display: inline-block;
     margin-top: 2px;

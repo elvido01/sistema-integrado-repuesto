@@ -412,6 +412,21 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
   }, [replyText, selected?.id]);
 
+  // Respuesta en un toque (30/09/2026): al abrir una conversacion que espera
+  // respuesta, Hermes redacta solo y la deja en la caja. Solo si la caja esta
+  // vacia (no se pisa lo que el vendedor empezo) y una vez por conversacion.
+  const yaSugeridas = useRef(new Set());
+  useEffect(() => {
+    const c = selected;
+    if (!c?.id || yaSugeridas.current.has(c.id)) return;
+    const cliente = c.last_user_message_at ? Date.parse(c.last_user_message_at) : 0;
+    const nuestro = c.last_agent_message_at ? Date.parse(c.last_agent_message_at) : 0;
+    if (!(cliente > nuestro) || replyText.trim()) return;
+    yaSugeridas.current.add(c.id);
+    handleSugerir();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
+
   async function handleSugerir() {
     if (!selected?.id || sugiriendo) return;
     setSugiriendo(true);
@@ -425,6 +440,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
         texto: d.sugerencia || '',
         messageId: d.message_id || null,
         productos: Array.isArray(d.productos) ? d.productos : [],
+        promo: d.promo || null,
       });
     } catch (err) {
       setError(err.message || 'Hermes no pudo redactar una respuesta.');
@@ -443,8 +459,39 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     setReplyText('');
   }
 
+  // >>> TIKTOK: COPIAR, NO "ENVIAR" <<<
+  // (30/09/2026) Desde aqui no se puede escribir en TikTok (no hay API de
+  // mensajes; ver project_tiktok_espejo): cada "Responder" moria como NO
+  // SALIO. Ahora el boton copia el texto y abre la bandeja de TikTok para
+  // pegarlo alli. Cuando se manda en TikTok, el espejo lo trae y la
+  // conversacion sale sola de "Sin responder".
+  const esTikTok = selected?.platform === 'tiktok';
+  const esperanTikTok = conversations.filter((c) => c.platform === 'tiktok' && esperaRespuesta(c)
+    && Date.now() - Date.parse(c.last_user_message_at || 0) < 3 * 86400000).length;
+  const [copiado, setCopiado] = useState(false);
+
+  async function copiarParaTikTok() {
+    const text = replyText.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      setError('No pude copiarlo. Selecciona el texto y cópialo a mano.');
+      return;
+    }
+    if (sugerencia?.messageId) {
+      const resultado = text === (sugerencia.texto || '').trim() ? 'usada' : 'editada';
+      marcarUsoSugerencia({ messageId: sugerencia.messageId, resultado }).catch(() => {});
+      setSugerencia(null);
+    }
+    setCopiado(true);
+    window.setTimeout(() => setCopiado(false), 4000);
+    window.open('https://www.tiktok.com/messages', 'mf-tiktok-mensajes');
+  }
+
   async function handleSendReply(event) {
     event?.preventDefault?.();
+    if (esTikTok) { copiarParaTikTok(); return; }
     if (!selected || !replyText.trim() || sending) return;
 
     const text = replyText.trim();
@@ -591,6 +638,16 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
           </button>
         </div>
       </header>
+
+      {/* TikTok no se contesta desde aqui, asi que lo que espera se olvida
+          facil (10 de 15 activas sin respuesta el 30/09). Cuenta solo lo de
+          los ultimos 3 dias: a un mensaje de hace un mes ya no se contesta, y
+          contarlo es como volvio inutil el punto rojo. */}
+      {channel === 'tiktok' && esperanTikTok > 0 && (
+        <button type="button" className="mf-tiktok-esperan" onClick={() => setListFilter('sin_responder')}>
+          ⏳ {esperanTikTok} {esperanTikTok === 1 ? 'cliente espera' : 'clientes esperan'} respuesta en TikTok · ver
+        </button>
+      )}
 
       <div className="mf-omni-search">
         <input
@@ -740,6 +797,16 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                 </div>
               )}
 
+              {sugerencia?.promo && (
+                <div className="mf-borrador-promo">
+                  🔥 Pregunta por algo en promoción: {sugerencia.promo.descripcion}
+                  {sugerencia.promo.precio ? ` · RD$${Number(sugerencia.promo.precio).toLocaleString('en-US')}` : ''}
+                  {sugerencia.promo.imagen_url && (
+                    <> · <a href={sugerencia.promo.imagen_url} target="_blank" rel="noreferrer">ver el arte</a></>
+                  )}
+                </div>
+              )}
+
               <form className="mf-omni-reply" onSubmit={handleSendReply}>
                 <textarea
                   ref={replyRef}
@@ -756,8 +823,11 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                 >
                   {sugiriendo ? 'Redactando...' : '✨ Sugerir'}
                 </button>
-                <button type="submit" disabled={sending || !replyText.trim()}>
-                  {sending ? 'Guardando...' : 'Responder'}
+                <button type="submit" disabled={sending || !replyText.trim()}
+                  title={esTikTok ? 'Copia el texto y abre tus mensajes de TikTok: pégalo en la conversación del cliente.' : undefined}>
+                  {esTikTok
+                    ? (copiado ? '¡Copiado! Pégalo en TikTok' : 'Copiar y abrir TikTok')
+                    : (sending ? 'Guardando...' : 'Responder')}
                 </button>
                 {sugerencia && (
                   <button type="button" onClick={descartarSugerencia} title="Tirar la sugerencia sin mandarla">
