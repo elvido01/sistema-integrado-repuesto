@@ -98,7 +98,11 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
   // gasta la ventana de 24h porque no es mensajeria. Ademas es lo unico
   // que hoy se puede responder: el privado a un desconocido sigue
   // esperando el Acceso Avanzado de Meta.
-  if (message.message_type === 'comment') {
+  //
+  // (30/09/2026) Salvo que el cliente haya escrito por PRIVADO despues: ahi
+  // se le contesta por privado, que es donde esta esperando. La extension
+  // vieja marcaba 'comment' igual y la respuesta salia en publico.
+  if (message.message_type === 'comment' && !(await escribioPorPrivado(supabase, message.conversation_id))) {
     return await dispatchCommentReply(supabase, tenantId, message, text, userId);
   }
 
@@ -142,17 +146,7 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
   // ya estaba gastada (la respuesta automatica de Business Suite la usa al
   // comentar): Sander Arias pregunto por Messenger y la respuesta "NO SALIO".
   let privadoPorComentario = String(message.raw_data?.privado_por_comentario || '').trim() || null;
-  if (privadoPorComentario) {
-    const { data: ultimo } = await supabase.from('sales_messages')
-      .select('message_type, created_at')
-      .eq('conversation_id', message.conversation_id)
-      .eq('sender_type', 'user')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const reciente = ultimo?.created_at && Date.now() - Date.parse(ultimo.created_at) < 24 * 3600 * 1000;
-    if (ultimo && ultimo.message_type !== 'comment' && reciente) privadoPorComentario = null;
-  }
+  if (privadoPorComentario && await escribioPorPrivado(supabase, message.conversation_id)) privadoPorComentario = null;
 
   const sent = await sendMetaText(message.platform, senderId, recipientId, text.slice(0, 1000), token, privadoPorComentario);
   if (!sent.ok) {
@@ -192,6 +186,20 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
 }
 
 // ------------------------------------------------------------
+// ¿Lo ultimo que escribio el cliente fue un mensaje privado de las ultimas
+// 24h? Entonces hay ventana abierta y se le contesta por privado.
+async function escribioPorPrivado(supabase: any, conversationId: string) {
+  const { data: ultimo } = await supabase.from('sales_messages')
+    .select('message_type, created_at')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'user')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return !!ultimo && ultimo.message_type !== 'comment'
+    && Date.now() - Date.parse(ultimo.created_at) < 24 * 3600 * 1000;
+}
+
 // Responder un comentario publico
 // ------------------------------------------------------------
 // A que comentario se contesta: si la pantalla lo dijo, a ese. Si no,
@@ -238,7 +246,10 @@ async function dispatchCommentReply(supabase: any, tenantId: string, message: an
   const isInstagramLoginToken = message.platform === 'instagram' && String(token || '').startsWith('IGAA');
   const host = isInstagramLoginToken ? 'graph.instagram.com' : 'graph.facebook.com';
 
-  const response = await fetch(`https://${host}/${META_GRAPH_VERSION}/${commentId}/replies`, {
+  // Instagram responde en /replies; Facebook en /comments (con /replies
+  // Facebook rechaza la llamada: no habia salido nunca una respuesta publica ahi).
+  const ruta = message.platform === 'facebook' ? 'comments' : 'replies';
+  const response = await fetch(`https://${host}/${META_GRAPH_VERSION}/${commentId}/${ruta}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: text.slice(0, 2200), access_token: token }),

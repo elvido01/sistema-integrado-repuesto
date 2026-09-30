@@ -68,6 +68,18 @@ if (!n?.is_valid) salir(`no sirve: ${dbgN.body?.error?.message || JSON.stringify
 // hereda sus permisos. Cambiar el desplegable del Explorador a "token de
 // pagina" fallo tres veces seguidas: el paso sobraba.
 if (n.type === 'USER') {
+  // El token de usuario del Explorador dura ~1-2 horas, y la pagina sacada de
+  // el caduca igual: el 30/09 se guardo uno a las 14:18 y murio a las 16:00,
+  // tumbando publicar, medir y responder. Solo sirve el de usuario de LARGA
+  // duracion (60 dias): de ese sale una pagina que no caduca.
+  const horas = n.expires_at ? (n.expires_at * 1000 - Date.now()) / 3600000 : Infinity;
+  if (horas < 48) {
+    salir(`es un token de usuario de CORTA duración (caduca en ${Math.max(0, horas).toFixed(1)} h).
+    La página que saldría de él caduca igual. Antes de pegarlo, extiéndelo:
+      https://developers.facebook.com/tools/debug/accesstoken → pega el token → Depurar
+      → abajo "Extender token de acceso" → copia el token NUEVO que aparece.
+    Y pega ese aquí.`);
+  }
   const { data: fbCanal } = await supabase.from('sales_channels')
     .select('external_account_id, account_name').eq('platform', 'facebook').eq('status', 'active')
     .limit(1).maybeSingle();
@@ -82,6 +94,13 @@ if (n.type === 'USER') {
   dbgN = await api(`/debug_token?input_token=${encodeURIComponent(nuevo)}`, nuevo);
   n = dbgN.body?.data;
   if (!n?.is_valid) salir(`el de la página no sirve: ${dbgN.body?.error?.message || JSON.stringify(dbgN.body)}`);
+}
+
+// Un token de página que caduca pronto no se guarda nunca, venga de donde venga.
+if (n.type === 'PAGE' && n.expires_at && (n.expires_at * 1000 - Date.now()) < 7 * 86400000) {
+  salir(`el token de página caduca el ${new Date(n.expires_at * 1000).toLocaleString('es-DO')}: no se guarda.
+    Sale de un token de usuario de corta duración. Extiéndelo primero en
+    https://developers.facebook.com/tools/debug/accesstoken ("Extender token de acceso").`);
 }
 
 console.log(`  app   : ${n.application} (${n.app_id})`);
