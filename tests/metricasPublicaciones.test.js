@@ -15,26 +15,34 @@ function fetchFalso(respuestas) {
 }
 
 describe('metricasFacebook', () => {
-  it('reacciones, comentarios y compartidos; alcance si hay insights', async () => {
+  it('pide cada estadística por separado y suma las reacciones por tipo', async () => {
     const f = fetchFalso([
-      { body: { reactions: { summary: { total_count: 12 } }, comments: { summary: { total_count: 3 } }, shares: { count: 2 } } },
-      { body: { data: [{ name: 'post_impressions_unique', values: [{ value: 540 }] }, { name: 'post_impressions', values: [{ value: 800 }] }] } },
+      { status: 400, body: { error: { message: '(#10) requires pages_read_user_content' } } },   // post
+      { status: 400, body: { error: { message: '(#100) The value must be a valid insights metric' } } },   // impressions_unique
+      { status: 400, body: { error: { message: '(#100) The value must be a valid insights metric' } } },   // impressions
+      { body: { data: [{ name: 'post_clicks', values: [{ value: 9 }] }] } },
+      { body: { data: [{ name: 'post_reactions_by_type_total', values: [{ value: { like: 3, love: 1 } }] }] } },
+      { body: { data: [{ name: 'post_media_view', values: [{ value: 250 }] }] } },
     ]);
     const m = await metricasFacebook({ fetchFn: f, token: 'T', id: 'PAG_1' });
-    expect(m).toMatchObject({ ok: true, likes: 12, comments: 3, shares: 2, reach: 540, impressions: 800 });
-    expect(f.pedidos[0].init.headers.Authorization).toBe('Bearer T');
+    expect(m).toMatchObject({ ok: true, likes: 4, clicks: 9, views: 250, comments: null, shares: null });
+    expect(f.pedidos.filter((p) => p.url.includes('/insights?metric=')).length).toBe(5);
     expect(f.pedidos[0].url).not.toContain('access_token');
   });
 
-  it('sin permiso de insights no inventa el alcance: queda null', async () => {
+  it('con el permiso de contenido: reacciones, comentarios y compartidos del post', async () => {
     const f = fetchFalso([
-      { body: { reactions: { summary: { total_count: 1 } }, comments: { summary: { total_count: 0 } } } },
-      { status: 400, body: { error: { message: '(#10) requires read_insights' } } },
+      { body: { reactions: { summary: { total_count: 12 } }, comments: { summary: { total_count: 3 } } } },
+      {}, {}, {}, {}, {},
     ]);
     const m = await metricasFacebook({ fetchFn: f, token: 'T', id: 'X' });
-    expect(m.ok).toBe(true);
-    expect(m.reach).toBeNull();
-    expect(m.shares).toBe(0);   // Meta omite "shares" cuando es cero
+    expect(m).toMatchObject({ ok: true, likes: 12, comments: 3, shares: 0, reach: null });
+  });
+
+  it('si nada responde, no se da por medido', async () => {
+    const malo = { status: 400, body: { error: { message: 'no' } } };
+    const f = fetchFalso([malo, malo, malo, malo, malo, malo]);
+    expect((await metricasFacebook({ fetchFn: f, token: 'T', id: 'X' })).ok).toBe(false);
   });
 });
 

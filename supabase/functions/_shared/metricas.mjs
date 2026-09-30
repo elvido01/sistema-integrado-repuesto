@@ -41,22 +41,40 @@ function insightsAMapa(data = []) {
 
 /** Una publicación del feed de una página de Facebook ("pagina_post"). */
 export async function metricasFacebook({ fetchFn, token, id }) {
+  // Dos caminos, y vale cualquiera de los dos. Leer reacciones/comentarios
+  // del post pide pages_read_user_content, que la app no tiene (30/09); las
+  // ESTADÍSTICAS (read_insights) dan alcance, clics y reacciones por tipo.
   const base = await leer(fetchFn,
     `https://graph.facebook.com/${V_META}/${encodeURIComponent(id)}?fields=shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)`,
     token);
-  if (!base.ok) return { ok: false, error: base.error };
-  const ins = await leer(fetchFn,
-    `https://graph.facebook.com/${V_META}/${encodeURIComponent(id)}/insights?metric=post_impressions_unique,post_impressions`,
-    token);
+  // Una por una: Meta va retirando métricas, y con una inválida en la lista
+  // rechaza TODA la petición ("The value must be a valid insights metric").
+  const datos = [];
+  const errores = [];
+  for (const metrica of ['post_impressions_unique', 'post_impressions', 'post_clicks', 'post_reactions_by_type_total', 'post_media_view']) {
+    const r = await leer(fetchFn,
+      `https://graph.facebook.com/${V_META}/${encodeURIComponent(id)}/insights?metric=${metrica}`, token);
+    if (r.ok) datos.push(...(r.body?.data || []));
+    else errores.push(`${metrica}: ${r.error}`);
+  }
+  const ins = { ok: datos.length > 0, body: { data: datos }, error: errores.join(' | ') };
+  if (!base.ok && !ins.ok) return { ok: false, error: `${base.error} | ${ins.error}` };
   const m = ins.ok ? insightsAMapa(ins.body?.data) : {};
+  // Las reacciones por tipo vienen como objeto {like: 3, love: 1}: se suman.
+  const porTipo = ins.ok ? (ins.body?.data || []).find((x) => x?.name === 'post_reactions_by_type_total') : null;
+  const objTipos = porTipo?.values?.[0]?.value ?? porTipo?.total_value?.value;
+  const reaccionesIns = objTipos && typeof objTipos === 'object'
+    ? Object.values(objTipos).reduce((a, v) => a + (Number(v) || 0), 0) : null;
   return {
     ok: true,
-    likes: num(base.body?.reactions?.summary?.total_count),
-    comments: num(base.body?.comments?.summary?.total_count),
-    shares: num(base.body?.shares?.count) ?? 0,   // Meta omite "shares" cuando es cero
+    likes: base.ok ? num(base.body?.reactions?.summary?.total_count) : reaccionesIns,
+    comments: base.ok ? num(base.body?.comments?.summary?.total_count) : null,
+    shares: base.ok ? (num(base.body?.shares?.count) ?? 0) : null,   // Meta omite "shares" cuando es cero
     reach: m.post_impressions_unique ?? null,
-    impressions: m.post_impressions ?? null,
-    raw: { base: base.body, insights: ins.ok ? ins.body : { error: ins.error } },
+    impressions: m.post_impressions ?? m.post_media_view ?? null,
+    views: m.post_media_view ?? null,
+    clicks: m.post_clicks ?? null,
+    raw: { base: base.ok ? base.body : { error: base.error }, insights: ins.body, insights_errores: ins.error || null },
   };
 }
 
