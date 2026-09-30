@@ -526,9 +526,15 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
     () => (prestamoFiltro === 'todos' ? cuotas : cuotas.filter((c) => c.prestamo_id === prestamoFiltro)),
     [cuotas, prestamoFiltro]
   );
-  // Los cargos son a nivel cliente: se muestran con "Todos…" o si coinciden con el préstamo filtrado
+  // Los cargos son a nivel cliente: se muestran con "Todos…" o si coinciden con
+  // el préstamo filtrado. Los que no tienen préstamo (TODOS los que vienen del
+  // SiiF: AB cobrador, incautado…) se muestran SIEMPRE: son deuda del cliente,
+  // y al filtrar por préstamo desaparecían del recibo (Doliscar, 30/09/2026:
+  // AB-0000512 y AB-0000517 "no se subieron", y sí estaban).
   const cargosFiltrados = useMemo(
-    () => (prestamoFiltro === 'todos' ? cargos : cargos.filter((c) => c.prestamo_id === prestamoFiltro)),
+    () => (prestamoFiltro === 'todos'
+      ? cargos
+      : cargos.filter((c) => !c.prestamo_id || c.prestamo_id === prestamoFiltro)),
     [cargos, prestamoFiltro]
   );
 
