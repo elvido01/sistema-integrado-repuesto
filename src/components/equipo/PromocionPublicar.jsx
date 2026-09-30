@@ -88,6 +88,96 @@ const num = (n) => Number(n || 0).toLocaleString('es-DO');
 // la promoción (7 días como mucho) contra el promedio de los 30 días previos
 // en ese mismo tiempo. No dice quién vino por la promoción: eso no se sabe
 // sin preguntarle al cajero, y no se le pregunta.
+// Los comentarios de la promoción en Facebook e Instagram, con respuesta en
+// público. Plegado por defecto: lo que importa a primera vista es cuántos
+// esperan respuesta. Los que esperan salen primero y abiertos a responder.
+function ComentariosDeLaPromocion({ bundleId, datos, onRespondido }) {
+  const lista = datos?.comentarios || [];
+  const pendientes = lista.filter((c) => !c.respondido);
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState({});
+  const [enviando, setEnviando] = useState(null);
+  const [aviso, setAviso] = useState({});
+
+  if (!lista.length && !(datos?.errores || []).length) return null;
+
+  const responder = async (c) => {
+    setEnviando(c.id);
+    setAviso((a) => ({ ...a, [c.id]: null }));
+    try {
+      const { data, error } = await supabase.functions.invoke('promo-comentarios', {
+        body: { accion: 'responder', bundle_id: bundleId, platform: c.platform, comment_id: c.id, texto: texto[c.id] || '' },
+      });
+      // Con status 422 supabase-js deja el cuerpo en error.context.
+      const r = data || (await error?.context?.json?.().catch(() => null)) || {};
+      if (r.ok) {
+        setTexto((t) => ({ ...t, [c.id]: '' }));
+        onRespondido?.();
+      } else {
+        setAviso((a) => ({ ...a, [c.id]: r }));
+      }
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  const ordenados = [...pendientes, ...lista.filter((c) => c.respondido)];
+  return (
+    <div className="mt-1 text-[11px]">
+      <button type="button" onClick={() => setAbierto((v) => !v)}
+        className={`font-semibold ${pendientes.length ? 'text-amber-700' : 'text-slate-600'}`}>
+        💬 {lista.length} {lista.length === 1 ? 'comentario' : 'comentarios'}
+        {pendientes.length > 0 && ` · ${pendientes.length} sin responder`} {abierto ? '▾' : '▸'}
+      </button>
+      {abierto && (
+        <div className="mt-1 space-y-1.5">
+          {(datos.errores || []).map((e) => <div key={e} className="text-red-600">No se pudo leer {e}</div>)}
+          {ordenados.map((c) => (
+            <div key={c.id} className={`rounded border px-2 py-1 ${c.respondido ? 'border-slate-200 bg-white' : 'border-amber-300 bg-amber-50'}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  <b className="text-slate-700">{c.autor || 'Alguien'}</b>
+                  <span className="text-slate-400"> · {c.platform} · {c.fecha ? new Date(c.fecha).toLocaleString('es-DO') : ''}</span>
+                </span>
+                {c.respondido && <span className="font-semibold text-emerald-700">respondido</span>}
+              </div>
+              <div className="text-slate-800">{c.texto}</div>
+              {c.respuestas?.filter((x) => x.propia).map((x, i) => (
+                <div key={i} className="ml-3 text-slate-500">↳ {x.texto}</div>
+              ))}
+              {!c.respondido && (
+                <div className="mt-1 space-y-1">
+                  <div className="flex gap-1">
+                    <input className="flex-1 rounded border px-1.5 py-1 text-[11px]" placeholder="Escribe la respuesta pública…"
+                      value={texto[c.id] || ''} onChange={(e) => setTexto((t) => ({ ...t, [c.id]: e.target.value }))} />
+                    <Button size="sm" className="h-7 bg-emerald-600 px-2 text-[11px] text-white hover:bg-emerald-700"
+                      disabled={enviando === c.id || !(texto[c.id] || '').trim()} onClick={() => responder(c)}>
+                      {enviando === c.id ? 'Enviando…' : 'Responder'}
+                    </Button>
+                  </div>
+                  {datos.sugerida && !(texto[c.id] || '').trim() && (
+                    <button type="button" className="text-violet-700 underline"
+                      onClick={() => setTexto((t) => ({ ...t, [c.id]: datos.sugerida }))}>
+                      Usar: “{datos.sugerida}”
+                    </button>
+                  )}
+                  {aviso[c.id] && (
+                    <div className="text-red-700">
+                      {aviso[c.id].motivo === 'permiso'
+                        ? <>Facebook todavía no deja responder desde MotoFlow (falta el permiso pages_manage_engagement en el token). {c.enlace && <a className="underline" href={c.enlace} target="_blank" rel="noreferrer">Responder en Facebook</a>}</>
+                        : aviso[c.id].error || 'No se pudo responder.'}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VentasDeLaPromocion({ v }) {
   const vendidas = Number(v.vendidas || 0);
   const normal = Number(v.normal || 0);
@@ -117,6 +207,8 @@ export default function PromocionPublicar({ prefill = null }) {
   const [promos, setPromos] = useState([]);
   // Lo que se vendió del producto desde que salió cada promoción, por bundle.
   const [ventasDe, setVentasDe] = useState({});
+  // Los comentarios de Facebook/Instagram de cada promoción, leídos de la red.
+  const [comentariosDe, setComentariosDe] = useState({});
   const [cargando, setCargando] = useState(true);
   const [trabajando, setTrabajando] = useState(false);
   const [verAnteriores, setVerAnteriores] = useState(false);
@@ -242,6 +334,9 @@ export default function PromocionPublicar({ prefill = null }) {
     if (ids.length) {
       const { data: ventas } = await supabase.rpc('promo_ventas_de_promociones', { p_bundle_ids: ids });
       setVentasDe(Object.fromEntries((Array.isArray(ventas) ? ventas : []).map((v) => [v.bundle_id, v])));
+      // Lo más lento (va a Facebook/Instagram) va de último y tampoco bloquea.
+      const { data: com } = await supabase.functions.invoke('promo-comentarios', { body: { accion: 'listar', bundle_ids: ids } });
+      if (com?.ok) setComentariosDe(com.promos || {});
     }
   }, [verAnteriores]);
 
@@ -698,6 +793,9 @@ export default function PromocionPublicar({ prefill = null }) {
                 {p.existencia_confirmada ? ' · existencia confirmada' : ' · SIN confirmar existencia'}
               </div>
               {ventasDe[p.bundle_id] && <VentasDeLaPromocion v={ventasDe[p.bundle_id]} />}
+              {comentariosDe[p.bundle_id] && (
+                <ComentariosDeLaPromocion bundleId={p.bundle_id} datos={comentariosDe[p.bundle_id]} onRespondido={cargar} />
+              )}
               {p.estado === 'APROBADO' && !p.programada && (
                 <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
                   <span className="flex-1">Aprobada pero sin fecha: así no sale nunca.</span>
