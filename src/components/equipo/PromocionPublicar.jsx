@@ -193,7 +193,7 @@ export default function PromocionPublicar({ prefill = null }) {
   const cargar = useCallback(async () => {
     const [{ data: cuentas }, { data: panel }] = await Promise.all([
       supabase.from('social_accounts')
-        .select('id, platform, account_name, external_account_id, status, connected_at, publicacion_habilitada, verificado_at, verificacion_detalle'),
+        .select('id, platform, account_name, external_account_id, status, connected_at, publicacion_habilitada, verificado_at, verificacion_detalle, perfil_url:meta->>perfil_url'),
       supabase.rpc('promo_panel', { p_limite: verAnteriores ? 25 : 3 }),
     ]);
     setRedesEstado(cuentas || []);
@@ -716,8 +716,9 @@ export default function PromocionPublicar({ prefill = null }) {
                             target="_blank" rel="noreferrer" className="font-semibold text-amber-700 underline">
                             ponerlo público
                           </a>
-                        ) : d.external_url && (
-                          <a href={d.external_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver</a>
+                        ) : (d.external_url || (d.platform === 'tiktok' && d.estado === 'PUBLICADO' && indicadorDe.tiktok?.cuenta?.perfil_url)) && (
+                          // TikTok publicado desde la bandeja no deja enlace propio: lleva al perfil.
+                          <a href={d.external_url || indicadorDe.tiktok.cuenta.perfil_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver</a>
                         )}
                         {d.estado === 'FALLO' && (
                           <button type="button" className="text-amber-700 underline"
