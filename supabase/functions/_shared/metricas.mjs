@@ -51,7 +51,7 @@ export async function metricasFacebook({ fetchFn, token, id }) {
   // rechaza TODA la petición ("The value must be a valid insights metric").
   const datos = [];
   const errores = [];
-  for (const metrica of ['post_impressions_unique', 'post_impressions', 'post_clicks', 'post_reactions_by_type_total', 'post_media_view']) {
+  for (const metrica of ['post_total_media_view_unique', 'post_clicks', 'post_reactions_by_type_total', 'post_media_view']) {
     const r = await leer(fetchFn,
       `https://graph.facebook.com/${V_META}/${encodeURIComponent(id)}/insights?metric=${metrica}`, token);
     if (r.ok) datos.push(...(r.body?.data || []));
@@ -70,8 +70,9 @@ export async function metricasFacebook({ fetchFn, token, id }) {
     likes: base.ok ? num(base.body?.reactions?.summary?.total_count) : reaccionesIns,
     comments: base.ok ? num(base.body?.comments?.summary?.total_count) : null,
     shares: base.ok ? (num(base.body?.shares?.count) ?? 0) : null,   // Meta omite "shares" cuando es cero
-    reach: m.post_impressions_unique ?? null,
-    impressions: m.post_impressions ?? m.post_media_view ?? null,
+    // Meta retiró post_impressions* en 2025: el alcance es ahora quienes lo vieron.
+    reach: m.post_total_media_view_unique ?? null,
+    impressions: m.post_media_view ?? null,
     views: m.post_media_view ?? null,
     clicks: m.post_clicks ?? null,
     raw: { base: base.ok ? base.body : { error: base.error }, insights: ins.body, insights_errores: ins.error || null },
