@@ -122,7 +122,8 @@ async function mcp(url: string, token: string, method: string, params: any) {
   });
   const j = await r.json().catch(() => null);
   if (j?.error) throw new Error(`MCP ${method}: ${j.error.message}`);
-  return j?.result;
+  if (!j?.result) throw new Error(`MCP ${method}: HTTP ${r.status} ${JSON.stringify(j).slice(0, 200)}`);
+  return j.result;
 }
 
 async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string) {
@@ -178,6 +179,8 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
       '9. ESTA SEMANA ESTAN EN PROMOCION (el cliente probablemente vio el anuncio):',
       ...ctx.promociones.map((p: any) => `   - ${p.descripcion}${p.precio ? ` a RD$ ${Number(p.precio).toLocaleString('en-US')}` : ''}`),
       '   Si pregunta por una de estas, dale ESE precio y dile que esta en oferta.',
+      '   ESTAN DISPONIBLES (la existencia se confirmo al publicarlas): nunca',
+      '   digas que no tienes una pieza de esta lista.',
       '   No las menciones si pregunta por otra cosa.',
     ] : []),
     '10. Si la busqueda trae "piezas_en_la_vieja", esas estan en el ALMACEN VIEJO.',
@@ -268,15 +271,20 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
       try {
         const args = JSON.parse(c.function.arguments || '{}');
         const out = await mcp(mcpUrl, token, 'tools/call', { name: c.function.name, arguments: args });
-        resultado = out?.content?.[0]?.text || '{}';
+        // (30/09/2026) Un fallo del MCP llegaba como texto ("Error consultando
+        // MotoFlow: ...") o como respuesta sin result, y se guardaba igual que
+        // una busqueda vacia: Hermes contestaba "deja que te confirmo" con la
+        // pieza en el estante y nadie veia por que. Ahora el error queda escrito.
+        resultado = out?.content?.[0]?.text || JSON.stringify({ error: 'El MCP no devolvio resultado', crudo: out ?? null });
         try {
           const parsed = JSON.parse(resultado);
           usadas.push({ herramienta: c.function.name, argumentos: args, ...parsed });
-        } catch { usadas.push({ herramienta: c.function.name, argumentos: args }); }
+        } catch { usadas.push({ herramienta: c.function.name, argumentos: args, error: String(resultado).slice(0, 300) }); }
       } catch (e) {
         // El fallo se le DEVUELVE al modelo para que reaccione (pedir otro
         // dato, buscar distinto) en vez de romper la sugerencia entera.
         resultado = JSON.stringify({ error: String(e?.message || e) });
+        usadas.push({ herramienta: c.function.name, argumentos: (() => { try { return JSON.parse(c.function.arguments || '{}'); } catch { return {}; } })(), error: String(e?.message || e).slice(0, 300) });
       }
       mensajes.push({ role: 'tool', tool_call_id: c.id, content: resultado });
     }

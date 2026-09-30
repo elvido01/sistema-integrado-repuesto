@@ -126,7 +126,7 @@ $fn$;
 CREATE OR REPLACE FUNCTION public.mcp_buscar_piezas(p_texto text, p_limite integer DEFAULT 8)
 RETURNS json
 LANGUAGE plpgsql
-STABLE
+VOLATILE   -- escribe (registrar_busqueda): STABLE la rompia, ver hermes_busqueda_puede_anotar.sql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $fn$
