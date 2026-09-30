@@ -189,6 +189,22 @@ export default function PromocionPublicar({ prefill = null }) {
     [indicadores],
   );
 
+  // El "ver" de cada destino publicado.
+  //  · Historia de Facebook: facebook.com/<id de la historia> no abre nada
+  //    ("Este contenido no está disponible"); se ven desde las historias de la
+  //    página. Las viejas guardaron el enlace malo y la base no deja
+  //    reescribirlo (publicación confirmada): se corrige aquí, al mostrarlo.
+  //  · TikTok publicado desde la bandeja no deja enlace propio: el perfil.
+  const enlaceVer = (d) => {
+    if (d.platform === 'facebook' && d.placement === 'story' && d.estado === 'PUBLICADO') {
+      const pagina = indicadorDe.facebook?.cuenta?.external_account_id;
+      if (pagina) return `https://www.facebook.com/stories/${pagina}`;
+    }
+    if (d.external_url) return d.external_url;
+    if (d.platform === 'tiktok' && d.estado === 'PUBLICADO') return indicadorDe.tiktok?.cuenta?.perfil_url || null;
+    return null;
+  };
+
   // Sin tokens: esta pantalla solo necesita saber el estado.
   const cargar = useCallback(async () => {
     const [{ data: cuentas }, { data: panel }] = await Promise.all([
@@ -716,9 +732,8 @@ export default function PromocionPublicar({ prefill = null }) {
                             target="_blank" rel="noreferrer" className="font-semibold text-amber-700 underline">
                             ponerlo público
                           </a>
-                        ) : (d.external_url || (d.platform === 'tiktok' && d.estado === 'PUBLICADO' && indicadorDe.tiktok?.cuenta?.perfil_url)) && (
-                          // TikTok publicado desde la bandeja no deja enlace propio: lleva al perfil.
-                          <a href={d.external_url || indicadorDe.tiktok.cuenta.perfil_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver</a>
+                        ) : enlaceVer(d) && (
+                          <a href={enlaceVer(d)} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver</a>
                         )}
                         {d.estado === 'FALLO' && (
                           <button type="button" className="text-amber-700 underline"
