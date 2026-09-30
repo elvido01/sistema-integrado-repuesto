@@ -135,7 +135,24 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
   // Si la pantalla marco un comentario, el privado va por ahi. Es lo unico
   // que Meta deja hoy, y ademas no exige que el cliente haya escrito en las
   // ultimas 24h: el comentario mismo es el permiso.
-  const privadoPorComentario = String(message.raw_data?.privado_por_comentario || '').trim() || null;
+  //
+  // (30/09/2026) Salvo que DESPUES del comentario el cliente haya escrito por
+  // privado: entonces hay ventana de 24h y se contesta como mensaje normal.
+  // La extension marcaba el comentario igual, y la privada por comentario
+  // ya estaba gastada (la respuesta automatica de Business Suite la usa al
+  // comentar): Sander Arias pregunto por Messenger y la respuesta "NO SALIO".
+  let privadoPorComentario = String(message.raw_data?.privado_por_comentario || '').trim() || null;
+  if (privadoPorComentario) {
+    const { data: ultimo } = await supabase.from('sales_messages')
+      .select('message_type, created_at')
+      .eq('conversation_id', message.conversation_id)
+      .eq('sender_type', 'user')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const reciente = ultimo?.created_at && Date.now() - Date.parse(ultimo.created_at) < 24 * 3600 * 1000;
+    if (ultimo && ultimo.message_type !== 'comment' && reciente) privadoPorComentario = null;
+  }
 
   const sent = await sendMetaText(message.platform, senderId, recipientId, text.slice(0, 1000), token, privadoPorComentario);
   if (!sent.ok) {

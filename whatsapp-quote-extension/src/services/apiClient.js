@@ -987,6 +987,21 @@ async function ultimoComentarioDe(conversationId, headers) {
   const [fila] = await fetchJson(url.toString(), { headers }).catch(() => []);
   if (!fila?.external_message_id) return null;
 
+  // (30/09/2026) Si despues del comentario escribio por privado, se le
+  // contesta por privado (hay ventana de 24h): ni respuesta privada al
+  // comentario (Business Suite suele gastarla) ni comentario publico.
+  const ultimo = new URL(`${SUPABASE_URL}/rest/v1/sales_messages`);
+  ultimo.searchParams.set('select', 'message_type,created_at');
+  ultimo.searchParams.set('conversation_id', `eq.${conversationId}`);
+  ultimo.searchParams.set('sender_type', 'eq.user');
+  ultimo.searchParams.set('order', 'created_at.desc');
+  ultimo.searchParams.set('limit', '1');
+  const [masNuevo] = await fetchJson(ultimo.toString(), { headers }).catch(() => []);
+  if (masNuevo && masNuevo.message_type !== 'comment'
+      && Date.now() - new Date(masNuevo.created_at) < 24 * 3600 * 1000) {
+    return null;
+  }
+
   // La respuesta privada de un comentario se gasta una sola vez y caduca a
   // los 7 dias. Mientras siga disponible es la buena: llega al buzon y abre
   // 24h para conversar, en vez de quedarse en un comentario publico.
