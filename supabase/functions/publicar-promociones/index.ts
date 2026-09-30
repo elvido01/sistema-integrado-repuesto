@@ -24,6 +24,72 @@ import { publicarDestino } from '../_shared/adaptadores.mjs';
 import { cuentaConAcceso } from '../_shared/cuentaSocial.mjs';
 import { privacidadVideoYoutube } from '../_shared/youtube.mjs';
 import { estadoEnvioTikTok } from '../_shared/tiktok.mjs';
+import { medirDestino } from '../_shared/metricas.mjs';
+
+// ── LOS NÚMEROS ─────────────────────────────────────────────────────────
+// Metricool dejó de traerlos el 28/09/2026: MotoFlow mide lo que publicó.
+// Cada 30 minutos (minutos :07 y :37, para no caer en la misma ronda que el
+// vigilante de :00/:05…), las publicaciones de los últimos 14 días. Las
+// historias de Instagram, solo sus primeras 24 h: después la API ya no da nada.
+// Una fila por publicación y por DÍA en social_post_metrics (origen
+// 'motoflow_api'): se actualiza durante el día, no se apila cada media hora.
+async function medirPublicaciones(sb: any) {
+  const min = new Date().getUTCMinutes();
+  if (min !== 7 && min !== 37) return 0;
+  const hace14 = new Date(Date.now() - 14 * 864e5).toISOString();
+  const hace1 = new Date(Date.now() - 864e5).toISOString();
+  const { data: destinos, error } = await sb.from('hermes_publication_targets')
+    .select('id, tenant_id, platform, placement, external_post_id, published_at')
+    .eq('status', 'published')
+    .in('platform', ['facebook', 'instagram', 'youtube'])
+    .not('external_post_id', 'is', null)
+    .gte('published_at', hace14)
+    .order('published_at', { ascending: false })
+    .limit(60);
+  if (error || !destinos?.length) return 0;
+
+  const tokens = new Map();
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
+  let medidos = 0;
+  for (const d of destinos) {
+    if (d.platform === 'facebook' && d.placement === 'story') continue;   // la API no da números
+    if (d.platform === 'instagram' && d.placement === 'story' && d.published_at < hace1) continue;
+    const clave = `${d.tenant_id}:${d.platform}`;
+    if (!tokens.has(clave)) tokens.set(clave, await cuentaDe(sb, d.tenant_id, d.platform));
+    const cuenta = tokens.get(clave);
+    if (!cuenta?.token) continue;
+
+    const { data: post } = await sb.from('social_posts').select('id')
+      .eq('tenant_id', d.tenant_id).eq('platform', d.platform).eq('external_post_id', d.external_post_id)
+      .limit(1).maybeSingle();
+    if (!post?.id) continue;
+
+    let m;
+    try {
+      m = await medirDestino({ fetchFn: fetch, token: cuenta.token, platform: d.platform, placement: d.placement, id: d.external_post_id });
+    } catch (e) {
+      console.error('[medidor]', d.platform, d.external_post_id, e?.message || e);
+      continue;
+    }
+    if (!m?.ok) { if (m) console.error('[medidor]', d.platform, d.external_post_id, m.error); continue; }
+
+    const fila = {
+      tenant_id: d.tenant_id, post_id: post.id, captured_at: new Date().toISOString(),
+      snapshot_date: hoy, origen: 'motoflow_api',
+      views: m.views ?? null, likes: m.likes ?? null, comments: m.comments ?? null,
+      shares: m.shares ?? null, saves: m.saves ?? null, reach: m.reach ?? null,
+      impressions: m.impressions ?? null, raw_data: m.raw ?? null,
+    };
+    const { data: ya } = await sb.from('social_post_metrics').select('id')
+      .eq('post_id', post.id).eq('origen', 'motoflow_api').eq('snapshot_date', hoy).limit(1).maybeSingle();
+    const { error: e2 } = ya?.id
+      ? await sb.from('social_post_metrics').update(fila).eq('id', ya.id).select('id')
+      : await sb.from('social_post_metrics').insert(fila).select('id');
+    if (e2) console.error('[medidor] no se guardó', d.external_post_id, e2.message);
+    else medidos += 1;
+  }
+  return medidos;
+}
 
 // Cada cuántos minutos se vuelve a preguntar por los Shorts privados. Cada
 // pregunta cuesta 1 unidad de las 10.000 diarias.
@@ -134,6 +200,7 @@ Deno.serve(async () => {
 
   // Antes de publicar lo nuevo, se mira si el dueño ya abrió lo privado.
   const vigilados = await vigilarPrivadosYoutube(sb);
+  const medidos = await medirPublicaciones(sb);
 
   const { data: trabajos, error } = await sb.rpc('promo_reclamar', { p_worker: WORKER, p_limite: 5 });
   if (error) {
@@ -141,7 +208,7 @@ Deno.serve(async () => {
     return json({ ok: false, error: error.message }, 500);
   }
   if (!Array.isArray(trabajos) || trabajos.length === 0) {
-    return json({ ok: true, trabajos: 0, vigilados });
+    return json({ ok: true, trabajos: 0, vigilados, medidos });
   }
 
   const informe = [];
