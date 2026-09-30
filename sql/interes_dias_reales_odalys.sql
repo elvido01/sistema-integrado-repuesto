@@ -178,7 +178,7 @@ BEGIN
       END AS ult_int_venc,
       MAX(p.tasa_interes) AS tasa,
       -- 30 = mes comercial (prestamos nuevos) · 365 = como siempre (los viejos)
-      MAX(COALESCE(p.base_interes_dias, 365), v_tenant) AS base_dias
+      MAX(COALESCE(p.base_interes_dias, 365)) AS base_dias
     FROM public.prestamos p
     JOIN public.prestamo_cuotas q ON q.prestamo_id = p.id AND q.tenant_id = v_tenant
     WHERE p.tenant_id = v_tenant
