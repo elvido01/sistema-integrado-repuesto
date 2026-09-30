@@ -288,6 +288,12 @@ async function handleMessagingEvent(supabase: any, objectType: string, platform:
   const externalConversationId = `${platform}:${accountExternalId}:${senderId}`;
   const intent = detectBasicIntent(text);
 
+  // (30/09/2026) El mensaje privado no trae el nombre, y aqui se escribia el
+  // id numerico encima del que ya habia puesto el comentario ("Sander Arias"
+  // pasaba a "28748689988102825"). Un nombre de verdad no se pisa; si no hay,
+  // se le pide a Meta el del perfil, y el numero queda solo de ultimo recurso.
+  const customerName = await nombreDelCliente(supabase, account, platform, externalConversationId, senderId);
+
   const { data: conversation, error: convError } = await supabase
     .from('sales_conversations')
     .upsert({
@@ -295,7 +301,7 @@ async function handleMessagingEvent(supabase: any, objectType: string, platform:
       channel_id: account.channel_id || null,
       platform,
       external_conversation_id: externalConversationId,
-      customer_name: senderId,
+      customer_name: customerName,
       customer_external_id: senderId,
       status: 'nuevo',
       intent,
@@ -559,6 +565,28 @@ async function markEvent(supabase: any, id: string | null, patch: Record<string,
   } catch (error) {
     console.warn('[meta-webhook] no se pudo actualizar log', error?.message || error);
   }
+}
+
+async function nombreDelCliente(supabase: any, account: any, platform: string, externalConversationId: string, senderId: string) {
+  const { data: previa } = await supabase.from('sales_conversations')
+    .select('customer_name')
+    .eq('tenant_id', account.tenant_id).eq('platform', platform)
+    .eq('external_conversation_id', externalConversationId)
+    .maybeSingle();
+  const actual = String(previa?.customer_name || '').trim();
+  if (actual && actual !== senderId && !/^\d{6,}$/.test(actual)) return actual;
+
+  if (account?.access_token) {
+    try {
+      const campos = platform === 'instagram' ? 'username,name' : 'name';
+      const r = await fetch(`https://graph.facebook.com/v22.0/${encodeURIComponent(senderId)}?fields=${campos}`,
+        { headers: { Authorization: `Bearer ${account.access_token}` } });
+      const p = await r.json().catch(() => null);
+      const nombre = String(p?.name || p?.username || '').trim();
+      if (nombre) return nombre;
+    } catch { /* sin nombre: el numero sirve igual para contestar */ }
+  }
+  return actual || senderId;
 }
 
 function platformFromObject(objectType: string): 'instagram' | 'facebook' {
