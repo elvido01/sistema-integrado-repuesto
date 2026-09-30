@@ -24,6 +24,16 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
+
+// La salida (nunca el token entero: solo `corto()`) queda tambien en
+// scripts/.meta-token-ultimo.log, para revisarla sin copiar la terminal.
+import { appendFileSync, writeFileSync } from 'node:fs';
+const LOG = path.join(RAIZ, 'scripts/.meta-token-ultimo.log');
+try { writeFileSync(LOG, `${new Date().toISOString()}\n`); } catch { /* sin log no pasa nada */ }
+const logOriginal = console.log;
+console.log = (...a) => { logOriginal(...a); try { appendFileSync(LOG, `${a.join(' ')}\n`); } catch { /* idem */ } };
+process.on('uncaughtException', (e) => { console.log(`\n✗ ERROR: ${e?.message || e}`); process.exit(1); });
+process.on('unhandledRejection', (e) => { console.log(`\n✗ ERROR: ${e?.message || e}`); process.exit(1); });
 const require_ = createRequire(path.join(RAIZ, 'package.json'));
 const { createClient } = require_('@supabase/supabase-js');
 

@@ -83,3 +83,4 @@ whatsapp-quote-extension/motoflow-whatsapp-extension.zip
 scripts/vault-sync/.estado.json
 vault/**/*.conflicto-*.md
 .latido-*
+scripts/.meta-token-ultimo.log
