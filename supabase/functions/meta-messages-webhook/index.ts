@@ -87,11 +87,25 @@ async function handleWebhook(body: any) {
     //
     // Meta no los manda en entry.messaging sino en entry.changes, que es otra
     // forma con otro contenido. Por eso el bucle de mensajes no los tocaba.
+    //
+    // (30/09/2026) Facebook los manda distinto: field 'feed', y dentro
+    // item='comment' con comment_id/message/post_id. Se traducen a la forma
+    // de Instagram para que ambos sigan el mismo camino. Del feed solo
+    // interesan los comentarios nuevos: reacciones, ediciones y publicaciones
+    // propias también llegan por ahí y no son de nadie que esté preguntando.
     const comentarios = (Array.isArray(entry?.changes) ? entry.changes : [])
-      .filter((c: any) => c?.field === 'comments' && c?.value);
+      .map((c: any) => {
+        if (c?.field === 'comments' && c?.value) return c.value;
+        const v = c?.value;
+        if (c?.field === 'feed' && v?.item === 'comment' && v?.verb === 'add') {
+          return { id: v.comment_id, from: v.from, text: v.message, media: { id: v.post_id }, parent_id: v.parent_id, feed: v };
+        }
+        return null;
+      })
+      .filter(Boolean);
 
-    for (const c of comentarios) {
-      await handleCommentEvent(supabase, objectType, platform, entryId, c.value);
+    for (const valor of comentarios) {
+      await handleCommentEvent(supabase, objectType, platform, entryId, valor);
     }
 
     if (!events.length && !comentarios.length) {
@@ -632,11 +646,27 @@ function extractMedia(message: any) {
     video: '[Video]',
     file: '[Archivo]',
     sticker: '[Sticker]',
+    share: '[Publicación compartida]',
+    ig_reel: '[Reel compartido]',
+    reel: '[Reel compartido]',
+    story_mention: '[Te mencionó en su historia]',
+    template: '[Mensaje con botones]',
   };
+  // (30/09/2026) Un adjunto de tipo que el CHECK de sales_messages no conoce
+  // (template, share, ig_reel…) hacía fallar el guardado y el mensaje se
+  // perdía entero. Lo que no está en la lista entra como 'unknown' con su
+  // etiqueta: mejor un mensaje raro en la bandeja que uno que no llega.
+  const conocidos = ['image', 'audio', 'video', 'document', 'sticker'];
+  const tipo = rawType === 'file' ? 'document' : rawType;
+  // Las plantillas (bots tipo ManyChat) traen el texto en el título.
+  const titulo = attachment?.payload?.generic?.elements?.[0]?.title;
   return {
-    type: rawType === 'file' ? 'document' : rawType,
-    url: attachment?.payload?.url || null,
-    label: labels[rawType] || '[Adjunto]',
+    type: conocidos.includes(tipo) ? tipo : 'unknown',
+    url: conocidos.includes(tipo) ? (attachment?.payload?.url || null) : null,
+    // Del reel o la publicación compartida se guarda el enlace en el texto,
+    // no se descarga: es lo que el vendedor necesita para ver qué le mandaron.
+    label: [labels[rawType] || '[Adjunto]', titulo,
+            conocidos.includes(tipo) ? null : attachment?.payload?.url].filter(Boolean).join(' '),
   };
 }
 
