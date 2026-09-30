@@ -46,6 +46,21 @@ Deno.serve(async (req) => {
   try { cuerpo = await req.json(); } catch { /* vacío */ }
 
   const base = Deno.env.get('SUPABASE_URL') || '';
+
+  // Solo preguntar en qué quedó un envío anterior, sin mandar otro video.
+  if (cuerpo.publish_id) {
+    const sbC = createClient(base, llave, { auth: { autoRefreshToken: false, persistSession: false } });
+    let c;
+    try {
+      c = await cuentaConAcceso({ sb: sbC, fetchFn: fetch, tenantId: cuerpo.tenant_id || MORLA, platform: 'tiktok', env: (k: string) => Deno.env.get(k) });
+    } catch (e) {
+      return json({ ok: false, paso: 'acceso', error: e?.message || String(e) });
+    }
+    if (!c) return json({ ok: false, paso: 'cuenta', error: 'No hay cuenta de TikTok conectada.' });
+    const s = await estadoEnvioTikTok({ fetchFn: fetch, token: c.token, publishId: String(cuerpo.publish_id) });
+    return json({ ok: s.ok, estado: s.estado || null, motivo: s.motivo || null, error: s.ok ? null : s.error });
+  }
+
   const video = String(cuerpo.video_url || '');
   if (!video.startsWith(`${base}/storage/`)) {
     return json({ ok: false, error: 'El video tiene que estar en el almacenamiento de MotoFlow.' }, 400);
