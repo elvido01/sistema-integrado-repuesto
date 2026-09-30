@@ -43,7 +43,7 @@ const salir = (msg) => { console.log(`\n✗ ${msg}\n`); process.exit(1); };
 
 const args = process.argv.slice(2);
 const forzar = args.includes('--forzar');
-const nuevo = args.find((a) => !a.startsWith('--'));
+let nuevo = args.find((a) => !a.startsWith('--'));
 
 if (!nuevo) {
   console.log(`
@@ -60,9 +60,29 @@ if (!nuevo) {
 
 // ── 1. ¿QUÉ ES ESTE TOKEN? ─────────────────────────────────
 console.log('\n═══ EL TOKEN NUEVO ═══');
-const dbgN = await api(`/debug_token?input_token=${encodeURIComponent(nuevo)}`, nuevo);
-const n = dbgN.body?.data;
+let dbgN = await api(`/debug_token?input_token=${encodeURIComponent(nuevo)}`, nuevo);
+let n = dbgN.body?.data;
 if (!n?.is_valid) salir(`no sirve: ${dbgN.body?.error?.message || JSON.stringify(dbgN.body)}`);
+
+// (30/09/2026) Si pegan el token de USUARIO se saca aqui el de la pagina, que
+// hereda sus permisos. Cambiar el desplegable del Explorador a "token de
+// pagina" fallo tres veces seguidas: el paso sobraba.
+if (n.type === 'USER') {
+  const { data: fbCanal } = await supabase.from('sales_channels')
+    .select('external_account_id, account_name').eq('platform', 'facebook').eq('status', 'active')
+    .limit(1).maybeSingle();
+  const cuentas = await api('/me/accounts?fields=id,name,access_token&limit=100', nuevo);
+  const pagina = (cuentas.body?.data || []).find((p) => String(p.id) === String(fbCanal?.external_account_id));
+  if (!pagina?.access_token) {
+    salir(`es un token de usuario y no alcanza la página ${fbCanal?.account_name || ''} (${fbCanal?.external_account_id}).
+    Al generarlo, en la ventana de Facebook marca esa página.`);
+  }
+  console.log(`  (era de usuario: se sacó el de la página ${pagina.name})`);
+  nuevo = pagina.access_token;
+  dbgN = await api(`/debug_token?input_token=${encodeURIComponent(nuevo)}`, nuevo);
+  n = dbgN.body?.data;
+  if (!n?.is_valid) salir(`el de la página no sirve: ${dbgN.body?.error?.message || JSON.stringify(dbgN.body)}`);
+}
 
 console.log(`  app   : ${n.application} (${n.app_id})`);
 console.log(`  tipo  : ${n.type}`);
