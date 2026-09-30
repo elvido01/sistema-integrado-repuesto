@@ -84,6 +84,25 @@ const METRICAS = [
 ];
 const num = (n) => Number(n || 0).toLocaleString('es-DO');
 
+// ¿Se movió el producto más de lo que se mueve solo? Vendidas desde que salió
+// la promoción (7 días como mucho) contra el promedio de los 30 días previos
+// en ese mismo tiempo. No dice quién vino por la promoción: eso no se sabe
+// sin preguntarle al cajero, y no se le pregunta.
+function VentasDeLaPromocion({ v }) {
+  const vendidas = Number(v.vendidas || 0);
+  const normal = Number(v.normal || 0);
+  const dias = Number(v.dias || 0);
+  const tiempo = dias < 1 ? 'en sus primeras horas' : `en ${dias.toLocaleString('es-DO')} días`;
+  return (
+    <div className={`mt-0.5 text-[11px] ${vendidas > normal ? 'text-emerald-700' : 'text-slate-600'}`}>
+      🛒 <b>{num(vendidas)}</b> vendidas {tiempo}
+      {Number(v.monto) > 0 && ` (${rd(v.monto)})`}
+      <span className="text-slate-500"> · lo normal en ese tiempo: {normal.toLocaleString('es-DO')}</span>
+      {vendidas > normal && <b> · se vendió más de lo normal</b>}
+    </div>
+  );
+}
+
 /** El precio, tal como hay que poder encontrarlo dentro del texto. */
 const precioEnTexto = (texto, precio) => {
   if (!precio) return true;
@@ -96,6 +115,8 @@ export default function PromocionPublicar({ prefill = null }) {
 
   const [redesEstado, setRedesEstado] = useState([]);
   const [promos, setPromos] = useState([]);
+  // Lo que se vendió del producto desde que salió cada promoción, por bundle.
+  const [ventasDe, setVentasDe] = useState({});
   const [cargando, setCargando] = useState(true);
   const [trabajando, setTrabajando] = useState(false);
   const [verAnteriores, setVerAnteriores] = useState(false);
@@ -213,8 +234,15 @@ export default function PromocionPublicar({ prefill = null }) {
       supabase.rpc('promo_panel', { p_limite: verAnteriores ? 25 : 3 }),
     ]);
     setRedesEstado(cuentas || []);
-    setPromos(Array.isArray(panel) ? panel : []);
+    const lista = Array.isArray(panel) ? panel : [];
+    setPromos(lista);
     setCargando(false);
+    // Aparte y sin bloquear: si falla, el historial se ve igual, sin ventas.
+    const ids = lista.map((p) => p.bundle_id).filter(Boolean);
+    if (ids.length) {
+      const { data: ventas } = await supabase.rpc('promo_ventas_de_promociones', { p_bundle_ids: ids });
+      setVentasDe(Object.fromEntries((Array.isArray(ventas) ? ventas : []).map((v) => [v.bundle_id, v])));
+    }
   }, [verAnteriores]);
 
   useEffect(() => { cargar(); }, [cargar]);
@@ -638,7 +666,8 @@ export default function PromocionPublicar({ prefill = null }) {
       {/* ── Paso 4: el historial, con lo que pasó de verdad ── */}
       <h3 className="mb-1 text-xs font-bold text-slate-700">Paso 4 · Historial y resultados</h3>
       <p className="mb-2 text-[10px] text-slate-500">
-        Los números los trae Metricool cuando pasa por las cuentas; no son al instante. Las historias no traen números.
+        MotoFlow mide cada 30 minutos; Facebook tarda unas horas en dar sus números. Las historias de Facebook y TikTok no traen números.
+        "Vendidas" cuenta todas las ventas del producto (tienda incluida) en los 7 días después de publicar, contra lo que vende normalmente en ese tiempo.
       </p>
       {promos.length === 0 && <p className="text-xs text-slate-500">Todavía no hay ninguna.</p>}
       <div className="space-y-2">
@@ -668,6 +697,7 @@ export default function PromocionPublicar({ prefill = null }) {
                 {p.programada ? `programada ${new Date(p.programada).toLocaleString('es-DO')}` : 'sin programar'}
                 {p.existencia_confirmada ? ' · existencia confirmada' : ' · SIN confirmar existencia'}
               </div>
+              {ventasDe[p.bundle_id] && <VentasDeLaPromocion v={ventasDe[p.bundle_id]} />}
               {p.estado === 'APROBADO' && !p.programada && (
                 <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
                   <span className="flex-1">Aprobada pero sin fecha: así no sale nunca.</span>
