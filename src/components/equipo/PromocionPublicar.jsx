@@ -178,6 +178,24 @@ function ComentariosDeLaPromocion({ bundleId, datos, onRespondido }) {
   );
 }
 
+// Cuánta gente escribió por la promoción en sus primeros 7 días: comentó en
+// la publicación o nombró la pieza por cualquier canal (sql/chats_de_cada_promocion.sql).
+// Es el paso entre "la vieron" (métricas) y "se vendió" (ventas).
+const NOMBRE_CANAL = { whatsapp: 'WhatsApp', facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok' };
+function ChatsDeLaPromocion({ c }) {
+  const n = Number(c.chats || 0);
+  const canales = Object.entries(c.por_canal || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${NOMBRE_CANAL[k] || k} ${v}`)
+    .join(' · ');
+  return (
+    <div className={`mt-0.5 text-[11px] ${n > 0 ? 'text-sky-700' : 'text-slate-500'}`}>
+      🙋 <b>{num(n)}</b> {n === 1 ? 'persona preguntó' : 'personas preguntaron'} por ella
+      {canales && <span> ({canales})</span>}
+    </div>
+  );
+}
+
 function VentasDeLaPromocion({ v }) {
   const vendidas = Number(v.vendidas || 0);
   const normal = Number(v.normal || 0);
@@ -207,6 +225,8 @@ export default function PromocionPublicar({ prefill = null }) {
   const [promos, setPromos] = useState([]);
   // Lo que se vendió del producto desde que salió cada promoción, por bundle.
   const [ventasDe, setVentasDe] = useState({});
+  // Cuántas conversaciones preguntaron por cada promoción, por canal.
+  const [chatsDe, setChatsDe] = useState({});
   // Los comentarios de Facebook/Instagram de cada promoción, leídos de la red.
   const [comentariosDe, setComentariosDe] = useState({});
   const [cargando, setCargando] = useState(true);
@@ -332,8 +352,12 @@ export default function PromocionPublicar({ prefill = null }) {
     // Aparte y sin bloquear: si falla, el historial se ve igual, sin ventas.
     const ids = lista.map((p) => p.bundle_id).filter(Boolean);
     if (ids.length) {
-      const { data: ventas } = await supabase.rpc('promo_ventas_de_promociones', { p_bundle_ids: ids });
+      const [{ data: ventas }, { data: chats }] = await Promise.all([
+        supabase.rpc('promo_ventas_de_promociones', { p_bundle_ids: ids }),
+        supabase.rpc('promo_chats_de_promociones', { p_bundle_ids: ids }),
+      ]);
       setVentasDe(Object.fromEntries((Array.isArray(ventas) ? ventas : []).map((v) => [v.bundle_id, v])));
+      setChatsDe(Object.fromEntries((Array.isArray(chats) ? chats : []).map((c) => [c.bundle_id, c])));
       // Lo más lento (va a Facebook/Instagram) va de último y tampoco bloquea.
       const { data: com } = await supabase.functions.invoke('promo-comentarios', { body: { accion: 'listar', bundle_ids: ids } });
       if (com?.ok) setComentariosDe(com.promos || {});
@@ -792,6 +816,7 @@ export default function PromocionPublicar({ prefill = null }) {
                 {p.programada ? `programada ${new Date(p.programada).toLocaleString('es-DO')}` : 'sin programar'}
                 {p.existencia_confirmada ? ' · existencia confirmada' : ' · SIN confirmar existencia'}
               </div>
+              {chatsDe[p.bundle_id] && <ChatsDeLaPromocion c={chatsDe[p.bundle_id]} />}
               {ventasDe[p.bundle_id] && <VentasDeLaPromocion v={ventasDe[p.bundle_id]} />}
               {comentariosDe[p.bundle_id] && (
                 <ComentariosDeLaPromocion bundleId={p.bundle_id} datos={comentariosDe[p.bundle_id]} onRespondido={cargar} />
