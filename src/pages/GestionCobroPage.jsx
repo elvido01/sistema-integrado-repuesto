@@ -28,6 +28,7 @@ import { usePanels } from '@/contexts/PanelContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -154,7 +155,7 @@ const addMonthsClamped = (date, months) => {
 //   n_meses * round(cap_base * tasa/100) + round(cap_base * tasa/100 * 12 * días/365)
 // Sin esto, "Monto vencido" mostraba solo las cuotas (2,488.93) mientras el
 // Recibo de Pago mostraba el atraso real (3,072.38) — caso HECTOR PEGUERO.
-const interesCorrientePendiente = (prestamo, cuotas = []) => {
+const interesCorrientePendiente = (prestamo, cuotas = [], diasReales = false) => {
   if (!hasInteresCorrienteEquivalente(prestamo, cuotas)) return 0;
   const capBase = cuotas.reduce((sum, q) => (
     sum + Math.max(0, Number(q.capital || 0) - Number(q.capital_pagado || 0))
@@ -172,6 +173,14 @@ const interesCorrientePendiente = (prestamo, cuotas = []) => {
   while (nMeses > 0 && addMonthsClamped(base, nMeses) > hoy) nMeses -= 1;
   const diasPart = Math.max(0, Math.round((hoy - addMonthsClamped(base, nMeses)) / 86400000));
   const round2 = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
+  // Empresas con config_empresa.interes_dias_reales (solo Odalys, 30/09/2026):
+  // todos los días reales a tasa diaria de 4 decimales, como el SiiF. Misma
+  // regla que public.interes_corriente() (sql/interes_dias_reales_odalys.sql).
+  if (diasReales) {
+    const dias = Math.max(0, Math.round((hoy - base) / 86400000));
+    const diaria = Math.round(capBase * tasa * 12 / 365 * 10000) / 10000;
+    return round2(diaria * dias);
+  }
   return nMeses * round2(capBase * tasa) + round2((capBase * tasa * 12 * diasPart) / 365);
 };
 
@@ -266,6 +275,7 @@ const PAGE_SIZE = 10;
 
 const GestionCobroPage = () => {
   const { toast } = useToast();
+  const { tenantId } = useAuth();
   const { openPanel } = usePanels();
   const [rows, setRows] = useState([]);
   const [gestiones, setGestiones] = useState([]);
@@ -409,8 +419,11 @@ const GestionCobroPage = () => {
       );
       // Monto del interés corriente por préstamo (para sumarlo al monto vencido,
       // igual que la fila >>INTERES<< del Recibo de Pago)
+      const { data: cfgInteres } = await supabase.from('config_empresa')
+        .select('interes_dias_reales').eq('tenant_id', tenantId).maybeSingle();
+      const diasReales = !!cfgInteres?.interes_dias_reales;
       const interesCorrientePorPrestamo = new Map(
-        prestamos.map((p) => [p.id, interesCorrientePendiente(p, cuotasDataPorPrestamo[p.id] || [])])
+        prestamos.map((p) => [p.id, interesCorrientePendiente(p, cuotasDataPorPrestamo[p.id] || [], diasReales)])
       );
       const activePrestamos = prestamos.filter((p) => (
         prestamosConVencidas.has(p.id)
@@ -538,7 +551,7 @@ const GestionCobroPage = () => {
       }).filter(Boolean);
 
       return { rows: built, gestiones: gestionesData };
-  }, [loadGestiones]);
+  }, [loadGestiones, tenantId]);
 
   const cargar = useCallback(async () => {
     const token = loadTokenRef.current + 1;
