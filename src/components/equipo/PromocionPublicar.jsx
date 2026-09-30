@@ -43,7 +43,12 @@ const REDES = [
   { platform: 'instagram', placement: 'story', nombre: 'Instagram · historia', media: 'imagen_historia' },
   { platform: 'tiktok', placement: 'reel', nombre: 'TikTok · video', media: 'video' },
   { platform: 'youtube', placement: 'short', nombre: 'YouTube · Short', media: 'video' },
+  // A MANO: WhatsApp no tiene API para los Estados. No va al publicador: la
+  // imagen baja sola a la carpeta de la PC (scripts/estados-whatsapp-pc.mjs),
+  // el dueño la sube a su Estado y marca "Ya lo publiqué" en el historial.
+  { platform: 'whatsapp', placement: 'estado', nombre: 'WhatsApp · estado (a mano)', media: 'imagen_historia', manual: true },
 ];
+const ES_MANUAL = new Set(REDES.filter((r) => r.manual).map((r) => `${r.platform}:${r.placement}`));
 
 const COLOR_ESTADO = {
   PUBLICADO: 'bg-emerald-100 text-emerald-800 border-emerald-300',
@@ -257,11 +262,13 @@ export default function PromocionPublicar({ prefill = null }) {
     }
   };
 
+  // Los que publica el servidor. El Estado de WhatsApp va aparte (a mano).
   const destinos = useMemo(
-    () => REDES.filter((r) => elegidos.includes(`${r.platform}:${r.placement}`))
+    () => REDES.filter((r) => !r.manual && elegidos.includes(`${r.platform}:${r.placement}`))
       .map((r) => ({ platform: r.platform, placement: r.placement })),
     [elegidos],
   );
+  const conEstadoWhatsapp = elegidos.some((c) => ES_MANUAL.has(c));
 
   const plataformasElegidas = useMemo(() => [...new Set(destinos.map((d) => d.platform))], [destinos]);
 
@@ -271,7 +278,7 @@ export default function PromocionPublicar({ prefill = null }) {
     if (!producto) p.push('Falta elegir la pieza.');
     else if (!existenciaOk) p.push('Falta marcar "Fui al estante y la pieza está".');
     if (!titulo.trim()) p.push('Falta el título.');
-    if (!destinos.length) p.push('No hay ni un destino elegido.');
+    if (!destinos.length) p.push('Elige al menos una red además del Estado de WhatsApp.');
     plataformasElegidas.forEach((plat) => {
       if (!textos[plat]?.trim()) p.push(`Falta el texto de ${plat}.`);
       else if (!precioEnTexto(textos[plat], precio)) p.push(`El texto de ${plat} no dice el precio.`);
@@ -279,8 +286,9 @@ export default function PromocionPublicar({ prefill = null }) {
     if (destinos.some((d) => d.placement === 'feed') && !media.imagen_feed) p.push('Falta la imagen del feed.');
     if (destinos.some((d) => d.placement === 'story') && !media.imagen_historia) p.push('Falta la imagen de la historia.');
     if (destinos.some((d) => ['reel', 'short'].includes(d.placement)) && !media.video) p.push('Falta el video vertical.');
+    if (conEstadoWhatsapp && !media.imagen_historia && !media.video) p.push('Para el Estado de WhatsApp falta la imagen de la historia o el video.');
     return p;
-  }, [producto, existenciaOk, titulo, destinos, plataformasElegidas, textos, precio, media]);
+  }, [producto, existenciaOk, titulo, destinos, conEstadoWhatsapp, plataformasElegidas, textos, precio, media]);
 
   const limpiar = () => {
     setBundle(null); setProducto(null); setTitulo(''); setBusqueda('');
@@ -319,6 +327,15 @@ export default function PromocionPublicar({ prefill = null }) {
         if (error) throw error;
         id = data.bundle_id;
         setBundle(id);
+      }
+      // El Estado de WhatsApp: se apunta para que la PC baje la imagen a la
+      // carpeta. Repetirlo no duplica (la base lo ignora).
+      if (conEstadoWhatsapp) {
+        const { error } = await supabase.rpc('promo_whatsapp_pedir', {
+          p_bundle_id: id, p_titulo: titulo.trim(),
+          p_imagen: media.imagen_historia || null, p_video: media.video || null,
+        });
+        if (error) throw error;
       }
       const pasos = [
         ['promo_confirmar_existencia', { p_bundle_id: id }],
@@ -662,6 +679,31 @@ export default function PromocionPublicar({ prefill = null }) {
                 </div>
               )}
               <div className="mt-1 grid gap-1 md:grid-cols-2">
+                {p.whatsapp_estado && (
+                  <div className="rounded bg-slate-50 px-2 py-1 text-[11px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-700">whatsapp · estado</span>
+                      <span className="flex items-center gap-2">
+                        {p.whatsapp_estado.estado === 'PENDIENTE' && (
+                          <button type="button" disabled={trabajando} className="font-semibold text-emerald-700 underline"
+                            onClick={() => paso('promo_whatsapp_publicado', { p_bundle_id: p.bundle_id }, 'Estado de WhatsApp marcado como publicado')}>
+                            ya lo publiqué
+                          </button>
+                        )}
+                        <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${COLOR_ESTADO[p.whatsapp_estado.estado === 'PUBLICADO' ? 'PUBLICADO' : 'EN TU TIKTOK'] || ''}`}>
+                          {p.whatsapp_estado.estado === 'PUBLICADO' ? 'PUBLICADO' : 'A MANO'}
+                        </span>
+                      </span>
+                    </div>
+                    {p.whatsapp_estado.estado === 'PENDIENTE' && (
+                      <div className="mt-0.5 text-[10px] text-fuchsia-800">
+                        {p.whatsapp_estado.archivo
+                          ? <>En tu PC: <b>C:\RepuestosMorla\Publicaciones\Pendientes\{p.whatsapp_estado.archivo}</b>. Súbela a tu Estado y pulsa "ya lo publiqué".</>
+                          : 'La imagen todavía no bajó a la carpeta de la PC (se descarga en menos de un minuto si el programa está abierto).'}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {(p.destinos || []).map((d) => (
                   <div key={d.id} className="rounded bg-slate-50 px-2 py-1 text-[11px]">
                     <div className="flex items-center justify-between gap-2">
