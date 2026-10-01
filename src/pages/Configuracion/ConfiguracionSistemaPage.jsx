@@ -213,6 +213,10 @@ const ConfiguracionSistemaPage = () => {
                 ...formData,
                 limpiar_ordenes_compra_auto: false,
                 modo_limpieza_orden: 'restar',
+                // El menú de préstamos cuelga de feat_financiera: va siempre
+                // junto con el tipo (antes cambiar a Financiera aquí no lo
+                // activaba). Ver sql/registro_empresa_con_tipo_de_negocio.sql.
+                feat_financiera: formData.tipo_negocio === 'financiera',
                 updated_at: new Date().toISOString()
             };
             
@@ -594,7 +598,13 @@ const ConfiguracionSistemaPage = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-1.5">
                                 <Label className="text-[11px] font-bold text-gray-700 uppercase">Tipo de Empresa</Label>
-                                <Select value={formData.tipo_negocio} onValueChange={(value) => setFormData(prev => ({ ...prev, tipo_negocio: value }))}>
+                                <Select value={formData.tipo_negocio} onValueChange={(value) => setFormData(prev => ({
+                                    ...prev,
+                                    tipo_negocio: value,
+                                    // Una financiera nueva arranca con la mora del grupo (4%);
+                                    // si ya tenía una puesta, se respeta.
+                                    mora_pct_default: value === 'financiera' && !Number(prev.mora_pct_default) ? 4 : prev.mora_pct_default,
+                                }))}>
                                     <SelectTrigger className="h-10 bg-white"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="repuestos">Repuestos / Piezas (código corto)</SelectItem>
@@ -603,7 +613,7 @@ const ConfiguracionSistemaPage = () => {
                                     </SelectContent>
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">
-                                    En <strong>Dealer</strong> y <strong>Financiera</strong> el código (chasis/VIN) se muestra completo en el buscador. En <strong>Repuestos</strong> el código va en columna angosta.
+                                    En <strong>Dealer</strong> y <strong>Financiera</strong> el código (chasis/VIN) se muestra completo en el buscador. En <strong>Repuestos</strong> el código va en columna angosta. <strong>Financiera</strong> además activa el menú de préstamos (al guardar y volver a entrar).
                                 </p>
                             </div>
 
