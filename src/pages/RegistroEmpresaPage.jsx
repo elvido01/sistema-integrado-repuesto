@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, User, Mail, Phone, MapPin, FileText, Lock, Eye, EyeOff, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Building2, User, Mail, Phone, MapPin, FileText, Briefcase, Lock, Eye, EyeOff, ArrowLeft, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +19,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
     telefono: '',
     email: '',
     direccion: '',
+    tipo_negocio: 'repuestos',
   });
 
   const [usuario, setUsuario] = useState({
@@ -74,6 +75,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
           p_direccion: empresa.direccion.trim() || null,
           p_telefono: empresa.telefono.trim() || null,
           p_email: empresa.email.trim() || null,
+          p_tipo_negocio: empresa.tipo_negocio,
         }
       );
 
@@ -157,6 +159,34 @@ const RegistroEmpresaPage = ({ onVolver }) => {
                 className="mt-1"
                 required
               />
+            </div>
+
+            {/* El tipo cambia el sistema: dealer = motos por chasis,
+                financiera = préstamos (activa ese menú y la mora de 4%). */}
+            <div>
+              <Label className="flex items-center gap-1">
+                <Briefcase className="w-3.5 h-3.5" /> Tipo de empresa *
+              </Label>
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                {[
+                  { v: 'repuestos', t: 'Repuestos', d: 'Tienda / piezas' },
+                  { v: 'dealer', t: 'Dealer', d: 'Venta de motos' },
+                  { v: 'financiera', t: 'Financiera', d: 'Préstamos' },
+                ].map(o => (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => setEmpresa(prev => ({ ...prev, tipo_negocio: o.v }))}
+                    className={`rounded-lg border px-2 py-2 text-left transition-colors ${
+                      empresa.tipo_negocio === o.v
+                        ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600'
+                        : 'border-slate-200 hover:bg-slate-50'}`}
+                  >
+                    <span className="block text-sm font-semibold text-slate-800">{o.t}</span>
+                    <span className="block text-[11px] text-slate-500">{o.d}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div>
