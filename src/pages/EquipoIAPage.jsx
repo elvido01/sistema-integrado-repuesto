@@ -23,6 +23,7 @@ import { BorradorPromocion } from '@/components/equipo/BorradorPromocion';
 import { EspecificacionesArte } from '@/components/equipo/EspecificacionesArte';
 import { RecomendacionesDelDia } from '@/components/equipo/RecomendacionesDelDia';
 import { PiezasModelo } from '@/components/equipo/PiezasModelo';
+import { FotosDelDia } from '@/components/equipo/FotosDelDia';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -535,6 +536,9 @@ const EquipoIAPage = () => {
             ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
         }}
       />
+
+      {/* Piezas sin foto: cinco al día. Sin foto no entran al Paso 1. */}
+      <FotosDelDia />
 
       {/* Cómo debe verse una promoción: las reglas que el Creativo lee y las
           piezas modelo que mira. Antes vivían separadas (una arriba, otra
