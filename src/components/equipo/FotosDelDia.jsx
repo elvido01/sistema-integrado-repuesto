@@ -65,6 +65,40 @@ export function FotosDelDia({ onFotoSubida }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  // >>> LAS FOTOS DE LA APP MÓVIL <<<
+  // El dueño casi siempre sube la foto con el teléfono (la app escribe
+  // productos.imagen_url directo) y la base la anota sola
+  // (sql/fotos_del_dia_desde_la_app.sql). Aquí se pregunta cada 30 segundos
+  // —y al volver a la pestaña— sin barajar la lista: solo se ponen en verde
+  // las que ya tienen foto y se mueve el contador.
+  const refrescar = useCallback(() => {
+    if (document.visibilityState !== 'visible') return;
+    supabase.rpc('equipo_fotos_pendientes', { p_limite: 1 }).then(({ data, error }) => {
+      if (error || !data) return;
+      setHoy(Number(data.hoy) || 0);
+      setFaltan(Number(data.faltan) || 0);
+      const recientes = Array.isArray(data.recientes) ? data.recientes : [];
+      if (recientes.length) {
+        setHechas((h) => {
+          const n = { ...h };
+          recientes.forEach((r) => { if (r.imagen_url) n[r.producto_id] = r.imagen_url; });
+          return n;
+        });
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(refrescar, 30000);
+    window.addEventListener('focus', refrescar);
+    document.addEventListener('visibilitychange', refrescar);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('focus', refrescar);
+      document.removeEventListener('visibilitychange', refrescar);
+    };
+  }, [refrescar]);
+
   const lista = todas.filter((p) => !saltadas.has(p.id)).slice(0, META);
 
   // "Otras": esta tanda se aparta (las hechas y las que no se pueden
@@ -122,8 +156,8 @@ export function FotosDelDia({ onFotoSubida }) {
           Fotos del día
         </span>
         <p className="flex-1 text-[11px] text-slate-500">
-          Cinco piezas que se venden y no tienen foto. Cada foto la pone en el catálogo y la
-          deja lista para promocionarla en el Paso 1.
+          Cinco piezas que se venden y no tienen foto. Súbela aquí o desde la app (en el
+          catálogo): se marca sola y la pieza queda lista para el Paso 1.
         </p>
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
           listoHoy ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}
