@@ -212,6 +212,34 @@ Deno.serve(async (req) => {
         }
 
         // ── UPDATE USER ─────────────────────────────────────────
+        // ── ¿PUEDE TOCAR A ESE USUARIO? (update y delete) ───────────
+        // (01/10/2026) Antes bastaba con ser 'admin' de CUALQUIER empresa para
+        // cambiarle el correo o la contraseña, o borrar, a un usuario de OTRA
+        // empresa (hasta a un superadmin). Ahora: el superadmin puede con todos;
+        // un admin solo con usuarios que compartan alguna empresa con él, y
+        // nunca con un superadmin.
+        const empresasDe = async (uid: string) => {
+            const set = new Set<string>();
+            const { data: p } = await supabaseClient.from('profiles').select('tenant_id').eq('id', uid).maybeSingle();
+            if (p?.tenant_id) set.add(p.tenant_id);
+            const { data: ue } = await supabaseClient.from('usuarios_empresas').select('tenant_id').eq('user_id', uid);
+            for (const r of ue || []) if (r.tenant_id) set.add(r.tenant_id);
+            return set;
+        };
+        if ((action === 'update_user' || action === 'delete_user') && !profile?.is_superadmin) {
+            const { data: objetivo } = await supabaseClient
+                .from('profiles').select('is_superadmin').eq('id', targetUserId).maybeSingle();
+            const mias = await empresasDe(user.id);
+            const suyas = await empresasDe(targetUserId);
+            const comparten = [...suyas].some((t) => mias.has(t));
+            if (objetivo?.is_superadmin || !comparten) {
+                return new Response(JSON.stringify({ error: 'Ese usuario no es de tu empresa.' }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 403,
+                });
+            }
+        }
+
         if (action === 'update_user') {
             const { email, password, full_name } = updates;
 
@@ -233,6 +261,11 @@ Deno.serve(async (req) => {
                     });
                 }
             }
+
+            // El correo de antes, para llevar el cambio también a la empresa.
+            const { data: antes } = email
+                ? await supabaseClient.from('profiles').select('email').eq('id', targetUserId).maybeSingle()
+                : { data: null };
 
             const authUpdates: any = {};
             // email_confirm: el cambio aplica de inmediato (los usuarios
@@ -262,7 +295,25 @@ Deno.serve(async (req) => {
                 if (updateProfileError) throw updateProfileError;
             }
 
-            return new Response(JSON.stringify({ message: 'User updated successfully' }), {
+            // (01/10/2026) Si la empresa tenía puesto ese mismo correo (pasa al
+            // registrarse: el del dueño es el de la empresa), se corrige también.
+            // Solo donde coincide: un correo de empresa distinto es otra decisión.
+            let empresasActualizadas = 0;
+            const viejo = String(antes?.email || '').trim().toLowerCase();
+            if (email && viejo && viejo !== String(email).trim().toLowerCase()) {
+                const suyas = [...(await empresasDe(targetUserId))];
+                if (suyas.length) {
+                    const { data: cambiadas } = await supabaseClient
+                        .from('config_empresa')
+                        .update({ email })
+                        .in('tenant_id', suyas)
+                        .ilike('email', viejo)
+                        .select('tenant_id');
+                    empresasActualizadas = (cambiadas || []).length;
+                }
+            }
+
+            return new Response(JSON.stringify({ message: 'User updated successfully', empresas_actualizadas: empresasActualizadas }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 200,
             });

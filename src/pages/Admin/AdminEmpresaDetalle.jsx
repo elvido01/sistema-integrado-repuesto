@@ -2,16 +2,47 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { invocarConSesion } from '@/lib/edgeInvoke';
 import { Button } from '@/components/ui/button';
 import { 
   X, Building2, Users, Package, ShoppingCart, CreditCard, Calendar, 
-  Loader2, FileText, TrendingUp, UserCog, Clock, DollarSign 
+  Loader2, FileText, TrendingUp, UserCog, Clock, DollarSign, Pencil 
 } from 'lucide-react';
 
 const AdminEmpresaDetalle = ({ tenantId, onClose }) => {
   const { toast } = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Corregir el correo de un usuario (01/10/2026: INVERSIONES EL NARANJO se
+  // registró con un número invertido y no podía confirmar la cuenta).
+  const [editandoCorreo, setEditandoCorreo] = useState(null);   // { user_id, email }
+  const [guardandoCorreo, setGuardandoCorreo] = useState(false);
+
+  const guardarCorreo = async () => {
+    const email = String(editandoCorreo?.email || '').trim().toLowerCase();
+    if (!/^[^s@]+@[^s@]+.[^s@]+$/.test(email)) {
+      toast({ variant: 'destructive', title: 'Correo no válido', description: 'Revisa que esté bien escrito.' });
+      return;
+    }
+    setGuardandoCorreo(true);
+    try {
+      const r = await invocarConSesion('admin-management', {
+        action: 'update_user',
+        targetUserId: editandoCorreo.user_id,
+        updates: { email },
+      });
+      toast({
+        title: 'Correo corregido',
+        description: `Ya puede entrar con ${email}.${r?.empresas_actualizadas ? ' También se corrigió el correo de la empresa.' : ''}`,
+      });
+      setEditandoCorreo(null);
+      fetchDetalle();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo corregir', description: err.message });
+    } finally {
+      setGuardandoCorreo(false);
+    }
+  };
 
   const fetchDetalle = useCallback(async () => {
     if (!tenantId) return;
@@ -208,7 +239,30 @@ const AdminEmpresaDetalle = ({ tenantId, onClose }) => {
                           </div>
                           <div>
                             <p className="font-bold text-gray-700">{u.full_name || 'Sin nombre'}</p>
-                            <p className="text-[10px] text-gray-400">{u.email}</p>
+                            {editandoCorreo?.user_id === u.user_id ? (
+                              <div className="mt-1 flex items-center gap-1">
+                                <input type="email" autoFocus value={editandoCorreo.email}
+                                  onChange={(e) => setEditandoCorreo({ ...editandoCorreo, email: e.target.value })}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') guardarCorreo(); if (e.key === 'Escape') setEditandoCorreo(null); }}
+                                  className="w-52 rounded border border-purple-300 px-1.5 py-0.5 text-[11px]" />
+                                <button type="button" disabled={guardandoCorreo} onClick={guardarCorreo}
+                                  className="rounded bg-purple-600 px-2 py-0.5 text-[10px] font-bold text-white disabled:opacity-50">
+                                  {guardandoCorreo ? '...' : 'Guardar'}
+                                </button>
+                                <button type="button" onClick={() => setEditandoCorreo(null)} className="text-[10px] text-gray-500">Cancelar</button>
+                              </div>
+                            ) : (
+                              <p className="flex items-center gap-1 text-[10px] text-gray-400">
+                                {u.email}
+                                {u.user_id && (
+                                  <button type="button" title="Corregir correo"
+                                    onClick={() => setEditandoCorreo({ user_id: u.user_id, email: u.email || '' })}
+                                    className="text-purple-500 hover:text-purple-700">
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
