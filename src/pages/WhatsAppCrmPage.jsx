@@ -1063,40 +1063,6 @@ const WhatsAppCrmPage = () => {
     await handleSetConversationStatus('seguimiento_futuro', { toastTitle: 'Seguimiento marcado' });
   };
 
-  const handleCreateLead = async () => {
-    if (!selected?.id || !tenantId) return;
-    let salesConversationId = selected.source_table === 'sales' ? selected.id : null;
-    if (!salesConversationId) {
-      const { data } = await supabase
-        .from('sales_conversations')
-        .select('id')
-        .eq('crm_whatsapp_conversation_id', selected.id)
-        .maybeSingle();
-      salesConversationId = data?.id || null;
-    }
-
-    const { error } = await supabase.from('sales_leads').insert({
-      tenant_id: tenantId,
-      conversation_id: salesConversationId,
-      cliente_nombre: renderConversationName(selected),
-      cliente_contacto: getConversationPhone(selected) || selected.phone || selected.customer_external_id || null,
-      canal: selected.platform || 'whatsapp',
-      estado: 'nuevo',
-      prioridad: selected.intent && selected.intent !== 'general' ? 'alta' : 'media',
-      score: selected.intent && selected.intent !== 'general' ? 70 : 30,
-      resumen: selected.last_message_preview || 'Lead creado manualmente desde Sales Hub',
-      metadata: {
-        source: 'sales_hub_manual',
-        crm_whatsapp_conversation_id: selected.source_table === 'crm_whatsapp' ? selected.id : null,
-      },
-    });
-    if (error) {
-      toast({ variant: 'destructive', title: 'No se pudo crear lead', description: error.message });
-      return;
-    }
-    toast({ title: 'Lead creado', description: 'Quedo registrado para seguimiento comercial.' });
-  };
-
   const handleOpenQuotePanel = () => {
     if (!isWhatsAppConversation(selected)) {
       toast({ variant: 'destructive', title: 'Cotizaciones solo por WhatsApp', description: 'En beta, las cotizaciones se mantienen en el flujo de WhatsApp.' });
@@ -2292,10 +2258,9 @@ const WhatsAppCrmPage = () => {
                       <CalendarClock className="h-4 w-4 2xl:mr-2" />
                       <span className="hidden 2xl:inline">Seguimiento</span>
                     </Button>
-                    <Button variant="outline" size="sm" className="h-9 px-2 2xl:h-10 2xl:px-3" onClick={handleCreateLead} title="Crear lead">
-                      <UserPlus className="h-4 w-4 2xl:mr-2" />
-                      <span className="hidden 2xl:inline">Lead</span>
-                    </Button>
+                    {/* (30/09/2026) "Crear lead" quitado: creaba filas en sales_leads
+                        que ninguna pantalla muestra (344 en "nuevo", nadie las movió).
+                        El seguimiento real es el botón de al lado y crm_seguimiento. */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="h-9 rounded-full px-2 gap-1.5 bg-white 2xl:h-10 2xl:px-4 2xl:gap-2" title="Etiquetar chat">
