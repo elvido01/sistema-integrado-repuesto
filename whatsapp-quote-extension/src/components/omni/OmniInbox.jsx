@@ -466,6 +466,17 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   // pegarlo alli. Cuando se manda en TikTok, el espejo lo trae y la
   // conversacion sale sola de "Sin responder".
   const esTikTok = selected?.platform === 'tiktok';
+  // (01/10/2026) Instagram por privado tampoco sale desde aqui hasta que Meta
+  // apruebe el Acceso Avanzado de instagram_manage_messages (error 2534048):
+  // mismo trato que TikTok. Los COMENTARIOS de Instagram si se responden, por
+  // eso solo cuando lo ultimo del cliente fue un mensaje privado.
+  const ultimoDelCliente = [...messages].reverse().find((m) => m.sender_type === 'user');
+  const esInstagramPrivado = selected?.platform === 'instagram' && ultimoDelCliente && ultimoDelCliente.message_type !== 'comment';
+  const copiarA = esTikTok
+    ? { red: 'TikTok', url: 'https://www.tiktok.com/messages', ventana: 'mf-tiktok-mensajes' }
+    : esInstagramPrivado
+      ? { red: 'Instagram', url: 'https://www.instagram.com/direct/inbox/', ventana: 'mf-instagram-mensajes' }
+      : null;
   const esperanTikTok = conversations.filter((c) => c.platform === 'tiktok' && esperaRespuesta(c)
     && Date.now() - Date.parse(c.last_user_message_at || 0) < 3 * 86400000).length;
   const [copiado, setCopiado] = useState(false);
@@ -486,12 +497,12 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     }
     setCopiado(true);
     window.setTimeout(() => setCopiado(false), 4000);
-    window.open('https://www.tiktok.com/messages', 'mf-tiktok-mensajes');
+    window.open(copiarA?.url || 'https://www.tiktok.com/messages', copiarA?.ventana || 'mf-tiktok-mensajes');
   }
 
   async function handleSendReply(event) {
     event?.preventDefault?.();
-    if (esTikTok) { copiarParaTikTok(); return; }
+    if (copiarA) { copiarParaTikTok(); return; }
     if (!selected || !replyText.trim() || sending) return;
 
     const text = replyText.trim();
@@ -824,9 +835,9 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                   {sugiriendo ? 'Redactando...' : '✨ Sugerir'}
                 </button>
                 <button type="submit" disabled={sending || !replyText.trim()}
-                  title={esTikTok ? 'Copia el texto y abre tus mensajes de TikTok: pégalo en la conversación del cliente.' : undefined}>
-                  {esTikTok
-                    ? (copiado ? '¡Copiado! Pégalo en TikTok' : 'Copiar y abrir TikTok')
+                  title={copiarA ? `Copia el texto y abre tus mensajes de ${copiarA.red}: pégalo en la conversación del cliente.` : undefined}>
+                  {copiarA
+                    ? (copiado ? `¡Copiado! Pégalo en ${copiarA.red}` : `Copiar y abrir ${copiarA.red}`)
                     : (sending ? 'Guardando...' : 'Responder')}
                 </button>
                 {sugerencia && (
