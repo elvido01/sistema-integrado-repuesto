@@ -199,6 +199,10 @@ const OrdenCompraPage = () => {
   const [sugerenciaCompra, setSugerenciaCompra] = useState(null);
   // Sube de número cuando hay que volver a preguntar por los pendientes.
   const [svRecargar, setSvRecargar] = useState(0);
+  // Notas del Suplidor Virtual que se parecen a una línea recién grabada:
+  // { ordenId, numero, items: [{ id, descripcion, linea, marcar }] }
+  const [svParecidas, setSvParecidas] = useState(null);
+  const [svParecidasGuardando, setSvParecidasGuardando] = useState(false);
   const [prioridadMap, setPrioridadMap] = useState({});
   const [analisisItems, setAnalisisItems] = useState([]);
   const [presData, setPresData] = useState(null);
@@ -2371,6 +2375,41 @@ const OrdenCompraPage = () => {
         setSvRecargar(v => v + 1);
       }
 
+      // La misma pieza anotada otra vez en el Suplidor Virtual (o la pieza
+      // buscada en la mercancía que ya estaba anotada): que no se le pida a
+      // otro suplidor al mismo tiempo. Las iguales se amarran solas a esta
+      // orden; las parecidas se preguntan ("SPRING EJE CAMBIO PLATINA" no es
+      // el eje). Ver sql/suplidor_virtual_notas_repetidas.sql.
+      const { data: repetidas, error: repErr } = await supabase
+        .rpc('sv_notas_de_la_orden', { p_orden_id: savedOrden.id });
+      if (!repErr && repetidas?.length) {
+        const iguales = repetidas.filter(r => r.igual).map(r => r.id);
+        if (iguales.length) {
+          const ahora = new Date().toISOString();
+          const { data: cerradas } = await supabase
+            .from('suplidor_virtual_items')
+            .update({ orden_compra_pedida_id: savedOrden.id, pedida_at: ahora, updated_at: ahora })
+            .in('id', iguales)
+            .is('orden_compra_pedida_id', null)
+            .select('id');
+          if (cerradas?.length) {
+            toast({
+              title: 'Suplidor Virtual al día',
+              description: `${cerradas.length} nota${cerradas.length !== 1 ? 's' : ''} de la misma pieza salió de la lista: ya está en ${savedOrden.numero}.`,
+            });
+          }
+          setSvRecargar(v => v + 1);
+        }
+        const parecidas = repetidas.filter(r => !r.igual);
+        if (parecidas.length) {
+          setSvParecidas({
+            ordenId: savedOrden.id,
+            numero: savedOrden.numero,
+            items: parecidas.map(r => ({ ...r, marcar: false })),
+          });
+        }
+      }
+
       // Manejo post-save segun como se llego aqui
       if (pinGateInfo?.via_workflow) {
         // Fase C: enviar a cola de aprobaciones (no grabar directo)
@@ -3923,6 +3962,72 @@ const OrdenCompraPage = () => {
         onSave={handleSaveProductoOrden}
         product={prodEditando}
       />
+
+      {/* Suplidor Virtual: notas parecidas a una línea recién grabada */}
+      <Dialog open={!!svParecidas} onOpenChange={(open) => { if (!open && !svParecidasGuardando) setSvParecidas(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <PackageX className="w-5 h-5" /> ¿Es la misma pieza?
+            </DialogTitle>
+            <DialogDescription className="text-slate-600 text-xs">
+              Estas notas del Suplidor Virtual se parecen a algo que ya pediste en {svParecidas?.numero}.
+              Marca las que sean la misma pieza y salen de la lista, para no pedirla a otro suplidor a la vez.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+            {(svParecidas?.items || []).map((it) => (
+              <label key={it.id} className="flex items-start gap-3 rounded border border-slate-200 p-2 cursor-pointer hover:bg-amber-50">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={it.marcar}
+                  onCheckedChange={(v) => setSvParecidas(prev => ({
+                    ...prev,
+                    items: prev.items.map(x => (x.id === it.id ? { ...x, marcar: !!v } : x)),
+                  }))}
+                />
+                <div className="text-sm min-w-0">
+                  <p className="font-semibold text-slate-800 uppercase">{it.descripcion}</p>
+                  <p className="text-xs text-slate-500">
+                    En la orden: <span className="font-medium text-slate-700">{it.linea}</span>
+                  </p>
+                </div>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSvParecidas(null)} disabled={svParecidasGuardando}>
+              No, son otras piezas
+            </Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={svParecidasGuardando || !svParecidas?.items.some(x => x.marcar)}
+              onClick={async () => {
+                const ids = svParecidas.items.filter(x => x.marcar).map(x => x.id);
+                setSvParecidasGuardando(true);
+                const ahora = new Date().toISOString();
+                const { data, error } = await supabase
+                  .from('suplidor_virtual_items')
+                  .update({ orden_compra_pedida_id: svParecidas.ordenId, pedida_at: ahora, updated_at: ahora })
+                  .in('id', ids)
+                  .is('orden_compra_pedida_id', null)
+                  .select('id');
+                setSvParecidasGuardando(false);
+                if (error || !data?.length) {
+                  toast({ variant: 'destructive', title: 'No se quitaron', description: error?.message || 'Las notas siguen en el Suplidor Virtual.' });
+                  return;
+                }
+                toast({ title: 'Suplidor Virtual al día', description: `${data.length} nota${data.length !== 1 ? 's' : ''} salió de la lista: ya está en ${svParecidas.numero}.` });
+                setSvParecidas(null);
+                setSvRecargar(v => v + 1);
+              }}
+            >
+              {svParecidasGuardando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+              Sí, quitar las marcadas
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Fase 4: Relacionar equivalentes desde la orden */}
       <Dialog open={!!eqLink} onOpenChange={(open) => { if (!open) setEqLink(null); }}>
