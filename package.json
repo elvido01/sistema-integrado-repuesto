@@ -26,7 +26,8 @@
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=motoflow --branch=feat/mercancias-filtros --commit-dirty=true && npx wrangler pages deploy dist --project-name=repuestos-morla --branch=main --commit-dirty=true",
     "equipo": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/arrancar-equipo.ps1",
     "ext:zip": "node scripts/empaquetar-extension.mjs",
-    "ext:build": "npm --prefix whatsapp-quote-extension run build && npm run ext:zip"
+    "ext:build": "npm --prefix whatsapp-quote-extension run build && npm run ext:zip",
+    "meta:messenger": "node scripts/meta-messenger-importar.mjs"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "^1.2.1",
