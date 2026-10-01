@@ -425,6 +425,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             // abierto para consultar y mover productos al sistema nuevo, pero
             // el cobro queda bloqueado (banner + trigger en la BD).
             if (empresa?.solo_consulta && ['pedidos', 'cotizaciones', 'cotizaciones-magna'].includes(sub.id)) return false;
+            // Módulos apagados para toda la empresa (config_empresa.modulos_deshabilitados)
+            const apagados = empresa?.modulos_deshabilitados || [];
+            if (apagados.includes(sub.id) || apagados.includes(sub.permissionKey)) return false;
             if (sub.tenantOnly && !(Array.isArray(sub.tenantOnly) ? sub.tenantOnly.includes(tenantId) : sub.tenantOnly === tenantId)) return false;
             if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
             // Módulos de una persona concreta, no de un rol (ej. Equipo IA).
