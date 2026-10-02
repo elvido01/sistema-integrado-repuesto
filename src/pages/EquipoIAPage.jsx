@@ -374,21 +374,20 @@ const EquipoIAPage = () => {
   const pedir = async () => {
     const texto = peticion.trim();
     if (!texto) return;
-    setEnviando(true);
-    const { data: res, error } = await supabase.rpc('equipo_pedir', { p_peticion: texto });
-    setEnviando(false);
-    if (error) {
-      toast({ variant: 'destructive', title: 'No se pudo enviar', description: error.message });
-      return;
+    // (02/10/2026) Antes abría un trabajo con equipo_pedir que nadie recogía
+    // (el reparto de Hermes no existe; solo las promociones van directo al
+    // Creativo). Ahora se le pasa al chat flotante, que habla con el Hermes
+    // de verdad y contesta ahí mismo.
+    const detalle = { texto };
+    window.dispatchEvent(new CustomEvent('equipo-ia:pedir-a-hermes', { detail: detalle }));
+    if (detalle.resultado === true) {
+      setPeticion('');
+      toast({ title: 'Se lo pasé a Hermes', description: 'Te contesta en el chat de abajo a la derecha.' });
+    } else if (detalle.resultado === false) {
+      toast({ variant: 'destructive', title: 'Hermes no está conectado', description: 'Su servidor no está dando señal. El pedido no se envió.' });
+    } else {
+      toast({ variant: 'destructive', title: 'No encontré el chat de Hermes', description: 'Recarga la página y vuelve a intentarlo.' });
     }
-    setPeticion('');
-    toast({
-      title: res?.duplicado ? 'Ya lo habías pedido' : 'Hermes lo recibió',
-      description: res?.duplicado
-        ? 'Ese mismo pedido ya estaba abierto — no se duplicó.'
-        : 'Aparecerá en Trabajos activos en cuanto empiece a coordinar.',
-    });
-    cargar(true);
   };
 
   const decidir = async (id, decision, comentario) => {
@@ -934,7 +933,7 @@ const EquipoIAPage = () => {
                 Enviar a Hermes
               </Button>
               <p className="mt-2 text-[10px] text-slate-400">
-                El chat de siempre sigue en el botón flotante. Esto abre un trabajo con seguimiento.
+                Se abre el chat flotante con Hermes y te contesta ahí mismo.
               </p>
             </div>
             <div className="rounded-xl border bg-white p-4 shadow-sm">

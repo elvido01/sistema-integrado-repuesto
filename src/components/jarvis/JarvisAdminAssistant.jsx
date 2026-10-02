@@ -660,6 +660,34 @@ export default function JarvisAdminAssistant() {
     }
     return askAiCeo(texto, { conVoz, voz: opciones.voz });
   };
+
+  // ── PEDIDOS QUE LLEGAN DE EQUIPO IA ────────────────────────────────
+  // (02/10/2026) "Pedirle algo al equipo" abría un trabajo que nadie
+  // recogía: el reparto de Hermes nunca se montó y solo las promociones
+  // tenían atajo al Creativo. Ahora el pedido entra aquí, a la conversación
+  // con el Hermes de verdad, que sí contesta. Siempre por Hermes y sin voz:
+  // lo escribió, no lo dijo. Se usa una referencia para llamar al render
+  // vigente (hermesVivo cambia después de montar).
+  const pedidoEquipoRef = useRef(null);
+  pedidoEquipoRef.current = (t) => {
+    setChatAbierto(true);
+    setCanal('hermes');
+    if (hermesVivo === false) {
+      setError(`${nombreEmpresa} no está conectado: su servidor no está dando señal.`);
+      return false;
+    }
+    enviarAHermes(t, { conVoz: false });
+    return true;
+  };
+  useEffect(() => {
+    const alPedir = (e) => {
+      const t = String(e.detail?.texto || '').trim();
+      if (t && pedidoEquipoRef.current) e.detail.resultado = pedidoEquipoRef.current(t);
+    };
+    window.addEventListener('equipo-ia:pedir-a-hermes', alPedir);
+    return () => window.removeEventListener('equipo-ia:pedir-a-hermes', alPedir);
+  }, []);
+
   // Se sube cada vez que el usuario interrumpe. La respuesta que venga en
   // camino con un número viejo se descarta: sin esto, cancelas y a los tres
   // segundos el agente se pone a hablar igual.
