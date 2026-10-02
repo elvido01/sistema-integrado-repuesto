@@ -191,6 +191,25 @@ describe('publicarDestino', () => {
     expect(r.sin_autorizar).toBe(true);
     expect(f.pedidos).toHaveLength(0);
   });
+
+  // El interruptor de público de YouTube (meta.privacidad_publicacion) lo pone
+  // el dueño tras la auditoría: viaja al adaptador solo si la cuenta lo trae.
+  it('la privacidad de la cuenta llega al adaptador; sin ella no se manda nada', async () => {
+    const vistos = [];
+    const espia = async (args) => { vistos.push(args.privacidad); return { ok: true, external_post_id: 'V' }; };
+    const destino = { platform: 'youtube', placement: 'short' };
+    await publicarDestino({
+      fetchFn: fetchFalso({ body: {} }), destino, media: MEDIA, texto: 'x',
+      cuenta: { token: 'T', external_account_id: 'YT', privacidad: 'public' },
+      adaptadores: { 'youtube:short': espia },
+    });
+    await publicarDestino({
+      fetchFn: fetchFalso({ body: {} }), destino, media: MEDIA, texto: 'x',
+      cuenta: { token: 'T', external_account_id: 'YT' },
+      adaptadores: { 'youtube:short': espia },
+    });
+    expect(vistos).toEqual(['public', undefined]);
+  });
 });
 
 describe('Una promocion entera', () => {

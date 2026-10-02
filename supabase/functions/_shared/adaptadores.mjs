@@ -214,7 +214,10 @@ export async function publicarDestino({ fetchFn, destino, cuenta, media, texto, 
   }
 
   try {
-    return await adaptador({ fetchFn, token: cuenta.token, cuentaId: cuenta.external_account_id, media, texto, destino });
+    // `privacidad` solo la usa YouTube (los demás la ignoran) y solo viaja
+    // si la cuenta la trae: sin ella, youtubeShort sube en privado.
+    const extra = cuenta.privacidad ? { privacidad: cuenta.privacidad } : {};
+    return await adaptador({ fetchFn, token: cuenta.token, cuentaId: cuenta.external_account_id, media, texto, destino, ...extra });
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
   }

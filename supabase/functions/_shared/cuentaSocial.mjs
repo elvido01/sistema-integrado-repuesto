@@ -18,7 +18,7 @@ import { accesoVigenteTikTok } from './tiktok.mjs';
 export async function cuentaConAcceso({ sb, fetchFn, tenantId, platform, env = () => undefined }) {
   const { data: cuentas } = await sb
     .from('social_accounts')
-    .select('id, external_account_id, publicacion_habilitada')
+    .select('id, external_account_id, publicacion_habilitada, meta')
     .eq('tenant_id', tenantId)
     .eq('platform', platform)
     .eq('status', 'connected')
@@ -70,5 +70,10 @@ export async function cuentaConAcceso({ sb, fetchFn, tenantId, platform, env = (
     });
   }
   if (!token) return null;
-  return { id: c.id, external_account_id: c.external_account_id, token, habilitada: c.publicacion_habilitada };
+  // >>> EL INTERRUPTOR DE PÚBLICO (YouTube) <<<
+  // meta.privacidad_publicacion = 'public' lo pone el DUEÑO cuando Google
+  // apruebe la auditoría (sql/youtube_publico_cuando_google_apruebe.sql).
+  // Sin él, el adaptador sube en privado como siempre.
+  const privacidad = c.meta?.privacidad_publicacion || null;
+  return { id: c.id, external_account_id: c.external_account_id, token, habilitada: c.publicacion_habilitada, privacidad };
 }
