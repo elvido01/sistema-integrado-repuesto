@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, marcarUsoSugerencia, sendOmniReply, sugerirRespuesta, updateOmniConversationStatus } from '../../services/apiClient.js';
+import { DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, descartarIntentoFallido, marcarUsoSugerencia, sendOmniReply, sugerirRespuesta, updateOmniConversationStatus } from '../../services/apiClient.js';
 import { esperaRespuesta, estaSinVer } from '../../channels/channelRegistry.js';
 
 const CHANNEL_LABELS = {
@@ -466,12 +466,17 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   // pegarlo alli. Cuando se manda en TikTok, el espejo lo trae y la
   // conversacion sale sola de "Sin responder".
   const esTikTok = selected?.platform === 'tiktok';
-  // (01/10/2026) Instagram por privado tampoco sale desde aqui hasta que Meta
-  // apruebe el Acceso Avanzado de instagram_manage_messages (error 2534048):
-  // mismo trato que TikTok. Los COMENTARIOS de Instagram si se responden, por
-  // eso solo cuando lo ultimo del cliente fue un mensaje privado.
+  // (02/10/2026) Instagram por privado: PRIMERO se intenta de verdad. Sale
+  // con quien tiene rol en la app (la cuenta de prueba del video de Meta) y,
+  // el dia que Meta apruebe el Acceso Avanzado, con todos -- sin tocar nada.
+  // Si Meta responde 2534048 (sin Acceso Avanzado y el cliente sin rol), el
+  // intento se borra, el texto se copia y se abre Instagram; y esa
+  // conversacion pasa directo a "Copiar y abrir" el resto de la sesion.
+  // Los COMENTARIOS de Instagram siempre se responden desde aqui.
+  const [igCerrado, setIgCerrado] = useState(() => new Set());
   const ultimoDelCliente = [...messages].reverse().find((m) => m.sender_type === 'user');
-  const esInstagramPrivado = selected?.platform === 'instagram' && ultimoDelCliente && ultimoDelCliente.message_type !== 'comment';
+  const esInstagramPrivado = selected?.platform === 'instagram' && ultimoDelCliente
+    && ultimoDelCliente.message_type !== 'comment' && igCerrado.has(selected?.id);
   const copiarA = esTikTok
     ? { red: 'TikTok', url: 'https://www.tiktok.com/messages', ventana: 'mf-tiktok-mensajes' }
     : esInstagramPrivado
@@ -539,6 +544,19 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
 
     try {
       const saved = await sendOmniReply({ conversation: selected, text });
+      if (saved?.sin_acceso_avanzado) {
+        descartarIntentoFallido(saved.id);
+        setMessages((current) => current.filter((message) => message.id !== tempId));
+        setIgCerrado((s) => new Set(s).add(selected.id));
+        setReplyText(text);
+        let copio = true;
+        try { await navigator.clipboard.writeText(text); } catch { copio = false; }
+        window.open('https://www.instagram.com/direct/inbox/', 'mf-instagram-mensajes');
+        setError(copio
+          ? 'Meta todavia no deja escribirle a este cliente desde aqui (falta el Acceso Avanzado). Ya lo copie: pegalo en Instagram.'
+          : 'Meta todavia no deja escribirle a este cliente desde aqui. Copia el texto y pegalo en Instagram.');
+        return;
+      }
       setMessages((current) => current.map((message) => (
         message.id === tempId ? (saved || { ...optimisticMessage, status: 'queued' }) : message
       )));

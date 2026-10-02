@@ -1070,10 +1070,28 @@ export async function sendOmniReply({ conversation, text }) {
     const d = await r.json().catch(() => null);
     const estado = d?.message?.status || (d?.ok ? 'sent' : 'failed');
     const motivo = d?.message?.raw_data?.dispatch_error || d?.error || null;
-    return { ...row, status: estado, dispatch_error: estado === 'sent' ? null : motivo };
+    // 2534048 = Meta todavia no da Acceso Avanzado y el cliente no tiene rol
+    // en la app. Se distingue de cualquier otro fallo porque la bandeja lo
+    // resuelve sola: copia el texto y abre Instagram.
+    const sinAccesoAvanzado = estado !== 'sent'
+      && Number(d?.message?.raw_data?.meta?.error?.error_subcode) === 2534048;
+    return { ...row, status: estado, dispatch_error: estado === 'sent' ? null : motivo, sin_acceso_avanzado: sinAccesoAvanzado };
   } catch (e) {
     return { ...row, status: 'queued', dispatch_error: e?.message || 'No se pudo contactar el despachador.' };
   }
+}
+
+// Un intento que Meta rechazo por el 2534048 no es una respuesta: el texto se
+// copia y se manda a mano en Instagram (el espejo/webhook lo traera). Se borra
+// la fila para que el chat no enseñe un "NO SALIO" de algo que si se va a
+// mandar. Solo filas fallidas y de agente: nunca un mensaje del cliente.
+export async function descartarIntentoFallido(messageId) {
+  if (!messageId) return;
+  const headers = await getAuthHeaders();
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/sales_messages?id=eq.${encodeURIComponent(messageId)}&status=eq.failed&sender_type=eq.agent`,
+    { method: 'DELETE', headers }
+  ).catch(() => {});
 }
 
 // ── HERMES SUGIERE, LA PERSONA DECIDE ───────────────────────────────
