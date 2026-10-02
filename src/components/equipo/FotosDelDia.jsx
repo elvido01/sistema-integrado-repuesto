@@ -57,6 +57,7 @@ export function FotosDelDia({ onFotoSubida }) {
       if (error) return;
       setTodas(Array.isArray(data?.piezas) ? data.piezas : []);
       setHoy(Number(data?.hoy) || 0);
+      hoyVisto.current = Number(data?.hoy) || 0;
       setFaltan(Number(data?.faltan) || 0);
       setSaltadas(new Set());
       setHechas({});
@@ -71,11 +72,19 @@ export function FotosDelDia({ onFotoSubida }) {
   // (sql/fotos_del_dia_desde_la_app.sql). Aquí se pregunta cada 30 segundos
   // —y al volver a la pestaña— sin barajar la lista: solo se ponen en verde
   // las que ya tienen foto y se mueve el contador.
+  // Cada foto nueva, venga de aquí o de la app, se avisa con un evento: el
+  // Paso 1 solo recomienda piezas con foto y así la recoge sin recargar.
+  const hoyVisto = useRef(null);
   const refrescar = useCallback(() => {
     if (document.visibilityState !== 'visible') return;
     supabase.rpc('equipo_fotos_pendientes', { p_limite: 1 }).then(({ data, error }) => {
       if (error || !data) return;
-      setHoy(Number(data.hoy) || 0);
+      const nuevoHoy = Number(data.hoy) || 0;
+      if (hoyVisto.current !== null && nuevoHoy > hoyVisto.current) {
+        window.dispatchEvent(new CustomEvent('equipo-ia:foto-puesta'));
+      }
+      hoyVisto.current = nuevoHoy;
+      setHoy(nuevoHoy);
       setFaltan(Number(data.faltan) || 0);
       const recientes = Array.isArray(data.recientes) ? data.recientes : [];
       if (recientes.length) {
@@ -135,6 +144,8 @@ export function FotosDelDia({ onFotoSubida }) {
       }
       setHechas((h) => ({ ...h, [p.id]: pub.publicUrl }));
       setHoy((n) => n + 1);
+      if (hoyVisto.current !== null) hoyVisto.current += 1;   // que el sondeo no la avise otra vez
+      window.dispatchEvent(new CustomEvent('equipo-ia:foto-puesta'));
       setFaltan((n) => Math.max(0, n - 1));
       if (onFotoSubida) onFotoSubida(p);
     } catch (err) {

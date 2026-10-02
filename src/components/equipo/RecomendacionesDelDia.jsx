@@ -107,6 +107,24 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar }
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  // >>> UNA FOTO NUEVA = UNA CANDIDATA MÁS <<<
+  // Aquí solo salen piezas con foto. Cuando "Fotos del día" avisa que se
+  // puso una (desde la pantalla o desde la app móvil), la lista se vuelve a
+  // pedir SIN soltar lo que el dueño ya marcó ni moverle la tanda.
+  useEffect(() => {
+    const alPonerFoto = () => {
+      supabase.rpc('equipo_candidatos_promocion', { p_limite: 40 })
+        .then(({ data, error }) => {
+          if (error || !Array.isArray(data)) return;
+          setTodas(data);
+          setElegidos((s) => s.filter((id) => data.some((p) => p.id === id)));
+          setTanda((t) => (t * POR_TANDA < data.length ? t : 0));
+        });
+    };
+    window.addEventListener('equipo-ia:foto-puesta', alPonerFoto);
+    return () => window.removeEventListener('equipo-ia:foto-puesta', alPonerFoto);
+  }, []);
+
   const totalTandas = Math.max(1, Math.ceil(todas.length / POR_TANDA));
   const lista = todas.slice(tanda * POR_TANDA, (tanda + 1) * POR_TANDA);
 
