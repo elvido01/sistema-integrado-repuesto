@@ -113,6 +113,24 @@ async function instagram({ fetchFn, token, cuentaId, contenedor, esperar = pausa
   const creationId = c.body?.id;
   if (!creationId) return { ok: false, paso: 'contenedor', http: c.http, error: 'Instagram no devolvió el id del contenedor.' };
 
+  // (04/10/2026) Un REEL no se publica hasta que Instagram termina de bajar
+  // y procesar el video (status_code FINISHED). Suele ser de 20 a 60 s. Se
+  // pregunta cada 5 s hasta 90 s; si no, se dice y la próxima vuelta del
+  // publicador lo intenta de nuevo con un contenedor nuevo.
+  if (contenedor.media_type === 'REELS') {
+    let listo = false;
+    for (let i = 0; i < 18 && !listo; i += 1) {
+      await esperar(5000);
+      const st = await metaLeer(fetchFn, `https://${host}/${V_META}/${creationId}?fields=status_code,status`, token);
+      const code = st.body?.status_code;
+      if (code === 'FINISHED') listo = true;
+      else if (code === 'ERROR' || code === 'EXPIRED') {
+        return { ok: false, paso: 'procesar', http: st.http, error: `Instagram no pudo procesar el video: ${st.body?.status || code}` };
+      }
+    }
+    if (!listo) return { ok: false, paso: 'procesar', error: 'Instagram sigue procesando el video del reel; se reintenta en la próxima vuelta.' };
+  }
+
   // Instagram a veces necesita un momento para procesar la imagen del
   // contenedor, y el segundo paso contesta "media not ready" (9007). Eso NO
   // es un fallo: se espera y se reintenta. Hasta tres veces; si no, sí falla.
@@ -137,6 +155,13 @@ async function instagram({ fetchFn, token, cuentaId, contenedor, esperar = pausa
 
 export const instagramFeed = ({ fetchFn, token, cuentaId, media, texto, esperar }) =>
   instagram({ fetchFn, token, cuentaId, esperar, contenedor: { image_url: media.imagen, caption: texto } });
+
+// El reel sale también en el feed del perfil (share_to_feed), como hace la
+// app cuando uno sube un reel a mano.
+export const instagramReel = ({ fetchFn, token, cuentaId, media, texto, esperar }) => (media.video
+  ? instagram({ fetchFn, token, cuentaId, esperar,
+      contenedor: { media_type: 'REELS', video_url: media.video, caption: texto, share_to_feed: true } })
+  : Promise.resolve({ ok: false, paso: 'contenedor', error: 'Falta el video del reel.' }));
 
 export const instagramHistoria = ({ fetchFn, token, cuentaId, media, esperar }) =>
   instagram({ fetchFn, token, cuentaId, esperar, contenedor: { image_url: media.imagen, media_type: 'STORIES' } });
@@ -180,6 +205,7 @@ export const ADAPTADORES = {
   'facebook:story': facebookHistoria,
   'instagram:feed': instagramFeed,
   'instagram:story': instagramHistoria,
+  'instagram:reel': instagramReel,
   'tiktok:reel': tiktokVideo,
   'tiktok:short': tiktokVideo,
   'youtube:short': youtubeShort,

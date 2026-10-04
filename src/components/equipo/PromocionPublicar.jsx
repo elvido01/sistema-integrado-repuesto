@@ -41,6 +41,9 @@ const REDES = [
   { platform: 'facebook', placement: 'story', nombre: 'Facebook · historia', media: 'imagen_historia' },
   { platform: 'instagram', placement: 'feed', nombre: 'Instagram · feed', media: 'imagen_feed' },
   { platform: 'instagram', placement: 'story', nombre: 'Instagram · historia', media: 'imagen_historia' },
+  // (04/10/2026) El reel del Creativo también a Instagram: sale en Reels y en
+  // el feed del perfil (share_to_feed). Mismo permiso de Meta que el feed.
+  { platform: 'instagram', placement: 'reel', nombre: 'Instagram · reel', media: 'video' },
   { platform: 'tiktok', placement: 'reel', nombre: 'TikTok · video', media: 'video' },
   { platform: 'youtube', placement: 'short', nombre: 'YouTube · Short', media: 'video' },
   // A MANO: WhatsApp no tiene API para los Estados. No va al publicador: la

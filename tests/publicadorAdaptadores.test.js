@@ -3,6 +3,7 @@ import {
   facebookFeed,
   facebookHistoria,
   instagramFeed,
+  instagramReel,
   tiktokVideo,
   youtubeShort,
   publicarDestino,
@@ -134,6 +135,47 @@ describe('Instagram', () => {
     expect(r.ok).toBe(false);
     expect(r.paso).toBe('publicar');
     expect(f.pedidos).toHaveLength(5);       // contenedor + 4 intentos
+  });
+});
+
+describe('Instagram Reels', () => {
+  it('espera a que Instagram procese el video y luego publica', async () => {
+    const f = fetchFalso([
+      { body: { id: 'CONT1' } },
+      { body: { status_code: 'IN_PROGRESS' } },
+      { body: { status_code: 'FINISHED' } },
+      { body: { id: 'REEL1' } },
+      { body: { permalink: 'https://www.instagram.com/reel/Ab1/' } },
+    ]);
+    const r = await instagramReel({ fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'Di I101', esperar: async () => {} });
+    expect(r.ok).toBe(true);
+    expect(r.external_post_id).toBe('REEL1');
+    expect(f.pedidos[0].cuerpo).toMatchObject({ media_type: 'REELS', video_url: MEDIA.video, caption: 'Di I101', share_to_feed: true });
+    expect(f.pedidos[1].url).toContain('CONT1?fields=status_code');
+    expect(f.pedidos[3].cuerpo.creation_id).toBe('CONT1');
+  });
+
+  it('si Instagram no puede procesar el video, no intenta publicar', async () => {
+    const f = fetchFalso([{ body: { id: 'CONT1' } }, { body: { status_code: 'ERROR', status: 'formato raro' } }]);
+    const r = await instagramReel({ fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'x', esperar: async () => {} });
+    expect(r.ok).toBe(false);
+    expect(r.paso).toBe('procesar');
+    expect(f.pedidos).toHaveLength(2);
+  });
+
+  it('si sigue procesando a los 90 s, lo dice y no publica', async () => {
+    const f = fetchFalso([{ body: { id: 'CONT1' } }, ...Array(18).fill({ body: { status_code: 'IN_PROGRESS' } })]);
+    const r = await instagramReel({ fetchFn: f, token: 'T', cuentaId: 'IG', media: MEDIA, texto: 'x', esperar: async () => {} });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/procesando/);
+    expect(f.pedidos).toHaveLength(19);
+  });
+
+  it('sin video no llama a Instagram', async () => {
+    const f = fetchFalso([]);
+    const r = await instagramReel({ fetchFn: f, token: 'T', cuentaId: 'IG', media: { imagen: 'x' }, texto: 'x' });
+    expect(r.ok).toBe(false);
+    expect(f.pedidos).toHaveLength(0);
   });
 });
 
