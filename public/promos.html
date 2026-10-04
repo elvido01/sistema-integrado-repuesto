@@ -119,7 +119,7 @@
   // Las piezas son PNG de 2-4 MB: en datos móviles no cargan. El almacenamiento
   // las achica al vuelo (webp de 640 px, ~70 KB) si se piden por /render/.
   const achicar = (url) => String(url || '').includes('/storage/v1/object/public/')
-    ? url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/') + '?width=640&quality=72'
+    ? url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/') + '?width=640&height=640&resize=contain&quality=72'
     : url;
   const titulo = (t) => String(t || '').toLowerCase().replace(/(^|\s)\S/g, (m) => m.toUpperCase());
 
