@@ -221,7 +221,7 @@ const precioEnTexto = (texto, precio) => {
   return String(texto || '').replace(/,/g, '').includes(entero);
 };
 
-export default function PromocionPublicar({ prefill = null }) {
+export default function PromocionPublicar({ prefill = null, onLibre = null }) {
   const { toast } = useToast();
 
   const [redesEstado, setRedesEstado] = useState([]);
@@ -461,6 +461,9 @@ export default function PromocionPublicar({ prefill = null }) {
     setTextos({ facebook: '', instagram: '', tiktok: '', youtube: '' });
     setMedia({ imagen_feed: '', imagen_historia: '', video: '' });
     setExistenciaOk(false); setCuando('');
+    // (04/10/2026) El Paso 2 espera a que esto quede libre para retomar el
+    // siguiente encargo; si no, se veían dos piezas distintas a la vez.
+    if (onLibre) onLibre();
   };
 
   // >>> UN CLIC, LOS PASOS DE SIEMPRE <<<

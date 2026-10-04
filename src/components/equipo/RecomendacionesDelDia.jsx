@@ -24,7 +24,7 @@ import { EncargoArte } from '@/components/equipo/EncargoArte';
 const MAX = 2;
 const POR_TANDA = 5;
 
-export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar }) {
+export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, pausarRetomar = false }) {
   const { toast } = useToast();
   // >>> LA LISTA ENTERA, DE CINCO EN CINCO <<<
   // Antes se pedían 5 y el botón de refrescar volvía a pedir las mismas 5:
@@ -66,7 +66,7 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar }
   // recargar. La pieza ya no sale en la barra (lo encargado se esconde 14
   // días), así que sin esto no había forma de recuperarla.
   useEffect(() => {
-    if (encargo || !Array.isArray(trabajos)) return;
+    if (encargo || pausarRetomar || !Array.isArray(trabajos)) return;
     const ahora = Date.now();
     const delPanel = (w) => w.origin_platform === 'panel' && w.tipo === 'promocion' && !ignorados.has(w.id);
     const vivo = trabajos.find((w) => delPanel(w)
@@ -79,7 +79,7 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar }
     const retomar = vivo || aceptada;
     // Sin las piezas: la tarjeta las busca por el código que va en el pedido.
     if (retomar) setEncargo({ trabajoId: retomar.id, productos: [] });
-  }, [trabajos, encargo, ignorados]);
+  }, [trabajos, encargo, ignorados, pausarRetomar]);
 
   // >>> CUANDO LA LISTA GENERAL MANDA AQUÍ <<<
   // Las promociones del panel ya no se aprueban en "Esperando tu

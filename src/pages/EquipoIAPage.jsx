@@ -531,6 +531,10 @@ const EquipoIAPage = () => {
       <RecomendacionesDelDia
         trabajos={data?.trabajos}
         enfocar={enfocarPromo}
+        // Con una promoción aprobada sin publicar en el Paso 3, el Paso 2 no
+        // retoma otro encargo solo (el dueño veía el Havoline arriba y el
+        // Motul abajo y parecía que las promociones se mezclaban).
+        pausarRetomar={!!prefillPromo}
         onEncargado={() => cargar(true)}
         onUsar={(p) => {
           // Objeto nuevo cada vez: aceptar la misma pieza dos veces vuelve a
@@ -562,7 +566,7 @@ const EquipoIAPage = () => {
       {/* Lo mismo para video: reels que el dueño admira y la receta de cada uno. */}
       <ReelsModelo />
 
-      <PromocionPublicar prefill={prefillPromo} />
+      <PromocionPublicar prefill={prefillPromo} onLibre={() => setPrefillPromo(null)} />
 
       {/* El código de cada promoción y lo que vendió: dice qué red trae gente. */}
       <CodigosDePromocion />
