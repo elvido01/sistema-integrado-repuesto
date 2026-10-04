@@ -397,16 +397,23 @@ export async function armarReel({ para, logoUrl, telefono, empresa, raiz, pensar
     if (musica) entradasA.push('-stream_loop', '-1', '-i', musica);
     const iv = 1, im = vozDur ? 2 : 1;
     if (vozDur && musica) {
-      filtroA = `[${iv}:a]adelay=${Math.round(ARRANQUE_VOZ * 1000)}:all=1,volume=1.6[v];`
-        + `[${im}:a]volume=0.13,afade=t=out:st=${(total - 1.2).toFixed(2)}:d=1.2[m];[v][m]amix=inputs=2:duration=longest:normalize=0[a]`;
+      // La música (nivelada a -14 LUFS en equipo\musica) va presente y se
+      // agacha sola cuando habla el locutor (sidechain), como en la radio.
+      filtroA = `[${iv}:a]adelay=${Math.round(ARRANQUE_VOZ * 1000)}:all=1,volume=1.6,asplit=2[v][vsc];`
+        + `[${im}:a]volume=0.45,afade=t=out:st=${(total - 1.2).toFixed(2)}:d=1.2[m0];`
+        + `[m0][vsc]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=350[m];`
+        + `[v][m]amix=inputs=2:duration=longest:normalize=0[a]`;
     } else if (vozDur) {
       filtroA = `[${iv}:a]adelay=${Math.round(ARRANQUE_VOZ * 1000)}:all=1,volume=1.6,apad[a]`;
     } else if (musica) {
-      filtroA = `[${im}:a]volume=0.5,afade=t=out:st=${(total - 1.2).toFixed(2)}:d=1.2[a]`;
+      filtroA = `[${im}:a]volume=0.9,afade=t=out:st=${(total - 1.2).toFixed(2)}:d=1.2[a]`;
     } else {
       entradasA.push('-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo');
       filtroA = '[1:a]anull[a]';
     }
+    // Todo el audio a -14 LUFS, el nivel de TikTok/Instagram: sin esto el
+    // reel sonaba más bajito que los videos de al lado (prueba 04/10: -18).
+    filtroA = filtroA.replace(/\[a\]$/, ',loudnorm=I=-14:TP=-1.5:LRA=11[a]');
     const final = path.join(dir, 'reel.mp4');
     await correr(FFMPEG, ['-v', 'error', '-y', '-i', mudo, ...entradasA,
       '-filter_script:v', guionV, '-filter_complex', filtroA,
