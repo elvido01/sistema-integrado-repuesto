@@ -248,6 +248,8 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
   const [subiendo, setSubiendo] = useState('');
   const [elegidos, setElegidos] = useState(() => REDES.map((r) => `${r.platform}:${r.placement}`));
   const [cuando, setCuando] = useState('');
+  // Con descuento nace el código (T101, I101…) y el texto lo dice; sin él, no.
+  const [conDescuento, setConDescuento] = useState(true);
   const [bundle, setBundle] = useState(null);
   const [creandoVideo, setCreandoVideo] = useState(false);
   // Programar desde el historial una promoción ya aprobada: { id, cuando }.
@@ -291,6 +293,7 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
       setResultados([]);
     }
     setExistenciaOk(false);
+    setConDescuento(!prefill.sinDescuento);
     if (prefill.titulo) setTitulo(prefill.titulo);
     if (prefill.media) setMedia((m) => ({ ...m, ...prefill.media }));
     if (prefill.textos) {
@@ -460,7 +463,7 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
     setBundle(null); setProducto(null); setTitulo(''); setBusqueda('');
     setTextos({ facebook: '', instagram: '', tiktok: '', youtube: '' });
     setMedia({ imagen_feed: '', imagen_historia: '', video: '' });
-    setExistenciaOk(false); setCuando('');
+    setExistenciaOk(false); setCuando(''); setConDescuento(true);
     // (04/10/2026) El Paso 2 espera a que esto quede libre para retomar el
     // siguiente encargo; si no, se veían dos piezas distintas a la vez.
     if (onLibre) onLibre();
@@ -488,7 +491,7 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
           p_producto_id: producto?.id || null,
           p_precio: Number(precio) || null,
           p_textos: textos,
-          p_media: media,
+          p_media: { ...media, sin_descuento: !conDescuento },
           p_destinos: destinos,
           p_idempotency_key: null,
           p_design_id: null,
@@ -756,6 +759,11 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
           Hora (Santo Domingo):
           <input type="datetime-local" className="rounded border px-2 py-1 text-xs"
             value={cuando} onChange={(e) => setCuando(e.target.value)} />
+        </label>
+        <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs"
+          title="Con descuento, cada red lleva su código (T, I, F, Y, W) con 5% en caja. Sin descuento no hay código.">
+          <input type="checkbox" checked={conDescuento} onChange={(e) => setConDescuento(e.target.checked)} />
+          <span><b>Con 5% de descuento</b> (código por red en el texto y en la página de la bio)</span>
         </label>
       </div>
 

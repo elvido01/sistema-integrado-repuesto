@@ -146,8 +146,9 @@ export const promptGuion = ({ para, empresa, telefono }) => {
     '  Si la receta pide datos técnicos y no los hay, habla de lo que sí se sabe (para qué moto, que está disponible).',
     '- PROHIBIDO mencionar el precio, "pesos", cifras de dinero o la palabra "precio" en la VOZ (decisión del dueño).',
     '  Si conviene, el precio va como "texto" de UNA toma, EXACTAMENTE el de catálogo.',
-    '- La voz termina invitando a venir o escribir al WhatsApp, y diciendo que si dicen que lo vieron en las redes',
-    '  se lo llevan con 5% de descuento.',
+    para.sin_descuento
+      ? '- La voz termina invitando a venir o escribir al WhatsApp. Esta promoción NO tiene descuento: no menciones descuento, rebaja, oferta de precio ni código.'
+      : '- La voz termina invitando a venir o escribir al WhatsApp, y diciendo que si dicen que lo vieron en las redes se lo llevan con 5% de descuento.',
     r.voz && r.voz.hay === false
       ? '- Esta receta NO lleva voz: deja "voz" con UNA frase corta (se usará solo como letra), y apóyate en "texto" de cada toma.'
       : '',
@@ -412,7 +413,9 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
       lineas: [
         { texto: guion.cierre, y: 0.555, tam: 104, letrero: true },
         ...(telefono ? [{ texto: `WhatsApp ${telefono}`, y: 0.71, tam: 78, fuente: FUENTE_TEXTO }] : []),
-        { texto: 'Di que lo viste aquí: 5% de descuento', y: 0.78, tam: 58, fuente: FUENTE_TEXTO, color: '0xDDDDDD' },
+        // Sin descuento (decisión del dueño por promoción) no se promete nada.
+        { texto: para.sin_descuento ? 'Visítanos o escríbenos' : 'Di que lo viste aquí: 5% de descuento',
+          y: 0.78, tam: 58, fuente: FUENTE_TEXTO, color: '0xDDDDDD' },
       ] }));
     log('  reel: clips montados');
 

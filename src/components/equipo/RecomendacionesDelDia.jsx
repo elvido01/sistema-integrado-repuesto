@@ -38,6 +38,9 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
   const [elegidos, setElegidos] = useState([]);
   const [enfoque, setEnfoque] = useState('');
   const [formato, setFormato] = useState('historia');
+  // (04/10/2026) "No siempre quiero competir por precio": sin descuento, el
+  // Creativo no lo menciona y al publicar no nace código.
+  const [conDescuento, setConDescuento] = useState(true);
   const [enviando, setEnviando] = useState(false);
   // El encargo en curso: se sigue aquí mismo hasta que la pieza llega. Ya no
   // va a "Esperando tu aprobación" ni por el canal de Hermes.
@@ -155,6 +158,7 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
       p_producto_ids: elegidos,
       p_enfoque: enfoque.trim() || null,
       p_formato: formato,
+      p_con_descuento: conDescuento,
     });
     setEnviando(false);
     if (error) {
@@ -277,6 +281,11 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
               </button>
             ))}
           </div>
+          <label className="flex cursor-pointer items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700"
+            title="Sin descuento: no se menciona descuento ni código en textos ni en el reel">
+            <input type="checkbox" checked={conDescuento} onChange={(e) => setConDescuento(e.target.checked)} />
+            Con 5% de descuento
+          </label>
           <Input value={enfoque} onChange={(e) => setEnfoque(e.target.value)}
             placeholder="Enfoque, opcional. Ej.: para el que le está fallando el arranque."
             className="h-8 min-w-[220px] flex-1 text-xs" />

@@ -259,6 +259,8 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
       const principal = piezas?.[0] || null;
       onUsar({
         producto: principal,
+        // "Descuento: NO" en el pedido (casilla del Paso 1).
+        sinDescuento: /Descuento:\s*NO\b/i.test(String(trabajo?.peticion || '')),
         titulo: principal?.descripcion || trabajo?.titulo || '',
         // El reel ya está en el almacenamiento público: va tal cual como el
         // video vertical, y el formulario no graba el de 8 s con la imagen.

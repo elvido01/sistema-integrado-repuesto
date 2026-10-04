@@ -948,10 +948,14 @@ while (corriendo) {
               }
               return porApi(c, prompt);
             };
+            // "Descuento: NO" en el encargo (casilla del Paso 1): ni el guion
+            // ni el cierre del reel hablan de descuento.
+            para.sin_descuento = /Descuento:\s*NO\b/i.test(texto);
             const guion = await escribirGuion({ para, empresa: emp, telefono: tel, pensar: pensarGuion });
             datos.reel_guion = {
               guion,
               para: { modelo_id: para.modelo_id, formato: para.formato, nota_dueno: para.nota_dueno || null,
+                sin_descuento: para.sin_descuento,
                 receta: para.receta, producto: para.producto },
               foto_url: fotoUrl, logo_url: logoUrl, telefono: tel, empresa: emp,
             };
