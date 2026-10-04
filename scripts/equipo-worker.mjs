@@ -937,17 +937,25 @@ while (corriendo) {
           const para = (await escribir('SELECT hermes.equipo_reel_para($1,$2) AS r',
             [msg.id, msg.claim_token])).rows[0]?.r;
           if (para && fotoUrl) {
-            const pensarGuion = async (prompt) => {
+            // Con video del dueño el guion se escribe MIRANDO sus clips: van
+            // imágenes (por API dentro del mensaje; con la suscripción, rutas).
+            const pensarGuion = async (prompt, imagenes = []) => {
               const c = { ...actual, max_tokens: 1500, temperatura: 0.7 };
               if (actual.proveedor === 'claude_suscripcion') {
-                try { return await porClaudeCode(prompt); }
+                const conRutas = imagenes.length
+                  ? `${prompt}\n\nLas imágenes de los clips están en estos archivos, en orden. ÁBRELAS y MÍRALAS:\n${imagenes.map((i) => `· ${i.ruta}`).join('\n')}`
+                  : prompt;
+                try { return await porClaudeCode(conRutas); }
                 catch (e) {
                   if (!process.env.OPENAI_API_KEY) throw e;
-                  return porApi({ ...c, proveedor: 'openai', modelo: 'gpt-4o' }, prompt);
+                  return porApi({ ...c, proveedor: 'openai', modelo: 'gpt-4o' }, prompt, imagenes);
                 }
               }
-              return porApi(c, prompt);
+              return porApi(c, prompt, imagenes);
             };
+            // (04/10/2026) "Clip N: url" en el encargo = el reel se hace con
+            // los videos del dueño (sql/reel_con_tus_videos.sql).
+            para.clips = [...texto.matchAll(/Clip \d+:\s*(https:\/\/\S+)/g)].map((m) => m[1]);
             // "Descuento: NO" en el encargo (casilla del Paso 1): ni el guion
             // ni el cierre del reel hablan de descuento.
             para.sin_descuento = /Descuento:\s*NO\b/i.test(texto);
@@ -955,11 +963,11 @@ while (corriendo) {
             datos.reel_guion = {
               guion,
               para: { modelo_id: para.modelo_id, formato: para.formato, nota_dueno: para.nota_dueno || null,
-                sin_descuento: para.sin_descuento,
+                sin_descuento: para.sin_descuento, clips: para.clips,
                 receta: para.receta, producto: para.producto },
               foto_url: fotoUrl, logo_url: logoUrl, telefono: tel, empresa: emp,
             };
-            log(`  guion del reel listo (${para.formato}, ${guion.tomas.length} tomas): espera al dueño`);
+            log(`  guion del reel listo (${para.formato}, ${guion.tomas.length} tomas${para.clips.length ? `, ${para.clips.length} clip(s) del dueño` : ''}): espera al dueño`);
           }
         } catch (e) {
           log('  no se pudo escribir el guion del reel:', e.message);

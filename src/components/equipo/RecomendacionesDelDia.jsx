@@ -3,8 +3,10 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
-import { Sparkles, RefreshCw } from 'lucide-react';
+import { Sparkles, RefreshCw, Film, X } from 'lucide-react';
 import { EncargoArte } from '@/components/equipo/EncargoArte';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { subirClip } from '@/lib/subirClip';
 
 // Qué promocionar hoy.
 //
@@ -41,6 +43,28 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
   // (04/10/2026) "No siempre quiero competir por precio": sin descuento, el
   // Creativo no lo menciona y al publicar no nace código.
   const [conDescuento, setConDescuento] = useState(true);
+  // (04/10/2026) "Reel con tu video": clips del teléfono que el Creativo usa
+  // en vez de generar tomas (sql/reel_con_tus_videos.sql).
+  const { tenantId } = useAuth();
+  const [clips, setClips] = useState([]);          // [{ nombre, url }]
+  const [subiendo, setSubiendo] = useState(null);  // { nombre, pct }
+  const entradaClip = useRef(null);
+
+  const elegirClips = async (files) => {
+    const lista = Array.from(files || []);
+    if (entradaClip.current) entradaClip.current.value = '';
+    for (const f of lista) {
+      if (clips.length >= 4) { toast({ title: 'Máximo 4 clips por reel' }); break; }
+      setSubiendo({ nombre: f.name, pct: 0 });
+      try {
+        const url = await subirClip(f, tenantId, (pct) => setSubiendo({ nombre: f.name, pct }));
+        setClips((xs) => [...xs, { nombre: f.name, url }].slice(0, 4));
+      } catch (e) {
+        toast({ variant: 'destructive', title: `No se subió ${f.name}`, description: e.message, duration: 10000 });
+      }
+    }
+    setSubiendo(null);
+  };
   const [enviando, setEnviando] = useState(false);
   // El encargo en curso: se sigue aquí mismo hasta que la pieza llega. Ya no
   // va a "Esperando tu aprobación" ni por el canal de Hermes.
@@ -159,6 +183,7 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
       p_enfoque: enfoque.trim() || null,
       p_formato: formato,
       p_con_descuento: conDescuento,
+      p_clips: clips.length ? clips.map((c) => c.url) : null,
     });
     setEnviando(false);
     if (error) {
@@ -181,6 +206,7 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
         description: 'Te enseño la pieza aquí mismo en cuanto esté.',
       });
     }
+    setClips([]);
     // Duplicado o no, hay un trabajo: se sigue igual.
     if (data?.trabajo_id) {
       setEncargo({ trabajoId: data.trabajo_id, productos: piezasElegidas });
@@ -289,10 +315,40 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
           <Input value={enfoque} onChange={(e) => setEnfoque(e.target.value)}
             placeholder="Enfoque, opcional. Ej.: para el que le está fallando el arranque."
             className="h-8 min-w-[220px] flex-1 text-xs" />
-          <Button type="button" size="sm" disabled={enviando} onClick={encargar}>
+          {/* Con UNA pieza elegida se pueden subir videos propios: el reel se
+              hace con ellos (la pieza real, y solo se paga la voz). */}
+          {elegidos.length === 1 && (
+            <>
+              <input ref={entradaClip} type="file" accept="video/*" multiple className="hidden"
+                onChange={(e) => elegirClips(e.target.files)} />
+              <button type="button" disabled={!!subiendo || enviando || clips.length >= 4}
+                onClick={() => entradaClip.current?.click()}
+                title="Clips grabados con el teléfono, en vertical, de 5 a 20 segundos (hasta 4)"
+                className="flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-700 hover:bg-red-100 disabled:opacity-50">
+                <Film className="h-3.5 w-3.5" />
+                {subiendo ? `Subiendo ${subiendo.pct}%…` : clips.length ? 'Otro video' : 'Subir mi video'}
+              </button>
+            </>
+          )}
+          <Button type="button" size="sm" disabled={enviando || !!subiendo} onClick={encargar}>
             {enviando ? 'Encargando…'
-              : `Encargar ${elegidos.length === 1 ? 'esta pieza' : 'estas dos'} al Comercial-Creativo`}
+              : clips.length ? `Encargar el reel con ${clips.length === 1 ? 'mi video' : `mis ${clips.length} videos`}`
+                : `Encargar ${elegidos.length === 1 ? 'esta pieza' : 'estas dos'} al Comercial-Creativo`}
           </Button>
+          {clips.length > 0 && (
+            <div className="flex w-full flex-wrap gap-1">
+              {clips.map((c, i) => (
+                <span key={c.url} className="flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-800">
+                  <Film className="h-3 w-3" /> Clip {i + 1}: {c.nombre}
+                  <button type="button" onClick={() => setClips((xs) => xs.filter((x) => x.url !== c.url))}
+                    title="Quitar este clip" className="hover:text-red-600"><X className="h-3 w-3" /></button>
+                </span>
+              ))}
+              <span className="text-[10px] text-slate-500">
+                El Creativo mira tus clips, escribe el guion y tú lo revisas en el Paso 2 antes de hacer el reel.
+              </span>
+            </div>
+          )}
         </div>
       )}
 

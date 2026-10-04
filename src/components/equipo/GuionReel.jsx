@@ -59,6 +59,8 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
   const n = palabras(g.voz);
   const seg = Math.round(n / 2.4);   // locutor de anuncio: ~2.4 palabras por segundo
   const formato = FORMATOS_REEL[reelGuion.para?.formato]?.nombre || 'reel';
+  // Con video del dueño no se generan tomas: solo se paga la voz.
+  const nClips = reelGuion.para?.clips?.length || 0;
 
   return (
     <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
@@ -68,7 +70,9 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
         </span>
         <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{formato}</span>
         <span className="flex-1 text-[10px] text-slate-500">
-          Revísalo y corrige lo que esté mal. Las tomas y la voz se pagan solo al pulsar "Hacer el reel" (unos US$0.25).
+          {nClips
+            ? `Con tu${nClips > 1 ? 's' : ''} ${nClips} video${nClips > 1 ? 's' : ''}. Revísalo y corrige lo que esté mal: solo se paga la voz (centavos).`
+            : 'Revísalo y corrige lo que esté mal. Las tomas y la voz se pagan solo al pulsar "Hacer el reel" (unos US$0.25).'}
         </span>
       </div>
 
@@ -130,9 +134,25 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
                       onChange={(e) => cambiarToma(i, 'texto', e.target.value.toUpperCase() || null)}
                       className="h-6 flex-1 rounded border px-1.5 text-[11px] font-bold" />
                   </div>
-                  <textarea value={t.escena || ''} onChange={(e) => cambiarToma(i, 'escena', e.target.value)} rows={2}
-                    title="Lo que se ve (va para la IA de imágenes, en inglés)"
-                    className="mt-1 w-full rounded border bg-white px-1.5 py-1 text-[10px] text-slate-500" />
+                  {t.clip ? (
+                    // Toma de un video del dueño: qué clip y qué parte.
+                    <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-600">
+                      <select value={t.clip} onChange={(e) => cambiarToma(i, 'clip', Number(e.target.value))}
+                        className="h-6 rounded border bg-white px-1">
+                        {Array.from({ length: nClips || 1 }, (_, k) => <option key={k} value={k + 1}>Clip {k + 1}</option>)}
+                      </select>
+                      <select value={t.momento || 'inicio'} onChange={(e) => cambiarToma(i, 'momento', e.target.value)}
+                        className="h-6 rounded border bg-white px-1">
+                        <option value="inicio">inicio</option>
+                        <option value="medio">medio</option>
+                        <option value="final">final</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <textarea value={t.escena || ''} onChange={(e) => cambiarToma(i, 'escena', e.target.value)} rows={2}
+                      title="Lo que se ve (va para la IA de imágenes, en inglés)"
+                      className="mt-1 w-full rounded border bg-white px-1.5 py-1 text-[10px] text-slate-500" />
+                  )}
                 </div>
               ))}
             </div>
@@ -154,7 +174,7 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
             <Button size="sm" disabled={enviando || trabajandoReel || (g.tomas || []).length < 2} onClick={hacer}
               className="bg-red-600 text-white hover:bg-red-700">
               {enviando ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Clapperboard className="mr-1 h-3.5 w-3.5" />}
-              {pedido?.estado === 'listo' ? 'Rehacer el reel con este guion' : 'Hacer el reel'}
+              {pedido?.estado === 'listo' ? 'Rehacer el reel con este guion' : nClips ? 'Hacer el reel con mi video' : 'Hacer el reel'}
             </Button>
             {pedido?.estado === 'listo' && (
               <button type="button" className="text-[11px] text-slate-500 hover:underline" onClick={() => setEditando(false)}>cancelar</button>

@@ -135,7 +135,15 @@ export const promptGuion = ({ para, empresa, telefono }) => {
     '  "descripcion_redes": "texto para TikTok y YouTube: 1-2 frases + 3-5 hashtags (#repuestosmoto #higuey ...)"',
     '}',
     'Reglas:',
-    '- 4 tomas, distintas entre sí, como pide la receta. La pieza SIEMPRE es la protagonista. Al menos 3 llevan "texto".',
+    ...(para.clips_info?.length ? [
+      `- El reel se hace con ${para.clips_info.length} VIDEO(S) REALES que grabó el dueño: ${para.clips_info.map((c) => `Clip ${c.n} (${c.dur.toFixed(1)} s)`).join(', ')}.`,
+      '  Te paso 3 imágenes de cada clip (inicio, medio y final), en orden. NO inventes escenas: cada toma usa un clip.',
+      '  Formato de cada toma: { "clip": 1, "momento": "inicio|medio|final", "texto": "2 o 3 PALABRAS o null" }.',
+      '  Entre 5 y 8 tomas, alternando clips y momentos para que haya ritmo. Al menos 3 llevan "texto".',
+      '  Describe en la voz lo que de verdad se ve en los clips (la pieza en la mano, puesta en la moto…).',
+    ] : [
+      '- 4 tomas, distintas entre sí, como pide la receta. La pieza SIEMPRE es la protagonista. Al menos 3 llevan "texto".',
+    ]),
     '- La voz es de COMERCIAL: primera frase = gancho fuerte (exclamación o pregunta al motoconchista, ej. "¡Tu moto merece lo mejor!"),',
     '  luego 1 o 2 beneficios en frases de 3 a 7 palabras, un toque de urgencia ("¡Ya llegó!", "¡No te quedes sin la tuya!"),',
     '  y cierre con llamado a la acción. Nada de explicaciones largas ni de leer el nombre del catálogo completo.',
@@ -172,11 +180,20 @@ export function sinPrecio(voz) {
   return frases.map((f) => f.trim()).filter((f) => f && !HABLA_DE_PRECIO.test(f)).join(' ');
 }
 
+const MOMENTOS = ['inicio', 'medio', 'final'];
+
 export function normalizarGuion(g) {
+  // Con video del dueño las tomas son "Clip N + momento" (hasta 8 cortes);
+  // con tomas de IA, una escena por toma (hasta 4, cada una cuesta).
+  const deClip = (Array.isArray(g?.tomas) ? g.tomas : []).some((t) => Number(t?.clip) > 0);
   const tomas = (Array.isArray(g?.tomas) ? g.tomas : [])
-    .filter((t) => t && limpioTexto(t.escena, 400))
-    .slice(0, 4)
-    .map((t, i) => ({
+    .filter((t) => t && (deClip ? Number(t.clip) > 0 : limpioTexto(t.escena, 400)))
+    .slice(0, deClip ? 8 : 4)
+    .map((t, i) => (deClip ? {
+      clip: Math.round(Number(t.clip)),
+      momento: MOMENTOS.includes(t.momento) ? t.momento : MOMENTOS[i % 3],
+      texto: t.texto ? limpioTexto(t.texto, 28).toUpperCase() : null,
+    } : {
       escena: limpioTexto(t.escena, 400),
       movimiento: MOVIMIENTOS.includes(t.movimiento) ? t.movimiento : MOVIMIENTOS[i % 2],
       texto: t.texto ? limpioTexto(t.texto, 28).toUpperCase() : null,
@@ -263,6 +280,29 @@ async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false }) {
   return salida;
 }
 
+// (04/10/2026) Un corte de un VIDEO del dueño: se llena el vertical sin
+// deformar (recorta lo que sobra), sin su sonido (va la voz y la música), con
+// la letra de la toma y el mismo destello de entrada que los demás cortes.
+// Si el clip es más corto que el corte, se repite.
+async function clipVideo({ dir, i, archivo, durClip, momento, dur, texto }) {
+  const base = { inicio: 0.05, medio: 0.4, final: 0.72 }[momento] ?? 0.05;
+  const desde = Math.max(0, Math.min(durClip * base, durClip - dur - 0.05));
+  const filtros = [
+    `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,fps=${FPS}`,
+    'eq=contrast=1.05:saturation=1.1',
+  ];
+  if (texto) {
+    filtros.push(...await letrero(dir, texto, { y: 'h*0.10', tam: 140, alpha: 'if(lt(t,0.12),t/0.12,1)' }));
+  }
+  filtros.push(`fade=t=in:st=0:d=0.1:color=white,fade=t=out:st=${Math.max(0, dur - 0.08).toFixed(2)}:d=0.08`);
+  const guion = path.join(dir, `f_video${i}.txt`);
+  await writeFile(guion, filtros.join(','), 'utf8');
+  const salida = path.join(dir, `clip_${String(i + 1).padStart(2, '0')}v.mp4`);
+  await correr(FFMPEG, ['-v', 'error', '-y', '-stream_loop', '-1', '-ss', desde.toFixed(2), '-i', archivo,
+    '-filter_script:v', guion, '-t', dur.toFixed(2), ...H264, '-an', salida]);
+  return salida;
+}
+
 // Intro y cierre: fondo oscuro, logo y letras. Sin logo, solo letras.
 async function clipPlaca({ dir, nombre, dur, logo, lineas }) {
   const n = Math.round(dur * FPS);
@@ -306,9 +346,12 @@ export function trozosSubtitulo(texto, desde, dur) {
   const palabras = String(texto || '').split(/\s+/).filter(Boolean);
   const trozos = [];
   for (let i = 0; i < palabras.length;) {
-    let j = Math.min(palabras.length, i + 5);
-    // No cortar dejando una palabra sola al final.
-    if (palabras.length - j === 1) j += 1;
+    // Hasta 5 palabras, pero nunca más de ~30 letras: "¡Atención
+    // motoconchista! Protege tu moto" se salía por los lados (04/10).
+    let j = i + 1;
+    while (j < palabras.length && j - i < 5 && palabras.slice(i, j + 1).join(' ').length <= 30) j += 1;
+    // No cortar dejando una palabra sola al final, si cabe.
+    if (palabras.length - j === 1 && palabras.slice(i, j + 1).join(' ').length <= 34) j += 1;
     trozos.push(palabras.slice(i, j).join(' '));
     i = j;
   }
@@ -347,8 +390,46 @@ const bajar = async (url, archivo) => {
 // tomas y voz. Por eso son dos pasos: con las imágenes se escribe solo el
 // guion (centavos); el reel se arma cuando él pulsa "Hacer el reel", con el
 // guion tal como lo dejó (sql/reels_con_guion_aprobado.sql).
+export async function verClips(urls, dir, { conImagenes = true } = {}) {
+  const clips = [];
+  for (const [k, url] of (urls || []).entries()) {
+    const ext = (String(url).match(/\.(mp4|mov|webm|m4v|3gp)(?:\?|$)/i)?.[1] || 'mp4').toLowerCase();
+    const archivo = path.join(dir, `clip_${k + 1}.${ext}`);
+    await bajar(url, archivo);
+    const dur = await duracionDe(archivo);
+    if (!dur) throw new Error(`El clip ${k + 1} no se puede leer.`);
+    const frames = [];
+    if (conImagenes) {
+      for (const [j, f] of [0.2, 0.5, 0.8].entries()) {
+        const ruta = path.join(dir, `clip_${k + 1}_${j + 1}.jpg`);
+        await correr(FFMPEG, ['-v', 'error', '-ss', (dur * f).toFixed(2), '-i', archivo, '-frames:v', '1',
+          '-vf', 'scale=384:-2', '-q:v', '4', '-y', ruta]);
+        frames.push({ ruta, mime: 'image/jpeg', b64: (await readFile(ruta)).toString('base64') });
+      }
+    }
+    clips.push({ n: k + 1, url, archivo, dur, frames });
+  }
+  return clips;
+}
+
 export async function escribirGuion({ para, empresa, telefono, pensar }) {
-  return normalizarGuion(leerJson(await pensar(promptGuion({ para, empresa, telefono }))));
+  if (!para.clips?.length) {
+    return normalizarGuion(leerJson(await pensar(promptGuion({ para, empresa, telefono }))));
+  }
+  // Con video del dueño: el guion se escribe MIRANDO sus clips.
+  const dir = await mkdtemp(path.join(tmpdir(), 'reel-guion-'));
+  try {
+    const clips = await verClips(para.clips, dir);
+    const conInfo = { ...para, clips_info: clips.map((c) => ({ n: c.n, dur: c.dur })) };
+    const imagenes = clips.flatMap((c) => c.frames);
+    const g = normalizarGuion(leerJson(await pensar(promptGuion({ para: conInfo, empresa, telefono }), imagenes)));
+    // El modelo a veces nombra "Clip 3" con un solo clip: se reparte entre
+    // los que de verdad hay, para que el dueño vea en el Paso 2 lo real.
+    g.tomas = g.tomas.map((t) => ({ ...t, clip: ((Math.max(1, t.clip) - 1) % clips.length) + 1 }));
+    return g;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 export async function armarReel({ para, guion: guionDado = null, logoUrl, telefono, empresa, raiz, pensar, pedirToma, subirVideo, log = () => {} }) {
@@ -362,9 +443,19 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
     const guion = guionDado ? normalizarGuion(guionDado) : await escribirGuion({ para, empresa, telefono, pensar });
     log(`  reel: guion con ${guion.tomas.length} tomas`);
 
-    // 2. Tomas, en paralelo (cada una tarda casi un minuto)
-    const resultados = await Promise.allSettled(guion.tomas.map((t) => pedirToma({ toma: t.escena })));
+    // 2. Tomas. Con video del dueño, sus clips (gratis); si no, imágenes de
+    // estudio en paralelo (cada una tarda casi un minuto y cuesta).
+    const conClips = !!para.clips?.length;
     const tomas = [];
+    let videos = [];
+    if (conClips) {
+      videos = await verClips(para.clips, dir, { conImagenes: false });
+      for (const t of guion.tomas) {
+        const v = videos[(Math.max(1, t.clip || 1) - 1) % videos.length];
+        tomas.push({ ...t, archivo: v.archivo, durClip: v.dur });
+      }
+    }
+    const resultados = conClips ? [] : await Promise.allSettled(guion.tomas.map((t) => pedirToma({ toma: t.escena })));
     for (const [i, r] of resultados.entries()) {
       if (r.status !== 'fulfilled') { avisos.push(`Toma ${i + 1} no salió: ${r.reason?.message || r.reason}`); continue; }
       const f = path.join(dir, `toma_${i + 1}.png`);
@@ -395,7 +486,9 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
       vozDur = await duracionDe(voz);
       log(`  reel: voz acelerada x${factor.toFixed(2)} -> ${vozDur.toFixed(1)} s`);
     }
-    const cortes = tomas.length * 2;
+    // Con clips cada toma es UN corte (ya hay movimiento real); con imágenes,
+    // dos (abierto y acercamiento) para que tenga ritmo de anuncio.
+    const cortes = conClips ? tomas.length : tomas.length * 2;
     const totalDeseado = Math.min(MAX + 2, Math.max(MIN, vozDur ? ARRANQUE_VOZ + vozDur + 0.3 : INTRO + cortes * 2 + CIERRE));
     const cuerpo = Math.max(totalDeseado - INTRO - CIERRE, cortes * 1.4);
     const porCorte = cuerpo / cortes;
@@ -406,6 +499,11 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
     clips.push(await clipPlaca({ dir, nombre: 'intro', dur: INTRO, logo,
       lineas: [{ texto: guion.titular, y: logo ? 0.57 : 0.42, tam: 140, letrero: true }] }));
     for (const [i, t] of tomas.entries()) {
+      if (conClips) {
+        clips.push(await clipVideo({ dir, i, archivo: t.archivo, durClip: t.durClip, momento: t.momento,
+          dur: porCorte, texto: t.texto }));
+        continue;
+      }
       clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento, texto: t.texto }));
       clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento, texto: null, cerrado: true }));
     }

@@ -42,6 +42,11 @@ export const promptPieza = ({ texto, cuenta, transcripcion, tomas }) => [
   '  "colores": ["colores en que se ve"],',
   '  "notas": "una línea con lo que distingue la pieza"',
   '}',
+  'Usa en "busqueda" los nombres de MOSTRADOR dominicano, que es como está escrito el catálogo. Ej.:',
+  '  BOTELLA = barra / horquilla / amortiguador delantero · COVER = protector o cubierta decorativa ·',
+  '  MILLERO = velocímetro · GOMA = llanta · ARO = rin · BANDA = zapata de freno · CATALINA = corona ·',
+  '  CLOCHE = embrague · MANECILLA = maneta · TAPITA = tapa · FAROL STOP = luz trasera · MUELITA = luz LED pequeña.',
+  '  (El 04/10 un "protector decorativo de amortiguador" estaba en el catálogo como "COVER SEGURIDAD BOTELLA".)',
   'Si el video no anuncia una pieza concreta (es un saludo, una moto completa, un evento), pon "es_pieza": false.',
   'No inventes: si no se sabe la marca o la moto, null o lista vacía.',
 ].join('\n');
