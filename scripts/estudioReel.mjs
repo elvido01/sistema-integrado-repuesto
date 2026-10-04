@@ -126,11 +126,21 @@ const transcribir = async (audio) => {
     desde: Math.round(s.start * 10) / 10, hasta: Math.round(s.end * 10) / 10, texto: String(s.text || '').trim(),
     // Con solo música, Whisper "oye" palabras ("you", "Música", "E aí"):
     // fuera lo que él mismo marca como probable no-voz.
-    ruido: Number(s.no_speech_prob || 0) > 0.5 || Number(s.avg_logprob || 0) < -1,
+    // Es la misma regla de Whisper para "silencio": las dos señales a la vez.
+    ruido: Number(s.no_speech_prob || 0) > 0.6 && Number(s.avg_logprob || 0) < -1,
   })).filter((s) => s.texto && !s.ruido && !inventado.test(s.texto))
     .map(({ ruido, ...resto }) => resto);
   // Dos o tres palabras sueltas en un reel entero no son una voz en off.
   const texto = segmentos.map((s) => s.texto).join(' ');
+  // Una frase que se repite tres veces es el coro de la canción de fondo
+  // ("Nuestra Cua Paso a Mejor…" en DPe_HakjkOj), no una voz en off.
+  const palabras = texto.toLowerCase().split(/\s+/).filter(Boolean);
+  const trio = new Map();
+  for (let i = 0; i + 3 <= palabras.length; i += 1) {
+    const k = palabras.slice(i, i + 3).join(' ');
+    trio.set(k, (trio.get(k) || 0) + 1);
+  }
+  if ([...trio.values()].some((n) => n >= 3)) return { texto: '', segmentos: [], aviso: 'la voz parecía letra de canción: se tomó como solo música' };
   if (texto.split(/\s+/).filter(Boolean).length < 5) return { texto: '', segmentos: [] };
   return { texto, segmentos };
 };
