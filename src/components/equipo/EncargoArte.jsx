@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, CheckCircle2, RotateCcw, X, AlertTriangle } from 'lucide-react';
+import { FORMATOS_REEL } from '@/components/equipo/ReelsModelo';
 
 // ════════════════════════════════════════════════════════════════════════
 //  EL ARTE DEL ENCARGO, AQUÍ MISMO
@@ -88,7 +89,9 @@ function Pieza({ imagenId, etiqueta, onCargada }) {
 // Cuánto tiempo sin movimiento se considera trabado. Una pieza normal tarda
 // minuto y medio; el arrendamiento del worker es de doce. Ocho minutos quieto
 // no es "está trabajando", es que algo se cayó.
-const TRABADO_MIN = 8;
+// (04/10/2026) Con el reel la pieza tarda de 4 a 6 minutos: 8 de quietud
+// ya no es raro. Se mide desde que el creativo la tomó.
+const TRABADO_MIN = 12;
 
 export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencargado }) {
   const { toast } = useToast();
@@ -254,10 +257,17 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
       onUsar({
         producto: principal,
         titulo: principal?.descripcion || trabajo?.titulo || '',
-        media: { imagen_feed: feed, ...(historia ? { imagen_historia: historia } : {}) },
+        // El reel ya está en el almacenamiento público: va tal cual como el
+        // video vertical, y el formulario no graba el de 8 s con la imagen.
+        media: {
+          imagen_feed: feed,
+          ...(historia ? { imagen_historia: historia } : {}),
+          ...(c.reel?.video_url ? { video: c.reel.video_url } : {}),
+        },
         textos: {
           facebook: textoDe(c.copy?.facebook),
           instagram: textoDe(c.copy?.instagram),
+          ...(c.reel?.descripcion_redes ? { tiktok: c.reel.descripcion_redes, youtube: c.reel.descripcion_redes } : {}),
         },
       });
       toast({ title: 'Imagen aprobada', description: 'Paso 3, abajo: ya está lleno. Marca el estante y publica o programa.' });
@@ -319,12 +329,12 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
             <Loader2 className="h-4 w-4 animate-spin text-violet-500" />
             {rehaciendo
               ? 'El Comercial-Creativo está rehaciendo la pieza…'
-              : 'El Comercial-Creativo está montando la pieza. Suele tardar menos de dos minutos…'}
+              : 'El Comercial-Creativo está montando las imágenes y el reel. Suele tardar unos cinco minutos…'}
           </div>
           {trabado && (
             <div className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
               <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span className="flex-1">Lleva {minutosQuieto} minutos sin moverse. Una pieza normal tarda uno o dos: algo se cayó.</span>
+              <span className="flex-1">Lleva {minutosQuieto} minutos sin moverse. Con el reel tarda unos cinco: algo se cayó.</span>
               <Button size="sm" variant="outline" disabled={trabajando} onClick={reencargar}>
                 {trabajando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-1 h-3.5 w-3.5" />}
                 Encargar de nuevo
@@ -388,10 +398,23 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
               Esta pieza ya la aceptaste hoy. Puedes volver a usarla en el formulario.
             </p>
           )}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={`grid gap-3 ${pieza.reel?.video_url ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
             <Pieza imagenId={pieza.arte_imagen_id} etiqueta="Feed cuadrado" onCargada={guardarPieza} />
             {pieza.arte_historia_id && (
               <Pieza imagenId={pieza.arte_historia_id} etiqueta="Historia 9:16" onCargada={guardarPieza} />
+            )}
+            {/* El reel de la misma pieza (Estilo de tus reels). Se ve con su voz:
+                lo que se aprueba aquí es lo que sale en TikTok y YouTube. */}
+            {pieza.reel?.video_url && (
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex h-56 w-full items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-950">
+                  <video src={pieza.reel.video_url} controls playsInline preload="metadata" className="max-h-56 w-auto" />
+                </div>
+                <span className="text-[10px] font-semibold text-slate-500">
+                  Reel · {FORMATOS_REEL[pieza.reel.formato]?.nombre || 'reel'}
+                  {pieza.reel.duracion ? ` · ${Math.round(pieza.reel.duracion)} s` : ''}
+                </span>
+              </div>
             )}
           </div>
 

@@ -117,6 +117,43 @@ function promptEscena({ vertical, fondo, acento, tieneFondo }) {
   ].join(' ');
 }
 
+// ── REELS (04/10/2026) ──────────────────────────────────────────────────
+// Una TOMA de reel: la pieza real en la escena que pide la receta (mano que
+// la sostiene, plato giratorio, mesa de acero, humo…). Sin texto: las letras
+// del reel las pone el montador encima, con tiempo, y no pueden salir mal.
+function promptToma({ toma, acento }) {
+  return [
+    'Vertical 9:16 cinematic frame for a motorcycle spare parts video ad (Instagram Reel / TikTok).',
+    'Use the product from the FIRST reference image EXACTLY as it is: same shape, colors, packaging,',
+    'printed labels, number of teeth/holes and proportions. Do not redraw, restyle, simplify or replace it.',
+    `Shot: ${toma}.`,
+    `Dramatic studio lighting, dark background, ${acento} rim light, soft haze and reflections,`,
+    'sharp focus on the product, photorealistic, premium commercial look.',
+    'Leave the bottom 22% of the frame darker and calm (subtitles go there).',
+    'ABSOLUTELY NO TEXT, letters, numbers, logos, watermarks or brand names anywhere,',
+    "except the product's own original printed packaging.",
+  ].join(' ');
+}
+
+// El reel terminado: el creativo lo manda con un permiso 'video' y aquí se
+// sube al bucket público ai-marketing (el mismo del video de 8 s), porque el
+// worker no tiene ni debe tener la llave del almacenamiento.
+const MAX_VIDEO = 40 * 1024 * 1024;
+async function subirVideo(req: Request, sb: any, permiso: any) {
+  const bytes = new Uint8Array(await req.arrayBuffer());
+  if (bytes.length < 1024) return json({ ok: false, error: 'El video llegó vacío.' }, 400);
+  if (bytes.length > MAX_VIDEO) return json({ ok: false, error: `El video pesa ${bytes.length} bytes; el máximo es ${MAX_VIDEO}.` }, 413);
+  // Un MP4 dice "ftyp" en los bytes 4-7. Lo demás no se sube.
+  if (new TextDecoder().decode(bytes.slice(4, 8)) !== 'ftyp') {
+    return json({ ok: false, error: 'Eso no es un MP4.' }, 400);
+  }
+  const ruta = `reels/${permiso.tenant_id}/${permiso.mensaje_id}-${Date.now()}.mp4`;
+  const { error } = await sb.storage.from('ai-marketing').upload(ruta, bytes, { contentType: 'video/mp4', upsert: false });
+  if (error) return json({ ok: false, error: `No se pudo guardar el video: ${error.message}` }, 502);
+  const { data } = sb.storage.from('ai-marketing').getPublicUrl(ruta);
+  return json({ ok: true, url: data.publicUrl, bytes: bytes.length });
+}
+
 // Texto que va DENTRO de la imagen: sin comillas ni saltos, que no rompan el
 // prompt, y corto, que en un teléfono no se lee un renglón de 40 letras.
 const limpio = (t: unknown, max: number) =>
@@ -198,7 +235,9 @@ Deno.serve(async (req: Request) => {
   if (pErr || !permiso?.ok) {
     return json({ ok: false, error: permiso?.motivo || pErr?.message || 'sin_permiso' }, 403);
   }
-  const formato = permiso.formato === 'historia' ? 'historia' : 'feed';
+  if (permiso.formato === 'video') return subirVideo(req, sb, permiso);
+  const esToma = permiso.formato === 'toma';
+  const formato = permiso.formato === 'historia' || esToma ? 'historia' : 'feed';
 
   const body = await req.json().catch(() => ({}));
   const fotoUrl = String(body?.foto_url || '');
@@ -253,7 +292,9 @@ Deno.serve(async (req: Request) => {
       tieneFondo: !!body?.fondo_b64,
     };
     const img = await generateImage({
-      prompt: conTexto
+      prompt: esToma
+        ? promptToma({ toma: limpio(body?.toma, 400) || 'the product on a glossy podium', acento: comun.acento })
+        : conTexto
         ? promptConTexto({
           ...comun,
           tieneLogo,
@@ -278,7 +319,7 @@ Deno.serve(async (req: Request) => {
       status: 'completed',
       duration_ms: Date.now() - t0,
       metadata: {
-        formato, mensaje_id: permiso.mensaje_id, calidad: CALIDAD, costo_exacto: img.exacto,
+        formato: esToma ? 'toma_reel' : formato, mensaje_id: permiso.mensaje_id, calidad: CALIDAD, costo_exacto: img.exacto,
         texto_en_escena: conTexto, telefono_en_escena: !!telefono, refs_estilo: estilo.map((r) => r.nombre),
       },
     });
