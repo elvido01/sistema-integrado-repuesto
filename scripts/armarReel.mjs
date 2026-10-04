@@ -30,8 +30,20 @@ const FFPROBE = process.env.FFPROBE_CMD || 'ffprobe';
 const FPS = 30;
 const W = 1080, H = 1920;
 const NARANJA = '0xF5A623';
-const FUENTE_TITULO = process.env.REEL_FUENTE_TITULO || 'C:/Windows/Fonts/impact.ttf';
-const FUENTE_TEXTO = process.env.REEL_FUENTE_TEXTO || 'C:/Windows/Fonts/arialbd.ttf';
+// (04/10/2026) "Las letras tienen que parecerse a las de las imágenes": las
+// piezas usan una letra gruesa, cursiva y estrecha (racing). La más parecida
+// libre es Barlow Condensed (Google Fonts, OFL), en hermes\equipo\fuentes.
+// Si no está, Impact.
+const DIR_FUENTES = path.resolve(import.meta.dirname, '..', 'fuentes');
+const fuente = (archivo, respaldo) => {
+  const f = path.join(DIR_FUENTES, archivo);
+  return existsSync(f) ? f : respaldo;
+};
+const FUENTE_TITULO = process.env.REEL_FUENTE_TITULO || fuente('BarlowCondensed-BlackItalic.ttf', 'C:/Windows/Fonts/impact.ttf');
+const FUENTE_TEXTO = process.env.REEL_FUENTE_TEXTO || fuente('BarlowCondensed-Bold.ttf', 'C:/Windows/Fonts/arialbd.ttf');
+// Los dos tonos del titular de las piezas: plata arriba, la palabra clave en oro.
+const PLATA = '0xF4F4F4';
+const ORO = '0xFFB21E';
 const MOVIMIENTOS = ['acercar', 'alejar', 'izquierda', 'derecha', 'subir', 'bajar'];
 
 const correr = (cmd, args, { timeout = 300_000 } = {}) => new Promise((resolve, reject) => {
@@ -64,6 +76,27 @@ const archivoTexto = async (dir, texto) => {
   return rutaFiltro(f);
 };
 
+// El titular como en las piezas: la primera parte en plata y la ÚLTIMA
+// palabra, más grande, en oro; borde oscuro y sombra. Devuelve filtros
+// drawtext para encadenar con comas.
+async function letrero(dir, texto, { y, tam = 130, alpha = null }) {
+  const palabras = String(texto || '').trim().split(/\s+/).filter(Boolean);
+  if (!palabras.length) return [];
+  const acento = palabras.pop();
+  const resto = palabras.join(' ');
+  const comun = `fontfile='${rutaFiltro(FUENTE_TITULO)}':expansion=none:borderw=5:bordercolor=0x0a0a0a@0.85`
+    + `:shadowcolor=black@0.75:shadowx=5:shadowy=7:x=(w-text_w)/2${alpha ? `:alpha='${alpha}'` : ''}`;
+  const filtros = [];
+  if (resto) {
+    filtros.push(`drawtext=${comun}:textfile='${await archivoTexto(dir, resto)}'`
+      + `:fontsize=${Math.round(tam * 0.78)}:fontcolor=${PLATA}:y=${y}`);
+  }
+  filtros.push(`drawtext=${comun}:textfile='${await archivoTexto(dir, acento)}'`
+    + `:fontsize=${resto ? Math.round(tam * 1.08) : tam}:fontcolor=${ORO}`
+    + `:y=${resto ? `${y}+${Math.round(tam * 0.8)}` : y}`);
+  return filtros;
+}
+
 const limpioTexto = (t, max) => String(t ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
 // ── 1. EL GUION ─────────────────────────────────────────────────────────
@@ -82,7 +115,7 @@ export const promptGuion = ({ para, empresa, telefono }) => {
     `- Descripción: ${p.descripcion}`,
     `- Código: ${p.codigo}`,
     p.marca ? `- Marca: ${p.marca}` : '',
-    p.modelos ? `- Motos compatibles: ${p.modelos}` : '- Motos compatibles: (no registradas; no las inventes)',
+    p.modelos ? `- Motos compatibles: ${p.modelos}` : '- Motos compatibles: (no registradas: NO menciones ninguna moto ni modelo)',
     `- Precio de catálogo (SOLO para letra en pantalla, NUNCA en la voz): RD$ ${Number(p.precio || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`,
     '',
     'LA RECETA:',
@@ -107,6 +140,9 @@ export const promptGuion = ({ para, empresa, telefono }) => {
     '  luego 1 o 2 beneficios en frases de 3 a 7 palabras, un toque de urgencia ("¡Ya llegó!", "¡No te quedes sin la tuya!"),',
     '  y cierre con llamado a la acción. Nada de explicaciones largas ni de leer el nombre del catálogo completo.',
     '- NO inventes medidas, cilindradas, materiales, certificaciones ni motos que no estén arriba.',
+    '- Los números y siglas del NOMBRE de la pieza (ej. 5100, 7100, 10W40, 20W50, 4T, 2T, SAE, 6203) son parte del nombre',
+    '  o de la especificación, NUNCA modelos de moto. "Compatible con modelos 5100" es un error grave.',
+    '  Solo nombra motos que estén en "Motos compatibles".',
     '  Si la receta pide datos técnicos y no los hay, habla de lo que sí se sabe (para qué moto, que está disponible).',
     '- PROHIBIDO mencionar el precio, "pesos", cifras de dinero o la palabra "precio" en la VOZ (decisión del dueño).',
     '  Si conviene, el precio va como "texto" de UNA toma, EXACTAMENTE el de catálogo.',
@@ -213,9 +249,8 @@ async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false }) {
     'eq=contrast=1.08:saturation=1.15',
   ];
   if (texto) {
-    filtros.push(`drawtext=fontfile='${rutaFiltro(FUENTE_TITULO)}':expansion=none:textfile='${await archivoTexto(dir, texto)}'`
-      + `:fontsize=124:fontcolor=white:borderw=6:bordercolor=black@0.9:box=1:boxcolor=${NARANJA}@0.92:boxborderw=22`
-      + `:x=(w-text_w)/2:y=h*0.12:alpha='if(lt(t,0.12),t/0.12,1)'`);
+    // La letra de las piezas (plata + oro), entrando de golpe.
+    filtros.push(...await letrero(dir, texto, { y: 'h*0.10', tam: 140, alpha: 'if(lt(t,0.12),t/0.12,1)' }));
   }
   filtros.push(`fade=t=in:st=0:d=0.12:color=white,fade=t=out:st=${Math.max(0, dur - 0.08).toFixed(2)}:d=0.08`);
   const lado = cerrado ? 'b' : 'a';
@@ -245,6 +280,12 @@ async function clipPlaca({ dir, nombre, dur, logo, lineas }) {
   for (const l of lineas) {
     k += 1;
     const sig = `[b${k}]`;
+    const aparece = `if(lt(t,${0.2 + k * 0.15}),0,min(1,(t-${0.2 + k * 0.15})/0.3))`;
+    if (l.letrero) {
+      partes.push(`${v}${(await letrero(dir, l.texto, { y: `h*${l.y}`, tam: l.tam || 130, alpha: aparece })).join(',')}${sig}`);
+      v = sig;
+      continue;
+    }
     partes.push(`${v}drawtext=fontfile='${rutaFiltro(l.fuente || FUENTE_TITULO)}':expansion=none:textfile='${await archivoTexto(dir, l.texto)}'`
       + `:fontsize=${l.tam || 96}:fontcolor=${l.color || 'white'}:borderw=4:bordercolor=black@0.7`
       + `:x=(w-text_w)/2:y=h*${l.y}:alpha='if(lt(t,${0.2 + k * 0.15}),0,min(1,(t-${0.2 + k * 0.15})/0.3))'${sig}`);
@@ -301,15 +342,23 @@ const bajar = async (url, archivo) => {
  *  pedirToma   ({ toma }) => Buffer PNG, por creativo-escena
  *  subirVideo  (Buffer) => url pública
  */
-export async function armarReel({ para, logoUrl, telefono, empresa, raiz, pensar, pedirToma, subirVideo, log = () => {} }) {
+// (04/10/2026) El dueño quiere VER y corregir el guion antes de gastar en
+// tomas y voz. Por eso son dos pasos: con las imágenes se escribe solo el
+// guion (centavos); el reel se arma cuando él pulsa "Hacer el reel", con el
+// guion tal como lo dejó (sql/reels_con_guion_aprobado.sql).
+export async function escribirGuion({ para, empresa, telefono, pensar }) {
+  return normalizarGuion(leerJson(await pensar(promptGuion({ para, empresa, telefono }))));
+}
+
+export async function armarReel({ para, guion: guionDado = null, logoUrl, telefono, empresa, raiz, pensar, pedirToma, subirVideo, log = () => {} }) {
   const dir = await mkdtemp(path.join(tmpdir(), 'reel-armar-'));
   const avisos = [];
   try {
     const conVoz = para.receta?.voz?.hay !== false;
     log(`  reel: formato ${para.formato}`);
 
-    // 1. Guion
-    const guion = normalizarGuion(leerJson(await pensar(promptGuion({ para, empresa, telefono }))));
+    // 1. Guion: el que aprobó el dueño o, si no hay, uno nuevo.
+    const guion = guionDado ? normalizarGuion(guionDado) : await escribirGuion({ para, empresa, telefono, pensar });
     log(`  reel: guion con ${guion.tomas.length} tomas`);
 
     // 2. Tomas, en paralelo (cada una tarda casi un minuto)
@@ -354,16 +403,16 @@ export async function armarReel({ para, logoUrl, telefono, empresa, raiz, pensar
     const logo = logoUrl ? await bajar(logoUrl, path.join(dir, 'logo.png')).catch(() => null) : null;
     const clips = [];
     clips.push(await clipPlaca({ dir, nombre: 'intro', dur: INTRO, logo,
-      lineas: [{ texto: guion.titular, y: logo ? 0.60 : 0.45, tam: 120, color: NARANJA }] }));
+      lineas: [{ texto: guion.titular, y: logo ? 0.57 : 0.42, tam: 140, letrero: true }] }));
     for (const [i, t] of tomas.entries()) {
       clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento, texto: t.texto }));
       clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento, texto: null, cerrado: true }));
     }
     clips.push(await clipPlaca({ dir, nombre: 'cierre', dur: CIERRE, logo,
       lineas: [
-        { texto: guion.cierre, y: 0.58, tam: 92, color: NARANJA },
-        ...(telefono ? [{ texto: `WhatsApp ${telefono}`, y: 0.68, tam: 70, fuente: FUENTE_TEXTO }] : []),
-        { texto: 'Di que lo viste aquí: 5% de descuento', y: 0.76, tam: 52, fuente: FUENTE_TEXTO, color: '0xDDDDDD' },
+        { texto: guion.cierre, y: 0.555, tam: 104, letrero: true },
+        ...(telefono ? [{ texto: `WhatsApp ${telefono}`, y: 0.71, tam: 78, fuente: FUENTE_TEXTO }] : []),
+        { texto: 'Di que lo viste aquí: 5% de descuento', y: 0.78, tam: 58, fuente: FUENTE_TEXTO, color: '0xDDDDDD' },
       ] }));
     log('  reel: clips montados');
 
@@ -382,7 +431,7 @@ export async function armarReel({ para, logoUrl, telefono, empresa, raiz, pensar
     const filtrosV = [];
     for (const s of subs) {
       filtrosV.push(`drawtext=fontfile='${rutaFiltro(FUENTE_TEXTO)}':expansion=none:textfile='${await archivoTexto(dir, s.texto)}'`
-        + `:fontsize=62:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=18`
+        + `:fontsize=70:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=18`
         + `:x=(w-text_w)/2:y=h*0.80:enable='between(t,${s.desde.toFixed(2)},${s.hasta.toFixed(2)})'`);
     }
     const guionV = path.join(dir, 'f_subs.txt');

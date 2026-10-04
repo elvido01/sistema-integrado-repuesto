@@ -65,7 +65,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { montarArte } from './arteCreativo.mjs';
 import { estudiarReel } from './estudioReel.mjs';
-import { armarReel } from './armarReel.mjs';
+import { armarReel, escribirGuion } from './armarReel.mjs';
 import { estudiarVideoSuplidor } from './estudioVideoSuplidor.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
@@ -572,6 +572,65 @@ const estudiarReelPendiente = async () => {
   }
 };
 
+// ── LOS REELS CON GUION APROBADO ──────────────────────────────────────
+// (04/10/2026) El dueño revisó y corrigió el guion en el Paso 2 y pulsó
+// "Hacer el reel" (sql/reels_con_guion_aprobado.sql). Aquí se generan las
+// tomas y la voz con ESE guion. Va antes que los estudios: el dueño espera.
+const armarReelPedido = async () => {
+  if (AGENTE !== 'comercial_creativo') return;
+  let ped;
+  try {
+    ped = (await escribir('SELECT hermes.equipo_reel_pedido_tomar() AS r')).rows[0]?.r;
+  } catch (e) { log('reels pedidos: no se pudo mirar la cola:', e.message); return; }
+  if (!ped) return;
+  log(`reel pedido ${ped.id} (intento ${ped.intento}) · ${ped.para?.producto?.descripcion || ''}`);
+
+  const permiso = async (formato) => {
+    const p = await escribir('SELECT hermes.equipo_reel_pedido_permiso($1,$2) AS r', [ped.id, formato]);
+    const r = p.rows[0].r;
+    if (!r?.ok) throw new Error(r?.motivo || 'sin permiso');
+    return r;
+  };
+  const pedirToma = async ({ toma }) => {
+    const pm = await permiso('toma');
+    const corte = new AbortController();
+    const reloj = setTimeout(() => corte.abort(), 170_000);
+    try {
+      const r = await fetch(pm.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-permiso-escena': pm.token },
+        body: JSON.stringify({ foto_url: ped.foto_url, toma, acento: '#f5a623' }),
+        signal: corte.signal,
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j?.ok || !j.b64) throw new Error(j?.error || `HTTP ${r.status}`);
+      log(`  toma: US$${j.cost_usd}`);
+      return Buffer.from(j.b64, 'base64');
+    } finally { clearTimeout(reloj); }
+  };
+  const subirVideo = async (bytes) => {
+    const pm = await permiso('video');
+    const r = await fetch(pm.url, {
+      method: 'POST', headers: { 'Content-Type': 'video/mp4', 'x-permiso-escena': pm.token }, body: bytes,
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j?.ok || !j.url) throw new Error(j?.error || `HTTP ${r.status}`);
+    return j.url;
+  };
+
+  try {
+    const reel = await armarReel({ para: ped.para, guion: ped.guion, logoUrl: ped.logo_url,
+      telefono: ped.telefono, empresa: ped.empresa, raiz: RAIZ, pedirToma, subirVideo, log,
+      pensar: async () => { throw new Error('el guion ya viene aprobado'); } });
+    await escribir('SELECT hermes.equipo_reel_pedido_listo($1,$2,$3,$4::jsonb,$5::jsonb)',
+      [ped.id, reel.video_url, reel.duracion, JSON.stringify(reel.avisos || []), JSON.stringify(reel.guion)]);
+    log(`  reel listo: ${reel.video_url}`);
+  } catch (e) {
+    log('  no se pudo armar el reel pedido:', e.message);
+    await escribir('SELECT hermes.equipo_reel_pedido_error($1,$2)', [ped.id, e.message]).catch(() => {});
+  }
+};
+
 // ── LOS VIDEOS DEL SUPLIDOR ───────────────────────────────────────────
 // (04/10/2026) "Lo que anuncia tu suplidor": el dueño pega el reel de Pedro
 // Racing y aquí se averigua qué pieza es (sql/videos_del_suplidor.sql). Igual
@@ -701,6 +760,7 @@ while (corriendo) {
   } catch (e) { log('error tomando de la cola:', e.message); await new Promise((s) => setTimeout(s, 15000)); continue; }
 
   if (!msg) {
+    await armarReelPedido();
     await estudiarReelPendiente();
     await estudiarVideoSuplidorPendiente();
     await new Promise((s) => setTimeout(s, ESPERA_VACIO_MS));
@@ -868,15 +928,15 @@ while (corriendo) {
           datos.advertencias = [...(datos.advertencias || []), ...avisosArte];
         }
 
-        // ── EL REEL (04/10/2026) ──────────────────────────────────
-        // Con las dos imágenes ya hechas, el reel de la misma pieza con la
-        // receta de un reel modelo (rota los formatos). Si algo falla, las
-        // imágenes llegan igual y se dice por qué no hubo reel: el reel es
-        // un añadido, no puede tumbar la promoción.
+        // ── EL GUION DEL REEL (04/10/2026) ────────────────────────
+        // Solo el guion: el dueño lo revisa y corrige en el Paso 2 y el reel
+        // se arma cuando él pulsa "Hacer el reel" (equipo_reels_pedidos). Así
+        // no se gasta en tomas y voz con un guion que dice algo mal (el del
+        // Motul 5100 decía "compatible con modelos 5,100").
         try {
           const para = (await escribir('SELECT hermes.equipo_reel_para($1,$2) AS r',
             [msg.id, msg.claim_token])).rows[0]?.r;
-          if (para) {
+          if (para && fotoUrl) {
             const pensarGuion = async (prompt) => {
               const c = { ...actual, max_tokens: 1500, temperatura: 0.7 };
               if (actual.proveedor === 'claude_suscripcion') {
@@ -888,37 +948,18 @@ while (corriendo) {
               }
               return porApi(c, prompt);
             };
-            const pedirToma = ({ toma }) => pedirEscena({ formato: 'toma', foto_url: fotoUrl, toma,
-              acento: datos.arte?.acento || '#f5a623' });
-            const subirVideo = async (bytes) => {
-              const p = await escribir('SELECT hermes.equipo_permiso_escena($1,$2,$3) AS r',
-                [msg.id, msg.claim_token, 'video']);
-              const permiso = p.rows[0].r;
-              if (!permiso?.ok) throw new Error(permiso?.motivo || 'sin permiso para subir el video');
-              const r = await fetch(permiso.url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'video/mp4', 'x-permiso-escena': permiso.token },
-                body: bytes,
-              });
-              const j = await r.json().catch(() => null);
-              if (!r.ok || !j?.ok || !j.url) throw new Error(j?.error || `HTTP ${r.status}`);
-              return j.url;
+            const guion = await escribirGuion({ para, empresa: emp, telefono: tel, pensar: pensarGuion });
+            datos.reel_guion = {
+              guion,
+              para: { modelo_id: para.modelo_id, formato: para.formato, nota_dueno: para.nota_dueno || null,
+                receta: para.receta, producto: para.producto },
+              foto_url: fotoUrl, logo_url: logoUrl, telefono: tel, empresa: emp,
             };
-            const reel = await armarReel({ para, logoUrl, telefono: tel, empresa: emp, raiz: RAIZ,
-              pensar: pensarGuion, pedirToma, subirVideo, log });
-            datos.reel = {
-              video_url: reel.video_url, formato: reel.formato, modelo_id: reel.modelo_id,
-              duracion: reel.duracion, voz: reel.guion.voz, descripcion_redes: reel.guion.descripcion_redes,
-            };
-            if (reel.avisos.length) datos.advertencias = [...(datos.advertencias || []), ...reel.avisos];
-            await escribir('SELECT hermes.equipo_reel_hecho($1,$2,$3,$4,$5,$6,$7::jsonb,$8)',
-              [msg.id, msg.claim_token, reel.modelo_id, reel.formato, para.producto?.id || null,
-               reel.video_url, JSON.stringify(reel.guion), reel.duracion]).catch((e) => log('  reel no anotado:', e.message));
-            log(`  reel listo: ${reel.video_url}`);
+            log(`  guion del reel listo (${para.formato}, ${guion.tomas.length} tomas): espera al dueño`);
           }
         } catch (e) {
-          log('  no se pudo armar el reel:', e.message);
-          datos.advertencias = [...(datos.advertencias || []), `No se pudo armar el reel: ${e.message}`];
+          log('  no se pudo escribir el guion del reel:', e.message);
+          datos.advertencias = [...(datos.advertencias || []), `No se pudo escribir el guion del reel: ${e.message}`];
         }
       } catch (e) {
         log('  no se pudo montar el arte:', e.message);

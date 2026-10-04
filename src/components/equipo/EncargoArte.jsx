@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, CheckCircle2, RotateCcw, X, AlertTriangle } from 'lucide-react';
 import { FORMATOS_REEL } from '@/components/equipo/ReelsModelo';
+import { GuionReel } from '@/components/equipo/GuionReel';
 
 // ════════════════════════════════════════════════════════════════════════
 //  EL ARTE DEL ENCARGO, AQUÍ MISMO
@@ -102,6 +103,8 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
   // Los bytes de cada pieza, tal como llegaron: para subirlas no hay que
   // volver a pedirlas.
   const bytesPiezas = useRef({});
+  // El reel hecho con el guion que el dueño aprobó (GuionReel).
+  const [reelPedido, setReelPedido] = useState(null);
 
   const mirar = useCallback(async () => {
     const { data, error } = await supabase.rpc('equipo_trabajo_detalle', { p_trabajo_id: trabajoId });
@@ -262,12 +265,17 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
         media: {
           imagen_feed: feed,
           ...(historia ? { imagen_historia: historia } : {}),
-          ...(c.reel?.video_url ? { video: c.reel.video_url } : {}),
+          ...(reelPedido?.estado === 'listo' && reelPedido.video_url ? { video: reelPedido.video_url }
+            : c.reel?.video_url ? { video: c.reel.video_url } : {}),
         },
         textos: {
           facebook: textoDe(c.copy?.facebook),
           instagram: textoDe(c.copy?.instagram),
-          ...(c.reel?.descripcion_redes ? { tiktok: c.reel.descripcion_redes, youtube: c.reel.descripcion_redes } : {}),
+          ...(() => {
+            const d = (reelPedido?.estado === 'listo' && reelPedido.guion?.descripcion_redes)
+              || c.reel_guion?.guion?.descripcion_redes || c.reel?.descripcion_redes;
+            return d ? { tiktok: d, youtube: d } : {};
+          })(),
         },
       });
       toast({ title: 'Imagen aprobada', description: 'Paso 3, abajo: ya está lleno. Marca el estante y publica o programa.' });
@@ -329,12 +337,12 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
             <Loader2 className="h-4 w-4 animate-spin text-violet-500" />
             {rehaciendo
               ? 'El Comercial-Creativo está rehaciendo la pieza…'
-              : 'El Comercial-Creativo está montando las imágenes y el reel. Suele tardar unos cinco minutos…'}
+              : 'El Comercial-Creativo está montando las imágenes y escribiendo el guion del reel. Suele tardar unos dos minutos…'}
           </div>
           {trabado && (
             <div className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
               <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span className="flex-1">Lleva {minutosQuieto} minutos sin moverse. Con el reel tarda unos cinco: algo se cayó.</span>
+              <span className="flex-1">Lleva {minutosQuieto} minutos sin moverse. Una pieza tarda dos o tres: algo se cayó.</span>
               <Button size="sm" variant="outline" disabled={trabajando} onClick={reencargar}>
                 {trabajando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-1 h-3.5 w-3.5" />}
                 Encargar de nuevo
@@ -417,6 +425,12 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
               </div>
             )}
           </div>
+
+          {/* El guion del reel: se revisa aquí y el reel se hace solo cuando el
+              dueño lo pide (no se gasta en tomas con un guion equivocado). */}
+          {pieza.reel_guion?.guion && (
+            <GuionReel trabajoId={trabajoId} reelGuion={pieza.reel_guion} onPedido={setReelPedido} />
+          )}
 
           {Array.isArray(pieza.advertencias) && pieza.advertencias.length > 0 && (
             <ul className="mt-2 list-disc rounded border border-amber-200 bg-amber-50 py-1.5 pl-6 pr-2 text-[11px] text-amber-900">
