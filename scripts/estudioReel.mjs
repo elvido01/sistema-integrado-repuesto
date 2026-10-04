@@ -27,15 +27,16 @@ const FFMPEG = process.env.FFMPEG_CMD || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_CMD || 'ffprobe';
 const MAX_TOMAS = 12;
 
-export const FORMATOS_REEL = [
-  'comercial_estudio',    // logo, humo, luz de color sobre negro, voz técnica
-  'en_las_manos',         // una mano la sostiene frente a la cámara, taller detrás
-  'pregunta_que_ensena',  // empieza con una pregunta y explica
-  'colores_variantes',    // todas las versiones en fila, letras grandes
-  'empaque_detalle',      // la pieza en su empaque, tomas de cerca, compatibles
-  'vitrina_giratoria',    // gira sola en un podio con reflejo
-  'otro',
-];
+export const FORMATOS_DESCRITOS = {
+  comercial_estudio:   'comercial de estudio: intro con logo, humo o chispas, luz de color sobre fondo negro, varias piezas o un kit, voz técnica y cierre con la marca',
+  en_las_manos:        'en las manos: una mano (o dos) sostiene la pieza frente a la cámara la mayor parte del tiempo, con taller o tienda detrás',
+  pregunta_que_ensena: 'pregunta que enseña: empieza con una pregunta al cliente y explica algo (cómo reconocer, cómo elegir); puede salir una persona',
+  colores_variantes:   'colores y variantes: varias versiones de la misma pieza (colores, tamaños) juntas, letras grandes animadas',
+  empaque_detalle:     'empaque y detalle: la pieza en su caja o blíster, tomas de cerca de cada detalle, lista de motos compatibles',
+  vitrina_giratoria:   'vitrina giratoria: UNA pieza o kit sobre un podio o plato que gira (o la cámara la rodea), con reflejo y luz detrás; casi sin cortes',
+  otro:                'otro: no encaja en ninguno',
+};
+export const FORMATOS_REEL = Object.keys(FORMATOS_DESCRITOS);
 
 const correr = (cmd, args, { timeout = 180_000 } = {}) => new Promise((resolve, reject) => {
   const hijo = spawn(cmd, args, { shell: false, windowsHide: true });
@@ -123,8 +124,15 @@ const transcribir = async (audio) => {
   const inventado = /amara\.org|subt[ií]tulos (realizados|por)/i;
   const segmentos = (j.segments || []).map((s) => ({
     desde: Math.round(s.start * 10) / 10, hasta: Math.round(s.end * 10) / 10, texto: String(s.text || '').trim(),
-  })).filter((s) => s.texto && !inventado.test(s.texto));
-  return { texto: segmentos.map((s) => s.texto).join(' '), segmentos };
+    // Con solo música, Whisper "oye" palabras ("you", "Música", "E aí"):
+    // fuera lo que él mismo marca como probable no-voz.
+    ruido: Number(s.no_speech_prob || 0) > 0.5 || Number(s.avg_logprob || 0) < -1,
+  })).filter((s) => s.texto && !s.ruido && !inventado.test(s.texto))
+    .map(({ ruido, ...resto }) => resto);
+  // Dos o tres palabras sueltas en un reel entero no son una voz en off.
+  const texto = segmentos.map((s) => s.texto).join(' ');
+  if (texto.split(/\s+/).filter(Boolean).length < 5) return { texto: '', segmentos: [] };
+  return { texto, segmentos };
 };
 
 export const promptEstudio = ({ duracion, tomas, transcripcion, nota }) => [
@@ -145,7 +153,7 @@ export const promptEstudio = ({ duracion, tomas, transcripcion, nota }) => [
   '',
   'Devuelve SOLO un JSON, sin texto alrededor, con esta forma:',
   '{',
-  `  "formato": "uno de: ${FORMATOS_REEL.join(', ')}",`,
+  '  "formato": "la clave de UNO de los formatos de abajo",',
   '  "titulo": "una línea: qué es este reel (ej. Comercial de estudio de un kit de cilindro)",',
   '  "para_que_piezas": "qué tipo de piezas lucen con este formato y cuáles no",',
   '  "duracion_s": 30,',
@@ -160,6 +168,9 @@ export const promptEstudio = ({ duracion, tomas, transcripcion, nota }) => [
   '  "lo_que_lo_hace_funcionar": ["...", "..."],',
   '  "no_copiar": ["su marca", "su producto", "sus frases exactas", "..."]',
   '}',
+  'Formatos (elige el que MÁS pesa en el reel, mirando todas las tomas):',
+  ...Object.entries(FORMATOS_DESCRITOS).map(([k, v]) => `  - ${k}: ${v}`),
+  '',
   'Reglas:',
   '- Una entrada en "tomas" por cada plano de la lista, con sus mismos segundos.',
   '- "que_se_ve" describe lo que se ve EN ESTE REEL con nombres genéricos (campana de clutch, mano, humo, logo de la marca),',
