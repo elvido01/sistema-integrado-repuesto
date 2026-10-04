@@ -23,6 +23,7 @@ import { BorradorPromocion } from '@/components/equipo/BorradorPromocion';
 import { EspecificacionesArte } from '@/components/equipo/EspecificacionesArte';
 import { RecomendacionesDelDia } from '@/components/equipo/RecomendacionesDelDia';
 import { PiezasModelo } from '@/components/equipo/PiezasModelo';
+import { ReelsModelo } from '@/components/equipo/ReelsModelo';
 import { FotosDelDia } from '@/components/equipo/FotosDelDia';
 import { AgotadosQueSeVenden } from '@/components/equipo/AgotadosQueSeVenden';
 import { CodigosDePromocion } from '@/components/equipo/CodigosDePromocion';
@@ -552,6 +553,9 @@ const EquipoIAPage = () => {
         <EspecificacionesArte />
         <PiezasModelo />
       </div>
+
+      {/* Lo mismo para video: reels que el dueño admira y la receta de cada uno. */}
+      <ReelsModelo />
 
       <PromocionPublicar prefill={prefillPromo} />
 

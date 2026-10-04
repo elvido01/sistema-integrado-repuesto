@@ -64,6 +64,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { montarArte } from './arteCreativo.mjs';
+import { estudiarReel } from './estudioReel.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
 const require_ = createRequire(path.join(RAIZ, 'package.json'));
@@ -521,6 +522,54 @@ const leerRespuesta = (texto) => {
   catch { return { ok: false, datos: { resumen: limpio.slice(0, 200), texto: limpio, estado: 'borrador', formato: 'texto_libre' } }; }
 };
 
+// ── LOS REELS MODELO ──────────────────────────────────────────────────
+// (04/10/2026) "Estilo de tus reels": el dueño pega enlaces de reels que le
+// gustan y aquí, con la cola vacía, se estudian uno a uno y se guarda su
+// receta (sql/equipo_reels_modelo.sql, scripts/estudioReel.mjs). Solo el
+// Comercial-Creativo y a lo sumo uno por minuto: un reel tarda de uno a tres
+// minutos y la cola de encargos manda.
+let ultimoReel = 0;
+const estudiarReelPendiente = async () => {
+  if (AGENTE !== 'comercial_creativo' || Date.now() - ultimoReel < 60_000) return;
+  ultimoReel = Date.now();
+  let reel;
+  try {
+    reel = (await escribir('SELECT hermes.equipo_reel_tomar() AS r')).rows[0]?.r;
+  } catch (e) { log('reels: no se pudo mirar la cola:', e.message); return; }
+  if (!reel) return;
+  log(`reel modelo ${reel.url} (intento ${reel.intento})`);
+
+  const { rows: [{ cfg: actual }] } = await consultar(
+    'SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE]);
+  const c = { ...actual, max_tokens: 2500, temperatura: 0.2 };
+  // Mirar las tomas: por API van dentro del mensaje; con la suscripción van
+  // como archivos que Claude Code abre. Si la suscripción no está, OpenAI.
+  const pensar = async (prompt, tomas) => {
+    if (actual.proveedor === 'claude_suscripcion') {
+      try {
+        const lista = tomas.map((t) => `· ${t.ruta} (segundo ${t.seg})`).join('\n');
+        return await porClaudeCode(
+          `${prompt}\n\nLas tomas están en estos archivos. ÁBRELAS y MÍRALAS antes de escribir:\n${lista}`);
+      } catch (e) {
+        if (!process.env.OPENAI_API_KEY) throw e;
+        log('  la suscripción no respondió; estudio por OpenAI');
+        return porApi({ ...c, proveedor: 'openai', modelo: 'gpt-4o' }, prompt, tomas);
+      }
+    }
+    return porApi(c, prompt, tomas);
+  };
+
+  try {
+    const est = await estudiarReel({ url: reel.url, nota: reel.nota_dueno, pensar, log });
+    await escribir('SELECT hermes.equipo_reel_guardar($1,$2::jsonb,$3,$4,$5,$6) AS r',
+      [reel.id, JSON.stringify(est.receta), est.formato, est.titulo, est.duracion, est.miniatura]);
+    log(`  receta guardada: ${est.formato} · ${est.titulo || ''}`);
+  } catch (e) {
+    log('  no se pudo estudiar el reel:', e.message);
+    await escribir('SELECT hermes.equipo_reel_error($1,$2)', [reel.id, e.message]).catch(() => {});
+  }
+};
+
 // ── El ciclo ───────────────────────────────────────────────────────────
 let corriendo = true;
 process.on('SIGINT', () => { corriendo = false; log('parando…'); });
@@ -607,7 +656,11 @@ while (corriendo) {
     msg = r.rows[0];
   } catch (e) { log('error tomando de la cola:', e.message); await new Promise((s) => setTimeout(s, 15000)); continue; }
 
-  if (!msg) { await new Promise((s) => setTimeout(s, ESPERA_VACIO_MS)); continue; }
+  if (!msg) {
+    await estudiarReelPendiente();
+    await new Promise((s) => setTimeout(s, ESPERA_VACIO_MS));
+    continue;
+  }
 
   log(`tomado ${msg.id} · ${msg.summary}`);
 
