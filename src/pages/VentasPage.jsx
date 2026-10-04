@@ -20,7 +20,8 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { escucharOrdenes } from '@/lib/puenteAgente';
 import { publicarDatos } from '@/lib/pantallaContexto';
-import { Loader2 } from 'lucide-react';
+import { Gift, Loader2, X } from 'lucide-react';
+import { nombreCanal } from '@/lib/canalesOrigen';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { esClienteGenerico } from '@/lib/clienteGenerico';
 
@@ -55,6 +56,8 @@ const VentasPage = () => {
     handleUpdateItem,
     handleDeleteItem,
     handleAddProductByCode,
+    promoAplicada,
+    quitarCodigoPromo,
     handleSelectCotizacion,
     handleSelectCotizacionMagna,
     handleSelectPedido,
@@ -731,6 +734,20 @@ const VentasPage = () => {
 
       <main className="flex-1 min-h-0 overflow-hidden">
         <div className="h-full overflow-y-auto bg-white shadow border-b border-gray-300">
+          {/* Codigo de promocion tecleado en la fila amarilla (T101, I101...). */}
+          {promoAplicada && (
+            <div className="flex items-center gap-2 border-b border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-800">
+              <Gift className="h-3.5 w-3.5" />
+              <span>
+                <b>Código {promoAplicada.codigo}</b> · vino por {nombreCanal(promoAplicada.canal)} ·{' '}
+                {Number(promoAplicada.pct)}% en {promoAplicada.descripcion}
+              </span>
+              <button type="button" onClick={quitarCodigoPromo} title="Quitar el código y su descuento"
+                className="ml-auto rounded p-0.5 hover:bg-emerald-100">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <VentasTable
             items={items}
             itemCode={itemCode}

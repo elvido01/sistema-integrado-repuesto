@@ -25,6 +25,7 @@ import { cuentaConAcceso } from '../_shared/cuentaSocial.mjs';
 import { privacidadVideoYoutube } from '../_shared/youtube.mjs';
 import { estadoEnvioTikTok } from '../_shared/tiktok.mjs';
 import { medirDestino } from '../_shared/metricas.mjs';
+import { textoConCodigo } from '../_shared/codigoPromo.mjs';
 
 // ── LOS NÚMEROS ─────────────────────────────────────────────────────────
 // Metricool dejó de traerlos el 28/09/2026: MotoFlow mide lo que publicó.
@@ -216,7 +217,12 @@ Deno.serve(async () => {
     const plataforma = job.channels?.[0];
     const cuenta = plataforma ? await cuentaDe(sb, job.tenant_id, plataforma) : null;
     const cfg = job.channel_config || {};
-    const texto = job.textos?.[plataforma] || job.caption || '';
+    // (04/10/2026) El codigo de descuento de la promocion va al final del
+    // texto (T101, I101...): es lo que dice en caja de que red vino la venta.
+    // Si no se puede leer, se publica igual sin codigo.
+    const { data: codigo, error: eCod } = await sb.rpc('promo_codigo_de_trabajo', { p_job_id: job.id });
+    if (eCod) console.error('[publicador] sin codigo de promocion:', eCod.message);
+    const texto = textoConCodigo(job.textos?.[plataforma] || job.caption || '', codigo);
 
     for (const destino of job.destinos || []) {
       // La historia va con la imagen vertical y el feed con la cuadrada. El

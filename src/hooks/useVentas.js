@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 import { emitInventarioActualizado } from '@/lib/catalogEvents';
 import { IDS_GENERICOS, ID_GENERICO_BASE } from '@/lib/clienteGenerico';
-import { CANAL_POR_DEFECTO } from '@/lib/canalesOrigen';
+import { CANAL_POR_DEFECTO, nombreCanal } from '@/lib/canalesOrigen';
 
 const CLIENTE_GENERICO = {
   id: ID_GENERICO_BASE,
@@ -86,6 +86,13 @@ export const useVentas = () => {
   // siempre. Lo pone `handleSelectCotizacion` cuando la cotizacion viene de
   // una conversacion de WhatsApp, Instagram, Facebook o TikTok.
   const [canalOrigen, setCanalOrigen] = useState(CANAL_POR_DEFECTO);
+  // Codigo de descuento de una promocion (T101, I101...): da 5% en la pieza
+  // promocionada y dice de que red vino la venta. Ver
+  // sql/codigo_de_descuento_por_promocion.sql. El ref es para que
+  // addProductToInvoice lo vea sin rehacerse.
+  const [promoAplicada, setPromoAplicada] = useState(null);
+  const promoRef = useRef(null);
+  useEffect(() => { promoRef.current = promoAplicada; }, [promoAplicada]);
   const [ncfPreview, setNcfPreview] = useState(null); // { ncf: 'B0100000334', tipo_ncf: '01' }
 
   /* Edit Mode State */
@@ -130,6 +137,10 @@ export const useVentas = () => {
    * Margen minimo (% sobre costo) configurable en config_empresa.margen_minimo_pct.
    * 0 (o no configurado) = solo se prohibe vender por debajo del costo. */
   const margenMinPct = Number(empresa?.margen_minimo_pct || 0) / 100;
+  // Las funciones de la promocion viven dentro de useCallback viejos: leen el
+  // margen por ref para no quedarse con el de antes de cargar la empresa.
+  const margenMinRef = useRef(margenMinPct);
+  margenMinRef.current = margenMinPct;
 
   // Precio de venta unitario (tal cual se cobra, ya con el descuento de la linea
   // aplicado). Se compara directamente contra el costo, igual que la "Ganancia
@@ -149,6 +160,27 @@ export const useVentas = () => {
     // Tolerancia de medio centavo para evitar falsos positivos por redondeo.
     if (precioVenta < piso - 0.005) return { costo, piso, precioVenta };
     return null;
+  };
+
+  // El % de la promocion que cabe sin bajar del costo (con el margen minimo
+  // de la empresa). Nunca negativo; con dos decimales hacia abajo.
+  const pctPromoPermitido = (item, pct) => {
+    const costo = Number(item?.costo_unitario || 0);
+    const precio = Number(item?.precio || 0);
+    if (costo <= 0 || precio <= 0) return pct;
+    const piso = costo * (1 + margenMinRef.current);
+    const tope = Math.floor((1 - piso / precio) * 10000) / 100;
+    return Math.max(0, Math.min(pct, tope));
+  };
+
+  // Pone el descuento de la promocion en una linea de la pieza promocionada.
+  // max_descuento sube con el: si no, editar la linea lo recortaria.
+  const conPromo = (item, promo) => {
+    if (!promo || !item || item.producto_id !== promo.producto_id) return item;
+    const pct = pctPromoPermitido(item, Number(promo.pct) || 0);
+    if (Number(item.descuento || 0) >= pct) return item;
+    const conDesc = { ...item, descuento: pct, max_descuento: Math.max(Number(item.max_descuento || 0), pct) };
+    return { ...conDesc, ...calculateItemValues(conDesc) };
   };
 
   const describeBajoCosto = (item, bc) => {
@@ -357,6 +389,7 @@ export const useVentas = () => {
     setManualClienteNombre('');
     setNotas('');
     setCanalOrigen(CANAL_POR_DEFECTO);
+    setPromoAplicada(null);
     loadNcfPreview(CLIENTE_GENERICO.tipo_ncf);
   }, [loadNcfPreview]);
 
@@ -571,11 +604,11 @@ export const useVentas = () => {
       local_suplidor_sugerido: product.local_suplidor_sugerido || null,
     };
 
-    setCurrentItem(newItem);
+    setCurrentItem(conPromo(newItem, promoRef.current));
     setItemCode(product.codigo);
   }, [cliente]);
 
-  const handleAddProductByCode = useCallback(async (code) => {
+  const agregarPiezaPorCodigo = useCallback(async (code) => {
     if (!code.trim()) return;
     try {
       const { data, error } = await supabase
@@ -638,6 +671,71 @@ export const useVentas = () => {
       toast({ title: 'Error Inesperado', description: 'Ocurrió un error al buscar el producto.', variant: 'destructive' });
     }
   }, [addProductToInvoice, toast]);
+
+  // >>> EL CODIGO DE PROMOCION SE TECLEA DONDE LOS CODIGOS DE PIEZA <<<
+  // (04/10/2026) Sin boton nuevo: en agosto ocho botones de "¿de donde
+  // vino?" duraron un dia, porque en el mostrador cada clic estorba. Si lo
+  // tecleado tiene forma de codigo (letra + numero sin cero delante) se
+  // pregunta primero si es una promocion; si no lo es, se busca como pieza.
+  const aplicarCodigoPromo = useCallback(async (promo) => {
+    setItemCode('');
+    if (promo.vencido) {
+      const d = new Date(promo.vence_at);
+      toast({
+        title: `El código ${promo.codigo} ya venció`,
+        description: `Valía hasta el ${d.toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit' })}. No se aplicó descuento.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    setPromoAplicada(promo);
+    promoRef.current = promo;
+    setCanalOrigen(promo.canal);
+
+    const enFactura = (itemsRef.current || []).find((i) => i.producto_id === promo.producto_id);
+    if (enFactura) {
+      setItems((prev) => prev.map((i) => conPromo(i, promo)));
+      setCurrentItem((c) => (c ? conPromo(c, promo) : c));
+    } else {
+      // La pieza no estaba: se pone en la fila amarilla con el descuento.
+      await agregarPiezaPorCodigo(promo.producto_codigo);
+    }
+    const pct = pctPromoPermitido(enFactura || { precio: 0 }, Number(promo.pct) || 0);
+    toast({
+      title: `Código ${promo.codigo} · ${nombreCanal(promo.canal)}`,
+      description: pct < Number(promo.pct)
+        ? `${promo.descripcion}: solo ${pct}% para no vender bajo el costo.`
+        : `${Number(promo.pct)}% de descuento en ${promo.descripcion}.`,
+    });
+  }, [agregarPiezaPorCodigo, toast]);
+
+  const quitarCodigoPromo = useCallback(() => {
+    const promo = promoRef.current;
+    setPromoAplicada(null);
+    promoRef.current = null;
+    setCanalOrigen(CANAL_POR_DEFECTO);
+    if (!promo) return;
+    const sinPromo = (i) => {
+      if (i.producto_id !== promo.producto_id) return i;
+      const limpio = { ...i, descuento: 0 };
+      return { ...limpio, ...calculateItemValues(limpio) };
+    };
+    setItems((prev) => prev.map(sinPromo));
+    setCurrentItem((c) => (c ? sinPromo(c) : c));
+  }, []);
+
+  const handleAddProductByCode = useCallback(async (code) => {
+    const txt = String(code || '').trim();
+    if (!txt) return;
+    if (/^[TIFYW][1-9]\d{2,4}$/i.test(txt)) {
+      const { data: promo, error } = await supabase.rpc('promo_codigo_buscar', { p_codigo: txt });
+      if (!error && promo) {
+        await aplicarCodigoPromo(promo);
+        return;
+      }
+    }
+    await agregarPiezaPorCodigo(txt);
+  }, [aplicarCodigoPromo, agregarPiezaPorCodigo]);
 
   const handleUpdateItem = useCallback((id, field, value) => {
     setItems(prevItems =>
@@ -897,6 +995,9 @@ export const useVentas = () => {
         // Solo las empresas del piloto mandan la columna. Para el resto el
         // payload sigue siendo exactamente el de antes.
         ...(pideCanalOrigen ? { canal_origen: canalOrigen || null } : {}),
+        // Con codigo de promocion el canal va siempre, piloto o no: es la
+        // razon de ser del codigo.
+        ...(promoAplicada ? { promo_codigo_id: promoAplicada.id, canal_origen: promoAplicada.canal } : {}),
       };
 
       // === Asignar NCF automático según tipo_ncf del cliente (01, 02, 31, 32...) ===
@@ -1707,6 +1808,8 @@ export const useVentas = () => {
     handleUpdateItem,
     handleDeleteItem,
     handleAddProductByCode,
+    promoAplicada,
+    quitarCodigoPromo,
     setCotizacionId,
     handleSelectCotizacion,
     handleSelectCotizacionMagna,

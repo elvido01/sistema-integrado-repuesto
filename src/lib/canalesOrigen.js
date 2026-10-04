@@ -32,6 +32,8 @@ export const CANALES_ORIGEN = Object.freeze([
   { valor: 'instagram', label: 'Instagram',        corto: 'Instagram', emoji: '📸' },
   { valor: 'facebook',  label: 'Facebook',         corto: 'Facebook',  emoji: '👥' },
   { valor: 'tiktok',    label: 'TikTok',           corto: 'TikTok',    emoji: '🎵' },
+  // (04/10/2026) Entra con el codigo de promocion Y###: sql/codigo_de_descuento_por_promocion.sql
+  { valor: 'youtube',   label: 'YouTube',          corto: 'YouTube',   emoji: '▶️' },
   { valor: 'telefono',  label: 'Llamó por teléfono', corto: 'Teléfono', emoji: '📞' },
   { valor: 'referido',  label: 'Lo refirió alguien', corto: 'Referido', emoji: '🤝' },
   { valor: 'otro',      label: 'Otro',             corto: 'Otro',      emoji: '❔' },

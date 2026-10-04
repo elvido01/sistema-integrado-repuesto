@@ -25,6 +25,7 @@ import { RecomendacionesDelDia } from '@/components/equipo/RecomendacionesDelDia
 import { PiezasModelo } from '@/components/equipo/PiezasModelo';
 import { FotosDelDia } from '@/components/equipo/FotosDelDia';
 import { AgotadosQueSeVenden } from '@/components/equipo/AgotadosQueSeVenden';
+import { CodigosDePromocion } from '@/components/equipo/CodigosDePromocion';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -553,6 +554,9 @@ const EquipoIAPage = () => {
       </div>
 
       <PromocionPublicar prefill={prefillPromo} />
+
+      {/* El código de cada promoción y lo que vendió: dice qué red trae gente. */}
+      <CodigosDePromocion />
 
       <section id="videos-metricool" className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Videos de TikTok y YouTube">
         <h3 className="text-xs font-bold text-slate-700">TikTok y YouTube publicados mediante Metricool</h3>
