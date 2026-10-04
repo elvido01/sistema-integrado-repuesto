@@ -214,12 +214,22 @@ function VentasDeLaPromocion({ v }) {
   );
 }
 
-/** El precio, tal como hay que poder encontrarlo dentro del texto. */
-const precioEnTexto = (texto, precio) => {
-  if (!precio) return true;
-  const entero = String(Math.trunc(Number(precio)));
-  return String(texto || '').replace(/,/g, '').includes(entero);
+/**
+ * (04/10/2026) El precio en el texto es OPCIONAL (decisión del dueño); lo que
+ * no se permite es uno EQUIVOCADO. Devuelve el primer monto (RD$ o $) que no
+ * es el del catálogo —ni exacto ni redondeado—, o null. Misma regla que
+ * promo_crear (sql/precio_opcional_en_el_texto.sql).
+ */
+const precioEquivocado = (texto, precio) => {
+  const p = Number(precio);
+  if (!p) return null;
+  for (const m of String(texto || '').matchAll(/(?:RD\s*\$|\$)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi)) {
+    const v = Number(m[1].replace(/,/g, ''));
+    if (Math.abs(v - p) >= 0.01 && v !== Math.round(p) && v !== Math.trunc(p)) return m[1];
+  }
+  return null;
 };
+const mencionaPrecio = (texto) => /(?:RD\s*\$|\$)\s*[0-9]/i.test(String(texto || ''));
 
 export default function PromocionPublicar({ prefill = null, onLibre = null }) {
   const { toast } = useToast();
@@ -450,7 +460,9 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
     if (!destinos.length) p.push('Elige al menos una red además del Estado de WhatsApp.');
     plataformasElegidas.forEach((plat) => {
       if (!textos[plat]?.trim()) p.push(`Falta el texto de ${plat}.`);
-      else if (!precioEnTexto(textos[plat], precio)) p.push(`El texto de ${plat} no dice el precio.`);
+      else if (precioEquivocado(textos[plat], precio)) {
+        p.push(`El texto de ${plat} dice RD$ ${precioEquivocado(textos[plat], precio)} y el precio es ${rd(precio)}.`);
+      }
     });
     if (destinos.some((d) => d.placement === 'feed') && !media.imagen_feed) p.push('Falta la imagen del feed.');
     if (destinos.some((d) => d.placement === 'story') && !media.imagen_historia) p.push('Falta la imagen de la historia.');
@@ -713,8 +725,11 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
             <div key={plat}>
               <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
                 <span>Texto de {plat}</span>
-                {textos[plat] && !precioEnTexto(textos[plat], precio) && (
-                  <span className="text-red-600">no dice el precio</span>
+                {textos[plat] && precioEquivocado(textos[plat], precio) && (
+                  <span className="text-red-600">precio equivocado</span>
+                )}
+                {textos[plat] && !precioEquivocado(textos[plat], precio) && !mencionaPrecio(textos[plat]) && (
+                  <span className="text-slate-400">sin precio (está bien si así lo quieres)</span>
                 )}
                 {/* El creativo escribe para Facebook e Instagram, no para
                     TikTok ni YouTube: con un clic se trae el de Instagram. */}
@@ -728,7 +743,7 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
               </div>
               <textarea rows={3} className="w-full rounded border px-2 py-1 text-xs"
                 value={textos[plat]} onChange={(e) => setTextos((t) => ({ ...t, [plat]: e.target.value }))}
-                placeholder={precio ? `…incluí el precio: ${rd(precio)}` : 'Texto para esta red'} />
+                placeholder={precio ? `Texto para esta red (el precio es opcional: ${rd(precio)})` : 'Texto para esta red'} />
             </div>
           ))}
         </div>
