@@ -269,3 +269,6 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/')}`) {
   });
   console.log({ ...r, miniatura: `${r.miniatura.length} chars` });
 }
+
+// Lo reusa el estudio de los videos del suplidor (scripts/estudioVideoSuplidor.mjs).
+export { correr, duracionDe, tieneAudio, transcribir, cortesDe, planosDe };

@@ -26,6 +26,7 @@ import { PiezasModelo } from '@/components/equipo/PiezasModelo';
 import { ReelsModelo } from '@/components/equipo/ReelsModelo';
 import { FotosDelDia } from '@/components/equipo/FotosDelDia';
 import { AgotadosQueSeVenden } from '@/components/equipo/AgotadosQueSeVenden';
+import { AnunciosDelSuplidor } from '@/components/equipo/AnunciosDelSuplidor';
 import { CodigosDePromocion } from '@/components/equipo/CodigosDePromocion';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -544,6 +545,9 @@ const EquipoIAPage = () => {
 
       {/* Lo que se vende y no está: no se promociona y se pide. */}
       <AgotadosQueSeVenden />
+
+      {/* Lo que Pedro Racing anuncia: la demanda que él crea, para pedirla o promocionarla ya. */}
+      <AnunciosDelSuplidor onEncargado={() => cargar(true)} />
 
       {/* Cómo debe verse una promoción: las reglas que el Creativo lee y las
           piezas modelo que mira. Antes vivían separadas (una arriba, otra

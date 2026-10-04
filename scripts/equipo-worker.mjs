@@ -66,6 +66,7 @@ import { join } from 'node:path';
 import { montarArte } from './arteCreativo.mjs';
 import { estudiarReel } from './estudioReel.mjs';
 import { armarReel } from './armarReel.mjs';
+import { estudiarVideoSuplidor } from './estudioVideoSuplidor.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
 const require_ = createRequire(path.join(RAIZ, 'package.json'));
@@ -571,6 +572,48 @@ const estudiarReelPendiente = async () => {
   }
 };
 
+// ── LOS VIDEOS DEL SUPLIDOR ───────────────────────────────────────────
+// (04/10/2026) "Lo que anuncia tu suplidor": el dueño pega el reel de Pedro
+// Racing y aquí se averigua qué pieza es (sql/videos_del_suplidor.sql). Igual
+// que los reels modelo: con la cola vacía, a lo sumo uno por minuto.
+let ultimoVideoSup = 0;
+const estudiarVideoSuplidorPendiente = async () => {
+  if (AGENTE !== 'comercial_creativo' || Date.now() - ultimoVideoSup < 60_000) return;
+  ultimoVideoSup = Date.now();
+  let v;
+  try {
+    v = (await escribir('SELECT hermes.equipo_video_sup_tomar() AS r')).rows[0]?.r;
+  } catch (e) { log('videos del suplidor: no se pudo mirar la cola:', e.message); return; }
+  if (!v) return;
+  log(`video del suplidor ${v.url} (intento ${v.intento})`);
+
+  const { rows: [{ cfg: actual }] } = await consultar(
+    'SELECT hermes.equipo_agente_config($1) AS cfg', [AGENTE]);
+  const c = { ...actual, max_tokens: 800, temperatura: 0.1 };
+  const pensar = async (prompt, tomas) => {
+    if (actual.proveedor === 'claude_suscripcion') {
+      try {
+        const lista = tomas.map((t) => `· ${t.ruta}`).join('\n');
+        return await porClaudeCode(`${prompt}\n\nLas imágenes están en estos archivos. ÁBRELAS y MÍRALAS:\n${lista}`);
+      } catch (e) {
+        if (!process.env.OPENAI_API_KEY) throw e;
+        return porApi({ ...c, proveedor: 'openai', modelo: 'gpt-4o' }, prompt, tomas);
+      }
+    }
+    return porApi(c, prompt, tomas);
+  };
+
+  try {
+    const r = await estudiarVideoSuplidor({ url: v.url, pensar, log });
+    const g = await escribir('SELECT hermes.equipo_video_sup_guardar($1,$2,$3,$4::jsonb,$5,$6,$7) AS r',
+      [v.id, r.pieza, r.busqueda, JSON.stringify(r.detalles), r.cuenta, r.texto, r.miniatura]);
+    log(`  es: ${r.pieza} · ${g.rows[0]?.r?.candidatos ?? 0} candidata(s) en el catálogo`);
+  } catch (e) {
+    log('  no se pudo estudiar el video del suplidor:', e.message);
+    await escribir('SELECT hermes.equipo_video_sup_error($1,$2)', [v.id, e.message]).catch(() => {});
+  }
+};
+
 // ── El ciclo ───────────────────────────────────────────────────────────
 let corriendo = true;
 process.on('SIGINT', () => { corriendo = false; log('parando…'); });
@@ -659,6 +702,7 @@ while (corriendo) {
 
   if (!msg) {
     await estudiarReelPendiente();
+    await estudiarVideoSuplidorPendiente();
     await new Promise((s) => setTimeout(s, ESPERA_VACIO_MS));
     continue;
   }
