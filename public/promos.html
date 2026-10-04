@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Promociones · Repuestos Morla</title>
+<meta name="description" content="Las promociones de la semana de Repuestos Morla, Higüey: repuestos de moto con descuento. Pide por WhatsApp.">
+<meta property="og:title" content="Promociones de Repuestos Morla">
+<meta property="og:description" content="Repuestos de moto en Higüey. Pide por WhatsApp y llévatelo con descuento.">
+<meta name="theme-color" content="#0b1e3a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;1,800;1,900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
+<!--
+  LINK EN LA BIO (04/10/2026) — sql/promos_link_en_bio.sql
+  Va en la bio de cada red con ?red=tiktok | instagram | facebook | youtube.
+  La red decide la letra del código de descuento (T/I/F/Y/W) y queda anotada
+  en cada clic. Solo lee promos_publicas (lo ya publicado, con existencia) y
+  anota clics con promos_publicas_clic: la clave es la pública (anon).
+-->
+<style>
+  :root {
+    --fondo: #08142a; --tarjeta: #0f2342; --borde: #1d3760; --texto: #f4f6fa; --suave: #a9b6cc;
+    --naranja: #f5a623; --oro: #ffb21e; --verde: #25d366; --verde-osc: #1da851;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--fondo); color: var(--texto); font-family: 'Barlow', system-ui, sans-serif; }
+  body { background: radial-gradient(1200px 500px at 50% -120px, #17345f 0%, var(--fondo) 60%) fixed; min-height: 100vh; }
+  .envoltura { max-width: 720px; margin: 0 auto; padding: 20px 16px 120px; }
+  header { text-align: center; padding: 8px 0 18px; }
+  header img { width: 112px; height: auto; filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
+  h1 { font-family: 'Barlow Condensed', sans-serif; font-style: italic; font-weight: 900; font-size: 40px; line-height: .95;
+       margin: 10px 0 4px; letter-spacing: .5px; text-transform: uppercase; }
+  h1 span { color: var(--oro); display: block; font-size: 46px; }
+  .sub { color: var(--suave); font-size: 14px; margin: 6px 0 0; }
+  .sub a { color: var(--suave); }
+  .lista { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 560px) { .lista { grid-template-columns: 1fr 1fr; } }
+  .tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px; overflow: hidden;
+             display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .foto { position: relative; aspect-ratio: 1 / 1; background: #061024; }
+  .foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .video-btn { position: absolute; right: 10px; bottom: 10px; border: 0; border-radius: 999px; padding: 8px 12px;
+               background: rgba(0,0,0,.65); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .cuerpo { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .nombre { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 20px; line-height: 1.1; text-transform: uppercase; }
+  .fila { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .precio { font-family: 'Barlow Condensed', sans-serif; font-style: italic; font-weight: 900; font-size: 30px; color: var(--oro); }
+  .disp { font-size: 12px; font-weight: 600; color: #7ee2a8; background: rgba(37,211,102,.12); padding: 3px 8px; border-radius: 999px; }
+  .codigo { border: 1px dashed var(--naranja); color: var(--texto); border-radius: 10px; padding: 7px 10px; font-size: 13px; }
+  .codigo b { color: var(--oro); font-size: 15px; letter-spacing: .5px; }
+  .wa { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+        background: var(--verde); color: #fff; font-weight: 700; font-size: 16px; padding: 12px; border-radius: 12px; }
+  .wa:active { background: var(--verde-osc); }
+  .wa svg { width: 20px; height: 20px; }
+  .vacio { text-align: center; color: var(--suave); padding: 30px 10px; }
+  .pie { text-align: center; color: var(--suave); font-size: 13px; margin-top: 26px; line-height: 1.6; }
+  .pie a { color: var(--naranja); }
+  .flotante { position: fixed; left: 16px; right: 16px; bottom: 16px; max-width: 688px; margin: 0 auto; }
+  .flotante .wa { box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  dialog { border: 0; padding: 0; background: #000; border-radius: 14px; max-width: min(420px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.8); }
+  dialog video { display: block; width: 100%; max-height: 80vh; }
+  dialog button { position: absolute; top: 8px; right: 8px; border: 0; border-radius: 999px; width: 34px; height: 34px;
+                  background: rgba(255,255,255,.85); font-size: 18px; cursor: pointer; }
+  .cargando { text-align: center; color: var(--suave); padding: 40px 0; }
+</style>
+</head>
+<body>
+<div class="envoltura">
+  <header>
+    <img id="logo" alt="Repuestos Morla" src="https://zdvxowpuklbypweyqqki.supabase.co/storage/v1/object/public/product-images/company/logo_empresa_1774028578651.png">
+    <h1>Promociones <span>de la semana</span></h1>
+    <p class="sub" id="direccion">Higüey, República Dominicana</p>
+  </header>
+
+  <main id="lista" class="lista"><p class="cargando">Cargando promociones…</p></main>
+
+  <p class="pie">
+    Precios sujetos a existencia. El código de descuento vale en la tienda y por WhatsApp hasta la fecha indicada.<br>
+    <a id="mapa" href="#" target="_blank" rel="noopener">Cómo llegar a la tienda</a>
+  </p>
+</div>
+
+<div class="flotante"><a id="wa-general" class="wa" href="#" target="_blank" rel="noopener"></a></div>
+
+<dialog id="dlg"><button type="button" aria-label="Cerrar" onclick="cerrarVideo()">✕</button><video id="vid" controls playsinline></video></dialog>
+
+<script>
+(() => {
+  const URL_SB = 'https://zdvxowpuklbypweyqqki.supabase.co';
+  const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpkdnhvd3B1a2xieXB3ZXlxcWtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA5NjI1MzcsImV4cCI6MjA2NjUzODUzN30.noYknWBDdtSkrLuYPRvb_P4-BbAH4qV4ya8bQQp9ijs';
+  const TENANT = new URLSearchParams(location.search).get('e') || '00000000-0000-0000-0000-000000000001';
+  const REDES = { tiktok: ['T', 'TikTok'], instagram: ['I', 'Instagram'], facebook: ['F', 'Facebook'], youtube: ['Y', 'YouTube'], whatsapp: ['W', 'WhatsApp'] };
+  const pedida = (new URLSearchParams(location.search).get('red') || '').toLowerCase();
+  // Sin ?red= se toma Instagram: es donde más se usa el link de la bio.
+  const red = REDES[pedida] ? pedida : 'instagram';
+  const [LETRA, NOMBRE_RED] = REDES[red];
+
+  const WA_ICONO = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1.1 2.7c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2-.1-.1-.2-.2-.5-.3z"/></svg>';
+
+  const rpc = (fn, body) => fetch(`${URL_SB}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    keepalive: true,
+  });
+  const anotar = (accion, producto = null) => {
+    try { rpc('promos_publicas_clic', { p_tenant: TENANT, p_producto: producto, p_red: red, p_accion: accion }).catch(() => {}); }
+    catch { /* un clic sin anotar no puede romper la página */ }
+  };
+
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const dinero = (n) => 'RD$ ' + Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+  const fechaCorta = (iso) => {
+    const d = new Date(new Date(iso).getTime() - 4 * 3600 * 1000);   // RD no cambia de hora
+    return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  };
+  // Las piezas son PNG de 2-4 MB: en datos móviles no cargan. El almacenamiento
+  // las achica al vuelo (webp de 640 px, ~70 KB) si se piden por /render/.
+  const achicar = (url) => String(url || '').includes('/storage/v1/object/public/')
+    ? url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/') + '?width=640&quality=72'
+    : url;
+  const titulo = (t) => String(t || '').toLowerCase().replace(/(^|\s)\S/g, (m) => m.toUpperCase());
+
+  let telefono = '18093905965';
+  const waUrl = (texto) => `https://wa.me/${telefono}?text=${encodeURIComponent(texto)}`;
+
+  window.cerrarVideo = () => { const v = document.getElementById('vid'); v.pause(); document.getElementById('dlg').close(); };
+  window.verVideo = (url, producto) => {
+    const v = document.getElementById('vid');
+    v.src = url; document.getElementById('dlg').showModal(); v.play().catch(() => {});
+    anotar('video', producto);
+  };
+
+  rpc('promos_publicas', { p_tenant: TENANT }).then((r) => r.json()).then((d) => {
+    const e = d.empresa || {};
+    const tel = String(e.telefono || '').replace(/\D/g, '');
+    if (tel.length === 10) telefono = '1' + tel;
+    else if (tel.length >= 11) telefono = tel;
+    if (e.logo) document.getElementById('logo').src = e.logo;
+    if (e.direccion) document.getElementById('direccion').textContent = e.direccion;
+    const nombre = titulo(e.nombre || 'Repuestos Morla');
+    document.title = `Promociones · ${nombre}`;
+
+    const mapa = document.getElementById('mapa');
+    mapa.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${nombre} ${e.direccion || 'Higüey'}`)}`;
+    mapa.addEventListener('click', () => anotar('mapa'));
+
+    const general = document.getElementById('wa-general');
+    general.innerHTML = `${WA_ICONO} Escríbenos por WhatsApp`;
+    general.href = waUrl(`Hola ${nombre} 👋 Vengo de su ${NOMBRE_RED}. Ando buscando un repuesto para mi moto.`);
+    general.addEventListener('click', () => anotar('whatsapp'));
+
+    const lista = document.getElementById('lista');
+    const promos = Array.isArray(d.promos) ? d.promos : [];
+    if (!promos.length) {
+      lista.innerHTML = '<p class="vacio">Esta semana estamos preparando nuevas promociones.<br>Escríbenos por WhatsApp: tenemos repuestos para tu moto.</p>';
+    } else {
+      lista.innerHTML = promos.map((p, i) => {
+        const codigo = p.codigo_numero ? `${LETRA}${p.codigo_numero}` : null;
+        const msg = `Hola ${nombre} 👋 Vi en ${NOMBRE_RED} la promoción de ${titulo(p.descripcion)} (${dinero(p.precio)}).`
+          + (codigo ? ` Mi código es ${codigo}.` : '') + ' ¿La tienen disponible?';
+        return `
+        <article class="tarjeta">
+          <div class="foto">
+            ${p.imagen ? `<img src="${esc(achicar(p.imagen))}" onerror="this.onerror=null;this.src='${esc(p.imagen)}'" alt="${esc(p.descripcion)}" loading="${i < 2 ? 'eager' : 'lazy'}">` : ''}
+            ${p.video ? `<button class="video-btn" type="button" data-video="${esc(p.video)}" data-p="${esc(p.producto_id)}">▶ Ver video</button>` : ''}
+          </div>
+          <div class="cuerpo">
+            <div class="nombre">${esc(p.descripcion)}</div>
+            <div class="fila"><span class="precio">${dinero(p.precio)}</span><span class="disp">Disponible</span></div>
+            ${codigo ? `<div class="codigo">Código <b>${codigo}</b> · ${Number(p.codigo_pct || 5)}% de descuento · hasta el ${fechaCorta(p.codigo_vence)}</div>` : ''}
+            <a class="wa" href="${esc(waUrl(msg))}" target="_blank" rel="noopener" data-p="${esc(p.producto_id)}">${WA_ICONO} Pedir por WhatsApp</a>
+          </div>
+        </article>`;
+      }).join('');
+      lista.querySelectorAll('.video-btn').forEach((b) => b.addEventListener('click', () => window.verVideo(b.dataset.video, b.dataset.p)));
+      lista.querySelectorAll('a.wa').forEach((a) => a.addEventListener('click', () => anotar('whatsapp', a.dataset.p)));
+    }
+    anotar('ver');
+  }).catch(() => {
+    document.getElementById('lista').innerHTML = '<p class="vacio">No pudimos cargar las promociones. Escríbenos por WhatsApp.</p>';
+    const general = document.getElementById('wa-general');
+    general.innerHTML = `${WA_ICONO} Escríbenos por WhatsApp`;
+    general.href = waUrl('Hola 👋 Ando buscando un repuesto para mi moto.');
+  });
+})();
+</script>
+</body>
+</html>
