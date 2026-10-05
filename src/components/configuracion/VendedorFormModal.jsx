@@ -15,6 +15,8 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
         nombre: '',
         activo: true,
         comision_pct: 0,
+        comision_tipo: 'porcentaje',
+        comision_fija: 0,
     });
 
     useEffect(() => {
@@ -24,12 +26,16 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
                     nombre: vendedor.nombre || '',
                     activo: vendedor.activo ?? true,
                     comision_pct: vendedor.comision_pct ?? 0,
+                    comision_tipo: vendedor.comision_tipo || 'porcentaje',
+                    comision_fija: vendedor.comision_fija ?? 0,
                 });
             } else {
                 setFormData({
                     nombre: '',
                     activo: true,
                     comision_pct: 0,
+                    comision_tipo: 'porcentaje',
+                    comision_fija: 0,
                 });
             }
         }
@@ -53,6 +59,7 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
         const payload = {
             ...formData,
             comision_pct: Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0,
+            comision_fija: Math.max(0, parseFloat(formData.comision_fija) || 0),
         };
 
         let result;
@@ -96,6 +103,31 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
                         <Label htmlFor="nombre">Nombre Completo</Label>
                         <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej. Juan Pérez" />
                     </div>
+                    {/* (05/10/2026) Cada empresa paga distinto: % de la venta (Morla) o un
+                        monto fijo por cada motocicleta (Caminero Motors, RD$300). */}
+                    <div className="space-y-2">
+                        <Label htmlFor="comision_tipo">Cómo se le paga la comisión</Label>
+                        <select
+                            id="comision_tipo"
+                            name="comision_tipo"
+                            value={formData.comision_tipo}
+                            onChange={handleChange}
+                            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        >
+                            <option value="porcentaje">% sobre la venta neta</option>
+                            <option value="fijo_por_unidad">Monto fijo por cada motocicleta vendida</option>
+                        </select>
+                    </div>
+                    {formData.comision_tipo === 'fijo_por_unidad' ? (
+                    <div className="space-y-2">
+                        <Label htmlFor="comision_fija">RD$ por cada motocicleta</Label>
+                        <Input id="comision_fija" name="comision_fija" type="number" step="0.01" min="0"
+                            value={formData.comision_fija} onChange={handleChange} placeholder="Ej. 300" />
+                        <p className="text-[11px] text-gray-500">
+                            Cuenta cada moto de sus facturas (producto con chasis o de tipo MOTOCICLETA).
+                        </p>
+                    </div>
+                    ) : (
                     <div className="space-y-2">
                         <Label htmlFor="comision_pct">% Comisión sobre venta neta</Label>
                         <div className="relative">
@@ -117,6 +149,7 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
                             Se usará como valor por defecto al calcular comisiones de este vendedor.
                         </p>
                     </div>
+                    )}
                     <div className="flex items-center space-x-2 pt-2">
                         <Checkbox id="activo" checked={formData.activo} onCheckedChange={(checked) => handleCheckedChange('activo', checked)} />
                         <Label htmlFor="activo">Vendedor Activo</Label>

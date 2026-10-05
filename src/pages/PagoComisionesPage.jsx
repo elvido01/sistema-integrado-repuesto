@@ -34,6 +34,12 @@ const PagoComisionesPage = () => {
   const [fechaDesde, setFechaDesde] = useState(startOfMonth(getCurrentDateInTimeZone()));
   const [fechaHasta, setFechaHasta] = useState(getCurrentDateInTimeZone());
   const [porcentaje, setPorcentaje] = useState(1);
+  // (05/10/2026) Caminero Motors paga RD$300 fijos por cada motocicleta; Morla
+  // paga % de la venta. Cada vendedor trae su forma (vendedores.comision_tipo,
+  // sql/comisiones_fijo_por_unidad.sql) y aquí se puede ajustar antes de pagar.
+  const [tipoComision, setTipoComision] = useState('porcentaje'); // porcentaje | fijo_por_unidad
+  const [montoFijo, setMontoFijo] = useState(0);
+  const esFijo = tipoComision === 'fijo_por_unidad';
   const [tipoReporte, setTipoReporte] = useState('ventas'); // ventas | cobros
   const [filtroPago, setFiltroPago] = useState('todas'); // todas | credito | contado
   const [comisiones, setComisiones] = useState([]);
@@ -71,7 +77,7 @@ const PagoComisionesPage = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('vendedores')
-        .select('id, nombre, comision_pct')
+        .select('id, nombre, comision_pct, comision_tipo, comision_fija')
         .eq('activo', true)
         .order('nombre', { ascending: true });
       if (error) {
@@ -79,11 +85,8 @@ const PagoComisionesPage = () => {
       } else {
         setVendedores(data);
         if (data.length > 0) {
+          // El % / monto fijo lo llena el efecto de abajo al elegir vendedor.
           setSelectedVendedor(data[0].id);
-          // Auto-llenar el % con el valor predeterminado del primer vendedor
-          if (data[0].comision_pct != null && Number(data[0].comision_pct) > 0) {
-            setPorcentaje(Number(data[0].comision_pct));
-          }
         }
       }
       setLoading(false);
@@ -95,6 +98,8 @@ const PagoComisionesPage = () => {
   useEffect(() => {
     if (!selectedVendedor || vendedores.length === 0) return;
     const v = vendedores.find(x => x.id === selectedVendedor);
+    setTipoComision(v?.comision_tipo === 'fijo_por_unidad' ? 'fijo_por_unidad' : 'porcentaje');
+    setMontoFijo(Number(v?.comision_fija) || 0);
     if (v?.comision_pct != null && Number(v.comision_pct) > 0) {
       setPorcentaje(Number(v.comision_pct));
     }
@@ -125,9 +130,11 @@ const PagoComisionesPage = () => {
 
       const comisionesCalculadas = filteredData.map(factura => {
         const ventaNeta = (factura.subtotal || 0); // Total - ITBIS
-        const valorComision = ventaNeta * (porcentaje / 100);
+        const unidades = Number(factura.unidades) || 0;
+        const valorComision = esFijo ? unidades * montoFijo : ventaNeta * (porcentaje / 100);
         return {
           ...factura,
+          unidades,
           venta_neta: ventaNeta,
           monto_itbis: factura.monto_itbis || 0,
           valor_comision: valorComision
@@ -137,9 +144,10 @@ const PagoComisionesPage = () => {
       const totalMonto = comisionesCalculadas.reduce((acc, curr) => acc + curr.monto_factura, 0);
       const totalImpuestos = comisionesCalculadas.reduce((acc, curr) => acc + curr.monto_itbis, 0);
       const totalAPagar = comisionesCalculadas.reduce((acc, curr) => acc + curr.valor_comision, 0);
+      const totalUnidades = comisionesCalculadas.reduce((acc, curr) => acc + curr.unidades, 0);
 
       setComisiones(comisionesCalculadas);
-      setTotales({ monto: totalMonto, impuestos: totalImpuestos, aPagar: totalAPagar });
+      setTotales({ monto: totalMonto, impuestos: totalImpuestos, aPagar: totalAPagar, unidades: totalUnidades });
 
       if (comisionesCalculadas.length === 0) {
         toast({ title: 'Sin resultados', description: 'No se encontraron ventas para este vendedor en el período seleccionado.' });
@@ -150,7 +158,7 @@ const PagoComisionesPage = () => {
     } finally {
       setCalculating(false);
     }
-  }, [selectedVendedor, fechaDesde, fechaHasta, porcentaje, filtroPago, toast]);
+  }, [selectedVendedor, fechaDesde, fechaHasta, porcentaje, filtroPago, esFijo, montoFijo, toast]);
 
   const imprimirComprobantePago = (pago) => {
     printPagoCompromisoPOS({
@@ -185,15 +193,21 @@ const PagoComisionesPage = () => {
         p_periodo_desde: formatDateForSupabase(fechaDesde),
         p_periodo_hasta: formatDateForSupabase(fechaHasta),
         p_total_ventas: totales.monto,
-        p_porcentaje: porcentaje,
+        p_porcentaje: esFijo ? 0 : porcentaje,
         p_total_comision: monto,
         p_forma_pago: formaPago,
         p_banco: bancoPago || null,
         p_referencia: referenciaPago || null,
-        p_notas: notasPago || null,
+        p_notas: (esFijo ? `${totales.unidades || 0} moto(s) x RD$${formatCurrency(montoFijo)}${notasPago ? ` · ${notasPago}` : ''}` : notasPago) || null,
         p_factura_ids: comisiones.map(c => c.factura_id).filter(Boolean),
       });
       if (error) throw error;
+      if (data?.pago_id) {
+        supabase.rpc('comision_anotar_calculo', {
+          p_pago_id: data.pago_id, p_tipo: tipoComision,
+          p_unidades: esFijo ? (totales.unidades || 0) : null, p_monto_por_unidad: esFijo ? montoFijo : null,
+        }).then(() => {}, () => {});
+      }
       toast({
         title: `💰 Comisión pagada — ${data?.numero}`,
         description: `${currentVendedorName}: RD$ ${formatCurrency(data?.monto)} (${formaPago === 'EFECTIVO' ? 'efectivo, descontado de la caja del día' : 'transferencia, descontado de la caja actual'})`,
@@ -230,7 +244,7 @@ const PagoComisionesPage = () => {
       fechaHasta,
       tipoReporte,
       filtroPago,
-      porcentaje
+      porcentaje: esFijo ? `RD$${formatCurrency(montoFijo)} por moto` : porcentaje,
     };
 
     generateComisionPDF(comisiones, filters);
@@ -318,13 +332,30 @@ const PagoComisionesPage = () => {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-[11px] font-black text-gray-400 uppercase mb-1 block">% a Pagar</Label>
-                  <Input
-                    type="number"
-                    className="h-8 w-24 text-right font-bold text-blue-600 rounded-none border-gray-300 bg-gray-50"
-                    value={porcentaje}
-                    onChange={e => setPorcentaje(parseFloat(e.target.value) || 0)}
-                  />
+                  <select
+                    value={tipoComision}
+                    onChange={e => setTipoComision(e.target.value)}
+                    title="Cómo se calcula la comisión de este vendedor"
+                    className="mb-1 block h-4 bg-transparent text-[11px] font-black uppercase text-gray-400 outline-none"
+                  >
+                    <option value="porcentaje">% a Pagar</option>
+                    <option value="fijo_por_unidad">RD$ por moto</option>
+                  </select>
+                  {esFijo ? (
+                    <Input
+                      type="number"
+                      className="h-8 w-24 text-right font-bold text-blue-600 rounded-none border-gray-300 bg-gray-50"
+                      value={montoFijo}
+                      onChange={e => setMontoFijo(parseFloat(e.target.value) || 0)}
+                    />
+                  ) : (
+                    <Input
+                      type="number"
+                      className="h-8 w-24 text-right font-bold text-blue-600 rounded-none border-gray-300 bg-gray-50"
+                      value={porcentaje}
+                      onChange={e => setPorcentaje(parseFloat(e.target.value) || 0)}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -403,7 +434,7 @@ const PagoComisionesPage = () => {
                     <TableHead className="text-[11px] font-black text-gray-500 uppercase h-8 px-2">Nombre</TableHead>
                     <TableHead className="text-[11px] font-black text-gray-500 uppercase h-8 px-2 text-right">Monto</TableHead>
                     <TableHead className="text-[11px] font-black text-gray-500 uppercase h-8 px-2 text-right">Impuestos</TableHead>
-                    <TableHead className="text-[11px] font-black text-gray-500 uppercase h-8 px-1 text-center">%</TableHead>
+                    <TableHead className="text-[11px] font-black text-gray-500 uppercase h-8 px-1 text-center">{esFijo ? 'Motos' : '%'}</TableHead>
                     <TableHead className="text-[11px] font-black text-[#0a1e3a] uppercase h-8 px-2 text-right bg-blue-50/50">A Pagar</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -418,7 +449,7 @@ const PagoComisionesPage = () => {
                       <TableCell className="text-[11px] font-black text-gray-700 py-1 px-2 bg-green-50/30 uppercase">{currentVendedorName}</TableCell>
                       <TableCell className="text-[11px] font-bold text-right py-1 px-2">{formatCurrency(totales.monto)}</TableCell>
                       <TableCell className="text-[11px] font-medium text-gray-500 text-right py-1 px-2 italic">{formatCurrency(totales.impuestos)}</TableCell>
-                      <TableCell className="text-[10px] font-bold text-center py-1 px-1 text-gray-400"></TableCell>
+                      <TableCell className="text-[10px] font-bold text-center py-1 px-1 text-gray-500">{esFijo ? (totales.unidades || 0) : `${porcentaje}%`}</TableCell>
                       <TableCell className="text-[11px] font-black text-right py-1 px-2 text-green-700 bg-blue-50/20">{formatCurrency(totales.aPagar)}</TableCell>
                     </TableRow>
                   ) : (
@@ -490,7 +521,11 @@ const PagoComisionesPage = () => {
               <div className="flex justify-between"><span>Período</span><b>{formatInTimeZone(fechaDesde, 'dd/MM/yyyy')} → {formatInTimeZone(fechaHasta, 'dd/MM/yyyy')}</b></div>
               <div className="flex justify-between"><span>Facturas incluidas</span><b>{comisiones.length}</b></div>
               <div className="flex justify-between"><span>Ventas del período</span><b>{formatCurrency(totales.monto)}</b></div>
-              <div className="flex justify-between"><span>% aplicado</span><b>{porcentaje}%</b></div>
+              {esFijo ? (
+                <div className="flex justify-between"><span>Motos vendidas</span><b>{totales.unidades || 0} × RD$ {formatCurrency(montoFijo)}</b></div>
+              ) : (
+                <div className="flex justify-between"><span>% aplicado</span><b>{porcentaje}%</b></div>
+              )}
             </div>
             <div>
               <Label className="text-xs font-bold">Monto a pagar (RD$)</Label>
