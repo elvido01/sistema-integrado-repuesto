@@ -42,7 +42,8 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
   const [formato, setFormato] = useState('historia');
   // (04/10/2026) "No siempre quiero competir por precio": sin descuento, el
   // Creativo no lo menciona y al publicar no nace código.
-  const [conDescuento, setConDescuento] = useState(true);
+  // (05/10/2026) "El 5% de descuento solo se activará de manera manual": desmarcada.
+  const [conDescuento, setConDescuento] = useState(false);
   // (04/10/2026) "Reel con tu video": clips del teléfono que el Creativo usa
   // en vez de generar tomas (sql/reel_con_tus_videos.sql).
   const { tenantId } = useAuth();

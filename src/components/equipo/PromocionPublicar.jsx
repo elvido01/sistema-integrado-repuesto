@@ -259,7 +259,8 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
   const [elegidos, setElegidos] = useState(() => REDES.map((r) => `${r.platform}:${r.placement}`));
   const [cuando, setCuando] = useState('');
   // Con descuento nace el código (T101, I101…) y el texto lo dice; sin él, no.
-  const [conDescuento, setConDescuento] = useState(true);
+  // (05/10/2026) El 5% solo a mano: desmarcada salvo que el encargo lo traiga.
+  const [conDescuento, setConDescuento] = useState(false);
   const [bundle, setBundle] = useState(null);
   const [creandoVideo, setCreandoVideo] = useState(false);
   // Programar desde el historial una promoción ya aprobada: { id, cuando }.

@@ -752,6 +752,24 @@ const latir = async () => {
 await latir();
 const latido = setInterval(() => { latir(); }, 60 * 1000);
 
+// >>> LAS 3 DEL DÍA <<<
+// (05/10/2026) Publicación diaria con Hermes: cada 5 minutos se pregunta a la
+// base si a alguna empresa encendida ya le toca (pasada su hora y sin las de
+// hoy). La base elige una pieza por rango de precio y la encarga sin
+// descuento; el dueño la aprueba en el Paso 2 (sql/publicacion_automatica_hermes.sql).
+let ultimoAutoDia = 0;
+const autoDelDia = async () => {
+  if (AGENTE !== 'comercial_creativo' || Date.now() - ultimoAutoDia < 5 * 60_000) return;
+  ultimoAutoDia = Date.now();
+  try {
+    const r = (await escribir('SELECT hermes.equipo_auto_del_dia_todos() AS r')).rows[0]?.r || [];
+    for (const x of r) {
+      const elegidas = (x.r?.elegidas || []).map((e) => `${e.rango}: ${e.pieza || '(sin candidata)'}`).join(' · ');
+      if (elegidas) log(`publicación del día (${x.tenant}): ${elegidas}`);
+    }
+  } catch (e) { log('publicación del día: no se pudo:', e.message); }
+};
+
 while (corriendo) {
   let msg;
   try {
@@ -759,6 +777,7 @@ while (corriendo) {
     msg = r.rows[0];
   } catch (e) { log('error tomando de la cola:', e.message); await new Promise((s) => setTimeout(s, 15000)); continue; }
 
+  await autoDelDia();
   if (!msg) {
     await armarReelPedido();
     await estudiarReelPendiente();

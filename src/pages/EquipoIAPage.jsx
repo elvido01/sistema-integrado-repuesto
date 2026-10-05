@@ -26,6 +26,7 @@ import { PiezasModelo } from '@/components/equipo/PiezasModelo';
 import { ReelsModelo } from '@/components/equipo/ReelsModelo';
 import { FotosDelDia } from '@/components/equipo/FotosDelDia';
 import { AgotadosQueSeVenden } from '@/components/equipo/AgotadosQueSeVenden';
+import { PublicacionDiaria } from '@/components/equipo/PublicacionDiaria';
 import { AnunciosDelSuplidor } from '@/components/equipo/AnunciosDelSuplidor';
 import { CodigosDePromocion } from '@/components/equipo/CodigosDePromocion';
 import { LinkEnLaBio } from '@/components/equipo/LinkEnLaBio';
@@ -524,6 +525,12 @@ const EquipoIAPage = () => {
           <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
         </Button>
       </div>
+
+      {/* (05/10/2026) Las 3 del día que elige Hermes: se revisan en el Paso 2. */}
+      <PublicacionDiaria
+        trabajos={data?.trabajos}
+        onRevisar={(trabajoId) => setEnfocarPromo({ trabajoId, en: Date.now() })}
+      />
 
       {/* Lo primero que se mira cada mañana: arriba y en fila, las cinco
           de un vistazo. Antes vivía apilado en la columna de la izquierda y
