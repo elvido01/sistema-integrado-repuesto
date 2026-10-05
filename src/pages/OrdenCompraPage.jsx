@@ -345,7 +345,7 @@ const OrdenCompraPage = () => {
     codigo: '',
     descripcion: '',
     costo: 0,
-    itbis_pct: 0,
+    itbis_pct: 0.18,
     unidad: 'UND',
     cantidad: 1,
   });
@@ -361,7 +361,8 @@ const OrdenCompraPage = () => {
       codigo: stagingItem.codigo || '',
       descripcion: '',
       costo: 0,
-      itbis_pct: 0,
+      // (05/10/2026) 18% de entrada: es lo que paga casi toda pieza.
+      itbis_pct: 0.18,
       unidad: 'UND',
       cantidad: 1,
     });
@@ -384,7 +385,8 @@ const OrdenCompraPage = () => {
       codigo: d.codigo || '',
       descripcion: d.descripcion || '',
       costo: Number(d.precio) || 0,
-      itbis_pct: Number(d.itbis_pct) || 0,
+      // La línea del Suplidor Virtual nace sin ITBIS: 18% de entrada.
+      itbis_pct: Number(d.itbis_pct) > 0 ? normalizeTaxRate(d.itbis_pct) : 0.18,
       unidad: d.unidad || 'UND',
       cantidad: Number(d.cantidad) || 1,
     });
@@ -474,7 +476,9 @@ const OrdenCompraPage = () => {
             descripcion: quickProd.descripcion.trim().toUpperCase(),
             costo: Number(quickProd.costo) || 0,
             precio: Number(quickProd.costo) || 0,  // precio default = costo (se ajusta despues)
-            itbis_pct: Number(quickProd.itbis_pct) || 0,
+            // (05/10/2026) Se guardaba el 18 tal cual y el producto salía con
+            // 1800% en Compras (TAZA XPRESS 011124). Va en decimal: 0.18.
+            itbis_pct: normalizeTaxRate(quickProd.itbis_pct),
             // NI `unidad` NI `existencia`: la tabla productos no tiene esas
             // columnas. La unidad vive en la linea de la orden, y la existencia
             // es la suma del kardex (get_stock_actual), no un campo del producto.
@@ -497,8 +501,8 @@ const OrdenCompraPage = () => {
       // precio 0 a propósito, y la orden salía pidiéndole al suplidor la pieza
       // a costo 0 y sin ITBIS aunque el catálogo los tuviera.
       const itbisPct = Number(quickProd.itbis_pct) > 0
-        ? Number(quickProd.itbis_pct)
-        : (Number(yaExiste?.itbis_pct) || 0);
+        ? normalizeTaxRate(quickProd.itbis_pct)
+        : normalizeTaxRate(yaExiste?.itbis_pct);
       const precio = Number(quickProd.costo) > 0
         ? Number(quickProd.costo)
         : (Number(yaExiste?.costo) || 0);
@@ -4247,12 +4251,16 @@ const OrdenCompraPage = () => {
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] uppercase font-bold text-slate-700">ITBIS %</Label>
-                <Input
-                  type="number" step="0.01" min={0} max={100}
-                  value={quickProd.itbis_pct || ''}
-                  onChange={(e) => setQuickProd(p => ({ ...p, itbis_pct: e.target.value }))}
-                  placeholder="0"
-                />
+                {/* Lista, no número libre: con número se escribía 18 y se guardaba 1800%. */}
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={String(normalizeTaxRate(quickProd.itbis_pct))}
+                  onChange={(e) => setQuickProd(p => ({ ...p, itbis_pct: Number(e.target.value) }))}
+                >
+                  <option value="0.18">18% GENERAL</option>
+                  <option value="0.16">16% REDUCIDO</option>
+                  <option value="0">0% EXENTO</option>
+                </select>
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] uppercase font-bold text-slate-700">Cantidad</Label>
