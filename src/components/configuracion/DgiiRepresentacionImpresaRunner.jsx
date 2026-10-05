@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
-import { DGII_SIMULACION_STATE_EVENT, loadDgiiSimulacionState } from '@/lib/dgiiCertificacionStorage';
+import { DGII_SIMULACION_STATE_EVENT, aceptadosDe, cargarDgiiSimulacionDelServidor, loadDgiiSimulacionState } from '@/lib/dgiiCertificacionStorage';
 import { downloadRepresentacionImpresa, downloadRepresentacionImpresaFromData, getRepresentacionQrUrl, parseEcfXml } from '@/lib/dgiiRepresentacionImpresa';
 
 const ACCEPTED_ESTADOS = new Set(['aceptado', 'aceptado_condicional']);
@@ -140,8 +140,22 @@ const DgiiRepresentacionImpresaRunner = ({ configInfo }) => {
   const [generating, setGenerating] = useState(false);
   const casos = saved?.casos || [];
 
+  // Si en el servidor hay una corrida con más aceptados que la de este
+  // navegador (otra PC, navegador borrado), se usa esa.
   useEffect(() => {
-    const refreshSaved = () => setSaved(loadDgiiSimulacionState());
+    let vivo = true;
+    cargarDgiiSimulacionDelServidor().then((srv) => {
+      if (!vivo || !srv) return;
+      setSaved((local) => (aceptadosDe(srv) > aceptadosDe(local) ? srv : local));
+    });
+    return () => { vivo = false; };
+  }, []);
+
+  useEffect(() => {
+    const refreshSaved = () => setSaved((prev) => {
+      const local = loadDgiiSimulacionState();
+      return prev?.desdeServidor && aceptadosDe(prev) > aceptadosDe(local) ? prev : local;
+    });
     window.addEventListener(DGII_SIMULACION_STATE_EVENT, refreshSaved);
     window.addEventListener('storage', refreshSaved);
     window.addEventListener('focus', refreshSaved);
