@@ -151,6 +151,33 @@ export async function consultarEstado(trackId, token, ambiente) {
   return data;
 }
 
+// Todos los TrackId que la DGII tiene para un e-NCF (con su estado y fecha).
+// Sirve para saber, sin el XML, si un comprobante se recibio y se acepto.
+// (05/10/2026) Paso 5 de Mario: los XML del Paso 4 quedaron en otra PC.
+export async function consultarTrackIds(rncEmisor, encf, token, ambiente) {
+  // La ruta distingue mayusculas y la documentacion la escribe de varias
+  // formas: se prueban en orden y se queda la primera que no da 404.
+  const rutas = [
+    "consultatrackids/api/TrackIds/Consulta",
+    "ConsultaTrackIds/api/TrackIds/Consulta",
+    "consultatrackids/api/trackids/consulta",
+    "consultatrackids/api/Consultas/Consulta",
+  ];
+  let ultimo = null;
+  for (const ruta of rutas) {
+    const url = `${baseUrl(ambiente)}/${ruta}`
+      + `?RncEmisor=${encodeURIComponent(rncEmisor)}&Encf=${encodeURIComponent(encf)}`;
+    const resp = await fetch(url, { method: "GET", headers: { "Authorization": `Bearer ${token}` } });
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }
+    if (resp.ok) return data;
+    ultimo = { error: `HTTP ${resp.status}`, ruta, data };
+    if (resp.status !== 404) return ultimo;
+  }
+  return ultimo;
+}
+
 // ────────────────────────────────────────────────
 // API end-to-end: firmar (asumimos ya firmado) y enviar
 // ────────────────────────────────────────────────

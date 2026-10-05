@@ -6,7 +6,7 @@ import forge from "https://esm.sh/node-forge@1.3.1";
 import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml } from "./dgii_xml_builder.ts";
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
-import { authenticate, enviarEcf, consultarEstado, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
+import { authenticate, enviarEcf, consultarEstado, consultarTrackIds, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1695,6 +1695,31 @@ Deno.serve(async (req) => {
 
     // ── ACTION: dgii_certif_check_status ──
     // Consulta el estado en DGII de un TrackId previamente enviado.
+    // ── ACTION: dgii_certif_trackids ──
+    // Solo lectura: para cada e-NCF, los TrackId que tiene la DGII (CerteCF por
+    // defecto). Dice si un comprobante del set se recibio y en que estado, aunque
+    // el XML firmado se haya perdido.
+    if (action === "dgii_certif_trackids") {
+      const encfs = Array.isArray(body.encfs) ? body.encfs.slice(0, 60) : [];
+      if (!encfs.length) throw new Error("encfs requerido");
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("Config DGII directo ausente");
+      const ambiente = body.ambiente || "CerteCF";
+      const rnc = String(integ.config.rnc_emisor || "").replace(/\D/g, "");
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const auth = await authenticate(cert, privateKey, ambiente);
+      const resultados = [];
+      for (const encf of encfs) {
+        resultados.push({ encf, trackids: await consultarTrackIds(rnc, String(encf), auth.token, ambiente) });
+      }
+      return new Response(JSON.stringify({ ok: true, ambiente, rnc, resultados }), { status: 200, headers: corsHeaders });
+    }
+
     if (action === "dgii_certif_check_status") {
       const { track_id } = body;
       if (!track_id) throw new Error("track_id requerido");
