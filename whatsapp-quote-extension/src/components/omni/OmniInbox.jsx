@@ -480,11 +480,39 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   const copiarA = esTikTok
     ? { red: 'TikTok', url: 'https://www.tiktok.com/messages', ventana: 'mf-tiktok-mensajes' }
     : esInstagramPrivado
-      ? { red: 'Instagram', url: 'https://www.instagram.com/direct/inbox/', ventana: 'mf-instagram-mensajes' }
+      ? { red: 'Instagram', url: urlInstagramDe(selected), ventana: 'mf-instagram-mensajes' }
       : null;
   const esperanTikTok = conversations.filter((c) => c.platform === 'tiktok' && esperaRespuesta(c)
     && Date.now() - Date.parse(c.last_user_message_at || 0) < 3 * 86400000).length;
   const [copiado, setCopiado] = useState(false);
+
+  // >>> QUE INSTAGRAM ABRA LA CONVERSACION, NO LA BANDEJA <<<
+  // (05/10/2026) "No selecciona la conversacion asi no se a quien
+  // responderle". Sin Acceso Avanzado, Meta no dice el usuario del cliente
+  // (solo un numero), asi que no hay enlace directo. Se deja una pista en
+  // chrome.storage --el ultimo mensaje del cliente y su hora-- y
+  // ig-mirror.js, ya dentro de instagram.com, busca esa conversacion (en
+  // Principal y en Solicitudes), la abre si es una sola y siempre muestra
+  // un cartel con lo que hay que buscar. Si el nombre ES un usuario de
+  // Instagram, ig.me/m/<usuario> abre el chat directo.
+  function urlInstagramDe(conv) {
+    const nombre = String(conv?.customer_name || '').trim().replace(/^@/, '');
+    if (/^[a-z0-9._]{2,30}$/i.test(nombre) && !/^\d+$/.test(nombre)) return `https://ig.me/m/${nombre}`;
+    return 'https://www.instagram.com/direct/inbox/';
+  }
+  function dejarPistaInstagram(conv) {
+    try {
+      const ultimo = [...messages].reverse().find((m) => m.sender_type === 'user' && m.message_text);
+      chrome?.storage?.local?.set({
+        motoflow_ig_buscar: {
+          texto: String(ultimo?.message_text || '').slice(0, 80),
+          at: ultimo?.created_at || null,
+          nombre: conv?.customer_name || null,
+          puesto: Date.now(),
+        },
+      });
+    } catch { /* sin pista: se abre la bandeja como antes */ }
+  }
 
   async function copiarParaTikTok() {
     const text = replyText.trim();
@@ -502,6 +530,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     }
     setCopiado(true);
     window.setTimeout(() => setCopiado(false), 4000);
+    if (copiarA?.red === 'Instagram') dejarPistaInstagram(selected);
     window.open(copiarA?.url || 'https://www.tiktok.com/messages', copiarA?.ventana || 'mf-tiktok-mensajes');
   }
 
@@ -551,7 +580,8 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
         setReplyText(text);
         let copio = true;
         try { await navigator.clipboard.writeText(text); } catch { copio = false; }
-        window.open('https://www.instagram.com/direct/inbox/', 'mf-instagram-mensajes');
+        dejarPistaInstagram(selected);
+        window.open(urlInstagramDe(selected), 'mf-instagram-mensajes');
         setError(copio
           ? 'Meta todavia no deja escribirle a este cliente desde aqui (falta el Acceso Avanzado). Ya lo copie: pegalo en Instagram.'
           : 'Meta todavia no deja escribirle a este cliente desde aqui. Copia el texto y pegalo en Instagram.');
