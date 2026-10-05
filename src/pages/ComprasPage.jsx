@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -41,6 +41,15 @@ const ComprasPage = () => {
   const currentPanel = panels.find(p => p.id === activePanel);
   const compraParaEditar = currentPanel?.extraData?.compraParaEditar;
   const [isEditMode, setIsEditMode] = useState(false);
+  // >>> EL NÚMERO DE LA COMPRA QUE SE EDITA NO SE TOCA <<<
+  // (05/10/2026) Al abrir una compra para editar, la carga inicial pedía "el
+  // siguiente número" en paralelo y, si llegaba después, PISABA el de la
+  // compra abierta. Al grabar, la compra cambiaba de número y el inventario
+  // se borraba por el número NUEVO (sin nada que borrar) y se volvía a meter:
+  // el 02/10 OC-0352/0351/0313 quedaron como OC-0365/0366/0367 con cada pieza
+  // sumada dos veces (444 unidades fantasma). Aquí vive el número con que se
+  // abrió la compra; el siguiente número solo entra en una compra nueva.
+  const numeroOriginal = useRef(null);
   const [proveedores, setProveedores] = useState([]);
   const [tasaDia, setTasaDia] = useState(0); // RD$ por US$ (suplidores que facturan en dólares)
   const [almacenes, setAlmacenes] = useState([]);
@@ -152,7 +161,7 @@ const ComprasPage = () => {
 
     const { data: nextNum, error: numError } = await supabase.rpc('get_next_compra_numero');
     if (!numError && nextNum) {
-      setCompra(prev => ({ ...prev, numero: nextNum }));
+      setCompra(prev => (prev.id || numeroOriginal.current ? prev : { ...prev, numero: nextNum }));
     } else if (numError) {
       // Antes esto se tragaba el error y la compra se grababa SIN número.
       avisarNumeroFallido(numError);
@@ -179,11 +188,12 @@ const ComprasPage = () => {
     setFinanciamiento({ activo: false, num_cuotas: 6, frecuencia: 'mensual', fecha_primera: '', cuotas: [] });
     setFinanciamientoGrupo(null);
     setCompraConPagos(false);
+    numeroOriginal.current = null;
 
     // Fetch new number after reset
     const { data: nextNum, error: numError } = await supabase.rpc('get_next_compra_numero');
     if (!numError && nextNum) {
-      setCompra(prev => ({ ...prev, numero: nextNum }));
+      setCompra(prev => (prev.id || numeroOriginal.current ? prev : { ...prev, numero: nextNum }));
     } else if (numError) {
       avisarNumeroFallido(numError);
     }
@@ -233,6 +243,7 @@ const ComprasPage = () => {
         ? (grupo.find(g => Array.isArray(g.compras_detalle) && g.compras_detalle.length > 0) || grupo[0])
         : data;
 
+      numeroOriginal.current = esGrupo ? baseNum : data.numero;
       setCompra({
         id: filaDetalle.id,
         numero: esGrupo ? baseNum : data.numero,   // en grupo, el número base (sin sufijo)
@@ -1371,6 +1382,8 @@ const ComprasPage = () => {
 
     const compraData = {
       ...compra,
+      // Editando, el número es el que tenía (ver numeroOriginal arriba).
+      ...(isEditMode && numeroOriginal.current ? { numero: numeroOriginal.current } : {}),
       fecha: formatDateForSupabase(compra.fecha),
       total_exento: totalsGuardar.exento,
       total_gravado: totalsGuardar.gravado,
@@ -1574,6 +1587,10 @@ const ComprasPage = () => {
       // Limpiar detalles y movimientos previos para repoblarlos frescos con los cambios
       await supabase.from('compras_detalle').delete().eq('compra_id', savedCompra.id);
       await supabase.from('inventario_movimientos').delete().eq('referencia_doc', `COMPRA-${savedCompra.numero || savedCompra.id}`);
+      // Y por si el número hubiera cambiado: lo que entró con el de antes.
+      if (numeroOriginal.current && numeroOriginal.current !== savedCompra.numero) {
+        await supabase.from('inventario_movimientos').delete().eq('referencia_doc', `COMPRA-${numeroOriginal.current}`);
+      }
     } else {
       // Compra + filas-pagaré (cuotas 2..N, pura deuda) en un solo insert.
       const { data, error: compraError } = await supabase.from('compras').insert(filasCompra).select();
