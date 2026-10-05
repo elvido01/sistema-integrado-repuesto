@@ -54,6 +54,7 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
       p_activo: cambios.activo ?? cfg?.activo ?? false,
       p_modo: cambios.modo ?? null,
       p_hora: cambios.hora ?? null,
+      p_horarios: cambios.horarios ?? null,
     });
     setGuardando(false);
     if (error) { toast({ variant: 'destructive', title: 'No se guardó', description: error.message }); return; }
@@ -76,6 +77,25 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
   const dias = desde ? Math.floor((Date.now() - desde.getTime()) / 86400000) : 0;
   const faltan = Math.max(0, DIAS_APRENDIZAJE - dias);
   const trabajoDe = (id) => (trabajos || []).find((w) => w.id === id);
+  const horarios = (cfg?.horarios || ['09:30', '12:30', '15:30']).map((h) => String(h).slice(0, 5));
+  const hora12 = (h) => {
+    const [H, M] = String(h || '').slice(0, 5).split(':').map(Number);
+    if (Number.isNaN(H)) return '';
+    return `${((H + 11) % 12) + 1}:${String(M).padStart(2, '0')} ${H < 12 ? 'am' : 'pm'}`;
+  };
+  const cambiarHorario = (i, valor) => {
+    if (!valor) return;
+    const nuevos = horarios.map((h, k) => (k === i ? valor : h));
+    if (nuevos.some((h) => h < '08:00' || h > '17:00')) {
+      toast({ variant: 'destructive', title: 'Entre las 8:00 am y las 5:00 pm' });
+      return;
+    }
+    if (new Set(nuevos).size !== 3) {
+      toast({ variant: 'destructive', title: 'Las 3 horas tienen que ser distintas' });
+      return;
+    }
+    configurar({ horarios: nuevos });
+  };
 
   return (
     <div className="mb-4 rounded-xl border border-violet-200 bg-white p-3 shadow-sm">
@@ -99,6 +119,14 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
             onChange={(e) => e.target.value && configurar({ hora: e.target.value })}
             className="h-6 rounded border px-1 text-[11px]" />
           <span className="text-slate-400">(con la PC encendida)</span>
+        </span>
+        <span className="flex items-center gap-1" title="Una pieza en cada hora; las horas rotan entre los rangos cada día.">
+          Salen a las
+          {horarios.map((h, i) => (
+            <input key={i} type="time" min="08:00" max="17:00" value={h} disabled={guardando}
+              onChange={(e) => cambiarHorario(i, e.target.value)}
+              className="h-6 rounded border px-1 text-[11px]" />
+          ))}
         </span>
         <label className={`flex items-center gap-1.5 ${faltan > 0 ? 'text-slate-400' : 'cursor-pointer text-slate-700'}`}
           title={faltan > 0 ? 'Los primeros 30 días tú apruebas: así Hermes aprende de lo que corriges.' : 'Publica sin pasar por tu aprobación.'}>
@@ -125,7 +153,10 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
             const w = e.trabajo_id ? trabajoDe(e.trabajo_id) : null;
             return (
               <div key={e.id} className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-[11px]">
-                <p className="text-[10px] font-bold uppercase text-violet-700">{e.rango}</p>
+                <p className="flex items-center justify-between text-[10px] font-bold uppercase text-violet-700">
+                  <span>{e.rango}</span>
+                  {e.hora_publicar && <span className="normal-case text-slate-500">sale a las {hora12(e.hora_publicar)}</span>}
+                </p>
                 {p ? (
                   <>
                     <p className="truncate font-bold text-slate-800" title={p.descripcion}>{p.descripcion}</p>

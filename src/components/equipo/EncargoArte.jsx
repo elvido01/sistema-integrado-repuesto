@@ -257,7 +257,12 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
       if (enMesa) await decidir('approved');
 
       const principal = piezas?.[0] || null;
+      // (05/10/2026) Si la eligió Hermes (publicación diaria), trae su hora de
+      // salida: el Paso 3 llega con "Programar" ya puesto a esa hora.
+      const { data: auto } = await supabase.from('equipo_auto_elegidas')
+        .select('fecha, hora_publicar').eq('trabajo_id', trabajoId).maybeSingle();
       onUsar({
+        programarPara: auto?.hora_publicar ? `${auto.fecha}T${String(auto.hora_publicar).slice(0, 5)}` : null,
         producto: principal,
         // "Descuento: NO" en el pedido (casilla del Paso 1).
         sinDescuento: /Descuento:\s*NO\b/i.test(String(trabajo?.peticion || '')),

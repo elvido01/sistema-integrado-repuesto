@@ -305,6 +305,10 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
     }
     setExistenciaOk(false);
     setConDescuento(!prefill.sinDescuento);
+    // La hora de la publicación diaria de Hermes, si todavía no ha pasado.
+    if (prefill.programarPara && new Date(`${prefill.programarPara}:00-04:00`) > new Date()) {
+      setCuando(prefill.programarPara);
+    }
     if (prefill.titulo) setTitulo(prefill.titulo);
     if (prefill.media) setMedia((m) => ({ ...m, ...prefill.media }));
     if (prefill.textos) {
