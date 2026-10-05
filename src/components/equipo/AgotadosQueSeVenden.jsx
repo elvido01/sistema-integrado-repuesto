@@ -11,8 +11,11 @@ import { AlertTriangle, Check, ChevronDown, Loader2, PackageX, RefreshCw } from 
 // grupo de equivalentes que suma existencia cuenta como una sola pieza: si
 // el hermano tiene, no falta (ver sql/promocionar_lo_que_se_vende.sql).
 //
-// "Pedir" la manda a Suplidor Virtual, donde el dueño ya elige a quién se
-// la compra; no se crea la orden desde aquí. Lo que ya está en una orden
+// "Pedir" la pone en el borrador (orden Pendiente) de SU suplidor, como hace
+// la venta cuando algo se acaba. Solo la pieza sin suplidor asignado va a
+// Suplidor Virtual, donde se elige a quién (sql/agotados_a_la_orden_del_suplidor.sql,
+// 05/10/2026: "tiene suplidor, debe enviarlo a la orden de compra de su
+// suplidor asignado"). Lo que ya está en una orden
 // abierta se muestra aparte con la fecha: una orden vieja que no llega es un
 // reclamo al suplidor, no "ya pedido".
 
@@ -31,7 +34,7 @@ export function AgotadosQueSeVenden() {
   const [piezas, setPiezas] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [pidiendo, setPidiendo] = useState(null);
-  const [pedidas, setPedidas] = useState(() => new Set());
+  const [pedidas, setPedidas] = useState(() => new Map());   // producto_id → texto del destino
   const [verPedidas, setVerPedidas] = useState(false);
 
   const cargar = useCallback(() => {
@@ -40,7 +43,7 @@ export function AgotadosQueSeVenden() {
       setCargando(false);
       if (error) return;
       setPiezas(Array.isArray(data) ? data : []);
-      setPedidas(new Set());
+      setPedidas(new Map());
     });
   }, []);
 
@@ -48,7 +51,7 @@ export function AgotadosQueSeVenden() {
 
   const pedir = async (p) => {
     setPidiendo(p.producto_id);
-    const { data, error } = await supabase.rpc('equipo_agotado_a_suplidor_virtual', {
+    const { data, error } = await supabase.rpc('equipo_agotado_pedir', {
       p_producto_id: p.producto_id, p_cantidad: p.sugerido,
     });
     setPidiendo(null);
@@ -56,10 +59,14 @@ export function AgotadosQueSeVenden() {
       toast({ variant: 'destructive', title: 'No se pudo pedir', description: error?.message || 'Inténtalo otra vez.' });
       return;
     }
-    setPedidas((s) => new Set([...s, p.producto_id]));
-    toast({
+    const aOrden = data.destino === 'orden';
+    setPedidas((m) => new Map(m).set(p.producto_id, aOrden ? `En ${data.numero}` : 'En Suplidor Virtual'));
+    toast(aOrden ? {
+      title: data.ya_estaba ? `Ya estaba en la ${data.numero}` : `Agregada a la ${data.numero}`,
+      description: `${p.descripcion} → orden de ${data.suplidor || 'su suplidor'}.`,
+    } : {
       title: data.ya_estaba ? 'Ya estaba en Suplidor Virtual' : 'Enviada a Suplidor Virtual',
-      description: `${p.descripcion}: elige allí a qué suplidor se la pides.`,
+      description: `${p.descripcion} no tiene suplidor asignado: elige allí a quién se la pides.`,
     });
   };
 
@@ -138,15 +145,15 @@ export function AgotadosQueSeVenden() {
       {sinPedir.length > 0 && (
         <div>
           {sinPedir.map((p) => {
-            const hecha = pedidas.has(p.producto_id);
+            const hecha = pedidas.get(p.producto_id);
             return (
               <Fila key={p.producto_id} p={p} accion={hecha ? (
                 <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
-                  <Check className="h-3 w-3" /> En Suplidor Virtual
+                  <Check className="h-3 w-3" /> {hecha}
                 </span>
               ) : (
                 <button type="button" onClick={() => pedir(p)} disabled={!!pidiendo}
-                  title="La manda a Suplidor Virtual con la cantidad de un mes de venta"
+                  title="La agrega a la orden de su suplidor con la cantidad de un mes de venta (sin suplidor: a Suplidor Virtual)"
                   className="flex items-center gap-1 rounded bg-red-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-red-700 disabled:opacity-50">
                   {pidiendo === p.producto_id && <Loader2 className="h-3 w-3 animate-spin" />}
                   Pedir {Number(p.sugerido)}
