@@ -78,6 +78,18 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
   const dias = desde ? Math.floor((Date.now() - desde.getTime()) / 86400000) : 0;
   const faltan = Math.max(0, DIAS_APRENDIZAJE - dias);
   const trabajoDe = (id) => (trabajos || []).find((w) => w.id === id);
+  // (06/10/2026) En qué va: elegida → (30 min antes) arte → reel → aviso.
+  const etapa = (e, w) => {
+    if (e.avisado_at) return /ya publicada/.test(e.nota || '') ? 'ya publicada' : '✅ lista: te avisé para publicarla';
+    if (!e.trabajo_id) {
+      if (!e.hora_publicar) return 'elegida';
+      const [H, M] = String(e.hora_publicar).split(':').map(Number);
+      const t = H * 60 + M - 30;
+      return `el arte se encarga a las ${hora12(`${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`)}`;
+    }
+    if (e.reel_pedido_at) return e.reel_pedido_id ? 'arte listo · armando el reel' : 'arte listo';
+    return w ? ESTADO[w.estado] || w.estado : 'haciendo el arte';
+  };
   const horarios = (cfg?.horarios || ['09:30', '12:30', '15:30']).map((h) => String(h).slice(0, 5));
   const hora12 = (h) => {
     const [H, M] = String(h || '').slice(0, 5).split(':').map(Number);
@@ -164,7 +176,7 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
                     <p className="text-slate-500">{dinero(p.precio)} · {p.codigo}</p>
                     {e.nota && <p className="mt-0.5 line-clamp-2 text-[10px] text-violet-700">{e.nota}</p>}
                     <div className="mt-1 flex items-center gap-2">
-                      <span className="text-[10px] text-slate-500">{w ? ESTADO[w.estado] || w.estado : 'encargada'}</span>
+                      <span className="text-[10px] text-slate-500">{etapa(e, w)}</span>
                       {e.trabajo_id && onRevisar && (
                         <button type="button" onClick={() => onRevisar(e.trabajo_id)}
                           className="ml-auto rounded bg-violet-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-violet-700">
