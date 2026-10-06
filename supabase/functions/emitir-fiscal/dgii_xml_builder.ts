@@ -323,12 +323,17 @@ function buildItemsXml(items) {
 }
 
 // Helper compartido: genera el bloque <Totales>
+// (06/10/2026) <TotalITBIS> VA, y va entre ITBIS1-3 y TotalITBIS1 (orden del
+// XSD). El 15/06 se quitó leyendo mal el error de mayo —era de POSICIÓN: venía
+// después de TotalITBIS1— y la DGII rechazó el Paso 4 del 06/10: "El campo
+// TotalITBIS del área Totales de la sección Encabezado no es válido".
 function buildTotalesXml(t) {
   return `<Totales>
       ${t.monto_gravado_total ? `<MontoGravadoTotal>${fmtMoney(t.monto_gravado_total)}</MontoGravadoTotal>` : ""}
       ${t.monto_gravado_18 ? `<MontoGravadoI1>${fmtMoney(t.monto_gravado_18)}</MontoGravadoI1>` : ""}
       ${t.monto_exento ? `<MontoExento>${fmtMoney(t.monto_exento)}</MontoExento>` : ""}
       ${t.total_itbis_18 ? `<ITBIS1>18</ITBIS1>` : ""}
+      ${t.total_itbis_18 ? `<TotalITBIS>${fmtMoney(t.itbis_total ?? t.total_itbis_18)}</TotalITBIS>` : ""}
       ${t.total_itbis_18 ? `<TotalITBIS1>${fmtMoney(t.total_itbis_18)}</TotalITBIS1>` : ""}
       <MontoTotal>${fmtMoney(t.monto_total)}</MontoTotal>
       ${t.monto_periodo != null ? `<MontoPeriodo>${fmtMoney(t.monto_periodo)}</MontoPeriodo>` : ""}
@@ -891,6 +896,7 @@ function buildXmlTipo46(input) {
       <MontoGravadoTotal>${fmtMoney(montoGravadoI3)}</MontoGravadoTotal>
       <MontoGravadoI3>${fmtMoney(montoGravadoI3)}</MontoGravadoI3>
       <ITBIS3>0</ITBIS3>
+      <TotalITBIS>0.00</TotalITBIS>
       <TotalITBIS3>0.00</TotalITBIS3>
       <MontoTotal>${fmtMoney(montoTotal)}</MontoTotal>
       <MontoPeriodo>${fmtMoney(montoTotal)}</MontoPeriodo>
