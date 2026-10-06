@@ -424,10 +424,18 @@ export default function JarvisAdminAssistant() {
     }, () => {});
 
     mirar();
-    const mirarBorrador = () => supabase.rpc('equipo_panel', { p_limite: 5 })
+    // 30 y no 5: para reconocer las promociones del panel hace falta ver su trabajo.
+    const mirarBorrador = () => supabase.rpc('equipo_panel', { p_limite: 30 })
       .then(({ data, error: e }) => {
         if (!vivo || e) return;
-        const p = (data?.aprobaciones || []).find((a) => a.estado === 'pending');
+        // (06/10/2026) Las promociones del panel (Paso 1 y la publicación
+        // diaria) se aprueban en el Paso 2, viendo el arte. Aquí salía
+        // "Publicar Promoción SET ARO…" pidiendo firma sin enseñar la pieza
+        // y antes de su hora: el dueño creía que publicaba.
+        const delPanel = new Set((data?.trabajos || [])
+          .filter((w) => w.tipo === 'promocion' && w.origin_platform === 'panel')
+          .map((w) => w.id));
+        const p = (data?.aprobaciones || []).find((a) => a.estado === 'pending' && !delPanel.has(a.trabajo_id));
         setBorrador(p || null);
       });
     mirarBorrador();
