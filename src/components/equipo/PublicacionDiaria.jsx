@@ -69,6 +69,7 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
     const n = (data?.elegidas || []).filter((x) => x.pieza).length;
     toast({ title: n ? `Hermes eligió ${n} pieza${n > 1 ? 's' : ''}` : 'Las de hoy ya estaban elegidas',
       description: n ? 'El Creativo las prepara; te llegan al Paso 2 para aprobarlas.' : undefined });
+    window.dispatchEvent(new CustomEvent('equipo-ia:candidatas-cambian'));
     cargar();
   };
 

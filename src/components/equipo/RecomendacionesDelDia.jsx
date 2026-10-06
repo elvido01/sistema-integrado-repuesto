@@ -150,8 +150,23 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
         });
     };
     window.addEventListener('equipo-ia:foto-puesta', alPonerFoto);
-    return () => window.removeEventListener('equipo-ia:foto-puesta', alPonerFoto);
+    // (06/10/2026) Y cuando algo se manda a publicar o Hermes encarga las del
+    // día: el Filtro Navi seguía aquí ya programado porque la lista se pidió
+    // antes y nadie la volvía a pedir.
+    window.addEventListener('equipo-ia:candidatas-cambian', alPonerFoto);
+    return () => {
+      window.removeEventListener('equipo-ia:foto-puesta', alPonerFoto);
+      window.removeEventListener('equipo-ia:candidatas-cambian', alPonerFoto);
+    };
   }, []);
+
+  // Un encargo nuevo (del dueño o de Hermes) saca la pieza de la lista.
+  const firmaTrabajos = (trabajos || []).filter((w) => w.tipo === 'promocion').map((w) => w.id).sort().join(',');
+  const primeraFirma = useRef(true);
+  useEffect(() => {
+    if (primeraFirma.current) { primeraFirma.current = false; return; }
+    window.dispatchEvent(new CustomEvent('equipo-ia:candidatas-cambian'));
+  }, [firmaTrabajos]);
 
   const totalTandas = Math.max(1, Math.ceil(todas.length / POR_TANDA));
   const lista = todas.slice(tanda * POR_TANDA, (tanda + 1) * POR_TANDA);

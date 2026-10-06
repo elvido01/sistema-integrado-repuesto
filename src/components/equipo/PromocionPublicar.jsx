@@ -549,6 +549,8 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
           ? `${bloqueados} destino(s) sin autorizar no salen. Lo demás, míralo abajo en el historial.`
           : 'Míralo abajo, en el historial.',
       });
+      // Lo mandado a publicar sale de "Qué promocionar hoy" por 30 días.
+      window.dispatchEvent(new CustomEvent('equipo-ia:candidatas-cambian'));
       limpiar();
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo', description: e.message, duration: 10000 });
