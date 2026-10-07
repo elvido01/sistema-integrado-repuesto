@@ -7,9 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Loader2, Search, PlusCircle, Send, Edit, Trash2, X, Printer, Share2, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
+import { Loader2, Search, PlusCircle, Send, Edit, Trash2, X, Printer, Share2, ChevronDown, ChevronUp, Image as ImageIcon, FileDown } from 'lucide-react';
 import CotizacionFormModal from '@/components/cotizaciones/CotizacionFormModal';
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { generateCotizacionPDF } from '@/components/common/PDFGenerator';
 import { printCotizacionPOS, printCotizacionQZ, printCotizacionWebUsb } from '@/lib/printPOS';
 import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
 import { agentIsAvailable } from '@/services/motoflowPrintAgent';
@@ -57,6 +58,7 @@ const CotizacionPage = () => {
     agentIsAvailable().then(setHasAgent).catch(() => setHasAgent(false));
   }, []);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [sharingImageId, setSharingImageId] = useState(null);
   const containerRef = useRef(null);
@@ -97,6 +99,31 @@ const CotizacionPage = () => {
     } finally {
       setPreferredBackend(previousBackend);
       setIsPrinting(false);
+    }
+  };
+
+  // Mismo PDF que sale al guardar la cotizacion (CotizacionFormModal). La
+  // vista de la lista no trae subtotal/ITBIS/notas, por eso se lee la fila completa.
+  const handleDescargarPDF = async () => {
+    if (!selectedCotizacion || !detalles.length || isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
+    try {
+      const { data: cot, error } = await supabase
+        .from('cotizaciones')
+        .select('*')
+        .eq('id', selectedCotizacion.id)
+        .single();
+      if (error) throw error;
+      let cliente = null;
+      if (cot.cliente_id) {
+        const { data } = await supabase.from('clientes').select('*').eq('id', cot.cliente_id).maybeSingle();
+        cliente = data;
+      }
+      generateCotizacionPDF({ ...cot, numero: cot.numero || selectedCotizacion.numero }, cliente, detalles);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo generar el PDF', description: err?.message || 'Error desconocido.' });
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -520,6 +547,16 @@ const CotizacionPage = () => {
             >
               <span>{isPrinting ? 'Imprimiendo...' : 'F6 - Imprimir'}</span>
               <Printer size={18} />
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={handleDescargarPDF}
+              disabled={!selectedCotizacion || !detalles.length || isDownloadingPdf}
+              className="w-full justify-between"
+            >
+              <span>{isDownloadingPdf ? 'Generando...' : 'Descargar PDF'}</span>
+              {isDownloadingPdf ? <Loader2 size={18} className="animate-spin" /> : <FileDown size={18} />}
             </Button>
 
             <div className="mt-3 pt-3 border-t space-y-2">
