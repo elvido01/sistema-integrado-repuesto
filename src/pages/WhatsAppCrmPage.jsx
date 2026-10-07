@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { MessageCircle, Search, Send, Bot, UserRound, Loader2, FileText, RefreshCw, Power, PowerOff, CheckCircle2, QrCode, Smartphone, X, Wifi, WifiOff, PlusCircle, Trash2, Share2, Image as ImageIcon, PackagePlus, Mic, Square, Volume2, VolumeX, ChevronUp, ChevronDown, Clock3, CreditCard, Ban, ShoppingCart, AlertTriangle, CalendarClock, CheckCheck, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SlidersHorizontal, MoreVertical, Edit3, Instagram, Facebook, Inbox, UserPlus, Handshake, MapPin, Sparkles } from 'lucide-react';
+import { MessageCircle, Search, Send, Bot, UserRound, Loader2, FileText, RefreshCw, Power, PowerOff, CheckCircle2, QrCode, Smartphone, X, Wifi, WifiOff, PlusCircle, Trash2, Share2, Image as ImageIcon, PackagePlus, Mic, Square, Volume2, VolumeX, ChevronUp, ChevronDown, Clock3, CreditCard, Ban, ShoppingCart, AlertTriangle, CalendarClock, CheckCheck, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SlidersHorizontal, MoreVertical, Edit3, Instagram, Facebook, Inbox, UserPlus, Handshake, MapPin, Sparkles, Flame } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { invocarConSesion } from '@/lib/edgeInvoke';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import NewManualConversationModal from '@/components/whatsapp/NewManualConversationModal';
+import EmbudoCrm from '@/components/whatsapp/EmbudoCrm';
 import { Label } from '@/components/ui/label';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { useWhatsAppNotifications } from '@/contexts/WhatsAppNotificationContext';
@@ -341,6 +342,7 @@ const WhatsAppCrmPage = () => {
   const [conversations, setConversations] = useState([]);
   const [showNewManualConv, setShowNewManualConv] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [embudoOpen, setEmbudoOpen] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [savingRename, setSavingRename] = useState(false);
@@ -2031,6 +2033,28 @@ const WhatsAppCrmPage = () => {
       <Helmet>
         <title>Sales Hub - {empresa?.nombre || 'Sistema'}</title>
       </Helmet>
+      <EmbudoCrm
+        open={embudoOpen}
+        onOpenChange={setEmbudoOpen}
+        onAbrirConversacion={(f) => {
+          // Los WhatsApp de la lista vienen de crm_whatsapp (otro id); el resto, de sales_conversations.
+          const conv = conversations.find((c) => c.id === f.id
+            || (f.crm_whatsapp_conversation_id && c.id === f.crm_whatsapp_conversation_id));
+          // Los WhatsApp del espejo no están en esta lista (se contestan en
+          // WhatsApp Web con la extensión): se abre el chat allí.
+          const tel = String(f.customer_phone || '').replace(/\D/g, '');
+          if (!conv && f.platform === 'whatsapp' && tel.length >= 10) {
+            window.open(`https://web.whatsapp.com/send?phone=${tel.length === 10 ? `1${tel}` : tel}`, '_blank', 'noopener');
+            return;
+          }
+          if (!conv) {
+            toast({ title: 'No está en la lista', description: 'Esa conversación no está entre las últimas cargadas. Búscala por el nombre o el teléfono.' });
+            return;
+          }
+          setSelected(conv);
+          setEmbudoOpen(false);
+        }}
+      />
       <div className="h-full min-h-0 w-full min-w-0 overflow-hidden bg-[#efeae2]">
         <div className={`h-full min-h-0 w-full min-w-0 grid grid-cols-1 ${showInboxPanel ? 'lg:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(380px,420px)_minmax(0,1fr)]' : 'lg:grid-cols-[minmax(0,1fr)]'}`}>
           {showInboxPanel && (
@@ -2041,6 +2065,9 @@ const WhatsAppCrmPage = () => {
                   <h1 className="text-xl 2xl:text-2xl font-black text-slate-900">Sales Hub</h1>
                 </div>
                 <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => setEmbudoOpen(true)} title="Embudo de ventas (Hermes clasifica cada conversación)">
+                    <Flame className="h-4 w-4 text-amber-500" />
+                  </Button>
                   <Button variant="ghost" size="icon" onClick={() => setIsStartChatOpen(true)} title="Iniciar chat">
                     <PlusCircle className="h-4 w-4" />
                   </Button>
