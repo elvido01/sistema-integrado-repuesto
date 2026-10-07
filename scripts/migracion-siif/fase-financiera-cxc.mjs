@@ -170,7 +170,11 @@ for (const p of pagosRI) {
 }
 for (const h of headers) {
   h.tienePendiente = (pendingByKey.get(String(h.loanNum)) || []).length > 0;
-  h.refPago = ultPagoByCedula.get(h.cedula) || h.ult_pago || h.fecha_inicio;
+  // (07/10/2026) El castigo mira también la fecha DEL PRÉSTAMO: un préstamo
+  // nuevo de un cliente cuyo último pago fue hace más de 6 años (PT-0000789,
+  // Benito Polo, Inversiones) entraba castigado el mismo día.
+  const ultPago = ultPagoByCedula.get(h.cedula) || h.ult_pago || h.fecha_inicio;
+  h.refPago = [ultPago, h.fecha_inicio].filter(Boolean).sort().pop();
   h.esCastigo = h.tienePendiente && !!h.refPago && h.refPago < CASTIGO_CUTOFF;
   h.estado = !h.tienePendiente ? 'saldado' : (h.esCastigo ? 'castigado' : 'activo');
 }
