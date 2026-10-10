@@ -532,6 +532,13 @@ const VentasPage = () => {
           } else {
             generateFacturaPDF(facturaParaImprimir, empresa);
           }
+        } else if (facturaParaImprimir.impresion_ecf && (printMethod === 'qz' || printMethod === 'agent' || printMethod === 'webusb' || silentOn)) {
+          // (10/10/2026) e-CF: el QR de la DGII como imagen ESC/POS (GS v 0) sale
+          // como basura en impresoras que no son Epson (Star en modo Star, etc.):
+          // pasó en el primer ticket de D Mario. El ticket HTML pasa por el
+          // agente como IMAGEN por el driver de Windows (o por el navegador),
+          // que imprime el QR en cualquier impresora. Mismo papel de siempre.
+          printFacturaPOS(facturaParaImprimir, printFormat === 'pos_80mm' ? 'pos_80mm' : 'pos_4inch');
         } else if (printMethod === 'qz' || printMethod === 'agent' || silentOn) {
           // printFacturaQZ usa el adapter (respeta la preferencia global).
           const previousBackend = getPreferredBackend();

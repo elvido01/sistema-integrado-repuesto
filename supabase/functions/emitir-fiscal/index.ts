@@ -803,15 +803,34 @@ Deno.serve(async (req) => {
           updatePayload.xml_firmado_path = resultado.request_payload?.xml_path || null;
           // El RFCE contesta en el acto (Aceptado / Aceptado Condicional);
           // el e-CF normal queda "enviado" hasta consultar su TrackId.
-          const estadoInmediato = resultado.request_payload?.via === "rfce"
-            ? String(resultado.response_payload?.estado || resultado.response_payload?.Estado || "").trim()
-            : "";
+          // (10/10/2026) La DGII contesta "Aceptado" / "Aceptado Condicional" y el
+          // CHECK de la columna solo admite aceptado | aceptado_condicional | ...:
+          // sin normalizar, el update fallaba callado y la fila se quedaba
+          // en "procesando" sin e-NCF (primera venta real de D Mario).
+          const estadoInmediato = (() => {
+            if (resultado.request_payload?.via !== "rfce") return "";
+            const e = String(resultado.response_payload?.estado || resultado.response_payload?.Estado || "").toLowerCase();
+            if (e.includes("condicional")) return "aceptado_condicional";
+            if (e.includes("aceptado")) return "aceptado";
+            if (e.includes("rechaz")) return "rechazado";
+            return "";
+          })();
           updatePayload.estado_dgii = estadoInmediato || "enviado";
         }
-        await supabase
+        const { error: updErr } = await supabase
           .from("documentos_fiscales")
           .update(updatePayload)
           .eq("id", docFiscal.id);
+        if (updErr) {
+          // El comprobante YA salió a la DGII: no se puede perder el e-NCF.
+          console.error("documentos_fiscales update:", updErr.message);
+          await supabase.from("documentos_fiscales").update({
+            estado: "emitido", ncf: resultado.ncf, encf: resultado.ncf,
+            request_payload: resultado.request_payload, response_payload: resultado.response_payload,
+            error_message: `update parcial: ${updErr.message}`.slice(0, 500),
+            emitted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          }).eq("id", docFiscal.id);
+        }
 
         if (resultado.ncf) {
           await supabase

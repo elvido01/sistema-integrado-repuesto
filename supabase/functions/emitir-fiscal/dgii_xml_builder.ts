@@ -163,7 +163,9 @@ const reconcileTotalesWithItems = (totales, items) => {
     if (indicador === "1") {
       const rate = normalizeRateTo01(it.itbis_pct ?? it.itbis_porcentaje ?? 0.18);
       montoGravado18 += base;
-      itbis18 += Number((base * rate).toFixed(2));
+      itbis18 += it.itbis_monto != null && isFinite(Number(it.itbis_monto))
+        ? Number(it.itbis_monto)
+        : Number((base * rate).toFixed(2));
     } else if (indicador === "4") {
       montoExento += base;
     }
@@ -1070,6 +1072,10 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
       indicador_facturacion: aplicaItbis ? "1" : "4", // 1=gravado, 4=exento
       monto_item: Number(monto.toFixed(2)),
       itbis_pct: aplicaItbis ? (isFinite(itbisPct) && itbisPct > 0 ? itbisPct : 0.18) : 0,
+      // (10/10/2026) El ITBIS que se COBRO en la línea. Recalcularlo (base × 18%)
+      // descuadraba un centavo: venta de RD$1,300 = 1,101.69 + 198.31, y el XML
+      // salía 198.30 / 1,299.99 (E320000000001 de D Mario).
+      itbis_monto: aplicaItbis && isFinite(itbisMonto) && itbisMonto > 0 ? Number(itbisMonto.toFixed(2)) : null,
       unidad_medida: "43", // unidad por defecto
     };
   });
@@ -1081,6 +1087,7 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
     it.indicador_facturacion === "4" ? s + it.monto_item : s, 0);
   const totalItbis = items.reduce((s, it) => {
     if (it.indicador_facturacion !== "1") return s;
+    if (it.itbis_monto != null) return s + it.itbis_monto;
     const rate = it.itbis_pct > 1 ? it.itbis_pct / 100 : it.itbis_pct;
     return s + Number((it.monto_item * rate).toFixed(2));
   }, 0);
