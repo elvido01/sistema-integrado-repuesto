@@ -29,7 +29,7 @@ const normalizeItbisPct = (value) => {
 
 export const useVentas = () => {
   const { toast } = useToast();
-  const { user, empresa, tenantId } = useAuth();
+  const { user, empresa, tenantId, fiscalActivo, fiscalModo } = useAuth();
   // El perfil del cajero no cambia mientras dure la sesión: se pregunta una
   // vez y se guarda aquí. Antes se consultaba en cada factura.
   const perfilRef = useRef(null);
@@ -1005,7 +1005,11 @@ export const useVentas = () => {
       // sin NCF + warning (útil para tenants nuevos sin autorización DGII aún).
       let ncfData = null;
       const tipoNcfCliente = safeCliente.tipo_ncf || '02';
-      if (!editingFacturaId && tipoNcfCliente) {
+      // (10/10/2026) Con facturación electrónica en producción el comprobante
+      // es el e-NCF que pone emitir-fiscal al guardar: no se busca NCF de
+      // papel (D Mario no tiene, y salía el aviso rojo "Sin NCF disponible").
+      const conEcfEnProduccion = fiscalActivo && fiscalModo === 'produccion';
+      if (!editingFacturaId && tipoNcfCliente && !conEcfEnProduccion) {
         const { data: ncfResult, error: ncfError } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: tipoNcfCliente });
         marca('ncf');
         if (ncfError) throw ncfError;
