@@ -11,6 +11,7 @@ import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
 import SugerenciasEquivalentesModal from '@/components/ventas/SugerenciasEquivalentesModal';
 import { generateFacturaPDF, generateFacturaCartaPDF } from '@/components/common/PDFGenerator';
 import { imprimirFactura } from '@/lib/printPOS';
+import { registrarError } from '@/lib/registroErrores';
 import { isSilentPrintEnabled } from '@/lib/printHtmlSmart';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -454,12 +455,14 @@ const VentasPage = () => {
         // En pruebas no se le pinta un cuadro rojo al cajero por cada venta:
         // el fallo queda en documentos_fiscales, que es donde se trabaja la
         // integración. Un aviso que sale siempre deja de ser un aviso.
+        if (!silencioso) registrarError('ventas.emitirECF', result.error || 'e-CF no emitido', { factura: facturaNumero });
         if (!silencioso) toast({ variant: 'destructive', title: 'Error e-CF', description: result.error || 'No se pudo emitir el e-CF. Puede reintentarlo desde el historial.', duration: 8000 });
         else console.warn('[e-CF pruebas] no emitido:', result.error);
         return null;
       }
     } catch (err) {
       console.error('[e-CF] Error:', err);
+      if (!silencioso) registrarError('ventas.emitirECF.conexion', err, { factura: facturaNumero });
       if (!silencioso) toast({ variant: 'destructive', title: 'Error e-CF', description: 'Error de conexión al emitir e-CF. La factura fue guardada correctamente.', duration: 8000 });
       return null;
     }

@@ -233,6 +233,91 @@ async function logEcfArecf(supabase, docId, estado, payload) {
   if (error) throw new Error(`Error registrando ARECF: ${error.message}`);
 }
 
+// (10/10/2026) Revisión automática de los e-CF que quedaron "enviado".
+// El E31 no se acepta en el acto: la DGII lo valida después y nadie volvía a
+// preguntar; uno rechazado más tarde quedaba como bueno en MotoFlow. Lo
+// llama una tarea programada (x-cron-secret) cada 10 minutos. Autentica una
+// vez por empresa; si falta el TrackId (se perdió al guardar) lo recupera
+// por el e-NCF. Rechazado → aviso a quien hizo la venta.
+const normalizarEstadoDgii = (est) => {
+  const e = String(est?.estado || est?.Estado || est?.codigo || "").toLowerCase();
+  if (e.includes("condicional")) return "aceptado_condicional";
+  if (e.includes("aceptado") || e === "1") return "aceptado";
+  if (e.includes("rechaz") || e === "0") return "rechazado";
+  return "enviado";
+};
+
+async function revisarPendientesDgii(supabase) {
+  const desde = new Date(Date.now() - 15 * 86400000).toISOString();
+  const { data: docs, error } = await supabase
+    .from("documentos_fiscales")
+    .select("id, tenant_id, factura_id, encf, track_id, tipo_ecf, ambiente, emitido_por, emitted_at")
+    .eq("proveedor", "dgii_directo")
+    .eq("estado", "emitido")
+    .eq("estado_dgii", "enviado")
+    .eq("ambiente", "Produccion")
+    .gte("emitted_at", desde)
+    .lte("emitted_at", new Date(Date.now() - 60000).toISOString())
+    .order("emitted_at", { ascending: true })
+    .limit(40);
+  if (error) throw new Error(`revisar pendientes: ${error.message}`);
+  const resumen = { revisados: 0, aceptados: 0, rechazados: 0, siguen: 0, errores: [] };
+  const porEmpresa = new Map();
+  for (const d of docs || []) {
+    if (String(d.track_id || "").startsWith("RFCE-")) continue; // el RFCE contesta en el acto
+    if (!porEmpresa.has(d.tenant_id)) porEmpresa.set(d.tenant_id, []);
+    porEmpresa.get(d.tenant_id).push(d);
+  }
+  for (const [tenantId, lista] of porEmpresa) {
+    try {
+      const { data: integ } = await supabase.from("integraciones_fiscales").select("config")
+        .eq("tenant_id", tenantId).eq("proveedor", "dgii_directo").maybeSingle();
+      if (!integ?.config) throw new Error("sin config DGII");
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const auth = await authenticate(cert, privateKey, "Produccion");
+      for (const d of lista) {
+        resumen.revisados++;
+        try {
+          let track = d.track_id;
+          if (!track) {
+            const t = await consultarTrackIds(integ.config.rnc_emisor, d.encf, auth.token, "Produccion");
+            const arr = Array.isArray(t) ? t : (t?.trackIds || t?.TrackIds || []);
+            const ult = arr[arr.length - 1];
+            track = ult?.trackId || ult?.TrackId || null;
+            if (track) {
+              const { error: e } = await supabase.from("documentos_fiscales").update({ track_id: track }).eq("id", d.id);
+              if (e) resumen.errores.push(`${d.encf}: guardar track: ${e.message}`);
+            }
+          }
+          if (!track) { resumen.siguen++; continue; }
+          const est = await consultarEstado(track, auth.token, "Produccion");
+          const norm = normalizarEstadoDgii(est);
+          if (norm === "enviado") { resumen.siguen++; continue; }
+          await logEcfArecf(supabase, d.id, norm, est);
+          if (norm === "rechazado") {
+            resumen.rechazados++;
+            const { data: f } = await supabase.from("facturas").select("numero").eq("id", d.factura_id).maybeSingle();
+            const motivo = JSON.stringify(est?.mensajes || est?.Mensajes || est).slice(0, 400);
+            if (d.emitido_por) {
+              const { error: e } = await supabase.from("notificaciones").insert({
+                tenant_id: tenantId, user_id: d.emitido_por, tipo: "ecf_rechazado",
+                titulo: `La DGII rechazó el ${d.encf} (factura #${f?.numero ?? "?"})`,
+                mensaje: `Hay que corregir y volver a emitir. Motivo: ${motivo}`,
+              });
+              if (e) resumen.errores.push(`${d.encf}: aviso: ${e.message}`);
+            }
+          } else resumen.aceptados++;
+        } catch (e) {
+          resumen.errores.push(`${d.encf}: ${String(e?.message || e).slice(0, 200)}`);
+        }
+      }
+    } catch (e) {
+      resumen.errores.push(`empresa ${String(tenantId).slice(0, 8)}: ${String(e?.message || e).slice(0, 200)}`);
+    }
+  }
+  return resumen;
+}
+
 async function logEcfAecf(supabase, docId, estado, payload) {
   // estado: 'aprobado' | 'rechazado' (B2B tipo 31)
   const { error } = await supabase
@@ -647,6 +732,16 @@ Deno.serve(async (req) => {
 
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const isServiceRole = !!serviceKey && token === serviceKey;
+
+    // ── ACTION: dgii_revisar_pendientes ── (tarea programada, todas las empresas)
+    // La clave x-cron-secret (secreto CRON_SECRET_FISCAL) SOLO abre esta acción.
+    if (action === "dgii_revisar_pendientes") {
+      const cronSecret = Deno.env.get("CRON_SECRET_FISCAL") ?? "";
+      const esCron = !!cronSecret && req.headers.get("x-cron-secret") === cronSecret;
+      if (!esCron && !isServiceRole) throw new Error("No autorizado");
+      const resumen = await revisarPendientesDgii(supabase);
+      return new Response(JSON.stringify({ ok: true, ...resumen }), { status: 200, headers: corsHeaders });
+    }
 
     let tenantId;
     // Fase 3.3: ID del caller para trazabilidad (emitido_por).

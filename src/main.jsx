@@ -4,6 +4,10 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import { HelmetProvider } from 'react-helmet-async';
 import { BrowserRouter } from 'react-router-dom';
+import { instalarRegistroErrores } from '@/lib/registroErrores';
+
+// Errores no controlados → errores_app (solo los lee el superadmin).
+instalarRegistroErrores();
 
 
 // Version marker for debugging deployment updates
