@@ -47,7 +47,8 @@ BEGIN
   -- Urgente y nuevo: también al chat de Hermes (Morla es donde lo lee el dueño).
   IF p_urgente AND v_n > 0 THEN
     PERFORM hermes_decir('00000000-0000-0000-0000-000000000001'::uuid,
-                         '⚠️ ' || p_titulo || E'\n' || p_mensaje, NULL, 'alertas');
+                         '⚠️ ' || p_titulo || E'\n' || p_mensaje, NULL, 'centinela');
+    -- 'centinela': hermes_chat_surface_chk solo acepta esos orígenes.
   END IF;
   RETURN v_n;
 END $$;
@@ -112,7 +113,8 @@ SELECT cron.unschedule('alertas-servicios')
  WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'alertas-servicios');
 SELECT cron.schedule('alertas-servicios', '7 * * * *', $$SELECT public.alertas_servicios_externos()$$);
 
--- Prueba en seco (no avisa nada si no hay errores en los últimos 70 minutos):
-SELECT public.alertas_servicios_externos() AS detectado_ahora;
+-- Sin prueba en seco a propósito: al correrlo el 10/10 detectó los errores de
+-- OpenAI de ANTES de la recarga (seguían dentro de los 70 minutos). La
+-- primera vuelta real es a la hora y 7.
 
 SELECT public.registrar_migracion('alertas_salud.sql');
