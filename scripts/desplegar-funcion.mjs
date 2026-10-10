@@ -58,7 +58,7 @@ const extras = process.argv.slice(3);
 // Si una función nueva va sin sesión, agrégala aquí.
 const SIN_JWT = new Set([
   'cotizar-morla', 'creativo-escena', 'dgii-receptor', 'hermes-publication-bridge',
-  'meta-add-ig-tester', 'meta-messages-webhook', 'meta-subscribe-pages', 'morla-video-runner-temp',
+  'meta-add-ig-tester', 'meta-messages-webhook', 'meta-subscribe-pages',
   'product-image-upload-bridge', 'social-oauth', 'tiktok-legal', 'tiktok-webhook', 'whatsapp-crm-webhook',
 ]);
 if (SIN_JWT.has(funcion) && !extras.includes('--no-verify-jwt')) {
