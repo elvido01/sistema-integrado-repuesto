@@ -33,6 +33,7 @@ import { LinkEnLaBio } from '@/components/equipo/LinkEnLaBio';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { traducirErrorIA } from '@/lib/errorIA';
 
 // ── Cómo se ve cada estado ────────────────────────────────────────────
 // Los nombres técnicos no se enseñan. "waiting_dependency" no le dice nada
@@ -883,7 +884,7 @@ const EquipoIAPage = () => {
 
                       {t.error && (
                         <p className="mb-2 flex items-start gap-1 rounded bg-red-50 p-2 text-[10px] text-red-700">
-                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /><Texto>{t.error}</Texto>
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /><span title={t.error}><Texto>{traducirErrorIA(t.error)}</Texto></span>
                         </p>
                       )}
 
@@ -987,7 +988,7 @@ const EquipoIAPage = () => {
                       {d.status === 'published' && d.external_url && (
                         <a className="text-blue-700 underline" href={d.external_url} target="_blank" rel="noreferrer">Ver publicación</a>
                       )}
-                      {d.status === 'failed' && d.error_message && <p className="mt-1 text-red-700"><Texto>{d.error_message}</Texto></p>}
+                      {d.status === 'failed' && d.error_message && <p className="mt-1 text-red-700" title={d.error_message}><Texto>{traducirErrorIA(d.error_message)}</Texto></p>}
                     </div>
                   ))}
                 </div>
@@ -1191,7 +1192,7 @@ const EquipoIAPage = () => {
                   <span className="ml-auto text-[10px] text-slate-400">{hace(m.created_at)}</span>
                 </div>
                 <p className="text-slate-600"><Texto>{m.summary}</Texto></p>
-                {m.error && <p className="mt-1 rounded bg-red-50 p-1 text-red-700"><Texto>{m.error}</Texto></p>}
+                {m.error && <p className="mt-1 rounded bg-red-50 p-1 text-red-700" title={m.error}><Texto>{traducirErrorIA(m.error)}</Texto></p>}
                 {m.resultado && (
                   <pre className="mt-1 max-h-32 overflow-auto rounded bg-slate-50 p-1 text-[10px]">
                     {JSON.stringify(m.resultado, null, 1)}

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Clapperboard, Loader2, RotateCcw } from 'lucide-react';
 import { FORMATOS_REEL } from '@/components/equipo/ReelsModelo';
+import { traducirErrorIA } from '@/lib/errorIA';
 
 // EL GUION DEL REEL, ANTES DE GASTAR — Paso 2.
 //
@@ -103,7 +104,7 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
         </p>
       )}
       {pedido?.estado === 'error' && (
-        <p className="mb-2 text-[11px] text-red-700">No se pudo hacer el reel: {pedido.error}. Puedes intentarlo otra vez.</p>
+        <p className="mb-2 text-[11px] text-red-700" title={pedido.error}>No se pudo hacer el reel: {traducirErrorIA(pedido.error)}</p>
       )}
 
       {editando && (

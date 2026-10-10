@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Clapperboard, ExternalLink, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { traducirErrorIA } from '@/lib/errorIA';
 
 // ESTILO DE TUS REELS — los reels modelo y la receta de cada uno.
 //
@@ -272,7 +273,7 @@ export function ReelsModelo() {
               {abierto.estado === 'listo'
                 ? <Receta r={abierto} />
                 : <p className="mb-3 text-sm text-slate-600">
-                    {ESTADO[abierto.estado]}{abierto.error ? `: ${abierto.error}` : ''}
+                    {ESTADO[abierto.estado]}{abierto.error ? `: ${traducirErrorIA(abierto.error)}` : ''}
                   </p>}
 
               <div className="mt-3 border-t pt-3">

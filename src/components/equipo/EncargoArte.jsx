@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Loader2, CheckCircle2, RotateCcw, X, AlertTriangle } from 'lucide-react';
 import { FORMATOS_REEL } from '@/components/equipo/ReelsModelo';
 import { GuionReel } from '@/components/equipo/GuionReel';
+import { traducirErrorIA } from '@/lib/errorIA';
 
 // ════════════════════════════════════════════════════════════════════════
 //  EL ARTE DEL ENCARGO, AQUÍ MISMO
@@ -391,10 +392,12 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
       {!pieza && terminado && (
         <div className="flex flex-wrap items-start gap-2 py-2 text-xs text-slate-600">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-          <span className="flex-1">
+          <span className="flex-1" title={trabajo?.error || undefined}>
             {trabajo?.estado === 'completed'
               ? 'Este encargo ya se cerró.'
-              : `El encargo terminó sin pieza (${trabajo?.estado}).${trabajo?.error ? ` ${trabajo.error}` : ''}`}
+              : trabajo?.error
+                ? `No se pudo hacer la pieza: ${traducirErrorIA(trabajo.error)}`
+                : `El encargo terminó sin pieza (${trabajo?.estado}).`}
           </span>
           {trabajo?.estado !== 'completed' && (
             <Button size="sm" variant="outline" disabled={trabajando} onClick={reencargar}>
