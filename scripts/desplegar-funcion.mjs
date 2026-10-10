@@ -51,6 +51,21 @@ console.log(`\n  Desplegando ${funcion} a ${PROD}...\n`);
 // todo y la plataforma da la URL por muerta.
 const extras = process.argv.slice(3);
 
+// (10/10/2026) Las que reciben llamadas SIN sesión (webhooks, el receptor de
+// la DGII, la escena del Creativo con su permiso de un solo uso...). Se les
+// pone --no-verify-jwt solas: redesplegar creativo-escena sin el flag la dejó
+// respondiendo 401 y el Creativo salió con la plantilla hasta que se notó.
+// Si una función nueva va sin sesión, agrégala aquí.
+const SIN_JWT = new Set([
+  'cotizar-morla', 'creativo-escena', 'dgii-receptor', 'hermes-publication-bridge',
+  'meta-add-ig-tester', 'meta-messages-webhook', 'meta-subscribe-pages', 'morla-video-runner-temp',
+  'product-image-upload-bridge', 'social-oauth', 'tiktok-legal', 'tiktok-webhook', 'whatsapp-crm-webhook',
+]);
+if (SIN_JWT.has(funcion) && !extras.includes('--no-verify-jwt')) {
+  extras.push('--no-verify-jwt');
+  console.log('  (sin sesión: --no-verify-jwt agregado solo)\n');
+}
+
 const hijo = spawn(cli, ['functions', 'deploy', funcion, '--project-ref', PROD, ...extras], {
   cwd: RAIZ,
   // El token va SOLO aquí: ni en el comando, ni en el historial, ni en ps.
