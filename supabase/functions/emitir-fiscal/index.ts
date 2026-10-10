@@ -522,6 +522,23 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
   // 4. Guardar XML firmado en Storage privado
   const xmlPath = await uploadSignedXml(supabase, factura.tenant_id, encf, xmlFirmado);
 
+  // (10/10/2026) Lo que el recibo necesita para la representación impresa:
+  // QR (consultatimbre), código de seguridad y fecha de firma. Se guarda en
+  // documentos_fiscales.request_payload.impresion para reimprimir igual.
+  const delXml = (tag) => (xmlFirmado.match(new RegExp(`<${tag}>([^<]*)</${tag}>`)) || [])[1] || null;
+  const impresion = {
+    encf,
+    tipo_ecf: tipoEcf,
+    ambiente,
+    codigo_seguridad: String(signatureValue || "").slice(0, 6),
+    fecha_firma: delXml("FechaHoraFirma"),
+    fecha_emision: delXml("FechaEmision"),
+    fecha_vencimiento: delXml("FechaVencimientoSecuencia"),
+    monto_total: delXml("MontoTotal"),
+    rnc_emisor: delXml("RNCEmisor"),
+    rnc_comprador: delXml("RNCComprador"),
+  };
+
   // 5. Autenticar con DGII
   const auth = await authenticate(cert, privateKey, ambiente);
   const rncArchivo = String(config.rnc_emisor || "").replace(/\D/g, "");
@@ -549,6 +566,7 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
         tipo_ecf: tipoEcf,
         ambiente,
         via: "rfce",
+        impresion,
         xml_path: xmlPath,
         codigo_seguridad: codigoSeguridad,
         digest_value: digestValue,
@@ -576,6 +594,7 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
     request_payload: {
       tipo_ecf: tipoEcf,
       ambiente,
+      impresion,
       xml_path: xmlPath,
       digest_value: digestValue,
       signature_value: signatureValue.slice(0, 100) + "...",
@@ -797,6 +816,7 @@ Deno.serve(async (req) => {
           proveedor_invoice_id: resultado.proveedor_invoice_id,
           proveedor_number: resultado.proveedor_number,
           ncf: resultado.ncf,
+          impresion: resultado.request_payload?.impresion || null,
         }), { status: 200, headers: corsHeaders });
 
       } catch (emitError) {

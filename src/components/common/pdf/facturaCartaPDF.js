@@ -18,6 +18,7 @@
 // una sola vez en los totales. En la base, facturas_detalle.importe viene
 // CON ITBIS (20,791.60) y precio sin él, así que aquí se resta.
 import jsPDF from 'jspdf';
+import { prepararEcfImpresion } from '@/lib/ecfImpresion';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { IDS_GENERICOS } from '@/lib/clienteGenerico';
@@ -40,6 +41,7 @@ const TITULOS_NCF = {
 };
 
 export const tituloComprobante = (factura) => {
+  if (factura?.ecf?.titulo) return factura.ecf.titulo;
   const tipo = String(factura?.ncf || '').length >= 3
     ? String(factura.ncf).substring(1, 3)
     : (factura?.tipo_ncf || '');
@@ -74,7 +76,10 @@ const cargarImagen = (url) => new Promise((resolve) => {
  * @param {object} empresa  config_empresa
  * @param {'abrir'|'descargar'} accion
  */
-export const generateFacturaCartaPDF = async (factura, empresa = {}, accion = 'abrir') => {
+export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 'abrir') => {
+  // (10/10/2026) e-CF: título electrónico, e-NCF, vencimiento y el QR de la DGII.
+  const factura = await prepararEcfImpresion(facturaIn);
+  const ecf = factura.ecf || null;
   const firma = await cargarImagen(empresa.firma_url);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const W = doc.internal.pageSize.getWidth();
@@ -127,7 +132,8 @@ export const generateFacturaCartaPDF = async (factura, empresa = {}, accion = 'a
 
   const filasDoc = [
     ['No', numeroStr],
-    factura.ncf ? ['NCF', String(factura.ncf)] : null,
+    ecf ? ['e-NCF', ecf.encf] : (factura.ncf ? ['NCF', String(factura.ncf)] : null),
+    ecf?.fecha_vencimiento ? ['Válida hasta', ecf.fecha_vencimiento] : null,
     ['Fecha', formatInTimeZone(new Date(factura.fecha), 'dd/LL/yyyy')],
     ['Pág.', '1/1'],
     ['Condición', factura.forma_pago === 'CREDITO'
@@ -148,7 +154,7 @@ export const generateFacturaCartaPDF = async (factura, empresa = {}, accion = 'a
     doc.setFontSize(8);
     doc.text(etiqueta, boxX + 2, fy + 3.6);
     // El NCF resaltado: es lo primero que se busca al recibir la factura.
-    const esNcf = etiqueta === 'NCF';
+    const esNcf = etiqueta === 'NCF' || etiqueta === 'e-NCF';
     doc.setFont('helvetica', esNcf ? 'bold' : 'normal');
     doc.setFontSize(esNcf ? 9.5 : 8.5);
     doc.text(String(valor), boxX + 26, fy + 3.7);
@@ -258,6 +264,28 @@ export const generateFacturaCartaPDF = async (factura, empresa = {}, accion = 'a
     totalRow('Pendiente', pendiente, true);
   }
 
+  // ---------- e-CF: QR + código de seguridad + fecha de firma ----------
+  // La DGII lo exige en la representación impresa. A la izquierda, a la
+  // altura del cierre de los totales.
+  if (ecf && (ecf.qr_data_url || ecf.codigo_seguridad)) {
+    const lado = 30;
+    const yQ = y + 4;
+    if (ecf.qr_data_url) {
+      try { doc.addImage(ecf.qr_data_url, 'PNG', M, yQ, lado, lado); } catch (e) { /* sin imagen: queda el texto */ }
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    const xt = ecf.qr_data_url ? M + lado + 4 : M;
+    if (ecf.codigo_seguridad) {
+      doc.text('Código de seguridad:', xt, yQ + 10);
+      doc.setFont('helvetica', 'bold');
+      doc.text(String(ecf.codigo_seguridad), xt + 33, yQ + 10);
+      doc.setFont('helvetica', 'normal');
+    }
+    if (ecf.fecha_firma) doc.text(`Fecha de firma digital: ${ecf.fecha_firma}`, xt, yQ + 15);
+    y = yQ + lado + 2;
+  }
+
   // ---------- FIRMAS + PIE ----------
   const yFirma = Math.max(y + 16, H - 26);
 
@@ -292,7 +320,7 @@ export const generateFacturaCartaPDF = async (factura, empresa = {}, accion = 'a
   );
 
   // ---------- SALIDA ----------
-  const archivo = `${tituloComprobante(factura).replace(/ /g, '_')}_${factura.ncf || numeroStr}.pdf`;
+  const archivo = `${tituloComprobante(factura).replace(/ /g, '_')}_${ecf?.encf || factura.ncf || numeroStr}.pdf`;
   if (accion === 'descargar') {
     doc.save(archivo);
     return;

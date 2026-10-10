@@ -1,3 +1,4 @@
+import QRCode from 'qrcode';
 /**
  * ESC/POS command builder for Star TSP143 receipt printer.
  * Generates raw text commands for native printer font output via QZ Tray.
@@ -167,6 +168,15 @@ function buildHeader(empresa?: EmpresaConfig, overrideName?: string): string {
 interface FacturaData {
     numero?: number | string;
     ncf?: string;
+    // (10/10/2026) Representación impresa del e-CF (lib/ecfImpresion.js)
+    ecf?: {
+        encf: string;
+        titulo: string;
+        codigo_seguridad?: string | null;
+        fecha_firma?: string | null;
+        fecha_vencimiento?: string | null;
+        qr_url?: string | null;
+    } | null;
     nombre_emisor_ncf?: string;
     fecha?: string;
     forma_pago?: string;
@@ -235,12 +245,21 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     // ── Init + Header ──
     lines.push(CMD.INIT);
     lines.push(buildHeader(empresa, factura.nombre_emisor_ncf));
-    lines.push(CMD.BOLD_ON + centerLine('FACTURA') + CMD.BOLD_OFF);
+    const ecf = factura.ecf || null;
+    if (ecf) {
+        // "FACTURA DE CREDITO FISCAL ELECTRONICA" no cabe en 42: en dos líneas.
+        for (const l of wrapLines(ecf.titulo)) lines.push(CMD.BOLD_ON + centerLine(l) + CMD.BOLD_OFF);
+    } else {
+        lines.push(CMD.BOLD_ON + centerLine('FACTURA') + CMD.BOLD_OFF);
+    }
     lines.push('');
 
     // ── Info ──
     lines.push(leftRight(`Numero : ${numeroStr}`, horaStr));
-    if (factura.ncf) {
+    if (ecf) {
+        lines.push(`e-NCF  : ${CMD.BOLD_ON}${ecf.encf}${CMD.BOLD_OFF}`);
+        if (ecf.fecha_vencimiento) lines.push(`Valida hasta: ${ecf.fecha_vencimiento}`);
+    } else if (factura.ncf) {
         lines.push(`NCF    : ${CMD.BOLD_ON}${factura.ncf}${CMD.BOLD_OFF}`);
     }
     lines.push(`Fecha  : ${fechaStr}`);
@@ -313,11 +332,59 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
         lines.push(dashLine());
     }
     lines.push(`Vendedor : ${factura.vendedor || 'MotoFlow'}`);
+
+    // ── Representación impresa del e-CF: QR + código + fecha de firma ──
+    // El QR va como IMAGEN (GS v 0), que es lo que ya usa el sistema para
+    // imprimir raster: el comando nativo de QR (GS ( k) no lo tienen todas.
+    // Va FUERA de toAscii, que borraría los bytes > 0x7F de la imagen.
+    if (ecf && (ecf.qr_url || ecf.codigo_seguridad)) {
+        const antes = toAscii(lines.join(CMD.LF)) + CMD.LF;
+        const despues: string[] = [];
+        if (ecf.codigo_seguridad) despues.push(centerLine(`Codigo de seguridad: ${ecf.codigo_seguridad}`));
+        if (ecf.fecha_firma) despues.push(centerLine(`Fecha firma digital: ${ecf.fecha_firma}`));
+        despues.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
+        despues.push(CMD.FEED_3);
+        despues.push(CMD.CUT);
+        return antes
+            + CMD.CENTER + (ecf.qr_url ? qrRasterEscPos(ecf.qr_url) : '') + CMD.LEFT + CMD.LF
+            + toAscii(despues.join(CMD.LF));
+    }
+
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
     return toAscii(lines.join(CMD.LF));
+}
+
+/**
+ * QR como imagen ESC/POS (GS v 0), en binary string. Cada módulo del QR son
+ * `escala` puntos; con margen de 4 módulos (lo que piden los lectores).
+ * Un e-CF típico sale en ~45 módulos → ~265 puntos (≈ 33 mm a 203 dpi).
+ */
+export function qrRasterEscPos(texto: string, escala = 5): string {
+    const qr = QRCode.create(texto, { errorCorrectionLevel: 'M' });
+    const n = qr.modules.size;
+    const margen = 4;
+    const lado = (n + margen * 2) * escala;
+    const anchoBytes = Math.ceil(lado / 8);
+    let datos = '';
+    for (let y = 0; y < lado; y++) {
+        const fila = Math.floor(y / escala) - margen;
+        for (let bx = 0; bx < anchoBytes; bx++) {
+            let byte = 0;
+            for (let bit = 0; bit < 8; bit++) {
+                const x = bx * 8 + bit;
+                const col = Math.floor(x / escala) - margen;
+                const negro = x < lado && fila >= 0 && fila < n && col >= 0 && col < n && qr.modules.get(fila, col);
+                if (negro) byte |= 0x80 >> bit;
+            }
+            datos += String.fromCharCode(byte);
+        }
+    }
+    return GS + 'v' + '0' + '\x00'
+        + String.fromCharCode(anchoBytes & 0xff, (anchoBytes >> 8) & 0xff, lado & 0xff, (lado >> 8) & 0xff)
+        + datos;
 }
 
 // ═══════════════════════════════════════════════════════════

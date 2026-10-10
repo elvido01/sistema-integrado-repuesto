@@ -1,4 +1,5 @@
 import { formatInTimeZone, formatFechaDMY } from './dateUtils';
+import { prepararEcfImpresion, ecfBloqueHtml, ecfVenceHtml } from '@/lib/ecfImpresion';
 import { printHtmlSmart, printViaBrowser } from './printHtmlSmart';
 import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
@@ -71,7 +72,10 @@ const getHeaderHTML = (overrideName) => {
   return lines.join('\n        ');
 };
 
-export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
+export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
+  // (10/10/2026) Si el comprobante es un e-NCF, se juntan antes los datos de la
+  // representación impresa (título, QR, código de seguridad, fecha de firma).
+  const factura = await prepararEcfImpresion(facturaIn);
   // Route to full/half page template
   if (printFormat === 'full_page' || printFormat === 'half_page') {
     return printFacturaFullPage(factura, printFormat);
@@ -149,7 +153,9 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
     <body onload="window.print()">
       <div class="header text-center">
         ${getHeaderHTML(factura.nombre_emisor_ncf)}
-        <div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">FACTURA</div>
+        ${factura.ecf
+          ? `<div style="margin-top: 4px; font-size: 13px; font-weight: 700; line-height: 1.2;">${factura.ecf.titulo}</div>`
+          : `<div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">FACTURA</div>`}
       </div>
 
       <div class="section">
@@ -168,7 +174,12 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
             return formatInTimeZone(vence, 'd/L/yyyy') + '</span>   <strong>CREDITO</strong>';
           })()}</span>
         </div>
-        ${factura.ncf ? `
+        ${factura.ecf ? `
+        <div class="row" style="margin-top: 2px;">
+          <span>e-NCF  : <strong>${factura.ecf.encf}</strong></span>
+        </div>
+        ${factura.ecf.fecha_vencimiento ? `<div class="row"><span>${ecfVenceHtml(factura.ecf)}</span></div>` : ''}
+        ` : factura.ncf ? `
         <div class="row" style="margin-top: 2px;">
           <span>NCF    : <strong>${factura.ncf}</strong></span>
         </div>
@@ -290,6 +301,8 @@ export const printFacturaPOS = (factura, printFormat = 'pos_4inch') => {
 
       ${renderFacturaNotas(factura.notas)}
 
+      ${ecfBloqueHtml(factura.ecf, { qr: is4inch ? '32mm' : '30mm', fuente: '12px' })}
+
       <div class="footer">
         <p>Vendedor : ${factura.vendedor || _empresaConfig.nombre}</p>
         <p class="text-center" style="margin-top: 5px;">*** GRACIAS POR SU COMPRA ***</p>
@@ -377,8 +390,9 @@ const printFacturaDealerFullPage = (factura) => {
           ${emp.rnc ? `<p>${emp.rnc}</p>` : ''}
         </div>
         <div class="doc">
-          <div class="t">FACTURA</div>
-          <div class="ncf">NCF: ${factura.ncf || ''}</div>
+          <div class="t">${factura.ecf ? factura.ecf.titulo : 'FACTURA'}</div>
+          <div class="ncf">${factura.ecf ? `e-NCF: ${factura.ecf.encf}` : `NCF: ${factura.ncf || ''}`}</div>
+          ${factura.ecf?.fecha_vencimiento ? `<div style="font-size:11px;">${ecfVenceHtml(factura.ecf)}</div>` : ''}
         </div>
       </div>
 
@@ -450,6 +464,8 @@ const printFacturaDealerFullPage = (factura) => {
         <div class="r final"><span>Total Facturado</span><span>${formatCurrency(factura.total)}</span></div>
       </div>
 
+      ${ecfBloqueHtml(factura.ecf, { qr: '30mm' })}
+
       <div class="firmas">
         <div class="f">Entregado por</div>
         <div class="f">Recibido por</div>
@@ -501,7 +517,7 @@ const printFacturaFullPage = (factura, printFormat) => {
     '14': 'COMPROBANTE GUBERNAMENTAL',
     '15': 'COMPROBANTE PARA EXPORTACIONES',
   };
-  const tituloFactura = TITULOS_NCF[tipoComprobante] || 'Factura';
+  const tituloFactura = factura.ecf ? factura.ecf.titulo : (TITULOS_NCF[tipoComprobante] || 'Factura');
 
   // El nombre del emisor con el que se autorizo el NCF manda sobre el
   // comercial; si no viene, la razon social; si tampoco, el nombre.
@@ -684,7 +700,11 @@ const printFacturaFullPage = (factura, printFormat) => {
         <span class="rnc">RNC: ${_empresaConfig.rnc || 'N/A'}&nbsp;&nbsp;&nbsp;Nº ${numeroStr}</span>
       </div>
 
-      ${factura.ncf ? `
+      ${factura.ecf ? `
+      <div class="ncf-box">
+        <span>e-NCF</span><strong>${factura.ecf.encf}</strong>
+        ${factura.ecf.fecha_vencimiento ? `<span style="margin-left:12px;">${ecfVenceHtml(factura.ecf)}</span>` : ''}
+      </div>` : factura.ncf ? `
       <!-- NCF: sin esto el comprobante no vale. No se imprimia en hoja
            grande, solo en el ticket. -->
       <div class="ncf-box">
@@ -763,6 +783,8 @@ const printFacturaFullPage = (factura, printFormat) => {
           <span class="tot-value">${formatCurrency(factura.total)}</span>
         </div>
       </div>
+
+      ${ecfBloqueHtml(factura.ecf, { qr: '30mm', fuente: '11px' })}
 
       ${factura.forma_pago === 'CREDITO' ? `
       <div class="footer-info">
@@ -2130,7 +2152,7 @@ export const printFacturaQZ = async (factura) => {
     const { findReceiptPrinter, printRawEscPos } = await import('@/services/printerAdapter');
 
     const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
-    const escpos = buildFacturaEscPos(factura, _empresaConfig);
+    const escpos = buildFacturaEscPos(await prepararEcfImpresion(factura), _empresaConfig);
 
     console.log("[QZ-POS] Imprimiendo factura via ESC/POS...");
     await printRawEscPos(printerName, escpos);
@@ -2673,7 +2695,7 @@ export const printPagoSuplidorPOS = (pago, suplidorNombre, detalles, formasPago,
 export const printFacturaWebUsb = async (factura) => {
   const { buildFacturaEscPos } = await import('@/services/escposReceipt');
   const { webUsbPrintEscPos } = await import('@/services/webUsbPrintService');
-  const escpos = buildFacturaEscPos(factura, _empresaConfig);
+  const escpos = buildFacturaEscPos(await prepararEcfImpresion(factura), _empresaConfig);
   await webUsbPrintEscPos(escpos);
 };
 

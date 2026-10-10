@@ -3,8 +3,12 @@ import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { formatCurrency } from './pdfUtils';
 import { IDS_GENERICOS } from '@/lib/clienteGenerico';
+import { prepararEcfImpresion } from '@/lib/ecfImpresion';
 
-export const generateFacturaPDF = (factura, empresa = {}) => {
+export const generateFacturaPDF = async (facturaIn, empresa = {}) => {
+  // (10/10/2026) e-CF: título electrónico, e-NCF, vencimiento y el QR de la DGII.
+  const factura = await prepararEcfImpresion(facturaIn);
+  const ecf = factura.ecf || null;
   // Papel térmico de 80mm (3.15 pulgadas) = ~226.77pt
   const pageWidth = 226;
   const marginLeft = 8;
@@ -41,8 +45,15 @@ export const generateFacturaPDF = (factura, empresa = {}) => {
     currentY += 3;
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text("FACTURA", pageWidth / 2, currentY, { align: 'center' });
+    if (ecf) {
+      doc.setFontSize(9.5);
+      const tl = doc.splitTextToSize(ecf.titulo, pageWidth - 16);
+      doc.text(tl, pageWidth / 2, currentY, { align: 'center' });
+      currentY += 11 * (tl.length - 1);
+    } else {
+      doc.setFontSize(11);
+      doc.text("FACTURA", pageWidth / 2, currentY, { align: 'center' });
+    }
     doc.setFont('helvetica', 'normal');
     currentY += 13;
 
@@ -61,13 +72,17 @@ export const generateFacturaPDF = (factura, empresa = {}) => {
     doc.text(horaStr, rightX, currentY, { align: 'right' });
     currentY += 12;
 
-    // NCF (si aplica)
-    if (factura.ncf) {
-      doc.text("NCF :", labelX, currentY);
+    // NCF (si aplica) — e-NCF y su vencimiento si es electrónico
+    if (ecf || factura.ncf) {
+      doc.text(ecf ? "e-NCF :" : "NCF :", labelX, currentY);
       doc.setFont('helvetica', 'bold');
-      doc.text(String(factura.ncf), valueX, currentY);
+      doc.text(String(ecf ? ecf.encf : factura.ncf), valueX, currentY);
       doc.setFont('helvetica', 'normal');
       currentY += 12;
+      if (ecf?.fecha_vencimiento) {
+        doc.text(`Valida hasta: ${ecf.fecha_vencimiento}`, labelX, currentY);
+        currentY += 12;
+      }
     }
 
     // Fecha
@@ -276,6 +291,25 @@ export const generateFacturaPDF = (factura, empresa = {}) => {
     currentY += 11;
     doc.text(`Vendedor : ${factura.vendedor || empresa.nombre || 'N/A'}`, marginLeft, currentY);
     currentY += 14;
+
+    // e-CF: QR + código de seguridad + fecha de firma (representación impresa)
+    if (ecf && (ecf.qr_data_url || ecf.codigo_seguridad)) {
+      const lado = 110; // pt ≈ 39 mm
+      if (ecf.qr_data_url) {
+        try { doc.addImage(ecf.qr_data_url, 'PNG', (pageWidth - lado) / 2, currentY, lado, lado); } catch (e) { /* queda el texto */ }
+        currentY += lado + 10;
+      }
+      doc.setFontSize(9);
+      if (ecf.codigo_seguridad) {
+        doc.text(`Codigo de seguridad: ${ecf.codigo_seguridad}`, pageWidth / 2, currentY, { align: 'center' });
+        currentY += 11;
+      }
+      if (ecf.fecha_firma) {
+        doc.text(`Fecha de firma digital: ${ecf.fecha_firma}`, pageWidth / 2, currentY, { align: 'center' });
+        currentY += 13;
+      }
+    }
+
     doc.setFontSize(10);
     doc.text("*** GRACIAS POR SU COMPRA ***", pageWidth / 2, currentY, { align: 'center' });
     currentY += 15;

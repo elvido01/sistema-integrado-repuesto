@@ -510,6 +510,9 @@ const VentasPage = () => {
               ncf: fiscal.ncf || fiscal.proveedor_number,
               encf: fiscal.ncf || fiscal.proveedor_number,
               track_id: fiscal.proveedor_invoice_id || fiscal.trackId || fiscal.track_id || null,
+              // QR / código de seguridad / fecha de firma para el papel
+              // (lib/ecfImpresion.js); así no hace falta otra consulta.
+              impresion_ecf: fiscal.impresion || null,
             };
           }
         }
