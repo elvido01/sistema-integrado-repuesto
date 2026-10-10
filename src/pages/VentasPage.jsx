@@ -10,8 +10,7 @@ import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
 import SugerenciasEquivalentesModal from '@/components/ventas/SugerenciasEquivalentesModal';
 import { generateFacturaPDF, generateFacturaCartaPDF } from '@/components/common/PDFGenerator';
-import { printFacturaPOS, printFacturaQZ, printFacturaWebUsb } from '@/lib/printPOS';
-import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
+import { imprimirFactura } from '@/lib/printPOS';
 import { isSilentPrintEnabled } from '@/lib/printHtmlSmart';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -520,7 +519,6 @@ const VentasPage = () => {
         // Route printing based on selected method.
         // "Imprimir sin diálogo" (checkbox) → texto ESC/POS NATIVO por el agente
         // (misma fuente nativa que daba QZ Tray, pero estable y sin permiso).
-        const silentOn = isSilentPrintEnabled();
         // PDF: no imprime, DEJA EL ARCHIVO. Es lo que hace falta para
         // mandarle la factura a una empresa por correo o WhatsApp; el
         // diálogo de impresión del navegador no deja nada que adjuntar.
@@ -532,47 +530,20 @@ const VentasPage = () => {
           } else {
             generateFacturaPDF(facturaParaImprimir, empresa);
           }
-        } else if (facturaParaImprimir.impresion_ecf && (printMethod === 'qz' || printMethod === 'agent' || printMethod === 'webusb' || silentOn)) {
-          // (10/10/2026) e-CF: el QR de la DGII como imagen ESC/POS (GS v 0) sale
-          // como basura en impresoras que no son Epson (Star en modo Star, etc.):
-          // pasó en el primer ticket de D Mario. El ticket HTML pasa por el
-          // agente como IMAGEN por el driver de Windows (o por el navegador),
-          // que imprime el QR en cualquier impresora. Mismo papel de siempre.
-          printFacturaPOS(facturaParaImprimir, printFormat === 'pos_80mm' ? 'pos_80mm' : 'pos_4inch');
-        } else if (printMethod === 'qz' || printMethod === 'agent' || silentOn) {
-          // printFacturaQZ usa el adapter (respeta la preferencia global).
-          const previousBackend = getPreferredBackend();
-          if (printMethod === 'qz') setPreferredBackend('qz');
-          else setPreferredBackend('agent'); // silent o 'agent' → agente
-          try {
-            await printFacturaQZ(facturaParaImprimir);
-          } catch (err) {
-            console.error(`[print] Error ESC/POS nativo, uso navegador:`, err);
-            toast({
-              variant: "destructive",
-              title: 'No se pudo imprimir con el agente',
-              description: `${err.message || String(err)}. Usando impresión navegador.`,
-              duration: 5000,
-            });
-            printFacturaPOS(facturaParaImprimir, printFormat);
-          } finally {
-            setPreferredBackend(previousBackend);
-          }
-        } else if (printMethod === 'webusb') {
-          try {
-            await printFacturaWebUsb(facturaParaImprimir);
-          } catch (err) {
-            console.error('[WebUSB] Error, falling back to browser:', err);
-            toast({
-              variant: "destructive",
-              title: "Error WebUSB",
-              description: `${err.message || String(err)}. Usando impresión navegador.`,
-              duration: 5000,
-            });
-            printFacturaPOS(facturaParaImprimir, printFormat);
-          }
         } else {
-          printFacturaPOS(facturaParaImprimir, printFormat);
+          // Misma regla que la reimpresión (lib/printPOS.js → imprimirFactura).
+          await imprimirFactura(facturaParaImprimir, {
+            printFormat, printMethod,
+            onError: (err) => {
+              console.error('[print] Error de impresión nativa, uso navegador:', err);
+              toast({
+                variant: "destructive",
+                title: 'No se pudo imprimir con el método elegido',
+                description: `${err.message || String(err)}. Usando impresión navegador.`,
+                duration: 5000,
+              });
+            },
+          });
         }
 
         toast({ title: 'Factura Guardada', description: `La factura #${facturaData.numero} ha sido generada y guardada.` });

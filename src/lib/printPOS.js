@@ -1,6 +1,6 @@
 import { formatInTimeZone, formatFechaDMY } from './dateUtils';
-import { prepararEcfImpresion, ecfBloqueHtml, ecfVenceHtml } from '@/lib/ecfImpresion';
-import { printHtmlSmart, printViaBrowser } from './printHtmlSmart';
+import { prepararEcfImpresion, ecfBloqueHtml, ecfVenceHtml, esEncf } from '@/lib/ecfImpresion';
+import { printHtmlSmart, printViaBrowser, isSilentPrintEnabled } from './printHtmlSmart';
 import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
 // Emite una plantilla HTML. Si el usuario activó "impresión sin diálogo" y el
@@ -2861,4 +2861,52 @@ export const printSalidaPOS = (salida, almacen, detalles, empresa = {}) => {
   `;
 
   emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
+};
+
+// ═══════════════════════════════════════════════════════════
+// (10/10/2026) UNA sola regla para imprimir una factura (no PDF): la usan la
+// venta en vivo y la reimpresión (Transacciones Diarias). Antes la
+// reimpresión de un ticket generaba un PDF y salía en otro formato.
+//   • e-CF (e-NCF E…): ticket HTML → agente como IMAGEN por el driver de
+//     Windows (o navegador). El QR de la DGII sale en CUALQUIER impresora;
+//     por ESC/POS nativo salía basura en las Star.
+//   • QZ / agente / "sin diálogo": ticket de texto ESC/POS nativo.
+//   • WebUSB: ESC/POS directo.
+//   • Navegador: plantilla HTML del formato elegido.
+// onError(err) se llama cuando se cae a navegador (para avisar).
+// ═══════════════════════════════════════════════════════════
+export const imprimirFactura = async (factura, { printFormat = 'pos_4inch', printMethod = 'browser', onError } = {}) => {
+  const silentOn = isSilentPrintEnabled();
+  const esEcf = !!factura?.impresion_ecf || esEncf(factura?.ncf);
+  const usaNativo = printMethod === 'qz' || printMethod === 'agent' || printMethod === 'webusb' || silentOn;
+
+  // Igual que la venta de siempre: con método nativo sale el TICKET aunque el
+  // formato elegido sea hoja (así lo usan hoy).
+  if (esEcf && usaNativo) {
+    return printFacturaPOS(factura, printFormat === 'pos_80mm' ? 'pos_80mm' : 'pos_4inch');
+  }
+  if (printMethod === 'qz' || printMethod === 'agent' || silentOn) {
+    const { setPreferredBackend, getPreferredBackend } = await import('@/services/printerAdapter');
+    const previo = getPreferredBackend();
+    setPreferredBackend(printMethod === 'qz' ? 'qz' : 'agent');
+    try {
+      await printFacturaQZ(factura);
+    } catch (err) {
+      onError?.(err);
+      printFacturaPOS(factura, printFormat);
+    } finally {
+      setPreferredBackend(previo);
+    }
+    return;
+  }
+  if (printMethod === 'webusb') {
+    try {
+      await printFacturaWebUsb(factura);
+    } catch (err) {
+      onError?.(err);
+      printFacturaPOS(factura, printFormat);
+    }
+    return;
+  }
+  return printFacturaPOS(factura, printFormat);
 };

@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateTransaccionesReportePDF, generateFacturaPDF, generateFacturaCartaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
 import { printListaTransacciones } from '@/lib/printListaTransacciones';
-import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS, printNotaCreditoPOS, printFacturaPOS } from '@/lib/printPOS';
+import { printReciboIngresoQZ, printRecibo4Pulgadas, printDevolucionPOS, printNotaCreditoPOS, printFacturaPOS, imprimirFactura } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ReporteTransaccionesDiariasPage = () => {
@@ -156,7 +156,16 @@ const ReporteTransaccionesDiariasPage = () => {
         // Respetar el formato de factura de la empresa. Caminero (y otros
         // dealers) imprimen en HOJA GRANDE (full_page/half_page); el resto en
         // POS. La venta en vivo ya lo respeta, aquí igualamos la reimpresión.
-        const formato = empresa?.formato_factura || 'pos_4inch';
+        // (10/10/2026) La reimpresión sale IGUAL que la venta: mismo formato y
+        // mismo método de impresión que esta PC usa al facturar (useVentas los
+        // guarda en localStorage), y la misma regla (imprimirFactura). Antes,
+        // en formato POS, aquí se generaba un PDF de ticket: otro formato.
+        let formato = empresa?.formato_factura || 'pos_4inch';
+        let metodo = 'browser';
+        try {
+          formato = localStorage.getItem('ventas_printFormat') || formato;
+          metodo = localStorage.getItem('ventas_printMethod') || metodo;
+        } catch (_) { /* sin storage: valores de la empresa */ }
         if (formato === 'full_page' || formato === 'half_page') {
           // Si la venta salió de una solicitud financiada (dealer), re-adjuntar
           // sus datos para el formato dealer (vehículo + inicial/pagarés),
@@ -181,14 +190,24 @@ const ReporteTransaccionesDiariasPage = () => {
               };
             }
           }
-          if (comoPdf) await generateFacturaCartaPDF(factura, empresa, 'descargar');
-          else printFacturaPOS(factura, formato);
-        } else if (comoPdf) {
-          // Aunque la empresa imprima en POS, el PDF para enviar va en hoja
-          // carta: un ticket de 80mm no es un documento presentable.
+        }
+        if (comoPdf) {
+          // El PDF para enviar va siempre en hoja carta: un ticket de 80mm no
+          // es un documento presentable.
           await generateFacturaCartaPDF(factura, empresa, 'descargar');
+        } else if (metodo === 'pdf') {
+          // La venta en método PDF deja el archivo: igual aquí.
+          if (formato === 'full_page' || formato === 'half_page') await generateFacturaCartaPDF(factura, empresa, 'descargar');
+          else generateFacturaPDF(factura, empresa);
         } else {
-          generateFacturaPDF(factura, empresa);
+          await imprimirFactura(factura, {
+            printFormat: formato, printMethod: metodo,
+            onError: (err) => toast({
+              variant: 'destructive',
+              title: 'No se pudo imprimir con el método elegido',
+              description: `${err.message || String(err)}. Usando impresión navegador.`,
+            }),
+          });
         }
       } else if (prefix === 'DV') {
         const { data: devolucion, error } = await supabase
