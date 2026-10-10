@@ -159,6 +159,31 @@ function buildItemsXml(row) {
         ? `<TablaSubRecargo>${subRecargos.join("")}</TablaSubRecargo>`
         : "";
 
+      // (10/10/2026) Faltaban y el set de Caminero (tipo 45) los trae.
+      // Orden según el XSD oficial: ...UnidadReferencia, TablaSubcantidad,
+      // GradosAlcohol, PrecioUnitarioReferencia, FechaElaboracion...
+      const subcantidades = [];
+      for (let j = 1; j <= 5; j++) {
+        const sub = nested("Subcantidad", j);
+        const cod = nested("CodigoSubcantidad", j);
+        if (hasAny(sub, cod)) {
+          subcantidades.push(`<SubcantidadItem>` + t("Subcantidad", sub) + t("CodigoSubcantidad", cod) + `</SubcantidadItem>`);
+        }
+      }
+      const subcantidadXml = subcantidades.length
+        ? `<TablaSubcantidad>${subcantidades.join("")}</TablaSubcantidad>`
+        : "";
+
+      // Impuesto selectivo / adicional de la línea (después de TablaSubRecargo).
+      const impLinea = [];
+      for (let j = 1; j <= 2; j++) {
+        const tipo = nested("TipoImpuesto", j);
+        if (tipo) impLinea.push(`<ImpuestoAdicional>${t("TipoImpuesto", tipo)}</ImpuestoAdicional>`);
+      }
+      const impLineaXml = impLinea.length
+        ? `<TablaImpuestoAdicional>${impLinea.join("")}</TablaImpuestoAdicional>`
+        : "";
+
       const otraMonedaXml = hasAny(
         item("PrecioOtraMoneda"),
         item("DescuentoOtraMoneda"),
@@ -185,6 +210,9 @@ function buildItemsXml(row) {
         t("UnidadMedida", item("UnidadMedida")) +
         t("CantidadReferencia", item("CantidadReferencia")) +
         t("UnidadReferencia", item("UnidadReferencia")) +
+        subcantidadXml +
+        t("GradosAlcohol", item("GradosAlcohol")) +
+        t("PrecioUnitarioReferencia", item("PrecioUnitarioReferencia")) +
         t("FechaElaboracion", item("FechaElaboracion")) +
         t("FechaVencimientoItem", item("FechaVencimientoItem")) +
         t("PrecioUnitarioItem", item("PrecioUnitarioItem")) +
@@ -192,6 +220,7 @@ function buildItemsXml(row) {
         subDescuentosXml +
         t("RecargoMonto", item("RecargoMonto")) +
         subRecargosXml +
+        impLineaXml +
         otraMonedaXml +
         t("MontoItem", item("MontoItem")) +
       `</Item>`;
@@ -300,9 +329,12 @@ function buildInfoAdicionalesXml(r) {
     "NombrePuertoDesembarque",
     "PesoBruto",
     "PesoNeto",
+    "UnidadPesoBruto",
+    "UnidadPesoNeto",
     "CantidadBulto",
     "UnidadBulto",
     "VolumenBulto",
+    "UnidadVolumen",
   ];
   const out = [];
   for (const f of fields) {
@@ -318,6 +350,13 @@ function buildInfoAdicionalesXml(r) {
 // ────────────────────────────────────────────────
 function buildTransporteXml(r) {
   const fields = [
+    "ViaTransporte",
+    "PaisOrigen",
+    "DireccionDestino",
+    "PaisDestino",
+    "RNCIdentificacionCompaniaTransportista",
+    "NombreCompaniaTransportista",
+    "NumeroViaje",
     "Conductor",
     "DocumentoTransporte",
     "Ficha",
@@ -368,9 +407,82 @@ function buildTotalesXml(r) {
   for (const f of fields) {
     const val = v(r, f);
     if (val !== "") out.push(t(f, val));
+    // (10/10/2026) El detalle de los impuestos adicionales va justo después
+    // de MontoImpuestoAdicional. Sin él la DGII no puede justificar el ITBIS
+    // calculado sobre precio + selectivo y rechaza TotalITBIS1 (caso E45-7).
+    if (f === "MontoImpuestoAdicional") out.push(impuestosAdicionalesXml(r, ""));
   }
-  // ImpuestosAdicionales si hay
   return `<Totales>${out.join("")}</Totales>`;
+}
+
+// Totales/ImpuestosAdicionales y OtraMoneda/ImpuestosAdicionalesOtraMoneda.
+// Columnas del set: TipoImpuesto[k], TasaImpuestoAdicional[k],
+// MontoImpuestoSelectivoConsumoEspecifico[k], ...Advalorem[k],
+// OtrosImpuestosAdicionales[k] (con sufijo "OtraMoneda" en la otra moneda).
+function impuestosAdicionalesXml(r, sufijo) {
+  const out = [];
+  for (let k = 1; k <= 20; k++) {
+    const tipo = v(r, `TipoImpuesto${sufijo}[${k}]`);
+    const tasa = v(r, `TasaImpuestoAdicional${sufijo}[${k}]`);
+    const esp = v(r, `MontoImpuestoSelectivoConsumoEspecifico${sufijo}[${k}]`);
+    const adv = v(r, `MontoImpuestoSelectivoConsumoAdvalorem${sufijo}[${k}]`);
+    const otros = v(r, `OtrosImpuestosAdicionales${sufijo}[${k}]`);
+    if (!hasAny(tipo, tasa, esp, adv, otros)) continue;
+    out.push(`<ImpuestoAdicional${sufijo}>` +
+      t(`TipoImpuesto${sufijo}`, tipo) +
+      t(`TasaImpuestoAdicional${sufijo}`, tasa) +
+      t(`MontoImpuestoSelectivoConsumoEspecifico${sufijo}`, esp) +
+      t(`MontoImpuestoSelectivoConsumoAdvalorem${sufijo}`, adv) +
+      t(`OtrosImpuestosAdicionales${sufijo}`, otros) +
+    `</ImpuestoAdicional${sufijo}>`);
+  }
+  return out.length ? `<ImpuestosAdicionales${sufijo}>${out.join("")}</ImpuestosAdicionales${sufijo}>` : "";
+}
+
+// ────────────────────────────────────────────────
+// OtraMoneda (Encabezado, después de Totales)
+// ────────────────────────────────────────────────
+function buildOtraMonedaXml(r) {
+  const antes = [
+    "TipoMoneda", "TipoCambio", "MontoGravadoTotalOtraMoneda", "MontoGravado1OtraMoneda",
+    "MontoGravado2OtraMoneda", "MontoGravado3OtraMoneda", "MontoExentoOtraMoneda",
+    "TotalITBISOtraMoneda", "TotalITBIS1OtraMoneda", "TotalITBIS2OtraMoneda",
+    "TotalITBIS3OtraMoneda", "MontoImpuestoAdicionalOtraMoneda",
+  ];
+  const out = antes.map((f) => t(f, v(r, f))).join("") +
+    impuestosAdicionalesXml(r, "OtraMoneda") +
+    t("MontoTotalOtraMoneda", v(r, "MontoTotalOtraMoneda"));
+  return out ? `<OtraMoneda>${out}</OtraMoneda>` : "";
+}
+
+// ────────────────────────────────────────────────
+// DescuentosORecargos globales (raíz, después de DetallesItems/Subtotales)
+// Columnas: NumeroLineaDoR[k], TipoAjuste[k], IndicadorNorma1007[k],
+// DescripcionDescuentooRecargo[k], TipoValor[k], ValorDescuentooRecargo[k],
+// MontoDescuentooRecargo[k], MontoDescuentooRecargoOtraMoneda[k],
+// IndicadorFacturacionDescuentooRecargo[k].
+// (10/10/2026) Faltaba: sin él la DGII calcula MontoGravadoI1 sin el
+// descuento y rechaza (caso E31-4 de Caminero).
+// ────────────────────────────────────────────────
+function buildDescuentosORecargosXml(r) {
+  const out = [];
+  for (let k = 1; k <= 20; k++) {
+    const linea = v(r, `NumeroLineaDoR[${k}]`);
+    const tipo = v(r, `TipoAjuste[${k}]`);
+    if (!linea && !tipo) continue;
+    out.push(`<DescuentoORecargo>` +
+      t("NumeroLinea", linea) +
+      t("TipoAjuste", tipo) +
+      t("IndicadorNorma1007", v(r, `IndicadorNorma1007[${k}]`)) +
+      t("DescripcionDescuentooRecargo", v(r, `DescripcionDescuentooRecargo[${k}]`)) +
+      t("TipoValor", v(r, `TipoValor[${k}]`)) +
+      t("ValorDescuentooRecargo", v(r, `ValorDescuentooRecargo[${k}]`)) +
+      t("MontoDescuentooRecargo", v(r, `MontoDescuentooRecargo[${k}]`)) +
+      t("MontoDescuentooRecargoOtraMoneda", v(r, `MontoDescuentooRecargoOtraMoneda[${k}]`)) +
+      t("IndicadorFacturacionDescuentooRecargo", v(r, `IndicadorFacturacionDescuentooRecargo[${k}]`)) +
+    `</DescuentoORecargo>`);
+  }
+  return out.length ? `<DescuentosORecargos>${out.join("")}</DescuentosORecargos>` : "";
 }
 
 // ────────────────────────────────────────────────
@@ -458,7 +570,9 @@ export function buildEcfFromTestRow(rawRow) {
   const infoAd = buildInfoAdicionalesXml(r);
   const transporte = buildTransporteXml(r);
   const totales = buildTotalesXml(r);
+  const otraMoneda = buildOtraMonedaXml(r);
   const itemsXml = buildItemsXml(r);
+  const descRec = buildDescuentosORecargosXml(r);
   const infoRef = buildInfoReferenciaXml(r);
 
   // Estructura: <ECF><Encabezado>...</Encabezado><DetallesItems>...</DetallesItems>
@@ -484,8 +598,10 @@ export function buildEcfFromTestRow(rawRow) {
         infoAd +
         transporte +
         totales +
+        otraMoneda +
       `</Encabezado>` +
       `<DetallesItems>${itemsXml}</DetallesItems>` +
+      descRec +
       infoRef +
       `<FechaHoraFirma>${fechaHoraFirma}</FechaHoraFirma>` +
     `</ECF>`;
