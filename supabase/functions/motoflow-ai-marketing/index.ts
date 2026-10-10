@@ -14,7 +14,7 @@
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { callLLM, generateImage } from './llm.ts';
+import { callLLM, generateImage, presupuestoImagenes } from './llm.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -325,6 +325,10 @@ async function genImage(supabase: any, tenant_id: string, uid: string, settings:
         || content?.flags?.prompt_imagen
         || `Eye-catching social media thumbnail for an auto parts product: ${content?.idea_miniatura || content?.titulo_youtube || 'motorcycle spare part'}. Bold, high contrast, clean background, professional product photo style.`;
 
+    const pres = await presupuestoImagenes(supabase);
+    if (!pres.ok) {
+        return json({ ok: false, error: 'tope_presupuesto', mensaje: `Presupuesto mensual de imágenes agotado (US$${pres.gastado.toFixed(2)} de US$${pres.tope.toFixed(2)}). Se renueva el día 1.` }, 402);
+    }
     const img = await generateImage({ prompt, size: body?.size || '1024x1024', quality: body?.quality || 'medium' });
 
     // Subir a Storage

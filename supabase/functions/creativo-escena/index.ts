@@ -57,7 +57,7 @@
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { generateImage } from '../motoflow-ai-marketing/llm.ts';
+import { generateImage, presupuestoImagenes } from '../motoflow-ai-marketing/llm.ts';
 
 const MODELO = 'gpt-image-2';
 const CALIDAD = 'medium';          // decisión del dueño, 28/09/2026
@@ -243,6 +243,13 @@ Deno.serve(async (req: Request) => {
   const fotoUrl = String(body?.foto_url || '');
   if (!fotoUrl.startsWith(ORIGEN_FOTOS)) {
     return json({ ok: false, error: 'La foto tiene que venir del almacenamiento de MotoFlow.' }, 400);
+  }
+
+  // Tope mensual de imágenes (US$10/mes en OpenAI, decisión del dueño). Sin
+  // presupuesto, el Creativo monta la pieza con la plantilla (gratis).
+  const pres = await presupuestoImagenes(sb);
+  if (!pres.ok) {
+    return json({ ok: false, error: `Presupuesto mensual de imágenes agotado (US$${pres.gastado.toFixed(2)} de US$${pres.tope.toFixed(2)}). La pieza sale con la plantilla; el presupuesto se renueva el día 1.` }, 402);
   }
 
   const t0 = Date.now();

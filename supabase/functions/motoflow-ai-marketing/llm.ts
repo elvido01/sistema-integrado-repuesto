@@ -88,6 +88,27 @@ export async function callLLM(opts: {
 // Sin `referencias` hace lo de siempre: imagen desde texto con gpt-image-1.
 // Con `referencias` (la foto real del producto, por ejemplo) usa /edits: el
 // modelo parte de esas imágenes en vez de inventarlas.
+// (10/10/2026) Tope mensual de gasto en IMÁGENES, decisión del dueño: US$10
+// al mes en OpenAI en total → US$8.50 para imágenes y el resto de margen para
+// el texto (CRM, Jarvis, chat cuestan centavos). Toda la cuenta es UNA para
+// todas las empresas, así que se suma todo. Se cambia con el secreto
+// IA_TOPE_IMAGENES_USD. El mes es el de RD (UTC-4).
+export async function presupuestoImagenes(sb: any): Promise<{ ok: boolean; gastado: number; tope: number }> {
+    const tope = Number(Deno.env.get('IA_TOPE_IMAGENES_USD') || 8.5);
+    const ahoraRD = new Date(Date.now() - 4 * 3600000);
+    const inicioMes = new Date(Date.UTC(ahoraRD.getUTCFullYear(), ahoraRD.getUTCMonth(), 1, 4, 0, 0)).toISOString();
+    const [a, b] = await Promise.all([
+        sb.from('ai_agent_runs').select('cost_usd').like('model', 'gpt-image%').gte('created_at', inicioMes).limit(5000),
+        sb.from('ai_marketing_content').select('cost_usd').gte('created_at', inicioMes).limit(5000),
+    ]);
+    const suma = (r: any) => (r?.data || []).reduce((s: number, x: any) => s + Number(x.cost_usd || 0), 0);
+    const gastado = Math.round((suma(a) + suma(b)) * 100) / 100;
+    // Si no se pudo leer el gasto, no se frena el trabajo (mejor una imagen de
+    // más que una publicación perdida por un fallo de lectura).
+    if (a?.error) return { ok: true, gastado, tope };
+    return { ok: gastado < tope, gastado, tope };
+}
+
 export async function generateImage(opts: {
     prompt: string;
     size?: string;
