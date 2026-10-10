@@ -25,6 +25,7 @@ import { RecomendacionesDelDia } from '@/components/equipo/RecomendacionesDelDia
 import { PiezasModelo } from '@/components/equipo/PiezasModelo';
 import { ReelsModelo } from '@/components/equipo/ReelsModelo';
 import { FotosDelDia } from '@/components/equipo/FotosDelDia';
+import { EfectividadPublicaciones } from '@/components/equipo/EfectividadPublicaciones';
 import { AgotadosQueSeVenden } from '@/components/equipo/AgotadosQueSeVenden';
 import { PublicacionDiaria } from '@/components/equipo/PublicacionDiaria';
 import { AnunciosDelSuplidor } from '@/components/equipo/AnunciosDelSuplidor';
@@ -532,6 +533,9 @@ const EquipoIAPage = () => {
         trabajos={data?.trabajos}
         onRevisar={(trabajoId) => setEnfocarPromo({ trabajoId, en: Date.now() })}
       />
+
+      {/* (10/10/2026) ¿Qué publicación vende? Solo con feat_medicion_publicaciones. */}
+      <EfectividadPublicaciones />
 
       {/* Lo primero que se mira cada mañana: arriba y en fila, las cinco
           de un vistazo. Antes vivía apilado en la columna de la izquierda y
