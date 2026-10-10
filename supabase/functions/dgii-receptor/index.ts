@@ -344,10 +344,14 @@ async function handleRecepcionEcf(supabase, req) {
     estado = "1"; motivo = "4";
   } else if (req.headers.get("x-selftest") !== "1") {
     // Duplicado: ya recibimos este eNCF del mismo emisor con Estado 0
+    // PARA ESTE MISMO RECEPTOR. (10/10/2026) Sin el filtro por empresa, el
+    // emisor de pruebas de la DGII (131880681) manda a Caminero los mismos
+    // E310000000001… que ya mandó a D Mario y se le contestaba "duplicado".
     const { data: dup } = await supabase
       .from("dgii_recepciones")
       .select("id")
       .eq("tipo", "ECF").eq("encf", encf).eq("rnc_emisor", rncEmisor)
+      .eq("tenant_id", receptor.tenant_id)
       .eq("estado", "0").eq("es_prueba", false)
       .limit(1);
     if (dup?.length) { estado = "1"; motivo = "3"; }
@@ -395,7 +399,9 @@ async function handleAprobacionComercial(supabase, req) {
   // "OK" satisfactorio · "Error"/"Incorrecto" si no.
   const respuesta = ok ? "OK" : "Error";
 
-  const receptor = await resolverReceptor(supabase, rncComprador).catch(() => null);
+  // En una aprobación comercial la empresa nuestra es la que EMITIÓ el e-CF
+  // que se aprueba (RNCEmisor); el comprador es el de la DGII (131880681).
+  const receptor = await resolverReceptor(supabase, rncEmisor || rncComprador).catch(() => null);
 
   await logRecepcion(supabase, req, {
     tipo: "ACECF", tenant_id: receptor?.tenant_id || null,
