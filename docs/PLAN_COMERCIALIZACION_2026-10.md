@@ -35,9 +35,9 @@ Marcar con [x] al terminar.
 - Deshacer: desactivar la tarea; volver a la versión anterior de la función.
 
 ### Mar 13/10, noche — Alertas de certificados y secuencias
-- [ ] Aviso a los 30, 15 y 7 días antes de que venza el certificado de cada
+- [x] (10/10, acción dgii_salud publicada y probada: 2 empresas, 0 avisos) Aviso a los 30, 15 y 7 días antes de que venza el certificado de cada
       empresa.
-- [ ] Aviso cuando quede menos del 10 % de una secuencia autorizada, o cuando
+- [x] (10/10) Aviso cuando quede menos del 10 % de una secuencia autorizada, o cuando
       esté por vencer.
 - Riesgo: bajo (solo lee y avisa).
 
@@ -67,6 +67,13 @@ Marcar con [x] al terminar.
 - [ ] Actualizar jsPDF (crítica) y las librerías con fallas altas. Probar
       todas las impresiones y PDF: ticket, carta, cotización, pedido.
 - Riesgo: el más alto de la semana, por eso va el domingo.
+
+### Agregado el 10/10 — Publicaciones que venden (solo Morla)
+- [x] Tope de IA US$20/mes (imágenes US$18.50; sin presupuesto, plantilla).
+- [x] Errores de IA en lenguaje claro en Equipo IA.
+- [x] Medición: movimiento de la pieza 7 días antes vs 7 después (tarjeta "¿Qué publicación vende?").
+- [x] Alertas de servicios sin saldo / token vencido (sql/alertas_salud.sql).
+- [ ] Alcance: horarios 13:30 / 17:30 / 19:30, TikTok en todas las promociones, Facebook feed casi sin alcance (5 vistas).
 
 ## Semana 2 — escalar a muchos clientes
 
