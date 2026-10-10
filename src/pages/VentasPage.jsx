@@ -26,7 +26,7 @@ import { esClienteGenerico } from '@/lib/clienteGenerico';
 
 const VentasPage = () => {
   const { toast } = useToast();
-  const { user, profile, empresa, fiscalActivo, fiscalModo } = useAuth();
+  const { user, profile, empresa, fiscalActivo, fiscalModo, tenantId } = useAuth();
   const grabarBtnRef = useRef(null);
   /* UI state for invoice editing search */
   const [isEditingNumero, setIsEditingNumero] = useState(false);
@@ -324,6 +324,7 @@ const VentasPage = () => {
           const { data: cot, error } = await supabase
             .from('cotizaciones')
             .select('*')
+            .eq('tenant_id', tenantId)   // numeración por empresa
             .eq('numero', orden.cotizacion)
             .maybeSingle();
           if (error) throw error;

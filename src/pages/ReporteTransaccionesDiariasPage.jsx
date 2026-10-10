@@ -22,7 +22,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ReporteTransaccionesDiariasPage = () => {
   const { toast } = useToast();
-  const { empresa } = useAuth();
+  const { empresa, tenantId } = useAuth();
   const { closePanel, activePanel } = usePanels();
   const [transactions, setTransactions] = useState([]);
   const [clients, setClients] = useState([]);
@@ -213,6 +213,7 @@ const ReporteTransaccionesDiariasPage = () => {
         const { data: devolucion, error } = await supabase
           .from('devoluciones')
           .select('*, devoluciones_detalle(*, productos(*)), facturas(*), clientes(*)')
+          .eq('tenant_id', tenantId)   // numeración por empresa: el número se repite entre empresas
           .eq('numero', numeroInt)
           .maybeSingle();
         if (error) throw error;
