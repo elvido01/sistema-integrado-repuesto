@@ -20,10 +20,35 @@
 
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 
-// (10/10/2026) El cortafuegos de PRODUCCION de la DGII corta los POST que salen
-// de Supabase (certificacion no). Con DGII_RELAY_URL + DGII_RELAY_KEY, todo lo
-// que va a /eCF/ (produccion, e-CF y RFCE) sale por el Worker workers/dgii-relay.
-// Certificacion y pruebas siguen directo.
+// (10/10/2026) multipart ARMADO A MANO para TODO envío a la DGII.
+// El FormData de Deno cierra el cuerpo con "--boundary--" SIN el CRLF final, y
+// el cortafuegos de PRODUCCION (Citrix) lo rechaza con un 400 HTML vacío
+// ("ERROR:"); CerteCF lo tolera. Comprobado byte a byte: los mismos bytes con
+// CRLF al final = token. También manda Content-Length explícito (IIS).
+export function multipartXml(xml: string, fileName: string) {
+  const boundary = "----MotoFlowDgii" + Date.now().toString(16) + Math.random().toString(16).slice(2, 8);
+  const CRLF = "\r\n";
+  const enc = new TextEncoder();
+  const head = enc.encode(
+    `--${boundary}${CRLF}` +
+    `Content-Disposition: form-data; name="xml"; filename="${fileName}"${CRLF}` +
+    `Content-Type: application/xml${CRLF}${CRLF}`
+  );
+  const xmlBytes = enc.encode(xml);
+  const tail = enc.encode(`${CRLF}--${boundary}--${CRLF}`);
+  const body = new Uint8Array(head.length + xmlBytes.length + tail.length);
+  body.set(head, 0);
+  body.set(xmlBytes, head.length);
+  body.set(tail, head.length + xmlBytes.length);
+  return {
+    body,
+    headers: { "Content-Type": `multipart/form-data; boundary=${boundary}`, "Content-Length": String(body.length) },
+  };
+}
+
+// Relé opcional: con DGII_RELAY_URL + DGII_RELAY_KEY, lo que va a /eCF/
+// (produccion) sale por ese relé (VPS dgii-relay). Sin esas variables, directo.
+
 export function dgiiFetch(url: string, init: RequestInit = {}) {
   const relay = Deno.env.get("DGII_RELAY_URL");
   const key = Deno.env.get("DGII_RELAY_KEY");
@@ -90,10 +115,9 @@ export async function validarSemilla(semillaFirmada, ambiente) {
   const url = `${baseUrl(ambiente)}/autenticacion/api/Autenticacion/ValidarSemilla`;
 
   // El endpoint espera multipart/form-data con un campo "xml"
-  const form = new FormData();
-  form.append("xml", new Blob([semillaFirmada], { type: "application/xml" }), "semilla.xml");
+  const mp = multipartXml(semillaFirmada, "semilla.xml");
 
-  const resp = await dgiiFetch(url, { method: "POST", body: form });
+  const resp = await dgiiFetch(url, { method: "POST", headers: mp.headers, body: mp.body });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
     throw new Error(`DGII validar semilla ${resp.status}: ${txt.slice(0, 300)}`);
@@ -127,13 +151,12 @@ export async function enviarEcf(xmlFirmado, token, ambiente, fileName) {
 
   // CRITICO: el filename debe ser <RNC><eNCF>.xml — DGII rechaza si no.
   const fName = fileName || "ecf.xml";
-  const form = new FormData();
-  form.append("xml", new Blob([xmlFirmado], { type: "application/xml" }), fName);
+  const mp = multipartXml(xmlFirmado, fName);
 
   const resp = await dgiiFetch(url, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${token}` },
-    body: form,
+    headers: { "Authorization": `Bearer ${token}`, ...mp.headers },
+    body: mp.body,
   });
 
   const text = await resp.text();
@@ -210,13 +233,12 @@ export async function enviarEcfCompleto(xmlFirmado, cert, privateKey, ambiente) 
 // ────────────────────────────────────────────────
 export async function enviarAnulacion(anecfFirmado, token, ambiente) {
   const url = `${baseUrl(ambiente)}/anulacionrangos/api/operaciones/anularrango`;
-  const form = new FormData();
-  form.append("xml", new Blob([anecfFirmado], { type: "application/xml" }), "anecf.xml");
+  const mp = multipartXml(anecfFirmado, "anecf.xml");
 
   const resp = await dgiiFetch(url, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${token}` },
-    body: form,
+    headers: { "Authorization": `Bearer ${token}`, ...mp.headers },
+    body: mp.body,
   });
   const text = await resp.text();
   let data;
@@ -274,16 +296,16 @@ export async function enviarRfce(rfceFirmado, token, ambiente, fileName) {
 export async function enviarAprobacionComercial(acecfFirmado, token, ambiente, fileName) {
   const url = `${baseUrl(ambiente)}/aprobacioncomercial/api/aprobacioncomercial`;
   const fName = fileName || "acecf.xml";
-  const form = new FormData();
-  form.append("xml", new Blob([acecfFirmado], { type: "application/xml" }), fName);
+  const mp = multipartXml(acecfFirmado, fName);
 
   const resp = await dgiiFetch(url, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
       "Accept": "application/json",
+      ...mp.headers,
     },
-    body: form,
+    body: mp.body,
   });
   const text = await resp.text();
   let data;

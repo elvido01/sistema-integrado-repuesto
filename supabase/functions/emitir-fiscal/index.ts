@@ -7,7 +7,7 @@ import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfc
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 import { buildRfceDesdeEcf } from "./dgii_rfce_produccion.ts";
-import { dgiiFetch, authenticate, enviarEcf, consultarEstado, consultarTrackIds, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
+import { dgiiFetch, multipartXml, authenticate, enviarEcf, consultarEstado, consultarTrackIds, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1794,9 +1794,8 @@ Deno.serve(async (req) => {
           const xmlFirmado = body.basura ? "<SemillaModel><valor>x</valor></SemillaModel>" : firmado;
           if (body.devolver_firmado) r.firmado = firmado;
           for (const ruta of ["autenticacion/api/Autenticacion/ValidarSemilla", "Autenticacion/api/Autenticacion/ValidarSemilla"]) {
-            const form = new FormData();
-            form.append("xml", new Blob([xmlFirmado], { type: "application/xml" }), "semilla.xml");
-            const rv = await dgiiFetch(`${bases[amb]}/${ruta}`, { method: "POST", body: form });
+            const mp = multipartXml(xmlFirmado, "semilla.xml");
+            const rv = await dgiiFetch(`${bases[amb]}/${ruta}`, { method: "POST", headers: mp.headers, body: mp.body });
             const txt = await rv.text();
             (r.validar ||= []).push({ ruta, status: rv.status, headers: Object.fromEntries(rv.headers), cuerpo: txt.slice(0, 600) });
           }
