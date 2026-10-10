@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { DGII_SIMULACION_STATE_EVENT, aceptadosDe, cargarDgiiSimulacionDelServidor, loadDgiiSimulacionState } from '@/lib/dgiiCertificacionStorage';
 import { downloadRepresentacionImpresa, downloadRepresentacionImpresaFromData, getRepresentacionQrUrl, parseEcfXml } from '@/lib/dgiiRepresentacionImpresa';
 
@@ -125,7 +126,8 @@ const DgiiRepresentacionImpresaRunner = ({ configInfo }) => {
   const todayDgii = `${pad(today.getDate())}-${pad(today.getMonth() + 1)}-${today.getFullYear()}`;
   const [manualXmls, setManualXmls] = useState([]);
   const [trackChecks, setTrackChecks] = useState({});
-  const [saved, setSaved] = useState(() => loadDgiiSimulacionState());
+  const { tenantId } = useAuth();
+  const [saved, setSaved] = useState(() => loadDgiiSimulacionState(tenantId));
   const [preparingAuto, setPreparingAuto] = useState(false);
   const [manualData, setManualData] = useState({
     tipo: '31',
@@ -144,16 +146,18 @@ const DgiiRepresentacionImpresaRunner = ({ configInfo }) => {
   // navegador (otra PC, navegador borrado), se usa esa.
   useEffect(() => {
     let vivo = true;
-    cargarDgiiSimulacionDelServidor().then((srv) => {
+    const local = loadDgiiSimulacionState(tenantId);
+    setSaved(local);
+    cargarDgiiSimulacionDelServidor(tenantId).then((srv) => {
       if (!vivo || !srv) return;
-      setSaved((local) => (aceptadosDe(srv) > aceptadosDe(local) ? srv : local));
+      setSaved((actual) => (aceptadosDe(srv) > aceptadosDe(actual) ? srv : actual));
     });
     return () => { vivo = false; };
-  }, []);
+  }, [tenantId]);
 
   useEffect(() => {
     const refreshSaved = () => setSaved((prev) => {
-      const local = loadDgiiSimulacionState();
+      const local = loadDgiiSimulacionState(tenantId);
       return prev?.desdeServidor && aceptadosDe(prev) > aceptadosDe(local) ? prev : local;
     });
     window.addEventListener(DGII_SIMULACION_STATE_EVENT, refreshSaved);
@@ -164,7 +168,7 @@ const DgiiRepresentacionImpresaRunner = ({ configInfo }) => {
       window.removeEventListener('storage', refreshSaved);
       window.removeEventListener('focus', refreshSaved);
     };
-  }, []);
+  }, [tenantId]);
 
   const slots = useMemo(() => buildSlots(casos, manualXmls), [casos, manualXmls]);
   const completos = slots.filter(s => s.entry).length;

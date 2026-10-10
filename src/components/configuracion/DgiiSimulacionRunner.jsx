@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/customSupabaseClient';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { clearDgiiSimulacionState, loadDgiiSimulacionState, saveDgiiSimulacionState } from '@/lib/dgiiCertificacionStorage';
 import { downloadRepresentacionImpresa } from '@/lib/dgiiRepresentacionImpresa';
 import { useToast } from '@/components/ui/use-toast';
@@ -82,8 +83,8 @@ const sanitizeCasoForStorage = (caso) => ({
   estado: caso.estado === 'sending' || caso.estado === 'checking' ? 'enviado' : caso.estado,
 });
 
-const getInitialCasos = () => {
-  const saved = loadDgiiSimulacionState();
+const getInitialCasos = (tenantId) => {
+  const saved = loadDgiiSimulacionState(tenantId);
   if (saved?.casos?.length) return saved.casos.map(sanitizeCasoForStorage);
   return generarCasos();
 };
@@ -257,8 +258,16 @@ function generarCasos() {
 
 const DgiiSimulacionRunner = () => {
   const { toast } = useToast();
+  const { tenantId } = useAuth();
   const fileInputRef = useRef(null);
-  const [casos, setCasos] = useState(getInitialCasos);
+  const [casos, setCasos] = useState(() => getInitialCasos(tenantId));
+  // Al cambiar de empresa, cada una con su propia corrida.
+  const tenantCargado = useRef(tenantId);
+  useEffect(() => {
+    if (tenantCargado.current === tenantId) return;
+    tenantCargado.current = tenantId;
+    setCasos(getInitialCasos(tenantId));
+  }, [tenantId]);
   const [running, setRunning] = useState(false);
   const [consultingAll, setConsultingAll] = useState(false);
   const [modal, setModal] = useState(null);
@@ -297,11 +306,12 @@ const DgiiSimulacionRunner = () => {
     const tieneResultado = casos.some(c => c.trackId || c.xmlFirmado || c.manualEcf?.xml_firmado || ACCEPTED_ESTADOS.has(c.estado) || c.estado === 'rechazado' || c.estado === 'error');
     if (!tieneResultado) return;
     const completado = casos.length > 0 && casos.every(c => ACCEPTED_ESTADOS.has(c.estado));
-    saveDgiiSimulacionState(casos.map(sanitizeCasoForStorage), {
+    if (tenantCargado.current !== tenantId) return;
+    saveDgiiSimulacionState(tenantId, casos.map(sanitizeCasoForStorage), {
       paso4Completado: completado,
       completadoAt: completado ? new Date().toISOString() : null,
     });
-  }, [casos]);
+  }, [casos, tenantId]);
 
   // Carga opcional: el usuario puede cargar el xlsx del Paso 2 (set oficial)
   // para que extraigamos automáticamente la FechaVencimientoSecuencia.
@@ -325,13 +335,14 @@ const DgiiSimulacionRunner = () => {
         toast({ title: 'Sin FechaVencimientoSecuencia', description: 'No encontré la columna en el xlsx.', variant: 'destructive' });
         return;
       }
+      // (10/10/2026) Del xlsx del Paso 2 solo sirve la fecha. Antes además
+      // reemplazaba los casos por los del Paso 2, cuyos e-NCF ya se usaron:
+      // la DGII los rechaza (Caminero, E320000000006).
       setFechaVencimiento(fechaDetectada);
-      const casosOficiales = casosDesdeXlsx(sheets);
-      if (casosOficiales.length) setCasos(casosOficiales);
       setFileName(f.name);
       toast({
-        title: '✓ Datos detectados del xlsx',
-        description: `${casosOficiales.length ? `${casosOficiales.length} casos cargados. ` : ''}FechaVencimientoSecuencia = ${fechaDetectada}`,
+        title: '✓ Fecha detectada del xlsx',
+        description: `FechaVencimientoSecuencia = ${fechaDetectada}`,
       });
     } catch (err) {
       toast({ title: 'Error leyendo xlsx', description: err.message, variant: 'destructive' });
@@ -531,7 +542,7 @@ const DgiiSimulacionRunner = () => {
   const limpiarSet = () => {
     if (running || consultingAll) return;
     if (!confirm('Nueva corrida?\n\nSe generan nuevas secuencias eNCF para evitar reutilizar.')) return;
-    clearDgiiSimulacionState();
+    clearDgiiSimulacionState(tenantId);
     setCasos(generarCasos());
   };
 

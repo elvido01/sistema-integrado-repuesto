@@ -1,6 +1,10 @@
 import { supabase } from '@/lib/customSupabaseClient';
 
 export const DGII_SIMULACION_STORAGE_KEY = 'dgii_simulacion_certecf_v1';
+// (10/10/2026) Una memoria POR EMPRESA. Con una sola para todo el navegador,
+// el Paso 4 de D Mario apareció dentro de Caminero Motors (y de Morla) y se
+// copió al servidor con su nombre. La llave vieja, sin empresa, se ignora.
+const llave = (tenantId) => `${DGII_SIMULACION_STORAGE_KEY}:${tenantId || 'sin-empresa'}`;
 export const DGII_SIMULACION_STATE_EVENT = 'dgii-simulacion-state-change';
 
 const notifyDgiiSimulacionStateChange = () => {
@@ -13,9 +17,10 @@ const notifyDgiiSimulacionStateChange = () => {
   }
 };
 
-export function loadDgiiSimulacionState() {
+export function loadDgiiSimulacionState(tenantId) {
+  if (!tenantId) return null;
   try {
-    const raw = localStorage.getItem(DGII_SIMULACION_STORAGE_KEY);
+    const raw = localStorage.getItem(llave(tenantId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed?.casos)) return null;
@@ -56,10 +61,12 @@ function copiarAlServidor(casos, completado) {
 }
 
 /** La corrida guardada en el servidor con más aceptados (la más reciente si empatan). */
-export async function cargarDgiiSimulacionDelServidor() {
+export async function cargarDgiiSimulacionDelServidor(tenantId) {
+  if (!tenantId) return null;
   try {
     const { data, error } = await supabase.from('dgii_certificacion_corridas')
       .select('casos, aceptados, completado, updated_at, set_clave')
+      .eq('tenant_id', tenantId)
       .eq('paso', 'paso4')
       .order('completado', { ascending: false })
       .order('aceptados', { ascending: false })
@@ -75,10 +82,11 @@ export async function cargarDgiiSimulacionDelServidor() {
 
 export const aceptadosDe = (estado) => contarAceptados(estado?.casos);
 
-export function saveDgiiSimulacionState(casos, extra = {}) {
+export function saveDgiiSimulacionState(tenantId, casos, extra = {}) {
+  if (!tenantId) return;
   copiarAlServidor(casos, extra?.paso4Completado);
   try {
-    localStorage.setItem(DGII_SIMULACION_STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(llave(tenantId), JSON.stringify({
       version: 1,
       updatedAt: new Date().toISOString(),
       casos,
@@ -90,9 +98,9 @@ export function saveDgiiSimulacionState(casos, extra = {}) {
   }
 }
 
-export function clearDgiiSimulacionState() {
+export function clearDgiiSimulacionState(tenantId) {
   try {
-    localStorage.removeItem(DGII_SIMULACION_STORAGE_KEY);
+    localStorage.removeItem(llave(tenantId));
     notifyDgiiSimulacionStateChange();
   } catch (_) {
     // Sin accion.
