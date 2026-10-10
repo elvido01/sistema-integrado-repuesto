@@ -10,6 +10,19 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 
+// (10/10/2026) El bucket 'pagos' (comprobantes de transferencia) pasó a
+// PRIVADO: los nombres comprobantes/<empresa>/<milisegundos> se podían
+// adivinar. Lo guardado es la URL "pública" de siempre; aquí se convierte en
+// un enlace firmado de 10 minutos para verlo.
+const MARCA_PAGOS = '/storage/v1/object/public/pagos/';
+async function enlaceComprobante(url) {
+  const i = String(url || '').indexOf(MARCA_PAGOS);
+  if (i < 0) return url;
+  const ruta = decodeURIComponent(url.slice(i + MARCA_PAGOS.length).split('?')[0]);
+  const { data, error } = await supabase.storage.from('pagos').createSignedUrl(ruta, 600);
+  return error ? url : data.signedUrl;
+}
+
 const AdminPagosReview = ({ onChanged }) => {
   const { toast } = useToast();
   const [pagos, setPagos] = useState([]);
@@ -170,7 +183,7 @@ const AdminPagosReview = ({ onChanged }) => {
             {pago.comprobante_url && (
               <div className="mb-4">
                 <button
-                  onClick={() => setViewImage(pago.comprobante_url)}
+                  onClick={async () => setViewImage(await enlaceComprobante(pago.comprobante_url))}
                   className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-3 py-2 text-xs font-bold text-blue-700 transition-colors"
                 >
                   <FileImage className="w-4 h-4" />
@@ -244,6 +257,10 @@ const AdminPagosReview = ({ onChanged }) => {
               {pago.comprobante_url && (
                 <a
                   href={pago.comprobante_url}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    window.open(await enlaceComprobante(pago.comprobante_url), '_blank', 'noopener');
+                  }}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="ml-auto"
