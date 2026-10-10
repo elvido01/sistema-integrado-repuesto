@@ -646,12 +646,7 @@ Deno.serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
 
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    // Clave de diagnóstico temporal (secreto DIAG_TOKEN): SOLO abre la prueba
-    // de autenticación, que no emite ni gasta e-NCF. Sin el secreto, nada.
-    const diagToken = Deno.env.get("DIAG_TOKEN") ?? "";
-    const esDiagnostico = !!diagToken && action === "dgii_probar_autenticacion"
-      && req.headers.get("x-diag") === diagToken;
-    const isServiceRole = (serviceKey && token === serviceKey) || esDiagnostico;
+    const isServiceRole = !!serviceKey && token === serviceKey;
 
     let tenantId;
     // Fase 3.3: ID del caller para trazabilidad (emitido_por).
