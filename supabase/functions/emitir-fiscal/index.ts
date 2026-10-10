@@ -3,9 +3,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import forge from "https://esm.sh/node-forge@1.3.1";
-import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml } from "./dgii_xml_builder.ts";
+import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii } from "./dgii_xml_builder.ts";
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
+import { buildRfceDesdeEcf } from "./dgii_rfce_produccion.ts";
 import { authenticate, enviarEcf, consultarEstado, consultarTrackIds, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
 
 const corsHeaders = {
@@ -492,12 +493,15 @@ async function dgiiDirectoTestConnection(config) {
 // 7. Retorna en el formato del contrato EmisorAdapter
 async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cliente) {
   // 1. Determinar tipo y generar eNCF correlativo
-  const isB2B = !!(cliente && cliente.rnc && String(cliente.rnc).trim().length > 0);
+  const isB2B = rncValidoDgii(cliente?.rnc);  // mismo criterio que el builder (no "000000000")
   const tipoEcf = isB2B ? "31" : "32";
   const ambiente = config.ambiente || "TesteCF";
 
-  // get_next_encf RPC asigna correlativo atomico al tenant del usuario
-  const { data: encf, error: encfErr } = await supabase.rpc("get_next_encf", {
+  // Correlativo atómico de ESTA empresa. (10/10/2026) get_next_encf la sacaba
+  // del usuario de la sesión, que aquí no existe (service key): "Sin tenant en
+  // sesion" en todos los intentos. sql/dgii_encf_por_empresa.sql
+  const { data: encf, error: encfErr } = await supabase.rpc("get_next_encf_empresa", {
+    p_tenant: factura.tenant_id,
     p_tipo_ecf: tipoEcf,
     p_ambiente: ambiente,
   });
@@ -520,9 +524,42 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
 
   // 5. Autenticar con DGII
   const auth = await authenticate(cert, privateKey, ambiente);
+  const rncArchivo = String(config.rnc_emisor || "").replace(/\D/g, "");
+  const fileName = `${rncArchivo}${encf}.xml`;
 
-  // 6. Enviar e-CF
-  const recepcion = await enviarEcf(xmlFirmado, auth.token, ambiente);
+  // 6a. (10/10/2026) Consumo < RD$250,000: NO va a la recepción normal. Va su
+  //     RESUMEN (RFCE) al canal de resúmenes, con el mismo código de seguridad
+  //     que imprime el QR. El e-CF completo ya quedó firmado y guardado (paso 4).
+  //     Mismo camino que la DGII aceptó en la certificación (Paso 2 y 4).
+  const montoTotal = Number((xmlFirmado.match(/<MontoTotal>([^<]+)<\/MontoTotal>/) || [])[1] || 0);
+  if (tipoEcf === "32" && montoTotal < 250000) {
+    const codigoSeguridad = String(signatureValue || "").slice(0, 6);
+    const rfce = buildRfceDesdeEcf(xmlFirmado, codigoSeguridad);
+    const { xmlFirmado: rfceFirmado } = await signEcfXml(rfce, cert, privateKey);
+    const respuesta = await enviarRfce(rfceFirmado, auth.token, ambiente, fileName);
+    const estadoRfce = String(respuesta?.estado || respuesta?.Estado || "").toLowerCase();
+    if (estadoRfce.includes("rechaz")) {
+      throw new Error(`DGII rechazó el resumen (RFCE) de ${encf}: ${JSON.stringify(respuesta?.mensajes || respuesta).slice(0, 400)}`);
+    }
+    return {
+      proveedor_invoice_id: `RFCE-${encf}`,
+      proveedor_number: encf,
+      ncf: encf,
+      request_payload: {
+        tipo_ecf: tipoEcf,
+        ambiente,
+        via: "rfce",
+        xml_path: xmlPath,
+        codigo_seguridad: codigoSeguridad,
+        digest_value: digestValue,
+        signature_value: signatureValue.slice(0, 100) + "...",
+      },
+      response_payload: respuesta,
+    };
+  }
+
+  // 6b. Enviar e-CF
+  const recepcion = await enviarEcf(xmlFirmado, auth.token, ambiente, fileName);
   const trackId = recepcion.trackId || recepcion.TrackId || recepcion.trackid;
   if (!trackId) {
     throw new Error(
@@ -735,7 +772,12 @@ Deno.serve(async (req) => {
           updatePayload.tipo_ecf = resultado.request_payload?.tipo_ecf || null;
           updatePayload.ambiente = resultado.request_payload?.ambiente || null;
           updatePayload.xml_firmado_path = resultado.request_payload?.xml_path || null;
-          updatePayload.estado_dgii = "enviado";  // a la espera del ARECF
+          // El RFCE contesta en el acto (Aceptado / Aceptado Condicional);
+          // el e-CF normal queda "enviado" hasta consultar su TrackId.
+          const estadoInmediato = resultado.request_payload?.via === "rfce"
+            ? String(resultado.response_payload?.estado || resultado.response_payload?.Estado || "").trim()
+            : "";
+          updatePayload.estado_dgii = estadoInmediato || "enviado";
         }
         await supabase
           .from("documentos_fiscales")
@@ -915,7 +957,7 @@ Deno.serve(async (req) => {
       }
 
       // Determinar tipo_ecf basado en si el cliente tiene RNC (B2B=31, B2C=32)
-      const isB2B = !!(cliente && cliente.rnc && String(cliente.rnc).trim().length > 0);
+      const isB2B = rncValidoDgii(cliente?.rnc);  // mismo criterio que el builder (no "000000000")
       const detectedTipo = isB2B ? "31" : "32";
       // Generar e-NCF de prueba que coincida con el tipo detectado
       const encf = encf_override || `E${detectedTipo}0000000001`;
@@ -984,7 +1026,7 @@ Deno.serve(async (req) => {
       }
 
       // 3. Generar XML
-      const isB2B = !!(cliente && cliente.rnc && String(cliente.rnc).trim().length > 0);
+      const isB2B = rncValidoDgii(cliente?.rnc);  // mismo criterio que el builder (no "000000000")
       const tipoEcf = isB2B ? "31" : "32";
       const encf = encf_override || `E${tipoEcf}0000000001`;
 
@@ -1909,7 +1951,8 @@ Deno.serve(async (req) => {
 
       // 6. Asignar e-NCF Tipo 34 (correlativo)
       const tipoEcf = "34";
-      const { data: encfNuevo, error: encfErr } = await supabase.rpc("get_next_encf", {
+      const { data: encfNuevo, error: encfErr } = await supabase.rpc("get_next_encf_empresa", {
+        p_tenant: tenantId,
         p_tipo_ecf: tipoEcf,
         p_ambiente: ambiente,
       });

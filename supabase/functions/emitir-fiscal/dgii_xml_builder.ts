@@ -96,6 +96,12 @@ const nowDgiiDateTime = () => {
   const seconds = String(rd.getUTCSeconds()).padStart(2, "0");
   return `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;
 };
+// RNC (9) o cédula (11) de verdad; "000000000" del Cliente Genérico no cuenta.
+export function rncValidoDgii(rnc) {
+  const d = String(rnc || "").replace(/\D/g, "");
+  return (d.length === 9 || d.length === 11) && !/^0+$/.test(d);
+}
+
 const fechaVencimientoSecuenciaXml = (input) =>
   input.fecha_vencimiento_secuencia
     ? `<FechaVencimientoSecuencia>${xmlEscape(normalizeDgiiDate(input.fecha_vencimiento_secuencia))}</FechaVencimientoSecuencia>`
@@ -1026,7 +1032,10 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
   console.log("[facturaToEcfInput] configEmisor keys:", Object.keys(configEmisor).join(","));
   console.log("[facturaToEcfInput] cliente:", cliente ? `${cliente.nombre} rnc=${cliente.rnc}` : "null");
 
-  const isB2B = !!(cliente && cliente.rnc && String(cliente.rnc).trim().length > 0);
+  // (10/10/2026) Crédito fiscal solo con un RNC/cédula DE VERDAD: 9 u 11
+  // dígitos y no todo ceros. El Cliente Genérico trae "000000000" y salía
+  // como E31 con ese RNC (la DGII lo rechaza): cada venta de mostrador.
+  const isB2B = rncValidoDgii(cliente?.rnc);
   const tipoEcf = isB2B ? "31" : "32";
 
   // Items — facturas_detalle columns: precio (base sin ITBIS), cantidad,
@@ -1042,11 +1051,16 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
 
     // Determinar si aplica ITBIS: si hay campo itbis_pct, usar ese.
     // Si no, revisar si d.itbis > 0 como indicador de que es gravado.
-    const itbisPct = Number(d.itbis_pct);
+    // (10/10/2026) facturas_detalle NO tiene itbis_pct: solo el MONTO del
+    // ITBIS de la línea. Antes todo salía gravado al 18% (también lo exento).
+    // Línea con ITBIS 0 → exenta; si no, la tasa se deduce del monto (18/16).
     const itbisMonto = Number(d.itbis);
-    const aplicaItbis = isFinite(itbisPct)
-      ? itbisPct > 0
-      : (isFinite(itbisMonto) && itbisMonto > 0 ? true : true); // default gravado
+    const pctCampo = Number(d.itbis_pct);
+    const pctDeducido = monto > 0 && isFinite(itbisMonto) ? itbisMonto / monto : NaN;
+    const itbisPct = isFinite(pctCampo) && d.itbis_pct !== null && d.itbis_pct !== undefined
+      ? (pctCampo > 1 ? pctCampo / 100 : pctCampo)
+      : (isFinite(pctDeducido) ? (Math.abs(pctDeducido - 0.16) < 0.01 ? 0.16 : (pctDeducido > 0.005 ? 0.18 : 0)) : 0.18);
+    const aplicaItbis = itbisPct > 0;
 
     return {
       descripcion: d.descripcion || `Item ${idx + 1}`,
@@ -1088,9 +1102,12 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
       telefono: configEmisor.telefono ? [configEmisor.telefono] : [],
       email: configEmisor.email,
     },
+    // E31 lleva FechaVencimientoSecuencia (obligatoria en el XSD); E32/E34 no
+    // (la DGII lo pidió así en el Paso 6 de D Mario).
+    fecha_vencimiento_secuencia: tipoEcf === "32" ? null : (configEmisor.fecha_vencimiento_secuencia || null),
     comprador: cliente
       ? {
-          rnc: cliente.rnc || null,
+          rnc: isB2B ? String(cliente.rnc).replace(/\D/g, "") : null,
           razon_social: cliente.nombre || null,
           email: cliente.email || null,
           contacto: cliente.telefono || null,
