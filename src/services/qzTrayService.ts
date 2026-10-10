@@ -1,3 +1,5 @@
+import { supabase } from '@/lib/customSupabaseClient';
+
 let connectingPromise: Promise<void> | null = null;
 
 declare global {
@@ -38,99 +40,17 @@ Vj8mBWGq/KDZs2mVNzhhhr1CfPQrbrzuinC0qlQpGJ4sLTqych3A
 -----END CERTIFICATE-----`;
 
 // ─── Clave privada para firmar solicitudes ───
-const QZ_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCZn/BJX9rMYI1R
-gPhEWbE2EcxOXAe83x7qHMY7iKd9IajUKbwyzkvMHtKiTd4+MqjgCNeMg9KiRzuQ
-kybRZMU9PQmZY/0BgHuMYTUXK8BlX19JwIJcRkawMHPvJKB5smpPzdFCy4vSkbCI
-uuYYDjS5PZgNNkD6uD3bpajwaW//GW6S8GDlSljYPC1HJz5JNN6hlGwmtjCOHPag
-zU/+0OavVH8riEYBZBgZ2ZjeXNd5zFsBFDJ56KdrkM5hlrVFI9rZ9WWOV2JKKYgI
-l/fxOjkXVdLyhGgxCRurEb6FmvBxiPWFaY7YWQckfYkHqT9LwJJy3o06dH2HLa0b
-3AKtfQGrAgMBAAECggEAMVYK/hV5l/8+AznPAWxom/u1SEkH9yEUtYzOINpvJ6GC
-rbhFh293KjOP463sPL9aOrC8QJUpNRJ5T6HiaobZTSRoC8nvu+a+RsQFH87eN/Ac
-EvxvISE0nGrDIL77hnnE6KIpnTDvU42USyTytjEBv6fHSB7vWVWIEB0wlxzVafAK
-kFD5EqjBbZnQLlbym+udQSPDdWlayvXechZMtMSDt7R6+HZHkRtvM7pXCsjemn0C
-HTB9hbWh64x6d9FiNZTgSWX2pj1/uh7rWN/lYrm6EjJW29zlbOLqNdJwpRD4pwDP
-JApqn12DQ7Fd7lrdOoen9GOGRHFUHTIzY077jXTS8QKBgQDH2Bst4rvZIAcUY1HZ
-3h/ahxDC9F8DUKYl232z6MDNCZFMmuzkAbwGu5lDauuj3gENKv+P66IXBXwhoOAj
-85UVRUyJiXRCUPUNPkmVR0i4XPvpLIqZePrxFB9XsfDSOxEJygL2SlYVwIyOTlF2
-i3C/NzeifHAGiYn0a6sBrV1rEwKBgQDEywP8j0BGpS5fpEqJhI+3gJzIbgQGtxnM
-VOnXn96v6OB9lqlF3D/QFgTxhCGZvTL9C6cC1nA3Ldheg9/WVVPIGFw6+aJnlUnF
-lakh3NVDIleQo3i9XVmNk9Ah0YpmURzN3GSUtruAH6lLMxAlzrbqO7HhVyhgSasP
-mcUhNBSKCQKBgQCZDiEazokSLN5fNgYNN3rr8f/bYC+YqV7mpakrbfqjzk0S/6Co
-q89m1Kz4Hl5kvXXOsPzULCKTQScl1kF0J20pwk5xE+4PkFNuFiNjChpe4RAqMGvi
-SO7gTooGrwiC6qwM9EO6f4pY1ISRxNfNU9RBDrg0YNunlhUrNn7dJPrkMwKBgQCa
-o9mXHk5o9SYyu9xioct5bFRHX8RELp/UJCm5agRIgRvfNIQBxKhUcOkjjCwHLlih
-5gUwQqfdhGYRJ1m+iECU7SeUpFPNR8+3tvo4BNuErLjYjMy1KWTUzwFvgcRa0IRs
-9DIJdmpyrO6QjCi1PPIZsB0AsUemGl2UncX9aHp3WQKBgAW3pkajkbe48VLoeMOf
-RKc8sVpxBGlKuy5zr5ic7/LA7NDqQo6rA/teeC0Xu0qSI3mAyxecNJ3agQK+ZUQo
-zKc/bgiuihqDif8IHhf8vEiVD/AxQG7UaQcIcnXqeZ5/6SCPVVzkM6SplrrU2l4M
-resb4umEFsq2bsAzV44OoeUF
------END PRIVATE KEY-----`;
-
-/**
- * Convierte un string PEM de clave privada a un CryptoKey para Web Crypto API
- */
-/**
- * Convierte un string PEM de clave privada a un CryptoKey para Web Crypto API
- */
-async function importPrivateKey(pem: string): Promise<CryptoKey> {
-    try {
-        const pemBody = pem
-            .replace("-----BEGIN PRIVATE KEY-----", "")
-            .replace("-----END PRIVATE KEY-----", "")
-            .replace(/\s/g, "");
-
-        console.log("[QZ] Decodificando clave privada... Longitud cuerpo:", pemBody.length);
-        const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
-        console.log("[QZ] Clave binaria (bytes):", binaryDer.byteLength);
-
-        const key = await crypto.subtle.importKey(
-            "pkcs8",
-            binaryDer.buffer,
-            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-            false,
-            ["sign"]
-        );
-        console.log("[QZ] Clave importada correctamente.");
-        return key;
-    } catch (e) {
-        console.error("[QZ] Error importando clave privada:", e);
-        throw e;
-    }
-}
-
-/**
- * Firma datos usando la clave privada con RSA-SHA256
- */
-
+// (10/10/2026) La llave privada YA NO vive en la web: firmaba cualquiera que
+// la sacara del código (y podía imprimir en silencio en las PCs que confían
+// en "Repuestos Morla Trust"). Ahora la firma la hace el servidor
+// (Edge Function qz-firmar, secreto QZ_PRIVATE_KEY_B64) y solo para un
+// usuario con sesión. Misma firma de siempre: RSASSA-PKCS1-v1_5 + SHA-256.
 async function signData(data: string): Promise<string> {
-    if (!window.crypto || !window.crypto.subtle) {
-        throw new Error("Vida 'crypto.subtle' no disponible. Asegúrese de usar HTTPS o localhost.");
+    const { data: r, error } = await supabase.functions.invoke('qz-firmar', { body: { mensaje: data } });
+    if (error || !r?.ok || !r?.firma) {
+        throw new Error(r?.error || error?.message || 'No se pudo firmar la solicitud de QZ');
     }
-
-    try {
-        console.log("[QZ] Iniciando firma de mensaje:", data.substring(0, 20) + "...");
-        const key = await importPrivateKey(QZ_PRIVATE_KEY);
-        const enc = new TextEncoder();
-        const signature = await crypto.subtle.sign(
-            "RSASSA-PKCS1-v1_5",
-            key,
-            enc.encode(data)
-        );
-
-        // Convertir a base64
-        const bytes = new Uint8Array(signature);
-        let binary = "";
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        const base64 = btoa(binary);
-        console.log("[QZ] Firma generada exitosamente.");
-        return base64;
-    } catch (err) {
-        console.error("[QZ] Error CRÍTICO generando firma digital:", err);
-        throw err;
-    }
+    return r.firma;
 }
 
 /**
