@@ -819,12 +819,17 @@ Deno.serve(async (req) => {
         if (updErr) {
           // El comprobante YA salió a la DGII: no se puede perder el e-NCF.
           console.error("documentos_fiscales update:", updErr.message);
-          await supabase.from("documentos_fiscales").update({
-            estado: "emitido", ncf: resultado.ncf, encf: resultado.ncf,
+          // Respaldo SIN las columnas con índice único (encf, track_id): fue un
+          // índice único el que tumbó el update del E310000000001 de D Mario.
+          // ncf y request_payload.impresion bastan para reimprimir y rastrear.
+          const { error: updErr2 } = await supabase.from("documentos_fiscales").update({
+            estado: "emitido", ncf: resultado.ncf,
+            tipo_ecf: updatePayload.tipo_ecf ?? null, ambiente: updatePayload.ambiente ?? null,
             request_payload: resultado.request_payload, response_payload: resultado.response_payload,
             error_message: `update parcial: ${updErr.message}`.slice(0, 500),
             emitted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
           }).eq("id", docFiscal.id);
+          if (updErr2) console.error("documentos_fiscales update de respaldo:", updErr2.message);
         }
 
         if (resultado.ncf) {
