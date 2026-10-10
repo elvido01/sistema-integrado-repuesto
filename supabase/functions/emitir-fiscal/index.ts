@@ -378,6 +378,73 @@ async function reintentarPendientesDgii(supabase) {
   return resumen;
 }
 
+// (10/10/2026) Salud DGII de cada empresa, una vez al día (plan, paso 4).
+// Certificado: se abre el .p12 y se lee su vencimiento (no está guardado en
+// otro lado). Secuencias: lo que queda del rango autorizado y su fecha de
+// vencimiento. Avisa con alertas_avisar (campana del superadmin y, si es
+// urgente, chat de Hermes). El título lleva el "escalón" (30/15/7 días) para
+// que cada escalón avise una vez y no todos los días.
+async function saludDgii(supabase) {
+  const resumen = { empresas: 0, avisos: [] };
+  const avisar = async (tenant, titulo, mensaje, urgente, cadaHoras) => {
+    const { error } = await supabase.rpc("alertas_avisar", {
+      p_tipo: "alerta_dgii", p_tenant: tenant, p_titulo: titulo, p_mensaje: mensaje,
+      p_urgente: urgente, p_cada_horas: cadaHoras,
+    });
+    resumen.avisos.push(error ? `ERROR aviso: ${error.message}` : titulo);
+  };
+  const { data: integs } = await supabase.from("integraciones_fiscales")
+    .select("tenant_id, config, modo").eq("proveedor", "dgii_directo").eq("activo", true);
+  for (const integ of integs || []) {
+    resumen.empresas++;
+    const { data: emp } = await supabase.from("config_empresa").select("nombre")
+      .eq("tenant_id", integ.tenant_id).maybeSingle();
+    const nombre = emp?.nombre || String(integ.tenant_id).slice(0, 8);
+    // Certificado
+    try {
+      const { cert } = await loadAndParseP12(supabase, integ.config);
+      const dias = Math.ceil((cert.validity.notAfter.getTime() - Date.now()) / 86400000);
+      const fecha = cert.validity.notAfter.toISOString().slice(0, 10);
+      if (dias <= 30) {
+        const escalon = dias <= 0 ? "VENCIDO" : dias <= 7 ? "vence en 7 días o menos" : dias <= 15 ? "vence en 15 días o menos" : "vence en 30 días o menos";
+        await avisar(integ.tenant_id, `Certificado digital de ${nombre}: ${escalon}`,
+          `Vence el ${fecha} (${dias} días). Renuévalo con la entidad certificadora y súbelo en Configuración → DGII. Sin certificado vigente la empresa NO puede emitir e-CF.`,
+          dias <= 7, dias <= 7 ? 24 : 24 * 20);
+      }
+    } catch (e) {
+      await avisar(integ.tenant_id, `No se pudo abrir el certificado digital de ${nombre}`,
+        `MotoFlow no puede firmar sus e-CF: ${String(e?.message || e).slice(0, 200)}. Revisa el archivo y la contraseña en Configuración → DGII.`,
+        true, 24);
+    }
+    if (integ.modo !== "produccion") continue;
+    // Secuencias de producción
+    const { data: secs } = await supabase.from("ecf_secuencias")
+      .select("tipo_ecf, desde, hasta, ultimo").eq("tenant_id", integ.tenant_id)
+      .eq("ambiente", "Produccion").eq("activo", true);
+    for (const s of secs || []) {
+      const total = Number(s.hasta) - Number(s.desde) + 1;
+      const quedan = Number(s.hasta) - Number(s.ultimo);
+      if (quedan <= Math.max(5, Math.ceil(total * 0.1))) {
+        await avisar(integ.tenant_id, `Secuencia E${s.tipo_ecf} de ${nombre} se está agotando`,
+          `Quedan ${quedan} de ${total} números (hasta E${s.tipo_ecf}${String(s.hasta).padStart(10, "0")}). Solicita un nuevo rango en la Oficina Virtual de la DGII y cárgalo en MotoFlow antes de que se acabe.`,
+          quedan <= 2, quedan <= 2 ? 24 : 72);
+      }
+    }
+    // Vencimiento de las secuencias (DD-MM-YYYY en la config)
+    const m = String(integ.config?.fecha_vencimiento_secuencia || "").match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m) {
+      const vence = new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]), 23, 59));
+      const dias = Math.ceil((vence.getTime() - Date.now()) / 86400000);
+      if (dias <= 30) {
+        await avisar(integ.tenant_id, `Las secuencias e-CF de ${nombre} vencen ${dias <= 0 ? "YA" : "pronto"}`,
+          `Fecha de vencimiento: ${m[0]} (${dias} días). Solicita las nuevas en la Oficina Virtual de la DGII.`,
+          dias <= 7, dias <= 7 ? 24 : 24 * 7);
+      }
+    }
+  }
+  return resumen;
+}
+
 async function logEcfAecf(supabase, docId, estado, payload) {
   // estado: 'aprobado' | 'rechazado' (B2B tipo 31)
   const { error } = await supabase
@@ -1046,13 +1113,15 @@ Deno.serve(async (req) => {
 
     // ── ACTION: dgii_revisar_pendientes ── (tarea programada, todas las empresas)
     // La clave x-cron-secret (secreto CRON_SECRET_FISCAL) SOLO abre esta acción.
-    if (action === "dgii_revisar_pendientes" || action === "dgii_reintentar_pendientes") {
+    if (action === "dgii_revisar_pendientes" || action === "dgii_reintentar_pendientes" || action === "dgii_salud") {
       const cronSecret = Deno.env.get("CRON_SECRET_FISCAL") ?? "";
       const esCron = !!cronSecret && req.headers.get("x-cron-secret") === cronSecret;
       if (!esCron && !isServiceRole) throw new Error("No autorizado");
       const resumen = action === "dgii_revisar_pendientes"
         ? await revisarPendientesDgii(supabase)
-        : await reintentarPendientesDgii(supabase);
+        : action === "dgii_salud"
+          ? await saludDgii(supabase)
+          : await reintentarPendientesDgii(supabase);
       return new Response(JSON.stringify({ ok: true, ...resumen }), { status: 200, headers: corsHeaders });
     }
 
