@@ -62,6 +62,10 @@ const DevolucionesPage = () => {
   const [imprimir, setImprimir] = useState(false);
   const [emitirDgii, setEmitirDgii] = useState(false);
   const [emitiendoDgii, setEmitiendoDgii] = useState(false);
+  // (10/10/2026) Número de la última devolución grabada. El número lo pone la
+  // base al grabar (secuencia compartida entre empresas): antes no se sabe.
+  // Queda visible hasta que se busque otra factura.
+  const [numeroGuardado, setNumeroGuardado] = useState(null);
 
   const handleSearchFactura = async () => {
     if (!facturaNumero) {
@@ -70,6 +74,7 @@ const DevolucionesPage = () => {
     }
     setIsSearching(true);
     resetForm(false);
+    setNumeroGuardado(null);
 
     try {
       // 1. Check if a return already exists for this invoice
@@ -326,7 +331,8 @@ const DevolucionesPage = () => {
         }
       }
 
-      toast({ title: '✅ Éxito', description: 'Devolución guardada y artículos reintegrados al inventario.' });
+      setNumeroGuardado(devolucion.numero);
+      toast({ title: `✅ Devolución DV-${devolucion.numero} guardada`, description: 'Artículos reintegrados al inventario.' });
 
       if (imprimir) {
         printDevolucionPOS(devolucion, factura, cliente, detallesDevolucion);
@@ -432,7 +438,7 @@ const DevolucionesPage = () => {
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <Label className="text-[10px] font-bold text-slate-600 uppercase w-16">NUMERO</Label>
-                  <Input readOnly value="---" className="h-7 w-20 bg-white border-slate-400 text-center font-bold" />
+                  <Input readOnly value={numeroGuardado ? `DV-${numeroGuardado}` : 'NUEVA'} title={numeroGuardado ? 'Última devolución grabada' : 'El número se asigna al grabar'} className={`h-7 w-20 bg-white border-slate-400 text-center font-bold ${numeroGuardado ? 'text-red-600' : 'text-slate-400'}`} />
                 </div>
                 <div className="flex items-center gap-2">
                   <Label className="text-[10px] font-bold text-slate-600 uppercase">FECHA</Label>
@@ -493,7 +499,7 @@ const DevolucionesPage = () => {
             <div className="grid grid-cols-12 gap-x-4 gap-y-1.5">
               <div className="col-span-7 flex items-center gap-3">
                 <Label className="text-[10px] font-bold text-slate-600 uppercase w-16 text-right">Cliente</Label>
-                <Input readOnly value={cliente?.id || ''} className="h-7 flex-grow font-mono text-[11px] bg-slate-50 border-slate-300" />
+                <Input readOnly value={cliente?.codigo || ''} className="h-7 flex-grow font-mono text-[11px] bg-slate-50 border-slate-300" />
               </div>
               <div className="col-span-5 flex items-center gap-3">
                 <Label className="text-[10px] font-bold text-slate-600 uppercase w-12 text-right">RNC</Label>
