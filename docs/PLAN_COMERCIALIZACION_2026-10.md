@@ -42,14 +42,14 @@ Marcar con [x] al terminar.
 - Riesgo: bajo (solo lee y avisa).
 
 ### Mié 14/10, noche — Seguridad, fase 2 (A)
-- [ ] Las 4 funciones que usa la web verifican que la empresa pedida sea la
+- [x] (10/10, verificado sin sesión) Las 4 funciones que usa la web verifican que la empresa pedida sea la
       del usuario.
-- [ ] Notificaciones: permiso de inserción por empresa, más una excepción
+- [x] (10/10, verificado sin sesión) Notificaciones: permiso de inserción por empresa, más una excepción
       controlada para el par Caminero ↔ MotoPréstamos.
 - Deshacer: SQL de reversa propio.
 
 ### Jue 15/10, noche — Seguridad, fase 2 (B)
-- [ ] Revisar las ~200 funciones con permisos elevados que se pueden llamar
+- [x] (10/10, verificado sin sesión) Revisar las ~200 funciones con permisos elevados que se pueden llamar
       sin sesión. Cerrarlas por lotes con la regla "cerrado por defecto",
       dejando una lista blanca de las públicas a propósito (promos,
       webhooks).
