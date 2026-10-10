@@ -343,9 +343,10 @@ const DgiiRepresentacionImpresaRunner = ({ configInfo }) => {
         ...manualData,
         ambiente: ambienteQr,
         rncEmisor,
-        razonSocialEmisor: configInfo?.nombre_emisor || 'D MARIO CASTRO TERMINACIONES & ALGO MAS SRL',
-        nombreComercial: configInfo?.nombre_emisor || 'D MARIO CASTRO TERMINACIONES & ALGO MAS',
-        direccionEmisor: 'C/Duarte esq. Baldomero Rijo',
+        // (10/10/2026) Antes caía en los datos de D Mario: cada empresa usa los suyos.
+        razonSocialEmisor: configInfo?.nombre_emisor || '',
+        nombreComercial: configInfo?.nombre_comercial || configInfo?.nombre_emisor || '',
+        direccionEmisor: configInfo?.direccion || '',
       }, { fileName: `${manualData.encf || 'ECF'}_RI.pdf` });
     } catch (err) {
       toast({ title: 'No se pudo generar la RI', description: err.message, variant: 'destructive' });

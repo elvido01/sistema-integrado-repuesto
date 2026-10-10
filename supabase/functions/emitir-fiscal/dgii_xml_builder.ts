@@ -1,5 +1,8 @@
 // @ts-nocheck
 // deno-lint-ignore-file
+import { codigoProvinciaMunicipio } from "./dgii_municipios.ts";
+// (10/10/2026) Municipio/Provincia van como CODIGO DGII de 6 digitos (ProvinciaMunicipioType).
+// D Mario y Caminero tienen "Higüey"/"HIGUEY" escrito en letras: asi el e-CF real no valida.
 //
 // ============================================================
 // Generador de XML para e-CF DGII
@@ -358,8 +361,8 @@ function buildEmisorXml(e, fechaEmision) {
       ${tag("NombreComercial", e.nombre_comercial)}
       ${sucursal}
       ${tag("DireccionEmisor", e.direccion)}
-      ${tag("Municipio", e.municipio)}
-      ${tag("Provincia", e.provincia)}
+      ${tag("Municipio", codigoProvinciaMunicipio(e.municipio, "municipio"))}
+      ${tag("Provincia", codigoProvinciaMunicipio(e.provincia, "provincia"))}
       ${e.telefono?.length ? `<TablaTelefonoEmisor>${e.telefono.map(t => `<TelefonoEmisor>${xmlEscape(t)}</TelefonoEmisor>`).join("")}</TablaTelefonoEmisor>` : ""}
       ${tag("CorreoEmisor", e.email)}
       <FechaEmision>${fmtDate(fechaEmision)}</FechaEmision>
