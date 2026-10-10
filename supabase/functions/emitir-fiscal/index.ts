@@ -1783,7 +1783,7 @@ Deno.serve(async (req) => {
       const bases = { TesteCF: "https://ecf.dgii.gov.do/TesteCF", CerteCF: "https://ecf.dgii.gov.do/CerteCF", Produccion: "https://ecf.dgii.gov.do/eCF" };
       const resultados = [];
       for (const amb of (body.ambientes || ["CerteCF", "Produccion"])) {
-        const r = { ambiente: amb };
+        const r = { ambiente: amb, relay: !!Deno.env.get("DGII_RELAY_URL") && !!Deno.env.get("DGII_RELAY_KEY") };
         try {
           const rs = await dgiiFetch(`${bases[amb]}/Autenticacion/api/Autenticacion/Semilla`, { headers: { Accept: "application/xml,text/xml" } });
           const semilla = await rs.text();

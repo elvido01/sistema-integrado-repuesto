@@ -15,9 +15,13 @@ export default {
     const [, host, ...resto] = url.pathname.split("/");
     if (!HOSTS.has(host)) return new Response("host no permitido", { status: 400 });
     const destino = `https://${host}/${resto.join("/")}${url.search}`;
-    const headers = new Headers(req.headers);
-    headers.delete("x-relay-key");
-    headers.delete("host");
+    // Solo lo necesario. Copiar todo arrastraba X-Forwarded-For / CF-Connecting-IP
+    // con la IP de Supabase, y el cortafuegos de la DGII bloqueaba por esa IP.
+    const headers = new Headers();
+    for (const h of ["content-type", "accept", "authorization"]) {
+      const v = req.headers.get(h);
+      if (v) headers.set(h, v);
+    }
     const r = await fetch(destino, {
       method: req.method,
       headers,
