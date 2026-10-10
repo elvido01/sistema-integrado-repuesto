@@ -11,7 +11,7 @@ Marcar con [x] al terminar.
 ## Semana 1 — seguridad y facturación electrónica
 
 ### Sáb 10/10, después de las 8:00 pm — Cerrar la fuga de datos
-- [ ] Correr `sql/seguridad_fase1_cerrar_fugas.sql` (38 funciones sin acceso
+- [x] (10/10, verificado: sin sesión da "permission denied") Correr `sql/seguridad_fase1_cerrar_fugas.sql` (38 funciones sin acceso
       público + 9 permisos de inserción abiertos).
 - Riesgo: bajo (solo permisos; la app no usa esas vías sin sesión).
 - Verificar: la prueba sin sesión debe dar "permission denied"; el domingo,
@@ -19,16 +19,16 @@ Marcar con [x] al terminar.
 - Deshacer: `sql/seguridad_fase1_revertir.sql`.
 
 ### Dom 11/10 (ventana larga) — Red de seguridad para lo que sigue
-- [ ] Registro de errores propio: los errores de la web y de las funciones
+- [x] (10/10, web publicada; falta correr `sql/errores_app.sql`) Registro de errores propio: los errores de la web y de las funciones
       van a una tabla, con un aviso diario. Sin servicios de terceros.
-- [ ] Las 590 pruebas corren solas antes de cada publicación (`npm run
+- [x] (10/10) Las 590 pruebas corren solas antes de cada publicación (`npm run
       deploy` se detiene si alguna falla).
-- [ ] Consulta automática de los e-CF "enviados" (E31): cada 10 min se
+- [x] (10/10, acción publicada y probada; falta correr el SQL local `sql/dgii_cron_revisar_pendientes.sql`, que no va a git porque lleva la clave) Consulta automática de los e-CF "enviados" (E31): cada 10 min se
       pregunta a la DGII si se aceptaron o se rechazaron. Solo lectura.
 - Deshacer: apagar la tarea programada; quitar el paso de pruebas del deploy.
 
 ### Lun 12/10, noche — Cola de reintento de e-CF
-- [ ] Una venta que se graba sin comprobante por un fallo de la DGII queda
+- [x] (10/10, publicada y probada: 0 candidatas; la tarea va en el mismo SQL local) Una venta que se graba sin comprobante por un fallo de la DGII queda
       en una cola, y se reintenta sola cada 5 minutos con el mismo e-NCF.
 - [ ] Botón "Reintentar e-CF" en el historial de ventas.
 - Riesgo: medio (toca emitir-fiscal). Probar primero con D Mario.
