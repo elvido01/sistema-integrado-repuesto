@@ -7,7 +7,7 @@ import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfc
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 import { buildRfceDesdeEcf } from "./dgii_rfce_produccion.ts";
-import { authenticate, enviarEcf, consultarEstado, consultarTrackIds, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
+import { dgiiFetch, authenticate, enviarEcf, consultarEstado, consultarTrackIds, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -646,7 +646,12 @@ Deno.serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
 
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const isServiceRole = serviceKey && token === serviceKey;
+    // Clave de diagnóstico temporal (secreto DIAG_TOKEN): SOLO abre la prueba
+    // de autenticación, que no emite ni gasta e-NCF. Sin el secreto, nada.
+    const diagToken = Deno.env.get("DIAG_TOKEN") ?? "";
+    const esDiagnostico = !!diagToken && action === "dgii_probar_autenticacion"
+      && req.headers.get("x-diag") === diagToken;
+    const isServiceRole = (serviceKey && token === serviceKey) || esDiagnostico;
 
     let tenantId;
     // Fase 3.3: ID del caller para trazabilidad (emitido_por).
@@ -664,14 +669,19 @@ Deno.serve(async (req) => {
       if (userError || !user) throw new Error("Token inválido");
       callerUserId = user.id;
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("tenant_id")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile?.tenant_id) throw new Error("Usuario sin tenant");
-      tenantId = profile.tenant_id;
+      // (10/10/2026) La EMPRESA ACTIVA, no profiles.tenant_id. El dueño trabaja
+      // varias empresas y su perfil no tiene una fija: con profiles.tenant_id
+      // la primera factura real de D Mario ni se intentó ("Usuario sin
+      // tenant"). get_user_tenant() con la sesión del usuario resuelve la
+      // empresa activa y comprueba que tenga acceso a ella.
+      const comoUsuario = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+        { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } },
+      );
+      const { data: tenantActivo } = await comoUsuario.rpc("get_user_tenant");
+      if (!tenantActivo) throw new Error("Usuario sin empresa activa");
+      tenantId = tenantActivo;
     }
 
     // ── ACTION: test_connection ──
@@ -1761,6 +1771,41 @@ Deno.serve(async (req) => {
     // Solo lectura: para cada e-NCF, los TrackId que tiene la DGII (CerteCF por
     // defecto). Dice si un comprobante del set se recibio y en que estado, aunque
     // el XML firmado se haya perdido.
+    // ── ACTION: dgii_probar_autenticacion ── (10/10/2026, diagnóstico)
+    // Solo AUTENTICA (semilla → firma → validar) contra el ambiente pedido y
+    // devuelve la respuesta cruda de la DGII. No emite ni gasta e-NCF.
+    if (action === "dgii_probar_autenticacion") {
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales").select("config")
+        .eq("tenant_id", tenantId).eq("proveedor", "dgii_directo").maybeSingle();
+      if (!integ?.config) throw new Error("Sin config DGII directo");
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const bases = { TesteCF: "https://ecf.dgii.gov.do/TesteCF", CerteCF: "https://ecf.dgii.gov.do/CerteCF", Produccion: "https://ecf.dgii.gov.do/eCF" };
+      const resultados = [];
+      for (const amb of (body.ambientes || ["CerteCF", "Produccion"])) {
+        const r = { ambiente: amb };
+        try {
+          const rs = await dgiiFetch(`${bases[amb]}/Autenticacion/api/Autenticacion/Semilla`, { headers: { Accept: "application/xml,text/xml" } });
+          const semilla = await rs.text();
+          r.semilla_status = rs.status;
+          r.semilla = semilla.slice(0, 300);
+          const { xmlFirmado: firmado } = await signXmlGenerico(semilla, cert, privateKey);
+          // body.basura: manda un XML sin firmar (separa bloqueo por IP de bloqueo por contenido)
+          const xmlFirmado = body.basura ? "<SemillaModel><valor>x</valor></SemillaModel>" : firmado;
+          if (body.devolver_firmado) r.firmado = firmado;
+          for (const ruta of ["autenticacion/api/Autenticacion/ValidarSemilla", "Autenticacion/api/Autenticacion/ValidarSemilla"]) {
+            const form = new FormData();
+            form.append("xml", new Blob([xmlFirmado], { type: "application/xml" }), "semilla.xml");
+            const rv = await dgiiFetch(`${bases[amb]}/${ruta}`, { method: "POST", body: form });
+            const txt = await rv.text();
+            (r.validar ||= []).push({ ruta, status: rv.status, headers: Object.fromEntries(rv.headers), cuerpo: txt.slice(0, 600) });
+          }
+        } catch (e) { r.error = String(e?.message || e); }
+        resultados.push(r);
+      }
+      return new Response(JSON.stringify({ ok: true, resultados }), { status: 200, headers: corsHeaders });
+    }
+
     if (action === "dgii_certif_trackids") {
       const encfs = Array.isArray(body.encfs) ? body.encfs.slice(0, 60) : [];
       if (!encfs.length) throw new Error("encfs requerido");

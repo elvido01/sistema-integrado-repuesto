@@ -20,6 +20,20 @@
 
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 
+// (10/10/2026) El cortafuegos de PRODUCCION de la DGII corta los POST que salen
+// de Supabase (certificacion no). Con DGII_RELAY_URL + DGII_RELAY_KEY, todo lo
+// que va a /eCF/ (produccion, e-CF y RFCE) sale por el Worker workers/dgii-relay.
+// Certificacion y pruebas siguen directo.
+export function dgiiFetch(url: string, init: RequestInit = {}) {
+  const relay = Deno.env.get("DGII_RELAY_URL");
+  const key = Deno.env.get("DGII_RELAY_KEY");
+  const m = String(url).match(/^https:\/\/([a-z.]+\.dgii\.gov\.do)(\/eCF\/.*)$/);
+  if (!relay || !key || !m) return fetch(url, init);
+  const headers = new Headers(init.headers || {});
+  headers.set("x-relay-key", key);
+  return fetch(`${relay.replace(/\/$/, "")}/${m[1]}${m[2]}`, { ...init, headers });
+}
+
 // CRITICO: las paths son case-sensitive. Estos valores estan tomados
 // de la libreria dgii-ecf (victors1681) que esta validada contra DGII
 // en produccion. NO cambiar el casing.
@@ -55,7 +69,7 @@ function baseUrl(ambiente) {
 export async function getSemilla(ambiente) {
   // Endpoint: Autenticacion/api/Autenticacion/Semilla (case-sensitive)
   const url = `${baseUrl(ambiente)}/Autenticacion/api/Autenticacion/Semilla`;
-  const resp = await fetch(url, {
+  const resp = await dgiiFetch(url, {
     method: "GET",
     headers: { "Accept": "application/xml,text/xml" },
   });
@@ -79,7 +93,7 @@ export async function validarSemilla(semillaFirmada, ambiente) {
   const form = new FormData();
   form.append("xml", new Blob([semillaFirmada], { type: "application/xml" }), "semilla.xml");
 
-  const resp = await fetch(url, { method: "POST", body: form });
+  const resp = await dgiiFetch(url, { method: "POST", body: form });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
     throw new Error(`DGII validar semilla ${resp.status}: ${txt.slice(0, 300)}`);
@@ -116,7 +130,7 @@ export async function enviarEcf(xmlFirmado, token, ambiente, fileName) {
   const form = new FormData();
   form.append("xml", new Blob([xmlFirmado], { type: "application/xml" }), fName);
 
-  const resp = await fetch(url, {
+  const resp = await dgiiFetch(url, {
     method: "POST",
     headers: { "Authorization": `Bearer ${token}` },
     body: form,
@@ -138,7 +152,7 @@ export async function enviarEcf(xmlFirmado, token, ambiente, fileName) {
 // ────────────────────────────────────────────────
 export async function consultarEstado(trackId, token, ambiente) {
   const url = `${baseUrl(ambiente)}/consultaresultado/api/Consultas/Estado?trackId=${encodeURIComponent(trackId)}`;
-  const resp = await fetch(url, {
+  const resp = await dgiiFetch(url, {
     method: "GET",
     headers: { "Authorization": `Bearer ${token}` },
   });
@@ -167,7 +181,7 @@ export async function consultarTrackIds(rncEmisor, encf, token, ambiente) {
   for (const ruta of rutas) {
     const url = `${baseUrl(ambiente)}/${ruta}`
       + `?RncEmisor=${encodeURIComponent(rncEmisor)}&Encf=${encodeURIComponent(encf)}`;
-    const resp = await fetch(url, { method: "GET", headers: { "Authorization": `Bearer ${token}` } });
+    const resp = await dgiiFetch(url, { method: "GET", headers: { "Authorization": `Bearer ${token}` } });
     const text = await resp.text();
     let data;
     try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }
@@ -199,7 +213,7 @@ export async function enviarAnulacion(anecfFirmado, token, ambiente) {
   const form = new FormData();
   form.append("xml", new Blob([anecfFirmado], { type: "application/xml" }), "anecf.xml");
 
-  const resp = await fetch(url, {
+  const resp = await dgiiFetch(url, {
     method: "POST",
     headers: { "Authorization": `Bearer ${token}` },
     body: form,
@@ -239,7 +253,7 @@ export async function enviarRfce(rfceFirmado, token, ambiente, fileName) {
   body.set(xmlBytes, head.length);
   body.set(tail, head.length + xmlBytes.length);
 
-  const resp = await fetch(url, {
+  const resp = await dgiiFetch(url, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -263,7 +277,7 @@ export async function enviarAprobacionComercial(acecfFirmado, token, ambiente, f
   const form = new FormData();
   form.append("xml", new Blob([acecfFirmado], { type: "application/xml" }), fName);
 
-  const resp = await fetch(url, {
+  const resp = await dgiiFetch(url, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
