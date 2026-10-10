@@ -56,9 +56,9 @@ Marcar con [x] al terminar.
 - Riesgo: medio. Un lote por noche si hace falta; cada lote con su reversa.
 
 ### Vie 16/10, noche — Funciones sin código y llave de QZ
-- [ ] Bajar al repositorio el código de las 5 funciones desplegadas sin
+- [x] (10/10: 4 al repo; morla-video-runner-temp borrada y archivada sin su clave) Bajar al repositorio el código de las 5 funciones desplegadas sin
       fuente; borrar las temporales (`morla-video-runner-temp`).
-- [ ] Sacar la llave privada de QZ Tray de la web (el agente ya la
+- [x] (10/10: firma en el servidor con qz-firmar; las PCs no cambian) Sacar la llave privada de QZ Tray de la web (el agente ya la
       reemplaza). Confirmar antes que ninguna PC sigue en QZ.
 
 ### Dom 18/10 (ventana larga) — Archivos públicos y librerías
