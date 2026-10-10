@@ -62,9 +62,9 @@ Marcar con [x] al terminar.
       reemplaza). Confirmar antes que ninguna PC sigue en QZ.
 
 ### Dom 18/10 (ventana larga) — Archivos públicos y librerías
-- [ ] Buckets `pagos` y `whatsapp-media` → privados, servidos con enlaces
+- [x] (10/10: `pagos` privado con enlace firmado; `whatsapp-media` queda público a propósito: ids de Meta no adivinables y Meta descarga por URL) Buckets `pagos` y `whatsapp-media` → privados, servidos con enlaces
       temporales.
-- [ ] Actualizar jsPDF (crítica) y las librerías con fallas altas. Probar
+- [~] (10/10: arreglos menores aplicados, 594 pruebas OK. Pendiente: jsPDF 3→4 (falla de Node, no aplica en navegador) y xlsx sin arreglo) Actualizar jsPDF (crítica) y las librerías con fallas altas. Probar
       todas las impresiones y PDF: ticket, carta, cotización, pedido.
 - Riesgo: el más alto de la semana, por eso va el domingo.
 
