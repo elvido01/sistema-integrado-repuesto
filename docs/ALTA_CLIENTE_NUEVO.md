@@ -47,7 +47,7 @@ En **Configuración**, en este orden:
 - [ ] Cargar productos.
 - [ ] Cargar clientes con crédito y balance.
 
-> **Ya existe (11/10/2026): Mercancías → "Importar catálogo (Excel)"** para productos. Falta lo mismo para clientes.
+> **Ya existen (11/10/2026): Mercancías → "Importar catálogo (Excel)" y Clientes → "Importar clientes (Excel)".** Los balances de clientes (saldos iniciales) van aparte: necesitan su propio tipo de documento.
 > "Importar existencias (CSV)" en Mercancías solo actualiza la existencia
 > de artículos que ya están creados. Hoy, un catálogo grande se carga a
 > mano o con una migración a la medida (como la del SiiF). Hace falta un
