@@ -64,7 +64,7 @@ Marcar con [x] al terminar.
 ### Dom 18/10 (ventana larga) — Archivos públicos y librerías
 - [x] (10/10: `pagos` privado con enlace firmado; `whatsapp-media` queda público a propósito: ids de Meta no adivinables y Meta descarga por URL) Buckets `pagos` y `whatsapp-media` → privados, servidos con enlaces
       temporales.
-- [~] (10/10: arreglos menores aplicados, 594 pruebas OK. Pendiente: jsPDF 3→4 (falla de Node, no aplica en navegador) y xlsx sin arreglo) Actualizar jsPDF (crítica) y las librerías con fallas altas. Probar
+- [x] (11/10: jsPDF 4.2.1 publicado; prueba de humo de los 20 PDF. Queda xlsx sin arreglo publicado) Actualizar jsPDF (crítica) y las librerías con fallas altas. Probar
       todas las impresiones y PDF: ticket, carta, cotización, pedido.
 - Riesgo: el más alto de la semana, por eso va el domingo.
 
@@ -111,4 +111,4 @@ Marcar con [x] al terminar.
 
 ## Encontrado en la guía de alta (11/10)
 - [x] (11/10: productos; probado con simulacro) **Importar catálogo (Excel/CSV)**: productos y clientes. Hoy solo existe "Importar existencias". Sin esto no se puede incorporar una tienda con miles de piezas.
-- [ ] Captcha en /registro (Cloudflare Turnstile, gratis) antes de anunciarlo en público.
+- [x] Captcha en /registro (Turnstile, 11/10): comprobado en el servidor (registrar-empresa) + freno 10/hora. Falta correr sql/registro_con_captcha.sql. También 11/10: saldos iniciales de clientes (Clientes → Saldos iniciales).
