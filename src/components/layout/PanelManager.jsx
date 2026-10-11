@@ -1,10 +1,49 @@
-﻿import React from 'react';
+﻿import React, { Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePanels } from '@/contexts/PanelContext';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HomePage from '@/pages/HomePage';
+
+// (11/10/2026) Las pantallas se cargan al abrirlas (React.lazy en PanelContext).
+// Tras publicar una versión nueva, una pestaña que siguiera abierta pide
+// archivos que ya no existen ("Failed to fetch dynamically imported module"):
+// se recarga la página (como máximo una vez por minuto) y abre la versión nueva.
+const ES_ARCHIVO_VIEJO = /dynamically imported module|Importing a module script failed|Loading chunk|ChunkLoadError/i;
+class PantallaSegura extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error) {
+    if (ES_ARCHIVO_VIEJO.test(String(error?.message || error))) {
+      let yaRecargo = false;
+      // Como máximo una recarga por minuto: evita un bucle si el fallo es otro.
+      try {
+        const ultima = Number(sessionStorage.getItem('mf_recarga_version') || 0);
+        yaRecargo = Date.now() - ultima < 60000;
+        if (!yaRecargo) sessionStorage.setItem('mf_recarga_version', String(Date.now()));
+      } catch (_) { /* sin storage */ }
+      if (!yaRecargo) window.location.reload();
+    }
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-full items-center justify-center p-6 text-center text-sm text-slate-600">
+          <div>
+            <p className="mb-2 font-semibold">No se pudo abrir esta pantalla.</p>
+            <p className="mb-3 text-xs text-slate-500">Puede que MotoFlow se haya actualizado. Recarga la página (Ctrl+F5).</p>
+            <button type="button" className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white" onClick={() => window.location.reload()}>Recargar</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+const Cargando = () => (
+  <div className="flex h-full items-center justify-center text-sm text-slate-400">Cargando…</div>
+);
 
 const PanelManager = () => {
   const { panels, activePanel, setActivePanel, closePanel } = usePanels();
@@ -70,7 +109,11 @@ const PanelManager = () => {
                   : "opacity-0 z-0 pointer-events-none"
               )}
             >
-              <PanelComponent extraData={panel.extraData} panelId={panel.id} />
+              <PantallaSegura>
+                <Suspense fallback={<Cargando />}>
+                  <PanelComponent extraData={panel.extraData} panelId={panel.id} />
+                </Suspense>
+              </PantallaSegura>
             </div>
           );
         })}

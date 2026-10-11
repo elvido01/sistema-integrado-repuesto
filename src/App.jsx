@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { Helmet } from 'react-helmet';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
@@ -12,9 +12,9 @@ import MainLayout from '@/components/layout/MainLayout';
 import SuscripcionBlocker from '@/components/common/SuscripcionBlocker';
 import LoginForm from '@/components/auth/LoginForm';
 import NuevaPasswordForm from '@/components/auth/NuevaPasswordForm';
-import RegistroEmpresaPage from '@/pages/RegistroEmpresaPage';
-import TiendaPage from '@/pages/TiendaPage';
-import PrivacyPolicyPage from '@/pages/PrivacyPolicyPage';
+const RegistroEmpresaPage = lazy(() => import('@/pages/RegistroEmpresaPage'));
+const TiendaPage = lazy(() => import('@/pages/TiendaPage'));
+const PrivacyPolicyPage = lazy(() => import('@/pages/PrivacyPolicyPage'));
 
 function PanelDeepLinkHandler() {
   const { openPanel } = usePanels();
@@ -52,6 +52,11 @@ function PanelDeepLinkHandler() {
   return null;
 }
 
+// Páginas públicas con carga diferida (registro, tienda, privacidad).
+const CargandoPagina = () => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-100 text-sm text-gray-400">Cargando…</div>
+);
+
 function AppContent() {
   const { session, loading, user, empresa, recuperando } = useAuth();
   const [showRegistro, setShowRegistro] = useState(
@@ -82,12 +87,14 @@ function AppContent() {
   if (!session || !user) {
     if (showRegistro) {
       return (
-        <RegistroEmpresaPage
-          onVolver={() => {
-            window.history.pushState({}, '', '/');
-            setShowRegistro(false);
-          }}
-        />
+        <Suspense fallback={<CargandoPagina />}>
+          <RegistroEmpresaPage
+            onVolver={() => {
+              window.history.pushState({}, '', '/');
+              setShowRegistro(false);
+            }}
+          />
+        </Suspense>
       );
     }
     return (
@@ -131,7 +138,7 @@ function App() {
   // Solo necesita HelmetProvider y BrowserRouter (ya montados en main.jsx).
   const isTienda = window.location.pathname.startsWith('/tienda');
   if (isTienda) {
-    return <TiendaPage />;
+    return <Suspense fallback={<CargandoPagina />}><TiendaPage /></Suspense>;
   }
 
   const publicLegalPaths = new Set([
@@ -140,7 +147,7 @@ function App() {
     '/politica-privacidad',
   ]);
   if (publicLegalPaths.has(window.location.pathname)) {
-    return <PrivacyPolicyPage />;
+    return <Suspense fallback={<CargandoPagina />}><PrivacyPolicyPage /></Suspense>;
   }
 
   return (
