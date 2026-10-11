@@ -85,7 +85,7 @@ Marcar con [x] al terminar.
       a configuración; los comentarios se quedan.
 
 ### Mié 21/10, noche — Web más liviana
-- [ ] Partir el código de 5.7 MB: cada pantalla y el módulo de IA (23 MB) se
+- [x] (11/10: 5.7 MB → 1.5 MB, carga diferida + recarga ante versión vieja) Partir el código de 5.7 MB: cada pantalla y el módulo de IA (23 MB) se
       cargan solo cuando se abren.
 - Verificar: tiempo de carga en celular antes y después.
 
