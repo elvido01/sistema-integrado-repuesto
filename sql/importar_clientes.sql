@@ -48,6 +48,7 @@ BEGIN
     RAISE EXCEPTION 'Envía entre 1 y 2000 filas por vez.';
   END IF;
 
+  DROP TABLE IF EXISTS _cli;  -- por si se llama dos veces en la misma transacción
   CREATE TEMP TABLE _cli ON COMMIT DROP AS
   WITH crudo AS (
     SELECT nullif(trim(x.codigo), '')                                   AS codigo,
@@ -61,7 +62,8 @@ BEGIN
            CASE WHEN x.credito IS NULL OR trim(x.credito) = '' THEN NULL
                 WHEN lower(trim(x.credito)) IN ('si','sí','s','1','true','x','yes') THEN true
                 ELSE false END                                          AS credito,
-           nullif(trim(x.tipo_ncf), '')                                 AS tipo_ncf,
+           -- Excel guarda "01" como el número 1: se completa a dos dígitos.
+           nullif(lpad(trim(coalesce(x.tipo_ncf, '')), 2, '0'), '00')   AS tipo_ncf,
            x.precio_nivel::int                                          AS precio_nivel,
            row_number() OVER ()                                         AS orden
       FROM jsonb_to_recordset(p_filas) AS x(

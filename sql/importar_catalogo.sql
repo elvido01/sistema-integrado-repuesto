@@ -52,6 +52,7 @@ BEGIN
     RAISE EXCEPTION 'Envía entre 1 y 2000 filas por vez.';
   END IF;
 
+  DROP TABLE IF EXISTS _cat;  -- por si se llama dos veces en la misma transacción
   CREATE TEMP TABLE _cat ON COMMIT DROP AS
   WITH crudo AS (
     SELECT nullif(trim(x.codigo), '')                         AS codigo,
