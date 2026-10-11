@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { tieneModulo } from '@/lib/modulos';
 import { Helmet } from 'react-helmet';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -13,7 +14,6 @@ import { Badge } from '@/components/ui/badge';
 import { Download, Eye, FileImage, Loader2, Plus, Printer, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 
 const BUCKET = 'documentacion-clientes';
-const CAMINERO_TENANT_ID = 'b39506c3-27dc-467d-830b-096731b83113';
 
 const emptyForm = {
   cliente_id: '',
@@ -300,7 +300,7 @@ export default function DocumentacionClientePage() {
 
   const countDocs = (record) => docFields.filter((f) => record[f.key]).length;
 
-  if (tenantId && tenantId !== CAMINERO_TENANT_ID) {
+  if (tenantId && !tieneModulo(empresa, 'vehiculos')) {
     return (
       <div className="h-full flex items-center justify-center bg-slate-100 p-6">
         <div className="bg-white border border-slate-200 rounded p-6 text-center max-w-md shadow-sm">

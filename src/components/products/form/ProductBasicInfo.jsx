@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { tieneModulo } from '@/lib/modulos';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -18,11 +19,10 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import ProductImageStudioModal from '@/components/products/ProductImageStudioModal';
 
 const NULL_VALUE = 'null_value';
-const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
 const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented, tipos, marcas, modelos, proveedores, ubicaciones, fetchCatalogs, loadVersion = 0 }) => {
-  const { tenantId } = useAuth();
-  const showVehicleFields = tenantId === CAMINERO_MOTORS_TENANT;
+  const { tenantId, empresa } = useAuth();
+  const showVehicleFields = tieneModulo(empresa, 'vehiculos');
   const [isTipoModalOpen, setIsTipoModalOpen] = useState(false);
   const [isMarcaModalOpen, setIsMarcaModalOpen] = useState(false);
   const [isModeloModalOpen, setIsModeloModalOpen] = useState(false);

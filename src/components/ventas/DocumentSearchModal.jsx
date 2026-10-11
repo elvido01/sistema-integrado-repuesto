@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { tieneModulo } from '@/lib/modulos';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -13,7 +14,6 @@ import { es } from 'date-fns/locale';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
-const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
 const DocumentSearchModal = ({
     isOpen,
@@ -23,8 +23,8 @@ const DocumentSearchModal = ({
     vendedores = []
 }) => {
     const { toast } = useToast();
-    const { tenantId } = useAuth();
-    const isCamineroMotors = tenantId === CAMINERO_MOTORS_TENANT;
+    const { tenantId, empresa } = useAuth();
+    const isCamineroMotors = tieneModulo(empresa, 'vehiculos');
     const [documents, setDocuments] = useState([]);
     const [selectedDoc, setSelectedDoc] = useState(null);
     const [details, setDetails] = useState([]);

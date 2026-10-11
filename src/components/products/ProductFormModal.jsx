@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { tieneModulo } from '@/lib/modulos';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,6 @@ import { useToast } from '@/components/ui/use-toast';
 import { useCatalogData } from '@/hooks/useSupabase';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
-const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 import ProductBasicInfo from './form/ProductBasicInfo';
 import ProductPlaceholderTab from './form/ProductPlaceholderTab';
 import ProductEcommerceTab from './form/ProductEcommerceTab';
@@ -51,7 +51,7 @@ const initialFormData = {
 const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   const { toast } = useToast();
   const { tenantId, empresa } = useAuth();
-  const hasVehicleFields = tenantId === CAMINERO_MOTORS_TENANT;
+  const hasVehicleFields = tieneModulo(empresa, 'vehiculos');
 
   // Check if tenant has tienda feature enabled
   const [hasTienda, setHasTienda] = useState(false);

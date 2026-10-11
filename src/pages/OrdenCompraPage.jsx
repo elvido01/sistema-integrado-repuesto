@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { tieneModulo } from '@/lib/modulos';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -66,7 +67,6 @@ import { loadDraft, useAutoDraft, clearDraft } from '@/lib/drafts';
 import { useCatalogData } from '@/hooks/useSupabase';
 import { onProveedoresActualizado, onInventarioActualizado } from '@/lib/catalogEvents';
 
-const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
 const getDetalleBase = (detalle) => {
   const cantidad = parseFloat(detalle.cantidad) || 0;
@@ -138,7 +138,7 @@ const OrdenCompraPage = () => {
   const navigate = useNavigate();
   const { openPanel, activePanel } = usePanels();
   const { setOrdenParaFacturar } = useCompras();
-  const isVehicleDealer = tenantId === CAMINERO_MOTORS_TENANT;
+  const isVehicleDealer = tieneModulo(empresa, 'vehiculos');
   const { marcas: catalogMarcas = [], modelos: catalogModelos = [] } = useCatalogData() ?? {};
 
   // --- VIEW STATE ---

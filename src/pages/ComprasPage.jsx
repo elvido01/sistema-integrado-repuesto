@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -75,7 +76,9 @@ const ComprasPage = () => {
     tipo_bienes_servicios: '09',
     sub_tipo: 'Compra de Merc',
     suplidor_id: null,
-    almacen_id: 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7',
+    // (10/10/2026) Antes: el almacén de Repuestos Morla para TODAS las empresas
+    // (112 compras de Caminero quedaron con él). Se llena al cargar los almacenes.
+    almacen_id: null,
     itbis_incluido: false,
     actualizar_precios: true,
     forma_pago: 'Contado',
@@ -145,7 +148,7 @@ const ComprasPage = () => {
       setAlmacenes(almData);
       // Ensure ALM01 is selected if it exists and no other is set
       if (almData.length > 0) {
-        setCompra(prev => ({ ...prev, almacen_id: prev.almacen_id || 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7' }));
+        setCompra(prev => ({ ...prev, almacen_id: prev.almacen_id || findAlmacenPrincipal(almData)?.id || null }));
       }
     }
 
@@ -256,7 +259,7 @@ const ComprasPage = () => {
         tipo_bienes_servicios: filaDetalle.tipo_bienes_servicios || '09',
         sub_tipo: filaDetalle.sub_tipo || 'Compra de Merc',
         suplidor_id: data.suplidor_id,
-        almacen_id: filaDetalle.almacen_id || 'a01dc84d-a24d-417d-b30b-72d41a2a8fd7',
+        almacen_id: filaDetalle.almacen_id || findAlmacenPrincipal(almacenes)?.id || null,
         itbis_incluido: filaDetalle.itbis_incluido ?? false,
         actualizar_precios: filaDetalle.actualizar_precios ?? true,
         forma_pago: esGrupo ? 'Credito' : (data.forma_pago || 'Contado'),

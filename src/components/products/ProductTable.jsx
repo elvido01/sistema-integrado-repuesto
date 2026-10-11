@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { tieneModulo } from '@/lib/modulos';
 import { Edit, Trash2, Loader2, RefreshCw, Package, Barcode, Store, Eye, EyeOff, Image as ImageIcon, ArrowRightLeft } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +13,6 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 
 // REPUESTOS MORLA VIEJA: solo en esta empresa aparece "Mover a Morla nuevo".
-const MORLA_VIEJA_TENANT = '00000000-0000-0000-0000-000000000002';
 
 const ProductTable = ({
   products, loading, onEdit, onDelete, onChangeCode,
@@ -21,8 +21,8 @@ const ProductTable = ({
   gruposMap = {}, onMoved,
 }) => {
   const { toast } = useToast();
-  const { tenantId } = useAuth();
-  const esMorlaVieja = tenantId === MORLA_VIEJA_TENANT;
+  const { tenantId, empresa } = useAuth();
+  const esMorlaVieja = tieneModulo(empresa, 'mover_a_empresa_nueva');
   const [sendingToOrder, setSendingToOrder] = useState(null);
   const [moviendo, setMoviendo] = useState(null);
 

@@ -1,3 +1,4 @@
+import { tieneModulo } from '@/lib/modulos';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -58,28 +59,28 @@ const navItems = [
     title: 'GPS',
     icon: RadioTower,
     subItems: [
-      { title: 'Dashboard GPS', id: 'gps-dashboard', icon: RadioTower, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
-      { title: 'Dispositivos', id: 'gps-dispositivos', icon: RadioTower, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
-      { title: 'Mapa GPS', id: 'gps-mapa', icon: MapPinned, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
-      { title: 'Alertas GPS', id: 'gps-alertas', icon: BellRing, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
-      { title: 'Financiamiento', id: 'gps-financiamiento', icon: DollarSign, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Dashboard GPS', id: 'gps-dashboard', icon: RadioTower, modulo: 'gps' },
+      { title: 'Dispositivos', id: 'gps-dispositivos', icon: RadioTower, modulo: 'gps' },
+      { title: 'Mapa GPS', id: 'gps-mapa', icon: MapPinned, modulo: 'gps' },
+      { title: 'Alertas GPS', id: 'gps-alertas', icon: BellRing, modulo: 'gps' },
+      { title: 'Financiamiento', id: 'gps-financiamiento', icon: DollarSign, modulo: 'gps' },
     ],
   },
   {
     title: 'MOTOFLOW IA CEO',
     icon: Brain,
     subItems: [
-      { title: 'Dashboard IA', id: 'ai-ceo', icon: Brain, tenantOnly: '00000000-0000-0000-0000-000000000001' },
+      { title: 'Dashboard IA', id: 'ai-ceo', icon: Brain, modulo: 'ai_ceo_dashboard' },
       // Morla + MotoPréstamos Los Naranjos. A la financiera se le habilitó SOLO
       // este submódulo (el Dashboard IA sigue siendo exclusivo de Morla).
       { title: 'Gestión Empresarial IA', id: 'gestion-empresarial', icon: TrendingUp,
-        tenantOnly: ['00000000-0000-0000-0000-000000000001', '766fe3d6-6885-4f2b-b2cc-1a91db696fb4'] },
+        modulo: 'gestion_empresarial' },
       // Equipo IA: del dueño, no de un puesto. Por eso va por correo y no
       // por rol — un admin nuevo mañana no debería heredarlo sin querer.
       // Esto solo lo ESCONDE; quien manda es public.equipo_ia_permitido()
       // en la base, que es donde una comprobación cuenta.
       { title: 'Equipo IA', id: 'equipo-ia', icon: Bot,
-        tenantOnly: '00000000-0000-0000-0000-000000000001',
+        modulo: 'equipo_ia',
         emailOnly: ['elvidocaminero@gmail.com', 'admin@repuestosmorla.com'] },
     ],
   },
@@ -88,7 +89,7 @@ const navItems = [
     icon: MessageCircle,
     subItems: [
       { title: 'Sales Hub', id: 'whatsapp-crm', icon: MessageCircle },
-      { title: 'Seguimientos de Hoy', id: 'seguimientos-hoy', icon: CalendarClock, permissionKey: 'clientes', tenantOnly: '00000000-0000-0000-0000-000000000001' },
+      { title: 'Seguimientos de Hoy', id: 'seguimientos-hoy', icon: CalendarClock, permissionKey: 'clientes', modulo: 'seguimientos_hoy' },
       { title: 'Clientes', id: 'clientes', icon: Users },
       { title: 'Cartera de Clientes', id: 'cartera-clientes', icon: Users },
     ],
@@ -99,16 +100,12 @@ const navItems = [
     subItems: [
       { title: 'Ventas', id: 'ventas' },
       { title: 'Recibo de Ingreso', id: 'recibo-ingreso', icon: Receipt },
-      { title: 'Pedidos', id: 'pedidos', tenantExclude: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Pedidos', id: 'pedidos', ocultarCon: 'ocultar_pedidos' },
       // Caminero Motors (terceros) + financieras que venden y financian propio
-      { title: 'Solicitudes de Compras', id: 'solicitudes-compras', icon: ClipboardList, tenantOnly: [
-        'b39506c3-27dc-467d-830b-096731b83113', // Caminero Motors
-        'c05a1d05-0d1e-4a2b-8c3f-0da1e5000005', // Moto Prestamos Odalys
-        'c07a1d07-1e2f-4b3c-9d4a-107a10500007', // Inversiones Los Naranjos
-      ] },
-      { title: 'Carta de Ruta', id: 'carta-ruta', icon: FileText, tenantOnly: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Solicitudes de Compras', id: 'solicitudes-compras', icon: ClipboardList, modulo: 'solicitudes_compras' },
+      { title: 'Carta de Ruta', id: 'carta-ruta', icon: FileText, modulo: 'carta_ruta' },
       { title: 'Cotizaciones', id: 'cotizaciones' },
-      { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, tenantOnly: '00000000-0000-0000-0000-000000000001' },
+      { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, modulo: 'cotizaciones_magna' },
       { title: 'Devoluciones', id: 'devoluciones' },
     ],
   },
@@ -120,7 +117,7 @@ const navItems = [
     title: 'Documentos',
     icon: FileText,
     subItems: [
-      { title: 'Notas y Comentarios', id: 'notas-comentarios', icon: FileText, tipoNegocio: 'financiera', tenantOr: 'b39506c3-27dc-467d-830b-096731b83113' },
+      { title: 'Notas y Comentarios', id: 'notas-comentarios', icon: FileText, tipoNegocio: 'financiera', moduloOr: 'notas_comentarios' },
     ],
   },
   {
@@ -166,7 +163,7 @@ const navItems = [
     icon: Landmark,
     subItems: [
       { title: 'Cuentas y Saldos', id: 'cuentas-bancarias', icon: Landmark },
-      { title: 'SAN Ahorro', id: 'san', icon: PiggyBank, tenantOnly: '766fe3d6-6885-4f2b-b2cc-1a91db696fb4' },
+      { title: 'SAN Ahorro', id: 'san', icon: PiggyBank, modulo: 'san' },
     ],
   },
   {
@@ -428,17 +425,17 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             // Módulos apagados para toda la empresa (config_empresa.modulos_deshabilitados)
             const apagados = empresa?.modulos_deshabilitados || [];
             if (apagados.includes(sub.id) || apagados.includes(sub.permissionKey)) return false;
-            if (sub.tenantOnly && !(Array.isArray(sub.tenantOnly) ? sub.tenantOnly.includes(tenantId) : sub.tenantOnly === tenantId)) return false;
-            if (sub.tenantExclude && sub.tenantExclude === tenantId) return false;
+            // (10/10/2026) Módulos por empresa: config_empresa.modulos (antes,
+            // uuids de empresas fijos en el código). sql/modulos_por_empresa.sql
+            if (sub.modulo && !tieneModulo(empresa, sub.modulo)) return false;
+            if (sub.ocultarCon && tieneModulo(empresa, sub.ocultarCon)) return false;
             // Módulos de una persona concreta, no de un rol (ej. Equipo IA).
             if (sub.emailOnly && !sub.emailOnly.includes((user?.email || '').toLowerCase())) return false;
             if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
-            // módulos por tipo de negocio (ej. Documentos); tenantOr = tenants
-            // extra que también lo ven aunque no sean de ese tipo (Caminero)
-            if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio) {
-              const tenantOrOk = sub.tenantOr && (Array.isArray(sub.tenantOr) ? sub.tenantOr.includes(tenantId) : sub.tenantOr === tenantId);
-              if (!tenantOrOk) return false;
-            }
+            // módulos por tipo de negocio (ej. Documentos); moduloOr = módulo que
+            // también lo enciende aunque la empresa no sea de ese tipo
+            if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio
+                && !(sub.moduloOr && tieneModulo(empresa, sub.moduloOr))) return false;
             if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito
             if (sub.id === 'whatsapp-crm' && !puedePlus) return false; // Sales Hub = función Plus (PRO/ENTERPRISE)
             return canAccess(profile, permissions, sub.permissionKey || sub.id);
