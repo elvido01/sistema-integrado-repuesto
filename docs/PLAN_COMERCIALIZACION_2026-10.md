@@ -78,10 +78,10 @@ Marcar con [x] al terminar.
 ## Semana 2 — escalar a muchos clientes
 
 ### Lun 19 – Mar 20/10, noche — Módulos por configuración
-- [ ] Quitar los identificadores fijos de clientes del código (GPS de
+- [x] (11/10: config_empresa.modulos; 0 uuids de empresas en pantallas; + almacén de Compras) Quitar los identificadores fijos de clientes del código (GPS de
       Caminero en el menú, etc.) y pasarlos a interruptores en la
       configuración de la empresa.
-- [ ] Revisar los 103 archivos que nombran clientes. Lo que sea lógica pasa
+- [~] (lo que era lógica por empresa ya es módulo; quedan nombres en comentarios) Revisar los 103 archivos que nombran clientes. Lo que sea lógica pasa
       a configuración; los comentarios se quedan.
 
 ### Mié 21/10, noche — Web más liviana
