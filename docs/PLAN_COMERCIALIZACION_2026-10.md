@@ -90,11 +90,10 @@ Marcar con [x] al terminar.
 - Verificar: tiempo de carga en celular antes y después.
 
 ### Jue 22/10, noche — Entorno de pruebas
-- [ ] Un entorno aparte para probar antes de producción (decisión de costo
-      del dueño: rama de Supabase o proyecto aparte).
+- [x] DECIDIDO 11/10: SIN entorno de pruebas (el dueño no quiere gastar más). Se sigue con producción + pruebas automáticas, transacciones con reversa y ventanas de horario.
 
 ### Vie 23/10 — Alta de clientes nuevos
-- [ ] Lista de pasos para dar de alta una empresa: registro, plan,
+- [x] (11/10: docs/ALTA_CLIENTE_NUEVO.md) Lista de pasos para dar de alta una empresa: registro, plan,
       certificado, certificación DGII con los runners, secuencias,
       impresión.
 - [ ] Probar el alta completa con una empresa de prueba.
@@ -109,3 +108,7 @@ Marcar con [x] al terminar.
       de Servicios de Facturación Electrónica?
 - [ ] Elegir la pasarela de pago para cobrar las suscripciones (decisión del
       dueño; la integración va después de estos 15 días).
+
+## Encontrado en la guía de alta (11/10)
+- [ ] **Importar catálogo (Excel/CSV)**: productos y clientes. Hoy solo existe "Importar existencias". Sin esto no se puede incorporar una tienda con miles de piezas.
+- [ ] Captcha en /registro (Cloudflare Turnstile, gratis) antes de anunciarlo en público.
