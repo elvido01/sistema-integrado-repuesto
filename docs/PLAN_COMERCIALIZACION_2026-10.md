@@ -110,5 +110,5 @@ Marcar con [x] al terminar.
       dueño; la integración va después de estos 15 días).
 
 ## Encontrado en la guía de alta (11/10)
-- [ ] **Importar catálogo (Excel/CSV)**: productos y clientes. Hoy solo existe "Importar existencias". Sin esto no se puede incorporar una tienda con miles de piezas.
+- [x] (11/10: productos; probado con simulacro) **Importar catálogo (Excel/CSV)**: productos y clientes. Hoy solo existe "Importar existencias". Sin esto no se puede incorporar una tienda con miles de piezas.
 - [ ] Captcha en /registro (Cloudflare Turnstile, gratis) antes de anunciarlo en público.
