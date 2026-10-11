@@ -334,7 +334,7 @@ async function reintentarPendientesDgii(supabase) {
     if (restantes <= 0) break;
     const { data: facts } = await supabase
       .from("facturas").select("id, numero, usuario_id, created_at")
-      .eq("tenant_id", tenant_id).is("ncf", null).neq("estado", "ANULADA")
+      .eq("tenant_id", tenant_id).is("ncf", null).neq("estado", "ANULADA").eq("es_saldo_inicial", false)
       .gte("created_at", new Date(Date.now() - 72 * 3600000).toISOString())
       .lte("created_at", new Date(Date.now() - 3 * 60000).toISOString())
       .order("created_at", { ascending: true }).limit(30);

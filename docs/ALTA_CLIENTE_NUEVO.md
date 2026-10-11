@@ -44,15 +44,19 @@ En **Configuración**, en este orden:
 
 ## 3. Catálogo de productos y clientes
 
-- [ ] Cargar productos.
-- [ ] Cargar clientes con crédito y balance.
+- [ ] **Productos**: Mercancías → "Importar catálogo (Excel)".
+- [ ] **Clientes**: Clientes → "Importar clientes (Excel)".
+- [ ] **Lo que deben** (después de los clientes): Clientes → "Saldos iniciales (Excel)".
+      Una fila por factura pendiente (cliente o RNC, documento, fecha, monto).
+      Cada una queda como factura a crédito marcada como saldo inicial: se
+      cobra con Recibo de Ingreso y suma al balance, pero no va al 607 ni a la
+      DGII. Usar la fecha original; sin fecha queda en el último día del mes
+      anterior, para no inflar las ventas del mes en que arranca. Subir el
+      mismo archivo dos veces no duplica.
 
-> **Ya existen (11/10/2026): Mercancías → "Importar catálogo (Excel)" y Clientes → "Importar clientes (Excel)".** Los balances de clientes (saldos iniciales) van aparte: necesitan su propio tipo de documento.
-> "Importar existencias (CSV)" en Mercancías solo actualiza la existencia
-> de artículos que ya están creados. Hoy, un catálogo grande se carga a
-> mano o con una migración a la medida (como la del SiiF). Hace falta un
-> **"Importar catálogo (Excel/CSV)"**: código, descripción, costo, precio,
-> ITBIS, existencia, ubicación, suplidor. Lo mismo para clientes.
+Los tres tienen "Bajar plantilla" y "Revisar (sin guardar)". Solo los ven
+los administradores. "Importar existencias (CSV)" en Mercancías es otra cosa:
+solo corrige la existencia de artículos que ya están creados.
 
 ## 4. Impresión (10 minutos)
 

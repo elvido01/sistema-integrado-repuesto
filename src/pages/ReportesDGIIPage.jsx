@@ -60,6 +60,7 @@ const ReportesDGIIPage = () => {
         .gte('fecha', rangoDeFechas(desde, hasta).desde)
         .lte('fecha', rangoDeFechas(desde, hasta).hasta)
         .neq('estado', 'ANULADA')
+        .eq('es_saldo_inicial', false) // saldos iniciales: deuda vieja, no venta de este periodo
         .order('fecha', { ascending: true });
       if (ev) throw ev;
 

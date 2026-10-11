@@ -99,9 +99,15 @@ const ClientesPage = () => {
                             <Input placeholder="Buscar cliente..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-64" />
                         </div>
                         {puedeImportar && (
-                            <Button variant="outline" onClick={() => setImportando(true)}>
+                            <Button variant="outline" onClick={() => setImportando('clientes')}>
                                 <Upload className="mr-2 h-4 w-4" />
                                 Importar clientes (Excel)
+                            </Button>
+                        )}
+                        {puedeImportar && (
+                            <Button variant="outline" onClick={() => setImportando('saldos')} title="Lo que cada cliente debía en el sistema anterior">
+                                <Upload className="mr-2 h-4 w-4" />
+                                Saldos iniciales (Excel)
                             </Button>
                         )}
                         <Button onClick={handleCreate}>
@@ -110,7 +116,7 @@ const ClientesPage = () => {
                         </Button>
                         {importando && (
                             <React.Suspense fallback={null}>
-                                <ImportarClientesModal tipo="clientes" open={importando}
+                                <ImportarClientesModal key={importando} tipo={importando} open={!!importando}
                                     onClose={() => setImportando(false)}
                                     onTerminado={() => fetchClientes(searchTerm)} />
                             </React.Suspense>

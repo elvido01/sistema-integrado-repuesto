@@ -48,6 +48,18 @@ const CAMPOS_CLIENTES = [
   { k: 'tipo_ncf', label: 'Comprobante (01/02)', alias: ['tipo ncf', 'ncf', 'comprobante', 'tipo comprobante'] },
   { k: 'precio_nivel', label: 'Nivel de precio (1-3)', alias: ['nivel precio', 'precio nivel', 'nivel', 'lista de precio'] },
 ];
+// (11/10/2026) Saldos iniciales: lo que cada cliente debía en el sistema
+// anterior. Cada fila es una factura a crédito marcada como saldo inicial
+// (sql/saldos_iniciales_clientes.sql): se cobra con recibo de ingreso, pero
+// no es venta, no va al 607 ni a la cola de e-CF.
+const CAMPOS_SALDOS = [
+  { k: 'cliente', label: 'Código cliente', alias: ['codigo', 'cod', 'codigo cliente', 'cliente', 'id cliente'] },
+  { k: 'rnc', label: 'RNC / Cédula', alias: ['rnc', 'cedula', 'rnc/cedula', 'rnc cedula', 'identificacion'] },
+  { k: 'documento', label: 'Documento', alias: ['documento', 'factura', 'no factura', 'numero factura', 'num factura', 'doc', 'referencia'] },
+  { k: 'fecha', label: 'Fecha', alias: ['fecha', 'fecha factura', 'fecha documento', 'date', 'emision'] },
+  { k: 'monto', label: 'Monto pendiente *', alias: ['monto', 'balance', 'saldo', 'pendiente', 'monto pendiente', 'debe', 'importe'] },
+  { k: 'dias_credito', label: 'Días de crédito', alias: ['dias', 'dias credito', 'dias de credito', 'plazo'] },
+];
 
 const CONFIG = {
   catalogo: {
@@ -68,9 +80,18 @@ const CONFIG = {
       'codigo,nombre,rnc,direccion,telefono,email,limite_credito,dias_credito,credito,tipo_ncf,precio_nivel\n'
       + 'C-001,TALLER EL MECANICO SRL,131880681,AV. DUARTE 12 HIGUEY,809-555-1234,taller@correo.com,20000,30,si,01,2\n'],
   },
+  saldos: {
+    titulo: 'Importar saldos iniciales (Excel o CSV)', campos: CAMPOS_SALDOS, rpc: 'importar_saldos_iniciales', unidad: 'saldos',
+    obligatorios: ['monto'], llave: 'monto', llaveNombre: 'monto', sinActualizar: true,
+    intro: 'Lo que cada cliente debía en el sistema anterior, una fila por factura pendiente (o una sola fila con el total). Usa la fecha original del documento; sin fecha, queda en el último día del mes anterior para no inflar las ventas de este mes. Primero importa los clientes: aquí se reconocen por código o RNC/cédula. Se cobran con Recibo de Ingreso, pero no cuentan como venta, no van al 607 ni se envían a la DGII. Volver a subir el mismo archivo no duplica (mismo cliente + mismo documento se salta).',
+    plantilla: ['plantilla_saldos_iniciales_motoflow.csv',
+      'cliente,rnc,documento,fecha,monto,dias_credito\n'
+      + 'C-001,131880681,FT-4521,2026-09-15,12500.00,30\n'],
+  },
 };
 
-const NUMERICOS = new Set(['costo', 'precio', 'itbis', 'existencia', 'min_stock', 'limite_credito', 'dias_credito', 'precio_nivel']);
+const NUMERICOS = new Set(['costo', 'precio', 'itbis', 'existencia', 'min_stock', 'limite_credito', 'dias_credito', 'precio_nivel', 'monto']);
+const FECHAS = new Set(['fecha']);
 const TANDA = 500;
 
 const normal = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -85,6 +106,24 @@ export function aNumero(v) {
   const conComaDecimal = /,\d{1,2}$/.test(limpio) && limpio.includes('.');
   const n = Number(conComaDecimal ? limpio.replace(/\./g, '').replace(',', '.') : limpio.replace(/,/g, ''));
   return Number.isFinite(n) ? n : null;
+}
+
+// Celda de fecha → 'YYYY-MM-DD'. Excel la guarda como número de serie
+// (días desde 30/12/1899); en texto se acepta 2026-09-15 o 15/09/2026
+// (día primero, como se escribe aquí). Lo que no se entiende → null.
+export function aFecha(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const dos = (n) => String(n).padStart(2, '0');
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+    return `${d.getUTCFullYear()}-${dos(d.getUTCMonth() + 1)}-${dos(d.getUTCDate())}`;
+  }
+  const t = String(v).trim();
+  let m = t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) return `${m[1]}-${dos(m[2])}-${dos(m[3])}`;
+  m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2}|\d{4})$/);
+  if (m) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${dos(m[2])}-${dos(m[1])}`;
+  return null;
 }
 
 const descargarPlantilla = ([nombre, csv]) => {
@@ -142,7 +181,7 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado, tipo
       const i = mapa[k];
       if (i === undefined || i === null || i === '') return;
       const v = r[i];
-      o[k] = NUMERICOS.has(k) ? aNumero(v) : (String(v ?? '').trim() || null);
+      o[k] = NUMERICOS.has(k) ? aNumero(v) : FECHAS.has(k) ? aFecha(v) : (String(v ?? '').trim() || null);
     });
     return o;
   }), [datos, mapa, CAMPOS]);
@@ -153,15 +192,15 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado, tipo
   const enviar = async (simular) => {
     setError(null);
     const validas = filasMapeadas.filter((f) => f[cfg.llave]);
-    const total = { recibidas: 0, nuevos: 0, nuevos_con_existencia: 0, actualizados: 0, existentes_sin_tocar: 0, errores: [], suplidores_no_encontrados: [] };
+    const total = { recibidas: 0, nuevos: 0, nuevos_con_existencia: 0, actualizados: 0, existentes_sin_tocar: 0, monto_total: 0, ya_importados: 0, errores: [], suplidores_no_encontrados: [] };
     if (!simular) { setFase('importando'); setProgreso(0); }
     try {
       for (let i = 0; i < validas.length; i += TANDA) {
-        const { data, error: e } = await supabase.rpc(cfg.rpc, {
-          p_filas: validas.slice(i, i + TANDA), p_actualizar: actualizar, p_simular: simular,
-        });
+        const params = { p_filas: validas.slice(i, i + TANDA), p_simular: simular };
+        if (!cfg.sinActualizar) params.p_actualizar = actualizar;
+        const { data, error: e } = await supabase.rpc(cfg.rpc, params);
         if (e) throw e;
-        for (const k of ['recibidas', 'nuevos', 'nuevos_con_existencia', 'actualizados', 'existentes_sin_tocar']) total[k] += data?.[k] || 0;
+        for (const k of ['recibidas', 'nuevos', 'nuevos_con_existencia', 'actualizados', 'existentes_sin_tocar', 'monto_total', 'ya_importados']) total[k] += Number(data?.[k]) || 0;
         total.errores.push(...(data?.errores || []));
         total.suplidores_no_encontrados = [...new Set([...total.suplidores_no_encontrados, ...(data?.suplidores_no_encontrados || [])])];
         if (!simular) setProgreso(Math.min(100, Math.round(((i + TANDA) / validas.length) * 100)));
@@ -234,19 +273,24 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado, tipo
               </table>
             </div>
 
-            <label className="flex items-center gap-2 text-xs text-slate-700">
+            {!cfg.sinActualizar && <label className="flex items-center gap-2 text-xs text-slate-700">
               <input type="checkbox" checked={actualizar} disabled={fase === 'importando'}
                 onChange={(e) => { setActualizar(e.target.checked); setResumen(null); if (fase === 'revisado') setFase('columnas'); }} />
               {cfg.actualizar}
-            </label>
+            </label>}
 
             {resumen && (
               <div className={`rounded border p-3 text-xs ${resumen.simulado ? 'border-blue-200 bg-blue-50' : 'border-emerald-200 bg-emerald-50'}`}>
                 <p className="mb-1 font-semibold">{resumen.simulado ? 'Revisión (todavía no se guardó nada):' : '✅ Importación terminada:'}</p>
+                {cfg.unidad === 'saldos' ? (<>
+                  <p>Saldos nuevos: <b>{resumen.nuevos.toLocaleString('es-DO')}</b> por <b>RD$ {resumen.monto_total.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></p>
+                  {resumen.ya_importados > 0 && <p>Ya importados antes (se saltan): <b>{resumen.ya_importados.toLocaleString('es-DO')}</b></p>}
+                </>) : (<>
                 <p>{cfg.unidad === 'clientes' ? 'Clientes' : 'Productos'} nuevos: <b>{resumen.nuevos.toLocaleString('es-DO')}</b>
                   {resumen.nuevos_con_existencia > 0 && <> ({resumen.nuevos_con_existencia.toLocaleString('es-DO')} con existencia inicial)</>}</p>
                 <p>Ya existían: <b>{(resumen.actualizados + resumen.existentes_sin_tocar).toLocaleString('es-DO')}</b>
                   {' '}→ {actualizar ? `${resumen.actualizados.toLocaleString('es-DO')} se actualizan` : 'no se tocan'}</p>
+                </>)}
                 {resumen.suplidores_no_encontrados.length > 0 && (
                   <p className="text-amber-800">Suplidores que no existen (créalos y vuelve a importar si quieres enlazarlos): {resumen.suplidores_no_encontrados.slice(0, 10).join(', ')}{resumen.suplidores_no_encontrados.length > 10 ? '…' : ''}</p>
                 )}
