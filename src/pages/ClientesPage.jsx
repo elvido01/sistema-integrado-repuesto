@@ -6,12 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, PlusCircle, Search, Loader2 } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Search, Loader2, Upload } from 'lucide-react';
+// (11/10/2026) Importar clientes desde Excel/CSV: la misma pantalla que el catálogo.
+const ImportarClientesModal = React.lazy(() => import('@/components/products/ImportarCatalogoModal'));
 import ClienteFormModal from '@/components/catalogo/ClienteFormModal';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const ClientesPage = () => {
-  const { empresa } = useAuth();
+  const { empresa, profile } = useAuth();
+  const [importando, setImportando] = useState(false);
+  const puedeImportar = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
     const { toast } = useToast();
     const [clientes, setClientes] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -94,10 +98,23 @@ const ClientesPage = () => {
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                             <Input placeholder="Buscar cliente..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-64" />
                         </div>
+                        {puedeImportar && (
+                            <Button variant="outline" onClick={() => setImportando(true)}>
+                                <Upload className="mr-2 h-4 w-4" />
+                                Importar clientes (Excel)
+                            </Button>
+                        )}
                         <Button onClick={handleCreate}>
                             <PlusCircle className="mr-2 h-4 w-4" />
                             Crear Cliente
                         </Button>
+                        {importando && (
+                            <React.Suspense fallback={null}>
+                                <ImportarClientesModal tipo="clientes" open={importando}
+                                    onClose={() => setImportando(false)}
+                                    onTerminado={() => fetchClientes(searchTerm)} />
+                            </React.Suspense>
+                        )}
                     </div>
                 </div>
 

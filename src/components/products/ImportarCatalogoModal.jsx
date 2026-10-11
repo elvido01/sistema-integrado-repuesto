@@ -19,7 +19,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
 
 // Campo → títulos que se reconocen (sin acentos, minúsculas).
-const CAMPOS = [
+const CAMPOS_CATALOGO = [
   { k: 'codigo', label: 'Código *', alias: ['codigo', 'cod', 'code', 'sku', 'codigo articulo', 'cod articulo', 'item'] },
   { k: 'descripcion', label: 'Descripción *', alias: ['descripcion', 'nombre', 'producto', 'articulo', 'description', 'detalle'] },
   { k: 'referencia', label: 'Referencia', alias: ['referencia', 'ref', 'numero de parte', 'no parte', 'parte', 'oem'] },
@@ -33,7 +33,44 @@ const CAMPOS = [
   { k: 'marca', label: 'Marca', alias: ['marca', 'brand'] },
   { k: 'tipo', label: 'Tipo', alias: ['tipo', 'categoria', 'familia', 'grupo', 'linea'] },
 ];
-const NUMERICOS = new Set(['costo', 'precio', 'itbis', 'existencia', 'min_stock']);
+// (11/10/2026) También importa clientes: misma pantalla, otros campos y otra
+// función en la base (sql/importar_clientes.sql).
+const CAMPOS_CLIENTES = [
+  { k: 'codigo', label: 'Código', alias: ['codigo', 'cod', 'code', 'codigo cliente', 'id cliente', 'numero'] },
+  { k: 'nombre', label: 'Nombre *', alias: ['nombre', 'cliente', 'razon social', 'nombre cliente', 'name'] },
+  { k: 'rnc', label: 'RNC / Cédula', alias: ['rnc', 'cedula', 'rnc/cedula', 'rnc cedula', 'documento', 'identificacion'] },
+  { k: 'direccion', label: 'Dirección', alias: ['direccion', 'address', 'domicilio'] },
+  { k: 'telefono', label: 'Teléfono', alias: ['telefono', 'tel', 'celular', 'phone', 'movil', 'whatsapp'] },
+  { k: 'email', label: 'Correo', alias: ['email', 'correo', 'e-mail', 'mail'] },
+  { k: 'limite_credito', label: 'Límite de crédito', alias: ['limite', 'limite credito', 'limite de credito', 'credito limite'] },
+  { k: 'dias_credito', label: 'Días de crédito', alias: ['dias', 'dias credito', 'dias de credito', 'plazo'] },
+  { k: 'credito', label: 'Crédito (sí/no)', alias: ['credito', 'a credito', 'autorizar credito', 'tiene credito'] },
+  { k: 'tipo_ncf', label: 'Comprobante (01/02)', alias: ['tipo ncf', 'ncf', 'comprobante', 'tipo comprobante'] },
+  { k: 'precio_nivel', label: 'Nivel de precio (1-3)', alias: ['nivel precio', 'precio nivel', 'nivel', 'lista de precio'] },
+];
+
+const CONFIG = {
+  catalogo: {
+    titulo: 'Importar catálogo (Excel o CSV)', campos: CAMPOS_CATALOGO, rpc: 'importar_catalogo', unidad: 'productos',
+    obligatorios: ['codigo', 'descripcion'], llave: 'codigo', llaveNombre: 'código',
+    intro: 'Crea los productos que no existen. Una fila por producto, con títulos en la primera fila. Código y descripción son obligatorios; lo demás es opcional (costo, precio, ITBIS, existencia, ubicación, mínimo, suplidor, marca, tipo).',
+    actualizar: 'Los que YA existen: actualizar descripción, costo, precio, ITBIS, ubicación y demás datos que vengan llenos (su existencia no se toca; para eso está "Importar existencias").',
+    plantilla: ['plantilla_catalogo_motoflow.csv',
+      'codigo,descripcion,referencia,costo,precio,itbis,existencia,ubicacion,min_stock,suplidor,marca,tipo\n'
+      + 'FA-001,FILTRO DE ACEITE CG150,15410-KF0,120,250,18,24,A-03,5,PEDRO RACING,HONDA,FILTROS\n'],
+  },
+  clientes: {
+    titulo: 'Importar clientes (Excel o CSV)', campos: CAMPOS_CLIENTES, rpc: 'importar_clientes', unidad: 'clientes',
+    obligatorios: ['nombre'], llave: 'nombre', llaveNombre: 'nombre',
+    intro: 'Crea los clientes que no existen. El nombre es obligatorio. Si trae código o RNC/cédula, con eso se reconoce al que ya existe. Los balances NO se cargan aquí: lo que debe un cliente son facturas a crédito y van aparte.',
+    actualizar: 'Los que YA existen (mismo código o RNC): actualizar nombre, teléfono, dirección, crédito y demás datos que vengan llenos.',
+    plantilla: ['plantilla_clientes_motoflow.csv',
+      'codigo,nombre,rnc,direccion,telefono,email,limite_credito,dias_credito,credito,tipo_ncf,precio_nivel\n'
+      + 'C-001,TALLER EL MECANICO SRL,131880681,AV. DUARTE 12 HIGUEY,809-555-1234,taller@correo.com,20000,30,si,01,2\n'],
+  },
+};
+
+const NUMERICOS = new Set(['costo', 'precio', 'itbis', 'existencia', 'min_stock', 'limite_credito', 'dias_credito', 'precio_nivel']);
 const TANDA = 500;
 
 const normal = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -50,16 +87,16 @@ export function aNumero(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-const descargarPlantilla = () => {
-  const csv = 'codigo,descripcion,referencia,costo,precio,itbis,existencia,ubicacion,min_stock,suplidor,marca,tipo\n'
-    + 'FA-001,FILTRO DE ACEITE CG150,15410-KF0,120,250,18,24,A-03,5,PEDRO RACING,HONDA,FILTROS\n';
+const descargarPlantilla = ([nombre, csv]) => {
   const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
-  a.href = url; a.download = 'plantilla_catalogo_motoflow.csv'; a.click();
+  a.href = url; a.download = nombre; a.click();
   URL.revokeObjectURL(url);
 };
 
-export default function ImportarCatalogoModal({ open, onClose, onTerminado }) {
+export default function ImportarCatalogoModal({ open, onClose, onTerminado, tipo = 'catalogo' }) {
+  const cfg = CONFIG[tipo] || CONFIG.catalogo;
+  const CAMPOS = cfg.campos;
   const inputRef = useRef(null);
   const [archivo, setArchivo] = useState(null);
   const [titulos, setTitulos] = useState([]);
@@ -108,19 +145,19 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado }) {
       o[k] = NUMERICOS.has(k) ? aNumero(v) : (String(v ?? '').trim() || null);
     });
     return o;
-  }), [datos, mapa]);
+  }), [datos, mapa, CAMPOS]);
 
-  const sinCodigo = filasMapeadas.filter((f) => !f.codigo).length;
-  const listo = mapa.codigo !== undefined && mapa.descripcion !== undefined;
+  const sinCodigo = filasMapeadas.filter((f) => !f[cfg.llave]).length;
+  const listo = cfg.obligatorios.every((k) => mapa[k] !== undefined);
 
   const enviar = async (simular) => {
     setError(null);
-    const validas = filasMapeadas.filter((f) => f.codigo);
+    const validas = filasMapeadas.filter((f) => f[cfg.llave]);
     const total = { recibidas: 0, nuevos: 0, nuevos_con_existencia: 0, actualizados: 0, existentes_sin_tocar: 0, errores: [], suplidores_no_encontrados: [] };
     if (!simular) { setFase('importando'); setProgreso(0); }
     try {
       for (let i = 0; i < validas.length; i += TANDA) {
-        const { data, error: e } = await supabase.rpc('importar_catalogo', {
+        const { data, error: e } = await supabase.rpc(cfg.rpc, {
           p_filas: validas.slice(i, i + TANDA), p_actualizar: actualizar, p_simular: simular,
         });
         if (e) throw e;
@@ -142,19 +179,15 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado }) {
     <Dialog open={open} onOpenChange={(v) => { if (!v) cerrar(); }}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-emerald-600" /> Importar catálogo (Excel o CSV)</DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-emerald-600" /> {cfg.titulo}</DialogTitle>
         </DialogHeader>
 
         {fase === 'archivo' && (
           <div className="space-y-3 text-sm">
-            <p className="text-slate-600">
-              Crea los productos que no existen. Una fila por producto, con títulos en la primera fila.
-              <b> Código y descripción son obligatorios</b>; lo demás es opcional (costo, precio, ITBIS, existencia,
-              ubicación, mínimo, suplidor, marca, tipo).
-            </p>
+            <p className="text-slate-600">{cfg.intro}</p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => inputRef.current?.click()}><Upload className="mr-2 h-4 w-4" /> Elegir archivo</Button>
-              <Button variant="outline" onClick={descargarPlantilla}><Download className="mr-2 h-4 w-4" /> Bajar plantilla</Button>
+              <Button variant="outline" onClick={() => descargarPlantilla(cfg.plantilla)}><Download className="mr-2 h-4 w-4" /> Bajar plantilla</Button>
             </div>
             <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
               onChange={(e) => e.target.files?.[0] && leerArchivo(e.target.files[0])} />
@@ -164,7 +197,7 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado }) {
         {fase !== 'archivo' && (
           <div className="space-y-4 text-sm">
             <p className="text-slate-600"><b>{archivo?.name}</b> · {datos.length.toLocaleString('es-DO')} filas
-              {sinCodigo > 0 && <span className="text-amber-700"> · {sinCodigo} sin código (se saltan)</span>}</p>
+              {sinCodigo > 0 && <span className="text-amber-700"> · {sinCodigo} sin {cfg.llaveNombre} (se saltan)</span>}</p>
 
             {/* Columnas */}
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -193,7 +226,7 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado }) {
                   {filasMapeadas.slice(0, 15).map((f, i) => (
                     <tr key={i} className="border-t border-slate-100">
                       {CAMPOS.filter(({ k }) => mapa[k] !== undefined).map(({ k }) => (
-                        <td key={k} className={`px-2 py-1 ${f[k] === null && (k === 'codigo' || k === 'descripcion') ? 'bg-red-50' : ''}`}>{f[k] ?? ''}</td>
+                        <td key={k} className={`px-2 py-1 ${f[k] == null && cfg.obligatorios.includes(k) ? 'bg-red-50' : ''}`}>{f[k] ?? ''}</td>
                       ))}
                     </tr>
                   ))}
@@ -204,14 +237,13 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado }) {
             <label className="flex items-center gap-2 text-xs text-slate-700">
               <input type="checkbox" checked={actualizar} disabled={fase === 'importando'}
                 onChange={(e) => { setActualizar(e.target.checked); setResumen(null); if (fase === 'revisado') setFase('columnas'); }} />
-              Los que YA existen: actualizar descripción, costo, precio, ITBIS, ubicación y demás datos que vengan llenos
-              (su existencia no se toca; para eso está "Importar existencias").
+              {cfg.actualizar}
             </label>
 
             {resumen && (
               <div className={`rounded border p-3 text-xs ${resumen.simulado ? 'border-blue-200 bg-blue-50' : 'border-emerald-200 bg-emerald-50'}`}>
                 <p className="mb-1 font-semibold">{resumen.simulado ? 'Revisión (todavía no se guardó nada):' : '✅ Importación terminada:'}</p>
-                <p>Productos nuevos: <b>{resumen.nuevos.toLocaleString('es-DO')}</b>
+                <p>{cfg.unidad === 'clientes' ? 'Clientes' : 'Productos'} nuevos: <b>{resumen.nuevos.toLocaleString('es-DO')}</b>
                   {resumen.nuevos_con_existencia > 0 && <> ({resumen.nuevos_con_existencia.toLocaleString('es-DO')} con existencia inicial)</>}</p>
                 <p>Ya existían: <b>{(resumen.actualizados + resumen.existentes_sin_tocar).toLocaleString('es-DO')}</b>
                   {' '}→ {actualizar ? `${resumen.actualizados.toLocaleString('es-DO')} se actualizan` : 'no se tocan'}</p>
@@ -222,7 +254,7 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado }) {
                   <div className="mt-1 text-red-700">
                     <p className="font-semibold">{resumen.errores.length} filas con problemas (se saltan):</p>
                     <ul className="max-h-28 list-disc overflow-auto pl-5">
-                      {resumen.errores.slice(0, 50).map((e, i) => <li key={i}><b>{e.codigo}</b>: {e.motivo}</li>)}
+                      {resumen.errores.slice(0, 50).map((e, i) => <li key={i}><b>{e.codigo || e.fila}</b>: {e.motivo}</li>)}
                     </ul>
                   </div>
                 )}
@@ -238,11 +270,11 @@ export default function ImportarCatalogoModal({ open, onClose, onTerminado }) {
               {fase !== 'listo' && <Button variant="ghost" disabled={fase === 'importando'} onClick={reiniciar}>Otro archivo</Button>}
               {fase === 'columnas' && (
                 <Button variant="outline" disabled={!listo} onClick={() => enviar(true)}
-                  title={listo ? '' : 'Indica qué columna es el código y cuál la descripción'}>Revisar (sin guardar)</Button>
+                  title={listo ? '' : 'Indica qué columna corresponde a cada campo con asterisco (*)'}>Revisar (sin guardar)</Button>
               )}
               {fase === 'revisado' && (resumen?.nuevos > 0 || resumen?.actualizados > 0) && (
                 <Button onClick={() => enviar(false)} className="bg-emerald-600 hover:bg-emerald-700">
-                  Importar {(resumen.nuevos + resumen.actualizados).toLocaleString('es-DO')} productos
+                  Importar {(resumen.nuevos + resumen.actualizados).toLocaleString('es-DO')} {cfg.unidad}
                 </Button>
               )}
               {fase === 'importando' && <Button disabled><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importando… {progreso}%</Button>}
