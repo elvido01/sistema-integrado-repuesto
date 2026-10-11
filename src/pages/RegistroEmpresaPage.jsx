@@ -6,12 +6,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/customSupabaseClient';
 import MotoFlowLogo from '@/components/common/MotoFlowLogo';
+import CaptchaTurnstile from '@/components/common/CaptchaTurnstile';
 
 const RegistroEmpresaPage = ({ onVolver }) => {
   const [step, setStep] = useState(1); // 1: empresa, 2: usuario, 3: éxito
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [captcha, setCaptcha] = useState('');
+  const [reiniciarCaptcha, setReiniciarCaptcha] = useState(0);
 
   const [empresa, setEmpresa] = useState({
     nombre: '',
@@ -64,22 +67,27 @@ const RegistroEmpresaPage = ({ onVolver }) => {
       return;
     }
 
-    setLoading(true);
-    try {
-      // 1. Crear el tenant en la BD (función SQL SECURITY DEFINER)
-      const { data: tenantId, error: tenantError } = await supabase.rpc(
-        'registrar_nueva_empresa',
-        {
-          p_nombre: empresa.nombre.trim(),
-          p_rnc: empresa.rnc.trim() || null,
-          p_direccion: empresa.direccion.trim() || null,
-          p_telefono: empresa.telefono.trim() || null,
-          p_email: empresa.email.trim() || null,
-          p_tipo_negocio: empresa.tipo_negocio,
-        }
-      );
+    if (!captcha) {
+      setError('Espera la verificación de que no eres un robot (debajo del formulario).');
+      return;
+    }
 
-      if (tenantError) throw tenantError;
+    setLoading(true);
+    let tenantId = null;
+    try {
+      // 1. Crear el tenant: la función registrar-empresa comprueba el
+      //    captcha en el servidor y llama registrar_nueva_empresa (el
+      //    público ya no puede llamarla directo).
+      const { data: alta, error: altaError } = await supabase.functions.invoke('registrar-empresa', {
+        body: { ...empresa, captcha },
+      });
+      if (altaError) {
+        let msg = altaError.message;
+        try { msg = (await altaError.context.json()).error || msg; } catch { /* sin cuerpo */ }
+        throw new Error(msg);
+      }
+      if (!alta?.ok) throw new Error(alta?.error || 'No se pudo registrar la empresa.');
+      tenantId = alta.tenant_id;
 
       // 2. Registrar el usuario admin con el tenant_id en metadata
       const { error: signUpError } = await supabase.auth.signUp({
@@ -100,6 +108,8 @@ const RegistroEmpresaPage = ({ onVolver }) => {
       setStep(3);
     } catch (err) {
       setError(err.message || 'Ocurrió un error al registrar la empresa.');
+      // El token del captcha es de un solo uso: pedir otro para reintentar.
+      if (!tenantId) setReiniciarCaptcha((n) => n + 1);
     } finally {
       setLoading(false);
     }
@@ -325,6 +335,8 @@ const RegistroEmpresaPage = ({ onVolver }) => {
               />
             </div>
 
+            <CaptchaTurnstile onToken={setCaptcha} reiniciar={reiniciarCaptcha} />
+
             <div className="flex gap-2 pt-1">
               <Button
                 type="button"
@@ -336,10 +348,10 @@ const RegistroEmpresaPage = ({ onVolver }) => {
               </Button>
               <Button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !captcha}
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
               >
-                {loading ? 'Registrando...' : 'Crear cuenta'}
+                {loading ? 'Registrando...' : captcha ? 'Crear cuenta' : 'Marca la verificación ↑'}
               </Button>
             </div>
           </form>

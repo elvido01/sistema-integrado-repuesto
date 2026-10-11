@@ -23,10 +23,11 @@ Es seguro: el usuario entra a la empresa con un "reclamo de alta" de un
 solo uso que vence. Nadie puede colarse en una empresa ajena con su
 identificador.
 
-> Pendiente conocido: el registro está abierto a cualquiera. No hay
-> captcha ni límite de intentos, así que alguien podría llenar la base de
-> empresas basura. Antes de anunciarlo en público, agregar un captcha
-> (Cloudflare Turnstile es gratis).
+> Protegido (11/10/2026): el registro pide la verificación de Cloudflare
+> (Turnstile, gratis; widget "MotoFlow registro" en la cuenta de Cloudflare).
+> La función `registrar-empresa` la comprueba en el servidor antes de crear
+> la empresa, y más de 10 altas en una hora se frenan. Si se agrega un
+> dominio nuevo de marca blanca con registro, hay que añadirlo al widget.
 
 ## 2. Configuración inicial (15–30 minutos)
 
