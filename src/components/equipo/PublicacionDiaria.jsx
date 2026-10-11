@@ -90,7 +90,7 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
     if (e.reel_pedido_at) return e.reel_pedido_id ? 'arte listo · armando el reel' : 'arte listo';
     return w ? ESTADO[w.estado] || w.estado : 'haciendo el arte';
   };
-  const horarios = (cfg?.horarios || ['09:30', '12:30', '15:30']).map((h) => String(h).slice(0, 5));
+  const horarios = (cfg?.horarios || ['13:30', '17:30', '19:30']).map((h) => String(h).slice(0, 5));
   const hora12 = (h) => {
     const [H, M] = String(h || '').slice(0, 5).split(':').map(Number);
     if (Number.isNaN(H)) return '';
@@ -99,8 +99,8 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
   const cambiarHorario = (i, valor) => {
     if (!valor) return;
     const nuevos = horarios.map((h, k) => (k === i ? valor : h));
-    if (nuevos.some((h) => h < '08:00' || h > '17:00')) {
-      toast({ variant: 'destructive', title: 'Entre las 8:00 am y las 5:00 pm' });
+    if (nuevos.some((h) => h < '08:00' || h > '21:00')) {
+      toast({ variant: 'destructive', title: 'Entre las 8:00 am y las 9:00 pm' });
       return;
     }
     if (new Set(nuevos).size !== 3) {
@@ -136,7 +136,7 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
         <span className="flex items-center gap-1" title="Una pieza en cada hora; las horas rotan entre los rangos cada día.">
           Salen a las
           {horarios.map((h, i) => (
-            <input key={i} type="time" min="08:00" max="17:00" value={h} disabled={guardando}
+            <input key={i} type="time" min="08:00" max="21:00" value={h} disabled={guardando}
               onChange={(e) => cambiarHorario(i, e.target.value)}
               className="h-6 rounded border px-1 text-[11px]" />
           ))}
