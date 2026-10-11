@@ -39,6 +39,7 @@ const ProductFilters = ({
   setLimit,
   onExport,
   onFileUpload,
+  onImportarCatalogo,
 }) => {
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -118,6 +119,15 @@ const ProductFilters = ({
           >
             <Upload className="w-4 h-4 mr-2" /> Importar existencias (CSV)
           </Button>
+          {onImportarCatalogo && (
+            <Button
+              variant="outline"
+              onClick={onImportarCatalogo}
+              title="Excel o CSV con código, descripción, costo, precio, ITBIS, existencia... Crea los productos que no existen."
+            >
+              <Upload className="w-4 h-4 mr-2" /> Importar catálogo (Excel)
+            </Button>
+          )}
           <input
             type="file"
             ref={fileInputRef}

@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 import ProductHeader from '@/components/products/ProductHeader';
 import ProductFilters from '@/components/products/ProductFilters';
+const ImportarCatalogoModal = React.lazy(() => import('@/components/products/ImportarCatalogoModal'));
 import ProductTable from '@/components/products/ProductTable';
 import ProductTableFooter from '@/components/products/ProductTableFooter';
 import ProductFormModal from '@/components/products/ProductFormModal';
@@ -27,7 +28,10 @@ import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils
 const ProductsPage = ({ extraData }) => {
   const { toast } = useToast();
   const { openPanel } = usePanels();
-  const { empresa, tenantId } = useAuth();
+  const { empresa, tenantId, profile } = useAuth();
+  // (11/10/2026) Importar catálogo (Excel/CSV): solo administradores.
+  const [importarCatalogo, setImportarCatalogo] = useState(false);
+  const puedeImportarCatalogo = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
 
   // Check if tenant has tienda feature
   const [hasTienda, setHasTienda] = useState(false);
@@ -725,8 +729,18 @@ const ProductsPage = ({ extraData }) => {
               setLimit={(newLimit) => setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }))}
               onExport={handleExport}
               onFileUpload={handleFileUpload}
+              onImportarCatalogo={puedeImportarCatalogo ? () => setImportarCatalogo(true) : undefined}
               onUpdateLocation={() => openPanel('update-location')}
             />
+            {importarCatalogo && (
+              <React.Suspense fallback={null}>
+                <ImportarCatalogoModal
+                  open={importarCatalogo}
+                  onClose={() => setImportarCatalogo(false)}
+                  onTerminado={() => fetchProducts(true)}
+                />
+              </React.Suspense>
+            )}
           </div>
 
           <ProductTable
