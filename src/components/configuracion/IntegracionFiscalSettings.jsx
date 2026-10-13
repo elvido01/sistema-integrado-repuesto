@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Wifi, WifiOff, Eye, EyeOff, Shield, Trash2, Save, Zap } from 'lucide-react';
 import DgiiCertificadoUploader from './DgiiCertificadoUploader';
+import DgiiSecuenciasEcf from './DgiiSecuenciasEcf';
 
 const PROVEEDORES = [
   {
@@ -270,7 +271,10 @@ const IntegracionFiscalSettings = () => {
 
       {/* Para DGII Directo: usar el uploader especializado de .p12 */}
       {proveedor === 'dgii_directo' && (
-        <DgiiCertificadoUploader />
+        <>
+          <DgiiCertificadoUploader />
+          <DgiiSecuenciasEcf />
+        </>
       )}
 
       {/* Campos dinámicos según proveedor (solo proveedores no-DGII directo) */}
