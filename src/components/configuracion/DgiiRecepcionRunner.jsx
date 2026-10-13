@@ -261,6 +261,30 @@ const DgiiRecepcionRunner = ({ configInfo }) => {
           </div>
         )}
       </div>
+
+      {/* (13/10/2026) Paso 12 de la certificación: las mismas direcciones,
+          ahora para producción. Guía para que cada empresa lo haga sola. */}
+      <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4 text-[12px] text-emerald-950 space-y-3">
+        <p className="font-bold text-[13px]">Paso 12 del portal DGII: «URL Servicios Producción»</p>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li>Pulsa <b>Copiar dirección</b>.</li>
+          <li>En el portal, pégala en los <b>tres campos</b>: Autenticación, Recepción y Aprobación Comercial. Es la misma en los tres.</li>
+          <li>No escribas <code>https://</code> ni <code>/fe/...</code>: el portal ya los pone.</li>
+          <li>Pulsa <b>Confirmar URLs</b>.</li>
+        </ol>
+        <div className="flex items-center gap-2 flex-wrap">
+          <code className="flex-1 min-w-0 break-all rounded border border-emerald-300 bg-white px-3 py-2 font-mono text-[13px] font-bold text-emerald-800">
+            {BASE_SIN_PROTOCOLO}
+          </code>
+          <Button onClick={() => copiar(BASE_SIN_PROTOCOLO, 'Dirección de producción')} className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0">
+            <Copy className="w-4 h-4 mr-2" /> Copiar dirección
+          </Button>
+        </div>
+        <p className="text-[11px] text-emerald-900/80">
+          Es el mismo receptor de las pruebas. Reconoce a tu empresa por tu RNC y firma con tu certificado.
+          Esta dirección queda publicada en el directorio de la DGII para que tus suplidores te envíen sus facturas electrónicas.
+        </p>
+      </div>
     </div>
   );
 };
