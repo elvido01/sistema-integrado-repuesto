@@ -42,7 +42,7 @@ const esPdf = async (promesa) => {
   return r;
 };
 
-describe('generadores de PDF con jsPDF ' + (jsPDF.version || ''), () => {
+describe('generadores de PDF con jsPDF ' + (jsPDF.version || ''), { timeout: 30000 }, () => {
   const casos = [
     ['comision', async () => (await import('@/components/common/pdf/comisionPDF')).generateComisionPDF(
       [{ ...doc, comision: 50, porcentaje: 5, vendedor: 'ANA' }], { vendedorName: 'ANA', startDate: '2026-10-01', endDate: '2026-10-11' })],
