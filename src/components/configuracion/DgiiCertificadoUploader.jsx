@@ -470,14 +470,14 @@ const DgiiCertificadoUploader = () => {
       {/* Estado actual */}
       {info?.configured ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[12px] text-emerald-800 space-y-3">
-          <div className="flex items-start gap-2">
+          <div className="flex flex-wrap items-start gap-2">
             <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
-            <div className="flex-1">
+            <div className="flex-1 min-w-[220px]">
               <p className="font-bold">Certificado configurado</p>
               <p>RNC: {info.rnc_emisor || '—'} · Ambiente: {info.ambiente}</p>
               <p className="text-[10px] text-emerald-600 mt-1 truncate">Path: {info.storage_path}</p>
             </div>
-            <div className="flex gap-2 shrink-0">
+            <div className="flex flex-wrap justify-end gap-2 max-w-full">
               <Button
                 type="button"
                 variant="outline"

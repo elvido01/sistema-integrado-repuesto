@@ -402,7 +402,7 @@ const ConfiguracionSistemaPage = () => {
 
     return (
         <div className="p-6 bg-gray-50 h-full overflow-y-auto">
-            <Card className="max-w-4xl mx-auto shadow-xl border-t-4 border-morla-blue">
+            <Card className="max-w-6xl mx-auto shadow-xl border-t-4 border-morla-blue">
                 <CardHeader className="bg-white border-b">
                     <CardTitle className="flex items-center gap-2 text-morla-blue uppercase tracking-wider">
                         <Building2 className="w-5 h-5" />

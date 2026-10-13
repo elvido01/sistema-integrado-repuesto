@@ -34,6 +34,7 @@ export default function DgiiSecuenciasEcf() {
   const { toast } = useToast();
   const [filas, setFilas] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [errorLectura, setErrorLectura] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [tipo, setTipo] = useState('32');
   const [desde, setDesde] = useState('1');
@@ -42,6 +43,7 @@ export default function DgiiSecuenciasEcf() {
   const cargar = useCallback(async () => {
     setCargando(true);
     const { data, error } = await supabase.rpc('ecf_secuencias_mias');
+    setErrorLectura(error ? error.message : null);
     if (!error) setFilas(data || []);
     setCargando(false);
   }, []);
@@ -79,6 +81,8 @@ export default function DgiiSecuenciasEcf() {
 
       {cargando ? (
         <p className="text-[11px] text-gray-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Cargando…</p>
+      ) : errorLectura ? (
+        <p className="text-[12px] text-gray-600 bg-gray-50 border rounded p-2">Esta sección todavía no está disponible. Avisa al soporte de MotoFlow.</p>
       ) : filas.length === 0 ? (
         <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
           Todavía no hay secuencias cargadas: no se pueden emitir facturas electrónicas en producción hasta que pongas al menos E31 y E32.
