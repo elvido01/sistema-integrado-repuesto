@@ -71,6 +71,14 @@ const BUCKET_ESTILO = 'equipo-estilo';
 // Cada referencia suma algo de imagen de entrada; tres bastan para que el
 // modelo entienda el estilo sin que la pieza se encarezca.
 const REFS_ESTILO = 3;
+// (14/10/2026) "same packaging" hacía que el modelo copiara TODO lo que hay en
+// la foto: en la historia del Amortiguador TVS Sport salió con la cartulina
+// de etiquetas de detrás; en el feed, recortado. Misma regla para los dos:
+// se saca SOLO el producto de su foto.
+const RECORTE = 'Cut the product cleanly out of its photo: keep ONLY the product itself (and its own retail box '
+  + 'only when the item is sold boxed, like oil or filters). Drop EVERYTHING else from the photo: background, wall, '
+  + 'table, floor, hands, shelves, and any card, sticker sheet, label board or other packaging standing behind or '
+  + 'under it. The product stands alone on the podium, exactly the same in every format (square and vertical).';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -103,6 +111,7 @@ function promptEscena({ vertical, fondo, acento, tieneFondo }) {
     'Professional advertising photo for a motorcycle spare parts store.',
     'Use the product from the FIRST reference image EXACTLY as it is: same shape, colors, packaging,',
     'printed labels and proportions. Do not redraw, restyle, simplify or replace the product.',
+    RECORTE,
     `Place it large and centered on a glossy dark circular podium with a ${acento} rim light and soft reflections,`,
     tieneFondo
       ? 'in front of a background inspired by the SECOND reference image (same mood and colors, blurred).'
@@ -177,6 +186,7 @@ function promptConTexto({ vertical, fondo, acento, tieneFondo, tieneLogo, nEstil
     'Premium social media advertisement for a motorcycle spare parts store.',
     'Use the product from the FIRST reference image EXACTLY as it is: same shape, colors, packaging,',
     'printed labels and proportions. Do not redraw, restyle, simplify or replace the product.',
+    RECORTE,
     tieneLogo ? `Reference image ${nLogo} is OUR OFFICIAL LOGO: place it at the top center, about ${vertical ? 30 : 24}% of the image width, `
       + 'reproduced EXACTLY (same shield shape, colors, stars and letters). Do not draw any other logo.' : '',
     tieneFondo ? `Build the background from reference image ${nFondo} (same mood and colors, blurred).` : '',
