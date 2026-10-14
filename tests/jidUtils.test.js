@@ -67,3 +67,12 @@ describe('nombreMasUtil', () => {
     expect(nombreMasUtil('Juan Pérez', 'Juan P.')).toBe(false);
   });
 });
+
+describe('parseJid con LID (14/10/2026)', () => {
+  it('un chat @lid es una persona sin número a la vista, no un grupo ni desconocido', () => {
+    expect(parseJid('210987654321098@lid')).toEqual({ phone: null, tipo: 'individual' });
+  });
+  it('el número del contacto (pn) se sigue leyendo normal', () => {
+    expect(parseJid('18095551234@c.us')).toEqual({ phone: '18095551234', tipo: 'individual' });
+  });
+});

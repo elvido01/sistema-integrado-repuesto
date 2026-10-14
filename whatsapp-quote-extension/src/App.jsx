@@ -476,8 +476,10 @@ export default function App() {
         const leido = readCurrentConversation();
         diag = leido.diag || diag;
         convo = leido.convo || null;
-      } catch {
-        // lector roto: el latido sigue saliendo
+      } catch (e) {
+        // lector roto: el latido sigue saliendo, y ahora dice POR QUÉ
+        // (14/10/2026: "getDataId is not defined" estuvo dos días sin verse).
+        diag = { ...diag, probe: { error: String(e?.message || e).slice(0, 200) } };
       }
       try {
         if (cancelled) return;

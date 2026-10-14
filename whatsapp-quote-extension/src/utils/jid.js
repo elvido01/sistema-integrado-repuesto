@@ -10,6 +10,9 @@ export function parseJid(jid) {
   if (/@g\.us$/i.test(s)) return { phone: null, tipo: 'grupo' };
   const m = s.match(/^(\d{7,15})@(c\.us|s\.whatsapp\.net)$/i);
   if (m) return { phone: m[1], tipo: 'individual' };
+  // (14/10/2026) WhatsApp Web pasó a identificar los chats por LID
+  // ("123456789012345@lid"): es una persona, pero el número no viene en el id.
+  if (/@lid$/i.test(s)) return { phone: null, tipo: 'individual' };
   return { phone: null, tipo: 'desconocido' };
 }
 

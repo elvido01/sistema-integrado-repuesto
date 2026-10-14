@@ -12,10 +12,22 @@ try {
   window.addEventListener('message', (ev) => {
     const d = ev?.data;
     if (d && d.source === 'motoflow-omni' && d.type === 'active-chat-jid') {
-      jidActivo = { jid: d.jid || null, at: Date.now() };
+      jidActivo = { jid: d.jid || null, pn: d.pn || null, at: Date.now() };
     }
   });
 } catch { /* entorno sin window (tests) */ }
+
+// data-id del mensaje. WhatsApp Web NUEVO ya no usa el prefijo true_/false_
+// ni el jid: el data-id es solo el ID del mensaje (hex). Aceptamos cualquiera.
+// (14/10/2026) Vive aquí y no dentro del lector: identidadDelChat también la
+// usa, y desde ahí no existía ("getDataId is not defined"). Cada chat de un
+// contacto guardado, sin número a la vista, tumbaba el espejo entero: del
+// 12/10 al 14/10 no entró un solo mensaje de WhatsApp.
+function getDataId(row) {
+  const self = row?.getAttribute && row.getAttribute('data-id');
+  if (self) return self;
+  return row?.querySelector?.('[data-id]')?.getAttribute('data-id') || null;
+}
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -66,7 +78,12 @@ export function identidadDelChat(nombre = null, rows = []) {
   let phone = '';
   const probe = (Date.now() - jidActivo.at) < 20000 ? parseJid(jidActivo.jid) : { phone: null, tipo: 'desconocido' };
   if (probe.tipo === 'grupo') return { grupo: true, jid: null, phone: '', nameKey: null, externalId: null, name };
-  if (probe.tipo === 'individual') { jid = jidActivo.jid; phone = probe.phone; }
+  if (probe.tipo === 'individual') {
+    jid = jidActivo.jid;
+    // Con LID el número no viene en el id: la sonda lo manda aparte si WhatsApp
+    // lo tiene (contacto con número conocido).
+    phone = probe.phone || parseJid(jidActivo.pn).phone || '';
+  }
   if (!phone) {
     const digits = normalizarDigitosIntl(name);
     if (digits.length >= 7) phone = digits;
@@ -141,14 +158,6 @@ export function readCurrentConversation({ maxMessages = 40 } = {}) {
 
   diag.rowsFound = rows.length;
   if (!rows.length) return { diag, convo: null };
-
-  // data-id del mensaje. WhatsApp Web NUEVO ya no usa el prefijo true_/false_
-  // ni el jid: el data-id es solo el ID del mensaje (hex). Aceptamos cualquiera.
-  const getDataId = (row) => {
-    const self = row.getAttribute && row.getAttribute('data-id');
-    if (self) return self;
-    return row.querySelector('[data-id]')?.getAttribute('data-id') || null;
-  };
 
   // Dirección (quién envió). WhatsApp nuevo no usa .message-out ni ticks
   // msg-*. Señal robusta: POSICIÓN — los mensajes que YO envío van alineados

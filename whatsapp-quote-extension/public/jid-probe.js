@@ -32,12 +32,34 @@
     return null;
   };
 
+  // (14/10/2026) Con LID ("...@lid") el número no viene en el id del chat.
+  // Si WhatsApp lo conoce, está en el contacto: se lee aparte (solo lectura).
+  const leerNumero = () => {
+    const intentos = [
+      () => window.require?.('WAWebChatCollection')?.ChatCollection?.getActive?.()?.contact?.phoneNumber?._serialized,
+      () => window.require?.('WAWebCollections')?.Chat?.getActive?.()?.contact?.phoneNumber?._serialized,
+      () => window.Store?.Chat?.getActive?.()?.contact?.phoneNumber?._serialized,
+    ];
+    for (const f of intentos) {
+      try {
+        const pn = f();
+        if (pn) return String(pn);
+      } catch { /* siguiente */ }
+    }
+    return null;
+  };
+
+  // Se anuncia al cambiar de chat Y cada 10 s aunque no cambie: el content
+  // script da por vencido el dato a los 20 s, y antes solo se avisaba al
+  // cambiar — quedarse más de 20 s en un chat lo dejaba sin número.
+  let ultimoAviso = 0;
   window.setInterval(() => {
     const jid = leerJid();
-    if (jid === ultimo) return;
+    if (jid === ultimo && Date.now() - ultimoAviso < 10000) return;
     ultimo = jid;
+    ultimoAviso = Date.now();
     try {
-      window.postMessage({ source: 'motoflow-omni', type: 'active-chat-jid', jid }, '*');
+      window.postMessage({ source: 'motoflow-omni', type: 'active-chat-jid', jid, pn: jid ? leerNumero() : null }, '*');
     } catch { /* nada */ }
   }, 1500);
 })();
