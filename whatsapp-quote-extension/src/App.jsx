@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
-import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento } from './services/apiClient.js';
+import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni } from './services/apiClient.js';
+import { slugNombreChat } from './utils/jid.js';
 import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, conversacionEsperaRespuesta, marcarUsoSugerencia, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, adjuntarFotos, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, leerChatsSinLeer, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
@@ -476,6 +477,12 @@ export default function App() {
         const leido = readCurrentConversation();
         diag = leido.diag || diag;
         convo = leido.convo || null;
+        // Chat marcado "No copiar": ni se lee ni se manda (el servidor
+        // también lo rechazaría).
+        if (convo && (excluidosRef.current.has(convo.external_conversation_id)
+          || excluidosRef.current.has(convo.name_key))) {
+          convo = null;
+        }
       } catch (e) {
         // lector roto: el latido sigue saliendo, y ahora dice POR QUÉ
         // (14/10/2026: "getDataId is not defined" estuvo dos días sin verse).
@@ -564,6 +571,41 @@ export default function App() {
   // Los chats que WhatsApp tiene marcados como no leidos: eso es justo lo que
   // al espejo le falta por copiar. Ver leerChatsSinLeer().
   const [chatsSinCopiar, setChatsSinCopiar] = useState([]);
+  // (14/10/2026) Chats que NO se copian (personales). Ref para que el espejo,
+  // que corre en un intervalo, vea siempre la lista al día.
+  const [excluidos, setExcluidos] = useState(() => new Set());
+  const excluidosRef = useRef(excluidos);
+  useEffect(() => { excluidosRef.current = excluidos; }, [excluidos]);
+  const claveNombre = (nombre) => `whatsapp:name:${slugNombreChat(nombre)}`;
+  useEffect(() => {
+    if (!session?.access_token || empresaPending) return undefined;
+    let vivo = true;
+    const cargar = async () => {
+      const rows = await listarChatsExcluidos();
+      if (vivo) setExcluidos(new Set(rows.map((r) => r.clave)));
+    };
+    cargar();
+    const t = window.setInterval(cargar, 5 * 60 * 1000);
+    return () => { vivo = false; window.clearInterval(t); };
+  }, [session?.access_token, empresaPending]);
+
+  const noCopiarChat = async (claves, nombre) => {
+    const ok = window.confirm(
+      `¿No copiar "${nombre}" al sistema?
+
+Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
+      'Úsalo para chats personales. Se puede deshacer desde MotoFlow.'
+    );
+    if (!ok) return;
+    try {
+      await excluirChatOmni(claves, nombre);
+      setExcluidos((prev) => new Set([...prev, ...claves.filter(Boolean)]));
+      setChatsSinCopiar((prev) => prev.filter((c) => !claves.includes(claveNombre(c.nombre))));
+      setNotice(`"${nombre}" ya no se copia al sistema.`);
+    } catch (e) {
+      setNotice(`No se pudo marcar "${nombre}": ${e?.message || e}`);
+    }
+  };
   const [abriendoChat, setAbriendoChat] = useState('');
 
   const [mirrorStatus, setMirrorStatus] = useState(null);
@@ -2587,6 +2629,20 @@ export default function App() {
               </span>
             );
           })()}
+          {latido?.chatOpen && activeChannel === CHANNEL_TYPES.WHATSAPP && (
+            <button
+              type="button"
+              className="mf-safe-button"
+              title="Chat personal: que no se copie al sistema"
+              onClick={() => {
+                const id = identidadDelChat();
+                if (id.grupo) return;
+                noCopiarChat([id.externalId, id.nameKey], id.name || 'este chat');
+              }}
+            >
+              No copiar este chat
+            </button>
+          )}
           <button className="mf-safe-button" type="button" onClick={handleRestoreWhatsApp} title="Desmontar temporalmente MotoFlow Omni">
             Restaurar WhatsApp
           </button>
@@ -2597,26 +2653,35 @@ export default function App() {
           que un chat sin abrir es un cliente que el sistema no ha visto. Antes
           no habia forma de saberlo sin ponerse a mirar WhatsApp; ahora estan
           aqui y se abren de un toque. */}
-      {session && !empresaPending && chatsSinCopiar.length > 0 && (
+      {session && !empresaPending && chatsSinCopiar.some((c) => !excluidos.has(claveNombre(c.nombre))) && (
         <section className="mf-sin-copiar">
           <header>
             <strong>
-              {chatsSinCopiar.length} chat{chatsSinCopiar.length !== 1 ? 's' : ''} con mensajes nuevos
+              {(() => { const n = chatsSinCopiar.filter((c) => !excluidos.has(claveNombre(c.nombre))).length; return `${n} chat${n !== 1 ? 's' : ''} con mensajes nuevos`; })()}
             </strong>
             <small>Todavia no entran al sistema. Toca uno y se copia solo.</small>
           </header>
           <div>
-            {chatsSinCopiar.map((c) => (
-              <button
-                key={c.nombre}
-                type="button"
-                disabled={!!abriendoChat}
-                onClick={() => abrirChatSinCopiar(c.nombre)}
-                title={`Abrir "${c.nombre}" para que el espejo lo copie`}
-              >
-                <span>{abriendoChat === c.nombre ? 'Abriendo...' : c.nombre}</span>
-                <b>{c.cantidad}</b>
-              </button>
+            {chatsSinCopiar.filter((c) => !excluidos.has(claveNombre(c.nombre))).map((c) => (
+              <span key={c.nombre} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                <button
+                  type="button"
+                  disabled={!!abriendoChat}
+                  onClick={() => abrirChatSinCopiar(c.nombre)}
+                  title={`Abrir "${c.nombre}" para que el espejo lo copie`}
+                >
+                  <span>{abriendoChat === c.nombre ? 'Abriendo...' : c.nombre}</span>
+                  <b>{c.cantidad}</b>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => noCopiarChat([claveNombre(c.nombre)], c.nombre)}
+                  title={`No copiar "${c.nombre}" (chat personal)`}
+                  style={{ border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontWeight: 700, padding: '0 4px' }}
+                >
+                  ×
+                </button>
+              </span>
             ))}
           </div>
         </section>

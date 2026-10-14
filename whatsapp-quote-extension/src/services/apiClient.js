@@ -934,6 +934,28 @@ export async function mirrorWhatsAppConversation(payload) {
 // recuerda el último latido guardado, y al despertar la pestaña ese recuerdo
 // es viejo aunque el espejo esté latiendo delante. Sin esta respuesta el chip
 // acusa de "en pausa" a un espejo vivo.
+// (14/10/2026) Chats de WhatsApp que NO se copian (el número es también el
+// personal del dueño). La lista vive en la base: el servidor también los
+// rechaza (sql/omni_chats_no_copiar.sql).
+export async function listarChatsExcluidos() {
+  const headers = await getAuthHeaders();
+  try {
+    const rows = await fetchJson(`${SUPABASE_URL}/rest/v1/omni_chats_excluidos?select=clave,nombre`, { headers });
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function excluirChatOmni(claves, nombre) {
+  const headers = await getAuthHeaders();
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/omni_excluir_chat`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_claves: claves.filter(Boolean), p_nombre: nombre || null, p_borrar: true }),
+  });
+}
+
 export async function sendMirrorHeartbeat(diag = {}) {
   const headers = await getAuthHeaders();
   try {
