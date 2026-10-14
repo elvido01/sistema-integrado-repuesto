@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import AdminEmpresaDetalle from './AdminEmpresaDetalle';
 import AdminPagosReview from '@/components/suscripcion/AdminPagosReview';
 import AdminCuentasBancarias from '@/components/suscripcion/AdminCuentasBancarias';
+import AdminEmpresasVacias from '@/components/admin/AdminEmpresasVacias';
 import {
   Shield, Loader2, Building2, Calendar, Zap, RefreshCw, Users, Activity,
   DollarSign, TrendingUp, Eye, Power, PowerOff, Clock, ArrowUpRight,
@@ -407,6 +408,7 @@ const AdminDashboard = () => {
                 {linkCopied ? <Check className="w-4 h-4 text-green-400" /> : <Link className="w-4 h-4" />}
                 <span className="text-xs hidden sm:inline">{linkCopied ? 'Copiado' : 'Link Registro'}</span>
               </Button>
+              <AdminEmpresasVacias onEliminada={fetchAll} />
               <Button
                 variant="ghost"
                 size="sm"
