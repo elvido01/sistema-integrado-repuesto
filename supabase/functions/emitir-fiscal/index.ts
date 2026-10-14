@@ -723,6 +723,16 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
   if (encf) {
     tipoEcf = String(encf).slice(1, 3); // el número manda: mismo tipo del primer intento
   } else {
+    // (14/10/2026) La DGII rechaza el E32 de RD$250,000 o más sin comprador
+    // identificado (código 1381, "RNCComprador ... es obligatorio") y el número
+    // queda gastado: D Mario FT-6, E320000000002, RD$514,999. Se frena ANTES
+    // de tomar el número.
+    if (tipoEcf === "32" && Number(factura.total || 0) >= 250000) {
+      throw new Error(
+        "Factura de consumo de RD$250,000 o más: la DGII exige la cédula o el RNC del cliente. " +
+        "Asígnale a la venta un cliente con cédula o RNC y vuelve a emitir. No se gastó ningún número.",
+      );
+    }
     const { data: nuevo, error: encfErr } = await supabase.rpc("get_next_encf_empresa", {
       p_tenant: factura.tenant_id,
       p_tipo_ecf: tipoEcf,
