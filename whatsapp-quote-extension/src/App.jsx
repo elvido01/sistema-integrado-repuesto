@@ -452,8 +452,16 @@ export default function App() {
     // está viva". Antes solo latía en el canal WhatsApp, así que trabajar un
     // rato en la bandeja de TikTok dejaba el espejo en "en pausa" — decía que
     // estaba apagado cuando lo único que pasaba es que se estaba mirando otra
-    // cosa. Copiar la conversación, en cambio, sigue siendo solo de WhatsApp.
-    const enWhatsApp = activeChannel === CHANNEL_TYPES.WHATSAPP;
+    // cosa.
+    //
+    // (14/10/2026) Y COPIAR también, en cualquier canal. Antes solo se copiaba
+    // con el canal WA elegido en la barra; el vendedor vive en la bandeja Omni
+    // (TikTok/Instagram) y del 12/10 al 14/10 no entró NI UN mensaje de
+    // WhatsApp, con chats abiertos detrás. La bandeja es una capa fija ENCIMA
+    // de WhatsApp (.mf-omni-workspace): el chat sigue dibujado debajo con su
+    // tamaño real, así que la dirección de cada mensaje (por posición) sale
+    // bien. Lo que manda es que haya un chat de WhatsApp abierto.
+    const enWhatsApp = true;
 
     let cancelled = false;
     const runMirror = async () => {

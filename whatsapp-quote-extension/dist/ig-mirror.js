@@ -210,5 +210,129 @@
     if (!temporizador) temporizador = window.setTimeout(enviar, ESPERA_MS);
   });
 
+  // ══════════════════════════════════════════════════════════════════
+  // "COPIAR Y ABRIR INSTAGRAM": ENCONTRAR LA CONVERSACIÓN
+  // ══════════════════════════════════════════════════════════════════
+  // (05/10/2026) El dueño: "no selecciona la conversación, así no sé a
+  // quién responderle". Sin Acceso Avanzado, Meta solo da un número por
+  // cliente, así que el panel no puede mandar un enlace al chat. Deja una
+  // pista en chrome.storage (el último mensaje del cliente y su hora) y aquí
+  // se busca esa vista previa en la lista de Instagram: en Principal y, si
+  // no está, en Solicitudes (los que no te siguen caen ahí). Si sale UNA, se
+  // abre; si salen varias, se marcan. Siempre queda un cartel con lo que hay
+  // que buscar. Solo se hace clic en la lista y solo si el vendedor acaba de
+  // pedirlo desde el panel: no se escribe nada.
+  const PISTA = 'motoflow_ig_buscar';
+  const PISTA_VIVE_MS = 3 * 60 * 1000;
+  const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/\s+/g, ' ').trim();
+  let buscando = false;
+
+  const horaDe = (iso) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString('es-DO', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch { return ''; }
+  };
+
+  const cartel = (pista, estado) => {
+    let c = document.getElementById('mf-ig-cartel');
+    if (!c) {
+      c = document.createElement('div');
+      c.id = 'mf-ig-cartel';
+      c.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;'
+        + 'max-width:520px;background:#0f766e;color:#fff;font:13px/1.4 system-ui,sans-serif;'
+        + 'padding:10px 34px 10px 14px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25)';
+      const x = document.createElement('button');
+      x.textContent = '×';
+      x.style.cssText = 'position:absolute;top:4px;right:8px;background:none;border:0;color:#fff;font-size:20px;cursor:pointer';
+      x.onclick = () => c.remove();
+      c.appendChild(x);
+      c.appendChild(document.createElement('div'));
+      document.body.appendChild(c);
+    }
+    const cuerpo = c.lastChild;
+    cuerpo.textContent = '';
+    const t = document.createElement('div');
+    t.style.fontWeight = '700';
+    t.textContent = `MotoFlow: el cliente escribió “${pista.texto}”${pista.at ? ` (${horaDe(pista.at)})` : ''}`;
+    const e = document.createElement('div');
+    e.textContent = estado;
+    cuerpo.append(t, e);
+  };
+
+  const filasQueDicen = (texto) => {
+    const trozo = norm(texto).slice(0, 22);
+    if (!trozo) return [];
+    const todos = [...document.querySelectorAll('a[href^="/direct/t/"], div[role="listitem"], div[role="button"], div[role="link"]')]
+      .filter((el) => !el.closest('#mf-ig-cartel'))
+      .filter((el) => { const t = el.innerText || ''; return t.length < 400 && norm(t).includes(trozo); });
+    // Quedarse con la fila, no con sus envoltorios: fuera lo que contiene otra coincidencia.
+    return todos.filter((el) => !todos.some((o) => o !== el && el.contains(o)));
+  };
+
+  const irASolicitudes = () => {
+    const a = document.querySelector('a[href="/direct/requests/"], a[href^="/direct/requests"]')
+      || [...document.querySelectorAll('a, div[role="tab"], div[role="button"]')]
+        .find((el) => /^(requests|solicitudes)\b/i.test(String(el.innerText || '').trim()));
+    if (a) { a.click(); return true; }
+    return false;
+  };
+
+  const buscarConversacion = async () => {
+    if (buscando || !almacen) return;
+    const pista = await leer(PISTA);
+    if (!pista?.puesto || Date.now() - pista.puesto > PISTA_VIVE_MS) return;
+    buscando = true;
+    // La pista se borra al TERMINAR, no al empezar: si esta pestaña ya
+    // estaba abierta, el panel la recarga un instante después y la búsqueda
+    // tiene que seguir en la página nueva.
+    const listo = (estado) => {
+      cartel(pista, estado);
+      try { almacen.remove(PISTA); } catch { /* nada */ }
+      buscando = false;
+    };
+
+    if (/\/direct\/t\//.test(location.pathname)) {
+      listo('Esta es la conversación. Tu respuesta ya está copiada: pégala con Ctrl+V.');
+      return;
+    }
+    if (!pista.texto) {
+      listo('Búscala en la lista (mira también en Solicitudes) y pega tu respuesta con Ctrl+V.');
+      return;
+    }
+
+    cartel(pista, 'Buscando la conversación…');
+    let pasoASolicitudes = false;
+    for (let i = 0; i < 24; i += 1) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const filas = filasQueDicen(pista.texto);
+      if (filas.length === 1) {
+        filas[0].scrollIntoView({ block: 'center' });
+        filas[0].click();
+        listo('La abrí. Tu respuesta ya está copiada: pégala con Ctrl+V. Si no es esta, búscala por ese mensaje.');
+        return;
+      }
+      if (filas.length > 1) {
+        filas.forEach((f) => { f.style.outline = '3px solid #f59e0b'; f.style.outlineOffset = '-3px'; });
+        listo(`Hay ${filas.length} conversaciones con ese mensaje (marcadas en amarillo): es la de esa hora. Tu respuesta ya está copiada: pégala con Ctrl+V.`);
+        return;
+      }
+      // Nada en Principal tras unos segundos: los que no te siguen caen en Solicitudes.
+      if (i === 7 && !pasoASolicitudes && !/\/direct\/requests/.test(location.pathname)) {
+        pasoASolicitudes = irASolicitudes();
+        if (pasoASolicitudes) cartel(pista, 'No está en Principal: buscando en Solicitudes…');
+      }
+    }
+    listo('No la encontré sola. Búscala por ese mensaje (en Principal, General o Solicitudes) y pega tu respuesta con Ctrl+V.');
+  };
+
+  try {
+    chrome?.storage?.onChanged?.addListener((cambios, area) => {
+      if (area === 'local' && cambios[PISTA]?.newValue) buscarConversacion();
+    });
+  } catch { /* nada */ }
+  buscarConversacion();
+
   refrescarCredenciales();
 })();
