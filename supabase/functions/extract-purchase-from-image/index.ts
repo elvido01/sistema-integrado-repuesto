@@ -188,40 +188,86 @@ JSON FORMAT:
 
         let extractedData: any = null;
         let lastError = null;
+        const errores: string[] = [];
+        let motorUsado = porImagen ? 'gemini' : 'vision';
+        const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+        // (14/10/2026) Google respondió 503 "high demand" y los tres modelos
+        // fallaron seguidos, sin esperar: la compra no se pudo leer. Ahora,
+        // ante saturación (503/429/500) cada modelo se reintenta con pausa.
+        intentos:
         for (const model of modelsToTry) {
-            console.log(`[LOG] Extrayendo con: ${model} (${porImagen ? 'imagen' : 'texto de Vision'})...`);
-            try {
-                const response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: partes }],
-                            generationConfig: {
-                                temperature: 0.1,
-                                // gemini 2.0 soporta formatout directamente pero para compatibilidad limpieza manual
-                            }
-                        }),
-                    }
-                );
+            for (const pausa of [0, 3000]) {
+                if (pausa) await esperar(pausa);
+                console.log(`[LOG] Extrayendo con: ${model} (${porImagen ? 'imagen' : 'texto de Vision'})${pausa ? ' · reintento' : ''}...`);
+                try {
+                    const response = await fetch(
+                        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: partes }],
+                                generationConfig: { temperature: 0.1 },
+                            }),
+                        }
+                    );
 
-                if (response.ok) {
-                    const result = await response.json();
-                    let text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                    text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-                    extractedData = JSON.parse(text);
-                    console.log(`[SUCCESS] Extracción completada con ${model}`);
-                    break;
-                } else {
+                    if (response.ok) {
+                        const result = await response.json();
+                        let text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                        text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+                        extractedData = JSON.parse(text);
+                        console.log(`[SUCCESS] Extracción completada con ${model}`);
+                        break intentos;
+                    }
                     const errText = await response.text();
                     console.error(`[FAIL] ${model}:`, errText);
                     lastError = errText;
+                    // Solo la saturación vale la pena reintentarla; otro error, al siguiente modelo.
+                    if (![429, 500, 503].includes(response.status)) break;
+                } catch (e: any) {
+                    console.error(`[ERROR] ${model}:`, e.message);
+                    lastError = e.message;
+                    break;
+                }
+            }
+            errores.push(`${model}: ${String(lastError || '').slice(0, 120)}`);
+        }
+
+        // Último respaldo: OpenAI (gpt-4o-mini también lee imágenes; centavos).
+        const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+        if (!extractedData && OPENAI_API_KEY) {
+            console.log('[LOG] Gemini no respondió: probando con OpenAI gpt-4o-mini...');
+            try {
+                const contenido: any[] = porImagen
+                    ? [
+                        { type: 'text', text: promptImagen },
+                        ...imagenes.map((img) => ({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.base64}` } })),
+                    ]
+                    : [{ type: 'text', text: promptTexto }];
+                const r = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        temperature: 0.1,
+                        response_format: { type: 'json_object' },
+                        messages: [{ role: 'user', content: contenido }],
+                    }),
+                });
+                if (r.ok) {
+                    const j = await r.json();
+                    extractedData = JSON.parse(j.choices?.[0]?.message?.content || '');
+                    motorUsado = 'openai';
+                    console.log('[SUCCESS] Extracción completada con OpenAI gpt-4o-mini');
+                } else {
+                    lastError = `OpenAI ${r.status}: ${(await r.text()).slice(0, 200)}`;
+                    errores.push(lastError);
                 }
             } catch (e: any) {
-                console.error(`[ERROR] ${model}:`, e.message);
-                lastError = e.message;
+                lastError = `OpenAI: ${e.message}`;
+                errores.push(lastError);
             }
         }
 
@@ -229,8 +275,8 @@ JSON FORMAT:
             // Los dos motores caídos: se dicen las dos razones, que son
             // distintas y se arreglan en sitios distintos.
             throw new Error(porImagen
-                ? `No se pudo leer la factura. Google Vision: ${visionFallo || 'no encontró texto'}. Gemini: ${lastError}`
-                : `Fallo crítico en IA: ${lastError}`);
+                ? `No se pudo leer la factura. Google Vision: ${visionFallo || 'no encontró texto'}. Intentos: ${errores.join(' | ')}`
+                : `Fallo crítico en IA: ${errores.join(' | ') || lastError}`);
         }
 
         // El texto crudo: el de Vision si lo hubo, si no el que devolvió Gemini.
@@ -240,7 +286,7 @@ JSON FORMAT:
         return new Response(JSON.stringify({
             ocr_text: ocrFinal,
             extracted_data: extractedData,
-            motor: porImagen ? 'gemini' : 'vision',
+            motor: motorUsado,
             vision_error: visionFallo,
         }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
