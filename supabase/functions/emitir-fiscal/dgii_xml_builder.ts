@@ -102,6 +102,17 @@ export function rncValidoDgii(rnc) {
   return (d.length === 9 || d.length === 11) && !/^0+$/.test(d);
 }
 
+// (14/10/2026) E31 o E32 para una venta. Crédito fiscal (31) si el cliente
+// tiene RNC/cédula válido, SALVO que esté marcado como consumo (tipo_ncf 02):
+// ese va E32 llevando su cédula como comprador. Es lo que pide la DGII para
+// el consumo de RD$250,000 o más (1381), y lo que corresponde a un consumidor
+// final con cédula (D Mario FT-6; los 48 clientes "02" de Caminero).
+export function tipoEcfDeCliente(cliente) {
+  if (!rncValidoDgii(cliente?.rnc)) return "32";
+  const ncf = String(cliente?.tipo_ncf || "").toUpperCase().replace(/^[BE]/, "");
+  return ncf === "02" || ncf === "32" ? "32" : "31";
+}
+
 const fechaVencimientoSecuenciaXml = (input) =>
   input.fecha_vencimiento_secuencia
     ? `<FechaVencimientoSecuencia>${xmlEscape(normalizeDgiiDate(input.fecha_vencimiento_secuencia))}</FechaVencimientoSecuencia>`
@@ -1037,8 +1048,7 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
   // (10/10/2026) Crédito fiscal solo con un RNC/cédula DE VERDAD: 9 u 11
   // dígitos y no todo ceros. El Cliente Genérico trae "000000000" y salía
   // como E31 con ese RNC (la DGII lo rechaza): cada venta de mostrador.
-  const isB2B = rncValidoDgii(cliente?.rnc);
-  const tipoEcf = isB2B ? "31" : "32";
+  const tipoEcf = tipoEcfDeCliente(cliente);
 
   // Items — facturas_detalle columns: precio (base sin ITBIS), cantidad,
   // descuento (monto plano), itbis (monto), importe (neto con ITBIS).
@@ -1114,7 +1124,8 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
     fecha_vencimiento_secuencia: tipoEcf === "32" ? null : (configEmisor.fecha_vencimiento_secuencia || null),
     comprador: cliente
       ? {
-          rnc: isB2B ? String(cliente.rnc).replace(/\D/g, "") : null,
+          // Con documento válido va siempre (también en E32: consumo grande).
+          rnc: rncValidoDgii(cliente.rnc) ? String(cliente.rnc).replace(/\D/g, "") : null,
           razon_social: cliente.nombre || null,
           email: cliente.email || null,
           contacto: cliente.telefono || null,

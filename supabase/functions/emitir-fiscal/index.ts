@@ -3,7 +3,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import forge from "https://esm.sh/node-forge@1.3.1";
-import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii } from "./dgii_xml_builder.ts";
+import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii, tipoEcfDeCliente } from "./dgii_xml_builder.ts";
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 import { buildRfceDesdeEcf } from "./dgii_rfce_produccion.ts";
@@ -711,8 +711,7 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
   //   alAsignar(info): avisa en cuanto hay e-NCF (y luego XML) para guardarlo
   //     antes de hablar con la DGII.
   // 1. Determinar tipo y generar eNCF correlativo
-  const isB2B = rncValidoDgii(cliente?.rnc);  // mismo criterio que el builder (no "000000000")
-  let tipoEcf = isB2B ? "31" : "32";
+  let tipoEcf = tipoEcfDeCliente(cliente);  // mismo criterio que el builder
   const ambiente = config.ambiente || "TesteCF";
   const esReintento = !!opts.encfPrevio;
 
@@ -727,7 +726,7 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
     // identificado (código 1381, "RNCComprador ... es obligatorio") y el número
     // queda gastado: D Mario FT-6, E320000000002, RD$514,999. Se frena ANTES
     // de tomar el número.
-    if (tipoEcf === "32" && Number(factura.total || 0) >= 250000) {
+    if (tipoEcf === "32" && Number(factura.total || 0) >= 250000 && !rncValidoDgii(cliente?.rnc)) {
       throw new Error(
         "Factura de consumo de RD$250,000 o más: la DGII exige la cédula o el RNC del cliente. " +
         "Asígnale a la venta un cliente con cédula o RNC y vuelve a emitir. No se gastó ningún número.",
@@ -1329,8 +1328,7 @@ Deno.serve(async (req) => {
       }
 
       // Determinar tipo_ecf basado en si el cliente tiene RNC (B2B=31, B2C=32)
-      const isB2B = rncValidoDgii(cliente?.rnc);  // mismo criterio que el builder (no "000000000")
-      const detectedTipo = isB2B ? "31" : "32";
+      const detectedTipo = tipoEcfDeCliente(cliente);  // mismo criterio que el builder
       // Generar e-NCF de prueba que coincida con el tipo detectado
       const encf = encf_override || `E${detectedTipo}0000000001`;
 
@@ -1398,8 +1396,7 @@ Deno.serve(async (req) => {
       }
 
       // 3. Generar XML
-      const isB2B = rncValidoDgii(cliente?.rnc);  // mismo criterio que el builder (no "000000000")
-      const tipoEcf = isB2B ? "31" : "32";
+      const tipoEcf = tipoEcfDeCliente(cliente);  // mismo criterio que el builder
       const encf = encf_override || `E${tipoEcf}0000000001`;
 
       let xml, input;
