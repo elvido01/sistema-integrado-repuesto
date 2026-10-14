@@ -68,7 +68,9 @@ const AdminDashboard = () => {
   const [linkCopied, setLinkCopied] = useState(false);
 
   const handleCopyRegistroLink = () => {
-    const url = `${window.location.origin}/registro`;
+    // (14/10/2026) Siempre el de MotoFlow: abierto desde un dominio de marca
+    // blanca (repuestos-morla.pages.dev) copiaba ese y el cliente veía a Morla.
+    const url = 'https://motoflow.pages.dev/registro';
     navigator.clipboard.writeText(url).then(() => {
       setLinkCopied(true);
       toast({ title: '✅ Link copiado', description: url });
