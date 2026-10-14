@@ -100,6 +100,16 @@ const ComprasPage = () => {
   };
 
   const [compra, setCompra] = useState(initialState);
+
+  // (14/10/2026) Una compra NUNCA se queda sin almacén. El 10/10 se quitó el
+  // almacén fijo de Morla (se ponía a todas las empresas) y se eligió al
+  // cargar la pantalla; pero resetForm, tras guardar, lo dejaba en null y la
+  // segunda compra salía sin almacén. Regla única: si falta, el principal.
+  useEffect(() => {
+    if (compra.almacen_id || !almacenes.length) return;
+    const principal = findAlmacenPrincipal(almacenes)?.id;
+    if (principal) setCompra((prev) => (prev.almacen_id ? prev : { ...prev, almacen_id: principal }));
+  }, [compra.almacen_id, almacenes]);
   const [detalles, setDetalles] = useState([]);
   const [currentDetalle, setCurrentDetalle] = useState(initialDetalleState);
   // Índice del detalle que está siendo editado desde la lista (null = staging para nuevo).
