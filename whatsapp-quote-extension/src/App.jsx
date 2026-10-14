@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
-import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni } from './services/apiClient.js';
-import { slugNombreChat } from './utils/jid.js';
+import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni, registrarChatsSinLeer } from './services/apiClient.js';
+import { slugNombreChat, parseJid } from './utils/jid.js';
 import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, conversacionEsperaRespuesta, marcarUsoSugerencia, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, adjuntarFotos, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, leerChatsSinLeer, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
 import { buildFichaPdf, downloadPdf } from './utils/fichaPdf.js';
@@ -588,6 +588,36 @@ export default function App() {
     const t = window.setInterval(cargar, 5 * 60 * 1000);
     return () => { vivo = false; window.clearInterval(t); };
   }, [session?.access_token, empresaPending]);
+
+  // (14/10/2026) Los chats SIN LEER entran al CRM sin abrirlos. La sonda
+  // (jid-probe.js, solo lectura) los anuncia cada 30 s; aquí se mandan como
+  // mucho una vez por minuto, sin los excluidos y con la misma clave del espejo.
+  useEffect(() => {
+    if (safeMode || !session?.access_token || empresaPending) return undefined;
+    let ultimoEnvio = 0;
+    const alMensaje = (ev) => {
+      const d = ev?.data;
+      if (!d || d.source !== 'motoflow-omni' || d.type !== 'unread-chats' || !Array.isArray(d.chats)) return;
+      if (Date.now() - ultimoEnvio < 60000) return;
+      const lista = d.chats.map((c) => {
+        const phone = parseJid(c.pn).phone || parseJid(c.jid).phone || '';
+        const nameKey = claveNombre(c.nombre);
+        return {
+          external_conversation_id: phone ? `whatsapp:${phone}` : nameKey,
+          name_key: nameKey,
+          phone: phone || null,
+          nombre: c.nombre || null,
+          cantidad: c.cantidad || 1,
+          preview: c.preview || null,
+          t: c.t || null,
+        };
+      }).filter((c) => !excluidosRef.current.has(c.external_conversation_id) && !excluidosRef.current.has(c.name_key));
+      ultimoEnvio = Date.now();
+      if (lista.length) registrarChatsSinLeer(lista);
+    };
+    window.addEventListener('message', alMensaje);
+    return () => window.removeEventListener('message', alMensaje);
+  }, [safeMode, session?.access_token, empresaPending]);
 
   const noCopiarChat = async (claves, nombre) => {
     const ok = window.confirm(

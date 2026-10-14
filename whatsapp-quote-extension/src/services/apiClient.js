@@ -956,6 +956,22 @@ export async function excluirChatOmni(claves, nombre) {
   });
 }
 
+// (14/10/2026) Chats sin leer → CRM como "esperando respuesta", sin abrirlos
+// (sql/omni_chats_sin_leer.sql). Nunca debe estorbar: errores silenciosos.
+export async function registrarChatsSinLeer(chats) {
+  if (!chats?.length) return null;
+  const headers = await getAuthHeaders();
+  try {
+    return await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/omni_registrar_sin_leer`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_chats: chats }),
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function sendMirrorHeartbeat(diag = {}) {
   const headers = await getAuthHeaders();
   try {
