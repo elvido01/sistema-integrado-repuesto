@@ -393,7 +393,12 @@ export const useVentas = () => {
     loadNcfPreview(CLIENTE_GENERICO.tipo_ncf);
   }, [loadNcfPreview]);
 
-  const handleSelectCliente = useCallback(async (selected) => {
+  // (15/10/2026) { repreciar: false } al cargar un pedido o una cotización:
+  // sus precios ya están acordados. Antes, aplicar el cliente terminaba
+  // DESPUÉS de cargar las líneas y les ponía el precio de catálogo (Mano de
+  // obra 700 → 150 en el pedido de NAVI VERMO) y les borraba el descuento.
+  const handleSelectCliente = useCallback(async (selected, opciones) => {
+    const repreciar = opciones?.repreciar !== false;
     const finalCliente = selected || CLIENTE_GENERICO;
     setCliente(finalCliente);
 
@@ -411,6 +416,7 @@ export const useVentas = () => {
     await loadNcfPreview(tipoNcf);
 
     // Re-apply price level to existing items when client changes
+    if (!repreciar) return;
     const currentItems = itemsRef.current;
     if (currentItems.length === 0) return;
 
@@ -1534,11 +1540,11 @@ export const useVentas = () => {
 
       const genericIds = IDS_GENERICOS;
       if (!cotizacion.cliente_id || genericIds.includes(cotizacion.cliente_id)) {
-        handleSelectCliente(CLIENTE_GENERICO);
+        handleSelectCliente(CLIENTE_GENERICO, { repreciar: false });
       } else {
         const { data: clienteData, error: clienteError } = await supabase.from('clientes').select('*').eq('id', cotizacion.cliente_id).single();
         if (clienteError) throw clienteError;
-        handleSelectCliente(clienteData);
+        handleSelectCliente(clienteData, { repreciar: false });
       }
 
       setManualClienteNombre(cotizacion.manual_cliente_nombre || '');
@@ -1688,7 +1694,7 @@ export const useVentas = () => {
         .ilike('nombre', '%magna%')
         .limit(1)
         .maybeSingle();
-      if (cli) handleSelectCliente(cli);
+      if (cli) handleSelectCliente(cli, { repreciar: false });
 
       toast({
         title: `Cotización Magna #${cotizacion.numero} cargada`,
@@ -1707,11 +1713,11 @@ export const useVentas = () => {
 
       const genericIds = IDS_GENERICOS;
       if (!pedido.cliente_id || genericIds.includes(pedido.cliente_id)) {
-        handleSelectCliente(CLIENTE_GENERICO);
+        handleSelectCliente(CLIENTE_GENERICO, { repreciar: false });
       } else {
         const { data: clienteData, error: clienteError } = await supabase.from('clientes').select('*').eq('id', pedido.cliente_id).single();
         if (clienteError) throw clienteError;
-        handleSelectCliente(clienteData);
+        handleSelectCliente(clienteData, { repreciar: false });
       }
 
       setManualClienteNombre(pedido.manual_cliente_nombre || '');
