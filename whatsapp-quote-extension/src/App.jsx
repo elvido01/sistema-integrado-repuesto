@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
-import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni, registrarChatsSinLeer } from './services/apiClient.js';
+import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni, registrarChatsSinLeer, clientesEsperando } from './services/apiClient.js';
 import { slugNombreChat, parseJid } from './utils/jid.js';
 import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, conversacionEsperaRespuesta, marcarUsoSugerencia, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, adjuntarFotos, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, leerChatsSinLeer, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
@@ -619,6 +619,23 @@ export default function App() {
     return () => window.removeEventListener('message', alMensaje);
   }, [safeMode, session?.access_token, empresaPending]);
 
+  // (15/10/2026) Clientes esperando respuesta +1 h en cualquier canal. Se
+  // pregunta cada 2 min; tocar uno lleva a su chat (WhatsApp) o a su bandeja.
+  const [esperando, setEsperando] = useState([]);
+  useEffect(() => {
+    if (safeMode || !session?.access_token || empresaPending) { setEsperando([]); return undefined; }
+    let vivo = true;
+    const mirar = async () => { const l = await clientesEsperando(60); if (vivo) setEsperando(l); };
+    mirar();
+    const t = window.setInterval(mirar, 120000);
+    return () => { vivo = false; window.clearInterval(t); };
+  }, [safeMode, session?.access_token, empresaPending]);
+  const haceCuanto = (iso) => {
+    const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    return min < 60 ? `${min} min` : min < 1440 ? `${Math.floor(min / 60)} h` : `${Math.floor(min / 1440)} d`;
+  };
+  const CANAL_CORTO = { whatsapp: 'WA', instagram: 'IG', facebook: 'FB', tiktok: 'TT' };
+
   const noCopiarChat = async (claves, nombre) => {
     const ok = window.confirm(
       `¿No copiar "${nombre}" al sistema?
@@ -817,12 +834,21 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
       setQuoteHistory(readHistory(activeQuoteChat));
       setInternalNote(meta.internalNote || '');
       setQuoteStatus(meta.quoteStatus || 'cotizado');
+      // (15/10/2026) El cliente elegido también es POR CHAT. Antes se quedaba
+      // el del chat anterior: en el de +509 35 25 3660 decía "Alberto Compras
+      // Vermont" (el de al lado), y cotizar o cobrar ahí se le asignaba a él.
+      setSelectedCustomer(meta.cliente || null);
+      setCustomerQuery(meta.cliente?.nombre || '');
+      setCustomerPhone(meta.cliente?.telefono || '');
     } catch {
       setLines([]);
       setLastQuote(null);
       setQuoteHistory([]);
       setInternalNote('');
       setQuoteStatus('cotizado');
+      setSelectedCustomer(null);
+      setCustomerQuery('');
+      setCustomerPhone('');
     }
   }, [activeQuoteChat.id]);
 
@@ -836,11 +862,11 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(getMetaStorageKey(activeQuoteChat), JSON.stringify({ internalNote, quoteStatus }));
+      window.localStorage.setItem(getMetaStorageKey(activeQuoteChat), JSON.stringify({ internalNote, quoteStatus, cliente: selectedCustomer || null }));
     } catch {
       // localStorage can be blocked in unusual browser profiles.
     }
-  }, [activeQuoteChat.id, internalNote, quoteStatus]);
+  }, [activeQuoteChat.id, internalNote, quoteStatus, selectedCustomer]);
 
   useEffect(() => {
     const term = query.trim();
@@ -2676,6 +2702,33 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
           <button className="mf-safe-button" type="button" onClick={handleRestoreWhatsApp} title="Desmontar temporalmente MotoFlow Omni">
             Restaurar WhatsApp
           </button>
+        </section>
+      )}
+
+      {session && !empresaPending && esperando.length > 0 && (
+        <section className="mf-sin-copiar" style={{ background: '#fff4e5', borderColor: '#f5c27a' }}>
+          <header>
+            <strong style={{ color: '#9a4d00' }}>
+              ⏰ {esperando.length} cliente{esperando.length !== 1 ? 's' : ''} esperando respuesta (+1 h)
+            </strong>
+            <small>Toca uno para ir a su conversación.</small>
+          </header>
+          <div>
+            {esperando.slice(0, 8).map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                disabled={!!abriendoChat}
+                title={c.preview || ''}
+                onClick={() => (c.platform === 'whatsapp'
+                  ? abrirChatSinCopiar(c.nombre)
+                  : handleSelectOmniChannel(c.platform))}
+              >
+                <span>{CANAL_CORTO[c.platform] || c.platform} · {c.nombre}</span>
+                <b>{haceCuanto(c.desde)}</b>
+              </button>
+            ))}
+          </div>
         </section>
       )}
 

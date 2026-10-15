@@ -972,6 +972,22 @@ export async function registrarChatsSinLeer(chats) {
   }
 }
 
+// (15/10/2026) Clientes esperando respuesta en todos los canales
+// (sql/omni_clientes_esperando.sql). Silencioso: el aviso nunca estorba.
+export async function clientesEsperando(minutos = 60) {
+  const headers = await getAuthHeaders();
+  try {
+    const r = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/omni_clientes_esperando`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_minutos: minutos }),
+    });
+    return Array.isArray(r) ? r : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function sendMirrorHeartbeat(diag = {}) {
   const headers = await getAuthHeaders();
   try {
