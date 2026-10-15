@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { montoConComas } from '@/lib/formatoMonto';
 import { Search, Trash2, Loader2, Package, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -200,10 +201,10 @@ const VentasTable = ({
                 />
               </TableCell>
               <TableCell className="h-7 p-1 text-right border-r border-gray-500 text-[13px] font-black text-gray-700">
-                {currentItem?.itbis != null ? Number(currentItem.itbis).toFixed(2) : '0.00'}
+                {currentItem?.itbis != null ? montoConComas(Number(currentItem.itbis)) : '0.00'}
               </TableCell>
               <TableCell className="h-7 p-1 text-right text-[15px] font-black text-blue-800">
-                {currentItem?.importe != null ? Number(currentItem.importe).toFixed(2) : '0.00'}
+                {currentItem?.importe != null ? montoConComas(Number(currentItem.importe)) : '0.00'}
               </TableCell>
               <TableCell className="p-1 text-center">
                 {currentItem && (
@@ -236,13 +237,13 @@ const VentasTable = ({
                     {item.cantidad}
                   </TableCell>
                   <TableCell className="p-1 text-right text-[14px] font-bold border-r border-gray-400">
-                    {Number(item.precio || 0).toFixed(2)}
+                    {montoConComas(Number(item.precio || 0))}
                   </TableCell>
                   <TableCell className="p-1 text-right text-[14px] font-bold text-red-600 border-r border-gray-400">
-                    {Number((item.precio * item.cantidad) * (item.descuento / 100)).toFixed(2)}
+                    {montoConComas(Number((item.precio * item.cantidad) * (item.descuento / 100)))}
                   </TableCell>
-                  <TableCell className="p-1 text-right text-[14px] font-semibold text-gray-600 border-r border-gray-400">{Number(item.itbis || 0).toFixed(2)}</TableCell>
-                  <TableCell className="p-1 text-right text-[14px] font-black text-blue-900">{Number(item.importe || 0).toFixed(2)}</TableCell>
+                  <TableCell className="p-1 text-right text-[14px] font-semibold text-gray-600 border-r border-gray-400">{montoConComas(Number(item.itbis || 0))}</TableCell>
+                  <TableCell className="p-1 text-right text-[14px] font-black text-blue-900">{montoConComas(Number(item.importe || 0))}</TableCell>
                   <TableCell className="p-0 text-center">
                     <Button size="sm" variant="ghost" className="h-5 w-5 p-0 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => onDeleteItem(item.id)}>
                       <Trash2 className="w-3 h-3" />

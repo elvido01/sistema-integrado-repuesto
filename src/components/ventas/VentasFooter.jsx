@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { montoConComas } from '@/lib/formatoMonto';
 import { agentIsAvailable } from '@/services/motoflowPrintAgent';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -116,7 +117,9 @@ const VentasFooter = ({
     if (paymentType === 'contado') {
       const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
       const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
-      if (recibido < totals.totalFactura) {
+      // (15/10/2026) En centavos: 17118.26 recibido contra un total de 17118.2600000001
+      // (decimales de la computadora) daba "cambio -0.00" y no dejaba grabar.
+      if (Math.round(recibido * 100) < Math.round(totals.totalFactura * 100)) {
         setAlertOpen(true);
         return;
       }
@@ -327,7 +330,7 @@ const VentasFooter = ({
                     <tr key={idx} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 bg-white">
                       <td className="px-1 font-bold">{p.tipo}</td>
                       <td className="px-1">{p.ref}</td>
-                      <td className="px-1 text-right font-black text-green-700">{(Number(p.monto)).toFixed(2)}</td>
+                      <td className="px-1 text-right font-black text-green-700">{montoConComas((Number(p.monto)))}</td>
                       <td className="px-1 text-center w-4">
                         <Trash2 className="w-[10px] h-[10px] text-red-500 cursor-pointer opacity-50 hover:opacity-100" onClick={() => removePago(idx)} />
                       </td>
@@ -342,7 +345,7 @@ const VentasFooter = ({
           <div className="flex items-center border-t border-gray-300 bg-[#f5f4ef]">
             <div className={`flex-1 flex items-center justify-between px-2 py-1 border-r border-gray-300 ${isCredit && totalAbonado > 0 ? 'bg-green-50' : ''}`}>
               <span className="text-[10px] font-black text-gray-500 uppercase">{isCredit ? 'ABONO' : 'RECIBIDO'}</span>
-              <span className={`text-[14px] font-black font-mono leading-none ${isCredit && totalAbonado > 0 ? 'text-green-700' : 'text-[#0a1e3a]'}`}>RD$ {totalAbonado.toFixed(2)}</span>
+              <span className={`text-[14px] font-black font-mono leading-none ${isCredit && totalAbonado > 0 ? 'text-green-700' : 'text-[#0a1e3a]'}`}>RD$ {montoConComas(totalAbonado)}</span>
             </div>
             <div className={`flex-1 flex items-center justify-between px-2 py-1 ${
               isCredit
@@ -358,7 +361,7 @@ const VentasFooter = ({
                 isCredit
                   ? (pendiente > 0 ? 'text-orange-700' : 'text-green-700')
                   : (cambio < 0 ? 'text-red-600' : 'text-green-700')
-              }`}>RD$ {isCredit ? pendiente.toFixed(2) : cambio.toFixed(2)}</span>
+              }`}>RD$ {isCredit ? montoConComas(pendiente) : montoConComas(cambio)}</span>
             </div>
           </div>
         </div>
@@ -369,19 +372,19 @@ const VentasFooter = ({
           <div className="grid grid-cols-2">
             <div className="flex justify-between items-center h-7 px-2 border-b border-r border-gray-400 bg-[#f0efe8]">
               <span className="text-[13px] font-black text-[#006400] uppercase">SUB-TOTAL</span>
-              <span className="font-mono font-black text-[14px] text-[#008000]">{totals.subTotal.toFixed(2)}</span>
+              <span className="font-mono font-black text-[14px] text-[#008000]">{montoConComas(totals.subTotal)}</span>
             </div>
             <div className="flex justify-between items-center h-7 px-2 border-b border-gray-400 bg-[#f5f4ef]">
               <span className="text-[13px] font-black text-gray-800 uppercase">F7 - RECARGO</span>
-              <span className="font-mono font-black text-[14px] text-black">{Number(recargo || 0).toFixed(2)}</span>
+              <span className="font-mono font-black text-[14px] text-black">{montoConComas(Number(recargo || 0))}</span>
             </div>
             <div className="flex justify-between items-center h-7 px-2 border-r border-gray-400 bg-[#f0efe8]">
               <span className="text-[13px] font-black text-black uppercase">DESCUENTO</span>
-              <span className="font-mono font-black text-[14px] text-black">{totals.totalDescuento.toFixed(2)}</span>
+              <span className="font-mono font-black text-[14px] text-black">{montoConComas(totals.totalDescuento)}</span>
             </div>
             <div className="flex justify-between items-center h-7 px-2 bg-[#f5f4ef]">
               <span className="text-[13px] font-black text-black uppercase">TOTAL ITBIS</span>
-              <span className="font-mono font-black text-[14px] text-black">{totals.totalItbis.toFixed(2)}</span>
+              <span className="font-mono font-black text-[14px] text-black">{montoConComas(totals.totalItbis)}</span>
             </div>
           </div>
 
@@ -390,7 +393,7 @@ const VentasFooter = ({
             <div className="flex justify-between items-center flex-1 px-3 h-9">
               <span className="text-[16px] font-black text-[#ff0000] uppercase tracking-tighter">TOTAL FACTURA</span>
               <span className="font-mono text-[20px] font-black text-[#ff0000] tracking-tighter leading-none">
-                {totals.totalFactura.toFixed(2)}
+                {montoConComas(totals.totalFactura)}
               </span>
             </div>
             <div className="flex items-center gap-2 px-2 border-l border-gray-400">
@@ -445,11 +448,11 @@ const VentasFooter = ({
               El Cambio NO puede ser Menor que 0.00 (cero).
               <br />
               <span className="text-[12px] text-gray-600 font-normal mt-1 block">
-                Monto Recibido: RD$ {(pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0)).toFixed(2)}
+                Monto Recibido: RD$ {montoConComas((pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0)))}
                 <br />
-                Total Factura: RD$ {totals.totalFactura.toFixed(2)}
+                Total Factura: RD$ {montoConComas(totals.totalFactura)}
                 <br />
-                Faltante: RD$ {Math.max(0, totals.totalFactura - (pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0))).toFixed(2)}
+                Faltante: RD$ {montoConComas(Math.max(0, totals.totalFactura - (pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0))))}
               </span>
             </AlertDialogDescription>
           </div>

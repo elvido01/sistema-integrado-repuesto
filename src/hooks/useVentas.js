@@ -542,8 +542,9 @@ export const useVentas = () => {
   const cambio = useMemo(() => {
     const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
     const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
-    // Permitir negativos para mostrar "faltante" como cambio negativo
-    return recibido - totals.totalFactura;
+    // Permitir negativos para mostrar "faltante" como cambio negativo.
+    // Redondeado al centavo (y sin "-0.00"): ver la validación al grabar.
+    return Math.round((recibido - totals.totalFactura) * 100) / 100 || 0;
   }, [montoRecibido, pagos, totals.totalFactura]);
 
   const addProductToInvoice = useCallback((product) => {
@@ -882,7 +883,9 @@ export const useVentas = () => {
     if (paymentType === 'contado') {
       const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
       const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
-      if (recibido < totals.totalFactura) {
+      // (15/10/2026) En centavos: 17118.26 recibido contra un total de 17118.2600000001
+      // (decimales de la computadora) daba "cambio -0.00" y no dejaba grabar.
+      if (Math.round(recibido * 100) < Math.round(totals.totalFactura * 100)) {
         toast({ title: 'Monto insuficiente', description: `El monto recibido (RD$ ${recibido.toFixed(2)}) no puede ser menor al total de la factura (RD$ ${totals.totalFactura.toFixed(2)}).`, variant: 'destructive' });
         return;
       }
