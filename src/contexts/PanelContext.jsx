@@ -1,4 +1,20 @@
-import React, { useEffect, useState, lazy } from 'react';
+import React, { useEffect, useState, lazy as reactLazy } from 'react';
+
+// (15/10/2026) Cada pantalla diferida se anota para PRECARGARLA en segundo
+// plano al entrar. Así una pestaña abierta sigue abriendo todas sus pantallas
+// aunque se publique una versión nueva (los archivos viejos desaparecen del
+// servidor). Antes, en ese caso, la página se recargaba sola y se perdía lo
+// que estuviera a medias — p. ej. una venta.
+const importadores = [];
+const lazy = (importar) => { importadores.push(importar); return reactLazy(importar); };
+export function precargarPantallas() {
+  let i = 0;
+  const siguiente = () => {
+    if (i >= importadores.length) return;
+    importadores[i++]().catch(() => {}).finally(() => setTimeout(siguiente, 150));
+  };
+  siguiente();
+}
 import { PanelContext, usePanels } from './panelCore';
 import { panelActivo, publicarModulos } from '@/lib/pantallaContexto';
 import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet, PiggyBank, Landmark } from 'lucide-react';
@@ -187,6 +203,13 @@ export { PanelContext, usePanels };  // re-export desde panelCore para no romper
 export const PanelProvider = ({ children }) => {
   const [panels, setPanels] = useState([{ id: 'inicio', ...componentMapping['inicio'] }]);
   const [activePanel, setActivePanel] = useState('inicio');
+
+  // Precarga de todas las pantallas, 8 s después de entrar (sin estorbar el
+  // arranque). Ver precargarPantallas.
+  useEffect(() => {
+    const t = setTimeout(precargarPantallas, 8000);
+    return () => clearTimeout(t);
+  }, []);
 
   // El agente sabe en qué pantalla estás. Al cambiar de panel se borran los
   // datos del anterior: que hable del cierre de caja mientras miras Ventas

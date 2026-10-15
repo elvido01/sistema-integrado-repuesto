@@ -1,4 +1,4 @@
-﻿import React, { Suspense } from 'react';
+import React, { Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePanels } from '@/contexts/PanelContext';
 import { Button } from '@/components/ui/button';
@@ -14,16 +14,12 @@ const ES_ARCHIVO_VIEJO = /dynamically imported module|Importing a module script 
 class PantallaSegura extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
+  // (15/10/2026) Ya NO se recarga sola: recargar tiraba lo que hubiera a
+  // medias en otras pantallas (una venta). Se precargan todas al entrar
+  // (precargarPantallas) y, si aun así falla, el botón deja decidir cuándo.
   componentDidCatch(error) {
     if (ES_ARCHIVO_VIEJO.test(String(error?.message || error))) {
-      let yaRecargo = false;
-      // Como máximo una recarga por minuto: evita un bucle si el fallo es otro.
-      try {
-        const ultima = Number(sessionStorage.getItem('mf_recarga_version') || 0);
-        yaRecargo = Date.now() - ultima < 60000;
-        if (!yaRecargo) sessionStorage.setItem('mf_recarga_version', String(Date.now()));
-      } catch (_) { /* sin storage */ }
-      if (!yaRecargo) window.location.reload();
+      console.warn('Pantalla de una versión anterior:', error?.message);
     }
   }
   render() {
