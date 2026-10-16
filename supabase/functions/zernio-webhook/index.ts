@@ -114,7 +114,9 @@ async function guardar(supabase: any, ev: any) {
     conversation_id: conversacionId,
     platform,
     sender_type: entrante ? 'user' : 'agent',
-    message_type: adj && !texto ? (tipoAdj === 'image' ? 'image' : tipoAdj === 'video' ? 'video' : tipoAdj === 'audio' ? 'audio' : 'file') : 'text',
+    // Los tipos que acepta sales_messages (CHECK): un reel compartido o una
+    // mención en historia entran como 'unknown' con su etiqueta.
+    message_type: adj && !texto ? ({ image: 'image', video: 'video', audio: 'audio', file: 'document', document: 'document', sticker: 'sticker' }[tipoAdj] || 'unknown') : 'text',
     message_text: texto || etiquetaAdj,
     media_url: adj?.url || null,
     external_message_id: idMensaje,
