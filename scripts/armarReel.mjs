@@ -11,8 +11,10 @@
 //   2. TOMAS     3-4 imágenes de estudio desde la foto real (creativo-escena,
 //                modo "toma"). Sin texto: las letras van encima.
 //   3. VOZ       OpenAI TTS en español del Caribe.
-//   4. MONTAJE   ffmpeg: intro con logo, tomas con movimiento de cámara y
-//                letras, cierre con WhatsApp y el 5% del código, subtítulos.
+//   4. MONTAJE   ffmpeg, según la PLANTILLA del guion (16/10/2026: anuncio,
+//                ¿le sirve?, ¿cuánto cuesta?, POV, ¿sabías que?, vitrina):
+//                la pieza con el gancho en el primer cuadro, tomas con
+//                movimiento y letras, pantalla especial, cierre, subtítulos.
 //   5. SUBIDA    creativo-escena, modo "video" → bucket ai-marketing.
 //
 // Es la "opción A" que eligió el dueño: imágenes con movimiento de cámara,
@@ -45,6 +47,108 @@ const FUENTE_TEXTO = process.env.REEL_FUENTE_TEXTO || fuente('BarlowCondensed-Bo
 const PLATA = '0xF4F4F4';
 const ORO = '0xFFB21E';
 const MOVIMIENTOS = ['acercar', 'alejar', 'izquierda', 'derecha', 'subir', 'bajar'];
+
+// ── LAS PLANTILLAS DE MONTAJE (16/10/2026) ──────────────────────────────
+// "Los reels son prácticamente idénticos": la receta del reel modelo cambiaba
+// las tomas, pero el molde era siempre el mismo (logo, 4 fotos con zoom,
+// cierre, locutor de anuncio y 5%). Y YouTube deja sin monetizar lo
+// "repetitivo o producido en masa" desde julio de 2025. Cada plantilla cambia
+// la ESTRUCTURA: el gancho, el ritmo, la voz, la duración y la pantalla
+// especial (lista de motos, precio). Todas abren con la PIEZA en el primer
+// cuadro (antes abría el logo sobre negro: era la miniatura del reel).
+export const PLANTILLAS = {
+  anuncio: {
+    nombre: 'Anuncio', tomas: 4, cortes: 2, min: 15, max: 30, cierre: 2.6, descuento: true, voz: 'ash',
+    instrucciones: 'Eres locutor de anuncios comerciales de radio y televisión en República Dominicana. '
+      + 'Acento caribeño dominicano, voz con mucha energía, entusiasmo y seguridad, como un anuncio de tienda que vende. '
+      + 'Ritmo rápido y con pegada: remata cada frase corta con fuerza, sube la emoción en las exclamaciones, '
+      + 'pausas cortas y dramáticas antes del llamado a la acción. Sonríe al hablar. Nunca suenes leído ni monótono.',
+  },
+  le_sirve: {
+    nombre: '¿Le sirve a tu moto?', tomas: 3, cortes: 1, min: 14, max: 26, cierre: 2.4, extra: 'lista', voz: 'onyx',
+    instrucciones: 'Eres el vendedor del mostrador de una tienda de repuestos de moto en República Dominicana. '
+      + 'Acento dominicano, seguro y amable, hablándole directo al cliente que pregunta si la pieza le sirve. '
+      + 'Ritmo ágil y natural, sin gritar, como en una conversación.',
+  },
+  cuanto_cuesta: {
+    nombre: '¿Cuánto crees que cuesta?', tomas: 3, cortes: 2, min: 12, max: 24, cierre: 2.4, extra: 'precio', descuento: true, voz: 'verse',
+    instrucciones: 'Eres un presentador dominicano jugando con el público en un video corto. Tono divertido y de suspenso, '
+      + 'retando al que mira a adivinar. Acento dominicano, cercano, con una pausa antes de la revelación.',
+  },
+  pov: {
+    nombre: 'POV: llegas a Morla', tomas: 4, cortes: 1, min: 9, max: 18, cierre: 2.0, voz: 'coral', ganchoPov: true,
+    instrucciones: 'Voz joven dominicana, natural y cercana, como contándole una historia corta a un amigo en TikTok. '
+      + 'Nada de locutor ni de anuncio: relajada, con humor, frases muy cortas.',
+  },
+  sabias_que: {
+    nombre: '¿Sabías que…?', tomas: 3, cortes: 2, min: 15, max: 30, cierre: 2.4, voz: 'nova',
+    instrucciones: 'Eres una experta en motos de República Dominicana explicando algo útil en un video corto. '
+      + 'Tono claro, cálido y seguro, como una buena maestra; acento dominicano; ritmo medio, sin prisa y sin exagerar.',
+  },
+  vitrina: {
+    nombre: 'Vitrina sin voz', tomas: 3, cortes: 2, min: 8, max: 11, cierre: 1.8, sinVoz: true,
+  },
+};
+
+// Las motos compatibles de verdad. get_nombres_modelos trae ruido de la
+// migración ("17", "12", "PORTA PLACA" en un porta placa, "UNIVERSAL"):
+// fuera los números solos, lo universal y lo que es el nombre de la pieza.
+export function motosDe(producto) {
+  const desc = String(producto?.descripcion || '').toUpperCase().trim();
+  const vistas = new Set();
+  return String(producto?.modelos || '').split(',')
+    .map((m) => m.replace(/\s+/g, ' ').trim().toUpperCase())
+    .filter((m) => m && /[A-Z]/.test(m) && m.length <= 22 && !/UNIVERSAL|GENERIC|VARIOS|TODAS/.test(m)
+      && !desc.startsWith(m) && !vistas.has(m) && vistas.add(m))
+    .slice(0, 8);
+}
+
+// El precio que paga el cliente: el de catálogo + su ITBIS (en Morla el
+// catálogo va sin ITBIS). Sin el ITBIS conocido no se revela ningún precio.
+export function precioFinal(producto) {
+  const precio = Number(producto?.precio || 0);
+  const itbis = producto?.itbis_pct;
+  if (!(precio > 0) || itbis === undefined || itbis === null) return null;
+  const pct = Number(itbis) > 1 ? Number(itbis) / 100 : Number(itbis);
+  const total = Math.round(precio * (1 + (pct || 0)));
+  return `RD$ ${total.toLocaleString('en-US')}`;
+}
+
+// Las que se pueden hacer con esta pieza: "¿Le sirve?" pide al menos 2 motos
+// reales; "¿Cuánto cuesta?" pide precio con ITBIS; la vitrina no sirve con
+// los videos del dueño (su gracia es la voz que describe lo que se ve).
+export function plantillasPosibles(para) {
+  return Object.keys(PLANTILLAS).filter((k) => {
+    if (k === 'le_sirve') return motosDe(para.producto).length >= 2;
+    if (k === 'cuanto_cuesta') return !!precioFinal(para.producto);
+    if (k === 'vitrina') return !para.clips?.length;
+    return true;
+  });
+}
+
+// Rotación: la que hace más tiempo que no sale (historial local del
+// Creativo), sin repetir nunca la última. Empate: al azar.
+const HISTORIAL = path.resolve(import.meta.dirname, '..', 'run', 'reel_plantillas.json');
+export async function elegirPlantilla(para, { historial = null } = {}) {
+  let usadas = historial;
+  if (!usadas) {
+    try { usadas = JSON.parse(await readFile(HISTORIAL, 'utf8')); } catch { usadas = []; }
+  }
+  const posibles = plantillasPosibles(para);
+  const ultima = usadas[usadas.length - 1];
+  const candidatas = posibles.filter((k) => k !== ultima);
+  const lista = candidatas.length ? candidatas : posibles;
+  const hace = (k) => { const i = usadas.lastIndexOf(k); return i < 0 ? Infinity : usadas.length - i; };
+  const mayor = Math.max(...lista.map(hace));
+  const mejores = lista.filter((k) => hace(k) === mayor);
+  return mejores[Math.floor(Math.random() * mejores.length)];
+}
+async function anotarPlantilla(k) {
+  let usadas = [];
+  try { usadas = JSON.parse(await readFile(HISTORIAL, 'utf8')); } catch { /* primera vez */ }
+  usadas.push(k);
+  try { await writeFile(HISTORIAL, JSON.stringify(usadas.slice(-30)), 'utf8'); } catch { /* sin carpeta run: rota igual al azar */ }
+}
 
 const correr = (cmd, args, { timeout = 300_000 } = {}) => new Promise((resolve, reject) => {
   const hijo = spawn(cmd, args, { shell: false, windowsHide: true });
@@ -100,23 +204,77 @@ async function letrero(dir, texto, { y, tam = 130, alpha = null }) {
 const limpioTexto = (t, max) => String(t ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
 // ── 1. EL GUION ─────────────────────────────────────────────────────────
-export const promptGuion = ({ para, empresa, telefono }) => {
+// Lo que pide cada plantilla: el encargo, el titular, el largo de la voz y
+// sus reglas. La receta del reel modelo queda para el estilo de las tomas.
+const ENCARGO = {
+  anuncio: [
+    'Vas a escribir el guion de un ANUNCIO en REEL vertical (TikTok, Instagram, YouTube Shorts) de UNA pieza:',
+    'un comercial que VENDE, con energía de anuncio de radio, no un video explicativo.',
+  ],
+  le_sirve: [
+    'Vas a escribir el guion de un REEL vertical (TikTok, Instagram, YouTube Shorts) de UNA pieza en formato "¿LE SIRVE A TU MOTO?":',
+    'responde la pregunta que más hacen los clientes. Abre con la pieza y la pregunta; las tomas muestran la pieza; después',
+    'el montador pone una pantalla con la LISTA de motos compatibles (sale de los datos: no la escribas tú).',
+    'La voz le habla al cliente ("¿Tienes una X o una Y? Esta pieza te sirve"), nombra 2 o 3 motos de la lista y lo invita',
+    'a escribir por WhatsApp con el modelo de su moto si no la ve.',
+  ],
+  cuanto_cuesta: [
+    'Vas a escribir el guion de un REEL vertical (TikTok, Instagram, YouTube Shorts) de UNA pieza en formato "¿CUÁNTO CREES QUE CUESTA?":',
+    'un juego con el público. Abre retando a adivinar el precio; las tomas muestran la pieza desde varios ángulos mientras',
+    'la voz da pistas de qué es y para qué sirve; al final el montador REVELA el precio en pantalla.',
+    'La voz termina con algo como "¿Acertaste? Mira el precio en pantalla", sin decirlo.',
+  ],
+  pov: [
+    'Vas a escribir el guion de un REEL vertical en formato "POV" de TikTok, de UNA pieza: en primera persona, como si el que',
+    'mira fuera el cliente que llega a la tienda buscando esta pieza. El titular es el texto POV que va encima de las primeras',
+    'tomas. Cortes rápidos. La voz es una mini historia con humor que termina en que en la tienda la tenían.',
+  ],
+  sabias_que: [
+    'Vas a escribir el guion de un REEL vertical educativo en formato "¿SABÍAS QUE…?", sobre UNA pieza: enseña algo útil',
+    '(para qué sirve, cómo saber cuándo cambiarla o un cuidado básico). NO es un anuncio. Abre con una pregunta que dé',
+    'curiosidad. SOLO consejos generales y seguros que cualquier mecánico confirmaría; sin cifras (kilómetros, medidas, horas)',
+    'que no estén en los datos. Termina con que en la tienda la tienes.',
+  ],
+  vitrina: [
+    'Vas a escribir el guion de una VITRINA SIN VOZ de UNA pieza: 8 a 10 segundos, solo música y letras rápidas, para que',
+    'se repita en bucle. Cada toma es un ángulo distinto de la pieza con 1 a 3 palabras de impacto.',
+  ],
+};
+const TITULAR = {
+  anuncio: '2 a 4 PALABRAS EN MAYÚSCULAS para la apertura (ej. LLEGÓ EL PISTÓN)',
+  le_sirve: 'la pregunta de apertura, 2 a 5 PALABRAS EN MAYÚSCULAS (ej. ¿LE SIRVE A TU CG?)',
+  cuanto_cuesta: '¿CUÁNTO CREES QUE CUESTA? o una variante de hasta 5 palabras EN MAYÚSCULAS',
+  pov: 'el texto POV en minúsculas como en TikTok, máximo 60 letras (ej. pov: tu moto no prende y llegas a morla)',
+  sabias_que: 'la pregunta de apertura, 3 a 6 PALABRAS EN MAYÚSCULAS (ej. ¿SABÍAS ESTO DE TU CADENA?)',
+  vitrina: '2 o 3 PALABRAS EN MAYÚSCULAS',
+};
+const LARGO_VOZ = {
+  anuncio: 'el locutor: 30 a 45 palabras (entre 15 y 22 segundos), frases MUY cortas',
+  le_sirve: 'el vendedor: 28 a 40 palabras, frases cortas',
+  cuanto_cuesta: 'el presentador: 22 a 35 palabras, frases cortas',
+  pov: 'la historia: 12 a 25 palabras, frases muy cortas',
+  sabias_que: 'la explicación: 40 a 55 palabras (20 a 26 segundos), frases claras',
+  vitrina: 'null (no lleva voz)',
+};
+
+export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) => {
   const r = { ...(para.receta || {}) };
   delete r.voz_original;   // sus palabras no se copian: ni se le enseñan
   const p = para.producto || {};
+  const P = PLANTILLAS[plantilla] || PLANTILLAS.anuncio;
+  const motos = motosDe(p);
+  const conDescuento = P.descuento && !para.sin_descuento;
   return [
     `Eres el director creativo de ${empresa || 'Repuestos Morla'}, tienda de repuestos de moto en Higüey, República Dominicana.`,
-    'Vas a escribir el guion de un ANUNCIO en REEL vertical (TikTok, Instagram, YouTube Shorts) de UNA pieza:',
-    'un comercial que VENDE, con energía de anuncio de radio, no un video explicativo.',
-    'siguiendo la RECETA de un reel que le gustó al dueño. Copias la receta (ritmo, tipo de tomas, estructura),',
-    'NUNCA su marca, su producto ni sus frases.',
+    ...(ENCARGO[plantilla] || ENCARGO.anuncio),
+    'Toma de la RECETA de un reel que le gustó al dueño el ESTILO de las tomas (escenario, luz, ángulos, ritmo);',
+    'la estructura la manda el formato de arriba. NUNCA copies su marca, su producto ni sus frases.',
     '',
     'LA PIEZA (datos reales del sistema, son lo ÚNICO que puedes afirmar):',
     `- Descripción: ${p.descripcion}`,
     `- Código: ${p.codigo}`,
     p.marca ? `- Marca: ${p.marca}` : '',
-    p.modelos ? `- Motos compatibles: ${p.modelos}` : '- Motos compatibles: (no registradas: NO menciones ninguna moto ni modelo)',
-    `- Precio de catálogo (SOLO para letra en pantalla, NUNCA en la voz): RD$ ${Number(p.precio || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`,
+    motos.length ? `- Motos compatibles: ${motos.join(', ')}` : '- Motos compatibles: (no registradas: NO menciones ninguna moto ni modelo)',
     '',
     'LA RECETA:',
     '```json', JSON.stringify(r, null, 1), '```',
@@ -124,13 +282,13 @@ export const promptGuion = ({ para, empresa, telefono }) => {
     '',
     'Devuelve SOLO este JSON, sin texto alrededor:',
     '{',
-    '  "titular": "2 a 4 PALABRAS EN MAYÚSCULAS para la apertura (ej. LLEGÓ EL PISTÓN)",',
+    `  "titular": "${TITULAR[plantilla] || TITULAR.anuncio}",`,
     '  "tomas": [',
     '    { "escena": "in ENGLISH, what the camera sees: the product + setting + angle (e.g. a hand holding the part close to camera, dark garage behind, red rim light)",',
     `      "movimiento": "uno de: ${MOVIMIENTOS.join(', ')}",`,
     '      "texto": "2 o 3 PALABRAS DE IMPACTO EN MAYÚSCULAS (ej. FRENA SEGURO, YA LLEGÓ, ORIGINAL), o null" }',
     '  ],',
-    '  "voz": "el locutor: 30 a 45 palabras (entre 15 y 22 segundos), frases MUY cortas",',
+    `  "voz": "${LARGO_VOZ[plantilla] || LARGO_VOZ.anuncio}",`,
     '  "cierre": "frase corta para la última pantalla (ej. YA DISPONIBLE EN HIGÜEY)",',
     '  "descripcion_redes": "texto para TikTok y YouTube: 1-2 frases + 3-5 hashtags (#repuestosmoto #higuey ...)"',
     '}',
@@ -142,21 +300,28 @@ export const promptGuion = ({ para, empresa, telefono }) => {
       '  Entre 5 y 8 tomas, alternando clips y momentos para que haya ritmo. Al menos 3 llevan "texto".',
       '  Describe en la voz lo que de verdad se ve en los clips (la pieza en la mano, puesta en la moto…).',
     ] : [
-      '- 4 tomas, distintas entre sí, como pide la receta. La pieza SIEMPRE es la protagonista. Al menos 3 llevan "texto".',
+      `- ${P.tomas} tomas, distintas entre sí. La pieza SIEMPRE es la protagonista.`
+        + (P.ganchoPov ? ' Las tomas van SIN "texto" (null), salvo la última (ej. LA TENÍAN).' : ` Al menos ${P.tomas - 1} llevan "texto".`),
     ]),
-    '- La voz es de COMERCIAL: primera frase = gancho fuerte (exclamación o pregunta al motoconchista, ej. "¡Tu moto merece lo mejor!"),',
-    '  luego 1 o 2 beneficios en frases de 3 a 7 palabras, un toque de urgencia ("¡Ya llegó!", "¡No te quedes sin la tuya!"),',
-    '  y cierre con llamado a la acción. Nada de explicaciones largas ni de leer el nombre del catálogo completo.',
+    ...(plantilla === 'anuncio' ? [
+      '- La voz es de COMERCIAL: primera frase = gancho fuerte (exclamación o pregunta al motoconchista, ej. "¡Tu moto merece lo mejor!"),',
+      '  luego 1 o 2 beneficios en frases de 3 a 7 palabras, un toque de urgencia ("¡Ya llegó!", "¡No te quedes sin la tuya!"),',
+      '  y cierre con llamado a la acción. Nada de explicaciones largas ni de leer el nombre del catálogo completo.',
+    ] : P.sinVoz ? [] : [
+      '- La primera frase de la voz es el gancho y tiene que entenderse sola en 2 segundos. Nada de leer el nombre del catálogo completo.',
+    ]),
+    '- En la VOZ, las abreviaturas del catálogo se dicen completas o no se dicen: JGO = juego, DEL. = delantero, TRAS. = trasero;',
+    '  y la marca de la pieza solo si suena natural. Di la pieza como la nombra un motoconchista ("las botellas de la CG").',
     '- NO inventes medidas, cilindradas, materiales, certificaciones ni motos que no estén arriba.',
     '- Los números y siglas del NOMBRE de la pieza (ej. 5100, 7100, 10W40, 20W50, 4T, 2T, SAE, 6203) son parte del nombre',
     '  o de la especificación, NUNCA modelos de moto. "Compatible con modelos 5100" es un error grave.',
     '  Solo nombra motos que estén en "Motos compatibles".',
     '  Si la receta pide datos técnicos y no los hay, habla de lo que sí se sabe (para qué moto, que está disponible).',
     '- PROHIBIDO mencionar el precio, "pesos", cifras de dinero o la palabra "precio" en la VOZ (decisión del dueño).',
-    '  Si conviene, el precio va como "texto" de UNA toma, EXACTAMENTE el de catálogo.',
-    para.sin_descuento
-      ? '- La voz termina invitando a venir o escribir al WhatsApp. Esta promoción NO tiene descuento: no menciones descuento, rebaja, oferta de precio ni código.'
-      : '- La voz termina invitando a venir o escribir al WhatsApp, y diciendo que si dicen que lo vieron en las redes se lo llevan con 5% de descuento.',
+    '  Tampoco pongas el precio en el "texto" de las tomas: si el formato lo revela, lo pone el montador (con el ITBIS).',
+    P.sinVoz ? '' : conDescuento
+      ? '- La voz termina invitando a venir o escribir al WhatsApp, y diciendo que si dicen que lo vieron en las redes se lo llevan con 5% de descuento.'
+      : '- La voz termina invitando a venir o escribir al WhatsApp. NO menciones descuento, rebaja, oferta de precio ni código.',
     r.voz && r.voz.hay === false
       ? '- Esta receta NO lleva voz: deja "voz" con UNA frase corta (se usará solo como letra), y apóyate en "texto" de cada toma.'
       : '',
@@ -199,12 +364,27 @@ export function normalizarGuion(g) {
       texto: t.texto ? limpioTexto(t.texto, 28).toUpperCase() : null,
     }));
   if (tomas.length < 2) throw new Error('El guion trajo menos de 2 tomas.');
+  // (16/10/2026) La plantilla viaja dentro del guion: el dueño lo aprueba y
+  // el reel se arma después, con la MISMA plantilla. Los guiones de antes no
+  // la traen: son anuncios.
+  const plantilla = PLANTILLAS[g.plantilla] ? g.plantilla : 'anuncio';
+  const P = PLANTILLAS[plantilla];
   return {
-    titular: limpioTexto(g.titular, 30).toUpperCase() || 'YA DISPONIBLE',
+    plantilla,
+    titular: P.ganchoPov
+      ? limpioTexto(g.titular, 60).toLowerCase() || 'pov: llegas a la tienda'
+      : limpioTexto(g.titular, 30).toUpperCase() || 'YA DISPONIBLE',
     tomas,
-    voz: sinPrecio(limpioTexto(g.voz, 600)),
+    voz: P.sinVoz ? '' : sinPrecio(limpioTexto(g.voz, 600)),
     cierre: limpioTexto(g.cierre, 34).toUpperCase() || 'YA DISPONIBLE EN HIGÜEY',
     descripcion_redes: limpioTexto(g.descripcion_redes, 400),
+    // La lista de "¿Le sirve?" y el precio de "¿Cuánto cuesta?" salen de los
+    // datos (no de la IA); el dueño los puede corregir en el Paso 2.
+    ...(plantilla === 'le_sirve' ? {
+      motos: (Array.isArray(g.motos) ? g.motos : String(g.motos || '').split(','))
+        .map((m) => limpioTexto(m, 22).toUpperCase()).filter(Boolean).slice(0, 8),
+    } : {}),
+    ...(plantilla === 'cuanto_cuesta' ? { precio_texto: limpioTexto(g.precio_texto, 20) } : {}),
   };
 }
 
@@ -217,7 +397,7 @@ export const INSTRUCCIONES_VOZ = 'Eres locutor de anuncios comerciales de radio 
   + 'Acento caribeño dominicano, voz con mucha energía, entusiasmo y seguridad, como un anuncio de tienda que vende. '
   + 'Ritmo rápido y con pegada: remata cada frase corta con fuerza, sube la emoción en las exclamaciones, '
   + 'pausas cortas y dramáticas antes del llamado a la acción. Sonríe al hablar. Nunca suenes leído ni monótono.';
-async function grabarVoz(texto, archivo) {
+async function grabarVoz(texto, archivo, P = PLANTILLAS.anuncio) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error('Falta OPENAI_API_KEY para la voz.');
   const pedir = (cuerpo) => fetch('https://api.openai.com/v1/audio/speech', {
@@ -226,8 +406,9 @@ async function grabarVoz(texto, archivo) {
     body: JSON.stringify(cuerpo),
   });
   let r = await pedir({
-    model: 'gpt-4o-mini-tts', voice: VOZ, input: texto, response_format: 'mp3',
-    instructions: INSTRUCCIONES_VOZ,
+    // El anuncio conserva su voz (REEL_VOZ); las demás plantillas, la suya.
+    model: 'gpt-4o-mini-tts', voice: P === PLANTILLAS.anuncio ? VOZ : (P.voz || VOZ), input: texto, response_format: 'mp3',
+    instructions: P.instrucciones || INSTRUCCIONES_VOZ,
   });
   // Si el modelo nuevo no está, el clásico: la voz es menos expresiva pero sale.
   if (!r.ok) r = await pedir({ model: 'tts-1', voice: 'onyx', input: texto, response_format: 'mp3' });
@@ -251,12 +432,19 @@ function movimiento(tipo, n) {
   }
 }
 
+// El gancho puede ser una pregunta larga ("¿CUÁNTO CREES QUE CUESTA?"): con
+// letra de 140 la primera línea se salía por los lados.
+const tamLetrero = (texto) => {
+  const resto = String(texto || '').trim().split(/\s+/).slice(0, -1).join(' ').length;
+  return resto > 18 ? 104 : resto > 12 ? 120 : 140;
+};
+
 const H264 = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-r', String(FPS)];
 
 // (04/10/2026) "Más comercial": cada toma se corta en DOS planos (el abierto
 // con su movimiento y un acercamiento con golpe de zoom) y cada corte entra
 // con un destello. Con 4 tomas son 8 cortes de ~2 s: ritmo de anuncio.
-async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false }) {
+async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false, pov = false }) {
   const n = Math.max(2, Math.round(dur * FPS));
   const { z, x, y } = cerrado
     ? { z: `1.35+0.10*on/${n}`, x: 'iw/2-(iw/zoom/2)', y: 'ih*0.42-(ih/zoom/2)' }
@@ -267,8 +455,9 @@ async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false }) {
     'eq=contrast=1.08:saturation=1.15',
   ];
   if (texto) {
-    // La letra de las piezas (plata + oro), entrando de golpe.
-    filtros.push(...await letrero(dir, texto, { y: 'h*0.10', tam: 140, alpha: 'if(lt(t,0.12),t/0.12,1)' }));
+    // La letra de las piezas (plata + oro), entrando de golpe; el POV, en su caja.
+    filtros.push(...(pov ? await filtrosPov(dir, texto)
+      : await letrero(dir, texto, { y: 'h*0.10', tam: tamLetrero(texto), alpha: 'if(lt(t,0.12),t/0.12,1)' })));
   }
   filtros.push(`fade=t=in:st=0:d=0.12:color=white,fade=t=out:st=${Math.max(0, dur - 0.08).toFixed(2)}:d=0.08`);
   const lado = cerrado ? 'b' : 'a';
@@ -284,7 +473,7 @@ async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false }) {
 // deformar (recorta lo que sobra), sin su sonido (va la voz y la música), con
 // la letra de la toma y el mismo destello de entrada que los demás cortes.
 // Si el clip es más corto que el corte, se repite.
-async function clipVideo({ dir, i, archivo, durClip, momento, dur, texto }) {
+async function clipVideo({ dir, i, archivo, durClip, momento, dur, texto, pov = false }) {
   const base = { inicio: 0.05, medio: 0.4, final: 0.72 }[momento] ?? 0.05;
   const desde = Math.max(0, Math.min(durClip * base, durClip - dur - 0.05));
   const filtros = [
@@ -292,7 +481,8 @@ async function clipVideo({ dir, i, archivo, durClip, momento, dur, texto }) {
     'eq=contrast=1.05:saturation=1.1',
   ];
   if (texto) {
-    filtros.push(...await letrero(dir, texto, { y: 'h*0.10', tam: 140, alpha: 'if(lt(t,0.12),t/0.12,1)' }));
+    filtros.push(...(pov ? await filtrosPov(dir, texto)
+      : await letrero(dir, texto, { y: 'h*0.10', tam: tamLetrero(texto), alpha: 'if(lt(t,0.12),t/0.12,1)' })));
   }
   filtros.push(`fade=t=in:st=0:d=0.1:color=white,fade=t=out:st=${Math.max(0, dur - 0.08).toFixed(2)}:d=0.08`);
   const guion = path.join(dir, `f_video${i}.txt`);
@@ -301,6 +491,87 @@ async function clipVideo({ dir, i, archivo, durClip, momento, dur, texto }) {
   await correr(FFMPEG, ['-v', 'error', '-y', '-stream_loop', '-1', '-ss', desde.toFixed(2), '-i', archivo,
     '-filter_script:v', guion, '-t', dur.toFixed(2), ...H264, '-an', salida]);
   return salida;
+}
+
+// (16/10/2026) El texto POV: minúsculas blancas sobre caja negra, arriba,
+// como lo escribe la gente en TikTok. Partido en renglones de ~22 letras.
+const FUENTE_SIMBOLOS = existsSync('C:/Windows/Fonts/seguisym.ttf') ? 'C:/Windows/Fonts/seguisym.ttf' : null;
+export function renglones(texto, max = 22) {
+  const out = [];
+  for (const p of String(texto || '').split(/\s+/).filter(Boolean)) {
+    if (out.length && (out[out.length - 1] + ' ' + p).length <= max) out[out.length - 1] += ` ${p}`;
+    else out.push(p);
+  }
+  return out.slice(0, 3);
+}
+async function filtrosPov(dir, texto) {
+  const filtros = [];
+  for (const [k, l] of renglones(texto).entries()) {
+    filtros.push(`drawtext=fontfile='${rutaFiltro(FUENTE_TEXTO)}':expansion=none`
+      + `:textfile='${await archivoTexto(dir, l)}':fontsize=66:fontcolor=white:box=1:boxcolor=black@0.78:boxborderw=16`
+      + `:x=(w-text_w)/2:y=h*0.11+${k * 96}`);
+  }
+  return filtros;
+}
+
+// El fondo de las pantallas especiales: la toma desenfocada y oscurecida,
+// con la pieza nítida arriba. Devuelve las partes del filter_complex.
+const fondoConPieza = (alto) => [
+  `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=24:2,eq=brightness=-0.28:saturation=0.9,setsar=1[bg]`,
+  `[1:v]scale=w=720:h=${alto}:force_original_aspect_ratio=decrease[pz]`,
+  `[bg][pz]overlay=x=(W-w)/2:y=H*0.06[b0]`,
+];
+async function pantallaEspecial({ dir, nombre, fondo, dur, partes }) {
+  const n = Math.round(dur * FPS);
+  const guion = path.join(dir, `f_${nombre}.txt`);
+  await writeFile(guion, partes.join(';'), 'utf8');
+  const salida = path.join(dir, `${nombre}.mp4`);
+  await correr(FFMPEG, ['-v', 'error', '-y', '-loop', '1', '-t', dur.toFixed(2), '-i', fondo,
+    '-loop', '1', '-t', dur.toFixed(2), '-i', fondo, '-filter_complex_script', guion,
+    '-map', '[out]', '-frames:v', String(n), ...H264, '-an', salida]);
+  return salida;
+}
+
+// "¿Le sirve a tu moto?": la pieza arriba y la lista de motos, una por una
+// con su ✔. Más de 4 motos: dos columnas.
+async function clipLista({ dir, fondo, titulo, motos, dur }) {
+  const partes = fondoConPieza(700);
+  let v = '[b0]';
+  partes.push(`${v}${(await letrero(dir, titulo, { y: 'h*0.405', tam: 104 })).join(',')}[b1]`);
+  v = '[b1]';
+  const dosColumnas = motos.length > 4;
+  for (const [k, moto] of motos.entries()) {
+    const col = dosColumnas ? k % 2 : 0;
+    const fila = dosColumnas ? Math.floor(k / 2) : k;
+    const x = dosColumnas ? (col ? 'w*0.54' : 'w*0.10') : 'w*0.22';
+    const y = `h*${(0.535 + fila * 0.066).toFixed(3)}`;
+    const desde = (0.35 + k * 0.3).toFixed(2);
+    const alpha = `if(lt(t,${desde}),0,min(1,(t-${desde})/0.2))`;
+    const marca = FUENTE_SIMBOLOS
+      ? `drawtext=fontfile='${rutaFiltro(FUENTE_SIMBOLOS)}':expansion=none:textfile='${await archivoTexto(dir, '✔')}'`
+        + `:fontsize=62:fontcolor=${ORO}:x=${x}:y=${y}:alpha='${alpha}',`
+      : '';
+    const sig = `[c${k}]`;
+    partes.push(`${v}${marca}drawtext=fontfile='${rutaFiltro(FUENTE_TITULO)}':expansion=none`
+      + `:textfile='${await archivoTexto(dir, moto)}':fontsize=66:fontcolor=white:borderw=4:bordercolor=black@0.8`
+      + `:x=${x}+80:y=${y}:alpha='${alpha}'${sig}`);
+    v = sig;
+  }
+  partes.push(`${v}fade=t=in:st=0:d=0.15:color=white,fade=t=out:st=${(dur - 0.12).toFixed(2)}:d=0.12[out]`);
+  return pantallaEspecial({ dir, nombre: 'lista', fondo, dur, partes });
+}
+
+// "¿Cuánto crees que cuesta?": la pieza, un redoble y el precio FINAL.
+async function clipPrecio({ dir, fondo, precio, dur }) {
+  const partes = fondoConPieza(760);
+  const aparece = 'if(lt(t,0.7),0,min(1,(t-0.7)/0.15))';
+  partes.push(`[b0]drawtext=fontfile='${rutaFiltro(FUENTE_TEXTO)}':expansion=none:textfile='${await archivoTexto(dir, 'EL PRECIO ES…')}'`
+    + `:fontsize=64:fontcolor=0xDDDDDD:borderw=3:bordercolor=black@0.8:x=(w-text_w)/2:y=h*0.50[b1]`);
+  partes.push(`[b1]${(await letrero(dir, precio, { y: 'h*0.555', tam: 150, alpha: aparece })).join(',')}[b2]`);
+  partes.push(`[b2]drawtext=fontfile='${rutaFiltro(FUENTE_TEXTO)}':expansion=none:textfile='${await archivoTexto(dir, 'ITBIS incluido')}'`
+    + `:fontsize=50:fontcolor=0xDDDDDD:x=(w-text_w)/2:y=h*0.735:alpha='${aparece}'[b3]`);
+  partes.push(`[b3]fade=t=in:st=0:d=0.15:color=white,fade=t=out:st=${(dur - 0.12).toFixed(2)}:d=0.12[out]`);
+  return pantallaEspecial({ dir, nombre: 'precio', fondo, dur, partes });
 }
 
 // Intro y cierre: fondo oscuro, logo y letras. Sin logo, solo letras.
@@ -413,35 +684,49 @@ export async function verClips(urls, dir, { conImagenes = true } = {}) {
 }
 
 export async function escribirGuion({ para, empresa, telefono, pensar }) {
+  // (16/10/2026) Cada guion sale con su plantilla, rotando (ver PLANTILLAS).
+  const plantilla = para.plantilla && plantillasPosibles(para).includes(para.plantilla)
+    ? para.plantilla : await elegirPlantilla(para);
+  const conDatos = (bruto) => {
+    const g = { ...leerJson(bruto), plantilla };
+    if (plantilla === 'le_sirve') g.motos = motosDe(para.producto);
+    if (plantilla === 'cuanto_cuesta') g.precio_texto = precioFinal(para.producto);
+    return normalizarGuion(g);
+  };
+  let g;
   if (!para.clips?.length) {
-    return normalizarGuion(leerJson(await pensar(promptGuion({ para, empresa, telefono }))));
+    g = conDatos(await pensar(promptGuion({ para, empresa, telefono, plantilla })));
+  } else {
+    // Con video del dueño: el guion se escribe MIRANDO sus clips.
+    const dir = await mkdtemp(path.join(tmpdir(), 'reel-guion-'));
+    try {
+      const clips = await verClips(para.clips, dir);
+      const conInfo = { ...para, clips_info: clips.map((c) => ({ n: c.n, dur: c.dur })) };
+      const imagenes = clips.flatMap((c) => c.frames);
+      g = conDatos(await pensar(promptGuion({ para: conInfo, empresa, telefono, plantilla }), imagenes));
+      // El modelo a veces nombra "Clip 3" con un solo clip: se reparte entre
+      // los que de verdad hay, para que el dueño vea en el Paso 2 lo real.
+      g.tomas = g.tomas.map((t) => ({ ...t, clip: ((Math.max(1, t.clip) - 1) % clips.length) + 1 }));
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
   }
-  // Con video del dueño: el guion se escribe MIRANDO sus clips.
-  const dir = await mkdtemp(path.join(tmpdir(), 'reel-guion-'));
-  try {
-    const clips = await verClips(para.clips, dir);
-    const conInfo = { ...para, clips_info: clips.map((c) => ({ n: c.n, dur: c.dur })) };
-    const imagenes = clips.flatMap((c) => c.frames);
-    const g = normalizarGuion(leerJson(await pensar(promptGuion({ para: conInfo, empresa, telefono }), imagenes)));
-    // El modelo a veces nombra "Clip 3" con un solo clip: se reparte entre
-    // los que de verdad hay, para que el dueño vea en el Paso 2 lo real.
-    g.tomas = g.tomas.map((t) => ({ ...t, clip: ((Math.max(1, t.clip) - 1) % clips.length) + 1 }));
-    return g;
-  } finally {
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
-  }
+  await anotarPlantilla(plantilla);
+  return g;
 }
 
 export async function armarReel({ para, guion: guionDado = null, logoUrl, telefono, empresa, raiz, pensar, pedirToma, subirVideo, log = () => {} }) {
   const dir = await mkdtemp(path.join(tmpdir(), 'reel-armar-'));
   const avisos = [];
   try {
-    const conVoz = para.receta?.voz?.hay !== false;
-    log(`  reel: formato ${para.formato}`);
-
-    // 1. Guion: el que aprobó el dueño o, si no hay, uno nuevo.
+    // 1. Guion: el que aprobó el dueño o, si no hay, uno nuevo. La plantilla
+    // viene dentro del guion (los de antes del 16/10 son anuncios).
     const guion = guionDado ? normalizarGuion(guionDado) : await escribirGuion({ para, empresa, telefono, pensar });
-    log(`  reel: guion con ${guion.tomas.length} tomas`);
+    const P = PLANTILLAS[guion.plantilla] || PLANTILLAS.anuncio;
+    // La receta sin voz manda solo en el anuncio: las demás plantillas son
+    // con voz por diseño (salvo la vitrina).
+    const conVoz = !P.sinVoz && (guion.plantilla !== 'anuncio' || para.receta?.voz?.hay !== false);
+    log(`  reel: plantilla ${guion.plantilla} · receta ${para.formato} · ${guion.tomas.length} tomas`);
 
     // 2. Tomas. Con video del dueño, sus clips (gratis); si no, imágenes de
     // estudio en paralelo (cada una tarda casi un minuto y cuesta).
@@ -469,15 +754,15 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
     let vozDur = 0;
     const voz = path.join(dir, 'voz.mp3');
     if (conVoz && guion.voz) {
-      await grabarVoz(guion.voz, voz);
+      await grabarVoz(guion.voz, voz, P);
       vozDur = await duracionDe(voz);
       log(`  reel: voz ${vozDur.toFixed(1)} s`);
     }
 
-    // 4. Tiempos (04/10/2026, dueño): de 15 a 30 segundos. La voz manda; si
-    // con ella se pasa de 30, se acelera hasta un 25% (en un anuncio sigue
-    // sonando natural). Sin voz, ~2 s por corte.
-    const INTRO = 1.2, CIERRE = 2.6, ARRANQUE_VOZ = 0.3, MIN = 15, MAX = 30;
+    // 4. Tiempos. Cada plantilla tiene su largo (la vitrina, 8 a 11 s; el
+    // anuncio, 15 a 30). La voz manda; si se pasa del máximo, se acelera
+    // hasta un 25%. Sin voz: cortes rápidos.
+    const CIERRE = P.cierre, ARRANQUE_VOZ = 0.3, MIN = P.min, MAX = P.max;
     if (vozDur && ARRANQUE_VOZ + vozDur + 0.3 > MAX - 0.5) {
       const factor = Math.min(1.25, (ARRANQUE_VOZ + vozDur + 0.3) / (MAX - 0.5));
       const rapida = path.join(dir, 'voz_rapida.mp3');
@@ -486,46 +771,82 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
       vozDur = await duracionDe(voz);
       log(`  reel: voz acelerada x${factor.toFixed(2)} -> ${vozDur.toFixed(1)} s`);
     }
+    // La pantalla especial de la plantilla (si hay con qué hacerla).
+    const motos = P.extra === 'lista' ? (guion.motos || []) : [];
+    const extra = P.extra === 'lista' && motos.length >= 2 ? 'lista'
+      : P.extra === 'precio' && guion.precio_texto ? 'precio' : null;
+    const durExtra = extra === 'lista' ? Math.min(4.2, Math.max(2.6, 1.3 + 0.3 * motos.length))
+      : extra === 'precio' ? 3.2 : 0;
     // Con clips cada toma es UN corte (ya hay movimiento real); con imágenes,
-    // dos (abierto y acercamiento) para que tenga ritmo de anuncio.
-    const cortes = conClips ? tomas.length : tomas.length * 2;
-    const totalDeseado = Math.min(MAX + 2, Math.max(MIN, vozDur ? ARRANQUE_VOZ + vozDur + 0.3 : INTRO + cortes * 2 + CIERRE));
-    const cuerpo = Math.max(totalDeseado - INTRO - CIERRE, cortes * 1.4);
+    // los que diga la plantilla (dos = abierto + acercamiento).
+    const porToma = conClips ? 1 : P.cortes;
+    const cortes = tomas.length * porToma;
+    const porCorteSinVoz = P.sinVoz ? 1.1 : 2;
+    const totalDeseado = Math.min(MAX + 2, Math.max(MIN, vozDur
+      ? ARRANQUE_VOZ + vozDur + 0.3
+      : cortes * porCorteSinVoz + durExtra + CIERRE));
+    const cuerpo = Math.max(totalDeseado - CIERRE - durExtra, cortes * 1.0);
     const porCorte = cuerpo / cortes;
-    const total = INTRO + cuerpo + CIERRE;
+    const finCuerpo = cuerpo + durExtra;          // ahí empieza el cierre
+    const total = finCuerpo + CIERRE;
 
+    // 5. Los cortes. El PRIMER cuadro es la pieza con el gancho encima (antes
+    // era el logo sobre negro, y esa era la miniatura del reel).
     const logo = logoUrl ? await bajar(logoUrl, path.join(dir, 'logo.png')).catch(() => null) : null;
     const clips = [];
-    clips.push(await clipPlaca({ dir, nombre: 'intro', dur: INTRO, logo,
-      lineas: [{ texto: guion.titular, y: logo ? 0.57 : 0.42, tam: 140, letrero: true }] }));
     for (const [i, t] of tomas.entries()) {
+      const ultima = i === tomas.length - 1;
+      // POV: el texto POV en los dos primeros cortes; la letra de la toma,
+      // solo en la última. Resto: el gancho en el primer corte.
+      const gancho = P.ganchoPov ? (i < 2 ? guion.titular : null) : (i === 0 ? guion.titular : null);
+      const letraToma = P.ganchoPov ? (ultima ? t.texto : null) : t.texto;
       if (conClips) {
         clips.push(await clipVideo({ dir, i, archivo: t.archivo, durClip: t.durClip, momento: t.momento,
-          dur: porCorte, texto: t.texto }));
+          dur: porCorte, texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov) }));
         continue;
       }
-      clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento, texto: t.texto }));
-      clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento, texto: null, cerrado: true }));
+      if (porToma === 2) {
+        // Abierto (con el gancho en la primera toma) y acercamiento (con la
+        // letra de la toma si el abierto llevó el gancho).
+        clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento,
+          texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov) }));
+        clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento,
+          texto: gancho ? letraToma : null, cerrado: true }));
+      } else {
+        clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: MOVIMIENTOS[(i + 2) % MOVIMIENTOS.length],
+          texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov) }));
+      }
     }
+    if (extra) {
+      let fondo = tomas[0].imagen;
+      if (!fondo) {
+        fondo = path.join(dir, 'fondo.png');
+        await correr(FFMPEG, ['-v', 'error', '-y', '-ss', (tomas[0].durClip * 0.4).toFixed(2), '-i', tomas[0].archivo,
+          '-frames:v', '1', fondo]);
+      }
+      clips.push(extra === 'lista'
+        ? await clipLista({ dir, fondo, titulo: 'SIRVE PARA', motos, dur: durExtra })
+        : await clipPrecio({ dir, fondo, precio: guion.precio_texto, dur: durExtra }));
+    }
+    const conDescuento = P.descuento && !para.sin_descuento;
     clips.push(await clipPlaca({ dir, nombre: 'cierre', dur: CIERRE, logo,
       lineas: [
         { texto: guion.cierre, y: 0.555, tam: 104, letrero: true },
         ...(telefono ? [{ texto: `WhatsApp ${telefono}`, y: 0.71, tam: 78, fuente: FUENTE_TEXTO }] : []),
-        // Sin descuento (decisión del dueño por promoción) no se promete nada.
-        { texto: para.sin_descuento ? 'Visítanos o escríbenos' : 'Di que lo viste aquí: 5% de descuento',
+        // El 5% solo en las plantillas que venden directo y si la promoción
+        // lo lleva (16/10: ya no en todos los reels).
+        { texto: conDescuento ? 'Di que lo viste aquí: 5% de descuento' : 'Visítanos o escríbenos',
           y: 0.78, tam: 58, fuente: FUENTE_TEXTO, color: '0xDDDDDD' },
       ] }));
-    log('  reel: clips montados');
+    log(`  reel: ${clips.length} cortes montados${extra ? ` + pantalla ${extra}` : ''}`);
 
     const lista = path.join(dir, 'lista.txt');
     await writeFile(lista, clips.map((c) => `file '${c.replace(/\\/g, '/')}'`).join('\n'), 'utf8');
     const mudo = path.join(dir, 'mudo.mp4');
     await correr(FFMPEG, ['-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lista, '-c', 'copy', mudo]);
 
-    // Subtítulos de la voz, encima de todo.
-    // En la placa de cierre no van subtítulos: la placa ya dice el llamado
-    // y el subtítulo le tapaba la línea del 5% (prueba del 04/10).
-    const finCuerpo = INTRO + cuerpo;
+    // Subtítulos de la voz, encima de todo. En la placa de cierre no van: la
+    // placa ya dice el llamado y el subtítulo le tapaba la línea del 5%.
     const subs = (vozDur ? trozosSubtitulo(guion.voz, ARRANQUE_VOZ, vozDur) : [])
       .filter((x) => x.desde < finCuerpo - 0.2)
       .map((x) => ({ ...x, hasta: Math.min(x.hasta, finCuerpo) }));
@@ -535,8 +856,6 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
         + `:fontsize=70:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=18`
         + `:x=(w-text_w)/2:y=h*0.80:enable='between(t,${s.desde.toFixed(2)},${s.hasta.toFixed(2)})'`);
     }
-    const guionV = path.join(dir, 'f_subs.txt');
-    await writeFile(guionV, filtrosV.length ? filtrosV.join(',') : 'null', 'utf8');
 
     // Audio: voz (con un respiro al empezar) + música baja si hay pistas en
     // hermes\equipo\musica. Sin nada, silencio: TikTok pide pista igual.
@@ -564,18 +883,35 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
     // Todo el audio a -14 LUFS, el nivel de TikTok/Instagram: sin esto el
     // reel sonaba más bajito que los videos de al lado (prueba 04/10: -18).
     filtroA = filtroA.replace(/\[a\]$/, ',loudnorm=I=-14:TP=-1.5:LRA=11[a]');
+
+    // Video: subtítulos y, encima, el logo chico en la esquina mientras no
+    // está la placa de cierre (16/10: el logo dejó de ser el primer cuadro).
+    // El logo entra el ÚLTIMO, así los números de las entradas de audio no cambian.
+    const nEntradas = 1 + entradasA.filter((x) => x === '-i').length;
+    let filtroV = `[0:v]${filtrosV.length ? filtrosV.join(',') : 'null'}[vs]`;
+    const entradasL = [];
+    if (logo) {
+      entradasL.push('-i', logo);
+      filtroV += `;[${nEntradas}:v]scale=170:-1,format=rgba,colorchannelmixer=aa=0.85[lg];`
+        + `[vs][lg]overlay=x=W-w-36:y=40:enable='lt(t,${finCuerpo.toFixed(2)})'[vout]`;
+    } else {
+      filtroV += ';[vs]null[vout]';
+    }
+    const guionAV = path.join(dir, 'f_final.txt');
+    await writeFile(guionAV, `${filtroV};${filtroA}`, 'utf8');
     const final = path.join(dir, 'reel.mp4');
-    await correr(FFMPEG, ['-v', 'error', '-y', '-i', mudo, ...entradasA,
-      '-filter_script:v', guionV, '-filter_complex', filtroA,
-      '-map', '0:v', '-map', '[a]', ...H264, '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+    await correr(FFMPEG, ['-v', 'error', '-y', '-i', mudo, ...entradasA, ...entradasL,
+      '-filter_complex_script', guionAV,
+      '-map', '[vout]', '-map', '[a]', ...H264, '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
       '-t', total.toFixed(2), '-movflags', '+faststart', final]);
     const bytes = await readFile(final);
     log(`  reel: ${total.toFixed(1)} s, ${(bytes.length / 1048576).toFixed(1)} MB${musica ? '' : ' (sin música: no hay pistas en equipo\\musica)'}`);
     if (!musica) avisos.push('El reel va sin música de fondo: ponle el sonido en TikTok al publicar el borrador.');
 
-    // 5. Subida
+    // 6. Subida
     const video_url = await subirVideo(bytes);
-    return { video_url, formato: para.formato, modelo_id: para.modelo_id, guion, duracion: Math.round(total * 10) / 10, avisos };
+    return { video_url, formato: para.formato, plantilla: guion.plantilla, modelo_id: para.modelo_id, guion,
+      duracion: Math.round(total * 10) / 10, avisos };
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

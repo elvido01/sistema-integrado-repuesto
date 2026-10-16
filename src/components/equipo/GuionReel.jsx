@@ -17,6 +17,15 @@ import { traducirErrorIA } from '@/lib/errorIA';
 // tomas y la voz se pagan solo entonces.
 
 const CADA_MS = 5000;
+// Los nombres de las plantillas de scripts/armarReel.mjs (PLANTILLAS).
+const PLANTILLAS_REEL = {
+  anuncio: 'Anuncio',
+  le_sirve: '¿Le sirve a tu moto?',
+  cuanto_cuesta: '¿Cuánto crees que cuesta?',
+  pov: 'POV: llegas a la tienda',
+  sabias_que: '¿Sabías que…?',
+  vitrina: 'Vitrina sin voz',
+};
 const palabras = (t) => String(t || '').trim().split(/\s+/).filter(Boolean).length;
 
 export function GuionReel({ trabajoId, reelGuion, onPedido }) {
@@ -59,7 +68,10 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
 
   const n = palabras(g.voz);
   const seg = Math.round(n / 2.4);   // locutor de anuncio: ~2.4 palabras por segundo
-  const formato = FORMATOS_REEL[reelGuion.para?.formato]?.nombre || 'reel';
+  // (16/10/2026) La plantilla de montaje manda la estructura; la receta del
+  // reel modelo, el estilo de las tomas. Los guiones de antes son anuncios.
+  const plantilla = PLANTILLAS_REEL[g.plantilla] || (g.plantilla ? g.plantilla : null);
+  const formato = plantilla || FORMATOS_REEL[reelGuion.para?.formato]?.nombre || 'reel';
   // Con video del dueño no se generan tomas: solo se paga la voz.
   const nClips = reelGuion.para?.clips?.length || 0;
 
@@ -110,11 +122,30 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
       {editando && (
         <div className="space-y-2 text-[11px]">
           <label className="block">
-            <span className="font-semibold text-slate-600">Titular de apertura</span>
-            <input value={g.titular || ''} onChange={(e) => setG({ ...g, titular: e.target.value.toUpperCase() })}
+            <span className="font-semibold text-slate-600">{g.plantilla === 'pov' ? 'Texto POV (va arriba, en minúsculas)' : 'Gancho del primer cuadro'}</span>
+            <input value={g.titular || ''} onChange={(e) => setG({ ...g, titular: g.plantilla === 'pov' ? e.target.value.toLowerCase() : e.target.value.toUpperCase() })}
               className="mt-0.5 h-7 w-full rounded border px-2 text-xs font-bold" />
           </label>
 
+          {g.plantilla === 'le_sirve' && (
+            <label className="block">
+              <span className="font-semibold text-slate-600">Motos de la lista "Sirve para"</span>
+              <span className="ml-2 text-slate-400">separadas por coma, hasta 8</span>
+              <input value={Array.isArray(g.motos) ? g.motos.join(', ') : (g.motos || '')}
+                onChange={(e) => setG({ ...g, motos: e.target.value.toUpperCase().split(',').map((m) => m.trim()).filter(Boolean).slice(0, 8) })}
+                className="mt-0.5 h-7 w-full rounded border px-2 text-xs font-bold" />
+            </label>
+          )}
+          {g.plantilla === 'cuanto_cuesta' && (
+            <label className="block">
+              <span className="font-semibold text-slate-600">Precio que se revela al final</span>
+              <span className="ml-2 text-slate-400">ya con ITBIS: es lo que paga el cliente</span>
+              <input value={g.precio_texto || ''} onChange={(e) => setG({ ...g, precio_texto: e.target.value })}
+                className="mt-0.5 h-7 w-full rounded border px-2 text-xs font-bold" />
+            </label>
+          )}
+
+          {g.plantilla !== 'vitrina' && (
           <label className="block">
             <span className="font-semibold text-slate-600">Lo que dice el locutor</span>
             <span className={`ml-2 ${seg > 24 ? 'text-red-600' : 'text-slate-400'}`}>
@@ -123,6 +154,7 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
             <Textarea value={g.voz || ''} onChange={(e) => setG({ ...g, voz: e.target.value })} rows={4} className="mt-0.5 text-xs" />
             <span className="text-[10px] text-slate-400">El precio nunca se dice en voz: si lo escribes aquí, se quita solo.</span>
           </label>
+          )}
 
           <div>
             <span className="font-semibold text-slate-600">Tomas</span>
