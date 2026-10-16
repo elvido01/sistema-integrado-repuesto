@@ -503,7 +503,15 @@ export const useVentas = () => {
     // (no depender del campo importe cacheado, que en algunas rutas — cambio
     // de cliente, carga de pedido — quedaba como bruto sin descuento aplicado).
     // Convencion: precio incluye ITBIS. Sub-Total = base pre-tax pre-descuento;
-    // ITBIS = sobre la base pre-descuento; TOTAL = SubTotal - Descuento + ITBIS.
+    // Descuento = SIN ITBIS; ITBIS = sobre lo cobrado (despues del descuento);
+    // TOTAL = SubTotal - Descuento + ITBIS.
+    //
+    // (16/10/2026) Antes el ITBIS se sacaba del precio ANTES del descuento y
+    // el descuento se restaba con su ITBIS adentro: el total cuadraba, pero la
+    // cabecera declaraba ITBIS de mas (FT-4463: 326.44 en vez de 316.65; unos
+    // RD$500 al mes en Morla, y el 607 lo toma de aqui). La ley (art. 339)
+    // pone la base "menos las bonificaciones y descuentos". Ahora la cabecera
+    // da lo mismo que la suma de las lineas, que ya lo hacian bien.
     const calculated = items.reduce((acc, item) => {
       const itbis_pct = normalizeItbisPct(item.itbis_pct);
       const precio = Number(item.precio || 0);
@@ -515,11 +523,12 @@ export const useVentas = () => {
       const lineNet = lineGross - lineDescuento;
 
       const itemSubTotal = lineGross / (1 + itbis_pct);
-      const itemItbis = lineGross - itemSubTotal;
+      const itemDescuento = lineDescuento / (1 + itbis_pct);
+      const itemItbis = lineNet - lineNet / (1 + itbis_pct);
 
       return {
         subTotal: acc.subTotal + itemSubTotal,
-        totalDescuento: acc.totalDescuento + lineDescuento,
+        totalDescuento: acc.totalDescuento + itemDescuento,
         totalItbis: acc.totalItbis + itemItbis,
         totalFactura: acc.totalFactura + lineNet
       };
