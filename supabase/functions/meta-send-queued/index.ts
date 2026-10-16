@@ -176,6 +176,20 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
 
   const sent = await sendMetaText(message.platform, senderId, recipientId, text.slice(0, 1000), token, privadoPorComentario);
   if (!sent.ok) {
+    // (16/10/2026) La gente comenta mucho más de lo que escribe por privado, y
+    // cada comentario admite UNA sola respuesta privada en 7 días: si ya la
+    // gastó la respuesta automática de Business Suite (2534023) o venció
+    // (2534024), y no hay ventana de mensaje directo, se contesta EN PÚBLICO
+    // debajo del comentario. Antes quedaba "NO SALIÓ" y el cliente sin nada
+    // (prueba del dueño: "Cuanto cuesta ?" → "235" rechazado por los dos lados).
+    const sub = Number(sent.body?.error?.error_subcode);
+    if (privadoPorComentario && (sub === 2534023 || sub === 2534024)) {
+      return dispatchCommentReply(supabase, tenantId, {
+        ...message,
+        raw_data: { ...(message.raw_data || {}), responder_a: privadoPorComentario, salio_en_publico: true,
+          motivo_publico: sub === 2534023 ? 'privada_ya_usada' : 'privada_vencida', zernio: errorZernio },
+      }, text, userId);
+    }
     return failMessage(supabase, message, `meta_${sent.status}`, {
       meta: sent.body,
       zernio: errorZernio,
