@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grabador de voz · Repuestos Morla</title>
+<style>
+  :root { --fondo:#0f1115; --panel:#181b22; --borde:#2a2f3a; --texto:#f2f2f2; --suave:#9aa3b2; --naranja:#f5a623; --rojo:#e53935; --verde:#2e7d32; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--fondo); color:var(--texto); font-family: "Segoe UI", system-ui, sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--borde); background:var(--panel); }
+  header h1 { font-size:18px; margin:0 12px 0 0; color:var(--naranja); }
+  select, button { font:inherit; border-radius:8px; border:1px solid var(--borde); background:#222733; color:var(--texto); padding:8px 12px; }
+  button { cursor:pointer; font-weight:600; }
+  button:disabled { opacity:.4; cursor:default; }
+  .principal { display:grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 62px); }
+  aside { border-right:1px solid var(--borde); padding:12px; overflow:auto; }
+  aside .sec { padding:10px; border-radius:8px; margin-bottom:6px; cursor:pointer; border:1px solid transparent; font-size:14px; display:flex; gap:8px; }
+  aside .sec:hover { background:#1d212a; }
+  aside .sec.activa { border-color:var(--naranja); background:#221d12; }
+  aside .marca { width:20px; flex:none; }
+  aside .dur { color:var(--suave); font-size:12px; margin-left:auto; }
+  main { padding:20px 32px; display:flex; flex-direction:column; gap:16px; }
+  .titulo { font-size:15px; color:var(--naranja); font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+  .puntos { color:var(--suave); font-size:14px; }
+  .prompter { font-size:var(--tam, 34px); line-height:1.55; background:#11141a; border:1px solid var(--borde); border-radius:12px; padding:28px 32px; max-width: 1100px; }
+  .controles { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .grabar { background:var(--rojo); border-color:var(--rojo); font-size:18px; padding:12px 22px; }
+  .parar { background:#444; font-size:18px; padding:12px 22px; }
+  .estado { font-size:15px; color:var(--suave); }
+  .grabando { color:#ff6b6b; font-weight:700; }
+  .nivel { width:220px; height:12px; background:#222; border-radius:6px; overflow:hidden; border:1px solid var(--borde); }
+  .nivel > div { height:100%; width:0; background:linear-gradient(90deg,#2e7d32,#f5a623,#e53935); transition:width .05s; }
+  .cuenta { position:fixed; inset:0; display:none; align-items:center; justify-content:center; font-size:220px; font-weight:800; color:var(--naranja); background:rgba(0,0,0,.6); }
+  .consejo { font-size:13px; color:var(--suave); max-width:1100px; }
+  .armar { border-top:1px solid var(--borde); padding-top:16px; max-width:1100px; }
+  .armar button.grande { background:var(--naranja); color:#111; border-color:var(--naranja); font-size:17px; padding:12px 20px; }
+  pre { background:#11141a; border:1px solid var(--borde); border-radius:8px; padding:10px; font-size:13px; white-space:pre-wrap; max-height:180px; overflow:auto; }
+  video { width:100%; max-width:960px; border-radius:10px; margin-top:10px; background:#000; }
+  .aviso { color:#ffcc80; font-size:13px; }
+  @media (max-width: 800px) { .principal { grid-template-columns: 1fr; } aside { border-right:none; border-bottom:1px solid var(--borde); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎙️ Grabador de voz</h1>
+  <select id="video"></select>
+  <label>Micrófono <select id="mic"></select></label>
+  <button id="menos" title="Letra más pequeña">A−</button>
+  <button id="mas" title="Letra más grande">A+</button>
+</header>
+<div class="principal">
+  <aside id="lista"></aside>
+  <main>
+    <div class="titulo" id="titulo"></div>
+    <div class="puntos" id="puntos"></div>
+    <div class="prompter" id="texto">Cargando…</div>
+    <div class="controles">
+      <button class="grabar" id="btnGrabar">● Grabar (Espacio)</button>
+      <button class="parar" id="btnParar" disabled>■ Parar (Espacio)</button>
+      <button id="btnEscuchar" disabled>▶ Escuchar</button>
+      <button id="btnSiguiente">Siguiente →</button>
+      <div class="nivel"><div id="nivel"></div></div>
+      <span class="estado" id="estado"></span>
+    </div>
+    <audio id="reproductor" controls style="display:none; max-width:500px"></audio>
+    <p class="consejo">Habla como en el mostrador, sin prisa. Si te equivocas, pulsa Parar y graba la sección otra vez: se queda la última.
+      Los silencios del principio y del final se quitan solos. Pon el micrófono a un palmo de la boca.</p>
+    <div class="armar">
+      <button class="grande" id="btnArmar">🎬 Armar el video con mi voz</button>
+      <span class="aviso" id="faltan"></span>
+      <pre id="log" style="display:none"></pre>
+      <div id="resultado"></div>
+    </div>
+  </main>
+</div>
+<div class="cuenta" id="cuenta"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+let video = null, actual = 0, grabador = null, partes = [], flujo = null, inicio = 0, reloj = null, analisis = null, animacion = null;
+let tam = Number(localStorage.getItem('tamPrompter') || 34);
+document.documentElement.style.setProperty('--tam', tam + 'px');
+$('menos').onclick = () => { tam = Math.max(20, tam - 3); guardarTam(); };
+$('mas').onclick = () => { tam = Math.min(60, tam + 3); guardarTam(); };
+function guardarTam() { document.documentElement.style.setProperty('--tam', tam + 'px'); try { localStorage.setItem('tamPrompter', tam); } catch {} }
+
+async function api(ruta, opciones) {
+  const r = await fetch(ruta, opciones);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+async function cargarVideos() {
+  const lista = await api('/api/videos');
+  $('video').innerHTML = lista.map(v => `<option value="${v.carpeta}">${v.titulo} (${v.grabadas}/${v.total})</option>`).join('');
+  const ultimo = localStorage.getItem('ultimoVideo');
+  if (ultimo && lista.some(v => v.carpeta === ultimo)) $('video').value = ultimo;
+  if (lista.length) await abrirVideo($('video').value);
+  else $('texto').textContent = 'No hay videos en C:\\RepuestosMorla\\Videos';
+}
+$('video').onchange = () => abrirVideo($('video').value);
+
+async function abrirVideo(carpeta, mantener) {
+  try { localStorage.setItem('ultimoVideo', carpeta); } catch {}
+  video = await api('/api/video/' + encodeURIComponent(carpeta));
+  if (!mantener) actual = Math.max(0, video.secciones.findIndex(s => !s.grabada));
+  pintar();
+  if (video.video) mostrarVideo();
+}
+
+function pintar() {
+  $('lista').innerHTML = video.secciones.map(s => `
+    <div class="sec ${s.i === actual ? 'activa' : ''}" data-i="${s.i}">
+      <span class="marca">${s.grabada ? '✅' : '⚪'}</span>
+      <span>${String(s.i).padStart(2, '0')} · ${s.titulo}</span>
+      <span class="dur">${s.grabada ? s.dur.toFixed(0) + ' s' : ''}</span>
+    </div>`).join('');
+  document.querySelectorAll('.sec').forEach(el => el.onclick = () => { if (!grabador) { actual = Number(el.dataset.i); pintar(); } });
+  const s = video.secciones[actual];
+  $('titulo').textContent = `Sección ${actual} de ${video.secciones.length - 1} · ${s.titulo}`;
+  $('puntos').textContent = s.puntos.length ? 'En pantalla: ' + s.puntos.join(' · ') : '';
+  $('texto').textContent = s.voz;
+  $('btnEscuchar').disabled = !s.grabada;
+  $('reproductor').style.display = 'none';
+  $('estado').textContent = s.grabada ? `Ya grabada (${s.dur.toFixed(0)} s). Puedes escucharla o grabarla otra vez.` : 'Lista para grabar.';
+  const faltan = video.secciones.filter(x => !x.grabada).length;
+  $('faltan').textContent = faltan ? `Faltan ${faltan} sección(es): esas saldrían con voz de IA.` : 'Todas grabadas ✔';
+}
+
+async function micros() {
+  try {
+    const prueba = await navigator.mediaDevices.getUserMedia({ audio: true });
+    prueba.getTracks().forEach(t => t.stop());
+  } catch (e) { $('estado').textContent = 'No hay permiso para el micrófono: ' + e.message; return; }
+  const disp = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  $('mic').innerHTML = disp.map(d => `<option value="${d.deviceId}">${d.label || 'Micrófono'}</option>`).join('');
+  const guardado = localStorage.getItem('microfono');
+  if (guardado && disp.some(d => d.deviceId === guardado)) $('mic').value = guardado;
+}
+$('mic').onchange = () => { try { localStorage.setItem('microfono', $('mic').value); } catch {} };
+
+async function cuentaAtras() {
+  const c = $('cuenta'); c.style.display = 'flex';
+  for (const n of [3, 2, 1]) { c.textContent = n; await new Promise(r => setTimeout(r, 700)); }
+  c.style.display = 'none';
+}
+
+async function grabar() {
+  if (grabador) return;
+  try {
+    flujo = await navigator.mediaDevices.getUserMedia({ audio: {
+      deviceId: $('mic').value ? { exact: $('mic').value } : undefined,
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1, sampleRate: 48000 } });
+  } catch (e) { $('estado').textContent = 'No se pudo abrir el micrófono: ' + e.message; return; }
+  await cuentaAtras();
+  const ctx = new AudioContext(); const fuente = ctx.createMediaStreamSource(flujo);
+  analisis = ctx.createAnalyser(); analisis.fftSize = 512; fuente.connect(analisis);
+  const datos = new Uint8Array(analisis.fftSize);
+  const medir = () => { analisis.getByteTimeDomainData(datos); let m = 0; for (const v of datos) m = Math.max(m, Math.abs(v - 128)); $('nivel').style.width = Math.min(100, m / 1.28) + '%'; animacion = requestAnimationFrame(medir); };
+  medir();
+  partes = [];
+  grabador = new MediaRecorder(flujo, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 192000 });
+  grabador.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
+  grabador.onstop = () => subir(ctx);
+  grabador.start(250);
+  inicio = Date.now();
+  $('btnGrabar').disabled = true; $('btnParar').disabled = false; $('btnSiguiente').disabled = true;
+  reloj = setInterval(() => { const s = Math.floor((Date.now() - inicio) / 1000); $('estado').innerHTML = `<span class="grabando">● GRABANDO ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</span>`; }, 250);
+}
+
+function parar() { if (grabador && grabador.state === 'recording') grabador.stop(); }
+
+async function subir(ctx) {
+  clearInterval(reloj); cancelAnimationFrame(animacion); $('nivel').style.width = '0';
+  flujo.getTracks().forEach(t => t.stop()); ctx.close();
+  grabador = null;
+  $('btnParar').disabled = true;
+  $('estado').textContent = 'Guardando y limpiando el audio…';
+  try {
+    const blob = new Blob(partes, { type: 'audio/webm' });
+    const r = await api(`/api/audio/${encodeURIComponent(video.carpeta)}/${actual}`, { method: 'POST', body: blob });
+    await abrirVideo(video.carpeta, true);
+    $('estado').textContent = `Guardada ✔ (${r.dur.toFixed(0)} s). Escúchala, o pasa a la siguiente.`;
+  } catch (e) { $('estado').textContent = 'No se pudo guardar: ' + e.message; }
+  $('btnGrabar').disabled = false; $('btnSiguiente').disabled = false;
+}
+
+$('btnGrabar').onclick = grabar;
+$('btnParar').onclick = parar;
+$('btnEscuchar').onclick = () => { const a = $('reproductor'); a.src = `/api/audio/${encodeURIComponent(video.carpeta)}/${actual}?t=${Date.now()}`; a.style.display = 'block'; a.play(); };
+$('btnSiguiente').onclick = () => { if (actual < video.secciones.length - 1) { actual++; pintar(); } };
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || ['SELECT', 'BUTTON', 'INPUT'].includes(document.activeElement?.tagName)) return;
+  e.preventDefault();
+  if (grabador) parar(); else grabar();
+});
+
+$('btnArmar').onclick = async () => {
+  const faltan = video.secciones.filter(x => !x.grabada).length;
+  if (faltan && !confirm(`Faltan ${faltan} sección(es) por grabar. Esas saldrán con voz de IA. ¿Armar igual?`)) return;
+  $('btnArmar').disabled = true; $('log').style.display = 'block'; $('log').textContent = 'Empezando…'; $('resultado').innerHTML = '';
+  try { await api(`/api/armar/${encodeURIComponent(video.carpeta)}`, { method: 'POST' }); } catch (e) { $('log').textContent = e.message; $('btnArmar').disabled = false; return; }
+  const t = setInterval(async () => {
+    const j = await api(`/api/armar/${encodeURIComponent(video.carpeta)}`);
+    $('log').textContent = j.log.join('\n'); $('log').scrollTop = 1e9;
+    if (j.estado === 'armando') return;
+    clearInterval(t); $('btnArmar').disabled = false;
+    if (j.estado === 'error') { $('log').textContent += '\nERROR: ' + j.error; return; }
+    $('log').textContent += `\nLISTO: ${j.resultado.minutos.toFixed(1)} minutos.` + (j.resultado.avisos.length ? '\n' + j.resultado.avisos.join('\n') : '');
+    mostrarVideo();
+  }, 1500);
+};
+
+function mostrarVideo() {
+  const c = encodeURIComponent(video.carpeta), t = Date.now();
+  $('resultado').innerHTML = `<video controls src="/api/salida/${c}/video.mp4?t=${t}"></video>
+    <p><img src="/api/salida/${c}/miniatura.jpg?t=${t}" style="max-width:420px;border-radius:8px"></p>
+    <button id="btnAbrir">📂 Abrir la carpeta del video</button>`;
+  $('btnAbrir').onclick = () => api(`/api/abrir/${c}`, { method: 'POST' });
+}
+
+micros().then(cargarVideos).catch(e => { $('texto').textContent = 'Error: ' + e.message; });
+</script>
+</body>
+</html>
