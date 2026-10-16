@@ -60,6 +60,7 @@ const SIN_JWT = new Set([
   'cotizar-morla', 'creativo-escena', 'dgii-receptor', 'hermes-publication-bridge',
   'meta-add-ig-tester', 'meta-messages-webhook', 'meta-subscribe-pages',
   'product-image-upload-bridge', 'social-oauth', 'tiktok-legal', 'tiktok-webhook', 'whatsapp-crm-webhook',
+  'zernio-webhook',
 ]);
 if (SIN_JWT.has(funcion) && !extras.includes('--no-verify-jwt')) {
   extras.push('--no-verify-jwt');

@@ -8,6 +8,7 @@
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { hayZernio, cuentaZernio, conversacionZernio, enviarPorZernio } from '../_shared/zernio.ts';
 
 const META_GRAPH_VERSION = 'v21.0';
 const META_PLATFORMS = new Set(['instagram', 'facebook']);
@@ -108,7 +109,7 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
 
   const { data: conversation, error: conversationError } = await supabase
     .from('sales_conversations')
-    .select('id, tenant_id, channel_id, platform, external_conversation_id, customer_external_id')
+    .select('id, tenant_id, channel_id, platform, external_conversation_id, customer_external_id, metadata')
     .eq('id', message.conversation_id)
     .eq('tenant_id', tenantId)
     .single();
@@ -124,6 +125,31 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
   const recipientId = conversation.customer_external_id || parsed?.recipient_id;
   const accountId = parsed?.account_id || await accountIdFromChannel(supabase, tenantId, conversation.channel_id);
   if (!recipientId || !accountId) return failMessage(supabase, message, 'identidad_meta_incompleta');
+
+  // (16/10/2026) Primero por ZERNIO, que tiene aprobado el permiso de mensajes
+  // que nuestra app propia de Meta sigue esperando (Acceso Avanzado). Si la
+  // cuenta no esta en Zernio o Zernio falla, se intenta por Meta como antes.
+  let errorZernio = null;
+  if (hayZernio()) {
+    const zc = await cuentaZernio(supabase, tenantId, message.platform, accountId);
+    const zConv = zc ? await conversacionZernio(supabase, conversation, zc.zernio_account_id, recipientId) : null;
+    if (zConv) {
+      const z = await enviarPorZernio({ conversationId: zConv, accountId: zc.zernio_account_id, texto: text.slice(0, 1000), idMensaje: message.id });
+      if (z.ok && z.body?.success !== false) {
+        const { data: enviado, error: errEnv } = await supabase.from('sales_messages').update({
+          status: 'sent',
+          external_message_id: z.body?.data?.messageId || null,
+          raw_data: { ...(message.raw_data || {}), source: 'meta_send_queued', via: 'zernio', sent_by: userId,
+            provider_response: z.body, zernio_conversation_id: zConv },
+        }).eq('id', message.id).eq('tenant_id', tenantId).select('id, status, external_message_id').single();
+        if (errEnv) throw new Error(errEnv.message);
+        return enviado;
+      }
+      errorZernio = { status: z.status, body: z.body };
+    } else if (zc) {
+      errorZernio = { motivo: 'conversacion_no_hallada_en_zernio' };
+    }
+  }
 
   const token = await resolveAccessToken(supabase, tenantId, message.platform, accountId, conversation.channel_id);
   if (!token) return failMessage(supabase, message, 'token_meta_no_configurado');
@@ -152,6 +178,7 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
   if (!sent.ok) {
     return failMessage(supabase, message, `meta_${sent.status}`, {
       meta: sent.body,
+      zernio: errorZernio,
       account_id: accountId,
       recipient_id: recipientId,
       privado_por_comentario: privadoPorComentario,
