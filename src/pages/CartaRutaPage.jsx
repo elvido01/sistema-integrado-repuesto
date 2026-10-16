@@ -373,6 +373,42 @@ const CartaRutaPage = ({ extraData }) => {
     setSearchResults([]);
   };
 
+  // (16/10/2026) La cédula/pasaporte escrita en la carta sigue el flujo: si a
+  // la solicitud o a su cliente les falta, se les pone. La factura electrónica
+  // la lee del cliente (o de la solicitud en una venta financiada) y la DGII la
+  // exige en un consumo de RD$250,000 o más. Nunca se pisa un documento que ya
+  // esté puesto.
+  const copiarCedulaASolicitud = async (solicitudId, cedula) => {
+    const doc = String(cedula || '').trim();
+    if (!solicitudId || !doc) return;
+    try {
+      const { data: sol } = await supabase
+        .from('solicitudes_compras')
+        .select('id, cliente_id, cliente_rnc')
+        .eq('id', solicitudId)
+        .maybeSingle();
+      if (!sol) return;
+      if (!String(sol.cliente_rnc || '').trim()) {
+        await supabase.from('solicitudes_compras').update({ cliente_rnc: doc }).eq('id', sol.id);
+      }
+      if (sol.cliente_id) {
+        const { data: cli } = await supabase
+          .from('clientes')
+          .select('codigo, rnc')
+          .eq('id', sol.cliente_id)
+          .maybeSingle();
+        const falta = {};
+        if (cli && !String(cli.rnc || '').trim()) falta.rnc = doc;
+        if (cli && !String(cli.codigo || '').trim()) falta.codigo = doc;
+        if (Object.keys(falta).length) {
+          await supabase.from('clientes').update(falta).eq('id', sol.cliente_id);
+        }
+      }
+    } catch (e) {
+      console.warn('[CartaRuta] No se pudo copiar la cédula a la solicitud:', e?.message);
+    }
+  };
+
   // ── Guardar carta de ruta ──
   const handleSave = async () => {
     if (!form.cliente_nombre.trim()) {
@@ -426,6 +462,7 @@ const CartaRutaPage = ({ extraData }) => {
         setSelectedCarta(data);
         toast({ title: 'Carta guardada', description: 'La Carta de Ruta se guardó correctamente.' });
       }
+      await copiarCedulaASolicitud(form.solicitud_id, form.cliente_cedula);
       fetchCartas();
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error al guardar', description: error.message });

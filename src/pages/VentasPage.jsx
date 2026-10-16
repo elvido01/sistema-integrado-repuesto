@@ -483,13 +483,16 @@ const VentasPage = () => {
     // (14/10/2026) La DGII rechaza la factura de consumo electrónica de
     // RD$250,000 o más si el comprador no está identificado, y el número queda
     // gastado (D Mario FT-6, E320000000002). Se frena antes de grabar.
+    // Cédula/RNC (9 u 11 dígitos) o pasaporte (va como IdentificadorExtranjero).
     const idCliente = String(cliente?.rnc || '').replace(/\D/g, '');
-    const clienteIdentificado = (idCliente.length === 9 || idCliente.length === 11) && !/^0+$/.test(idCliente);
+    const pasaporte = String(cliente?.rnc || '').toUpperCase().replace(/[\s-]/g, '');
+    const clienteIdentificado = ((idCliente.length === 9 || idCliente.length === 11) && !/^0+$/.test(idCliente))
+      || (/^[A-Z0-9]{5,20}$/.test(pasaporte) && /[A-Z]/.test(pasaporte) && /[1-9]/.test(pasaporte));
     if (fiscalActivo && fiscalModo === 'produccion' && Number(totals?.totalFactura || 0) >= 250000 && !clienteIdentificado) {
       toast({
         variant: 'destructive',
-        title: 'Falta la cédula o el RNC del cliente',
-        description: 'Para facturas de RD$250,000 o más la DGII exige identificar al comprador. Elige o crea el cliente con su cédula o RNC y vuelve a pulsar F10.',
+        title: 'Falta la cédula, el RNC o el pasaporte del cliente',
+        description: 'Para facturas de RD$250,000 o más la DGII exige identificar al comprador. Elige o crea el cliente con su documento y vuelve a pulsar F10.',
         duration: 9000,
       });
       return;

@@ -102,6 +102,20 @@ export function rncValidoDgii(rnc) {
   return (d.length === 9 || d.length === 11) && !/^0+$/.test(d);
 }
 
+// (16/10/2026) Pasaporte u otro documento extranjero (R12699336, DO02017289):
+// va en IdentificadorExtranjero. Muchos compradores de Caminero son extranjeros.
+export function idExtranjeroDgii(doc) {
+  if (rncValidoDgii(doc)) return null;
+  const d = String(doc || "").toUpperCase().replace(/[\s-]/g, "");
+  // Con al menos una letra: un teléfono tecleado en el RNC no es un pasaporte.
+  return /^[A-Z0-9]{5,20}$/.test(d) && /[A-Z]/.test(d) && /[1-9]/.test(d) ? d : null;
+}
+
+// El comprador está identificado: cédula/RNC o documento extranjero.
+export function compradorIdentificado(doc) {
+  return rncValidoDgii(doc) || !!idExtranjeroDgii(doc);
+}
+
 // (14/10/2026) E31 o E32 para una venta. Crédito fiscal (31) si el cliente
 // tiene RNC/cédula válido, SALVO que esté marcado como consumo (tipo_ncf 02):
 // ese va E32 llevando su cédula como comprador. Es lo que pide la DGII para
@@ -413,8 +427,9 @@ function buildXmlTipo32(input) {
       ${input.forma_pago === "04" ? `<FechaLimitePago>${fmtDate(input.fecha_limite_pago || input.fecha_emision)}</FechaLimitePago>` : ""}
     </IdDoc>
     ${buildEmisorXml(e, input.fecha_emision)}
-    ${(c.rnc || c.razon_social) ? `<Comprador>
+    ${(c.rnc || c.id_extranjero || c.razon_social) ? `<Comprador>
       ${tag("RNCComprador", c.rnc)}
+      ${tag("IdentificadorExtranjero", c.id_extranjero)}
       ${tag("RazonSocialComprador", c.razon_social)}
     </Comprador>` : ""}
     ${buildTotalesXml(t)}
@@ -589,9 +604,10 @@ function buildXmlNota(input, tipo) {
   const itemsXml = buildItemsXml(input.items || []);
   const refXml = buildInformacionReferenciaXml(input.referencia);
 
-  const compradorXml = (c.rnc || c.razon_social) ? (
+  const compradorXml = (c.rnc || c.id_extranjero || c.razon_social) ? (
     `<Comprador>` +
       (c.rnc ? `<RNCComprador>${xmlEscape(c.rnc)}</RNCComprador>` : "") +
+      tag("IdentificadorExtranjero", c.id_extranjero) +
       (c.razon_social ? `<RazonSocialComprador>${xmlEscape(c.razon_social)}</RazonSocialComprador>` : "") +
       tag("ContactoComprador", c.contacto) +
       tag("CorreoComprador", c.email) +
@@ -1126,6 +1142,7 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
       ? {
           // Con documento válido va siempre (también en E32: consumo grande).
           rnc: rncValidoDgii(cliente.rnc) ? String(cliente.rnc).replace(/\D/g, "") : null,
+          id_extranjero: tipoEcf === "32" ? idExtranjeroDgii(cliente.rnc) : null,
           razon_social: cliente.nombre || null,
           email: cliente.email || null,
           contacto: cliente.telefono || null,
@@ -1237,7 +1254,8 @@ export function notaToEcfInput(nota, facturaOriginal, cliente, configEmisor, enc
     },
     comprador: cliente
       ? {
-          rnc: cliente.rnc || null,
+          rnc: rncValidoDgii(cliente.rnc) ? String(cliente.rnc).replace(/\D/g, "") : null,
+          id_extranjero: idExtranjeroDgii(cliente.rnc),
           razon_social: cliente.nombre || null,
           email: cliente.email || null,
           direccion: cliente.direccion || null,

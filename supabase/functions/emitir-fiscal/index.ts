@@ -3,7 +3,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import forge from "https://esm.sh/node-forge@1.3.1";
-import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii, tipoEcfDeCliente } from "./dgii_xml_builder.ts";
+import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii, compradorIdentificado, tipoEcfDeCliente } from "./dgii_xml_builder.ts";
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 import { buildRfceDesdeEcf } from "./dgii_rfce_produccion.ts";
@@ -316,6 +316,41 @@ async function revisarPendientesDgii(supabase) {
     }
   }
   return resumen;
+}
+
+// (16/10/2026) Comprador real de una venta financiada por terceros (Caminero →
+// MotoPréstamos). Al grabar, procesar_financiamiento_terceros le pone a la
+// factura la ficha de la financiera (la CxC es de ella) y deja al comprador
+// solo como nombre: sin esto el e-CF salía sin cédula y el de RD$250,000 o más
+// no se podía emitir. El comprador se toma de la solicitud ("SOLICITUD #N" en
+// las notas de la factura) y, si ahí falta el documento, de su carta de ruta.
+async function compradorReal(supabase, factura, cliente) {
+  if (compradorIdentificado(cliente?.rnc)) return cliente;
+  const m = String(factura?.notas || "").match(/SOLICITUD #(\d+)/);
+  if (!m) return cliente;
+  const { data: sol } = await supabase.from("solicitudes_compras")
+    .select("id, cliente_id, cliente_nombre, cliente_rnc")
+    .eq("tenant_id", factura.tenant_id).eq("numero", Number(m[1]))
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!sol) return cliente;
+  let ficha = null;
+  if (sol.cliente_id) {
+    const { data } = await supabase.from("clientes").select("*").eq("id", sol.cliente_id).maybeSingle();
+    ficha = data;
+  }
+  let doc = [sol.cliente_rnc, ficha?.rnc, ficha?.codigo].find((d) => compradorIdentificado(d)) || null;
+  if (!doc) {
+    const { data: cartas } = await supabase.from("cartas_ruta").select("cliente_cedula")
+      .eq("solicitud_id", sol.id).order("created_at", { ascending: false }).limit(5);
+    doc = (cartas || []).map((c) => c.cliente_cedula).find((d) => compradorIdentificado(d)) || null;
+  }
+  if (!doc) return cliente;
+  return {
+    ...(ficha || cliente || {}),
+    nombre: String(sol.cliente_nombre || "").trim() || ficha?.nombre || factura.manual_cliente_nombre || cliente?.nombre,
+    rnc: String(doc).trim(),
+    tipo_ncf: ficha?.tipo_ncf || "02",
+  };
 }
 
 // (10/10/2026) Cola de reintento. Una venta de una empresa con e-CF en
@@ -726,10 +761,10 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
     // identificado (código 1381, "RNCComprador ... es obligatorio") y el número
     // queda gastado: D Mario FT-6, E320000000002, RD$514,999. Se frena ANTES
     // de tomar el número.
-    if (tipoEcf === "32" && Number(factura.total || 0) >= 250000 && !rncValidoDgii(cliente?.rnc)) {
+    if (tipoEcf === "32" && Number(factura.total || 0) >= 250000 && !compradorIdentificado(cliente?.rnc)) {
       throw new Error(
-        "Factura de consumo de RD$250,000 o más: la DGII exige la cédula o el RNC del cliente. " +
-        "Asígnale a la venta un cliente con cédula o RNC y vuelve a emitir. No se gastó ningún número.",
+        "Factura de consumo de RD$250,000 o más: la DGII exige la cédula, el RNC o el pasaporte del cliente. " +
+        "Asígnale a la venta un cliente con su documento y vuelve a emitir. No se gastó ningún número.",
       );
     }
     const { data: nuevo, error: encfErr } = await supabase.rpc("get_next_encf_empresa", {
@@ -923,6 +958,7 @@ async function emitirFacturaFiscal(supabase, tenantId, factura_id, callerUserId)
       .single();
     cliente = clienteData;
   }
+  cliente = await compradorReal(supabase, factura, cliente);
 
   // 6. Registro. (10/10/2026) Si un intento anterior de ESTA factura falló,
   //    se reusa su fila: guarda el e-NCF (y el XML) que ya tomó.
@@ -1326,6 +1362,7 @@ Deno.serve(async (req) => {
           .maybeSingle();
         cliente = c;
       }
+      cliente = await compradorReal(supabase, factura, cliente);
 
       // Determinar tipo_ecf basado en si el cliente tiene RNC (B2B=31, B2C=32)
       const detectedTipo = tipoEcfDeCliente(cliente);  // mismo criterio que el builder
@@ -1394,6 +1431,7 @@ Deno.serve(async (req) => {
           .maybeSingle();
         cliente = c;
       }
+      cliente = await compradorReal(supabase, factura, cliente);
 
       // 3. Generar XML
       const tipoEcf = tipoEcfDeCliente(cliente);  // mismo criterio que el builder
@@ -1518,6 +1556,7 @@ Deno.serve(async (req) => {
           .maybeSingle();
         cliente = c;
       }
+      cliente = await compradorReal(supabase, facturaOrig, cliente);
 
       // 6. e-NCF de la nota (placeholder para test)
       const encf = encf_override || `E${tipo}0000000001`;
@@ -2351,6 +2390,7 @@ Deno.serve(async (req) => {
           .maybeSingle();
         cliente = c;
       }
+      cliente = await compradorReal(supabase, facturaOrig, cliente);
 
       // 6. Asignar e-NCF Tipo 34 (correlativo)
       const tipoEcf = "34";

@@ -933,14 +933,19 @@ const SolicitudesComprasPage = () => {
 
       // El código del cliente DEBE ser su cédula/RNC: backfill si está vacío
       // (cubre tanto el cliente recién creado como uno ya vinculado sin código).
+      // (16/10/2026) Y su RNC/cédula también: es lo que lee la factura
+      // electrónica, y sin él la DGII no acepta un consumo de RD$250,000 o más.
       if (clienteId && rncCli) {
         const { data: cliRow } = await supabase
           .from('clientes')
-          .select('codigo')
+          .select('codigo, rnc')
           .eq('id', clienteId)
           .maybeSingle();
-        if (cliRow && (!cliRow.codigo || String(cliRow.codigo).trim() === '')) {
-          await supabase.from('clientes').update({ codigo: rncCli }).eq('id', clienteId);
+        const falta = {};
+        if (cliRow && !String(cliRow.codigo || '').trim()) falta.codigo = rncCli;
+        if (cliRow && !String(cliRow.rnc || '').trim()) falta.rnc = rncCli;
+        if (Object.keys(falta).length) {
+          await supabase.from('clientes').update(falta).eq('id', clienteId);
         }
       }
 
