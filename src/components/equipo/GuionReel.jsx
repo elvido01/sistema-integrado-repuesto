@@ -139,7 +139,7 @@ export function GuionReel({ trabajoId, reelGuion, onPedido }) {
           {g.plantilla === 'cuanto_cuesta' && (
             <label className="block">
               <span className="font-semibold text-slate-600">Precio que se revela al final</span>
-              <span className="ml-2 text-slate-400">ya con ITBIS: es lo que paga el cliente</span>
+              <span className="ml-2 text-slate-400">el de catálogo (ITBIS incluido): es lo que paga el cliente</span>
               <input value={g.precio_texto || ''} onChange={(e) => setG({ ...g, precio_texto: e.target.value })}
                 className="mt-0.5 h-7 w-full rounded border px-2 text-xs font-bold" />
             </label>

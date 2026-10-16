@@ -103,19 +103,18 @@ export function motosDe(producto) {
     .slice(0, 8);
 }
 
-// El precio que paga el cliente: el de catálogo + su ITBIS (en Morla el
-// catálogo va sin ITBIS). Sin el ITBIS conocido no se revela ningún precio.
+// El precio que paga el cliente. En MotoFlow el precio de catálogo YA
+// incluye el ITBIS (convención del POS, useVentas: el ITBIS se desglosa de
+// adentro). Lo confirmó el dueño el 16/10 con FT-4463: botella CG a
+// 2,140.01 de catálogo = 2,140.01 en caja.
 export function precioFinal(producto) {
   const precio = Number(producto?.precio || 0);
-  const itbis = producto?.itbis_pct;
-  if (!(precio > 0) || itbis === undefined || itbis === null) return null;
-  const pct = Number(itbis) > 1 ? Number(itbis) / 100 : Number(itbis);
-  const total = Math.round(precio * (1 + (pct || 0)));
-  return `RD$ ${total.toLocaleString('en-US')}`;
+  if (!(precio > 0)) return null;
+  return `RD$ ${Math.round(precio).toLocaleString('en-US')}`;
 }
 
 // Las que se pueden hacer con esta pieza: "¿Le sirve?" pide al menos 2 motos
-// reales; "¿Cuánto cuesta?" pide precio con ITBIS; la vitrina no sirve con
+// reales; "¿Cuánto cuesta?" pide precio; la vitrina no sirve con
 // los videos del dueño (su gracia es la voz que describe lo que se ve).
 export function plantillasPosibles(para) {
   return Object.keys(PLANTILLAS).filter((k) => {
@@ -318,7 +317,7 @@ export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) 
     '  Solo nombra motos que estén en "Motos compatibles".',
     '  Si la receta pide datos técnicos y no los hay, habla de lo que sí se sabe (para qué moto, que está disponible).',
     '- PROHIBIDO mencionar el precio, "pesos", cifras de dinero o la palabra "precio" en la VOZ (decisión del dueño).',
-    '  Tampoco pongas el precio en el "texto" de las tomas: si el formato lo revela, lo pone el montador (con el ITBIS).',
+    '  Tampoco pongas el precio en el "texto" de las tomas: si el formato lo revela, lo pone el montador.',
     P.sinVoz ? '' : conDescuento
       ? '- La voz termina invitando a venir o escribir al WhatsApp, y diciendo que si dicen que lo vieron en las redes se lo llevan con 5% de descuento.'
       : '- La voz termina invitando a venir o escribir al WhatsApp. NO menciones descuento, rebaja, oferta de precio ni código.',
