@@ -33,6 +33,11 @@ const WHATSAPP = '809-390-5965';
 const FFMPEG = process.env.FFMPEG_CMD || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_CMD || 'ffprobe';
 const VOZ_IA = 'onyx';
+// (17/10/2026) Real-ESRGAN en el procesador (scripts/mejorar-foto.py): la
+// foto chica del catálogo se agranda x4 antes de entrar al video. Una vez por
+// foto (queda en tmpm_*.jpg); si falla, va la original.
+const MEJORAR = 'C:/RepuestosMorla/herramientas/mejorar-fotos/mejorar-foto.py';
+const PYTHON = process.env.PYTHON_CMD || 'python';
 const INSTRUCCIONES_IA = 'Eres el dueño de una tienda de repuestos de moto en República Dominicana explicándole a tus clientes en un video de YouTube. '
   + 'Tono cercano, claro y seguro, como hablando en el mostrador con un cliente de confianza. Acento dominicano natural. '
   + 'Ritmo medio, pausas naturales entre ideas. Nada de locutor de anuncio ni de exagerar.';
@@ -93,6 +98,15 @@ export async function armarVideo(dir, { log = console.log } = {}) {
     if (!existsSync(f)) writeFileSync(f, Buffer.from(await (await fetch(url)).arrayBuffer()));
     return f;
   };
+  async function mejorar(original, f, nombre) {
+    if (existsSync(f)) return f;
+    if (!existsSync(MEJORAR)) return original;
+    log(`Mejorando la foto: ${nombre}…`);
+    try { await correr(PYTHON, [MEJORAR, original, f, '1600']); return f; } catch (e) {
+      log(`  (sin mejorar: ${String(e?.message || e).slice(0, 120)})`);
+      return original;
+    }
+  }
   async function vozIA(texto, f) {
     if (existsSync(f)) return f;
     const key = claveOpenAI();
@@ -190,7 +204,9 @@ export async function armarVideo(dir, { log = console.log } = {}) {
   const { guion, fotos } = leerVideo(dir);
   const fotosLocales = {};
   for (const [k, u] of Object.entries(fotos)) {
-    fotosLocales[k] = await bajar(u, path.join(TMP, `f_${k.replace(/[^A-Z0-9]+/gi, '_')}.jpg`));
+    const nombre = k.replace(/[^A-Z0-9]+/gi, '_');
+    const original = await bajar(u, path.join(TMP, `f_${nombre}.jpg`));
+    fotosLocales[k] = await mejorar(original, path.join(TMP, `fm_${nombre}.jpg`), k);
   }
   if (!Object.keys(fotosLocales).length) throw new Error('El video no tiene fotos de productos (fotos.json).');
   const logo = await bajar(LOGO_URL, path.join(TMP, 'logo.png'));
