@@ -78,21 +78,21 @@ export const generateTotals = (doc, totals, finalY) => {
     totals.yOffset += isLarge ? 20 : 15;
   };
 
-  addTotalRow("Sub-Total:", totals.subtotal.toFixed(2));
-  addTotalRow("Descuento:", `(${totals.descuento.toFixed(2)})`);
-  addTotalRow("ITBIS:", totals.itbis.toFixed(2));
+  addTotalRow("Sub-Total:", formatCurrency(totals.subtotal));
+  addTotalRow("Descuento:", `(${formatCurrency(totals.descuento)})`);
+  addTotalRow("ITBIS:", formatCurrency(totals.itbis));
 
   doc.setLineWidth(1.5);
   doc.line(totalsX, totalsY + totals.yOffset - 5, PAGE_WIDTH - MARGIN, totalsY + totals.yOffset - 5);
 
-  addTotalRow("TOTAL:", totals.total.toFixed(2), true, true);
+  addTotalRow("TOTAL:", formatCurrency(totals.total), true, true);
 
   return totalsY + totals.yOffset;
 };
 
-export const formatCurrency = (value) => {
-    return (parseFloat(value) || 0).toFixed(2);
-};
+// Con separador de miles: 5,017.46 (17/10/2026, faltaban las comas en los PDF).
+export const formatCurrency = (value) =>
+  (parseFloat(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const formatDate = (date) => {
     return date ? formatInTimeZone(new Date(date), 'dd/MM/yyyy') : 'N/A';
