@@ -63,8 +63,19 @@ export async function conversacionZernio(supabase: any, conversacion: any, zerni
 
 // Enviar un texto por Zernio. Idempotente por el id de nuestro mensaje: si la
 // llamada se repite, Zernio no lo manda dos veces.
-export async function enviarPorZernio({ conversationId, accountId, texto, idMensaje }) {
+//
+// (18/10/2026) humano=true: respuesta escrita por una persona fuera de la
+// ventana de 24 h. Meta la admite hasta 7 días después del último mensaje
+// del cliente con la etiqueta HUMAN_AGENT (en Instagram es la única).
+export async function enviarPorZernio({ conversationId, accountId, texto, idMensaje, humano = false }) {
+  const body: any = { accountId, message: texto };
+  if (humano) { body.messagingType = 'MESSAGE_TAG'; body.messageTag = 'HUMAN_AGENT'; }
   return zernio(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
-    method: 'POST', body: { accountId, message: texto }, idempotencia: idMensaje,
+    method: 'POST', body, idempotencia: humano ? `${idMensaje}:humano` : idMensaje,
   });
+}
+
+// ¿Zernio lo rechazó porque se cerró la ventana de 24 h? (subcode 2534022)
+export function ventanaCerrada(body: any) {
+  return Number(body?.platformError?.subcode) === 2534022 || /2534022/.test(String(body?.error || ''));
 }

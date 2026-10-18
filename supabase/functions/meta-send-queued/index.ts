@@ -8,7 +8,7 @@
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { hayZernio, cuentaZernio, conversacionZernio, enviarPorZernio } from '../_shared/zernio.ts';
+import { hayZernio, cuentaZernio, conversacionZernio, enviarPorZernio, ventanaCerrada } from '../_shared/zernio.ts';
 
 const META_GRAPH_VERSION = 'v21.0';
 const META_PLATFORMS = new Set(['instagram', 'facebook']);
@@ -134,13 +134,26 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
     const zc = await cuentaZernio(supabase, tenantId, message.platform, accountId);
     const zConv = zc ? await conversacionZernio(supabase, conversation, zc.zernio_account_id, recipientId) : null;
     if (zConv) {
-      const z = await enviarPorZernio({ conversationId: zConv, accountId: zc.zernio_account_id, texto: text.slice(0, 1000), idMensaje: message.id });
+      let z = await enviarPorZernio({ conversationId: zConv, accountId: zc.zernio_account_id, texto: text.slice(0, 1000), idMensaje: message.id });
+      // (18/10/2026) Pasadas las 24 h del último mensaje del cliente, una
+      // respuesta escrita por una persona (todo lo que llega aquí: la manda
+      // alguien con "Responder") puede salir hasta 7 días con la etiqueta
+      // HUMAN_AGENT. Wil Arroyo Zamora preguntó el 16/10 a las 7:31 pm y la
+      // respuesta del 18/10 10:01 am quedó "NO SALIÓ".
+      // OJO 18/10: la app de Meta de Zernio NO tiene aprobado Human Agent
+      // (403 "must be reviewed and approved by Facebook"): hoy este reintento
+      // falla y sigue a Meta como antes. Se deja para el día que lo aprueben.
+      let conEtiqueta = false;
+      if (!z.ok && ventanaCerrada(z.body)) {
+        z = await enviarPorZernio({ conversationId: zConv, accountId: zc.zernio_account_id, texto: text.slice(0, 1000), idMensaje: message.id, humano: true });
+        conEtiqueta = true;
+      }
       if (z.ok && z.body?.success !== false) {
         const { data: enviado, error: errEnv } = await supabase.from('sales_messages').update({
           status: 'sent',
           external_message_id: z.body?.data?.messageId || null,
           raw_data: { ...(message.raw_data || {}), source: 'meta_send_queued', via: 'zernio', sent_by: userId,
-            provider_response: z.body, zernio_conversation_id: zConv },
+            provider_response: z.body, zernio_conversation_id: zConv, ...(conEtiqueta ? { etiqueta: 'HUMAN_AGENT' } : {}) },
         }).eq('id', message.id).eq('tenant_id', tenantId).select('id, status, external_message_id').single();
         if (errEnv) throw new Error(errEnv.message);
         return enviado;
