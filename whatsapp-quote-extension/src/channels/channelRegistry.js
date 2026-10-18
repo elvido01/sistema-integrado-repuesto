@@ -56,6 +56,33 @@ export function esperaRespuesta(conversation) {
 }
 
 /**
+ * La ventana de 24 horas de Instagram y Messenger (18/10/2026).
+ *
+ * Un mensaje directo solo se puede contestar dentro de las 24 h siguientes al
+ * ULTIMO mensaje directo del cliente (un comentario no cuenta: la vista lo
+ * deja fuera en ultimo_dm_cliente_at). En 30 dias, 10 de 13 conversaciones
+ * por privado se quedaron sin respuesta hasta cerrarse.
+ *
+ * null si no aplica (otro canal, o el cliente solo comento). Si no:
+ *   { estado: 'abierta' | 'por_vencer' | 'cerrada', msQuedan, texto }
+ * 'por_vencer' = quedan menos de 6 h.
+ */
+export const HORAS_VENTANA_DM = 24;
+const HORAS_POR_VENCER = 6;
+
+export function ventanaDM(conversation, ahora = Date.now()) {
+  if (!['instagram', 'facebook'].includes(conversation?.platform)) return null;
+  const ultimo = conversation?.ultimo_dm_cliente_at;
+  if (!ultimo) return null;
+  const msQuedan = new Date(ultimo).getTime() + HORAS_VENTANA_DM * 3600000 - ahora;
+  if (!Number.isFinite(msQuedan)) return null;
+  if (msQuedan <= 0) return { estado: 'cerrada', msQuedan, texto: 'cerrada' };
+  const min = Math.floor(msQuedan / 60000);
+  const texto = min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 && min < 600 ? ` ${min % 60}m` : ''}`;
+  return { estado: msQuedan < HORAS_POR_VENCER * 3600000 ? 'por_vencer' : 'abierta', msQuedan, texto };
+}
+
+/**
  * ¿Hay algo aqui que todavia no se ha MIRADO?
  *
  * Distinto de esperaRespuesta a proposito. Aquello solo se apaga

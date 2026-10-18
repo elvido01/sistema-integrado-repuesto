@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, descartarIntentoFallido, marcarUsoSugerencia, sendOmniReply, sugerirRespuesta, updateOmniConversationStatus } from '../../services/apiClient.js';
-import { esperaRespuesta, estaSinVer } from '../../channels/channelRegistry.js';
+import { esperaRespuesta, estaSinVer, ventanaDM } from '../../channels/channelRegistry.js';
 
 const CHANNEL_LABELS = {
   unified: 'Bandeja integrada',
@@ -167,6 +167,9 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   const filterOptions = [
     { key: 'todos', label: 'Todos' },
     { key: 'sin_responder', label: 'Sin responder' },
+    // (18/10/2026) Instagram y Messenger: las que esperan respuesta y todavía
+    // se pueden contestar, la que se cierra antes primero.
+    ...(['instagram', 'facebook', 'unified'].includes(channel) ? [{ key: 'por_vencer', label: '⏳ Por vencer' }] : []),
     { key: 'mios', label: 'Asignadas a mi' },
     { key: 'seguimientos', label: 'Seguimientos' }
   ];
@@ -294,6 +297,14 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     el.scrollTop = el.scrollHeight;
   }, [messages, selected?.id]);
 
+  // El reloj de las 24 h avanza solo: se repinta cada minuto.
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setAhora(Date.now()), 60000);
+    return () => window.clearInterval(t);
+  }, []);
+  const ventanaAbierta = selected ? ventanaDM(selected, ahora) : null;
+
   const selectedMeta = useMemo(() => {
     if (!selected) return null;
     return {
@@ -325,6 +336,12 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     const isAssignedToMe = (conversation) => Boolean(conversation.assigned_to_me || conversation.mine || conversation.assigned_to);
     const isFollowup = (conversation) => ['seguimiento', 'seguimiento_futuro', 'pendiente_revision'].includes(conversation.status);
 
+    if (listFilter === 'por_vencer') {
+      return conversations
+        .filter((c) => esperaRespuesta(c) && ['abierta', 'por_vencer'].includes(ventanaDM(c, ahora)?.estado))
+        .sort((a, b) => ventanaDM(a, ahora).msQuedan - ventanaDM(b, ahora).msQuedan);
+    }
+
     return conversations.filter((conversation) => {
       // El mismo criterio que el número de la barra, de una sola fuente: si
       // el filtro dijera una cosa y el contador otra, no habría forma de
@@ -336,7 +353,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
       if (listFilter === 'seguimientos') return isFollowup(conversation);
       return true;
     });
-  }, [conversations, listFilter]);
+  }, [conversations, listFilter, ahora]);
 
   function getWaitingLabel(conversation) {
     const value = conversation.last_customer_message_at || conversation.last_inbound_at || conversation.last_message_at;
@@ -754,6 +771,9 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
             // justo eso.
             const espera = estaSinVer(conversation);
             const waiting = getWaitingLabel(conversation);
+            // El reloj sale cuando el cliente espera: con la ventana abierta,
+            // cuánto queda; cerrada, que ya no se le puede escribir.
+            const ventana = esperaRespuesta(conversation) ? ventanaDM(conversation, ahora) : null;
             return (
               <button
                 key={conversation.id}
@@ -771,6 +791,14 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                   {espera && <em title="No lo has abierto todavía">•</em>}
                   <small>{formatTime(conversation.last_message_at)}</small>
                   {waiting && <small>{waiting}</small>}
+                  {ventana && (
+                    <small className={`mf-ventana is-${ventana.estado}`}
+                      title={ventana.estado === 'cerrada'
+                        ? 'Pasaron 24 h desde su último mensaje: Instagram/Messenger no deja escribirle hasta que vuelva a escribir.'
+                        : `Quedan ${ventana.texto} para poder contestarle por privado.`}>
+                      {ventana.estado === 'cerrada' ? '⛔ cerrada' : `⏳ ${ventana.texto}`}
+                    </small>
+                  )}
                 </span>
               </button>
             );
@@ -863,6 +891,14 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                   {sugerencia.promo.imagen_url && (
                     <> · <a href={sugerencia.promo.imagen_url} target="_blank" rel="noreferrer">ver el arte</a></>
                   )}
+                </div>
+              )}
+
+              {ventanaAbierta && ventanaAbierta.estado !== 'abierta' && (
+                <div className={`mf-ventana-aviso is-${ventanaAbierta.estado}`}>
+                  {ventanaAbierta.estado === 'cerrada'
+                    ? '⛔ Pasaron más de 24 h desde su último mensaje directo: Instagram y Messenger no dejan escribirle hasta que el cliente vuelva a escribir. Lo que respondas no va a salir.'
+                    : `⏳ Quedan ${ventanaAbierta.texto} para contestarle por privado. Después de eso Instagram/Messenger no deja escribirle.`}
                 </div>
               )}
 

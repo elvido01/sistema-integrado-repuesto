@@ -437,6 +437,25 @@ export const styles = `
     font-weight: 700;
   }
   .mf-borrador-acciones { display: flex; gap: 6px; }
+  /* Reloj de las 24 h de Instagram/Messenger (18/10/2026) */
+  .mf-omni-conv-side small.mf-ventana {
+    padding: 1px 5px;
+    border-radius: 5px;
+    font-weight: 700;
+  }
+  .mf-ventana.is-abierta { background: #e7f6ee; color: #11734b; }
+  .mf-ventana.is-por_vencer { background: #fff1d6; color: #9a4d00; }
+  .mf-ventana.is-cerrada { background: #eef0f2; color: #6b7280; }
+  .mf-ventana-aviso {
+    margin: 6px 8px 0;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .mf-ventana-aviso.is-por_vencer { background: #fff4e5; border: 1px solid #f5c26b; color: #9a4d00; }
+  .mf-ventana-aviso.is-cerrada { background: #fdecec; border: 1px solid #f3b4b4; color: #9b1c1c; }
+
   .mf-tiktok-esperan {
     display: block;
     width: calc(100% - 16px);
@@ -662,7 +681,7 @@ export const styles = `
     display: grid;
     justify-items: end;
     gap: 4px;
-    max-width: 62px;
+    max-width: 74px;
   }
 
   .mf-omni-conv-side i,
