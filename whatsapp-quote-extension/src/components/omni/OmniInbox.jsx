@@ -494,11 +494,21 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
   const ultimoDelCliente = [...messages].reverse().find((m) => m.sender_type === 'user');
   const esInstagramPrivado = selected?.platform === 'instagram' && ultimoDelCliente
     && ultimoDelCliente.message_type !== 'comment' && igCerrado.has(selected?.id);
+  // (18/10/2026) Ventana de 24 h cerrada y el cliente nunca comentó: por la
+  // API ya no sale (Meta 2534022), pero la regla es solo para los sistemas;
+  // una persona en la app de Instagram o en la bandeja de Business Suite sí
+  // puede contestarle. Se copia el texto y se abre su chat. Si comentó en una
+  // publicación no hace falta: la respuesta sale por el comentario
+  // (ultimoComentarioDe en apiClient).
+  const comentoAlguna = messages.some((m) => m.sender_type === 'user' && m.message_type === 'comment');
+  const cerradaSinComentario = ventanaAbierta?.estado === 'cerrada' && !comentoAlguna;
   const copiarA = esTikTok
     ? { red: 'TikTok', url: 'https://www.tiktok.com/messages', ventana: 'mf-tiktok-mensajes' }
-    : esInstagramPrivado
+    : (esInstagramPrivado || (cerradaSinComentario && selected?.platform === 'instagram'))
       ? { red: 'Instagram', url: urlInstagramDe(selected), ventana: 'mf-instagram-mensajes' }
-      : null;
+      : (cerradaSinComentario && selected?.platform === 'facebook')
+        ? { red: 'Messenger', url: 'https://business.facebook.com/latest/inbox/messenger', ventana: 'mf-messenger-mensajes' }
+        : null;
   const esperanTikTok = conversations.filter((c) => c.platform === 'tiktok' && esperaRespuesta(c)
     && Date.now() - Date.parse(c.last_user_message_at || 0) < 3 * 86400000).length;
   const [copiado, setCopiado] = useState(false);
@@ -896,9 +906,11 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
 
               {ventanaAbierta && ventanaAbierta.estado !== 'abierta' && (
                 <div className={`mf-ventana-aviso is-${ventanaAbierta.estado}`}>
-                  {ventanaAbierta.estado === 'cerrada'
-                    ? '⛔ Pasaron más de 24 h desde su último mensaje directo: Instagram y Messenger no dejan escribirle hasta que el cliente vuelva a escribir. Lo que respondas no va a salir.'
-                    : `⏳ Quedan ${ventanaAbierta.texto} para contestarle por privado. Después de eso Instagram/Messenger no deja escribirle.`}
+                  {ventanaAbierta.estado !== 'cerrada'
+                    ? `⏳ Quedan ${ventanaAbierta.texto} para contestarle desde aquí. Después tendrás que hacerlo desde la app.`
+                    : comentoAlguna
+                      ? '💬 Pasaron más de 24 h desde su último mensaje directo, pero comentó en una publicación: tu respuesta le llegará por su comentario.'
+                      : `⛔ Pasaron más de 24 h desde su último mensaje directo: desde aquí ya no sale. Escribe la respuesta y pulsa «Copiar y abrir ${copiarA?.red || 'la app'}»: desde la app sí puedes contestarle.`}
                 </div>
               )}
 
