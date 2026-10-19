@@ -1394,7 +1394,7 @@ const CierreCajaPage = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {DENOMINACIONES.map(d => {
+                          {DENOMINACIONES.filter(d => d.tipo !== 'tasa').map(d => {
                             const cant = cantidades[d.label] ?? 0;
                             const val = valorDenominacion(d, cantidades);
                             return (
@@ -1419,9 +1419,23 @@ const CierreCajaPage = () => {
                                   />
                                 </TableCell>
                                 <TableCell className="py-0.5 text-right font-mono text-sm">
-                                  {d.tipo === 'tasa'
-                                    ? <span className="text-xs text-gray-500 font-sans">RD$ por US$</span>
-                                    : formatCurrency(val)}
+                                  {d.tipo === 'dolar' ? (
+                                    // La tasa va en el mismo renglón de los dólares.
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="text-xs text-gray-600 font-sans font-semibold whitespace-nowrap">Tasa del día</span>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={cantidades['Tasa del día'] ?? ''}
+                                        onChange={e => handleCantidadChange({ label: 'Tasa del día', tipo: 'tasa' }, e.target.value)}
+                                        onFocus={e => e.target.select()}
+                                        onClick={e => e.target.select()}
+                                        className="w-20 text-center h-6 text-sm px-1"
+                                      />
+                                      <span className="min-w-[90px]">{formatCurrency(val)}</span>
+                                    </div>
+                                  ) : formatCurrency(val)}
                                 </TableCell>
                               </TableRow>
                             );
