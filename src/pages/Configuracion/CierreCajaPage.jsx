@@ -38,13 +38,30 @@ const DENOMINACIONES_TODAS = [
   { label: 'Cent.', value: 0 },
   { label: 'Tarjetas', value: 0, tipo: 'tarjeta' },
   { label: 'Cheques', value: 0, tipo: 'cheque' },
+  { label: 'Tarjetas/Cheques', value: 0, tipo: 'tarjeta' },
+  // (19/10/2026) Los dólares se cuentan en US$ y se pasan a pesos con la
+  // tasa del día, así el cuadre sigue en pesos. La tasa se graba en el
+  // desglose como un renglón más ('Tasa del día'), que no suma.
+  { label: 'Dólares', value: 0, tipo: 'dolar' },
+  { label: 'Tasa del día', value: 0, tipo: 'tasa' },
   { label: 'Otros', value: 0, tipo: 'otro' },
 ];
 
 // Retiradas del conteo: no circulan o no se usan. Solo dejan de pedirse al
-// contar; lo ya grabado con ellas se sigue leyendo.
-const DENOMINACIONES_RETIRADAS = new Set(['20', 'Cent.', 'Otros']);
+// contar; lo ya grabado con ellas se sigue leyendo. Tarjetas y Cheques van
+// juntos desde el 19/10/2026.
+const DENOMINACIONES_RETIRADAS = new Set(['20', 'Cent.', 'Otros', 'Tarjetas', 'Cheques']);
 const DENOMINACIONES = DENOMINACIONES_TODAS.filter(d => !DENOMINACIONES_RETIRADAS.has(d.label));
+
+// Lo que vale en pesos un renglón del desglose. Billetes: cantidad × valor;
+// tarjetas/cheques: el monto tal cual; dólares: US$ × tasa; la tasa, nada.
+const valorDenominacion = (d, desglose) => {
+  const cant = Number(desglose?.[d.label]) || 0;
+  if (d.tipo === 'tasa') return 0;
+  if (d.tipo === 'dolar') return cant * (Number(desglose?.['Tasa del día']) || 0);
+  if (d.tipo) return cant;
+  return cant * d.value;
+};
 
 const formatCurrency = (v) =>
   new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
@@ -573,17 +590,28 @@ const CierreCajaPage = () => {
   }, [fetchResumen]);
 
   /* ── Desglose math ── */
-  const handleCantidadChange = (label, value) => {
+  const handleCantidadChange = (d, value) => {
+    // Montos (tarjetas/cheques, dólares, tasa) con decimales: se guarda el
+    // texto para poder teclear "62." sin que se coma el punto.
+    if (d.tipo) {
+      setCantidades(prev => ({ ...prev, [d.label]: value }));
+      return;
+    }
     const parsed = parseInt(value, 10);
-    setCantidades(prev => ({ ...prev, [label]: isNaN(parsed) ? 0 : parsed }));
+    setCantidades(prev => ({ ...prev, [d.label]: isNaN(parsed) ? 0 : parsed }));
   };
 
+  // La tasa del día de las compras en dólares (la última que se usó) como
+  // punto de partida; se puede cambiar aquí mismo.
+  useEffect(() => {
+    supabase.rpc('get_tasa_dia').then(({ data }) => {
+      const t = Number(data) || 0;
+      if (t > 0) setCantidades(prev => (Number(prev['Tasa del día']) > 0 ? prev : { ...prev, 'Tasa del día': t }));
+    }, () => {});
+  }, []);
+
   const desgloseTotal = useMemo(() => {
-    return DENOMINACIONES.reduce((sum, d) => {
-      const cant = cantidades[d.label] || 0;
-      if (d.tipo) return sum + cant; // Para tarjetas/cheques/otros el valor se ingresa directo
-      return sum + (cant * d.value);
-    }, 0);
+    return DENOMINACIONES.reduce((sum, d) => sum + valorDenominacion(d, cantidades), 0);
   }, [cantidades]);
 
   /* ── Cerrar turno ── */
@@ -614,7 +642,7 @@ const CierreCajaPage = () => {
         efectivo_en_caja: resumen?.efectivoEnCaja || 0,
         total_desglose: desgloseTotal,
         diferencia: desgloseTotal - (resumen?.efectivoEnCaja || 0),
-        desglose: cantidades,
+        desglose: Object.fromEntries(Object.entries(cantidades).map(([k, v]) => [k, Number(v) || 0])),
         usuario_id: user?.id,
         // La foto del cierre, para poder reimprimirlo idéntico. Recalcular el
         // día más tarde daría otro documento: los cobros siguen entrando.
@@ -657,7 +685,10 @@ const CierreCajaPage = () => {
       toast({ title: 'Cierre de Caja', description: `El cierre del turno ${turno} ha sido registrado exitosamente.` });
 
       // Reset
-      setCantidades(DENOMINACIONES.reduce((acc, d) => ({ ...acc, [d.label]: 0 }), {}));
+      setCantidades(prev => ({
+        ...DENOMINACIONES.reduce((acc, d) => ({ ...acc, [d.label]: 0 }), {}),
+        'Tasa del día': prev['Tasa del día'] || 0,
+      }));
       setShowDesglose(false);
       // Con una sola caja al día el turno no avanza: siempre es el 1.
       if (!unTurno) setTurno(prev => Math.min(prev + 1, turnosPorDia));
@@ -849,10 +880,11 @@ const CierreCajaPage = () => {
             <table>
               <thead><tr><th>Denominación</th><th class="num">Cant.</th><th class="num">Valor</th></tr></thead>
               <tbody>
-                ${DENOMINACIONES_TODAS.filter(d => Number(cierre.desglose[d.label] || 0) > 0).map(d => {
+                ${DENOMINACIONES_TODAS.filter(d => Number(cierre.desglose[d.label] || 0) > 0
+          && (d.tipo !== 'tasa' || Number(cierre.desglose['Dólares'] || 0) > 0)).map(d => {
                   const cant = cierre.desglose[d.label] || 0;
-                  const val = d.tipo ? cant : cant * d.value;
-                  return `<tr><td>${d.label}</td><td class="num">${cant}</td><td class="num">${formatCurrency(val)}</td></tr>`;
+                  const val = valorDenominacion(d, cierre.desglose);
+                  return `<tr><td>${d.label}</td><td class="num">${cant}</td><td class="num">${d.tipo === 'tasa' ? '' : formatCurrency(val)}</td></tr>`;
                 }).join('')}
                 <tr class="grande"><td colspan="2">Total Desglose</td><td class="num">${formatCurrency(cierre.total_desglose)}</td></tr>
                 <tr class="grande"><td colspan="2">Diferencia${cierre.diferencia < 0 ? ' (FALTANTE)' : cierre.diferencia > 0 ? ' (SOBRANTE)' : ''}</td><td class="num">${formatCurrency(cierre.diferencia)}</td></tr>
@@ -1005,13 +1037,14 @@ const CierreCajaPage = () => {
           <span class="text-right" style="width: 42px;">CANT.</span>
           <span class="text-right" style="width: 84px;">VALOR</span>
         </div>
-        ${DENOMINACIONES_TODAS.filter(d => Number(cierre.desglose[d.label] || 0) > 0).map(d => {
+        ${DENOMINACIONES_TODAS.filter(d => Number(cierre.desglose[d.label] || 0) > 0
+          && (d.tipo !== 'tasa' || Number(cierre.desglose['Dólares'] || 0) > 0)).map(d => {
           const cant = cierre.desglose[d.label] || 0;
-          const val = d.tipo ? cant : cant * d.value;
+          const val = valorDenominacion(d, cierre.desglose);
           return `<div class="row">
             <span style="flex: 1;">${d.label}</span>
             <span class="text-right" style="width: 42px;">${cant}</span>
-            <span class="text-right" style="width: 84px;">${formatCurrency(val)}</span>
+            <span class="text-right" style="width: 84px;">${d.tipo === 'tasa' ? '' : formatCurrency(val)}</span>
           </div>`;
         }).join('')}
         <div class="row total-row"><span>Total Desglose:</span><span>${formatCurrency(cierre.total_desglose)}</span></div>
@@ -1362,17 +1395,20 @@ const CierreCajaPage = () => {
                         </TableHeader>
                         <TableBody>
                           {DENOMINACIONES.map(d => {
-                            const cant = cantidades[d.label] || 0;
-                            const val = d.tipo ? cant : cant * d.value;
+                            const cant = cantidades[d.label] ?? 0;
+                            const val = valorDenominacion(d, cantidades);
                             return (
                               <TableRow key={d.label} className="hover:bg-yellow-50/50">
-                                <TableCell className="py-0.5 font-semibold text-right pr-4 text-sm">{d.label}</TableCell>
+                                <TableCell className="py-0.5 font-semibold text-right pr-4 text-sm whitespace-nowrap">
+                                  {d.label}
+                                </TableCell>
                                 <TableCell className="py-0.5 text-center">
                                   <Input
                                     type="number"
                                     min="0"
+                                    step={d.tipo ? '0.01' : '1'}
                                     value={cant}
-                                    onChange={e => handleCantidadChange(d.label, e.target.value)}
+                                    onChange={e => handleCantidadChange(d, e.target.value)}
                                     // Al entrar en la casilla se selecciona el 0
                                     // para que se pise al teclear. Si no, un 3
                                     // sobre el 0 quedaba en 30 y el cuadre salía
@@ -1382,7 +1418,11 @@ const CierreCajaPage = () => {
                                     className="w-20 mx-auto text-center h-6 text-sm px-1"
                                   />
                                 </TableCell>
-                                <TableCell className="py-0.5 text-right font-mono text-sm">{formatCurrency(val)}</TableCell>
+                                <TableCell className="py-0.5 text-right font-mono text-sm">
+                                  {d.tipo === 'tasa'
+                                    ? <span className="text-xs text-gray-500 font-sans">RD$ por US$</span>
+                                    : formatCurrency(val)}
+                                </TableCell>
                               </TableRow>
                             );
                           })}
