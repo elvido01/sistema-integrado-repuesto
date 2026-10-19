@@ -15,6 +15,10 @@ import { BarChart3, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 
 const rd = (n) => `RD$${Math.round(Number(n) || 0).toLocaleString('es-DO')}`;
 const num = (n) => (Number(n) || 0).toLocaleString('es-DO');
+// (19/10/2026) El objetivo de cada pieza de la publicación diaria
+// (sql/publicacion_diaria_objetivos.sql). Lo que hay que mirar es el alcance
+// de las de educar y conversación contra las de venta.
+const OBJETIVO = { venta: '💰 Venta', educativo: '📚 Educar', interaccion: '💬 Conversación', manual: '✋ A mano' };
 
 // Lectura de una fila: cómo le fue a la pieza después de publicarla.
 function efecto(r) {
@@ -68,6 +72,16 @@ export function EfectividadPublicaciones() {
       subieron: medibles.filter((r) => efecto(r).txt === 'Subió').length,
       porDescuento: porGrupo((r) => (r.con_descuento ? 'Con descuento' : 'Sin descuento')),
       porFormato: porGrupo((r) => (r.formato === 'reel' ? 'Reel' : 'Imagen')),
+      // Por objetivo cuenta TODAS (no solo las de 3+ días): el alcance se ve
+      // desde el primer día; las ventas, en la columna de cada fila.
+      porObjetivo: filas.reduce((g, r) => {
+        const k = r.objetivo || 'manual';
+        g[k] ||= { n: 0, alcance: 0, interacciones: 0 };
+        g[k].n += 1;
+        g[k].alcance += Number(r.alcance) || 0;
+        g[k].interacciones += Number(r.interacciones) || 0;
+        return g;
+      }, {}),
     };
   }, [filas]);
 
@@ -122,6 +136,19 @@ export function EfectividadPublicaciones() {
             </div>
           )}
 
+          {resumen && Object.keys(resumen.porObjetivo).length > 1 && (
+            <div className="mb-3 rounded-lg border border-violet-100 bg-violet-50/40 p-2 text-[11px]">
+              <p className="mb-1 font-semibold text-slate-700">Por objetivo: alcance e interacciones promedio por publicación</p>
+              <div className="flex flex-wrap gap-x-5 gap-y-1">
+                {Object.entries(resumen.porObjetivo).map(([k, g]) => (
+                  <span key={k} className="text-slate-700">
+                    <b>{OBJETIVO[k] || k}</b> ({g.n}): {num(Math.round(g.alcance / g.n))} personas · {num(Math.round(g.interacciones / g.n))} interacc.
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {!!filas?.length && (
             <div className="max-h-80 overflow-auto">
               <table className="w-full text-[11px]">
@@ -144,7 +171,12 @@ export function EfectividadPublicaciones() {
                     return (
                       <tr key={r.bundle_id} className="border-t border-slate-100">
                         <td className="py-1 pr-2 whitespace-nowrap">{new Date(r.publicado_at).toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit' })}</td>
-                        <td className="py-1 pr-2" title={r.codigo}>{r.descripcion}</td>
+                        <td className="py-1 pr-2" title={r.codigo}>
+                          {r.descripcion}
+                          {r.objetivo && r.objetivo !== 'manual' && (
+                            <span className="ml-1 whitespace-nowrap text-[10px] text-violet-700">{OBJETIVO[r.objetivo]}</span>
+                          )}
+                        </td>
                         <td className="py-1 pr-2 whitespace-nowrap">
                           {r.formato === 'reel' ? 'Reel' : 'Imagen'}
                           <span className={`ml-1 rounded px-1 ${r.con_descuento ? 'bg-amber-50 text-amber-700' : 'text-slate-400'}`}>

@@ -22,6 +22,14 @@ const ESTADO = {
   completed: 'hecha', cancelled: 'descartada', expired: 'vencida',
 };
 
+// (19/10/2026) Cada pieza del día con su objetivo (sql/publicacion_diaria_objetivos.sql).
+// El alcance era muy bajo y las 3 eran de venta: las redes no reparten anuncios.
+const OBJETIVOS = {
+  venta: { txt: '💰 Venta', cls: 'bg-emerald-100 text-emerald-800', ayuda: 'La promoción de siempre: la pieza y su precio.' },
+  educativo: { txt: '📚 Educar', cls: 'bg-sky-100 text-sky-800', ayuda: 'Enseña algo útil de este tipo de pieza para llegar a más gente. Reel ¿Sabías que?.' },
+  interaccion: { txt: '💬 Conversación', cls: 'bg-amber-100 text-amber-800', ayuda: 'Una pregunta sobre su moto para que comenten. Reel ¿Le sirve a tu moto?.' },
+};
+
 export function PublicacionDiaria({ trabajos, onRevisar }) {
   const { toast } = useToast();
   const [cfg, setCfg] = useState(null);
@@ -118,6 +126,7 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
         </span>
         <p className="flex-1 text-[11px] text-slate-500">
           Cada día 3 piezas: una de RD$100–500, una de 501–1,000 y una de más de 1,000. Nada de menos de RD$100 y sin el 5% (ese solo a mano).
+          Cada una con su objetivo (venta, educar o conversación), que rota cada día.
         </p>
         <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-slate-700">
           <input type="checkbox" checked={activo} disabled={guardando} onChange={(e) => configurar({ activo: e.target.checked })} />
@@ -167,7 +176,15 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
             return (
               <div key={e.id} className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-[11px]">
                 <p className="flex items-center justify-between text-[10px] font-bold uppercase text-violet-700">
-                  <span>{e.rango}</span>
+                  <span className="flex items-center gap-1">
+                    {e.rango}
+                    {e.objetivo && (
+                      <span className={`rounded px-1 py-px text-[9px] normal-case ${OBJETIVOS[e.objetivo]?.cls || ''}`}
+                        title={OBJETIVOS[e.objetivo]?.ayuda}>
+                        {OBJETIVOS[e.objetivo]?.txt || e.objetivo}
+                      </span>
+                    )}
+                  </span>
                   {e.hora_publicar && <span className="normal-case text-slate-500">sale a las {hora12(e.hora_publicar)}</span>}
                 </p>
                 {p ? (
