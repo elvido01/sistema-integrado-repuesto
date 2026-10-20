@@ -103,6 +103,35 @@ export async function facebookHistoria({ fetchFn, token, cuentaId, media }) {
   return { ok: true, external_post_id: String(id), external_url: `https://www.facebook.com/stories/${cuentaId}` };
 }
 
+// (20/10/2026) Video vertical en la página (promo de MotoFlow por las redes
+// de Morla). /videos con file_url: Facebook baja el video él mismo y, si es
+// vertical y corto, lo muestra también como reel.
+export async function facebookVideo({ fetchFn, token, cuentaId, media, texto }) {
+  if (!media.video) return { ok: false, paso: 'publicar', error: 'Falta el video.' };
+  const res = await meta(fetchFn, `https://graph.facebook.com/${V_META}/${cuentaId}/videos`,
+    token, { file_url: media.video, description: texto });
+  if (!res.ok) return fallo(res, 'publicar');
+  const id = res.body?.id;
+  if (!id) return { ok: false, paso: 'publicar', http: res.http, error: 'Facebook contestó 200 pero sin id del video.' };
+  return { ok: true, external_post_id: String(id), external_url: `https://www.facebook.com/${cuentaId}/videos/${id}` };
+}
+
+// (20/10/2026) El primer comentario de la propia cuenta (el enlace de
+// registro de la promo de MotoFlow). Solo Facebook e Instagram dejan
+// comentar por la API. Si falla, la publicación sigue publicada.
+export async function comentarPrimero({ fetchFn, token, platform, postId, texto }) {
+  if (!texto || !postId) return { ok: false, error: 'sin texto o sin id' };
+  let url;
+  if (platform === 'facebook') url = `https://graph.facebook.com/${V_META}/${postId}/comments`;
+  else if (platform === 'instagram') {
+    const host = String(token).startsWith('IGAA') ? 'graph.instagram.com' : 'graph.facebook.com';
+    url = `https://${host}/${V_META}/${postId}/comments`;
+  } else return { ok: false, error: `${platform} no deja comentar por la API` };
+  const res = await meta(fetchFn, url, token, { message: texto });
+  if (!res.ok) return fallo(res, 'comentar');
+  return { ok: true, id: res.body?.id || null };
+}
+
 // ── INSTAGRAM (siempre dos pasos: contenedor y publicación) ─────────────
 async function instagram({ fetchFn, token, cuentaId, contenedor, esperar = pausa }) {
   const host = String(token).startsWith('IGAA') ? 'graph.instagram.com' : 'graph.facebook.com';
@@ -203,6 +232,7 @@ export function adaptadorDePrueba(guion = {}) {
 export const ADAPTADORES = {
   'facebook:feed': facebookFeed,
   'facebook:story': facebookHistoria,
+  'facebook:reel': facebookVideo,
   'instagram:feed': instagramFeed,
   'instagram:story': instagramHistoria,
   'instagram:reel': instagramReel,

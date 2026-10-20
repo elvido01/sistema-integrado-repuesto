@@ -20,7 +20,7 @@
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { publicarDestino } from '../_shared/adaptadores.mjs';
+import { publicarDestino, comentarPrimero } from '../_shared/adaptadores.mjs';
 import { cuentaConAcceso } from '../_shared/cuentaSocial.mjs';
 import { privacidadVideoYoutube } from '../_shared/youtube.mjs';
 import { estadoEnvioTikTok } from '../_shared/tiktok.mjs';
@@ -259,6 +259,14 @@ Deno.serve(async () => {
         token_vencido: !!r.token_vencido,
       };
       const rep = await reportar(sb, job.id, resultado);
+      // (20/10/2026) Primer comentario de la cuenta (channel_config.primer_comentario):
+      // el enlace de registro de la promo de MotoFlow. Una vez, al publicar.
+      if (r.ok && !r.ya_estaba && cfg.primer_comentario && ['facebook', 'instagram'].includes(destino.platform)
+          && destino.placement !== 'story') {
+        const c = await comentarPrimero({ fetchFn: fetch, token: cuenta.token, platform: destino.platform,
+          postId: r.external_post_id, texto: String(cfg.primer_comentario).slice(0, 500) });
+        if (!c.ok) console.error('[publicador] primer comentario', destino.platform, c.error);
+      }
       // YouTube sube privado hasta la auditoría de Google: se anota, para que
       // la pantalla diga PRIVADO y lleve al dueño a YouTube Studio.
       if (r.ok && r.privacidad) {

@@ -9,6 +9,8 @@ import {
   publicarDestino,
   publicarPromocion,
   adaptadorDePrueba,
+  facebookVideo,
+  comentarPrimero,
 } from '../supabase/functions/_shared/adaptadores.mjs';
 
 // Un `fetch` de mentira que apunta todo lo que le piden y contesta lo que se
@@ -318,5 +320,32 @@ describe('Una promocion entera', () => {
     const r = await publicarPromocion({ fetchFn: null, destinos: yaPublicados, cuentas, media: MEDIA, textos: {}, adaptadores });
     expect(falso.llamadas).toEqual(['instagram:story']);   // solo el que faltaba
     expect(r.resultados.filter((x) => x.ya_estaba)).toHaveLength(5);
+  });
+});
+
+describe('Facebook video y primer comentario (20/10/2026)', () => {
+  it('sube el video por file_url con el texto, sin token en la URL', async () => {
+    const f = fetchFalso({ body: { id: '999' } });
+    const r = await facebookVideo({ fetchFn: f, token: 'T', cuentaId: 'PAG', media: MEDIA, texto: 'Prueba' });
+    expect(r.ok).toBe(true);
+    expect(r.external_post_id).toBe('999');
+    expect(f.pedidos[0].url).toMatch(/\/PAG\/videos$/);
+    expect(f.pedidos[0].cuerpo).toEqual({ file_url: MEDIA.video, description: 'Prueba' });
+    expect(f.pedidos[0].url).not.toContain('T');
+  });
+  it('sin video no llama a nadie', async () => {
+    const f = fetchFalso({ body: { id: '1' } });
+    const r = await facebookVideo({ fetchFn: f, token: 'T', cuentaId: 'PAG', media: { imagen: 'x' }, texto: 'x' });
+    expect(r.ok).toBe(false);
+    expect(f.pedidos.length).toBe(0);
+  });
+  it('comenta en Facebook e Instagram, y no en TikTok', async () => {
+    const f = fetchFalso([{ body: { id: 'c1' } }, { body: { id: 'c2' } }]);
+    expect((await comentarPrimero({ fetchFn: f, token: 'T', platform: 'facebook', postId: 'P1', texto: 'link' })).ok).toBe(true);
+    expect((await comentarPrimero({ fetchFn: f, token: 'IGAAx', platform: 'instagram', postId: 'M1', texto: 'link' })).ok).toBe(true);
+    expect(f.pedidos[0].url).toMatch(/graph\.facebook\.com\/v[\d.]+\/P1\/comments$/);
+    expect(f.pedidos[1].url).toMatch(/graph\.instagram\.com\/v[\d.]+\/M1\/comments$/);
+    expect(f.pedidos[1].cuerpo).toEqual({ message: 'link' });
+    expect((await comentarPrimero({ fetchFn: f, token: 'T', platform: 'tiktok', postId: 'X', texto: 'link' })).ok).toBe(false);
   });
 });
