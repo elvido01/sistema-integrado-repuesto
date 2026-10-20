@@ -1,0 +1,34 @@
+{
+  "titulo": "MotoFlow — promo 01 (prueba 15 días)",
+  "enlace": "motoflow.pages.dev/registro",
+  "escenas": [
+    {
+      "id": "gancho",
+      "voz": "¿Todavía facturas a mano… o usas tres programas para vender y cobrar?"
+    },
+    {
+      "id": "dgii",
+      "voz": "La DGII ya exige la factura electrónica. Con MotoFlow la tienes desde el primer día."
+    },
+    {
+      "id": "pos",
+      "voz": "Punto de venta, inventario y cuentas por cobrar, en un solo sistema."
+    },
+    {
+      "id": "bandeja",
+      "voz": "WhatsApp, Instagram, Facebook y TikTok en una sola bandeja… y la inteligencia artificial te dice quién está listo para comprar."
+    },
+    {
+      "id": "para",
+      "voz": "Hecho en República Dominicana para repuestos, dealers de motos y financieras."
+    },
+    {
+      "id": "precio",
+      "voz": "Desde mil novecientos cincuenta pesos al mes. Pruébalo quince días gratis."
+    },
+    {
+      "id": "cta",
+      "voz": "El enlace está en el primer comentario. ¡Regístrate hoy!"
+    }
+  ]
+}
