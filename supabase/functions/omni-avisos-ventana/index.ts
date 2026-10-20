@@ -37,8 +37,41 @@ Deno.serve(async () => {
     console.error('[omni-avisos-ventana] telegram', r?.status, r ? (await r.text()).slice(0, 200) : 'sin respuesta');
     await supabase.rpc('omni_avisos_ventana_soltar', { p_conversation_id: a.conversation_id, p_tipo: a.tipo, p_dm_at: a.dm_at });
   }
-  return json({ ok: true, enviados, fallidos });
+  // (20/10/2026) Los casos del CRM: algo que tiene que decidir una persona
+  // (sql/crm_casos.sql). Misma vuelta, mismo bot.
+  let casos = 0;
+  const { data: cs } = await supabase.rpc('crm_casos_tomar_avisos');
+  for (const k of cs || []) {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: textoCaso(k), disable_web_page_preview: true }),
+    }).catch(() => null);
+    if (r?.ok) { casos++; continue; }
+    fallidos++;
+    console.error('[omni-avisos-ventana] telegram caso', r?.status);
+    await supabase.rpc('crm_casos_soltar_aviso', { p_caso_id: k.id });
+  }
+  return json({ ok: true, enviados, casos, fallidos });
 });
+
+const MOTIVO = {
+  no_lo_tenemos: '📦 Pieza que no hay',
+  reclamo: '⚠️ Reclamo',
+  precio_especial: '💲 Pide precio especial',
+  listo_para_comprar: '🛒 Quiere comprar',
+  duda_tecnica: '🔧 Duda técnica',
+  otro: '🧩 Para decidir',
+};
+const CANAL = { whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Messenger', tiktok: 'TikTok' };
+
+function textoCaso(k: any) {
+  return `${MOTIVO[k.motivo] || MOTIVO.otro} · ${CANAL[k.plataforma] || k.plataforma} · ${k.cliente}` +
+    (k.quiere ? `\n• Quiere: ${k.quiere}` : '') +
+    (k.se_le_dijo ? `\n• Se le dijo: ${k.se_le_dijo}` : '') +
+    (k.falta ? `\n• Falta: ${k.falta}` : '') +
+    '\n\nSe cierra solo cuando le contestes.';
+}
 
 function texto(a: any) {
   const red = RED[a.plataforma] || a.plataforma;

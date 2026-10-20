@@ -137,6 +137,22 @@ export const styles = `
 
   /* Los chats que el espejo todavia no ha copiado. Verde suave, no alarma:
      no hay nada roto, hay trabajo esperando. */
+  .mf-casos { background: #f3effd; border-bottom-color: #ddd3f7; }
+  .mf-casos strong { color: #5b3cc4; }
+  .mf-sin-copiar .mf-casos-lista { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
+  .mf-caso { background: #fff; border: 1px solid #ddd3f7; border-radius: 8px; overflow: hidden; }
+  .mf-sin-copiar .mf-caso .mf-caso-head { width: 100%; justify-content: space-between; border: 0; border-radius: 0; color: #4a2fa8; }
+  .mf-sin-copiar .mf-caso .mf-caso-head span { max-width: 230px; }
+  .mf-caso-cuerpo { padding: 2px 8px 7px; font-size: 11px; color: #333; }
+  .mf-caso-cuerpo p, .mf-caso-aviso p { margin: 2px 0; line-height: 1.3; }
+  .mf-caso-cuerpo i, .mf-caso-aviso i { font-style: normal; font-weight: 800; color: #5b3cc4; }
+  .mf-sin-copiar .mf-caso-acciones { display: flex; gap: 6px; margin-top: 5px; }
+  .mf-sin-copiar .mf-caso-acciones button { border-color: #c9bdf2; color: #4a2fa8; }
+  .mf-caso-badge { font-size: 11px; }
+  .mf-caso-aviso { margin: 6px 0; padding: 7px 10px; border: 1px solid #ddd3f7; background: #f3effd; border-radius: 8px; font-size: 12px; }
+  .mf-caso-aviso strong { display: block; color: #5b3cc4; margin-bottom: 2px; }
+  .mf-caso-aviso button { margin-top: 5px; padding: 3px 9px; border: 1px solid #c9bdf2; border-radius: 999px; background: #fff; color: #4a2fa8; font-weight: 800; font-size: 11px; cursor: pointer; }
+
   .mf-sin-copiar {
     padding: 8px 14px 10px;
     background: #eef7f2;

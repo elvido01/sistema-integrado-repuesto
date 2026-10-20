@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
-import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni, registrarChatsSinLeer, clientesEsperando } from './services/apiClient.js';
+import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni, registrarChatsSinLeer, clientesEsperando, casosAbiertos, resolverCaso } from './services/apiClient.js';
 import { slugNombreChat, parseJid } from './utils/jid.js';
 import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, conversacionEsperaRespuesta, marcarUsoSugerencia, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, adjuntarFotos, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, leerChatsSinLeer, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
@@ -342,6 +342,17 @@ function serializeLines(lines) {
   }));
 }
 
+
+// (20/10/2026) Motivos de los casos del CRM (sql/crm_casos.sql).
+const MOTIVO_CASO = {
+  no_lo_tenemos: '📦 No hay',
+  reclamo: '⚠️ Reclamo',
+  precio_especial: '💲 Precio especial',
+  listo_para_comprar: '🛒 Quiere comprar',
+  duda_tecnica: '🔧 Duda técnica',
+  otro: '🧩 Para decidir',
+};
+
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [mode, setMode] = useState('cotizar'); // 'cotizar' | 'cobranza' | 'omni'
@@ -630,6 +641,27 @@ export default function App() {
     const t = window.setInterval(mirar, 120000);
     return () => { vivo = false; window.clearInterval(t); };
   }, [safeMode, session?.access_token, empresaPending]);
+  // (20/10/2026) Casos del CRM (sql/crm_casos.sql): lo que el clasificador
+  // vio que tiene que decidir una persona. Se cierran solos al contestar.
+  const [casos, setCasos] = useState([]);
+  const [casoAbierto, setCasoAbierto] = useState('');
+  useEffect(() => {
+    if (safeMode || !session?.access_token || empresaPending) { setCasos([]); return undefined; }
+    let vivo = true;
+    const mirar = async () => { const l = await casosAbiertos(); if (vivo) setCasos(l); };
+    mirar();
+    const t = window.setInterval(mirar, 120000);
+    return () => { vivo = false; window.clearInterval(t); };
+  }, [safeMode, session?.access_token, empresaPending]);
+  const handleResolverCaso = async (id) => {
+    setCasos((prev) => prev.filter((k) => k.id !== id));
+    try {
+      await resolverCaso(id);
+    } catch (e) {
+      setNotice(`No se pudo cerrar el caso: ${e?.message || e}`);
+      setCasos(await casosAbiertos());
+    }
+  };
   const haceCuanto = (iso) => {
     const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
     return min < 60 ? `${min} min` : min < 1440 ? `${Math.floor(min / 60)} h` : `${Math.floor(min / 1440)} d`;
@@ -2620,6 +2652,8 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
             onQuoteConversation={handleOmniQuoteConversation}
             onConversationsChange={mezclarConversacionesDelRail}
             onSelectedConversationChange={setOmniSelectedConversation}
+            casos={casos}
+            onResolverCaso={handleResolverCaso}
           />
         </div>
       )}
@@ -2702,6 +2736,39 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
           <button className="mf-safe-button" type="button" onClick={handleRestoreWhatsApp} title="Desmontar temporalmente MotoFlow Omni">
             Restaurar WhatsApp
           </button>
+        </section>
+      )}
+
+      {session && !empresaPending && casos.length > 0 && (
+        <section className="mf-sin-copiar mf-casos">
+          <header>
+            <strong>🧩 {casos.length} caso{casos.length !== 1 ? 's' : ''} para decidir</strong>
+            <small>Hermes no lo puede resolver solo. Se cierra al contestarle.</small>
+          </header>
+          <div className="mf-casos-lista">
+            {casos.slice(0, 10).map((k) => (
+              <div key={k.id} className={`mf-caso${casoAbierto === k.id ? ' is-open' : ''}`}>
+                <button type="button" className="mf-caso-head" onClick={() => setCasoAbierto(casoAbierto === k.id ? '' : k.id)}>
+                  <span>{MOTIVO_CASO[k.motivo] || MOTIVO_CASO.otro} · {CANAL_CORTO[k.platform] || k.platform} · {k.nombre}</span>
+                  <b>{haceCuanto(k.creado_at)}</b>
+                </button>
+                {casoAbierto === k.id && (
+                  <div className="mf-caso-cuerpo">
+                    {k.quiere && <p><i>Quiere:</i> {k.quiere}</p>}
+                    {k.se_le_dijo && <p><i>Se le dijo:</i> {k.se_le_dijo}</p>}
+                    {k.falta && <p><i>Falta:</i> {k.falta}</p>}
+                    <span className="mf-caso-acciones">
+                      <button type="button" disabled={!!abriendoChat}
+                        onClick={() => (k.platform === 'whatsapp' ? abrirChatSinCopiar(k.nombre) : handleSelectOmniChannel(k.platform))}>
+                        Abrir conversación
+                      </button>
+                      <button type="button" onClick={() => handleResolverCaso(k.id)} title="Ya se resolvió por otra vía">✓ Resuelto</button>
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

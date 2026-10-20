@@ -988,6 +988,31 @@ export async function clientesEsperando(minutos = 60) {
   }
 }
 
+// (20/10/2026) Casos del CRM: lo que tiene que decidir una persona
+// (sql/crm_casos.sql). Silencioso como el de esperando.
+export async function casosAbiertos() {
+  const headers = await getAuthHeaders();
+  try {
+    const r = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/crm_casos_abiertos`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    return Array.isArray(r) ? r : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function resolverCaso(casoId) {
+  const headers = await getAuthHeaders();
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/crm_caso_resolver`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_caso_id: casoId }),
+  });
+}
+
 export async function sendMirrorHeartbeat(diag = {}) {
   const headers = await getAuthHeaders();
   try {

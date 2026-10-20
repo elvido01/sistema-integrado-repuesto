@@ -133,7 +133,7 @@ function MediaDelMensaje({ message }) {
   return <a href={url} target="_blank" rel="noreferrer" className="mf-omni-media-link">Abrir adjunto</a>;
 }
 
-export default function OmniInbox({ channel, onQuoteConversation, onConversationsChange, onSelectedConversationChange }) {
+export default function OmniInbox({ channel, onQuoteConversation, onConversationsChange, onSelectedConversationChange, casos = [], onResolverCaso }) {
   const [search, setSearch] = useState('');
   const [listFilter, setListFilter] = useState('todos');
   const [conversations, setConversations] = useState([]);
@@ -170,6 +170,8 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     // (18/10/2026) Instagram y Messenger: las que esperan respuesta y todavía
     // se pueden contestar, la que se cierra antes primero.
     ...(['instagram', 'facebook', 'unified'].includes(channel) ? [{ key: 'por_vencer', label: '⏳ Por vencer' }] : []),
+    // (20/10/2026) Lo que tiene que decidir una persona (sql/crm_casos.sql).
+    ...(casos.length ? [{ key: 'casos', label: `🧩 Casos (${casos.length})` }] : []),
     { key: 'mios', label: 'Asignadas a mi' },
     { key: 'seguimientos', label: 'Seguimientos' }
   ];
@@ -304,6 +306,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     return () => window.clearInterval(t);
   }, []);
   const ventanaAbierta = selected ? ventanaDM(selected, ahora) : null;
+  const casoSel = selected ? casos.find((k) => k.conversation_id === selected.id) : null;
 
   const selectedMeta = useMemo(() => {
     if (!selected) return null;
@@ -336,6 +339,11 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     const isAssignedToMe = (conversation) => Boolean(conversation.assigned_to_me || conversation.mine || conversation.assigned_to);
     const isFollowup = (conversation) => ['seguimiento', 'seguimiento_futuro', 'pendiente_revision'].includes(conversation.status);
 
+    if (listFilter === 'casos') {
+      const ids = new Set(casos.map((k) => k.conversation_id));
+      return conversations.filter((c) => ids.has(c.id));
+    }
+
     if (listFilter === 'por_vencer') {
       return conversations
         .filter((c) => esperaRespuesta(c) && ['abierta', 'por_vencer'].includes(ventanaDM(c, ahora)?.estado))
@@ -353,7 +361,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
       if (listFilter === 'seguimientos') return isFollowup(conversation);
       return true;
     });
-  }, [conversations, listFilter, ahora]);
+  }, [conversations, listFilter, ahora, casos]);
 
   function getWaitingLabel(conversation) {
     const value = conversation.last_customer_message_at || conversation.last_inbound_at || conversation.last_message_at;
@@ -799,6 +807,7 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                 <span className="mf-omni-conv-side">
                   <i>{CHANNEL_BADGES[platform] || platform.slice(0, 2).toUpperCase()}</i>
                   {espera && <em title="No lo has abierto todavía">•</em>}
+                  {casos.some((k) => k.conversation_id === conversation.id) && <small className="mf-caso-badge" title="Caso para decidir">🧩</small>}
                   <small>{formatTime(conversation.last_message_at)}</small>
                   {waiting && <small>{waiting}</small>}
                   {ventana && (
@@ -901,6 +910,16 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                   {sugerencia.promo.imagen_url && (
                     <> · <a href={sugerencia.promo.imagen_url} target="_blank" rel="noreferrer">ver el arte</a></>
                   )}
+                </div>
+              )}
+
+              {casoSel && (
+                <div className="mf-caso-aviso">
+                  <strong>🧩 Caso para decidir</strong>
+                  {casoSel.quiere && <p><i>Quiere:</i> {casoSel.quiere}</p>}
+                  {casoSel.se_le_dijo && <p><i>Se le dijo:</i> {casoSel.se_le_dijo}</p>}
+                  {casoSel.falta && <p><i>Falta:</i> {casoSel.falta}</p>}
+                  <button type="button" onClick={() => onResolverCaso?.(casoSel.id)}>✓ Resuelto</button>
                 </div>
               )}
 

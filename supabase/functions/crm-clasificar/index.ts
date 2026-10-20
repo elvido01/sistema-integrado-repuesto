@@ -46,7 +46,17 @@ Categoría = lo principal que el cliente quiere AHORA: precio, disponibilidad, c
 intencion_compra: 0 a 100, qué tan probable es que compre pronto.
 urgente: true solo si el cliente espera respuesta y lleva rato sin ella, o es un reclamo.
 "[audio]" o "[image]" significa que mandó un audio o una foto que no puedes ver: no inventes su contenido.
-Resumen y siguiente_paso: en español dominicano, cortos (máx 120 caracteres), concretos, para el vendedor.`;
+Resumen y siguiente_paso: en español dominicano, cortos (máx 120 caracteres), concretos, para el vendedor.
+
+caso: ¿hace falta que una PERSONA de la tienda decida algo ahora? necesita_persona = true SOLO si el último mensaje es del CLIENTE y espera algo que un bot no puede resolver con el catálogo:
+- no_lo_tenemos: pide una pieza que la tienda dijo que no hay, o hay que conseguirla/pedirla.
+- reclamo: garantía, pieza mala, devolución, queja.
+- precio_especial: pide rebaja, precio por cantidad, fiao o crédito.
+- listo_para_comprar: quiere pagar, separar, que se lo envíen o va a ir a buscarlo.
+- duda_tecnica: compatibilidad o medida que hay que verificar en la pieza o con un mecánico.
+- otro: otra cosa que solo una persona puede decidir.
+Si solo saludó, o pregunta precio/existencia de algo normal, o la tienda ya le contestó lo último: necesita_persona = false y motivo = "ninguno".
+quiere / se_le_dijo / falta: una línea cada uno (máx 120 caracteres), para que el vendedor entienda sin leer el chat: qué quiere el cliente, qué le dijo ya la tienda (o "nada todavía"), y qué tiene que decidir o hacer la persona.`;
 
 const ESQUEMA = {
   name: 'clasificacion_crm',
@@ -54,7 +64,7 @@ const ESQUEMA = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['etapa', 'motivo_etapa', 'categoria', 'intencion_compra', 'urgente', 'producto', 'moto', 'resumen', 'siguiente_paso'],
+    required: ['etapa', 'motivo_etapa', 'categoria', 'intencion_compra', 'urgente', 'producto', 'moto', 'resumen', 'siguiente_paso', 'caso'],
     properties: {
       etapa: { type: 'string', enum: ETAPAS },
       motivo_etapa: { type: 'string' },
@@ -65,6 +75,19 @@ const ESQUEMA = {
       moto: { type: ['string', 'null'] },
       resumen: { type: 'string' },
       siguiente_paso: { type: 'string' },
+      // (20/10/2026) El caso para una persona (sql/crm_casos.sql).
+      caso: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['necesita_persona', 'motivo', 'quiere', 'se_le_dijo', 'falta'],
+        properties: {
+          necesita_persona: { type: 'boolean' },
+          motivo: { type: 'string', enum: ['ninguno', 'no_lo_tenemos', 'reclamo', 'precio_especial', 'listo_para_comprar', 'duda_tecnica', 'otro'] },
+          quiere: { type: 'string' },
+          se_le_dijo: { type: 'string' },
+          falta: { type: 'string' },
+        },
+      },
     },
   },
 };
