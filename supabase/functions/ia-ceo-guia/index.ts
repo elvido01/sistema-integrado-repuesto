@@ -351,6 +351,10 @@ Deno.serve(async (req: Request) => {
   let tenants: string[] = [];
   let desdePanel = false;
   if (u?.user) {
+    // (21/10/2026) MODO PRUEBA: solo admin@repuestosmorla.com (Repuestos Morla).
+    if ((u.user.email || '').toLowerCase() !== 'admin@repuestosmorla.com') {
+      return json({ ok: false, error: 'El IA CEO está en prueba: solo para Repuestos Morla.' }, 403);
+    }
     const { data: prof } = await sb.from('profiles').select('role, tenant_id, is_superadmin').eq('id', u.user.id).single();
     if (!prof || (!['owner', 'admin'].includes(prof.role) && !prof.is_superadmin)) return json({ ok: false, error: 'Solo el dueño o un administrador.' }, 403);
     // La empresa ACTIVA de ese usuario, como la ve la base (get_user_tenant

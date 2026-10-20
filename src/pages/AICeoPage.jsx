@@ -160,6 +160,19 @@ export default function AICeoPage() {
         }
     };
 
+    // (21/10/2026) Modo prueba: solo admin@repuestosmorla.com en Repuestos Morla.
+    const { user } = useAuth();
+    if ((user?.email || '').toLowerCase() !== 'admin@repuestosmorla.com'
+        || tenantId !== '00000000-0000-0000-0000-000000000001') {
+        return (
+            <div className="p-10 text-center text-slate-500">
+                <Brain className="h-10 w-10 mx-auto mb-3 text-violet-400" />
+                <p className="font-semibold text-slate-700">El IA CEO está en prueba.</p>
+                <p className="text-sm">Por ahora solo está disponible para Repuestos Morla.</p>
+            </div>
+        );
+    }
+
     return (
         <>
             <Helmet><title>MOTOFLOW IA CEO — Motoflow</title></Helmet>

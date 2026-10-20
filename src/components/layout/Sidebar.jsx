@@ -70,7 +70,11 @@ const navItems = [
     title: 'MOTOFLOW IA CEO',
     icon: Brain,
     subItems: [
-      { title: 'Dashboard IA', id: 'ai-ceo', icon: Brain, modulo: 'ai_ceo_dashboard' },
+      // (21/10/2026) IA CEO en MODO PRUEBA: solo Repuestos Morla y solo con
+      // admin@repuestosmorla.com (decisión del dueño). La función ia-ceo-guia
+      // y tenant_credit_plan lo limitan igual del lado del servidor.
+      { title: 'Dashboard IA', id: 'ai-ceo', icon: Brain, modulo: 'ai_ceo_dashboard',
+        emailOnly: ['admin@repuestosmorla.com'] },
       // Morla + MotoPréstamos Los Naranjos. A la financiera se le habilitó SOLO
       // este submódulo (el Dashboard IA sigue siendo exclusivo de Morla).
       { title: 'Gestión Empresarial IA', id: 'gestion-empresarial', icon: TrendingUp,
