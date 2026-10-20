@@ -106,13 +106,25 @@ export async function facebookHistoria({ fetchFn, token, cuentaId, media }) {
 // (20/10/2026) Video vertical en la página (promo de MotoFlow por las redes
 // de Morla). /videos con file_url: Facebook baja el video él mismo y, si es
 // vertical y corto, lo muestra también como reel.
-export async function facebookVideo({ fetchFn, token, cuentaId, media, texto }) {
+export async function facebookVideo({ fetchFn, token, cuentaId, media, texto, esperar = pausa }) {
   if (!media.video) return { ok: false, paso: 'publicar', error: 'Falta el video.' };
   const res = await meta(fetchFn, `https://graph.facebook.com/${V_META}/${cuentaId}/videos`,
     token, { file_url: media.video, description: texto });
   if (!res.ok) return fallo(res, 'publicar');
   const id = res.body?.id;
   if (!id) return { ok: false, paso: 'publicar', http: res.http, error: 'Facebook contestó 200 pero sin id del video.' };
+  // Facebook procesa el video unos segundos después de aceptarlo; mientras
+  // tanto no deja comentar (el primer comentario del 20/10 se perdió así).
+  // Se espera a que diga publicado, hasta 60 s; si no, sale igual.
+  for (let i = 0; i < 12; i += 1) {
+    await esperar(5000);
+    const st = await metaLeer(fetchFn, `https://graph.facebook.com/${V_META}/${id}?fields=status`, token);
+    const fase = st.body?.status;
+    if (fase?.video_status === 'error') {
+      return { ok: false, paso: 'procesar', http: st.http, error: 'Facebook no pudo procesar el video.' };
+    }
+    if (fase?.publishing_phase?.publish_status === 'published') break;
+  }
   return { ok: true, external_post_id: String(id), external_url: `https://www.facebook.com/${cuentaId}/videos/${id}` };
 }
 

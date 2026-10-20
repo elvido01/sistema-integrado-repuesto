@@ -325,13 +325,14 @@ describe('Una promocion entera', () => {
 
 describe('Facebook video y primer comentario (20/10/2026)', () => {
   it('sube el video por file_url con el texto, sin token en la URL', async () => {
-    const f = fetchFalso({ body: { id: '999' } });
-    const r = await facebookVideo({ fetchFn: f, token: 'T', cuentaId: 'PAG', media: MEDIA, texto: 'Prueba' });
+    const f = fetchFalso([{ body: { id: '999' } }, { body: { status: { video_status: 'ready', publishing_phase: { publish_status: 'published' } } } }]);
+    const r = await facebookVideo({ fetchFn: f, token: 'T', cuentaId: 'PAG', media: MEDIA, texto: 'Prueba', esperar: async () => {} });
     expect(r.ok).toBe(true);
     expect(r.external_post_id).toBe('999');
     expect(f.pedidos[0].url).toMatch(/\/PAG\/videos$/);
     expect(f.pedidos[0].cuerpo).toEqual({ file_url: MEDIA.video, description: 'Prueba' });
     expect(f.pedidos[0].url).not.toContain('T');
+    expect(f.pedidos.length).toBe(2);   // esperó a que Facebook dijera publicado
   });
   it('sin video no llama a nadie', async () => {
     const f = fetchFalso({ body: { id: '1' } });
