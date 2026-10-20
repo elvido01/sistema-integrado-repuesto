@@ -256,6 +256,61 @@ const LARGO_VOZ = {
   vitrina: 'null (no lleva voz)',
 };
 
+// (20/10/2026) "Siempre pone lo mismo en los reels": los EJEMPLOS del prompt
+// ("¡Tu moto merece lo mejor!", "¡Ya llegó!", "No te quedes sin el tuyo")
+// salían copiados en 7 de cada 10 guiones. Ahora no hay frases de ejemplo:
+// cada guion recibe un ÁNGULO y un tipo de CIERRE al azar, la lista de lo
+// que ya dijeron los últimos reels (prohibido repetir), las frases gastadas
+// que se detectan solas y las correcciones del dueño (antes → después) para
+// aprender su estilo. Los datos vienen de hermes.equipo_reel_para
+// (sql/reels_guion_aprende.sql).
+const ANGULOS = [
+  'el PROBLEMA que resuelve: qué le pasa a la moto (o al motorista) sin esta pieza o con la vieja gastada',
+  'cómo se SIENTE el cliente con ella: comodidad, seguridad, orgullo de su moto',
+  'una PREGUNTA directa al motorista sobre su día a día en la calle',
+  'ANTES y DESPUÉS: la pieza gastada contra la nueva',
+  'el DETALLE que la hace especial (acabado, color, marca), solo lo que esté en los datos',
+  'HUMOR dominicano ligero sobre una situación de calle que todos conocen',
+  'cuándo conviene CAMBIARLA (señales generales que cualquier mecánico confirma, sin cifras)',
+  'para QUIÉN es: el motoconcho que trabaja todo el día, el que cuida su moto, el que viaja lejos',
+];
+const CIERRES = [
+  'invitar a pasar por la tienda en Higüey a verla en persona',
+  'pedir que escriban al WhatsApp con el modelo de su moto',
+  'decir que se la separan si escriben hoy',
+  'invitar a comentar el modelo de su moto en el video',
+  'retar a que la comparen en persona con la que tienen puesta',
+];
+const azar = (l) => l[Math.floor(Math.random() * l.length)];
+
+const normal = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim();
+/** Frases y grupos de 3 palabras que ya salieron en varios guiones. */
+export function frasesGastadas(voces = [], { minFrase = 2, minTrio = 3, max = 15 } = {}) {
+  const frases = new Map();
+  const trios = new Map();
+  for (const v of voces) {
+    const vistasF = new Set();
+    for (const f of String(v).split(/[.!?¡¿,]+/).map(normal).filter((x) => x.split(' ').length >= 3)) vistasF.add(f);
+    vistasF.forEach((f) => frases.set(f, (frases.get(f) || 0) + 1));
+    const w = normal(v).split(' ');
+    const vistasT = new Set();
+    for (let i = 0; i + 2 < w.length; i += 1) vistasT.add(w.slice(i, i + 3).join(' '));
+    vistasT.forEach((t) => trios.set(t, (trios.get(t) || 0) + 1));
+  }
+  const vacias = /^(de la|de tu|para tu|en la|a tu|y la|la de|el de|con el|con la|de los|que te|te lo)/;
+  const salida = [...frases].filter(([, n]) => n >= minFrase).sort((a, b) => b[1] - a[1]).map(([f]) => f);
+  for (const [t, n] of [...trios].sort((a, b) => b[1] - a[1])) {
+    if (n < minTrio || vacias.test(t) || salida.some((f) => f.includes(t))) continue;
+    salida.push(t);
+  }
+  // Las de siempre, aunque todavía no se repitan en la ventana.
+  for (const c of ['tu moto merece lo mejor', 'ya llego', 'no te quedes sin el tuyo', 'no te quedes sin la tuya', 'aqui esta']) {
+    if (!salida.includes(c)) salida.push(c);
+  }
+  return salida.slice(0, max + 5);
+}
+
 export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) => {
   const r = { ...(para.receta || {}) };
   delete r.voz_original;   // sus palabras no se copian: ni se le enseñan
@@ -263,6 +318,14 @@ export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) 
   const P = PLANTILLAS[plantilla] || PLANTILLAS.anuncio;
   const motos = motosDe(p);
   const conDescuento = P.descuento && !para.sin_descuento;
+  const angulo = para.angulo || azar(ANGULOS);
+  const cierre = para.cierre_tipo || azar(CIERRES);
+  const recientes = (para.voces_recientes || []).map((v) => limpioTexto(v, 260)).filter(Boolean).slice(0, 15);
+  const gastadas = frasesGastadas(para.voces_recientes || []);
+  const correcciones = (para.correcciones || []).slice(0, 6).map((c) => ({
+    voz_antes: limpioTexto(c.voz_antes, 260), voz_despues: limpioTexto(c.voz_despues, 260),
+    titular_antes: limpioTexto(c.titular_antes, 80), titular_despues: limpioTexto(c.titular_despues, 80),
+  }));
   return [
     `Eres el director creativo de ${empresa || 'Repuestos Morla'}, tienda de repuestos de moto en Higüey, República Dominicana.`,
     ...(ENCARGO[plantilla] || ENCARGO.anuncio),
@@ -279,6 +342,29 @@ export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) 
     '```json', JSON.stringify(r, null, 1), '```',
     para.nota_dueno ? `Nota del dueño sobre este formato: ${para.nota_dueno}` : '',
     '',
+    ...(P.sinVoz ? [] : [
+      `ÁNGULO de este guion (úsalo para el gancho y la historia): ${angulo}.`,
+      `CIERRE de este guion: ${cierre}. Dilo con palabras tuyas, no con una fórmula.`,
+      '',
+    ]),
+    ...(recientes.length ? [
+      'LO QUE YA DIJERON LOS ÚLTIMOS REELS de la tienda. Tu guion tiene que sonar DISTINTO: no repitas ninguna de estas',
+      'frases, ni empieces ni termines como ellos:',
+      ...recientes.map((v) => `- "${v}"`),
+      '',
+    ] : []),
+    ...(gastadas.length ? [
+      `FRASES GASTADAS, PROHIBIDAS (salieron una y otra vez): ${gastadas.map((f) => `"${f}"`).join(', ')}.`,
+      '',
+    ] : []),
+    ...(correcciones.length ? [
+      'ASÍ CORRIGE EL DUEÑO los guiones antes de aprobarlos. Aprende de sus cambios (qué quita, qué agrega, cómo lo dice):',
+      ...correcciones.map((c) => [
+        c.voz_antes !== c.voz_despues ? `- Voz. Antes: "${c.voz_antes}" → Él lo dejó: "${c.voz_despues}"` : '',
+        c.titular_antes !== c.titular_despues ? `- Titular. Antes: "${c.titular_antes}" → Él lo dejó: "${c.titular_despues}"` : '',
+      ].filter(Boolean).join('\n')).filter(Boolean),
+      '',
+    ] : []),
     'Devuelve SOLO este JSON, sin texto alrededor:',
     '{',
     `  "titular": "${TITULAR[plantilla] || TITULAR.anuncio}",`,
@@ -303,9 +389,10 @@ export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) 
         + (P.ganchoPov ? ' Las tomas van SIN "texto" (null), salvo la última (ej. LA TENÍAN).' : ` Al menos ${P.tomas - 1} llevan "texto".`),
     ]),
     ...(plantilla === 'anuncio' ? [
-      '- La voz es de COMERCIAL: primera frase = gancho fuerte (exclamación o pregunta al motoconchista, ej. "¡Tu moto merece lo mejor!"),',
-      '  luego 1 o 2 beneficios en frases de 3 a 7 palabras, un toque de urgencia ("¡Ya llegó!", "¡No te quedes sin la tuya!"),',
-      '  y cierre con llamado a la acción. Nada de explicaciones largas ni de leer el nombre del catálogo completo.',
+      '- La voz es de COMERCIAL: primera frase = gancho fuerte (exclamación o pregunta) que nazca del ÁNGULO de abajo,',
+      '  luego 1 o 2 beneficios concretos de ESTA pieza en frases de 3 a 7 palabras, y cierre con llamado a la acción.',
+      '  Nada de explicaciones largas ni de leer el nombre del catálogo completo. Nada de frases de relleno que sirvan para',
+      '  cualquier pieza: si la frase funciona igual para un aceite que para un espejo, no sirve.',
     ] : P.sinVoz ? [] : [
       '- La primera frase de la voz es el gancho y tiene que entenderse sola en 2 segundos. Nada de leer el nombre del catálogo completo.',
     ]),
@@ -320,7 +407,7 @@ export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) 
     '  Tampoco pongas el precio en el "texto" de las tomas: si el formato lo revela, lo pone el montador.',
     P.sinVoz ? '' : conDescuento
       ? '- La voz termina invitando a venir o escribir al WhatsApp, y diciendo que si dicen que lo vieron en las redes se lo llevan con 5% de descuento.'
-      : '- La voz termina invitando a venir o escribir al WhatsApp. NO menciones descuento, rebaja, oferta de precio ni código.',
+      : '- La voz termina con el CIERRE de arriba. NO menciones descuento, rebaja, oferta de precio ni código.',
     r.voz && r.voz.hay === false
       ? '- Esta receta NO lleva voz: deja "voz" con UNA frase corta (se usará solo como letra), y apóyate en "texto" de cada toma.'
       : '',
