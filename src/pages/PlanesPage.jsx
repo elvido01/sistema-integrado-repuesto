@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Crown, Shield, Sparkles, Clock, Check, X, Zap,
   Users, Package, FileText, Warehouse, BarChart3,
-  Camera, Globe, ChevronRight, Star, Loader2
+  Camera, Globe, ChevronRight, Star, Loader2, BadgeCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
@@ -13,6 +13,51 @@ import PagoTransferenciaModal from '@/components/suscripcion/PagoTransferenciaMo
 // Ajustar aquí si se quiere otro descuento.
 const MESES_GRATIS_ANUAL = 2;
 const DIAS_ANUAL = 365;
+
+// (20/10/2026) Lo que incluye cada plan, contado como beneficio y no como
+// nombre de módulo ("Carta de Ruta" no le dice nada a un cliente nuevo).
+// La facturación electrónica va en TODOS: es obligatoria con la DGII.
+// Cada plan suma a los de abajo ("Todo lo del Básico, más:").
+const INCLUYE = {
+  BASICO: {
+    base: null,
+    items: [
+      'Facturación electrónica e-CF (DGII)',
+      'Punto de venta con cierre de caja',
+      'Inventario, compras y suplidores',
+      'Cotizaciones en PDF listas para WhatsApp',
+      'Cuentas por cobrar y por pagar',
+      'Reportes 606 y 607',
+    ],
+  },
+  PRO: {
+    base: 'Básico',
+    items: [
+      'WhatsApp, Instagram, Facebook y TikTok en una sola bandeja',
+      'Embudo de ventas que se mueve solo con IA',
+      'Lee tus facturas de compra con una foto',
+      'Cobranzas y recordatorios',
+      'Cuentas bancarias y reportes avanzados',
+    ],
+  },
+  ENTERPRISE: {
+    base: 'Pro',
+    items: [
+      'Asistente IA que contesta y recomienda',
+      'Equipo IA: publicaciones diarias para tus redes',
+      'Varias empresas con un mismo usuario',
+      'Acceso API y soporte prioritario',
+    ],
+  },
+};
+
+// Lo que cuesta en el mercado (precios publicados, octubre 2026). Se cita
+// el rango, no una marca, y se revisa cada cierto tiempo.
+const MERCADO = [
+  { que: 'Solo facturación electrónica (250–800 e-CF/mes)', cuanto: 'RD$1,380 – RD$2,800 / mes' },
+  { que: 'Sistema de punto de venta + inventario con e-CF', cuanto: 'US$25 – US$79 / mes (≈ RD$1,600 – RD$5,000)' },
+  { que: 'CRM para WhatsApp e Instagram', cuanto: 'se paga aparte, por usuario' },
+];
 
 const PlanesPage = () => {
   const { planes, planActual, suscripcion, porVencer, isVencida } = useSuscripcion();
@@ -39,14 +84,6 @@ const PlanesPage = () => {
     { key: 'limite_almacenes',  label: 'Almacenes',          icon: Warehouse,  format: v => v >= 99 ? 'Ilimitados' : v },
   ];
 
-  const boolFeatures = [
-    { key: 'feat_cotizaciones_magna', label: 'Cotizaciones Avanzadas' },
-    { key: 'feat_carta_ruta',         label: 'Carta de Ruta' },
-    { key: 'feat_cobranzas',          label: 'Módulo de Cobranzas' },
-    { key: 'feat_reportes_avanzados', label: 'Reportes Avanzados' },
-    { key: 'feat_ocr_facturas',       label: 'OCR de Facturas' },
-    { key: 'feat_api_access',         label: 'Acceso API' },
-  ];
 
   const handleSelectPlan = (plan) => {
     if (plan.nombre === 'TRIAL') return;
@@ -77,9 +114,13 @@ const PlanesPage = () => {
             </h1>
           </div>
           <p className="text-white/70 text-sm max-w-xl mx-auto">
-            Elige el plan que mejor se adapte a tu negocio.
+            Factura, vende y cobra desde un solo sistema.
             Todos los planes incluyen soporte técnico y actualizaciones.
           </p>
+          <div className="mt-4 inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-300/40 text-emerald-100 rounded-full px-4 py-1.5 text-xs font-bold">
+            <BadgeCheck className="w-4 h-4" />
+            Facturación electrónica DGII incluida en todos los planes
+          </div>
 
           {/* Toggle Mensual / Anual */}
           <div className="mt-6 flex items-center justify-center">
@@ -216,15 +257,16 @@ const PlanesPage = () => {
 
                   <hr className="border-gray-100" />
 
-                  {/* Boolean features */}
-                  {boolFeatures.map(feat => (
-                    <div key={feat.key} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">{feat.label}</span>
-                      {plan[feat.key] ? (
-                        <Check className="w-5 h-5 text-emerald-500" />
-                      ) : (
-                        <X className="w-5 h-5 text-gray-300" />
-                      )}
+                  {/* Lo que incluye, como beneficio */}
+                  {INCLUYE[plan.nombre]?.base && (
+                    <p className="text-xs font-black uppercase tracking-wide text-gray-500">
+                      Todo lo del {INCLUYE[plan.nombre].base}, más:
+                    </p>
+                  )}
+                  {(INCLUYE[plan.nombre]?.items || []).map((item) => (
+                    <div key={item} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span className="text-sm text-gray-700 leading-snug">{item}</span>
                     </div>
                   ))}
                 </div>
@@ -242,7 +284,7 @@ const PlanesPage = () => {
                           : `bg-gradient-to-r ${meta.gradient} hover:opacity-90 text-white`
                     }`}
                   >
-                    {isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisi�n' : canPayCurrent ? (
+                    {isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisión' : canPayCurrent ? (
                       <>
                         Pagar Plan Actual
                         <ChevronRight className="w-4 h-4 ml-2" />
@@ -260,6 +302,26 @@ const PlanesPage = () => {
           })}
         </div>
 
+        {/* Contra el mercado */}
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+          className="mt-10 rounded-2xl border border-gray-200 bg-white p-6"
+        >
+          <h3 className="font-black text-gray-900 text-sm uppercase tracking-wider">¿Cuánto cuesta por separado?</h3>
+          <p className="text-xs text-gray-500 mt-1">Lo que cobran en República Dominicana por cada pieza suelta (precios publicados).</p>
+          <div className="mt-4 divide-y divide-gray-100">
+            {MERCADO.map((m) => (
+              <div key={m.que} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 py-2">
+                <span className="text-sm text-gray-700">{m.que}</span>
+                <span className="text-sm font-bold text-gray-900">{m.cuanto}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-sm text-emerald-700 font-bold">
+            Con MotoFlow va todo junto: facturación electrónica, punto de venta, inventario y, desde el Pro, tus redes y WhatsApp en una sola bandeja.
+          </p>
+        </motion.div>
+
         {/* Footer info */}
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
@@ -273,6 +335,7 @@ const PlanesPage = () => {
           </div>
           <p className="text-xs text-gray-400">
             Pago por transferencia bancaria. Su plan se activa tras verificación del comprobante (máx. 24h).
+            El certificado digital para la facturación electrónica lo emite una entidad autorizada y se paga aparte.
           </p>
         </motion.div>
       </div>
