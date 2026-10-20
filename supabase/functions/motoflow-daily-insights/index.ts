@@ -20,7 +20,7 @@
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { runCFO, runInventario, runCredito, runVentas, runCompras, runMarketing, runOperaciones, runEstrategia, runCEOPrincipal } from './agents.ts';
+import { runCFO, runInventario, runCredito, runVentas, runCompras, runMarketing, runOperaciones, runEstrategia, runCEOPrincipal, setEmpresa } from './agents.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -128,6 +128,18 @@ Deno.serve(async (req: Request) => {
                     snapshotResumen = sRes;
                 } catch (e) { console.warn(`[${tid}] snapshot falló:`, e); }
 
+                // 2.B (20/10/2026) Lo que saben los demás módulos: Gestión
+                // Empresarial, Equipo IA, CRM, Financiera y las decisiones
+                // pendientes (sql/ia_ceo_contexto.sql). Si falla, el CEO
+                // sigue con sus sub-reportes como antes.
+                let negocio: any = null;
+                try {
+                    const { data: ctx, error: eCtx } = await supabase.rpc('ia_ceo_contexto', { p_tenant_id: tid });
+                    if (eCtx) console.warn(`[${tid}] contexto:`, eCtx.message);
+                    negocio = ctx || null;
+                } catch (e) { console.warn(`[${tid}] contexto falló:`, e); }
+                setEmpresa(negocio?.empresa?.nombre || null, negocio?.empresa?.tipo_negocio || null);
+
                 // 3. Sub-agentes en PARALELO (6 base + Estrategia solo si quarterly)
                 const diasVentas = report_type === 'weekly' ? 7 : (report_type === 'monthly' ? 30 : 30);
                 const startedSubs = Date.now();
@@ -147,7 +159,7 @@ Deno.serve(async (req: Request) => {
                 const subDuration = Date.now() - startedSubs;
 
                 // 4. AI CEO Principal sintetiza
-                const ceoReport = await runCEOPrincipal(tid, subReports);
+                const ceoReport = await runCEOPrincipal(tid, subReports, negocio);
 
                 // 4.B Generar resumen para WhatsApp + URL wa.me
                 const fechaFmt = new Date().toLocaleDateString('es-DO', { weekday: 'long', day: '2-digit', month: 'long' });
@@ -169,7 +181,7 @@ Deno.serve(async (req: Request) => {
                 if (snapshotResumen?.score != null) {
                     waLines.push(`📈 Salud del negocio: *${snapshotResumen.score}/100*`);
                 }
-                waLines.push(`_Reporte IA · ${fechaFmt} · MORLA AI CEO_`);
+                waLines.push(`_Reporte IA · ${fechaFmt} · ${negocio?.empresa?.nombre || 'MotoFlow'} · IA CEO_`);
                 const whatsappSummary = waLines.join('\n');
                 const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(whatsappSummary)}`;
 

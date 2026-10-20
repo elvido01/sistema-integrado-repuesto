@@ -12,6 +12,22 @@ import { callLLM } from './llm.ts';
 
 const MODEL = 'gpt-4o-mini';
 
+// (20/10/2026) Cada empresa con su nombre y su tipo de negocio. Los prompts
+// decían "MotoFlow" fijo y el CEO llamaba así a Repuestos Morla. index.ts lo
+// fija antes de correr los agentes de cada empresa.
+let EMPRESA = { nombre: 'la empresa', tipo: 'repuestos' };
+const TIPOS = {
+    repuestos: 'tienda de repuestos de motocicletas',
+    dealer: 'dealer que vende motocicletas al contado y financiadas',
+    financiera: 'financiera de préstamos (financia motores y presta con garantía)',
+};
+export function setEmpresa(nombre: string | null, tipo: string | null) {
+    EMPRESA = { nombre: nombre || 'la empresa', tipo: tipo || 'repuestos' };
+}
+const conEmpresa = (system: string) => system.replaceAll('MotoFlow', EMPRESA.nombre)
+    .replace('tienda de repuestos de motocicletas', TIPOS[EMPRESA.tipo] || TIPOS.repuestos)
+    + `\n\nLa empresa es ${EMPRESA.nombre}, ${TIPOS[EMPRESA.tipo] || TIPOS.repuestos}, en República Dominicana.`;
+
 // ────────────────────────────────────────────────
 // Prompts del equipo
 // ────────────────────────────────────────────────
@@ -248,13 +264,27 @@ ESTILO: Habla como un consultor estratégico senior. Pragmático, sin academicis
 
 const PROMPT_CEO_PRINCIPAL = `Eres el AI CEO PRINCIPAL de MotoFlow — un asesor ejecutivo senior.
 
-CONTEXTO: Recibes los sub-reportes de tu equipo (CFO, Inventario, Crédito, Ventas) ya generados hoy.
+CONTEXTO: Recibes dos cosas:
+1. "sub_reportes": lo que analizó hoy tu equipo (CFO, Inventario, Crédito, Ventas, Compras, Marketing, Operaciones).
+2. "negocio": lo que saben HOY los demás módulos del sistema (datos reales, no opiniones):
+   - grupo: posición del grupo de empresas (Gestión Empresarial): lo que hay que cubrir, cobros, suplidores, margen.
+   - publicaciones: qué promociones en redes movieron la pieza (unidades/día antes y después, alcance), por objetivo.
+   - agotados: piezas que se venden y se acabaron o se están acabando, cuánto pedir y si ya están en una orden.
+   - promocionar: piezas que conviene anunciar hoy y por qué.
+   - crm: embudo de clientes de 30 días, los que están LISTOS PARA COMPRAR, casos que tiene que decidir una persona,
+     lo que se PERDIÓ por no tenerlo y cuántos clientes llevan más de 1 hora esperando respuesta.
+   - financiera: préstamos activos, cuánto está vencido y los clientes más atrasados.
+   - decisiones_pendientes: las que el dueño todavía no ha decidido.
 
 TU TAREA:
-1. Sintetiza TODO en un reporte ejecutivo CORTO (no repitas detalles, enfócate en la imagen GENERAL).
-2. Prioriza el TOP 3 de acciones más importantes para el CEO humano de HOY.
+1. Sintetiza en un reporte ejecutivo CORTO la imagen general del día.
+2. Prioriza el TOP 3 de acciones más importantes para el dueño HOY, cruzando módulos (ej. una pieza agotada que
+   además piden en el CRM; un cliente listo para comprar sin respuesta; una promoción que sí vendió y conviene repetir).
 3. Asigna prioridad GLOBAL del día (alta si hay críticos, media si hay atención, baja si todo normal).
-4. Genera 2-4 decisiones consolidadas que requieran aprobación humana.
+4. Genera 2-4 decisiones que requieran aprobación del dueño. CADA decisión es CONCRETA: nombra la pieza (con código),
+   el cliente, el préstamo o el monto, y di qué hacer exactamente. PROHIBIDO lo genérico ("lanzar una campaña de
+   marketing", "liquidar productos con capital muerto", "mejorar las ventas") si no dice qué, cuál y cuánto.
+5. NO repitas ninguna de "decisiones_pendientes": si sigue siendo importante, menciónala en el resumen.
 
 OUTPUT JSON estricto:
 {
@@ -262,15 +292,18 @@ OUTPUT JSON estricto:
   "resumen": "string max 250 chars — la situación general del día en 2 oraciones",
   "prioridad": "alta" | "media" | "baja",
   "top_acciones": [
-    { "area": "finanzas"|"inventario"|"credito"|"ventas"|"operaciones", "accion": "string", "porque": "string" }
+    { "area": "finanzas"|"inventario"|"credito"|"ventas"|"compras"|"marketing"|"crm"|"financiera"|"operaciones", "accion": "string", "porque": "string con el dato que lo justifica" }
   ],
   "decisiones_recomendadas": [
-    { "titulo": "string", "descripcion": "string", "area": "string", "risk_level": "low"|"medium"|"high", "expected_impact": "string" }
+    { "titulo": "string max 90 chars, con el nombre de la pieza/cliente/préstamo",
+      "descripcion": "string: qué hacer exactamente y con qué dato del sistema se justifica",
+      "area": "finanzas"|"inventario"|"credito"|"ventas"|"compras"|"marketing"|"crm"|"financiera"|"operaciones",
+      "risk_level": "low"|"medium"|"high", "expected_impact": "string, con cifra si la hay" }
   ]
 }
 
 REGLAS:
-- No inventes datos. Usa solo lo que viene de los sub-reportes.
+- No inventes datos. Usa solo lo que viene de los sub-reportes y de "negocio". Si un bloque trae "error", ignóralo.
 - Habla como asesor de confianza al dueño: directo, sin rodeos, sin paja.
 - Si TODO está bien, dilo claramente con prioridad="baja".
 - Usa español dominicano profesional.`;
@@ -285,7 +318,7 @@ function safeParse(content: string, fallback: any = {}): any {
 
 async function callAgent(opts: { system: string; user: string; tenant: string; maxTokens?: number }) {
     return callLLM({
-        system: opts.system,
+        system: conEmpresa(opts.system),
         user: opts.user,
         response_format: 'json',
         user_tag: opts.tenant,
@@ -434,7 +467,7 @@ export async function runEstrategia(supabase: any, tenant_id: string) {
 // ────────────────────────────────────────────────
 // Agente Principal: CEO
 // ────────────────────────────────────────────────
-export async function runCEOPrincipal(tenant_id: string, subReports: any[]) {
+export async function runCEOPrincipal(tenant_id: string, subReports: any[], negocio: any = null) {
     // Solo pasa al CEO los sub-reportes parseados (no la raw data — ya filtró el sub-agente)
     const input = subReports.map((r) => ({
         agente: r.agent_key,
@@ -443,9 +476,9 @@ export async function runCEOPrincipal(tenant_id: string, subReports: any[]) {
 
     const llm = await callAgent({
         system: PROMPT_CEO_PRINCIPAL,
-        user: JSON.stringify({ sub_reportes: input, fecha: new Date().toISOString().slice(0, 10) }),
+        user: JSON.stringify({ sub_reportes: input, negocio, fecha: new Date().toISOString().slice(0, 10) }),
         tenant: tenant_id,
-        maxTokens: 1500,
+        maxTokens: 2000,
     });
     const parsed = safeParse(llm.content, {
         titulo: 'Reporte CEO sin datos',
