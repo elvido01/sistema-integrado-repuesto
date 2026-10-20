@@ -350,7 +350,16 @@ Deno.serve(async (req: Request) => {
 
                 // 6. Crear decisiones recomendadas (solo desde CEO Principal para evitar duplicados)
                 let decisionesCreadas = 0;
-                const decisiones = ceoReport.parsed.decisiones_recomendadas || [];
+                // (20/10/2026) No se repite una decisión que sigue pendiente: el
+                // modelo a veces la vuelve a proponer con otras mayúsculas o
+                // tildes ("RAMON CIERRA" / "Ramón Cierra").
+                const norm = (t: any) => String(t || '').toLowerCase().normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+                const { data: pendientes } = await supabase.from('ai_decisions')
+                    .select('title').eq('tenant_id', tid).eq('status', 'pending');
+                const yaPendientes = new Set((pendientes || []).map((d: any) => norm(d.title)));
+                const decisiones = (ceoReport.parsed.decisiones_recomendadas || [])
+                    .filter((d: any) => !yaPendientes.has(norm(d.titulo)));
                 if (decisiones.length > 0) {
                     const decisionRows = decisiones.map((d: any) => ({
                         tenant_id: tid,
