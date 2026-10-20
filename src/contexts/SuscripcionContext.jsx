@@ -116,14 +116,38 @@ export const SuscripcionProvider = ({ children }) => {
     }
 
     try {
-      const { data, error } = await supabase.rpc('check_suscripcion_activa', {
-        p_tenant_id: tenantId
-      });
+      // (20/10/2026) Repuestos Morla, ENTERPRISE con 253 días, quedó
+      // "SISTEMA BLOQUEADO" al entrar: la verificación falló una vez (red o
+      // sesión recién abierta) y la consulta de respaldo, sin poder leer
+      // nada, concluía "sin suscripción" y bloqueaba. Ahora se reintenta, y
+      // un fallo al verificar NUNCA bloquea: solo bloquea una respuesta que
+      // de verdad diga vencida o sin plan. Se vuelve a mirar en 1 minuto.
+      let data = null;
+      let error = null;
+      for (let intento = 0; intento < 3; intento += 1) {
+        if (intento > 0) {
+          await new Promise((r) => setTimeout(r, 1500 * intento));
+          await supabase.auth.getSession().catch(() => null);
+        }
+        ({ data, error } = await supabase.rpc('check_suscripcion_activa', { p_tenant_id: tenantId }));
+        if (!error && data) break;
+      }
 
-      if (error) {
-        console.warn('[Suscripcion] RPC no disponible, usando consulta directa:', error.message);
-        const fallback = await fetchSuscripcionDirecta();
-        setSuscripcion(fallback);
+      if (error || !data) {
+        console.warn('[Suscripcion] no se pudo verificar:', error?.message || 'sin respuesta');
+        const fallback = await fetchSuscripcionDirecta().catch(() => null);
+        if (fallback?.suscripcion_id) {
+          setSuscripcion(fallback);
+        } else {
+          setSuscripcion((prev) => (prev?.estado && prev.estado !== 'sin_verificar' ? prev : {
+            activa: true,
+            estado: 'sin_verificar',
+            dias_restantes: 0,
+            plan: null,
+            mensaje: 'No se pudo verificar la suscripción en este momento.',
+          }));
+          setTimeout(() => { fetchSuscripcionRef.current?.(); }, 60000);
+        }
         return;
       }
 
@@ -131,7 +155,7 @@ export const SuscripcionProvider = ({ children }) => {
     } catch (err) {
       console.error('[Suscripcion] Error fetching:', err);
       setSuscripcion({
-        activa: false,
+        activa: true,
         estado: 'sin_verificar',
         dias_restantes: 0,
         plan: 'pendiente',
@@ -141,6 +165,9 @@ export const SuscripcionProvider = ({ children }) => {
       setLoading(false);
     }
   }, [user, tenantId, fetchSuscripcionDirecta]);
+
+  const fetchSuscripcionRef = React.useRef(null);
+  useEffect(() => { fetchSuscripcionRef.current = fetchSuscripcion; }, [fetchSuscripcion]);
 
   const fetchPlanes = useCallback(async () => {
     try {
