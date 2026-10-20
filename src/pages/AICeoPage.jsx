@@ -1,10 +1,15 @@
 // ============================================================
 // AICeoPage.jsx — MOTOFLOW IA CEO Dashboard (Fase 1)
 // ============================================================
-// Centro de mando inteligente. Tres pestañas internas:
-//   1. Dashboard   → Health score + alertas críticas + reporte
-//   2. Alertas     → listado completo de alertas con filtros
-//   3. Reportes    → historial de reportes diarios
+// (20/10/2026) El dueño: "está muy cargado, hay que hacerlo más simple y a
+// la vez más robusto: una guía diaria con planes estratégicos divididos en
+// tareas diarias". Al frente solo dos vistas:
+//   · Hoy     → los números clave, las 5 tareas del día con su botón, y los
+//               planes en marcha (IaCeoGuia).
+//   · Planes  → los propuestos para aprobar y el avance de los activos.
+// Lo de antes (Dashboard, Chat, Alertas, Decisiones, Predicciones,
+// Presupuesto, Marketing, Diseño, Captut, Reportes, Configuración) sigue,
+// detrás de "Más herramientas".
 // ============================================================
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -15,7 +20,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp, Megaphone, Palette, Film, Wallet } from 'lucide-react';
+import { Brain, RefreshCw, Loader2, Zap, AlertCircle, FileText, LayoutDashboard, Settings, Gavel, MessageSquare, TrendingUp, Megaphone, Palette, Film, Wallet, ListChecks, Target, Wrench, ChevronDown } from 'lucide-react';
 
 import BusinessHealthCard from '@/components/ai-ceo/BusinessHealthCard';
 import PresupuestoAnalisisCard from '@/components/ai-ceo/PresupuestoAnalisisCard';
@@ -27,10 +32,17 @@ import AiCeoChat from '@/components/ai-ceo/AiCeoChat';
 import AiForecastCard from '@/components/ai-ceo/AiForecastCard';
 import AiSettingsPanel from '@/components/ai-ceo/AiSettingsPanel';
 import AiTrendsChart from '@/components/ai-ceo/AiTrendsChart';
+import IaCeoGuia from '@/components/ai-ceo/IaCeoGuia';
 import MarketingAI from '@/pages/MorlaAICEO/MarketingAI';
 import DesignProPage from '@/pages/MorlaAICEO/DesignProPage';
 import CaptutPro from '@/pages/MorlaAICEO/CaptutPro';
 
+// Al frente: la guía.
+const PRINCIPALES = [
+    { key: 'hoy',    label: 'Hoy',    icon: ListChecks },
+    { key: 'planes', label: 'Planes', icon: Target },
+];
+// Detrás de "Más herramientas".
 const TABS = [
     { key: 'dashboard',   label: 'Dashboard',    icon: LayoutDashboard },
     { key: 'chat',        label: 'Chat IA',      icon: MessageSquare },
@@ -54,7 +66,9 @@ export default function AICeoPage() {
     const puedeDiseno = isSuperAdmin || (planActual || '').toUpperCase() === 'ENTERPRISE';
     const puedeCaptut = isSuperAdmin || (planActual || '').toUpperCase() === 'ENTERPRISE';
     const { toast } = useToast();
-    const [tab, setTab] = useState('dashboard');
+    const [tab, setTab] = useState('hoy');
+    const [masHerramientas, setMasHerramientas] = useState(false);
+    const { empresa } = useAuth();
     const [health, setHealth] = useState(null);
     const [healthLoading, setHealthLoading] = useState(true);
     const [running, setRunning] = useState(false);
@@ -161,12 +175,13 @@ export default function AICeoPage() {
                             <Brain className="h-7 w-7" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold text-slate-800 leading-tight">MOTOFLOW IA CEO</h1>
+                            <h1 className="text-2xl font-bold text-slate-800 leading-tight">IA CEO{empresa?.nombre ? ` · ${empresa.nombre}` : ''}</h1>
                             <p className="text-xs text-slate-500">
-                                Equipo digital de inteligencia para el CEO humano · Fase 1
+                                Tu guía diaria: planes para hacer crecer la empresa, divididos en tareas de cada día
                             </p>
                         </div>
                     </div>
+                    {masHerramientas && (
                     <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={() => { cargarHealth(); cargarConteoAlertas(); cargarConteoDecisiones(); }}>
                             <RefreshCw className={`h-4 w-4 mr-1 ${healthLoading ? 'animate-spin' : ''}`} />
@@ -181,10 +196,35 @@ export default function AICeoPage() {
                             Correr análisis ahora
                         </Button>
                     </div>
+                    )}
                 </div>
 
-                {/* Tabs */}
-                <div className="flex gap-1 mb-3 border-b border-slate-200">
+                {/* La guía al frente */}
+                <div className="flex items-center gap-1 mb-3 border-b border-slate-200">
+                    {PRINCIPALES.map((t) => {
+                        const Icon = t.icon;
+                        const active = tab === t.key;
+                        return (
+                            <button key={t.key} onClick={() => { setTab(t.key); setMasHerramientas(false); }}
+                                className={`px-5 py-2.5 text-sm font-bold border-b-2 -mb-px flex items-center gap-2 ${
+                                    active ? 'border-violet-600 text-violet-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                                <Icon className="h-4 w-4" /> {t.label}
+                            </button>
+                        );
+                    })}
+                    <button onClick={() => { setMasHerramientas((v) => !v); if (!masHerramientas && ['hoy', 'planes'].includes(tab)) setTab('dashboard'); if (masHerramientas) setTab('hoy'); }}
+                        className={`ml-auto px-3 py-2 text-xs font-semibold rounded-md flex items-center gap-1.5 ${masHerramientas ? 'bg-slate-200 text-slate-800' : 'text-slate-500 hover:bg-slate-100'}`}>
+                        <Wrench className="h-3.5 w-3.5" /> Más herramientas
+                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${masHerramientas ? 'rotate-180' : ''}`} />
+                    </button>
+                </div>
+
+                {tab === 'hoy' && <IaCeoGuia vista="hoy" onVerPlanes={() => setTab('planes')} />}
+                {tab === 'planes' && <IaCeoGuia vista="planes" />}
+
+                {/* Las herramientas de antes */}
+                {masHerramientas && (
+                <div className="flex gap-1 mb-3 border-b border-slate-200 overflow-x-auto">
                     {TABS
                         .filter((t) => t.key !== 'marketing' || puedeMarketing)
                         .filter((t) => t.key !== 'diseno' || puedeDiseno)
@@ -224,6 +264,7 @@ export default function AICeoPage() {
                         );
                     })}
                 </div>
+                )}
 
                 {/* Content */}
                 {tab === 'dashboard' && (
