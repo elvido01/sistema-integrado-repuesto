@@ -69,7 +69,7 @@ const conversationStatusLabels = {
   cliente_interesado: 'Interesado',
   pendiente_pago: 'Pendiente de pago',
   listo_facturar: 'Listo para facturar',
-  venta_cerrada: 'Venta cerrada',
+  venta_cerrada: 'Venta ganada',
   venta_perdida: 'Venta perdida',
   producto_agotado: 'Producto agotado',
   seguimiento_futuro: 'Seguimiento futuro',
@@ -110,6 +110,7 @@ const toSalesStatus = (status) => ({
   seguimiento_futuro: 'seguimiento',
   producto_agotado: 'seguimiento',
   venta_perdida: 'perdido',
+  venta_cerrada: 'cerrado',
   cerrada: 'cerrado',
   cerrado: 'cerrado',
   perdido: 'perdido',
@@ -126,7 +127,7 @@ const lifecycleMeta = {
   cliente_interesado: { label: 'Cliente interesado', tone: 'bg-orange-100 text-orange-800 border-orange-200' },
   pendiente_pago: { label: 'Pendiente de pago', tone: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
   listo_facturar: { label: 'Listo para facturar', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  venta_cerrada: { label: 'Venta cerrada', tone: 'bg-green-100 text-green-800 border-green-200' },
+  venta_cerrada: { label: 'Venta ganada', tone: 'bg-green-100 text-green-800 border-green-200' },
   seguimiento: { label: 'Seguimiento', tone: 'bg-purple-100 text-purple-800 border-purple-200' },
   seguimiento_futuro: { label: 'Seguimiento', tone: 'bg-purple-100 text-purple-800 border-purple-200' },
   producto_agotado: { label: 'Producto agotado', tone: 'bg-rose-100 text-rose-800 border-rose-200' },
@@ -164,6 +165,10 @@ const conversationStatusOptions = [
   { value: 'listo_facturar', label: 'Listo para facturar', icon: ShoppingCart },
   { value: 'seguimiento_futuro', label: 'Seguimiento futuro', icon: CalendarClock },
   { value: 'producto_agotado', label: 'Producto agotado', icon: PackagePlus },
+  // (21/10/2026) "No dice ganado en el menú": cerrar el chat no decía si se
+  // vendió, y el IA CEO cuenta la etapa GANADO. Estas tres cierran y además
+  // mueven la etapa (crm_cerrar_venta, también en las repetidas del cliente).
+  { value: 'venta_cerrada', label: 'Venta ganada (compró)', icon: CheckCircle2 },
   { value: 'venta_perdida', label: 'Venta perdida', icon: Ban },
   { value: 'cerrada', label: 'Cerrada', icon: CheckCircle2 },
 ];
@@ -1034,7 +1039,33 @@ const WhatsAppCrmPage = () => {
       await handleMarkQuoteSent();
       return;
     }
+    // Cerrar dice si se vendió (etapa GANADO / PERDIDO del embudo).
+    if (['venta_cerrada', 'venta_perdida', 'cerrada'].includes(status)) {
+      let compro = status === 'venta_cerrada';
+      if (status === 'cerrada') {
+        compro = window.confirm('¿El cliente compró?\n\nAceptar = Sí, venta ganada\nCancelar = No compró');
+      }
+      await cerrarVenta(compro, status);
+      return;
+    }
     await handleSetConversationStatus(status);
+  };
+
+  const cerrarVenta = async (compro, status) => {
+    if (!selected?.id) return;
+    const ok = await handleSetConversationStatus(compro ? 'venta_cerrada' : status === 'cerrada' ? 'cerrada' : 'venta_perdida');
+    if (!ok) return;
+    const { data, error } = await supabase.rpc('crm_cerrar_venta', { p_conversation_id: selected.id, p_compro: compro });
+    if (error) {
+      toast({ variant: 'destructive', title: 'Se cerró el chat, pero no se marcó la venta', description: error.message });
+      return;
+    }
+    const n = Number(data?.conversaciones || 1);
+    toast({
+      title: compro ? '✅ Venta ganada' : 'Venta perdida',
+      description: n > 1 ? `También se cerraron ${n - 1} conversación(es) repetida(s) del mismo cliente.` : undefined,
+    });
+    await fetchConversations({ silent: true });
   };
 
   const handleTakeConversation = async () => {
@@ -2844,7 +2875,7 @@ const WhatsAppCrmPage = () => {
                         <Button variant="outline" size="sm" className="h-7 justify-start px-2 text-[11px]" onClick={() => handleSetConversationStatus('producto_agotado')} disabled={updatingStatus}>
                           <PackagePlus className="h-3.5 w-3.5 mr-1" /> Agotado
                         </Button>
-                        <Button variant="outline" size="sm" className="h-7 justify-start px-2 text-[11px] text-red-700 hover:text-red-800" onClick={() => handleSetConversationStatus('venta_perdida')} disabled={updatingStatus}>
+                        <Button variant="outline" size="sm" className="h-7 justify-start px-2 text-[11px] text-red-700 hover:text-red-800" onClick={() => handleSelectConversationStatus('venta_perdida')} disabled={updatingStatus}>
                           <Ban className="h-3.5 w-3.5 mr-1" /> Perdida
                         </Button>
                       </div>
