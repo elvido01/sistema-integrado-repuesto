@@ -193,6 +193,8 @@ Arma las TAREAS DE HOY (${diaSemanaRD()} ${hoy}) para el dueño: MÁXIMO 5, orde
 - "panel": la pantalla donde se hace, una clave EXACTA de "pantallas" (o null si no aplica).
 - "telefono": si la tarea es llamar o escribirle a UNA persona y su teléfono viene en los datos, ponlo tal cual
   (solo dígitos); "contacto": "llamar" o "whatsapp". Si no hay teléfono en los datos, null en los dos.
+- "conversacion": si la tarea es contestar o contactar a UN cliente que viene en crm (listos_para_comprar o
+  casos_abiertos), pon su "conversacion_id" tal cual; si no, null.
 - PROHIBIDAS las tareas vagas: "Revisa el flujo de caja", "Organiza una estrategia", "Analiza…", "Evalúa…".
   Si una tarea empieza con revisar/analizar/evaluar tiene que decir EXACTAMENTE qué cifra, pieza o cliente y qué
   decidir con eso (ej. "Verifica si existen las 32 motos de 2015 que el sistema da en inventario").
@@ -200,7 +202,7 @@ Arma las TAREAS DE HOY (${diaSemanaRD()} ${hoy}) para el dueño: MÁXIMO 5, orde
   volver a ponerla si sigue siendo importante; repite el estilo de las que HIZO.
 - No le pidas cosas que el sistema ya resuelve solo (publicar, clasificar el CRM).
 Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 letras", "plan": número|null, "panel": "clave"|null,
-  "telefono": "solo dígitos"|null, "contacto": "llamar"|"whatsapp"|null } ] }`;
+  "telefono": "solo dígitos"|null, "contacto": "llamar"|"whatsapp"|null, "conversacion": "id"|null } ] }`;
   const entrada = {
     planes_activos: (activos || []).map((p, i) => ({ n: i + 1, titulo: p.titulo, mide: p.metrica_nombre,
       hoy: p.valor_actual, meta: p.meta, progreso: `${p.progreso}%`, hasta: p.fecha_fin })),
@@ -219,6 +221,7 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
     } catch (e) { console.warn('[ia-ceo-guia] segunda vuelta:', e?.message || e); }
   }
   const telefonos = telefonosDe(ctx);
+  const conversaciones = conversacionesDe(ctx);
   const filas = (res.tareas || []).filter((t) => !esVaga(t)).slice(0, 5).map((t, i) => {
     const plan = Number.isInteger(t.plan) && activos?.[t.plan - 1] ? activos[t.plan - 1].id : null;
     const panel = t.panel && paneles[t.panel] ? t.panel : null;
@@ -230,6 +233,10 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
         // Solo un teléfono que venga en los datos: el modelo no inventa números.
         ...(t.telefono && telefonos.has(String(t.telefono).replace(/\D/g, ''))
           ? { telefono: String(t.telefono).replace(/\D/g, ''), contacto: t.contacto === 'whatsapp' ? 'whatsapp' : 'llamar' } : {}),
+        // (21/10/2026) La conversación de ESE cliente: el botón abre la suya,
+        // no la primera del Sales Hub. Solo ids que vengan en los datos.
+        ...(t.conversacion && conversaciones.has(String(t.conversacion))
+          ? { conversacion: conversaciones.get(String(t.conversacion)) } : {}),
       },
     };
   }).filter((t) => t.titulo);
@@ -254,6 +261,14 @@ function esVaga(t: any) {
   if (!VERBO_VAGO.test(titulo)) return false;
   const resto = titulo.replace(VERBO_VAGO, '');
   return !/\d/.test(resto) && !/\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9-]{2,}\b/.test(resto);
+}
+/** Las conversaciones del CRM que vienen en el contexto: id → { id, canal, cliente }. */
+function conversacionesDe(ctx: any) {
+  const m = new Map<string, any>();
+  for (const x of [...(ctx?.crm?.listos_para_comprar || []), ...(ctx?.crm?.casos_abiertos || [])]) {
+    if (x?.conversacion_id) m.set(String(x.conversacion_id), { id: x.conversacion_id, canal: x.canal || null, cliente: x.cliente || null, telefono: x.telefono || null });
+  }
+  return m;
 }
 /** Los teléfonos que vienen en el contexto (los únicos que una tarea puede llevar). */
 function telefonosDe(ctx: any) {

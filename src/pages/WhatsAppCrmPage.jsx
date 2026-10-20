@@ -85,6 +85,8 @@ const channelMeta = {
   instagram: { label: 'Instagram', icon: Instagram, className: 'bg-pink-100 text-pink-800 border-pink-200' },
   facebook: { label: 'Facebook', icon: Facebook, className: 'bg-blue-100 text-blue-800 border-blue-200' },
   youtube: { label: 'YouTube', icon: MessageCircle, className: 'bg-red-100 text-red-800 border-red-200' },
+  // (21/10/2026) Faltaba: las de TikTok salían con la etiqueta de WhatsApp.
+  tiktok: { label: 'TikTok', icon: MessageCircle, className: 'bg-slate-900 text-white border-slate-900' },
 };
 
 const salesTabs = [
@@ -337,7 +339,7 @@ const isWhatsAppConversation = (conversation) => (conversation?.platform || 'wha
 // En local apunta al servidor que corre en tu PC; en produccion al VPS.
 const WA_WEB_URL = import.meta.env.VITE_WHATSAPP_WEB_URL || 'http://localhost:3899';
 
-const WhatsAppCrmPage = () => {
+const WhatsAppCrmPage = ({ extraData } = {}) => {
   const { empresa, tenantId, user } = useAuth();
   const { toast } = useToast();
   const { openPanel } = usePanels();
@@ -480,6 +482,28 @@ const WhatsAppCrmPage = () => {
     }
     if (!silent) setLoading(false);
   }, [syncUnreadCounts, toast]);
+
+  // (21/10/2026) Abrir UNA conversación concreta (la tarea del IA CEO "Contesta
+  // a…"): antes se abría siempre la primera de la lista. Si no está entre las
+  // cargadas, se busca por su id.
+  // Una vez por pedido (cada clic manda un extraData nuevo): después el
+  // usuario se mueve libre entre chats aunque la lista se refresque.
+  const pedidoAtendidoRef = useRef(null);
+  useEffect(() => {
+    const id = extraData?.conversationId;
+    if (!id || pedidoAtendidoRef.current === extraData) return;
+    const yaEsta = conversations.find((c) => c.id === id || c.sales_conversation_id === id);
+    if (yaEsta) { pedidoAtendidoRef.current = extraData; setSelected(yaEsta); return; }
+    if (loading) return;
+    pedidoAtendidoRef.current = extraData;
+    supabase.from('sales_conversations_view').select('*').eq('id', id).maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        const conv = normalizeSalesConversation(data);
+        setConversations((prev) => (prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev]));
+        setSelected(conv);
+      });
+  }, [extraData, conversations, loading]);
 
   // ── Crear conversacion manual (Instagram/Facebook/WhatsApp) ──
   // Inserta en sales_conversations + primer sales_message (rol 'user').
@@ -2021,7 +2045,17 @@ const WhatsAppCrmPage = () => {
     }
   };
 
-  const renderConversationName = (conv) => conv.cliente_nombre || conv.contact_name || getConversationContactLabel(conv);
+  // (21/10/2026) TikTok no da el nombre al espejo: queda el número de usuario
+  // (7446116147655246853) y no se distinguía. Se dice "Cliente de TikTok" con
+  // los últimos 4 dígitos; el lápiz de arriba le pone el nombre de verdad.
+  const renderConversationName = (conv) => {
+    const n = conv.cliente_nombre || conv.contact_name || '';
+    if (/^\d{12,}$/.test(String(n).trim())) {
+      const red = channelMeta[conv.platform]?.label || 'red';
+      return `Cliente de ${red} ···${String(n).trim().slice(-4)}`;
+    }
+    return n || getConversationContactLabel(conv);
+  };
   const renderConversationInitial = (conv) => renderConversationName(conv).trim().charAt(0).toUpperCase() || '?';
   const renderConversationAvatar = (conv, className, unreadCount = 0) => {
     const logo = getConversationLogo(conv);

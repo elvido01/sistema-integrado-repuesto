@@ -92,6 +92,18 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
     if (a.tipo === 'panel' && a.panel) openPanel(a.panel);
   };
 
+  // (21/10/2026) La conversación de ESE cliente. Instagram/Facebook/TikTok
+  // están en el Sales Hub; los WhatsApp del espejo se trabajan en WhatsApp
+  // Web: con teléfono, wa.me; sin él, se copia el nombre para buscarlo.
+  const abrirConversacion = async (c) => {
+    if (!c) return;
+    if (c.canal !== 'whatsapp') { openPanel('whatsapp-crm', { conversationId: c.id }); return; }
+    if (c.telefono) { window.open(`https://wa.me/${conPais(c.telefono)}`, '_blank'); return; }
+    try { await navigator.clipboard.writeText(c.cliente || ''); } catch { /* sin portapapeles */ }
+    window.open('https://web.whatsapp.com/', 'whatsapp');
+    toast({ title: `Copiado: ${c.cliente}`, description: 'En WhatsApp Web, pégalo en el buscador (Ctrl+V) para abrir su chat.' });
+  };
+
   if (cargando) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-purple-500" /></div>;
 
   const tareas = datos?.tareas || [];
@@ -216,7 +228,12 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                       {t.accion.contacto === 'whatsapp' ? 'WhatsApp' : 'Llamar'}
                     </a>
                   )}
-                  {!lista && (t.accion?.tipo === 'panel' || t.accion?.tipo === 'planes') && (
+                  {!lista && t.accion?.conversacion && (
+                    <Button size="sm" variant="outline" onClick={() => abrirConversacion(t.accion.conversacion)}>
+                      Abrir chat <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                    </Button>
+                  )}
+                  {!lista && !t.accion?.conversacion && (t.accion?.tipo === 'panel' || t.accion?.tipo === 'planes') && (
                     <Button size="sm" variant="outline" onClick={() => hacer(t)}>
                       {t.accion.tipo === 'planes' ? 'Ver planes' : (t.accion.etiqueta || 'Abrir')} <ArrowRight className="w-3.5 h-3.5 ml-1" />
                     </Button>

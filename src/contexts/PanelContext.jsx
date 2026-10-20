@@ -176,7 +176,7 @@ const componentMapping = {
   // El permiso real vive en la base (public.equipo_ia_permitido). Aquí solo
   // se registra el panel: la propia página enseña "es del dueño" si no toca.
   'equipo-ia': { component: () => <EquipoIAPage />, icon: Brain, name: 'Equipo IA' },
-  'whatsapp-crm': { component: () => <Protected module="whatsapp-crm"><PlanGate nombre="Sales Hub / CRM"><WhatsAppCrmPage /></PlanGate></Protected>, icon: MessageCircle, name: 'Sales Hub' },
+  'whatsapp-crm': { component: ({ extraData }) => <Protected module="whatsapp-crm"><PlanGate nombre="Sales Hub / CRM"><WhatsAppCrmPage extraData={extraData} /></PlanGate></Protected>, icon: MessageCircle, name: 'Sales Hub' },
   'seguimientos-hoy': { component: () => <Protected module="clientes"><SeguimientosHoyPage /></Protected>, icon: CalendarClock, name: 'Seguimientos de Hoy' },
   'gps-dashboard': { component: () => <Protected module="gps-dashboard"><GpsDashboardPage /></Protected>, icon: RadioTower, name: 'GPS Dashboard' },
   'gps-dispositivos': { component: () => <Protected module="gps-dispositivos"><GpsDevicesPage /></Protected>, icon: RadioTower, name: 'GPS Dispositivos' },
