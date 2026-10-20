@@ -35,18 +35,26 @@ const cors = {
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } });
 
 // ── El catálogo: lo único con lo que se puede medir un plan ─────────────
+// (21/10/2026) Cada métrica dice para qué tipo de negocio sirve: a la
+// financiera le proponía "subir las ventas", cuando crece prestando y
+// cobrando. Sin "tipos" sirve para todos.
 const METRICAS: Record<string, any> = {
-  ventas_30d: { nombre: 'Ventas de los últimos 30 días', unidad: 'RD$', dir: 'subir', val: (c) => c.ventas?.ventas_30d },
-  cxc_pendiente: { nombre: 'Cuentas por cobrar pendientes (facturas a crédito)', unidad: 'RD$', dir: 'bajar', val: (c) => c.ventas?.cxc_pendiente },
+  ventas_30d: { nombre: 'Ventas de los últimos 30 días', unidad: 'RD$', dir: 'subir', tipos: ['repuestos', 'dealer'], val: (c) => c.ventas?.ventas_30d },
+  colocado_30d: { nombre: 'Monto prestado (colocado) en 30 días', unidad: 'RD$', dir: 'subir', tipos: ['financiera'], val: (c) => c.financiera?.colocado_30d },
+  prestamos_nuevos_30d: { nombre: 'Préstamos nuevos en 30 días', unidad: 'préstamos', dir: 'subir', tipos: ['financiera'], val: (c) => c.financiera?.prestamos_nuevos_30d },
+  cobrado_30d: { nombre: 'Cobrado de préstamos en 30 días', unidad: 'RD$', dir: 'subir', tipos: ['financiera'], val: (c) => c.financiera?.cobrado_30d },
+  motos_vendidas_30d: { nombre: 'Motos vendidas en 30 días', unidad: 'motos', dir: 'subir', tipos: ['dealer'], val: (c) => c.dealer?.motos_vendidas_30d },
+  ventas_atascadas: { nombre: 'Solicitudes aprobadas sin carta de ruta', unidad: 'solicitudes', dir: 'bajar', tipos: ['dealer'], val: (c) => c.dealer?.aprobadas_sin_carta_total },
+  cxc_pendiente: { nombre: 'Cuentas por cobrar pendientes (facturas a crédito)', unidad: 'RD$', dir: 'bajar', tipos: ['repuestos', 'dealer'], val: (c) => c.ventas?.cxc_pendiente },
   clientes_sin_respuesta: { nombre: 'Clientes esperando respuesta más de 1 hora', unidad: 'clientes', dir: 'bajar', val: (c) => c.crm?.esperando_respuesta_mas_1h },
   ventas_ganadas_crm: { nombre: 'Ventas cerradas desde el CRM (30 días)', unidad: 'ventas', dir: 'subir', val: (c) => (c.crm ? Number(c.crm?.embudo_30d?.ganado || 0) : null) },
   agotados_sin_orden: {
     nombre: 'Piezas que se venden, agotadas y sin pedir', unidad: 'piezas', dir: 'bajar',
     val: (c) => (Array.isArray(c.agotados) ? c.agotados.filter((a) => a.estado === 'agotado' && !a.ya_en_orden).length : null),
   },
-  mora_30d: { nombre: 'Préstamos con más de 30 días de atraso', unidad: 'préstamos', dir: 'bajar', val: (c) => c.financiera?.atraso_mas_30_dias },
-  monto_vencido: { nombre: 'Monto vencido de la cartera de préstamos', unidad: 'RD$', dir: 'bajar', val: (c) => c.financiera?.monto_vencido },
-  prestamos_con_atraso: { nombre: 'Préstamos con alguna cuota atrasada', unidad: 'préstamos', dir: 'bajar', val: (c) => c.financiera?.prestamos_con_atraso },
+  mora_30d: { nombre: 'Préstamos con más de 30 días de atraso', unidad: 'préstamos', dir: 'bajar', tipos: ['financiera'], val: (c) => c.financiera?.atraso_mas_30_dias },
+  monto_vencido: { nombre: 'Monto vencido de la cartera de préstamos', unidad: 'RD$', dir: 'bajar', tipos: ['financiera'], val: (c) => c.financiera?.monto_vencido },
+  prestamos_con_atraso: { nombre: 'Préstamos con alguna cuota atrasada', unidad: 'préstamos', dir: 'bajar', tipos: ['financiera'], val: (c) => c.financiera?.prestamos_con_atraso },
   falta_cubrir: { nombre: 'Lo que falta cubrir del mes (gastos, suplidores, compromisos del grupo)', unidad: 'RD$', dir: 'bajar', val: (c) => c.grupo?.totales?.falta_cubrir },
 };
 
@@ -126,8 +134,9 @@ async function proponerPlanes(sb: any, key: string, tid: string, ctx: any, valor
   const cupo = Math.max(0, 3 - activos.length);
   if (!cupo) return { propuestos: 0, motivo: 'ya hay 3 activos' };
 
+  const tipo = ctx.empresa?.tipo_negocio || 'repuestos';
   const catalogo = Object.entries(METRICAS)
-    .filter(([k]) => valores[k] != null)
+    .filter(([k, m]) => valores[k] != null && (!m.tipos || m.tipos.includes(tipo)))
     .map(([k, m]) => ({ metrica: k, nombre: m.nombre, valor_hoy: valores[k], unidad: m.unidad, hay_que: m.dir }));
   const sistema = `${SISTEMA_BASE(ctx.empresa)}
 
@@ -147,6 +156,7 @@ Devuelve JSON: { "planes": [ { "titulo": "verbo + qué + meta, máx 80 letras (e
     const base = valores[p.metrica];
     const meta = Number(p.meta);
     if (!m || base == null || !Number.isFinite(meta)) continue;
+    if (m.tipos && !m.tipos.includes(tipo)) continue;
     if (m.dir === 'bajar' ? !(meta < base) : !(meta > base)) continue;   // meta al revés
     if (activos.some((a) => a.metrica === p.metrica)) continue;
     const dias = Math.max(30, Math.min(90, Number(p.dias) || 60));
@@ -181,22 +191,46 @@ Arma las TAREAS DE HOY (${diaSemanaRD()} ${hoy}) para el dueño: MÁXIMO 5, orde
   cliente, préstamo, monto). Empieza con un verbo ("Llama a…", "Pide…", "Contesta a…", "Aprueba la promo de…").
 - "porque": el dato del sistema que la justifica, en una frase.
 - "panel": la pantalla donde se hace, una clave EXACTA de "pantallas" (o null si no aplica).
+- "telefono": si la tarea es llamar o escribirle a UNA persona y su teléfono viene en los datos, ponlo tal cual
+  (solo dígitos); "contacto": "llamar" o "whatsapp". Si no hay teléfono en los datos, null en los dos.
+- PROHIBIDAS las tareas vagas: "Revisa el flujo de caja", "Organiza una estrategia", "Analiza…", "Evalúa…".
+  Si una tarea empieza con revisar/analizar/evaluar tiene que decir EXACTAMENTE qué cifra, pieza o cliente y qué
+  decidir con eso (ej. "Verifica si existen las 32 motos de 2015 que el sistema da en inventario").
 - Aprende de "tareas_anteriores": si el dueño DESCARTÓ un tipo de tarea, no insistas igual; si la POSPUSO, puedes
   volver a ponerla si sigue siendo importante; repite el estilo de las que HIZO.
 - No le pidas cosas que el sistema ya resuelve solo (publicar, clasificar el CRM).
-Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 letras", "plan": número|null, "panel": "clave"|null } ] }`;
-  const { res, uso } = await pensar(key, sistema, {
+Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 letras", "plan": número|null, "panel": "clave"|null,
+  "telefono": "solo dígitos"|null, "contacto": "llamar"|"whatsapp"|null } ] }`;
+  const entrada = {
     planes_activos: (activos || []).map((p, i) => ({ n: i + 1, titulo: p.titulo, mide: p.metrica_nombre,
       hoy: p.valor_actual, meta: p.meta, progreso: `${p.progreso}%`, hasta: p.fecha_fin })),
     negocio: ctx, pantallas: paneles, tareas_anteriores: anteriores || [],
-  });
-  const filas = (res.tareas || []).slice(0, 5).map((t, i) => {
+  };
+  let { res, uso } = await pensar(key, sistema, entrada);
+  // (21/10/2026) Las vagas no pasan: se le devuelven UNA vez para que las
+  // cambie por concretas; las que sigan vagas se quitan.
+  const vagas = (res.tareas || []).filter(esVaga);
+  if (vagas.length) {
+    try {
+      const otra = await pensar(key, sistema, { ...entrada,
+        rechazadas_por_vagas: vagas.map((t) => t.titulo),
+        instruccion: 'Estas tareas son vagas. Devuelve la lista completa otra vez cambiándolas por tareas concretas (qué, quién, cuánto).' });
+      res = otra.res;
+    } catch (e) { console.warn('[ia-ceo-guia] segunda vuelta:', e?.message || e); }
+  }
+  const telefonos = telefonosDe(ctx);
+  const filas = (res.tareas || []).filter((t) => !esVaga(t)).slice(0, 5).map((t, i) => {
     const plan = Number.isInteger(t.plan) && activos?.[t.plan - 1] ? activos[t.plan - 1].id : null;
     const panel = t.panel && paneles[t.panel] ? t.panel : null;
     return {
       tenant_id: tid, fecha: hoy, orden: i + 1, plan_id: plan,
       titulo: String(t.titulo || '').slice(0, 140), porque: String(t.porque || '').slice(0, 300),
-      accion: panel ? { tipo: 'panel', panel, etiqueta: paneles[panel].split(' (')[0] } : { tipo: 'ninguna' },
+      accion: {
+        ...(panel ? { tipo: 'panel', panel, etiqueta: paneles[panel].split(' (')[0] } : { tipo: 'ninguna' }),
+        // Solo un teléfono que venga en los datos: el modelo no inventa números.
+        ...(t.telefono && telefonos.has(String(t.telefono).replace(/\D/g, ''))
+          ? { telefono: String(t.telefono).replace(/\D/g, ''), contacto: t.contacto === 'whatsapp' ? 'whatsapp' : 'llamar' } : {}),
+      },
     };
   }).filter((t) => t.titulo);
   // Los planes propuestos esperan al dueño: va de primera.
@@ -212,6 +246,23 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
   return { tareas: filas.length, uso };
 }
 
+const VERBO_VAGO = /^(revisa|revisar|verifica|eval[uú]a|analiza|organiza|considera|planifica|mejora|optimiza|define|estudia|ajusta|explora|implementa)\b/i;
+/** Vaga: empieza con un verbo de oficina y no nombra ni una cifra ni un nombre propio/código. */
+function esVaga(t: any) {
+  const titulo = String(t?.titulo || '').trim();
+  if (/\bestrategias?\b/i.test(titulo)) return true;   // "organiza una estrategia…" nunca dice qué hacer
+  if (!VERBO_VAGO.test(titulo)) return false;
+  const resto = titulo.replace(VERBO_VAGO, '');
+  return !/\d/.test(resto) && !/\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9-]{2,}\b/.test(resto);
+}
+/** Los teléfonos que vienen en el contexto (los únicos que una tarea puede llevar). */
+function telefonosDe(ctx: any) {
+  const set = new Set<string>();
+  const txt = JSON.stringify(ctx || {});
+  for (const m of txt.matchAll(/"telefono":"(\d{7,15})"/g)) set.add(m[1]);
+  return set;
+}
+
 // ── TELEGRAM ───────────────────────────────────────────────────────────
 async function avisar(sb: any, tid: string, ctx: any) {
   const token = Deno.env.get('TELEGRAM_BOT_TOKEN'), chat = Deno.env.get('TELEGRAM_CHAT_ID');
@@ -219,11 +270,16 @@ async function avisar(sb: any, tid: string, ctx: any) {
   const hoy = hoyRD();
   const { error: eYa } = await sb.from('ia_guia_avisos').insert({ tenant_id: tid, fecha: hoy });
   if (eYa) return 'ya avisado';
-  const { data: tareas } = await sb.from('ia_tareas').select('orden, titulo, porque').eq('tenant_id', tid).eq('fecha', hoy).order('orden');
+  const { data: tareas } = await sb.from('ia_tareas').select('orden, titulo, porque, accion').eq('tenant_id', tid).eq('fecha', hoy).order('orden');
   const { data: planes } = await sb.from('ia_planes').select('titulo, progreso, estado').eq('tenant_id', tid).in('estado', ['activo', 'propuesto']);
   if (!tareas?.length) { await sb.from('ia_guia_avisos').delete().eq('tenant_id', tid).eq('fecha', hoy); return 'sin tareas'; }
   const lineas = [`🧭 ${ctx.empresa?.nombre || 'Tu empresa'} · tus tareas de hoy (${diaSemanaRD()})`, ''];
-  for (const t of tareas) lineas.push(`${t.orden}. ${t.titulo}`, t.porque ? `   ↳ ${t.porque}` : '');
+  for (const t of tareas) {
+    lineas.push(`${t.orden}. ${t.titulo}`, t.porque ? `   ↳ ${t.porque}` : '');
+    // En el teléfono, el número se toca y llama (o abre WhatsApp).
+    const tel = t.accion?.telefono;
+    if (tel) lineas.push(t.accion.contacto === 'whatsapp' ? `   💬 https://wa.me/${tel.length === 10 ? `1${tel}` : tel}` : `   📞 +${tel.length === 10 ? `1${tel}` : tel}`);
+  }
   const act = (planes || []).filter((p) => p.estado === 'activo');
   if (act.length) {
     lineas.push('', 'Planes en marcha:');

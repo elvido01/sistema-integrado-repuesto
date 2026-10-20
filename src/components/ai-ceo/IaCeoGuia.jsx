@@ -12,7 +12,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { usePanels } from '@/contexts/PanelContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Check, Clock, X, Loader2, RefreshCw, ArrowRight, Target, Sparkles, CircleDot } from 'lucide-react';
+import { Check, Clock, X, Loader2, RefreshCw, ArrowRight, Target, Sparkles, CircleDot, Phone, MessageCircle } from 'lucide-react';
 
 const NOMBRES = {
   ventas_30d: 'Ventas 30 días',
@@ -28,6 +28,8 @@ const NOMBRES = {
 const EN_PESOS = new Set(['ventas_30d', 'cxc_pendiente', 'falta_cubrir', 'monto_vencido']);
 const ORDEN = ['ventas_30d', 'falta_cubrir', 'monto_vencido', 'mora_30d', 'cxc_pendiente', 'clientes_sin_respuesta', 'agotados_sin_orden'];
 const valor = (k, v) => (EN_PESOS.has(k) ? `RD$${Math.round(Number(v)).toLocaleString('en-US')}` : Math.round(Number(v)).toLocaleString('en-US'));
+// 809/829/849 sin el 1 del país: se le pone (wa.me y tel: lo necesitan).
+const conPais = (tel) => { const d = String(tel || '').replace(/\D/g, ''); return d.length === 10 ? `1${d}` : d; };
 const conUnidad = (u, v) => (u === 'RD$' ? `RD$${Math.round(Number(v)).toLocaleString('en-US')}` : `${Math.round(Number(v))} ${u || ''}`);
 
 export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
@@ -206,6 +208,14 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                   </div>
                 </div>
                 <div className="flex items-start gap-1 shrink-0">
+                  {!lista && t.accion?.telefono && (
+                    <a href={t.accion.contacto === 'whatsapp' ? `https://wa.me/${conPais(t.accion.telefono)}` : `tel:+${conPais(t.accion.telefono)}`}
+                      target={t.accion.contacto === 'whatsapp' ? '_blank' : undefined} rel="noreferrer"
+                      className="inline-flex items-center gap-1 h-9 px-3 rounded-md text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700">
+                      {t.accion.contacto === 'whatsapp' ? <MessageCircle className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+                      {t.accion.contacto === 'whatsapp' ? 'WhatsApp' : 'Llamar'}
+                    </a>
+                  )}
                   {!lista && (t.accion?.tipo === 'panel' || t.accion?.tipo === 'planes') && (
                     <Button size="sm" variant="outline" onClick={() => hacer(t)}>
                       {t.accion.tipo === 'planes' ? 'Ver planes' : (t.accion.etiqueta || 'Abrir')} <ArrowRight className="w-3.5 h-3.5 ml-1" />
