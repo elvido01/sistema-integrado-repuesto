@@ -377,7 +377,7 @@ const ReporteTransaccionesDiariasPage = () => {
   return (
     <>
       <Helmet>
-        <title>Lista de Transacciones Diarias — {empresa?.nombre || 'Sistema'}</title>
+        <title>Lista de Transacciones Diarias — MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

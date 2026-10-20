@@ -418,7 +418,7 @@ const DevolucionesPage = () => {
 
   return (
     <>
-      <Helmet><title>Devoluciones — {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Devoluciones — MotoFlow</title></Helmet>
       <div className="h-full flex flex-col p-2 bg-gray-100 space-y-2 overflow-y-auto">
 
         {/* Title Bar */}

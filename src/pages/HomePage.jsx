@@ -648,7 +648,7 @@ const HomePage = () => {
   return (
     <>
       <Helmet>
-        <title>Inicio — {empresa?.nombre || nombreEmpresa || 'Sistema'}</title>
+        <title>Inicio — MotoFlow</title>
         <meta name="description" content="Dashboard principal financiero inteligente." />
       </Helmet>
       

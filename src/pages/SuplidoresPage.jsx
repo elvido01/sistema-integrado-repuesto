@@ -112,7 +112,7 @@ const SuplidoresPage = () => {
     return (
         <>
             <Helmet>
-                <title>Suplidores — {empresa?.nombre || 'Sistema'}</title>
+                <title>Suplidores — MotoFlow</title>
             </Helmet>
             <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">
                 <div className="bg-morla-blue p-4 rounded-lg shadow-sm border flex justify-between items-center">

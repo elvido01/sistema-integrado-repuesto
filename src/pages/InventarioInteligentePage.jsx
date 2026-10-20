@@ -198,7 +198,7 @@ const InventarioInteligentePage = () => {
 
   return (
     <>
-      <Helmet><title>Inventario Inteligente - {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Inventario Inteligente - MotoFlow</title></Helmet>
       <div className="h-full overflow-y-auto bg-slate-50 p-4 space-y-4">
         <div className="bg-white border rounded-lg p-4 shadow-sm">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">

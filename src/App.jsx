@@ -63,7 +63,9 @@ function AppContent() {
     window.location.pathname === '/registro'
   );
 
-  const nombreSaaS = empresa?.nombre || 'MotoFlow';
+  // (20/10/2026) El sistema se llama MotoFlow en todas las empresas; el
+  // nombre de la empresa sale en el menú y en sus documentos.
+  const nombreSaaS = 'MotoFlow';
 
   if (loading) {
     return (

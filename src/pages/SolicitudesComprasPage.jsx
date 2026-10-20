@@ -1092,7 +1092,7 @@ const SolicitudesComprasPage = () => {
 
   return (
     <>
-      <Helmet><title>Solicitudes de Compras — {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Solicitudes de Compras — MotoFlow</title></Helmet>
       <SolicitudFormModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

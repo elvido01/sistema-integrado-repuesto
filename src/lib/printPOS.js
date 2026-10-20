@@ -798,7 +798,7 @@ const printFacturaFullPage = (factura, printFormat) => {
         <span>Vendedor: ${factura.vendedor || _empresaConfig.nombre}</span>
       </div>
       <div class="footer-copy">
-        &copy; ${new Date().getFullYear()} ${_empresaConfig.nombre} — Sistema de Gestión Integral
+        Generado con MotoFlow — Sistema de Gestión Integral
       </div>
 
     </body>

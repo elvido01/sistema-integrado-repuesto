@@ -413,7 +413,7 @@ const InventarioFisicoPage = () => {
     return (
         <>
             <Helmet>
-                <title>Inventario Físico por Ubicación — {empresa?.nombre || 'Sistema'}</title>
+                <title>Inventario Físico por Ubicación — MotoFlow</title>
             </Helmet>
 
             <motion.div

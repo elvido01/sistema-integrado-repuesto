@@ -449,7 +449,7 @@ const SalidaMercanciaPage = () => {
   return (
     <>
       <Helmet>
-        <title>Salida de Mercancía — {empresa?.nombre || 'Sistema'}</title>
+        <title>Salida de Mercancía — MotoFlow</title>
       </Helmet>
       <ProductSearchModal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} onSelectProduct={handleProductSelect} />
 

@@ -153,7 +153,7 @@ const RecomendadorPreciosPage = () => {
 
   return (
     <>
-      <Helmet><title>Recomendador de Precios - {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Recomendador de Precios - MotoFlow</title></Helmet>
       <div className="h-full overflow-y-auto bg-slate-50 p-4 space-y-4">
         <div className="bg-white border rounded-lg p-4 shadow-sm">
           <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">

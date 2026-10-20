@@ -232,7 +232,7 @@ const CotizacionesMagnaPage = () => {
     return (
         <>
             <Helmet>
-                <title>Cotización y Facturas Magna — {empresa?.nombre || 'Sistema'}</title>
+                <title>Cotización y Facturas Magna — MotoFlow</title>
             </Helmet>
             <div ref={containerRef} tabIndex={-1} className="h-full grid grid-cols-12 gap-4 p-4 bg-gray-50 overflow-hidden">
 

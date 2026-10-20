@@ -691,7 +691,7 @@ const ProductsPage = ({ extraData }) => {
   return (
     <>
       <Helmet>
-        <title>Maestro de Artículos — {empresa?.nombre || 'MotoFlow'}</title>
+        <title>Maestro de Artículos — MotoFlow</title>
       </Helmet>
 
       <motion.div

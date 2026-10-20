@@ -218,7 +218,7 @@ const CuentasPorPagarPage = () => {
   return (
     <>
       <Helmet>
-        <title>Cuentas por Pagar — {empresa?.nombre || 'Sistema'}</title>
+        <title>Cuentas por Pagar — MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

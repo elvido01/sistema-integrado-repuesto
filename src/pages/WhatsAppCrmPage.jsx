@@ -2031,7 +2031,7 @@ const WhatsAppCrmPage = () => {
   return (
     <>
       <Helmet>
-        <title>Sales Hub - {empresa?.nombre || 'Sistema'}</title>
+        <title>Sales Hub - MotoFlow</title>
       </Helmet>
       <EmbudoCrm
         open={embudoOpen}

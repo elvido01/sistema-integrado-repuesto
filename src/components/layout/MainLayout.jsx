@@ -21,7 +21,6 @@ import JarvisAdminAssistant from '@/components/jarvis/JarvisAdminAssistant';
 const MainLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { empresa } = useAuth();
-  const nombreEmpresa = empresa?.nombre || 'Sistema';
 
   useEffect(() => {
     if (empresa) setEmpresaPrintConfig(empresa);
@@ -53,7 +52,7 @@ const MainLayout = () => {
           </LayoutProvider>
         </main>
         <footer className="text-center py-2 text-[10px] text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-          © {new Date().getFullYear()} {nombreEmpresa} — Sistema de Gestión Integral
+          © {new Date().getFullYear()} MotoFlow — Sistema de Gestión Integral
         </footer>
         <JarvisAdminAssistant />
       </div>

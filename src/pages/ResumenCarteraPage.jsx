@@ -138,7 +138,7 @@ const ResumenCarteraPage = () => {
 
   return (
     <div className="p-1.5 bg-slate-100">
-      <Helmet><title>Resumen de Cartera — {empresa?.nombre || 'Financiera'}</title></Helmet>
+      <Helmet><title>Resumen de Cartera — MotoFlow</title></Helmet>
       <div className="bg-white rounded-lg shadow border w-full overflow-hidden">
         <div className="bg-gradient-to-r from-slate-300 to-slate-200 text-slate-800 text-center py-1 font-extrabold tracking-wide text-base">
           RESUMEN DE CARTERA {data?.generado ? `— al ${fdate(data.generado)}` : ''}

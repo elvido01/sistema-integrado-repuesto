@@ -507,7 +507,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
                 </button>
               </div>
               <h2 className="text-lg font-bold tracking-tight flex items-center gap-3">
-                <span className="text-amber-400">{empresa?.nombre?.toUpperCase() || 'REPUESTOS MORLA'}</span>
+                <span className="text-amber-400">{empresa?.nombre?.toUpperCase() || 'MOTOFLOW'}</span>
                 <span className="text-slate-500">|</span>
                 <span className="uppercase tracking-widest text-sm text-sky-300 font-black">
                   {editingCotizacion ? `Cotización ${editingCotizacion.numero}` : 'Cotización'}

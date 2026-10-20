@@ -281,7 +281,7 @@ const EntradaMercanciaPage = () => {
   return (
     <>
       <Helmet>
-        <title>Entrada de Mercancía — {empresa?.nombre || 'MotoFlow'}</title>
+        <title>Entrada de Mercancía — MotoFlow</title>
       </Helmet>
       <ProductSearchModal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} onSelectProduct={handleProductSelect} />
 

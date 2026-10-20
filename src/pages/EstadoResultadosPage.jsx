@@ -273,7 +273,7 @@ const EstadoResultadosPage = () => {
 
   return (
     <>
-      <Helmet><title>Estado de Resultado - {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Estado de Resultado - MotoFlow</title></Helmet>
       <div className="h-full flex flex-col p-4 bg-slate-50 overflow-y-auto space-y-3">
         <div className="bg-white border rounded-lg p-4 shadow-sm">
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">

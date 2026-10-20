@@ -846,7 +846,7 @@ const EtiquetasMasivasPage = ({ extraData }) => {
     return (
         <div className="bg-gray-100 min-h-screen pb-8">
             <Helmet>
-                <title>Impresión Masiva de Etiquetas - MORLA</title>
+                <title>Impresión Masiva de Etiquetas - MotoFlow</title>
             </Helmet>
 
             <div className="bg-morla-blue shadow-md mb-6 border-b-2 border-morla-blue/20">

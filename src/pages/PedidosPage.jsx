@@ -462,7 +462,7 @@ const PedidoFormModal = ({ isOpen, onClose, pedido, onSave, clientes, vendedores
                 </button>
               </div>
               <h2 className="text-lg font-bold tracking-tight flex items-center gap-3">
-                <span className="text-amber-400">{empresa?.nombre?.toUpperCase() || 'REPUESTOS MORLA'}</span>
+                <span className="text-amber-400">{empresa?.nombre?.toUpperCase() || 'MOTOFLOW'}</span>
                 <span className="text-slate-500">|</span>
                 <span className="uppercase tracking-widest text-sm text-sky-300 font-black">PEDIDO / PRE-FACTURA</span>
               </h2>
@@ -908,7 +908,7 @@ const PedidosPage = () => {
 
   return (
     <>
-      <Helmet><title>Pedidos — {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Pedidos — MotoFlow</title></Helmet>
       <PedidoFormModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} pedido={editingPedido} onSave={handleSavePedido} clientes={clientes} vendedores={vendedores} />
 
       <div className="h-full flex flex-col p-4 bg-gray-50 space-y-4">

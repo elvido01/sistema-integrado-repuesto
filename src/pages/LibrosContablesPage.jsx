@@ -405,7 +405,7 @@ const LibrosContablesPage = () => {
 
   return (
     <>
-      <Helmet><title>Libros Contables — {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Libros Contables — MotoFlow</title></Helmet>
 
       <div className="h-full flex flex-col p-4 bg-gray-50 space-y-3 overflow-y-auto">
         {/* Header */}

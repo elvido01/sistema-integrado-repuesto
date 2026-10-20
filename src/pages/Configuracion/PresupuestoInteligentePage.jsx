@@ -151,7 +151,7 @@ const PresupuestoInteligentePage = () => {
 
   return (
     <>
-      <Helmet><title>Presupuesto Inteligente — {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Presupuesto Inteligente — MotoFlow</title></Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

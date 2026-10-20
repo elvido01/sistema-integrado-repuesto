@@ -1139,7 +1139,7 @@ const CierreCajaPage = () => {
   return (
     <>
       <Helmet>
-        <title>Cierre de Caja — {empresa?.nombre || 'Sistema'}</title>
+        <title>Cierre de Caja — MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

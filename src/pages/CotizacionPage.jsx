@@ -364,7 +364,7 @@ const CotizacionPage = () => {
   return (
     <>
       <Helmet>
-        <title>Cotizaciones — {empresa?.nombre || 'Sistema'}</title>
+        <title>Cotizaciones — MotoFlow</title>
       </Helmet>
       <div ref={containerRef} tabIndex={-1} className="h-full flex flex-col lg:grid lg:grid-cols-12 gap-4 p-4 bg-gray-50 overflow-y-auto lg:overflow-hidden">
 

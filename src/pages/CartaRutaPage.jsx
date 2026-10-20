@@ -731,7 +731,7 @@ const CartaRutaPage = ({ extraData }) => {
 
   return (
     <>
-      <Helmet><title>Carta de Ruta — {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Carta de Ruta — MotoFlow</title></Helmet>
 
       <div className="h-full flex flex-col p-4 bg-gray-50 space-y-3">
         {/* Header */}

@@ -142,7 +142,7 @@ const LoginForm = ({ onRegistrar }) => {
 
           {tenantBranding ? (
             <p className="text-gray-500 dark:text-gray-400 text-xs mt-1">
-              Sistema de gestión — {nombreMostrado}
+              Sistema de gestión MotoFlow
             </p>
           ) : (
             <p className="text-gray-500 dark:text-gray-400 text-xs mt-3">

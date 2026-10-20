@@ -2873,7 +2873,7 @@ const OrdenCompraPage = () => {
       {/* TÃ­tulo Blue Bar */}
       <div className="bg-morla-blue text-white py-1 px-4 mb-3 rounded-t-sm flex justify-between items-center shadow-md">
         <h1 className="text-sm font-bold tracking-widest uppercase text-white">Orden de Compra</h1>
-        <div className="text-[10px] font-medium opacity-80 italic text-white">Sistema de Gestión Morla</div>
+        <div className="text-[10px] font-medium opacity-80 italic text-white">MotoFlow</div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[28%_42%_30%] items-stretch gap-3 mb-3">
@@ -3892,7 +3892,7 @@ const OrdenCompraPage = () => {
 
   return (
     <>
-      <Helmet><title>Orden de Compra — {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Orden de Compra — MotoFlow</title></Helmet>
 
       <ProductSearchModal
         isOpen={isSearchModalOpen}

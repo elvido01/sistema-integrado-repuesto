@@ -8,7 +8,7 @@ const UpdateLocationPage = () => {
   return (
     <>
       <Helmet>
-        <title>Actualizar Ubicación — {empresa?.nombre || 'Sistema'}</title>
+        <title>Actualizar Ubicación — MotoFlow</title>
         <meta name="description" content="Módulo para actualizar la ubicación de los productos en el inventario." />
       </Helmet>
       <div className="min-h-full bg-morla-gray-light flex items-center justify-center p-4">

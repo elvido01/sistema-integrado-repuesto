@@ -537,7 +537,7 @@ const PagoSuplidoresPage = () => {
   return (
     <>
       <Helmet>
-        <title>Pago a Suplidores — {empresa?.nombre || 'Sistema'}</title>
+        <title>Pago a Suplidores — MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

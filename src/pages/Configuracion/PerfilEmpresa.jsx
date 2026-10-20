@@ -157,7 +157,7 @@ const PerfilEmpresa = () => {
 
   return (
     <>
-      <Helmet><title>Perfil de Empresa — {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Perfil de Empresa — MotoFlow</title></Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

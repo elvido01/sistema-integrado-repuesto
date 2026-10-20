@@ -316,7 +316,7 @@ export default function DocumentacionClientePage() {
 
   return (
     <div className="h-full flex flex-col bg-slate-100 p-3">
-      <Helmet><title>Documentación Cliente - {empresa?.nombre || 'Sistema'}</title></Helmet>
+      <Helmet><title>Documentación Cliente - MotoFlow</title></Helmet>
 
       <div className="flex items-center justify-between bg-slate-200 border border-slate-300 rounded-sm px-3 py-2 mb-3">
         <div className="flex items-center gap-2">

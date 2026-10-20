@@ -72,7 +72,7 @@ const SolicitudesPage = () => {
     return (
         <div className="bg-gray-100 min-h-screen pb-8">
             <Helmet>
-                <title>Solicitudes por Producto Agotado — {empresa?.nombre || 'Sistema'}</title>
+                <title>Solicitudes por Producto Agotado — MotoFlow</title>
             </Helmet>
 
             {/* Blue Header Bar */}

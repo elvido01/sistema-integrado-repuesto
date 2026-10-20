@@ -358,7 +358,7 @@ const ReciboIngresoPage = ({ extraData }) => {
   return (
     <>
       <Helmet>
-        <title>Recibo de Ingreso — {empresa?.nombre || 'Sistema'}</title>
+        <title>Recibo de Ingreso — MotoFlow</title>
       </Helmet>
       <motion.div
         initial={{ opacity: 0, y: 20 }}

@@ -689,7 +689,7 @@ const VentasPage = () => {
 
   return (
     <div className="bg-gray-50 h-full flex flex-col">
-      <Helmet><title>Ventas — {empresa?.nombre || 'MotoFlow'}</title></Helmet>
+      <Helmet><title>Ventas — MotoFlow</title></Helmet>
 
       {empresa?.solo_consulta && (
         <div className="bg-amber-100 border-b-2 border-amber-400 text-amber-900 px-4 py-2 text-sm font-bold text-center">

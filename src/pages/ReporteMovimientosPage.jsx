@@ -231,7 +231,7 @@ const MovimientoMercanciasPage = () => {
   return (
     <>
       <Helmet>
-        <title>Transacciones de Inventario - {empresa?.nombre || 'Sistema'}</title>
+        <title>Transacciones de Inventario - MotoFlow</title>
       </Helmet>
 
       <motion.div
