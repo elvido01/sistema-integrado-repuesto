@@ -7,6 +7,10 @@
       "voz": "¿Todavía facturas a mano… o usas tres programas para vender y cobrar?"
     },
     {
+      "id": "persona",
+      "voz": "Con MotoFlow vendes y facturas desde la computadora… y atiendes a tus clientes desde el celular."
+    },
+    {
       "id": "dgii",
       "voz": "La DGII ya exige la factura electrónica. Con MotoFlow la tienes desde el primer día."
     },

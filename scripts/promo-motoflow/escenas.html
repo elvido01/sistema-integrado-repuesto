@@ -62,6 +62,26 @@
   .bandera { width: 110px; height: 74px; vertical-align: 6px; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
   .tache { position: absolute; left: 50%; top: 50%; width: 560px; height: 560px; margin: -280px 0 0 -280px; animation: pop .45s ease-out; }
 
+  /* 1b · Persona: foto a sangre con zoom lento y tarjetas reales encima */
+  .escena.foto { z-index: 6; }
+  .toma { position: absolute; inset: 0; background-size: cover; background-position: center; }
+  .toma.zoom { animation: zoom 9s linear both; }
+  @keyframes zoom { from { transform: scale(1.0); } to { transform: scale(1.14); } }
+  .toma.dos { animation: aparece .6s ease-out both, zoom2 6s linear both; }
+  @keyframes aparece { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes zoom2 { from { transform: scale(1.12) translateY(-20px); } to { transform: scale(1.0); } }
+  .sombra-abajo { position: absolute; left: 0; right: 0; bottom: 0; height: 900px; background: linear-gradient(transparent, rgba(5,10,30,.92)); }
+  .sombra-arriba { position: absolute; left: 0; right: 0; top: 0; height: 800px; background: linear-gradient(rgba(5,10,30,.9), transparent); }
+  .flota { position: absolute; display: flex; align-items: center; gap: 22px; background: rgba(255,255,255,.96); color: var(--tinta);
+    border-radius: 30px; padding: 26px 34px; box-shadow: 0 30px 70px rgba(0,0,0,.45); font-size: 40px; font-weight: 800; }
+  .flota small { display: block; font-size: 28px; font-weight: 600; color: #5d6b88; }
+  .flota .ok { width: 72px; height: 72px; border-radius: 50%; background: var(--verde); color: #fff; display: grid; place-items: center; font-size: 42px; flex: none; }
+  .flota .ico { width: 72px; height: 72px; border-radius: 22px; }
+  .flota .ico img { width: 40px; height: 40px; filter: brightness(0) invert(1); }
+  .rotulo { position: absolute; left: 70px; right: 70px; text-align: center; font-size: 76px; font-weight: 900; line-height: 1.05; letter-spacing: -1px;
+    text-shadow: 0 6px 30px rgba(0,0,0,.6); }
+  .rotulo em { font-style: normal; color: var(--cian); }
+
   /* 2 · DGII */
   .factura { position: absolute; left: 140px; right: 140px; top: 640px; padding: 50px 54px; }
   .factura h4 { font-size: 34px; font-weight: 800; color: #6b7a99; letter-spacing: 2px; }
@@ -153,6 +173,21 @@
     <p class="sub a sube" style="--t:2.2;top:1600px">¿O usas <b style="color:#fff">3 programas</b> para vender y cobrar?</p>
   </section>
 
+  <!-- 1b · Persona usándolo (fotos generadas, tarjetas reales encima) -->
+  <section class="escena foto" data-id="persona">
+    <div class="toma zoom" style="background-image:url('toma-mostrador.png')"></div>
+    <div class="sombra-abajo"></div>
+    <h2 class="rotulo a sube" style="--t:.3;top:1220px">Vende y factura <em>en segundos</em></h2>
+    <div class="flota a izq" style="--t:1.0;left:80px;top:1440px"><span class="ok">✓</span><div>Venta RD$3,850<small>Disco de freno · contado</small></div></div>
+    <div class="flota a der" style="--t:1.8;right:80px;top:1640px"><span class="ok">✓</span><div>e-CF aceptada<small>DGII · E320000000231</small></div></div>
+
+    <div class="toma dos a" style="--t:3.0;background-image:url('toma-celular.png')"></div>
+    <div class="sombra-arriba a" style="--t:3.0;animation: aparece .6s ease-out both"></div>
+    <h2 class="rotulo a sube" style="--t:3.2;top:240px">Y atiende <em>desde el celular</em></h2>
+    <div class="flota a der" style="--t:3.7;right:70px;top:470px"><span class="ico ig"><img src="https://cdn.jsdelivr.net/npm/simple-icons@11.0.0/icons/instagram.svg"></span><div>@motos_rd<small>¿Precio de las gomas 90/90?</small></div></div>
+    <div class="flota a izq" style="--t:4.3;left:70px;top:660px"><span class="ico wa"><img src="https://cdn.jsdelivr.net/npm/simple-icons@11.0.0/icons/whatsapp.svg"></span><div>Juan Pérez<small>Voy para allá 🏍️</small></div></div>
+  </section>
+
   <!-- 2 · DGII -->
   <section class="escena" data-id="dgii">
     <h1 class="titulo a sube" style="top:290px;font-size:104px">Factura electrónica <em>DGII</em></h1>
@@ -197,9 +232,9 @@
         <div><b>María Gómez</b><span>Hola, ¿hacen envíos a Santiago?</span></div><time>9:47</time></div>
       <div class="msg a der" style="--t:2.9"><div class="ico tt"><img src="https://cdn.jsdelivr.net/npm/simple-icons@11.0.0/icons/tiktok.svg"></div>
         <div><b>Carlos R.</b><span>Me lo separa, voy a pagar hoy 🙌</span></div><time>9:52</time>
-        <span class="listo a pop" style="--t:6.0">🛒 Listo para comprar</span></div>
+        <span class="listo a pop" style="--t:5.2">🛒 Listo para comprar</span></div>
     </div>
-    <div class="ia a sube" style="--t:6.6"><b>✨ IA DE MOTOFLOW</b>Carlos quiere pagar hoy. Escríbele primero.</div>
+    <div class="ia a sube" style="--t:5.8"><b>✨ IA DE MOTOFLOW</b>Carlos quiere pagar hoy. Escríbele primero.</div>
   </section>
 
   <!-- 5 · Para quién -->

@@ -20,7 +20,7 @@ const AQUI = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:
 const DIR = process.argv[2] || 'C:/RepuestosMorla/Videos/motoflow-promo-01';
 const BROWSER = 'C:/Users/PC/.claude/skills/browser-automation/browser.mjs';
 const MUSICA = 'C:/Users/PC/AppData/Local/hermes/equipo/musica/electronica-energetica.mp3';
-const TEMPO = 1.06;        // la voz de la IA es pausada para un anuncio
+const TEMPO = 1.0;         // (20/10) sin acelerar: el atempo la hacía sonar a robot; el ritmo lo da la voz
 const AIRE = 0.35;         // silencio entre escenas
 const COLA = 1.6;          // la última escena se queda un poco más
 

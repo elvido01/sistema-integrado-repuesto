@@ -14,10 +14,14 @@ import path from 'node:path';
 const AQUI = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/, '$1');
 const SALIDA = process.argv[2] || 'C:/RepuestosMorla/Videos/motoflow-promo-01';
 const REHACER = process.argv.includes('--rehacer');
-const VOZ = 'onyx';
-const INSTRUCCIONES = 'Locutor de un anuncio de redes sociales en República Dominicana. Acento dominicano natural, '
-  + 'cercano, con energía y confianza, sonrisa en la voz. Ritmo ágil pero claro, sin gritar ni sonar a vendedor exagerado. '
-  + 'Las preguntas suenan a pregunta de verdad.';
+// (20/10/2026) onyx sonaba a robot: cedar (la más natural) con tono de
+// locutor comercial. Otras voces para probar: marin, ash, verse
+// (muestras en <carpeta>/muestras-voz). Se cambia con PROMO_VOZ.
+const VOZ = process.env.PROMO_VOZ || 'cedar';
+const INSTRUCCIONES = 'Locutor comercial de radio y televisión de República Dominicana grabando un anuncio. '
+  + 'Voz cálida, segura y con mucha energía positiva, sonriendo mientras habla. Acento dominicano natural y moderno. '
+  + 'Ritmo dinámico de comercial: rápido pero claro, con énfasis vendedor en las palabras clave y entonación que sube '
+  + 'y baja de forma natural, nada monótono ni robótico.';
 
 function clave() {
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
