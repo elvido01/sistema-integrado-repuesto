@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SeguimientoForm from './components/seguimiento/SeguimientoForm.jsx';
 import SeguimientosHoy from './components/seguimiento/SeguimientosHoy.jsx';
-import { crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni, registrarChatsSinLeer, clientesEsperando, casosAbiertos, resolverCaso } from './services/apiClient.js';
+import { cerrarVentaConversacion, crearSeguimiento, getSeguimientosPendientes, cerrarSeguimiento, listarChatsExcluidos, excluirChatOmni, registrarChatsSinLeer, clientesEsperando, casosAbiertos, resolverCaso } from './services/apiClient.js';
 import { slugNombreChat, parseJid } from './utils/jid.js';
 import { DIAS_EN_BANDEJA, asociarClienteConversacion, castigarPrestamo, conversacionDeWhatsApp, engancharCotizacion, conversacionEsperaRespuesta, marcarUsoSugerencia, sugerirRespuesta, closeCobroGestiones, createOutOfStockRequests, createQuote, getAvailableProductNotifications, getClienteFicha, getClientesMorosos, getCobroGestiones, getEmpresasUsuarioExtension, getRobadoClienteIds, getOmniConversations, getOutOfStockRequest, getStoredSession, loadStoredSession, getVendors, insertCobroGestion, logConversationEvent, marcarEnvioCobranza, markNotificationsRead, markOutOfStockCustomerNotified, mirrorWhatsAppConversation, adjuntarFotos, getMirrorStatus, sendMirrorHeartbeat, searchCustomers, searchProducts, sendOmniReply, setClienteTelefono, setCobranzaSeguimiento, setEmpresaActivaExtension, signInWithPassword, signOut, updateOmniConversationStatus } from './services/apiClient.js';
 import { attachFileToWhatsApp, getCurrentChat, leerChatsSinLeer, getWhatsAppDraftText, identidadDelChat, openWhatsAppChatViaInternalLink, openWhatsAppChatViaSearch, pasteTextIntoWhatsApp, readCurrentConversation } from './utils/whatsappDom.js';
@@ -362,6 +362,7 @@ export default function App() {
   const [omniQuoteConversation, setOmniQuoteConversation] = useState(null);
   const [omniSelectedConversation, setOmniSelectedConversation] = useState(null);
   const [sugiriendoWa, setSugiriendoWa] = useState(false);
+  const [cerrandoVenta, setCerrandoVenta] = useState(false);
   // El borrador que Hermes deja listo al abrir un chat que espera respuesta:
   // { chatId, texto, messageId, promo }. Ver el efecto "Respuesta en un toque".
   const [borradorWa, setBorradorWa] = useState(null);
@@ -2392,6 +2393,76 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
     }
   }
 
+  // ── Abrir el chat que pide MotoFlow (21/10/2026) ────────────────
+  // Los botones del IA CEO ("WhatsApp", "Abrir chat") mandan el pedido por
+  // el puente (public/motoflow-puente.js → fondo.js). Llega aquí con la
+  // pestaña ya al frente y se abre el chat SIN recargar WhatsApp. Si la
+  // pestaña se tuvo que abrir o recargar, el pedido espera en storage y se
+  // atiende cuando WhatsApp termina de cargar.
+  const atenderPedidoRef = useRef(null);
+  atenderPedidoRef.current = async (pedido) => {
+    if (!pedido || (!pedido.phone && !pedido.nombre)) return;
+    // WhatsApp recién cargado todavía no tiene la lista ni el buscador.
+    for (let i = 0; i < 60 && !document.querySelector('#pane-side'); i += 1) {
+      await new Promise((r) => window.setTimeout(r, 1000));
+    }
+    setActiveChannel(CHANNEL_TYPES.WHATSAPP);
+    if (pedido.phone) {
+      const r = await openChatWithoutReload({ phone: pedido.phone, expectedName: pedido.nombre || '' });
+      if (!r?.ok) setNotice(`No se encontro el chat de ${pedido.nombre || pedido.phone} en este WhatsApp. Buscalo a mano.`);
+      return;
+    }
+    await abrirChatSinCopiar(pedido.nombre);
+  };
+  useEffect(() => {
+    const api = globalThis.chrome;
+    if (!api?.runtime?.onMessage) return undefined;
+    const oir = (msg) => { if (msg?.tipo === 'motoflow-abrir-chat') atenderPedidoRef.current?.(msg); };
+    api.runtime.onMessage.addListener(oir);
+    // Pedido que quedó guardado mientras WhatsApp cargaba (2 min de vida).
+    try {
+      api.storage?.local?.get('motoflow_abrir_chat', (d) => {
+        const p = d?.motoflow_abrir_chat;
+        if (!p) return;
+        api.storage.local.remove('motoflow_abrir_chat');
+        if (Date.now() - (p.at || 0) < 120000) atenderPedidoRef.current?.(p);
+      });
+    } catch { /* sin storage */ }
+    return () => api.runtime.onMessage.removeListener(oir);
+  }, []);
+
+  // ── Compró / No compró (21/10/2026) ─────────────────────────────
+  // El dueño no tenía dónde decir que el cliente compró: el estado rápido
+  // ("Cotizado"…) es una nota del panel y no llega al embudo. Esto cierra la
+  // conversación en MotoFlow como GANADO o PERDIDO, igual que el Sales Hub.
+  async function handleCerrarVentaWhatsApp(compro) {
+    if (cerrandoVenta) return;
+    let ident;
+    try { ident = identidadDelChat(); } catch { ident = null; }
+    if (!ident?.externalId || ident.grupo) {
+      setNotice('Abre el chat del cliente para marcar la venta.');
+      return;
+    }
+    const nombre = getCurrentChat()?.name || 'este cliente';
+    if (!window.confirm(compro ? `¿${nombre} COMPRO? Se marca como venta ganada.` : `¿${nombre} NO compro? Se marca como venta perdida.`)) return;
+    setCerrandoVenta(true);
+    try {
+      const conversationId = await conversacionDeWhatsApp({ telefono: ident.phone || null, externalId: ident.externalId });
+      if (!conversationId) {
+        setNotice('Esa conversacion todavia no esta en MotoFlow. Espera unos segundos a que el espejo la suba y vuelve a tocar.');
+        return;
+      }
+      await cerrarVentaConversacion({ conversationId, compro });
+      if (compro) setQuoteStatus('confirmado');
+      else setQuoteStatus('perdido');
+      setNotice(compro ? `✅ ${nombre}: venta ganada.` : `${nombre}: marcada como no compro.`);
+    } catch (error) {
+      setNotice(error.message || 'No se pudo marcar la venta.');
+    } finally {
+      setCerrandoVenta(false);
+    }
+  }
+
   // ── Sugerir dentro de WhatsApp Web ──────────────────────────────
   // WhatsApp no usa la bandeja Omni: se contesta en la caja de WhatsApp, asi
   // que aqui no hay donde poner el borrador. Se PEGA en esa caja, que es lo
@@ -2897,6 +2968,20 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
             >
               {sugiriendoWa ? 'Redactando...' : '✨ Sugerir'}
             </button>
+          )}
+          {activeChannel === CHANNEL_TYPES.WHATSAPP && (
+            <div className="mf-venta-fila">
+              <button className="mf-venta-ganada" type="button" disabled={cerrandoVenta}
+                onClick={() => handleCerrarVentaWhatsApp(true)}
+                title="El cliente compro: cierra la conversacion como venta ganada en MotoFlow.">
+                ✅ Compró
+              </button>
+              <button className="mf-venta-perdida" type="button" disabled={cerrandoVenta}
+                onClick={() => handleCerrarVentaWhatsApp(false)}
+                title="El cliente no compro: cierra la conversacion como venta perdida.">
+                ✖ No compró
+              </button>
+            </div>
           )}
         </nav>
       )}

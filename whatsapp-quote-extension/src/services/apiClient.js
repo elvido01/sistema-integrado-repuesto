@@ -1004,6 +1004,19 @@ export async function casosAbiertos() {
   }
 }
 
+// (21/10/2026) Cerrar la conversación diciendo si compró: etapa GANADO o
+// PERDIDO en el embudo (lo que cuentan el IA CEO y el plan de ventas desde el
+// CRM), también en sus conversaciones repetidas, y resuelve sus casos.
+export async function cerrarVentaConversacion({ conversationId, compro }) {
+  if (!conversationId) throw new Error('Esa conversacion todavia no esta en MotoFlow.');
+  const headers = await getAuthHeaders();
+  return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/crm_cerrar_venta`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_conversation_id: conversationId, p_compro: !!compro }),
+  });
+}
+
 export async function resolverCaso(casoId) {
   const headers = await getAuthHeaders();
   return fetchJson(`${SUPABASE_URL}/rest/v1/rpc/crm_caso_resolver`, {

@@ -34,6 +34,15 @@ const conPais = (tel) => { const d = String(tel || '').replace(/\D/g, ''); retur
 // wa.me paraba en la página de api.whatsapp.com ("Abrir aplicación").
 // La pestaña se llama 'whatsapp' para reusar la misma y no abrir una por clic.
 const abrirWhatsAppWeb = (tel) => window.open(`https://web.whatsapp.com/send?phone=${conPais(tel)}`, 'whatsapp');
+// Con la extensión MotoFlow Omni (2.1.23+) el pedido va por su puente: trae
+// al frente la pestaña de WhatsApp que ya está abierta y abre el chat ahí,
+// sin recargarla. Devuelve false si la extensión no está y hay que usar el
+// enlace de siempre.
+const pedirALaExtension = (tel, nombre) => {
+  if (!document.documentElement.dataset.motoflowOmni) return false;
+  window.postMessage({ tipo: 'motoflow-omni-abrir-chat', phone: tel ? conPais(tel) : null, nombre: nombre || null }, window.location.origin);
+  return true;
+};
 const conUnidad = (u, v) => (u === 'RD$' ? `RD$${Math.round(Number(v)).toLocaleString('en-US')}` : `${Math.round(Number(v))} ${u || ''}`);
 
 export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
@@ -102,6 +111,7 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
   const abrirConversacion = async (c) => {
     if (!c) return;
     if (c.canal !== 'whatsapp') { openPanel('whatsapp-crm', { conversationId: c.id }); return; }
+    if ((c.telefono || c.cliente) && pedirALaExtension(c.telefono, c.cliente)) return;
     if (c.telefono) { abrirWhatsAppWeb(c.telefono); return; }
     try { await navigator.clipboard.writeText(c.cliente || ''); } catch { /* sin portapapeles */ }
     window.open('https://web.whatsapp.com/', 'whatsapp');
@@ -227,6 +237,9 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                   {!lista && t.accion?.telefono && (
                     <a href={t.accion.contacto === 'whatsapp' ? `https://web.whatsapp.com/send?phone=${conPais(t.accion.telefono)}` : `tel:+${conPais(t.accion.telefono)}`}
                       target={t.accion.contacto === 'whatsapp' ? 'whatsapp' : undefined} rel="noreferrer"
+                      onClick={(e) => {
+                        if (t.accion.contacto === 'whatsapp' && pedirALaExtension(t.accion.telefono, t.accion.conversacion?.cliente)) e.preventDefault();
+                      }}
                       className="inline-flex items-center gap-1 h-9 px-3 rounded-md text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700">
                       {t.accion.contacto === 'whatsapp' ? <MessageCircle className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
                       {t.accion.contacto === 'whatsapp' ? 'WhatsApp' : 'Llamar'}

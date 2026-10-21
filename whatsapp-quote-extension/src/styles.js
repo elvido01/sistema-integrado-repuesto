@@ -432,6 +432,17 @@ export const styles = `
     font-weight: 900;
   }
 
+  /* Compró / No compró (21/10/2026) */
+  .mf-venta-fila {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .mf-venta-fila button { font-weight: 900; }
+  .mf-venta-fila .mf-venta-ganada { background: #e7f8ee; color: #0f7a3d; border-color: #b6e6c8; }
+  .mf-venta-fila .mf-venta-perdida { background: #fdeeee; color: #a12a2a; border-color: #f2c4c4; }
+
   /* Respuesta en un toque: la tarjeta que Hermes deja lista al abrir el chat. */
   .mf-borrador {
     margin: 6px 8px;
