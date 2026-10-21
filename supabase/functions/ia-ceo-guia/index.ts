@@ -198,6 +198,8 @@ Arma las TAREAS DE HOY (${diaSemanaRD()} ${hoy}) para el dueño: MÁXIMO 5, orde
 - PROHIBIDAS las tareas vagas: "Revisa el flujo de caja", "Organiza una estrategia", "Analiza…", "Evalúa…".
   Si una tarea empieza con revisar/analizar/evaluar tiene que decir EXACTAMENTE qué cifra, pieza o cliente y qué
   decidir con eso (ej. "Verifica si existen las 32 motos de 2015 que el sistema da en inventario").
+- "tareas_anteriores" sirve para aprender el estilo, NO para copiarlas: una tarea de contactar o contestar a un cliente
+  solo se pone si ese cliente viene HOY en crm (listos_para_comprar o casos_abiertos); si ya no viene, ya se atendió.
 - Aprende de "tareas_anteriores": si el dueño DESCARTÓ un tipo de tarea, no insistas igual; si la POSPUSO, puedes
   volver a ponerla si sigue siendo importante; repite el estilo de las que HIZO.
 - No le pidas cosas que el sistema ya resuelve solo (publicar, clasificar el CRM).
@@ -222,7 +224,16 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
   }
   const telefonos = telefonosDe(ctx);
   const conversaciones = conversacionesDe(ctx);
-  const filas = (res.tareas || []).filter((t) => !esVaga(t)).slice(0, 5).map((t, i) => {
+  // (21/10/2026) El dueño cerró a Anthony Abreu y King Love con "Compró" y al
+  // rehacer volvieron: el modelo las copió de las tareas de ayer. Se quita
+  // toda tarea que nombre a un cliente con la conversación ya cerrada (14
+  // días), salvo que vuelva a estar entre los que esperan hoy.
+  const cerrados = await clientesCerrados(sb, tid, conversaciones);
+  const yaAtendida = (t: any) => {
+    const tit = normalizar(t.titulo);
+    return cerrados.some((n) => tit.includes(n));
+  };
+  const filas = (res.tareas || []).filter((t) => !esVaga(t) && !yaAtendida(t)).slice(0, 5).map((t, i) => {
     const plan = Number.isInteger(t.plan) && activos?.[t.plan - 1] ? activos[t.plan - 1].id : null;
     const panel = t.panel && paneles[t.panel] ? t.panel : null;
     return {
@@ -262,6 +273,18 @@ function esVaga(t: any) {
   const resto = titulo.replace(VERBO_VAGO, '');
   return !/\d/.test(resto) && !/\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9-]{2,}\b/.test(resto);
 }
+const normalizar = (v: unknown) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/** Nombres (normalizados) de clientes cuya conversación se cerró en 14 días y que hoy no esperan respuesta. */
+async function clientesCerrados(sb: any, tid: string, abiertas: Map<string, any>) {
+  const desde = new Date(Date.now() - 14 * 864e5).toISOString();
+  const { data } = await sb.from('sales_conversations').select('customer_name')
+    .eq('tenant_id', tid).eq('status', 'cerrado').gte('last_message_at', desde).limit(2000);
+  const esperan = new Set([...abiertas.values()].map((c) => normalizar(c.cliente)));
+  return [...new Set((data || []).map((r: any) => normalizar(r.customer_name)))]
+    .filter((n) => n.length >= 5 && !/^\+?[\d\s()-]+$/.test(n) && !esperan.has(n));
+}
+
 /** Las conversaciones del CRM que vienen en el contexto: id → { id, canal, cliente }. */
 function conversacionesDe(ctx: any) {
   const m = new Map<string, any>();
