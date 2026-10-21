@@ -28,8 +28,12 @@ const NOMBRES = {
 const EN_PESOS = new Set(['ventas_30d', 'cxc_pendiente', 'falta_cubrir', 'monto_vencido']);
 const ORDEN = ['ventas_30d', 'falta_cubrir', 'monto_vencido', 'mora_30d', 'cxc_pendiente', 'clientes_sin_respuesta', 'agotados_sin_orden'];
 const valor = (k, v) => (EN_PESOS.has(k) ? `RD$${Math.round(Number(v)).toLocaleString('en-US')}` : Math.round(Number(v)).toLocaleString('en-US'));
-// 809/829/849 sin el 1 del país: se le pone (wa.me y tel: lo necesitan).
+// 809/829/849 sin el 1 del país: se le pone (WhatsApp y tel: lo necesitan).
 const conPais = (tel) => { const d = String(tel || '').replace(/\D/g, ''); return d.length === 10 ? `1${d}` : d; };
+// (21/10/2026) Directo a WhatsApp Web, donde vive la extensión del CRM.
+// wa.me paraba en la página de api.whatsapp.com ("Abrir aplicación").
+// La pestaña se llama 'whatsapp' para reusar la misma y no abrir una por clic.
+const abrirWhatsAppWeb = (tel) => window.open(`https://web.whatsapp.com/send?phone=${conPais(tel)}`, 'whatsapp');
 const conUnidad = (u, v) => (u === 'RD$' ? `RD$${Math.round(Number(v)).toLocaleString('en-US')}` : `${Math.round(Number(v))} ${u || ''}`);
 
 export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
@@ -94,11 +98,11 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
 
   // (21/10/2026) La conversación de ESE cliente. Instagram/Facebook/TikTok
   // están en el Sales Hub; los WhatsApp del espejo se trabajan en WhatsApp
-  // Web: con teléfono, wa.me; sin él, se copia el nombre para buscarlo.
+  // Web: con teléfono, directo a su chat; sin él, se copia el nombre para buscarlo.
   const abrirConversacion = async (c) => {
     if (!c) return;
     if (c.canal !== 'whatsapp') { openPanel('whatsapp-crm', { conversationId: c.id }); return; }
-    if (c.telefono) { window.open(`https://wa.me/${conPais(c.telefono)}`, '_blank'); return; }
+    if (c.telefono) { abrirWhatsAppWeb(c.telefono); return; }
     try { await navigator.clipboard.writeText(c.cliente || ''); } catch { /* sin portapapeles */ }
     window.open('https://web.whatsapp.com/', 'whatsapp');
     toast({ title: `Copiado: ${c.cliente}`, description: 'En WhatsApp Web, pégalo en el buscador (Ctrl+V) para abrir su chat.' });
@@ -221,8 +225,8 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                 </div>
                 <div className="flex items-start gap-1 shrink-0">
                   {!lista && t.accion?.telefono && (
-                    <a href={t.accion.contacto === 'whatsapp' ? `https://wa.me/${conPais(t.accion.telefono)}` : `tel:+${conPais(t.accion.telefono)}`}
-                      target={t.accion.contacto === 'whatsapp' ? '_blank' : undefined} rel="noreferrer"
+                    <a href={t.accion.contacto === 'whatsapp' ? `https://web.whatsapp.com/send?phone=${conPais(t.accion.telefono)}` : `tel:+${conPais(t.accion.telefono)}`}
+                      target={t.accion.contacto === 'whatsapp' ? 'whatsapp' : undefined} rel="noreferrer"
                       className="inline-flex items-center gap-1 h-9 px-3 rounded-md text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700">
                       {t.accion.contacto === 'whatsapp' ? <MessageCircle className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
                       {t.accion.contacto === 'whatsapp' ? 'WhatsApp' : 'Llamar'}
