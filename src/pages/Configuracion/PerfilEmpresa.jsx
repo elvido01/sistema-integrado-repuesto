@@ -12,7 +12,11 @@ import { descargarRespaldoTenant } from '@/lib/backupTenant';
 
 const PerfilEmpresa = () => {
   const { toast } = useToast();
-  const { profile , empresa} = useAuth();
+  const { profile, empresa, tenantId } = useAuth();
+  // (21/10/2026) La empresa ACTIVA, no la del perfil: el súper admin no tiene
+  // empresa en el perfil (la pantalla se quedaba cargando para siempre) y quien
+  // trabaja varias empresas editaba la del perfil aunque tuviera otra abierta.
+  const empresaId = tenantId || profile?.tenant_id || null;
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -22,13 +26,13 @@ const PerfilEmpresa = () => {
   const [addonPrices, setAddonPrices] = useState({ precio_placa: 0, precio_gps: 0, precio_casco: 0, precio_seguro: 0 });
 
   const fetchTenant = useCallback(async () => {
-    if (!profile?.tenant_id) return;
+    if (!empresaId) { setIsLoading(false); return; }
     setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from('tenants')
         .select('*')
-        .eq('id', profile.tenant_id)
+        .eq('id', empresaId)
         .single();
       if (error) throw error;
       setTenant(data);
@@ -36,7 +40,7 @@ const PerfilEmpresa = () => {
       const { data: cfg } = await supabase
         .from('config_empresa')
         .select('precio_placa, precio_gps, precio_casco, precio_seguro')
-        .eq('tenant_id', profile.tenant_id)
+        .eq('tenant_id', empresaId)
         .maybeSingle();
       setAddonPrices({
         precio_placa: cfg?.precio_placa || 0,
@@ -48,7 +52,7 @@ const PerfilEmpresa = () => {
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar el perfil de empresa.' });
     }
     setIsLoading(false);
-  }, [profile?.tenant_id, toast]);
+  }, [empresaId, toast]);
 
   useEffect(() => {
     fetchTenant();
@@ -64,7 +68,7 @@ const PerfilEmpresa = () => {
     setIsUploading(true);
     try {
       const ext = file.name.split('.').pop();
-      const fileName = `company/logo_tenant_${profile.tenant_id}_${Date.now()}.${ext}`;
+      const fileName = `company/logo_tenant_${empresaId}_${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from('product-images')
         .upload(fileName, file, { upsert: true });
