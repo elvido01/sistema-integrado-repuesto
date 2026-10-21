@@ -3,16 +3,22 @@
 //
 //  Corre en las páginas de MotoFlow. Sirve para que un botón de MotoFlow
 //  ("WhatsApp", "Abrir chat" del IA CEO) abra el chat del cliente en la
-//  pestaña de WhatsApp Web que YA está abierta, sin recargarla: antes iba a
-//  wa.me / web.whatsapp.com/send, que carga WhatsApp desde cero.
+//  pestaña de WhatsApp Web que YA está abierta, sin recargarla, igual que
+//  Gestión de cobro dentro del panel. El enlace de siempre (wa.me /
+//  web.whatsapp.com/send) carga WhatsApp desde cero.
 //
-//  1) Marca la página (data-motoflow-omni) para que MotoFlow sepa, sin
-//     esperar, que la extensión está instalada. Sin la marca, MotoFlow sigue
-//     abriendo el enlace de siempre.
-//  2) Pasa el pedido al fondo de la extensión (fondo.js), que trae al frente
-//     la pestaña de WhatsApp y le dice qué chat abrir.
+//  1) Marca la página (data-motoflow-omni).
+//  2) Recibe el pedido de MotoFlow, CONFIRMA que lo recibió (MotoFlow espera
+//     esa confirmación; sin ella usa el enlace de siempre) y lo pasa al
+//     fondo de la extensión (fondo.js).
+//
+//  fondo.js también lo inyecta en las pestañas de MotoFlow que ya estaban
+//  abiertas al instalar/actualizar: de ahí la guarda contra doble carga.
 // ════════════════════════════════════════════════════════════════════════
 (() => {
+  if (window.__motoflowPuente) return;
+  window.__motoflowPuente = true;
+
   try {
     document.documentElement.dataset.motoflowOmni = chrome.runtime.getManifest().version;
   } catch { /* extensión recargada: esta pestaña ya no tiene contexto */ }
@@ -27,9 +33,10 @@
         phone: d.phone ? String(d.phone).replace(/\D/g, '') : null,
         nombre: d.nombre ? String(d.nombre).slice(0, 120) : null,
       });
+      window.postMessage({ tipo: 'motoflow-omni-recibido', id: d.id || null }, window.location.origin);
     } catch {
-      // La extensión se actualizó y esta pestaña quedó huérfana: se quita la
-      // marca para que el próximo clic use el enlace de siempre (o F5).
+      // La extensión se actualizó y esta pestaña quedó huérfana: sin
+      // confirmación, MotoFlow abre el enlace de siempre.
       delete document.documentElement.dataset.motoflowOmni;
     }
   });

@@ -2417,7 +2417,15 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
   useEffect(() => {
     const api = globalThis.chrome;
     if (!api?.runtime?.onMessage) return undefined;
-    const oir = (msg) => { if (msg?.tipo === 'motoflow-abrir-chat') atenderPedidoRef.current?.(msg); };
+    // Contesta al momento si ESTA pestaña puede atender (WhatsApp cargado,
+    // no la pantalla de "usar aquí"); el fondo trae al frente la que dijo sí.
+    const oir = (msg, _sender, responder) => {
+      if (msg?.tipo !== 'motoflow-abrir-chat') return undefined;
+      const lista = !!document.querySelector('#pane-side');
+      responder({ ok: lista });
+      if (lista) atenderPedidoRef.current?.(msg);
+      return undefined;
+    };
     api.runtime.onMessage.addListener(oir);
     // Pedido que quedó guardado mientras WhatsApp cargaba (2 min de vida).
     try {
