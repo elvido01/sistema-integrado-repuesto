@@ -550,34 +550,35 @@ const CartaRutaPage = ({ extraData }) => {
         <style>
           @page { size: letter; margin: 15mm 20mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: 'Times New Roman', serif; font-size: 13px; color: #000; padding: 20px 30px; }
+          /* (22/10/2026) El dueño pidió letras más grandes: +3 puntos en todo. */
+          body { font-family: 'Times New Roman', serif; font-size: 16px; color: #000; padding: 20px 30px; }
           .header { position: relative; margin-bottom: 20px; min-height: 110px; }
           .header-center { text-align: center; }
           .header-right { position: absolute; right: 0; top: 40px; text-align: right; }
-          .carta-label-num { font-size: 13px; font-weight: bold; color: #000; letter-spacing: 1px; }
+          .carta-label-num { font-size: 16px; font-weight: bold; color: #000; letter-spacing: 1px; }
           .header-logo { max-height: 110px; max-width: 280px; object-fit: contain; }
-          .logo-text { font-size: 28px; font-weight: bold; letter-spacing: 3px; margin-bottom: 2px; }
-          .subtitle { font-size: 14px; font-weight: bold; letter-spacing: 2px; color: #b22222; }
-          .subtitle-rnc { font-size: 12px; color: #000; margin-top: 2px; }
-          .subtitle-main { font-size: 16px; font-weight: bold; letter-spacing: 2px; text-decoration: underline; margin-top: 6px; }
-          .rnc { font-size: 12px; font-style: italic; }
-          .fecha { text-align: right; font-size: 14px; font-weight: bold; margin-top: -10px; margin-bottom: 20px; }
-          .cliente { margin-bottom: 18px; font-size: 14px; line-height: 1.8; }
+          .logo-text { font-size: 32px; font-weight: bold; letter-spacing: 3px; margin-bottom: 2px; }
+          .subtitle { font-size: 17px; font-weight: bold; letter-spacing: 2px; color: #b22222; }
+          .subtitle-rnc { font-size: 15px; color: #000; margin-top: 2px; }
+          .subtitle-main { font-size: 19px; font-weight: bold; letter-spacing: 2px; text-decoration: underline; margin-top: 6px; }
+          .rnc { font-size: 15px; font-style: italic; }
+          .fecha { text-align: right; font-size: 17px; font-weight: bold; margin-top: -10px; margin-bottom: 20px; }
+          .cliente { margin-bottom: 18px; font-size: 17px; line-height: 1.8; }
           .cliente strong { font-weight: bold; }
-          .seccion-titulo { text-align: center; font-weight: bold; font-size: 13px; margin: 12px 0 4px; text-decoration: underline; }
-          .separador { text-align: center; font-size: 10px; letter-spacing: 2px; color: #333; margin: 2px 0; }
-          .desc-factura { text-align: center; font-size: 13px; font-weight: bold; margin: 6px 20px; }
-          .moto-grid { display: grid; grid-template-columns: max-content max-content; gap: 4px 60px; margin: 10px auto; justify-content: center; font-size: 13px; line-height: 1.8; }
+          .seccion-titulo { text-align: center; font-weight: bold; font-size: 16px; margin: 12px 0 4px; text-decoration: underline; }
+          .separador { text-align: center; font-size: 13px; letter-spacing: 2px; color: #333; margin: 2px 0; }
+          .desc-factura { text-align: center; font-size: 16px; font-weight: bold; margin: 6px 20px; }
+          .moto-grid { display: grid; grid-template-columns: max-content max-content; gap: 4px 60px; margin: 10px auto; justify-content: center; font-size: 16px; line-height: 1.8; }
           .moto-grid div { font-weight: bold; }
-          .clausulas { margin: 18px 10px; font-size: 12px; line-height: 1.7; }
+          .clausulas { margin: 18px 10px; font-size: 15px; line-height: 1.7; }
           .firmas { margin-top: 50px; }
           .firma-center { text-align: center; margin-bottom: 40px; }
           .firma-center .linea, .firma-row .linea { border-top: 1px solid #000; display: inline-block; width: 250px; margin-top: 30px; }
           .firma-row { display: flex; justify-content: space-between; margin-top: 20px; }
           .firma-item { text-align: center; width: 45%; }
           .firma-item .linea { width: 200px; }
-          .firma-label { font-weight: bold; font-size: 13px; margin-top: 4px; }
-          .footer { text-align: center; margin-top: 40px; font-size: 11px; border-top: 1px solid #ccc; padding-top: 8px; line-height: 1.5; }
+          .firma-label { font-weight: bold; font-size: 16px; margin-top: 4px; }
+          .footer { text-align: center; margin-top: 40px; font-size: 14px; border-top: 1px solid #ccc; padding-top: 8px; line-height: 1.5; }
           @media print { body { padding: 0; } }
         </style>
       </head>
@@ -644,7 +645,8 @@ const CartaRutaPage = ({ extraData }) => {
         </div>
 
         <div class="footer">
-          ${[empresa?.direccion1, empresa?.direccion2, empresa?.direccion].filter(Boolean).join(', ') || ''}<br/>
+          ${[...new Set([empresa?.direccion1, empresa?.direccion2, empresa?.direccion]
+              .map((d) => String(d || '').trim()).filter(Boolean))].join(', ')}<br/>
           ${empresa?.telefono ? `Teléfonos: ${empresa.telefono}` : ''}
           ${empresa?.email ? ` &bull; ${empresa.email}` : ''}
         </div>
