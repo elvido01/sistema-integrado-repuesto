@@ -39,7 +39,7 @@ const abrirWhatsAppWeb = (tel) => window.open(`https://web.whatsapp.com/send?pho
 // sin recargarla (como Gestión de cobro dentro del panel). Se espera la
 // confirmación del puente; sin ella (no hay extensión, o la pestaña quedó
 // vieja) se resuelve false y se usa el enlace de siempre.
-const pedirALaExtension = (tel, nombre) => new Promise((resolve) => {
+const pedirALaExtension = (tel, nombre, extra = {}) => new Promise((resolve) => {
   if (!document.documentElement.dataset.motoflowOmni) { resolve(false); return; }
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const oir = (e) => {
@@ -48,7 +48,7 @@ const pedirALaExtension = (tel, nombre) => new Promise((resolve) => {
   };
   const reloj = window.setTimeout(() => { window.removeEventListener('message', oir); resolve(false); }, 600);
   window.addEventListener('message', oir);
-  window.postMessage({ tipo: 'motoflow-omni-abrir-chat', id, phone: tel ? conPais(tel) : null, nombre: nombre || null }, window.location.origin);
+  window.postMessage({ tipo: 'motoflow-omni-abrir-chat', id, phone: tel ? conPais(tel) : null, nombre: nombre || null, ...extra }, window.location.origin);
 });
 const conUnidad = (u, v) => (u === 'RD$' ? `RD$${Math.round(Number(v)).toLocaleString('en-US')}` : `${Math.round(Number(v))} ${u || ''}`);
 
@@ -136,7 +136,13 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
   // Web: con teléfono, directo a su chat; sin él, se copia el nombre para buscarlo.
   const abrirConversacion = async (c) => {
     if (!c) return;
-    if (c.canal !== 'whatsapp') { openPanel('whatsapp-crm', { conversationId: c.id }); return; }
+    // Instagram/Facebook/TikTok: en la bandeja de la extensión (donde se
+    // contesta y se marca Compró); sin extensión, en el Sales Hub.
+    if (c.canal !== 'whatsapp') {
+      if (await pedirALaExtension(null, c.cliente, { conversationId: c.id, canal: c.canal })) return;
+      openPanel('whatsapp-crm', { conversationId: c.id });
+      return;
+    }
     if ((c.telefono || c.cliente) && await pedirALaExtension(c.telefono, c.cliente)) return;
     if (c.telefono) { abrirWhatsAppWeb(c.telefono); return; }
     try { await navigator.clipboard.writeText(c.cliente || ''); } catch { /* sin portapapeles */ }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, descartarIntentoFallido, marcarUsoSugerencia, sendOmniReply, sugerirRespuesta, updateOmniConversationStatus } from '../../services/apiClient.js';
+import { cerrarVentaConversacion, getOmniConversationById, DIAS_EN_BANDEJA, getOmniConversations, getOmniMessages, marcarCanalVisto, marcarConversacionVista, descartarIntentoFallido, marcarUsoSugerencia, sendOmniReply, sugerirRespuesta, updateOmniConversationStatus } from '../../services/apiClient.js';
 import { esperaRespuesta, estaSinVer, ventanaDM } from '../../channels/channelRegistry.js';
 
 const CHANNEL_LABELS = {
@@ -133,11 +133,14 @@ function MediaDelMensaje({ message }) {
   return <a href={url} target="_blank" rel="noreferrer" className="mf-omni-media-link">Abrir adjunto</a>;
 }
 
-export default function OmniInbox({ channel, onQuoteConversation, onConversationsChange, onSelectedConversationChange, casos = [], onResolverCaso }) {
+export default function OmniInbox({ channel, onQuoteConversation, onConversationsChange, onSelectedConversationChange, casos = [], onResolverCaso, abrirId = null, onAbierto }) {
   const [search, setSearch] = useState('');
   const [listFilter, setListFilter] = useState('todos');
   const [conversations, setConversations] = useState([]);
   const [selected, setSelected] = useState(null);
+  // La conversación que se abrió por pedido: la carga de la lista no la
+  // cambia por la primera, aunque sea más vieja que la ventana de la bandeja.
+  const fijadaRef = useRef(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -184,11 +187,14 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     getOmniConversations({ channel, search })
       .then((rows) => {
         if (!alive) return;
-        setConversations(rows || []);
-        onConversationsChange?.(rows || []);
+        const fijada = fijadaRef.current;
+        const lista = fijada && !(rows || []).some((r) => r.id === fijada.id) && (channel === 'unified' || fijada.platform === channel)
+          ? [fijada, ...(rows || [])] : (rows || []);
+        setConversations(lista);
+        onConversationsChange?.(lista);
         setSelected((current) => {
-          if (current && rows?.some((row) => row.id === current.id)) return current;
-          return rows?.[0] || null;
+          if (current && lista.some((row) => row.id === current.id)) return current;
+          return lista[0] || null;
         });
       })
       .catch((err) => {
@@ -691,6 +697,51 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
     }
   }
 
+  // (22/10/2026) Abrir UNA conversación pedida (ficha de "esperando" o el
+  // botón "Abrir chat" del IA CEO). Si no está en la lista cargada —más de
+  // los días de la bandeja— se trae por su id y se pone arriba.
+  const abrirRef = useRef(null);
+  useEffect(() => {
+    if (!abrirId || abrirRef.current === abrirId || loading) return;
+    const ya = conversations.find((c) => c.id === abrirId);
+    abrirRef.current = abrirId;
+    if (ya) { fijadaRef.current = ya; handleSelectConversation(ya); onAbierto?.(); return; }
+    getOmniConversationById(abrirId).then((c) => {
+      if (c) {
+        fijadaRef.current = c;
+        setConversations((lista) => (lista.some((x) => x.id === c.id) ? lista : [c, ...lista]));
+        handleSelectConversation(c);
+      } else {
+        setError('No encontré esa conversación en esta empresa.');
+      }
+      onAbierto?.();
+    }).catch(() => onAbierto?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirId, conversations, loading]);
+  useEffect(() => { if (!abrirId) abrirRef.current = null; }, [abrirId]);
+
+  // (22/10/2026) Compró / No compró, igual que en WhatsApp: cierra la
+  // conversación como venta ganada o perdida (crm_cerrar_venta), que es lo
+  // que cuentan el IA CEO y el plan de ventas desde el CRM.
+  const [cerrandoVenta, setCerrandoVenta] = useState(false);
+  async function handleCerrarVenta(compro) {
+    if (!selected?.id || cerrandoVenta) return;
+    const nombre = selected.customer_name || 'este cliente';
+    if (!window.confirm(compro ? `¿${nombre} COMPRO? Se marca como venta ganada.` : `¿${nombre} NO compro? Se marca como venta perdida.`)) return;
+    setCerrandoVenta(true);
+    setError('');
+    try {
+      await cerrarVentaConversacion({ conversationId: selected.id, compro });
+      const cambio = { status: 'cerrado', etapa: compro ? 'ganado' : 'perdido' };
+      setSelected((c) => (c?.id === selected.id ? { ...c, ...cambio } : c));
+      setConversations((lista) => lista.map((c) => (c.id === selected.id ? { ...c, ...cambio } : c)));
+    } catch (err) {
+      setError(err.message || 'No se pudo marcar la venta.');
+    } finally {
+      setCerrandoVenta(false);
+    }
+  }
+
   const sinVerCount = conversations.filter(estaSinVer).length;
 
   return (
@@ -846,6 +897,24 @@ export default function OmniInbox({ channel, onQuoteConversation, onConversation
                 </select>
                 <b>{CHANNEL_BADGES[selectedMeta.platform] || selectedMeta.platform.slice(0, 2).toUpperCase()}</b>
               </header>
+              <div className="mf-venta-fila mf-venta-omni">
+                {selected.etapa === 'ganado' || selected.etapa === 'perdido' ? (
+                  <span className={`mf-venta-hecha is-${selected.etapa}`}>
+                    {selected.etapa === 'ganado' ? '✅ Venta ganada' : '✖ No compró'}
+                  </span>
+                ) : (
+                  <>
+                    <button className="mf-venta-ganada" type="button" disabled={cerrandoVenta}
+                      onClick={() => handleCerrarVenta(true)} title="El cliente compró: venta ganada en MotoFlow.">
+                      ✅ Compró
+                    </button>
+                    <button className="mf-venta-perdida" type="button" disabled={cerrandoVenta}
+                      onClick={() => handleCerrarVenta(false)} title="El cliente no compró: venta perdida.">
+                      ✖ No compró
+                    </button>
+                  </>
+                )}
+              </div>
 
               <div
                 className="mf-omni-messages"

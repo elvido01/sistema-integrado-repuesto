@@ -440,6 +440,11 @@ export const styles = `
     gap: 6px;
   }
   .mf-venta-fila button { font-weight: 900; }
+  .mf-venta-omni { margin: 6px 10px; }
+  .mf-venta-omni button { height: 34px; border: 1px solid; border-radius: 8px; cursor: pointer; }
+  .mf-venta-hecha { grid-column: 1 / -1; text-align: center; font-weight: 900; padding: 6px; border-radius: 8px; }
+  .mf-venta-hecha.is-ganado { background: #e7f8ee; color: #0f7a3d; }
+  .mf-venta-hecha.is-perdido { background: #fdeeee; color: #a12a2a; }
   .mf-venta-fila .mf-venta-ganada { background: #e7f8ee; color: #0f7a3d; border-color: #b6e6c8; }
   .mf-venta-fila .mf-venta-perdida { background: #fdeeee; color: #a12a2a; border-color: #f2c4c4; }
 

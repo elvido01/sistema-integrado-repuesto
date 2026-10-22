@@ -777,6 +777,18 @@ export async function getVendors() {
 // la busqueda se salta la ventana a proposito).
 export const DIAS_EN_BANDEJA = 15;
 
+// (22/10/2026) Una conversación concreta (la que pide el IA CEO o la ficha
+// de "esperando"), aunque esté fuera de la ventana de la bandeja.
+export async function getOmniConversationById(id) {
+  if (!id) return null;
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/sales_conversations_view`);
+  url.searchParams.set('select', '*');
+  url.searchParams.set('id', `eq.${id}`);
+  const filas = await fetchJson(url.toString(), { headers });
+  return Array.isArray(filas) ? filas[0] || null : null;
+}
+
 export async function getOmniConversations({ channel = 'unified', search = '', limit = 60 } = {}) {
   const headers = await getAuthHeaders();
   const empresa = await getCurrentEmpresa(headers).catch(() => null);

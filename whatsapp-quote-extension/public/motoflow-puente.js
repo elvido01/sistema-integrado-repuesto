@@ -32,6 +32,10 @@
         tipo: 'abrir-chat',
         phone: d.phone ? String(d.phone).replace(/\D/g, '') : null,
         nombre: d.nombre ? String(d.nombre).slice(0, 120) : null,
+        // (22/10/2026) Instagram/Facebook: se abre ESA conversación en la
+        // bandeja del panel (no hay chat de WhatsApp que buscar).
+        conversationId: d.conversationId ? String(d.conversationId).slice(0, 64) : null,
+        canal: d.canal ? String(d.canal).slice(0, 20) : null,
       });
       window.postMessage({ tipo: 'motoflow-omni-recibido', id: d.id || null }, window.location.origin);
     } catch {

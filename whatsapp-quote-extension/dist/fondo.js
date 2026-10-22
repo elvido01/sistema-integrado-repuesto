@@ -29,7 +29,8 @@ const preguntar = (tabId, msg) => new Promise((resolve) => {
 chrome.runtime.onMessage.addListener((msg, _sender, responder) => {
   if (msg?.tipo !== 'abrir-chat') return undefined;
   (async () => {
-    const pedido = { phone: msg.phone || null, nombre: msg.nombre || null, at: Date.now() };
+    const pedido = { phone: msg.phone || null, nombre: msg.nombre || null,
+      conversationId: msg.conversationId || null, canal: msg.canal || null, at: Date.now() };
     const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
     tabs.sort((a, b) => Number(b.active) - Number(a.active));
 

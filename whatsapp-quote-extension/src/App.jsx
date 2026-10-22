@@ -363,6 +363,9 @@ export default function App() {
   const [omniSelectedConversation, setOmniSelectedConversation] = useState(null);
   const [sugiriendoWa, setSugiriendoWa] = useState(false);
   const [cerrandoVenta, setCerrandoVenta] = useState(false);
+  // (22/10/2026) La conversación de Instagram/Facebook que hay que abrir en la
+  // bandeja (ficha de "esperando" o pedido del IA CEO).
+  const [abrirOmniId, setAbrirOmniId] = useState(null);
   // El borrador que Hermes deja listo al abrir un chat que espera respuesta:
   // { chatId, texto, messageId, promo }. Ver el efecto "Respuesta en un toque".
   const [borradorWa, setBorradorWa] = useState(null);
@@ -2401,6 +2404,11 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
   // atiende cuando WhatsApp termina de cargar.
   const atenderPedidoRef = useRef(null);
   atenderPedidoRef.current = async (pedido) => {
+    if (pedido?.conversationId && pedido.canal && pedido.canal !== 'whatsapp') {
+      handleSelectOmniChannel(pedido.canal);
+      setAbrirOmniId(pedido.conversationId);
+      return;
+    }
     if (!pedido || (!pedido.phone && !pedido.nombre)) return;
     // WhatsApp recién cargado todavía no tiene la lista ni el buscador.
     for (let i = 0; i < 60 && !document.querySelector('#pane-side'); i += 1) {
@@ -2421,7 +2429,10 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
     // no la pantalla de "usar aquí"); el fondo trae al frente la que dijo sí.
     const oir = (msg, _sender, responder) => {
       if (msg?.tipo !== 'motoflow-abrir-chat') return undefined;
-      const lista = !!document.querySelector('#pane-side');
+      // Instagram/Facebook se abren en la bandeja del panel: no hace falta
+      // que WhatsApp esté cargado, solo que el panel esté vivo.
+      const omni = msg.conversationId && msg.canal && msg.canal !== 'whatsapp';
+      const lista = omni || !!document.querySelector('#pane-side');
       responder({ ok: lista });
       if (lista) atenderPedidoRef.current?.(msg);
       return undefined;
@@ -2733,6 +2744,8 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
             onSelectedConversationChange={setOmniSelectedConversation}
             casos={casos}
             onResolverCaso={handleResolverCaso}
+            abrirId={abrirOmniId}
+            onAbierto={() => setAbrirOmniId(null)}
           />
         </div>
       )}
@@ -2866,11 +2879,13 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
                 type="button"
                 disabled={!!abriendoChat}
                 title={c.preview || ''}
-                onClick={() => (c.platform === 'whatsapp'
-                  ? abrirChatSinCopiar(c.nombre)
-                  : handleSelectOmniChannel(c.platform))}
+                onClick={() => {
+                  if (c.platform === 'whatsapp') { abrirChatSinCopiar(c.nombre); return; }
+                  handleSelectOmniChannel(c.platform);
+                  setAbrirOmniId(c.id);
+                }}
               >
-                <span>{CANAL_CORTO[c.platform] || c.platform} · {c.nombre}</span>
+                <span>{c.ventana_cerrada ? '⛔ ' : ''}{CANAL_CORTO[c.platform] || c.platform} · {c.nombre}</span>
                 <b>{haceCuanto(c.desde)}</b>
               </button>
             ))}
