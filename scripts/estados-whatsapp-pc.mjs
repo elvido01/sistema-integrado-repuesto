@@ -20,7 +20,7 @@
 //    node scripts/estados-whatsapp-pc.mjs --una    (una vuelta y sale)
 // ════════════════════════════════════════════════════════════════════════
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, unlinkSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -44,15 +44,26 @@ const log = (...a) => console.log(new Date().toLocaleString('es-DO', { timeZone:
 
 // ── Una sola copia: si ya hay otra viva, esta se va ───────────────────────
 const CANDADO = join(RAIZ, '.programa-activo.pid');
+// (22/10/2026) El número de proceso solo NO sirve: al reiniciar la PC,
+// Windows le dio el 10876 del programa de ayer al ChatGPT, el programa creyó
+// que ya había otra copia y se cerró — todo el día sin bajar nada. Ahora la
+// copia viva RENUEVA el candado en cada vuelta; uno con más de 10 minutos sin
+// renovar (10 min: una vuelta bajando videos tarda) es de un programa muerto, sea quien sea que tenga ese número hoy.
+const CANDADO_VIEJO_MS = 10 * 60 * 1000;
 function tomarCandado() {
   mkdirSync(RAIZ, { recursive: true });
   if (existsSync(CANDADO)) {
     const pid = Number(readFileSync(CANDADO, 'utf8'));
-    try { if (pid && pid !== process.pid) { process.kill(pid, 0); return false; } } catch { /* murió: se toma */ }
+    let fresco = false;
+    try { fresco = Date.now() - statSync(CANDADO).mtimeMs < CANDADO_VIEJO_MS; } catch { /* sin fecha: viejo */ }
+    if (fresco && pid && pid !== process.pid) {
+      try { process.kill(pid, 0); return false; } catch { /* murió: se toma */ }
+    }
   }
   writeFileSync(CANDADO, String(process.pid));
   return true;
 }
+const renovarCandado = () => { try { writeFileSync(CANDADO, String(process.pid)); } catch { /* que no tumbe la vuelta */ } };
 
 // ── Base: la API REST con la llave de servicio (esta PC ya la tiene) ──────
 async function rest(ruta, init = {}) {
@@ -137,6 +148,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const una = process.argv.includes('--una');
   log(`Carpeta: ${RAIZ}`);
   do {
+    renovarCandado();
     try { await vuelta(); } catch (e) { log('ERROR en la vuelta:', e.message); }
     if (!una) await new Promise((ok) => setTimeout(ok, CADA_MS));
   } while (!una);
