@@ -15,7 +15,7 @@
 -- chasis completo). Vale para cualquier punto de venta (POS, móvil,
 -- financiamiento) y para todas las empresas que venden vehículos.
 --
--- Además se corrigen las dos facturas que el dueño tiene que reimprimir.
+-- Además se corrigen las tres facturas que el dueño tiene que reimprimir.
 -- Su comprobante electrónico ya está firmado y no cambia: lo que cambia es
 -- la descripción impresa.
 -- =====================================================================
@@ -42,12 +42,12 @@ DROP TRIGGER IF EXISTS factura_linea_chasis ON public.facturas_detalle;
 CREATE TRIGGER factura_linea_chasis BEFORE INSERT OR UPDATE OF codigo, descripcion ON public.facturas_detalle
   FOR EACH ROW EXECUTE FUNCTION public.trg_factura_linea_chasis();
 
--- Las dos que el dueño va a reimprimir (Caminero Motors).
+-- Las tres que el dueño va a reimprimir (Caminero Motors): FT-79, FT-81 y FT-82.
 UPDATE public.facturas_detalle d SET descripcion = d.descripcion
   FROM public.facturas f
  WHERE f.id = d.factura_id
    AND f.tenant_id = 'b39506c3-27dc-467d-830b-096731b83113'
-   AND f.ncf IN ('E320000000001', 'E320000000003')
-   AND d.codigo IN ('LLCLGL306RA123016', 'LLCLGM3KXTX104027');
+   AND f.ncf IN ('E320000000001', 'E320000000002', 'E320000000003')
+   AND d.codigo IN ('LLCLGL306RA123016', 'LLCVPP103SA150019', 'LLCLGM3KXTX104027');
 
 SELECT public.registrar_migracion('factura_chasis_en_descripcion.sql');
