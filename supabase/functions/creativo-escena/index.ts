@@ -174,18 +174,23 @@ async function subirVideo(req: Request, sb: any, permiso: any) {
 const limpio = (t: unknown, max: number) =>
   String(t ?? '').replace(/["\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
-function promptConTexto({ vertical, fondo, acento, tieneFondo, tieneLogo, nEstilo, titulo, subtitulo, sello, telefono }) {
+function promptConTexto({ vertical, fondo, acento, tieneFondo, tieneLogo, nEstilo, titulo, subtitulo, sello, telefono, formatoAnuncio = 'podio' }) {
+  const F = FORMATOS_ANUNCIO[formatoAnuncio] || FORMATOS_ANUNCIO.podio;
+  const esPodio = formatoAnuncio === 'podio';
   // El orden de las referencias: producto, logo, fondo, estilo.
   const nLogo = tieneLogo ? 2 : 0;
   const nFondo = tieneFondo ? (tieneLogo ? 3 : 2) : 0;
   const primeraEstilo = 2 + (tieneLogo ? 1 : 0) + (tieneFondo ? 1 : 0);
   const estilo = nEstilo
-    ? `Reference images ${primeraEstilo} to ${primeraEstilo + nEstilo - 1} are finished ads from OUR OWN store: copy their visual style exactly `
-      + '(dark blue background with orange neon light streaks, glossy dark podium with glowing orange rim, cinematic haze, '
+    ? `Reference images ${primeraEstilo} to ${primeraEstilo + nEstilo - 1} are finished ads from OUR OWN store: copy their brand style `
+      + (esPodio
+        ? '(dark blue background with orange neon light streaks, glossy dark podium with glowing orange rim, cinematic haze, '
+        : `(their colors and light, but NOT their podium composition: this ad is a ${F.sobre}, `)
       + 'and above all their TYPOGRAPHY: heavy bold italic condensed sans-serif headline, first line in silver-white metallic '
       + 'with bevel and shadow, key word in orange-gold gradient, thin orange separator lines with small spaced capitals, '
       + 'a rounded orange button). Do NOT copy their products, their words or their logo.'
-    : 'Style: dark blue background with orange neon light streaks, glossy dark podium with glowing orange rim, cinematic haze. '
+    : (esPodio ? 'Style: dark blue background with orange neon light streaks, glossy dark podium with glowing orange rim, cinematic haze. '
+      : 'Style: dark blue and orange brand colors, cinematic light. ')
       + 'Typography: heavy bold italic condensed sans-serif headline, first line in silver-white metallic with bevel and shadow, '
       + 'key word in orange-gold gradient, thin orange separator lines, a rounded orange button.';
   return [
@@ -202,17 +207,77 @@ function promptConTexto({ vertical, fondo, acento, tieneFondo, tieneLogo, nEstil
     `HEADLINE: "${titulo}" (the product model or the last word in the orange-gold gradient, the rest in silver-white metallic).`,
     subtitulo ? `SUBTITLE between thin lines, small spaced capitals: "${subtitulo}".` : '',
     `BUTTON: "${sello}".`,
+    F.textos || '',
     telefono ? `FOOTER: "${telefono}" — exactly these digits and dashes — next to a small green WhatsApp icon, `
       + 'inside a dark rounded bar with a thin orange border at the very bottom.' : '',
     tieneLogo ? 'Layout: the logo at the top, the headline right BELOW the logo (never behind or over it),'
       : 'Layout: do NOT draw any logo, badge or shield; the headline at the top,',
-    'the product large and centered on the podium below the headline,',
+    F.composicion,
     'the text never covering the product,',
-    telefono ? 'the button under the podium, and the footer bar below the button, never overlapping it.'
-      : 'the button under the podium.',
+    telefono ? 'the button under the product area, and the footer bar below the button, never overlapping it.'
+      : 'the button under the product area.',
     'No prices, URLs, watermarks, other phone numbers or any other text. The product may show its own printed packaging text.',
     'Sharp focus on the product, high contrast, professional commercial look.',
   ].filter(Boolean).join(' ');
+}
+
+// ── FORMATOS DE ANUNCIO (22/10/2026) ───────────────────────────────────
+// El curso "Claude para Marketing" (Álvaro Pareja) enseña los formatos
+// estáticos que más convierten en Meta. Todas las piezas salían igual (la
+// pieza en el podio) y Meta castiga lo que se ve repetido: el alcance de
+// Morla está en 27–123. Ahora rotan, el que hace más tiempo que no sale.
+// El TESTIMONIO no está: pide un cliente y una frase REALES; inventarlos no.
+// Lo que no cambia: la pieza real de la foto, el logo, la letra y los
+// colores de la marca, y nada de precios.
+const FORMATOS_ANUNCIO: Record<string, { sobre: string; textos?: string; composicion: string }> = {
+  podio: {
+    sobre: 'glossy dark podium',
+    composicion: 'the product large and centered on a glossy dark podium with glowing orange rim below the headline,',
+  },
+  oferta: {
+    sobre: 'dynamic retail flyer',
+    composicion: 'PROMOTIONAL FLYER layout: energetic retail-sale look, the product large and slightly tilted with orange light rays '
+      + 'and speed lines bursting behind it, the BUTTON text inside a big orange starburst sticker overlapping a corner of the product area,',
+  },
+  antes_despues: {
+    sobre: 'before and after split',
+    textos: 'LABELS: "ANTES" on the left half and "DESPUÉS" on the right half, small bold capitals in a dark tag.',
+    composicion: 'BEFORE / AFTER SPLIT layout: below the headline the frame is divided in two halves by a thin glowing orange line; '
+      + 'LEFT half: the same kind of part WORN OUT (dirty, rusty, cracked or faded) on a greasy workshop floor with dull light; '
+      + 'RIGHT half: the real product from the first reference image, brand new, shining, in clean bright light,',
+  },
+  en_la_moto: {
+    sobre: 'installed on a motorcycle',
+    composicion: 'IN-USE layout: below the headline a real motorcycle on a sunny Caribbean street with the part installed in its place, '
+      + 'and a large circular zoom callout with a thick orange border showing the product EXACTLY as in the first reference image,',
+  },
+  problema: {
+    sobre: 'problem and solution',
+    composicion: 'PROBLEM / SOLUTION layout: below the headline a smaller dark, desaturated photo of a motorcycle suffering the problem '
+      + 'this part solves (worn, broken, dim, noisy or leaking), and an orange arrow leading to the product from the first reference image, '
+      + 'large, bright and heroic as the solution,',
+  },
+};
+
+// Feed e historia de la MISMA pieza llevan el mismo formato (llegan casi a
+// la vez: el desempate no es al azar, sale del id del mensaje). Si no, el que
+// hace más tiempo que no sale en esta empresa.
+async function elegirFormatoAnuncio(sb: any, tenantId: string, mensajeId: string, pedido?: string) {
+  if (pedido && FORMATOS_ANUNCIO[pedido]) return pedido;
+  const { data: filas } = await sb.from('ai_agent_runs').select('metadata, created_at')
+    .eq('tenant_id', tenantId).eq('herramienta', 'creativo-escena').eq('status', 'completed')
+    .not('metadata->>formato_anuncio', 'is', null)
+    .order('created_at', { ascending: false }).limit(20);
+  const usados = (filas || []).map((f: any) => f.metadata || {});
+  const mismo = usados.find((m: any) => mensajeId && m.mensaje_id === mensajeId && FORMATOS_ANUNCIO[m.formato_anuncio]);
+  if (mismo) return mismo.formato_anuncio;
+  const claves = Object.keys(FORMATOS_ANUNCIO);
+  const hace = (k: string) => { const i = usados.findIndex((m: any) => m.formato_anuncio === k); return i < 0 ? 1e9 : i; };
+  const mayor = Math.max(...claves.map(hace));
+  const mejores = claves.filter((k) => hace(k) === mayor);
+  let h = 0;
+  for (const c of String(mensajeId || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return mejores[h % mejores.length];
 }
 
 // Las piezas modelo del dueño. Si no hay o no se pueden bajar, la escena
@@ -306,6 +371,9 @@ Deno.serve(async (req: Request) => {
       if (/^[0-9()+\-\s]{7,20}$/.test(t)) telefono = t;
     }
     const estilo = conTexto ? await referenciasDeEstilo(sb, permiso.tenant_id) : [];
+    const formatoAnuncio = conTexto
+      ? await elegirFormatoAnuncio(sb, permiso.tenant_id, String(permiso.mensaje_id || ''), body?.formato_anuncio).catch(() => 'podio')
+      : null;
     referencias.push(...estilo);
 
     const comun = {
@@ -326,6 +394,7 @@ Deno.serve(async (req: Request) => {
           subtitulo: limpio(body?.subtitulo, 60),
           sello: limpio(body?.sello, 24) || 'YA DISPONIBLE',
           telefono,
+          formatoAnuncio,
         })
         : promptEscena(comun),
       size: TAM[formato],
@@ -344,10 +413,11 @@ Deno.serve(async (req: Request) => {
       metadata: {
         formato: esToma ? 'toma_reel' : formato, mensaje_id: permiso.mensaje_id, calidad: CALIDAD, costo_exacto: img.exacto,
         texto_en_escena: conTexto, telefono_en_escena: !!telefono, refs_estilo: estilo.map((r) => r.nombre),
+        ...(formatoAnuncio ? { formato_anuncio: formatoAnuncio } : {}),
       },
     });
 
-    return json({ ok: true, b64: img.b64, cost_usd: img.cost_usd, texto_en_escena: conTexto, logo_en_escena: tieneLogo });
+    return json({ ok: true, b64: img.b64, cost_usd: img.cost_usd, texto_en_escena: conTexto, logo_en_escena: tieneLogo, formato_anuncio: formatoAnuncio });
   } catch (e) {
     const mensaje = String(e?.message || e).slice(0, 400);
     await anotarGasto(sb, {
