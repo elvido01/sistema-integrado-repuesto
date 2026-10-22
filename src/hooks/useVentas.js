@@ -7,6 +7,7 @@ import { sendProductToOrdenCompra } from '@/services/sendToOrdenCompra';
 import { emitInventarioActualizado } from '@/lib/catalogEvents';
 import { IDS_GENERICOS, ID_GENERICO_BASE } from '@/lib/clienteGenerico';
 import { CANAL_POR_DEFECTO, nombreCanal } from '@/lib/canalesOrigen';
+import { conChasis } from '@/lib/chasisFactura';
 
 const CLIENTE_GENERICO = {
   id: ID_GENERICO_BASE,
@@ -1100,7 +1101,7 @@ export const useVentas = () => {
           factura_id: activeFactura.id,
           producto_id: item.producto_id,
           codigo: item.codigo,
-          descripcion: item.descripcion,
+          descripcion: conChasis(item.codigo, item.descripcion),
           cantidad: cantidad,
           precio: baseImponible / cantidad,
           descuento: montoDescuento,
