@@ -172,8 +172,14 @@ Devuelve JSON: { "planes": [ { "titulo": "verbo + qué + meta, máx 80 letras (e
 }
 
 // ── TAREAS ─────────────────────────────────────────────────────────────
-async function armarTareas(sb: any, key: string, tid: string, ctx: any, valores: any) {
+async function armarTareas(sb: any, key: string, tid: string, ctx: any, valores: any, rehacer = false) {
   const hoy = hoyRD();
+  // (22/10/2026) Rehacer conserva lo ya hecho/pospuesto/descartado de hoy y
+  // completa hasta 5. Antes borraba primero y, si ya había alguna hecha, no
+  // armaba ninguna: el dueño aprobó dos decisiones, pulsó ↻ y perdió las otras.
+  const { data: deHoy } = await sb.from('ia_tareas').select('titulo, estado').eq('tenant_id', tid).eq('fecha', hoy);
+  const quedan = (deHoy || []).filter((t: any) => t.estado !== 'pendiente');
+  const cupo = rehacer ? Math.max(5 - quedan.length, 3) : 5;
   const { data: activos } = await sb.from('ia_planes').select('id, titulo, metrica_nombre, unidad, linea_base, meta, valor_actual, progreso, fecha_fin')
     .eq('tenant_id', tid).eq('estado', 'activo');
   const { count: propuestos } = await sb.from('ia_planes').select('id', { count: 'exact', head: true })
@@ -211,6 +217,8 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
     planes_activos: (activos || []).map((p, i) => ({ n: i + 1, titulo: p.titulo, mide: p.metrica_nombre,
       hoy: p.valor_actual, meta: p.meta, progreso: `${p.progreso}%`, hasta: p.fecha_fin })),
     negocio: ctx, pantallas: paneles, tareas_anteriores: anteriores || [],
+    ...(quedan.length ? { ya_atendidas_hoy: quedan.map((t: any) => `${t.titulo} (${t.estado})`),
+      instruccion_hoy: `Ya se atendieron estas hoy: no las repitas. Devuelve como máximo ${cupo} tareas nuevas.` } : {}),
   };
   let { res, uso } = await pensar(key, sistema, entrada);
   // (21/10/2026) Las vagas no pasan: se le devuelven UNA vez para que las
@@ -245,11 +253,13 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
     const tit = normalizar(t.titulo);
     return cerrados.some((n) => tit.includes(n));
   };
-  const filas = (res.tareas || []).filter((t) => !esVaga(t) && !yaAtendida(t)).slice(0, 5).map((t, i) => {
+  const repetida = (t: any) => quedan.some((q: any) => normalizar(q.titulo) === normalizar(t.titulo));
+  const base = quedan.length;
+  const filas = (res.tareas || []).filter((t) => !esVaga(t) && !yaAtendida(t) && !repetida(t)).slice(0, cupo).map((t, i) => {
     const plan = Number.isInteger(t.plan) && activos?.[t.plan - 1] ? activos[t.plan - 1].id : null;
     const panel = t.panel && paneles[t.panel] ? t.panel : null;
     return {
-      tenant_id: tid, fecha: hoy, orden: i + 1, plan_id: plan,
+      tenant_id: tid, fecha: hoy, orden: base + i + 1, plan_id: plan,
       titulo: String(t.titulo || '').slice(0, 140), porque: String(t.porque || '').slice(0, 300),
       verificacion: pruebaDe(t),
       accion: {
@@ -265,7 +275,7 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
     };
   }).filter((t) => t.titulo);
   // Los planes propuestos esperan al dueño: va de primera.
-  if (propuestos) {
+  if (propuestos && !rehacer) {
     filas.unshift({ tenant_id: tid, fecha: hoy, orden: 0, plan_id: null,
       titulo: `Revisa ${propuestos === 1 ? 'el plan propuesto' : `los ${propuestos} planes propuestos`} y apruébalos o recházalos`,
       porque: 'Las tareas de cada día salen de los planes que apruebes.',
@@ -273,6 +283,9 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
     filas.splice(5);
     filas.forEach((f, i) => { f.orden = i + 1; });
   }
+  // Solo ahora, con las nuevas en la mano, se quitan las pendientes viejas:
+  // si el modelo falla (sin saldo, caído) las de hoy siguen ahí.
+  if (rehacer && filas.length) await sb.from('ia_tareas').delete().eq('tenant_id', tid).eq('fecha', hoy).eq('estado', 'pendiente');
   if (filas.length) await sb.from('ia_tareas').insert(filas);
   return { tareas: filas.length, uso };
 }
@@ -377,9 +390,8 @@ async function guiaDe(sb: any, key: string, tid: string, modo: string, rehacer: 
 
   // 3. Tareas de hoy
   if (modo !== 'planes') {
-    if (rehacer) await sb.from('ia_tareas').delete().eq('tenant_id', tid).eq('fecha', hoy).eq('estado', 'pendiente');
     const { count: yaHay } = await sb.from('ia_tareas').select('id', { count: 'exact', head: true }).eq('tenant_id', tid).eq('fecha', hoy);
-    out.tareas = yaHay ? { tareas: 0, motivo: 'ya hay tareas hoy' } : await armarTareas(sb, key, tid, ctx, valores);
+    out.tareas = yaHay && !rehacer ? { tareas: 0, motivo: 'ya hay tareas hoy' } : await armarTareas(sb, key, tid, ctx, valores, rehacer);
   }
 
   // 4. Telegram (la vuelta automática de la mañana)
