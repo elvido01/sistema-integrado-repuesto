@@ -195,6 +195,8 @@ Arma las TAREAS DE HOY (${diaSemanaRD()} ${hoy}) para el dueño: MÁXIMO 5, orde
   (solo dígitos); "contacto": "llamar" o "whatsapp". Si no hay teléfono en los datos, null en los dos.
 - "conversacion": si la tarea es contestar o contactar a UN cliente que viene en crm (listos_para_comprar o
   casos_abiertos), pon su "conversacion_id" tal cual; si no, null.
+- "decision": si la tarea es decidir una de "decisiones_pendientes" (aprobar/rechazar), pon su "id" tal cual; si no, null.
+  El dueño la decide con un botón en la misma tarea.
 - PROHIBIDAS las tareas vagas: "Revisa el flujo de caja", "Organiza una estrategia", "Analiza…", "Evalúa…".
   Si una tarea empieza con revisar/analizar/evaluar tiene que decir EXACTAMENTE qué cifra, pieza o cliente y qué
   decidir con eso (ej. "Verifica si existen las 32 motos de 2015 que el sistema da en inventario").
@@ -204,7 +206,7 @@ Arma las TAREAS DE HOY (${diaSemanaRD()} ${hoy}) para el dueño: MÁXIMO 5, orde
   volver a ponerla si sigue siendo importante; repite el estilo de las que HIZO.
 - No le pidas cosas que el sistema ya resuelve solo (publicar, clasificar el CRM).
 Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 letras", "plan": número|null, "panel": "clave"|null,
-  "telefono": "solo dígitos"|null, "contacto": "llamar"|"whatsapp"|null, "conversacion": "id"|null } ] }`;
+  "telefono": "solo dígitos"|null, "contacto": "llamar"|"whatsapp"|null, "conversacion": "id"|null, "decision": "id"|null } ] }`;
   const entrada = {
     planes_activos: (activos || []).map((p, i) => ({ n: i + 1, titulo: p.titulo, mide: p.metrica_nombre,
       hoy: p.valor_actual, meta: p.meta, progreso: `${p.progreso}%`, hasta: p.fecha_fin })),
@@ -229,6 +231,16 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
   // toda tarea que nombre a un cliente con la conversación ya cerrada (14
   // días), salvo que vuelva a estar entre los que esperan hoy.
   const cerrados = await clientesCerrados(sb, tid, conversaciones);
+  const decisiones = new Set((ctx?.decisiones_pendientes || []).map((d: any) => String(d.id)).filter(Boolean));
+  const esperando = Number(ctx?.crm?.esperando_respuesta_mas_1h) || 0;
+  // (22/10/2026) La PRUEBA DE HECHO: qué dato cierra la tarea solo
+  // (ia_tareas_verificar, cada 3 min, sin IA). Sin prueba queda a mano.
+  const pruebaDe = (t: any) => {
+    if (t.conversacion && conversaciones.has(String(t.conversacion))) return { tipo: 'conversacion', id: String(t.conversacion) };
+    if (t.decision && decisiones.has(String(t.decision))) return { tipo: 'decision', id: String(t.decision) };
+    if (/esperando respuesta|sin respuesta/i.test(String(t.titulo || ''))) return { tipo: 'esperando', inicial: esperando };
+    return null;
+  };
   const yaAtendida = (t: any) => {
     const tit = normalizar(t.titulo);
     return cerrados.some((n) => tit.includes(n));
@@ -239,6 +251,7 @@ Devuelve JSON: { "tareas": [ { "titulo": "máx 90 letras", "porque": "máx 160 l
     return {
       tenant_id: tid, fecha: hoy, orden: i + 1, plan_id: plan,
       titulo: String(t.titulo || '').slice(0, 140), porque: String(t.porque || '').slice(0, 300),
+      verificacion: pruebaDe(t),
       accion: {
         ...(panel ? { tipo: 'panel', panel, etiqueta: paneles[panel].split(' (')[0] } : { tipo: 'ninguna' }),
         // Solo un teléfono que venga en los datos: el modelo no inventa números.

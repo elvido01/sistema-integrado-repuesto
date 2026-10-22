@@ -59,13 +59,21 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
   const [cargando, setCargando] = useState(true);
   const [preparando, setPreparando] = useState(false);
 
-  const cargar = useCallback(async () => {
+  // (22/10/2026) Antes de leer, se le pide al sistema que confirme lo que ya
+  // tiene prueba (le escribiste, decidiste, ya no hay clientes esperando).
+  // Sin la función (SQL no corrido) se lee igual. Silencioso al sondear.
+  const cargar = useCallback(async (silencioso = false) => {
+    await supabase.rpc('ia_ceo_verificar_ahora').then(() => {}, () => {});
     const { data, error } = await supabase.rpc('ia_guia_hoy');
-    if (error) toast({ variant: 'destructive', title: 'No se pudo cargar la guía', description: error.message });
+    if (error) { if (!silencioso) toast({ variant: 'destructive', title: 'No se pudo cargar la guía', description: error.message }); return; }
     setDatos(data || null);
     setCargando(false);
   }, [toast]);
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => {
+    cargar();
+    const t = setInterval(() => { if (!document.hidden) cargar(true); }, 60000);
+    return () => clearInterval(t);
+  }, [cargar]);
 
   const preparar = async (opciones = {}) => {
     setPreparando(true);
@@ -82,8 +90,19 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
     }
   };
 
+  // La decisión de los agentes (RAMON CIERRA, la promo de GOMA) se decide
+  // aquí mismo: eso la cierra a ella y a la tarea.
+  const decidirTarea = async (t, aprobar) => {
+    let nota = null;
+    if (!aprobar) nota = window.prompt('¿Por qué no? (opcional)') ?? null;
+    const { error } = await supabase.rpc('ia_ceo_decidir', { p_tarea_id: t.id, p_aprobar: aprobar, p_nota: nota });
+    if (error) { toast({ variant: 'destructive', title: 'No se guardó', description: error.message }); return; }
+    toast({ title: aprobar ? 'Decisión aprobada' : 'Decisión rechazada' });
+    cargar(true);
+  };
+
   const marcar = async (t, estado) => {
-    setDatos((d) => ({ ...d, tareas: d.tareas.map((x) => (x.id === t.id ? { ...x, estado } : x)) }));
+    setDatos((d) => ({ ...d, tareas: d.tareas.map((x) => (x.id === t.id ? { ...x, estado, confirmada_por: estado === 'pendiente' ? null : 'persona' } : x)) }));
     const { error } = await supabase.rpc('ia_tarea_marcar', { p_id: t.id, p_estado: estado });
     if (error) { toast({ variant: 'destructive', title: 'No se guardó', description: error.message }); cargar(); }
   };
@@ -236,6 +255,22 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                   {t.porque && <div className="text-sm text-gray-500 mt-0.5">{t.porque}</div>}
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     {t.plan && <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 rounded-full px-2 py-0.5 inline-flex items-center gap-1"><Target className="w-3 h-3" /> {t.plan}</span>}
+                    {t.estado === 'hecha' && t.confirmada_por && t.confirmada_por !== 'persona' && (
+                      <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 inline-flex items-center gap-1"
+                        title={t.marcada_at ? new Date(t.marcada_at).toLocaleString('es-DO') : undefined}>
+                        <Check className="w-3 h-3" /> Confirmada por {t.confirmada_por === 'hermes' ? 'Hermes' : 'el sistema'}{t.evidencia ? `: ${t.evidencia}` : ''}
+                      </span>
+                    )}
+                    {t.estado === 'pendiente' && t.verifica === 'esperando' && t.avance && (
+                      <span className="text-[11px] font-semibold text-sky-700 bg-sky-50 rounded-full px-2 py-0.5">
+                        Quedan {t.avance.actual} esperando (empezaste con {t.avance.inicial})
+                      </span>
+                    )}
+                    {t.estado === 'pendiente' && t.verifica && t.verifica !== 'esperando' && (
+                      <span className="text-[11px] text-gray-400" title="El sistema la marca hecha sola cuando ve la prueba">
+                        se confirma sola
+                      </span>
+                    )}
                     {t.estado === 'pospuesta' && <span className="text-[11px] font-semibold text-amber-700">pospuesta</span>}
                     {t.estado === 'descartada' && <span className="text-[11px] font-semibold text-gray-500">descartada</span>}
                   </div>
@@ -253,6 +288,12 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                       {t.accion.contacto === 'whatsapp' ? <MessageCircle className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
                       {t.accion.contacto === 'whatsapp' ? 'WhatsApp' : 'Llamar'}
                     </a>
+                  )}
+                  {!lista && t.verifica === 'decision' && (
+                    <>
+                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => decidirTarea(t, true)}>Aprobar</Button>
+                      <Button size="sm" variant="outline" onClick={() => decidirTarea(t, false)}>Rechazar</Button>
+                    </>
                   )}
                   {!lista && t.accion?.conversacion && (
                     <Button size="sm" variant="outline" onClick={() => abrirConversacion(t.accion.conversacion)}>

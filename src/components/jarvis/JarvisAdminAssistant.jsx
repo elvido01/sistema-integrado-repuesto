@@ -115,7 +115,7 @@ const formatVoiceError = async (err) => {
 };
 
 export default function JarvisAdminAssistant() {
-  const { profile, isSuperAdmin } = useAuth();
+  const { profile, isSuperAdmin, user, tenantId } = useAuth();
   const { openPanel } = usePanels();
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -249,10 +249,27 @@ export default function JarvisAdminAssistant() {
   // instante pero es otro programa, sin esa memoria.
   const [canal, setCanal] = useState('hermes');
   const [hermesVivo, setHermesVivo] = useState(null);   // null = averiguando
+  // (22/10/2026) 'ceo' es la pestaña IA CEO: el MISMO Hermes (su memoria, su
+  // suscripción, sin gastar OpenAI) con el estado del CEO pegado —planes,
+  // tareas con su prueba, decisiones— vía ia_ceo_escribir. Hermes lee y
+  // escribe en el CEO con hermes.ia_ceo_*. Hilo propio en pantalla: sus
+  // preguntas se reconocen por pantalla.canal y las respuestas por responde_a.
+  // MODO PRUEBA: solo Repuestos Morla con admin@repuestosmorla.com.
+  const esHermes = canal === 'hermes' || canal === 'ceo';
+  const ceoPermitido = tenantId === '00000000-0000-0000-0000-000000000001'
+    && String(user?.email || '').toLowerCase() === 'admin@repuestosmorla.com';
+  const ceoIdsRef = useRef(new Set());
+  const canalDeFila = (f) => {
+    if (f.rol !== 'hermes') {
+      if ((f.canal || f.pantalla?.canal) === 'ia_ceo') { ceoIdsRef.current.add(f.id); return 'ceo'; }
+      return 'hermes';
+    }
+    return f.responde_a && ceoIdsRef.current.has(f.responde_a) ? 'ceo' : 'hermes';
+  };
 
   // Quién es el que está al otro lado AHORA. Todo lo que se ve en pantalla
   // —el nombre, el saludo, el marcador de agua— sale de aquí.
-  const agenteActivo = canal === 'hermes' ? agente : (agenteSistema || agente);
+  const agenteActivo = esHermes ? agente : (agenteSistema || agente);
   const nombreAgente = agenteActivo?.nombre || 'Asistente';
   // Los rótulos decían "Hermes" escrito a mano. Con un agente por empresa eso
   // solo es cierto en Repuestos Morla: el de Caminero se llamará de otra
@@ -302,7 +319,7 @@ export default function JarvisAdminAssistant() {
     let vivo = true;
 
     (async () => {
-      const [conHermes, conJarvis] = await Promise.all([
+      const [conHermes, conJarvis, conCeo] = await Promise.all([
         supabase.from('hermes_chat').select(columnasChat(true))
           .order('id', { ascending: false }).limit(30),
         sesionRef.current
@@ -310,8 +327,20 @@ export default function JarvisAdminAssistant() {
               .eq('session_id', sesionRef.current)
               .order('created_at', { ascending: false }).limit(30)
           : Promise.resolve({ data: [], error: null }),
+        ceoPermitido
+          ? supabase.from('hermes_chat').select(columnasChat(true))
+              .eq('pantalla->>canal', 'ia_ceo').order('id', { ascending: false }).limit(20)
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (!vivo) return;
+      for (const f of conCeo.data || []) ceoIdsRef.current.add(f.id);
+      let respuestasCeo = [];
+      if (ceoIdsRef.current.size) {
+        const r = await supabase.from('hermes_chat').select(columnasChat(true))
+          .in('responde_a', [...ceoIdsRef.current]).limit(60);
+        respuestasCeo = r.data || [];
+        if (!vivo) return;
+      }
 
       // El error se descartaba y "sin permiso" se veía igual que "sin
       // mensajes". No son lo mismo y hay que poder distinguirlos.
@@ -324,13 +353,16 @@ export default function JarvisAdminAssistant() {
       }
 
       const burbujas = [];
-      for (const f of conHermes.data || []) {
+      const yaEstan = new Set();
+      for (const f of [...(conCeo.data || []), ...respuestasCeo, ...(conHermes.data || [])]) {
+        if (yaEstan.has(idBurbuja(f))) continue;
+        yaEstan.add(idBurbuja(f));
         burbujas.push({
           id: idBurbuja(f),
           role: f.rol === 'hermes' ? 'assistant' : 'user',
           content: f.texto,
           de: f.rol === 'hermes' ? 'hermes' : undefined,
-          canalDe: 'hermes',
+          canalDe: canalDeFila(f),
           imagenId: f.imagen_id || undefined,
           en: f.creado_en,
         });
@@ -355,7 +387,8 @@ export default function JarvisAdminAssistant() {
     })();
 
     return () => { vivo = false; };
-  }, [agente]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agente, ceoPermitido]);
 
   // DOS caminos para lo mismo, a propósito.
   //
@@ -479,7 +512,7 @@ export default function JarvisAdminAssistant() {
   // no tiene `acciones` (v3) o `media_id` (v5), se reintenta sin ellas en
   // vez de dejar la conversación en blanco con un error de SQL.
   const columnasChat = (conFecha) => {
-    const cols = ['id', 'rol', 'texto'];
+    const cols = ['id', 'rol', 'texto', 'responde_a', 'canal:pantalla->>canal'];
     if (conFecha) cols.push('creado_en');
     if (!sinAccionesRef.current) cols.push('acciones');
     if (!sinVozRef.current) cols.push('message_type', 'media_id');
@@ -512,7 +545,7 @@ export default function JarvisAdminAssistant() {
     }]);
   };
 
-  const enviarAHermes = async (texto, { conVoz }) => {
+  const enviarAHermes = async (texto, { conVoz, ceo = false }) => {
     // `loading` NO sirve de candado aquí. recognition.onresult se construye
     // una sola vez, al abrir el micrófono, y se queda con el `enviar` de ese
     // render: su `loading` vale false para siempre, por muy ocupado que esté
@@ -563,7 +596,7 @@ export default function JarvisAdminAssistant() {
     // cuanto la base lo devuelve: si no, el sondeo la traería de vuelta y la
     // pregunta aparecería dos veces.
     const idProvisional = `u-tmp-${Date.now()}`;
-    setMensajes((m) => [...m, { id: idProvisional, role: 'user', content: texto, canalDe: 'hermes' }]);
+    setMensajes((m) => [...m, { id: idProvisional, role: 'user', content: texto, canalDe: ceo ? 'ceo' : 'hermes' }]);
     setLoading(true);
     setError('');
     // Se avisa UNA vez por espera. Repetirlo en cada vuelta es lo que sonaba
@@ -573,7 +606,7 @@ export default function JarvisAdminAssistant() {
     // solo tapa el silencio mientras contesta desde su PC.
     if (conVoz) speak('Un momento, estoy revisando.', { escucharDespues: false });
     try {
-      const { data, error: e } = await supabase.rpc('hermes_escribir', {
+      const { data, error: e } = await supabase.rpc(ceo ? 'ia_ceo_escribir' : 'hermes_escribir', {
         p_texto: texto,
         // Con la aclaración de qué es esto y de dónde salen los datos de
         // verdad. Sin ella, "datos: null" se leía como "no hay datos".
@@ -581,6 +614,7 @@ export default function JarvisAdminAssistant() {
       });
       if (e) throw e;
       if (data?.id) {
+        if (ceo) ceoIdsRef.current.add(data.id);
         idPendienteRef.current = data.id;
         pendienteRef.current = null;
         idsVistosRef.current.add(`u-${data.id}`);
@@ -653,12 +687,12 @@ export default function JarvisAdminAssistant() {
         return;
       }
     }
-    if (canal === 'hermes') {
+    if (esHermes) {
       // `null` es "todavia no se", no "no". Tratarlo como negativo hacia
       // que un mensaje mandado en el primer segundo tras abrir el widget
       // dijera "Hermes no esta conectado" con Hermes conectado — y el
       // aviso se quedaba en pantalla aunque el latido llegara despues.
-      if (hermesVivo !== false) return enviarAHermes(texto, { conVoz });
+      if (hermesVivo !== false) return enviarAHermes(texto, { conVoz, ceo: canal === 'ceo' });
       // Antes se pasaba SOLO al asistente rápido. Y como este contesta con la
       // persona de Hermes, quien preguntaba creía estar hablando con él: el
       // aviso ámbar decía "no está conectado" y abajo alguien contestaba
@@ -836,7 +870,7 @@ export default function JarvisAdminAssistant() {
         id, role: f.rol === 'hermes' ? 'assistant' : 'user', content: f.texto,
         // Todo lo que sale de hermes_chat lo escribió Hermes desde su PC.
         de: f.rol === 'hermes' ? 'hermes' : undefined,
-        canalDe: 'hermes',
+        canalDe: canalDeFila(f),
         // v5: la respuesta puede traer voz. `media_id` en una fila de
         // 'usuario' es la nota que se mando; en una de 'hermes', el TTS.
         mediaId: f.media_id || undefined,
@@ -1063,6 +1097,18 @@ export default function JarvisAdminAssistant() {
         }`} />
         {nombreEmpresa}
       </button>
+      {ceoPermitido && (
+        <button
+          type="button"
+          onClick={() => cambiarCanal('ceo')}
+          title="IA CEO · Hermes con tus planes, tareas y decisiones a la vista"
+          className={`rounded-full px-2 py-0.5 text-[10px] font-bold transition ${
+            canal === 'ceo' ? 'bg-purple-400/25 text-purple-100' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          IA CEO
+        </button>
+      )}
       <button
         type="button"
         onClick={() => cambiarCanal('local')}
@@ -1787,7 +1833,9 @@ export default function JarvisAdminAssistant() {
                 se leía como si los dos canales fueran el mismo. No lo son. */}
             <div className="flex items-center gap-2 border-b border-cyan-300/10 px-3 py-1.5 text-[11px]">
               {selectorCanal()}
-              {canal === 'hermes' ? (
+              {canal === 'ceo' && hermesVivo !== false ? (
+                <span className="truncate text-purple-200/80">tus planes y tareas · confirma lo que hiciste</span>
+              ) : esHermes ? (
                 hermesVivo === false ? (
                   <span className="truncate text-amber-300">sin señal de su servidor</span>
                 ) : hermesVivo ? (
