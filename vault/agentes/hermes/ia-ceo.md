@@ -37,6 +37,26 @@ SELECT hermes.ia_ceo_decidir(p_decision_id := '<uuid>', p_aprobar := true, p_not
 COMMIT;
 ```
 
+## No dar seguimiento (empleados, proveedores, familia)
+
+Cuando el dueño diga que alguien NO es cliente ("Sander Arias es empleado",
+"ese es mi suplidor"), agrégalo a la lista. Desde ese momento sus
+conversaciones quedan cerradas y fuera de todo lo que cuenta clientes (IA CEO,
+"clientes esperando", el embudo, las fichas de la extensión), y sus tareas
+pendientes se descartan solas. Una venta ganada se queda ganada.
+
+```sql
+BEGIN; SET TRANSACTION READ WRITE;
+SELECT hermes.crm_no_seguir_agregar(p_nombre := 'Sander Arias', p_telefono := NULL, p_motivo := 'empleado');
+COMMIT;
+SELECT hermes.crm_no_seguir_lista();           -- quiénes están
+-- quitar: BEGIN; SET TRANSACTION READ WRITE; SELECT hermes.crm_no_seguir_quitar('<id>'); COMMIT;
+```
+
+El nombre cubre también los que empiezan igual ("Sander Arias" cubre "sander
+Arias Repuestos Morla"). Si tienes el teléfono, ponlo: es más seguro.
+Sander Arias ya está en la lista (22/10).
+
 ## Qué confirma el sistema solo (cada 3 minutos, sin IA)
 
 | La tarea es… | Se cierra cuando… |

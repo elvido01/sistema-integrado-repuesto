@@ -130,13 +130,19 @@ function promptEscena({ vertical, fondo, acento, tieneFondo }) {
 // Una TOMA de reel: la pieza real en la escena que pide la receta (mano que
 // la sostiene, plato giratorio, mesa de acero, humo…). Sin texto: las letras
 // del reel las pone el montador encima, con tiempo, y no pueden salir mal.
+// (22/10/2026) Todas las tomas salían en el MISMO estudio oscuro porque esa
+// luz estaba fija aquí. armarReel elige un escenario por reel y lo manda
+// pegado a la toma ("… || AMBIENTE: …"); sin él, el estudio oscuro de antes.
 function promptToma({ toma, acento }) {
+  const [plano, ambiente] = String(toma).split(/\s*\|\|\s*AMBIENTE:\s*/i);
   return [
     'Vertical 9:16 cinematic frame for a motorcycle spare parts video ad (Instagram Reel / TikTok).',
     'Use the product from the FIRST reference image EXACTLY as it is: same shape, colors, packaging,',
     'printed labels, number of teeth/holes and proportions. Do not redraw, restyle, simplify or replace it.',
-    `Shot: ${toma}.`,
-    `Dramatic studio lighting, dark background, ${acento} rim light, soft haze and reflections,`,
+    `Shot: ${plano}.`,
+    ambiente
+      ? `Setting and light: ${ambiente}. Keep it real and natural, not a dark studio.`
+      : `Dramatic studio lighting, dark background, ${acento} rim light, soft haze and reflections,`,
     'sharp focus on the product, photorealistic, premium commercial look.',
     'Leave the bottom 22% of the frame darker and calm (subtitles go there).',
     'ABSOLUTELY NO TEXT, letters, numbers, logos, watermarks or brand names anywhere,',

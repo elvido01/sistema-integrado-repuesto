@@ -201,7 +201,9 @@ export const instagramFeed = ({ fetchFn, token, cuentaId, media, texto, esperar 
 // app cuando uno sube un reel a mano.
 export const instagramReel = ({ fetchFn, token, cuentaId, media, texto, esperar }) => (media.video
   ? instagram({ fetchFn, token, cuentaId, esperar,
-      contenedor: { media_type: 'REELS', video_url: media.video, caption: texto, share_to_feed: true } })
+      // (22/10/2026) La portada: el cuadro a 0.4 s, ya con la pieza y el gancho
+      // (antes Instagram tomaba el primero, que salía blanco).
+      contenedor: { media_type: 'REELS', video_url: media.video, caption: texto, share_to_feed: true, thumb_offset: 400 } })
   : Promise.resolve({ ok: false, paso: 'contenedor', error: 'Falta el video del reel.' }));
 
 export const instagramHistoria = ({ fetchFn, token, cuentaId, media, esperar }) =>

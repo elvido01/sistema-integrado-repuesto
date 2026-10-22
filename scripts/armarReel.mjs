@@ -48,6 +48,36 @@ const PLATA = '0xF4F4F4';
 const ORO = '0xFFB21E';
 const MOVIMIENTOS = ['acercar', 'alejar', 'izquierda', 'derecha', 'subir', 'bajar'];
 
+// (22/10/2026) "No se están alternando los creativos": TODAS las tomas salían
+// en el mismo estudio oscuro con luz de borde (creativo-escena lo tenía fijo)
+// y con la misma fórmula de texto ("CLARIDAD TOTAL", "CONFIANZA TOTAL").
+// Cada reel elige un ESCENARIO distinto de los últimos 3 y lo manda a la toma
+// (creativo-escena lo usa en vez del estudio oscuro).
+export const ESCENARIOS = {
+  estudio_oscuro: 'dark premium studio, glossy black surface, colored rim light and soft haze',
+  estudio_claro: 'bright clean white studio, soft daylight, light grey seamless background, crisp soft shadows',
+  taller: 'real Dominican motorcycle repair workshop, tools on a worn workbench, natural window light',
+  en_la_moto: 'mounted on a real motorcycle parked on a sunny street in a Caribbean town, shallow depth of field',
+  mostrador: 'counter of a busy motorcycle parts store, shelves with boxes blurred behind, warm indoor light',
+  atardecer: 'outdoors at golden hour on a quiet road, warm orange sunlight, motorcycle silhouette blurred far behind',
+  concreto: 'top-down flat lay on rough concrete floor with a few wrenches and gloves around, hard sunlight',
+};
+export function elegirEscenario(para) {
+  const ultimos = (para.recientes || []).map((r) => r?.escenario).filter(Boolean).slice(0, 3);
+  const libres = Object.keys(ESCENARIOS).filter((k) => !ultimos.includes(k));
+  const lista = libres.length ? libres : Object.keys(ESCENARIOS);
+  return lista[Math.floor(Math.random() * lista.length)];
+}
+
+// (22/10/2026) El objetivo del día (venta/educar/conversación) amarraba UNA
+// plantilla: todo "educativo" salía "¿Sabías que…?" (21 y 22/10 seguidos).
+// Ahora el objetivo da un GRUPO y dentro rota.
+export const POR_OBJETIVO = {
+  educativo: ['sabias_que', 'pov', 'le_sirve'],
+  interaccion: ['le_sirve', 'cuanto_cuesta', 'pov'],
+  venta: ['anuncio', 'vitrina', 'cuanto_cuesta'],
+};
+
 // ── LAS PLANTILLAS DE MONTAJE (16/10/2026) ──────────────────────────────
 // "Los reels son prácticamente idénticos": la receta del reel modelo cambiaba
 // las tomas, pero el molde era siempre el mismo (logo, 4 fotos con zoom,
@@ -130,10 +160,18 @@ export function plantillasPosibles(para) {
 const HISTORIAL = path.resolve(import.meta.dirname, '..', 'run', 'reel_plantillas.json');
 export async function elegirPlantilla(para, { historial = null } = {}) {
   let usadas = historial;
+  // Lo que de verdad salió (la base), no el archivo local: hay dos copias del
+  // script y cada una llevaba su historial.
+  if (!usadas && para.recientes?.length) {
+    usadas = para.recientes.map((r) => r?.plantilla).filter(Boolean).reverse();
+  }
   if (!usadas) {
     try { usadas = JSON.parse(await readFile(HISTORIAL, 'utf8')); } catch { usadas = []; }
   }
-  const posibles = plantillasPosibles(para);
+  const todas = plantillasPosibles(para);
+  const grupo = POR_OBJETIVO[para.objetivo] || null;
+  const delGrupo = grupo ? todas.filter((k) => grupo.includes(k)) : [];
+  const posibles = delGrupo.length ? delGrupo : todas;
   const ultima = usadas[usadas.length - 1];
   const candidatas = posibles.filter((k) => k !== ultima);
   const lista = candidatas.length ? candidatas : posibles;
@@ -311,7 +349,7 @@ export function frasesGastadas(voces = [], { minFrase = 2, minTrio = 3, max = 15
   return salida.slice(0, max + 5);
 }
 
-export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) => {
+export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio', escenario = null }) => {
   const r = { ...(para.receta || {}) };
   delete r.voz_original;   // sus palabras no se copian: ni se le enseñan
   const p = para.producto || {};
@@ -322,6 +360,8 @@ export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) 
   const cierre = para.cierre_tipo || azar(CIERRES);
   const recientes = (para.voces_recientes || []).map((v) => limpioTexto(v, 260)).filter(Boolean).slice(0, 15);
   const gastadas = frasesGastadas(para.voces_recientes || []);
+  const textosUsados = [...new Set((para.recientes || []).flatMap((x) => [x?.titular, ...(x?.textos || [])])
+    .map((t) => limpioTexto(t, 60)).filter(Boolean))].slice(0, 30);
   const correcciones = (para.correcciones || []).slice(0, 6).map((c) => ({
     voz_antes: limpioTexto(c.voz_antes, 260), voz_despues: limpioTexto(c.voz_despues, 260),
     titular_antes: limpioTexto(c.titular_antes, 80), titular_despues: limpioTexto(c.titular_despues, 80),
@@ -329,8 +369,14 @@ export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) 
   return [
     `Eres el director creativo de ${empresa || 'Repuestos Morla'}, tienda de repuestos de moto en Higüey, República Dominicana.`,
     ...(ENCARGO[plantilla] || ENCARGO.anuncio),
-    'Toma de la RECETA de un reel que le gustó al dueño el ESTILO de las tomas (escenario, luz, ángulos, ritmo);',
-    'la estructura la manda el formato de arriba. NUNCA copies su marca, su producto ni sus frases.',
+    ...(escenario && ESCENARIOS[escenario] && !para.clips_info?.length ? [
+      `ESCENARIO OBLIGATORIO de este reel (manda sobre la receta): ${ESCENARIOS[escenario]}.`,
+      'TODAS las tomas pasan en ese escenario; cambia el ángulo, la distancia y lo que acompaña a la pieza.',
+      'De la RECETA de abajo toma solo los ángulos y el ritmo. NUNCA copies su marca, su producto ni sus frases.',
+    ] : [
+      'Toma de la RECETA de un reel que le gustó al dueño el ESTILO de las tomas (escenario, luz, ángulos, ritmo);',
+      'la estructura la manda el formato de arriba. NUNCA copies su marca, su producto ni sus frases.',
+    ]),
     '',
     'LA PIEZA (datos reales del sistema, son lo ÚNICO que puedes afirmar):',
     `- Descripción: ${p.descripcion}`,
@@ -351,6 +397,12 @@ export const promptGuion = ({ para, empresa, telefono, plantilla = 'anuncio' }) 
       'LO QUE YA DIJERON LOS ÚLTIMOS REELS de la tienda. Tu guion tiene que sonar DISTINTO: no repitas ninguna de estas',
       'frases, ni empieces ni termines como ellos:',
       ...recientes.map((v) => `- "${v}"`),
+      '',
+    ] : []),
+    ...(textosUsados.length ? [
+      'TEXTOS EN PANTALLA de los últimos reels: NO repitas ninguno ni copies su fórmula (por ejemplo, nada de',
+      '"PALABRA + TOTAL" si ya salió). Cada "texto" de toma y el titular tienen que ser nuevos y nombrar algo de ESTA pieza:',
+      textosUsados.map((t) => `"${t}"`).join(', ') + '.',
       '',
     ] : []),
     ...(gastadas.length ? [
@@ -530,7 +582,7 @@ const H264 = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt'
 // (04/10/2026) "Más comercial": cada toma se corta en DOS planos (el abierto
 // con su movimiento y un acercamiento con golpe de zoom) y cada corte entra
 // con un destello. Con 4 tomas son 8 cortes de ~2 s: ritmo de anuncio.
-async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false, pov = false }) {
+async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false, pov = false, primero = false }) {
   const n = Math.max(2, Math.round(dur * FPS));
   const { z, x, y } = cerrado
     ? { z: `1.35+0.10*on/${n}`, x: 'iw/2-(iw/zoom/2)', y: 'ih*0.42-(ih/zoom/2)' }
@@ -543,9 +595,12 @@ async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false, pov 
   if (texto) {
     // La letra de las piezas (plata + oro), entrando de golpe; el POV, en su caja.
     filtros.push(...(pov ? await filtrosPov(dir, texto)
-      : await letrero(dir, texto, { y: 'h*0.10', tam: tamLetrero(texto), alpha: 'if(lt(t,0.12),t/0.12,1)' })));
+      : await letrero(dir, texto, { y: 'h*0.10', tam: tamLetrero(texto), alpha: primero ? '1' : 'if(lt(t,0.12),t/0.12,1)' })));
   }
-  filtros.push(`fade=t=in:st=0:d=0.12:color=white,fade=t=out:st=${Math.max(0, dur - 0.08).toFixed(2)}:d=0.08`);
+  // (22/10/2026) El PRIMER cuadro es la portada que toman Facebook, TikTok y
+  // YouTube: entraba con destello y salía BLANCO. El primer corte arranca ya
+  // con la pieza y el gancho; el destello queda para los cortes siguientes.
+  filtros.push(`${primero ? '' : 'fade=t=in:st=0:d=0.12:color=white,'}fade=t=out:st=${Math.max(0, dur - 0.08).toFixed(2)}:d=0.08`);
   const lado = cerrado ? 'b' : 'a';
   const guion = path.join(dir, `f_toma${i}${lado}.txt`);
   await writeFile(guion, filtros.join(','), 'utf8');
@@ -559,7 +614,7 @@ async function clipToma({ dir, i, imagen, dur, mov, texto, cerrado = false, pov 
 // deformar (recorta lo que sobra), sin su sonido (va la voz y la música), con
 // la letra de la toma y el mismo destello de entrada que los demás cortes.
 // Si el clip es más corto que el corte, se repite.
-async function clipVideo({ dir, i, archivo, durClip, momento, dur, texto, pov = false }) {
+async function clipVideo({ dir, i, archivo, durClip, momento, dur, texto, pov = false, primero = false }) {
   const base = { inicio: 0.05, medio: 0.4, final: 0.72 }[momento] ?? 0.05;
   const desde = Math.max(0, Math.min(durClip * base, durClip - dur - 0.05));
   const filtros = [
@@ -568,9 +623,9 @@ async function clipVideo({ dir, i, archivo, durClip, momento, dur, texto, pov = 
   ];
   if (texto) {
     filtros.push(...(pov ? await filtrosPov(dir, texto)
-      : await letrero(dir, texto, { y: 'h*0.10', tam: tamLetrero(texto), alpha: 'if(lt(t,0.12),t/0.12,1)' })));
+      : await letrero(dir, texto, { y: 'h*0.10', tam: tamLetrero(texto), alpha: primero ? '1' : 'if(lt(t,0.12),t/0.12,1)' })));
   }
-  filtros.push(`fade=t=in:st=0:d=0.1:color=white,fade=t=out:st=${Math.max(0, dur - 0.08).toFixed(2)}:d=0.08`);
+  filtros.push(`${primero ? '' : 'fade=t=in:st=0:d=0.1:color=white,'}fade=t=out:st=${Math.max(0, dur - 0.08).toFixed(2)}:d=0.08`);
   const guion = path.join(dir, `f_video${i}.txt`);
   await writeFile(guion, filtros.join(','), 'utf8');
   const salida = path.join(dir, `clip_${String(i + 1).padStart(2, '0')}v.mp4`);
@@ -771,17 +826,17 @@ export async function verClips(urls, dir, { conImagenes = true } = {}) {
 
 export async function escribirGuion({ para, empresa, telefono, pensar }) {
   // (16/10/2026) Cada guion sale con su plantilla, rotando (ver PLANTILLAS).
-  const plantilla = para.plantilla && plantillasPosibles(para).includes(para.plantilla)
-    ? para.plantilla : await elegirPlantilla(para);
+  const plantilla = await elegirPlantilla(para);
+  const escenario = elegirEscenario(para);
   const conDatos = (bruto) => {
     const g = { ...leerJson(bruto), plantilla };
     if (plantilla === 'le_sirve') g.motos = motosDe(para.producto);
     if (plantilla === 'cuanto_cuesta') g.precio_texto = precioFinal(para.producto);
-    return normalizarGuion(g);
+    return { ...normalizarGuion(g), escenario };
   };
   let g;
   if (!para.clips?.length) {
-    g = conDatos(await pensar(promptGuion({ para, empresa, telefono, plantilla })));
+    g = conDatos(await pensar(promptGuion({ para, empresa, telefono, plantilla, escenario })));
   } else {
     // Con video del dueño: el guion se escribe MIRANDO sus clips.
     const dir = await mkdtemp(path.join(tmpdir(), 'reel-guion-'));
@@ -789,7 +844,7 @@ export async function escribirGuion({ para, empresa, telefono, pensar }) {
       const clips = await verClips(para.clips, dir);
       const conInfo = { ...para, clips_info: clips.map((c) => ({ n: c.n, dur: c.dur })) };
       const imagenes = clips.flatMap((c) => c.frames);
-      g = conDatos(await pensar(promptGuion({ para: conInfo, empresa, telefono, plantilla }), imagenes));
+      g = conDatos(await pensar(promptGuion({ para: conInfo, empresa, telefono, plantilla, escenario }), imagenes));
       // El modelo a veces nombra "Clip 3" con un solo clip: se reparte entre
       // los que de verdad hay, para que el dueño vea en el Paso 2 lo real.
       g.tomas = g.tomas.map((t) => ({ ...t, clip: ((Math.max(1, t.clip) - 1) % clips.length) + 1 }));
@@ -826,7 +881,12 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
         tomas.push({ ...t, archivo: v.archivo, durClip: v.dur });
       }
     }
-    const resultados = conClips ? [] : await Promise.allSettled(guion.tomas.map((t) => pedirToma({ toma: t.escena })));
+    // El escenario viaja dentro del texto de la toma ("… || AMBIENTE: …"):
+    // creativo-escena lo usa en vez del estudio oscuro fijo. Así no hubo que
+    // tocar el worker. Cabe en sus 400 letras.
+    const ambiente = ESCENARIOS[guion.escenario] || null;
+    const conAmbiente = (e) => (ambiente ? `${String(e || '').slice(0, 250)} || AMBIENTE: ${ambiente}`.slice(0, 400) : e);
+    const resultados = conClips ? [] : await Promise.allSettled(guion.tomas.map((t) => pedirToma({ toma: conAmbiente(t.escena) })));
     for (const [i, r] of resultados.entries()) {
       if (r.status !== 'fulfilled') { avisos.push(`Toma ${i + 1} no salió: ${r.reason?.message || r.reason}`); continue; }
       const f = path.join(dir, `toma_${i + 1}.png`);
@@ -888,19 +948,19 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
       const letraToma = P.ganchoPov ? (ultima ? t.texto : null) : t.texto;
       if (conClips) {
         clips.push(await clipVideo({ dir, i, archivo: t.archivo, durClip: t.durClip, momento: t.momento,
-          dur: porCorte, texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov) }));
+          dur: porCorte, texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov), primero: clips.length === 0 }));
         continue;
       }
       if (porToma === 2) {
         // Abierto (con el gancho en la primera toma) y acercamiento (con la
         // letra de la toma si el abierto llevó el gancho).
         clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento,
-          texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov) }));
+          texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov), primero: clips.length === 0 }));
         clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: t.movimiento,
           texto: gancho ? letraToma : null, cerrado: true }));
       } else {
         clips.push(await clipToma({ dir, i, imagen: t.imagen, dur: porCorte, mov: MOVIMIENTOS[(i + 2) % MOVIMIENTOS.length],
-          texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov) }));
+          texto: gancho || letraToma, pov: !!(gancho && P.ganchoPov), primero: clips.length === 0 }));
       }
     }
     if (extra) {
