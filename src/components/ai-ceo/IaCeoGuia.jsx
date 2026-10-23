@@ -50,6 +50,7 @@ const pedirALaExtension = (tel, nombre, extra = {}) => new Promise((resolve) => 
   window.addEventListener('message', oir);
   window.postMessage({ tipo: 'motoflow-omni-abrir-chat', id, phone: tel ? conPais(tel) : null, nombre: nombre || null, ...extra }, window.location.origin);
 });
+const CANAL_CORTO = { whatsapp: 'WA', instagram: 'IG', facebook: 'FB', tiktok: 'TT' };
 const conUnidad = (u, v) => (u === 'RD$' ? `RD$${Math.round(Number(v)).toLocaleString('en-US')}` : `${Math.round(Number(v))} ${u || ''}`);
 
 export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
@@ -58,6 +59,10 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [preparando, setPreparando] = useState(false);
+  // (23/10/2026) "Responde a los 2 clientes" no decía CUÁLES: uno era de
+  // TikTok y otro un WhatsApp del espejo (que no sale en el Sales Hub). La
+  // lista viva, con la misma regla que la cuenta, y un botón por cliente.
+  const [esperando, setEsperando] = useState([]);
 
   // (22/10/2026) Antes de leer, se le pide al sistema que confirme lo que ya
   // tiene prueba (le escribiste, decidiste, ya no hay clientes esperando).
@@ -68,6 +73,12 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
     if (error) { if (!silencioso) toast({ variant: 'destructive', title: 'No se pudo cargar la guía', description: error.message }); return; }
     setDatos(data || null);
     setCargando(false);
+    if ((data?.tareas || []).some((t) => t.verifica === 'esperando' && t.estado === 'pendiente')) {
+      const { data: lista, error: e2 } = await supabase.rpc('ia_ceo_esperando_lista');
+      setEsperando(!e2 && Array.isArray(lista) ? lista : []);
+    } else {
+      setEsperando([]);
+    }
   }, [toast]);
   useEffect(() => {
     cargar();
@@ -278,8 +289,21 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                       </span>
                     )}
                     {t.estado === 'pospuesta' && <span className="text-[11px] font-semibold text-amber-700">pospuesta</span>}
-                    {t.estado === 'descartada' && <span className="text-[11px] font-semibold text-gray-500">descartada</span>}
                   </div>
+                  {t.estado === 'pendiente' && t.verifica === 'esperando' && esperando.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {esperando.map((c) => (
+                        <button key={c.id} type="button" title={c.preview || ''}
+                          onClick={() => abrirConversacion(c)}
+                          className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[12px] font-semibold text-sky-800 hover:bg-sky-50">
+                          <span className="text-[10px] font-black uppercase text-gray-500">{CANAL_CORTO[c.canal] || c.canal}</span>
+                          {/^\d{12,}$/.test(String(c.cliente)) ? `Cliente ···${String(c.cliente).slice(-4)}` : c.cliente}
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {t.estado === 'descartada' && <span className="text-[11px] font-semibold text-gray-500">descartada</span>}
                 </div>
                 <div className="flex items-start gap-1 shrink-0">
                   {!lista && t.accion?.telefono && (
