@@ -73,12 +73,15 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
     const parsedValue = (value === NULL_VALUE || value === '') ? null : value; 
     setFormData(prev => {
       const newState = { ...prev, [id]: parsedValue };
-      if (id === 'marca_id') {
-        newState.modelos_ids = []; // Reset modelos when marca changes
+      // (23/10/2026) Solo en vehículos la marca es la de la moto y manda
+      // sobre los modelos. En repuestos es la del fabricante de la pieza
+      // (RHYNO): cambiarla borraba los modelos de moto a los que sirve.
+      if (id === 'marca_id' && showVehicleFields) {
+        newState.modelos_ids = [];
       }
       return newState;
     });
-  }, [setFormData]);
+  }, [setFormData, showVehicleFields]);
 
   const handleMultiSelectChange = useCallback((id, value) => {
     setFormData(prev => ({ ...prev, [id]: value }));
@@ -230,18 +233,30 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
       .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
   }, [marcas]);
 
+  // (23/10/2026) Y-6448 tenía 6 modelos y la ficha enseñaba 3: se filtraban
+  // por la marca del producto, que en un repuesto es la del fabricante de la
+  // pieza, no la de la moto. En repuestos se ven todos; en vehículos, los de
+  // su marca. Y lo que el producto YA tiene se ve siempre, aunque sea de otra
+  // marca: lo que no se ve no se puede quitar.
   const filteredModelos = useMemo(() => {
     if (!modelos) return [];
-    if (!formData.marca_id) return modelos; // Show all models if no brand is selected
+    if (!showVehicleFields || !formData.marca_id) return modelos;
     return modelos.filter(m => String(m.marca_id) === String(formData.marca_id));
-  }, [formData.marca_id, modelos]);
+  }, [formData.marca_id, modelos, showVehicleFields]);
 
   const modeloOptions = useMemo(() => {
-    return (filteredModelos || [])
-      .filter(m => m.activo)
-      .map(m => ({ value: String(m.id), label: m.nombre }))
+    const elegidos = new Set((formData.modelos_ids || []).map(String));
+    const lista = (filteredModelos || []).filter(m => m.activo || elegidos.has(String(m.id)));
+    const ids = new Set(lista.map(m => String(m.id)));
+    for (const m of modelos || []) if (elegidos.has(String(m.id)) && !ids.has(String(m.id))) lista.push(m);
+    // Hay nombres repetidos bajo distintas marcas: se dice de cuál es cada uno.
+    const veces = {};
+    for (const m of lista) veces[m.nombre] = (veces[m.nombre] || 0) + 1;
+    const nombreMarca = (id) => (marcas || []).find(x => String(x.id) === String(id))?.nombre;
+    return lista
+      .map(m => ({ value: String(m.id), label: veces[m.nombre] > 1 && nombreMarca(m.marca_id) ? `${m.nombre} · ${nombreMarca(m.marca_id)}` : m.nombre }))
       .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
-  }, [filteredModelos]);
+  }, [filteredModelos, modelos, marcas, formData.modelos_ids]);
 
   const proveedorOptions = useMemo(() => {
     return (proveedores || [])
