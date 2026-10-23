@@ -16,6 +16,8 @@
 // cortas, calma, nada de floritura. Eso vive en las instrucciones del
 // agente, no aquí.
 
+import { supabase } from '@/lib/customSupabaseClient';
+
 const CLAVE_VOZ = 'motoflow_voz_hermes';
 
 // Masculinas LATINAS que suelen venir en Windows/Chrome, de mejor a peor.
@@ -121,8 +123,11 @@ export function ajustes() {
       ritmo: Number(j.ritmo) || RITMO_DEF,
       tono: Number(j.tono) || TONO_DEF,
       pitidos: j.pitidos !== false,
+      // La voz de mayordomo (servidor) viene encendida; se apaga desde el panel.
+      neuronal: j.neuronal !== false,
+      vozNeural: j.vozNeural || 'onyx',
     };
-  } catch { return { ritmo: RITMO_DEF, tono: TONO_DEF, pitidos: true }; }
+  } catch { return { ritmo: RITMO_DEF, tono: TONO_DEF, pitidos: true, neuronal: true, vozNeural: 'onyx' }; }
 }
 
 export function guardarAjustes(a) {
@@ -176,12 +181,182 @@ function blip({ desde = 880, hasta = 1320, dur = 0.14, vol = 0.05 } = {}) {
 export const pitidoEscucha = () => blip({ desde: 660, hasta: 1180, dur: 0.13 });
 export const pitidoFin = () => blip({ desde: 1180, hasta: 620, dur: 0.18, vol: 0.04 });
 
-export function hablar(texto, { alEmpezar, alTerminar } = {}) {
-  if (!('speechSynthesis' in window) || !texto) return null;
+// ── LA VOZ DE MAYORDOMO (23/10/2026) ────────────────────────
+// Lo de arriba dice que el navegador no da para más, y es verdad: por eso la
+// voz buena ya no sale del navegador. La función jarvis-voz convierte el texto
+// con gpt-4o-mini-tts y unas instrucciones de "mayordomo de película" (grave,
+// serena, trata de señor). Suena a persona y se le puede medir el nivel, así
+// que la esfera dibuja la onda mientras habla.
+//
+// NUNCA deja mudo a nadie: sin red, sin sesión o con el proveedor caído se
+// vuelve a speechSynthesis en la misma llamada. Se apaga con el ajuste
+// `neuronal: false` en el panel de voz.
+//
+// Partida en frases: la primera se pide sola para que empiece a sonar en un
+// par de segundos, y mientras suena se pide la siguiente.
+
+export const VOCES_NEURONALES = [
+  { id: 'onyx', nombre: 'Mayordomo grave (onyx)' },
+  { id: 'ash', nombre: 'Mayordomo claro (ash)' },
+  { id: 'echo', nombre: 'Sereno (echo)' },
+  { id: 'ballad', nombre: 'Narrador (ballad)' },
+];
+
+let sesionVoz = 0;               // sube al callar: lo que esté en vuelo se descarta
+let audioNeural = null;
+let controlador = null;
+const cacheFrases = new Map();   // frase corta -> Blob ("Un momento…" no se cobra dos veces)
+const oyentesNivel = new Set();
+let nivelActual = 0;
+
+export function alNivelVoz(cb) {
+  oyentesNivel.add(cb);
+  return () => oyentesNivel.delete(cb);
+}
+function emitirNivel(n) {
+  nivelActual = n;
+  oyentesNivel.forEach((f) => { try { f(n); } catch { /* un oyente roto no para la voz */ } });
+}
+export const nivelVoz = () => nivelActual;
+
+function partirEnFrases(t) {
+  const frases = t.match(/[^.!?¿¡;:\n]+[.!?;:\n]*/g)?.map((s) => s.trim()).filter(Boolean) || [t];
+  const trozos = [];
+  let actual = '';
+  for (const f of frases) {
+    // El primero corto, para empezar rápido; los demás hasta ~280 letras.
+    const tope = trozos.length === 0 ? 140 : 280;
+    if (actual && (actual.length + f.length + 1) > tope) { trozos.push(actual); actual = f; }
+    else actual = actual ? `${actual} ${f}` : f;
+  }
+  if (actual) trozos.push(actual);
+  // Un trozo suelto más largo que el máximo del servidor se corta a la fuerza.
+  return trozos.flatMap((x) => (x.length <= 1100 ? [x] : x.match(/.{1,1100}(\s|$)/g) || [x]));
+}
+
+async function pedirAudio(trozo, voz, sesion) {
+  const clave = `${voz}|${trozo}`;
+  if (cacheFrases.has(clave)) return cacheFrases.get(clave);
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  if (!token) throw new Error('sin_sesion');
+  // fetch directo y no functions.invoke: invoke lee 'audio/mpeg' como TEXTO
+  // y el audio llegaría roto.
+  controlador = new AbortController();
+  const base = import.meta.env.VITE_SUPABASE_URL?.trim();
+  const r = await fetch(`${base}/functions/v1/jarvis-voz`, {
+    method: 'POST',
+    signal: controlador.signal,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || '',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ texto: trozo, voz }),
+  });
+  if (sesion !== sesionVoz) throw new Error('cancelado');
+  const blob = r.ok ? await r.blob() : null;
+  if (!blob?.size || !(blob.type || '').startsWith('audio')) throw new Error(`jarvis-voz ${r.status}`);
+  if (trozo.length <= 80) {
+    cacheFrases.set(clave, blob);
+    if (cacheFrases.size > 40) cacheFrases.delete(cacheFrases.keys().next().value);
+  }
+  return blob;
+}
+
+function sonarBlob(blob, sesion) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const a = new Audio(url);
+    audioNeural = a;
+    let analizador = null, datos = null, raf = 0;
+    try {
+      const ctx = audio();
+      if (ctx) {
+        const fuente = ctx.createMediaElementSource(a);
+        analizador = ctx.createAnalyser();
+        analizador.fftSize = 256;
+        datos = new Uint8Array(analizador.frequencyBinCount);
+        fuente.connect(analizador).connect(ctx.destination);
+      }
+    } catch { analizador = null; /* sin Web Audio suena igual, solo sin onda */ }
+    const medir = () => {
+      if (!analizador) return;
+      analizador.getByteTimeDomainData(datos);
+      let suma = 0;
+      for (let i = 0; i < datos.length; i += 1) { const v = (datos[i] - 128) / 128; suma += v * v; }
+      emitirNivel(Math.min(1, Math.sqrt(suma / datos.length) * 3.2));
+      raf = requestAnimationFrame(medir);
+    };
+    const fin = (ok) => {
+      cancelAnimationFrame(raf);
+      emitirNivel(0);
+      URL.revokeObjectURL(url);
+      if (audioNeural === a) audioNeural = null;
+      if (ok) resolve(); else reject(new Error('reproduccion'));
+    };
+    a.onended = () => fin(true);
+    a.onerror = () => fin(false);
+    a.onpause = () => { if (sesion !== sesionVoz) fin(true); };
+    a.play().then(() => { if (analizador) raf = requestAnimationFrame(medir); }).catch(() => fin(false));
+  });
+}
+
+async function hablarNeural(limpio, { alEmpezar, alTerminar }, sesion, aj) {
+  const trozos = partirEnFrases(limpio);
+  let empezo = false;
+  let siguiente = pedirAudio(trozos[0], aj.vozNeural, sesion);
+  for (let i = 0; i < trozos.length; i += 1) {
+    let blob;
+    try {
+      blob = await siguiente;
+    } catch (e) {
+      if (sesion !== sesionVoz) return;
+      // Falló el servidor: lo que falta se dice con la voz del sistema.
+      hablarSistema(trozos.slice(i).join(' '), { alEmpezar: empezo ? undefined : alEmpezar, alTerminar });
+      return;
+    }
+    if (sesion !== sesionVoz) return;
+    if (i + 1 < trozos.length) siguiente = pedirAudio(trozos[i + 1], aj.vozNeural, sesion);
+    if (!empezo) {
+      empezo = true;
+      if (aj.pitidos) blip({ desde: 980, hasta: 1460, dur: 0.1, vol: 0.035 });
+      alEmpezar?.();
+    }
+    try {
+      await sonarBlob(blob, sesion);
+    } catch {
+      if (sesion !== sesionVoz) return;
+      hablarSistema(trozos.slice(i).join(' '), { alTerminar });
+      return;
+    }
+    if (sesion !== sesionVoz) return;
+  }
+  if (aj.pitidos) pitidoFin();
+  alTerminar?.();
+}
+
+export function hablar(texto, opciones = {}) {
+  if (!texto) return null;
+  callar();
+  const a = ajustes();
+  const limpio = limpiarParaVoz(texto);
+  if (a.neuronal && navigator.onLine !== false) {
+    const sesion = sesionVoz;
+    hablarNeural(limpio, opciones, sesion, a).catch(() => {
+      if (sesion === sesionVoz) hablarSistema(limpio, opciones);
+    });
+    return { neuronal: true };
+  }
+  return hablarSistema(limpio, opciones);
+}
+
+function hablarSistema(texto, { alEmpezar, alTerminar } = {}) {
+  if (!('speechSynthesis' in window) || !texto) { alTerminar?.(); return null; }
   window.speechSynthesis.cancel();
 
   const a = ajustes();
-  const u = new SpeechSynthesisUtterance(limpiarParaVoz(texto));
+  const u = new SpeechSynthesisUtterance(texto);
   const voz = resolverVoz();
   if (voz) { u.voice = voz; u.lang = voz.lang; } else { u.lang = 'es-MX'; }
   u.rate = a.ritmo;
@@ -195,6 +370,14 @@ export function hablar(texto, { alEmpezar, alTerminar } = {}) {
 }
 
 export function callar() {
+  sesionVoz += 1;
+  try { controlador?.abort(); } catch { /* nada en vuelo */ }
+  if (audioNeural) {
+    const a = audioNeural;
+    audioNeural = null;
+    try { a.pause(); } catch { /* ya parado */ }
+  }
+  emitirNivel(0);
   try { window.speechSynthesis?.cancel(); } catch { /* nada */ }
 }
 

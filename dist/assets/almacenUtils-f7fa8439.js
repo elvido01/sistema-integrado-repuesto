@@ -1,0 +1,1 @@
+function d(r){if(!r||r.length===0)return null;const o=r.find(n=>{var i;return((i=n.codigo)==null?void 0:i.trim())==="01"});if(o)return o;const t=r.find(n=>{var i;return((i=n.codigo)==null?void 0:i.toUpperCase())==="ALM01"});if(t)return t;const f=r.find(n=>{var i;return(i=n.nombre)==null?void 0:i.toLowerCase().includes("principal")});return f||r[0]}export{d as f};

@@ -1,0 +1,1 @@
+const s=e=>{if(e===""||e==null)return"";const[t,n]=String(e).split("."),i=t?Number(t).toLocaleString("en-US"):"0";return n!==void 0?`${i}.${n}`:i},o=e=>{let t=String(e).replace(/,/g,"").replace(/[^\d.]/g,"");const n=t.split(".");n.length>2&&(t=`${n[0]}.${n.slice(1).join("")}`);const[i,p]=t.split(".");return p!==void 0?`${i}.${p.slice(0,2)}`:i};export{s as f,o as p};

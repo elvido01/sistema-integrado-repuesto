@@ -5,7 +5,8 @@ import { BarraVozHermes, ReproductorVoz, pararTodoAudio } from '@/components/jar
 import { ImagenHermes, ImagenPorUrl, urlDeImagenEnTexto } from '@/components/jarvis/ImagenHermes';
 import * as vozEspejo from '@/lib/vozEspejo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes } from '@/lib/vozJarvis';
+import { hablar, callar, listarVoces, vozElegida, elegirVoz, alListarVoces, ajustes, guardarAjustes, VOCES_NEURONALES } from '@/lib/vozJarvis';
+import OndaVoz from '@/components/jarvis/OndaVoz';
 import { leerContexto, leerModulos, contextoParaAgente } from '@/lib/pantallaContexto';
 import { transcribir, elegirTexto } from '@/lib/oidoJarvis';
 import { glosarioDeAhora, terminosDeAhora } from '@/lib/jarvisContexto';
@@ -610,7 +611,15 @@ export default function JarvisAdminAssistant() {
         p_texto: texto,
         // Con la aclaración de qué es esto y de dónde salen los datos de
         // verdad. Sin ella, "datos: null" se leía como "no hay datos".
-        p_pantalla: contextoParaAgente(leerModulos()),
+        p_pantalla: {
+          ...contextoParaAgente(leerModulos()),
+          // (23/10/2026) Por voz la respuesta se ESCUCHA: tres párrafos con
+          // viñetas son un minuto de audio. Al estilo del mayordomo de la
+          // película: corto, sereno, tratando de señor.
+          ...(conVoz ? {
+            respuesta_hablada: 'El usuario te habla por voz desde la esfera y tu respuesta se leera en voz alta. Contesta como un mayordomo: 1 a 3 frases cortas, serenas y elegantes, tratandolo de "señor". Sin listas, sin viñetas, sin emojis ni simbolos. Montos sin centavos. Si hay mucho detalle, da lo esencial y ofrece mostrarlo en pantalla.',
+          } : {}),
+        },
       });
       if (e) throw e;
       if (data?.id) {
@@ -1711,7 +1720,34 @@ export default function JarvisAdminAssistant() {
         {verVoces && (
           <div className="pointer-events-auto w-[290px] rounded-lg border border-cyan-300/25 bg-slate-950/95 p-3 text-xs text-cyan-50 shadow-xl">
             <div className="mb-2 font-bold uppercase tracking-wider text-cyan-300">Voz de {nombreAgente}</div>
-            {voces.length === 0 ? (
+            {/* (23/10/2026) La voz de mayordomo sale del servidor (jarvis-voz):
+                suena a persona y no depende de lo que tenga instalado Windows.
+                Apagada, se usa la del sistema de abajo. */}
+            <div className="mb-3 space-y-2 rounded border border-cyan-300/20 bg-cyan-500/5 p-2">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={aj.neuronal}
+                  onChange={(e) => cambiarAjuste({ neuronal: e.target.checked })}
+                  className="accent-cyan-400" />
+                <span className="font-bold text-cyan-100">Voz de mayordomo (recomendada)</span>
+              </label>
+              {aj.neuronal && (
+                <select
+                  value={aj.vozNeural}
+                  onChange={(e) => cambiarAjuste({ vozNeural: e.target.value })}
+                  className="w-full rounded border border-cyan-300/30 bg-slate-900 px-2 py-1.5 text-cyan-50"
+                >
+                  {VOCES_NEURONALES.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+                </select>
+              )}
+              <button type="button" onClick={probar}
+                className="rounded border border-cyan-300/30 px-2 py-1 text-[11px] font-bold text-cyan-100 hover:bg-cyan-500/15">
+                ▶ Probar voz
+              </button>
+              <p className="leading-snug text-cyan-200/50">
+                {aj.neuronal ? 'Cuesta centavos por minuto hablado. Si falla, habla con la del sistema.' : 'Usando la voz del sistema (gratis).'}
+              </p>
+            </div>
+            {aj.neuronal ? null : voces.length === 0 ? (
               <p className="text-cyan-200/70">No hay voces en español instaladas en este equipo.</p>
             ) : (
               <>
@@ -2155,6 +2191,9 @@ export default function JarvisAdminAssistant() {
               {capasEsfera(26)}
             </div>
 
+            {/* La onda mientras habla: se mueve con el nivel REAL del audio. */}
+            <OndaVoz activa={speaking} barras={28} alto={46} />
+
             <p className="text-sm text-cyan-100/70">
               {speaking ? 'Hablando…' : listening ? 'Te escucho…' : loading ? 'Consultando…' : 'Toca el micrófono para hablar'}
             </p>
@@ -2204,6 +2243,12 @@ export default function JarvisAdminAssistant() {
             dejaba facturar. Un asistente que estorba el trabajo es peor que no
             tenerlo, y el aviso se puede leer igual aunque los clics lo
             atraviesen. */}
+        {speaking && !modoLive && (
+          <div className="pointer-events-none rounded-full border border-cyan-300/20 bg-slate-950/80 px-3 py-1">
+            <OndaVoz activa barras={18} alto={22} />
+          </div>
+        )}
+
         {!chatAbierto && (error || lastMessage) && (
           <div className={`pointer-events-none max-w-[280px] rounded-md border px-3 py-2 text-xs shadow-xl ${
             error

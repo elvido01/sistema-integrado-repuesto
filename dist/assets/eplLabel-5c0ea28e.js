@@ -1,0 +1,3 @@
+function h({descripcion:n,codigo:e,precio:r,ubicacion:s,includeUb:t,copies:c=1,empresaNombre:i="Sistema"}){const a=(n||"").toUpperCase().trim(),l=a.slice(0,24),m=a.length>24?a.slice(24,24*2):"",o=["N","q380","Q406,24","","; Empresa en font 3 (mismo grosor que el precio)",`A55,15,0,3,1,1,N,"${i}"`,"",`A55,45,0,2,1,1,N,"${l}"`,`A55,65,0,2,1,1,N,"${m}"`,"","; Barcode SIN texto debajo (human readable OFF)",`B80,90,0,1,2,4,55,N,"${e}"`,"","; Código escrito SOLO aquí (una sola vez)",`A55,150,0,2,1,1,N,"${e}"`,"","; Precio alineado con código escrito",`A240,150,0,3,1,1,N,"${r}"`,"","; Ubicación centrada abajo",t?`A155,180,0,2,1,1,N,"${s}"`:"","",`P${Math.max(1,Math.floor(Number(c)))}`,""].join(`
+`);return console.log(`[EPL Generated]:
+`,o),o}export{h as b};
