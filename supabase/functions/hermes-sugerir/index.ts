@@ -72,8 +72,28 @@ Deno.serve(async (req: Request) => {
     const { data: promos } = await supabase.rpc('hermes_promociones_activas');
     ctx.promociones = Array.isArray(promos) ? promos : [];
 
+    // (23/10/2026) La dirección REAL: sin ella le dijo a un cliente "Avenida
+    // Duarte esquina 27 de Febrero" (es esq. Baldemiro Rijo, Higüey).
+    const { data: tienda } = await supabase.from('config_empresa')
+      .select('nombre, direccion1, direccion, telefono').limit(1).maybeSingle();
+    ctx.tienda = tienda || null;
+
+    // (23/10/2026) Lo que el dueño CAMBIÓ de las sugerencias: el mejor
+    // maestro que hay. Antes → después, las 8 más recientes.
+    const { data: corr } = await supabase.from('sales_ai_training_logs')
+      .select('customer_message, bot_reply, human_reply')
+      .eq('outcome', 'editada').not('human_reply', 'is', null)
+      .order('created_at', { ascending: false }).limit(12);
+    ctx.correcciones = (corr || [])
+      .filter((c: any) => c.human_reply && c.bot_reply && c.human_reply.trim() !== c.bot_reply.trim()
+        && c.human_reply.length > 8 && !/solicitud de env[ií]o de mensajes/i.test(c.human_reply))
+      .slice(0, 8);
+
     const { texto, usadas } = await redactar(ctx, apiKey, mcpUrl, token);
     if (!texto) return json({ ok: false, error: 'La IA no devolvio texto' }, 502);
+    if (/^\s*NO_RESPONDER\s*$/i.test(texto)) {
+      return json({ ok: false, no_responder: true, error: 'Ese mensaje no parece de un cliente (cadena, enlace o publicidad): no hace falta contestarlo.' }, 200);
+    }
 
     // Si pregunta por algo en promocion, la extension ofrece mandar el arte.
     const loQueDijo = [
@@ -183,10 +203,25 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
       '   digas que no tienes una pieza de esta lista.',
       '   No las menciones si pregunta por otra cosa.',
     ] : []),
-    '10. Si la busqueda trae "piezas_en_la_vieja", esas estan en el ALMACEN VIEJO.',
-    '   No estan en el mostrador y no se pueden facturar ahi: hay que traerlas.',
-    '   Ofrecelas asi: "esa la tengo en el almacen viejo, deja que te la busco".',
-    '   Nunca digas que no tienes una pieza si aparece en esa lista con existencia.',
+    // (23/10/2026) El dueño borraba "almacen viejo" en TODAS las que lo
+    // traían: al cliente no se le cuenta dónde está guardada la pieza.
+    '10. Si la busqueda trae "piezas_en_la_vieja" con existencia, la pieza la TIENES:',
+    '   ofrecela como cualquier otra, con su precio. NUNCA digas "almacen", "mostrador",',
+    '   "sistema", "inventario" ni donde esta guardada.',
+    '12. Habla por la casa en plural: "¿en que te podemos ayudar?".',
+    '13. Si no la tienes: "no la tengo ahora, pero la puedo conseguir con mi suplidor".',
+    '   Nada de "piezas relacionadas" ni ofrecer otra cosa que no pidio.',
+    '14. Plasticos, carroceria, colores o calcomanias: hay muchas variantes. Pide que te',
+    '   mande una FOTO de la pieza que necesita y el color, antes de ofrecer nada.',
+    '15. Ubicacion, telefono y envios: usa SOLO los DATOS DE LA TIENDA de abajo. Nunca',
+    '   inventes una direccion. Envio: "si enviamos, dime a donde y te digo el costo".',
+    '16. Precios SIN centavos: RD$ 241, no RD$ 241,23.',
+    '17. Si el mensaje NO es de un cliente (cadena, noticia, publicidad, enlace suelto,',
+    '   mensaje personal o del sistema), escribe solo: NO_RESPONDER',
+    ...(ctx.tienda ? [
+      '',
+      `DATOS DE LA TIENDA: ${[ctx.tienda.nombre, ctx.tienda.direccion1 || ctx.tienda.direccion, ctx.tienda.telefono ? `tel. ${ctx.tienda.telefono}` : null].filter(Boolean).join(' · ')}.`,
+    ] : []),
     ...(fotos.length ? [
       '11. EL CLIENTE MANDO UNA FOTO y la estas viendo. Mirala y di QUE PIEZA es',
       '   antes de preguntar nada: para eso la mando, porque no sabe como se',
@@ -203,8 +238,12 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
 
   // El texto va primero y la foto despues: con la imagen delante, el modelo
   // tiende a describirla en vez de contestar lo que se le pregunta.
+  const correcciones = (Array.isArray(ctx.correcciones) ? ctx.correcciones : [])
+    .map((c: any) => `Cliente: ${String(c.customer_message || '').slice(0, 160)}\nTu sugerencia: ${String(c.bot_reply).slice(0, 220)}\nEl dueño lo cambio a: ${String(c.human_reply).slice(0, 220)}`)
+    .join('\n\n');
   const encargo = [
     ejemplos ? `ASI CONTESTA LA CASA (copia el tono, no el contenido):\n\n${ejemplos}\n` : '',
+    correcciones ? `ASI CORRIGE EL DUEÑO TUS SUGERENCIAS. Aprende QUE quita, QUE agrega y COMO lo dice; no repitas lo que el borra:\n\n${correcciones}\n` : '',
     historial ? `CONVERSACION HASTA AHORA:\n${historial}\n` : '',
     `LA PREGUNTA A CONTESTAR:\n${ctx.pregunta}\n`,
     fotos.length
