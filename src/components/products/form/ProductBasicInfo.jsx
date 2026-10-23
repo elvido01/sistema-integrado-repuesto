@@ -20,7 +20,7 @@ import ProductImageStudioModal from '@/components/products/ProductImageStudioMod
 
 const NULL_VALUE = 'null_value';
 
-const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented, tipos, marcas, modelos, proveedores, ubicaciones, fetchCatalogs, loadVersion = 0 }) => {
+const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect, isEditing, handleNotImplemented, tipos, marcas, modelos, proveedores, ubicaciones, fetchCatalogs, loadVersion = 0, medidaLista = false }) => {
   const { tenantId, empresa } = useAuth();
   const showVehicleFields = tieneModulo(empresa, 'vehiculos');
   const [isTipoModalOpen, setIsTipoModalOpen] = useState(false);
@@ -609,6 +609,23 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                 <Button type="button" variant="ghost" size="sm" className="h-9 px-2 border" onClick={() => setIsModeloModalOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
               </div>
             </div>
+
+            {/* Medida (23/10/2026): aro, cadena, batería, caja de bola… Los
+                números que antes iban como "modelo". Solo repuestos. */}
+            {medidaLista && !showVehicleFields && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="medida" className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Medida</Label>
+                <div className="col-span-3">
+                  <Input
+                    id="medida"
+                    value={formData.medida || ''}
+                    onChange={handleInputChange}
+                    placeholder="Ej: 17 · 428 · 6301 · 7"
+                    className="h-9"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Suplidor - posición original para tenants normales */}
             {!showVehicleFields && (

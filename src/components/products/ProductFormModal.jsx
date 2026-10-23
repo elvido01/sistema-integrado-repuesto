@@ -25,6 +25,7 @@ const initialFormData = {
   tipo_id: null,
   marca_id: null,
   modelos_ids: [],
+  medida: '',
   suplidor_id: null,
   garantia_meses: 0,
   itbis_pct: 0.18,
@@ -52,6 +53,17 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   const { toast } = useToast();
   const { tenantId, empresa } = useAuth();
   const hasVehicleFields = tieneModulo(empresa, 'vehiculos');
+
+  // (23/10/2026) La MEDIDA (aro, cadena, batería, caja de bola…) va en su
+  // propio campo (sql/productos_medida.sql). Hasta que esa columna exista,
+  // ni se enseña ni se manda: guardar un campo que la base no tiene haría
+  // fallar el guardado de cualquier producto.
+  const [medidaLista, setMedidaLista] = useState(false);
+  useEffect(() => {
+    if (!isOpen) return;
+    supabase.from('productos').select('medida').limit(1)
+      .then(({ error }) => setMedidaLista(!error), () => setMedidaLista(false));
+  }, [isOpen]);
 
   // Check if tenant has tienda feature enabled
   const [hasTienda, setHasTienda] = useState(false);
@@ -113,6 +125,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       tipo_id: p.tipo_id?.toString() || (p.tipo?.id ? String(p.tipo.id) : null),
       marca_id: p.marca_id?.toString() || (p.marca?.id ? String(p.marca.id) : null),
       modelos_ids: p.modelos_ids || (p.modelo_id ? [p.modelo_id] : []),
+      medida: p.medida || '',
       suplidor_id: p.suplidor_id?.toString() || (p.suplidor?.id ? String(p.suplidor.id) : null),
       garantia_meses: p.garantia_meses || 0,
       itbis_pct: (p.itbis_pct !== undefined && p.itbis_pct !== null) ? parseFloat(p.itbis_pct) : 0.18,
@@ -312,9 +325,10 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
 
     const { chasis, motor, color, anio, condicion, placa, matricula, kilometraje,
             ecommerce_visible, ecommerce_slug, ecommerce_descripcion, ecommerce_orden,
-            ...restFormData } = formData;
+            medida, ...restFormData } = formData;
     const cleanedData = {
       ...restFormData,
+      ...(medidaLista ? { medida: String(medida || '').trim().toUpperCase() || null } : {}),
       tipo_id: formData.tipo_id || null,
       marca_id: formData.marca_id || null,
       modelos_ids: formData.modelos_ids || [],
@@ -448,6 +462,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
                     handleNotImplemented={handleNotImplemented}
                     onCodigoBlur={handleFetchProductByCode}
                     onProductSelect={handleProductSelect}
+                    medidaLista={medidaLista}
                     isEditing={isEditing}
                     tipos={tipos}
                     marcas={marcas}
