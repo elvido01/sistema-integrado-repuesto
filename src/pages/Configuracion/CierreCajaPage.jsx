@@ -449,6 +449,29 @@ const CierreCajaPage = () => {
       console.warn('Exception cargando compromisos pagados:', e);
     }
 
+    // (24/10/2026) Efectivo que se SACÓ de la caja hacia una cuenta (compra de
+    // dólares, depósito). No es gasto: cambia de lugar. Sale en su propia
+    // línea y se resta del efectivo. Ver sql/efectivo_caja_a_cuenta.sql
+    let efectivoMovido = [];
+    try {
+      const { data: movData, error: movErr } = await supabase
+        .from('caja_depositos')
+        .select('id, monto_caja, moneda, tasa, monto_cuenta, concepto, cuenta_id, created_at, cuentas_bancarias(banco, alias)')
+        .eq('tenant_id', tenantId)
+        .eq('fecha', fechaStr)
+        .eq('anulado', false)
+        .order('created_at');
+      if (movErr) console.warn('Error cargando efectivo movido a cuentas:', movErr.message);
+      else efectivoMovido = (movData || []).map((d) => ({
+        ...d,
+        cuenta: d.cuentas_bancarias
+          ? `${d.cuentas_bancarias.banco}${d.cuentas_bancarias.alias ? ` — ${d.cuentas_bancarias.alias}` : ''}`
+          : 'cuenta',
+      }));
+    } catch (e) {
+      console.warn('Exception cargando efectivo movido a cuentas:', e);
+    }
+
     const ventasContado = ventas.filter(v => {
       const formaPago = String(v.forma_pago || '').toUpperCase();
       return formaPago === 'CONTADO' || formaPago === 'EFECTIVO';
@@ -510,6 +533,7 @@ const CierreCajaPage = () => {
     compromisosEfectivo = compromisosEfectivo.filter((c) => efectivoDeCompromiso(c) > 0);
 
     const totalCompromisosEfectivo = compromisosEfectivo.reduce((sum, c) => sum + efectivoDeCompromiso(c), 0);
+    const totalEfectivoMovido = efectivoMovido.reduce((sum, d) => sum + (parseFloat(d.monto_caja) || 0), 0);
     const totalPagosSuplidoresEfectivo = pagosSuplidores.reduce((sum, p) => {
       const efectivo = (p.formas_pago || []).filter(fp => fp.forma === 'Efectivo')
         .reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0);
@@ -547,6 +571,8 @@ const CierreCajaPage = () => {
       prestamosEfectivo, // detalle para el impreso del cierre (financieras)
       totalCompromisosEfectivo,
       compromisosEfectivo, // detalle para el impreso del cierre (compromisos)
+      totalEfectivoMovido,
+      efectivoMovido, // detalle: efectivo pasado a cuentas (compra de dólares, depósitos)
       totalPagosSuplidores: totalPagosSuplidoresEfectivo,
       cambioEntregado,
       cantFacturas,
@@ -561,7 +587,7 @@ const CierreCajaPage = () => {
       // totalVentasContado, que incluye las ventas cobradas por
       // transferencia/tarjeta y las del movil: el cierre pedia un efectivo
       // que nunca estuvo en la caja y siempre salia faltante.
-      efectivoEnCaja: totalVentasContadoCaja + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPagosTerceros - totalPagosNomina - totalPrestamosEfectivo - totalCompromisosEfectivo - comprasContadoEfectivo,
+      efectivoEnCaja: totalVentasContadoCaja + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPagosTerceros - totalPagosNomina - totalPrestamosEfectivo - totalCompromisosEfectivo - comprasContadoEfectivo - totalEfectivoMovido,
     };
 
     if (soloCalcular) return calculado;
@@ -867,6 +893,15 @@ const CierreCajaPage = () => {
 
             <div class="linea-fuerte"><span>GASTO TOTAL</span><span>${formatCurrency(GASTO_TOTAL)}</span></div>
 
+            ${(resumen?.efectivoMovido || []).length ? `
+            <!-- (24/10/2026) No es gasto: el efectivo pasó a una cuenta (compra de
+                 dólares, depósito). Va aparte para que el cuadre se vea entero. -->
+            <div class="sec">Efectivo movido a cuentas (no es gasto)</div>
+            <table><tbody>
+              ${resumen.efectivoMovido.map(d => `<tr><td>${d.cuenta}${d.moneda && d.moneda !== 'DOP' ? ` — US$${Number(d.monto_cuenta).toLocaleString('es-DO', { minimumFractionDigits: 2 })} a ${Number(d.tasa)}` : ''}${d.concepto ? ` · ${d.concepto}` : ''}</td><td class="num">${formatCurrency(d.monto_caja)}</td></tr>`).join('')}
+            </tbody></table>
+            <div class="linea-fuerte"><span>EFECTIVO MOVIDO A CUENTAS</span><span>${formatCurrency(resumen?.totalEfectivoMovido)}</span></div>` : ''}
+
             <!-- El cierre termina en un solo recuadro: lo que entró, lo que
                  salió y lo que debe haber en la gaveta. La resta a la vista,
                  en vez de un número suelto arriba que hay que ir a comprobar. -->
@@ -1029,6 +1064,15 @@ const CierreCajaPage = () => {
         ${filaPos('Compras de contado', resumen?.comprasContadoEfectivo)}` : ''}
         <div class="separator"></div>
         <div class="row total-row"><span>GASTO TOTAL:</span><span>${formatCurrency(GASTO_TOTAL)}</span></div>
+        ${(resumen?.efectivoMovido || []).length ? `
+        <div class="separator"></div>
+        <div class="bold" style="margin-bottom: 4px;">EFECTIVO MOVIDO A CUENTAS (NO ES GASTO)</div>
+        ${resumen.efectivoMovido.map(d => `
+          <div class="row">
+            <span style="max-width: 70%;">${d.cuenta}${d.moneda && d.moneda !== 'DOP' ? ` (US$${Number(d.monto_cuenta).toLocaleString('es-DO', { minimumFractionDigits: 2 })} a ${Number(d.tasa)})` : ''}</span>
+            <span>${formatCurrency(d.monto_caja)}</span>
+          </div>`).join('')}
+        <div class="row total-row"><span>MOVIDO A CUENTAS:</span><span>${formatCurrency(resumen?.totalEfectivoMovido)}</span></div>` : ''}
         <div class="row total-row"><span>EFECTIVO EN CAJA:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DINERO EN CAJA</div>
@@ -1341,6 +1385,27 @@ const CierreCajaPage = () => {
                   <Fila label="Compras de contado (Efectivo)" value={resumen.comprasContadoEfectivo} />
 
                   <LineaFuerte label="Gasto total" value={gastoTotalDe(resumen)} />
+
+                  {/* (24/10/2026) No es gasto: el efectivo pasó a una cuenta
+                      (compra de dólares, depósito). Se mueve desde Cuentas
+                      Bancarias → "Efectivo del día". */}
+                  {(resumen.efectivoMovido || []).length > 0 && (
+                    <>
+                      <div className="mt-2 mb-1 ml-3 pl-3 border-l-2 border-emerald-200">
+                        {resumen.efectivoMovido.map((d) => (
+                          <div key={d.id} className="flex justify-between items-center py-0.5">
+                            <span className="text-xs text-gray-500 truncate pr-2">
+                              {d.cuenta}
+                              {d.moneda && d.moneda !== 'DOP' ? ` (US$${Number(d.monto_cuenta).toLocaleString('es-DO', { minimumFractionDigits: 2 })} a ${Number(d.tasa)})` : ''}
+                              {d.concepto ? ` · ${d.concepto}` : ''}
+                            </span>
+                            <span className="font-mono text-xs text-gray-600 shrink-0">{formatCurrency(d.monto_caja)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <LineaFuerte label="Efectivo movido a cuentas (no es gasto)" value={resumen.totalEfectivoMovido} />
+                    </>
+                  )}
 
                   <div className="flex justify-between items-center py-2 mt-2 bg-morla-blue/10 rounded px-3 border border-morla-blue/30">
                     <span className="font-bold text-morla-blue">Efectivo en Caja</span>

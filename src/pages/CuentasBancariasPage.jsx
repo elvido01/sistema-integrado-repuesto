@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
+import EfectivoDelDia from '@/components/bancos/EfectivoDelDia';
 
 const n = (v) => Number(v || 0);
 const money = (v, mon = 'DOP') =>
@@ -26,6 +27,7 @@ const ORIGEN_LABEL = {
   venta: 'Venta', recibo: 'Recibo', cierre_caja: 'Cierre de caja',
   pago_suplidor: 'Pago a suplidor', compromiso: 'Compromiso/gasto', san: 'Abono SAN', ajuste: 'Ajuste manual', transferencia_interna: 'Transferencia',
   san_completado: 'SAN completado', apertura: 'Apertura', ingreso: 'Ingreso', retiro: 'Retiro',
+  efectivo_caja: 'Efectivo de la caja',
 };
 
 const CUENTA_VACIA = { banco: '', alias: '', numero_cuenta: '', tipo: 'corriente', moneda: 'DOP', saldo_inicial: '0' };
@@ -331,6 +333,9 @@ export default function CuentasBancariasPage() {
             <div className="text-3xl font-black mt-1">{money(tot, mon)}</div>
           </div>
         ))}
+        {/* (24/10/2026) El efectivo de la caja del día, para moverlo a una cuenta
+            (compra de dólares, depósito) sin que cuente como gasto. */}
+        <EfectivoDelDia tenantId={tenantId} cuentas={cuentas} onCambio={cargar} />
       </div>
 
       {loading ? (
