@@ -645,14 +645,32 @@ const CartaRutaPage = ({ extraData }) => {
         </div>
 
         <div class="footer">
-          ${[...new Set([empresa?.direccion1, empresa?.direccion2, empresa?.direccion]
-              .map((d) => String(d || '').trim()).filter(Boolean))].join(', ')}<br/>
+          ${(() => {
+            // (24/10/2026) MotoPréstamos tiene los teléfonos también en
+            // "Dirección 2" y salían dos veces. Lo que ya va en Teléfonos, o
+            // que son solo números de teléfono, no se repite como dirección.
+            const tel = String(empresa?.telefono || '').replace(/\D/g, '');
+            const soloTelefonos = (d) => /^[\d\s()\/+.,-]+$/.test(d) && d.replace(/\D/g, '').length >= 7;
+            const dirs = [...new Set([empresa?.direccion1, empresa?.direccion2, empresa?.direccion]
+              .map((d) => String(d || '').trim()).filter(Boolean))]
+              .filter((d) => !(tel && d.replace(/\D/g, '') === tel) && !soloTelefonos(d));
+            return dirs.length ? `${dirs.join(', ')}<br/>` : '';
+          })()}
           ${empresa?.telefono ? `Teléfonos: ${empresa.telefono}` : ''}
           ${empresa?.email ? ` &bull; ${empresa.email}` : ''}
         </div>
 
         <script>
-          window.onload = function() { window.print(); };
+          // (24/10/2026) La carta de ruta va SIEMPRE en una sola hoja. Con las
+          // letras grandes, una carta con muchas cláusulas pasaba a una
+          // segunda: si no cabe, se achica lo justo para que entre.
+          window.onload = function() {
+            document.body.style.padding = '0';
+            var util = 1056 - Math.round((15 * 2) * 96 / 25.4) - 6;   // carta 11in menos márgenes de 15mm
+            var alto = document.body.scrollHeight;
+            if (alto > util) document.body.style.zoom = (util / alto).toFixed(3);
+            setTimeout(function() { window.print(); }, 150);
+          };
         </script>
       </body>
       </html>
