@@ -184,7 +184,8 @@ async function armarTareas(sb: any, key: string, tid: string, ctx: any, valores:
     .eq('tenant_id', tid).eq('estado', 'activo');
   const { count: propuestos } = await sb.from('ia_planes').select('id', { count: 'exact', head: true })
     .eq('tenant_id', tid).eq('estado', 'propuesto');
-  const { data: anteriores } = await sb.from('ia_tareas').select('fecha, titulo, estado')
+  // (26/10/2026) 'nota' = el porqué que escribió el dueño al descartar.
+  const { data: anteriores } = await sb.from('ia_tareas').select('fecha, titulo, estado, nota')
     .eq('tenant_id', tid).lt('fecha', hoy).gte('fecha', new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10))
     .order('fecha', { ascending: false }).limit(40);
   const paneles = panelesDe(ctx.empresa?.tipo_negocio);
@@ -208,6 +209,8 @@ Arma las TAREAS DE HOY (${diaSemanaRD()} ${hoy}) para el dueño: MÁXIMO 5, orde
   decidir con eso (ej. "Verifica si existen las 32 motos de 2015 que el sistema da en inventario").
 - "tareas_anteriores" sirve para aprender el estilo, NO para copiarlas: una tarea de contactar o contestar a un cliente
   solo se pone si ese cliente viene HOY en crm (listos_para_comprar o casos_abiertos); si ya no viene, ya se atendió.
+- Si una tarea anterior trae "nota", es el PORQUÉ del dueño (ej. "es del banco, no es cliente"): obedécela al pie
+  de la letra y no vuelvas a proponer nada que choque con ella.
 - Aprende de "tareas_anteriores": si el dueño DESCARTÓ un tipo de tarea, no insistas igual; si la POSPUSO, puedes
   volver a ponerla si sigue siendo importante; repite el estilo de las que HIZO.
 - No le pidas cosas que el sistema ya resuelve solo (publicar, clasificar el CRM).

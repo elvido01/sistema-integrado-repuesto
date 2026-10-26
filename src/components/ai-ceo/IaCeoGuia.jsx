@@ -63,6 +63,9 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
   // TikTok y otro un WhatsApp del espejo (que no sale en el Sales Hub). La
   // lista viva, con la misma regla que la cuenta, y un botón por cliente.
   const [esperando, setEsperando] = useState([]);
+  // (26/10/2026) La ✕ pide el motivo y, si la tarea es de una conversación,
+  // permite cerrarla ("no va con los intereses de la empresa").
+  const [descarte, setDescarte] = useState(null);   // { t, nota, cerrar, conv, guardando }
 
   // (22/10/2026) Antes de leer, se le pide al sistema que confirme lo que ya
   // tiene prueba (le escribiste, decidiste, ya no hay clientes esperando).
@@ -109,6 +112,39 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
     const { error } = await supabase.rpc('ia_ceo_decidir', { p_tarea_id: t.id, p_aprobar: aprobar, p_nota: nota });
     if (error) { toast({ variant: 'destructive', title: 'No se guardó', description: error.message }); return; }
     toast({ title: aprobar ? 'Decisión aprobada' : 'Decisión rechazada' });
+    cargar(true);
+  };
+
+  const abrirDescarte = async (t) => {
+    setDescarte({ t, nota: '', cerrar: false, conv: null, guardando: false });
+    const convId = t.accion?.conversacion?.id;
+    if (!convId) return;
+    // Se enseña A QUIÉN se va a cerrar de verdad, con su nombre de HOY: la
+    // tarea de "Alexander Primo Banco Reserva" (26/10) apuntaba al chat de
+    // Repuesto Abreu, un cliente real.
+    const { data } = await supabase.from('sales_conversations')
+      .select('id, customer_name, customer_phone, last_message_preview, platform')
+      .eq('id', convId).maybeSingle();
+    setDescarte((d) => (d && d.t.id === t.id ? { ...d, conv: data || null } : d));
+  };
+
+  const confirmarDescarte = async () => {
+    const d = descarte;
+    if (!d) return;
+    setDescarte({ ...d, guardando: true });
+    const { data, error } = await supabase.rpc('ia_tarea_descartar', {
+      p_id: d.t.id, p_nota: d.nota || null, p_cerrar_conversacion: !!d.cerrar,
+    });
+    if (error) {
+      toast({ variant: 'destructive', title: 'No se guardó', description: error.message });
+      setDescarte({ ...d, guardando: false });
+      return;
+    }
+    toast({
+      title: 'Tarea descartada',
+      description: data?.cerrada ? 'Conversación cerrada: no se le dará seguimiento. Se puede quitar en Sales Hub → No dar seguimiento.' : 'El CEO leerá tu comentario.',
+    });
+    setDescarte(null);
     cargar(true);
   };
 
@@ -303,7 +339,11 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                       ))}
                     </div>
                   )}
-                  {t.estado === 'descartada' && <span className="text-[11px] font-semibold text-gray-500">descartada</span>}
+                  {t.estado === 'descartada' && (
+                    <span className="text-[11px] font-semibold text-gray-500">
+                      descartada{String(t.evidencia || '').startsWith('Descartada: ') ? ` — ${String(t.evidencia).slice(12)}` : ''}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-start gap-1 shrink-0">
                   {!lista && t.accion?.telefono && (
@@ -338,7 +378,7 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
                   {!lista && (
                     <>
                       <Button size="sm" variant="ghost" title="Posponer" onClick={() => marcar(t, 'pospuesta')}><Clock className="w-4 h-4" /></Button>
-                      <Button size="sm" variant="ghost" title="No sirve (el CEO aprende)" onClick={() => marcar(t, 'descartada')}><X className="w-4 h-4" /></Button>
+                      <Button size="sm" variant="ghost" title="Descartar con motivo (el CEO aprende)" onClick={() => abrirDescarte(t)}><X className="w-4 h-4" /></Button>
                     </>
                   )}
                   {lista && t.estado !== 'hecha' && (
@@ -361,6 +401,50 @@ export default function IaCeoGuia({ vista = 'hoy', onVerPlanes }) {
         {!activos.length && <p className="text-sm text-gray-400">Aprueba un plan y desde mañana tus tareas lo hacen avanzar.</p>}
         <div className="space-y-3">{activos.map((p) => <PlanBarra key={p.id} p={p} />)}</div>
       </section>
+      {descarte && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !descarte.guardando && setDescarte(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-gray-900">Descartar tarea</h3>
+            <p className="mt-1 text-sm text-gray-500">{descarte.t.titulo}</p>
+            <label className="mt-3 block text-sm font-semibold text-gray-700">¿Por qué? (el CEO lo lee mañana)</label>
+            <textarea rows={3} autoFocus value={descarte.nota}
+              onChange={(e) => setDescarte((d) => ({ ...d, nota: e.target.value }))}
+              placeholder="Ej. Es del banco, no es cliente · ya lo atendí por teléfono · no vendemos eso"
+              className="mt-1 w-full rounded-md border border-gray-300 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" />
+            {descarte.t.accion?.conversacion?.id && (
+              <div className="mt-3 rounded-lg border border-gray-200 p-3">
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-0.5" checked={descarte.cerrar}
+                    onChange={(e) => setDescarte((d) => ({ ...d, cerrar: e.target.checked }))} />
+                  <span><b>Cerrar esta conversación:</b> no va con los intereses de la empresa. No se le dará más seguimiento ni volverá a salir en tareas.</span>
+                </label>
+                {descarte.conv ? (
+                  <div className="mt-2 rounded-md bg-gray-50 p-2 text-xs text-gray-700">
+                    Se cerraría: <b>{descarte.conv.customer_name || 'sin nombre'}</b>
+                    {descarte.conv.customer_phone ? ` · ${descarte.conv.customer_phone}` : ''}
+                    {descarte.conv.last_message_preview ? <div className="mt-0.5 text-gray-500">Último mensaje: “{String(descarte.conv.last_message_preview).slice(0, 90)}”</div> : null}
+                    {descarte.t.accion?.conversacion?.cliente && descarte.conv.customer_name
+                      && String(descarte.t.accion.conversacion.cliente).trim().toUpperCase() !== String(descarte.conv.customer_name).trim().toUpperCase() && (
+                      <div className="mt-1 font-semibold text-red-600">
+                        Ojo: la tarea dice “{descarte.t.accion.conversacion.cliente}” pero el chat enlazado es de “{descarte.conv.customer_name}”. Si no es el mismo, NO marques cerrar.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-xs text-gray-400">Buscando a quién corresponde…</div>
+                )}
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" disabled={descarte.guardando} onClick={() => setDescarte(null)}>Cancelar</Button>
+              <Button disabled={descarte.guardando} onClick={confirmarDescarte}
+                className={descarte.cerrar ? 'bg-red-600 hover:bg-red-700' : ''}>
+                {descarte.guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : descarte.cerrar ? 'Descartar y cerrar conversación' : 'Descartar'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
