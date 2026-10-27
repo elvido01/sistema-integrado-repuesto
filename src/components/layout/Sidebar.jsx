@@ -110,6 +110,7 @@ const navItems = [
       { title: 'Carta de Ruta', id: 'carta-ruta', icon: FileText, modulo: 'carta_ruta' },
       // (27/10/2026) Inmobiliaria: solares vendidos, el traspaso (3%) y el contrato.
       { title: 'Inmuebles Vendidos', id: 'inmuebles-vendidos', icon: Landmark, tipoNegocio: 'inmobiliaria', permissionKey: 'ventas' },
+      { title: 'Contratos de Alquiler', id: 'contratos-alquiler', icon: Landmark, soloTipos: ['servicios', 'inmobiliaria'], permissionKey: 'ventas' },
       { title: 'Cotizaciones', id: 'cotizaciones' },
       { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, modulo: 'cotizaciones_magna' },
       { title: 'Devoluciones', id: 'devoluciones' },
@@ -449,6 +450,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             // también lo enciende aunque la empresa no sea de ese tipo
             // (27/10/2026) Lo que no aplica a un tipo de empresa (servicios no tiene inventario).
             if (sub.ocultarEnTipos?.includes(empresa?.tipo_negocio)) return false;
+            if (sub.soloTipos && !sub.soloTipos.includes(empresa?.tipo_negocio)) return false;
             if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio
                 && !(sub.moduloOr && tieneModulo(empresa, sub.moduloOr))) return false;
             if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito

@@ -342,6 +342,11 @@ const VentasPage = () => {
             }
           }
           if (orden.cliente_nombre) setManualClienteNombre(orden.cliente_nombre);
+          if (orden.cliente_id) {
+            const { data: cli } = await supabase.from('clientes').select('*')
+              .eq('id', orden.cliente_id).eq('tenant_id', tenantId).maybeSingle();
+            if (cli) await handleSelectCliente(cli, { repreciar: false });
+          }
         }
 
         if (orden.forma_pago) setTipoPago(orden.forma_pago);
@@ -363,7 +368,7 @@ const VentasPage = () => {
     // volvería a montar el oyente con cada línea agregada, y con él la fila
     // que garantiza que preparar termine antes de que empiece cobrar.
   }, [handleAddProductByCode, handleSelectCotizacion, handleDeleteItem, resetVenta,
-      setManualClienteNombre, setTipoPago, setMontoRecibido, toast]);
+      setManualClienteNombre, setTipoPago, setMontoRecibido, toast, handleSelectCliente, tenantId]);
 
 
   useEffect(() => {

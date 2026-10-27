@@ -178,6 +178,11 @@ interface FacturaData {
         qr_url?: string | null;
     } | null;
     nombre_emisor_ncf?: string;
+    // (27/10/2026) Retenciones del cliente agente de retención y aviso del
+    // inmueble (lib/ecfImpresion.js → completarExtras).
+    itbis_retenido?: number;
+    isr_retenido?: number;
+    _tiene_inmueble?: boolean;
     fecha?: string;
     forma_pago?: string;
     dias_credito?: number;
@@ -306,6 +311,19 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     lines.push(totalsRow('ITBIS :', fmt(totalItbis)));
     lines.push(padR('Valores en', W - 12) + padL('============', 12));
     lines.push(padR('DOP', 10) + CMD.BOLD_ON + padL('TOTAL :', W - 10 - 12) + padL(fmt(factura.total || 0), 12) + CMD.BOLD_OFF);
+
+    // ── Retenciones (cliente agente de retención): se cobra el neto ──
+    const retItbis = Number(factura.itbis_retenido) || 0;
+    const retIsr = Number(factura.isr_retenido) || 0;
+    if (retItbis + retIsr > 0) {
+        if (retItbis > 0) lines.push(totalsRow('ITBIS retenido:', '-' + fmt(retItbis)));
+        if (retIsr > 0) lines.push(totalsRow('ISR retenido:', '-' + fmt(retIsr)));
+        lines.push(CMD.BOLD_ON + totalsRow('NETO A COBRAR:', fmt((Number(factura.total) || 0) - retItbis - retIsr)) + CMD.BOLD_OFF);
+    }
+    if (factura._tiene_inmueble) {
+        lines.push(dashLine());
+        for (const l of wrapLines('Inmueble: no gravado con ITBIS. El 3% de transferencia lo paga el comprador en la DGII dentro de 6 meses.')) lines.push(l);
+    }
 
     // ── Payment ──
     if (formaPago === 'CONTADO') {

@@ -134,6 +134,9 @@ export function normalizarOrdenVenta(cruda) {
     cotizacion: o.cotizacion ? String(o.cotizacion).trim().slice(0, 40) : null,
     lineas: lineasValidas(lineas),
     cliente_nombre: o.cliente_nombre ? String(o.cliente_nombre).slice(0, 120) : null,
+    // (27/10/2026) El cliente DE LA BASE (contratos de alquiler): de él
+    // dependen el crédito y las retenciones. Solo un uuid.
+    cliente_id: /^[0-9a-f-]{36}$/i.test(String(o.cliente_id || '')) ? String(o.cliente_id) : null,
     forma_pago: formaValida(o.forma_pago),
     recibido: montoValido(o.recibido),
   };

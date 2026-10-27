@@ -86,6 +86,7 @@ const ConfiguracionSistemaPage = () => {
         tipo_negocio: 'repuestos',
         emisor_persona_fisica: false,
         retencion_itbis_aplica: true,
+        isr_retencion_pct: 15,
         incluir_existencias_cero_default: true,
         cobranza_hora_corte: '17:50',
         cobranza_buscador_telefono: '',
@@ -151,6 +152,7 @@ const ConfiguracionSistemaPage = () => {
                     tipo_negocio: data.tipo_negocio || 'repuestos',
                     emisor_persona_fisica: !!data.emisor_persona_fisica,
                     retencion_itbis_aplica: data.retencion_itbis_aplica !== false,
+                    isr_retencion_pct: data.isr_retencion_pct ?? 15,
                     incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true,
                     cobranza_hora_corte: (data.cobranza_hora_corte || '17:50').slice(0, 5),
                     cobranza_buscador_telefono: data.cobranza_buscador_telefono || '',
@@ -222,6 +224,7 @@ const ConfiguracionSistemaPage = () => {
                 // activaba). Ver sql/registro_empresa_con_tipo_de_negocio.sql.
                 // La inmobiliaria vende solares a plazos con el motor de préstamos.
                 feat_financiera: ['financiera', 'inmobiliaria'].includes(formData.tipo_negocio),
+                isr_retencion_pct: Number.isFinite(parseFloat(formData.isr_retencion_pct)) ? parseFloat(formData.isr_retencion_pct) : 15,
                 updated_at: new Date().toISOString()
             };
             
@@ -631,12 +634,19 @@ const ConfiguracionSistemaPage = () => {
                                 <label className="flex items-start gap-2 text-sm">
                                     <input type="checkbox" className="mt-1" checked={!!formData.emisor_persona_fisica}
                                         onChange={(e) => setFormData(prev => ({ ...prev, emisor_persona_fisica: e.target.checked }))} />
-                                    <span>La empresa factura como <strong>persona física</strong> (profesional independiente). Le retienen el <strong>100% del ITBIS</strong> y el <strong>10% de ISR</strong>.</span>
+                                    <span>La empresa factura como <strong>persona física</strong> (profesional independiente). Le retienen el <strong>100% del ITBIS</strong> y el ISR de abajo.</span>
                                 </label>
                                 <label className="flex items-start gap-2 text-sm">
                                     <input type="checkbox" className="mt-1" checked={formData.retencion_itbis_aplica !== false}
                                         onChange={(e) => setFormData(prev => ({ ...prev, retencion_itbis_aplica: e.target.checked }))} />
-                                    <span>Los clientes empresa <strong>retienen ITBIS</strong> (30% en servicios profesionales). Apágalo si tu contador indica que por ser emisor electrónico ya no te retienen (Norma 02-2026).</span>
+                                    <span>En facturas de <strong>papel</strong> (B01/B02) los clientes empresa retienen el <strong>30% del ITBIS</strong> (Norma 02-05). Con <strong>e-CF</strong> no se retiene: la Norma 02-2026 lo eliminó para personas jurídicas emisoras electrónicas (se aplica solo).</span>
+                                </label>
+                                <label className="flex items-center gap-2 text-sm">
+                                    <span>Retención de ISR a persona física (honorarios y alquileres):</span>
+                                    <input type="number" min="0" max="100" step="0.5" className="h-8 w-20 rounded border px-2 text-right font-bold"
+                                        value={formData.isr_retencion_pct}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, isr_retencion_pct: e.target.value }))} />
+                                    <span>% <span className="text-[10px] text-gray-500">(15% desde el 01/07/2026, Ley 30-26)</span></span>
                                 </label>
                                 <p className="text-[10px] text-gray-500 italic">Solo aplica a líneas de SERVICIO y a clientes marcados como "Agente de retención". La factura vale su total; lo que se cobra es el neto. Confirma las tasas con tu contador.</p>
                             </div>
