@@ -177,11 +177,15 @@ const RegistroEmpresaPage = ({ onVolver }) => {
               <Label className="flex items-center gap-1">
                 <Briefcase className="w-3.5 h-3.5" /> Tipo de empresa *
               </Label>
-              <div className="mt-1 grid grid-cols-3 gap-2">
+              {/* (27/10/2026) Servicios e Inmobiliaria: el sistema se acomoda solo
+                  (sin inventario / solares a plazos y traspasos). */}
+              <div className="mt-1 grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[
-                  { v: 'repuestos', t: 'Repuestos', d: 'Tienda / piezas' },
-                  { v: 'dealer', t: 'Dealer', d: 'Venta de motos' },
-                  { v: 'financiera', t: 'Financiera', d: 'Préstamos' },
+                  { v: 'repuestos', t: 'Repuestos / Tienda', d: 'Piezas, productos con inventario' },
+                  { v: 'dealer', t: 'Dealer', d: 'Venta de vehículos por chasis' },
+                  { v: 'financiera', t: 'Financiera', d: 'Préstamos y cobranza' },
+                  { v: 'servicios', t: 'Servicios', d: 'Sin inventario: honorarios, mantenimiento' },
+                  { v: 'inmobiliaria', t: 'Inmobiliaria', d: 'Solares, ventas a plazos, alquileres' },
                 ].map(o => (
                   <button
                     key={o.v}

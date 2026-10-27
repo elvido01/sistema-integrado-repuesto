@@ -47,7 +47,13 @@ const initialFormData = {
   ecommerce_slug: '',
   ecommerce_descripcion: '',
   ecommerce_orden: 0,
+  // (27/10/2026) Bien / servicio / inmueble. Ver NaturalezaProducto.jsx
+  naturaleza: 'bien',
+  servicio_tipo: null,
+  datos_inmueble: null,
 };
+
+import NaturalezaProducto from '@/components/products/form/NaturalezaProducto';
 
 const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   const { toast } = useToast();
@@ -64,6 +70,19 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
     supabase.from('productos').select('medida').limit(1)
       .then(({ error }) => setMedidaLista(!error), () => setMedidaLista(false));
   }, [isOpen]);
+
+  // (27/10/2026) Bien / servicio / inmueble: igual que la medida, solo si la
+  // columna ya existe (sql/tipos_empresa_servicios_inmobiliaria.sql).
+  const [naturalezaLista, setNaturalezaLista] = useState(false);
+  useEffect(() => {
+    if (!isOpen) return;
+    supabase.from('productos').select('naturaleza').limit(1)
+      .then(({ error }) => setNaturalezaLista(!error), () => setNaturalezaLista(false));
+  }, [isOpen]);
+  const tipoEmpresa = empresa?.tipo_negocio;
+  // Lo que se propone al crear: una empresa de servicios vende servicios; una
+  // inmobiliaria, inmuebles.
+  const naturalezaPorDefecto = tipoEmpresa === 'servicios' ? 'servicio' : tipoEmpresa === 'inmobiliaria' ? 'inmueble' : 'bien';
 
   // Check if tenant has tienda feature enabled
   const [hasTienda, setHasTienda] = useState(false);
@@ -126,6 +145,9 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       marca_id: p.marca_id?.toString() || (p.marca?.id ? String(p.marca.id) : null),
       modelos_ids: p.modelos_ids || (p.modelo_id ? [p.modelo_id] : []),
       medida: p.medida || '',
+      naturaleza: p.naturaleza || 'bien',
+      servicio_tipo: p.servicio_tipo || null,
+      datos_inmueble: p.datos_inmueble || null,
       suplidor_id: p.suplidor_id?.toString() || (p.suplidor?.id ? String(p.suplidor.id) : null),
       garantia_meses: p.garantia_meses || 0,
       itbis_pct: (p.itbis_pct !== undefined && p.itbis_pct !== null) ? parseFloat(p.itbis_pct) : 0.18,
@@ -183,10 +205,15 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
 
   const resetForm = useCallback(() => {
     // Caminero Motors: por defecto 0% ITBIS (vehículos de motor no llevan ITBIS en RD)
-    setFormData({ ...initialFormData, itbis_pct: hasVehicleFields ? 0 : 0.18 });
+    setFormData({
+      ...initialFormData,
+      itbis_pct: hasVehicleFields || naturalezaPorDefecto === 'inmueble' ? 0 : 0.18,
+      naturaleza: naturalezaPorDefecto,
+      servicio_tipo: naturalezaPorDefecto === 'servicio' ? 'profesional' : null,
+    });
     setPresentations([createNewPresentation()]);
     setIsEditing(false);
-  }, [createNewPresentation, hasVehicleFields]);
+  }, [createNewPresentation, hasVehicleFields, naturalezaPorDefecto]);
 
   const handleClose = useCallback(() => {
     onClose();
@@ -325,10 +352,16 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
 
     const { chasis, motor, color, anio, condicion, placa, matricula, kilometraje,
             ecommerce_visible, ecommerce_slug, ecommerce_descripcion, ecommerce_orden,
-            medida, ...restFormData } = formData;
+            medida, naturaleza, servicio_tipo, datos_inmueble, ...restFormData } = formData;
+    const esInmueble = naturaleza === 'inmueble';
     const cleanedData = {
       ...restFormData,
       ...(medidaLista ? { medida: String(medida || '').trim().toUpperCase() || null } : {}),
+      ...(naturalezaLista ? {
+        naturaleza: naturaleza || 'bien',
+        servicio_tipo: naturaleza === 'servicio' ? (servicio_tipo || 'profesional') : null,
+        datos_inmueble: esInmueble ? (datos_inmueble || {}) : null,
+      } : {}),
       tipo_id: formData.tipo_id || null,
       marca_id: formData.marca_id || null,
       modelos_ids: formData.modelos_ids || [],
@@ -341,7 +374,11 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       garantia_meses: parseInt(formData.garantia_meses) || 0,
       min_stock: parseFloat(formData.min_stock) || 0,
       max_stock: parseFloat(formData.max_stock) || 0,
-      itbis_pct: parseFloat(formData.itbis_pct) || 0.18,
+      // El inmueble no lleva ITBIS. Lo demás queda como estaba (`|| 0.18`
+      // convierte un 0 en 18%; las motos de Caminero dependen de eso hoy).
+      // Un servicio exento (alquiler de vivienda) sí guarda su 0.
+      itbis_pct: esInmueble || (naturaleza === 'servicio' && parseFloat(formData.itbis_pct) === 0)
+        ? 0 : (parseFloat(formData.itbis_pct) || 0.18),
       stock_mode: formData.stock_mode || 'auto',
       ...(hasVehicleFields && {
         chasis: chasis || null,
@@ -456,6 +493,9 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
             <div className="overflow-y-auto flex-grow bg-gray-50/30">
               <form onSubmit={handleSubmit} className="p-2">
                 <div className="bg-white border rounded-md shadow-sm p-3 mb-2">
+                  {naturalezaLista && (['servicios', 'inmobiliaria'].includes(tipoEmpresa) || (formData.naturaleza && formData.naturaleza !== 'bien')) && (
+                    <NaturalezaProducto formData={formData} setFormData={setFormData} />
+                  )}
                   <ProductBasicInfo
                     formData={formData}
                     setFormData={setFormData}

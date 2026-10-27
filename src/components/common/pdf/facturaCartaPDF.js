@@ -264,6 +264,23 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
     totalRow('Pendiente', pendiente, true);
   }
 
+  // (27/10/2026) Retenciones del cliente agente de retención: lo que se cobra
+  // es el neto. Y la nota del inmueble (sin ITBIS; el 3% lo paga el comprador).
+  const retI = Number(factura.itbis_retenido) || 0;
+  const retS = Number(factura.isr_retenido) || 0;
+  if (retI + retS > 0) {
+    if (retI > 0) totalRow('ITBIS retenido', -retI);
+    if (retS > 0) totalRow('ISR retenido', -retS);
+    totalRow('Neto a cobrar', (Number(factura.total) || 0) - retI - retS, true, 10);
+  }
+  if (factura._tiene_inmueble) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.5);
+    const nota = doc.splitTextToSize('Inmueble: transferencia no gravada con ITBIS. El impuesto de transferencia inmobiliaria (3% sobre el mayor entre el valor del acto y la tabla de la DGII) lo paga el comprador en la DGII dentro de los 6 meses del acto de venta.', R - M);
+    doc.text(nota, M, y + 2);
+    y += 2 + nota.length * 3.4;
+  }
+
   // ---------- e-CF: QR + código de seguridad + fecha de firma ----------
   // La DGII lo exige en la representación impresa. A la izquierda, a la
   // altura del cierre de los totales.

@@ -108,6 +108,8 @@ const navItems = [
       // Caminero Motors (terceros) + financieras que venden y financian propio
       { title: 'Solicitudes de Compras', id: 'solicitudes-compras', icon: ClipboardList, modulo: 'solicitudes_compras' },
       { title: 'Carta de Ruta', id: 'carta-ruta', icon: FileText, modulo: 'carta_ruta' },
+      // (27/10/2026) Inmobiliaria: solares vendidos, el traspaso (3%) y el contrato.
+      { title: 'Inmuebles Vendidos', id: 'inmuebles-vendidos', icon: Landmark, tipoNegocio: 'inmobiliaria', permissionKey: 'ventas' },
       { title: 'Cotizaciones', id: 'cotizaciones' },
       { title: 'Cot. Facturas Magna', id: 'cotizaciones-magna', icon: FileText, modulo: 'cotizaciones_magna' },
       { title: 'Devoluciones', id: 'devoluciones' },
@@ -128,7 +130,7 @@ const navItems = [
     title: 'Cuentas por Pagar',
     icon: DollarSign,
     subItems: [
-      { title: 'Orden de Compra', id: 'orden-compra' },
+      { title: 'Orden de Compra', id: 'orden-compra', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
       { title: 'Compras', id: 'compras' },
       { title: 'Pago a Suplidores', id: 'pago-suplidores', icon: Truck },
       { title: 'Pago Comisiones', id: 'pago-comisiones-vendedor', icon: Users },
@@ -154,12 +156,12 @@ const navItems = [
     icon: Package,
     subItems: [
       { title: 'Mercancías', id: 'mercancias' },
-      { title: 'Almacenes', id: 'almacenes', icon: Warehouse },
-      { title: 'Entrada Mercancía', id: 'entrada-mercancia', icon: Download },
-      { title: 'Salida Mercancía', id: 'salida-mercancia', icon: Upload },
-      { title: 'Actualizar Ubicación', id: 'actualizar-ubicacion' },
-      { title: 'Imp. Etiquetas', id: 'etiquetas-masivas', icon: Barcode },
-      { title: 'Solicitudes Agotados', id: 'solicitudes', icon: ClipboardList },
+      { title: 'Almacenes', id: 'almacenes', icon: Warehouse, ocultarEnTipos: ['servicios'] },
+      { title: 'Entrada Mercancía', id: 'entrada-mercancia', icon: Download, ocultarEnTipos: ['servicios'] },
+      { title: 'Salida Mercancía', id: 'salida-mercancia', icon: Upload, ocultarEnTipos: ['servicios'] },
+      { title: 'Actualizar Ubicación', id: 'actualizar-ubicacion', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
+      { title: 'Imp. Etiquetas', id: 'etiquetas-masivas', icon: Barcode, ocultarEnTipos: ['servicios', 'inmobiliaria'] },
+      { title: 'Solicitudes Agotados', id: 'solicitudes', icon: ClipboardList, ocultarEnTipos: ['servicios', 'inmobiliaria'] },
     ],
   },
   {
@@ -175,18 +177,18 @@ const navItems = [
     icon: BarChart2,
     subItems: [
       { title: 'Reporte de Compras', id: 'reporte-compras' },
-      { title: 'Transacciones de Inventario', id: 'reporte-movimientos' },
+      { title: 'Transacciones de Inventario', id: 'reporte-movimientos', ocultarEnTipos: ['servicios'] },
       { title: 'Transacciones Diarias', id: 'reporte-transacciones-diarias', icon: ListChecks },
-      { title: 'Inventario Físico', id: 'inventario-fisico', icon: Archive },
+      { title: 'Inventario Físico', id: 'inventario-fisico', icon: Archive, ocultarEnTipos: ['servicios'] },
       { title: 'Reportes DGII (606/607/608)', id: 'reportes-dgii', icon: FileText },
       { title: 'Libros Contables', id: 'libros-contables', icon: FileText },
       { title: 'Estado de Resultado', id: 'estado-resultados', icon: DollarSign },
       { title: 'Alertas Gerenciales', id: 'alertas-gerenciales', icon: BellRing },
       { title: 'Rentabilidad Diaria', id: 'rentabilidad-diaria', icon: DollarSign },
-      { title: 'Inventario Inteligente', id: 'inventario-inteligente', icon: Warehouse },
+      { title: 'Inventario Inteligente', id: 'inventario-inteligente', icon: Warehouse, ocultarEnTipos: ['servicios', 'inmobiliaria'] },
       { title: 'Flujo de Caja', id: 'flujo-caja', icon: DollarSign },
       { title: 'Cartera de Clientes', id: 'cartera-clientes', icon: Users },
-      { title: 'Recomendador de Precios', id: 'recomendador-precios', icon: DollarSign },
+      { title: 'Recomendador de Precios', id: 'recomendador-precios', icon: DollarSign, ocultarEnTipos: ['servicios', 'inmobiliaria'] },
     ],
   },
   {
@@ -198,9 +200,9 @@ const navItems = [
       { title: 'Suplidores', id: 'suplidores', icon: Truck },
       { title: 'Mercancías', id: 'mercancias', icon: Package },
       { title: 'Tipos de Producto', id: 'tipos-producto' },
-      { title: 'Marcas', id: 'marcas' },
-      { title: 'Modelos', id: 'modelos' },
-      { title: 'Ubicaciones', id: 'ubicaciones' },
+      { title: 'Marcas', id: 'marcas', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
+      { title: 'Modelos', id: 'modelos', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
+      { title: 'Ubicaciones', id: 'ubicaciones', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
     ],
   },
   {
@@ -216,6 +218,13 @@ const navItems = [
     ],
   },
 ];
+
+// (27/10/2026) El nombre de "Mercancías" según lo que vende la empresa.
+const TITULOS_POR_TIPO = {
+  servicios: { mercancias: 'Servicios' },
+  inmobiliaria: { mercancias: 'Inmuebles y Servicios' },
+};
+const tituloPorTipo = (sub, tipo) => TITULOS_POR_TIPO[tipo]?.[sub.id] || sub.title;
 
 const findGroupForPanel = (panelId) => {
   for (const item of navItems) {
@@ -438,6 +447,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             if (sub.featFlag && !empresa?.[sub.featFlag]) return false; // módulos por flag de empresa (ej. financiera)
             // módulos por tipo de negocio (ej. Documentos); moduloOr = módulo que
             // también lo enciende aunque la empresa no sea de ese tipo
+            // (27/10/2026) Lo que no aplica a un tipo de empresa (servicios no tiene inventario).
+            if (sub.ocultarEnTipos?.includes(empresa?.tipo_negocio)) return false;
             if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio
                 && !(sub.moduloOr && tieneModulo(empresa, sub.moduloOr))) return false;
             if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito
@@ -544,7 +555,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                                 isSubActive ? 'bg-white scale-125' : 'bg-slate-300 group-hover/sub:bg-blue-400'
                               }`} />
                             )}
-                            <span className="truncate flex-1">{subItem.title}</span>
+                            <span className="truncate flex-1">{tituloPorTipo(subItem, empresa?.tipo_negocio)}</span>
                             {subUnread > 0 && (
                               <span className={`min-w-5 h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center ${
                                 isSubActive ? 'bg-white text-emerald-600' : 'bg-emerald-500 text-white'

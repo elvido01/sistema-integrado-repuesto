@@ -75,10 +75,14 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     dias_credito: 0,
     mora_pct: 0,
     generar_mora: true, // cotejo "Generar Cargos por Atrasos (MORA)?"
+    agente_retencion: false,
     tipo_ncf: '02', // Consumidor Final
     precio_nivel: 1,
   });
   const showMora = isDealer || !!empresa?.feat_financiera;
+  // (27/10/2026) Empresas de servicios e inmobiliarias: el cliente empresa
+  // que retiene ITBIS/ISR al pagar. Ver sql/tipos_empresa_servicios_inmobiliaria.sql
+  const showRetencion = ['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio);
   const [ficha, setFicha] = useState(emptyFicha());
   const [activeTab, setActiveTab] = useState('personal');
 
@@ -106,6 +110,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           dias_credito: cliente.dias_credito || 0,
           mora_pct: cliente.mora_pct || 0,
           generar_mora: cliente.generar_mora ?? true,
+          agente_retencion: !!cliente.agente_retencion,
           tipo_ncf: cliente.tipo_ncf || '02',
           precio_nivel: cliente.precio_nivel || 1,
         });
@@ -128,6 +133,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           dias_credito: prefill?.dias_credito || 0,
           mora_pct: prefill?.mora_pct || 0,
           generar_mora: prefill?.generar_mora ?? true,
+          agente_retencion: false,
           tipo_ncf: '02',
           precio_nivel: 1,
         });
@@ -168,6 +174,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
         dias_credito: row.dias_credito || 0,
         mora_pct: row.mora_pct || 0,
         generar_mora: row.generar_mora ?? true,
+        agente_retencion: !!row.agente_retencion,
         tipo_ncf: row.tipo_ncf || '02',
         precio_nivel: row.precio_nivel || 1,
       });
@@ -270,6 +277,9 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     if (isDealer) {
       dataToSubmit.ficha_dealer = ficha;
     }
+    // Solo donde aplica: en las demás empresas no se manda (no cambia nada).
+    if (showRetencion) dataToSubmit.agente_retencion = !!formData.agente_retencion;
+    else delete dataToSubmit.agente_retencion;
 
     // Actualiza si es edición (prop cliente) o si el código coincidió con un
     // cliente existente al teclearlo (matchedId). Si no, inserta uno nuevo.
@@ -448,6 +458,15 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
               </TabsContent>
             )}
             <TabsContent value="credito" className="py-4 space-y-4">
+              {showRetencion && (
+                <div className="flex items-start space-x-2 rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <Checkbox id="agente_retencion" checked={!!formData.agente_retencion} onCheckedChange={(checked) => handleCheckedChange('agente_retencion', checked)} />
+                  <Label htmlFor="agente_retencion" className="leading-snug">
+                    <b>Agente de retención</b> — es una empresa que al pagarnos servicios retiene ITBIS/ISR.
+                    Sus facturas de servicios muestran la retención y se cobra el <b>neto</b>.
+                  </Label>
+                </div>
+              )}
               <div className="flex items-center space-x-2">
                 <Checkbox id="autorizar_credito" checked={formData.autorizar_credito} onCheckedChange={(checked) => handleCheckedChange('autorizar_credito', checked)} />
                 <Label htmlFor="autorizar_credito">Autorizar Crédito</Label>

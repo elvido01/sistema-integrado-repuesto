@@ -64,12 +64,14 @@ export const generar607 = (ventas) => {
       v.ncf_modificado || '',          // 4
       '01',                            // 5 Tipo ingreso: operaciones (default)
       fmtFecha(v.fecha),               // 6
-      '',                              // 7 fecha retención
+      // (27/10/2026) Retenciones del cliente agente de retención (servicios).
+      // La fecha de retención real es la del pago; se usa la del comprobante.
+      (Number(v.itbis_retenido) || 0) + (Number(v.isr_retenido) || 0) > 0 ? fmtFecha(v.fecha) : '', // 7 fecha retención
       fmtMonto(v.subtotal),            // 8 monto facturado (sin ITBIS)
       fmtMonto(v.itbis),               // 9
-      '0.00',                          // 10
+      fmtMonto(v.itbis_retenido || 0), // 10 ITBIS retenido por terceros
       '0.00',                          // 11
-      '0.00',                          // 12
+      fmtMonto(v.isr_retenido || 0),   // 12 retención renta por terceros
       '0.00',                          // 13
       '0.00',                          // 14
       '0.00',                          // 15

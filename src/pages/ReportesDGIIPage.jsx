@@ -56,7 +56,7 @@ const ReportesDGIIPage = () => {
       // (cuando se emitio via PSFE como Alegra). Buscamos en ambas fuentes.
       const { data: vRaw, error: ev } = await supabase
         .from('facturas')
-        .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
+        .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, itbis_retenido, isr_retenido, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
         .gte('fecha', rangoDeFechas(desde, hasta).desde)
         .lte('fecha', rangoDeFechas(desde, hasta).hasta)
         .neq('estado', 'ANULADA')

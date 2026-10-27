@@ -1,5 +1,5 @@
 import { formatInTimeZone, formatFechaDMY } from './dateUtils';
-import { prepararEcfImpresion, ecfBloqueHtml, ecfVenceHtml, esEncf } from '@/lib/ecfImpresion';
+import { prepararEcfImpresion, ecfBloqueHtml, ecfVenceHtml, esEncf, extrasFacturaHtml } from '@/lib/ecfImpresion';
 import { printHtmlSmart, printViaBrowser, isSilentPrintEnabled } from './printHtmlSmart';
 import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 
@@ -301,6 +301,7 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
 
       ${renderFacturaNotas(factura.notas)}
 
+      ${extrasFacturaHtml(factura)}
       ${ecfBloqueHtml(factura.ecf, { qr: is4inch ? '32mm' : '30mm', fuente: '12px' })}
 
       <div class="footer">
@@ -464,6 +465,7 @@ const printFacturaDealerFullPage = (factura) => {
         <div class="r final"><span>Total Facturado</span><span>${formatCurrency(factura.total)}</span></div>
       </div>
 
+      ${extrasFacturaHtml(factura)}
       ${ecfBloqueHtml(factura.ecf, { qr: '30mm' })}
 
       <div class="firmas">
@@ -784,6 +786,7 @@ const printFacturaFullPage = (factura, printFormat) => {
         </div>
       </div>
 
+      ${extrasFacturaHtml(factura)}
       ${ecfBloqueHtml(factura.ecf, { qr: '30mm', fuente: '11px' })}
 
       ${factura.forma_pago === 'CREDITO' ? `

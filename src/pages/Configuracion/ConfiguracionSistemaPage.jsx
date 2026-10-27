@@ -84,6 +84,8 @@ const ConfiguracionSistemaPage = () => {
         precio3_descuento_pct: 15,
         margen_minimo_pct: 0,
         tipo_negocio: 'repuestos',
+        emisor_persona_fisica: false,
+        retencion_itbis_aplica: true,
         incluir_existencias_cero_default: true,
         cobranza_hora_corte: '17:50',
         cobranza_buscador_telefono: '',
@@ -147,6 +149,8 @@ const ConfiguracionSistemaPage = () => {
                     precio3_descuento_pct: data.precio3_descuento_pct ?? 15,
                     margen_minimo_pct: data.margen_minimo_pct ?? 0,
                     tipo_negocio: data.tipo_negocio || 'repuestos',
+                    emisor_persona_fisica: !!data.emisor_persona_fisica,
+                    retencion_itbis_aplica: data.retencion_itbis_aplica !== false,
                     incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true,
                     cobranza_hora_corte: (data.cobranza_hora_corte || '17:50').slice(0, 5),
                     cobranza_buscador_telefono: data.cobranza_buscador_telefono || '',
@@ -216,7 +220,8 @@ const ConfiguracionSistemaPage = () => {
                 // El menú de préstamos cuelga de feat_financiera: va siempre
                 // junto con el tipo (antes cambiar a Financiera aquí no lo
                 // activaba). Ver sql/registro_empresa_con_tipo_de_negocio.sql.
-                feat_financiera: formData.tipo_negocio === 'financiera',
+                // La inmobiliaria vende solares a plazos con el motor de préstamos.
+                feat_financiera: ['financiera', 'inmobiliaria'].includes(formData.tipo_negocio),
                 updated_at: new Date().toISOString()
             };
             
@@ -610,11 +615,30 @@ const ConfiguracionSistemaPage = () => {
                                         <SelectItem value="repuestos">Repuestos / Piezas (código corto)</SelectItem>
                                         <SelectItem value="dealer">Dealer / Vehículos (chasis largo)</SelectItem>
                                         <SelectItem value="financiera">Financiera / Motopréstamos</SelectItem>
+                                        <SelectItem value="servicios">Servicios (sin inventario)</SelectItem>
+                                        <SelectItem value="inmobiliaria">Inmobiliaria (solares, alquileres)</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">
-                                    En <strong>Dealer</strong> y <strong>Financiera</strong> el código (chasis/VIN) se muestra completo en el buscador. En <strong>Repuestos</strong> el código va en columna angosta. <strong>Financiera</strong> además activa el menú de préstamos (al guardar y volver a entrar).
+                                    En <strong>Dealer</strong> y <strong>Financiera</strong> el código (chasis/VIN) se muestra completo en el buscador. En <strong>Repuestos</strong> el código va en columna angosta. <strong>Financiera</strong> además activa el menú de préstamos (al guardar y volver a entrar). <strong>Servicios</strong> esconde el inventario; <strong>Inmobiliaria</strong> vende solares (de contado o a plazos) y lleva los traspasos.
                                 </p>
+                            </div>
+
+                            {/* (27/10/2026) Retenciones: cuando un cliente marcado como
+                                "agente de retención" (una empresa) paga servicios. */}
+                            <div className="space-y-2 md:col-span-2 rounded-md border border-amber-200 bg-amber-50/50 p-3">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Retenciones en ventas de servicios</Label>
+                                <label className="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" className="mt-1" checked={!!formData.emisor_persona_fisica}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, emisor_persona_fisica: e.target.checked }))} />
+                                    <span>La empresa factura como <strong>persona física</strong> (profesional independiente). Le retienen el <strong>100% del ITBIS</strong> y el <strong>10% de ISR</strong>.</span>
+                                </label>
+                                <label className="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" className="mt-1" checked={formData.retencion_itbis_aplica !== false}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, retencion_itbis_aplica: e.target.checked }))} />
+                                    <span>Los clientes empresa <strong>retienen ITBIS</strong> (30% en servicios profesionales). Apágalo si tu contador indica que por ser emisor electrónico ya no te retienen (Norma 02-2026).</span>
+                                </label>
+                                <p className="text-[10px] text-gray-500 italic">Solo aplica a líneas de SERVICIO y a clientes marcados como "Agente de retención". La factura vale su total; lo que se cobra es el neto. Confirma las tasas con tu contador.</p>
                             </div>
 
                             <div className="space-y-1.5">

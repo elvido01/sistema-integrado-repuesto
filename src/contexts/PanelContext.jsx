@@ -49,6 +49,7 @@ const ReporteMovimientosPage = lazy(() => import('@/pages/ReporteMovimientosPage
 const SolicitudesPage = lazy(() => import('@/pages/SolicitudesPage'));
 const SolicitudesComprasPage = lazy(() => import('@/pages/SolicitudesComprasPage'));
 const CartaRutaPage = lazy(() => import('@/pages/CartaRutaPage'));
+const InmueblesVendidosPage = lazy(() => import('@/pages/InmueblesVendidosPage'));
 const DocumentacionClientePage = lazy(() => import('@/pages/DocumentacionClientePage'));
 const ReportesDGIIPage = lazy(() => import('@/pages/ReportesDGIIPage'));
 const LibrosContablesPage = lazy(() => import('@/pages/LibrosContablesPage'));
@@ -151,6 +152,7 @@ const componentMapping = {
   'solicitudes': { component: () => <Protected module="solicitudes"><SolicitudesPage /></Protected>, icon: ClipboardList, name: 'Solicitudes Agotados' },
   'solicitudes-compras': { component: () => <Protected module="solicitudes-compras"><SolicitudesComprasPage /></Protected>, icon: ClipboardList, name: 'Solicitudes de Compras' },
   'carta-ruta': { component: ({ extraData }) => <Protected module="carta-ruta"><CartaRutaPage extraData={extraData} /></Protected>, icon: FileText, name: 'Carta de Ruta' },
+  'inmuebles-vendidos': { component: () => <Protected module="ventas"><InmueblesVendidosPage /></Protected>, icon: FileText, name: 'Inmuebles Vendidos' },
   'documentacion-cliente': { component: () => <Protected module="documentacion-cliente"><DocumentacionClientePage /></Protected>, icon: FileImage, name: 'Documentación Cliente' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },
   'libros-contables': { component: () => <Protected module="libros-contables"><LibrosContablesPage /></Protected>, icon: FileText, name: 'Libros Contables' },

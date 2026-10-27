@@ -1096,6 +1096,9 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
       precio_unitario: precioBase,
       descuento_monto: descuento,
       indicador_facturacion: aplicaItbis ? "1" : "4", // 1=gravado, 4=exento
+      // (27/10/2026) Línea de SERVICIO (honorarios, alquiler): 2. Bien e
+      // inmueble: 1. La naturaleza la copia la base al guardar la línea.
+      indicador_bien_servicio: d.naturaleza === "servicio" ? "2" : "1",
       monto_item: Number(monto.toFixed(2)),
       itbis_pct: aplicaItbis ? (isFinite(itbisPct) && itbisPct > 0 ? itbisPct : 0.18) : 0,
       // (10/10/2026) El ITBIS que se COBRO en la línea. Recalcularlo (base × 18%)

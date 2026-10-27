@@ -37,7 +37,51 @@ export const esEncf = (n) => /^E\d{12}$/.test(String(n || '').trim());
  * un e-NCF. Si no lo es (NCF de papel o sin NCF), la devuelve tal cual.
  * `factura.impresion_ecf` (lo que devuelve emitir-fiscal) evita la consulta.
  */
-export async function prepararEcfImpresion(factura) {
+// ── (27/10/2026) Retenciones e inmuebles en la factura impresa ──────────
+// Las retenciones las calcula la base al guardar las líneas (cliente agente
+// de retención + líneas de servicio), así que aquí se LEEN de la factura.
+// Y si alguna línea es un inmueble, la factura lleva la nota del traspaso.
+// Ver sql/tipos_empresa_servicios_inmobiliaria.sql
+async function completarExtras(factura) {
+  if (!factura?.id || factura._extras) return factura;
+  const out = { ...factura, _extras: true };
+  try {
+    const [{ data: f, error: e1 }, { data: dets, error: e2 }] = await Promise.all([
+      supabase.from('facturas').select('itbis_retenido, isr_retenido').eq('id', factura.id).maybeSingle(),
+      supabase.from('facturas_detalle').select('naturaleza').eq('factura_id', factura.id),
+    ]);
+    if (!e1 && f) { out.itbis_retenido = Number(f.itbis_retenido) || 0; out.isr_retenido = Number(f.isr_retenido) || 0; }
+    if (!e2) out._tiene_inmueble = (dets || []).some((d) => d.naturaleza === 'inmueble');
+  } catch (_) { /* sin las columnas nuevas: se imprime como siempre */ }
+  return out;
+}
+
+const mon = (v) => `RD$ ${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Bloque HTML: retenciones + neto a cobrar, y la nota del inmueble. '' si no aplica. */
+export function extrasFacturaHtml(factura, { fuente = '12px' } = {}) {
+  if (!factura) return '';
+  const ri = Number(factura.itbis_retenido) || 0;
+  const rs = Number(factura.isr_retenido) || 0;
+  const partes = [];
+  if (ri + rs > 0) {
+    const fila = (k, v, b = false) => `<div style="display:flex;justify-content:space-between;${b ? 'font-weight:900;border-top:1px solid #000;padding-top:2px;' : ''}"><span>${k}</span><span>${v}</span></div>`;
+    partes.push(`<div style="margin:6px 0 4px auto;max-width:300px;font-size:${fuente};line-height:1.35;">
+      ${ri > 0 ? fila('ITBIS retenido por el cliente', `- ${mon(ri)}`) : ''}
+      ${rs > 0 ? fila('ISR retenido por el cliente', `- ${mon(rs)}`) : ''}
+      ${fila('NETO A COBRAR', mon((Number(factura.total) || 0) - ri - rs), true)}
+    </div>`);
+  }
+  if (factura._tiene_inmueble) {
+    partes.push(`<div style="margin:6px 0;font-size:${fuente};line-height:1.3;border:1px dashed #000;padding:4px 6px;">
+      Inmueble: transferencia no gravada con ITBIS. El impuesto de transferencia inmobiliaria (3% sobre el mayor entre el valor del acto y la tabla de la DGII) lo paga el comprador en la DGII dentro de los 6 meses del acto de venta.
+    </div>`);
+  }
+  return partes.join('');
+}
+
+export async function prepararEcfImpresion(facturaIn) {
+  const factura = await completarExtras(facturaIn);
   if (!factura || factura.ecf) return factura;
   const encf = [factura.encf, factura.ncf].map((x) => String(x || '').trim()).find(esEncf);
   if (!encf) return factura;
