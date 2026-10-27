@@ -163,7 +163,7 @@ const ReporteTransaccionesDiariasPage = () => {
         let formato = empresa?.formato_factura || 'pos_4inch';
         let metodo = 'browser';
         try {
-          formato = localStorage.getItem('ventas_printFormat') || formato;
+          // El formato es el de la empresa (ya no se guarda por computadora).
           metodo = localStorage.getItem('ventas_printMethod') || metodo;
         } catch (_) { /* sin storage: valores de la empresa */ }
         if (formato === 'full_page' || formato === 'half_page') {

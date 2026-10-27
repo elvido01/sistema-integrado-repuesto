@@ -75,7 +75,12 @@ export const useVentas = () => {
   const [cotizacionMagnaId, setCotizacionMagnaId] = useState(null);
   const [solicitudCompraId, setSolicitudCompraId] = useState(null); // origen financiado (terceros)
   const [confirmarContado, setConfirmarContado] = useState(false);  // aviso al salirse del crédito
-  const [printFormat, setPrintFormat] = useState(() => localStorage.getItem('ventas_printFormat') || empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
+  // (27/10/2026) Manda el formato de la EMPRESA (Configuración → Formato de
+  // factura). Antes mandaba lo último que se eligió en ESA computadora, para
+  // siempre: en Caminero alguien eligió media página una vez y las facturas
+  // siguieron saliendo en 8.5x5.5 con el QR pasado a otra hoja. El selector de
+  // abajo cambia solo la venta en curso.
+  const [printFormat, setPrintFormat] = useState(() => empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser');
   const [recargo, setRecargo] = useState(0);
   const [tipoPago, setTipoPago] = useState('EFECTIVO'); // EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE
@@ -103,11 +108,10 @@ export const useVentas = () => {
   const [currentItem, setCurrentItem] = useState(null);
   const [editingItemIndex, setEditingItemIndex] = useState(null); // index of item being edited in-place
 
-  // Sync printFormat default from config_empresa when it loads (if no localStorage override)
+  // Cuando carga la configuración de la empresa, su formato manda.
   useEffect(() => {
-    if (empresa?.formato_factura && !localStorage.getItem('ventas_printFormat')) {
-      setPrintFormat(empresa.formato_factura);
-    }
+    if (empresa?.formato_factura) setPrintFormat(empresa.formato_factura);
+    try { localStorage.removeItem('ventas_printFormat'); } catch { /* sin storage */ }
   }, [empresa?.formato_factura]);
 
   /* Ref to access latest items in async callbacks */
@@ -383,7 +387,9 @@ export const useVentas = () => {
     setTipoPago('EFECTIVO');
     setCuentaBancoId(null);
     setPagos([]);
-    setPrintFormat('pos_4inch');
+    // Terminada la venta, se vuelve al formato de la empresa (antes se iba a
+    // 4 pulgadas, por eso "a veces" salía en otro formato).
+    setPrintFormat(empresa?.formato_factura || 'pos_4inch');
     setEditingFacturaId(null);
     setEditingFacturaNumero(null);
     setPedidoId(null);

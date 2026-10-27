@@ -785,7 +785,7 @@ const VentasPage = () => {
         onFacturar={handleConfirmAndPrint}
         isSaving={isSaving}
         printFormat={printFormat}
-        setPrintFormat={(v) => { setPrintFormat(v); localStorage.setItem('ventas_printFormat', v); }}
+        setPrintFormat={(v) => { setPrintFormat(v); /* solo esta venta: ver useVentas */ }}
         printMethod={printMethod}
         setPrintMethod={(v) => { setPrintMethod(v); localStorage.setItem('ventas_printMethod', v); }}
         tipoPago={tipoPago}
