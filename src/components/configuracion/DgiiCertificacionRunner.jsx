@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -73,7 +73,26 @@ function downloadXml(xml, fileName) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Revocar enseguida puede cancelar la descarga en Chrome.
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// (28/10/2026) La factura completa de la fase 4 se firma junto con su RFCE y
+// su código de seguridad tiene que coincidir con el RFCE ya aceptado: si se
+// pierde, no se puede volver a generar. Se guarda en este navegador para que
+// sobreviva a una recarga y se pueda bajar las veces que haga falta.
+const MANUAL_KEY = (encf) => `dgii_certif_manual_${String(encf || '').trim()}`;
+function guardarManual(encf, m) {
+  try { if (m?.xml_firmado) localStorage.setItem(MANUAL_KEY(encf), JSON.stringify(m)); } catch { /* sin espacio o bloqueado */ }
+}
+function leerManual(encf) {
+  try { const v = localStorage.getItem(MANUAL_KEY(encf)); return v ? JSON.parse(v) : null; } catch { return null; }
+}
+function nombreManual(caso) {
+  const m = caso.manualEcf || {};
+  const rnc = String(m.rnc_emisor || caso.row?.RNCEmisor || '').replace(/\D/g, '');
+  const encf = String(m.encf || caso.encf || '').trim();
+  return m.file_name || (rnc && encf ? `${rnc}${encf}.xml` : `${encf}.xml`);
 }
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -108,6 +127,20 @@ const DgiiCertificacionRunner = () => {
   const [running, setRunning] = useState(false);
   const [consultingAll, setConsultingAll] = useState(false);
   const [progreso, setProgreso] = useState({ ok: 0, err: 0 });
+
+  // Toda factura completa firmada que aparezca queda guardada en el navegador.
+  useEffect(() => {
+    for (const c of casos) if (c.fase === 4 && c.manualEcf?.xml_firmado) guardarManual(c.encf, c.manualEcf);
+  }, [casos]);
+
+  const manualesListos = casos.filter(c => c.fase === 4 && c.manualEcf?.xml_firmado);
+  const descargarManuales = async () => {
+    for (const c of manualesListos) {
+      downloadXml(c.manualEcf.xml_firmado, nombreManual(c));
+      await delay(1200);
+    }
+    toast({ title: `${manualesListos.length} XML descargados`, description: 'Si Chrome pregunta, permite "descargar varios archivos".' });
+  };
 
   const resumen = useMemo(() => {
     const aceptados = casos.filter(c => isCasoAceptado(c) || isRfceListoParaFacturaCompleta(c)).length;
@@ -175,7 +208,7 @@ const DgiiCertificacionRunner = () => {
         toast({ title: 'Archivo vacio', description: 'No se encontraron casos en las hojas ECF o RFCE.', variant: 'destructive' });
         return;
       }
-      setCasos(all);
+      setCasos(all.map(c => (c.fase === 4 ? { ...c, manualEcf: leerManual(c.encf) } : c)));
       setProgreso({ ok: 0, err: 0 });
       toast({
         title: '✓ Set cargado',
@@ -611,6 +644,18 @@ const DgiiCertificacionRunner = () => {
           </Button>
         )}
 
+        {manualesListos.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={descargarManuales}
+            disabled={running}
+            className="border-purple-300 text-purple-700 hover:bg-purple-100"
+            title="Facturas de consumo < 250 mil: se suben a mano en el portal DGII"
+          >
+            Descargar {manualesListos.length} XML (subida manual)
+          </Button>
+        )}
+
         {casos.some(c => c.trackId && !String(c.trackId).startsWith('DESCARGADO')) && (
           <Button
             variant="outline"
@@ -740,6 +785,17 @@ const DgiiCertificacionRunner = () => {
                           className="h-6 px-2 text-[10px]"
                         >
                           Reintentar
+                        </Button>
+                      )}
+                      {caso.fase === 4 && caso.manualEcf?.xml_firmado && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => downloadXml(caso.manualEcf.xml_firmado, nombreManual(caso))}
+                          className="h-6 px-2 text-[10px] text-purple-700"
+                          title="Bajar el XML firmado para subirlo en el portal DGII (Facturas de consumo < 250 mil)"
+                        >
+                          Descargar XML
                         </Button>
                       )}
                       {(caso.trackId || caso.response || caso.estado === 'aceptado' || caso.estado === 'descargado' || caso.estado === 'enviado') && (
