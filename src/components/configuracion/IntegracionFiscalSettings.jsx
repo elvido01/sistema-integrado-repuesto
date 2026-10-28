@@ -288,6 +288,11 @@ const IntegracionFiscalSettings = () => {
                 type={campo.type === 'password' && !showSecrets[campo.key] ? 'password' : 'text'}
                 value={config[campo.key] || ''}
                 onChange={(e) => handleConfigChange(campo.key, e.target.value)}
+                // Claves de integración: que el navegador no meta la del login.
+                name={`fiscal-${campo.key}`}
+                autoComplete={campo.type === 'password' ? 'new-password' : 'off'}
+                data-lpignore="true"
+                data-1p-ignore="true"
                 placeholder={campo.placeholder}
                 className="h-10 pr-10"
               />

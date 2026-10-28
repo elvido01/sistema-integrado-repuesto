@@ -46,6 +46,8 @@ const DgiiCertificadoUploader = () => {
 
   const [file, setFile] = useState(null);
   const [password, setPassword] = useState('');
+  // Solo lectura hasta que el usuario entra al campo: Chrome no autocompleta campos readOnly.
+  const [pwdEditable, setPwdEditable] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [rnc, setRnc] = useState('');
   const [nombre, setNombre] = useState('');
@@ -714,6 +716,13 @@ const DgiiCertificadoUploader = () => {
               type={showPwd ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              // Que el navegador no meta aquí la clave guardada del login.
+              name="dgii-cert-clave"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              readOnly={!pwdEditable}
+              onFocus={() => setPwdEditable(true)}
               placeholder="Contrasena que usaste al exportar el .p12"
               className="pr-10"
             />
