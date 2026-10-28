@@ -4,6 +4,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useVentas } from '@/hooks/useVentas';
 import VentasHeader from '@/components/ventas/VentasHeader';
 import VentasTable from '@/components/ventas/VentasTable';
+import LineasServicios from '@/components/ventas/LineasServicios';
 import VentasFooter from '@/components/ventas/VentasFooter';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
@@ -755,6 +756,12 @@ const VentasPage = () => {
               </button>
             </div>
           )}
+          {/* (28/10/2026) Servicios e inmobiliarias facturan por líneas libres
+              (servicio · descripción · referencia · monto), no por códigos con
+              existencia. Ver components/ventas/LineasServicios.jsx */}
+          {['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio) ? (
+            <LineasServicios items={items} setItems={setItems} cliente={cliente} />
+          ) : (
           <VentasTable
             items={items}
             itemCode={itemCode}
@@ -774,6 +781,7 @@ const VentasPage = () => {
             clearCurrentItem={clearCurrentItem}
             userRole={profile?.role}
           />
+          )}
         </div>
       </main>
 
