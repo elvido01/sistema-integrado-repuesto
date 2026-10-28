@@ -312,9 +312,12 @@ const DgiiCertificacionRunner = () => {
     return last || { estado: 'enviado', error: null, payload: null };
   };
 
-  const correrTodos = async () => {
+  // soloFases: p. ej. [3, 4] para repetir solo RFCE + facturas de consumo cuando
+  // las fases 1 y 2 ya están aceptadas en la DGII.
+  const correrTodos = async (soloFases = null) => {
     if (!casos.length || running) return;
-    if (!confirm(`Enviar ${casos.length} casos a DGII?\n\nSe firmara cada uno con tu .p12 y se enviara al ambiente oficial de certificacion (${CERTIFICACION_AMBIENTE}).\n\nEsto puede tardar 1-3 minutos.`)) return;
+    const nEnviar = soloFases ? casos.filter(c => soloFases.includes(c.fase)).length : casos.length;
+    if (!confirm(`Enviar ${nEnviar} casos a DGII?\n\nSe firmara cada uno con tu .p12 y se enviara al ambiente oficial de certificacion (${CERTIFICACION_AMBIENTE}).\n\nEsto puede tardar 1-3 minutos.`)) return;
     setRunning(true);
     let ok = 0, err = 0;
     const manualEcfByEncf = new Map(
@@ -329,6 +332,7 @@ const DgiiCertificacionRunner = () => {
     );
     for (let i = 0; i < casos.length; i++) {
       const casoActual = casos[i];
+      if (soloFases && !soloFases.includes(casoActual.fase)) { ok++; setProgreso({ ok, err }); continue; }
       if (isCasoAceptado(casoActual) || isRfceListoParaFacturaCompleta(casoActual) || LOCAL_READY_ESTADOS.has(casoActual.estado)) {
         if (isCasoAceptado(casoActual) || isRfceListoParaFacturaCompleta(casoActual)) aceptadosEnCorrida.add(String(casoActual.encf));
         ok++;
@@ -635,12 +639,23 @@ const DgiiCertificacionRunner = () => {
 
         {casos.length > 0 && (
           <Button
-            onClick={correrTodos}
+            onClick={() => correrTodos()}
             disabled={running}
             className="bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
             {running ? `Enviando ${progreso.ok + progreso.err}/${casos.length}...` : `Enviar ${casos.length} casos`}
+          </Button>
+        )}
+
+        {!running && casos.some(c => c.fase === 3) && (
+          <Button
+            variant="outline"
+            onClick={() => correrTodos([3, 4])}
+            className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+            title="Cuando las fases 1 y 2 ya estan aceptadas en la DGII: reenvia solo los resumenes (RFCE) y prepara las facturas de consumo"
+          >
+            Solo resúmenes + facturas de consumo ({casos.filter(c => c.fase === 3 || c.fase === 4).length})
           </Button>
         )}
 
