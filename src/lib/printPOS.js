@@ -313,7 +313,8 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
   `;
 
   // Impresión sin diálogo por el agente si está activo; sino, navegador.
-  emitirImpresion(html, { tipo: 'ticket', anchoMM: is4inch ? 72 : 68 });
+  // (28/10/2026) Factura en dólares: las etiquetas también.
+  emitirImpresion(factura._moneda === 'USD' ? html.replace(/RD\$/g, 'US$') : html, { tipo: 'ticket', anchoMM: is4inch ? 72 : 68 });
 };
 
 // ── Full Page / Half Page Invoice ──
@@ -480,7 +481,7 @@ const printFacturaDealerFullPage = (factura) => {
     </body></html>`;
 
   // Factura dealer en hoja completa (carta) → imagen GDI o navegador.
-  emitirImpresion(html, { tipo: 'carta' });
+  emitirImpresion(factura._moneda === 'USD' ? html.replace(/RD\$/g, 'US$') : html, { tipo: 'carta' });
 };
 
 const printFacturaFullPage = (factura, printFormat) => {
@@ -808,7 +809,7 @@ const printFacturaFullPage = (factura, printFormat) => {
     </html>
   `;
 
-  emitirImpresion(html, { tipo: 'ticket', anchoMM: 72 });
+  emitirImpresion(factura._moneda === 'USD' ? html.replace(/RD\$/g, 'US$') : html, { tipo: 'ticket', anchoMM: 72 });
 };
 
 export const printDevolucionPOS = (devolucion, factura, cliente, details) => {

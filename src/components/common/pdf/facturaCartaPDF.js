@@ -264,6 +264,14 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
     totalRow('Pendiente', pendiente, true);
   }
 
+  // (28/10/2026) Factura en US$: los montos de arriba ya vienen en dólares.
+  if (factura._moneda === 'USD') {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(`Valores en US$ · Tasa RD$ ${money(factura._tasa)} por US$ 1 · Equivale a RD$ ${money(factura._total_rd)}`, R, y + 1, { align: 'right' });
+    y += 6;
+  }
+
   // (27/10/2026) Retenciones del cliente agente de retención: lo que se cobra
   // es el neto. Y la nota del inmueble (sin ITBIS; el 3% lo paga el comprador).
   const retI = Number(factura.itbis_retenido) || 0;

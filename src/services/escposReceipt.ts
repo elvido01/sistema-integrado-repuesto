@@ -183,6 +183,9 @@ interface FacturaData {
     itbis_retenido?: number;
     isr_retenido?: number;
     _tiene_inmueble?: boolean;
+    _moneda?: string;
+    _tasa?: number;
+    _total_rd?: number;
     fecha?: string;
     forma_pago?: string;
     dias_credito?: number;
@@ -310,7 +313,11 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     lines.push(totalsRow('Descuento en Items:', fmt(factura.descuento || 0)));
     lines.push(totalsRow('ITBIS :', fmt(totalItbis)));
     lines.push(padR('Valores en', W - 12) + padL('============', 12));
-    lines.push(padR('DOP', 10) + CMD.BOLD_ON + padL('TOTAL :', W - 10 - 12) + padL(fmt(factura.total || 0), 12) + CMD.BOLD_OFF);
+    lines.push(padR(factura._moneda === 'USD' ? 'USD' : 'DOP', 10) + CMD.BOLD_ON + padL('TOTAL :', W - 10 - 12) + padL(fmt(factura.total || 0), 12) + CMD.BOLD_OFF);
+    if (factura._moneda === 'USD' && factura._tasa) {
+        lines.push(totalsRow('Tasa RD$ x US$:', fmt(factura._tasa)));
+        lines.push(totalsRow('Equivale RD$:', fmt(factura._total_rd || 0)));
+    }
 
     // ── Retenciones (cliente agente de retención): se cobra el neto ──
     const retItbis = Number(factura.itbis_retenido) || 0;

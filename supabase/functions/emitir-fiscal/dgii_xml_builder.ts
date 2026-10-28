@@ -353,6 +353,7 @@ function buildItemsXml(items) {
       ${tag("UnidadMedida", it.unidad_medida || "43")}
       <PrecioUnitarioItem>${fmtMoney(precio)}</PrecioUnitarioItem>
       ${descuento > 0 ? `<DescuentoMonto>${fmtMoney(descuento)}</DescuentoMonto>` : ""}
+      ${it.otra_moneda ? `<OtraMonedaDetalle><PrecioOtraMoneda>${fmtMoney(it.otra_moneda.precio)}</PrecioOtraMoneda><MontoItemOtraMoneda>${fmtMoney(it.otra_moneda.monto)}</MontoItemOtraMoneda></OtraMonedaDetalle>` : ""}
       <MontoItem>${fmtMoney(monto)}</MontoItem>
     </Item>`.trim();
   }).join("\n    ");
@@ -377,6 +378,23 @@ function buildTotalesXml(t) {
       ${t.total_itbis_retenido ? `<TotalITBISRetenido>${fmtMoney(t.total_itbis_retenido)}</TotalITBISRetenido>` : ""}
       ${t.total_isr_retencion ? `<TotalISRRetencion>${fmtMoney(t.total_isr_retencion)}</TotalISRRetencion>` : ""}
     </Totales>`;
+}
+
+// (28/10/2026) Factura en otra moneda (US$): <OtraMoneda> va en el
+// Encabezado DESPUÉS de <Totales> (mismo orden que el builder de
+// certificación, aceptado por la DGII). Los Totales siguen en pesos.
+function buildOtraMonedaXml(om) {
+  if (!om) return "";
+  return `<OtraMoneda>` +
+    `<TipoMoneda>${om.tipo_moneda}</TipoMoneda>` +
+    `<TipoCambio>${Number(om.tipo_cambio).toFixed(4)}</TipoCambio>` +
+    (om.monto_gravado_total ? `<MontoGravadoTotalOtraMoneda>${fmtMoney(om.monto_gravado_total)}</MontoGravadoTotalOtraMoneda>` : "") +
+    (om.monto_gravado_1 ? `<MontoGravado1OtraMoneda>${fmtMoney(om.monto_gravado_1)}</MontoGravado1OtraMoneda>` : "") +
+    (om.monto_exento ? `<MontoExentoOtraMoneda>${fmtMoney(om.monto_exento)}</MontoExentoOtraMoneda>` : "") +
+    (om.total_itbis ? `<TotalITBISOtraMoneda>${fmtMoney(om.total_itbis)}</TotalITBISOtraMoneda>` : "") +
+    (om.total_itbis_1 ? `<TotalITBIS1OtraMoneda>${fmtMoney(om.total_itbis_1)}</TotalITBIS1OtraMoneda>` : "") +
+    `<MontoTotalOtraMoneda>${fmtMoney(om.monto_total)}</MontoTotalOtraMoneda>` +
+  `</OtraMoneda>`;
 }
 
 // Helper compartido: genera el bloque <Emisor>
@@ -433,6 +451,7 @@ function buildXmlTipo32(input) {
       ${tag("RazonSocialComprador", c.razon_social)}
     </Comprador>` : ""}
     ${buildTotalesXml(t)}
+    ${buildOtraMonedaXml(input.otra_moneda)}
   </Encabezado>
   <DetallesItems>
     ${itemsXml}
@@ -512,6 +531,7 @@ function buildXmlTipo31(input) {
       ${tag("DireccionComprador", c.direccion)}
     </Comprador>
     ${buildTotalesXml(t)}
+    ${buildOtraMonedaXml(input.otra_moneda)}
   </Encabezado>
   <DetallesItems>
     ${itemsXml}
@@ -1124,6 +1144,28 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
 
   console.log("[facturaToEcfInput] Calculated totals:", { totalGravado, totalExento, totalItbis, total });
 
+  // (28/10/2026) Factura en US$: los montos de arriba están en PESOS (es lo
+  // que guarda la factura). En la otra moneda = pesos ÷ tasa de la factura.
+  // El total en dólares es la suma de sus partes ya redondeadas, para que
+  // cuadre consigo mismo.
+  let otraMoneda = null;
+  const tasaFactura = Number(factura.tasa_cambio);
+  if (factura.moneda === "USD" && tasaFactura > 0) {
+    const r2 = (v) => Math.round((Number(v) / tasaFactura) * 100) / 100;
+    for (const it of items) {
+      it.otra_moneda = { precio: r2(it.precio_unitario), monto: r2(it.monto_item) };
+    }
+    const g = r2(totalGravado), ex = r2(totalExento), it18 = r2(totalItbis);
+    otraMoneda = {
+      tipo_moneda: "USD",
+      tipo_cambio: tasaFactura,
+      monto_gravado_total: g, monto_gravado_1: g,
+      monto_exento: ex,
+      total_itbis: it18, total_itbis_1: it18,
+      monto_total: Number((g + ex + it18).toFixed(2)),
+    };
+  }
+
   return {
     tipo_ecf: tipoEcf,
     encf,
@@ -1165,6 +1207,7 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
     fecha_limite_pago: factura.forma_pago === "CREDITO"
       ? new Date(new Date(factura.fecha).getTime() + (factura.dias_credito || 30) * 86400000)
       : null,
+    otra_moneda: otraMoneda,
   };
 }
 

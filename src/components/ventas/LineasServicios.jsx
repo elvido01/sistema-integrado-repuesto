@@ -37,7 +37,11 @@ const partir = (it) => {
   return i > 0 ? { desc: d.slice(0, i), ref: d.slice(i + SEP.length) } : { desc: d, ref: '' };
 };
 
-export default function LineasServicios({ items, setItems, cliente }) {
+export default function LineasServicios({ items, setItems, cliente, moneda = 'DOP', tasa = '' }) {
+  // (28/10/2026) En US$ los montos se escriben en dólares y se guardan en
+  // pesos (× tasa): la venta, la caja y el 607 siguen en pesos.
+  const factor = moneda === 'USD' && n(tasa) > 0 ? n(tasa) : 1;
+  const sim = moneda === 'USD' ? 'US$' : 'RD$';
   const { tenantId, fiscalActivo } = useAuth();
   const { toast } = useToast();
   const [catalogo, setCatalogo] = useState([]);
@@ -74,7 +78,8 @@ export default function LineasServicios({ items, setItems, cliente }) {
     const prod = porId[it.producto_id] || general;
     const itbis_pct = it.naturaleza === 'inmueble' ? 0 : pct(prod?.itbis_pct ?? 0.18);
     const monto = n(it._monto);
-    const precio = (it._conItbis ?? conItbis) ? monto : monto * (1 + itbis_pct);   // el sistema guarda precio CON ITBIS
+    const enMoneda = (it._conItbis ?? conItbis) ? monto : monto * (1 + itbis_pct);
+    const precio = enMoneda * factor;   // el sistema guarda precio CON ITBIS y EN PESOS
     const descTxt = String(it._desc ?? '').trim().toUpperCase();
     const refTxt = String(it._ref ?? '').trim().toUpperCase();
     return {
@@ -86,25 +91,34 @@ export default function LineasServicios({ items, setItems, cliente }) {
       itbis_pct, precio, importe: precio, itbis: precio - precio / (1 + itbis_pct),
       costo_unitario: n(prod?.costo), max_descuento: 0,
     };
-  }, [porId, general, conItbis]);
+  }, [porId, general, conItbis, factor]);
 
   // Las líneas que llegan de otro lado (editar una factura) se adoptan tal cual.
   const filas = useMemo(() => items.map((it, i) => {
     const { desc, ref } = partir(it);
-    return { ...it, _lid: it._lid || `x${i}`, _desc: desc, _ref: ref, _monto: it._monto ?? n(it.precio) * n(it.cantidad || 1) };
+    return { ...it, _lid: it._lid || `x${i}`, _desc: desc, _ref: ref, _monto: it._monto ?? (n(it.precio) * n(it.cantidad || 1)) / factor };
   }), [items]);
 
   const cambiar = (lid, cambios) => setItems((prev) => prev.map((it, i) => {
     const l = it._lid || `x${i}`;
     if (l !== lid) return it;
     const { desc, ref } = partir(it);
-    return armar({ _lid: l, _desc: desc, _ref: ref, _monto: it._monto ?? n(it.precio), _conItbis: it._conItbis ?? conItbis, producto_id: it.producto_id, naturaleza: it.naturaleza }, cambios);
+    return armar({ _lid: l, _desc: desc, _ref: ref, _monto: it._monto ?? n(it.precio) / factor, _conItbis: it._conItbis ?? conItbis, producto_id: it.producto_id, naturaleza: it.naturaleza }, cambios);
   }));
 
   const agregar = () => {
     if (!general) { toast({ variant: 'destructive', title: 'Todavía cargando el servicio general…' }); return; }
     setItems((prev) => [...prev, armar({ _lid: nuevoLid(), producto_id: general.id, _desc: '', _ref: '', _monto: 0, _conItbis: conItbis }, {})]);
   };
+
+  // Cambió la moneda o la tasa: las líneas se rehacen con el monto que se
+  // escribió (en su moneda), así el total en pesos sigue a la tasa.
+  useEffect(() => {
+    if (!general) return;
+    setItems((prev) => prev.map((it, i) => (it._monto !== undefined
+      ? armar({ ...it, _lid: it._lid || `x${i}` }, {}) : it)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [factor]);
 
   // Si no hay líneas, se abre una vacía para escribir directo.
   useEffect(() => { if (!cargando && general && items.length === 0) agregar(); /* eslint-disable-next-line */ }, [cargando, general]);
@@ -124,21 +138,22 @@ export default function LineasServicios({ items, setItems, cliente }) {
   // Totales y retención ESTIMADA (la definitiva la calcula la base al grabar,
   // con el NCF ya asignado): misma regla que recalcular_retenciones_factura.
   const t = useMemo(() => {
-    const total = filas.reduce((s, f) => s + n(f.precio) * n(f.cantidad || 1), 0);
-    const itbis = filas.reduce((s, f) => s + n(f.itbis), 0);
+    const totalRD = filas.reduce((s, f) => s + n(f.precio) * n(f.cantidad || 1), 0);
+    const total = totalRD / factor;
+    const itbis = filas.reduce((s, f) => s + n(f.itbis), 0) / factor;
     let retI = 0; let retS = 0;
     if (cliente?.agente_retencion && cfg) {
-      const factor = cfg.emisor_persona_fisica ? 1 : (fiscalActivo ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0));
+      const fRet = cfg.emisor_persona_fisica ? 1 : (fiscalActivo ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0));
       for (const f of filas) {
         if (f.naturaleza !== 'servicio') continue;
-        if (f.servicio_tipo === 'profesional') retI += n(f.itbis) * factor;
+        if (f.servicio_tipo === 'profesional') retI += (n(f.itbis) / factor) * fRet;
         if (cfg.emisor_persona_fisica && ['profesional', 'alquiler'].includes(f.servicio_tipo)) {
-          retS += (n(f.precio) - n(f.itbis)) * n(cfg.isr_retencion_pct ?? 15) / 100;
+          retS += ((n(f.precio) - n(f.itbis)) / factor) * n(cfg.isr_retencion_pct ?? 15) / 100;
         }
       }
     }
-    return { total, itbis, subtotal: total - itbis, retI, retS };
-  }, [filas, cliente, cfg, fiscalActivo]);
+    return { total, totalRD, itbis, subtotal: total - itbis, retI, retS };
+  }, [filas, cliente, cfg, fiscalActivo, factor]);
 
   const celda = 'w-full bg-transparent px-2 py-1.5 text-[13px] focus:bg-yellow-50 focus:outline-none';
 
@@ -158,7 +173,7 @@ export default function LineasServicios({ items, setItems, cliente }) {
             <th className="w-[22%] border-r border-slate-400 px-2 py-1.5">Servicio</th>
             <th className="border-r border-slate-400 px-2 py-1.5">Descripción</th>
             <th className="w-[16%] border-r border-slate-400 px-2 py-1.5">Referencia</th>
-            <th className="w-[15%] border-r border-slate-400 px-2 py-1.5 text-right">Monto</th>
+            <th className="w-[15%] border-r border-slate-400 px-2 py-1.5 text-right">Monto {sim}</th>
             <th className="w-[9%] border-r border-slate-400 px-2 py-1.5 text-right">ITBIS</th>
             <th className="w-10" />
           </tr>
@@ -204,7 +219,7 @@ export default function LineasServicios({ items, setItems, cliente }) {
                   </div>
                 </td>
                 <td className="border-r border-slate-200 px-2 py-1.5 text-right font-mono text-[12px] text-slate-600">
-                  {f.naturaleza === 'inmueble' ? <span title="El inmueble no lleva ITBIS">exento</span> : money(f.itbis)}
+                  {f.naturaleza === 'inmueble' ? <span title="El inmueble no lleva ITBIS">exento</span> : money(n(f.itbis) / factor)}
                 </td>
                 <td className="text-center">
                   <button type="button" title="Quitar línea" className="p-1.5 text-slate-400 hover:text-red-600"
@@ -250,7 +265,13 @@ export default function LineasServicios({ items, setItems, cliente }) {
         <div className="min-w-[260px] text-[12px]">
           <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-mono">{money(t.subtotal)}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">ITBIS</span><span className="font-mono">{money(t.itbis)}</span></div>
-          <div className="flex justify-between font-bold"><span>Total</span><span className="font-mono">{money(t.total)}</span></div>
+          <div className="flex justify-between font-bold"><span>Total {sim}</span><span className="font-mono">{money(t.total)}</span></div>
+          {moneda === 'USD' && (
+            <div className="flex justify-between text-[11px] text-slate-500">
+              <span>{n(tasa) > 0 ? `Equivale a (tasa ${n(tasa)})` : 'Falta la tasa del día'}</span>
+              <span className="font-mono">{n(tasa) > 0 ? `RD$ ${money(t.totalRD)}` : '—'}</span>
+            </div>
+          )}
           {t.retI + t.retS > 0 && (
             <>
               {t.retI > 0 && <div className="flex justify-between text-amber-800"><span>ITBIS retenido por el cliente</span><span className="font-mono">-{money(t.retI)}</span></div>}

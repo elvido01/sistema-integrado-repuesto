@@ -40,6 +40,12 @@ const VentasHeader = ({
   manualClienteNombre,
   setManualClienteNombre,
   ncfPreview,
+  // (28/10/2026) Moneda de la factura (RD$/US$) y su tasa. Solo se muestra
+  // si quien llama pasa setMoneda (hoy: servicios e inmobiliarias).
+  moneda = 'DOP',
+  setMoneda,
+  tasaCambio = '',
+  setTasaCambio,
 }) => {
   const { empresa } = useAuth();
   const nombreEmpresa = empresa?.nombre || 'Sistema';
@@ -172,7 +178,7 @@ const VentasHeader = ({
             <div className="col-span-2 text-right">
               <Label htmlFor="nombre" className="text-[11px] font-black text-gray-500 uppercase tracking-tight">NOMBRE:</Label>
             </div>
-            <div className="col-span-8">
+            <div className={setMoneda ? 'col-span-5' : 'col-span-8'}>
               <Input
                 id="nombre"
                 className={`h-5 text-[11px] font-medium border-gray-300 rounded-none bg-white focus:ring-0 text-[#0a1e3a] uppercase shadow-sm ${isGeneric ? 'border-yellow-400 bg-yellow-50' : ''}`}
@@ -182,7 +188,33 @@ const VentasHeader = ({
                 placeholder={isGeneric ? "ESCRIBA NOMBRE O VEHICULO DEL CLIENTE..." : ""}
               />
             </div>
+            {setMoneda ? (
+              <div className="col-span-5 flex items-center gap-1">
+                <Label className="text-[11px] font-black text-gray-500 uppercase tracking-tight">MONEDA:</Label>
+                <select
+                  value={moneda}
+                  onChange={(e) => setMoneda(e.target.value)}
+                  className={`h-5 rounded-none border px-1 text-[11px] font-bold ${moneda === 'USD' ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-gray-300 bg-white text-[#0a1e3a]'}`}
+                >
+                  <option value="DOP">RD$ PESOS</option>
+                  <option value="USD">US$ DÓLARES</option>
+                </select>
+                {moneda === 'USD' && (
+                  <>
+                    <Label className="ml-1 text-[11px] font-black text-gray-500 uppercase tracking-tight">TASA:</Label>
+                    <Input
+                      className="h-5 w-20 rounded-none border-emerald-500 bg-white px-1 text-right text-[11px] font-bold"
+                      inputMode="decimal"
+                      placeholder="RD$ x US$"
+                      value={tasaCambio}
+                      onChange={(e) => setTasaCambio?.(e.target.value.replace(/[^0-9.]/g, ''))}
+                    />
+                  </>
+                )}
+              </div>
+            ) : (
             <div className="col-span-2"></div>
+            )}
 
             {/* Row 3: Address and Tel */}
             <div className="col-span-2 text-right">

@@ -43,6 +43,7 @@ const VentasPage = () => {
     confirmarContado, setConfirmarContado, confirmarPasarAContado,
     diasCredito, setDiasCredito,
     items, setItems,
+    moneda, setMoneda, tasaCambio, setTasaCambio,
     itemCode, setItemCode,
     isSaving,
     montoRecibido, setMontoRecibido,
@@ -704,6 +705,8 @@ const VentasPage = () => {
       )}
 
       <VentasHeader
+        {...(['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio)
+          ? { moneda, setMoneda, tasaCambio, setTasaCambio } : {})}
         date={date}
         setDate={setDate}
         cliente={cliente}
@@ -760,7 +763,7 @@ const VentasPage = () => {
               (servicio · descripción · referencia · monto), no por códigos con
               existencia. Ver components/ventas/LineasServicios.jsx */}
           {['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio) ? (
-            <LineasServicios items={items} setItems={setItems} cliente={cliente} />
+            <LineasServicios items={items} setItems={setItems} cliente={cliente} moneda={moneda} tasa={tasaCambio} />
           ) : (
           <VentasTable
             items={items}

@@ -83,6 +83,10 @@ export const useVentas = () => {
   const [printFormat, setPrintFormat] = useState(() => empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser');
   const [recargo, setRecargo] = useState(0);
+  // (28/10/2026) Factura en US$: la base sigue en pesos (montos de siempre);
+  // la moneda y la tasa se guardan para imprimir y para el e-CF (OtraMoneda).
+  const [moneda, setMoneda] = useState('DOP');
+  const [tasaCambio, setTasaCambio] = useState('');
   const [tipoPago, setTipoPago] = useState('EFECTIVO'); // EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE
   const [cuentaBancoId, setCuentaBancoId] = useState(null); // cuenta destino si el contado no es efectivo
   const [pagos, setPagos] = useState([]); // [{ tipo, ref, monto }]
@@ -384,6 +388,8 @@ export const useVentas = () => {
     setCurrentItem(null);
     setEditingItemIndex(null);
     setRecargo(0);
+    setMoneda('DOP');
+    setTasaCambio('');
     setTipoPago('EFECTIVO');
     setCuentaBancoId(null);
     setPagos([]);
@@ -878,6 +884,10 @@ export const useVentas = () => {
       toast({ title: 'Factura vacía', description: 'No se puede guardar una factura sin artículos.', variant: 'destructive' });
       return;
     }
+    if (moneda === 'USD' && !(Number(tasaCambio) > 0)) {
+      toast({ title: 'Falta la tasa', description: 'La factura es en US$: escribe la tasa del día (RD$ por cada US$).', variant: 'destructive' });
+      return;
+    }
     if (paymentType === 'credito' && !cliente.autorizar_credito) {
       toast({ title: 'Error de crédito', description: 'Este cliente no tiene crédito autorizado.', variant: 'destructive' });
       return;
@@ -987,6 +997,8 @@ export const useVentas = () => {
       const facturaData = {
         tenant_id: tenantId,
         fecha: localISO,
+        // Solo se manda si es en dólares: en pesos queda el DOP por defecto.
+        ...(moneda === 'USD' ? { moneda: 'USD', tasa_cambio: Number(tasaCambio) } : {}),
         cliente_id: safeCliente.id,
         manual_cliente_nombre: isGeneric ? manualClienteNombre : null,
         vendedor: finalVendedorName,
@@ -1507,6 +1519,8 @@ export const useVentas = () => {
       setEditingFacturaId(factura.id);
       setEditingFacturaNumero(factura.numero);
       setCliente(factura.clientes || CLIENTE_GENERICO);
+      setMoneda(factura.moneda === 'USD' ? 'USD' : 'DOP');
+      setTasaCambio(factura.tasa_cambio ? String(factura.tasa_cambio) : '');
       setDate(new Date(factura.fecha));
       setPaymentType(factura.forma_pago.toLowerCase());
       setDiasCredito(factura.dias_credito || 0);
@@ -1823,6 +1837,7 @@ export const useVentas = () => {
     confirmarContado, setConfirmarContado, confirmarPasarAContado,
     diasCredito, setDiasCredito,
     items, setItems,
+    moneda, setMoneda, tasaCambio, setTasaCambio,
     itemCode, setItemCode,
     isSaving,
     montoRecibido, setMontoRecibido,
