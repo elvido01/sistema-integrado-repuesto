@@ -70,22 +70,42 @@ solo corrige la existencia de artículos que ya están creados.
 
 ## 5. Facturación electrónica e-CF (si la quiere): 1 a 3 semanas, la marca la DGII
 
-1. [ ] El cliente compra su **certificado digital** (DigiFirma u otra
+1. [ ] **Formulario de postulación** (Oficina Virtual de la DGII →
+       Facturación Electrónica → Postulación). En «Datos del software a
+       utilizar» se llena así (también sale en MotoFlow, Configuración → DGII,
+       «Paso 1», con botones para copiar):
+
+       | Campo del portal | Qué poner |
+       |---|---|
+       | Tipo de software | **PROPIO** |
+       | Nombre del software | **MotoFlow** |
+       | Versión del software | **1.0** |
+       | URL de recepción | `zdvxowpuklbypweyqqki.supabase.co/functions/v1/dgii-receptor` |
+       | URL de aprobación comercial | la misma dirección |
+       | URL de autenticación | la misma dirección |
+
+       - Sin `https://` delante ni `/fe/...` detrás: el portal los pone solo.
+       - Las tres son la misma: el receptor de MotoFlow atiende los tres
+         servicios y reconoce a la empresa por su RNC.
+       - **GENERAR ARCHIVO** → se descarga un `.xml` → firmarlo en MotoFlow
+         (Configuración → DGII → **Firmar XML**, necesita el `.p12` del paso 4)
+         → subir el firmado en «Envío de archivo de postulación firmado».
+2. [ ] El cliente compra su **certificado digital** (DigiFirma u otra
        entidad autorizada por INDOTEL), a nombre de quien firmará.
-2. [ ] En su Oficina Virtual: delegar los roles (**Administrador de e-CF,
+3. [ ] En su Oficina Virtual: delegar los roles (**Administrador de e-CF,
        Firmante, Aprobador comercial, Solicitante**) a esa persona, y que
        ella los acepte en su propia OFV.
-3. [ ] En MotoFlow, **Configuración → DGII**: subir el `.p12` y su
+4. [ ] En MotoFlow, **Configuración → DGII**: subir el `.p12` y su
        contraseña (se guarda cifrada).
-4. [ ] Postulación en la DGII y certificación con los **runners** de
-       MotoFlow (pasos 1–15):
+5. [ ] Aprobada la postulación (punto 1), certificación con los **runners**
+       de MotoFlow (pasos 2–15):
        - URL del receptor para los pasos 8 y 10:
          `https://zdvxowpuklbypweyqqki.supabase.co/functions/v1/dgii-receptor`;
        - el software se declara como propio.
-5. [ ] Al certificarse: solicitar las **secuencias e-NCF** (E31, E32, E34…) y
+6. [ ] Al certificarse: solicitar las **secuencias e-NCF** (E31, E32, E34…) y
        cargarlas en `ecf_secuencias` (ambiente Produccion).
-6. [ ] Pasar la integración a **modo producción**.
-7. [ ] Hacer **una factura E32 y una E31 reales** y escanear el QR: la
+7. [ ] Pasar la integración a **modo producción**.
+8. [ ] Hacer **una factura E32 y una E31 reales** y escanear el QR: la
        DGII debe decir "Aceptado".
 
 Lo que cuida el sistema solo, ya activo:
