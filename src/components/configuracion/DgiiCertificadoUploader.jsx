@@ -473,132 +473,9 @@ const DgiiCertificadoUploader = () => {
 
   return (
     <div className="space-y-4">
-      {/* (28/10/2026) Paso 1: qué poner en el formulario de postulación de la DGII. */}
-      <DgiiGuiaPostulacion />
-      {/* Estado actual */}
-      {info?.configured ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[12px] text-emerald-800 space-y-3">
-          <div className="flex flex-wrap items-start gap-2">
-            <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
-            <div className="flex-1 min-w-[220px]">
-              <p className="font-bold">Certificado configurado</p>
-              <p>RNC: {info.rnc_emisor || '—'} · Ambiente: {info.ambiente}</p>
-              <p className="text-[10px] text-emerald-600 mt-1 truncate">Path: {info.storage_path}</p>
-            </div>
-            <div className="flex flex-wrap justify-end gap-2 max-w-full">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleValidate}
-                disabled={saving}
-                className="border-emerald-300 text-emerald-700 hover:bg-emerald-100"
-              >
-                <BadgeCheck className="w-3.5 h-3.5 mr-1" /> Validar
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleGenerateTestXml()}
-                disabled={saving || generatingXml}
-                className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                title="Genera el XML de la factura mas reciente (sin firmar, sin enviar)"
-              >
-                {generatingXml ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileCode2 className="w-3.5 h-3.5 mr-1" />}
-                XML
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleGenerateTestXml({ sign: true })}
-                disabled={saving || generatingXml}
-                className="border-purple-300 text-purple-700 hover:bg-purple-100"
-                title="Genera y FIRMA el XML con el .p12 cargado (XAdES-BES, sin enviar a DGII)"
-              >
-                {generatingXml ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5 mr-1" />}
-                XML firmado
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleSendToDgii}
-                disabled={saving || generatingXml}
-                className="border-orange-300 text-orange-700 hover:bg-orange-100"
-                title="Genera, firma y ENVIA a DGII en el ambiente configurado"
-              >
-                {saving ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
-                Enviar a DGII
-              </Button>
-              <input
-                ref={externalXmlInputRef}
-                type="file"
-                accept=".xml"
-                onChange={handleSignExternalXml}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => externalXmlInputRef.current?.click()}
-                disabled={signingExternal}
-                className="border-indigo-300 text-indigo-700 hover:bg-indigo-100"
-                title="Firma un XML externo (ej. postulacion FI-GDF-016 de OFV) con tu .p12"
-              >
-                {signingExternal ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileSignature className="w-3.5 h-3.5 mr-1" />}
-                Firmar XML
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleDelete}
-                disabled={saving}
-                className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar
-              </Button>
-            </div>
-          </div>
 
-          {/* Metadata del certificado (si ya fue validado) */}
-          {info.metadata && (() => {
-            const validTo = info.metadata.valid_to ? new Date(info.metadata.valid_to) : null;
-            const now = new Date();
-            const diasRestantes = validTo ? Math.floor((validTo - now) / (1000 * 60 * 60 * 24)) : null;
-            const expirado = diasRestantes !== null && diasRestantes < 0;
-            const proximoVencer = diasRestantes !== null && diasRestantes >= 0 && diasRestantes <= 30;
-            return (
-              <div className="border-t border-emerald-200 pt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-                <div><span className="text-emerald-600 font-bold">Sujeto (CN):</span> {info.metadata.subject_cn || '—'}</div>
-                <div><span className="text-emerald-600 font-bold">Emisor (CN):</span> {info.metadata.issuer_cn || '—'}</div>
-                <div><span className="text-emerald-600 font-bold">Vigente desde:</span> {info.metadata.valid_from ? new Date(info.metadata.valid_from).toLocaleDateString('es-DO') : '—'}</div>
-                <div className={expirado ? 'text-red-700 font-bold' : proximoVencer ? 'text-amber-700 font-bold' : ''}>
-                  <span className="text-emerald-600 font-bold">Vence:</span>{' '}
-                  {validTo ? validTo.toLocaleDateString('es-DO') : '—'}
-                  {diasRestantes !== null && (
-                    expirado
-                      ? <span className="ml-1 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Expirado hace {Math.abs(diasRestantes)} dias</span>
-                      : proximoVencer
-                        ? <span className="ml-1 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Vence en {diasRestantes} dias</span>
-                        : <span className="ml-1 text-emerald-600">({diasRestantes} dias)</span>
-                  )}
-                </div>
-                {info.metadata.serial && <div className="col-span-2"><span className="text-emerald-600 font-bold">Serial:</span> <span className="font-mono text-[10px]">{info.metadata.serial}</span></div>}
-                {info.metadata.self_signed && (
-                  <div className="col-span-2 text-amber-700 inline-flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Certificado auto-firmado — solo sirve para pruebas, NO para emitir a DGII en produccion.
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-      ) : (
+      {/* Antes de todo: datos de la empresa y certificado. */}
+      {!info?.configured && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800 flex items-start gap-2">
           <FileLock2 className="w-4 h-4 mt-0.5 shrink-0" />
           <div>
@@ -805,6 +682,135 @@ const DgiiCertificadoUploader = () => {
           </p>
         )}
         </>)}
+      </div>
+
+      {/* (28/10/2026) Paso 1 de la DGII: va DESPUÉS de llenar los datos y subir el
+          certificado, porque el archivo de postulación se firma con ese .p12. */}
+      <div className="border-t pt-6 mt-2 space-y-3">
+        <DgiiGuiaPostulacion certificadoListo={!!info?.configured} />
+        {info?.configured && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[12px] text-emerald-800 space-y-3">
+          <div className="flex flex-wrap items-start gap-2">
+            <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-[220px]">
+              <p className="font-bold">Certificado configurado</p>
+              <p>RNC: {info.rnc_emisor || '—'} · Ambiente: {info.ambiente}</p>
+              <p className="text-[10px] text-emerald-600 mt-1 truncate">Path: {info.storage_path}</p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 max-w-full">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleValidate}
+                disabled={saving}
+                className="border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+              >
+                <BadgeCheck className="w-3.5 h-3.5 mr-1" /> Validar
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleGenerateTestXml()}
+                disabled={saving || generatingXml}
+                className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                title="Genera el XML de la factura mas reciente (sin firmar, sin enviar)"
+              >
+                {generatingXml ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileCode2 className="w-3.5 h-3.5 mr-1" />}
+                XML
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleGenerateTestXml({ sign: true })}
+                disabled={saving || generatingXml}
+                className="border-purple-300 text-purple-700 hover:bg-purple-100"
+                title="Genera y FIRMA el XML con el .p12 cargado (XAdES-BES, sin enviar a DGII)"
+              >
+                {generatingXml ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5 mr-1" />}
+                XML firmado
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSendToDgii}
+                disabled={saving || generatingXml}
+                className="border-orange-300 text-orange-700 hover:bg-orange-100"
+                title="Genera, firma y ENVIA a DGII en el ambiente configurado"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
+                Enviar a DGII
+              </Button>
+              <input
+                ref={externalXmlInputRef}
+                type="file"
+                accept=".xml"
+                onChange={handleSignExternalXml}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => externalXmlInputRef.current?.click()}
+                disabled={signingExternal}
+                className="border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                title="Firma un XML externo (ej. postulacion FI-GDF-016 de OFV) con tu .p12"
+              >
+                {signingExternal ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileSignature className="w-3.5 h-3.5 mr-1" />}
+                Firmar XML
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDelete}
+                disabled={saving}
+                className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar
+              </Button>
+            </div>
+          </div>
+
+          {/* Metadata del certificado (si ya fue validado) */}
+          {info.metadata && (() => {
+            const validTo = info.metadata.valid_to ? new Date(info.metadata.valid_to) : null;
+            const now = new Date();
+            const diasRestantes = validTo ? Math.floor((validTo - now) / (1000 * 60 * 60 * 24)) : null;
+            const expirado = diasRestantes !== null && diasRestantes < 0;
+            const proximoVencer = diasRestantes !== null && diasRestantes >= 0 && diasRestantes <= 30;
+            return (
+              <div className="border-t border-emerald-200 pt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                <div><span className="text-emerald-600 font-bold">Sujeto (CN):</span> {info.metadata.subject_cn || '—'}</div>
+                <div><span className="text-emerald-600 font-bold">Emisor (CN):</span> {info.metadata.issuer_cn || '—'}</div>
+                <div><span className="text-emerald-600 font-bold">Vigente desde:</span> {info.metadata.valid_from ? new Date(info.metadata.valid_from).toLocaleDateString('es-DO') : '—'}</div>
+                <div className={expirado ? 'text-red-700 font-bold' : proximoVencer ? 'text-amber-700 font-bold' : ''}>
+                  <span className="text-emerald-600 font-bold">Vence:</span>{' '}
+                  {validTo ? validTo.toLocaleDateString('es-DO') : '—'}
+                  {diasRestantes !== null && (
+                    expirado
+                      ? <span className="ml-1 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Expirado hace {Math.abs(diasRestantes)} dias</span>
+                      : proximoVencer
+                        ? <span className="ml-1 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Vence en {diasRestantes} dias</span>
+                        : <span className="ml-1 text-emerald-600">({diasRestantes} dias)</span>
+                  )}
+                </div>
+                {info.metadata.serial && <div className="col-span-2"><span className="text-emerald-600 font-bold">Serial:</span> <span className="font-mono text-[10px]">{info.metadata.serial}</span></div>}
+                {info.metadata.self_signed && (
+                  <div className="col-span-2 text-amber-700 inline-flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Certificado auto-firmado — solo sirve para pruebas, NO para emitir a DGII en produccion.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+        )}
       </div>
 
       {/* Set de Pruebas DGII (Paso 2 certificacion) — solo si hay cert configurado */}

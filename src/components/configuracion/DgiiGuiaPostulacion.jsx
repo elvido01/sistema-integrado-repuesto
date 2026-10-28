@@ -21,7 +21,7 @@ const RECEPTOR = `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/dgii-receptor`
 export const SOFTWARE_NOMBRE = 'MotoFlow';
 export const SOFTWARE_VERSION = '1.0';
 
-export default function DgiiGuiaPostulacion() {
+export default function DgiiGuiaPostulacion({ certificadoListo = true }) {
   const { toast } = useToast();
   const copiar = async (valor, que) => {
     try {
@@ -55,6 +55,11 @@ export default function DgiiGuiaPostulacion() {
           Oficina Virtual de la DGII → <b>Facturación Electrónica</b> → <b>Postulación</b>. Los datos de la empresa ya vienen llenos;
           en <b>«Datos del software a utilizar»</b> pon exactamente esto:
         </p>
+        {!certificadoListo && (
+          <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">
+            Primero llena los datos de la empresa y sube el certificado .p12 (arriba). Sin él no se puede firmar la postulación.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-2">
