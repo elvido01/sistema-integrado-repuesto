@@ -370,7 +370,16 @@ const DgiiSimulacionRunner = () => {
 
   const enviarCaso = async (caso) => {
     if (configDgii?.ambiente && configDgii.ambiente !== CERTIFICACION_AMBIENTE) {
-      throw new Error(`El certificado esta configurado en ${configDgii.ambiente}. Para el Paso 4 debes guardar Ambiente = ${CERTIFICACION_AMBIENTE}.`);
+      // El ambiente se leyó al abrir la pantalla: si el usuario lo cambió y
+      // guardó después, se vuelve a leer antes de dar el error.
+      let actual = configDgii.ambiente;
+      try {
+        const { data: fresca } = await supabase.functions.invoke('emitir-fiscal', { body: { action: 'dgii_certificate_info' } });
+        if (fresca?.ok) { setConfigDgii(fresca); actual = fresca.ambiente; }
+      } catch (_) { /* se queda con lo que había */ }
+      if (actual && actual !== CERTIFICACION_AMBIENTE) {
+        throw new Error(`El certificado esta configurado en ${actual}. Para el Paso 4 cambia Ambiente = ${CERTIFICACION_AMBIENTE} y pulsa "Guardar datos".`);
+      }
     }
     const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
       body: {

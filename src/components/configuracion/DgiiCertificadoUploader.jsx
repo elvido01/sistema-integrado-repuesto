@@ -523,6 +523,11 @@ const DgiiCertificadoUploader = () => {
           <p className={`text-[10px] ${ambiente === 'CerteCF' ? 'text-amber-700' : 'text-red-600 font-semibold'}`}>
             El set oficial del portal de certificacion se envia siempre por CerteCF. Si estas en Paso 4, guarda Ambiente = CerteCF.
           </p>
+          {info?.configured && info.ambiente && ambiente !== info.ambiente && (
+            <p className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">
+              Sin guardar: el sistema sigue usando {info.ambiente}. Pulsa «Guardar datos» (más abajo) para pasar a {ambiente}.
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Callback URL (DGII envia ARECF/AECF)</Label>
