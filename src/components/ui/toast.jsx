@@ -26,6 +26,9 @@ const toastVariants = cva(
 				default: 'bg-background border',
 				destructive:
           'group destructive border-destructive bg-destructive text-destructive-foreground',
+				// (28/10/2026) No existía: los avisos con variant 'warning' salían
+				// transparentes encima del encabezado y no se leían.
+				warning: 'border-amber-400 bg-amber-50 text-amber-900',
 			},
 		},
 		defaultVariants: {

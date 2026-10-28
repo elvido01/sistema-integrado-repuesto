@@ -384,8 +384,8 @@ const VentasPage = () => {
         setVendedores(vendedoresData);
         if (vendedoresData.length === 0) {
           toast({
-            title: 'Advertencia',
-            description: 'No se encontraron vendedores activos. Verifique los permisos o el catálogo.',
+            title: 'Esta empresa no tiene vendedores',
+            description: 'Puedes facturar igual: la venta queda a nombre de tu usuario. Si quieres vendedores (para comisiones), créalos en Catálogo → Vendedores.',
             variant: 'warning'
           });
         }
