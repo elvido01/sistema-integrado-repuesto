@@ -373,7 +373,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
               registrada exitosamente con un plan TRIAL de 15 días.
             </p>
             <p className="text-gray-400 text-xs mb-6">
-              Revisa tu correo <span className="font-medium">{usuario.email}</span> para
+              Revisa tu correo <span className="font-semibold text-gray-700">{usuario.email}</span> para
               confirmar tu cuenta y comenzar a usar el sistema.
             </p>
             <Button onClick={onVolver} className="w-full bg-blue-600 hover:bg-blue-700">
