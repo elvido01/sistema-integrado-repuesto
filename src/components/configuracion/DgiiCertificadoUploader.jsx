@@ -48,6 +48,8 @@ const DgiiCertificadoUploader = () => {
   const [password, setPassword] = useState('');
   // Solo lectura hasta que el usuario entra al campo: Chrome no autocompleta campos readOnly.
   const [pwdEditable, setPwdEditable] = useState(false);
+  // Con certificado ya cargado, la subida queda escondida hasta pulsar "Reemplazar".
+  const [reemplazando, setReemplazando] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [rnc, setRnc] = useState('');
   const [nombre, setNombre] = useState('');
@@ -422,6 +424,7 @@ const DgiiCertificadoUploader = () => {
       toast({ title: '✅ Certificado guardado', description: 'El .p12 quedo cifrado y la configuracion guardada correctamente.' });
       setFile(null);
       setPassword('');
+      setReemplazando(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       await fetchInfo();
     } catch (err) {
@@ -666,6 +669,39 @@ const DgiiCertificadoUploader = () => {
           Certificado digital (.p12 / .pfx)
         </Label>
 
+        {info?.configured && !reemplazando ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-emerald-200 bg-emerald-50">
+            <div className="flex items-center gap-3 min-w-0">
+              <ShieldCheck className="w-7 h-7 text-emerald-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-bold text-emerald-800">Certificado cargado</p>
+                <p className="text-[11px] text-emerald-700">
+                  Guardado y cifrado. Solo súbelo de nuevo si lo renovaste o cambiaste.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={saving}
+                className="bg-morla-blue hover:bg-morla-blue/90 text-white"
+              >
+                {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Guardar datos
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReemplazando(true)}
+                disabled={saving}
+              >
+                <Upload className="w-4 h-4 mr-2" /> Reemplazar certificado
+              </Button>
+            </div>
+          </div>
+        ) : (<>
+
         {/* Input nativo OCULTO. Lo abrimos via boton custom. */}
         <input
           ref={fileInputRef}
@@ -752,12 +788,11 @@ const DgiiCertificadoUploader = () => {
           <Button
             type="button"
             variant="outline"
-            onClick={handleSaveSettings}
+            onClick={() => { setReemplazando(false); setFile(null); setPassword(''); if (fileInputRef.current) fileInputRef.current.value = ''; }}
             disabled={saving}
-            className="ml-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+            className="ml-2"
           >
-            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-            Guardar datos
+            Cancelar
           </Button>
         )}
         {(!file || !password.trim()) && (
@@ -769,6 +804,7 @@ const DgiiCertificadoUploader = () => {
                 : 'Falta ingresar la contraseña del certificado.'}
           </p>
         )}
+        </>)}
       </div>
 
       {/* Set de Pruebas DGII (Paso 2 certificacion) — solo si hay cert configurado */}
