@@ -1,0 +1,1 @@
+const a={dealer:{singular:"motocicleta",plural:"motocicletas",corta:"moto",vendidas:"Motos vendidas"},financiera:{singular:"motocicleta",plural:"motocicletas",corta:"moto",vendidas:"Motos vendidas"},inmobiliaria:{singular:"inmueble",plural:"inmuebles",corta:"inmueble",vendidas:"Inmuebles vendidos"}},i=o=>a[o]||null;export{i as u};

@@ -7,8 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { unidadComision } from '@/lib/comisionUnidad';
 
 const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
+    const { empresa } = useAuth();
+    const unidad = unidadComision(empresa?.tipo_negocio);
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formData, setFormData] = useState({
@@ -115,16 +119,22 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
                             className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                         >
                             <option value="porcentaje">% sobre la venta neta</option>
-                            <option value="fijo_por_unidad">Monto fijo por cada motocicleta vendida</option>
+                            {/* Solo donde se venden unidades contables (motos, inmuebles); si un
+                                vendedor viejo ya lo tiene, se sigue mostrando. */}
+                            {(unidad || formData.comision_tipo === 'fijo_por_unidad') && (
+                                <option value="fijo_por_unidad">Monto fijo por cada {unidad?.singular || 'unidad'} vendida</option>
+                            )}
                         </select>
                     </div>
                     {formData.comision_tipo === 'fijo_por_unidad' ? (
                     <div className="space-y-2">
-                        <Label htmlFor="comision_fija">RD$ por cada motocicleta</Label>
+                        <Label htmlFor="comision_fija">RD$ por cada {unidad?.singular || 'unidad'}</Label>
                         <Input id="comision_fija" name="comision_fija" type="number" step="0.01" min="0"
                             value={formData.comision_fija} onChange={handleChange} placeholder="Ej. 300" />
                         <p className="text-[11px] text-gray-500">
-                            Cuenta cada moto de sus facturas (producto con chasis o de tipo MOTOCICLETA).
+                            {unidad?.singular === 'inmueble'
+                                ? 'Cuenta cada inmueble de sus facturas (producto marcado como Inmueble).'
+                                : 'Cuenta cada moto de sus facturas (producto con chasis o de tipo MOTOCICLETA).'}
                         </p>
                     </div>
                     ) : (

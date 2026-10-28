@@ -20,6 +20,7 @@ import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } fro
 import { generateComisionPDF } from '@/components/common/pdf/comisionPDF';
 import { printPagoCompromisoPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { unidadComision } from '@/lib/comisionUnidad';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 
 const ROLES_ADMIN = ['admin', 'owner', 'manager', 'gerente'];
@@ -40,6 +41,9 @@ const PagoComisionesPage = () => {
   const [tipoComision, setTipoComision] = useState('porcentaje'); // porcentaje | fijo_por_unidad
   const [montoFijo, setMontoFijo] = useState(0);
   const esFijo = tipoComision === 'fijo_por_unidad';
+  // (28/10/2026) "por moto" solo en las empresas que venden motos; en una
+  // inmobiliaria es "por inmueble"; en las demás no hay monto por unidad.
+  const unidad = unidadComision(empresa?.tipo_negocio);
   const [tipoReporte, setTipoReporte] = useState('ventas'); // ventas | cobros
   const [filtroPago, setFiltroPago] = useState('todas'); // todas | credito | contado
   const [comisiones, setComisiones] = useState([]);
@@ -198,7 +202,7 @@ const PagoComisionesPage = () => {
         p_forma_pago: formaPago,
         p_banco: bancoPago || null,
         p_referencia: referenciaPago || null,
-        p_notas: (esFijo ? `${totales.unidades || 0} moto(s) x RD$${formatCurrency(montoFijo)}${notasPago ? ` · ${notasPago}` : ''}` : notasPago) || null,
+        p_notas: (esFijo ? `${totales.unidades || 0} ${unidad?.corta || 'unidad'}(s) x RD$${formatCurrency(montoFijo)}${notasPago ? ` · ${notasPago}` : ''}` : notasPago) || null,
         p_factura_ids: comisiones.map(c => c.factura_id).filter(Boolean),
       });
       if (error) throw error;
@@ -244,7 +248,7 @@ const PagoComisionesPage = () => {
       fechaHasta,
       tipoReporte,
       filtroPago,
-      porcentaje: esFijo ? `RD$${formatCurrency(montoFijo)} por moto` : porcentaje,
+      porcentaje: esFijo ? `RD$${formatCurrency(montoFijo)} por ${unidad?.corta || 'unidad'}` : porcentaje,
     };
 
     generateComisionPDF(comisiones, filters);
@@ -339,7 +343,7 @@ const PagoComisionesPage = () => {
                     className="mb-1 block h-4 bg-transparent text-[11px] font-black uppercase text-gray-400 outline-none"
                   >
                     <option value="porcentaje">% a Pagar</option>
-                    <option value="fijo_por_unidad">RD$ por moto</option>
+                    {(unidad || esFijo) && <option value="fijo_por_unidad">RD$ por {unidad?.corta || 'unidad'}</option>}
                   </select>
                   {esFijo ? (
                     <Input
@@ -522,7 +526,7 @@ const PagoComisionesPage = () => {
               <div className="flex justify-between"><span>Facturas incluidas</span><b>{comisiones.length}</b></div>
               <div className="flex justify-between"><span>Ventas del período</span><b>{formatCurrency(totales.monto)}</b></div>
               {esFijo ? (
-                <div className="flex justify-between"><span>Motos vendidas</span><b>{totales.unidades || 0} × RD$ {formatCurrency(montoFijo)}</b></div>
+                <div className="flex justify-between"><span>{unidad?.vendidas || 'Unidades vendidas'}</span><b>{totales.unidades || 0} × RD$ {formatCurrency(montoFijo)}</b></div>
               ) : (
                 <div className="flex justify-between"><span>% aplicado</span><b>{porcentaje}%</b></div>
               )}
