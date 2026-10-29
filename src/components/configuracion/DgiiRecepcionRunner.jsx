@@ -170,7 +170,7 @@ const DgiiRecepcionRunner = ({ configInfo }) => {
         <p>
           En el Paso 7 (y luego en el 12 para producción) el portal DGII pide la <b>base</b> de cada servicio — el sufijo <code>/fe/...</code> lo agrega el portal.
           En los pasos 8-11 la DGII envía e-CF y Aprobaciones Comerciales de prueba a estas URL y este sistema responde solo
-          (ARECF firmado para e-CF, «OK» para aprobaciones). Antes de marcar «listo para recepción» en el portal, corre el self-test.
+          (ARECF firmado para e-CF, «OK» para aprobaciones). Abajo tienes qué botón pulsar en cada paso.
         </p>
       </div>
 
@@ -189,6 +189,24 @@ const DgiiRecepcionRunner = ({ configInfo }) => {
         ))}
         <p className="text-[10px] text-slate-500">
           En el campo del portal se escribe solo la parte en azul (sin «https://», el portal ya lo antepone).
+        </p>
+      </div>
+
+      {/* (29/10/2026) Guía botón por botón de los pasos 7-11 del portal:
+          antes la guía saltaba del 7 al 12 y no decía qué pulsar en el 8 y el 10. */}
+      <div className="rounded-lg border-2 border-indigo-300 bg-white p-4 text-[12px] text-slate-800 space-y-2">
+        <p className="font-bold text-[13px] text-indigo-900">Qué pulsar en el portal DGII, paso por paso</p>
+        <ol className="space-y-2">
+          <li><b>Paso 7 · URL Servicios Prueba:</b> pega la parte en azul en los tres campos (Autenticación, Recepción y Aprobación Comercial) y pulsa <b>Confirmar URLs</b>. Antes, pulsa aquí abajo <b>Probar receptor</b>: deben salir todos en verde.</li>
+          <li><b>Paso 8 · Inicio Prueba Recepción e-CF:</b> pulsa el botón verde <b>«ENVIAR PRUEBA DE COMPROBANTES»</b>. La DGII manda facturas de prueba a tu receptor y MotoFlow contesta solo.</li>
+          <li><b>Paso 9 · Recepción e-CF:</b> no pulses nada. Espera unos minutos y pulsa aquí <b>Refrescar log</b>: en «Últimas recepciones» deben aparecer las facturas de la DGII. El portal pasa solo al paso 10 cuando las recibe todas.</li>
+          <li><b>Paso 10 · Inicio Prueba Recepción Aprobación Comercial:</b> pulsa el botón verde <b>«ENVIAR PRUEBA DE APROBACIONES COMERCIALES»</b>.</li>
+          <li><b>Paso 11 · Recepción Aprobación Comercial:</b> igual que el 9: espera, pulsa <b>Refrescar log</b> y comprueba que llegaron. El portal pasa solo al paso 12.</li>
+          <li><b>Paso 12 · URL Servicios Producción:</b> mira el recuadro verde al final de esta sección.</li>
+        </ol>
+        <p className="text-[11px] text-slate-500">
+          No pulses <b>«Actualizar URLs»</b> en los pasos 8 y 10 salvo que las direcciones estén mal: las URL ya quedaron puestas en el paso 7.
+          Si un paso se queda parado más de 15 minutos, mira los «Logs registrados» del portal y el log de aquí abajo.
         </p>
       </div>
 
