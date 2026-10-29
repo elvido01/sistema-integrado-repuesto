@@ -38,7 +38,7 @@ const AMBIENTES = [
 
 const DgiiCertificadoUploader = () => {
   const { toast } = useToast();
-  const { tenantId } = useAuth();
+  const { tenantId, empresa } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -89,6 +89,18 @@ const DgiiCertificadoUploader = () => {
   }, []);
 
   useEffect(() => { fetchInfo(); }, [fetchInfo]);
+
+  // (29/10/2026) Empresa nueva sin configuración DGII: los datos que ya dio al
+  // registrarse (RNC, razón social) vienen puestos; solo se llenan los vacíos.
+  useEffect(() => {
+    if (loading || info?.configured || !empresa) return;
+    const soloDigitos = (v) => String(v || '').replace(/\D/g, '');
+    setRnc((v) => v || soloDigitos(empresa.rnc));
+    setNombre((v) => v || empresa.razon_social || empresa.nombre || '');
+    setNombreComercial((v) => v || empresa.nombre_comercial || empresa.nombre || '');
+    setMunicipio((v) => v || empresa.municipio || empresa.ciudad || '');
+    setProvincia((v) => v || empresa.provincia || '');
+  }, [loading, info?.configured, empresa]);
 
   // Estado para el visor de XML de prueba
   const [xmlPreview, setXmlPreview] = useState(null); // { xml, encf, tipo_ecf, factura }
