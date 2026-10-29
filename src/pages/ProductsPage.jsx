@@ -228,6 +228,23 @@ const ProductsPage = ({ extraData }) => {
   };
 
   const handleSaveProduct = async (productData, presentations, isEditing) => {
+    // (29/10/2026) Cambiar la existencia desde la ficha crea una entrada/salida
+    // de ajuste. Caso I-7191: se bajó aquí Y además se corrigió la compra, y
+    // las mismas unidades se restaron dos veces. Siempre se pide confirmación.
+    if (isEditing) {
+      const antes = parseFloat(selectedProduct?.existencia || 0) || 0;
+      const despues = parseFloat(productData?.existencia || 0) || 0;
+      const dif = despues - antes;
+      if (Math.abs(dif) > 0.001) {
+        const ok = window.confirm(
+          `¿Cambiar la existencia de ${productData?.codigo || 'este producto'} de ${antes} a ${despues}?\n\n` +
+          `Se creará una ${dif < 0 ? 'SALIDA' : 'ENTRADA'} de ajuste por ${Math.abs(dif)} unidad(es).\n\n` +
+          `Si la diferencia viene de una compra o venta mal registrada, corrige ESE documento y no la existencia: ` +
+          `si haces las dos cosas, se descuenta dos veces.`
+        );
+        if (!ok) return;
+      }
+    }
     try {
       let savedProduct;
 
