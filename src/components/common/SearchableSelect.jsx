@@ -130,7 +130,7 @@ export default function SearchableSelect({
   }, [open, focusIndex]);
 
   return (
-    <div className={`relative ${className}`} ref={rootRef}>
+    <div className={`relative min-w-0 ${className}`} ref={rootRef}>
       {/* Etiqueta solo para accesibilidad */}
       {label ? (
         <span className="sr-only">{label}</span>
@@ -149,12 +149,12 @@ export default function SearchableSelect({
         onKeyDown={onButtonKeyDown}
         disabled={disabled}
       >
-        <span className={`truncate ${selected || (allowCustomValue && value) ? '' : 'text-neutral-400'}`}>
+        <span className={`truncate min-w-0 flex-1 ${selected || (allowCustomValue && value) ? '' : 'text-neutral-400'}`}>
           {displayValue}
         </span>
 
         {/* Clear / caret */}
-        <span className="ml-2 flex items-center gap-1">
+        <span className="ml-2 flex shrink-0 items-center gap-1">
           {clearable && selected ? (
             <span
               role="button"
