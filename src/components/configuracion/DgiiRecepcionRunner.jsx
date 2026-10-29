@@ -203,6 +203,7 @@ const DgiiRecepcionRunner = ({ configInfo }) => {
           <li><b>Paso 10 · Inicio Prueba Recepción Aprobación Comercial:</b> pulsa el botón verde <b>«ENVIAR PRUEBA DE APROBACIONES COMERCIALES»</b>.</li>
           <li><b>Paso 11 · Recepción Aprobación Comercial:</b> igual que el 9: espera, pulsa <b>Refrescar log</b> y comprueba que llegaron. El portal pasa solo al paso 12.</li>
           <li><b>Paso 12 · URL Servicios Producción:</b> mira el recuadro verde al final de esta sección.</li>
+          <li><b>Paso 13 · Declaración Jurada:</b> mira el recuadro morado al final (se firma con el botón Firmar XML, igual que la postulación).</li>
         </ol>
         <p className="text-[11px] text-slate-500">
           No pulses <b>«Actualizar URLs»</b> en los pasos 8 y 10 salvo que las direcciones estén mal: las URL ya quedaron puestas en el paso 7.
@@ -301,6 +302,22 @@ const DgiiRecepcionRunner = ({ configInfo }) => {
         <p className="text-[11px] text-emerald-900/80">
           Es el mismo receptor de las pruebas. Reconoce a tu empresa por tu RNC y firma con tu certificado.
           Esta dirección queda publicada en el directorio de la DGII para que tus suplidores te envíen sus facturas electrónicas.
+        </p>
+      </div>
+
+      {/* (29/10/2026) Pasos 13-15: la declaración jurada se firma igual que la postulación. */}
+      <div className="rounded-lg border-2 border-violet-300 bg-violet-50 p-4 text-[12px] text-violet-950 space-y-2">
+        <p className="font-bold text-[13px]">Paso 13 del portal DGII: «Declaración Jurada»</p>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li>En el portal, pulsa <b>GENERAR ARCHIVO</b> (abajo del texto de la declaración): se descarga un archivo <b>.xml</b>.</li>
+          <li>Aquí en MotoFlow, ve más arriba a la sección del certificado (recuadro verde «Certificado configurado») y pulsa <b>Firmar XML</b>. Elige el archivo que bajaste. Se descarga el archivo firmado (termina en <b>_firmado.xml</b>).</li>
+          <li>En el portal, en <b>«Envío de archivo de declaración jurada firmado»</b>, pulsa <b>Browse</b> y elige el archivo <b>_firmado.xml</b>.</li>
+          <li>Pulsa <b>ENVIAR ARCHIVO</b>.</li>
+        </ol>
+        <p className="font-bold text-[13px] pt-1">Pasos 14 y 15: «Verificación Estatus» y «Finalizado»</p>
+        <p>
+          No se pulsa nada: la DGII revisa y pasa sola al 15. Cuando llegue a <b>Finalizado</b>, cambia el ambiente del certificado a
+          <b> Producción</b> y pulsa <b>Guardar datos</b>; si no, las facturas seguirán yendo a pruebas.
         </p>
       </div>
     </div>
