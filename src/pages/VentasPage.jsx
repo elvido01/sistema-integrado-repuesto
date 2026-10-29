@@ -25,6 +25,7 @@ import { Gift, Loader2, X } from 'lucide-react';
 import { nombreCanal } from '@/lib/canalesOrigen';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { esClienteGenerico } from '@/lib/clienteGenerico';
+import { useLayout } from '@/contexts/LayoutContext';
 
 const VentasPage = () => {
   const { toast } = useToast();
@@ -86,6 +87,21 @@ const VentasPage = () => {
   } = useVentas();
 
   const { activePanel } = usePanels();
+  const { setSidebarOpen } = useLayout();
+
+  // (29/10/2026) El punto de venta necesita todo el ancho: en pantallas
+  // medianas, al entrar a Ventas (o al achicar la ventana) se recoge el menú
+  // lateral antes de que la factura se deforme. Nunca lo vuelve a abrir solo.
+  useEffect(() => {
+    if (activePanel !== 'ventas') return undefined;
+    const ANCHO_MINIMO = 1500; // menú abierto (260 px) + factura completa
+    const revisar = () => {
+      if (window.innerWidth < ANCHO_MINIMO) setSidebarOpen(false);
+    };
+    revisar();
+    window.addEventListener('resize', revisar);
+    return () => window.removeEventListener('resize', revisar);
+  }, [activePanel, setSidebarOpen]);
 
   const handleEditFacturaToggle = () => {
     setIsEditingNumero(!isEditingNumero);
