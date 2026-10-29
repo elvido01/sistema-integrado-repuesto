@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import PagoTransferenciaModal from '@/components/suscripcion/PagoTransferenciaModal';
 
 // Meses gratis al pagar anual (2 = "paga 10, lleva 12" ≈ 17% de ahorro).
@@ -19,6 +20,17 @@ const DIAS_ANUAL = 365;
 // La facturación electrónica va en TODOS: es obligatoria con la DGII.
 // Cada plan suma a los de abajo ("Todo lo del Básico, más:").
 const INCLUYE = {
+  // (29/10/2026) Solo para empresas sin inventario (servicios e inmobiliaria).
+  SERVICIOS: {
+    base: null,
+    items: [
+      'Facturación electrónica e-CF (DGII)',
+      'Facturas de servicios con retenciones (ITBIS e ISR)',
+      'Facturas en pesos o en dólares',
+      'Cuentas por cobrar',
+      'Reportes 606, 607 y 608',
+    ],
+  },
   BASICO: {
     base: null,
     items: [
@@ -72,6 +84,7 @@ const PlanesPage = () => {
 
   const planMeta = {
     TRIAL:      { icon: Clock,    gradient: 'from-amber-500 to-orange-500',   color: 'amber',   badge: 'Prueba Gratis',   popular: false },
+    SERVICIOS:  { icon: FileText, gradient: 'from-sky-500 to-cyan-500',      color: 'sky',     badge: 'Solo facturación', popular: false },
     BASICO:     { icon: Shield,   gradient: 'from-blue-500 to-indigo-500',    color: 'blue',    badge: 'Ideal para iniciar', popular: false },
     PRO:        { icon: Crown,    gradient: 'from-emerald-500 to-teal-500',   color: 'emerald', badge: 'Más Popular',     popular: true },
     ENTERPRISE: { icon: Sparkles, gradient: 'from-purple-500 to-violet-500',  color: 'purple',  badge: 'Todo Ilimitado',  popular: false },
@@ -100,7 +113,10 @@ const PlanesPage = () => {
   const isCurrentPlan = (nombre) => planActual === nombre;
   const pagoPendiente = suscripcion?.pago_pendiente;
 
-  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL');
+  // El plan SERVICIOS solo lo ven las empresas sin inventario.
+  const { empresa } = useAuth();
+  const sinInventario = ['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio);
+  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL' && (p.nombre !== 'SERVICIOS' || sinInventario));
 
   return (
     <div className="min-h-full bg-gradient-to-b from-gray-50 to-white">
@@ -172,7 +188,7 @@ const PlanesPage = () => {
 
       {/* Plans Grid */}
       <div className="max-w-5xl mx-auto px-4 py-10">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={`grid grid-cols-1 gap-6 ${paidPlanes.length > 3 ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
           {paidPlanes.map((plan, i) => {
             const meta = planMeta[plan.nombre] || planMeta.BASICO;
             const PlanIcon = meta.icon;
