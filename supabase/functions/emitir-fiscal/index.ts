@@ -1253,6 +1253,20 @@ Deno.serve(async (req) => {
         certificado_password_iv: iv,
       };
 
+      // (29/10/2026) Probar que la contraseña abre el .p12 ANTES de guardar.
+      // Antes se guardaba cualquier cosa y el error salía después, al firmar.
+      try {
+        await loadAndParseP12(supabase, config);
+      } catch (e) {
+        const msg = String(e?.message || e);
+        return new Response(JSON.stringify({
+          ok: false,
+          error: /password|MAC/i.test(msg)
+            ? "La contraseña no abre este certificado. Revisa la contraseña que te dio la entidad certificadora (DigiFirma, Cámara TIC, etc.) y vuelve a subirlo."
+            : `El archivo no es un certificado .p12 válido: ${msg}`,
+        }), { status: 200, headers: corsHeaders });
+      }
+
       // Upsert en integraciones_fiscales (una fila por tenant + proveedor)
       const { data: existente } = await supabase
         .from("integraciones_fiscales")
