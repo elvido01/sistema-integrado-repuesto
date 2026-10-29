@@ -408,6 +408,11 @@ const ConfiguracionSistemaPage = () => {
         return <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-morla-blue" /></div>;
     }
 
+    // (29/10/2026) Empresas sin inventario: no ven compras, búsqueda de
+    // productos ni precios 2/3. Servicios tampoco financia.
+    const esServicios = formData.tipo_negocio === 'servicios';
+    const sinInventario = esServicios || formData.tipo_negocio === 'inmobiliaria';
+
     return (
         <div className="p-6 bg-gray-50 h-full overflow-y-auto">
             <Card className="max-w-6xl mx-auto shadow-xl border-t-4 border-morla-blue">
@@ -569,6 +574,7 @@ const ConfiguracionSistemaPage = () => {
                     </div>
 
                     {/* Configuración de precios automáticos */}
+                    {!sinInventario && (
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
                         <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
                            <Percent className="w-4 h-4" /> Configuración de Precios 2 y 3
@@ -597,6 +603,7 @@ const ConfiguracionSistemaPage = () => {
                             </div>
                         </div>
                     </div>
+                    )}
 
                     {/* Tipo de empresa y control de venta bajo costo */}
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
@@ -760,6 +767,7 @@ const ConfiguracionSistemaPage = () => {
                     </div>
 
                     {/* Compras y Órdenes Section */}
+                    {!sinInventario && (
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
                         <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
                            <FileText className="w-4 h-4" /> Configuración de Órdenes de Compra
@@ -811,8 +819,10 @@ const ConfiguracionSistemaPage = () => {
 	                            </p>
 	                        </div>
                     </div>
+                    )}
 
                     {/* Búsqueda de Productos */}
+                    {!sinInventario && (
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
                         <h3 className="text-sm font-bold text-morla-blue uppercase border-b pb-2 mb-4 flex items-center gap-2">
                             <FileText className="w-4 h-4" /> Búsqueda de Productos
@@ -837,6 +847,7 @@ const ConfiguracionSistemaPage = () => {
                             </p>
                         </div>
                     </div>
+                    )}
 
                     {/* Sección de Impresión: Formato Factura y Etiquetas */}
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-6">
@@ -937,6 +948,7 @@ const ConfiguracionSistemaPage = () => {
                     </div>
 
                     {/* Sección de Financiamiento (Propio / Terceros) */}
+                    {!esServicios && (
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-4">
                         <h3 className="text-sm font-bold text-emerald-700 uppercase border-b pb-2 mb-4 flex items-center gap-2">
                             <Banknote className="w-4 h-4" /> Financiamiento
@@ -975,6 +987,7 @@ const ConfiguracionSistemaPage = () => {
                             )}
                         </div>
                     </div>
+                    )}
 
                     {/* Sección de Impresoras WebUSB */}
                     <div className="border rounded-md p-6 bg-[#f0f0f0] shadow-inner">
