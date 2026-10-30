@@ -117,7 +117,7 @@ const VentasPage = () => {
     let ultimo = '';
     try {
       const { data } = await supabase.from('facturas')
-        .select('numero').order('numero', { ascending: false }).limit(1).maybeSingle();
+        .select('numero').order('numero', { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
       if (data?.numero != null) ultimo = String(data.numero);
     } catch (_) { /* sin el último número, el campo queda vacío como antes */ }
     setEditNumero(ultimo);

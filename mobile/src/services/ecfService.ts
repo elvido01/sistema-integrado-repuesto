@@ -10,21 +10,23 @@
 // El papel de un e-CF lleva: título del tipo, e-NCF, código de seguridad,
 // fecha de firma y el QR de consulta de la DGII (src/lib/ecfImpresion.js).
 // ============================================================
-import { supabase } from '@/src/supabase/client';
-
-const SUPABASE_URL =
-  process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://zdvxowpuklbypweyqqki.supabase.co';
+import { supabase, supabaseUrl as SUPABASE_URL } from '@/src/supabase/client';
 
 export type FiscalConfig = { activo: boolean; modo: string | null };
 
 export async function getFiscalConfig(tenantId?: string | null): Promise<FiscalConfig> {
   if (!tenantId) return { activo: false, modo: null };
-  const { data } = await supabase
+  // Si la consulta falla se LANZA: tratar el error como "sin e-CF" hacía
+  // que una empresa en producción facturara sin e-NCF sin que nadie lo notara.
+  const { data, error } = await supabase
     .from('integraciones_fiscales')
     .select('activo, modo')
     .eq('tenant_id', tenantId)
     .eq('activo', true)
+    .order('updated_at', { ascending: false, nullsFirst: false })
+    .limit(1)
     .maybeSingle();
+  if (error) throw error;
   return { activo: !!data, modo: data?.modo || null };
 }
 
@@ -39,7 +41,16 @@ export type ResultadoEmision = {
 export async function emitirFacturaElectronica(facturaId: string): Promise<ResultadoEmision> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) return { ok: false, error: 'Sesión vencida: vuelve a entrar.' };
-  const resp = await fetch(`${SUPABASE_URL}/functions/v1/emitir-fiscal`, {
+  // Con tiempo límite: el fetch de React Native no tiene, y sin datos móviles
+  // el botón Cobrar se quedaba girando para siempre con la venta ya grabada.
+  const control = new AbortController();
+  // 150 s = el límite de la Edge Function: cortar antes imprimía el ticket
+  // sin e-NCF mientras el servidor sí lo terminaba de emitir.
+  const reloj = setTimeout(() => control.abort(), 150_000);
+  let resp: Response;
+  try {
+    resp = await fetch(`${SUPABASE_URL}/functions/v1/emitir-fiscal`, {
+    signal: control.signal,
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -47,6 +58,12 @@ export async function emitirFacturaElectronica(facturaId: string): Promise<Resul
     },
     body: JSON.stringify({ action: 'emitir_factura', factura_id: facturaId }),
   });
+  } catch (e: any) {
+    const tarde = e?.name === 'AbortError';
+    return { ok: false, error: tarde ? 'la DGII no respondió en 150 s (puede que sí se haya emitido: míralo en el Monitor DGII)' : `sin conexión (${e?.message || e})` };
+  } finally {
+    clearTimeout(reloj);
+  }
   try {
     return await resp.json();
   } catch {
@@ -107,10 +124,15 @@ export function datosEcf(encf: string | null | undefined, imp: Record<string, an
   };
 }
 
+/** RNC (9) o cédula (11): lo único con lo que emitir-fiscal saca un E31. */
+export function rncValido(rnc: unknown) {
+  const dig = String(rnc || '').replace(/\D/g, '');
+  return (dig.length === 9 || dig.length === 11) && !/^0+$/.test(dig);
+}
+
 /** Cédula/RNC (9 u 11 dígitos) o pasaporte: lo que la DGII acepta como comprador identificado. */
 export function documentoValido(rnc: unknown) {
-  const dig = String(rnc || '').replace(/\D/g, '');
-  if ((dig.length === 9 || dig.length === 11) && !/^0+$/.test(dig)) return true;
+  if (rncValido(rnc)) return true;
   const pas = String(rnc || '').toUpperCase().replace(/[\s-]/g, '');
   return /^[A-Z0-9]{5,20}$/.test(pas) && /[A-Z]/.test(pas) && /[1-9]/.test(pas);
 }

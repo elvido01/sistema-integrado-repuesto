@@ -2,17 +2,17 @@
   "huellas": {
     "mobile/app/(tabs)/existencia.tsx": "03d0199fde9d48b7",
     "mobile/app/(tabs)/orden-compra.tsx": "106721884dbe917e",
-    "mobile/app/(tabs)/pos.tsx": "04d8b4304ab3e6cf",
+    "mobile/app/(tabs)/pos.tsx": "af1a77e2401e7b8b",
     "mobile/app/(tabs)/recibo-ingreso.tsx": "5a2d47c165dc6679",
     "mobile/app/(tabs)/recibo-pago-financiera.tsx": "6d2c015654ac5900",
     "mobile/app/existencia/index.tsx": "a2cbc70f80c67ea7",
     "mobile/app/recibo-ingreso/index.tsx": "ded4296193bd97d0",
     "mobile/app/recibo-pago-financiera/index.tsx": "7710348bed06f254",
     "mobile/app/solicitudes-compra/index.tsx": "dfb2b8eadf197098",
-    "mobile/services/printFactura.ts": "b250944c0d23ef42",
+    "mobile/services/printFactura.ts": "54b1417ac2daad3f",
     "mobile/services/printReciboFinanciera.ts": "d42fc2404d90363f",
     "mobile/services/printReciboIngreso.ts": "f45ebb063412733a",
-    "mobile/src/services/ecfService.ts": "2fe45f6fa3d6f6cf",
+    "mobile/src/services/ecfService.ts": "3ed2c78df1d88e8f",
     "mobile/src/services/reciboIngresoService.ts": "0712cb95834020b7",
     "mobile/src/services/reciboPagoFinancieraService.ts": "5cbc079b86b4d420",
     "sql/acierto_compras.sql": "8c435e3fdca58847",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "72d5921bed6fdbed",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "6e8fd553b619b253",
+    "src/pages/VentasPage.jsx": "a794db359189ee06",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -408,6 +408,16 @@
       "fecha": "2026-10-30",
       "nota": "punto de partida",
       "archivos": 402
+    },
+    {
+      "fecha": "2026-10-30",
+      "nota": "code-review high (2 rondas) de 3ccb2bda + f0abd708: arreglados encabezado del emisor por nombre (Caminero/Morla sin RNC), cliente generico de cotizacion, error de red tratado como sin e-CF, ficha de cliente no encontrada, timeout e-CF 150 s, RNC 9/11 para 01, nulls en ultimo numero, updates de cotizacion/pedido sin select, titulo e-CF de 58 mm",
+      "archivos": [
+        "mobile/app/(tabs)/pos.tsx",
+        "mobile/services/printFactura.ts",
+        "mobile/src/services/ecfService.ts",
+        "src/pages/VentasPage.jsx"
+      ]
     }
   ]
 }

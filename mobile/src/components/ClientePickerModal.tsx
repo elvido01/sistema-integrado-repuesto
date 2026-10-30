@@ -28,7 +28,8 @@ export async function buscarClientes(term: string): Promise<ClientePOS[]> {
 }
 
 export async function leerCliente(id: string): Promise<ClientePOS | null> {
-  const { data } = await supabase.from('clientes').select(CAMPOS).eq('id', id).maybeSingle();
+  const { data, error } = await supabase.from('clientes').select(CAMPOS).eq('id', id).maybeSingle();
+  if (error) throw error;
   return (data as ClientePOS) || null;
 }
 

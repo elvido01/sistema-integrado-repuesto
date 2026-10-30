@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // Fallback hardcoded en caso de que el build no incluyera el .env.
 // Estos son valores PUBLICOS (anon key) — seguro tenerlos en el codigo.
-const supabaseUrl =
+export const supabaseUrl =
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
   'https://zdvxowpuklbypweyqqki.supabase.co';
 const supabaseAnonKey =

@@ -59,7 +59,6 @@
       "mobile/app/(tabs)/cotizaciones.tsx": 2,
       "mobile/app/(tabs)/orden-compra.tsx": 1,
       "mobile/app/(tabs)/pedidos.tsx": 1,
-      "mobile/app/(tabs)/pos.tsx": 2,
       "mobile/app/configuracion/index.tsx": 1,
       "mobile/app/solicitudes-compra/index.tsx": 1,
       "mobile/app/ubicacion/index.tsx": 1,

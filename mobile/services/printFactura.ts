@@ -12,21 +12,27 @@ const W = 32; // 58mm impresora térmica estándar
 // asi que 48 columnas es seguro. La dejamos como parametro.
 
 const fmt = (n: number) => Number(n || 0).toFixed(2);
-const REPUESTOS_MORLA_EMPRESA = {
-    nombre: 'REPUESTOS MORLA',
-    razon_social: 'REPUESTOS MORLA',
-    rnc: '',
-    direccion1: 'Av. Duarte, esq. Baldemiro Rijo',
-    direccion2: 'Higuey, Rep. Dom.',
-    telefono: '809-390-5965',
-};
-const isCamineroHeader = (empresa: any) => {
-    const text = `${empresa?.nombre || ''} ${empresa?.razon_social || ''}`.toUpperCase();
-    return text.includes('MPN') || text.includes('CAMINERO');
-};
-const normalizePosEmpresa = (empresa: any) => (
-    isCamineroHeader(empresa) ? { ...empresa, ...REPUESTOS_MORLA_EMPRESA } : empresa
-);
+// Encabezado del emisor, igual que la web (src/lib/printPOS.js): arriba el
+// nombre comercial, debajo la razón social si es distinta (una persona física
+// como Morla factura a nombre del dueño y el comprobante tiene que decirlo) y
+// el RNC. (30/10/2026) Antes se detectaba la empresa por el NOMBRE: todo lo
+// que dijera "CAMINERO" o "MPN" salía como REPUESTOS MORLA y SIN RNC,
+// también Caminero Motors, que emite e-CF.
+export function encabezadoEmpresa(empresa: any) {
+    const e = empresa || {};
+    const nombre = String(e.nombre || e.razon_social || 'MotoFlow').trim();
+    const rs = String(e.razon_social || '').trim();
+    return {
+        nombre,
+        razonSocial: rs && rs.toUpperCase() !== nombre.toUpperCase() ? rs : '',
+        direccion: e.direccion1 || e.direccion || '',
+        direccion2: e.direccion2 || '',
+        telefono: e.telefono || '',
+        rnc: e.rnc || '',
+    };
+}
+// El título del e-CF cabe en una línea del papel de 58 mm.
+export const tituloCorto = (t: string, width: number) => (t.length > width ? t.replace('ELECTRONICA', 'ELECT.') : t);
 
 function padLeft(s: string, n: number) { return s.length >= n ? s.slice(0, n) : ' '.repeat(n - s.length) + s; }
 function padRight(s: string, n: number) { return s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length); }
@@ -39,14 +45,7 @@ function labelVal(label: string, value: string, width: number): string {
 
 export async function printFacturaPos(f: any, { width = 32 } = {}) {
     const lines: TicketLine[] = [];
-    const empresa = normalizePosEmpresa(f?.empresa || {});
-    const EMPRESA = {
-        nombre: empresa.razon_social || empresa.nombre || 'MotoFlow',
-        direccion: empresa.direccion1 || empresa.direccion || '',
-        direccion2: empresa.direccion2 || '',
-        telefono: empresa.telefono || '',
-        rnc: empresa.rnc || f.rnc || '',
-    };
+    const EMPRESA = encabezadoEmpresa(f?.empresa);
 
     const fecha = f.fecha instanceof Date ? f.fecha : new Date(f.fecha);
     const fechaStr = fecha.toLocaleDateString('es-DO');
@@ -57,6 +56,7 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
 
     // Header
     lines.push({ type: 'text', text: EMPRESA.nombre, align: 'center', bold: true, double: true });
+    if (EMPRESA.razonSocial) lines.push({ type: 'text', text: EMPRESA.razonSocial, align: 'center' });
     if (EMPRESA.direccion) lines.push({ type: 'text', text: EMPRESA.direccion, align: 'center' });
     if (EMPRESA.direccion2) lines.push({ type: 'text', text: EMPRESA.direccion2, align: 'center' });
     if (EMPRESA.telefono) lines.push({ type: 'text', text: `Tel: ${EMPRESA.telefono}`, align: 'center' });
@@ -64,7 +64,7 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
     lines.push({ type: 'feed', lines: 1 });
     // e-CF (30/10/2026): título del tipo + e-NCF (+ vencimiento si aplica).
     if (f.ecf) {
-        lines.push({ type: 'text', text: f.ecf.titulo, align: 'center', bold: true });
+        lines.push({ type: 'text', text: tituloCorto(f.ecf.titulo, width), align: 'center', bold: true });
         lines.push({ type: 'text', text: `e-NCF: ${f.ecf.encf}`, align: 'center', bold: true });
         if (f.ecf.fecha_vencimiento) lines.push({ type: 'text', text: `Valida hasta: ${f.ecf.fecha_vencimiento}`, align: 'center' });
     } else {

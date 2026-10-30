@@ -8,28 +8,16 @@ import { supabase } from '@/src/supabase/client';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { getSavedPrinter } from '@/services/bluetoothPrinter';
-import { printFacturaPos } from '@/services/printFactura';
+import { printFacturaPos, encabezadoEmpresa, tituloCorto } from '@/services/printFactura';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import ClientePickerModal, { leerCliente, type ClientePOS } from '@/src/components/ClientePickerModal';
-import { getFiscalConfig, emitirFacturaElectronica, datosEcf, documentoValido } from '@/src/services/ecfService';
+import { getFiscalConfig, emitirFacturaElectronica, datosEcf, documentoValido, rncValido } from '@/src/services/ecfService';
 
 const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
-const REPUESTOS_MORLA_EMPRESA = {
-  nombre: 'REPUESTOS MORLA',
-  razon_social: 'REPUESTOS MORLA',
-  rnc: '',
-  direccion1: 'Av. Duarte, esq. Baldemiro Rijo',
-  direccion2: 'Higuey, Rep. Dom.',
-  telefono: '809-390-5965',
-};
-const isCamineroHeader = (empresa: any) => {
-  const text = `${empresa?.nombre || ''} ${empresa?.razon_social || ''}`.toUpperCase();
-  return text.includes('MPN') || text.includes('CAMINERO');
-};
-const normalizePosEmpresa = (empresa: any) => (
-  isCamineroHeader(empresa) ? { ...empresa, ...REPUESTOS_MORLA_EMPRESA } : empresa
-);
+// Cliente genérico fijo que guardan cotizaciones y pedidos (cotizaciones.tsx).
+// En la factura no se guarda: va como "sin cliente" + el nombre escrito.
+const CLIENTE_GENERICO_ID = '2749fa36-3d7c-4bdf-ad61-df88eda8365a';
 const normalizeItbisPct = (value: unknown) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0.18;
@@ -87,14 +75,16 @@ export default function POSScreen() {
   // si la factura sale de consumo (02/E32) o de crédito fiscal (01/E31).
   const [pickerOpen, setPickerOpen] = useState(false);
   const [clienteInfo, setClienteInfo] = useState<ClientePOS | null>(null);
+  // El genérico de cotizaciones/pedidos cuenta como "sin cliente".
+  const clienteReal = clienteId && clienteId !== CLIENTE_GENERICO_ID ? clienteId : null;
 
   useEffect(() => {
     let vivo = true;
-    if (!clienteId) { setClienteInfo(null); return undefined; }
-    if (clienteInfo?.id === clienteId) return undefined;
-    leerCliente(clienteId).then((c) => { if (vivo) setClienteInfo(c); }).catch(() => {});
+    if (!clienteReal) { setClienteInfo(null); return undefined; }
+    if (clienteInfo?.id === clienteReal) return undefined;
+    leerCliente(clienteReal).then((c) => { if (vivo) setClienteInfo(c); }).catch(() => {});
     return () => { vivo = false; };
-  }, [clienteId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clienteReal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const elegirCliente = (c: ClientePOS | null) => {
     setPickerOpen(false);
@@ -169,16 +159,40 @@ export default function POSScreen() {
       // 0. Cliente y comprobante. El tipo lo dice la ficha del cliente
       //    (01 crédito fiscal / 02 consumo); sin cliente, consumo.
       let cliente = clienteInfo;
-      if (clienteId && cliente?.id !== clienteId) cliente = await leerCliente(clienteId);
-      const tipoNcf = clienteId && cliente?.tipo_ncf ? cliente.tipo_ncf : '02';
-      const fiscal = await getFiscalConfig(tenantId);
+      if (clienteReal && cliente?.id !== clienteReal) {
+        // Si no se puede leer la ficha no se adivina el comprobante: con un
+        // cliente de crédito fiscal saldría de consumo.
+        try {
+          cliente = await leerCliente(clienteReal);
+        } catch {
+          Alert.alert('Sin conexión', 'No se pudo leer la ficha del cliente. Revisa la conexión y vuelve a cobrar.');
+          return;
+        }
+        if (!cliente) {
+          // Borrado, inactivo o de otra empresa: reintentar no lo arregla.
+          setClienteInfo(null);
+          setCliente(null, 'Cliente Generico', '');
+          Alert.alert('Cliente no encontrado', 'Ese cliente ya no existe en esta empresa. Se cambió a cliente genérico: elige otro si hace falta y vuelve a cobrar.');
+          return;
+        }
+      }
+      const tipoNcf = clienteReal && cliente?.tipo_ncf ? cliente.tipo_ncf : '02';
+      let fiscal;
+      try {
+        fiscal = await getFiscalConfig(tenantId);
+      } catch {
+        // Sin saber si la empresa factura electrónico, cobrar podría sacar
+        // una factura sin e-NCF en una empresa que ya está en producción.
+        Alert.alert('Sin conexión', 'No se pudo confirmar la facturación electrónica de la empresa. Revisa la conexión y vuelve a cobrar.');
+        return;
+      }
       const ecfProduccion = fiscal.activo && fiscal.modo === 'produccion';
 
       // Mismas reglas de la DGII que la web: crédito fiscal exige RNC, y
       // una factura de consumo de RD$250,000 o más exige identificar al
       // comprador (si no, la DGII la rechaza y el número queda gastado).
-      if (tipoNcf === '01' && !documentoValido(cliente?.rnc)) {
-        Alert.alert('Falta el RNC', `${cliente?.nombre || 'Este cliente'} es de crédito fiscal pero su ficha no tiene un RNC o cédula válido. Corrígelo en Clientes o vende como consumo.`);
+      if (tipoNcf === '01' && !rncValido(cliente?.rnc)) {
+        Alert.alert('Falta el RNC', `${cliente?.nombre || 'Este cliente'} es de crédito fiscal pero su ficha no tiene un RNC (9 dígitos) o cédula (11 dígitos) válido. Corrígelo en Clientes o vende como consumo.`);
         return;
       }
       if (ecfProduccion && total >= 250000 && !documentoValido(cliente?.rnc)) {
@@ -211,7 +225,7 @@ export default function POSScreen() {
       const subtotalCalculado = round2(lineasCalculadas.reduce((sum, row) => sum + row.totals.base, 0));
       const itbisCalculado = round2(lineasCalculadas.reduce((sum, row) => sum + row.totals.itbis, 0));
       const totalCalculado = round2(lineasCalculadas.reduce((sum, row) => sum + row.totals.importe, 0));
-      let empresaEmision = normalizePosEmpresa(empresa);
+      let empresaEmision: any = empresa;
 
       if (tenantId) {
         const { data: empresaActual, error: empresaError } = await supabase
@@ -220,7 +234,7 @@ export default function POSScreen() {
           .eq('tenant_id', tenantId)
           .maybeSingle();
         if (empresaError) throw empresaError;
-        if (empresaActual) empresaEmision = normalizePosEmpresa(empresaActual);
+        if (empresaActual) empresaEmision = empresaActual;
       }
 
       // 1. Guardar Venta en Supabase
@@ -229,8 +243,8 @@ export default function POSScreen() {
         .insert({
           tenant_id: tenantId,
           usuario_id: user?.id,
-          cliente_id: clienteId || null,
-          ...(!clienteId && clienteNombre && clienteNombre !== 'Cliente Generico'
+          cliente_id: clienteReal,
+          ...(!clienteReal && clienteNombre && !/GEN[EÉ]RICO/i.test(clienteNombre)
             ? { manual_cliente_nombre: clienteNombre } : {}),
           fecha: fechaVenta,
           subtotal: subtotalCalculado,
@@ -305,19 +319,23 @@ export default function POSScreen() {
       }
 
       if (cotizacionOrigenId) {
-        const { error: cotError } = await supabase
+        const { data: cotOk, error: cotError } = await supabase
           .from('cotizaciones')
           .update({ estado: 'Facturada' })
-          .eq('id', cotizacionOrigenId);
+          .eq('id', cotizacionOrigenId)
+          .select('id');
         if (cotError) throw cotError;
+        if (!cotOk?.length) Alert.alert('Cotización sin marcar', `FT-${venta.numero} quedó grabada, pero la cotización #${cotizacionOrigenNumero} no se pudo marcar como facturada. Márquela a mano para no cobrarla dos veces.`);
       }
 
       if (pedidoOrigenId) {
-        const { error: pedidoError } = await supabase
+        const { data: pedOk, error: pedidoError } = await supabase
           .from('pedidos')
           .update({ estado: 'Facturado' })
-          .eq('id', pedidoOrigenId);
+          .eq('id', pedidoOrigenId)
+          .select('id');
         if (pedidoError) throw pedidoError;
+        if (!pedOk?.length) Alert.alert('Pedido sin marcar', `FT-${venta.numero} quedó grabada, pero el pedido #${pedidoOrigenNumero} no se pudo marcar como facturado. Márquelo a mano para no cobrarlo dos veces.`);
       }
 
       // 4. Factura electrónica. En producción se espera: el e-NCF va en el
@@ -325,7 +343,7 @@ export default function POSScreen() {
       //    documentos_fiscales, igual que en la web).
       let ncfFinal: string | null = ncfAsignado;
       let ecf = null;
-      if (fiscal.activo && ecfProduccion) {
+      if (ecfProduccion) {
         try {
           const r = await emitirFacturaElectronica(venta.id);
           if (r.ok) {
@@ -338,7 +356,9 @@ export default function POSScreen() {
           Alert.alert('Factura grabada, e-CF no emitido', `FT-${venta.numero}: sin conexión con la DGII (${e?.message || e}). Se puede reintentar desde el Monitor DGII en la web.`);
         }
       } else if (fiscal.activo) {
-        emitirFacturaElectronica(venta.id).catch((e) => console.warn('[e-CF pruebas]', e?.message || e));
+        emitirFacturaElectronica(venta.id)
+          .then((r) => { if (!r.ok) console.warn('[e-CF pruebas]', r.error); })
+          .catch((e) => console.warn('[e-CF pruebas]', e?.message || e));
       }
 
       // 5. Preparar snapshot de la factura para el modal
@@ -379,15 +399,6 @@ export default function POSScreen() {
   // Construye el texto de la factura en formato ticket POS (monospace).
   // Se envuelve en ``` para que WhatsApp/Telegram/Discord lo rendericen
   // como bloque monospace y se vea como el ticket impreso.
-  const empresaTicket = normalizePosEmpresa(empresa);
-  const EMPRESA = {
-    nombre: empresaTicket?.razon_social || empresaTicket?.nombre || 'MotoFlow',
-    direccion: empresaTicket?.direccion1 || '',
-    direccion2: empresaTicket?.direccion2 || '',
-    telefono: empresaTicket?.telefono || '',
-    rnc: empresaTicket?.rnc || '',
-  };
-
   const buildFacturaTexto = (f: any) => {
     if (!f) return '';
     const W = 36; // ancho del ticket
@@ -420,15 +431,18 @@ export default function POSScreen() {
       ? `FT-${String(f.numero).padStart(7, '0').slice(-7)}`
       : `FT-${String(f.id || '0').replace(/[^0-9]/g, '').padStart(7, '0').slice(-7)}`;
 
+    // El mismo emisor que el papel: el que se leyó al cobrar (f.empresa).
+    const EMPRESA = encabezadoEmpresa(f.empresa || empresa);
     let t = '```\n';
     t += center(EMPRESA.nombre) + '\n';
+    if (EMPRESA.razonSocial) t += center(EMPRESA.razonSocial) + '\n';
     if (EMPRESA.direccion) t += center(EMPRESA.direccion) + '\n';
     if (EMPRESA.direccion2) t += center(EMPRESA.direccion2) + '\n';
     if (EMPRESA.telefono) t += center(EMPRESA.telefono) + '\n';
     if (EMPRESA.rnc) t += center(`RNC: ${EMPRESA.rnc}`) + '\n';
     t += '\n';
     if (f.ecf) {
-      t += center(f.ecf.titulo.length > W ? f.ecf.titulo.replace('ELECTRONICA', 'ELECT.') : f.ecf.titulo) + '\n';
+      t += center(tituloCorto(f.ecf.titulo, W)) + '\n';
       t += center(`e-NCF: ${f.ecf.encf}`) + '\n';
       if (f.ecf.fecha_vencimiento) t += center(`Valida hasta: ${f.ecf.fecha_vencimiento}`) + '\n';
     } else {
