@@ -78,7 +78,12 @@ const REFS_ESTILO = 3;
 const RECORTE = 'Cut the product cleanly out of its photo: keep ONLY the product itself (and its own retail box '
   + 'only when the item is sold boxed, like oil or filters). Drop EVERYTHING else from the photo: background, wall, '
   + 'table, floor, hands, shelves, and any card, sticker sheet, label board or other packaging standing behind or '
-  + 'under it. The product stands alone on the podium, exactly the same in every format (square and vertical).';
+  + 'under it. The product stands alone on the podium, exactly the same in every format (square and vertical). '
+  // (30/10/2026) Motor de arranque RHYNO sobre una caja de cartón lisa: la
+  // imagen le pintó "TVS" y un caballo a la caja, copiados de los anuncios
+  // de estilo. Nunca se agrega una marca que no esté en la foto.
+  + 'NEVER add, invent or copy any brand name, logo, emblem or label onto the product or onto any box: '
+  + 'if a surface is plain in the photo it stays plain. Brands seen in the style reference ads belong to OTHER products.';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

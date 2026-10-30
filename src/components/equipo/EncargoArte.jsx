@@ -436,12 +436,6 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
             )}
           </div>
 
-          {/* El guion del reel: se revisa aquí y el reel se hace solo cuando el
-              dueño lo pide (no se gasta en tomas con un guion equivocado). */}
-          {pieza.reel_guion?.guion && (
-            <GuionReel trabajoId={trabajoId} reelGuion={pieza.reel_guion} onPedido={setReelPedido} />
-          )}
-
           {Array.isArray(pieza.advertencias) && pieza.advertencias.length > 0 && (
             <ul className="mt-2 list-disc rounded border border-amber-200 bg-amber-50 py-1.5 pl-6 pr-2 text-[11px] text-amber-900">
               {pieza.advertencias.map((a, i) => <li key={i}>{a}</li>)}
@@ -460,8 +454,8 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
             </div>
           ) : pidiendoOtra ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <input value={comentario} onChange={(e) => setComentario(e.target.value)}
-                placeholder="¿Qué le cambio? Ej.: el precio más grande, fondo más claro."
+              <input value={comentario} onChange={(e) => setComentario(e.target.value)} autoFocus
+                placeholder="¿Qué le cambio? Ej.: la caja sin marca, la marca es RHYNO, fondo más claro."
                 className="h-8 min-w-[240px] flex-1 rounded border border-slate-300 px-2 text-xs" />
               <Button size="sm" disabled={trabajando} onClick={otra}>
                 {trabajando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null} Pedírsela
@@ -484,9 +478,18 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
                 Descartar
               </button>
               <span className="text-[10px] text-slate-400">
+                ¿Algo mal en la imagen (una marca, una letra)? Pulsa «Pedir cambios» y dile qué corregir.
                 Aprobarla no publica nada: pasa al paso 3, abajo.
               </span>
             </div>
+          )}
+
+          {/* El guion del reel: se revisa aquí y el reel se hace solo cuando el
+              dueño lo pide (no se gasta en tomas con un guion equivocado).
+              (30/10/2026) Va DEBAJO de los botones: encima, el guion empujaba
+              «Pedir cambios» fuera de la pantalla y no se encontraba. */}
+          {pieza.reel_guion?.guion && (
+            <GuionReel trabajoId={trabajoId} reelGuion={pieza.reel_guion} onPedido={setReelPedido} />
           )}
         </>
       )}
