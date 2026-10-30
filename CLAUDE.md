@@ -16,6 +16,8 @@ npm run revisar    # Pre-publish reviewer (also runs first inside npm run deploy
 
 `scripts/revisar-antes-de-publicar.mjs` blocks NEW cases of bugs that already bit us (Supabase update/delete without `.select()`, `.limit(1)` without `.order()`, global keydown without activePanel, STABLE SQL functions that write, duplicated SQL functions). Old cases live in `scripts/revision-base.json` (ratchet: only goes down). An intentional case is marked on its line with `// revisado: <why>`. Never "fix" a block by running `--base`.
 
+`scripts/candado-sensible.mjs` (also inside `npm run deploy` and `scripts/desplegar-funcion.mjs`) blocks publishing when files of caja / préstamos / inventario / ventas-compras / DGII changed since the last approved review (fingerprints in `scripts/revision-sensible.json`). When it blocks: run `/code-review high` on the listed files, fix the findings, then `node scripts/candado-sensible.mjs --aprobar "code-review high: <result>"`. Never approve without having run the review.
+
 > The `dist/` folder is in `.gitignore` but is force-committed (`git add -f dist/`) because the hosting is static file deployment — the built output is what gets uploaded to the web.
 
 ## Environment Setup

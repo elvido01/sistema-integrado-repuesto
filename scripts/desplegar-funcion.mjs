@@ -43,6 +43,14 @@ const CANDIDATOS = [
 ];
 const cli = CANDIDATOS.find((c) => c === 'supabase' || existsSync(c)) || 'supabase';
 
+// (30/10/2026) Las funciones de dinero/DGII pasan por el mismo candado que la
+// web: si cambiaron sin /code-review aprobado, no se despliegan.
+{
+  const { spawnSync } = await import('child_process');
+  const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'candado-sensible.mjs'), '--ruta', `supabase/functions/${funcion}/`], { cwd: RAIZ, stdio: 'inherit' });
+  if (r.status !== 0) process.exit(1);
+}
+
 console.log(`\n  Desplegando ${funcion} a ${PROD}...\n`);
 
 // Lo que venga despues del nombre se le pasa tal cual al CLI. Hace falta
