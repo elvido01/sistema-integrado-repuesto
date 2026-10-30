@@ -10,6 +10,9 @@ import * as Sharing from 'expo-sharing';
 import { getSavedPrinter } from '@/services/bluetoothPrinter';
 import { printFacturaPos } from '@/services/printFactura';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import QRCode from 'react-native-qrcode-svg';
+import ClientePickerModal, { leerCliente, type ClientePOS } from '@/src/components/ClientePickerModal';
+import { getFiscalConfig, emitirFacturaElectronica, datosEcf, documentoValido } from '@/src/services/ecfService';
 
 const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 const REPUESTOS_MORLA_EMPRESA = {
@@ -61,8 +64,10 @@ export default function POSScreen() {
     removeItem,
     updateQuantity,
     clearCart,
+    clienteId,
     clienteNombre,
     clienteTelefono,
+    setCliente,
     cotizacionOrigenId,
     cotizacionOrigenNumero,
     pedidoOrigenId,
@@ -78,6 +83,25 @@ export default function POSScreen() {
   const [compartiendo, setCompartiendo] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
+  // (30/10/2026) Cliente ya creado: su RNC y su tipo de comprobante deciden
+  // si la factura sale de consumo (02/E32) o de crédito fiscal (01/E31).
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [clienteInfo, setClienteInfo] = useState<ClientePOS | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    if (!clienteId) { setClienteInfo(null); return undefined; }
+    if (clienteInfo?.id === clienteId) return undefined;
+    leerCliente(clienteId).then((c) => { if (vivo) setClienteInfo(c); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [clienteId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const elegirCliente = (c: ClientePOS | null) => {
+    setPickerOpen(false);
+    setClienteInfo(c);
+    if (c) setCliente(c.id, c.nombre, c.telefono || '');
+    else setCliente(null, 'Cliente Generico', '');
+  };
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -142,22 +166,44 @@ export default function POSScreen() {
     cobrandoRef.current = true;
     setLoading(true);
     try {
-      // 0. Intentar asignar NCF tipo 02 (Consumidor Final) — el POS móvil
-      //    siempre vende a consumidor genérico. Si no hay secuencia activa,
-      //    la venta procede sin NCF + alerta (igual que en la web).
+      // 0. Cliente y comprobante. El tipo lo dice la ficha del cliente
+      //    (01 crédito fiscal / 02 consumo); sin cliente, consumo.
+      let cliente = clienteInfo;
+      if (clienteId && cliente?.id !== clienteId) cliente = await leerCliente(clienteId);
+      const tipoNcf = clienteId && cliente?.tipo_ncf ? cliente.tipo_ncf : '02';
+      const fiscal = await getFiscalConfig(tenantId);
+      const ecfProduccion = fiscal.activo && fiscal.modo === 'produccion';
+
+      // Mismas reglas de la DGII que la web: crédito fiscal exige RNC, y
+      // una factura de consumo de RD$250,000 o más exige identificar al
+      // comprador (si no, la DGII la rechaza y el número queda gastado).
+      if (tipoNcf === '01' && !documentoValido(cliente?.rnc)) {
+        Alert.alert('Falta el RNC', `${cliente?.nombre || 'Este cliente'} es de crédito fiscal pero su ficha no tiene un RNC o cédula válido. Corrígelo en Clientes o vende como consumo.`);
+        return;
+      }
+      if (ecfProduccion && total >= 250000 && !documentoValido(cliente?.rnc)) {
+        Alert.alert('Falta la cédula o el RNC', 'Para facturas de RD$250,000 o más la DGII exige identificar al comprador. Elige un cliente con su documento.');
+        return;
+      }
+
+      // Con e-CF en producción el comprobante lo pone emitir-fiscal; si no,
+      // NCF de papel. Si no hay secuencia activa, la venta sigue sin NCF +
+      // alerta (igual que en la web).
       let ncfAsignado: string | null = null;
-      try {
-        const { data: ncfResult } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: '02' });
-        if (ncfResult?.success) {
-          ncfAsignado = ncfResult.ncf;
-        } else if (ncfResult && !ncfResult.success) {
-          Alert.alert(
-            'Sin NCF disponible',
-            `${ncfResult.error}. La factura se emite sin NCF.`,
-          );
+      if (!ecfProduccion) {
+        try {
+          const { data: ncfResult } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: tipoNcf });
+          if (ncfResult?.success) {
+            ncfAsignado = ncfResult.ncf;
+          } else if (ncfResult && !ncfResult.success) {
+            Alert.alert(
+              'Sin NCF disponible',
+              `${ncfResult.error}. La factura se emite sin NCF.`,
+            );
+          }
+        } catch (ncfErr: any) {
+          console.warn('[POS] No se pudo obtener NCF:', ncfErr?.message);
         }
-      } catch (ncfErr: any) {
-        console.warn('[POS] No se pudo obtener NCF:', ncfErr?.message);
       }
 
       const fechaVenta = new Date().toISOString();
@@ -183,7 +229,9 @@ export default function POSScreen() {
         .insert({
           tenant_id: tenantId,
           usuario_id: user?.id,
-          cliente_id: null,
+          cliente_id: clienteId || null,
+          ...(!clienteId && clienteNombre && clienteNombre !== 'Cliente Generico'
+            ? { manual_cliente_nombre: clienteNombre } : {}),
           fecha: fechaVenta,
           subtotal: subtotalCalculado,
           descuento: 0,
@@ -272,7 +320,28 @@ export default function POSScreen() {
         if (pedidoError) throw pedidoError;
       }
 
-      // 4. Preparar snapshot de la factura para el modal
+      // 4. Factura electrónica. En producción se espera: el e-NCF va en el
+      //    papel. En pruebas va por detrás (el fallo queda en
+      //    documentos_fiscales, igual que en la web).
+      let ncfFinal: string | null = ncfAsignado;
+      let ecf = null;
+      if (fiscal.activo && ecfProduccion) {
+        try {
+          const r = await emitirFacturaElectronica(venta.id);
+          if (r.ok) {
+            ncfFinal = r.ncf || r.proveedor_number || null;
+            ecf = datosEcf(ncfFinal, r.impresion);
+          } else {
+            Alert.alert('Factura grabada, e-CF no emitido', `FT-${venta.numero}: ${r.error || 'error desconocido'}. Se puede reintentar desde el Monitor DGII en la web.`);
+          }
+        } catch (e: any) {
+          Alert.alert('Factura grabada, e-CF no emitido', `FT-${venta.numero}: sin conexión con la DGII (${e?.message || e}). Se puede reintentar desde el Monitor DGII en la web.`);
+        }
+      } else if (fiscal.activo) {
+        emitirFacturaElectronica(venta.id).catch((e) => console.warn('[e-CF pruebas]', e?.message || e));
+      }
+
+      // 5. Preparar snapshot de la factura para el modal
       const numeroFactura = venta.numero || String(venta.id).slice(0, 8).toUpperCase();
       setFacturaModal({
         numero: numeroFactura,
@@ -280,7 +349,11 @@ export default function POSScreen() {
         cotizacionNumero: cotizacionOrigenNumero,
         pedidoNumero: pedidoOrigenNumero,
         fecha: fechaVenta,
-        cliente: clienteNombre,
+        cliente: cliente?.nombre || clienteNombre,
+        clienteRnc: cliente?.rnc || null,
+        clienteTel: cliente?.telefono || clienteTelefono || null,
+        ncf: ncfFinal,
+        ecf,
         items: lineasCalculadas.map(({ item: it, totals }) => ({
           codigo: it.codigo,
           descripcion: it.descripcion,
@@ -354,15 +427,22 @@ export default function POSScreen() {
     if (EMPRESA.telefono) t += center(EMPRESA.telefono) + '\n';
     if (EMPRESA.rnc) t += center(`RNC: ${EMPRESA.rnc}`) + '\n';
     t += '\n';
-    t += center('FACTURA') + '\n';
+    if (f.ecf) {
+      t += center(f.ecf.titulo.length > W ? f.ecf.titulo.replace('ELECTRONICA', 'ELECT.') : f.ecf.titulo) + '\n';
+      t += center(`e-NCF: ${f.ecf.encf}`) + '\n';
+      if (f.ecf.fecha_vencimiento) t += center(`Valida hasta: ${f.ecf.fecha_vencimiento}`) + '\n';
+    } else {
+      t += center('FACTURA') + '\n';
+      if (f.ncf) t += center(`NCF: ${f.ncf}`) + '\n';
+    }
     if (f.cotizacionNumero) t += center(`Desde cotizacion #${f.cotizacionNumero}`) + '\n';
     if (f.pedidoNumero) t += center(`Desde pedido #${f.pedidoNumero}`) + '\n';
     t += labelVal(`Numero  : ${numStr}`, horaStr) + '\n';
     t += `Fecha   : ${fechaStr}\n`;
     t += `Vence   : CONTADO\n`;
     t += `Cliente : ${f.cliente || 'CLIENTE GENERICO'}\n`;
-    t += `Direccion N/A\n`;
-    t += `Tel.    : N/A\n`;
+    if (f.clienteRnc) t += `RNC/Ced : ${f.clienteRnc}\n`;
+    t += `Tel.    : ${f.clienteTel || 'N/A'}\n`;
     t += '\n';
     t += sep + '\n';
     t += 'Descripcion de la Mercancia\n';
@@ -452,15 +532,22 @@ export default function POSScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
     >
       <View className="bg-white px-4 pb-4 border-b border-gray-100 flex-row justify-between items-center" style={{ paddingTop: Math.max(insets.top + 12, 16) }}>
-        <View className="flex-row items-center flex-1">
+        {/* Tocar el cliente abre el buscador de clientes ya creados */}
+        <TouchableOpacity className="flex-row items-center flex-1" onPress={() => setPickerOpen(true)}>
           <View className="bg-gray-100 p-2 rounded-full mr-3">
             <User color="#6b7280" size={20} />
           </View>
           <View className="flex-1">
             <Text className="text-gray-900 font-bold" numberOfLines={1}>{clienteNombre}</Text>
-            {clienteTelefono ? <Text className="text-gray-500 text-sm">{clienteTelefono}</Text> : null}
+            <Text className="text-gray-500 text-xs" numberOfLines={1}>
+              {clienteInfo
+                ? [clienteInfo.rnc ? `RNC/Céd: ${clienteInfo.rnc}` : null, clienteInfo.tipo_ncf === '01' ? 'Crédito fiscal' : 'Consumo']
+                  .filter(Boolean).join(' · ')
+                : (clienteTelefono || 'Toca para elegir cliente')}
+            </Text>
           </View>
-        </View>
+          <Text className="text-brand text-xs font-bold ml-2">Cambiar</Text>
+        </TouchableOpacity>
         {items.length > 0 ? (
           <TouchableOpacity
             className="bg-brand rounded-full px-3 py-2 flex-row items-center ml-2"
@@ -593,6 +680,8 @@ export default function POSScreen() {
         </View>
       )}
 
+      <ClientePickerModal visible={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={elegirCliente} />
+
       {/* Modal: factura POS al finalizar venta */}
       <Modal
         visible={facturaModal !== null}
@@ -637,6 +726,24 @@ export default function POSScreen() {
                       .replace(/^```\n?/, '')
                       .replace(/\n?```$/, '')}
                   </Text>
+                  {/* Representación impresa del e-CF: QR + código + firma */}
+                  {facturaModal?.ecf ? (
+                    <View style={{ alignItems: 'center', marginTop: 8 }}>
+                      {facturaModal.ecf.qr_url ? (
+                        <QRCode value={facturaModal.ecf.qr_url} size={130} ecl="M" />
+                      ) : null}
+                      {facturaModal.ecf.codigo_seguridad ? (
+                        <Text style={{ fontSize: 11, color: '#111827', marginTop: 6 }}>
+                          Código de seguridad: {facturaModal.ecf.codigo_seguridad}
+                        </Text>
+                      ) : null}
+                      {facturaModal.ecf.fecha_firma ? (
+                        <Text style={{ fontSize: 11, color: '#111827' }}>
+                          Fecha de firma digital: {facturaModal.ecf.fecha_firma}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
               </ViewShot>
             </ScrollView>

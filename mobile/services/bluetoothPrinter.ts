@@ -296,7 +296,23 @@ export async function printText(text: string, opts: { cut?: boolean; feed?: numb
 export type TicketLine =
     | { type: 'text'; text: string; align?: 'left' | 'center' | 'right'; bold?: boolean; double?: boolean }
     | { type: 'sep'; char?: string }
-    | { type: 'feed'; lines?: number };
+    | { type: 'feed'; lines?: number }
+    // (30/10/2026) QR del e-CF. Comando estándar ESC/POS (GS ( k): lo
+    // entienden casi todas las térmicas de 58/80 mm.
+    | { type: 'qr'; data: string; size?: number };
+
+function qrBytes(data: string, size = 6): number[] {
+    const GS = 0x1d;
+    const d = Array.from(data).map((c) => c.charCodeAt(0) & 0xff);
+    const len = d.length + 3;
+    return [
+        GS, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00, // modelo 2
+        GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, Math.max(1, Math.min(16, size)), // tamaño del punto
+        GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31, // corrección M
+        GS, 0x28, 0x6b, len & 0xff, (len >> 8) & 0xff, 0x31, 0x50, 0x30, ...d, // guardar
+        GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30, // imprimir
+    ];
+}
 
 export async function printTicket(lines: TicketLine[], { cut = true, width = 32 } = {}) {
     await ensureConnected();
@@ -320,6 +336,11 @@ export async function printTicket(lines: TicketLine[], { cut = true, width = 32 
             bytes.push(LF);
         } else if (l.type === 'feed') {
             for (let i = 0; i < (l.lines || 1); i++) bytes.push(LF);
+        } else if (l.type === 'qr') {
+            bytes.push(...PosCommands.ALIGN_CENTER);
+            bytes.push(...qrBytes(l.data, l.size));
+            bytes.push(LF);
+            bytes.push(...PosCommands.ALIGN_LEFT);
         }
     }
 

@@ -62,8 +62,15 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
     if (EMPRESA.telefono) lines.push({ type: 'text', text: `Tel: ${EMPRESA.telefono}`, align: 'center' });
     if (EMPRESA.rnc) lines.push({ type: 'text', text: `RNC: ${EMPRESA.rnc}`, align: 'center' });
     lines.push({ type: 'feed', lines: 1 });
-    lines.push({ type: 'text', text: 'FACTURA', align: 'center', bold: true });
-    if (f.ncf) lines.push({ type: 'text', text: `NCF: ${f.ncf}`, align: 'center' });
+    // e-CF (30/10/2026): título del tipo + e-NCF (+ vencimiento si aplica).
+    if (f.ecf) {
+        lines.push({ type: 'text', text: f.ecf.titulo, align: 'center', bold: true });
+        lines.push({ type: 'text', text: `e-NCF: ${f.ecf.encf}`, align: 'center', bold: true });
+        if (f.ecf.fecha_vencimiento) lines.push({ type: 'text', text: `Valida hasta: ${f.ecf.fecha_vencimiento}`, align: 'center' });
+    } else {
+        lines.push({ type: 'text', text: 'FACTURA', align: 'center', bold: true });
+        if (f.ncf) lines.push({ type: 'text', text: `NCF: ${f.ncf}`, align: 'center' });
+    }
     if (f.cotizacionNumero) lines.push({ type: 'text', text: `Desde cot. #${f.cotizacionNumero}`, align: 'center' });
     if (f.pedidoNumero) lines.push({ type: 'text', text: `Desde pedido #${f.pedidoNumero}`, align: 'center' });
     lines.push({ type: 'sep' });
@@ -73,6 +80,7 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
     lines.push({ type: 'text', text: `Fecha   : ${fechaStr}` });
     lines.push({ type: 'text', text: `Vence   : CONTADO` });
     lines.push({ type: 'text', text: `Cliente : ${f.cliente || 'CLIENTE GENERICO'}` });
+    if (f.clienteRnc) lines.push({ type: 'text', text: `RNC/Ced : ${f.clienteRnc}` });
     if (f.clienteTel) lines.push({ type: 'text', text: `Tel.    : ${f.clienteTel}` });
     lines.push({ type: 'sep' });
 
@@ -127,6 +135,15 @@ export async function printFacturaPos(f: any, { width = 32 } = {}) {
         if (f.devuelto != null && Number(f.devuelto) > 0) {
             lines.push({ type: 'text', text: labelVal('Devuelto', `RD$ ${fmt(f.devuelto)}`, width) });
         }
+    }
+
+    // Representación impresa del e-CF: QR de consulta DGII + código de
+    // seguridad + fecha de firma digital.
+    if (f.ecf) {
+        lines.push({ type: 'feed', lines: 1 });
+        if (f.ecf.qr_url) lines.push({ type: 'qr', data: f.ecf.qr_url, size: width >= 48 ? 6 : 4 });
+        if (f.ecf.codigo_seguridad) lines.push({ type: 'text', text: `Codigo de seguridad: ${f.ecf.codigo_seguridad}`, align: 'center' });
+        if (f.ecf.fecha_firma) lines.push({ type: 'text', text: `Fecha firma: ${f.ecf.fecha_firma}`, align: 'center' });
     }
 
     lines.push({ type: 'feed', lines: 1 });
