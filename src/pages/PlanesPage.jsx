@@ -114,9 +114,12 @@ const PlanesPage = () => {
   const pagoPendiente = suscripcion?.pago_pendiente;
 
   // El plan SERVICIOS solo lo ven las empresas sin inventario.
-  const { empresa } = useAuth();
+  // (30/10/2026) El superadmin lo ve siempre, marcado y sin poder elegirlo
+  // para una empresa que no es de servicios.
+  const { empresa, isSuperAdmin } = useAuth();
   const sinInventario = ['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio);
-  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL' && (p.nombre !== 'SERVICIOS' || sinInventario));
+  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL' && (p.nombre !== 'SERVICIOS' || sinInventario || isSuperAdmin));
+  const soloVistaAdmin = (plan) => plan.nombre === 'SERVICIOS' && !sinInventario;
 
   return (
     <div className="min-h-full bg-gradient-to-b from-gray-50 to-white">
@@ -215,6 +218,12 @@ const PlanesPage = () => {
                   </div>
                 )}
 
+                {soloVistaAdmin(plan) && (
+                  <div className="absolute top-0 left-0 bg-slate-800 text-white text-[10px] font-black uppercase px-3 py-1 rounded-br-xl">
+                    Solo servicios e inmobiliaria
+                  </div>
+                )}
+
                 {/* Current plan badge */}
                 {isCurrent && (
                   <div className="absolute top-0 left-0 bg-blue-500 text-white text-[10px] font-black uppercase px-3 py-1 rounded-br-xl">
@@ -291,16 +300,16 @@ const PlanesPage = () => {
                 <div className="px-6 pb-6 pt-2 bg-white">
                   <Button
                     onClick={() => handleSelectPlan(plan)}
-                    disabled={(isCurrent && !canPayCurrent) || pagoPendiente}
+                    disabled={(isCurrent && !canPayCurrent) || pagoPendiente || soloVistaAdmin(plan)}
                     className={`w-full h-11 font-black uppercase tracking-wider text-xs shadow-md transition-all ${
-                      isCurrent && !canPayCurrent
+                      (isCurrent && !canPayCurrent) || soloVistaAdmin(plan)
                         ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                         : pagoPendiente
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           : `bg-gradient-to-r ${meta.gradient} hover:opacity-90 text-white`
                     }`}
                   >
-                    {isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisión' : canPayCurrent ? (
+                    {soloVistaAdmin(plan) ? 'No aplica a esta empresa' : isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisión' : canPayCurrent ? (
                       <>
                         Pagar Plan Actual
                         <ChevronRight className="w-4 h-4 ml-2" />
