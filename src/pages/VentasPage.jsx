@@ -103,9 +103,25 @@ const VentasPage = () => {
     return () => window.removeEventListener('resize', revisar);
   }, [activePanel, setSidebarOpen]);
 
-  const handleEditFacturaToggle = () => {
-    setIsEditingNumero(!isEditingNumero);
-    if (!isEditingNumero) setEditNumero('');
+  // (30/10/2026) Al abrir "editar factura" el campo trae la ÚLTIMA factura
+  // (la que más se corrige) ya seleccionada: Enter la abre, o se escribe
+  // encima cualquier número anterior. No hay límite de día ni de hora.
+  const handleEditFacturaToggle = async () => {
+    if (isEditingNumero) {
+      setIsEditingNumero(false);
+      setEditNumero('');
+      return;
+    }
+    // Primero el número y DESPUÉS se abre el campo: así el autoFocus lo
+    // encuentra puesto y lo deja seleccionado para escribir encima.
+    let ultimo = '';
+    try {
+      const { data } = await supabase.from('facturas')
+        .select('numero').order('numero', { ascending: false }).limit(1).maybeSingle();
+      if (data?.numero != null) ultimo = String(data.numero);
+    } catch (_) { /* sin el último número, el campo queda vacío como antes */ }
+    setEditNumero(ultimo);
+    setIsEditingNumero(true);
   };
 
   const handleSearchInvoice = async () => {

@@ -267,7 +267,9 @@ const VentasHeader = ({
                       placeholder="Nº..."
                       value={editNumero}
                       onChange={(e) => setEditNumero(e.target.value)}
+                      onFocus={(e) => e.target.select()}
                       onKeyDown={(e) => e.key === 'Enter' && onSearchInvoice()}
+                      title="Trae la última factura. Enter para abrirla, o escribe otro número (de cualquier día)."
                     />
                     <Button
                       variant="ghost"
