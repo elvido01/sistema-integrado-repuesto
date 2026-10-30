@@ -11,7 +11,10 @@ npm run dev        # Start dev server on port 5173 (kills port first via PowerSh
 npm run build      # Build to dist/ for production deployment
 npm run preview    # Preview production build
 npm test           # Run tests with vitest
+npm run revisar    # Pre-publish reviewer (also runs first inside npm run deploy)
 ```
+
+`scripts/revisar-antes-de-publicar.mjs` blocks NEW cases of bugs that already bit us (Supabase update/delete without `.select()`, `.limit(1)` without `.order()`, global keydown without activePanel, STABLE SQL functions that write, duplicated SQL functions). Old cases live in `scripts/revision-base.json` (ratchet: only goes down). An intentional case is marked on its line with `// revisado: <why>`. Never "fix" a block by running `--base`.
 
 > The `dist/` folder is in `.gitignore` but is force-committed (`git add -f dist/`) because the hosting is static file deployment — the built output is what gets uploaded to the web.
 

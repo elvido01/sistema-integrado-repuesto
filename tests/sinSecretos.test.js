@@ -74,6 +74,25 @@ function leer(f) {
 
 const ARCHIVOS = archivosDelRepo();
 
+// >>> POR QUÉ SE LEE TODO UNA SOLA VEZ Y CON 60 s <<<
+// (30/10/2026) Esta prueba "fallaba sola" de vez en cuando y tumbaba el
+// deploy sin que hubiera ningún secreto: leía los ~2000 archivos del repo
+// cuatro veces, y con las 53 pruebas corriendo a la vez la primera lectura
+// en frío pasaba de los 5 s que da vitest por defecto. Ahora se lee una vez
+// y cada caso solo busca en lo ya leído.
+const TIEMPO = 60_000;
+let TEXTOS = null;
+function textos() {
+  if (!TEXTOS) {
+    TEXTOS = [];
+    for (const f of ARCHIVOS) {
+      const t = leer(f);
+      if (t) TEXTOS.push([f, t]);
+    }
+  }
+  return TEXTOS;
+}
+
 // Se arman en trozos para que el patrón no aparezca escrito de corrido en
 // ningún sitio y esta prueba no se encuentre a sí misma si algún día deja de
 // estar exenta.
@@ -92,12 +111,11 @@ describe('no hay secretos en el repositorio', () => {
 
   it.each(PATRONES)('ningún archivo trae $nombre', ({ re }) => {
     const encontrados = [];
-    for (const f of ARCHIVOS) {
-      const texto = leer(f);
-      if (texto && re.test(texto)) encontrados.push(f);
+    for (const [f, texto] of textos()) {
+      if (re.test(texto)) encontrados.push(f);
     }
     expect(encontrados, `secreto en: ${encontrados.join(', ')}`).toEqual([]);
-  });
+  }, TIEMPO);
 
   it('ningún JWT lleva el rol service_role', () => {
     // La anon es pública por diseño; la service_role se salta RLS entera y
@@ -105,9 +123,7 @@ describe('no hay secretos en el repositorio', () => {
     const jwt = /eyJ[A-Za-z0-9_-]{6,}\.(eyJ[A-Za-z0-9_-]{10,})\.[A-Za-z0-9_-]{10,}/g;
     const encontrados = [];
 
-    for (const f of ARCHIVOS) {
-      const texto = leer(f);
-      if (!texto) continue;
+    for (const [f, texto] of textos()) {
       for (const m of texto.matchAll(jwt)) {
         let carga;
         try { carga = JSON.parse(Buffer.from(m[1], 'base64url').toString('utf8')); } catch { continue; }
@@ -116,5 +132,5 @@ describe('no hay secretos en el repositorio', () => {
     }
 
     expect([...new Set(encontrados)], `service_role en: ${encontrados.join(', ')}`).toEqual([]);
-  });
+  }, TIEMPO);
 });
