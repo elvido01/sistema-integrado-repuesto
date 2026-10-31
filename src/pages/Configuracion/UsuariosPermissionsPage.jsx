@@ -54,16 +54,16 @@ const BLOQUEADOS_NO_ADMIN = ['usuarios', 'config_sistema', 'perfil-empresa', 'co
 const defaultPermsForRole = (role, allModules) => {
     const r = String(role || '').toLowerCase();
 
-    // Vendedor: operación de ventas
-    const vendedorEdit = ['ventas', 'recibo-ingreso', 'pedidos', 'cotizaciones', 'clientes', 'devoluciones'];
-    const vendedorView = ['orden-compra', 'mercancias', 'reporte-transacciones-diarias'];
+    // Vendedor (31/10/2026, pedido del dueño): ventas, cotizaciones, pedidos,
+    // devoluciones y actualizar ubicación. Lo demás se marca a mano.
+    const vendedorEdit = ['ventas', 'cotizaciones', 'pedidos', 'devoluciones', 'actualizar-ubicacion'];
 
     if (r === 'seller' || r === 'vendedor') {
-        return [...mkPerms(vendedorEdit, true), ...mkPerms(vendedorView, false)];
+        return mkPerms(vendedorEdit, true);
     }
 
     if (r === 'supervisor') {
-        const supEdit = [...vendedorEdit, 'compras', 'solicitudes-compras', 'aprobaciones-compras', 'suplidores',
+        const supEdit = [...vendedorEdit, 'recibo-ingreso', 'clientes', 'compras', 'solicitudes-compras', 'aprobaciones-compras', 'suplidores',
             'cierre-caja', 'entrada-mercancia', 'salida-mercancia', 'actualizar-ubicacion', 'vendedores',
             'marcas', 'modelos', 'tipos-producto'];
         const supView = ['pago-suplidores', 'reporte-compras', 'reporte-movimientos', 'cartera-clientes',
@@ -98,6 +98,41 @@ const UsuariosPermissionsPage = () => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [salesGoal, setSalesGoal] = useState('');
     const [salesGoalLoading, setSalesGoalLoading] = useState(false);
+    const [sinGuardar, setSinGuardar] = useState(false);
+
+    // Al crear un usuario se le guardan de una vez los permisos de su rol,
+    // para que no entre con el menú vacío. Si ya tenía permisos (usuario de
+    // otra empresa que solo se vinculó), no se toca nada.
+    const alCrearUsuario = async (nuevo, rol) => {
+        try {
+            if (nuevo?.id && !isFullAccessRole(rol)) {
+                const tpl = defaultPermsForRole(rol, MODULES);
+                const { data: ya, error: eYa } = await supabase
+                    .from('user_module_permissions')
+                    .select('module_key')
+                    .eq('user_id', nuevo.id)
+                    .order('module_key')
+                    .limit(1);
+                if (eYa) throw eYa;
+                if (tpl.length > 0 && (ya || []).length === 0) {
+                    const { data: puestos, error } = await supabase
+                        .from('user_module_permissions')
+                        .upsert(tpl.map(t => ({ user_id: nuevo.id, ...t })), { onConflict: 'user_id,module_key' })
+                        .select('module_key');
+                    if (error) throw error;
+                    if ((puestos || []).length !== tpl.length) throw new Error('no se guardaron todos los módulos');
+                }
+            }
+        } catch (error) {
+            console.error('Permisos por defecto del usuario nuevo:', error);
+            toast({
+                variant: 'destructive',
+                title: 'Usuario creado sin permisos',
+                description: `No se pudieron poner los permisos del rol (${error?.message || 'error'}). Ábrelo, revisa los módulos y pulsa Guardar Cambios.`,
+            });
+        }
+        fetchUsers();
+    };
 
     useEffect(() => {
         fetchUsers();
@@ -151,7 +186,17 @@ const UsuariosPermissionsPage = () => {
             ]);
 
             if (permsRes.error) throw permsRes.error;
-            setUserPermissions(permsRes.data || []);
+            const perms = permsRes.data || [];
+            // Usuario sin ningún permiso guardado (ej. creado antes de que
+            // esto se guardara solo): se precargan los del rol, sin guardar.
+            if (perms.length === 0 && !isFullAccessRole(user.role)) {
+                const tpl = defaultPermsForRole(user.role, MODULES);
+                setUserPermissions(tpl.map(t => ({ user_id: user.id, ...t })));
+                setSinGuardar(tpl.length > 0);
+            } else {
+                setUserPermissions(perms);
+                setSinGuardar(false);
+            }
             if (goalRes.error) {
                 console.warn('No se pudo cargar la meta del vendedor:', goalRes.error.message);
             } else {
@@ -199,7 +244,7 @@ const UsuariosPermissionsPage = () => {
         // Si el usuario aún no tiene permisos configurados, precargar los del rol
         // (siempre editables). Si ya tiene, no se toca nada hasta que el admin
         // use el botón "Aplicar permisos sugeridos".
-        if (!isFullAccessRole(newRole) && (userPermissions || []).length === 0) {
+        if (!isFullAccessRole(newRole) && (sinGuardar || (userPermissions || []).length === 0)) {
             aplicarPlantilla(newRole, { merge: false });
         }
     };
@@ -261,6 +306,7 @@ const UsuariosPermissionsPage = () => {
                 }
             }
 
+            setSinGuardar(false);
             toast({
                 title: "Éxito",
                 description: "Usuario y permisos actualizados correctamente."
@@ -326,7 +372,7 @@ const UsuariosPermissionsPage = () => {
             <CreateUserModal
                 isOpen={isCreateModalOpen}
                 onClose={() => setIsCreateModalOpen(false)}
-                onUserCreated={fetchUsers}
+                onUserCreated={alCrearUsuario}
             />
 
             <EditUserModal
@@ -461,6 +507,11 @@ const UsuariosPermissionsPage = () => {
                                         <p className="text-xs text-gray-500">
                                             Los permisos sugeridos son solo un punto de partida según el rol. Puedes marcar o
                                             desmarcar cualquier módulo libremente antes de <strong>Guardar Cambios</strong>.
+                                            {sinGuardar && (
+                                                <span className="block mt-1 font-semibold text-amber-700">
+                                                    Este usuario no tenía permisos: se marcaron los sugeridos de su rol. Pulsa Guardar Cambios para dejarlos puestos.
+                                                </span>
+                                            )}
                                         </p>
                                         <div className="border rounded-lg overflow-hidden">
                                             <Table>

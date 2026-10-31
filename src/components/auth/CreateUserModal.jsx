@@ -103,7 +103,7 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
                     : `Cuenta creada. ${usuario.includes('@') ? usuario : `Usuario: ${usuario}`}. Ya puede iniciar sesión.`,
             });
 
-            if (onUserCreated) onUserCreated(data?.user);
+            if (onUserCreated) onUserCreated(data?.user, formData.role);
             onClose();
             // Reset form
             setFormData({ username: '', password: '', fullName: '', role: 'seller' });
