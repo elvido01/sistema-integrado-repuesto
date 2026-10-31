@@ -30,6 +30,35 @@ const downloadTextFile = (content, fileName, type = 'application/xml') => {
   URL.revokeObjectURL(url);
 };
 
+// (31/10/2026) Vencimiento de las secuencias: va en el XML de todos los
+// e-CF menos E32, y tiene que ser EXACTAMENTE la fecha autorizada.
+// Se acepta DD-MM-AAAA, DD/MM/AAAA o AAAA-MM-DD y se guarda DD-MM-AAAA;
+// una fecha imposible (31-02, mes 13) o con otro formato no se guarda.
+// Devuelve '' (vacío), la fecha normalizada, o null si no es válida.
+function normalizarVencimiento(v) {
+  const t = String(v || '').trim();
+  if (!t) return '';
+  let d, m, a;
+  let x = t.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/);
+  if (x) { [, d, m, a] = x; if (a.length === 2) a = `20${a}`; }
+  else if ((x = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) [, a, m, d] = x;
+  else return null;
+  const dd = Number(d), mm = Number(m), aa = Number(a);
+  const f = new Date(Date.UTC(aa, mm - 1, dd));
+  if (f.getUTCFullYear() !== aa || f.getUTCMonth() !== mm - 1 || f.getUTCDate() !== dd) return null;
+  return `${String(dd).padStart(2, '0')}-${String(mm).padStart(2, '0')}-${aa}`;
+}
+
+// null si se puede guardar; si no, el motivo para el toast.
+function problemaVencimiento(v, ambiente) {
+  const n = normalizarVencimiento(v);
+  if (n === null) return 'La fecha de vencimiento de las secuencias no es válida. Escríbela como 31-12-2027.';
+  if (n === '') return ambiente === 'Produccion' ? 'En producción hace falta la fecha de vencimiento de las secuencias (la de la Oficina Virtual).' : null;
+  const [d, m, a] = n.split('-').map(Number);
+  if (Date.UTC(a, m - 1, d, 23, 59) < Date.now()) return `Esa fecha (${n}) ya pasó: las secuencias estarían vencidas. Revisa el año.`;
+  return null;
+}
+
 const AMBIENTES = [
   { value: 'TesteCF',    label: 'TesteCF — Pruebas iniciales' },
   { value: 'CerteCF',    label: 'CerteCF — Set de 25 pruebas oficiales' },
@@ -384,6 +413,13 @@ const DgiiCertificadoUploader = () => {
       toast({ title: 'Falta razon social', description: 'Ingresa la razon social del emisor.', variant: 'destructive' });
       return;
     }
+    {
+      const problema = problemaVencimiento(fechaVencimientoSecuencia, ambiente);
+      if (problema) {
+        toast({ title: 'Revisa el vencimiento', description: problema, variant: 'destructive' });
+        return;
+      }
+    }
     if (!file) {
       toast({ title: 'Falta archivo', description: 'Selecciona el archivo .p12 o .pfx primero.', variant: 'destructive' });
       if (fileInputRef.current) fileInputRef.current.click();
@@ -420,7 +456,7 @@ const DgiiCertificadoUploader = () => {
           provincia,
           ambiente,
           callback_url: callbackUrl,
-          fecha_vencimiento_secuencia: fechaVencimientoSecuencia,
+          fecha_vencimiento_secuencia: normalizarVencimiento(fechaVencimientoSecuencia),
           certificado_password: password,
           storage_path: storagePath,
         },
@@ -449,6 +485,13 @@ const DgiiCertificadoUploader = () => {
 
   const handleSaveSettings = async () => {
     if (!info?.configured) return;
+    {
+      const problema = problemaVencimiento(fechaVencimientoSecuencia, ambiente);
+      if (problema) {
+        toast({ title: 'Revisa el vencimiento', description: problema, variant: 'destructive' });
+        return;
+      }
+    }
     setSaving(true);
     try {
       const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
@@ -461,7 +504,7 @@ const DgiiCertificadoUploader = () => {
           provincia,
           ambiente,
           callback_url: callbackUrl,
-          fecha_vencimiento_secuencia: fechaVencimientoSecuencia,
+          fecha_vencimiento_secuencia: normalizarVencimiento(fechaVencimientoSecuencia),
         },
       });
       if (error) throw error;
@@ -547,11 +590,16 @@ const DgiiCertificadoUploader = () => {
         </div>
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Vencimiento secuencia e-CF</Label>
-          <Input value={fechaVencimientoSecuencia} onChange={(e) => setFechaVencimientoSecuencia(e.target.value)} placeholder="31-12-2028" />
-          <p className="text-[10px] text-gray-500">Usado en simulacion para los tipos que DGII exige. Debe coincidir exactamente con el vencimiento autorizado en DGII.</p>
-          {fechaVencimientoSecuencia && fechaVencimientoSecuencia !== '31-12-2028' && (
-            <p className="text-[10px] text-orange-700 font-semibold">
-              Aviso: para esta certificacion nos indicaste que DGII marca 31-12-2028 como fecha correcta.
+          <Input value={fechaVencimientoSecuencia} onChange={(e) => setFechaVencimientoSecuencia(e.target.value)} placeholder="DD-MM-AAAA" />
+          {/* (31/10/2026) Antes había un aviso fijo de la certificación ("DGII marca
+              31-12-2028") que contradecía la fecha real de las secuencias. */}
+          <p className="text-[10px] text-gray-500">
+            La fecha de vencimiento de tus secuencias autorizadas: sale en la Oficina Virtual, en cada solicitud aprobada («Fecha Vencimiento»).
+            Va dentro de los e-CF (todos menos E32) y tiene que ser exactamente esa. No es el vencimiento del certificado.
+          </p>
+          {problemaVencimiento(fechaVencimientoSecuencia, ambiente) && (
+            <p className="text-[10px] text-red-600 font-semibold">
+              {problemaVencimiento(fechaVencimientoSecuencia, ambiente)} Así no se puede guardar.
             </p>
           )}
         </div>

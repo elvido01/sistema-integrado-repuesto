@@ -629,7 +629,7 @@ const DgiiSimulacionRunner = () => {
             type="text"
             value={fechaVencimiento}
             onChange={(e) => setFechaVencimiento(e.target.value)}
-            placeholder={configDgii?.fecha_vencimiento_secuencia || 'DD-MM-YYYY  ej: 31-12-2028'}
+            placeholder={configDgii?.fecha_vencimiento_secuencia || 'DD-MM-AAAA'}
             className="border border-gray-300 rounded px-3 py-1.5 text-[12px] w-48"
           />
           <span className="text-[10px] text-gray-600">o detectar automáticamente:</span>
