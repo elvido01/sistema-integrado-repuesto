@@ -6,6 +6,12 @@
 // ahora el administrador las pone aquí (sql/ecf_secuencias_por_empresa.sql).
 // Un rango nuevo para un tipo que ya existe no hace retroceder el contador:
 // nunca se repite un e-NCF.
+//
+// (31/10/2026) Cada autorización de la DGII trae SU vencimiento, y el
+// sistema guarda uno solo. Por eso un rango nuevo NO se junta con el viejo:
+// tiene que empezar después del último autorizado (o ser una corrección del
+// cargado: mismo «Desde»), y si al viejo le quedan números o hay un salto se
+// pide confirmación. Reglas en src/lib/ecfSecuencias.js.
 // ============================================================
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -14,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Hash, Loader2, Plus } from 'lucide-react';
+import { encf, leerSecuencia, validarRango, sugerirDesde } from '@/lib/ecfSecuencias';
 
 const TIPOS = [
   { v: '31', t: 'E31 · Crédito fiscal' },
@@ -28,8 +35,6 @@ const TIPOS = [
   { v: '47', t: 'E47 · Pagos al exterior' },
 ];
 
-const encf = (tipo, n) => `E${tipo}${String(n).padStart(10, '0')}`;
-
 export default function DgiiSecuenciasEcf() {
   const { toast } = useToast();
   const [filas, setFilas] = useState([]);
@@ -39,6 +44,11 @@ export default function DgiiSecuenciasEcf() {
   const [tipo, setTipo] = useState('32');
   const [desde, setDesde] = useState('1');
   const [hasta, setHasta] = useState('');
+  // «Desde» lo sugiere el sistema hasta que la persona lo toca; después no se
+  // le cambia por debajo (ni al cargar la tabla ni al cambiar el tipo).
+  const [desdeTocado, setDesdeTocado] = useState(false);
+
+  const filaDe = useCallback((t) => filas.find((x) => String(x.tipo_ecf) === String(t)) || null, [filas]);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -49,21 +59,73 @@ export default function DgiiSecuenciasEcf() {
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
 
+  useEffect(() => {
+    if (!desdeTocado) setDesde(sugerirDesde(filaDe(tipo)));
+  }, [tipo, desdeTocado, filaDe]);
+
+  // Al cambiar de tipo, «Desde» se vuelve a sugerir, salvo que lo que haya
+  // sea un e-NCF pegado de ESE tipo (se respeta lo que pegó la persona).
+  const cambiarTipo = (t) => {
+    setTipo(t);
+    // Solo se re-sugiere si lo que hay es la sugerencia del tipo anterior:
+    // lo que la persona escribió o pegó no se toca.
+    if (!desdeTocado || desde === sugerirDesde(filaDe(tipo))) setDesdeTocado(false);
+  };
+
+  const actual = filaDe(tipo);
+  const quedanActual = actual ? Number(actual.quedan) : 0;
+  const rango = hasta ? validarRango(tipo, desde, hasta, actual) : null;
+
   const guardar = async () => {
-    const d = Number(desde), h = Number(hasta);
-    if (!Number.isInteger(d) || !Number.isInteger(h) || d < 1 || h < d) {
-      toast({ variant: 'destructive', title: 'Revisa el rango', description: '"Desde" tiene que ser 1 o más y "Hasta" igual o mayor.' });
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      await guardarRango();
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const guardarRango = async () => {
+    // Se relee antes de decidir: el POS sigue gastando números mientras esta
+    // pantalla está abierta.
+    const { data: frescas, error: errFresco } = await supabase.rpc('ecf_secuencias_mias');
+    if (errFresco) {
+      toast({ variant: 'destructive', title: 'No se guardó', description: 'No se pudieron leer las secuencias actuales. Reintenta.' });
       return;
     }
-    setGuardando(true);
+    setFilas(frescas || []);
+    const viva = (frescas || []).find((x) => String(x.tipo_ecf) === String(tipo)) || null;
+    const r = validarRango(tipo, desde, hasta, viva);
+    if (r.error) {
+      toast({ variant: 'destructive', title: 'Revisa el rango', description: r.error });
+      return;
+    }
+    const { d, h, caso } = r;
+    const quedan = viva ? Number(viva.quedan) : 0;
+    const avisos = [];
+    if (caso === 'correccion') {
+      avisos.push(`Vas a CORREGIR el rango cargado de E${tipo}: queda ${encf(tipo, d)} a ${encf(tipo, h)}. Hazlo solo si el anterior se tecleó mal.
+
+Si es una autorización NUEVA de la DGII, no la cargues así: pon «Desde» en ${encf(tipo, Number(viva.hasta) + 1)}.`);
+    } else if (quedan > 0) {
+      avisos.push(`A E${tipo} todavía le quedan ${quedan.toLocaleString('es-DO')} números (${encf(tipo, Number(viva.ultimo) + 1)} a ${encf(tipo, viva.hasta)}). Si cargas el rango nuevo ahora, esos ya NO se usarán nunca. Lo mejor es esperar a que se acaben.`);
+    }
+    if (caso === 'salto') {
+      avisos.push(`El rango nuevo no sigue al anterior: salta de ${encf(tipo, viva.hasta)} a ${encf(tipo, d)}. Confirma que la DGII te autorizó desde ${encf(tipo, d)}.`);
+    }
+    if (avisos.length && !window.confirm(`${avisos.join('\n\n')}\n\n¿Guardar de todos modos?`)) return;
     const { error } = await supabase.rpc('ecf_cargar_secuencia', { p_tipo: tipo, p_desde: d, p_hasta: h });
-    setGuardando(false);
     if (error) {
       toast({ variant: 'destructive', title: 'No se guardó', description: error.message });
       return;
     }
-    toast({ title: 'Secuencia guardada', description: `E${tipo}: ${encf(tipo, d)} a ${encf(tipo, h)}` });
+    toast({
+      title: 'Secuencia guardada',
+      description: `E${tipo}: ${encf(tipo, d)} a ${encf(tipo, h)}.`,
+    });
     setHasta('');
+    setDesdeTocado(false);
     cargar();
   };
 
@@ -75,14 +137,20 @@ export default function DgiiSecuenciasEcf() {
       <div className="rounded-md bg-sky-50 border border-sky-200 p-3 text-[12px] text-sky-950 space-y-1">
         <p>Después de certificarte, pide tus secuencias en la <b>Oficina Virtual de la DGII</b> (menú de Facturación Electrónica, solicitud de secuencias e-NCF).</p>
         <p>Cuando te las aprueben, pon aquí cada rango tal como te lo dio la DGII: el tipo, el primer número y el último.
+          Puedes escribir el número (600) o pegar el e-NCF completo (E320000000600).
+          Si un rango se tecleó mal, se corrige dejando el mismo «Desde» y poniendo el «Hasta» bueno.
           La <b>fecha de vencimiento</b> va arriba, en «Vencimiento secuencia e-CF» (la exigen los E31).</p>
-        <p>Si te autorizan más números de un tipo que ya tienes, cárgalo igual: el sistema sigue donde iba y nunca repite un número.</p>
+        <p>Si te autorizan más números de un tipo que ya tienes, cárgalos <b>cuando se acaben los actuales</b>: el rango nuevo reemplaza al anterior y los números que le quedaban ya no se usan (cada autorización vence por su lado). Nunca se repite un número.</p>
       </div>
 
       {cargando ? (
         <p className="text-[11px] text-gray-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Cargando…</p>
       ) : errorLectura ? (
-        <p className="text-[12px] text-gray-600 bg-gray-50 border rounded p-2">Esta sección todavía no está disponible. Avisa al soporte de MotoFlow.</p>
+        <p className="text-[12px] text-gray-600 bg-gray-50 border rounded p-2">
+          No se pudieron leer las secuencias cargadas.{' '}
+          <button type="button" onClick={cargar} className="underline font-bold">Reintentar</button>
+          {' '}— si sigue igual, avisa al soporte de MotoFlow.
+        </p>
       ) : filas.length === 0 ? (
         <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
           Todavía no hay secuencias cargadas: no se pueden emitir facturas electrónicas en producción hasta que pongas al menos E31 y E32.
@@ -123,26 +191,36 @@ export default function DgiiSecuenciasEcf() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
         <div className="space-y-1">
           <Label className="text-[10px] font-bold text-gray-600 uppercase">Tipo</Label>
-          <select value={tipo} onChange={(e) => setTipo(e.target.value)} disabled={guardando}
+          <select value={tipo} onChange={(e) => cambiarTipo(e.target.value)} disabled={guardando}
             className="w-full h-10 rounded-md border border-input bg-white px-2 text-sm">
             {TIPOS.map((t) => <option key={t.v} value={t.v}>{t.t}</option>)}
           </select>
         </div>
         <div className="space-y-1">
           <Label className="text-[10px] font-bold text-gray-600 uppercase">Desde (número)</Label>
-          <Input inputMode="numeric" value={desde} onChange={(e) => setDesde(e.target.value.replace(/\D/g, ''))} placeholder="1" disabled={guardando} />
+          <Input inputMode="numeric" value={desde} onChange={(e) => { setDesdeTocado(true); setDesde(e.target.value.slice(0, 20)); }}
+            placeholder="primer nº" autoComplete="off" disabled={guardando} />
         </div>
         <div className="space-y-1">
           <Label className="text-[10px] font-bold text-gray-600 uppercase">Hasta (número)</Label>
-          <Input inputMode="numeric" value={hasta} onChange={(e) => setHasta(e.target.value.replace(/\D/g, ''))} placeholder="500" disabled={guardando} />
+          <Input inputMode="numeric" value={hasta} onChange={(e) => setHasta(e.target.value.slice(0, 20))}
+            placeholder="último nº" autoComplete="off" disabled={guardando} />
         </div>
-        <Button onClick={guardar} disabled={guardando || !hasta} className="h-10">
+        <Button onClick={guardar} disabled={guardando || cargando || !!errorLectura || !rango || !!rango.error} className="h-10">
           {guardando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />} Guardar rango
         </Button>
       </div>
-      {desde && hasta && Number(hasta) >= Number(desde) && (
+      {rango?.error && <p className="text-[11px] text-red-600">{rango.error}</p>}
+      {rango && !rango.error && (
         <p className="text-[11px] text-gray-600">
-          Se cargará <b className="font-mono">{encf(tipo, desde)}</b> a <b className="font-mono">{encf(tipo, hasta)}</b> ({(Number(hasta) - Number(desde) + 1).toLocaleString('es-DO')} números).
+          Se cargará <b className="font-mono">{encf(tipo, rango.d)}</b> a <b className="font-mono">{encf(tipo, rango.h)}</b> ({(rango.h - rango.d + 1).toLocaleString('es-DO')} números).
+        </p>
+      )}
+      {!cargando && actual && quedanActual > 0 && rango?.caso !== 'correccion' && (
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+          A E{tipo} todavía le quedan <b>{quedanActual.toLocaleString('es-DO')}</b> números
+          ({encf(tipo, Number(actual.ultimo) + 1)} a {encf(tipo, actual.hasta)}). Si cargas un rango nuevo ahora, esos ya no se usarán.
+          Lo mejor es cargarlo cuando se acaben.
         </p>
       )}
     </div>

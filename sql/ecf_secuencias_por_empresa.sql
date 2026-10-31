@@ -1,3 +1,6 @@
+-- >>> AVISO (31/10/2026): ecf_cargar_secuencia de este archivo es VIEJA. <<<
+-- La viva es sql/ecf_secuencia_sin_solape.sql (no deja montar un rango sobre
+-- otro). Correr este archivo entero la degradaría sin dar error.
 -- =====================================================================
 -- SECUENCIAS e-NCF: CADA EMPRESA CARGA LAS SUYAS
 -- =====================================================================

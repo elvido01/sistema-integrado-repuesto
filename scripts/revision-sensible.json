@@ -111,7 +111,7 @@
     "sql/diagnostics_valor_inventario_resumen.sql": "748619cba8f04c1b",
     "sql/dmario_anular_factura1_prueba.sql": "0621d9fafb90cd87",
     "sql/dmario_secuencias_ecf_produccion.sql": "9c409dd86246598b",
-    "sql/ecf_secuencias_por_empresa.sql": "938af5944ddd4158",
+    "sql/ecf_secuencias_por_empresa.sql": "5068edd381d9740e",
     "sql/editar_recibo_caja_efectivo.sql": "a2f1ba8266090050",
     "sql/editar_recibo_cuenta_bancaria.sql": "26f045e3ef3edf14",
     "sql/efectivo_caja_a_cuenta.sql": "be5363cae8378f3a",
@@ -308,7 +308,7 @@
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
     "src/components/configuracion/DgiiRecepcionRunner.jsx": "1d70110142f92c7e",
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
-    "src/components/configuracion/DgiiSecuenciasEcf.jsx": "0333a87cb1351acb",
+    "src/components/configuracion/DgiiSecuenciasEcf.jsx": "8e721645f8743464",
     "src/components/configuracion/DgiiSimulacionRunner.jsx": "58ab942cb2a7125a",
     "src/components/configuracion/IntegracionFiscalSettings.jsx": "382f634632485a7f",
     "src/components/dashboard/FinancialAlert.jsx": "94f13ee0e3bbaa79",
@@ -401,7 +401,9 @@
     "supabase/functions/emitir-fiscal/index.ts": "5949831e745b7ddf",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
     "supabase/functions/motoflow-compras-advisor/index.ts": "e873b25160eded59",
-    "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158"
+    "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
+    "sql/ecf_secuencia_sin_solape.sql": "58f848af08a0ad40",
+    "src/lib/ecfSecuencias.js": "9ec1d87a0b1c86d0"
   },
   "historial": [
     {
@@ -417,6 +419,16 @@
         "mobile/services/printFactura.ts",
         "mobile/src/services/ecfService.ts",
         "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-10-31",
+      "nota": "code-review high x4 de secuencias e-NCF: campo acepta numero o e-NCF pegado (valida tipo, sin inventar con puntos), bloqueo de solape en pantalla y en SQL, correccion con mismo Desde, confirmacion si quedan numeros o hay salto, relectura antes de guardar, doble clic. Pendiente conocido: vencimiento por rango (hoy uno por empresa).",
+      "archivos": [
+        "sql/ecf_secuencia_sin_solape.sql",
+        "sql/ecf_secuencias_por_empresa.sql",
+        "src/components/configuracion/DgiiSecuenciasEcf.jsx",
+        "src/lib/ecfSecuencias.js"
       ]
     }
   ]
