@@ -267,15 +267,20 @@ BEGIN
   IF v.id IS NULL THEN RETURN json_build_object('ok', false); END IF;
 
   SELECT count(*) INTO v_n FROM jsonb_array_elements(v.piezas) x WHERE COALESCE((x ->> 'incluir')::boolean, true);
+  -- El aviso no puede tumbar el video ya subido: si falla, se sigue.
+  BEGIN
   PERFORM public.hermes_decir(v.tenant_id, format(
     E'🎬 **Piezas de la semana listo** — %s piezas, %s.\nEntra a Equipo IA → Piezas de la semana para verlo. Puedes quitar piezas o corregir lo que dice la voz, o aprobarlo para que salga el sábado.',
     v_n, CASE WHEN p_duracion >= 60 THEN format('%s min %s s', floor(p_duracion / 60), round(p_duracion) % 60)
-              ELSE format('%s s', round(p_duracion)) END), NULL, 'piezas_semana');
+              ELSE format('%s s', round(p_duracion)) END), NULL, 'publicacion_diaria');
   INSERT INTO public.notificaciones (tenant_id, user_id, tipo, titulo, mensaje)
   SELECT v.tenant_id, pr.id, 'promo_lista', '🎬 Piezas de la semana: listo para revisar',
          'Equipo IA → Piezas de la semana. Apruébalo para que salga el sábado.'
     FROM public.profiles pr
    WHERE pr.tenant_id = v.tenant_id AND pr.role IN ('owner', 'admin');
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'piezas de la semana: el aviso falló: %', SQLERRM;
+  END;
   RETURN json_build_object('ok', true);
 END $function$;
 
