@@ -39,6 +39,8 @@ import { videoDesdeImagen, formatoDeVideo } from '@/lib/videoDesdeImagen';
 const REDES = [
   { platform: 'facebook', placement: 'feed', nombre: 'Facebook · feed', media: 'imagen_feed' },
   { platform: 'facebook', placement: 'story', nombre: 'Facebook · historia', media: 'imagen_historia' },
+  // (01/11/2026) El mismo reel del Creativo también a Facebook Reels.
+  { platform: 'facebook', placement: 'reel', nombre: 'Facebook · reel', media: 'video' },
   { platform: 'instagram', placement: 'feed', nombre: 'Instagram · feed', media: 'imagen_feed' },
   { platform: 'instagram', placement: 'story', nombre: 'Instagram · historia', media: 'imagen_historia' },
   // (04/10/2026) El reel del Creativo también a Instagram: sale en Reels y en

@@ -175,8 +175,9 @@ export function PiezasDeLaSemana() {
         p_producto_id: null,
         p_precio: null,
         // YouTube toma el título de la línea "Título:"; "[video largo]" le dice
-        // que no es un Short (no lleva #Shorts).
-        p_textos: { facebook: texto, youtube: `Título: ${titulo}\n[video largo]\n${texto}` },
+        // que no es un Short (no lleva #Shorts) y a Facebook que va como video
+        // normal, no como reel (los reels son verticales). La línea no se publica.
+        p_textos: { facebook: `[video largo]\n${texto}`, youtube: `Título: ${titulo}\n[video largo]\n${texto}` },
         p_media: { video: actual.video_url, sin_descuento: true },
         p_destinos: destinos,
         p_idempotency_key: `semanal-${actual.id}`,

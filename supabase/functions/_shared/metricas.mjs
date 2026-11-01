@@ -79,6 +79,35 @@ export async function metricasFacebook({ fetchFn, token, id }) {
   };
 }
 
+/**
+ * (01/11/2026) Un reel o video de Facebook (id del video). Las reacciones y
+ * comentarios salen del video; las vistas y el alcance de video_insights,
+ * una métrica por petición (con una inválida Meta rechaza todas).
+ */
+export async function metricasFacebookVideo({ fetchFn, token, id }) {
+  const base = await leer(fetchFn,
+    `https://graph.facebook.com/${V_META}/${encodeURIComponent(id)}?fields=likes.summary(total_count).limit(0),comments.summary(total_count).limit(0)`,
+    token);
+  const datos = [];
+  const errores = [];
+  for (const metrica of ['blue_reels_play_count', 'total_video_views', 'post_impressions_unique', 'total_video_impressions_unique']) {
+    const r = await leer(fetchFn,
+      `https://graph.facebook.com/${V_META}/${encodeURIComponent(id)}/video_insights?metric=${metrica}`, token);
+    if (r.ok) datos.push(...(r.body?.data || []));
+    else errores.push(`${metrica}: ${r.error}`);
+  }
+  if (!base.ok && datos.length === 0) return { ok: false, error: `${base.error} | ${errores.join(' | ')}` };
+  const m = insightsAMapa(datos);
+  return {
+    ok: true,
+    likes: base.ok ? num(base.body?.likes?.summary?.total_count) : null,
+    comments: base.ok ? num(base.body?.comments?.summary?.total_count) : null,
+    views: m.blue_reels_play_count ?? m.total_video_views ?? null,
+    reach: m.post_impressions_unique ?? m.total_video_impressions_unique ?? null,
+    raw: { base: base.ok ? base.body : { error: base.error }, insights: datos, insights_errores: errores.join(' | ') || null },
+  };
+}
+
 /** Una publicación o historia de Instagram (id del media). */
 export async function metricasInstagram({ fetchFn, token, id, historia = false }) {
   const base = await leer(fetchFn,
@@ -123,6 +152,7 @@ export async function metricasYoutube({ fetchFn, token, id }) {
 export async function medirDestino({ fetchFn, token, platform, placement, id }) {
   if (!token || !id) return null;
   if (platform === 'facebook' && placement === 'feed') return metricasFacebook({ fetchFn, token, id });
+  if (platform === 'facebook' && placement === 'reel') return metricasFacebookVideo({ fetchFn, token, id });
   if (platform === 'instagram') return metricasInstagram({ fetchFn, token, id, historia: placement === 'story' });
   if (platform === 'youtube') return metricasYoutube({ fetchFn, token, id });
   return null;

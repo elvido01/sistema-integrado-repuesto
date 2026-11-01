@@ -128,6 +128,56 @@ export async function facebookVideo({ fetchFn, token, cuentaId, media, texto, es
   return { ok: true, external_post_id: String(id), external_url: `https://www.facebook.com/${cuentaId}/videos/${id}` };
 }
 
+// (01/11/2026) REEL de Facebook por la API de Reels (video_reels), no por
+// /videos: un video normal no entra en la pestaña de Reels y llega a menos
+// gente. Tres pasos: start (Facebook da el id), subir por URL (rupload) y
+// finish con el texto. "Piezas de la semana" es horizontal y de minutos:
+// su texto trae la línea "[video largo]" y sale como video normal.
+const VIDEO_LARGO = /^\s*\[video largo\]\s*$/im;
+
+export async function facebookReel({ fetchFn, token, cuentaId, media, texto = '', esperar = pausa }) {
+  if (!media.video) return { ok: false, paso: 'publicar', error: 'Falta el video.' };
+  const limpio = String(texto).split(/\r?\n/).filter((l) => !VIDEO_LARGO.test(l)).join('\n').trim();
+  if (VIDEO_LARGO.test(String(texto))) {
+    return facebookVideo({ fetchFn, token, cuentaId, media, texto: limpio, esperar });
+  }
+
+  const ini = await meta(fetchFn, `https://graph.facebook.com/${V_META}/${cuentaId}/video_reels`,
+    token, { upload_phase: 'start' });
+  if (!ini.ok) return fallo(ini, 'iniciar');
+  const id = ini.body?.video_id;
+  if (!id) return { ok: false, paso: 'iniciar', http: ini.http, error: 'Facebook no dio el id del reel.' };
+
+  // La subida va a rupload con el token como "OAuth" (así lo pide Meta) y
+  // la URL pública del video en la cabecera file_url: Facebook lo descarga.
+  const up = await fetchFn(ini.body?.upload_url || `https://rupload.facebook.com/video-upload/${V_META}/${id}`, {
+    method: 'POST',
+    headers: { Authorization: `OAuth ${token}`, file_url: media.video },
+  });
+  let upBody = null;
+  try { upBody = await up.json(); } catch { /* puede no venir JSON */ }
+  if (!up.ok || upBody?.error || upBody?.success === false) {
+    return { ok: false, paso: 'subir', http: up.status, error: upBody?.error?.message || upBody?.debug_info?.message || `HTTP ${up.status}`, token_vencido: esTokenVencido(upBody?.error) };
+  }
+
+  const fin = await meta(fetchFn, `https://graph.facebook.com/${V_META}/${cuentaId}/video_reels`,
+    token, { upload_phase: 'finish', video_id: id, video_state: 'PUBLISHED', description: limpio });
+  if (!fin.ok || fin.body?.success === false) return fallo(fin, 'publicar');
+
+  // Facebook procesa el reel después del finish; hasta 90 s mirando el estado.
+  for (let i = 0; i < 18; i += 1) {
+    await esperar(5000);
+    const st = await metaLeer(fetchFn, `https://graph.facebook.com/${V_META}/${id}?fields=status`, token);
+    const s = st.body?.status;
+    if (s?.video_status === 'error' || s?.processing_phase?.status === 'error' || s?.publishing_phase?.status === 'error') {
+      const msg = s?.processing_phase?.error?.message || s?.publishing_phase?.error?.message;
+      return { ok: false, paso: 'procesar', http: st.http, error: `Facebook no pudo procesar el reel${msg ? `: ${msg}` : '.'}` };
+    }
+    if (s?.publishing_phase?.status === 'complete' || s?.video_status === 'ready') break;
+  }
+  return { ok: true, external_post_id: String(id), external_url: `https://www.facebook.com/reel/${id}` };
+}
+
 // (20/10/2026) El primer comentario de la propia cuenta (el enlace de
 // registro de la promo de MotoFlow). Solo Facebook e Instagram dejan
 // comentar por la API. Si falla, la publicación sigue publicada.
@@ -246,7 +296,7 @@ export function adaptadorDePrueba(guion = {}) {
 export const ADAPTADORES = {
   'facebook:feed': facebookFeed,
   'facebook:story': facebookHistoria,
-  'facebook:reel': facebookVideo,
+  'facebook:reel': facebookReel,
   'instagram:feed': instagramFeed,
   'instagram:story': instagramHistoria,
   'instagram:reel': instagramReel,
