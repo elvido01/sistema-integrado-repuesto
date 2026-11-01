@@ -85,6 +85,98 @@ const RECORTE = 'Cut the product cleanly out of its photo: keep ONLY the product
   + 'NEVER add, invent or copy any brand name, logo, emblem or label onto the product or onto any box: '
   + 'if a surface is plain in the photo it stays plain. Brands seen in the style reference ads belong to OTHER products.';
 
+// (01/11/2026) Estilo CATÁLOGO (Vini / EcoSpeed con la marca de Morla): aquí
+// solo se deja el producto sobre blanco, limpio y sin letras; el logo, el
+// sello y la franja con tipo, moto, código y precio los dibuja el creativo
+// (scripts/arteCatalogo.mjs) con los datos del catálogo.
+function promptCatalogo({ vertical }) {
+  return [
+    'Clean e-commerce catalog product photo for a motorcycle spare parts store.',
+    'Use the product from the FIRST reference image EXACTLY as it is: same shape, colors, packaging,',
+    'printed labels, number of teeth/holes and proportions. Do not redraw, restyle, simplify or replace it.',
+    RECORTE,
+    'Place it on a PURE WHITE seamless background (#FFFFFF), centered, large, with a very soft natural shadow under it,',
+    'bright even studio light, sharp focus, photorealistic. If it is a kit, arrange its pieces neatly side by side.',
+    `Leave clean white margins on all sides${vertical ? ' (it is a tall frame: keep the product in the middle 70%)' : ''}.`,
+    'ABSOLUTELY NO TEXT, letters, numbers, logos, stickers, badges or watermarks added anywhere.',
+  ].join(' ');
+}
+
+// (01/11/2026) "El sistema analiza las imágenes y decide con qué estilo":
+// gpt-4o-mini mira la foto (en baja resolución, centavos) y elige entre los
+// formatos con texto y el catálogo, teniendo en cuenta cuáles salieron hace
+// poco. El catálogo solo en piezas de VENTA: las de conversación y las de
+// educar viven de su titular, que el catálogo no tiene.
+async function decidirFormato({ foto, mime, producto, objetivo, usados }) {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) throw new Error('sin clave');
+  const opciones: Record<string, string> = {
+    catalogo: 'clean catalog card on white (like Vini OEM Parts): best for parts with nice retail box or packaging, kits, small or technical parts, oils, anything that already looks good and the buyer wants to see clearly',
+    podio: 'hero product on a dark glossy podium: premium items, helmets, seats, bigger standalone parts',
+    oferta: 'energetic retail flyer: cheap fast-moving items',
+    antes_despues: 'worn vs new split: wear parts (brakes, chains, bulbs, tires, filters)',
+    en_la_moto: 'installed on a motorcycle with zoom callout: body panels, lights, mirrors, seats, visible accessories',
+    problema: 'problem and solution: parts that fix a symptom (starter, battery, clutch, regulator)',
+  };
+  // Sin los datos de la pieza no hay franja que dibujar.
+  if ((objetivo && objetivo !== 'venta') || !producto?.descripcion) delete opciones.catalogo;
+  let b64 = '';
+  const bytes = new Uint8Array(foto);
+  for (let i = 0; i < bytes.length; i += 32768) b64 += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  const recientes = usados.slice(0, 6).map((m: any) => m.formato_anuncio).filter(Boolean);
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini', temperature: 0.4, max_tokens: 120,
+      response_format: { type: 'json_object' },
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: [
+            `Product: ${producto?.descripcion || 'unknown'}.`,
+            'Pick the ad layout that will look BEST for this exact photo and product. Options:',
+            ...Object.entries(opciones).map(([k, v]) => `- ${k}: ${v}`),
+            `Recently used (avoid repeating the same one 3 times in a row): ${recientes.join(', ') || 'none'}.`,
+            'Reply JSON {"formato": "<option>", "motivo": "<short reason in Spanish>"}.',
+          ].join('\n') },
+          { type: 'image_url', image_url: { url: `data:${mime};base64,${btoa(b64)}`, detail: 'low' } },
+        ],
+      }],
+    }),
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = JSON.parse((await r.json()).choices?.[0]?.message?.content || '{}');
+  const formato = String(j.formato || '');
+  if (!opciones[formato]) throw new Error(`formato desconocido: ${formato}`);
+  return { formato, motivo: String(j.motivo || '').slice(0, 200) };
+}
+
+// El tipo y la moto para la franja del catálogo, partidos de la descripción.
+// Solo con palabras que ya están en ella (lo comprueba el creativo).
+async function lineasDeCatalogo(descripcion: string) {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey || !descripcion) return null;
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini', temperature: 0, max_tokens: 80,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'user', content: [
+        `Spare part description: "${descripcion}".`,
+        'Split it for a catalog label: "tipo" = the part type with its variant (e.g. "PISTÓN KIT STD", "CATALINA KIT 38/15T"),',
+        '"moto" = the motorcycle model(s) it fits (e.g. "C 110/DAWN 125", "CG 200"), or "" if none.',
+        'Use ONLY words that appear in the description (you may add a space or "/" between them). Uppercase.',
+        'Reply JSON {"tipo": "...", "moto": "..."}.',
+      ].join('\n') }],
+    }),
+  });
+  if (!r.ok) return null;
+  const j = JSON.parse((await r.json()).choices?.[0]?.message?.content || '{}');
+  return { tipo: String(j.tipo || '').slice(0, 40), moto: String(j.moto || '').slice(0, 34) };
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -267,22 +359,30 @@ const FORMATOS_ANUNCIO: Record<string, { sobre: string; textos?: string; composi
 // Feed e historia de la MISMA pieza llevan el mismo formato (llegan casi a
 // la vez: el desempate no es al azar, sale del id del mensaje). Si no, el que
 // hace más tiempo que no sale en esta empresa.
-async function elegirFormatoAnuncio(sb: any, tenantId: string, mensajeId: string, pedido?: string) {
-  if (pedido && FORMATOS_ANUNCIO[pedido]) return pedido;
+const ES_FORMATO = (k: string) => !!FORMATOS_ANUNCIO[k] || k === 'catalogo';
+async function elegirFormatoAnuncio(sb: any, tenantId: string, mensajeId: string, pedido?: string,
+  analisis: { foto?: Uint8Array; mime?: string; producto?: any; objetivo?: string } = {}) {
+  if (pedido && ES_FORMATO(pedido)) return { formato: pedido, motivo: 'pedido' };
   const { data: filas } = await sb.from('ai_agent_runs').select('metadata, created_at')
     .eq('tenant_id', tenantId).eq('herramienta', 'creativo-escena').eq('status', 'completed')
     .not('metadata->>formato_anuncio', 'is', null)
     .order('created_at', { ascending: false }).limit(20);
   const usados = (filas || []).map((f: any) => f.metadata || {});
-  const mismo = usados.find((m: any) => mensajeId && m.mensaje_id === mensajeId && FORMATOS_ANUNCIO[m.formato_anuncio]);
-  if (mismo) return mismo.formato_anuncio;
+  const mismo = usados.find((m: any) => mensajeId && m.mensaje_id === mensajeId && ES_FORMATO(m.formato_anuncio));
+  if (mismo) return { formato: mismo.formato_anuncio, motivo: 'el mismo de su otra imagen', lineas: mismo.catalogo_lineas || null };
+  // Lo decide quien mira la foto; si no puede, la rotación de siempre.
+  if (analisis.foto) {
+    try {
+      return await decidirFormato({ foto: analisis.foto, mime: analisis.mime || 'image/jpeg', producto: analisis.producto, objetivo: analisis.objetivo, usados });
+    } catch (e) { console.log('decidirFormato:', String(e?.message || e)); }
+  }
   const claves = Object.keys(FORMATOS_ANUNCIO);
   const hace = (k: string) => { const i = usados.findIndex((m: any) => m.formato_anuncio === k); return i < 0 ? 1e9 : i; };
   const mayor = Math.max(...claves.map(hace));
   const mejores = claves.filter((k) => hace(k) === mayor);
   let h = 0;
   for (const c of String(mensajeId || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return mejores[h % mejores.length];
+  return { formato: mejores[h % mejores.length], motivo: 'rotación' };
 }
 
 // Las piezas modelo del dueño. Si no hay o no se pueden bajar, la escena
@@ -375,9 +475,20 @@ Deno.serve(async (req: Request) => {
       const t = String(emp?.telefono || '').trim();
       if (/^[0-9()+\-\s]{7,20}$/.test(t)) telefono = t;
     }
-    const estilo = conTexto ? await referenciasDeEstilo(sb, permiso.tenant_id) : [];
-    const formatoAnuncio = conTexto
-      ? await elegirFormatoAnuncio(sb, permiso.tenant_id, String(permiso.mensaje_id || ''), body?.formato_anuncio).catch(() => 'podio')
+    const eleccion = conTexto
+      ? await elegirFormatoAnuncio(sb, permiso.tenant_id, String(permiso.mensaje_id || ''), body?.formato_anuncio, {
+        foto, mime: mimeFoto,
+        producto: body?.producto && typeof body.producto === 'object' ? { descripcion: limpio(body.producto.descripcion, 120) } : null,
+        objetivo: ['venta', 'educativo', 'interaccion'].includes(body?.objetivo) ? body.objetivo : null,
+      }).catch(() => ({ formato: 'podio', motivo: 'respaldo' }))
+      : null;
+    const formatoAnuncio = eleccion?.formato || null;
+    const esCatalogo = formatoAnuncio === 'catalogo';
+    // El catálogo no lleva logo ni piezas de estilo: es el producto solo, sobre blanco.
+    if (esCatalogo) { referencias.splice(1); tieneLogo = false; }
+    const estilo = conTexto && !esCatalogo ? await referenciasDeEstilo(sb, permiso.tenant_id) : [];
+    const lineasCat = esCatalogo
+      ? (eleccion.lineas || await lineasDeCatalogo(limpio(body?.producto?.descripcion, 120)).catch(() => null))
       : null;
     referencias.push(...estilo);
 
@@ -390,6 +501,8 @@ Deno.serve(async (req: Request) => {
     const img = await generateImage({
       prompt: esToma
         ? promptToma({ toma: limpio(body?.toma, 400) || 'the product on a glossy podium', acento: comun.acento })
+        : esCatalogo
+        ? promptCatalogo({ vertical: comun.vertical })
         : conTexto
         ? promptConTexto({
           ...comun,
@@ -418,11 +531,13 @@ Deno.serve(async (req: Request) => {
       metadata: {
         formato: esToma ? 'toma_reel' : formato, mensaje_id: permiso.mensaje_id, calidad: CALIDAD, costo_exacto: img.exacto,
         texto_en_escena: conTexto, telefono_en_escena: !!telefono, refs_estilo: estilo.map((r) => r.nombre),
-        ...(formatoAnuncio ? { formato_anuncio: formatoAnuncio } : {}),
+        ...(formatoAnuncio ? { formato_anuncio: formatoAnuncio, formato_motivo: eleccion?.motivo || null } : {}),
+        ...(lineasCat ? { catalogo_lineas: lineasCat } : {}),
       },
     });
 
-    return json({ ok: true, b64: img.b64, cost_usd: img.cost_usd, texto_en_escena: conTexto, logo_en_escena: tieneLogo, formato_anuncio: formatoAnuncio });
+    return json({ ok: true, b64: img.b64, cost_usd: img.cost_usd, texto_en_escena: conTexto && !esCatalogo, logo_en_escena: tieneLogo,
+      formato_anuncio: formatoAnuncio, formato_motivo: eleccion?.motivo || null, catalogo_lineas: lineasCat });
   } catch (e) {
     const mensaje = String(e?.message || e).slice(0, 400);
     await anotarGasto(sb, {

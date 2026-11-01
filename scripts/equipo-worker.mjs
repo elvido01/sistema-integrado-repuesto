@@ -936,7 +936,15 @@ while (corriendo) {
         const urls = texto.match(/https?:\/\/[^\s"']+\.(?:png|jpe?g|webp)/gi) || [];
         const fotoUrl = urls.find((u) => !/logo/i.test(u)) || null;
         const logoUrl = urls.find((u) => /logo/i.test(u)) || null;
-        const tel = (texto.match(/\d{3}-\d{3}-\d{4}/) || [])[0] || null;
+        // (01/11/2026) Aquí había dos caracteres de retroceso (0x08) en vez
+        // de \b: el teléfono no se encontraba nunca y los reels salían sin él.
+        const tel = (texto.match(/\b\d{3}-\d{3}-\d{4}\b/) || [])[0] || null;
+        // (01/11/2026) La pieza y el objetivo, del texto del encargo, para el
+        // estilo catálogo (franja con tipo, moto, código y precio exactos).
+        const mp = texto.match(/·\s*(.+?)\s*\(código\s*([^)]+)\)\.\s*Precio de catálogo:\s*RD\$\s*([\d,]+(?:\.\d+)?)/i);
+        const producto = mp ? { descripcion: mp[1].trim(), codigo: mp[2].trim(), precio: Number(mp[3].replace(/,/g, '')) } : null;
+        const mo = texto.match(/OBJETIVO DE ESTA PIEZA:\s*([A-ZÁÉÍÓÚÑ]+)/i);
+        const objetivo = !mo ? null : /^CONVERS/i.test(mo[1]) ? 'interaccion' : /^EDUC/i.test(mo[1]) ? 'educativo' : 'venta';
         const emp = (texto.match(/Empresa:\s*(.+)/i) || [])[1]?.trim() || null;
 
         // Si GPT Image no pudo y se usó la plantilla, se dice: el dueño tiene
@@ -966,8 +974,11 @@ while (corriendo) {
             });
             const j = await r.json().catch(() => null);
             if (!r.ok || !j?.ok || !j.b64) throw new Error(j?.error || `HTTP ${r.status}`);
-            log(`  escena ${formato}: US$${j.cost_usd}`);
-            return Buffer.from(j.b64, 'base64');
+            log(`  escena ${formato}: US$${j.cost_usd}${j.formato_anuncio ? ` · estilo ${j.formato_anuncio}${j.formato_motivo ? ` (${j.formato_motivo})` : ''}` : ''}`);
+            const escena = Buffer.from(j.b64, 'base64');
+            escena.formatoAnuncio = j.formato_anuncio || null;
+            escena.catalogoLineas = j.catalogo_lineas || null;
+            return escena;
           } finally {
             clearTimeout(reloj);
           }
@@ -975,7 +986,7 @@ while (corriendo) {
         const guardar = async (formato) => {
           const { png, aviso } = await montarArte({
             ...datos.arte, foto_url: fotoUrl, logo_url: logoUrl,
-            telefono: tel, empresa: emp, formato,
+            telefono: tel, empresa: emp, formato, producto, objetivo,
             // El fondo NO lo elige el modelo: lo eligio el dueño al subirlo.
             fondo_b64: fondoRef ? fondoRef.b64 : null,
           }, { pedirEscena });

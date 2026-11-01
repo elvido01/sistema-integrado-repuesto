@@ -32,6 +32,7 @@
 // ============================================================
 
 import sharp from 'sharp';
+import { montarCatalogo } from './arteCatalogo.mjs';
 
 // Dos formatos, los dos que se usan de verdad: el cuadrado del feed y la
 // historia vertical. Nada más, para no acabar manteniendo seis.
@@ -257,9 +258,20 @@ export async function montarArte(ficha = {}, { pedirEscena = null } = {}) {
           // El logo también lo coloca el modelo: pegado encima tapaba el
           // titular (Motul 7100, 29/09). Va el OFICIAL como referencia.
           logo_url: ficha.titulo ? (ficha.logo_url || null) : null,
+          // (01/11/2026) Para que la función decida el estilo mirando la foto
+          // (y si es catálogo, parta tipo y moto). Solo la descripción viaja.
+          producto: ficha.producto?.descripcion ? { descripcion: ficha.producto.descripcion } : null,
+          objetivo: ficha.objetivo || null,
         }),
         bajar(ficha.logo_url),
       ]);
+      // Estilo catálogo: la escena es el producto sobre blanco y aquí se
+      // dibujan logo, sello y la franja con tipo, moto, código y precio.
+      if (escena.formatoAnuncio === 'catalogo' && ficha.producto?.descripcion) {
+        const cat = await montarCatalogo({ escena, logo, formato, producto: ficha.producto,
+          lineas: escena.catalogoLineas, telefono: ficha.telefono });
+        return { png: cat.png, motor: 'gpt-image-2 · catálogo' };
+      }
       const hecho = await vestirEscena({ escena, logo, ficha, formato, textoEnEscena: !!ficha.titulo });
       return { ...hecho, motor: 'gpt-image-2' };
     } catch (e) {
