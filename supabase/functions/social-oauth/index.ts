@@ -4,7 +4,11 @@ import { authorizationUrl, exchangeCode, providerConfig, randomSecret, readIdent
 
 const env = (key: string) => Deno.env.get(key);
 const base = env('SUPABASE_URL')!;
-const origins = new Set((env('SOCIAL_OAUTH_ORIGINS') || 'https://repuestos-morla.pages.dev').split(',').map(s => s.trim()));
+const origins = new Set([
+  ...(env('SOCIAL_OAUTH_ORIGINS') || '').split(','),
+  'https://repuestos-morla.pages.dev', 'https://motoflow.pages.dev',
+  'https://repuestosmorla.com', 'https://www.repuestosmorla.com', 'http://localhost:5173',
+].map(s => s.trim()).filter(Boolean));
 const sb = createClient(base, env('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false, autoRefreshToken: false } });
 
 Deno.serve(async (req: Request) => {

@@ -23,7 +23,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { publicarDestino, comentarPrimero } from '../_shared/adaptadores.mjs';
 import { cuentaConAcceso } from '../_shared/cuentaSocial.mjs';
 import { privacidadVideoYoutube } from '../_shared/youtube.mjs';
-import { estadoEnvioTikTok } from '../_shared/tiktok.mjs';
+import { estadoEnvioTikTok, creadorTikTok } from '../_shared/tiktok.mjs';
 import { medirDestino } from '../_shared/metricas.mjs';
 import { textoConCodigo } from '../_shared/codigoPromo.mjs';
 
@@ -138,22 +138,43 @@ async function vigilarPrivadosYoutube(sb: any) {
  */
 async function vigilarBandejaTikTok(sb: any) {
   const { data: enBandeja, error } = await sb.from('hermes_publication_targets')
-    .select('id, tenant_id, external_post_id')
-    .eq('platform', 'tiktok').eq('status', 'published').eq('privacidad', 'inbox')
+    .select('id, tenant_id, external_post_id, privacidad')
+    .eq('platform', 'tiktok').eq('status', 'published').in('privacidad', ['inbox', 'tiktok_enviado'])
     .not('external_post_id', 'is', null)
     .order('published_at', { ascending: false })
     .limit(10);
   if (error || !enBandeja?.length) return 0;
   const tokens = new Map();
+  const usuarios = new Map();
   for (const t of enBandeja) {
     if (!tokens.has(t.tenant_id)) tokens.set(t.tenant_id, await cuentaDe(sb, t.tenant_id, 'tiktok'));
     const cuenta = tokens.get(t.tenant_id);
     if (!cuenta?.token) continue;
     const v = await estadoEnvioTikTok({ fetchFn: fetch, token: cuenta.token, publishId: t.external_post_id });
     if (!v.ok) { console.error('[publicador] no se pudo mirar el envío a TikTok', t.external_post_id, v.error); continue; }
+    if (v.estado === 'FAILED' && t.privacidad === 'tiktok_enviado') {
+      // (01/11/2026) La publicación directa falló del lado de TikTok: el
+      // historial lo dice en vez de quedarse "publicado" sin video.
+      const { error: eF } = await sb.from('hermes_publication_targets')
+        .update({ status: 'failed', privacidad: null, error_message: `TikTok no lo publicó: ${v.motivo || 'sin motivo'}` })
+        .eq('id', t.id).select('id');
+      if (eF) console.error('[publicador] no se anotó el fallo de TikTok', t.external_post_id, eF.message);
+      continue;
+    }
     if (v.estado !== 'PUBLISH_COMPLETE') continue;
+    // Directo y público: TikTok da el id del video; con el usuario de la
+    // cuenta queda el enlace al video en el historial.
+    const cambio: Record<string, unknown> = { privacidad: 'public' };
+    if (v.video_id) {
+      if (!usuarios.has(t.tenant_id)) {
+        const c = await creadorTikTok({ fetchFn: fetch, token: cuenta.token });
+        usuarios.set(t.tenant_id, c.ok ? c.usuario : null);
+      }
+      const usuario = usuarios.get(t.tenant_id);
+      if (usuario) cambio.external_url = `https://www.tiktok.com/@${usuario}/video/${v.video_id}`;
+    }
     const { error: e } = await sb.from('hermes_publication_targets')
-      .update({ privacidad: 'public' }).eq('id', t.id).select('id');
+      .update(cambio).eq('id', t.id).select('id');
     if (e) console.error('[publicador] no se anotó que TikTok ya lo publicó', t.external_post_id, e.message);
   }
   return enBandeja.length;
@@ -245,7 +266,7 @@ Deno.serve(async () => {
         // otro destino): no se insiste contra una cuenta muerta.
         r = { ok: false, error: `La cuenta de ${plataforma} está marcada como no habilitada. Reconectar.` };
       } else {
-        r = await publicarDestino({ fetchFn: fetch, destino, cuenta, media: { imagen, video }, texto });
+        r = await publicarDestino({ fetchFn: fetch, destino, cuenta, media: { imagen, video, tiktok: cfg.tiktok || null }, texto });
       }
 
       const resultado = {

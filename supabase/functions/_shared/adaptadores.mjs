@@ -24,7 +24,7 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { youtubeShort } from './youtube.mjs';
-import { tiktokBandeja } from './tiktok.mjs';
+import { tiktokBandeja, tiktokDirecto } from './tiktok.mjs';
 
 export const V_META = 'v22.0';
 
@@ -265,7 +265,13 @@ export const instagramHistoria = ({ fetchFn, token, cuentaId, media, esperar }) 
 // tiktok.mjs. La publicación directa no se usa: sin la auditoría exige poner
 // la cuenta entera en privado. Que una promoción salga a TikTok sigue
 // dependiendo de la cuenta conectada y habilitada, como las demás redes.
-export const tiktokVideo = tiktokBandeja;
+// (01/11/2026) Si el dueño eligió "publicar directo" en la pantalla
+// (media.tiktok.modo = 'directo', con a quién se muestra y los interruptores),
+// va por video.publish; si no, a la bandeja como siempre.
+export function tiktokVideo({ fetchFn, token, media, texto }) {
+  if (media?.tiktok?.modo === 'directo') return tiktokDirecto({ fetchFn, token, media, texto, opciones: media.tiktok });
+  return tiktokBandeja({ fetchFn, token, media });
+}
 
 // YouTube ya sube de verdad (29/09/2026): el canal está conectado por OAuth
 // con youtube.upload. Vive en youtube.mjs y sube en PRIVADO por defecto;

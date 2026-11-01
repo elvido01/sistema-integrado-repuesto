@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, Search, Upload, CheckCircle2, AlertTriangle, Clock, RotateCcw, Ban, Film } from 'lucide-react';
 import { videoDesdeImagen, formatoDeVideo } from '@/lib/videoDesdeImagen';
+import TikTokOpciones, { OPCIONES_TIKTOK_INICIALES } from '@/components/equipo/TikTokOpciones';
 
 const REDES = [
   { platform: 'facebook', placement: 'feed', nombre: 'Facebook · feed', media: 'imagen_feed' },
@@ -259,6 +260,9 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
   const [media, setMedia] = useState({ imagen_feed: '', imagen_historia: '', video: '' });
   const [subiendo, setSubiendo] = useState('');
   const [elegidos, setElegidos] = useState(() => REDES.map((r) => `${r.platform}:${r.placement}`));
+  // (01/11/2026) Cómo sale a TikTok: a la bandeja o directo con sus opciones.
+  const [tiktokOpc, setTiktokOpc] = useState(OPCIONES_TIKTOK_INICIALES);
+  const [tiktokProblema, setTiktokProblema] = useState(null);
   const [cuando, setCuando] = useState('');
   // Con descuento nace el código (T101, I101…) y el texto lo dice; sin él, no.
   // (05/10/2026) El 5% solo a mano: desmarcada salvo que el encargo lo traiga.
@@ -475,14 +479,17 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
     if (destinos.some((d) => d.placement === 'story') && !media.imagen_historia) p.push('Falta la imagen de la historia.');
     if (destinos.some((d) => ['reel', 'short'].includes(d.placement)) && !media.video) p.push('Falta el video vertical.');
     if (conEstadoWhatsapp && !media.imagen_historia && !media.video) p.push('Para el Estado de WhatsApp falta la imagen de la historia o el video.');
+    if (plataformasElegidas.includes('tiktok') && tiktokProblema) p.push(tiktokProblema);
     return p;
-  }, [producto, existenciaOk, titulo, destinos, conEstadoWhatsapp, plataformasElegidas, textos, precio, media]);
+  }, [producto, existenciaOk, titulo, destinos, conEstadoWhatsapp, plataformasElegidas, textos, precio, media, tiktokProblema]);
 
   const limpiar = () => {
     setBundle(null); setProducto(null); setTitulo(''); setBusqueda('');
     setTextos({ facebook: '', instagram: '', tiktok: '', youtube: '' });
     setMedia({ imagen_feed: '', imagen_historia: '', video: '' });
     setExistenciaOk(false); setCuando(''); setConDescuento(true);
+    // A quién se muestra se elige en cada publicación (regla de TikTok); el modo se queda.
+    setTiktokOpc((o) => ({ ...OPCIONES_TIKTOK_INICIALES, modo: o.modo }));
     // (04/10/2026) El Paso 2 espera a que esto quede libre para retomar el
     // siguiente encargo; si no, se veían dos piezas distintas a la vez.
     if (onLibre) onLibre();
@@ -510,7 +517,10 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
           p_producto_id: producto?.id || null,
           p_precio: Number(precio) || null,
           p_textos: textos,
-          p_media: { ...media, sin_descuento: !conDescuento },
+          p_media: {
+            ...media, sin_descuento: !conDescuento,
+            ...(plataformasElegidas.includes('tiktok') ? { tiktok: tiktokOpc } : {}),
+          },
           p_destinos: destinos,
           p_idempotency_key: null,
           p_design_id: null,
@@ -778,6 +788,9 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
             );
           })}
         </div>
+        {plataformasElegidas.includes('tiktok') && (
+          <TikTokOpciones opciones={tiktokOpc} onChange={setTiktokOpc} video={media.video} onProblema={setTiktokProblema} />
+        )}
         <label className="flex flex-wrap items-center gap-2 text-xs">
           <Clock className="h-4 w-4 text-slate-500" />
           Hora (Santo Domingo):
@@ -952,6 +965,11 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
                     )}
                     {/* TikTok no publica solo: el video llega como borrador a
                         la bandeja de la app y el dueño lo publica desde ahí. */}
+                    {d.platform === 'tiktok' && d.privacidad === 'tiktok_enviado' && (
+                      <div className="mt-0.5 text-[10px] text-fuchsia-800">
+                        Enviado directo a TikTok: lo está procesando. El enlace aparece aquí en unos minutos.
+                      </div>
+                    )}
                     {d.estado === 'EN TU TIKTOK' && (
                       <div className="mt-0.5 text-[10px] text-fuchsia-800">
                         Está como borrador en tu TikTok. Abre la app en el teléfono, toca la notificación
