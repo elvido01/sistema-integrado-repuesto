@@ -1062,3 +1062,7 @@ export async function armarReel({ para, guion: guionDado = null, logoUrl, telefo
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
+
+// (01/11/2026) Lo que reutiliza el video "Piezas de la semana" (armarSemanal.mjs).
+export { correr, duracionDe, rutaFiltro, archivoTexto, letrero, grabarVoz, musicaDe, bajar,
+  FUENTE_TITULO, FUENTE_TEXTO, PLATA, ORO, NARANJA, FPS };

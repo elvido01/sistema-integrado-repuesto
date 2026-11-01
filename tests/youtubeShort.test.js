@@ -93,6 +93,9 @@ describe('título y descripción', () => {
     expect(tituloDesdeTexto('')).toBe('Promoción #Shorts');
     expect(tituloDesdeTexto('x'.repeat(120)).length).toBe(100);
     expect(tituloDesdeTexto('Oferta <hoy>')).toBe('Oferta hoy #Shorts');
+    // El video largo de Piezas de la semana: sin #Shorts y sin la marca en la descripción.
+    expect(tituloDesdeTexto('Título: Piezas de la semana\n[video largo]\nLista')).toBe('Piezas de la semana');
+    expect(descripcionDesdeTexto('Título: Piezas de la semana\n[video largo]\nLista')).toBe('Lista');
   });
   it('la descripción quita el título y el rótulo, y conserva el precio', () => {
     expect(descripcionDesdeTexto(TEXTO)).toBe('Lleva tu Platina al siguiente nivel. RD$ 2,350.03');

@@ -28,6 +28,7 @@ import { FotosDelDia } from '@/components/equipo/FotosDelDia';
 import { EfectividadPublicaciones } from '@/components/equipo/EfectividadPublicaciones';
 import { AgotadosQueSeVenden } from '@/components/equipo/AgotadosQueSeVenden';
 import { PublicacionDiaria } from '@/components/equipo/PublicacionDiaria';
+import { PiezasDeLaSemana } from '@/components/equipo/PiezasDeLaSemana';
 import { AnunciosDelSuplidor } from '@/components/equipo/AnunciosDelSuplidor';
 import { CodigosDePromocion } from '@/components/equipo/CodigosDePromocion';
 import { LinkEnLaBio } from '@/components/equipo/LinkEnLaBio';
@@ -533,6 +534,9 @@ const EquipoIAPage = () => {
         trabajos={data?.trabajos}
         onRevisar={(trabajoId) => setEnfocarPromo({ trabajoId, en: Date.now() })}
       />
+
+      {/* (01/11/2026) El video horizontal del fin de semana con las piezas publicadas. */}
+      <PiezasDeLaSemana />
 
       {/* (10/10/2026) ¿Qué publicación vende? Solo con feat_medicion_publicaciones. */}
       <EfectividadPublicaciones />

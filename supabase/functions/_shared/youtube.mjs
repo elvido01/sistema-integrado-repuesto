@@ -25,12 +25,20 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const PRIVACIDADES = new Set(['private', 'unlisted', 'public']);
 const CATEGORIA_AUTOS = '2'; // "Autos y vehículos"
 
+// (01/11/2026) "Piezas de la semana" es un video horizontal de minutos, no
+// un Short: su texto trae la línea "[video largo]" y entonces el título va
+// sin #Shorts. La línea no sale en la descripción.
+const VIDEO_LARGO = /^\s*\[video largo\]\s*$/i;
+
 /** El título sale del texto de YouTube: la línea "Título:" o la primera. */
 export function tituloDesdeTexto(texto = '', respaldo = 'Promoción') {
-  const lineas = String(texto).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const todas = String(texto).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const largo = todas.some((l) => VIDEO_LARGO.test(l));
+  const lineas = todas.filter((l) => !VIDEO_LARGO.test(l));
   const marcada = lineas.find((l) => /^t[ií]tulo\s*:/i.test(l));
   let t = (marcada || lineas[0] || respaldo).replace(/^t[ií]tulo\s*:\s*/i, '');
   t = t.replace(/[<>]/g, '').trim() || respaldo;               // YouTube rechaza < y >
+  if (largo) return t.slice(0, 100);
   const conShorts = `${t} #Shorts`;
   return (conShorts.length <= 100 ? conShorts : t).slice(0, 100);
 }
@@ -39,7 +47,7 @@ export function tituloDesdeTexto(texto = '', respaldo = 'Promoción') {
 export function descripcionDesdeTexto(texto = '') {
   return String(texto)
     .split(/\r?\n/)
-    .filter((l) => !/^\s*t[ií]tulo\s*:/i.test(l))
+    .filter((l) => !/^\s*t[ií]tulo\s*:/i.test(l) && !VIDEO_LARGO.test(l))
     .map((l) => l.replace(/^\s*descripci[oó]n\s*:\s*/i, ''))
     .join('\n')
     .replace(/[<>]/g, '')

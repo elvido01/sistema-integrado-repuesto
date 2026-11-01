@@ -66,6 +66,7 @@ import { join } from 'node:path';
 import { montarArte } from './arteCreativo.mjs';
 import { estudiarReel } from './estudioReel.mjs';
 import { armarReel, escribirGuion } from './armarReel.mjs';
+import { armarSemanal } from './armarSemanal.mjs';
 import { estudiarVideoSuplidor } from './estudioVideoSuplidor.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
@@ -631,6 +632,52 @@ const armarReelPedido = async () => {
   }
 };
 
+// ── PIEZAS DE LA SEMANA ───────────────────────────────────────────────
+// (01/11/2026) El video horizontal del fin de semana con las piezas
+// publicadas (sql/piezas_de_la_semana.sql, scripts/armarSemanal.mjs). La
+// base decide cuándo toca (viernes a la hora puesta, o "Armar ahora" en
+// Equipo IA); aquí se arma y se sube. Lo aprueba el dueño antes de salir.
+let ultimoSemanalDia = 0;
+const semanalDelDia = async () => {
+  if (AGENTE !== 'comercial_creativo' || Date.now() - ultimoSemanalDia < 5 * 60_000) return;
+  ultimoSemanalDia = Date.now();
+  try {
+    const r = (await escribir('SELECT hermes.equipo_semanal_todos() AS r')).rows[0]?.r || [];
+    for (const x of r) log(`piezas de la semana (${x.tenant}): preparado ${x.id}`);
+  } catch (e) { log('piezas de la semana: no se pudo mirar si toca:', e.message); }
+};
+
+const armarSemanalPendiente = async () => {
+  if (AGENTE !== 'comercial_creativo') return;
+  let sem;
+  try {
+    sem = (await escribir('SELECT hermes.equipo_semanal_tomar() AS r')).rows[0]?.r;
+  } catch (e) { log('piezas de la semana: no se pudo mirar la cola:', e.message); return; }
+  if (!sem) return;
+  log(`piezas de la semana ${sem.id} (intento ${sem.intento}) · ${sem.piezas?.length || 0} piezas`);
+
+  const subirVideo = async (bytes) => {
+    const p = (await escribir('SELECT hermes.equipo_semanal_permiso($1) AS r', [sem.id])).rows[0].r;
+    if (!p?.ok) throw new Error(p?.motivo || 'sin permiso');
+    const r = await fetch(p.url, {
+      method: 'POST', headers: { 'Content-Type': 'video/mp4', 'x-permiso-escena': p.token }, body: bytes,
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j?.ok || !j.url) throw new Error(j?.error || `HTTP ${r.status}`);
+    return j.url;
+  };
+
+  try {
+    const v = await armarSemanal({ semanal: sem, raiz: RAIZ, subirVideo, log });
+    await escribir('SELECT hermes.equipo_semanal_listo($1,$2,$3,$4::jsonb,$5::jsonb)',
+      [sem.id, v.video_url, v.duracion, JSON.stringify(v.avisos || []), JSON.stringify(v.guion)]);
+    log(`  piezas de la semana listo: ${v.video_url}`);
+  } catch (e) {
+    log('  no se pudo armar piezas de la semana:', e.message);
+    await escribir('SELECT hermes.equipo_semanal_error($1,$2)', [sem.id, e.message]).catch(() => {});
+  }
+};
+
 // ── LOS VIDEOS DEL SUPLIDOR ───────────────────────────────────────────
 // (04/10/2026) "Lo que anuncia tu suplidor": el dueño pega el reel de Pedro
 // Racing y aquí se averigua qué pieza es (sql/videos_del_suplidor.sql). Igual
@@ -778,8 +825,10 @@ while (corriendo) {
   } catch (e) { log('error tomando de la cola:', e.message); await new Promise((s) => setTimeout(s, 15000)); continue; }
 
   await autoDelDia();
+  await semanalDelDia();
   if (!msg) {
     await armarReelPedido();
+    await armarSemanalPendiente();
     await estudiarReelPendiente();
     await estudiarVideoSuplidorPendiente();
     await new Promise((s) => setTimeout(s, ESPERA_VACIO_MS));
@@ -935,7 +984,7 @@ while (corriendo) {
             [msg.id, msg.claim_token, png.toString('base64'), 'image/png', `arte-${formato}.png`]);
           const res = r.rows[0].r;
           if (!res?.ok) throw new Error(res?.motivo || 'no se pudo guardar el arte');
-          log(`  arte ${formato}: ${(png.length / 1024).toFixed(0)} KB${aviso ? ' (plantilla de respaldo)' : ''}`);
+          log(`  arte ${formato}: ${(png.length / 1024).toFixed(0)} KB${aviso ? ` (plantilla de respaldo: ${aviso})` : ''}`);
           if (aviso && !avisosArte.includes(aviso)) avisosArte.push(aviso);
           return res.imagen_id;
         };
