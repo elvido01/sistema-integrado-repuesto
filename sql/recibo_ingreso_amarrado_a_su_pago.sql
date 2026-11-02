@@ -10,8 +10,10 @@
 --   1) Un solo contador: el número del pago sigue al MAYOR de los dos
 --      (_siguiente_numero_pago). El próximo pago salta a 0148845 y su recibo
 --      es RI-0148845; los números 0148838..0148844 ya existen como recibos y
---      no se repiten. registrar_pago_prestamo (x2) y registrar_recuperacion
---      cambian SOLO esa línea.
+--      no se repiten. registrar_pago_prestamo (x2), registrar_recuperacion y
+--      registrar_pago_prestamo_financiera_externa cambian SOLO esa línea.
+--      El número se reparte con candado por empresa (también el de los
+--      recibos de facturas): dos cobros a la vez no comparten dígitos.
 --   2) recibos_ingreso.prestamo_pago_id: el recibo queda AMARRADO a su pago.
 --   3) Disparador al grabar el recibo: si hay un pago del mismo cliente en
 --      ese mismo instante (las funciones graban pago y recibo en la misma
@@ -40,7 +42,9 @@ CREATE INDEX IF NOT EXISTS idx_prestamo_pagos_cliente_instante
 WITH p AS (
   SELECT id, tenant_id, cliente_id, created_at,
          row_number() OVER (PARTITION BY tenant_id, cliente_id, created_at ORDER BY total_pagado, numero) AS n
-    FROM public.prestamo_pagos
+    FROM public.prestamo_pagos x
+   -- solo los que aún no tienen recibo amarrado (así se puede correr dos veces)
+   WHERE NOT EXISTS (SELECT 1 FROM public.recibos_ingreso y WHERE y.prestamo_pago_id = x.id)
 ), r AS (
   SELECT ri.id, ri.tenant_id, ri.cliente_id, ri.created_at,
          row_number() OVER (PARTITION BY ri.tenant_id, ri.cliente_id, ri.created_at ORDER BY ri.monto_pagado, ri.numero) AS n
@@ -60,22 +64,60 @@ UPDATE public.recibos_ingreso ri
 CREATE UNIQUE INDEX IF NOT EXISTS recibos_ingreso_prestamo_pago_unico
   ON public.recibos_ingreso (prestamo_pago_id) WHERE prestamo_pago_id IS NOT NULL;
 
--- 1) Un solo contador
+-- 1) Un solo contador. Se reparte de uno en uno por empresa (candado de la
+-- transacción): dos cobros al mismo tiempo no sacan el mismo número. Solo
+-- cuenta números con formato normal ('0148845', 'RI-148845', 'RI-0148845'),
+-- igual que get_next_recibo_ingreso_numero: uno raro no dispara el contador.
 CREATE OR REPLACE FUNCTION public._siguiente_numero_pago(p_tenant uuid)
  RETURNS text
- LANGUAGE sql
- STABLE
+ LANGUAGE plpgsql
+ VOLATILE
  SET search_path TO 'public'
 AS $function$
-  SELECT lpad((GREATEST(
-    (SELECT COALESCE(MAX(NULLIF(regexp_replace(numero, '\D', '', 'g'), '')::bigint), 0)
-       FROM public.prestamo_pagos WHERE tenant_id = p_tenant),
-    (SELECT COALESCE(MAX(NULLIF(regexp_replace(numero, '\D', '', 'g'), '')::bigint), 0)
-       FROM public.recibos_ingreso WHERE tenant_id = p_tenant)
-  ) + 1)::text, 7, '0')
+DECLARE v_n bigint;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('numeros_recibo:' || p_tenant::text));
+  SELECT GREATEST(
+    (SELECT COALESCE(MAX(regexp_replace(numero, '^RI-', '')::bigint), 0)
+       FROM public.prestamo_pagos WHERE tenant_id = p_tenant AND numero ~ '^(RI-)?\d{1,12}$'),
+    (SELECT COALESCE(MAX(regexp_replace(numero, '^RI-', '')::bigint), 0)
+       FROM public.recibos_ingreso WHERE tenant_id = p_tenant AND numero ~ '^(RI-)?\d{1,12}$')
+  ) + 1 INTO v_n;
+  RETURN lpad(v_n::text, 7, '0');
+END;
 $function$;
 
 REVOKE ALL ON FUNCTION public._siguiente_numero_pago(uuid) FROM PUBLIC, anon, authenticated;
+
+-- El contador de los demás recibos (cobros de facturas) toma el MISMO
+-- candado: un cobro de factura y un pago a la vez no comparten dígitos.
+-- Misma firma y mismo resultado que antes; solo se añade el candado.
+CREATE OR REPLACE FUNCTION public.get_next_recibo_ingreso_numero()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  _tenant UUID;
+  _next BIGINT;
+BEGIN
+  _tenant := get_user_tenant();
+  PERFORM pg_advisory_xact_lock(hashtext('numeros_recibo:' || _tenant::text));
+
+  SELECT COALESCE(MAX(
+    CASE
+      WHEN numero ~ '^\d+$' THEN numero::bigint
+      WHEN numero ~ '^RI-' THEN REPLACE(numero, 'RI-', '')::bigint
+      ELSE 0
+    END
+  ), 0) + 1 INTO _next
+  FROM recibos_ingreso
+  WHERE tenant_id = _tenant;
+
+  RETURN 'RI-' || LPAD(_next::text, 6, '0');
+END;
+$function$;
 
 -- 3) El disparador
 CREATE OR REPLACE FUNCTION public._recibo_ingreso_toma_su_pago()
@@ -101,7 +143,9 @@ BEGIN
 
   -- El número del pago (el del recibo impreso), solo en los recibos normales
   -- y si nadie más lo tiene.
-  IF NEW.prestamo_pago_id IS NOT NULL AND NEW.origen IS NULL THEN
+  -- (origen vacío = las funciones de caja; 'movil' = cobro de la app para
+  -- la financiera externa. 'sync' (migración) y pagos a suplidor, no.)
+  IF NEW.prestamo_pago_id IS NOT NULL AND (NEW.origen IS NULL OR NEW.origen = 'movil') THEN
     SELECT 'RI-' || regexp_replace(numero, '^RI-', '') INTO v_num
       FROM public.prestamo_pagos WHERE id = NEW.prestamo_pago_id;
     IF v_num IS NOT NULL AND v_num <> 'RI-' AND NOT EXISTS (
@@ -150,6 +194,10 @@ AS $function$
         )
       ORDER BY
         (ri.created_at = p.created_at) DESC,
+        -- la referencia al número del pago pesa más que parecerse en dígitos
+        EXISTS (SELECT 1 FROM jsonb_array_elements(
+                  CASE WHEN jsonb_typeof(ri.formas_pago) = 'array' THEN ri.formas_pago ELSE '[]'::jsonb END) f
+                 WHERE f->>'referencia' = p.numero) DESC,
         (ri.monto_pagado = p.total_pagado) DESC,
         abs(extract(epoch FROM ri.created_at - p.created_at)),
         ri.id
@@ -689,12 +737,187 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.registrar_pago_prestamo_financiera_externa(p_cliente_id uuid, p_monto numeric, p_fecha date DEFAULT NULL::date, p_cobrador text DEFAULT NULL::text, p_forma_pago text DEFAULT 'Efectivo'::text, p_cuenta text DEFAULT NULL::text, p_banco text DEFAULT NULL::text, p_comentarios text DEFAULT NULL::text, p_prestamo_id uuid DEFAULT NULL::uuid, p_cuota_ids uuid[] DEFAULT NULL::uuid[])
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_fin uuid := public._get_financiera_externa_tenant();
+  v_tenant uuid := public.get_user_tenant();
+  v_restante numeric := round(COALESCE(p_monto,0), 2);
+  v_total numeric := round(COALESCE(p_monto,0), 2);
+  v_bal_ant numeric;
+  v_bal_act numeric;
+  v_pago_id uuid;
+  v_numero text;
+  v_ticket_numero text;
+  v_recibo_numero text;
+  v_seq int;
+  v_ticket_seq int;
+  v_estado json;
+  rec record;
+  ab_mora numeric;
+  ab_int numeric;
+  ab_cap numeric;
+BEGIN
+  IF p_cliente_id IS NULL THEN RAISE EXCEPTION 'cliente_id es requerido'; END IF;
+  IF v_total <= 0 THEN RAISE EXCEPTION 'El monto a pagar debe ser mayor que cero'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.clientes WHERE id = p_cliente_id AND tenant_id = v_fin) THEN
+    RAISE EXCEPTION 'Cliente no pertenece a la financiera externa';
+  END IF;
+
+  v_estado := public.get_prestamos_cliente_financiera_externa(p_cliente_id);
+  v_bal_ant := COALESCE((v_estado->>'balance_total')::numeric, 0);
+
+  -- (02/11/2026) Contador único pago/recibo (ver _siguiente_numero_pago).
+  v_numero := public._siguiente_numero_pago(v_fin);
+
+  SELECT COUNT(*)::int + 1
+    INTO v_ticket_seq
+  FROM public.prestamo_pagos pp
+  WHERE pp.tenant_id = v_fin
+    AND (
+      (v_tenant IS NOT NULL AND pp.created_by IN (
+        SELECT p.id FROM public.profiles p WHERE p.tenant_id = v_tenant
+      ))
+      OR (v_tenant IS NULL AND pp.created_by = auth.uid())
+    );
+  v_ticket_numero := lpad(v_ticket_seq::text, 4, '0');
+
+  INSERT INTO public.prestamo_pagos (
+    tenant_id, numero, cliente_id, fecha, cobrador, forma_pago, cuenta_numero, banco,
+    total_pagado, balance_anterior, balance_actual, comentarios, created_by
+  ) VALUES (
+    v_fin, v_numero, p_cliente_id, COALESCE(p_fecha, current_date), p_cobrador,
+    COALESCE(p_forma_pago,'Efectivo'), p_cuenta, p_banco, v_total, v_bal_ant, 0, p_comentarios, auth.uid()
+  ) RETURNING id INTO v_pago_id;
+
+  FOR rec IN
+    SELECT (c->>'cuota_id')::uuid AS cuota_id,
+           (c->>'mora_pend')::numeric AS mora_pend,
+           (c->>'interes_pend')::numeric AS interes_pend,
+           (c->>'capital_pend')::numeric AS capital_pend
+    FROM json_array_elements(v_estado->'cuotas') c
+    WHERE (p_prestamo_id IS NULL OR (c->>'prestamo_id')::uuid = p_prestamo_id)
+      AND (p_cuota_ids IS NULL OR (c->>'cuota_id')::uuid = ANY(p_cuota_ids))
+    ORDER BY (c->>'fecha_vencimiento')::date
+  LOOP
+    EXIT WHEN v_restante <= 0;
+
+    ab_mora := LEAST(v_restante, rec.mora_pend);
+    v_restante := round(v_restante - ab_mora, 2);
+    ab_int := LEAST(v_restante, rec.interes_pend);
+    v_restante := round(v_restante - ab_int, 2);
+    ab_cap := LEAST(v_restante, rec.capital_pend);
+    v_restante := round(v_restante - ab_cap, 2);
+
+    IF (ab_mora + ab_int + ab_cap) > 0 THEN
+      INSERT INTO public.prestamo_pago_detalle (
+        tenant_id, pago_id, cuota_id, abono_capital, abono_interes, abono_mora, abono_total
+      ) VALUES (
+        v_fin, v_pago_id, rec.cuota_id, ab_cap, ab_int, ab_mora, ab_cap + ab_int + ab_mora
+      );
+
+      UPDATE public.prestamo_cuotas q
+         SET capital_pagado = q.capital_pagado + ab_cap,
+             interes_pagado = q.interes_pagado + ab_int,
+             mora_pagada = q.mora_pagada + ab_mora,
+             estado = CASE
+                        WHEN (q.capital_pagado + ab_cap) >= q.capital
+                         AND (q.interes_pagado + ab_int) >= q.interes THEN 'pagada'
+                        ELSE 'parcial'
+                      END
+       WHERE q.id = rec.cuota_id AND q.tenant_id = v_fin;
+    END IF;
+  END LOOP;
+
+  UPDATE public.prestamos p
+     SET estado = 'saldado'
+   WHERE p.tenant_id = v_fin
+     AND p.cliente_id = p_cliente_id
+     AND p.estado = 'activo'
+     AND NOT EXISTS (
+       SELECT 1 FROM public.prestamo_cuotas q
+       WHERE q.prestamo_id = p.id AND COALESCE(q.estado, 'pendiente') <> 'pagada'
+     );
+
+  -- Un pago aceptado por la empresa libera automaticamente el estado SE BUSCA.
+  UPDATE public.cobro_gestiones
+     SET estado = 'cerrada',
+         resultado = 'pago_recibido',
+         metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+           'cerrado_por_pago', true,
+           'pago_id', v_pago_id,
+           'pago_numero', v_numero,
+           'monto_pagado', v_total
+         )
+   WHERE tenant_id = v_fin
+     AND cliente_id = p_cliente_id
+     AND tipo = 'mandado_buscar'
+     AND estado = 'mandado_buscar';
+
+  -- Y CUMPLE la promesa de pago activa: el cliente pago, la promesa no debe
+  -- seguir mostrandose (ni como vencida) en Gestion de Cobro.
+  UPDATE public.cobro_gestiones
+     SET estado = 'cumplida',
+         metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+           'cumplida_por_pago', true,
+           'pago_id', v_pago_id,
+           'pago_numero', v_numero,
+           'monto_pagado', v_total
+         )
+   WHERE tenant_id = v_fin
+     AND cliente_id = p_cliente_id
+     AND tipo = 'promesa_pago'
+     AND estado NOT IN ('cumplida', 'cancelada');
+
+  SELECT 'RI-' || lpad((COALESCE(MAX((regexp_replace(numero, '\D','','g'))::int), 0) + 1)::text, 6, '0')
+    INTO v_recibo_numero
+  FROM public.recibos_ingreso
+  WHERE tenant_id = v_fin;
+
+  INSERT INTO public.recibos_ingreso (
+    tenant_id, numero, cliente_id, fecha, monto_pagado, concepto, formas_pago, usuario_id, origen
+  ) VALUES (
+    v_fin,
+    v_recibo_numero,
+    p_cliente_id,
+    COALESCE(p_fecha, current_date),
+    v_total,
+    'Pago de prestamo (financiera)',
+    jsonb_build_array(jsonb_build_object(
+      'forma', COALESCE(p_forma_pago, 'Efectivo'),
+      'monto', v_total,
+      'referencia', COALESCE(NULLIF(btrim(p_cuenta), ''), v_numero)
+    )),
+    auth.uid(),
+    'movil'
+  );
+
+  v_bal_act := COALESCE((public.get_prestamos_cliente_financiera_externa(p_cliente_id)->>'balance_total')::numeric, 0);
+  UPDATE public.prestamo_pagos SET balance_actual = v_bal_act WHERE id = v_pago_id;
+
+  RETURN json_build_object(
+    'pago_id', v_pago_id,
+    'numero', COALESCE(v_ticket_numero, v_numero),
+    'numero_interno', v_numero,
+    'total_pagado', v_total,
+    'sobrante', GREATEST(v_restante, 0),
+    'balance_anterior', v_bal_ant,
+    'balance_actual', v_bal_act
+  );
+END;
+$function$;
+
 SELECT public.registrar_migracion('recibo_ingreso_amarrado_a_su_pago.sql');
 
 -- ===== VERIFICACION =====
 -- El próximo número de pago de MotoPréstamos (debe ser mayor que RI-148844).
 SELECT public._siguiente_numero_pago('766fe3d6-6885-4f2b-b2cc-1a91db696fb4') AS proximo_pago;
--- Pagos del último mes sin recibo amarrado (debe dar 0).
+-- Pagos del último mes sin recibo amarrado: 0 en MotoPréstamos; en empresas
+-- alimentadas por la migración ('sync') puede salir alguno y no es error.
 SELECT count(*) AS pagos_sin_recibo_amarrado
   FROM public.prestamo_pagos p
  WHERE p.fecha > current_date - 30 AND COALESCE(p.anulado, false) = false
