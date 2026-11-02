@@ -19,6 +19,24 @@
 const API = 'https://open.tiktokapis.com/v2';
 const UN_TROZO_MAX = 64 * 1024 * 1024;
 
+/**
+ * (02/11/2026) Los ids de video de TikTok son enteros de 19 dígitos y
+ * JSON.parse los redondea (7703650180112879000 en vez del real): el enlace y
+ * la medición apuntaban a otro video. Se leen como TEXTO antes de parsear.
+ */
+export function jsonConIdsGrandes(texto) {
+  return JSON.parse(String(texto).replace(/(:\s*|[[,]\s*)(-?\d{16,})(?=\s*[,\]}])/g, '$1"$2"'));
+}
+
+async function leerJson(r) {
+  try {
+    if (typeof r.text === 'function') return jsonConIdsGrandes(await r.text());
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 async function errorDe(r) {
   try {
     const j = await r.json();
@@ -133,8 +151,7 @@ export async function videosTikTok({ fetchFn, token, max = 10 }) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8' },
     body: JSON.stringify({ max_count: Math.min(Math.max(1, max), 20) }),
   });
-  let j = null;
-  try { j = await r.json(); } catch { /* sin cuerpo */ }
+  const j = await leerJson(r);
   if (!r.ok || (j?.error?.code && j.error.code !== 'ok')) {
     return {
       ok: false, http: r.status, error: j?.error?.message || j?.error?.code || `HTTP ${r.status}`,
@@ -154,6 +171,47 @@ export async function videosTikTok({ fetchFn, token, max = 10 }) {
     compartidos: v.share_count ?? null,
   }));
   return { ok: true, videos };
+}
+
+/**
+ * (02/11/2026) Los números de videos concretos (video.query, permiso
+ * video.list). Hasta 20 ids por llamada. Devuelve { ok, numeros: { [id]:
+ * { vistas, me_gusta, comentarios, compartidos } } }. Un video que TikTok no
+ * devuelve (borrado o privado) simplemente no viene: nunca se inventa un cero.
+ */
+export async function numerosVideosTikTok({ fetchFn, token, ids }) {
+  const lista = [...new Set((ids || []).map(String).filter((x) => /^\d+$/.test(x)))].slice(0, 20);
+  if (!lista.length) return { ok: true, numeros: {} };
+  const r = await fetchFn(`${API}/video/query/?fields=id,view_count,like_count,comment_count,share_count`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8' },
+    // Los ids viajan como texto: como número JavaScript los redondea.
+    body: `{"filters":{"video_ids":[${lista.map((x) => `"${x}"`).join(',')}]}}`,
+  });
+  const j = await leerJson(r);
+  if (!r.ok || (j?.error?.code && j.error.code !== 'ok')) {
+    return {
+      ok: false, http: r.status, error: j?.error?.message || j?.error?.code || `HTTP ${r.status}`,
+      token_vencido: r.status === 401 || j?.error?.code === 'access_token_invalid',
+      sin_permiso: j?.error?.code === 'scope_not_authorized',
+    };
+  }
+  const numeros = {};
+  for (const v of j?.data?.videos || []) {
+    numeros[String(v.id)] = {
+      vistas: v.view_count ?? null,
+      me_gusta: v.like_count ?? null,
+      comentarios: v.comment_count ?? null,
+      compartidos: v.share_count ?? null,
+    };
+  }
+  return { ok: true, numeros };
+}
+
+/** El id del video dentro de un enlace https://www.tiktok.com/@usuario/video/ID. */
+export function idDeVideoTikTok(url) {
+  const m = String(url || '').match(/\/video\/(\d{8,})/);
+  return m ? m[1] : null;
 }
 
 /** Baja el video, lo anuncia a TikTok y lo sube en un trozo. { ok, publishId, http } o el fallo. */
@@ -216,8 +274,7 @@ export async function estadoEnvioTikTok({ fetchFn, token, publishId }) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8' },
     body: JSON.stringify({ publish_id: publishId }),
   });
-  let j = null;
-  try { j = await r.json(); } catch { /* sin cuerpo */ }
+  const j = await leerJson(r);
   if (!r.ok || (j?.error?.code && j.error.code !== 'ok')) {
     return { ok: false, error: j?.error?.message || `HTTP ${r.status}`, token_vencido: r.status === 401 || j?.error?.code === 'access_token_invalid' };
   }

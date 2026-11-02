@@ -23,7 +23,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { publicarDestino, comentarPrimero } from '../_shared/adaptadores.mjs';
 import { cuentaConAcceso } from '../_shared/cuentaSocial.mjs';
 import { privacidadVideoYoutube } from '../_shared/youtube.mjs';
-import { estadoEnvioTikTok, creadorTikTok } from '../_shared/tiktok.mjs';
+import { estadoEnvioTikTok, creadorTikTok, numerosVideosTikTok, idDeVideoTikTok } from '../_shared/tiktok.mjs';
 import { medirDestino } from '../_shared/metricas.mjs';
 import { textoConCodigo } from '../_shared/codigoPromo.mjs';
 
@@ -47,10 +47,13 @@ async function medirPublicaciones(sb: any) {
     .gte('published_at', hace14)
     .order('published_at', { ascending: false })
     .limit(60);
-  if (error || !destinos?.length) return 0;
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
+  // TikTok va aparte (por lotes, sin token de Meta).
+  let deTikTok = 0;
+  try { deTikTok = await medirTikTok(sb, hace14, hoy); } catch (e) { console.error('[medidor] tiktok', e?.message || e); }
+  if (error || !destinos?.length) return deTikTok;
 
   const tokens = new Map();
-  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
   let medidos = 0;
   for (const d of destinos) {
     if (d.platform === 'facebook' && d.placement === 'story') continue;   // la API no da números
@@ -89,7 +92,7 @@ async function medirPublicaciones(sb: any) {
     if (e2) console.error('[medidor] no se guardó', d.external_post_id, e2.message);
     else medidos += 1;
   }
-  return medidos;
+  return medidos + deTikTok;
 }
 
 // Cada cuántos minutos se vuelve a preguntar por los Shorts privados. Cada
@@ -137,12 +140,23 @@ async function vigilarPrivadosYoutube(sb: any) {
  * queda en "EN TU TIKTOK" y el dueño lo ve igual en su perfil.
  */
 async function vigilarBandejaTikTok(sb: any) {
+  // (02/11/2026) También los ya publicados sin enlace: TikTok da el id del
+  // video al terminar (también de los borradores que el dueño publica desde
+  // el teléfono), y con él el post queda unido a su promoción y se mide.
+  // Un borrador que lleva más de 7 días en la bandeja ya no se publica: deja
+  // de preguntarse, para que no ocupe el turno de los demás (TikTok admite
+  // pocas preguntas por minuto).
+  const hace30 = new Date(Date.now() - 30 * 864e5).toISOString();
+  const hace7 = new Date(Date.now() - 7 * 864e5).toISOString();
   const { data: enBandeja, error } = await sb.from('hermes_publication_targets')
-    .select('id, tenant_id, external_post_id, privacidad')
-    .eq('platform', 'tiktok').eq('status', 'published').in('privacidad', ['inbox', 'tiktok_enviado'])
+    .select('id, tenant_id, job_id, external_post_id, privacidad, published_at')
+    .eq('platform', 'tiktok').eq('status', 'published')
+    .or(`privacidad.in.(tiktok_enviado,public),and(privacidad.eq.inbox,published_at.gte."${hace7}")`)
     .not('external_post_id', 'is', null)
+    .is('external_url', null)
+    .gte('published_at', hace30)
     .order('published_at', { ascending: false })
-    .limit(10);
+    .limit(20);
   if (error || !enBandeja?.length) return 0;
   const tokens = new Map();
   const usuarios = new Map();
@@ -176,8 +190,104 @@ async function vigilarBandejaTikTok(sb: any) {
     const { error: e } = await sb.from('hermes_publication_targets')
       .update(cambio).eq('id', t.id).select('id');
     if (e) console.error('[publicador] no se anotó que TikTok ya lo publicó', t.external_post_id, e.message);
+    else if (v.video_id && cambio.external_url) {
+      await registrarPostTikTok(sb, t, v.video_id, String(cambio.external_url));
+    }
   }
   return enBandeja.length;
+}
+
+/**
+ * (02/11/2026) El post de TikTok en social_posts, unido a su promoción
+ * (publication_job_id), como hace el disparador sync_hermes_job_social_posts
+ * con Facebook/Instagram/YouTube. TikTok no entra por el disparador porque al
+ * publicar solo se conoce el id del ENVÍO; el del video llega después.
+ * Si Metricool ya lo había dado de alta (mismo id), solo se le pone la promoción.
+ */
+async function registrarPostTikTok(sb: any, t: any, videoId: string, url: string) {
+  const { data: job } = await sb.from('hermes_publication_jobs')
+    .select('id, producto_id, content_id, title, caption, media_url')
+    .eq('id', t.job_id).maybeSingle();
+  if (!job?.id) return;
+  const { data: ya } = await sb.from('social_posts').select('id')
+    .eq('tenant_id', t.tenant_id).eq('platform', 'tiktok').eq('external_post_id', videoId)
+    .order('created_at', { ascending: true }).limit(1).maybeSingle();
+  const fila = {
+    publication_job_id: job.id,
+    producto_id: job.producto_id,
+    external_url: url,
+    published_at: t.published_at,
+  };
+  const { error } = ya?.id
+    ? await sb.from('social_posts').update(fila).eq('id', ya.id).select('id')
+    : await sb.from('social_posts').insert({
+      ...fila,
+      tenant_id: t.tenant_id,
+      platform: 'tiktok',
+      post_type: 'video',
+      external_post_id: videoId,
+      content_id: job.content_id,
+      title: job.title,
+      description: job.caption,
+      thumbnail_url: job.media_url,
+      status: 'publicado',
+      is_general: job.producto_id == null,
+      source_provider: 'motoflow_api',
+      source_record_id: videoId,
+    }).select('id');
+  if (error) console.error('[publicador] no se registró el post de TikTok', videoId, error.message);
+}
+
+/**
+ * (02/11/2026) Números de los TikTok de las promociones (video.query): una
+ * fila por post y día en social_post_metrics, como las demás redes. TikTok no
+ * da alcance: vistas, me gusta, comentarios y compartidos.
+ */
+async function medirTikTok(sb: any, desde: string, hoy: string) {
+  const { data: destinos, error } = await sb.from('hermes_publication_targets')
+    .select('tenant_id, external_url')
+    .eq('platform', 'tiktok').eq('status', 'published')
+    .like('external_url', '%/video/%')
+    .gte('published_at', desde)
+    .order('published_at', { ascending: false })
+    .limit(60);
+  if (error || !destinos?.length) return 0;
+  const porEmpresa = new Map<string, string[]>();
+  for (const d of destinos) {
+    const id = idDeVideoTikTok(d.external_url);
+    if (!id) continue;
+    porEmpresa.set(d.tenant_id, [...(porEmpresa.get(d.tenant_id) || []), id]);
+  }
+  let medidos = 0;
+  for (const [tenantId, ids] of porEmpresa) {
+    const cuenta = await cuentaDe(sb, tenantId, 'tiktok');
+    if (!cuenta?.token) continue;
+    for (let i = 0; i < ids.length; i += 20) {
+      const r = await numerosVideosTikTok({ fetchFn: fetch, token: cuenta.token, ids: ids.slice(i, i + 20) });
+      if (!r.ok) { console.error('[medidor] tiktok', r.error); break; }
+      for (const [id, n] of Object.entries(r.numeros) as [string, any][]) {
+        const { data: post } = await sb.from('social_posts').select('id')
+          .eq('tenant_id', tenantId).eq('platform', 'tiktok').eq('external_post_id', id)
+          .order('created_at', { ascending: true }).limit(1).maybeSingle();
+        if (!post?.id) continue;
+        const fila = {
+          tenant_id: tenantId, post_id: post.id, captured_at: new Date().toISOString(),
+          snapshot_date: hoy, origen: 'motoflow_api',
+          views: n.vistas, likes: n.me_gusta, comments: n.comentarios, shares: n.compartidos,
+          raw_data: n,
+        };
+        const { data: ya } = await sb.from('social_post_metrics').select('id')
+          .eq('post_id', post.id).eq('origen', 'motoflow_api').eq('snapshot_date', hoy)
+          .order('captured_at', { ascending: false }).limit(1).maybeSingle();
+        const { error: e2 } = ya?.id
+          ? await sb.from('social_post_metrics').update(fila).eq('id', ya.id).select('id')
+          : await sb.from('social_post_metrics').insert(fila).select('id');
+        if (e2) console.error('[medidor] tiktok no se guardó', id, e2.message);
+        else medidos += 1;
+      }
+    }
+  }
+  return medidos;
 }
 
 const WORKER = 'motoflow-publicador-v1';

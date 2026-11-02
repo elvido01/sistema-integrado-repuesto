@@ -836,7 +836,7 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
       {/* ── Paso 4: el historial, con lo que pasó de verdad ── */}
       <h3 className="mb-1 text-xs font-bold text-slate-700">Paso 4 · Historial y resultados</h3>
       <p className="mb-2 text-[10px] text-slate-500">
-        MotoFlow mide cada 30 minutos; Facebook tarda unas horas en dar sus números. Las historias de Facebook y TikTok no traen números.
+        MotoFlow mide cada 30 minutos; Facebook tarda unas horas en dar sus números. Las historias de Facebook no traen números; TikTok da vistas y me gusta, sin alcance.
         "Vendidas" cuenta todas las ventas del producto (tienda incluida) en los 7 días después de publicar, contra lo que vende normalmente en ese tiempo.
       </p>
       {promos.length === 0 && <p className="text-xs text-slate-500">Todavía no hay ninguna.</p>}

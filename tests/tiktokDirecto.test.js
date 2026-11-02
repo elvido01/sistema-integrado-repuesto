@@ -103,3 +103,34 @@ describe('Cuenta y videos', () => {
     expect(JSON.parse(f.pedidos[0].init.body)).toEqual({ max_count: 5 });
   });
 });
+
+describe('Ids de video exactos (02/11/2026)', () => {
+  const crudo = (texto) => async () => ({ ok: true, status: 200, text: async () => texto });
+
+  it('JSON.parse redondea; jsonConIdsGrandes no', async () => {
+    const { jsonConIdsGrandes } = await import('../supabase/functions/_shared/tiktok.mjs');
+    const j = jsonConIdsGrandes('{"data":{"publicaly_available_post_id":[7703650180112879122],"videos":[{"id":7703307237191650123,"view_count":168}]}}');
+    expect(j.data.publicaly_available_post_id[0]).toBe('7703650180112879122');
+    expect(j.data.videos[0]).toEqual({ id: '7703307237191650123', view_count: 168 });
+  });
+
+  it('el estado devuelve el id real del video', async () => {
+    const r = await estadoEnvioTikTok({ fetchFn: crudo('{"data":{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":[7703650180112879122]},"error":{"code":"ok"}}'), token: 't', publishId: 'p' });
+    expect(r.video_id).toBe('7703650180112879122');
+  });
+
+  it('video.query: ids como texto en la petición y números por id', async () => {
+    const { numerosVideosTikTok, idDeVideoTikTok } = await import('../supabase/functions/_shared/tiktok.mjs');
+    const pedidos = [];
+    const f = async (url, init) => {
+      pedidos.push({ url, init });
+      return { ok: true, status: 200, text: async () => '{"data":{"videos":[{"id":7703650180112879122,"view_count":300,"like_count":12,"comment_count":2,"share_count":1}]},"error":{"code":"ok"}}' };
+    };
+    const r = await numerosVideosTikTok({ fetchFn: f, token: 'tok', ids: ['7703650180112879122', '7703650180112879122', 'malo'] });
+    expect(r.numeros).toEqual({ '7703650180112879122': { vistas: 300, me_gusta: 12, comentarios: 2, compartidos: 1 } });
+    expect(pedidos[0].init.body).toBe('{"filters":{"video_ids":["7703650180112879122"]}}');
+    expect(pedidos[0].url).toContain('/video/query/?fields=');
+    expect(idDeVideoTikTok('https://www.tiktok.com/@repuestos_morla/video/7703650180112879122')).toBe('7703650180112879122');
+    expect(idDeVideoTikTok(null)).toBeNull();
+  });
+});
