@@ -404,7 +404,8 @@
     "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
     "sql/ecf_secuencia_sin_solape.sql": "58f848af08a0ad40",
     "src/lib/ecfSecuencias.js": "9ec1d87a0b1c86d0",
-    "sql/recibo_transferencia_sale_de_la_caja.sql": "2aca331a0ff3f3ca"
+    "sql/recibo_transferencia_sale_de_la_caja.sql": "2aca331a0ff3f3ca",
+    "sql/recibo_ingreso_amarrado_a_su_pago.sql": "c21d72cd18213fd9"
   },
   "historial": [
     {
@@ -446,6 +447,13 @@
       "archivos": [
         "sql/recibo_transferencia_sale_de_la_caja.sql",
         "src/pages/Configuracion/CierreCajaPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-02",
+      "nota": "code-review high x2 sobre recibo_ingreso_amarrado_a_su_pago.sql: 1a pasada (digitos repetidos 6/7 cifras, v_pago sin asignar, renumerar bajaba el MAX y tocaba turno cerrado, todas las empresas, backfill codicioso, financiera externa, eficiencia) y 2a pasada (financiera externa con contador aparte, concurrencia sin candado, numeros raros, prioridad de referencia, backfill repetible) corregidos; simulacro con registrar_pago_prestamo real: pago 0148846 -> RI-0148846 amarrado, recibos de hoy intactos, 0 pagos del mes sin amarre. Aceptado: v_seq sin uso y la sobrecarga de 9 argumentos (preexistentes)",
+      "archivos": [
+        "sql/recibo_ingreso_amarrado_a_su_pago.sql"
       ]
     }
   ]
