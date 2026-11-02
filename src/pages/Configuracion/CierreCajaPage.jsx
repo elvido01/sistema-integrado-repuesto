@@ -66,6 +66,10 @@ const valorDenominacion = (d, desglose) => {
 const formatCurrency = (v) =>
   new Intl.NumberFormat('es-DO', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 
+// Banco y cuenta los teclea una persona: en el impreso van escapados.
+const escHtmlCierre = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 // Una factura anulada no metió plata en la caja. Se comprueba así y no con
 // .neq('estado','ANULADA') en la consulta: en PostgREST eso descarta también
 // las filas con estado NULL, que son la mayoría de las facturas.
@@ -518,6 +522,34 @@ const CierreCajaPage = () => {
     };
     const totalRecibosEfectivo = recibos.reduce((sum, r) => sum + efectivoDeRecibo(r), 0);
     const totalRecibosOtrasFormas = Math.max(0, totalRecibos - totalRecibosEfectivo);
+    // (02/11/2026) A qué cuenta fue lo que no entró en efectivo: el recibo
+    // guarda banco y cuenta al cambiarlo a transferencia (editar_forma_pago_recibo).
+    // Sin banco anotado sale solo la forma ("Transferencia").
+    const porCuenta = new Map();
+    recibos.forEach((r) => {
+      (Array.isArray(r.formas_pago) ? r.formas_pago : []).forEach((f) => {
+        if (String(f.forma || '').toLowerCase().includes('efectivo')) return;
+        const monto = parseFloat(f.monto) || 0;
+        if (monto <= 0) return;
+        // El nombre de la cuenta (alias) si lo tiene; si no, banco y número.
+        const destino = f.alias
+          ? `${f.alias}${f.banco ? ` (${f.banco})` : ''}`
+          : [f.banco, f.cuenta].filter(Boolean).join(' ');
+        const etiqueta = destino ? `${f.forma || 'Otra'} → ${destino}` : (f.forma || 'Otra forma');
+        porCuenta.set(etiqueta, (porCuenta.get(etiqueta) || 0) + monto);
+      });
+    });
+    const recibosPorCuenta = [...porCuenta.entries()].map(([etiqueta, monto]) => ({ etiqueta, monto }));
+    // El detalle tiene que sumar lo mismo que su línea madre (que sale de
+    // total − efectivo). Si un recibo trae formas que no cuadran con su monto,
+    // la diferencia va aparte, a la vista, en vez de esconderse.
+    const sumaPorCuenta = recibosPorCuenta.reduce((s, c) => s + c.monto, 0);
+    const diferenciaPorCuenta = Math.round((totalRecibosOtrasFormas - sumaPorCuenta) * 100) / 100;
+    // Solo si FALTA detalle (positivo): un vuelto en efectivo puede dar
+    // negativo y no es dinero sin cuenta.
+    if (recibosPorCuenta.length && diferenciaPorCuenta >= 0.01) {
+      recibosPorCuenta.push({ etiqueta: 'Sin forma detallada', monto: diferenciaPorCuenta });
+    }
     const totalGastosDiarios = gastosDiarios.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
     const totalPagosTerceros = pagosTerceros.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
     const totalPagosNomina = pagosNomina.reduce((sum, g) => sum + (parseFloat(g.monto) || 0), 0);
@@ -561,6 +593,7 @@ const CierreCajaPage = () => {
       totalRecibosCaja,
       totalRecibosEfectivo,
       totalRecibosOtrasFormas,
+      recibosPorCuenta, // detalle: a qué cuenta fue cada transferencia
       totalGastosDiarios,
       gastosDiarios, // detalle para el impreso del cierre
       totalPagosTerceros,
@@ -837,7 +870,8 @@ const CierreCajaPage = () => {
               ${filaResumen('Recibos Ingreso (total)', resumen?.totalRecibos, true)}
               ${Number(resumen?.totalRecibosOtrasFormas) > 0 ? `
               ${filaResumen('· Recibos en Efectivo', resumen?.totalRecibosEfectivo)}
-              ${filaResumen('· Recibos Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}` : ''}
+              ${filaResumen('· Recibos Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}
+              ${(resumen?.recibosPorCuenta || []).map((c) => filaResumen(`&nbsp;&nbsp;&nbsp;&nbsp;↳ ${escHtmlCierre(c.etiqueta)}`, c.monto, false, true)).join('')}` : ''}
             </tbody></table>
             <!-- De todo lo que entró, lo que de verdad llegó a la gaveta. -->
             <div class="linea-fuerte"><span>TOTAL INGRESO EN CAJA</span><span>${formatCurrency(TOTAL_SISTEMA)}</span></div>
@@ -994,7 +1028,8 @@ const CierreCajaPage = () => {
         ${filaPos('Recibos Ingreso (total)', resumen?.totalRecibos)}
         ${Number(resumen?.totalRecibosOtrasFormas) > 0 ? `
         ${filaPos('&nbsp;&nbsp;En Efectivo', resumen?.totalRecibosEfectivo, { siempre: true })}
-        ${filaPos('&nbsp;&nbsp;Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}` : ''}
+        ${filaPos('&nbsp;&nbsp;Transf/Cheque/Tarjeta', resumen?.totalRecibosOtrasFormas)}
+        ${(resumen?.recibosPorCuenta || []).map((c) => filaPos(`&nbsp;&nbsp;&nbsp;&nbsp;↳ ${escHtmlCierre(c.etiqueta)}`, c.monto, { siempre: true })).join('')}` : ''}
         <div class="row total-row"><span>TOTAL INGRESO EN CAJA:</span><span>${formatCurrency(TOTAL_SISTEMA)}</span></div>
         ${(resumen?.gastosDiarios || []).length ? `
         <div class="separator"></div>
@@ -1322,6 +1357,9 @@ const CierreCajaPage = () => {
                     <>
                       <Fila label="· Recibos en Efectivo" value={resumen.totalRecibosEfectivo} />
                       <Fila label="· Recibos Transf/Cheque/Tarjeta" value={resumen.totalRecibosOtrasFormas} />
+                      {(resumen.recibosPorCuenta || []).map((c) => (
+                        <Fila key={c.etiqueta} label={`    ↳ ${c.etiqueta}`} value={c.monto} siempre />
+                      ))}
                     </>
                   )}
                   <LineaFuerte label="Total ingreso en caja" value={totalSistemaDe(resumen)} />
