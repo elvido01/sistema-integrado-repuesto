@@ -104,6 +104,10 @@ const CierreCajaPage = () => {
   const [cajeros, setCajeros] = useState([]);
   const [selectedCajero, setSelectedCajero] = useState('ALL');
   const [showDesglose, setShowDesglose] = useState(false);
+  // Las líneas de transferencia/cheque/tarjeta que están abiertas (flecha).
+  const [cuentasAbiertas, setCuentasAbiertas] = useState({});
+  // Otro día u otro cajero: las líneas vuelven a cerradas.
+  useEffect(() => { setCuentasAbiertas({}); }, [fecha, selectedCajero]);
   const [saving, setSaving] = useState(false);
   const [loadingResumen, setLoadingResumen] = useState(false);
   const [imprimir, setImprimir] = useState(true);
@@ -239,7 +243,7 @@ const CierreCajaPage = () => {
       // Primero filtramos por fecha como DATE, luego fallback a created_at.
       const { data: recibosData, error: recibosErr } = await supabase
         .from('recibos_ingreso')
-        .select('monto_pagado, fecha, created_at, origen, formas_pago')
+        .select('numero, monto_pagado, fecha, created_at, origen, formas_pago, clientes(nombre)')
         .eq('tenant_id', tenantId)
         .eq('anulado', false)
         .eq('fecha', fechaStr);
@@ -249,7 +253,7 @@ const CierreCajaPage = () => {
         // Fallback: intentar por created_at (TIMESTAMPTZ)
         const { data: recibosCreatedData, error: recibosCreatedErr } = await supabase
           .from('recibos_ingreso')
-          .select('monto_pagado, created_at, origen, formas_pago')
+          .select('numero, monto_pagado, created_at, origen, formas_pago, clientes(nombre)')
           .eq('tenant_id', tenantId)
           .eq('anulado', false)
           .gte('created_at', startOfDay)
@@ -532,14 +536,36 @@ const CierreCajaPage = () => {
         const monto = parseFloat(f.monto) || 0;
         if (monto <= 0) return;
         // El nombre de la cuenta (alias) si lo tiene; si no, banco y número.
+        const limpio = (x) => String(x || '').trim().replace(/\s+/g, ' ');
         const destino = f.alias
-          ? `${f.alias}${f.banco ? ` (${f.banco})` : ''}`
-          : [f.banco, f.cuenta].filter(Boolean).join(' ');
-        const etiqueta = destino ? `${f.forma || 'Otra'} → ${destino}` : (f.forma || 'Otra forma');
-        porCuenta.set(etiqueta, (porCuenta.get(etiqueta) || 0) + monto);
+          ? `${limpio(f.alias)}${f.banco ? ` (${limpio(f.banco)})` : ''}`
+          : [limpio(f.banco), limpio(f.cuenta)].filter(Boolean).join(' ');
+        // "TRANSFERENCIA" y "Transferencia" (y "BANRESERVAS"/"Banreservas ")
+        // son lo mismo: se agrupa sin mayúsculas ni espacios de más.
+        const formaTxt = limpio(f.forma) || 'Otra forma';
+        const forma = formaTxt.charAt(0).toUpperCase() + formaTxt.slice(1).toLowerCase();
+        const etiqueta = destino ? `${forma} → ${destino}` : forma;
+        const clave = etiqueta.toUpperCase();
+        const grupo = porCuenta.get(clave) || { etiqueta, monto: 0, detalle: [] };
+        grupo.monto += monto;
+        // (02/11/2026) El detalle que se abre con la flecha: cliente, recibo y
+        // monto. El número del pago de préstamo (el del papel) va solo cuando es
+        // seguro que la referencia lo es: el recibo pasado a transferencia con
+        // la corrección guarda el banco aparte y deja en referencia el pago.
+        // Sin eso la referencia suele ser la CUENTA del banco, no el pago.
+        const dig = (x) => String(x || '').replace(/\D/g, '');
+        const refPago = f.cuenta_id && /^\d{7}$/.test(String(f.referencia || ''))
+          && dig(f.referencia) !== dig(r.numero) ? f.referencia : null;
+        grupo.detalle.push({
+          cliente: r.clientes?.nombre || 'Cliente genérico',
+          recibo: r.numero || '—',
+          pago: refPago,
+          monto,
+        });
+        porCuenta.set(clave, grupo);
       });
     });
-    const recibosPorCuenta = [...porCuenta.entries()].map(([etiqueta, monto]) => ({ etiqueta, monto }));
+    const recibosPorCuenta = [...porCuenta.values()].map((g) => ({ etiqueta: g.etiqueta, monto: g.monto, detalle: g.detalle }));
     // El detalle tiene que sumar lo mismo que su línea madre (que sale de
     // total − efectivo). Si un recibo trae formas que no cuadran con su monto,
     // la diferencia va aparte, a la vista, en vez de esconderse.
@@ -1357,9 +1383,44 @@ const CierreCajaPage = () => {
                     <>
                       <Fila label="· Recibos en Efectivo" value={resumen.totalRecibosEfectivo} />
                       <Fila label="· Recibos Transf/Cheque/Tarjeta" value={resumen.totalRecibosOtrasFormas} />
-                      {(resumen.recibosPorCuenta || []).map((c) => (
-                        <Fila key={c.etiqueta} label={`    ↳ ${c.etiqueta}`} value={c.monto} siempre />
-                      ))}
+                      {(resumen.recibosPorCuenta || []).map((c) => {
+                        const abierta = !!cuentasAbiertas[c.etiqueta];
+                        const tieneDetalle = (c.detalle || []).length > 0;
+                        return (
+                          <div key={c.etiqueta} className="pl-4">
+                            <button
+                              type="button"
+                              disabled={!tieneDetalle}
+                              onClick={() => setCuentasAbiertas((x) => ({ ...x, [c.etiqueta]: !x[c.etiqueta] }))}
+                              className="flex w-full items-center justify-between py-1 text-left disabled:cursor-default"
+                              title={tieneDetalle ? 'Ver los recibos' : undefined}
+                            >
+                              <span className="flex items-center gap-1 text-sm text-gray-600">
+                                {tieneDetalle && (
+                                  <ChevronDown className={`h-4 w-4 text-morla-blue transition-transform ${abierta ? '' : '-rotate-90'}`} />
+                                )}
+                                ↳ {c.etiqueta}
+                                {tieneDetalle && <span className="text-xs text-gray-400">({c.detalle.length})</span>}
+                              </span>
+                              <span className="font-mono text-sm text-gray-800">{formatCurrency(c.monto)}</span>
+                            </button>
+                            {abierta && tieneDetalle && (
+                              <div className="mb-1 ml-5 rounded border border-gray-200 bg-white">
+                                {c.detalle.map((d, i) => (
+                                  <div key={`${d.recibo}-${i}`}
+                                    className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1 text-xs last:border-b-0">
+                                    <span className="min-w-0 truncate text-gray-700" title={d.cliente}>{d.cliente}</span>
+                                    <span className="shrink-0 font-mono text-gray-500">
+                                      {d.recibo}{d.pago ? ` · pago ${d.pago}` : ''}
+                                    </span>
+                                    <span className="w-24 shrink-0 text-right font-mono text-gray-800">{formatCurrency(d.monto)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </>
                   )}
                   <LineaFuerte label="Total ingreso en caja" value={totalSistemaDe(resumen)} />
