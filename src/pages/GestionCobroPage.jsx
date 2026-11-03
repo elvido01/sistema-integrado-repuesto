@@ -184,6 +184,21 @@ const interesCorrientePendiente = (prestamo, cuotas = [], diasReales = false) =>
   return nMeses * round2(capBase * tasa) + round2((capBase * tasa * 12 * diasPart) / 365);
 };
 
+// Interés atrasado por préstamo, calculado en la base con la MISMA regla del
+// Recibo de Pago (sql/gestion_cobro_interes_atrasado.sql). La regla vieja de
+// arriba solo miraba cuotas sin pagar. Los préstamos "a interés" (Flor Lappot,
+// Danilo Morla) graban cada interés como cuota ya pagada, así que se quedaban
+// fuera de la lista. Devuelve null si la función falla (o aún no está
+// instalada); en ese caso la página usa la regla vieja en vez de quedar vacía.
+const cargarInteresAtrasado = async (prestamoIds) => {
+  const { data, error } = await supabase.rpc('interes_atrasado_prestamos', { p_ids: prestamoIds });
+  if (error) {
+    console.warn('interes_atrasado_prestamos: se usa la regla vieja', error.message);
+    return null;
+  }
+  return new Map((data || []).map((r) => [r.prestamo_id, r]));
+};
+
 const normalizePhone = (value) => {
   const digits = String(value || '').replace(/\D/g, '');
   if (!digits) return '';
@@ -379,6 +394,8 @@ const GestionCobroPage = () => {
     if (!prestamos.length) return { rows: [], gestiones: [] };
 
       const prestamoIds = prestamos.map((p) => p.id);
+      // En paralelo con las cuotas: no depende de ellas.
+      const interesBasePromise = cargarInteresAtrasado(prestamoIds);
       const cuotasData = [];
       for (const ids of chunkArray(prestamoIds)) {
         const chunkRows = await fetchPaged(() => supabase
@@ -412,19 +429,42 @@ const GestionCobroPage = () => {
         acc[q.prestamo_id].push(q);
         return acc;
       }, {});
-      const prestamosConInteresEquivalente = new Set(
-        prestamos
-          .filter((p) => hasInteresCorrienteEquivalente(p, cuotasDataPorPrestamo[p.id] || []))
-          .map((p) => p.id)
-      );
-      // Monto del interés corriente por préstamo (para sumarlo al monto vencido,
-      // igual que la fila >>INTERES<< del Recibo de Pago)
-      const { data: cfgInteres } = await supabase.from('config_empresa')
-        .select('interes_dias_reales').eq('tenant_id', tenantId).maybeSingle();
-      const diasReales = !!cfgInteres?.interes_dias_reales;
-      const interesCorrientePorPrestamo = new Map(
-        prestamos.map((p) => [p.id, interesCorrientePendiente(p, cuotasDataPorPrestamo[p.id] || [], diasReales)])
-      );
+      const interesBase = await interesBasePromise;
+      let prestamosConInteresEquivalente;
+      let interesCorrientePorPrestamo;
+      // Días de atraso del interés: cuenta desde que se vuelve exigible (el
+      // último interés cobrado + un período), no desde el último pago.
+      const diasInteresPorPrestamo = new Map();
+      if (interesBase) {
+        interesCorrientePorPrestamo = new Map(
+          prestamos.map((p) => [p.id, Number(interesBase.get(p.id)?.interes_corr || 0)])
+        );
+        prestamos.forEach((p) => {
+          const r = interesBase.get(p.id);
+          if (r && Number(r.interes_corr || 0) > 0 && r.interes_vence) {
+            diasInteresPorPrestamo.set(p.id, daysBetween(r.interes_vence));
+          }
+        });
+        prestamosConInteresEquivalente = new Set(
+          prestamos
+            .filter((p) => (diasInteresPorPrestamo.get(p.id) || 0) > DIAS_GRACIA_PAGO)
+            .map((p) => p.id)
+        );
+      } else {
+        prestamosConInteresEquivalente = new Set(
+          prestamos
+            .filter((p) => hasInteresCorrienteEquivalente(p, cuotasDataPorPrestamo[p.id] || []))
+            .map((p) => p.id)
+        );
+        // Monto del interés corriente por préstamo (para sumarlo al monto vencido,
+        // igual que la fila >>INTERES<< del Recibo de Pago)
+        const { data: cfgInteres } = await supabase.from('config_empresa')
+          .select('interes_dias_reales').eq('tenant_id', tenantId).maybeSingle();
+        const diasReales = !!cfgInteres?.interes_dias_reales;
+        interesCorrientePorPrestamo = new Map(
+          prestamos.map((p) => [p.id, interesCorrientePendiente(p, cuotasDataPorPrestamo[p.id] || [], diasReales)])
+        );
+      }
       const activePrestamos = prestamos.filter((p) => (
         prestamosConVencidas.has(p.id)
           || prestamosConInteresEquivalente.has(p.id)
@@ -514,7 +554,9 @@ const GestionCobroPage = () => {
         const interesCorrienteMonto = isRecordatorioPago ? 0 : (interesCorrientePorPrestamo.get(p.id) || 0);
         const montoVencido = cuotasCaso.reduce((sum, q) => sum + pendingCuota(q), 0) + interesCorrienteMonto;
         const oldest = cuotasCaso[0]?.fecha_vencimiento;
-        const diasAtraso = isRecordatorioPago ? DIAS_GRACIA_PAGO : (oldest ? daysBetween(oldest) : 0);
+        const diasAtraso = isRecordatorioPago
+          ? DIAS_GRACIA_PAGO
+          : Math.max(oldest ? daysBetween(oldest) : 0, diasInteresPorPrestamo.get(p.id) || 0);
         const promesa = gs.find((g) => g.tipo === 'promesa_pago' && g.estado !== 'cumplida' && g.estado !== 'cancelada');
         const gestionFisica = gs.find((g) => ['mandado_buscar', 'visita'].includes(g.tipo) && g.estado !== 'cerrada');
         const ultimaRespuesta = gs.find((g) => g.tipo === 'respuesta_cliente' || g.tipo === 'llamada');

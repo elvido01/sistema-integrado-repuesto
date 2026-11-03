@@ -362,7 +362,7 @@
     "src/pages/DevolucionesPage.jsx": "3ea88c27d05f760b",
     "src/pages/FinancieraPrestamosPage.jsx": "d357e2238c8baf89",
     "src/pages/FlujoCajaPage.jsx": "780178bdfa02b360",
-    "src/pages/GestionCobroPage.jsx": "f66fbeccc2d345e4",
+    "src/pages/GestionCobroPage.jsx": "ab20e6df03486db2",
     "src/pages/InventarioFisicoPage.jsx": "b8944320ac3f0956",
     "src/pages/InventarioInteligentePage.jsx": "b539fed6a2087c39",
     "src/pages/ListaChasisPrestamosPage.jsx": "b1b70541508a15c1",
@@ -405,7 +405,8 @@
     "sql/ecf_secuencia_sin_solape.sql": "58f848af08a0ad40",
     "src/lib/ecfSecuencias.js": "9ec1d87a0b1c86d0",
     "sql/recibo_transferencia_sale_de_la_caja.sql": "2aca331a0ff3f3ca",
-    "sql/recibo_ingreso_amarrado_a_su_pago.sql": "c21d72cd18213fd9"
+    "sql/recibo_ingreso_amarrado_a_su_pago.sql": "c21d72cd18213fd9",
+    "sql/gestion_cobro_interes_atrasado.sql": "1dd6d0352614624f"
   },
   "historial": [
     {
@@ -461,6 +462,14 @@
       "nota": "code-review high (detalle desplegable de transferencias en el cierre): corregidos numero de cuenta mostrado como pago (solo con cuenta_id), numero repetido (compara digitos), agrupacion de destino sin mayusculas/espacios, lineas abiertas al cambiar de dia/cajero. Aceptados: detalle guardado en la foto del cierre (sirve para reimprimir identico), Sin forma detallada sin detalle, estilo propio de la fila",
       "archivos": [
         "src/pages/Configuracion/CierreCajaPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-03",
+      "nota": "code-review high: 10 hallazgos; aplicados fallback ante cualquier error, filtro get_user_tenant en la funcion, RPC en paralelo y una sola llamada; resto intencional o fuera de alcance (extension WhatsApp)",
+      "archivos": [
+        "sql/gestion_cobro_interes_atrasado.sql",
+        "src/pages/GestionCobroPage.jsx"
       ]
     }
   ]
