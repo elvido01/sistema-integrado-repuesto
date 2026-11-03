@@ -406,7 +406,8 @@
     "src/lib/ecfSecuencias.js": "9ec1d87a0b1c86d0",
     "sql/recibo_transferencia_sale_de_la_caja.sql": "2aca331a0ff3f3ca",
     "sql/recibo_ingreso_amarrado_a_su_pago.sql": "c21d72cd18213fd9",
-    "sql/gestion_cobro_interes_atrasado.sql": "1dd6d0352614624f"
+    "sql/gestion_cobro_interes_atrasado.sql": "1dd6d0352614624f",
+    "sql/extension_cobro_interes_atrasado.sql": "41248232d86e7baf"
   },
   "historial": [
     {
@@ -470,6 +471,13 @@
       "archivos": [
         "sql/gestion_cobro_interes_atrasado.sql",
         "src/pages/GestionCobroPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-03",
+      "nota": "code-review high: sin errores de calculo; misma regla que la pagina; 8 notas (4 ya existian, contador de periodos y aviso de 3 dias para prestamos a interes quedan como mejora); tiempo 0.12s->0.16s",
+      "archivos": [
+        "sql/extension_cobro_interes_atrasado.sql"
       ]
     }
   ]
