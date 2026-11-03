@@ -12,9 +12,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { generateGastoDiarioPDF } from '@/components/common/pdf/gastoDiarioPDF';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
-import { formatFechaDMY } from '@/lib/dateUtils';
+import { formatFechaDMY, formatDateForSupabase } from '@/lib/dateUtils';
 
-const todayISO = () => new Date().toISOString().split('T')[0];
+// Hoy en Santo Domingo. toISOString() da la fecha UTC: después de las 8 pm
+// el gasto salía con la fecha de mañana.
+const todayISO = () => formatDateForSupabase(new Date());
 
 const TIPOS_GASTO = [
   'Operativo',
@@ -87,6 +89,73 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const [gastosHoy, setGastosHoy] = useState([]);
   const [editandoId, setEditandoId] = useState(null);
   const [huboCambios, setHuboCambios] = useState(false);
+
+  // ---- FECHA ANTERIOR → CLAVE DE ADMINISTRADOR ------------------------
+  // Guardar un gasto en un día que ya pasó (o sacarlo de un día pasado) lo
+  // autoriza un administrador con su clave. La regla vive en el servidor
+  // (sql/gasto_fecha_anterior_con_clave.sql). Aquí se adelanta la pregunta,
+  // y si el servidor la exige igual (error P0G01) se abre el mismo cuadro.
+  const [sinClaveFecha, setSinClaveFecha] = useState(true);
+  const [fechaOriginal, setFechaOriginal] = useState(null); // al editar
+  const [claveOpen, setClaveOpen] = useState(false);
+  const [clave, setClave] = useState('');
+  const [autorizando, setAutorizando] = useState(false);
+  // { id, fecha, hasta } — una autorización = un guardado (máx. 10 min).
+  const autFechaRef = useRef(null);
+  const formRef = useRef(null);
+
+  // El día pasado que toca este guardado: el de destino, o el de origen si
+  // se está sacando un gasto de un día pasado. null = no toca días pasados.
+  const diaPasadoTocado = () => {
+    const hoy = todayISO();
+    const f = formData.fecha;
+    if (editandoId && f === fechaOriginal) return null;
+    if (f && f < hoy) return f;
+    if (editandoId && fechaOriginal && fechaOriginal < hoy) return fechaOriginal;
+    return null;
+  };
+  const autorizacionVigente = (dia) => {
+    const a = autFechaRef.current;
+    return a && dia && a.fecha === dia && Date.now() < a.hasta ? a.id : null;
+  };
+  const necesitaClave = () => {
+    const dia = diaPasadoTocado();
+    return !sinClaveFecha && !!dia && !autorizacionVigente(dia);
+  };
+  // Lo que va en la fila. Al editar con cambio de fecha se manda siempre
+  // (null si no hay) para no dejar una autorización de otra fecha.
+  const campoAutorizacion = () => {
+    const id = autorizacionVigente(diaPasadoTocado());
+    if (editandoId) return formData.fecha !== fechaOriginal ? { autorizacion_fecha_id: id || null } : {};
+    return id ? { autorizacion_fecha_id: id } : {};
+  };
+  const pedirClave = () => { setClave(''); setClaveOpen(true); };
+  const esFaltaClave = (error) => error?.code === 'P0G01';
+
+  const confirmarClave = async () => {
+    const dia = diaPasadoTocado();
+    if (!dia) { setClaveOpen(false); return; }
+    setAutorizando(true);
+    try {
+      const { data, error } = await supabase.rpc('autorizar_gasto_fecha_anterior', {
+        p_fecha: dia, p_password: clave,
+      });
+      if (error) throw error;
+      if (!data?.ok) {
+        toast({ variant: 'destructive', title: 'No autorizado', description: data?.error || 'Clave incorrecta.' });
+        return;
+      }
+      autFechaRef.current = { id: data.id, fecha: dia, hasta: Date.now() + 9 * 60 * 1000 };
+      setClaveOpen(false);
+      setClave('');
+      // Seguir con el guardado que se detuvo para pedir la clave.
+      setTimeout(() => formRef.current?.requestSubmit(), 0);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'No se pudo autorizar', description: e.message });
+    } finally {
+      setAutorizando(false);
+    }
+  };
 
   // ---- PAGO A TERCEROS ------------------------------------------------
   // El GPS, el seguro, el casco, la placa y la matrícula NO son gastos de la
@@ -210,6 +279,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
 
   const resetForm = () => {
     setEditandoId(null);
+    setFechaOriginal(null);
     setFormData({ fecha: todayISO(), tipo_gasto: 'Operativo', monto: '', descripcion: '' });
     setPagaCon('efectivo');
     setCuentaId('');
@@ -233,6 +303,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
 
   const editarGasto = (g) => {
     setEditandoId(g.id);
+    setFechaOriginal(g.fecha);
     // Corregir un pago a terceros se hace con el formulario normal: solo
     // cambian monto/descripción. La marca de tercero no se toca (el update
     // no la incluye), así que la fila sigue fuera del reporte de gastos.
@@ -272,6 +343,12 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       if (gasto?.id) editarGasto(gasto);
       else { setModo('gasto'); resetForm(); }
       setHuboCambios(false);
+      setClaveOpen(false);
+      setClave('');
+      autFechaRef.current = null; // nunca la de otra empresa u otro usuario
+      // Si la función aún no existe (SQL sin correr), se deja como antes.
+      supabase.rpc('gasto_fecha_anterior_sin_clave')
+        .then(({ data, error }) => setSinClaveFecha(error ? true : !!data));
       cargarGastosHoy();
       cargarConceptos();
       cargarPendientes();
@@ -326,6 +403,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       toast({ variant: 'destructive', title: 'Falta la cuenta', description: 'Elige de qué cuenta bancaria sale el pago.' });
       return;
     }
+    if (necesitaClave()) { pedirClave(); return; }
 
     setIsSubmitting(true);
     try {
@@ -340,6 +418,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         cuenta_bancaria_id: desdeBanco ? cuentaId : null,
         afecta_caja: !(desdeBanco || esExterno),
         es_tercero: true,
+        ...campoAutorizacion(),
       };
 
       const { data: creados, error } = await supabase.from('gastos_diarios').insert([
@@ -368,6 +447,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       ]).select('id, monto, concepto_tercero, descripcion');
 
       if (error) throw error;
+      autFechaRef.current = null; // una autorización = un guardado
 
       // Si se corrigió un monto, ese pasa a ser el valor fijo del concepto.
       // Así casco/placa/matrícula se configuran solas la primera vez que se
@@ -422,6 +502,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       setPendSel({});
       await Promise.all([cargarGastosHoy(), cargarPendientes()]);
     } catch (error) {
+      if (esFaltaClave(error)) { autFechaRef.current = null; setSinClaveFecha(false); pedirClave(); return; }
       toast({
         variant: 'destructive',
         title: 'Error al guardar',
@@ -453,6 +534,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       toast({ variant: 'destructive', title: 'Falta la cuenta', description: 'Elige de qué cuenta bancaria sale el gasto.' });
       return;
     }
+    if (necesitaClave()) { pedirClave(); return; }
 
     setIsSubmitting(true);
     try {
@@ -465,10 +547,15 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
           tipo_gasto: formData.tipo_gasto,
           monto,
           descripcion: formData.descripcion.trim(),
+          ...campoAutorizacion(),
         };
         if (!bancoLock) upd.afecta_caja = pagaCon !== 'externo';
-        const { error } = await supabase.from('gastos_diarios').update(upd).eq('id', editandoId);
+        const { data: actualizados, error } = await supabase
+          .from('gastos_diarios').update(upd).eq('id', editandoId).select('id');
         if (error) throw error;
+        // 204 sin error puede ser cero filas (otra empresa activa, RLS).
+        if (!actualizados?.length) throw new Error('No se actualizó el gasto. Recarga la lista y vuelve a intentarlo.');
+        autFechaRef.current = null;
         toast({ title: 'Gasto actualizado', description: 'La caja se recalcula con el nuevo monto.' });
         setHuboCambios(true);
         setIsSubmitting(false);
@@ -492,9 +579,11 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         cuenta_bancaria_id: desdeBanco ? cuentaId : null,
         // Banco de la empresa o tercero (Odalys): NO resta de la gaveta.
         afecta_caja: !(desdeBanco || esExterno),
+        ...campoAutorizacion(),
       }).select('id').single();
 
       if (error) throw error;
+      autFechaRef.current = null;
 
       // Pagado por banco: sale de la cuenta (y NO de la gaveta). Idempotente
       // por el id del gasto; si falla, el gasto igual quedó registrado.
@@ -549,6 +638,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
 
       onClose(true);
     } catch (error) {
+      if (esFaltaClave(error)) { autFechaRef.current = null; setSinClaveFecha(false); pedirClave(); return; }
       toast({
         variant: 'destructive',
         title: 'Error al guardar',
@@ -610,7 +700,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className={`min-w-0 py-3 ${modo === 'terceros' ? 'space-y-2.5' : 'space-y-4'}`}>
+        <form ref={formRef} onSubmit={handleSubmit} className={`min-w-0 py-3 ${modo === 'terceros' ? 'space-y-2.5' : 'space-y-4'}`}>
           {/* En terceros, cada dato es una fila enmarcada: rótulo a la
               izquierda, valor a la derecha. Rótulo encima del campo gastaba el
               doble de alto y dejaba media línea vacía al lado de cada uno. */}
@@ -1019,6 +1109,41 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
             </div>
           </div>
         )}
+
+      {/* Clave de administrador para un gasto con fecha anterior. Va DENTRO
+          del DialogContent: fuera, un clic en él cerraba el modal de gastos. */}
+      <Dialog open={claveOpen} onOpenChange={(open) => { if (!open) { setClaveOpen(false); setClave(''); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Gasto con fecha anterior</DialogTitle>
+            <DialogDescription>
+              La fecha {formatFechaDMY(formData.fecha)} ya pasó. Para guardarlo hace falta la clave de un administrador.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); if (!autorizando) confirmarClave(); }}
+            className="space-y-3"
+          >
+            <Input
+              type="password"
+              autoFocus
+              autoComplete="off"
+              placeholder="Clave del administrador"
+              value={clave}
+              onChange={(e) => setClave(e.target.value)}
+            />
+            <DialogFooter>
+              <Button type="button" variant="secondary" onClick={() => { setClaveOpen(false); setClave(''); }}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={autorizando || !clave.trim()}>
+                {autorizando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Autorizar y guardar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       </DialogContent>
     </Dialog>
   );
