@@ -22,19 +22,35 @@ BEGIN;
 
 DROP FUNCTION IF EXISTS public.get_transacciones_diarias_sin_limite(date, date, uuid, text);
 
--- Forma de pago legible desde un jsonb de formas [{forma, monto, ...}].
+-- Nombre legible de una forma de pago: "TARJETA DE CREDITO" -> "Tarjeta de Crédito".
+CREATE OR REPLACE FUNCTION public._forma_pago_nombre(p text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT NULLIF(
+           replace(replace(replace(
+             initcap(lower(btrim(COALESCE(p, '')))),
+             ' De ', ' de '), 'Credito', 'Crédito'), 'Debito', 'Débito'),
+           '')
+$function$;
+
+-- Formas de pago de un jsonb [{forma, monto, ...}], sin repetir, en su orden.
+-- Una forma con monto 0 no se usó: no sale.
 CREATE OR REPLACE FUNCTION public._formas_pago_texto(p_formas jsonb)
  RETURNS text
  LANGUAGE sql
- IMMUTABLE
+ STABLE
  SET search_path TO 'public'
 AS $function$
   SELECT string_agg(s.nom, ' + ' ORDER BY s.ord)
     FROM (
-      SELECT initcap(lower(btrim(x.e->>'forma'))) AS nom, min(x.ord) AS ord
+      SELECT public._forma_pago_nombre(x.e->>'forma') AS nom, min(x.ord) AS ord
         FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_formas) = 'array' THEN p_formas ELSE '[]'::jsonb END)
              WITH ORDINALITY AS x(e, ord)
-       WHERE COALESCE(btrim(x.e->>'forma'), '') <> ''
+       WHERE public._forma_pago_nombre(x.e->>'forma') IS NOT NULL
+         AND NOT (x.e ? 'monto' AND COALESCE(NULLIF(x.e->>'monto', '')::numeric, 0) = 0)
        GROUP BY 1
     ) s
 $function$;
@@ -88,12 +104,11 @@ BEGIN
           )::numeric AS cre,
           CASE
             WHEN UPPER(COALESCE(f.forma_pago, '')) = 'CREDITO' THEN 'Crédito'
+            -- tipo_pago viene como 'EFECTIVO/TRANSFERENCIA': misma regla que los recibos.
             ELSE COALESCE(
-              (SELECT string_agg(s.nom, ' + ' ORDER BY s.ord)
-                 FROM (SELECT initcap(lower(btrim(x.p))) AS nom, min(x.ord) AS ord
-                         FROM unnest(string_to_array(COALESCE(f.tipo_pago, ''), '/')) WITH ORDINALITY AS x(p, ord)
-                        WHERE btrim(x.p) <> '' AND UPPER(btrim(x.p)) NOT LIKE '%MOVIL%'
-                        GROUP BY 1) s),
+              public._formas_pago_texto(
+                (SELECT jsonb_agg(jsonb_build_object('forma', x.p) ORDER BY x.ord)
+                   FROM unnest(string_to_array(COALESCE(f.tipo_pago, ''), '/')) WITH ORDINALITY AS x(p, ord))),
               'Efectivo')
           END AS fp_val
       FROM public.facturas f
@@ -142,7 +157,7 @@ BEGIN
           0::numeric AS deb,
           ri.monto_pagado::numeric AS cre,
           COALESCE(public._formas_pago_texto(ri.formas_pago),
-                   NULLIF(initcap(lower(btrim(pp.forma_pago))), ''),
+                   public._forma_pago_nombre(pp.forma_pago),
                    '') AS fp_val
       FROM public.recibos_ingreso ri
       LEFT JOIN public.clientes c ON ri.cliente_id = c.id

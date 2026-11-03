@@ -49,8 +49,8 @@ export const generateTransaccionesReportePDF = (transactions, filters, totals, e
         return [
             formatInTimeZone(t.fecha, 'dd/MM/yyyy hh:mm a'),
             t.transaccion,
-            // Mientras no se corra el SQL nuevo, forma_pago no viene: queda el NCF.
-            t.forma_pago ?? t.ncf ?? '',
+            // Sin forma de pago (devolucion, o el SQL nuevo aun no corrido): queda el NCF.
+            t.forma_pago || t.ncf || '',
             codigoVisible,
             (t.cliente_nombre || '').substring(0, 30),
             (t.descripcion || '').substring(0, 40),
@@ -69,7 +69,7 @@ export const generateTransaccionesReportePDF = (transactions, filters, totals, e
         columnStyles: {
             0: { cellWidth: 28 },
             1: { cellWidth: 18 },
-            2: { cellWidth: 18 },
+            2: { cellWidth: 26 },
             3: { cellWidth: 22 },
             6: { halign: 'right' },
             7: { halign: 'right' }
