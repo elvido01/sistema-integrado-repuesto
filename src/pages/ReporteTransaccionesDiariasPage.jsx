@@ -491,7 +491,7 @@ const ReporteTransaccionesDiariasPage = () => {
                 <TableRow className="[&>th]:h-8 [&>th]:text-slate-700 [&>th]:font-bold [&>th]:italic [&>th]:text-xs">
                   <TableHead className="w-24">Fecha</TableHead>
                   <TableHead className="w-28">Transaccion</TableHead>
-                  <TableHead className="w-24">Referencia</TableHead>
+                  <TableHead className="w-28">Forma de Pago</TableHead>
                   <TableHead className="w-32">Cliente</TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Descripcion</TableHead>
@@ -514,7 +514,8 @@ const ReporteTransaccionesDiariasPage = () => {
                     >
                       <TableCell className="whitespace-nowrap">{formatInTimeZone(t.fecha, 'dd/MM/yyyy')}</TableCell>
                       <TableCell className="font-mono">{t.transaccion}</TableCell>
-                      <TableCell className="font-mono text-slate-500">{t.ncf}</TableCell>
+                      {/* Mientras no se corra el SQL nuevo, forma_pago no viene: queda el NCF. */}
+                      <TableCell className="whitespace-nowrap text-slate-600" title={t.ncf ? `NCF: ${t.ncf}` : ''}>{t.forma_pago ?? t.ncf}</TableCell>
                       <TableCell className="font-mono">{t.cliente_codigo}</TableCell>
                       <TableCell className="truncate max-w-[220px]" title={t.cliente_nombre || ''}>{t.cliente_nombre}</TableCell>
                       <TableCell className="truncate max-w-[260px]" title={t.descripcion || ''}>{t.descripcion}</TableCell>

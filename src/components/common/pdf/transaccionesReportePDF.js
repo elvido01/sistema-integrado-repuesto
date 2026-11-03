@@ -42,14 +42,15 @@ export const generateTransaccionesReportePDF = (transactions, filters, totals, e
     doc.text(`Fecha Impresión: ${formatInTimeZone(new Date(), 'dd/MM/yyyy hh:mm:ss a')}`, pageWidth - margin, 15, { align: 'right' });
 
     // --- Table ---
-    const tableColumn = ["FECHA", "TRANS.", "NCF", "CLIENTE", "NOMBRE", "DESCRIPCION", "DEBITOS", "CREDITOS"];
+    const tableColumn = ["FECHA", "TRANS.", "FORMA PAGO", "CLIENTE", "NOMBRE", "DESCRIPCION", "DEBITOS", "CREDITOS"];
     const tableRows = transactions.map(t => {
         const codigo = t.cliente_codigo || '';
         const codigoVisible = codigo.length > 13 ? '' : codigo;
         return [
             formatInTimeZone(t.fecha, 'dd/MM/yyyy hh:mm a'),
             t.transaccion,
-            t.ncf || '',
+            // Mientras no se corra el SQL nuevo, forma_pago no viene: queda el NCF.
+            t.forma_pago ?? t.ncf ?? '',
             codigoVisible,
             (t.cliente_nombre || '').substring(0, 30),
             (t.descripcion || '').substring(0, 40),
