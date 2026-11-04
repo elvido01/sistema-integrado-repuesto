@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { CalendarClock, Clapperboard, Loader2, RotateCcw, Send, Sparkles, Trash2 } from 'lucide-react';
+import { CalendarClock, ChevronDown, ChevronUp, Clapperboard, Loader2, RotateCcw, Send, Sparkles, Trash2 } from 'lucide-react';
 
 // PIEZAS DE LA SEMANA
 //
@@ -74,6 +74,8 @@ export function PiezasDeLaSemana() {
   const [cuando, setCuando] = useState('');
   const [redes, setRedes] = useState({ facebook: true, youtube: true });
   const [texto, setTexto] = useState('');
+  // Minimizada por defecto: se abre con el botón y vuelve cerrada al recargar.
+  const [abierto, setAbierto] = useState(false);
 
   const cargar = useCallback(async () => {
     const [{ data: c }, { data: s, error }] = await Promise.all([
@@ -215,18 +217,28 @@ export function PiezasDeLaSemana() {
 
   return (
     <div className="mb-4 rounded-xl border border-orange-200 bg-white p-3 shadow-sm">
-      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className={`${abierto ? 'mb-2 ' : ''}flex flex-wrap items-center gap-x-3 gap-y-1`}>
         <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
           <Clapperboard className="h-4 w-4 text-orange-600" /> Piezas de la semana
         </span>
-        <p className="flex-1 text-[11px] text-slate-500">
+        {!abierto && est && (
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${est.cls}`}>{est.txt}</span>
+        )}
+        <p className={`flex-1 text-[11px] text-slate-500 ${abierto ? '' : 'hidden md:block truncate'}`}>
           Video horizontal con las piezas publicadas en la semana: qué es cada una y su precio (en la voz y en pantalla), para YouTube y Facebook. Tú lo apruebas antes de que salga.
         </p>
         <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-slate-700">
           <input type="checkbox" checked={activo} disabled={trabajando} onChange={(e) => configurar({ activo: e.target.checked })} />
           {activo ? 'Encendido' : 'Apagado'}
         </label>
+        <button type="button" onClick={() => setAbierto((v) => !v)} title={abierto ? 'Minimizar' : 'Abrir'}
+          className="flex items-center gap-1 rounded border bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50">
+          {abierto ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          {abierto ? 'Minimizar' : 'Abrir'}
+        </button>
       </div>
+
+      {abierto && (<>
 
       <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
         <span className="flex items-center gap-1">
@@ -357,6 +369,7 @@ export function PiezasDeLaSemana() {
           )}
         </div>
       )}
+      </>)}
     </div>
   );
 }
