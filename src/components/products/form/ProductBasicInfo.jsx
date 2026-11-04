@@ -467,6 +467,20 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
     calculateAutoStock();
   }, [calculateAutoStock]);
 
+  // "Solo por encargo": muchas pantallas abren la ficha con un producto que no
+  // trae esta columna, así que se lee aquí. Mientras no se sepa (undefined) el
+  // guardado no la toca, para no borrar una marca que no se llegó a ver.
+  useEffect(() => {
+    if (!formData.id || typeof formData.solo_por_encargo === 'boolean') return undefined;
+    let vivo = true;
+    supabase.from('productos').select('solo_por_encargo').eq('id', formData.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (!vivo || error || !data) return;
+        setFormData(prev => (prev.id === formData.id ? { ...prev, solo_por_encargo: !!data.solo_por_encargo } : prev));
+      });
+    return () => { vivo = false; };
+  }, [formData.id, formData.solo_por_encargo, setFormData]);
+
   const toggleStockMode = () => {
     const newMode = formData.stock_mode === 'auto' ? 'manual' : 'auto';
     setFormData(prev => ({ ...prev, stock_mode: newMode }));
@@ -904,6 +918,19 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                 {formData.stock_mode === 'auto' ? 'Auto Mín/Máx' : 'Manual Mín/Máx'}
               </Button>
             </div>
+            {formData.id && (
+              <label
+                className="mt-1 flex items-center gap-1.5 text-[10px] font-bold uppercase text-sky-700 cursor-pointer select-none"
+                title="Pieza de muy poca rotación: no entra sola en la Orden de Compra. Se pide a mano cuando un cliente la encarga."
+              >
+                <Checkbox
+                  checked={formData.solo_por_encargo === true}
+                  disabled={typeof formData.solo_por_encargo !== 'boolean'}
+                  onCheckedChange={(v) => setFormData(prev => ({ ...prev, solo_por_encargo: v === true }))}
+                />
+                Solo por encargo
+              </label>
+            )}
           </div>
 
           {/* Impuestos */}

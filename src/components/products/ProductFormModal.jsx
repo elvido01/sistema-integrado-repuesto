@@ -380,6 +380,8 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       itbis_pct: esInmueble || (naturaleza === 'servicio' && parseFloat(formData.itbis_pct) === 0)
         ? 0 : (parseFloat(formData.itbis_pct) || 0.18),
       stock_mode: formData.stock_mode || 'auto',
+      // Solo si se llegó a leer: si no, se quedaría en false una marca puesta.
+      ...(typeof formData.solo_por_encargo === 'boolean' && { solo_por_encargo: formData.solo_por_encargo }),
       ...(hasVehicleFields && {
         chasis: chasis || null,
         motor: motor || null,

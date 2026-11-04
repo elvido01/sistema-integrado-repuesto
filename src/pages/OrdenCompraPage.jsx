@@ -50,6 +50,9 @@ const DECISION_OPTIONS = {
   no_disponible: { label: 'No lo tiene suplidor', short: 'No disponible', cls: 'bg-red-50 text-red-700 border-red-200' },
   pospuesto_presupuesto: { label: 'Pospuesto por presupuesto', short: 'Presupuesto', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   poca_rotacion: { label: 'Poca rotacion', short: 'Poca rotacion', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
+  // Además de sacar la línea, la base marca la pieza (productos.solo_por_encargo)
+  // y deja de entrar sola en las órdenes. La marca se quita en la ficha.
+  por_encargo: { label: 'Solo por encargo (no volver a sugerir)', short: 'Por encargo', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
   sustituido: { label: 'Sustituido', short: 'Sustituido', cls: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
