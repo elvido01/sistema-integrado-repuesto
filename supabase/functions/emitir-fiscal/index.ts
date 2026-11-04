@@ -7,6 +7,7 @@ import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfc
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 import { buildRfceDesdeEcf } from "./dgii_rfce_produccion.ts";
+import { codigoProvinciaMunicipio } from "./dgii_municipios.ts";
 import { dgiiFetch, multipartXml, authenticate, enviarEcf, consultarEstado, consultarTrackIds, enviarAnulacion, enviarRfce, enviarAprobacionComercial } from "./dgii_client.ts";
 
 const corsHeaders = {
@@ -75,6 +76,114 @@ async function resolveEmisorConfig(supabase, tenantId, integConfig) {
     console.warn("[resolveEmisorConfig] fallback config_empresa fallo:", err.message);
   }
   return cfg;
+}
+
+// (04/11/2026) El AMBIENTE manda: 'Produccion' = modo 'produccion' (la caja web
+// y la del móvil esperan el e-NCF, la cola de reintentos corre); cualquier otro
+// = modo 'pruebas'. Antes el ambiente y el modo se guardaban por separado y
+// elegir 'Produccion' gastaba números reales mientras la caja seguía en pruebas.
+//
+// Pasar a producción revisa lo que la DGII exige antes de encender; si algo
+// falta, guarda los demás datos, se queda en pruebas y dice qué falta. Al
+// encender se anota config.produccion_desde: la cola de reintentos nunca emite
+// una venta hecha antes (ya se entregó sin comprobante).
+// E32 es obligatoria (casi toda venta es consumo). E31/E34 no bloquean: hay
+// negocios autorizados solo para consumo; si faltan se avisa al encender.
+const SECUENCIAS_AVISO = [
+  ["31", "E31 (crédito fiscal): las ventas a clientes con RNC saldrán sin comprobante"],
+  ["34", "E34 (nota de crédito): las devoluciones no llevarán nota"],
+];
+
+// soloCert = la empresa ya emite y solo se cambia el certificado: se revisa
+// el certificado (y que la DGII lo acepte), no las secuencias ni los datos.
+async function requisitosProduccion(supabase, tenantId, config, soloCert = false) {
+  const faltas: string[] = [];
+  const avisos: string[] = [];
+  const cfg = await resolveEmisorConfig(supabase, tenantId, config);
+  let tipos: string[] = [];
+  if (!soloCert) {
+  const doc = String(cfg.rnc_emisor || "").replace(/\D/g, "");
+  if (doc.length !== 9 && doc.length !== 11) faltas.push("RNC o cédula del emisor (9 u 11 dígitos)");
+  if (!cfg.nombre_emisor) faltas.push("razón social");
+  if (!cfg.direccion) faltas.push("dirección de la empresa (Configuración → Empresa)");
+  // Sin código el builder omite Municipio/Provincia (opcionales en el XSD): avisar, no bloquear.
+  if (!codigoProvinciaMunicipio(cfg.municipio, "municipio")) avisos.push(`el municipio "${cfg.municipio || ""}" no se reconoce: el e-CF sale sin municipio`);
+  if (!codigoProvinciaMunicipio(cfg.provincia, "provincia")) avisos.push(`la provincia "${cfg.provincia || ""}" no se reconoce: el e-CF sale sin provincia`);
+  const mv = String(cfg.fecha_vencimiento_secuencia || "").match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (!mv) faltas.push("el vencimiento de las secuencias (DD-MM-AAAA)");
+  else if (new Date(`${mv[3]}-${mv[2]}-${mv[1]}T23:59:59-04:00`).getTime() < Date.now()) {
+    faltas.push(`secuencias vigentes (el vencimiento ${cfg.fecha_vencimiento_secuencia} ya pasó)`);
+  }
+
+  const { data: secs } = await supabase.from("ecf_secuencias")
+    .select("tipo_ecf, hasta, ultimo")
+    .eq("tenant_id", tenantId).eq("ambiente", "Produccion").eq("activo", true);
+  tipos = (secs || []).filter((x) => Number(x.ultimo || 0) < Number(x.hasta || 0)).map((x) => x.tipo_ecf).sort();
+  if (!tipos.includes("32")) faltas.push("la secuencia de PRODUCCIÓN E32 (consumo) con números disponibles (cárgala en «Secuencias e-NCF autorizadas»)");
+  for (const [t, txt] of SECUENCIAS_AVISO) if (!tipos.includes(t)) avisos.push(`sin secuencia ${txt}`);
+  }
+
+  let cert = null, privateKey = null;
+  try {
+    const p = await loadAndParseP12(supabase, cfg);
+    cert = p.cert; privateKey = p.privateKey;
+    const vence = p.metadata?.valid_to ? new Date(p.metadata.valid_to) : null;
+    if (p.metadata?.self_signed) faltas.push("un certificado de una entidad autorizada (el cargado es de prueba, auto-firmado)");
+    else if (vence && vence < new Date()) faltas.push(`un certificado vigente (venció el ${vence.toISOString().slice(0, 10)})`);
+  } catch (e) {
+    faltas.push(`un certificado que abra con su contraseña (${String(e?.message || e).slice(0, 120)})`);
+  }
+  // Lo que de verdad dice si la DGII nos deja entrar: autenticar en producción.
+  if (cert && !faltas.length) {
+    try { await authenticate(cert, privateKey, "Produccion"); }
+    catch (e) { faltas.push(`que la DGII de producción acepte el certificado (${String(e?.message || e).slice(0, 160)}). ¿La empresa ya terminó la certificación?`); }
+  }
+  return { faltas, avisos, tipos };
+}
+
+// antes = { modo, ambiente, activo } de la fila como estaba.
+// revisarCert = se está subiendo un certificado nuevo (con la empresa ya en
+// producción también se revisa: uno malo dejaría todas las ventas sin e-CF).
+async function aplicarModoSegunAmbiente(supabase, tenantId, integId, configIn, antes, revisarCert = false) {
+  const config = { ...configIn };
+  const yaEnProduccion = antes?.modo === "produccion";
+  const activoAntes = antes?.activo ?? true;
+  const guardar = async (cfg, modo, activo) => {
+    const { data: upd, error } = await supabase.from("integraciones_fiscales")
+      .update({ config: cfg, modo, activo, updated_at: new Date().toISOString() })
+      .eq("id", integId).select("id");
+    if (error) throw new Error(`Error guardando config: ${error.message}`);
+    if (!upd?.length) throw new Error("No se guardó la configuración (0 filas)");
+  };
+
+  if (config.ambiente !== "Produccion") {
+    await guardar(config, "pruebas", activoAntes);
+    return { ok: true, modo: "pruebas", encendida: false };
+  }
+
+  const encendida = !yaEnProduccion;
+  let tipos: string[] = [];
+  // Una empresa que ya emite no se revisa (ni se apaga) por guardar otro dato.
+  let avisos: string[] = [];
+  if (encendida || revisarCert) {
+    const r = await requisitosProduccion(supabase, tenantId, config, !encendida);
+    if (r.faltas.length) {
+      const motivo = "Falta: " + r.faltas.join("; ") + ".";
+      if (yaEnProduccion) {
+        // Certificado nuevo malo con la empresa emitiendo: no se toca nada.
+        return { ok: false, error: `No se cambió el certificado; se sigue usando el anterior. ${motivo}` };
+      }
+      const previo = antes?.ambiente && antes.ambiente !== "Produccion" ? antes.ambiente : "CerteCF";
+      await guardar({ ...configIn, ambiente: previo }, "pruebas", activoAntes);
+      return { ok: true, modo: "pruebas", encendida: false, rechazo: `Datos guardados, pero sigue en pruebas. ${motivo}` };
+    }
+    tipos = r.tipos;
+    avisos = r.avisos;
+  }
+  config.callback_url ||= `${Deno.env.get("SUPABASE_URL")}/functions/v1/dgii-callback`;
+  if (encendida) config.produccion_desde = new Date().toISOString();
+  await guardar(config, "produccion", encendida ? true : activoAntes);
+  return { ok: true, modo: "produccion", encendida, tipos, avisos };
 }
 
 // ============================================================
@@ -362,15 +471,19 @@ const MAX_INTENTOS_ECF = 6;
 async function reintentarPendientesDgii(supabase) {
   const resumen = { candidatas: 0, emitidas: [], fallidas: [] };
   const { data: integs } = await supabase
-    .from("integraciones_fiscales").select("tenant_id")
+    .from("integraciones_fiscales").select("tenant_id, config")
     .eq("proveedor", "dgii_directo").eq("activo", true).eq("modo", "produccion");
   let restantes = 10;
-  for (const { tenant_id } of integs || []) {
+  for (const { tenant_id, config } of integs || []) {
     if (restantes <= 0) break;
+    // (04/11/2026) Lo vendido antes de encender producción ya se entregó sin
+    // comprobante: la cola no lo toca (config.produccion_desde).
+    const hace72 = Date.now() - 72 * 3600000;
+    const corte = Date.parse(config?.produccion_desde || "") || 0;
     const { data: facts } = await supabase
       .from("facturas").select("id, numero, usuario_id, created_at")
       .eq("tenant_id", tenant_id).is("ncf", null).neq("estado", "ANULADA").eq("es_saldo_inicial", false)
-      .gte("created_at", new Date(Date.now() - 72 * 3600000).toISOString())
+      .gte("created_at", new Date(Math.max(hace72, corte)).toISOString())
       .lte("created_at", new Date(Date.now() - 3 * 60000).toISOString())
       .order("created_at", { ascending: true }).limit(30);
     if (!facts?.length) continue;
@@ -1270,39 +1383,82 @@ Deno.serve(async (req) => {
       // Upsert en integraciones_fiscales (una fila por tenant + proveedor)
       const { data: existente } = await supabase
         .from("integraciones_fiscales")
-        .select("id")
+        .select("id, modo, activo, config")
         .eq("tenant_id", tenantId)
         .eq("proveedor", "dgii_directo")
         .maybeSingle();
+      // Lo que ya tenía (dirección, produccion_desde...) se conserva; un campo
+      // dejado en blanco no borra el guardado. La metadata era del certificado viejo.
+      if (existente?.config) {
+        for (const [k, v] of Object.entries(existente.config)) {
+          if (config[k] == null && v != null && k !== "metadata") config[k] = v;
+        }
+      }
 
-      if (existente) {
-        const { error: updErr } = await supabase
-          .from("integraciones_fiscales")
-          .update({ config, activo: true, updated_at: new Date().toISOString() })
-          .eq("id", existente.id);
-        if (updErr) throw new Error(`Error guardando config: ${updErr.message}`);
-      } else {
-        const { error: insErr } = await supabase
+      let integId = existente?.id;
+      if (!integId) {
+        // Se crea en pruebas; si pidió Producción, aplicarModoSegunAmbiente
+        // revisa los requisitos y lo sube.
+        const { data: nueva, error: insErr } = await supabase
           .from("integraciones_fiscales")
           .insert({
             tenant_id: tenantId,
             proveedor: "dgii_directo",
-            config,
+            config: { ...config, ambiente: config.ambiente === "Produccion" ? "CerteCF" : config.ambiente },
             activo: true,
-          });
+            modo: "pruebas",
+          })
+          .select("id").single();
         if (insErr) throw new Error(`Error creando integracion: ${insErr.message}`);
+        integId = nueva.id;
       }
 
-      return new Response(JSON.stringify({ ok: true }), {
+      const antes = existente
+        ? { modo: existente.modo, ambiente: existente.config?.ambiente, activo: existente.activo }
+        : { modo: "pruebas", ambiente: "CerteCF", activo: true };
+      const r = await aplicarModoSegunAmbiente(supabase, tenantId, integId, config, antes, true);
+      // Un solo .p12 por empresa en el bucket: se borra el que sobra (el viejo
+      // si se aceptó el nuevo; el nuevo si se rechazó).
+      const pathViejo = existente?.config?.certificado_storage_path;
+      const sobra = r.ok ? (pathViejo && pathViejo !== storage_path ? pathViejo : null)
+                         : (storage_path !== pathViejo ? storage_path : null);
+      if (sobra) {
+        const { error: rmErr } = await supabase.storage.from("certificados-dgii").remove([sobra]);
+        if (rmErr) console.warn("[emitir-fiscal] no se pudo borrar el .p12 sobrante:", rmErr.message);
+      }
+      return new Response(JSON.stringify(r), {
         status: 200, headers: corsHeaders,
       });
     }
 
-    // ── ACTION: dgii_test_xml_generation ──
-    // DEV/QA: dado un factura_id existente, genera el XML del e-CF
-    // que se enviaria a DGII (sin firmar, sin enviar). Util para
-    // inspeccionar visualmente que el XML tiene la forma correcta
-    // antes de avanzar con firma y envio.
+    // ── ACTION: dgii_requisitos_produccion ── (04/11/2026) solo LEE: dice qué le
+    // falta a la empresa para pasar a Producción, sin cambiar nada.
+    if (action === "dgii_requisitos_produccion") {
+      const { data: integ } = await supabase.from("integraciones_fiscales")
+        .select("config, modo").eq("tenant_id", tenantId).eq("proveedor", "dgii_directo").maybeSingle();
+      if (!integ?.config) throw new Error("No hay configuracion DGII directo para este tenant");
+      const r = await requisitosProduccion(supabase, tenantId, integ.config);
+      return new Response(JSON.stringify({ ok: true, modo: integ.modo, listo: !r.faltas.length, ...r }), { status: 200, headers: corsHeaders });
+    }
+
+    // ── ACTION: dgii_activar ── (04/11/2026) volver a encender tras «Desactivar».
+    // Lo vendido mientras estuvo apagada no se emite: si está en producción,
+    // el corte de la cola pasa a ahora.
+    if (action === "dgii_activar") {
+      const { data: integ } = await supabase.from("integraciones_fiscales")
+        .select("id, config, modo").eq("tenant_id", tenantId).eq("proveedor", "dgii_directo").maybeSingle();
+      if (!integ?.id) throw new Error("No hay configuracion DGII directo para este tenant");
+      const config = integ.modo === "produccion"
+        ? { ...(integ.config || {}), produccion_desde: new Date().toISOString() }
+        : integ.config;
+      const { data: upd, error } = await supabase.from("integraciones_fiscales")
+        .update({ activo: true, config, updated_at: new Date().toISOString() })
+        .eq("id", integ.id).select("id");
+      if (error) throw new Error(error.message);
+      if (!upd?.length) throw new Error("No se activó (0 filas)");
+      return new Response(JSON.stringify({ ok: true, modo: integ.modo }), { status: 200, headers: corsHeaders });
+    }
+
     if (action === "dgii_update_config_meta") {
       const {
         rnc_emisor, nombre_emisor, ambiente, callback_url, fecha_vencimiento_secuencia,
@@ -1310,7 +1466,7 @@ Deno.serve(async (req) => {
       } = body;
       const { data: integ } = await supabase
         .from("integraciones_fiscales")
-        .select("id, config")
+        .select("id, config, modo, activo")
         .eq("tenant_id", tenantId)
         .eq("proveedor", "dgii_directo")
         .maybeSingle();
@@ -1328,17 +1484,19 @@ Deno.serve(async (req) => {
         fecha_vencimiento_secuencia: normalizeDgiiDate(fecha_vencimiento_secuencia),
       };
 
-      const { error: updErr } = await supabase
-        .from("integraciones_fiscales")
-        .update({ config, activo: true, updated_at: new Date().toISOString() })
-        .eq("id", integ.id);
-      if (updErr) throw new Error(`Error guardando config: ${updErr.message}`);
-
-      return new Response(JSON.stringify({ ok: true }), {
+      // El ambiente decide el modo; a Producción solo si cumple todo.
+      const r = await aplicarModoSegunAmbiente(supabase, tenantId, integ.id, config,
+        { modo: integ.modo, ambiente: integ.config?.ambiente, activo: integ.activo });
+      return new Response(JSON.stringify(r), {
         status: 200, headers: corsHeaders,
       });
     }
 
+    // ── ACTION: dgii_test_xml_generation ──
+    // DEV/QA: dado un factura_id existente, genera el XML del e-CF
+    // que se enviaria a DGII (sin firmar, sin enviar). Util para
+    // inspeccionar visualmente que el XML tiene la forma correcta
+    // antes de avanzar con firma y envio.
     if (action === "dgii_test_xml_generation") {
       const { factura_id, encf_override } = body;
       if (!factura_id) throw new Error("factura_id requerido");

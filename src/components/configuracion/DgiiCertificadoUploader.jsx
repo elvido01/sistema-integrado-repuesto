@@ -65,7 +65,7 @@ const AMBIENTES = [
   { value: 'Produccion', label: 'Produccion — Emision real' },
 ];
 
-const DgiiCertificadoUploader = () => {
+const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
   const { toast } = useToast();
   const { tenantId, empresa } = useAuth();
 
@@ -433,7 +433,9 @@ const DgiiCertificadoUploader = () => {
     setSaving(true);
     try {
       // 1. Subir el .p12 a Storage privado en path <tenant_id>/certificado.p12
-      const storagePath = `${tenantId}/certificado.p12`;
+      // (04/11/2026) Nombre propio por subida: si el servidor rechaza el nuevo
+      // (empresa ya en producción), el anterior sigue intacto y en uso.
+      const storagePath = `${tenantId}/certificado-${Date.now()}.p12`;
       const { error: upErr } = await supabase.storage
         .from('certificados-dgii')
         .upload(storagePath, file, { upsert: true, contentType: 'application/x-pkcs12' });
@@ -469,7 +471,7 @@ const DgiiCertificadoUploader = () => {
       }
       if (!data?.ok) throw new Error(data?.error || 'No se pudo guardar la config');
 
-      toast({ title: '✅ Certificado guardado', description: 'El .p12 quedo cifrado y la configuracion guardada correctamente.' });
+      avisarResultado(data, '✅ Certificado guardado');
       setFile(null);
       setPassword('');
       setReemplazando(false);
@@ -481,6 +483,24 @@ const DgiiCertificadoUploader = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Resultado de guardar (subir certificado o «Guardar datos»): el ambiente
+  // decide si la empresa emite de verdad; el servidor revisa los requisitos.
+  const avisarResultado = (data, tituloNormal) => {
+    const avisos = (data.avisos || []).length ? ` Ojo: ${data.avisos.join('; ')}.` : '';
+    if (data.rechazo) {
+      toast({ title: 'Sigue en pruebas', description: data.rechazo, variant: 'destructive', duration: 20000 });
+    } else if (data.encendida) {
+      toast({
+        title: '✅ Producción encendida',
+        description: `La DGII aceptó el certificado. Desde la próxima venta la web y la app móvil emiten e-CF reales (secuencias: ${(data.tipos || []).map((t) => 'E' + t).join(', ')}). Las ventas anteriores se quedan sin comprobante.${avisos}`,
+        duration: 20000,
+      });
+    } else {
+      toast({ title: tituloNormal, description: data.modo === 'produccion' ? 'Sigue en Producción.' : 'Sigue en pruebas: las ventas no gastan números reales.' });
+    }
+    onGuardado?.();
   };
 
   const handleSaveSettings = async () => {
@@ -509,7 +529,7 @@ const DgiiCertificadoUploader = () => {
       });
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error || 'No se pudo guardar la configuracion');
-      toast({ title: 'Configuracion guardada', description: 'Datos DGII actualizados sin reemplazar el certificado.' });
+      avisarResultado(data, 'Configuracion guardada');
       await fetchInfo();
     } catch (err) {
       toast({ title: 'Error', description: err.message || 'No se pudo guardar la configuracion.', variant: 'destructive' });

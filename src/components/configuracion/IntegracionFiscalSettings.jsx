@@ -66,9 +66,10 @@ const IntegracionFiscalSettings = () => {
 
   const proveedorInfo = PROVEEDORES.find(p => p.id === proveedor) || PROVEEDORES[0];
 
-  const fetchIntegracion = useCallback(async () => {
+  // silencioso: refrescar sin la rueda (no desmonta el formulario DGII).
+  const fetchIntegracion = useCallback(async (silencioso = false) => {
     if (!tenantId) return;
-    setLoading(true);
+    if (silencioso !== true) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('integraciones_fiscales')
@@ -214,6 +215,26 @@ const IntegracionFiscalSettings = () => {
     }
   };
 
+  // DGII Directo: volver a encender tras «Desactivar» (las ventas hechas
+  // mientras estuvo apagada no se emiten luego por la cola).
+  const handleActivarDgii = async () => {
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('emitir-fiscal', { body: { action: 'dgii_activar' } });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error || 'No se pudo activar');
+      await fetchIntegracion(true);
+      toast({
+        title: 'Facturación electrónica activada',
+        description: data.modo === 'produccion' ? 'Desde la próxima venta se emiten e-CF reales.' : 'En pruebas: las ventas no gastan números reales.',
+      });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -272,7 +293,7 @@ const IntegracionFiscalSettings = () => {
       {/* Para DGII Directo: usar el uploader especializado de .p12 */}
       {proveedor === 'dgii_directo' && (
         <>
-          <DgiiCertificadoUploader />
+          <DgiiCertificadoUploader onGuardado={() => fetchIntegracion(true)} />
           <DgiiSecuenciasEcf />
         </>
       )}
@@ -312,7 +333,8 @@ const IntegracionFiscalSettings = () => {
       </div>
       )}
 
-      {/* Modo */}
+      {/* Modo — en DGII Directo lo decide el Ambiente del bloque de arriba */}
+      {proveedor !== 'dgii_directo' && (<>
       <div className="space-y-1.5">
         <Label className="text-[11px] font-bold text-gray-700 uppercase">Modo</Label>
         <Select value={modo} onValueChange={setModo}>
@@ -341,9 +363,11 @@ const IntegracionFiscalSettings = () => {
           <span className="text-xs font-bold text-gray-700 uppercase">Activar facturación electrónica</span>
         </label>
       </div>
+      </>)}
 
       {/* Botones */}
       <div className="flex flex-wrap gap-2 pt-2">
+        {proveedor !== 'dgii_directo' && (<>
         <Button
           onClick={handleTestConnection}
           disabled={testing || saving}
@@ -362,6 +386,18 @@ const IntegracionFiscalSettings = () => {
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Guardar Integración
         </Button>
+        </>)}
+
+        {integracion?.proveedor === 'dgii_directo' && !activo && proveedor === 'dgii_directo' && (
+          <Button
+            onClick={handleActivarDgii}
+            disabled={saving}
+            className="gap-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            Activar
+          </Button>
+        )}
 
         {integracion && activo && (
           <Button

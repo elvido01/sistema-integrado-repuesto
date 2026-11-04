@@ -65,7 +65,7 @@
       "mobile/src/services/usuariosService.ts": 1,
       "supabase/functions/admin-management/index.ts": 2,
       "supabase/functions/dgii-callback/index.ts": 2,
-      "supabase/functions/emitir-fiscal/index.ts": 16,
+      "supabase/functions/emitir-fiscal/index.ts": 14,
       "supabase/functions/hermes-publication-bridge/index.ts": 2,
       "supabase/functions/ia-ceo-guia/index.ts": 4,
       "supabase/functions/meta-messages-webhook/index.ts": 2,
@@ -128,5 +128,5 @@
       "registrar_pago_prestamo"
     ]
   },
-  "actualizado": "2026-11-03"
+  "actualizado": "2026-11-04"
 }

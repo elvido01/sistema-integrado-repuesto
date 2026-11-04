@@ -304,13 +304,13 @@
     "src/components/compras/SuplidorVirtualMenu.jsx": "a99bc9d7b867d4a6",
     "src/components/configuracion/DgiiAprobacionComercialRunner.jsx": "d7ed6427407f6fde",
     "src/components/configuracion/DgiiCertificacionRunner.jsx": "ad60fe3cddd203e7",
-    "src/components/configuracion/DgiiCertificadoUploader.jsx": "0d8d12cb1d8089f4",
+    "src/components/configuracion/DgiiCertificadoUploader.jsx": "943ac6f537ae4d6e",
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
     "src/components/configuracion/DgiiRecepcionRunner.jsx": "1d70110142f92c7e",
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
     "src/components/configuracion/DgiiSecuenciasEcf.jsx": "8e721645f8743464",
     "src/components/configuracion/DgiiSimulacionRunner.jsx": "d00cb0b02e42771b",
-    "src/components/configuracion/IntegracionFiscalSettings.jsx": "382f634632485a7f",
+    "src/components/configuracion/IntegracionFiscalSettings.jsx": "153fb01d82243e60",
     "src/components/dashboard/FinancialAlert.jsx": "94f13ee0e3bbaa79",
     "src/components/dashboard/FinancialGoalCard.jsx": "bd663d1215fbf288",
     "src/components/financiera/NuevoPrestamoModal.jsx": "464bdb41702a35d7",
@@ -398,7 +398,7 @@
     "supabase/functions/emitir-fiscal/dgii_signer.ts": "3ab01a57d8c1f932",
     "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "eb3b11b495b8856b",
     "supabase/functions/emitir-fiscal/import_map.json": "3d5861c491100d4a",
-    "supabase/functions/emitir-fiscal/index.ts": "5949831e745b7ddf",
+    "supabase/functions/emitir-fiscal/index.ts": "13e16c068eb774d4",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
     "supabase/functions/motoflow-compras-advisor/index.ts": "e873b25160eded59",
     "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
@@ -509,6 +509,15 @@
         "src/pages/CuentasBancariasPage.jsx",
         "src/pages/OrdenCompraPage.jsx",
         "src/pages/PagoComisionesPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-04",
+      "nota": "code-review high x2 (20 hallazgos): ambiente decide modo; requisitos al encender (E32 obligatoria, E31/E34 y municipio como aviso); corte produccion_desde en la cola en vez de marcar docs; cert nuevo en produccion solo revisa cert y no pisa el viejo (nombre unico + borrado del sobrante); merge sin nulls ni metadata vieja; activo respetado + dgii_activar; avisos unificados y refresco silencioso. Pendiente menor: el .p12 se abre 2 veces al guardar",
+      "archivos": [
+        "src/components/configuracion/DgiiCertificadoUploader.jsx",
+        "src/components/configuracion/IntegracionFiscalSettings.jsx",
+        "supabase/functions/emitir-fiscal/index.ts"
       ]
     }
   ]
