@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { FileText, Minus, Plus, PlusCircle, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import { useCartStore } from '@/src/store/useCartStore';
+import { useCartStore, claveLinea } from '@/src/store/useCartStore';
 import { supabase } from '@/src/supabase/client';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatFechaDMY } from '@/src/utils/formatDate';
@@ -41,12 +41,15 @@ export default function OrdenCompraScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
-    items,
+    items: todosItems,
     addItem,
     removeItem,
     updateQuantity,
     clearCart,
   } = useCartStore();
+  // El carrito es el mismo del POS: las líneas de servicio escritas a mano no
+  // se compran, así que la orden no las ve ni las graba.
+  const items = useMemo(() => todosItems.filter((i) => !i.lineaId), [todosItems]);
 
   const [loading, setLoading] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
@@ -478,7 +481,7 @@ export default function OrdenCompraScreen() {
 
       <FlatList
         data={items}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => claveLinea(item)}
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 250, 250) }}
         ListEmptyComponent={
           <View className="items-center justify-center px-8 py-16">
@@ -523,14 +526,14 @@ export default function OrdenCompraScreen() {
                   <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden">
                     <TouchableOpacity
                       className="bg-gray-50 p-2 active:bg-gray-200"
-                      onPress={() => (item.cantidad > 1 ? updateQuantity(item.id, item.cantidad - 1) : removeItem(item.id))}
+                      onPress={() => (item.cantidad > 1 ? updateQuantity(claveLinea(item), item.cantidad - 1) : removeItem(claveLinea(item)))}
                     >
                       <Minus color="#4b5563" size={16} />
                     </TouchableOpacity>
                     <Text className="font-bold px-4">{item.cantidad}</Text>
                     <TouchableOpacity
                       className="bg-gray-50 p-2 active:bg-gray-200"
-                      onPress={() => updateQuantity(item.id, item.cantidad + 1)}
+                      onPress={() => updateQuantity(claveLinea(item), item.cantidad + 1)}
                     >
                       <Plus color="#4b5563" size={16} />
                     </TouchableOpacity>

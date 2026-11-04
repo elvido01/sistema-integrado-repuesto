@@ -5,7 +5,18 @@ export interface CartItem extends Producto {
   cantidad: number;
   precioSeleccionado: number;
   descuento: number;
+  // Línea de servicio escrita a mano (descripción y monto propios). Varias
+  // líneas cuelgan del mismo producto (SERVICIO GENERAL), así que no se
+  // juntan por id: cada una tiene su lineaId.
+  lineaId?: string;
+  naturaleza?: 'bien' | 'servicio' | 'inmueble' | null;
 }
+
+// La llave de una línea del carrito: su lineaId si es de servicio, si no el producto.
+export const claveLinea = (i: Pick<CartItem, 'id' | 'lineaId'>) => i.lineaId || i.id;
+const esLinea = (i: CartItem, clave: string) => (i.lineaId ? i.lineaId === clave : i.id === clave);
+let seqLinea = 0;
+export const nuevaLineaId = () => `serv_${Date.now()}_${seqLinea++}`;
 
 interface CartState {
   items: CartItem[];
@@ -16,7 +27,16 @@ interface CartState {
   cotizacionOrigenNumero: string | number | null;
   pedidoOrigenId: string | null;
   pedidoOrigenNumero: string | number | null;
-  addItem: (producto: Producto, cantidad?: number, tipoPrecio?: 1 | 2 | 3 | 4) => void;
+  // `extra` lo pasan cotizaciones y pedidos al volver a cargar su detalle: una
+  // línea de servicio o inmueble entra suelta (con su lineaId y su descuento),
+  // no se junta con otra del mismo producto.
+  addItem: (
+    producto: Producto,
+    cantidad?: number,
+    tipoPrecio?: 1 | 2 | 3 | 4,
+    extra?: { naturaleza?: string | null; descuento?: number },
+  ) => void;
+  addLineaServicio: (linea: CartItem) => void;
   removeItem: (productoId: string) => void;
   updateQuantity: (productoId: string, cantidad: number) => void;
   updateDiscount: (productoId: string, descuento: number) => void;
@@ -39,9 +59,25 @@ export const useCartStore = create<CartState>((set, get) => ({
   pedidoOrigenId: null,
   pedidoOrigenNumero: null,
 
-  addItem: (producto, cantidad = 1, tipoPrecio = 1) => {
+  addItem: (producto, cantidad = 1, tipoPrecio = 1, extra) => {
     const items = get().items;
-    const existingItem = items.find(i => i.id === producto.id);
+    const nat = extra?.naturaleza;
+    if (nat === 'servicio' || nat === 'inmueble') {
+      set({
+        items: [...items, {
+          ...producto,
+          lineaId: nuevaLineaId(),
+          naturaleza: nat,
+          // El inmueble no lleva ITBIS (igual que la web), diga lo que diga la ficha.
+          itbis_pct: nat === 'inmueble' ? 0 : producto.itbis_pct,
+          cantidad,
+          precioSeleccionado: producto.precio_venta_1,
+          descuento: Number(extra?.descuento || 0),
+        }],
+      });
+      return;
+    }
+    const existingItem = items.find(i => i.id === producto.id && !i.lineaId);
 
     let precio = producto.precio_venta_1;
     if (tipoPrecio === 2) precio = producto.precio_venta_2;
@@ -51,7 +87,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     if (existingItem) {
       set({
         items: items.map(i =>
-          i.id === producto.id
+          i.id === producto.id && !i.lineaId
             ? { ...i, cantidad: i.cantidad + cantidad }
             : i
         )
@@ -61,14 +97,17 @@ export const useCartStore = create<CartState>((set, get) => ({
     }
   },
 
-  removeItem: (productoId) => set({ items: get().items.filter(i => i.id !== productoId) }),
+  addLineaServicio: (linea) => set({ items: [...get().items, linea] }),
 
+  removeItem: (clave) => set({ items: get().items.filter(i => !esLinea(i, clave)) }),
+
+  // Una línea de servicio es un monto: su cantidad no se cambia con +/-.
   updateQuantity: (productoId, cantidad) => set({
-    items: get().items.map(i => i.id === productoId ? { ...i, cantidad } : i)
+    items: get().items.map(i => esLinea(i, productoId) && !i.lineaId ? { ...i, cantidad } : i)
   }),
 
   updateDiscount: (productoId, descuento) => set({
-    items: get().items.map(i => i.id === productoId ? { ...i, descuento } : i)
+    items: get().items.map(i => esLinea(i, productoId) ? { ...i, descuento } : i)
   }),
 
   setCliente: (id, nombre, telefono) => set({ clienteId: id, clienteNombre: nombre, clienteTelefono: telefono }),

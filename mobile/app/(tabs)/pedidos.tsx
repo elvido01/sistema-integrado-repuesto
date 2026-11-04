@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { CreditCard, FileText, ListOrdered, Minus, Pencil, Plus, PlusCircle, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import { useCartStore } from '@/src/store/useCartStore';
+import { useCartStore, claveLinea } from '@/src/store/useCartStore';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { supabase } from '@/src/supabase/client';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -267,7 +267,7 @@ export default function PedidosScreen() {
     try {
       const { data: detalles, error } = await supabase
         .from('pedidos_detalle')
-        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct)')
+        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct, naturaleza)')
         .eq('pedido_id', pedido.id);
 
       if (error) throw error;
@@ -298,7 +298,7 @@ export default function PedidosScreen() {
           url_imagen: producto.imagen_url || undefined,
         };
 
-        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1);
+        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1, { naturaleza: producto.naturaleza, descuento: Number(detalle.descuento || 0) });
         if (Number(detalle.descuento || 0) > 0) {
           updateDiscount(detalle.producto_id, Number(detalle.descuento || 0));
         }
@@ -324,7 +324,7 @@ export default function PedidosScreen() {
     try {
       const { data: detalles, error } = await supabase
         .from('pedidos_detalle')
-        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct)')
+        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct, naturaleza)')
         .eq('pedido_id', pedido.id);
 
       if (error) throw error;
@@ -355,7 +355,7 @@ export default function PedidosScreen() {
           url_imagen: producto.imagen_url || undefined,
         };
 
-        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1);
+        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1, { naturaleza: producto.naturaleza, descuento: Number(detalle.descuento || 0) });
         if (Number(detalle.descuento || 0) > 0) {
           updateDiscount(detalle.producto_id, Number(detalle.descuento || 0));
         }
@@ -529,7 +529,7 @@ export default function PedidosScreen() {
 
       <FlatList
         data={items}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => claveLinea(item)}
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 270, 270) }}
         ListEmptyComponent={
           <View className="items-center justify-center px-8 py-16">
@@ -564,14 +564,14 @@ export default function PedidosScreen() {
                   <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden">
                     <TouchableOpacity
                       className="bg-gray-50 p-2 active:bg-gray-200"
-                      onPress={() => (item.cantidad > 1 ? updateQuantity(item.id, item.cantidad - 1) : removeItem(item.id))}
+                      onPress={() => (item.cantidad > 1 ? updateQuantity(claveLinea(item), item.cantidad - 1) : removeItem(claveLinea(item)))}
                     >
                       <Minus color="#4b5563" size={16} />
                     </TouchableOpacity>
                     <Text className="font-bold px-4">{item.cantidad}</Text>
                     <TouchableOpacity
                       className="bg-gray-50 p-2 active:bg-gray-200"
-                      onPress={() => updateQuantity(item.id, item.cantidad + 1)}
+                      onPress={() => updateQuantity(claveLinea(item), item.cantidad + 1)}
                     >
                       <Plus color="#4b5563" size={16} />
                     </TouchableOpacity>

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, ScrollView, Modal, Platform } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FileText, PlusCircle, Search, Trash2, Plus, Minus, Pencil, Share2, X, RefreshCw, CreditCard } from 'lucide-react-native';
-import { useCartStore } from '@/src/store/useCartStore';
+import { useCartStore, claveLinea } from '@/src/store/useCartStore';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { supabase } from '@/src/supabase/client';
 import ViewShot, { captureRef } from 'react-native-view-shot';
@@ -242,7 +242,7 @@ export default function CotizacionesScreen() {
     try {
       const { data: detalles, error } = await supabase
         .from('cotizaciones_detalle')
-        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct)')
+        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct, naturaleza)')
         .eq('cotizacion_id', cotizacion.id);
 
       if (error) throw error;
@@ -273,7 +273,7 @@ export default function CotizacionesScreen() {
           url_imagen: producto.imagen_url || undefined,
         };
 
-        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1);
+        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1, { naturaleza: producto.naturaleza, descuento: Number(detalle.descuento_valor || 0) });
         if (Number(detalle.descuento_valor || 0) > 0) {
           updateDiscount(detalle.producto_id, Number(detalle.descuento_valor || 0));
         }
@@ -299,7 +299,7 @@ export default function CotizacionesScreen() {
     try {
       const { data: detalles, error } = await supabase
         .from('cotizaciones_detalle')
-        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct)')
+        .select('*, productos(id, codigo, descripcion, referencia, imagen_url, itbis_pct, naturaleza)')
         .eq('cotizacion_id', cotizacion.id);
 
       if (error) throw error;
@@ -329,7 +329,7 @@ export default function CotizacionesScreen() {
           url_imagen: producto.imagen_url || undefined,
         };
 
-        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1);
+        addItem(productoParaVenta, Number(detalle.cantidad || 1), 1, { naturaleza: producto.naturaleza, descuento: Number(detalle.descuento_valor || 0) });
         if (Number(detalle.descuento_valor || 0) > 0) {
           updateDiscount(detalle.producto_id, Number(detalle.descuento_valor || 0));
         }
@@ -506,7 +506,7 @@ export default function CotizacionesScreen() {
 
       <FlatList
         data={items}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => claveLinea(item)}
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 250, 250) }}
         ListEmptyComponent={
           <View className="items-center justify-center px-8 py-16">
@@ -541,14 +541,14 @@ export default function CotizacionesScreen() {
                   <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden">
                     <TouchableOpacity
                       className="bg-gray-50 p-2 active:bg-gray-200"
-                      onPress={() => (item.cantidad > 1 ? updateQuantity(item.id, item.cantidad - 1) : removeItem(item.id))}
+                      onPress={() => (item.cantidad > 1 ? updateQuantity(claveLinea(item), item.cantidad - 1) : removeItem(claveLinea(item)))}
                     >
                       <Minus color="#4b5563" size={16} />
                     </TouchableOpacity>
                     <Text className="font-bold px-4">{item.cantidad}</Text>
                     <TouchableOpacity
                       className="bg-gray-50 p-2 active:bg-gray-200"
-                      onPress={() => updateQuantity(item.id, item.cantidad + 1)}
+                      onPress={() => updateQuantity(claveLinea(item), item.cantidad + 1)}
                     >
                       <Plus color="#4b5563" size={16} />
                     </TouchableOpacity>

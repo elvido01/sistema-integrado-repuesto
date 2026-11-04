@@ -22,6 +22,8 @@ type EmpresaConfig = {
   email?: string | null;
   logo_url?: string | null;
   formato_factura?: string | null;
+  // repuestos | dealer | financiera | servicios | inmobiliaria
+  tipo_negocio?: string | null;
 };
 
 interface AuthState {
@@ -80,7 +82,7 @@ async function fetchProfileAndEmpresa(userId: string) {
   if (tenantId) {
     const { data, error } = await supabase
       .from('config_empresa')
-      .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura')
+      .select('nombre, razon_social, rnc, direccion1, direccion2, telefono, email, logo_url, formato_factura, tipo_negocio')
       .eq('tenant_id', tenantId)
       .maybeSingle();
 

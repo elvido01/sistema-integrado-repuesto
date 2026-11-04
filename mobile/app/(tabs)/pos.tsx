@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Platform, KeyboardAvoidingView, Keyboard } from 'react-native';
-import { useCartStore } from '@/src/store/useCartStore';
+import { useCartStore, claveLinea } from '@/src/store/useCartStore';
+import ServicioLineaModal from '@/src/components/ServicioLineaModal';
 import { Trash2, Plus, Minus, Search, User, CreditCard, ShoppingCart, PlusCircle, Share2, X, Printer } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/src/store/useAuthStore';
@@ -60,7 +61,12 @@ export default function POSScreen() {
     cotizacionOrigenNumero,
     pedidoOrigenId,
     pedidoOrigenNumero,
+    addLineaServicio,
   } = useCartStore();
+  // (04/11/2026) Servicios e inmobiliarias facturan líneas de servicio con
+  // descripción y monto propios (igual que la web), además de productos.
+  const esServicios = ['servicios', 'inmobiliaria'].includes(String(empresa?.tipo_negocio || ''));
+  const [servicioOpen, setServicioOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   // `disabled={loading}` llega un render tarde: dos toques seguidos en Cobrar
   // alcanzaban a grabar dos facturas (FT-3906 y FT-3907, 10/09/2026, 1 minuto).
@@ -297,7 +303,8 @@ export default function POSScreen() {
       //    Si falla NO se lanza: la factura ya existe y un "Error" invitaría
       //    a cobrar otra vez.
       const movimientos = lineasCalculadas
-        .filter(({ item }) => item.id)
+        // Un servicio no mueve inventario; un inmueble sí sale (igual que en la web).
+        .filter(({ item }) => item.id && !(item.lineaId && item.naturaleza === 'servicio'))
         .map(({ item, totals }) => ({
           tenant_id: tenantId,
           producto_id: item.id,
@@ -459,7 +466,7 @@ export default function POSScreen() {
     t += `Tel.    : ${f.clienteTel || 'N/A'}\n`;
     t += '\n';
     t += sep + '\n';
-    t += 'Descripcion de la Mercancia\n';
+    t += (esServicios ? 'Descripcion' : 'Descripcion de la Mercancia') + '\n';
     t += sep + '\n';
     t += columnsHeader + '\n';
     t += sep + '\n';
@@ -575,17 +582,28 @@ export default function POSScreen() {
 
       <FlatList
         data={items}
-        keyExtractor={item => item.id}
+        keyExtractor={item => claveLinea(item)}
         ListEmptyComponent={
           <View className="flex-1 justify-center items-center p-10 mt-20">
             <ShoppingCart color="#d1d5db" size={64} />
-            <Text className="text-gray-400 text-lg mt-4 text-center">No hay productos en el carrito</Text>
+            <Text className="text-gray-400 text-lg mt-4 text-center">
+              {esServicios ? 'La factura está vacía' : 'No hay productos en el carrito'}
+            </Text>
+            {esServicios ? (
+              <TouchableOpacity
+                className="mt-6 bg-brand px-6 py-3 rounded-full flex-row items-center"
+                onPress={() => setServicioOpen(true)}
+              >
+                <PlusCircle color="white" size={20} />
+                <Text className="text-white font-medium ml-2">Agregar servicio</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
-              className="mt-6 bg-brand px-6 py-3 rounded-full flex-row items-center"
+              className={`${esServicios ? 'mt-3 bg-gray-100' : 'mt-6 bg-brand'} px-6 py-3 rounded-full flex-row items-center`}
               onPress={() => router.push('/(tabs)/catalogo?modo=venta')}
             >
-              <Search color="white" size={20} className="mr-2" />
-              <Text className="text-white font-medium">Buscar Productos</Text>
+              <Search color={esServicios ? '#1d4ed8' : 'white'} size={20} className="mr-2" />
+              <Text className={`${esServicios ? 'text-brand' : 'text-white'} font-medium`}>Buscar Productos</Text>
             </TouchableOpacity>
           </View>
         }
@@ -601,21 +619,31 @@ export default function POSScreen() {
                 <Text className="text-gray-900 font-bold text-lg mb-2">
                   RD${(item.precioSeleccionado * item.cantidad).toLocaleString()}
                 </Text>
-                <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden">
-                  <TouchableOpacity 
-                    className="bg-gray-50 p-2 active:bg-gray-200"
-                    onPress={() => item.cantidad > 1 ? updateQuantity(item.id, item.cantidad - 1) : removeItem(item.id)}
+                {item.lineaId ? (
+                  // Línea de servicio: un monto, sin cantidad. Solo se quita.
+                  <TouchableOpacity
+                    className="bg-gray-50 border border-gray-200 rounded-lg p-2 active:bg-gray-200"
+                    onPress={() => removeItem(claveLinea(item))}
                   >
-                    <Minus color="#4b5563" size={16} />
+                    <Trash2 color="#ef4444" size={16} />
                   </TouchableOpacity>
-                  <Text className="font-bold px-4">{item.cantidad}</Text>
-                  <TouchableOpacity 
-                    className="bg-gray-50 p-2 active:bg-gray-200"
-                    onPress={() => updateQuantity(item.id, item.cantidad + 1)}
-                  >
-                    <Plus color="#4b5563" size={16} />
-                  </TouchableOpacity>
-                </View>
+                ) : (
+                  <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden">
+                    <TouchableOpacity
+                      className="bg-gray-50 p-2 active:bg-gray-200"
+                      onPress={() => item.cantidad > 1 ? updateQuantity(claveLinea(item), item.cantidad - 1) : removeItem(claveLinea(item))}
+                    >
+                      <Minus color="#4b5563" size={16} />
+                    </TouchableOpacity>
+                    <Text className="font-bold px-4">{item.cantidad}</Text>
+                    <TouchableOpacity
+                      className="bg-gray-50 p-2 active:bg-gray-200"
+                      onPress={() => updateQuantity(claveLinea(item), item.cantidad + 1)}
+                    >
+                      <Plus color="#4b5563" size={16} />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             </View>
           </View>
@@ -627,6 +655,16 @@ export default function POSScreen() {
           className="bg-white border-t border-gray-200 px-4 pt-4"
           style={{ paddingBottom: Math.max(insets.bottom + 16, 24), marginBottom: keyboardBottomInset }}
         >
+          {esServicios ? (
+            <TouchableOpacity
+              className="bg-blue-50 border border-blue-200 py-3 rounded-xl flex-row justify-center items-center mb-2"
+              onPress={() => setServicioOpen(true)}
+            >
+              <PlusCircle color="#1d4ed8" size={20} />
+              <Text className="text-brand font-bold ml-2">+ Agregar servicio</Text>
+            </TouchableOpacity>
+          ) : null}
+
           {/* Boton para seguir agregando */}
           <TouchableOpacity
             className="bg-gray-100 py-3 rounded-xl flex-row justify-center items-center mb-3"
@@ -695,6 +733,14 @@ export default function POSScreen() {
       )}
 
       <ClientePickerModal visible={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={elegirCliente} />
+
+      {esServicios ? (
+        <ServicioLineaModal
+          visible={servicioOpen}
+          onClose={() => setServicioOpen(false)}
+          onAgregar={(linea) => { addLineaServicio(linea); setServicioOpen(false); }}
+        />
+      ) : null}
 
       {/* Modal: factura POS al finalizar venta */}
       <Modal

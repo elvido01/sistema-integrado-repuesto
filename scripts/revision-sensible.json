@@ -1,8 +1,8 @@
 {
   "huellas": {
     "mobile/app/(tabs)/existencia.tsx": "03d0199fde9d48b7",
-    "mobile/app/(tabs)/orden-compra.tsx": "106721884dbe917e",
-    "mobile/app/(tabs)/pos.tsx": "af1a77e2401e7b8b",
+    "mobile/app/(tabs)/orden-compra.tsx": "afb0fe45e511582d",
+    "mobile/app/(tabs)/pos.tsx": "2c717fdf40d3f06d",
     "mobile/app/(tabs)/recibo-ingreso.tsx": "5a2d47c165dc6679",
     "mobile/app/(tabs)/recibo-pago-financiera.tsx": "6d2c015654ac5900",
     "mobile/app/existencia/index.tsx": "a2cbc70f80c67ea7",
@@ -486,6 +486,14 @@
       "nota": "code-review high: 9 hallazgos; arreglados formas con monto 0, nombres unificados (Tarjeta de Crédito/Crédito) en un solo helper, STABLE en vez de IMMUTABLE, NCF de respaldo, columna PDF mas ancha; sin recibos de prestamo sin amarre ni tipo_pago MOVIL en prod; grants previos eran solo authenticated/service_role",
       "archivos": [
         "sql/transacciones_comentario_y_forma_pago.sql"
+      ]
+    },
+    {
+      "fecha": "2026-11-04",
+      "nota": "code-review high: 10 hallazgos; arreglados lineas de servicio que se fundian al pasar por cotizacion/pedido (addItem con naturaleza), inmueble sale del inventario, ITBIS 0 del inmueble al recargar, orden de compra ignora servicios, cantidad fija en lineas de servicio, cambio de servicio reemplaza desc/monto, recarga por apertura con tenant_id y aviso si falla el catalogo",
+      "archivos": [
+        "mobile/app/(tabs)/orden-compra.tsx",
+        "mobile/app/(tabs)/pos.tsx"
       ]
     }
   ]
