@@ -145,6 +145,8 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       marca_id: p.marca_id?.toString() || (p.marca?.id ? String(p.marca.id) : null),
       modelos_ids: p.modelos_ids || (p.modelo_id ? [p.modelo_id] : []),
       medida: p.medida || '',
+      // Si quien abre la ficha ya trajo la columna se usa; si no, la lee ProductBasicInfo.
+      ...(typeof p.solo_por_encargo === 'boolean' && { solo_por_encargo: p.solo_por_encargo }),
       naturaleza: p.naturaleza || 'bien',
       servicio_tipo: p.servicio_tipo || null,
       datos_inmueble: p.datos_inmueble || null,
@@ -352,7 +354,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
 
     const { chasis, motor, color, anio, condicion, placa, matricula, kilometraje,
             ecommerce_visible, ecommerce_slug, ecommerce_descripcion, ecommerce_orden,
-            medida, naturaleza, servicio_tipo, datos_inmueble, ...restFormData } = formData;
+            medida, naturaleza, servicio_tipo, datos_inmueble, solo_por_encargo, ...restFormData } = formData;
     const esInmueble = naturaleza === 'inmueble';
     const cleanedData = {
       ...restFormData,
@@ -381,7 +383,7 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
         ? 0 : (parseFloat(formData.itbis_pct) || 0.18),
       stock_mode: formData.stock_mode || 'auto',
       // Solo si se llegó a leer: si no, se quedaría en false una marca puesta.
-      ...(typeof formData.solo_por_encargo === 'boolean' && { solo_por_encargo: formData.solo_por_encargo }),
+      ...(typeof solo_por_encargo === 'boolean' && { solo_por_encargo }),
       ...(hasVehicleFields && {
         chasis: chasis || null,
         motor: motor || null,

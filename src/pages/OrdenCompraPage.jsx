@@ -2306,6 +2306,9 @@ const OrdenCompraPage = () => {
 
     if (
       detallesError
+      // Un CHECK que rechaza la decisión no es 'columna que falta': reintentar
+      // sin decisiones las borraría todas sin avisar.
+      && detallesError.code !== '23514'
       && (
         detallesError.message?.includes('decision_estado')
         || detallesError.message?.includes('decision_motivo')

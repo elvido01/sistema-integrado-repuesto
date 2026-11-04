@@ -206,7 +206,8 @@ const PagoComisionesPage = () => {
         p_porcentaje: esFijo ? 0 : porcentaje,
         p_total_comision: monto,
         p_forma_pago: formaPago,
-        p_banco: bancoPago || null,
+        // El banco solo va en transferencia: si se cambió a efectivo no se arrastra.
+        p_banco: formaPago === 'TRANSFERENCIA' ? (bancoPago || null) : null,
         p_referencia: referenciaPago || null,
         p_notas: (esFijo ? `${totales.unidades || 0} ${unidad?.corta || 'unidad'}(s) x RD$${formatCurrency(montoFijo)}${notasPago ? ` · ${notasPago}` : ''}` : notasPago) || null,
         p_factura_ids: comisiones.map(c => c.factura_id).filter(Boolean),
@@ -233,7 +234,7 @@ const PagoComisionesPage = () => {
         periodo_hasta: fechaHasta,
         forma_pago: formaPago,
         referencia: referenciaPago,
-        banco: bancoPago,
+        banco: formaPago === 'TRANSFERENCIA' ? bancoPago : '',
         total_comision: data?.monto,
       });
       setPagarOpen(false);

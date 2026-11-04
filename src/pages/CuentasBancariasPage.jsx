@@ -27,7 +27,7 @@ const ORIGEN_LABEL = {
   venta: 'Venta', recibo: 'Recibo', cierre_caja: 'Cierre de caja',
   pago_suplidor: 'Pago a suplidor', compromiso: 'Compromiso/gasto', san: 'Abono SAN', ajuste: 'Ajuste manual', transferencia_interna: 'Transferencia',
   san_completado: 'SAN completado', apertura: 'Apertura', ingreso: 'Ingreso', retiro: 'Retiro',
-  efectivo_caja: 'Efectivo de la caja',
+  efectivo_caja: 'Efectivo de la caja', comision: 'Pago de comisión', gasto: 'Gasto', desembolso: 'Desembolso',
 };
 
 const CUENTA_VACIA = { banco: '', alias: '', numero_cuenta: '', tipo: 'corriente', moneda: 'DOP', saldo_inicial: '0' };
@@ -40,6 +40,7 @@ const MODULOS = [
   { key: 'pago_suplidor', label: 'Pago a suplidores' },
   { key: 'compromiso', label: 'Compromisos / gastos' },
   { key: 'san', label: 'SAN (ahorro programado)' },
+  { key: 'comision', label: 'Pago de comisiones' },
 ];
 
 export default function CuentasBancariasPage() {
