@@ -22,6 +22,7 @@ import { printPagoCompromisoPOS } from '@/lib/printPOS';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { unidadComision } from '@/lib/comisionUnidad';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
+import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 
 const ROLES_ADMIN = ['admin', 'owner', 'manager', 'gerente'];
 
@@ -56,6 +57,7 @@ const PagoComisionesPage = () => {
   const [montoPagar, setMontoPagar] = useState('');
   const [formaPago, setFormaPago] = useState('EFECTIVO');
   const [bancoPago, setBancoPago] = useState('');
+  const [cuentaPago, setCuentaPago] = useState(null);
   const [referenciaPago, setReferenciaPago] = useState('');
   const [notasPago, setNotasPago] = useState('');
   const [pagando, setPagando] = useState(false);
@@ -183,13 +185,17 @@ const PagoComisionesPage = () => {
       return;
     }
     setMontoPagar(String(Math.round(totales.aPagar * 100) / 100));
-    setFormaPago('EFECTIVO'); setBancoPago(''); setReferenciaPago(''); setNotasPago('');
+    setFormaPago('EFECTIVO'); setBancoPago(''); setCuentaPago(null); setReferenciaPago(''); setNotasPago('');
     setPagarOpen(true);
   };
 
   const handlePagar = async () => {
     const monto = parseFloat(montoPagar) || 0;
     if (monto <= 0) { toast({ variant: 'destructive', title: 'Monto inválido' }); return; }
+    if (formaPago === 'TRANSFERENCIA' && !cuentaPago) {
+      toast({ variant: 'destructive', title: 'Falta la cuenta', description: 'Elija la cuenta bancaria de donde sale la transferencia.' });
+      return;
+    }
     setPagando(true);
     try {
       const { data, error } = await supabase.rpc('pagar_comision', {
@@ -204,6 +210,9 @@ const PagoComisionesPage = () => {
         p_referencia: referenciaPago || null,
         p_notas: (esFijo ? `${totales.unidades || 0} ${unidad?.corta || 'unidad'}(s) x RD$${formatCurrency(montoFijo)}${notasPago ? ` · ${notasPago}` : ''}` : notasPago) || null,
         p_factura_ids: comisiones.map(c => c.factura_id).filter(Boolean),
+        // Solo en transferencia: así el efectivo sigue funcionando aunque la
+        // base todavía no tenga sql/comision_transferencia_sale_del_banco.sql.
+        ...(formaPago === 'TRANSFERENCIA' && { p_cuenta_bancaria_id: cuentaPago }),
       });
       if (error) throw error;
       if (data?.pago_id) {
@@ -214,7 +223,7 @@ const PagoComisionesPage = () => {
       }
       toast({
         title: `💰 Comisión pagada — ${data?.numero}`,
-        description: `${currentVendedorName}: RD$ ${formatCurrency(data?.monto)} (${formaPago === 'EFECTIVO' ? 'efectivo, descontado de la caja del día' : 'transferencia, descontado de la caja actual'})`,
+        description: `${currentVendedorName}: RD$ ${formatCurrency(data?.monto)} (${formaPago === 'EFECTIVO' ? 'efectivo, descontado de la caja del día' : `transferencia, descontado de ${bancoPago || 'la cuenta bancaria'}`})`,
       });
       imprimirComprobantePago({
         numero: data?.numero,
@@ -545,15 +554,24 @@ const PagoComisionesPage = () => {
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-white">
                   <SelectItem value="EFECTIVO">Efectivo (descuenta de la caja del día)</SelectItem>
-                  <SelectItem value="TRANSFERENCIA">Transferencia (descuenta de la caja actual)</SelectItem>
+                  <SelectItem value="TRANSFERENCIA">Transferencia (descuenta de la cuenta bancaria)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {formaPago === 'TRANSFERENCIA' && (
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-xs font-bold">Banco</Label>
-                  <Input value={bancoPago} onChange={e => setBancoPago(e.target.value)} className="mt-1 h-8 text-xs" />
+                  {/* La transferencia sale de una cuenta, no de la caja: la base
+                      registra la salida en esa cuenta. El banco del comprobante
+                      se toma de la cuenta elegida. */}
+                  <CuentaBancariaSelect
+                    value={cuentaPago}
+                    onChange={setCuentaPago}
+                    onSelect={(c) => setBancoPago(c ? [c.banco, c.numero_cuenta].filter(Boolean).join(' ') : '')}
+                    moneda="DOP"
+                    contexto="comision"
+                    label="Sale de la cuenta"
+                  />
                 </div>
                 <div>
                   <Label className="text-xs font-bold">Referencia</Label>
