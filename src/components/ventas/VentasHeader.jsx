@@ -292,6 +292,11 @@ const VentasHeader = ({
             {/* Row 1: Comprobante */}
             <div className="grid grid-cols-4 gap-x-1.5 gap-y-1 items-center">
               <Label className="col-span-1 text-[10px] font-black text-gray-400 uppercase tracking-tight text-right">COMPROB:</Label>
+              {ncfPreview?.electronico ? (
+                <div className="col-span-3 h-5 text-[10px] font-bold border border-gray-300 bg-white flex items-center px-2 shadow-sm">
+                  {ncfPreview.nombre} <span className="ml-1 text-emerald-600">(ELECTRÓNICA)</span>
+                </div>
+              ) : (
               <Select value={cliente?.tipo_ncf || '02'}>
                 <SelectTrigger className="h-5 text-[10px] font-bold border-gray-300 rounded-none bg-white col-span-3 shadow-sm">
                   <SelectValue />
@@ -302,14 +307,20 @@ const VentasHeader = ({
                   <SelectItem value="14" className="text-xs font-semibold">B14 - ESPECIAL</SelectItem>
                 </SelectContent>
               </Select>
+              )}
 
               <Label className="col-span-1 text-[12px] font-black text-gray-300 uppercase tracking-tight text-right">NCF:</Label>
               <div className={`col-span-3 border h-5 text-[12px] font-mono font-bold flex items-center px-2 rounded-none ${
                 ncfPreview?.ncf
                   ? 'bg-yellow-50 border-yellow-400 text-yellow-700'
-                  : 'bg-slate-50 border-gray-200 text-slate-400'
-              }`}>
-                {ncfPreview?.ncf || '—'}
+                  : ncfPreview?.aviso
+                    ? 'bg-red-50 border-red-400 text-red-700'
+                    : 'bg-slate-50 border-gray-200 text-slate-400'
+              }`} title={ncfPreview?.quedan != null ? `Quedan ${ncfPreview.quedan} números en esta secuencia` : undefined}>
+                {ncfPreview?.ncf || ncfPreview?.aviso || '—'}
+                {ncfPreview?.quedan != null && ncfPreview.quedan <= 50 && (
+                  <span className="ml-auto text-[9px] font-sans text-orange-600">quedan {ncfPreview.quedan}</span>
+                )}
               </div>
 
               <Label className="col-span-1 text-[10px] font-black text-gray-400 uppercase tracking-tight text-right">VENDEDOR:</Label>

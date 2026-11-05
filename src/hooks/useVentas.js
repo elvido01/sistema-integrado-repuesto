@@ -338,9 +338,50 @@ export const useVentas = () => {
     }, 100);
   }, [items, currentItem, editingItemIndex]);
 
-  const loadNcfPreview = useCallback(async (tipoNcf = '02') => {
+  // Cliente actual, para recalcular el comprobante cuando cambia el modo fiscal.
+  const clienteRef = useRef(cliente);
+  useEffect(() => { clienteRef.current = cliente; }, [cliente]);
+  const pedidoPreviewRef = useRef(0);
+
+  const loadNcfPreview = useCallback(async (tipoNcf = '02', clienteVenta = null) => {
+    const pedido = ++pedidoPreviewRef.current;
+    const poner = (v) => { if (pedido === pedidoPreviewRef.current) setNcfPreview(v); };
+    // Facturación electrónica en producción: el comprobante es el e-NCF que
+    // pondrá emitir-fiscal. Mismo criterio que tipoEcfDeCliente del builder:
+    // E31 si tiene RNC/cédula válido y no está marcado consumo; si no, E32.
+    if (fiscalActivo && fiscalModo === 'produccion') {
+      try {
+        const doc = String(clienteVenta?.rnc || '').replace(/\D/g, '');
+        const rncValido = (doc.length === 9 || doc.length === 11) && !/^0+$/.test(doc);
+        // El tipo_ncf del cliente tal cual: vacío con RNC válido es E31 en el builder.
+        const tipoCli = String((clienteVenta ? clienteVenta.tipo_ncf : tipoNcf) || '').toUpperCase().replace(/^[BE]/, '');
+        const tipoEcf = !rncValido || tipoCli === '02' || tipoCli === '32' ? '32' : '31';
+        const { data: seq, error } = await supabase
+          .from('ecf_secuencias')
+          .select('serie, tipo_ecf, desde, hasta, ultimo')
+          .eq('tipo_ecf', tipoEcf)
+          .eq('ambiente', 'Produccion')
+          .eq('activo', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        const nombre = tipoEcf === '31' ? 'E31 - CRÉDITO FISCAL' : 'E32 - CONSUMO';
+        if (!seq) { poner({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `Sin secuencia E${tipoEcf}` }); return; }
+        // get_next_encf_empresa da siempre ultimo+1.
+        const siguiente = Number(seq.ultimo || 0) + 1;
+        if (siguiente < Number(seq.desde || 1)) { poner({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `E${tipoEcf} mal cargada (revisar secuencia)` }); return; }
+        if (siguiente > Number(seq.hasta)) { poner({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `E${tipoEcf} agotada` }); return; }
+        const quedan = Number(seq.hasta) - siguiente + 1;
+        poner({ ncf: `${seq.serie || 'E'}${tipoEcf}${String(siguiente).padStart(10, '0')}`, tipo_ncf: tipoEcf, electronico: true, nombre, quedan });
+      } catch (err) {
+        console.warn('No se pudo obtener preview e-NCF:', err.message);
+        poner({ ncf: null, electronico: true, nombre: 'e-CF', aviso: 'No se pudo leer la secuencia' });
+      }
+      return;
+    }
     if (!tipoNcf || tipoNcf === '00') {
-      setNcfPreview(null);
+      poner(null);
       return;
     }
     try {
@@ -359,18 +400,24 @@ export const useVentas = () => {
           ? seq.secuencia_desde
           : seq.ultimo_emitido + 1;
         const ncfCompleto = `${seq.serie}${seq.tipo_ncf}${String(siguiente).padStart(8, '0')}`;
-        setNcfPreview({ ncf: ncfCompleto, tipo_ncf: tipoNcf });
+        poner({ ncf: ncfCompleto, tipo_ncf: tipoNcf });
       } else {
-        setNcfPreview(null);
+        poner(null);
       }
     } catch (err) {
       console.warn('No se pudo obtener preview NCF:', err.message);
-      setNcfPreview(null);
+      poner(null);
     }
-  }, []);
+  }, [fiscalActivo, fiscalModo, tenantId]);
 
+  // Al abrir, al cambiar de empresa o de modo fiscal, con el cliente que esté
+  // puesto. Editando una factura no: esa ya tiene (o no) su comprobante.
+  const editandoRef = useRef(false);
+  useEffect(() => { editandoRef.current = !!editingFacturaId; }, [editingFacturaId]);
   useEffect(() => {
-    loadNcfPreview(CLIENTE_GENERICO.tipo_ncf);
+    if (editandoRef.current) return;
+    const c = clienteRef.current || CLIENTE_GENERICO;
+    loadNcfPreview(c.tipo_ncf || '02', c);
   }, [loadNcfPreview]);
 
   const resetVenta = useCallback(() => {
@@ -403,7 +450,7 @@ export const useVentas = () => {
     setNotas('');
     setCanalOrigen(CANAL_POR_DEFECTO);
     setPromoAplicada(null);
-    loadNcfPreview(CLIENTE_GENERICO.tipo_ncf);
+    loadNcfPreview(CLIENTE_GENERICO.tipo_ncf, CLIENTE_GENERICO);
   }, [loadNcfPreview]);
 
   // (15/10/2026) { repreciar: false } al cargar un pedido o una cotización:
@@ -426,7 +473,7 @@ export const useVentas = () => {
 
     // === Preview NCF: mostrar el próximo NCF sin consumirlo ===
     const tipoNcf = finalCliente.tipo_ncf || '02';
-    await loadNcfPreview(tipoNcf);
+    await loadNcfPreview(tipoNcf, finalCliente);
 
     // Re-apply price level to existing items when client changes
     if (!repreciar) return;

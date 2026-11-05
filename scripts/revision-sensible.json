@@ -336,11 +336,11 @@
     "src/components/ventas/ProductSearchModal.jsx": "8715b24d7a79c7a9",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "d41b7a5f356e2269",
-    "src/components/ventas/VentasHeader.jsx": "fa016ec64798b4fa",
+    "src/components/ventas/VentasHeader.jsx": "5f2e5eb96ffe733b",
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "ebde061c801d8299",
+    "src/hooks/useVentas.js": "34d5096e9d4a5d03",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -525,6 +525,14 @@
       "nota": "code-review high x2 sobre el refresco del modo fiscal: 1a version (consulta por venta en VentasPage) descartada por la revision (NCF de papel con modo viejo, espera extra); 2a: refrescarFiscal en el contexto (60 s visible, al volver, tras guardar + BroadcastChannel), guardia de respuestas viejas, no apaga si la empresa activa cambio, desactivar con select. Queda: otra PC tarda hasta 60 s en enterarse",
       "archivos": [
         "src/components/configuracion/IntegracionFiscalSettings.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-05",
+      "nota": "code-review high: 9 hallazgos en vista previa e-NCF; corregidos tipo E31/E32 igual al builder, siguiente=ultimo+1 con aviso fuera de rango, error visible, no recalcula editando, recarga al cambiar empresa. Sin corregir: bloquear guardar con secuencia agotada, helper compartido, estado cargando",
+      "archivos": [
+        "src/components/ventas/VentasHeader.jsx",
+        "src/hooks/useVentas.js"
       ]
     }
   ]
