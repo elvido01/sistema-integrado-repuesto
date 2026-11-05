@@ -206,10 +206,11 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
   }, [toast, createNewPresentation]);
 
   const resetForm = useCallback(() => {
-    // Caminero Motors: por defecto 0% ITBIS (vehículos de motor no llevan ITBIS en RD)
+    // Moto nueva: 18%, que es lo que siempre se guardó (antes la pantalla
+    // decía 0% pero el guardado lo convertía en 18%). El inmueble va en 0%.
     setFormData({
       ...initialFormData,
-      itbis_pct: hasVehicleFields || naturalezaPorDefecto === 'inmueble' ? 0 : 0.18,
+      itbis_pct: naturalezaPorDefecto === 'inmueble' ? 0 : 0.18,
       naturaleza: naturalezaPorDefecto,
       servicio_tipo: naturalezaPorDefecto === 'servicio' ? 'profesional' : null,
     });
@@ -376,11 +377,10 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
       garantia_meses: parseInt(formData.garantia_meses) || 0,
       min_stock: parseFloat(formData.min_stock) || 0,
       max_stock: parseFloat(formData.max_stock) || 0,
-      // El inmueble no lleva ITBIS. Lo demás queda como estaba (`|| 0.18`
-      // convierte un 0 en 18%; las motos de Caminero dependen de eso hoy).
-      // Un servicio exento (alquiler de vivienda) sí guarda su 0.
-      itbis_pct: esInmueble || (naturaleza === 'servicio' && parseFloat(formData.itbis_pct) === 0)
-        ? 0 : (parseFloat(formData.itbis_pct) || 0.18),
+      // Se guarda lo elegido (0% exento incluido). Solo un valor vacío cae en 18%.
+      // El inmueble no lleva ITBIS.
+      itbis_pct: esInmueble ? 0
+        : (Number.isFinite(parseFloat(formData.itbis_pct)) ? parseFloat(formData.itbis_pct) : 0.18),
       stock_mode: formData.stock_mode || 'auto',
       // Solo si se llegó a leer: si no, se quedaría en false una marca puesta.
       ...(typeof solo_por_encargo === 'boolean' && { solo_por_encargo }),
