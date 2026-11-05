@@ -69,7 +69,7 @@ const SuscripcionBlocker = () => {
                 <a href="tel:+18095551234" className="flex-1 flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg py-2.5 px-3 text-xs font-bold transition-colors border border-blue-200">
                   <Phone className="w-3.5 h-3.5" /> Llamar
                 </a>
-                <a href="mailto:soporte@motoflow.app" className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg py-2.5 px-3 text-xs font-bold transition-colors border border-indigo-200">
+                <a href="mailto:ventasmotoflow@gmail.com" className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg py-2.5 px-3 text-xs font-bold transition-colors border border-indigo-200">
                   <Mail className="w-3.5 h-3.5" /> Email
                 </a>
               </div>
