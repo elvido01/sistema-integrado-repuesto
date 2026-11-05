@@ -953,9 +953,7 @@ const TiendaPage = () => {
             {config?.logo_url ? (
               <img src={config.logo_url} alt={config.nombre} className="h-10 object-contain" />
             ) : (
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-500/20">
-                {config?.nombre?.charAt(0) || 'T'}
-              </div>
+              <img src="/logo-motoflow-icono.png" alt="MotoFlow" className="w-10 h-10 object-contain" />
             )}
             <div>
               <h1 className="text-base font-bold text-gray-900">{config?.nombre || 'Tienda'}</h1>

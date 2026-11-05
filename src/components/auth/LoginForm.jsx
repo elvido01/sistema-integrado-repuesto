@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import MotoFlowLogo from '@/components/common/MotoFlowLogo';
+import MotoFlowLogo, { ICONO_MOTOFLOW } from '@/components/common/MotoFlowLogo';
 import { supabase } from '@/lib/customSupabaseClient';
 import { toLoginEmail } from '@/lib/loginIdentity';
 
@@ -125,11 +125,9 @@ const LoginForm = ({ onRegistrar }) => {
                 className="object-contain h-16"
               />
             ) : brandingLoaded && tenantBranding ? (
-              // Tenant sin logo: inicial + nombre
+              // Tenant sin logo: la "M" de MotoFlow por defecto + nombre
               <div className="flex flex-col items-center gap-2">
-                <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black text-3xl shadow-lg">
-                  {nombreMostrado.charAt(0).toUpperCase()}
-                </div>
+                <img src={ICONO_MOTOFLOW} alt="MotoFlow" className="w-16 h-16 object-contain" />
                 <span className="text-xl font-bold text-gray-800 dark:text-white">
                   {nombreMostrado}
                 </span>

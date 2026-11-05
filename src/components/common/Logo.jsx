@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import MotoFlowLogo from '@/components/common/MotoFlowLogo';
+import MotoFlowLogo, { ICONO_MOTOFLOW } from '@/components/common/MotoFlowLogo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 /**
@@ -43,7 +43,7 @@ const Logo = ({ size = 'default', variant = 'default' }) => {
     );
   }
 
-  // Tenant tiene nombre pero no logo
+  // Tenant sin logo propio: la "M" de MotoFlow por defecto + su nombre
   if (empresa?.nombre) {
     return (
       <motion.div
@@ -51,14 +51,12 @@ const Logo = ({ size = 'default', variant = 'default' }) => {
         animate={{ opacity: 1, scale: 1 }}
         className="flex items-center gap-2 min-w-0"
       >
-        <div
-          className={`rounded-lg flex items-center justify-center text-white font-bold shrink-0 ${
-            variant === 'light' ? 'bg-sky-500/30' : 'bg-blue-600'
-          }`}
-          style={{ width: iconSize, height: iconSize, fontSize: iconSize * 0.45 }}
-        >
-          {empresa.nombre.charAt(0).toUpperCase()}
-        </div>
+        <img
+          src={ICONO_MOTOFLOW}
+          alt="MotoFlow"
+          className="object-contain shrink-0"
+          style={{ width: iconSize, height: iconSize }}
+        />
         <span className={`font-bold ${textColor} ${textSize} truncate`}>
           {empresa.nombre}
         </span>
@@ -66,26 +64,8 @@ const Logo = ({ size = 'default', variant = 'default' }) => {
     );
   }
 
-  // Fallback: nombre genérico (superadmin o sin config)
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex items-center gap-2"
-    >
-      <div
-        className={`rounded-lg flex items-center justify-center text-white font-bold shrink-0 ${
-          variant === 'light' ? 'bg-sky-500/30' : 'bg-blue-600'
-        }`}
-        style={{ width: iconSize, height: iconSize, fontSize: iconSize * 0.45 }}
-      >
-        S
-      </div>
-      <span className={`font-bold ${textColor} ${textSize} whitespace-nowrap`}>
-        Sistema
-      </span>
-    </motion.div>
-  );
+  // Sin empresa (superadmin o sin config): logo MotoFlow completo
+  return <MotoFlowLogo size="sm" />;
 };
 
 export default Logo;
