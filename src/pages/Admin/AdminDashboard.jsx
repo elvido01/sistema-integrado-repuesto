@@ -12,11 +12,12 @@ import AdminEmpresaDetalle from './AdminEmpresaDetalle';
 import AdminPagosReview from '@/components/suscripcion/AdminPagosReview';
 import AdminCuentasBancarias from '@/components/suscripcion/AdminCuentasBancarias';
 import AdminEmpresasVacias from '@/components/admin/AdminEmpresasVacias';
+import { invocarConSesion } from '@/lib/edgeInvoke';
 import {
   Shield, Loader2, Building2, Calendar, Zap, RefreshCw, Users, Activity,
   DollarSign, TrendingUp, Eye, Power, PowerOff, Clock, ArrowUpRight,
   Package, CreditCard, Search, ChevronDown, ChevronUp, Plus, Link, Copy, Check,
-  BellRing, AlertTriangle
+  BellRing, AlertTriangle, MailCheck
 } from 'lucide-react';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -58,6 +59,9 @@ const AdminDashboard = () => {
   const [pagosPendientesCount, setPagosPendientesCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
+  // Cuentas que se registraron y no han confirmado el correo (no pueden entrar).
+  const [correosPendientes, setCorreosPendientes] = useState([]);
+  const [confirmando, setConfirmando] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterEstado, setFilterEstado] = useState('todos');
   const [sortField, setSortField] = useState('nombre');
@@ -205,6 +209,38 @@ const AdminDashboard = () => {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  const fetchCorreosPendientes = useCallback(async () => {
+    try {
+      const r = await invocarConSesion('admin-management', { action: 'correos_sin_confirmar' });
+      setCorreosPendientes(Array.isArray(r?.pendientes) ? r.pendientes : []);
+    } catch (err) {
+      console.warn('[AdminDash] correos sin confirmar:', err?.message || err);
+    }
+  }, []);
+
+  useEffect(() => { fetchCorreosPendientes(); }, [fetchCorreosPendientes]);
+
+  // Por empresa (tenantId) o una cuenta suelta (userId).
+  const handleConfirmarCorreo = async ({ tenantId, userId }) => {
+    const clave = tenantId || userId;
+    setConfirmando(clave);
+    try {
+      const r = await invocarConSesion('admin-management', {
+        action: 'confirmar_correos_empresa',
+        ...(tenantId ? { tenantId } : { targetUserId: userId }),
+      });
+      const lista = r?.confirmados || [];
+      toast({
+        title: lista.length ? '✅ Correo confirmado' : 'No había correos por confirmar',
+        description: lista.length ? `Ya puede entrar: ${lista.join(', ')}` : undefined,
+      });
+      await fetchCorreosPendientes();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo confirmar', description: err.message });
+    }
+    setConfirmando(null);
+  };
 
   // ── ACTIONS: con fallback directo si RPCs no existen ──
 
@@ -413,7 +449,7 @@ const AdminDashboard = () => {
                 variant="ghost"
                 size="sm"
                 className="text-white hover:bg-white/10"
-                onClick={fetchAll}
+                onClick={() => { fetchAll(); fetchCorreosPendientes(); }}
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
@@ -464,6 +500,42 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               </div>
+
+              {/* ── CORREOS SIN CONFIRMAR ── */}
+              {correosPendientes.length > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MailCheck className="w-4 h-4 text-amber-600" />
+                    <p className="text-xs font-black uppercase text-amber-800">
+                      Correos sin confirmar ({correosPendientes.length}) · no pueden entrar hasta confirmarlos
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    {correosPendientes.map((p) => {
+                      const empresas = (p.tenant_ids || []).map((id) => tenants.find((t) => t.id === id)?.nombre || id.slice(0, 8));
+                      return (
+                        <div key={p.user_id} className="flex items-center justify-between gap-2 bg-white border border-amber-200 rounded-lg px-3 py-1.5">
+                          <div className="min-w-0">
+                            <p className="text-[12px] font-bold text-gray-800 truncate">{p.email}</p>
+                            <p className="text-[10px] text-gray-500 truncate">
+                              {empresas.length ? empresas.join(', ') : 'Sin empresa'} · {new Date(p.created_at).toLocaleString('es-DO')}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="h-7 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white gap-1 shrink-0"
+                            disabled={confirmando === p.user_id}
+                            onClick={() => handleConfirmarCorreo({ userId: p.user_id })}
+                          >
+                            {confirmando === p.user_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MailCheck className="w-3 h-3" />}
+                            Confirmar
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* ── PAGOS PENDIENTES ── */}
               <AdminPagosReview onChanged={fetchAll} />
@@ -639,6 +711,18 @@ const AdminDashboard = () => {
                                 >
                                   <Eye className="w-3.5 h-3.5" />
                                 </Button>
+                                {correosPendientes.some((p) => (p.tenant_ids || []).includes(tenant.id)) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 text-amber-600 hover:bg-amber-50"
+                                    onClick={() => handleConfirmarCorreo({ tenantId: tenant.id })}
+                                    title="Confirmar correo de la empresa"
+                                    disabled={isUpdating || confirmando === tenant.id}
+                                  >
+                                    {confirmando === tenant.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MailCheck className="w-3.5 h-3.5" />}
+                                  </Button>
+                                )}
                                 {tenant.activo ? (
                                   <Button
                                     variant="ghost"

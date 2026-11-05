@@ -66,7 +66,55 @@ Deno.serve(async (req) => {
             });
         }
 
-        const { action, targetUserId, updates } = await req.json();
+        const { action, targetUserId, updates, tenantId } = await req.json();
+        const json = (body, status = 200) => new Response(JSON.stringify(body), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status,
+        });
+
+        // ── CORREOS SIN CONFIRMAR (solo super admin) ─────────────
+        // (05/11/2026) Quien se registra y no abre el correo de confirmación
+        // no puede entrar. El super admin los ve y los confirma desde su panel.
+        if (action === 'correos_sin_confirmar' || action === 'confirmar_correos_empresa') {
+            if (!profile?.is_superadmin) return json({ error: 'Solo el super administrador.' }, 403);
+
+            const sinConfirmar = [];
+            for (let page = 1; page <= 50; page++) {
+                const { data, error } = await supabaseClient.auth.admin.listUsers({ page, perPage: 1000 });
+                if (error) throw error;
+                const lote = data?.users || [];
+                for (const u of lote) if (!u.email_confirmed_at && u.email) sinConfirmar.push(u);
+                if (lote.length < 1000) break;
+            }
+            const ids = sinConfirmar.map((u) => u.id);
+            const empresasPorUsuario = new Map(ids.map((id) => [id, new Set()]));
+            if (ids.length) {
+                const { data: perfiles } = await supabaseClient.from('profiles').select('id, tenant_id').in('id', ids);
+                for (const p of perfiles || []) if (p.tenant_id) empresasPorUsuario.get(p.id)?.add(p.tenant_id);
+                const { data: ue } = await supabaseClient.from('usuarios_empresas').select('user_id, tenant_id').in('user_id', ids);
+                for (const r of ue || []) if (r.tenant_id) empresasPorUsuario.get(r.user_id)?.add(r.tenant_id);
+            }
+
+            if (action === 'correos_sin_confirmar') {
+                return json({
+                    pendientes: sinConfirmar.map((u) => ({
+                        user_id: u.id, email: u.email, created_at: u.created_at,
+                        tenant_ids: [...(empresasPorUsuario.get(u.id) || [])],
+                    })),
+                });
+            }
+
+            // Por empresa (todos sus usuarios) o una cuenta suelta (targetUserId).
+            if (!tenantId && !targetUserId) return json({ error: 'Falta la empresa o el usuario.' }, 400);
+            const confirmados = [];
+            for (const u of sinConfirmar) {
+                const toca = tenantId ? empresasPorUsuario.get(u.id)?.has(tenantId) : u.id === targetUserId;
+                if (!toca) continue;
+                const { error } = await supabaseClient.auth.admin.updateUserById(u.id, { email_confirm: true });
+                if (error) throw error;
+                confirmados.push(u.email);
+            }
+            return json({ confirmados });
+        }
 
         if (!action || !targetUserId) {
             return new Response(JSON.stringify({ error: 'Missing action or targetUserId' }), {
