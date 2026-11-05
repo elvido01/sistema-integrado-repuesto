@@ -33,7 +33,7 @@ const sections = [
   {
     title: 'Solicitudes de eliminacion',
     body: [
-      'Los usuarios pueden solicitar acceso, correccion o eliminacion de informacion relacionada con conversaciones enviando un correo a ventasmotoflow@gmail.com e indicando el canal usado, la cuenta contactada y una descripcion suficiente para ubicar la conversacion.',
+      'Los usuarios pueden solicitar acceso, correccion o eliminacion de informacion relacionada con conversaciones enviando un correo a ventasmotoflowrd@gmail.com e indicando el canal usado, la cuenta contactada y una descripcion suficiente para ubicar la conversacion.',
       'Si el dato pertenece a una empresa usuaria de MotoFlow, la solicitud puede requerir validacion con el administrador del negocio correspondiente.',
     ],
   },
@@ -98,9 +98,9 @@ function PrivacyPolicyPage() {
               MotoFlow CRM, escriba a{' '}
               <a
                 className="font-semibold text-blue-700 underline underline-offset-4"
-                href="mailto:ventasmotoflow@gmail.com"
+                href="mailto:ventasmotoflowrd@gmail.com"
               >
-                ventasmotoflow@gmail.com
+                ventasmotoflowrd@gmail.com
               </a>
               .
             </p>
