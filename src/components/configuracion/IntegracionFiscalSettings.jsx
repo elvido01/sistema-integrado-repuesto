@@ -51,7 +51,7 @@ const PROVEEDORES = [
 
 const IntegracionFiscalSettings = () => {
   const { toast } = useToast();
-  const { tenantId } = useAuth();
+  const { tenantId, refrescarFiscal } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -142,6 +142,7 @@ const IntegracionFiscalSettings = () => {
 
       if (error) throw error;
 
+      refrescarFiscal?.({ avisar: true });
       toast({ title: 'Integración guardada', description: 'La configuración fiscal ha sido actualizada.' });
       await fetchIntegracion();
     } catch (err) {
@@ -200,13 +201,16 @@ const IntegracionFiscalSettings = () => {
     if (!integracion) return;
     setSaving(true);
     try {
-      const { error } = await supabase
+      const { data: apagadas, error } = await supabase
         .from('integraciones_fiscales')
         .update({ activo: false, updated_at: new Date().toISOString() })
-        .eq('tenant_id', tenantId);
+        .eq('tenant_id', tenantId)
+        .select('tenant_id');
 
       if (error) throw error;
+      if (!apagadas?.length) throw new Error('No se desactivó (la empresa activa no coincide). Recarga la página e inténtalo otra vez.');
       setActivo(false);
+      refrescarFiscal?.({ avisar: true });
       toast({ title: 'Integración desactivada', description: 'La facturación electrónica ha sido desactivada.' });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
@@ -224,6 +228,7 @@ const IntegracionFiscalSettings = () => {
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error || 'No se pudo activar');
       await fetchIntegracion(true);
+      refrescarFiscal?.({ avisar: true });
       toast({
         title: 'Facturación electrónica activada',
         description: data.modo === 'produccion' ? 'Desde la próxima venta se emiten e-CF reales.' : 'En pruebas: las ventas no gastan números reales.',
@@ -293,7 +298,7 @@ const IntegracionFiscalSettings = () => {
       {/* Para DGII Directo: usar el uploader especializado de .p12 */}
       {proveedor === 'dgii_directo' && (
         <>
-          <DgiiCertificadoUploader onGuardado={() => fetchIntegracion(true)} />
+          <DgiiCertificadoUploader onGuardado={() => { fetchIntegracion(true); refrescarFiscal?.({ avisar: true }); }} />
           <DgiiSecuenciasEcf />
         </>
       )}

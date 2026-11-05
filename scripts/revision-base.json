@@ -4,7 +4,7 @@
       "src/components/ai-ceo/AiAlertsList.jsx": 2,
       "src/components/ai-ceo/AiDecisionsList.jsx": 1,
       "src/components/ai-ceo/AiSettingsPanel.jsx": 1,
-      "src/components/configuracion/IntegracionFiscalSettings.jsx": 2,
+      "src/components/configuracion/IntegracionFiscalSettings.jsx": 1,
       "src/components/cotizaciones/CotizacionFormModal.jsx": 2,
       "src/components/cotizaciones_magna/CotizacionMagnaFormModal.jsx": 2,
       "src/components/dashboard/CommitmentFormModal.jsx": 1,
@@ -128,5 +128,5 @@
       "registrar_pago_prestamo"
     ]
   },
-  "actualizado": "2026-11-04"
+  "actualizado": "2026-11-05"
 }

@@ -310,7 +310,7 @@
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
     "src/components/configuracion/DgiiSecuenciasEcf.jsx": "8e721645f8743464",
     "src/components/configuracion/DgiiSimulacionRunner.jsx": "d00cb0b02e42771b",
-    "src/components/configuracion/IntegracionFiscalSettings.jsx": "153fb01d82243e60",
+    "src/components/configuracion/IntegracionFiscalSettings.jsx": "9481b3e1e437658c",
     "src/components/dashboard/FinancialAlert.jsx": "94f13ee0e3bbaa79",
     "src/components/dashboard/FinancialGoalCard.jsx": "bd663d1215fbf288",
     "src/components/financiera/NuevoPrestamoModal.jsx": "464bdb41702a35d7",
@@ -518,6 +518,13 @@
         "src/components/configuracion/DgiiCertificadoUploader.jsx",
         "src/components/configuracion/IntegracionFiscalSettings.jsx",
         "supabase/functions/emitir-fiscal/index.ts"
+      ]
+    },
+    {
+      "fecha": "2026-11-05",
+      "nota": "code-review high x2 sobre el refresco del modo fiscal: 1a version (consulta por venta en VentasPage) descartada por la revision (NCF de papel con modo viejo, espera extra); 2a: refrescarFiscal en el contexto (60 s visible, al volver, tras guardar + BroadcastChannel), guardia de respuestas viejas, no apaga si la empresa activa cambio, desactivar con select. Queda: otra PC tarda hasta 60 s en enterarse",
+      "archivos": [
+        "src/components/configuracion/IntegracionFiscalSettings.jsx"
       ]
     }
   ]

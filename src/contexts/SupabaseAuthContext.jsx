@@ -1,8 +1,23 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { USERNAME_EMAIL_DOMAIN } from '@/lib/loginIdentity';
+
+// Estado fiscal de una empresa: { activo, modo }. Una sola consulta para el
+// inicio de sesión y el refresco. Lanza si la consulta falla.
+async function leerFiscal(tid) {
+  const { data, error } = await supabase
+    .from('integraciones_fiscales')
+    .select('activo, modo')
+    .eq('tenant_id', tid)
+    .eq('activo', true)
+    .maybeSingle();
+  if (error) throw error;
+  return { activo: !!data, modo: data?.modo || null };
+}
+
+const CANAL_FISCAL = 'motoflow-fiscal';
 
 const AuthContext = createContext(undefined);
 
@@ -98,14 +113,14 @@ export const AuthProvider = ({ children }) => {
 
       // 4. Check if tenant has active fiscal integration
       if (activeTid) {
-        const { data: integData } = await supabase
-          .from('integraciones_fiscales')
-          .select('activo, modo')
-          .eq('tenant_id', activeTid)
-          .eq('activo', true)
-          .maybeSingle();
-        setFiscalActivo(!!integData);
-        setFiscalModo(integData?.modo || null);
+        try {
+          const fis = await leerFiscal(activeTid);
+          setFiscalActivo(fis.activo);
+          setFiscalModo(fis.modo);
+        } catch {
+          setFiscalActivo(false);
+          setFiscalModo(null);
+        }
       } else {
         setFiscalActivo(false);
         setFiscalModo(null);
@@ -242,6 +257,61 @@ export const AuthProvider = ({ children }) => {
   }, [toast, handleSession]);
 
   const tenantId = activeTenantId || profile?.tenant_id || null;
+
+  // (05/11/2026) El modo fiscal (pruebas / producción) se refresca solo: cada
+  // minuto, al volver a la ventana y después de guardar la configuración DGII.
+  // Antes se leía UNA vez al entrar: Morla pasó a producción con la caja
+  // abierta y 3 tickets salieron sin e-NCF ni QR (la caja seguía "en pruebas"
+  // y no esperó a la DGII). Si la consulta falla, se queda el valor que había.
+  // { avisar: true } = se acaba de cambiar la configuración: las otras pestañas
+  // de este navegador se enteran al instante (BroadcastChannel).
+  const pedidoFiscalRef = useRef(0);
+  const ultimoFiscalRef = useRef(0);
+  const refrescarFiscal = useCallback(async ({ avisar = false } = {}) => {
+    if (!tenantId) return;
+    if (avisar) {
+      try { const c = new BroadcastChannel(CANAL_FISCAL); c.postMessage({ tenantId }); c.close(); } catch { /* navegador sin canal */ }
+    }
+    const mio = ++pedidoFiscalRef.current;
+    ultimoFiscalRef.current = Date.now();
+    let fis;
+    try { fis = await leerFiscal(tenantId); } catch { return; }   // falla: se queda lo que había
+    if (mio !== pedidoFiscalRef.current) return;                   // llegó una respuesta más nueva
+    if (!fis.activo) {
+      // Sin fila puede ser "apagada" o que la empresa activa cambió en otra
+      // pestaña (RLS la esconde). En ese caso no se apaga nada aquí.
+      const { data: activa, error } = await supabase.rpc('get_user_tenant');
+      if (error || (activa && activa !== tenantId)) return;
+      if (mio !== pedidoFiscalRef.current) return;
+    }
+    setFiscalActivo(fis.activo);
+    setFiscalModo(fis.modo);
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (!user || !tenantId) return undefined;
+    // Al volver a la ventana dispara focus y visibilitychange: una sola consulta.
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - ultimoFiscalRef.current < 3000) return;
+      refrescarFiscal();
+    };
+    const t = setInterval(() => { if (document.visibilityState === 'visible') refrescarFiscal(); }, 60_000);
+    window.addEventListener('focus', alVolver);
+    document.addEventListener('visibilitychange', alVolver);
+    let canal = null;
+    try {
+      canal = new BroadcastChannel(CANAL_FISCAL);
+      canal.onmessage = (e) => { if (e?.data?.tenantId === tenantId) refrescarFiscal(); };
+    } catch { /* navegador sin canal */ }
+    return () => {
+      pedidoFiscalRef.current++;   // respuestas en vuelo ya no cuentan
+      clearInterval(t);
+      window.removeEventListener('focus', alVolver);
+      document.removeEventListener('visibilitychange', alVolver);
+      canal?.close();
+    };
+  }, [user, tenantId, refrescarFiscal]);
   const isSuperAdmin = profile?.is_superadmin === true;
 
   // ── Recuperación de contraseña por correo ──────────────────────────────
@@ -285,6 +355,7 @@ export const AuthProvider = ({ children }) => {
     empresa,
     fiscalActivo,
     fiscalModo,
+    refrescarFiscal,
     signUp,
     signIn,
     signOut,
@@ -292,7 +363,7 @@ export const AuthProvider = ({ children }) => {
     enviarRecuperacion,
     cambiarPassword,
     refreshPermissions: () => user && fetchProfileAndPermissions(user.id)
-  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, fiscalActivo, fiscalModo, signUp, signIn, signOut, recuperando, enviarRecuperacion, cambiarPassword, fetchProfileAndPermissions]);
+  }), [user, session, profile, permissions, loading, tenantId, isSuperAdmin, empresa, fiscalActivo, fiscalModo, refrescarFiscal, signUp, signIn, signOut, recuperando, enviarRecuperacion, cambiarPassword, fetchProfileAndPermissions]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
