@@ -68,24 +68,31 @@ const normalizeDgiiDate = (d) => {
   return fmtDate(d);
 };
 
-const fmtDateTime = (d) => {
-  const dt = d instanceof Date ? d : new Date(d);
-  if (isNaN(dt.getTime())) return String(d || "");
-  const day = String(dt.getDate()).padStart(2, "0");
-  const month = String(dt.getMonth() + 1).padStart(2, "0");
-  const year = dt.getFullYear();
-  const hours = String(dt.getHours()).padStart(2, "0");
-  const minutes = String(dt.getMinutes()).padStart(2, "0");
-  const seconds = String(dt.getSeconds()).padStart(2, "0");
-  return `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;
-};
+// (05/11/2026) Fecha DGII desde lo que trae un xlsx: texto dd-MM-yyyy
+// [HH:mm:ss] tal cual, serial de Excel (redondeado al segundo, sin zona) o
+// Date/ISO en hora de RD (el servidor corre en UTC).
+export function fechaDgiiDesdeXlsx(v, conHora) {
+  if (v === null || v === undefined || v === "") return "";
+  const p2 = (n) => String(n).padStart(2, "0");
+  const t = typeof v === "string" ? v.trim() : v;
+  if (typeof t === "string") {
+    const m = t.match(/^(\d{2}-\d{2}-\d{4})(?: (\d{2}:\d{2}:\d{2}))?$/);
+    if (m) return conHora ? `${m[1]} ${m[2] || "00:00:00"}` : m[1];
+  }
+  let dt;
+  if (typeof t === "number" || (typeof t === "string" && /^\d+(\.\d+)?$/.test(t))) {
+    const seg = Math.round(Number(t) * 86400);
+    dt = new Date(Date.UTC(1899, 11, 30) + seg * 1000);
+  } else {
+    const d = t instanceof Date ? t : new Date(t);
+    if (isNaN(d.getTime())) return String(v);
+    dt = new Date(d.getTime() - 4 * 60 * 60 * 1000);
+  }
+  const fecha = `${p2(dt.getUTCDate())}-${p2(dt.getUTCMonth() + 1)}-${dt.getUTCFullYear()}`;
+  return conHora ? `${fecha} ${p2(dt.getUTCHours())}:${p2(dt.getUTCMinutes())}:${p2(dt.getUTCSeconds())}` : fecha;
+}
 
-const fmtAcecfDate = (d) => {
-  if (typeof d === "string" && /^\d{2}-\d{2}-\d{4}$/.test(d.trim())) return d.trim();
-  return fmtDate(d);
-};
-
-const nowDgiiDateTime = () => {
+export const nowDgiiDateTime = () => {
   const now = new Date();
   const rd = new Date(now.getTime() - 4 * 60 * 60 * 1000);
   const day = String(rd.getUTCDate()).padStart(2, "0");
@@ -250,12 +257,12 @@ export function buildAcecfXml(input) {
     <Version>1.0</Version>
     <RNCEmisor>${xmlEscape(input.rnc_emisor)}</RNCEmisor>
     <eNCF>${xmlEscape(input.encf)}</eNCF>
-    <FechaEmision>${xmlEscape(fmtAcecfDate(input.fecha_emision))}</FechaEmision>
+    <FechaEmision>${xmlEscape(fechaDgiiDesdeXlsx(input.fecha_emision, false))}</FechaEmision>
     <MontoTotal>${fmtMoney(input.monto_total)}</MontoTotal>
     <RNCComprador>${xmlEscape(input.rnc_comprador)}</RNCComprador>
     <Estado>${xmlEscape(estado)}</Estado>
     ${motivo}
-    <FechaHoraAprobacionComercial>${xmlEscape(fmtDateTime(input.fecha_hora_aprobacion_comercial))}</FechaHoraAprobacionComercial>
+    <FechaHoraAprobacionComercial>${xmlEscape(fechaDgiiDesdeXlsx(input.fecha_hora_aprobacion_comercial, true))}</FechaHoraAprobacionComercial>
   </DetalleAprobacionComercial>
 </ACECF>`.trim();
 }

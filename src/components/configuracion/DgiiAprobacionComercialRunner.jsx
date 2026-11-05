@@ -7,9 +7,24 @@ import { CheckCircle2, Clock, FileCheck2, Loader2, Play, RotateCcw, Upload, XCir
 
 async function parseXlsx(file) {
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  // (05/11/2026) Las fechas se pasan a texto DGII aquí, con SSF.format (el
+  // mismo redondeo que muestra Excel) y sin la zona horaria del navegador.
+  // Antes viajaban como Date → UTC y el XML salía con la hora +4; la DGII
+  // rechaza FechaHoraAprobacionComercial si no es la del xlsx.
+  // cellNF: sin eso SheetJS no llena cell.z y no se sabe qué celda es fecha.
+  const wb = XLSX.read(buf, { type: 'array', cellDates: false, cellNF: true });
+  const date1904 = !!wb.Workbook?.WBProps?.date1904;
   const rows = [];
   for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    for (const ref of Object.keys(ws)) {
+      const cell = ws[ref];
+      if (ref[0] === '!' || !cell || cell.t !== 'n' || !cell.z || !XLSX.SSF.is_date(cell.z)) continue;
+      // Con hora si el formato de la celda la muestra (h o s), no según el valor.
+      const conHora = /[hs]/i.test(String(cell.z).replace(/"[^"]*"/g, ''));
+      const texto = XLSX.SSF.format(conHora ? 'dd-mm-yyyy hh:mm:ss' : 'dd-mm-yyyy', cell.v, { date1904 });
+      ws[ref] = { t: 's', v: texto, w: texto };
+    }
     const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
     rows.push(...sheetRows.map((row) => ({ row, sheet: name })));
   }

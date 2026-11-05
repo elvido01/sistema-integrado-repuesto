@@ -302,7 +302,7 @@
     "src/components/compras/SugerenciasSuplidorVirtual.jsx": "158308a8bc904c41",
     "src/components/compras/SuplidorSearchModal.jsx": "0f5b59cbb77276f2",
     "src/components/compras/SuplidorVirtualMenu.jsx": "a99bc9d7b867d4a6",
-    "src/components/configuracion/DgiiAprobacionComercialRunner.jsx": "d7ed6427407f6fde",
+    "src/components/configuracion/DgiiAprobacionComercialRunner.jsx": "b73f21888e93614d",
     "src/components/configuracion/DgiiCertificacionRunner.jsx": "ad60fe3cddd203e7",
     "src/components/configuracion/DgiiCertificadoUploader.jsx": "943ac6f537ae4d6e",
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
@@ -396,9 +396,9 @@
     "supabase/functions/emitir-fiscal/dgii_municipios.ts": "05e84e0c74dc6806",
     "supabase/functions/emitir-fiscal/dgii_rfce_produccion.ts": "b0db09e190c66477",
     "supabase/functions/emitir-fiscal/dgii_signer.ts": "3ab01a57d8c1f932",
-    "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "eb3b11b495b8856b",
+    "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "56d1a888f4c748fd",
     "supabase/functions/emitir-fiscal/import_map.json": "3d5861c491100d4a",
-    "supabase/functions/emitir-fiscal/index.ts": "13e16c068eb774d4",
+    "supabase/functions/emitir-fiscal/index.ts": "a3a683b6a13beab5",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
     "supabase/functions/motoflow-compras-advisor/index.ts": "e873b25160eded59",
     "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
@@ -533,6 +533,15 @@
       "archivos": [
         "src/components/ventas/VentasHeader.jsx",
         "src/hooks/useVentas.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-05",
+      "nota": "code-review high: ACECF fechas, 10 hallazgos (cellNF faltante, serial sin redondeo, hora por valor, date1904, codigo muerto, normalizadores repartidos); todos corregidos con un solo fechaDgiiDesdeXlsx en el builder y SSF.format en el navegador",
+      "archivos": [
+        "src/components/configuracion/DgiiAprobacionComercialRunner.jsx",
+        "supabase/functions/emitir-fiscal/dgii_xml_builder.ts",
+        "supabase/functions/emitir-fiscal/index.ts"
       ]
     }
   ]

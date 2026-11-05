@@ -3,7 +3,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import forge from "https://esm.sh/node-forge@1.3.1";
-import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii, compradorIdentificado, tipoEcfDeCliente } from "./dgii_xml_builder.ts";
+import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii, compradorIdentificado, tipoEcfDeCliente, nowDgiiDateTime } from "./dgii_xml_builder.ts";
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 import { buildRfceDesdeEcf } from "./dgii_rfce_produccion.ts";
@@ -1986,14 +1986,6 @@ Deno.serve(async (req) => {
         return "";
       };
       const cleanRnc = (v) => String(v || "").replace(/\D/g, "");
-      const normalizeDate = (v) => {
-        if (v instanceof Date) return v;
-        if (typeof v === "number") {
-          const epoch = new Date(Date.UTC(1899, 11, 30));
-          return new Date(epoch.getTime() + v * 86400000);
-        }
-        return v;
-      };
       const normalizeMonto = (v) => Number(String(v || "0").replace(/,/g, "")) || 0;
 
       const { data: integ } = await supabase
@@ -2012,9 +2004,9 @@ Deno.serve(async (req) => {
         rnc_comprador: cleanRnc(pick("RNCComprador", "RNC Comprador", "RNC del Comprador", "RncComprador") || integ.config.rnc_emisor),
         estado: String(pick("Estado", "EstadoAprobacion", "Estado Aprobacion") || "1").trim(),
         detalle_motivo_rechazo: pick("DetalleMotivoRechazo", "Detalle Motivo Rechazo", "MotivoRechazo", "Motivo Rechazo"),
-        fecha_hora_aprobacion_comercial: normalizeDate(
-          pick("FechaHoraAprobacionComercial", "Fecha Hora Aprobacion Comercial") || new Date()
-        ),
+        // El builder convierte las fechas (fechaDgiiDesdeXlsx). Sin dato: hora de RD.
+        fecha_hora_aprobacion_comercial:
+          pick("FechaHoraAprobacionComercial", "Fecha Hora Aprobacion Comercial") || nowDgiiDateTime(),
       };
 
       let xmlSinFirmar;
