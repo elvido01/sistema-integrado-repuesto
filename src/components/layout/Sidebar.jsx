@@ -47,6 +47,7 @@ import {
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { canAccess } from '@/lib/permissionsHelper';
+import { esPlanProOMas } from '@/lib/planes';
 import Logo from '@/components/common/Logo';
 import { useTheme } from '@/contexts/ThemeContext';
 import NotificationBell from '@/components/layout/NotificationBell';
@@ -285,6 +286,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const { planActual } = useSuscripcion();
   // Funciones Plus: solo planes PRO/ENTERPRISE (y super admin).
   const puedePlus = isSuperAdmin || ['PRO', 'ENTERPRISE'].includes((planActual || '').toUpperCase());
+  // Nómina: plan Pro en adelante (incluye EDUCA PRO / EDUCA TOTAL en colegios).
+  const puedeNomina = isSuperAdmin || esPlanProOMas(planActual);
   const { theme, toggleTheme } = useTheme();
   const { totalUnread } = useWhatsAppNotifications();
   const [expandedGroup, setExpandedGroup] = useState(null);
@@ -480,6 +483,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 && !(sub.moduloOr && tieneModulo(empresa, sub.moduloOr))) return false;
             if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito
             if (sub.id === 'whatsapp-crm' && !puedePlus) return false; // Sales Hub = función Plus (PRO/ENTERPRISE)
+            if (sub.id === 'nomina' && !puedeNomina) return false;
             return canAccess(profile, permissions, sub.permissionKey || sub.id);
           });
           if (allowedSubItems.length === 0) return null;

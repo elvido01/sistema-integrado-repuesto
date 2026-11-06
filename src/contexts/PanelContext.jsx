@@ -51,6 +51,7 @@ const SolicitudesComprasPage = lazy(() => import('@/pages/SolicitudesComprasPage
 const CartaRutaPage = lazy(() => import('@/pages/CartaRutaPage'));
 const InmueblesVendidosPage = lazy(() => import('@/pages/InmueblesVendidosPage'));
 const ColegioConfigPage = lazy(() => import('@/pages/colegio/ColegioConfigPage'));
+import PlanProGate from '@/components/common/PlanProGate';
 const ContratosAlquilerPage = lazy(() => import('@/pages/ContratosAlquilerPage'));
 const DocumentacionClientePage = lazy(() => import('@/pages/DocumentacionClientePage'));
 const ReportesDGIIPage = lazy(() => import('@/pages/ReportesDGIIPage'));
@@ -125,7 +126,8 @@ const componentMapping = {
   'recibo-ingreso': { component: ({ extraData }) => <Protected module="recibo-ingreso"><ReciboIngresoRouter extraData={extraData} /></Protected>, icon: Receipt, name: 'Recibo de Ingreso' },
   'pago-suplidores': { component: () => <Protected module="pago-suplidores"><PagoSuplidoresPage /></Protected>, icon: Truck, name: 'Pago a Suplidores' },
   'pago-comisiones-vendedor': { component: () => <Protected module="pago-comisiones-vendedor"><PagoComisionesPage /></Protected>, icon: Users, name: 'Pago Comisiones' },
-  'nomina': { component: () => <Protected module="nomina"><NominaPage /></Protected>, icon: Wallet, name: 'Nómina' },
+  // (06/11/2026) Nómina: plan Pro en adelante.
+  'nomina': { component: () => <Protected module="nomina"><PlanProGate funcion="Nómina"><NominaPage /></PlanProGate></Protected>, icon: Wallet, name: 'Nómina' },
   'compras': { component: () => <Protected module="compras"><ComprasPage /></Protected>, icon: Truck, name: 'Compras' },
   'pedidos': { component: () => <Protected module="pedidos"><PedidosPage /></Protected>, icon: ListOrdered, name: 'Pedidos' },
   'cotizaciones': { component: () => <Protected module="cotizaciones"><CotizacionPage /></Protected>, icon: FileText, name: 'Cotizaciones' },

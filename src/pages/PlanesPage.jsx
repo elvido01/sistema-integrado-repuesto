@@ -50,6 +50,7 @@ const INCLUYE = {
       'Lee tus facturas de compra con una foto',
       'Cobranzas y recordatorios',
       'Cuentas bancarias y reportes avanzados',
+      'Nómina: sueldos, TSS y adelantos',
     ],
   },
   // (06/11/2026) Centros educativos: solo los ven los colegios.
@@ -70,6 +71,7 @@ const INCLUYE = {
       'Hasta 800 estudiantes y 6 usuarios',
       'Reservación de cupo y proyección del año',
       'Antigüedad de saldos (30, 60 días)',
+      'Nómina del personal: sueldos, TSS y adelantos',
     ],
   },
   'EDUCA TOTAL': {
