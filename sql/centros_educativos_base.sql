@@ -58,7 +58,7 @@ ALTER TABLE public.planes ADD CONSTRAINT planes_segmento_check CHECK (segmento I
 
 INSERT INTO public.planes (nombre, descripcion, precio, duracion_dias, limite_usuarios, limite_productos,
                            limite_facturas, limite_almacenes, limite_estudiantes, segmento, activo)
-SELECT v.nombre, v.descripcion, v.precio, 30, v.usuarios, 100, NULL, 1, v.estudiantes, 'educativo', true
+SELECT v.nombre, v.descripcion, v.precio, 30, v.usuarios, 1000, NULL, 1, v.estudiantes, 'educativo', true
   FROM (VALUES
     ('EDUCA INICIAL', 'Colegios de hasta 300 estudiantes', 2000.00, 3,     300),
     ('EDUCA PRO',     'Colegios de hasta 800 estudiantes', 3950.00, 6,     800),
