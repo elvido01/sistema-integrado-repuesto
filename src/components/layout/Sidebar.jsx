@@ -62,6 +62,7 @@ const navItems = [
     title: 'Colegio',
     icon: GraduationCap,
     subItems: [
+      { title: 'Estudiantes', id: 'colegio-estudiantes', icon: GraduationCap, soloTipos: ['educativo'] },
       { title: 'Configuración del Colegio', id: 'colegio-config', icon: Settings, soloTipos: ['educativo'] },
     ],
   },

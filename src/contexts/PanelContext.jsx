@@ -51,6 +51,7 @@ const SolicitudesComprasPage = lazy(() => import('@/pages/SolicitudesComprasPage
 const CartaRutaPage = lazy(() => import('@/pages/CartaRutaPage'));
 const InmueblesVendidosPage = lazy(() => import('@/pages/InmueblesVendidosPage'));
 const ColegioConfigPage = lazy(() => import('@/pages/colegio/ColegioConfigPage'));
+const EstudiantesPage = lazy(() => import('@/pages/colegio/EstudiantesPage'));
 import PlanProGate from '@/components/common/PlanProGate';
 const ContratosAlquilerPage = lazy(() => import('@/pages/ContratosAlquilerPage'));
 const DocumentacionClientePage = lazy(() => import('@/pages/DocumentacionClientePage'));
@@ -158,6 +159,7 @@ const componentMapping = {
   'carta-ruta': { component: ({ extraData }) => <Protected module="carta-ruta"><CartaRutaPage extraData={extraData} /></Protected>, icon: FileText, name: 'Carta de Ruta' },
   'inmuebles-vendidos': { component: () => <Protected module="ventas"><InmueblesVendidosPage /></Protected>, icon: FileText, name: 'Inmuebles Vendidos' },
   'colegio-config': { component: () => <Protected module="colegio-config"><ColegioConfigPage /></Protected>, icon: FileText, name: 'Configuración del Colegio' },
+  'colegio-estudiantes': { component: () => <Protected module="colegio-estudiantes"><EstudiantesPage /></Protected>, icon: Users, name: 'Estudiantes' },
   'contratos-alquiler': { component: () => <Protected module="ventas"><ContratosAlquilerPage /></Protected>, icon: FileText, name: 'Contratos de Alquiler' },
   'documentacion-cliente': { component: () => <Protected module="documentacion-cliente"><DocumentacionClientePage /></Protected>, icon: FileImage, name: 'Documentación Cliente' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },

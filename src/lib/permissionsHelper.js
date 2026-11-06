@@ -34,6 +34,7 @@ export const canEdit = (profile, permissions, moduleKey) => {
 };
 
 export const MODULES = [
+    { key: 'colegio-estudiantes', label: 'Colegio - Estudiantes y familias (inscribir, editar, retirar)' },
     { key: 'colegio-config', label: 'Colegio - Configuración (años, cursos, tarifas, conceptos)' },
     { key: 'ventas', label: 'Ventas' },
     { key: 'recibo-ingreso', label: 'Recibo de Ingreso' },
