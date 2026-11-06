@@ -410,7 +410,7 @@ const ConfiguracionSistemaPage = () => {
 
     // (29/10/2026) Empresas sin inventario: no ven compras, búsqueda de
     // productos ni precios 2/3. Servicios tampoco financia.
-    const esServicios = formData.tipo_negocio === 'servicios' || formData.tipo_negocio === 'educativo';
+    const esServicios = formData.tipo_negocio === 'servicios';
     const sinInventario = esServicios || formData.tipo_negocio === 'inmobiliaria';
 
     return (
@@ -949,7 +949,7 @@ const ConfiguracionSistemaPage = () => {
                     </div>
 
                     {/* Sección de Financiamiento (Propio / Terceros) */}
-                    {!esServicios && (
+                    {!esServicios && formData.tipo_negocio !== 'educativo' && (
                     <div className="border rounded-md p-6 bg-white shadow-inner space-y-4">
                         <h3 className="text-sm font-bold text-emerald-700 uppercase border-b pb-2 mb-4 flex items-center gap-2">
                             <Banknote className="w-4 h-4" /> Financiamiento

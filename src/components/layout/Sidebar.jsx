@@ -229,9 +229,14 @@ const navItems = [
   },
 ];
 
-// (06/11/2026) Un colegio no vende mercancía: solo ve lo suyo (grupo Colegio)
-// y lo general de una empresa (caja, bancos, gastos, nómina, DGII, usuarios).
+// (06/11/2026) Un colegio ve lo suyo (grupo Colegio), lo general de una
+// empresa (caja, bancos, gastos, nómina, DGII, usuarios) y el inventario de
+// UNIFORMES, que se maneja igual que en un repuestos (decisión del dueño):
+// mercancía por talla, compras, entradas, venta en el punto de venta.
 const PERMITIDOS_EDUCATIVO = new Set([
+  'ventas', 'devoluciones', 'mercancias', 'almacenes', 'entrada-mercancia', 'salida-mercancia',
+  'orden-compra', 'solicitudes', 'tipos-producto', 'reporte-movimientos', 'inventario-fisico',
+  'inventario-inteligente', 'etiquetas-masivas', 'clientes',
   'recibo-ingreso', 'compras', 'pago-suplidores', 'nomina', 'cuentas-bancarias',
   'reporte-compras', 'reporte-transacciones-diarias', 'reportes-dgii', 'libros-contables',
   'estado-resultados', 'flujo-caja', 'suplidores',
@@ -242,6 +247,7 @@ const PERMITIDOS_EDUCATIVO = new Set([
 const TITULOS_POR_TIPO = {
   servicios: { mercancias: 'Servicios' },
   inmobiliaria: { mercancias: 'Inmuebles y Servicios' },
+  educativo: { mercancias: 'Uniformes y Mercancías' },
 };
 const tituloPorTipo = (sub, tipo) => TITULOS_POR_TIPO[tipo]?.[sub.id] || sub.title;
 
