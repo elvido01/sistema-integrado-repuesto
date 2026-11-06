@@ -42,6 +42,7 @@ import {
   Landmark,
   TrendingUp,
   Bot,
+  GraduationCap,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -55,6 +56,14 @@ import { useWhatsAppNotifications } from '@/contexts/WhatsAppNotificationContext
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 
 const navItems = [
+  {
+    // (06/11/2026) Centros educativos (colegios). Solo tipo 'educativo'.
+    title: 'Colegio',
+    icon: GraduationCap,
+    subItems: [
+      { title: 'Configuración del Colegio', id: 'colegio-config', icon: Settings, soloTipos: ['educativo'] },
+    ],
+  },
   {
     title: 'GPS',
     icon: RadioTower,
@@ -219,6 +228,15 @@ const navItems = [
     ],
   },
 ];
+
+// (06/11/2026) Un colegio no vende mercancía: solo ve lo suyo (grupo Colegio)
+// y lo general de una empresa (caja, bancos, gastos, nómina, DGII, usuarios).
+const PERMITIDOS_EDUCATIVO = new Set([
+  'recibo-ingreso', 'compras', 'pago-suplidores', 'nomina', 'cuentas-bancarias',
+  'reporte-compras', 'reporte-transacciones-diarias', 'reportes-dgii', 'libros-contables',
+  'estado-resultados', 'flujo-caja', 'suplidores',
+  'usuarios', 'config_sistema', 'perfil-empresa', 'cierre-caja', 'comprobantes-fiscales', 'dgii-monitor',
+]);
 
 // (27/10/2026) El nombre de "Mercancías" según lo que vende la empresa.
 const TITULOS_POR_TIPO = {
@@ -449,6 +467,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             // módulos por tipo de negocio (ej. Documentos); moduloOr = módulo que
             // también lo enciende aunque la empresa no sea de ese tipo
             // (27/10/2026) Lo que no aplica a un tipo de empresa (servicios no tiene inventario).
+            if (empresa?.tipo_negocio === 'educativo' && !sub.id.startsWith('colegio-') && !PERMITIDOS_EDUCATIVO.has(sub.id)) return false;
             if (sub.ocultarEnTipos?.includes(empresa?.tipo_negocio)) return false;
             if (sub.soloTipos && !sub.soloTipos.includes(empresa?.tipo_negocio)) return false;
             if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio

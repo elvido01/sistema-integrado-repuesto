@@ -186,6 +186,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
                   { v: 'financiera', t: 'Financiera', d: 'Préstamos y cobranza' },
                   { v: 'servicios', t: 'Servicios', d: 'Sin inventario: honorarios, mantenimiento' },
                   { v: 'inmobiliaria', t: 'Inmobiliaria', d: 'Solares, ventas a plazos, alquileres' },
+                  { v: 'educativo', t: 'Centro educativo', d: 'Colegios: estudiantes y mensualidades' },
                 ].map(o => (
                   <button
                     key={o.v}

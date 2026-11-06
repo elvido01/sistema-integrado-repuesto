@@ -52,6 +52,34 @@ const INCLUYE = {
       'Cuentas bancarias y reportes avanzados',
     ],
   },
+  // (06/11/2026) Centros educativos: solo los ven los colegios.
+  'EDUCA INICIAL': {
+    base: null,
+    items: [
+      'Ficha integral del estudiante con foto',
+      'Familias y hermanos enlazados',
+      'Tarifas por estudiante, becas y Sala de Tareas',
+      'Mensualidades con recargo automático',
+      'Recibos en ticket y en hoja, cierre de caja',
+      'Reportes de cobros y de quién debe',
+    ],
+  },
+  'EDUCA PRO': {
+    base: 'Educa Inicial',
+    items: [
+      'Hasta 800 estudiantes y 6 usuarios',
+      'Reservación de cupo y proyección del año',
+      'Antigüedad de saldos (30, 60 días)',
+    ],
+  },
+  'EDUCA TOTAL': {
+    base: 'Educa Pro',
+    items: [
+      'Estudiantes y usuarios sin límite',
+      'Recordatorios de pago por WhatsApp incluidos',
+      'Soporte prioritario',
+    ],
+  },
   ENTERPRISE: {
     base: 'Pro',
     items: [
@@ -88,8 +116,16 @@ const PlanesPage = () => {
     BASICO:     { icon: Shield,   gradient: 'from-blue-500 to-indigo-500',    color: 'blue',    badge: 'Ideal para iniciar', popular: false },
     PRO:        { icon: Crown,    gradient: 'from-emerald-500 to-teal-500',   color: 'emerald', badge: 'Más Popular',     popular: true },
     ENTERPRISE: { icon: Sparkles, gradient: 'from-purple-500 to-violet-500',  color: 'purple',  badge: 'Todo Ilimitado',  popular: false },
+    'EDUCA INICIAL': { icon: Shield,   gradient: 'from-blue-500 to-indigo-500',   color: 'blue',    badge: 'Hasta 300 estudiantes', popular: false },
+    'EDUCA PRO':     { icon: Crown,    gradient: 'from-emerald-500 to-teal-500',  color: 'emerald', badge: 'Más Popular',           popular: true },
+    'EDUCA TOTAL':   { icon: Sparkles, gradient: 'from-purple-500 to-violet-500', color: 'purple',  badge: 'Sin límite',            popular: false },
   };
 
+  // Un plan de colegio se mide en estudiantes, no en productos ni almacenes.
+  const featureListEduca = [
+    { key: 'limite_usuarios',    label: 'Usuarios',    icon: Users, format: v => v >= 99999 ? 'Ilimitados' : v },
+    { key: 'limite_estudiantes', label: 'Estudiantes', icon: Users, format: v => (v == null ? 'Ilimitados' : v?.toLocaleString()) },
+  ];
   const featureList = [
     { key: 'limite_usuarios',   label: 'Usuarios',           icon: Users,      format: v => v >= 99999 ? 'Ilimitados' : v },
     { key: 'limite_productos',  label: 'Productos',          icon: Package,    format: v => v >= 99999 ? 'Ilimitados' : v?.toLocaleString() },
@@ -118,8 +154,13 @@ const PlanesPage = () => {
   // para una empresa que no es de servicios.
   const { empresa, isSuperAdmin } = useAuth();
   const sinInventario = ['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio);
-  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL' && (p.nombre !== 'SERVICIOS' || sinInventario || isSuperAdmin));
-  const soloVistaAdmin = (plan) => plan.nombre === 'SERVICIOS' && !sinInventario;
+  // (06/11/2026) Un colegio ve solo los planes Educa; los demás no los ven.
+  const esColegio = empresa?.tipo_negocio === 'educativo';
+  const esEduca = (p) => p.segmento === 'educativo';
+  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL'
+    && (isSuperAdmin || esEduca(p) === esColegio)
+    && (p.nombre !== 'SERVICIOS' || sinInventario || isSuperAdmin));
+  const soloVistaAdmin = (plan) => (plan.nombre === 'SERVICIOS' && !sinInventario) || esEduca(plan) !== esColegio;
 
   return (
     <div className="min-h-full bg-gradient-to-b from-gray-50 to-white">
@@ -268,7 +309,7 @@ const PlanesPage = () => {
                 {/* Features */}
                 <div className="px-6 py-5 space-y-3 bg-white">
                   {/* Límites */}
-                  {featureList.map(feat => (
+                  {(esEduca(plan) ? featureListEduca : featureList).map(feat => (
                     <div key={feat.key} className="flex items-center justify-between">
                       <span className="flex items-center gap-2 text-sm text-gray-600">
                         <feat.icon className="w-4 h-4 text-gray-400" />

@@ -410,7 +410,7 @@ const ConfiguracionSistemaPage = () => {
 
     // (29/10/2026) Empresas sin inventario: no ven compras, búsqueda de
     // productos ni precios 2/3. Servicios tampoco financia.
-    const esServicios = formData.tipo_negocio === 'servicios';
+    const esServicios = formData.tipo_negocio === 'servicios' || formData.tipo_negocio === 'educativo';
     const sinInventario = esServicios || formData.tipo_negocio === 'inmobiliaria';
 
     return (
@@ -627,6 +627,7 @@ const ConfiguracionSistemaPage = () => {
                                         <SelectItem value="financiera">Financiera / Motopréstamos</SelectItem>
                                         <SelectItem value="servicios">Servicios (sin inventario)</SelectItem>
                                         <SelectItem value="inmobiliaria">Inmobiliaria (solares, alquileres)</SelectItem>
+                                        <SelectItem value="educativo">Centro educativo (colegios)</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">
