@@ -43,22 +43,39 @@ export function buildRfceDesdeEcf(xmlFirmado, codigoSeguridad) {
   const totales = seccion(sinFirma, "Totales");
 
   if (val(idDoc, "TipoeCF") !== "32") throw new Error("El RFCE solo aplica a facturas de consumo (32)");
+  // Sin emisor o sin montos el resumen saldría con un bloque vacío y la DGII
+  // contestaría "Firma Inválida", escondiendo el problema real.
+  if (!val(emisor, "RNCEmisor") || !val(totales, "MontoTotal")) {
+    throw new Error("El XML guardado del e-CF no trae emisor o totales: no se puede armar el resumen (RFCE)");
+  }
   const codigo = codigoSeguridad || codigoSeguridadDe(xmlFirmado);
   if (!codigo || codigo.length !== 6) throw new Error("Falta el código de seguridad (6 caracteres)");
 
+  // Venta sin cliente (ni "Cliente Genérico"): el bloque va OMITIDO, igual que
+  // en la certificación. Un <Comprador></Comprador> vacío sale del firmador
+  // como <Comprador/>; la DGII lo expande al verificar y rechaza con
+  // "Firma Inválida" (E320000000032, 06/11/2026).
+  const datosComprador =
+    t("RNCComprador", val(comprador, "RNCComprador")) +
+    t("IdentificadorExtranjero", val(comprador, "IdentificadorExtranjero")) +
+    t("RazonSocialComprador", val(comprador, "RazonSocialComprador"));
+
   const formas = [...seccion(idDoc, "TablaFormasPago").matchAll(/<FormaDePago>([\s\S]*?)<\/FormaDePago>/g)]
     .slice(0, 7)
-    .map(([, f]) => `<FormaDePago>${t("FormaPago", val(f, "FormaPago"))}${t("MontoPago", val(f, "MontoPago"))}</FormaDePago>`)
+    .map(([, f]) => t("FormaPago", val(f, "FormaPago")) + t("MontoPago", val(f, "MontoPago")))
+    .filter(Boolean)  // un envoltorio vacío también sale <X/> y rompe la firma
+    .map((f) => `<FormaDePago>${f}</FormaDePago>`)
     .join("");
 
   const impuestos = [...seccion(totales, "ImpuestosAdicionales").matchAll(/<ImpuestoAdicional>([\s\S]*?)<\/ImpuestoAdicional>/g)]
     .slice(0, 20)
-    .map(([, i]) => `<ImpuestoAdicional>` +
+    .map(([, i]) =>
       t("TipoImpuesto", val(i, "TipoImpuesto")) +
       t("MontoImpuestoSelectivoConsumoEspecifico", val(i, "MontoImpuestoSelectivoConsumoEspecifico")) +
       t("MontoImpuestoSelectivoConsumoAdvalorem", val(i, "MontoImpuestoSelectivoConsumoAdvalorem")) +
-      t("OtrosImpuestosAdicionales", val(i, "OtrosImpuestosAdicionales")) +
-    `</ImpuestoAdicional>`)
+      t("OtrosImpuestosAdicionales", val(i, "OtrosImpuestosAdicionales")))
+    .filter(Boolean)
+    .map((i) => `<ImpuestoAdicional>${i}</ImpuestoAdicional>`)
     .join("");
 
   // Los montos del TOTALES (no los de ImpuestosAdicionales, que van aparte).
@@ -81,11 +98,7 @@ export function buildRfceDesdeEcf(xmlFirmado, codigoSeguridad) {
           t("RazonSocialEmisor", val(emisor, "RazonSocialEmisor")) +
           t("FechaEmision", val(emisor, "FechaEmision")) +
         `</Emisor>` +
-        `<Comprador>` +
-          t("RNCComprador", val(comprador, "RNCComprador")) +
-          t("IdentificadorExtranjero", val(comprador, "IdentificadorExtranjero")) +
-          t("RazonSocialComprador", val(comprador, "RazonSocialComprador")) +
-        `</Comprador>` +
+        (datosComprador ? `<Comprador>${datosComprador}</Comprador>` : "") +
         `<Totales>` +
           tot("MontoGravadoTotal") + tot("MontoGravadoI1") + tot("MontoGravadoI2") + tot("MontoGravadoI3") +
           tot("MontoExento") +
