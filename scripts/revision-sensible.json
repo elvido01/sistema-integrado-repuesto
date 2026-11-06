@@ -411,7 +411,9 @@
     "sql/transacciones_comentario_y_forma_pago.sql": "28fdc886a89a2965",
     "sql/comision_transferencia_sale_del_banco.sql": "0a0eee530316663f",
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
-    "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef"
+    "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
+    "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
+    "src/pages/colegio/CajaColegioPage.jsx": "58a8c28cc3c78bf7"
   },
   "historial": [
     {
@@ -549,6 +551,14 @@
       "nota": "code-review high: RFCE omite Comprador/FormaDePago/ImpuestoAdicional vacios (Firma Invalida E320000000032) + error claro sin totales + test; firmador no se toca (byte-perfect)",
       "archivos": [
         "supabase/functions/emitir-fiscal/dgii_rfce_produccion.ts"
+      ]
+    },
+    {
+      "fecha": "2026-11-06",
+      "nota": "code-review high: 10 hallazgos; 9 arreglados (ano completo por estudiante, efectivo en dolares cuenta como efectivo, esperar el ano antes de abrir, recargos al abrir familia y dentro del cobro, RI en el papel, reimpresion con el ano del recibo, anular por rol de la empresa activa, LIMIT 1 con ORDER BY, busqueda sin respuestas viejas); es_tercero en el recibo se deja a proposito (regla: los cobros a terceros no salen de las formulas de efectivo). Probado con BEGIN/ROLLBACK.",
+      "archivos": [
+        "sql/centros_educativos_caja.sql",
+        "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }
   ]

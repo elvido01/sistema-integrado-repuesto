@@ -252,7 +252,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                   <Campo label={k === 'madre' ? 'Nombre de la madre' : 'Nombre del padre'} className="md:col-span-2">
                     <input className={campo} value={fam[`${k}_nombre`]} onChange={(e) => f(`${k}_nombre`, e.target.value)} />
                   </Campo>
-                  <Campo label="Profesión / ocupación"><input className={campo} value={fam[`${k}_profesion`]} onChange={(e) => f(`${k}_profesion`, e.target.value)} /></Campo>
+                  <Campo label="Ocupación"><input className={campo} value={fam[`${k}_profesion`]} onChange={(e) => f(`${k}_profesion`, e.target.value)} /></Campo>
                   <Campo label="Lugar de trabajo"><input className={campo} value={fam[`${k}_trabajo`]} onChange={(e) => f(`${k}_trabajo`, e.target.value)} /></Campo>
                   <Campo label="Celular"><input className={campo} value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, e.target.value)} /></Campo>
                   <Campo label="Teléfono"><input className={campo} value={fam[`${k}_telefono`]} onChange={(e) => f(`${k}_telefono`, e.target.value)} /></Campo>
