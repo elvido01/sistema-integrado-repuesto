@@ -68,3 +68,21 @@ describe('ticket de e-CF por el agente (fuentes nativas)', () => {
     expect(imagenes[0]).toContain('data:image/png;base64');
   });
 });
+
+describe('ticket nativo: hora, cliente genérico y monto', () => {
+  it('hora de la venta en AM/PM, sin Direccion/Tel vacíos y sin la E', async () => {
+    const { buildFacturaEscPos } = await import('../src/services/escposReceipt.ts');
+    const t = buildFacturaEscPos({ ...venta, fecha: '2026-11-07T23:22:00Z', clientes: { nombre: 'CLIENTE GENERICO', direccion: '', telefono: 'N/A' },
+      facturas_detalle: [{ descripcion: 'PIEZA', cantidad: 1, precio: 100, importe: 100 }] }, {});
+    expect(t).toContain('07:22 PM');
+    expect(t).not.toContain('Direccion');
+    expect(t).not.toContain('Tel. :');
+    expect(t).not.toMatch(/100\.00 E/);
+  });
+  it('con dirección y teléfono, sí salen', async () => {
+    const { buildFacturaEscPos } = await import('../src/services/escposReceipt.ts');
+    const t = buildFacturaEscPos({ ...venta, clientes: { nombre: 'JUAN', direccion: 'Calle 1', telefono: '809-555-1234' } }, {});
+    expect(t).toContain('Direccion : Calle 1');
+    expect(t).toContain('Tel. : 809-555-1234');
+  });
+});

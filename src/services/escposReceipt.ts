@@ -268,7 +268,11 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     const fechaStr = factura.fecha
         ? new Date(factura.fecha).toLocaleDateString('es-DO', { day: 'numeric', month: 'numeric', year: 'numeric' })
         : 'N/A';
-    const horaStr = new Date().toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false });
+    // (07/11/2026) Hora de la VENTA (antes salía la hora de imprimir) en
+    // 12 horas con AM/PM, hora de RD. Una fecha sin hora usa la de ahora.
+    const conHora = typeof factura.fecha === 'string' ? factura.fecha.length > 10 : !!factura.fecha;
+    const horaStr = (conHora ? new Date(factura.fecha as string) : new Date())
+        .toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Santo_Domingo' });
     const numeroStr = `FT-${String(factura.numero || 'N/A').padStart(7, '0')}`;
 
     // Client name
@@ -307,8 +311,10 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     lines.push(`Fecha  : ${fechaStr}`);
     lines.push(`Vence  : ${CMD.BOLD_ON}${vence}${CMD.BOLD_OFF}`);
     lines.push(`${CMD.BOLD_ON}Cliente : ${clientName}${CMD.BOLD_OFF}`);
-    lines.push(`Direccion : ${client.direccion || 'N/A'}`);
-    lines.push(`Tel. : ${client.telefono || 'N/A'}`);
+    // Sin dirección o teléfono (el cliente genérico) no se gastan líneas en "N/A".
+    const conDato = (v: unknown) => { const t = String(v ?? '').trim(); return t && !/^n\/?a$/i.test(t) ? t : ''; };
+    if (conDato(client.direccion)) lines.push(`Direccion : ${conDato(client.direccion)}`);
+    if (conDato(client.telefono)) lines.push(`Tel. : ${conDato(client.telefono)}`);
 
     // ── Items Section ──
     lines.push(dashLine());
@@ -328,7 +334,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
             `  ${item.cantidad || 0} UND`,
             fmt(item.precio || 0),
             fmt(itemItbis),
-            `${fmt(item.importe || 0)}${itemItbis < 0.01 ? ' E' : ''}`
+            fmt(item.importe || 0)
         ));
         // Discount line if applicable
         if ((item.descuento || 0) > 0) {

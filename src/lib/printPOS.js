@@ -203,12 +203,15 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
           <span>RNC    : ${client.rnc}</span>
         </div>
         ` : ''}
+        ${/* Sin dirección o teléfono (cliente genérico) no se gastan líneas en "N/A". */ ''}
+        ${String(client.direccion || '').trim() && !/^n\/?a$/i.test(String(client.direccion).trim()) ? `
         <div class="client-info-row">
-          <span>Direccion : ${client.direccion || 'N/A'}</span>
-        </div>
+          <span>Direccion : ${client.direccion}</span>
+        </div>` : ''}
+        ${String(client.telefono || '').trim() && !/^n\/?a$/i.test(String(client.telefono).trim()) ? `
         <div class="client-info-row">
-          <span>Tel. : ${client.telefono || 'N/A'}</span>
-        </div>
+          <span>Tel. : ${client.telefono}</span>
+        </div>` : ''}
       </div>
 
       <div class="separator"></div>
