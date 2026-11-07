@@ -1408,6 +1408,21 @@ export async function getEstadoCuenta(clienteId) {
 // - Financiera/MotoPrestamos: clientes con prestamos atrasados, agrupados por cliente.
 export async function getClientesMorosos() {
   const headers = await getAuthHeaders();
+
+  // (07/11/2026) Colegio: su propia lista (familias con mensualidades atrasadas
+  // o por vencer en 3 dias, con el mensaje ya armado). La base devuelve NULL si
+  // la empresa no es un colegio, y se sigue con la cobranza de siempre.
+  try {
+    const colegio = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_cobro_colegio_extension`, {
+      method: 'POST',
+      headers,
+      body: '{}'
+    });
+    if (colegio?.tipo_cobranza === 'colegio') return colegio;
+  } catch {
+    // SQL del colegio aun no aplicado: sigue con la cobranza normal.
+  }
+
   const empresa = await getCurrentEmpresa(headers).catch(() => null);
 
   try {

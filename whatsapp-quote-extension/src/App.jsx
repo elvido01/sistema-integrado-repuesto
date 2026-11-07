@@ -47,6 +47,8 @@ const DEFAULT_FINANCIERA_COBRO_TEMPLATE =
   'adicionales, este es un mensaje automatico del sistema. Gracias.';
 
 function buildCobroMessage(estado) {
+  // Colegio: la base manda el mensaje ya armado (hijos, meses, recargo).
+  if (estado?.mensaje) return estado.mensaje;
   const isFinancieraCobro = ['financiera', 'gestion_cobro'].includes(estado?.tipo_cobranza);
   const fallbackTemplate = isFinancieraCobro
     ? DEFAULT_FINANCIERA_COBRO_TEMPLATE
@@ -70,6 +72,7 @@ function buildCobroMessage(estado) {
 
 function buildCobroMessageFor(cliente, empresaNombre, plantilla) {
   return buildCobroMessage({
+    mensaje: cliente.mensaje || null,
     plantilla,
     empresa_nombre: empresaNombre,
     tipo_cobranza: cliente.tipo_cobranza,
@@ -1556,9 +1559,12 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
       }
       setMorosos(data);
       if (!data?.clientes?.length) {
-        setCobroMsg(data?.tipo_cobranza === 'financiera'
-          ? 'No hay clientes con prestamos atrasados. Todo al dia.'
-          : 'No hay clientes con facturas vencidas. Todo al dia.');
+        setCobroMsg(data?.aviso
+          || (data?.tipo_cobranza === 'colegio'
+            ? 'No hay familias atrasadas ni mensualidades por vencer. Todo al dia.'
+            : data?.tipo_cobranza === 'financiera'
+              ? 'No hay clientes con prestamos atrasados. Todo al dia.'
+              : 'No hay clientes con facturas vencidas. Todo al dia.'));
       }
     } catch (error) {
       setCobroMsg(error.message || 'No se pudo cargar la lista de cobranza.');
@@ -3331,8 +3337,9 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
         const isGestionCobro = morosos?.tipo_cobranza === 'gestion_cobro';
         const isFinancieraCobro = morosos?.tipo_cobranza === 'financiera' || isGestionCobro;
         const usaAccionesWhatsAppCobro = !isFinancieraCobro;
-        const deudaLabel = isFinancieraCobro ? 'prestamo(s)' : 'factura(s)';
-        const cuentaLabel = isFinancieraCobro ? 'pagos vencidos' : 'cuota(s)';
+        const esColegio = morosos?.tipo_cobranza === 'colegio';
+        const deudaLabel = esColegio ? 'mensualidad(es)' : isFinancieraCobro ? 'prestamo(s)' : 'factura(s)';
+        const cuentaLabel = esColegio ? 'mensualidad(es)' : isFinancieraCobro ? 'pagos vencidos' : 'cuota(s)';
 
         return (
           <section className="mf-cobranza">

@@ -90,6 +90,7 @@ const INCLUYE = {
     items: [
       'Estudiantes y usuarios sin límite',
       'Registro de notas y boletín de calificaciones (formato MINERD)',
+      'Página web del colegio con su propio dominio: requisitos de inscripción y tareas que los maestros suben y los estudiantes descargan (próximamente)',
       'Soporte prioritario',
     ],
   },
