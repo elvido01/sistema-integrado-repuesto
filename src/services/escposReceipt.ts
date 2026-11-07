@@ -221,7 +221,40 @@ interface FacturaData {
     }>;
 }
 
-export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig): string {
+/**
+ * Cómo va el QR del e-CF en el ticket nativo:
+ *  'star'   → comando QR del modo Star (ESC GS y). Las Star TSP143 de Morla
+ *             trabajan en modo Star: ahí GS ( k y GS v 0 salen como basura
+ *             (prueba impresa del 07/11/2026: solo la C salió).
+ *  'escpos' → comando QR ESC/POS estándar (GS ( k): Epson, Xprinter…
+ *  'raster' → el QR como imagen (GS v 0), lo de antes.
+ */
+export type ModoQr = 'star' | 'escpos' | 'raster';
+
+export function qrNativo(texto: string, modo: ModoQr = 'raster'): string {
+    const b = (n: number) => String.fromCharCode(n & 0xff);
+    if (modo === 'star') {
+        // Centrado del modo Star (ESC GS a n), modelo 2, corrección M, celda 6.
+        return ESC + GS + 'a' + b(1)
+            + ESC + GS + 'yS0' + b(2) + ESC + GS + 'yS1' + b(1) + ESC + GS + 'yS2' + b(6)
+            + ESC + GS + 'yD1' + b(0) + b(texto.length) + b(texto.length >> 8) + texto
+            + ESC + GS + 'yP'
+            + ESC + GS + 'a' + b(0);
+    }
+    if (modo === 'escpos') {
+        const len = texto.length + 3;
+        return CMD.CENTER
+            + GS + '(k' + b(4) + b(0) + '1A2' + b(0)
+            + GS + '(k' + b(3) + b(0) + '1C' + b(6)
+            + GS + '(k' + b(3) + b(0) + '1E1'
+            + GS + '(k' + b(len) + b(len >> 8) + '1P0' + texto
+            + GS + '(k' + b(3) + b(0) + '1Q0'
+            + CMD.LEFT;
+    }
+    return CMD.CENTER + qrRasterEscPos(texto) + CMD.LEFT;
+}
+
+export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig, opciones: { qr?: ModoQr } = {}): string {
     const details = factura.facturas_detalle || [];
     const client = factura.clientes || {};
     const formaPago = String(factura.forma_pago || '').toUpperCase();
@@ -371,7 +404,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
         despues.push(CMD.FEED_3);
         despues.push(CMD.CUT);
         return antes
-            + CMD.CENTER + (ecf.qr_url ? qrRasterEscPos(ecf.qr_url) : '') + CMD.LEFT + CMD.LF
+            + (ecf.qr_url ? qrNativo(toAscii(ecf.qr_url), opciones.qr || 'raster') : '') + CMD.LF
             + toAscii(despues.join(CMD.LF));
     }
 

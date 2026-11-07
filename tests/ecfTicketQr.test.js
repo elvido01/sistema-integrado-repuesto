@@ -1,18 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// El ticket que sale hacia el agente (printHtmlSmart) se captura aquí.
-const enviados = [];
+// Lo que sale hacia la impresora: texto nativo (printRawEscPos) o imagen (printHtmlSmart).
+const crudos = [];
+const imagenes = [];
+let impresora = 'Star TSP100 Cutter (TSP143)';
+let agenteFalla = false;
+vi.mock('@/services/printerAdapter', () => ({
+  findReceiptPrinter: vi.fn(async () => impresora),
+  printRawEscPos: vi.fn(async (nombre, escpos) => { if (agenteFalla) throw new Error('agente caído'); crudos.push({ nombre, escpos }); }),
+  setPreferredBackend: vi.fn(),
+  getPreferredBackend: vi.fn(() => 'agent'),
+}));
 vi.mock('@/lib/printHtmlSmart', () => ({
-  printHtmlSmart: vi.fn(async (html, opts) => { enviados.push({ html, opts }); return { backend: 'agent' }; }),
-  printViaBrowser: vi.fn((html) => enviados.push({ html, opts: { navegador: true } })),
+  printHtmlSmart: vi.fn(async (html) => { imagenes.push(html); return { backend: 'agent' }; }),
+  printViaBrowser: vi.fn((html) => imagenes.push(html)),
   isSilentPrintEnabled: () => true,
 }));
-vi.mock('../src/lib/printHtmlSmart', () => ({
-  printHtmlSmart: vi.fn(async (html, opts) => { enviados.push({ html, opts }); return { backend: 'agent' }; }),
-  printViaBrowser: vi.fn((html) => enviados.push({ html, opts: { navegador: true } })),
-  isSilentPrintEnabled: () => true,
-}));
-// Sin base: completarExtras y la consulta de respaldo no encuentran nada.
 vi.mock('@/lib/customSupabaseClient', () => {
   const q = { select: () => q, eq: () => q, order: () => q, limit: () => q, maybeSingle: async () => ({ data: null, error: null }), then: (r) => r({ data: [], error: null }) };
   return { supabase: { from: () => q } };
@@ -30,25 +33,38 @@ const venta = {
   subtotal: 338.98, itbis: 61.02, total: 400, facturas_detalle: [{ descripcion: 'PIEZA', cantidad: 1, precio: 400, importe: 400 }],
   clientes: { nombre: 'CLIENTE GENERICO' },
 };
+const ESC = '\x1B', GS = '\x1D';
 
-describe('ticket de e-CF por el agente', () => {
-  beforeEach(() => { enviados.length = 0; });
+describe('ticket de e-CF por el agente (fuentes nativas)', () => {
+  beforeEach(() => { crudos.length = 0; imagenes.length = 0; impresora = 'Star TSP100 Cutter (TSP143)'; agenteFalla = false; });
 
-  it('venta en vivo (agente, sin diálogo): el ticket lleva el QR y el código de seguridad', async () => {
+  it('Star: texto nativo con el QR del modo Star, el e-NCF y el código de seguridad', async () => {
     const { imprimirFactura } = await import('../src/lib/printPOS.js');
     await imprimirFactura({ ...venta }, { printFormat: 'pos_4inch', printMethod: 'agent' });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(enviados).toHaveLength(1);
-    const { html } = enviados[0];
-    expect(html).toContain('data:image/png;base64');
-    expect(html).toContain('jSux58');
+    expect(imagenes).toHaveLength(0);
+    expect(crudos).toHaveLength(1);
+    const { escpos } = crudos[0];
+    expect(escpos).toContain(ESC + GS + 'yS0');            // QR modo Star
+    expect(escpos).toContain('consultatimbrefc');
+    expect(escpos).not.toContain(GS + 'v0');               // no la imagen que salía basura
+    expect(escpos).toContain('E320000000054');
+    expect(escpos).toContain('jSux58');
   });
 
-  it('reimpresión (la factura viene de la base: sin impresion_ecf)', async () => {
+  it('otra marca (Epson): QR ESC/POS estándar', async () => {
+    impresora = 'EPSON TM-T20';
     const { imprimirFactura } = await import('../src/lib/printPOS.js');
-    const { impresion_ecf, encf, ...deLaBase } = venta;
-    await imprimirFactura(deLaBase, { printFormat: 'pos_4inch', printMethod: 'agent' });
+    await imprimirFactura({ ...venta }, { printFormat: 'pos_4inch', printMethod: 'agent' });
+    expect(crudos[0].escpos).toContain(GS + '(k');
+    expect(crudos[0].escpos).not.toContain(ESC + GS + 'yS0');
+  });
+
+  it('si el agente falla, sale el ticket como imagen (con su QR)', async () => {
+    agenteFalla = true;
+    const { imprimirFactura } = await import('../src/lib/printPOS.js');
+    await imprimirFactura({ ...venta }, { printFormat: 'pos_4inch', printMethod: 'agent', onError: () => {} });
     await new Promise((r) => setTimeout(r, 50));
-    expect(enviados).toHaveLength(1);
+    expect(imagenes).toHaveLength(1);
+    expect(imagenes[0]).toContain('data:image/png;base64');
   });
 });

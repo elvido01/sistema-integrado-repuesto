@@ -2156,7 +2156,9 @@ export const printFacturaQZ = async (factura) => {
     const { findReceiptPrinter, printRawEscPos } = await import('@/services/printerAdapter');
 
     const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
-    const escpos = buildFacturaEscPos(await prepararEcfImpresion(factura), _empresaConfig);
+    // QR del e-CF con el comando que entiende la impresora (escposReceipt → qrNativo).
+    const qr = /star|tsp/i.test(String(printerName || '')) ? 'star' : 'escpos';
+    const escpos = buildFacturaEscPos(await prepararEcfImpresion(factura), _empresaConfig, { qr });
 
     console.log("[QZ-POS] Imprimiendo factura via ESC/POS...");
     await printRawEscPos(printerName, escpos);
@@ -2871,10 +2873,10 @@ export const printSalidaPOS = (salida, almacen, detalles, empresa = {}) => {
 // (10/10/2026) UNA sola regla para imprimir una factura (no PDF): la usan la
 // venta en vivo y la reimpresión (Transacciones Diarias). Antes la
 // reimpresión de un ticket generaba un PDF y salía en otro formato.
-//   • e-CF (e-NCF E…): ticket HTML → agente como IMAGEN por el driver de
-//     Windows (o navegador). El QR de la DGII sale en CUALQUIER impresora;
-//     por ESC/POS nativo salía basura en las Star.
-//   • QZ / agente / "sin diálogo": ticket de texto ESC/POS nativo.
+//   • QZ / agente / "sin diálogo": ticket de texto con las fuentes de la
+//     impresora, también el e-CF (07/11/2026): su QR va con el comando que
+//     entiende la impresora (modo Star en las Star). Si falla, sale el ticket
+//     HTML como imagen, que trae el QR en cualquier impresora.
 //   • WebUSB: ESC/POS directo.
 //   • Navegador: plantilla HTML del formato elegido.
 // onError(err) se llama cuando se cae a navegador (para avisar).
@@ -2886,7 +2888,8 @@ export const imprimirFactura = async (factura, { printFormat = 'pos_4inch', prin
 
   // Igual que la venta de siempre: con método nativo sale el TICKET aunque el
   // formato elegido sea hoja (así lo usan hoy).
-  if (esEcf && usaNativo) {
+  // WebUSB no sabe qué impresora es: el e-CF sale como imagen, como antes.
+  if (esEcf && printMethod === 'webusb' && !silentOn) {
     return printFacturaPOS(factura, printFormat === 'pos_80mm' ? 'pos_80mm' : 'pos_4inch');
   }
   if (printMethod === 'qz' || printMethod === 'agent' || silentOn) {
@@ -2897,7 +2900,7 @@ export const imprimirFactura = async (factura, { printFormat = 'pos_4inch', prin
       await printFacturaQZ(factura);
     } catch (err) {
       onError?.(err);
-      printFacturaPOS(factura, printFormat);
+      printFacturaPOS(factura, esEcf && usaNativo ? (printFormat === 'pos_80mm' ? 'pos_80mm' : 'pos_4inch') : printFormat);
     } finally {
       setPreferredBackend(previo);
     }
