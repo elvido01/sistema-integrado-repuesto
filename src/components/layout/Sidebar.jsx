@@ -22,6 +22,7 @@ import {
   Archive,
   ClipboardList,
   Globe,
+  Star,
   LogOut,
   User,
   Sun,
@@ -51,7 +52,8 @@ import {
 import { usePanels } from '@/contexts/PanelContext';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { canAccess } from '@/lib/permissionsHelper';
-import { esPlanProOMas, puedeCrm } from '@/lib/planes';
+import { accesoFuncion, etiquetaPlan } from '@/lib/planes';
+import MejorarPlanModal from '@/components/auth/MejorarPlanModal';
 import Logo from '@/components/common/Logo';
 import { useTheme } from '@/contexts/ThemeContext';
 import NotificationBell from '@/components/layout/NotificationBell';
@@ -286,8 +288,13 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const { openPanel, activePanel } = usePanels();
   const { profile, permissions, user, signOut, isSuperAdmin, tenantId, empresa } = useAuth();
   const { planActual, especialVigente } = useSuscripcion();
-  // Nómina: plan Pro en adelante (incluye EDUCA PRO / EDUCA TOTAL en colegios).
-  const puedeNomina = isSuperAdmin || esPlanProOMas(planActual);
+  // (07/11/2026) Funciones de otro plan (lib/planes → accesoFuncion): las del
+  // plan siguiente salen en gris con ★ y abren la ventanita de mejorar plan,
+  // sin abrir pestaña; las de dos planes más arriba no se enseñan. La ★ solo
+  // la ven los que pueden contratar (dueño/admin/gerente).
+  const acceso = (id) => accesoFuncion(id, { planActual, especial: especialVigente, superAdmin: isSuperAdmin });
+  const puedeContratar = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
+  const [mejorar, setMejorar] = useState(null);
   const { theme, toggleTheme } = useTheme();
   const { totalUnread } = useWhatsAppNotifications();
   const [expandedGroup, setExpandedGroup] = useState(null);
@@ -389,6 +396,14 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const isGroupActive = (item) => item.subItems?.some(sub => sub.id === activePanel);
 
   return (
+    <>
+    <MejorarPlanModal
+      abierta={!!mejorar}
+      funcion={mejorar?.funcion}
+      plan={mejorar?.plan}
+      onCerrar={() => setMejorar(null)}
+      onVerPlanes={() => { setMejorar(null); handleNavClick('planes'); }}
+    />
     <motion.div
       animate={{ width: sidebarOpen ? 260 : 80 }}
       transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
@@ -482,9 +497,10 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             if (sub.tipoNegocio && empresa?.tipo_negocio !== sub.tipoNegocio
                 && !(sub.moduloOr && tieneModulo(empresa, sub.moduloOr))) return false;
             if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito
-            // Sales Hub: PRO/ENTERPRISE y EDUCA PRO/TOTAL a precio completo (lib/planes).
-            if (sub.id === 'whatsapp-crm' && !(isSuperAdmin || puedeCrm(planActual, especialVigente))) return false;
-            if (sub.id === 'nomina' && !puedeNomina) return false;
+            // Por plan (Sales Hub, Nómina, Notas, Tareas, Página Web): lib/planes.
+            const porPlan = acceso(sub.id).estado;
+            if (porPlan === 'oculta') return false;
+            if (porPlan === 'mejorar') return puedeContratar;
             return canAccess(profile, permissions, sub.permissionKey || sub.id);
           });
           if (allowedSubItems.length === 0) return null;
@@ -568,6 +584,23 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                         const isSubActive = activePanel === subItem.id;
                         const SubIcon = subItem.icon;
                         const subUnread = subItem.id === 'whatsapp-crm' ? totalUnread : 0;
+                        const bloqueo = acceso(subItem.id);
+                        if (bloqueo.estado === 'mejorar') {
+                          return (
+                            <button
+                              key={subItem.id}
+                              onClick={() => setMejorar({ funcion: subItem.id, plan: bloqueo.plan })}
+                              title={`Viene en el plan ${bloqueo.plan}`}
+                              className="group/sub w-full text-left text-[12.5px] py-2 px-3 rounded-lg flex items-center gap-2.5 text-slate-400 hover:bg-violet-50 hover:text-slate-500 transition-all duration-150"
+                            >
+                              {SubIcon ? <SubIcon className="w-3.5 h-3.5 flex-shrink-0 text-slate-300" /> : <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-200" />}
+                              <span className="truncate flex-1">{tituloPorTipo(subItem, empresa?.tipo_negocio)}</span>
+                              <span className="flex items-center gap-0.5 rounded-full border border-violet-300 px-1.5 py-px text-[9px] font-extrabold text-violet-600 flex-shrink-0">
+                                <Star className="w-2.5 h-2.5 fill-violet-500 text-violet-500" />{etiquetaPlan(bloqueo.plan)}
+                              </span>
+                            </button>
+                          );
+                        }
                         return (
                           <button
                             key={subItem.id}
@@ -722,6 +755,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         )}
       </div>
     </motion.div>
+    </>
   );
 };
 

@@ -64,3 +64,33 @@ describe('página web del colegio', () => {
     expect(enlaceRed('https://fb.com/x', 'facebook')).toBe('https://fb.com/x');
   });
 });
+
+import { accesoFuncion, etiquetaPlan } from '../src/lib/planes.js';
+
+describe('funciones de un plan mayor en el menú', () => {
+  it('colegio en Educa Pro: lo de Total sale con ★', () => {
+    expect(accesoFuncion('colegio-tareas', { planActual: 'EDUCA PRO' })).toEqual({ estado: 'mejorar', plan: 'EDUCA TOTAL' });
+    expect(accesoFuncion('nomina', { planActual: 'EDUCA PRO' }).estado).toBe('libre');
+  });
+  it('colegio en Educa Inicial: lo de Pro con ★, lo de Total escondido', () => {
+    expect(accesoFuncion('nomina', { planActual: 'EDUCA INICIAL' })).toEqual({ estado: 'mejorar', plan: 'EDUCA PRO' });
+    expect(accesoFuncion('whatsapp-crm', { planActual: 'EDUCA INICIAL', especial: { precio: 1 } })).toEqual({ estado: 'mejorar', plan: 'EDUCA PRO' });
+    expect(accesoFuncion('colegio-notas', { planActual: 'Educa Inicial' }).estado).toBe('oculta');
+  });
+  it('comercial: Básico ve Nómina con ★ PRO; nunca lo de colegios', () => {
+    expect(accesoFuncion('nomina', { planActual: 'BASICO' })).toEqual({ estado: 'mejorar', plan: 'PRO' });
+    expect(accesoFuncion('colegio-sitio', { planActual: 'PRO' }).estado).toBe('oculta');
+  });
+  it('precio especial que quita el CRM en un plan que sí lo trae: escondido', () => {
+    expect(accesoFuncion('whatsapp-crm', { planActual: 'EDUCA PRO', especial: { precio: 1 } }).estado).toBe('oculta');
+  });
+  it('super admin y funciones sin plan: libres', () => {
+    expect(accesoFuncion('colegio-notas', { planActual: 'EDUCA INICIAL', superAdmin: true }).estado).toBe('libre');
+    expect(accesoFuncion('ventas', { planActual: 'BASICO' }).estado).toBe('libre');
+    expect(accesoFuncion('nomina', { planActual: null }).estado).toBe('oculta');
+  });
+  it('marquita', () => {
+    expect(etiquetaPlan('EDUCA TOTAL')).toBe('TOTAL');
+    expect(etiquetaPlan('pro')).toBe('PRO');
+  });
+});
