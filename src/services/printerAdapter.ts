@@ -220,8 +220,18 @@ export async function printRaw(
 /**
  * Wrappers cómodos por tipo.
  */
+/**
+ * (07/11/2026) Las Star de Morla trabajan en modo Star: ahí el avance final
+ * (ESC d 3) YA corta, y el corte ESC/POS (GS V …) no lo entienden y salía
+ * como una "v" arriba del ticket siguiente. En una Star se quita.
+ */
+export function ajustarParaImpresora(printerName: string, escpos: string): string {
+    if (!/star|tsp/i.test(String(printerName || ''))) return escpos;
+    return escpos.replace(/\x1DV[\x00\x01\x30\x31]/g, '').replace(/\x1DV[\x41\x42][\s\S]/g, '');
+}
+
 export async function printRawEscPos(printerName: string, escpos: string) {
-    return printRaw(printerName, escpos, { format: 'escpos' });
+    return printRaw(printerName, ajustarParaImpresora(printerName, escpos), { format: 'escpos' });
 }
 
 export async function printRawEpl(printerName: string, epl: string) {

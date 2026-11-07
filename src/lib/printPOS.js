@@ -2203,7 +2203,7 @@ export const printCotizacionQZ = async (cotizacion, detalles) => {
     const { findReceiptPrinter, printRawEscPos } = await import('@/services/printerAdapter');
 
     const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
-    const escpos = buildCotizacionEscPos(cotizacion, detalles);
+    const escpos = buildCotizacionEscPos(cotizacion, detalles, _empresaConfig);
 
     console.log("[QZ-POS] Imprimiendo cotización via ESC/POS...");
     await printRawEscPos(printerName, escpos);
@@ -2741,7 +2741,7 @@ export const printFacturaWebUsb = async (factura) => {
 export const printCotizacionWebUsb = async (cotizacion, detalles) => {
   const { buildCotizacionEscPos } = await import('@/services/escposReceipt');
   const { webUsbPrintEscPos } = await import('@/services/webUsbPrintService');
-  const escpos = buildCotizacionEscPos(cotizacion, detalles);
+  const escpos = buildCotizacionEscPos(cotizacion, detalles, _empresaConfig);
   await webUsbPrintEscPos(escpos);
 };
 

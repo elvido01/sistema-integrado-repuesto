@@ -100,3 +100,21 @@ describe('ticket nativo de compra', () => {
     expect(t).not.toContain('RNC    :');
   });
 });
+
+describe('cotización y Star', () => {
+  it('la cotización sale con el nombre y los datos de la empresa (no MotoFlow ni la dirección de Morla)', async () => {
+    const { buildCotizacionEscPos } = await import('../src/services/escposReceipt.ts');
+    const t = buildCotizacionEscPos({ numero: 1, fecha_cotizacion: '2026-11-06' }, [], { nombre: 'Colegio X', telefono: '809-111-2222' });
+    expect(t).toContain('COLEGIO X');
+    expect(t).not.toContain('MOTOFLOW');
+    expect(t).not.toContain('MotoFlow');
+    expect(t).not.toContain('Baldemiro');
+    expect(t).toContain('6/11/2026');
+  });
+  it('en una Star se quita el corte ESC/POS (salía como una "v"); en otras se deja', async () => {
+    const { ajustarParaImpresora } = await import('../src/services/printerAdapter.ts');
+    const t = 'hola\x1Bd\x03\x1DV\x00';
+    expect(ajustarParaImpresora('Star TSP100 Cutter (TSP143)', t)).toBe('hola\x1Bd\x03');
+    expect(ajustarParaImpresora('EPSON TM-T20', t)).toBe(t);
+  });
+});

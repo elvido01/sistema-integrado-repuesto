@@ -138,23 +138,13 @@ interface EmpresaConfig {
 
 function buildHeader(empresa?: EmpresaConfig, overrideName?: string): string {
     const lines: string[] = [];
+    // (07/11/2026) Sin datos de la empresa no se ponen los de Morla (estaban
+    // fijos aquí: la cotización salía "MOTOFLOW" con la dirección de Morla).
     const nombre = (overrideName || empresa?.nombre || 'MotoFlow').toUpperCase();
     lines.push(CMD.BOLD_ON + centerLine(nombre) + CMD.BOLD_OFF);
-    if (empresa?.direccion) {
-        lines.push(centerLine(empresa.direccion));
-    } else {
-        lines.push(centerLine('Av. Duarte, esq. Baldemiro Rijo'));
-    }
-    if (empresa?.ciudad) {
-        lines.push(centerLine(empresa.ciudad));
-    } else {
-        lines.push(centerLine('Higuey, Rep. Dom.'));
-    }
-    if (empresa?.telefono) {
-        lines.push(centerLine(empresa.telefono));
-    } else {
-        lines.push(centerLine('809-390-5965'));
-    }
+    if (empresa?.direccion) lines.push(centerLine(empresa.direccion));
+    if (empresa?.ciudad) lines.push(centerLine(empresa.ciudad));
+    if (empresa?.telefono) lines.push(centerLine(empresa.telefono));
     if (empresa?.rnc) {
         lines.push(centerLine(`RNC: ${empresa.rnc}`));
     }
@@ -478,12 +468,15 @@ interface CotizacionDetalle {
 
 export function buildCotizacionEscPos(
     cotizacion: CotizacionData,
-    detalles: CotizacionDetalle[]
+    detalles: CotizacionDetalle[],
+    empresa?: EmpresaConfig,
 ): string {
-    const fechaStr = cotizacion.fecha_cotizacion
-        ? new Date(cotizacion.fecha_cotizacion).toLocaleDateString('es-DO', { day: 'numeric', month: 'numeric', year: 'numeric' })
-        : 'N/A';
-    const horaStr = new Date().toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false });
+    // Fecha sin hora ("2026-11-06") se toma tal cual: new Date() la corría un día.
+    const fc = String(cotizacion.fecha_cotizacion || '');
+    const fechaStr = /^\d{4}-\d{2}-\d{2}$/.test(fc)
+        ? `${Number(fc.slice(8, 10))}/${Number(fc.slice(5, 7))}/${fc.slice(0, 4)}`
+        : fc ? new Date(fc).toLocaleDateString('es-DO', { day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'America/Santo_Domingo' }) : 'N/A';
+    const horaStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Santo_Domingo' });
     const numeroStr = `COT-${String(cotizacion.numero || 'N/A').padStart(7, '0')}`;
 
     // Calculate totals
@@ -506,7 +499,7 @@ export function buildCotizacionEscPos(
 
     // ── Init + Header ──
     lines.push(CMD.INIT);
-    lines.push(buildHeader());
+    lines.push(buildHeader(empresa));
     lines.push(CMD.BOLD_ON + centerLine('COTIZACION') + CMD.BOLD_OFF);
     lines.push('');
 
@@ -552,7 +545,7 @@ export function buildCotizacionEscPos(
     lines.push(centerLine('Los precios estan sujetos a cambios'));
     lines.push(centerLine('sin previo aviso.'));
     lines.push('');
-    lines.push(centerLine('MotoFlow'));
+    lines.push(centerLine(String(empresa?.nombre || 'MotoFlow').toUpperCase()));
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
