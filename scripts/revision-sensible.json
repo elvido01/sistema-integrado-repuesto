@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "58a8c28cc3c78bf7"
+    "src/pages/colegio/CajaColegioPage.jsx": "a35f435c7685ae61"
   },
   "historial": [
     {
@@ -558,6 +558,13 @@
       "nota": "code-review high: 10 hallazgos; 9 arreglados (ano completo por estudiante, efectivo en dolares cuenta como efectivo, esperar el ano antes de abrir, recargos al abrir familia y dentro del cobro, RI en el papel, reimpresion con el ano del recibo, anular por rol de la empresa activa, LIMIT 1 con ORDER BY, busqueda sin respuestas viejas); es_tercero en el recibo se deja a proposito (regla: los cobros a terceros no salen de las formulas de efectivo). Probado con BEGIN/ROLLBACK.",
       "archivos": [
         "sql/centros_educativos_caja.sql",
+        "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-07",
+      "nota": "code-review high (parte 4 colegio): 10 hallazgos, 10 arreglados - cargos anulados ya no se recrean (preparar/recargos con NOT EXISTS), cambio de ano exige p_anio_actual, caja relee el ano actual, Marcar como actual vuelve con aviso, desempate por curso, retiro por vencimiento, fecha local, edu_soy_direccion, helpers unicos en colegio.js, cache de cabecera solo si lee bien. Probado BEGIN/ROLLBACK.",
+      "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }

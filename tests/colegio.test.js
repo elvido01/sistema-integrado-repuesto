@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   mesesDelAnio, tarifaSugerida, totalAnioCompleto, edadDe, tarifaParaNuevo,
-  fechaDeExcel, leerPlantillaEstudiantes, COLUMNAS_PLANTILLA,
+  fechaDeExcel, leerPlantillaEstudiantes, COLUMNAS_PLANTILLA, diasAtraso, tramoAntiguedad,
 } from '../src/lib/colegio.js';
 
 describe('colegio: estudiantes', () => {
@@ -94,5 +94,23 @@ describe('colegio: tarifas', () => {
   it('año completo: 5% solo sobre las mensualidades (ejemplo del colegio)', () => {
     expect(totalAnioCompleto(5000, 10, 5)).toBe(47500);
     expect(totalAnioCompleto(6150, 10, 5)).toBe(58425);
+  });
+});
+
+describe('colegio: antigüedad de saldos', () => {
+  it('cuenta los días desde el día límite', () => {
+    expect(diasAtraso('2026-09-05', '2026-11-06')).toBe(62);
+    expect(diasAtraso('2026-11-05', '2026-11-06')).toBe(1);
+    expect(diasAtraso('2026-12-05', '2026-11-06')).toBeLessThan(0);
+  });
+
+  it('tramos 30 / 60 como pidió el colegio', () => {
+    expect(tramoAntiguedad(0)).toBe('por_vencer');
+    expect(tramoAntiguedad(-10)).toBe('por_vencer');
+    expect(tramoAntiguedad(1)).toBe('d30');
+    expect(tramoAntiguedad(30)).toBe('d30');
+    expect(tramoAntiguedad(31)).toBe('d60');
+    expect(tramoAntiguedad(60)).toBe('d60');
+    expect(tramoAntiguedad(61)).toBe('d60mas');
   });
 });

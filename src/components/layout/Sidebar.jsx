@@ -65,6 +65,7 @@ const navItems = [
     subItems: [
       { title: 'Caja del Colegio', id: 'colegio-caja', icon: Wallet, soloTipos: ['educativo'] },
       { title: 'Estudiantes', id: 'colegio-estudiantes', icon: GraduationCap, soloTipos: ['educativo'] },
+      { title: 'Reportes del Colegio', id: 'colegio-reportes', icon: BarChart2, soloTipos: ['educativo'] },
       { title: 'Configuración del Colegio', id: 'colegio-config', icon: Settings, soloTipos: ['educativo'] },
     ],
   },

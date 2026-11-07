@@ -149,4 +149,96 @@ export function reciboColegioHojaHTML(d) {
 </body></html>`;
 }
 
+// ── Estilos comunes de hoja (estado de cuenta y reportes) ──
+const CSS_HOJA = `
+  @page { size: letter; margin: 12mm; }
+  * { box-sizing: border-box; } body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; font-size: 12px; color: #1b2330; }
+  .cab { display: flex; align-items: center; gap: 14px; border-bottom: 3px solid #16325c; padding-bottom: 8px; }
+  .cab img { width: 64px; height: 64px; object-fit: contain; }
+  .cab h1 { margin: 0; font-family: Georgia, serif; font-style: italic; font-size: 19px; color: #16325c; }
+  .dat { color: #5b6472; font-size: 10.5px; margin-top: 2px; line-height: 1.45; }
+  .tit { margin-left: auto; text-align: right; } .tit .t { font-size: 14px; font-weight: 800; color: #16325c; letter-spacing: .5px; text-transform: uppercase; }
+  .tit .f { font-size: 11px; color: #5b6472; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th { background: #16325c; color: #fff; font-size: 10.5px; text-align: left; padding: 5px 7px; }
+  td { padding: 4px 7px; border-bottom: 1px solid #e1e5ea; font-size: 11.5px; vertical-align: top; }
+  .m { text-align: right; font-family: Consolas, monospace; white-space: nowrap; }
+  tr.g td { background: #eef3fb; color: #16325c; font-weight: 800; border-bottom: 1px solid #9fb6dc; padding-top: 7px; }
+  tr.s td { font-weight: 700; background: #f7f8fa; } tr.t td { font-weight: 800; border-top: 2px solid #16325c; font-size: 12.5px; }
+  tr.an td { color: #9aa1ab; text-decoration: line-through; }
+  .rojo { color: #b3261e; } .verde { color: #2e8b3e; }
+  h2 { font-size: 12.5px; color: #16325c; margin: 14px 0 2px; } .sub { font-size: 11px; color: #5b6472; }
+  .nota { font-size: 10px; color: #5b6472; margin-top: 14px; line-height: 1.45; }
+`;
+const cabecera = (c, titulo, fecha) => `
+  <div class="cab">
+    ${c?.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : ''}
+    <div><h1>${esc(c?.nombre || '')}</h1>
+      <div class="dat">${c?.rnc ? `RNC ${esc(c.rnc)} · ` : ''}${esc(c?.direccion || '')}${c?.telefono ? ` · Tel. ${esc(c.telefono)}` : ''}</div></div>
+    <div class="tit"><div class="t">${esc(titulo)}</div><div class="f">${esc(fecha || '')}</div></div>
+  </div>`;
+
+/**
+ * Estado de cuenta de una familia: todos los hijos en una sola hoja.
+ * d = { colegio, familia, fecha, estudiantes: [{ nombre, matricula, curso, tanda, tarifa, beca_pct, estado,
+ *        cargos: [{ descripcion, anio, moneda, monto, descuento, pagado, pendiente, estado, vencido }] }],
+ *       pagos: [{ numero, fecha, total, anulado }] }
+ */
+export function estadoCuentaFamiliaHTML(d) {
+  const f = d.familia || {};
+  let totDOP = 0; let totUSD = 0; let venDOP = 0;
+  const bloques = d.estudiantes.map((e) => {
+    const pDOP = e.cargos.filter((c) => c.moneda !== 'USD').reduce((s, c) => s + c.pendiente, 0);
+    const pUSD = e.cargos.filter((c) => c.moneda === 'USD').reduce((s, c) => s + c.pendiente, 0);
+    totDOP += pDOP; totUSD += pUSD;
+    venDOP += e.cargos.filter((c) => c.moneda !== 'USD' && c.vencido).reduce((s, c) => s + c.pendiente, 0);
+    const filas = e.cargos.map((c) => {
+      const est = c.estado === 'pagado' ? '<span class="verde">Pagado</span>'
+        : c.vencido ? '<span class="rojo">Vencido</span>' : c.estado === 'parcial' ? 'Abonado' : 'Pendiente';
+      const mon = (v) => `${c.moneda === 'USD' ? 'US$ ' : ''}${n2(v)}`;
+      return `<tr><td>${esc(c.descripcion)}${c.anio ? ` <span class="sub">(${esc(c.anio)})</span>` : ''}</td>
+        <td class="m">${mon(c.monto)}</td><td class="m">${Number(c.descuento) > 0 ? mon(c.descuento) : ''}</td>
+        <td class="m">${mon(c.pagado)}</td><td class="m">${c.pendiente > 0 ? mon(c.pendiente) : ''}</td><td>${est}</td></tr>`;
+    }).join('');
+    return `<h2>${esc(e.nombre)} <span class="sub">· Mat. ${esc(e.matricula)} · ${esc(e.curso || '')}${e.tanda ? ` · ${esc(e.tanda)}` : ''} · RD$ ${n2(e.tarifa)}${Number(e.beca_pct) > 0 ? ` (beca ${Number(e.beca_pct)}%)` : ''}${e.estado !== 'activo' ? ` · ${esc(e.estado)}` : ''}</span></h2>
+      <table><tr><th>Concepto</th><th class="m">Monto</th><th class="m">Descuento</th><th class="m">Pagado</th><th class="m">Pendiente</th><th>Estado</th></tr>
+      ${filas || '<tr><td colspan="6" class="sub">Sin cargos</td></tr>'}
+      <tr class="s"><td colspan="4">Pendiente de ${esc(e.nombre.split(' ')[0])}</td><td class="m">${n2(pDOP)}${pUSD > 0 ? `<br>US$ ${n2(pUSD)}` : ''}</td><td></td></tr></table>`;
+  }).join('');
+  const pagos = (d.pagos || []).map((p) => `<tr class="${p.anulado ? 'an' : ''}"><td>${esc(numeroRecibo(p.numero))}</td><td>${esc(fechaDO(p.fecha))}</td><td class="m">${n2(p.total)}</td></tr>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Estado de cuenta ${esc(f.nombre || '')}</title><style>${CSS_HOJA}</style></head><body>
+  ${cabecera(d.colegio, 'Estado de cuenta', `Al ${fechaDO(d.fecha)}`)}
+  <div style="margin:8px 0 2px">Familia <b>${esc(f.nombre || '')}</b>${[f.madre_nombre, f.padre_nombre, f.tutor_nombre].filter(Boolean).length ? ` · ${esc([f.madre_nombre, f.padre_nombre, f.tutor_nombre].filter(Boolean).join(' / '))}` : ''}${f.telefono ? ` · ${esc(f.telefono)}` : ''}</div>
+  ${bloques}
+  <table style="margin-top:14px"><tr class="t"><td>TOTAL PENDIENTE DE LA FAMILIA</td><td class="m">RD$ ${n2(totDOP)}${totUSD > 0 ? ` + US$ ${n2(totUSD)}` : ''}</td></tr>
+  ${venDOP > 0 ? `<tr><td class="rojo">De eso, vencido</td><td class="m rojo">RD$ ${n2(venDOP)}</td></tr>` : ''}</table>
+  ${pagos ? `<h2>Últimos pagos</h2><table><tr><th>Recibo</th><th>Fecha</th><th class="m">Total RD$</th></tr>${pagos}</table>` : ''}
+  <div class="nota">${esc(d.reglaRecargo || '')}</div>
+</body></html>`;
+}
+
+/**
+ * Reporte genérico en hoja. columnas = [{ t: 'Título', k: 'clave', m: true (dinero) }]
+ * filas = objetos; { _grupo: 'texto' } = encabezado de grupo; { _sub: true, ... } = subtotal;
+ * total = fila final (mismas claves) u null.
+ */
+export function reporteColegioHTML({ colegio, titulo, subtitulo, columnas, filas, total, nota, horizontal }) {
+  const celda = (c, r) => {
+    const v = r[c.k];
+    if (c.m) return `<td class="m">${v === '' || v == null ? '' : n2(v)}</td>`;
+    return `<td>${esc(v ?? '')}</td>`;
+  };
+  const cuerpo = filas.map((r) => {
+    if (r._grupo) return `<tr class="g"><td colspan="${columnas.length}">${esc(r._grupo)}</td></tr>`;
+    return `<tr class="${r._sub ? 's' : ''}${r._anulado ? ' an' : ''}">${columnas.map((c) => celda(c, r)).join('')}</tr>`;
+  }).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(titulo)}</title><style>${CSS_HOJA}${horizontal ? '@page { size: letter landscape; margin: 10mm; }' : ''}</style></head><body>
+  ${cabecera(colegio, titulo, subtitulo)}
+  <table><tr>${columnas.map((c) => `<th${c.m ? ' class="m"' : ''}>${esc(c.t)}</th>`).join('')}</tr>
+  ${cuerpo || `<tr><td colspan="${columnas.length}" class="sub">Sin datos</td></tr>`}
+  ${total ? `<tr class="t">${columnas.map((c) => celda(c, total)).join('')}</tr>` : ''}</table>
+  ${nota ? `<div class="nota">${esc(nota)}</div>` : ''}
+</body></html>`;
+}
+
 export { dinero };

@@ -13,7 +13,8 @@
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { GraduationCap, Loader2, Plus, Save, RefreshCw, CheckCircle2, Ban, Star } from 'lucide-react';
+import { GraduationCap, Loader2, Plus, Save, RefreshCw, CheckCircle2, Ban, Star, ArrowRightCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -36,8 +37,14 @@ const PESTANAS = [
 ];
 
 export default function ColegioConfigPage() {
-  const { tenantId } = useAuth();
+  const { tenantId, profile } = useAuth();
   const { toast } = useToast();
+  // La misma regla que la base para el cambio de año (dueño/admin de ESTE colegio, o superadmin).
+  const [esDireccion, setEsDireccion] = useState(['admin', 'owner'].includes(profile?.role));
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase.rpc('edu_soy_direccion').then(({ data, error: e }) => { if (!e) setEsDireccion(!!data); });
+  }, [tenantId]);
   const [pestana, setPestana] = useState('tarifas');
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -166,7 +173,7 @@ export default function ColegioConfigPage() {
             <Cursos cursos={cursos} guardando={guardando} actualizar={actualizar} insertar={insertar} />
           )}
           {pestana === 'anios' && (
-            <Anios anios={anios} guardando={guardando} insertar={insertar} tenantId={tenantId} error={error} recargar={cargar} />
+            <Anios anios={anios} guardando={guardando} insertar={insertar} tenantId={tenantId} error={error} recargar={cargar} esDireccion={esDireccion} toast={toast} />
           )}
           {pestana === 'reglas' && (
             <Reglas cfg={cfg} tenantId={tenantId} error={error} recargar={cargar} toast={toast} />
@@ -486,9 +493,11 @@ function Cursos({ cursos, guardando, actualizar, insertar }) {
 }
 
 // ── Año escolar ──────────────────────────────────────────────────────────
-function Anios({ anios, guardando, insertar, tenantId, error, recargar }) {
+function Anios({ anios, guardando, insertar, tenantId, error, recargar, esDireccion, toast }) {
   const ultimo = anios[0];
+  const actual = anios.find((a) => a.actual);
   const [nuevo, setNuevo] = useState(null);
+  const [cambio, setCambio] = useState(false);
 
   const empezar = () => {
     const a = ultimo ? ultimo.anio_inicio + 1 : new Date().getFullYear();
@@ -506,6 +515,11 @@ function Anios({ anios, guardando, insertar, tenantId, error, recargar }) {
 
   // Un solo año actual: primero se apaga el que estaba, luego se enciende el nuevo.
   const marcarActual = async (anio) => {
+    if (actual && !window.confirm(`Esto solo cambia cuál es el año actual (para corregir un error): NO sube a los estudiantes de curso ni prepara cuentas.
+
+Para pasar al año siguiente usa "Cambio de año escolar".
+
+¿Marcar ${anio.nombre} como actual?`)) return undefined;
     const { error: e1 } = await supabase.from('edu_anios').update({ actual: false })
       .eq('tenant_id', tenantId).eq('actual', true).select('id');
     if (e1) return error('No se pudo cambiar el año actual', e1);
@@ -528,6 +542,7 @@ function Anios({ anios, guardando, insertar, tenantId, error, recargar }) {
               {a.actual && <span className="ml-2 text-[10px] font-bold text-blue-700 bg-blue-100 rounded-full px-2 py-0.5">AÑO ACTUAL</span>}
               {a.cerrado && <span className="ml-2 text-[10px] font-bold text-gray-600 bg-gray-100 rounded-full px-2 py-0.5">CERRADO</span>}
             </div>
+            {/* Para corregir un año marcado por error. Pasar de año de verdad es el Cambio de año (promueve a los estudiantes). */}
             {!a.actual && !a.cerrado && (
               <Button size="sm" variant="outline" disabled={guardando} onClick={() => marcarActual(a)}>Marcar como actual</Button>
             )}
@@ -562,7 +577,149 @@ function Anios({ anios, guardando, insertar, tenantId, error, recargar }) {
       ) : (
         <Button size="sm" variant="outline" onClick={empezar}><Plus className="w-4 h-4 mr-1" /> Crear el año escolar siguiente</Button>
       )}
+
+      {actual && esDireccion && (
+        <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+          <div className="font-bold text-amber-900">Cambio de año escolar</div>
+          <p className="text-sm text-amber-900">
+            Al terminar {actual.nombre}: cada estudiante sube al curso siguiente (el de 6to de secundaria se gradúa), todos pasan a continuantes,
+            la mensualidad <b>no cambia</b> y se prepara la cuenta del año nuevo. Quien ya pagó la reservación no la vuelve a pagar.
+            Lo que quedó debiendo del año viejo se sigue cobrando en la Caja.
+          </p>
+          <Button size="sm" onClick={() => setCambio(true)}><ArrowRightCircle className="w-4 h-4 mr-1" /> Cambiar a {actual.anio_inicio + 1}-{actual.anio_inicio + 2}</Button>
+        </div>
+      )}
+      {cambio && actual && (
+        <CambioAnioDialog actual={actual} siguiente={anios.find((a) => a.anio_inicio === actual.anio_inicio + 1)} error={error}
+          onClose={() => setCambio(false)}
+          onDone={(r) => {
+            setCambio(false);
+            toast({ title: `Año ${r.anio} en marcha`, description: `${r.promovidos} suben de curso · ${r.repiten} repiten · ${r.graduados} graduados · ${r.retirados} retirados · ${r.cargos} cargos creados` });
+            recargar();
+          }} />
+      )}
     </div>
+  );
+}
+
+// ── Cambio de año ────────────────────────────────────────────────────────
+// Lista a todos los activos con el curso que tendrán y si reservaron. La
+// dirección marca quién repite y quién no sigue; el resto sube de curso.
+// Todo pasa en la base en una sola transacción (edu_cambiar_anio).
+const RESERVA_TXT = { pagada: 'Reservó y pagó', pendiente: 'Reservó sin pagar', sin_reservar: 'Sin reservar', gradua: 'Se gradúa' };
+function CambioAnioDialog({ actual, siguiente, onClose, onDone, error }) {
+  const nombreSig = `${actual.anio_inicio + 1}-${actual.anio_inicio + 2}`;
+  const [filas, setFilas] = useState(null);
+  const [marca, setMarca] = useState({});        // estudiante_id → 'repite' | 'retirar'
+  const [preparar, setPreparar] = useState(true);
+  const [mesInicio, setMesInicio] = useState(siguiente?.mes_inicio || actual.mes_inicio || 9);
+  const [meses, setMeses] = useState(siguiente?.meses || actual.meses || 10);
+  const [confirmar, setConfirmar] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const [filtro, setFiltro] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      const { data, error: e } = await supabase.rpc('edu_reporte_reservas');
+      if (e) { error('No se pudo cargar la lista', e); onClose(); return; }
+      setFilas(data?.filas || []);
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const poner = (id, v) => setMarca((m) => { const n = { ...m }; if (n[id] === v) delete n[id]; else n[id] = v; return n; });
+  const cuenta = (v) => Object.values(marca).filter((x) => x === v).length;
+  const sinReservar = (filas || []).filter((f) => f.reserva === 'sin_reservar' || f.reserva === 'pendiente').length;
+  const visibles = (filas || []).filter((f) => !filtro || f.reserva === filtro);
+
+  const ok = async () => {
+    if (confirmar.trim() !== nombreSig) return error('Falta confirmar', `Escribe ${nombreSig} para confirmar.`);
+    setGuardando(true);
+    const { data, error: e } = await supabase.rpc('edu_cambiar_anio', {
+      p_anio_actual: actual.id,   // si otro ya cambió de año, la base no avanza otra vez
+      p_repiten: Object.entries(marca).filter(([, v]) => v === 'repite').map(([id]) => id),
+      p_retirar: Object.entries(marca).filter(([, v]) => v === 'retirar').map(([id]) => id),
+      p_preparar: preparar,
+      p_mes_inicio: Number(mesInicio), p_meses: Number(meses),
+    });
+    setGuardando(false);
+    if (e) return error('No se pudo cambiar de año', e);
+    return onDone(data);
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && !guardando && onClose()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Cambiar de {actual.nombre} a {nombreSig}</DialogTitle></DialogHeader>
+        {!filas ? <div className="py-10 flex justify-center"><Loader2 className="w-7 h-7 animate-spin text-blue-600" /></div> : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-xs font-bold text-gray-600 uppercase">
+                Primer mes de cobro
+                <select className={`${campo} w-40 mt-1`} value={mesInicio} onChange={(e) => setMesInicio(e.target.value)}>
+                  <option value={8}>Agosto</option><option value={9}>Septiembre</option>
+                </select>
+              </label>
+              <label className="text-xs font-bold text-gray-600 uppercase">
+                Mensualidades
+                <input type="number" min="1" max="12" className={`${campo} w-24 mt-1`} value={meses} onChange={(e) => setMeses(e.target.value)} />
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={preparar} onChange={(e) => setPreparar(e.target.checked)} />
+                Preparar la cuenta del año nuevo de cada estudiante
+              </label>
+              <label className="text-xs font-bold text-gray-600 uppercase ml-auto">
+                Mostrar
+                <select className={`${campo} w-44 mt-1`} value={filtro} onChange={(e) => setFiltro(e.target.value)}>
+                  <option value="">Todos ({filas.length})</option>
+                  <option value="sin_reservar">Sin reservar</option>
+                  <option value="pendiente">Reservó sin pagar</option>
+                  <option value="pagada">Reservó y pagó</option>
+                  <option value="gradua">Se gradúan</option>
+                </select>
+              </label>
+            </div>
+            {sinReservar > 0 && (
+              <div className="text-sm rounded-md bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2">
+                {sinReservar} estudiante{sinReservar === 1 ? '' : 's'} no {sinReservar === 1 ? 'ha' : 'han'} pagado la reservación. Si alguno no va a seguir, márcalo en <b>No sigue</b>; a los que sigan se les carga la reservación en la cuenta nueva.
+              </div>
+            )}
+            <div className="border rounded-md max-h-[45vh] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-gray-100 text-xs text-gray-600">
+                  <tr><th className="text-left px-2 py-1.5">Estudiante</th><th className="text-left">Curso → próximo</th><th className="text-left">Reserva</th><th className="w-20">Repite</th><th className="w-20">No sigue</th></tr>
+                </thead>
+                <tbody>
+                  {visibles.map((f) => (
+                    <tr key={f.estudiante_id} className={`border-t ${marca[f.estudiante_id] === 'retirar' ? 'bg-red-50' : marca[f.estudiante_id] === 'repite' ? 'bg-amber-50' : ''}`}>
+                      <td className="px-2 py-1">{f.estudiante} <span className="text-xs text-gray-400">· Fam. {f.familia}</span></td>
+                      <td className="text-xs">{f.curso} → <b>{marca[f.estudiante_id] === 'repite' ? f.curso : marca[f.estudiante_id] === 'retirar' ? '—' : f.curso_siguiente}</b></td>
+                      <td className={`text-xs ${f.reserva === 'pagada' ? 'text-emerald-700' : f.reserva === 'gradua' ? 'text-gray-500' : 'text-amber-700'}`}>{RESERVA_TXT[f.reserva] || f.reserva}</td>
+                      <td className="text-center"><input type="checkbox" checked={marca[f.estudiante_id] === 'repite'} onChange={() => poner(f.estudiante_id, 'repite')} /></td>
+                      <td className="text-center"><input type="checkbox" checked={marca[f.estudiante_id] === 'retirar'} onChange={() => poner(f.estudiante_id, 'retirar')} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="text-sm text-gray-700">
+              Suben de curso: <b>{filas.length - cuenta('repite') - cuenta('retirar') - filas.filter((f) => f.reserva === 'gradua' && !marca[f.estudiante_id]).length}</b> ·
+              Repiten: <b>{cuenta('repite')}</b> · Se gradúan: <b>{filas.filter((f) => f.reserva === 'gradua' && !marca[f.estudiante_id]).length}</b> ·
+              No siguen: <b>{cuenta('retirar')}</b>
+            </div>
+            <div className="rounded-md border border-red-200 bg-red-50/60 p-3 space-y-2">
+              <p className="text-sm text-red-900">Esto no se deshace con un botón: {actual.nombre} queda cerrado y {nombreSig} pasa a ser el año actual. Para confirmar escribe <b>{nombreSig}</b>.</p>
+              <div className="flex gap-2">
+                <input className={`${campo} w-40`} value={confirmar} onChange={(e) => setConfirmar(e.target.value)} placeholder={nombreSig} />
+                <Button variant="ghost" onClick={onClose} disabled={guardando}>Cancelar</Button>
+                <Button className="bg-red-700 hover:bg-red-800" onClick={ok} disabled={guardando || confirmar.trim() !== nombreSig}>
+                  {guardando && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} Cambiar de año
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

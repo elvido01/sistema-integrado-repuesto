@@ -12,7 +12,8 @@
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { Wallet, Search, Loader2, Printer, Plus, Trash2, Ban, RefreshCw, CalendarPlus } from 'lucide-react';
+import { Wallet, Search, Loader2, Printer, Plus, Trash2, Ban, RefreshCw, CalendarPlus, CalendarCheck, FileText, X } from 'lucide-react';
+import { imprimirEstadoCuenta } from '@/lib/colegioReportes';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -21,31 +22,30 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { printHtmlSmart } from '@/lib/printHtmlSmart';
 import { reciboColegioTicketHTML, reciboColegioHojaHTML, numeroRecibo } from '@/lib/printColegio';
-import { mesesDelAnio, MESES } from '@/lib/colegio';
+import { mesesDelAnio, MESES, hoyRD, pendienteDe, TANDAS_NOMBRE as TANDAS } from '@/lib/colegio';
 
 const n2 = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const campo = 'h-9 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
-const TANDAS = { matutina: 'Matutina', vespertina: 'Vespertina', extendida: 'Extendida', nocturna: 'Nocturna' };
 // 'Efectivo en dólares': el Cierre de Caja lo cuenta como efectivo (el nombre lleva
 // "efectivo"), igual que el desglose de la gaveta que cuenta los dólares × tasa.
 const FORMAS = ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque', 'Efectivo en dólares'];
 const conBanco = (f) => ['Transferencia', 'Tarjeta', 'Cheque'].includes(f);
-const hoyRD = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
-const pendienteDe = (c) => Math.max(0, Number(c.monto) - Number(c.descuento) - Number(c.pagado));
 
 /** Arma los datos de impresión de un recibo ya guardado (sirve también para reimprimir). */
 export async function datosReciboColegio(pagoId, tenantId) {
   const { data: p, error } = await supabase.from('edu_pagos').select('*').eq('id', pagoId).eq('tenant_id', tenantId).single();
   if (error) throw error;
   const [li, fa, emp, us, ri] = await Promise.all([
-    supabase.from('edu_pago_lineas').select('*, edu_cargos(anio_id)').eq('pago_id', pagoId).eq('tenant_id', tenantId).order('created_at'),
+    supabase.from('edu_pago_lineas').select('*, edu_cargos(anio_id, tipo)').eq('pago_id', pagoId).eq('tenant_id', tenantId).order('created_at'),
     supabase.from('edu_familias').select('*').eq('id', p.familia_id).eq('tenant_id', tenantId).single(),
     supabase.from('config_empresa').select('nombre, rnc, direccion1, direccion2, telefono, logo_url, slogan').eq('tenant_id', tenantId).single(),
     p.usuario_id ? supabase.from('profiles').select('full_name, email').eq('id', p.usuario_id).maybeSingle() : Promise.resolve({ data: null }),
     p.recibo_ingreso_id ? supabase.from('recibos_ingreso').select('numero').eq('id', p.recibo_ingreso_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   // El año escolar es el de los cargos de ESTE recibo (al reimprimir uno viejo no sale el año nuevo).
-  const anioId = (li.data || []).find((l) => l.edu_cargos?.anio_id)?.edu_cargos.anio_id;
+  // La reservación del año próximo no decide la tarjeta: manda el resto de las líneas.
+  const anioId = ((li.data || []).find((l) => l.edu_cargos?.anio_id && l.edu_cargos.tipo !== 'reservacion')
+    || (li.data || []).find((l) => l.edu_cargos?.anio_id))?.edu_cargos.anio_id;
   const an = anioId ? await supabase.from('edu_anios').select('*').eq('id', anioId).eq('tenant_id', tenantId).maybeSingle() : { data: null };
   const idsEst = [...new Set((li.data || []).map((l) => l.estudiante_id))];
   const [es, cu, ca, cfg] = await Promise.all([
@@ -101,6 +101,8 @@ export default function CajaColegioPage() {
   const [cargos, setCargos] = useState([]);
   const [cursos, setCursos] = useState(new Map());
   const [anio, setAnio] = useState(null);
+  const [anios, setAnios] = useState(new Map());   // id → año (para las deudas viejas y la reservación del próximo)
+  const [reservando, setReservando] = useState(null);
   const [cfg, setCfg] = useState(null);
   const [conceptos, setConceptos] = useState([]);
   const [sel, setSel] = useState({});          // cargo_id → 'completo' | 'medio'
@@ -113,7 +115,12 @@ export default function CajaColegioPage() {
   const [recibosHoy, setRecibosHoy] = useState([]);
   const [preparar, setPreparar] = useState(null);   // estudiante a preparar
   const [agregar, setAgregar] = useState(null);     // estudiante al que agregar cargo
-  const esDireccion = ['admin', 'owner'].includes(profile?.role);
+  // La misma regla que la base (dueño/admin de ESTE colegio, o superadmin); mientras responde, el rol del perfil.
+  const [esDireccion, setEsDireccion] = useState(['admin', 'owner'].includes(profile?.role));
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase.rpc('edu_soy_direccion').then(({ data, error: e }) => { if (!e) setEsDireccion(!!data); });
+  }, [tenantId]);
 
   const error = useCallback((t, d) => toast({ title: t, description: d ? String(d) : undefined, variant: 'destructive' }), [toast]);
 
@@ -123,12 +130,13 @@ export default function CajaColegioPage() {
     (async () => {
       const [cu, an, cf, co] = await Promise.all([
         supabase.from('edu_cursos').select('id, nombre').eq('tenant_id', tenantId),
-        supabase.from('edu_anios').select('*').eq('tenant_id', tenantId).eq('actual', true).maybeSingle(),
+        supabase.from('edu_anios').select('*').eq('tenant_id', tenantId).order('anio_inicio'),
         supabase.from('edu_config').select('*').eq('tenant_id', tenantId).maybeSingle(),
         supabase.from('edu_conceptos').select('*').eq('tenant_id', tenantId).eq('activo', true).order('orden'),
       ]);
       setCursos(new Map((cu.data || []).map((c) => [c.id, c.nombre])));
-      setAnio(an.data || null); setCfg(cf.data || null); setConceptos(co.data || []);
+      setAnios(new Map((an.data || []).map((a) => [a.id, a])));
+      setAnio((an.data || []).find((a) => a.actual) || null); setCfg(cf.data || null); setConceptos(co.data || []);
     })();
   }, [tenantId]);
 
@@ -179,11 +187,23 @@ export default function CajaColegioPage() {
       ]);
       if (fa.error) throw fa.error;
       const ids = (es.data || []).map((e) => e.id);
-      const { data: ca, error: eC } = ids.length
-        ? await supabase.from('edu_cargos').select('*').in('estudiante_id', ids).eq('anio_id', anio.id).eq('tenant_id', tenantId).neq('estado', 'anulado')
-        : { data: [] };
+      // Todo lo de la familia: el año actual, lo que quedó debiendo de años
+      // anteriores y la reservación del año próximo.
+      const [{ data: ca, error: eC }, { data: an }] = await Promise.all([
+        ids.length
+          ? supabase.from('edu_cargos').select('*').in('estudiante_id', ids).eq('tenant_id', tenantId).neq('estado', 'anulado')
+          : Promise.resolve({ data: [] }),
+        supabase.from('edu_anios').select('*').eq('tenant_id', tenantId),   // la reservación pudo crear el año próximo
+      ]);
       if (eC) throw eC;
-      setFamilia(fa.data); setEstudiantes(es.data || []); setCargos(ca || []);
+      const mapa = new Map((an || []).map((a) => [a.id, a]));
+      // El año actual se relee: el panel sigue montado aunque en Configuración se cambie de año.
+      const actual = [...mapa.values()].find((a) => a.actual) || anio;
+      const visibles = (ca || []).filter((c) => c.anio_id === actual.id || pendienteDe(c) > 0
+        || (c.tipo === 'reservacion' && (mapa.get(c.anio_id)?.anio_inicio ?? 0) > actual.anio_inicio));
+      setAnios(mapa);
+      if (actual.id !== anio.id) setAnio(actual);
+      setFamilia(fa.data); setEstudiantes(es.data || []); setCargos(visibles);
       setSel({}); setAnioCompleto({}); setTasa('');
       setFormas([{ forma: 'Efectivo', monto: '', referencia: '', cuenta_id: null, banco: '', alias: '' }]);
       setBuscar(''); setResultados([]);
@@ -199,12 +219,12 @@ export default function CajaColegioPage() {
     const pct = Number(cfg?.descuento_anual_pct || 0);
     return cargos.filter((c) => sel[c.id]).map((c) => {
       let monto = pendienteDe(c);
-      if (c.tipo === 'mensualidad' && anioCompleto[c.estudiante_id]) monto = Math.round(Number(c.monto) * (1 - pct / 100) * 100) / 100;
+      if (c.tipo === 'mensualidad' && c.anio_id === anio?.id && anioCompleto[c.estudiante_id]) monto = Math.round(Number(c.monto) * (1 - pct / 100) * 100) / 100;
       else if (c.tipo === 'mensualidad' && sel[c.id] === 'medio') monto = Math.round(Number(c.monto) / 2 * 100) / 100;
       const rd = c.moneda === 'USD' ? Math.round(monto * Number(tasa || 0) * 100) / 100 : monto;
       return { cargo: c, monto, rd };
     });
-  }, [cargos, sel, anioCompleto, cfg, tasa]);
+  }, [cargos, sel, anioCompleto, cfg, tasa, anio]);
   const total = lineas.reduce((s, l) => s + l.rd, 0);
   const hayUSD = lineas.some((l) => l.cargo.moneda === 'USD');
   const sumaFormas = formas.reduce((s, f) => s + (Number(f.monto) || 0), 0);
@@ -217,7 +237,8 @@ export default function CajaColegioPage() {
   const alternar = (c) => setSel((s) => { const n = { ...s }; if (n[c.id]) delete n[c.id]; else n[c.id] = 'completo'; return n; });
 
   const marcarAnioCompleto = (est, on) => {
-    const mens = cargos.filter((c) => c.estudiante_id === est.id && c.tipo === 'mensualidad' && pendienteDe(c) > 0);
+    // Solo las mensualidades del año actual (una deuda del año pasado no lleva el descuento).
+    const mens = cargos.filter((c) => c.estudiante_id === est.id && c.tipo === 'mensualidad' && c.anio_id === anio?.id && pendienteDe(c) > 0);
     if (on && mens.some((c) => Number(c.pagado) > 0)) {
       return error('No se puede', 'El año completo es con las mensualidades sin abonar (hay una con medio mes pagado).');
     }
@@ -267,6 +288,26 @@ export default function CajaColegioPage() {
     if (familia?.id === r.familia_id) abrirFamilia(familia.id);
   };
 
+  // Reservación de cupo del año próximo: queda como un cargo más para cobrarlo ahora.
+  const reservar = async (e) => {
+    setReservando(e.id);
+    const { error: er } = await supabase.rpc('edu_reservar_cupo', { p_estudiante: e.id });
+    setReservando(null);
+    if (er) return error('No se pudo reservar', er.message);
+    toast({ title: `Cupo reservado para ${e.nombres}`, description: 'Márcalo y cóbralo con lo demás.' });
+    return abrirFamilia(familia.id);
+  };
+
+  // Quitar un cargo sin pagos (retiro, error al cargarlo): solo la dirección.
+  const anularCargo = async (c) => {
+    const motivo = window.prompt(`Motivo para quitar "${c.descripcion}":`, '');
+    if (motivo === null) return;
+    const { error: er } = await supabase.rpc('edu_anular_cargo', { p_cargo: c.id, p_motivo: motivo });
+    if (er) { error('No se pudo quitar', er.message); return; }
+    toast({ title: `${c.descripcion} quitado` });
+    abrirFamilia(familia.id);
+  };
+
   const cambiarFormato = (v) => { setFormato(v); try { localStorage.setItem('colegio_formato_recibo', v); } catch { /* sin almacenamiento */ } };
   const setForma = (i, k, v) => setFormas((fs) => fs.map((f, j) => (j === i ? { ...f, [k]: v } : f)));
 
@@ -305,7 +346,13 @@ export default function CajaColegioPage() {
             {/* ── Estudiantes y cargos ── */}
             <div className="lg:col-span-2 space-y-3">
               <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
-                <div className="font-black text-gray-800">Familia {familia.nombre}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-black text-gray-800">Familia {familia.nombre}</div>
+                  <Button size="sm" variant="outline" title="Todos los hijos en una sola hoja"
+                    onClick={() => imprimirEstadoCuenta(familia.id, tenantId).catch((e) => error('No se pudo imprimir', e?.message))}>
+                    <FileText className="w-4 h-4 mr-1" /> Estado de cuenta
+                  </Button>
+                </div>
                 <div className="text-xs text-gray-500">
                   {[familia.madre_nombre && `Madre: ${familia.madre_nombre} ${familia.madre_celular || ''}`, familia.padre_nombre && `Padre: ${familia.padre_nombre} ${familia.padre_celular || ''}`, familia.tutor_nombre && `Tutor: ${familia.tutor_nombre} ${familia.tutor_telefono || ''}`].filter(Boolean).join(' · ')}
                 </div>
@@ -320,7 +367,9 @@ export default function CajaColegioPage() {
                 const pendientes = suyos.filter((c) => pendienteDe(c) > 0)
                   .sort((a, b) => String(a.periodo || '0').localeCompare(String(b.periodo || '0')) || a.tipo.localeCompare(b.tipo));
                 const pagados = suyos.filter((c) => pendienteDe(c) <= 0);
-                const hayMensPend = pendientes.some((c) => c.tipo === 'mensualidad');
+                const hayMensPend = pendientes.some((c) => c.tipo === 'mensualidad' && c.anio_id === anio?.id);
+                const anioSig = anio ? `${anio.anio_inicio + 1}-${anio.anio_inicio + 2}` : '';
+                const reservaSig = suyos.find((c) => c.tipo === 'reservacion' && (anios.get(c.anio_id)?.anio_inicio ?? 0) > (anio?.anio_inicio ?? 0));
                 return (
                   <div key={e.id} className={`bg-white border rounded-lg ${e.estado !== 'activo' ? 'opacity-60' : 'border-gray-200'}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b bg-gray-50 rounded-t-lg">
@@ -328,7 +377,15 @@ export default function CajaColegioPage() {
                         <b>{e.nombres} {e.apellidos}</b>
                         <span className="text-xs text-gray-500"> · Mat. {e.matricula} · {cursos.get(e.curso_id) || ''} · {TANDAS[e.tanda] || ''} · RD${n2(e.tarifa_mensual)}{Number(e.beca_pct) > 0 ? ` (beca ${Number(e.beca_pct)}%)` : ''}{e.estado !== 'activo' ? ` · ${e.estado}` : ''}</span>
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1 items-center">
+                        {e.estado === 'activo' && reservaSig && pendienteDe(reservaSig) <= 0 && (
+                          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 rounded px-2 py-1">✓ Cupo {anios.get(reservaSig.anio_id)?.nombre} reservado</span>
+                        )}
+                        {e.estado === 'activo' && !reservaSig && (
+                          <Button size="sm" variant="outline" disabled={reservando === e.id} onClick={() => reservar(e)} title="Cobrar ahora la reservación de cupo del año que viene">
+                            {reservando === e.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CalendarCheck className="w-4 h-4 mr-1" />} Reservar cupo {anioSig}
+                          </Button>
+                        )}
                         {e.estado === 'activo' && (
                           <Button size="sm" variant="outline" onClick={() => setPreparar(e)} title="Crear las mensualidades y conceptos del año">
                             <CalendarPlus className="w-4 h-4 mr-1" /> {suyos.length ? 'Completar cuenta' : 'Preparar cuenta del año'}
@@ -353,13 +410,16 @@ export default function CajaColegioPage() {
                           <tbody>
                             {pendientes.map((c) => {
                               const marcado = !!sel[c.id];
-                              const medioPosible = c.tipo === 'mensualidad' && cfg?.permite_medio_mes && Number(c.pagado) === 0 && !anioCompleto[e.id];
+                              const delAnioCompleto = !!anioCompleto[e.id] && c.tipo === 'mensualidad' && c.anio_id === anio?.id;
+                              const medioPosible = c.tipo === 'mensualidad' && cfg?.permite_medio_mes && Number(c.pagado) === 0 && !delAnioCompleto;
                               const vencido = c.vence && c.vence < hoyRD();
+                              const otroAnio = c.anio_id !== anio?.id ? anios.get(c.anio_id)?.nombre : null;
                               return (
                                 <tr key={c.id} className="border-b last:border-0">
-                                  <td className="py-1.5 w-8"><input type="checkbox" checked={marcado} disabled={!!anioCompleto[e.id] && c.tipo === 'mensualidad'} onChange={() => alternar(c)} /></td>
+                                  <td className="py-1.5 w-8"><input type="checkbox" checked={marcado} disabled={delAnioCompleto} onChange={() => alternar(c)} /></td>
                                   <td className={vencido ? 'text-red-700' : ''}>
                                     {c.descripcion}{c.es_tercero ? <span className="text-[10px] text-gray-400"> (se le paga a la compañía)</span> : ''}
+                                    {otroAnio && c.tipo !== 'reservacion' && <span className="ml-1 text-[10px] font-bold uppercase bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">año {otroAnio}</span>}
                                     {Number(c.pagado) > 0 && <span className="text-xs text-gray-500"> · abonado {c.moneda === 'USD' ? 'US$' : 'RD$'}{n2(c.pagado)}</span>}
                                   </td>
                                   <td className="w-40">
@@ -371,6 +431,13 @@ export default function CajaColegioPage() {
                                     )}
                                   </td>
                                   <td className="text-right font-mono w-32">{c.moneda === 'USD' ? 'US$' : 'RD$'}{n2(pendienteDe(c))}</td>
+                                  <td className="w-8 text-right">
+                                    {esDireccion && Number(c.pagado) === 0 && (
+                                      <button type="button" title="Quitar este cargo (solo la dirección)" className="text-gray-300 hover:text-red-600" onClick={() => anularCargo(c)}>
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </td>
                                 </tr>
                               );
                             })}

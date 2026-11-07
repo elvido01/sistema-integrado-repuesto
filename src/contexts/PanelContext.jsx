@@ -53,6 +53,7 @@ const InmueblesVendidosPage = lazy(() => import('@/pages/InmueblesVendidosPage')
 const ColegioConfigPage = lazy(() => import('@/pages/colegio/ColegioConfigPage'));
 const EstudiantesPage = lazy(() => import('@/pages/colegio/EstudiantesPage'));
 const CajaColegioPage = lazy(() => import('@/pages/colegio/CajaColegioPage'));
+const ReportesColegioPage = lazy(() => import('@/pages/colegio/ReportesColegioPage'));
 import PlanProGate from '@/components/common/PlanProGate';
 const ContratosAlquilerPage = lazy(() => import('@/pages/ContratosAlquilerPage'));
 const DocumentacionClientePage = lazy(() => import('@/pages/DocumentacionClientePage'));
@@ -162,6 +163,7 @@ const componentMapping = {
   'colegio-config': { component: () => <Protected module="colegio-config"><ColegioConfigPage /></Protected>, icon: FileText, name: 'Configuración del Colegio' },
   'colegio-estudiantes': { component: () => <Protected module="colegio-estudiantes"><EstudiantesPage /></Protected>, icon: Users, name: 'Estudiantes' },
   'colegio-caja': { component: () => <Protected module="colegio-caja"><CajaColegioPage /></Protected>, icon: Wallet, name: 'Caja del Colegio' },
+  'colegio-reportes': { component: () => <Protected module="colegio-reportes"><ReportesColegioPage /></Protected>, icon: BarChart2, name: 'Reportes del Colegio' },
   'contratos-alquiler': { component: () => <Protected module="ventas"><ContratosAlquilerPage /></Protected>, icon: FileText, name: 'Contratos de Alquiler' },
   'documentacion-cliente': { component: () => <Protected module="documentacion-cliente"><DocumentacionClientePage /></Protected>, icon: FileImage, name: 'Documentación Cliente' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },

@@ -147,3 +147,27 @@ export function leerPlantillaEstudiantes(filas, cursos) {
   });
   return { familias, errores };
 }
+
+/** Hoy en Santo Domingo (YYYY-MM-DD). */
+export const hoyRD = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
+/** Fecha local de Santo Domingo de un timestamptz (no la de UTC). */
+export const fechaLocalRD = (ts) => (ts ? new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }) : '');
+/** Lo que falta de un cargo (en su moneda), redondeado a centavos. */
+export const pendienteDe = (c) => Math.max(0, Math.round((Number(c.monto) - Number(c.descuento) - Number(c.pagado)) * 100) / 100);
+export const TANDAS_NOMBRE = { matutina: 'Matutina', vespertina: 'Vespertina', extendida: 'Extendida', nocturna: 'Nocturna' };
+
+/** Días de atraso de un cargo pendiente (negativo = todavía no vence). */
+export function diasAtraso(desde, hoy = hoyRD()) {
+  if (!desde) return 0;
+  const a = new Date(`${String(desde).slice(0, 10)}T12:00:00`);
+  const b = new Date(`${hoy}T12:00:00`);
+  return Math.round((b - a) / 86400000);
+}
+
+/** Tramo de antigüedad de saldos (lo que pidió el colegio: 30 / 60). */
+export function tramoAntiguedad(dias) {
+  if (dias <= 0) return 'por_vencer';
+  if (dias <= 30) return 'd30';
+  if (dias <= 60) return 'd60';
+  return 'd60mas';
+}
