@@ -112,7 +112,8 @@ describe('cotización y Star', () => {
     expect(t).toContain('6/11/2026');
   });
   it('en una Star se quita el corte ESC/POS (salía como una "v"); en otras se deja', async () => {
-    const { ajustarParaImpresora } = await import('../src/services/printerAdapter.ts');
+    // Este archivo simula printerAdapter arriba: aquí va el de verdad.
+    const { ajustarParaImpresora } = await vi.importActual('../src/services/printerAdapter.ts');
     const t = 'hola\x1Bd\x03\x1DV\x00';
     expect(ajustarParaImpresora('Star TSP100 Cutter (TSP143)', t)).toBe('hola\x1Bd\x03');
     expect(ajustarParaImpresora('EPSON TM-T20', t)).toBe(t);
