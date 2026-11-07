@@ -37,11 +37,12 @@ const toAscii = (s: string): string =>
 // ── Width: Star TSP143 = 42 chars/line (Font A, 80mm) ──
 const W = 42;
 
-// Column widths for item detail rows
-const COL_CANT = 8;   // "  1 UND "
-const COL_PRECIO = 10;  // "   355.00"
-const COL_ITBIS = 8;   // "  54.15"
-const COL_MONTO = W - COL_CANT - COL_PRECIO - COL_ITBIS; // 16 remaining
+// Column widths for item detail rows (07/11/2026: repartidas parejo; antes
+// MONTO tenía 16 y PRECIO/ITBIS quedaban apretados a la izquierda)
+const COL_CANT = 9;   // "  1 UND "
+const COL_PRECIO = 11;  // "   355.00"
+const COL_ITBIS = 10;   // "  54.15"
+const COL_MONTO = W - COL_CANT - COL_PRECIO - COL_ITBIS; // 12 restantes
 
 // ── Helpers ──────────────────────────────────────────────
 const fmt = (val: number): string =>
