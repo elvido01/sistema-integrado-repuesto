@@ -44,6 +44,7 @@ import {
   TrendingUp,
   Bot,
   GraduationCap,
+  BookOpen,
   Wallet,
 } from 'lucide-react';
 import { usePanels } from '@/contexts/PanelContext';
@@ -66,6 +67,7 @@ const navItems = [
     subItems: [
       { title: 'Caja del Colegio', id: 'colegio-caja', icon: Wallet, soloTipos: ['educativo'] },
       { title: 'Estudiantes', id: 'colegio-estudiantes', icon: GraduationCap, soloTipos: ['educativo'] },
+      { title: 'Notas y Boletines', id: 'colegio-notas', icon: BookOpen, soloTipos: ['educativo'] },
       { title: 'Reportes del Colegio', id: 'colegio-reportes', icon: BarChart2, soloTipos: ['educativo'] },
       { title: 'Configuración del Colegio', id: 'colegio-config', icon: Settings, soloTipos: ['educativo'] },
     ],

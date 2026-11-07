@@ -203,3 +203,39 @@ export const PLANTILLA_SECRETARIA = [
   { module_key: 'ventas', can_view: true, can_edit: true },
   { module_key: 'clientes', can_view: true, can_edit: true },
 ];
+
+// ── Registro de notas (07/11/2026, plan EDUCA TOTAL) ──────────────────────
+// Boletín MINERD de primaria: 3 competencias fundamentales × 4 períodos por
+// asignatura. C1-C3 = promedio de los 4 períodos de esa competencia; la final
+// del área = promedio de C1-C3. Solo se calculan con todo lleno (como en el
+// boletín de papel). Redondeo a entero, 0.5 hacia arriba.
+export const COMPETENCIAS = [
+  { n: 1, corto: 'Comunicativa', largo: 'Comunicativa' },
+  { n: 2, corto: 'Pensamiento lógico', largo: 'Pensamiento Lógico, Creativo y Crítico; Resolución de Problemas; Científica y Tecnológica' },
+  { n: 3, corto: 'Ética y ciudadana', largo: 'Ética y Ciudadana; Desarrollo Personal y Espiritual; Ambiental y de la Salud' },
+];
+export const PERIODOS = [1, 2, 3, 4];
+export const NIVELES_CON_NOTAS = ['primaria', 'secundaria'];
+
+/** notas: { 'c-p': número } de UNA asignatura. → C1..C3 (o null si faltan períodos). */
+export function finalCompetencia(notas, competencia) {
+  const vals = PERIODOS.map((p) => notas?.[`${competencia}-${p}`]);
+  if (vals.some((v) => v === null || v === undefined || v === '' || Number.isNaN(Number(v)))) return null;
+  return Math.round(vals.reduce((s, v) => s + Number(v), 0) / PERIODOS.length);
+}
+
+/** Calificación final del área: promedio de C1..C3 (null si falta alguna). */
+export function finalArea(notas) {
+  const cs = COMPETENCIAS.map((c) => finalCompetencia(notas, c.n));
+  if (cs.some((v) => v === null)) return null;
+  return Math.round(cs.reduce((s, v) => s + v, 0) / cs.length);
+}
+
+/** Valida lo tecleado en una casilla: '' (vacía) o un número de 0 a 100. */
+export function notaValida(txt) {
+  const t = String(txt ?? '').trim();
+  if (t === '') return { ok: true, valor: null };
+  const n = Number(t.replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0 || n > 100) return { ok: false, valor: null };
+  return { ok: true, valor: Math.round(n * 100) / 100 };
+}

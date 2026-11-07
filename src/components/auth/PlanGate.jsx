@@ -11,7 +11,8 @@ import { Lock } from 'lucide-react';
 import { puedeCrm } from '@/lib/planes';
 
 // crm: la regla del Sales Hub (lib/planes): también EDUCA PRO/TOTAL, y no con precio especial.
-export default function PlanGate({ planes = ['PRO', 'ENTERPRISE'], nombre = 'Esta función', crm = false, children }) {
+// mensaje: texto propio de "Disponible en..." (p. ej. solo Educa Total).
+export default function PlanGate({ planes = ['PRO', 'ENTERPRISE'], nombre = 'Esta función', crm = false, mensaje = null, children }) {
     const { isSuperAdmin } = useAuth();
     const { planActual, especialVigente } = useSuscripcion();
     const permitido = isSuperAdmin || (crm ? puedeCrm(planActual, especialVigente) : planes.includes((planActual || '').toUpperCase()));
@@ -25,9 +26,9 @@ export default function PlanGate({ planes = ['PRO', 'ENTERPRISE'], nombre = 'Est
             </div>
             <h2 className="text-2xl font-bold text-slate-800">{nombre} es una función Plus</h2>
             <p className="text-slate-500 mt-2 max-w-md">
-                {crm && String(planActual || '').toUpperCase().startsWith('EDUCA')
+                {mensaje || (crm && String(planActual || '').toUpperCase().startsWith('EDUCA')
                     ? <>Disponible en los planes <b className="text-violet-600">Educa Pro</b> y <b className="text-violet-600">Educa Total</b> a precio completo.</>
-                    : <>Disponible en los planes <b className="text-violet-600">PRO</b> y <b className="text-violet-600">Enterprise</b>.</>}
+                    : <>Disponible en los planes <b className="text-violet-600">PRO</b> y <b className="text-violet-600">Enterprise</b>.</>)}
                 Actualiza tu plan para desbloquearla.
             </p>
             <p className="text-xs text-slate-400 mt-4">Tu plan actual: <b>{planActual || 'sin plan'}</b></p>

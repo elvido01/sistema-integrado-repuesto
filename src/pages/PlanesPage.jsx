@@ -81,6 +81,7 @@ const INCLUYE = {
     items: [
       'Hasta 800 estudiantes y 6 usuarios',
       'Sales Hub: WhatsApp, Instagram y Facebook en una sola bandeja',
+      'Recordatorios de pago por WhatsApp incluidos',
       'Nómina del personal: sueldos, TSS y adelantos',
     ],
   },
@@ -88,7 +89,7 @@ const INCLUYE = {
     base: 'Educa Pro',
     items: [
       'Estudiantes y usuarios sin límite',
-      'Recordatorios de pago por WhatsApp incluidos',
+      'Registro de notas y boletín de calificaciones (formato MINERD)',
       'Soporte prioritario',
     ],
   },

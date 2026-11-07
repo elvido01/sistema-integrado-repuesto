@@ -114,3 +114,28 @@ describe('colegio: antigüedad de saldos', () => {
     expect(tramoAntiguedad(61)).toBe('d60mas');
   });
 });
+
+import { finalCompetencia, finalArea, notaValida } from '../src/lib/colegio.js';
+
+describe('colegio: notas del boletín', () => {
+  const llenas = { '1-1': 90, '1-2': 85, '1-3': 88, '1-4': 91, '2-1': 83, '2-2': 80, '2-3': 79, '2-4': 84, '3-1': 81, '3-2': 77, '3-3': 90, '3-4': 86 };
+  it('C1-C3 = promedio de los 4 períodos, redondeado', () => {
+    expect(finalCompetencia(llenas, 1)).toBe(89);   // 88.5 → 89
+    expect(finalCompetencia(llenas, 2)).toBe(82);   // 81.5 → 82
+    expect(finalCompetencia(llenas, 3)).toBe(84);   // 83.5 → 84
+  });
+  it('final del área = promedio de C1-C3', () => {
+    expect(finalArea(llenas)).toBe(85);             // (89+82+84)/3 = 85
+  });
+  it('con períodos vacíos no calcula (como el boletín de papel)', () => {
+    expect(finalCompetencia({ '1-1': 90 }, 1)).toBeNull();
+    expect(finalArea({ ...llenas, '3-4': undefined })).toBeNull();
+  });
+  it('valida lo tecleado', () => {
+    expect(notaValida('')).toEqual({ ok: true, valor: null });
+    expect(notaValida('85')).toEqual({ ok: true, valor: 85 });
+    expect(notaValida('87,5')).toEqual({ ok: true, valor: 87.5 });
+    expect(notaValida('101').ok).toBe(false);
+    expect(notaValida('abc').ok).toBe(false);
+  });
+});

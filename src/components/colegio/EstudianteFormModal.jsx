@@ -25,7 +25,7 @@ const FAMILIA_VACIA = {
 };
 const EST_VACIO = {
   nombres: '', apellidos: '', fecha_nacimiento: '', lugar_nacimiento: '', celular: '', otro_telefono: '', telefono_trabajo: '',
-  foto_path: null, curso_id: '', tanda: '', condicion: 'nuevo', tarifa_mensual: '', tarifa_id: null, tarifa_acuerdo: false, tarifa_nota: '',
+  foto_path: null, curso_id: '', tanda: '', seccion: '', condicion: 'nuevo', tarifa_mensual: '', tarifa_id: null, tarifa_acuerdo: false, tarifa_nota: '',
   beca_pct: 0, beca_motivo: '', sala_tareas: false, numero_hermanos: '', edades_hermanos: '', posicion_familia: '', notas: '',
 };
 const limpio = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'string' ? (v.trim() || null) : v]));
@@ -167,7 +167,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
         fecha_nacimiento: est.fecha_nacimiento || null, lugar_nacimiento: est.lugar_nacimiento,
         celular: est.celular, otro_telefono: est.otro_telefono, telefono_trabajo: est.telefono_trabajo,
         foto_path: est.foto_path || null,
-        curso_id: est.curso_id, tanda: est.tanda, condicion: est.condicion,
+        curso_id: est.curso_id, tanda: est.tanda, seccion: String(est.seccion || '').trim().toUpperCase() || null, condicion: est.condicion,
         tarifa_mensual: Number(est.tarifa_mensual), tarifa_id: est.tarifa_acuerdo ? null : est.tarifa_id,
         tarifa_acuerdo: !!est.tarifa_acuerdo, tarifa_nota: est.tarifa_nota,
         beca_pct: Number(est.beca_pct) || 0, beca_motivo: Number(est.beca_pct) > 0 ? est.beca_motivo : null,
@@ -309,10 +309,14 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                 {cursos.filter((c) => c.activo || c.id === est.curso_id).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </Campo>
-            <Campo label="Tanda *">
-              <select className={campo} value={est.tanda || ''} onChange={(e) => s('tanda', e.target.value)} disabled={!curso}>
-                {(curso?.tandas || []).map((t) => <option key={t} value={t}>{TANDAS[t]}</option>)}
-              </select>
+            <Campo label="Tanda * · Sección">
+              <div className="flex gap-2">
+                <select className={`${campo} flex-1 min-w-0`} value={est.tanda || ''} onChange={(e) => s('tanda', e.target.value)} disabled={!curso}>
+                  {(curso?.tandas || []).map((t) => <option key={t} value={t}>{TANDAS[t]}</option>)}
+                </select>
+                <input className={`${campo} w-14 text-center uppercase`} maxLength={3} placeholder="A" title="Sección (A, B...): sale en el boletín de notas"
+                  value={est.seccion || ''} onChange={(e) => s('seccion', e.target.value)} />
+              </div>
             </Campo>
             <Campo label="Condición">
               <select className={campo} value={est.condicion} onChange={(e) => s('condicion', e.target.value)}>

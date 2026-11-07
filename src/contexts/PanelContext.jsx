@@ -17,7 +17,7 @@ export function precargarPantallas() {
 }
 import { PanelContext, usePanels } from './panelCore';
 import { panelActivo, publicarModulos } from '@/lib/pantallaContexto';
-import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet, PiggyBank, Landmark } from 'lucide-react';
+import { Home, ShoppingCart, Truck, BarChart2, Package, MapPin, FileText, Settings, CornerUpLeft, ListOrdered, Users, Briefcase, Archive, Upload, Download, ListChecks, Receipt, DollarSign, UserCog, RefreshCw, Barcode, ClipboardList, Building2, Shield, CreditCard, Warehouse, BellRing, Brain, FileImage, MessageCircle, RadioTower, Sparkles, ShieldAlert, PieChart, CalendarClock, Wallet, PiggyBank, Landmark, BookOpen } from 'lucide-react';
 
 import HomePage from '@/pages/HomePage';
 const VentasPage = lazy(() => import('@/pages/VentasPage'));
@@ -54,6 +54,7 @@ const ColegioConfigPage = lazy(() => import('@/pages/colegio/ColegioConfigPage')
 const EstudiantesPage = lazy(() => import('@/pages/colegio/EstudiantesPage'));
 const CajaColegioPage = lazy(() => import('@/pages/colegio/CajaColegioPage'));
 const ReportesColegioPage = lazy(() => import('@/pages/colegio/ReportesColegioPage'));
+const NotasColegioPage = lazy(() => import('@/pages/colegio/NotasColegioPage'));
 import PlanProGate from '@/components/common/PlanProGate';
 const ContratosAlquilerPage = lazy(() => import('@/pages/ContratosAlquilerPage'));
 const DocumentacionClientePage = lazy(() => import('@/pages/DocumentacionClientePage'));
@@ -164,6 +165,8 @@ const componentMapping = {
   'colegio-estudiantes': { component: () => <Protected module="colegio-estudiantes"><EstudiantesPage /></Protected>, icon: Users, name: 'Estudiantes' },
   'colegio-caja': { component: () => <Protected module="colegio-caja"><CajaColegioPage /></Protected>, icon: Wallet, name: 'Caja del Colegio' },
   'colegio-reportes': { component: () => <Protected module="colegio-reportes"><ReportesColegioPage /></Protected>, icon: BarChart2, name: 'Reportes del Colegio' },
+  // (07/11/2026) Registro de notas y boletín MINERD: plan EDUCA TOTAL.
+  'colegio-notas': { component: () => <Protected module="colegio-notas"><PlanGate planes={['EDUCA TOTAL']} nombre="Notas y Boletines" mensaje={<>Disponible en el plan <b className="text-violet-600">Educa Total</b>.</>}><NotasColegioPage /></PlanGate></Protected>, icon: BookOpen, name: 'Notas y Boletines' },
   'contratos-alquiler': { component: () => <Protected module="ventas"><ContratosAlquilerPage /></Protected>, icon: FileText, name: 'Contratos de Alquiler' },
   'documentacion-cliente': { component: () => <Protected module="documentacion-cliente"><DocumentacionClientePage /></Protected>, icon: FileImage, name: 'Documentación Cliente' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },
