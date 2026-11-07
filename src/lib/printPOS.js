@@ -2215,7 +2215,34 @@ export const printCotizacionQZ = async (cotizacion, detalles) => {
   }
 };
 
+// (07/11/2026) Con "imprimir sin diálogo" (agente) la compra sale con las
+// fuentes de la impresora (escposReceipt → buildCompraEscPos), como la factura.
+// Si el agente falla, sale el ticket HTML como imagen, como antes.
 export const printCompraPOS = (compra, suplidor, detalles, paperSize = '4inch') => {
+  if (isSilentPrintEnabled()) {
+    imprimirCompraNativa(compra, suplidor, detalles).catch((err) => {
+      console.warn('[compra] ticket nativo falló, uso imagen:', err?.message || err);
+      printCompraHtml(compra, suplidor, detalles, paperSize);
+    });
+    return;
+  }
+  printCompraHtml(compra, suplidor, detalles, paperSize);
+};
+
+async function imprimirCompraNativa(compra, suplidor, detalles) {
+  const { buildCompraEscPos } = await import('@/services/escposReceipt');
+  const { findReceiptPrinter, printRawEscPos, setPreferredBackend, getPreferredBackend } = await import('@/services/printerAdapter');
+  const previo = getPreferredBackend();
+  setPreferredBackend('agent');
+  try {
+    const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
+    await printRawEscPos(printerName, buildCompraEscPos(compra, suplidor, detalles, _empresaConfig));
+  } finally {
+    setPreferredBackend(previo);
+  }
+}
+
+const printCompraHtml = (compra, suplidor, detalles, paperSize = '4inch') => {
   const fechaStr = compra.fecha
     // formatFechaDMY formatea por texto: new Date('2026-07-22') se lee como
     // medianoche UTC y al pasarlo a Santo Domingo (UTC-4) imprimia el dia anterior.

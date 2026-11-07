@@ -638,3 +638,99 @@ export function buildReciboIngresoEscPos(
 
     return toAscii(lines.join(CMD.LF));
 }
+
+// ═══════════════════════════════════════════════════════════
+// COMPRA DE MERCANCÍA (07/11/2026)
+// ═══════════════════════════════════════════════════════════
+// El mismo ticket de compra de 4"/80mm (printPOS → printCompraPOS), con las
+// fuentes de la impresora por el agente, como la factura. Columnas:
+// CANT · COSTO · DESC · TOTAL (el total de la línea ya trae el ITBIS).
+
+interface CompraData {
+    numero?: string | number;
+    fecha?: string;
+    created_at?: string;
+    ncf?: string | null;
+    referencia?: string | null;
+    total_exento?: number;
+    total_gravado?: number;
+    descuento_total?: number;
+    itbis_total?: number;
+    total_compra?: number;
+    forma_pago?: string | null;
+    itbis_incluido?: boolean;
+}
+interface CompraDetalle {
+    descripcion?: string;
+    cantidad?: number;
+    unidad?: string;
+    costo_unitario?: number;
+    descuento_pct?: number;
+    itbis_pct?: number;
+    importe?: number;
+}
+
+// Total de la línea con ITBIS. Se calcula (no se toma importe): con "ITBIS
+// incluido" compras_detalle.importe trae el ITBIS sumado dos veces y las líneas
+// no cuadraban con el TOTAL (OC-0393: 12,330.80 contra 10,449.84).
+export const totalLineaCompra = (item: CompraDetalle, itbisIncluido = false): number => {
+    const cant = Number(item.cantidad || 0), costo = Number(item.costo_unitario || 0);
+    if (!cant || !costo) return Number(item.importe || 0);
+    const base = cant * costo * (1 - Number(item.descuento_pct || 0) / 100);
+    const tasa = Number(item.itbis_pct || 0) > 1 ? Number(item.itbis_pct) / 100 : Number(item.itbis_pct || 0);
+    return Math.round((itbisIncluido ? base : base * (1 + tasa)) * 100) / 100;
+};
+
+export function buildCompraEscPos(
+    compra: CompraData,
+    suplidor: { nombre?: string; rnc?: string } | null,
+    detalles: CompraDetalle[],
+    empresa?: EmpresaConfig,
+): string {
+    // Fecha de la compra tal cual (es fecha sin hora: new Date() la corría un día).
+    const f = String(compra.fecha || '');
+    const fechaStr = /^\d{4}-\d{2}-\d{2}/.test(f) ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : 'N/A';
+    const horaStr = (compra.created_at ? new Date(compra.created_at) : new Date())
+        .toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Santo_Domingo' });
+    const conDato = (v: unknown) => { const t = String(v ?? '').trim(); return t && !/^n\/?a$/i.test(t) ? t : ''; };
+    const credito = /CR[EÉ]DITO/i.test(String(compra.forma_pago || ''));
+
+    const lines: string[] = [];
+    lines.push(CMD.INIT);
+    lines.push(buildHeader(empresa));
+    lines.push(CMD.BOLD_ON + centerLine('COMPRA DE MERCANCIA') + CMD.BOLD_OFF);
+    lines.push('');
+    lines.push(leftRight(`Numero : ${compra.numero || 'N/A'}`, horaStr));
+    lines.push(`Fecha  : ${fechaStr}`);
+    lines.push(`Pago   : ${CMD.BOLD_ON}${credito ? 'CREDITO' : 'CONTADO'}${CMD.BOLD_OFF}`);
+    lines.push(`${CMD.BOLD_ON}Suplidor: ${String(suplidor?.nombre || 'N/A').toUpperCase()}${CMD.BOLD_OFF}`);
+    if (conDato(suplidor?.rnc)) lines.push(`RNC    : ${conDato(suplidor?.rnc)}`);
+    if (conDato(compra.ncf)) lines.push(`NCF    : ${CMD.BOLD_ON}${conDato(compra.ncf)}${CMD.BOLD_OFF}`);
+    if (conDato(compra.referencia)) lines.push(`REF    : ${conDato(compra.referencia)}`);
+
+    lines.push(dashLine());
+    lines.push(itemRow('CANT.', 'COSTO', 'DESC', 'TOTAL'));
+    lines.push(dashLine());
+    for (const item of detalles || []) {
+        for (const l of wrapLines(String(item.descripcion || '').trim().toUpperCase())) lines.push(l);
+        lines.push(itemRow(
+            `  ${Number(item.cantidad || 0)} ${item.unidad || 'UND'}`,
+            fmt(Number(item.costo_unitario || 0)),
+            `${Number(item.descuento_pct || 0)}%`,
+            fmt(totalLineaCompra(item, !!compra.itbis_incluido)),
+        ));
+    }
+    lines.push(dashLine());
+    if (Number(compra.total_exento || 0) > 0) lines.push(totalsRow('Exento :', fmt(Number(compra.total_exento))));
+    lines.push(totalsRow('Gravado :', fmt(Number(compra.total_gravado || 0))));
+    if (Number(compra.descuento_total || 0) > 0) lines.push(totalsRow('Descuento :', fmt(Number(compra.descuento_total))));
+    lines.push(totalsRow('ITBIS :', fmt(Number(compra.itbis_total || 0))));
+    lines.push(padL('==========', W));
+    lines.push(CMD.BOLD_ON + totalsRow('TOTAL :', fmt(Number(compra.total_compra || 0))) + CMD.BOLD_OFF);
+    lines.push(dashLine());
+    lines.push(CMD.BOLD_ON + centerLine('*** COMPRA DE MERCANCIA ***') + CMD.BOLD_OFF);
+    if (empresa?.nombre) lines.push(centerLine(String(empresa.nombre)));
+    lines.push(CMD.FEED_3);
+    lines.push(CMD.CUT);
+    return toAscii(lines.join(CMD.LF));
+}

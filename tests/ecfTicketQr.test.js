@@ -86,3 +86,17 @@ describe('ticket nativo: hora, cliente genérico y monto', () => {
     expect(t).toContain('Tel. : 809-555-1234');
   });
 });
+
+describe('ticket nativo de compra', () => {
+  it('con ITBIS incluido las líneas suman el total (no el importe guardado con ITBIS doble)', async () => {
+    const { totalLineaCompra, buildCompraEscPos } = await import('../src/services/escposReceipt.ts');
+    expect(totalLineaCompra({ cantidad: 12, costo_unitario: 359.78, itbis_pct: 0.18, importe: 5094.48 }, true)).toBe(4317.36);
+    expect(totalLineaCompra({ cantidad: 2, costo_unitario: 100, itbis_pct: 0.18, descuento_pct: 10 }, false)).toBe(212.4);
+    const t = buildCompraEscPos({ numero: 'OC-1', fecha: '2026-11-07', ncf: '', referencia: 'R1', total_gravado: 100, itbis_total: 18, total_compra: 118 },
+      { nombre: 'Suplidor', rnc: '' }, [{ descripcion: 'X', cantidad: 1, costo_unitario: 100, itbis_pct: 0.18 }], {});
+    expect(t).toContain('07/11/2026');
+    expect(t).toContain('118.00');
+    expect(t).not.toContain('NCF');
+    expect(t).not.toContain('RNC    :');
+  });
+});
