@@ -234,9 +234,10 @@ export type ModoQr = 'star' | 'escpos' | 'raster';
 export function qrNativo(texto: string, modo: ModoQr = 'raster'): string {
     const b = (n: number) => String.fromCharCode(n & 0xff);
     if (modo === 'star') {
-        // Centrado del modo Star (ESC GS a n), modelo 2, corrección M, celda 6.
+        // Centrado del modo Star (ESC GS a n), modelo 2, corrección M, celda 5
+        // (~2.5 cm: lo mínimo legible; con 6 salía de ~3 cm y el dueño lo quiso más chico).
         return ESC + GS + 'a' + b(1)
-            + ESC + GS + 'yS0' + b(2) + ESC + GS + 'yS1' + b(1) + ESC + GS + 'yS2' + b(6)
+            + ESC + GS + 'yS0' + b(2) + ESC + GS + 'yS1' + b(1) + ESC + GS + 'yS2' + b(5)
             + ESC + GS + 'yD1' + b(0) + b(texto.length) + b(texto.length >> 8) + texto
             + ESC + GS + 'yP'
             + ESC + GS + 'a' + b(0);
@@ -245,7 +246,7 @@ export function qrNativo(texto: string, modo: ModoQr = 'raster'): string {
         const len = texto.length + 3;
         return CMD.CENTER
             + GS + '(k' + b(4) + b(0) + '1A2' + b(0)
-            + GS + '(k' + b(3) + b(0) + '1C' + b(6)
+            + GS + '(k' + b(3) + b(0) + '1C' + b(5)
             + GS + '(k' + b(3) + b(0) + '1E1'
             + GS + '(k' + b(len) + b(len >> 8) + '1P0' + texto
             + GS + '(k' + b(3) + b(0) + '1Q0'
@@ -396,7 +397,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     // imprimir raster: el comando nativo de QR (GS ( k) no lo tienen todas.
     // Va FUERA de toAscii, que borraría los bytes > 0x7F de la imagen.
     if (ecf && (ecf.qr_url || ecf.codigo_seguridad)) {
-        const antes = toAscii(lines.join(CMD.LF)) + CMD.LF;
+        const antes = toAscii(lines.join(CMD.LF)) + CMD.LF + CMD.LF; // aire entre el vendedor y el QR
         const despues: string[] = [];
         if (ecf.codigo_seguridad) despues.push(centerLine(`Codigo de seguridad: ${ecf.codigo_seguridad}`));
         if (ecf.fecha_firma) despues.push(centerLine(`Fecha firma digital: ${ecf.fecha_firma}`));
