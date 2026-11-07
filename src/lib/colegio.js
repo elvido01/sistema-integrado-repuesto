@@ -154,6 +154,10 @@ export const hoyRD = () => new Date().toLocaleDateString('en-CA', { timeZone: 'A
 export const fechaLocalRD = (ts) => (ts ? new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }) : '');
 /** Lo que falta de un cargo (en su moneda), redondeado a centavos. */
 export const pendienteDe = (c) => Math.max(0, Math.round((Number(c.monto) - Number(c.descuento) - Number(c.pagado)) * 100) / 100);
+/** Estado del estudiante como se lee en pantalla. 'por_confirmar' = subió de curso en el
+ *  cambio de año pero la familia no ha confirmado que sigue (fuera del aula, sin mensualidades). */
+export const ESTADO_ESTUDIANTE = { activo: 'activo', por_confirmar: 'por confirmar', retirado: 'retirado', graduado: 'graduado' };
+
 export const TANDAS_NOMBRE = { matutina: 'Matutina', vespertina: 'Vespertina', extendida: 'Extendida', nocturna: 'Nocturna' };
 
 /** Días de atraso de un cargo pendiente (negativo = todavía no vence). */

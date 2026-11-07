@@ -12,7 +12,7 @@
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { Wallet, Search, Loader2, Printer, Plus, Trash2, Ban, RefreshCw, CalendarPlus, CalendarCheck, FileText, X } from 'lucide-react';
+import { Wallet, Search, Loader2, Printer, Plus, Trash2, Ban, RefreshCw, CalendarPlus, CalendarCheck, FileText, X, UserMinus } from 'lucide-react';
 import { imprimirEstadoCuenta } from '@/lib/colegioReportes';
 import FacturaFiscalDialog from '@/components/colegio/FacturaFiscalDialog';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -23,7 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { printHtmlSmart } from '@/lib/printHtmlSmart';
 import { reciboColegioTicketHTML, reciboColegioHojaHTML, numeroRecibo } from '@/lib/printColegio';
-import { mesesDelAnio, MESES, hoyRD, pendienteDe, TANDAS_NOMBRE as TANDAS } from '@/lib/colegio';
+import { mesesDelAnio, MESES, hoyRD, pendienteDe, TANDAS_NOMBRE as TANDAS, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 
 const n2 = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const campo = 'h-9 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
@@ -104,6 +104,7 @@ export default function CajaColegioPage() {
   const [anio, setAnio] = useState(null);
   const [anios, setAnios] = useState(new Map());   // id → año (para las deudas viejas y la reservación del próximo)
   const [reservando, setReservando] = useState(null);
+  const [confirmando, setConfirmando] = useState(null);
   const [facturar, setFacturar] = useState(false);   // factura con crédito fiscal de la familia abierta
   const [cfg, setCfg] = useState(null);
   const [conceptos, setConceptos] = useState([]);
@@ -168,7 +169,7 @@ export default function CajaColegioPage() {
           .or(`nombre.ilike.%${limpio}%,madre_nombre.ilike.%${limpio}%,padre_nombre.ilike.%${limpio}%,tutor_nombre.ilike.%${limpio}%`).order('nombre').limit(8),
       ]);
       const r = [
-        ...(es.data || []).map((e) => ({ tipo: 'est', id: e.id, familia_id: e.familia_id, titulo: `${e.nombres} ${e.apellidos}`, sub: `Mat. ${e.matricula} · ${cursos.get(e.curso_id) || ''}${e.estado !== 'activo' ? ` · ${e.estado}` : ''}` })),
+        ...(es.data || []).map((e) => ({ tipo: 'est', id: e.id, familia_id: e.familia_id, titulo: `${e.nombres} ${e.apellidos}`, sub: `Mat. ${e.matricula} · ${cursos.get(e.curso_id) || ''}${e.estado !== 'activo' ? ` · ${ESTADO_ESTUDIANTE[e.estado] || e.estado}` : ''}` })),
         ...(fa.data || []).map((f) => ({ tipo: 'fam', id: f.id, familia_id: f.id, titulo: `Familia ${f.nombre}`, sub: [f.madre_nombre, f.padre_nombre, f.tutor_nombre].filter(Boolean).join(' / ') })),
       ];
       if (yo === busquedaRef.current) setResultados(r);   // una respuesta vieja no pisa la nueva
@@ -300,6 +301,20 @@ export default function CajaColegioPage() {
     return abrirFamilia(familia.id);
   };
 
+  // Estudiante 'por confirmar' tras el cambio de año. Sigue SOLO pagando la
+  // reservación (lo hace la base al quedar pagada). Si se fue: retirado y se
+  // quitan los cargos del año sin pagar (lo del año viejo se sigue debiendo).
+  const noSigue = async (e) => {
+    const motivo = window.prompt(`¿Por qué no sigue ${e.nombres} ${e.apellidos}? (por ejemplo: se fue a otro colegio)`, '');
+    if (motivo === null) return undefined;
+    setConfirmando(e.id);
+    const { error: er } = await supabase.rpc('edu_no_continua', { p_estudiante: e.id, p_motivo: motivo });
+    setConfirmando(null);
+    if (er) return error('No se pudo retirar', er.message);
+    toast({ title: `${e.nombres} quedó retirado` });
+    return abrirFamilia(familia.id);
+  };
+
   // Quitar un cargo sin pagos (retiro, error al cargarlo): solo la dirección.
   const anularCargo = async (c) => {
     const motivo = window.prompt(`Motivo para quitar "${c.descripcion}":`, '');
@@ -374,15 +389,32 @@ export default function CajaColegioPage() {
                 const pagados = suyos.filter((c) => pendienteDe(c) <= 0);
                 const hayMensPend = pendientes.some((c) => c.tipo === 'mensualidad' && c.anio_id === anio?.id);
                 const anioSig = anio ? `${anio.anio_inicio + 1}-${anio.anio_inicio + 2}` : '';
+                // Por confirmar: su reservación es la del año que ya corre (no anulada).
+                const reservaActual = e.estado === 'por_confirmar' ? suyos.find((c) => c.tipo === 'reservacion' && c.anio_id === anio?.id && pendienteDe(c) > 0) : null;
                 const reservaSig = suyos.find((c) => c.tipo === 'reservacion' && (anios.get(c.anio_id)?.anio_inicio ?? 0) > (anio?.anio_inicio ?? 0));
                 return (
-                  <div key={e.id} className={`bg-white border rounded-lg ${e.estado !== 'activo' ? 'opacity-60' : 'border-gray-200'}`}>
+                  <div key={e.id} className={`bg-white border rounded-lg ${e.estado === 'por_confirmar' ? 'border-amber-300' : e.estado !== 'activo' ? 'opacity-60' : 'border-gray-200'}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b bg-gray-50 rounded-t-lg">
                       <div>
                         <b>{e.nombres} {e.apellidos}</b>
-                        <span className="text-xs text-gray-500"> · Mat. {e.matricula} · {cursos.get(e.curso_id) || ''} · {TANDAS[e.tanda] || ''} · RD${n2(e.tarifa_mensual)}{Number(e.beca_pct) > 0 ? ` (beca ${Number(e.beca_pct)}%)` : ''}{e.estado !== 'activo' ? ` · ${e.estado}` : ''}</span>
+                        <span className="text-xs text-gray-500"> · Mat. {e.matricula} · {cursos.get(e.curso_id) || ''} · {TANDAS[e.tanda] || ''} · RD${n2(e.tarifa_mensual)}{Number(e.beca_pct) > 0 ? ` (beca ${Number(e.beca_pct)}%)` : ''}{e.estado !== 'activo' && e.estado !== 'por_confirmar' ? ` · ${ESTADO_ESTUDIANTE[e.estado] || e.estado}` : ''}</span>
                       </div>
                       <div className="flex flex-wrap gap-1 items-center">
+                        {e.estado === 'por_confirmar' && (
+                          <>
+                            <span className="text-xs font-semibold text-amber-800 bg-amber-50 rounded px-2 py-1">
+                              {reservaActual ? `Por confirmar: cobra la reservación (${n2(pendienteDe(reservaActual))}) y entra al aula` : `Por confirmar en ${anio?.nombre || ''}: sigue al pagar la reservación`}
+                            </span>
+                            {!reservaActual && (
+                              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={reservando === e.id} onClick={() => reservar(e)} title="Carga la reservación del año; al cobrarla completa queda confirmado, entra al aula y se le prepara la cuenta">
+                                {reservando === e.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CalendarCheck className="w-4 h-4 mr-1" />} Reservar cupo {anio?.nombre}
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" disabled={confirmando === e.id} onClick={() => noSigue(e)} title="Se fue: queda retirado (lo que debe del año viejo se sigue cobrando)">
+                              {confirmando === e.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <UserMinus className="w-4 h-4 mr-1" />} No sigue
+                            </Button>
+                          </>
+                        )}
                         {e.estado === 'activo' && reservaSig && pendienteDe(reservaSig) <= 0 && (
                           <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 rounded px-2 py-1">✓ Cupo {anios.get(reservaSig.anio_id)?.nombre} reservado</span>
                         )}
@@ -402,7 +434,9 @@ export default function CajaColegioPage() {
                       </div>
                     </div>
                     {suyos.length === 0 ? (
-                      <div className="px-4 py-4 text-sm text-gray-500">Este estudiante todavía no tiene la cuenta del año. Púlsale "Preparar cuenta del año".</div>
+                      <div className="px-4 py-4 text-sm text-gray-500">{e.estado === 'por_confirmar'
+                        ? 'No debe nada. Para que siga, pulsa "Reservar cupo" y cobra la reservación: al quedar pagada entra al aula y se le prepara la cuenta.'
+                        : 'Este estudiante todavía no tiene la cuenta del año. Púlsale "Preparar cuenta del año".'}</div>
                     ) : (
                       <div className="px-4 py-2">
                         {hayMensPend && Number(cfg?.descuento_anual_pct) > 0 && (

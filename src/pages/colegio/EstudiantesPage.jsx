@@ -17,7 +17,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import EstudianteFormModal from '@/components/colegio/EstudianteFormModal';
 import ImportarEstudiantesModal from '@/components/colegio/ImportarEstudiantesModal';
-import { edadDe } from '@/lib/colegio';
+import { edadDe, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 
 const fmt = (v) => `RD$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const campo = 'h-9 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
@@ -42,6 +42,7 @@ export default function EstudiantesPage() {
   const [fEstado, setFEstado] = useState('activo');
   const [ficha, setFicha] = useState(null);         // null | {} (nuevo) | estudiante
   const [importar, setImportar] = useState(false);
+  const [retirando, setRetirando] = useState(null);
 
   const error = useCallback((t, d) => toast({ title: t, description: d ? String(d) : undefined, variant: 'destructive' }), [toast]);
 
@@ -101,6 +102,19 @@ export default function EstudiantesPage() {
       return quitarTildes(`${e.nombres} ${e.apellidos} ${e.matricula} ${fa?.nombre || ''} ${fa?.madre_nombre || ''} ${fa?.padre_nombre || ''} ${fa?.tutor_nombre || ''}`).includes(q);
     });
   }, [estudiantes, familias, buscar, fCurso, fTanda, fEstado]);
+
+  // Por confirmar (cambio de año): sigue solo pagando la reservación en la Caja.
+  // Aquí solo se marca el que se fue (edu_no_continua quita los cargos del año).
+  const noSigue = async (e) => {
+    const motivo = window.prompt(`¿Por qué no sigue ${e.nombres} ${e.apellidos}?`, '');
+    if (motivo === null) return undefined;
+    setRetirando(e.id);
+    const { error: err } = await supabase.rpc('edu_no_continua', { p_estudiante: e.id, p_motivo: motivo });
+    setRetirando(null);
+    if (err) return error('No se pudo retirar', err.message);
+    toast({ title: `${e.nombres} quedó retirado` });
+    return cargar();
+  };
 
   const cambiarEstado = async (e, estado) => {
     let motivo = null;
@@ -164,6 +178,7 @@ export default function EstudiantesPage() {
           </select>
           <select className={campo} value={fEstado} onChange={(e) => setFEstado(e.target.value)}>
             <option value="activo">Activos</option>
+            <option value="por_confirmar">Por confirmar que siguen</option>
             <option value="retirado">Retirados</option>
             <option value="graduado">Graduados</option>
             <option value="">Todos</option>
@@ -200,7 +215,7 @@ export default function EstudiantesPage() {
                           {e.nombres} {e.apellidos}
                           {!e.foto_path && <Camera className="w-3.5 h-3.5 text-amber-500" title="Falta la foto" />}
                         </div>
-                        <div className="text-xs text-gray-500">{e.condicion === 'nuevo' ? 'Nuevo ingreso' : 'Continuante'}{edad != null ? ` · ${edad} años` : ''}</div>
+                        <div className="text-xs text-gray-500">{e.condicion === 'nuevo' ? 'Nuevo ingreso' : 'Continuante'}{edad != null ? ` · ${edad} años` : ''}{e.estado !== 'activo' ? ` · ${ESTADO_ESTUDIANTE[e.estado] || e.estado}` : ''}</div>
                       </td>
                       <td>{cursoNombre.get(e.curso_id) || '—'}<div className="text-xs text-gray-500">{TANDAS[e.tanda] || ''}</div></td>
                       <td>
@@ -215,7 +230,9 @@ export default function EstudiantesPage() {
                       </td>
                       <td className="text-center text-xs">{e.sala_tareas ? 'Sala de Tareas' : ''}</td>
                       <td className="text-right pr-3" onClick={(ev) => ev.stopPropagation()}>
-                        {e.estado === 'activo' ? (
+                        {e.estado === 'por_confirmar' ? (
+                          <Button size="sm" variant="ghost" disabled={retirando === e.id} title="No sigue (queda retirado). Para que siga, paga la reservación en la Caja." onClick={() => noSigue(e)}><UserMinus className="w-4 h-4" /></Button>
+                        ) : e.estado === 'activo' ? (
                           <Button size="sm" variant="ghost" title="Retirar (no se borra)" onClick={() => cambiarEstado(e, 'retirado')}><UserMinus className="w-4 h-4" /></Button>
                         ) : (
                           <Button size="sm" variant="ghost" title="Reactivar" onClick={() => cambiarEstado(e, 'activo')}><UserCheck className="w-4 h-4" /></Button>

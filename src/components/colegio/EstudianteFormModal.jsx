@@ -9,7 +9,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import FotoEstudiante from '@/components/colegio/FotoEstudiante';
-import { edadDe, tarifaParaNuevo } from '@/lib/colegio';
+import { edadDe, tarifaParaNuevo, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 
 const campo = 'h-9 w-full rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
 const etiqueta = 'text-[11px] font-bold text-gray-600 uppercase';
@@ -96,7 +96,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
     const hs = await cargarFamilia(fa.id);
     if (!editando) {
       // Hermano en el colegio → su misma tarifa (regla del colegio).
-      const sug = tarifaParaNuevo(tarifas, (hs || []).filter((h) => h.estado === 'activo'));
+      const sug = tarifaParaNuevo(tarifas, (hs || []).filter((h) => h.estado === 'activo' || h.estado === 'por_confirmar'));
       if (sug) setEst((p) => ({ ...p, apellidos: p.apellidos || fa.nombre, tarifa_mensual: String(sug.monto), tarifa_id: sug.tarifa_id, tarifa_acuerdo: false, tarifa_nota: sug.nota || '' }));
     }
   };
@@ -232,7 +232,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
               {hermanos.length > 0 && (
                 <div className="mb-3 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm">
                   <b>Hermanos en el colegio:</b>{' '}
-                  {hermanos.map((h) => `${h.nombres} (${nombreCurso(h.curso_id)}${h.estado !== 'activo' ? `, ${h.estado}` : ''})`).join(' · ')}
+                  {hermanos.map((h) => `${h.nombres} (${nombreCurso(h.curso_id)}${h.estado !== 'activo' ? `, ${ESTADO_ESTUDIANTE[h.estado] || h.estado}` : ''})`).join(' · ')}
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">

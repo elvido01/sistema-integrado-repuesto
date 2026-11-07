@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "4b1c2eba79e2d0e8",
+    "src/pages/colegio/CajaColegioPage.jsx": "30ae68266f98bf00",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea"
   },
@@ -577,6 +577,13 @@
         "sql/centros_educativos_factura_fiscal.sql",
         "src/components/colegio/FacturaFiscalDialog.jsx",
         "src/pages/Configuracion/CierreCajaPage.jsx",
+        "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-07",
+      "nota": "code-review high: 10 hallazgos (por_confirmar sin salida sin concepto reserva, lista del cliente vieja, no_continua sin rol direccion, meses pasados con recargo, anulacion sin revertir, por_confirmar de año anterior, abono parcial, texto caja, etiquetas, doble clic) - todos arreglados y probados en transaccion (sql v2)",
+      "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }

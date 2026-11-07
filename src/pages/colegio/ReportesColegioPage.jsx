@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { printHtmlSmart } from '@/lib/printHtmlSmart';
 import { exportToExcel } from '@/lib/excelExport';
 import { reporteColegioHTML, numeroRecibo } from '@/lib/printColegio';
-import { MESES } from '@/lib/colegio';
+import { MESES, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 import { hoyRD, diasAtraso, tramoAntiguedad, datosColegio, imprimirEstadoCuenta, TANDAS } from '@/lib/colegioReportes';
 
 const n2 = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -40,6 +40,7 @@ const PESTANAS = [
   ['recibos', 'Listado de recibos'],
   ['arqueo', 'Arqueo'],
   ['reservas', 'Reservas año próximo'],
+  ['confirmar', 'Por confirmar'],
 ];
 const CON_RANGO = ['cobrado', 'recibos', 'arqueo'];
 const CON_PENDIENTES = ['grado', 'mes', 'antiguedad'];
@@ -51,6 +52,7 @@ export default function ReportesColegioPage() {
   const [pendientes, setPendientes] = useState(null);
   const [cobros, setCobros] = useState(null);
   const [reservas, setReservas] = useState(null);
+  const [porConfirmar, setPorConfirmar] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [desde, setDesde] = useState(hoyRD());
   const [hasta, setHasta] = useState(hoyRD());
@@ -88,17 +90,29 @@ export default function ReportesColegioPage() {
     return undefined;
   }, [error]);
 
+  // Los que subieron de curso en el cambio de año sin confirmar que siguen.
+  const cargarPorConfirmar = useCallback(async () => {
+    setCargando(true);
+    const { data, error: e } = await supabase.rpc('edu_reporte_por_confirmar');
+    setCargando(false);
+    if (e) return error('No se pudo cargar la lista', e.message);
+    setPorConfirmar(data || []);
+    return undefined;
+  }, [error]);
+
   // Carga lo que la pestaña necesita la primera vez que se abre.
   useEffect(() => {
     if (!tenantId) return;
     if (CON_PENDIENTES.includes(pestana) && pendientes === null) cargarPendientes();
     if (CON_RANGO.includes(pestana) && cobros === null) cargarCobros();
     if (pestana === 'reservas' && reservas === null) cargarReservas();
-  }, [tenantId, pestana, pendientes, cobros, reservas, cargarPendientes, cargarCobros, cargarReservas]);
+    if (pestana === 'confirmar' && porConfirmar === null) cargarPorConfirmar();
+  }, [tenantId, pestana, pendientes, cobros, reservas, porConfirmar, cargarPendientes, cargarCobros, cargarReservas, cargarPorConfirmar]);
 
   const actualizar = () => {
     if (CON_PENDIENTES.includes(pestana)) cargarPendientes();
     else if (CON_RANGO.includes(pestana)) cargarCobros();
+    else if (pestana === 'confirmar') cargarPorConfirmar();
     else cargarReservas();
   };
 
@@ -121,8 +135,9 @@ export default function ReportesColegioPage() {
     if (pestana === 'cobrado') return tablaCobrado(cobrosVigentes, agrupar, rango);
     if (pestana === 'recibos') return tablaRecibos(cobros || [], rango);
     if (pestana === 'arqueo') return tablaArqueo(cobros || [], rango);
+    if (pestana === 'confirmar') return tablaPorConfirmar(porConfirmar || []);
     return tablaReservas(reservas, filtroReserva);
-  }, [pestana, deuda, incluirPorVencer, pendientes, cobrosVigentes, cobros, agrupar, rango, reservas, filtroReserva]);
+  }, [pestana, deuda, incluirPorVencer, pendientes, cobrosVigentes, cobros, agrupar, rango, reservas, filtroReserva, porConfirmar]);
 
   const imprimir = async () => {
     try {
@@ -212,7 +227,7 @@ export default function ReportesColegioPage() {
               <select className={`${campo} block mt-1`} value={filtroReserva} onChange={(e) => setFiltroReserva(e.target.value)}>
                 <option value="todos">Todos</option>
                 <option value="sin_reservar">Sin reservar</option>
-                <option value="pendiente">Reservado sin pagar</option>
+                <option value="pendiente">Cargada sin pagar (no cuenta)</option>
                 <option value="pagada">Reservado y pagado</option>
                 <option value="gradua">Se gradúan</option>
               </select>
@@ -290,7 +305,7 @@ function ResumenReservas({ reservas }) {
   const pagadas = cuenta('pagada');
   const caja = [
     ['Reservaron y pagaron', pagadas, 'text-emerald-700'],
-    ['Reservaron sin pagar', cuenta('pendiente'), 'text-amber-700'],
+    ['Cargada sin pagar (no cuenta)', cuenta('pendiente'), 'text-amber-700'],
     ['Sin reservar', cuenta('sin_reservar'), 'text-red-700'],
     ['Se gradúan', cuenta('gradua'), 'text-gray-600'],
   ];
@@ -341,7 +356,7 @@ function tablaPorGrado(deuda, todo) {
   ests.forEach((e) => {
     if (e.curso !== curso) { cerrar(); curso = e.curso; sub = { n: 0, rd: 0, usd: 0 }; filas.push({ _grupo: curso }); }
     sub.n += 1; sub.rd += e.rd; sub.usd += e.usd;
-    filas.push({ ...e, estudiante: `${e.estudiante}${e.estado !== 'activo' ? ` (${e.estado})` : ''}`, usd: e.usd || '' });
+    filas.push({ ...e, estudiante: `${e.estudiante}${e.estado !== 'activo' ? ` (${ESTADO_ESTUDIANTE[e.estado] || e.estado})` : ''}`, usd: e.usd || '' });
   });
   cerrar();
   const tot = ests.reduce((s, e) => ({ rd: s.rd + e.rd, usd: s.usd + e.usd }), { rd: 0, usd: 0 });
@@ -404,7 +419,7 @@ function tablaAntiguedad(pendientes) {
     const c = { ...c0, pendiente: Number(c0.pendiente) };
     const tramo = tramoAntiguedad(diasAtraso(c.desde, hoy));
     const e = m.get(c.estudiante_id) || {
-      estudiante: `${c.estudiante}${c.estado !== 'activo' ? ` (${c.estado})` : ''}`, curso: c.curso, curso_orden: c.curso_orden, tutor: c.tutor || '', telefono: c.telefono || '',
+      estudiante: `${c.estudiante}${c.estado !== 'activo' ? ` (${ESTADO_ESTUDIANTE[c.estado] || c.estado})` : ''}`, curso: c.curso, curso_orden: c.curso_orden, tutor: c.tutor || '', telefono: c.telefono || '',
       _familia_id: c.familia_id, por_vencer: 0, d30: 0, d60: 0, d60mas: 0,
     };
     e[tramo] += c.pendiente;
@@ -511,7 +526,29 @@ function tablaArqueo(pagos, rango) {
   };
 }
 
-const ESTADO_RESERVA = { pagada: 'Reservado y pagado', pendiente: 'Reservado sin pagar', sin_reservar: 'Sin reservar', gradua: 'Se gradúa' };
+const ESTADO_RESERVA = { pagada: 'Reservado y pagado', pendiente: 'Cargada sin pagar', sin_reservar: 'Sin reservar', gradua: 'Se gradúa' };
+function tablaPorConfirmar(lista) {
+  const filas = [];
+  let curso = null;
+  lista.forEach((x) => {
+    if (x.curso !== curso) { curso = x.curso; filas.push({ _grupo: curso }); }
+    filas.push({
+      estudiante: x.estudiante, matricula: x.matricula, tutor: x.tutor || '', telefono: x.telefono || '',
+      tarifa: Number(x.tarifa), debe: Number(x.debe), _familia_id: x.familia_id,
+    });
+  });
+  return {
+    titulo: 'Por confirmar que siguen', subtitulo: `Al ${fechaDO(hoyRD())} · ${lista.length} estudiante${lista.length === 1 ? '' : 's'}`,
+    columnas: [
+      { t: 'Estudiante', k: 'estudiante' }, { t: 'Mat.', k: 'matricula' }, { t: 'Tutor', k: 'tutor' }, { t: 'Teléfono', k: 'telefono' },
+      { t: 'Mensualidad', k: 'tarifa', m: true }, { t: 'Debe RD$', k: 'debe', m: true },
+    ],
+    filas,
+    total: null,
+    nota: 'Subieron de curso en el cambio de año, pero la familia no ha confirmado que siguen: no están en las aulas ni se les cargan mensualidades. Llamar a la familia: sigue cuando paga la reservación en la Caja del Colegio (botón "Reservar cupo" y se cobra); si se fue, "No sigue". El curso que sale es el que les toca este año.',
+  };
+}
+
 function tablaReservas(reservas, filtro) {
   const todas = reservas?.filas || [];
   const lista = todas.filter((x) => filtro === 'todos' || x.reserva === filtro);
@@ -524,7 +561,7 @@ function tablaReservas(reservas, filtro) {
   });
   const filas = [{ _grupo: `Proyección ${reservas?.anio_siguiente || ''} por curso` }];
   [...proy.entries()].sort((a, b) => a[1].orden.localeCompare(b[1].orden)).forEach(([curso, g]) => {
-    filas.push({ estudiante: curso, curso: `Pagaron ${g.pagada} · sin pagar ${g.pendiente} · sin reservar ${g.sin_reservar}`, reserva: `${g.pagada + g.pendiente} de ${g.pagada + g.pendiente + g.sin_reservar}`, _sub: true });
+    filas.push({ estudiante: curso, curso: `Pagaron ${g.pagada} · sin pagar ${g.pendiente} · sin reservar ${g.sin_reservar}`, reserva: `${g.pagada} de ${g.pagada + g.pendiente + g.sin_reservar} pagaron`, _sub: true });
   });
   filas.push({ _grupo: `Estudiantes (${lista.length})` });
   lista.forEach((x) => filas.push({

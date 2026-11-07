@@ -231,10 +231,10 @@ function Tarifas({ tarifas, cfg, anioActual, guardando, nuevaTarifa, setNuevaTar
           </div>
         </label>
         <p className="text-xs text-gray-500 flex-1 min-w-[200px]">
-          Al agregar la tarifa del año nuevo se sugiere la última ({fmt(ultima)}) + {fmt(incremento)}. Se puede cambiar antes de guardar.
+          Se sugiere la más alta ({fmt(ultima)}) + {fmt(incremento)} para el nuevo ingreso, pero se puede escribir cualquier monto (por ejemplo, una tarifa vieja que falte en la lista).
         </p>
         {!nuevaTarifa && (
-          <Button size="sm" onClick={empezar}><Plus className="w-4 h-4 mr-1" /> Agregar tarifa del año nuevo</Button>
+          <Button size="sm" onClick={empezar}><Plus className="w-4 h-4 mr-1" /> Agregar tarifa</Button>
         )}
       </div>
 
@@ -582,9 +582,10 @@ Para pasar al año siguiente usa "Cambio de año escolar".
         <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 space-y-2">
           <div className="font-bold text-amber-900">Cambio de año escolar</div>
           <p className="text-sm text-amber-900">
-            Al terminar {actual.nombre}: cada estudiante sube al curso siguiente (el de 6to de secundaria se gradúa), todos pasan a continuantes,
-            la mensualidad <b>no cambia</b> y se prepara la cuenta del año nuevo. Quien ya pagó la reservación no la vuelve a pagar.
-            Lo que quedó debiendo del año viejo se sigue cobrando en la Caja.
+            Al terminar {actual.nombre}: cada estudiante sube al curso siguiente (el de 6to de secundaria se gradúa), todos pasan a continuantes
+            y la mensualidad <b>no cambia</b>. <b>Sigue</b> solo el que pagó la reservación: a ese se le prepara la cuenta del año nuevo.
+            El que no la ha pagado queda <b>por confirmar</b> (fuera de las aulas y sin mensualidades) hasta que pague la reservación en la Caja.
+            Lo que quedó debiendo del año viejo se sigue cobrando.
           </p>
           <Button size="sm" onClick={() => setCambio(true)}><ArrowRightCircle className="w-4 h-4 mr-1" /> Cambiar a {actual.anio_inicio + 1}-{actual.anio_inicio + 2}</Button>
         </div>
@@ -594,7 +595,7 @@ Para pasar al año siguiente usa "Cambio de año escolar".
           onClose={() => setCambio(false)}
           onDone={(r) => {
             setCambio(false);
-            toast({ title: `Año ${r.anio} en marcha`, description: `${r.promovidos} suben de curso · ${r.repiten} repiten · ${r.graduados} graduados · ${r.retirados} retirados · ${r.cargos} cargos creados` });
+            toast({ title: `Año ${r.anio} en marcha`, description: `${r.promovidos} suben de curso · ${r.repiten} repiten · ${r.graduados} graduados · ${r.retirados} no siguen · ${r.por_confirmar || 0} por confirmar · ${r.cargos} cargos creados` });
             recargar();
           }} />
       )}
@@ -605,8 +606,11 @@ Para pasar al año siguiente usa "Cambio de año escolar".
 // ── Cambio de año ────────────────────────────────────────────────────────
 // Lista a todos los activos con el curso que tendrán y si reservaron. La
 // dirección marca quién repite y quién no sigue; el resto sube de curso.
+// SIGUE solo el que PAGÓ la reservación (regla del colegio: sin pago no hay
+// cupo). El resto sube igual pero queda 'por_confirmar' (fuera del aula y sin
+// mensualidades) hasta que pague la reservación en la Caja (07/11/2026).
 // Todo pasa en la base en una sola transacción (edu_cambiar_anio).
-const RESERVA_TXT = { pagada: 'Reservó y pagó', pendiente: 'Reservó sin pagar', sin_reservar: 'Sin reservar', gradua: 'Se gradúa' };
+const RESERVA_TXT = { pagada: 'Reservó y pagó', pendiente: 'Cargada sin pagar', sin_reservar: 'Sin reservar', gradua: 'Se gradúa' };
 function CambioAnioDialog({ actual, siguiente, onClose, onDone, error }) {
   const nombreSig = `${actual.anio_inicio + 1}-${actual.anio_inicio + 2}`;
   const [filas, setFilas] = useState(null);
@@ -618,18 +622,28 @@ function CambioAnioDialog({ actual, siguiente, onClose, onDone, error }) {
   const [guardando, setGuardando] = useState(false);
   const [filtro, setFiltro] = useState('');
 
+  // Sin concepto de reservación (o en 0) no hay cómo confirmarse: la base deja seguir a todos.
+  const [conReserva, setConReserva] = useState(true);
   useEffect(() => {
     (async () => {
-      const { data, error: e } = await supabase.rpc('edu_reporte_reservas');
+      const [{ data, error: e }, co] = await Promise.all([
+        supabase.rpc('edu_reporte_reservas'),
+        supabase.from('edu_conceptos').select('id').eq('tenant_id', actual.tenant_id).eq('tipo', 'reservacion').eq('activo', true).gt('monto', 0),
+      ]);
       if (e) { error('No se pudo cargar la lista', e); onClose(); return; }
+      setConReserva(co.error ? true : (co.data || []).length > 0);
       setFilas(data?.filas || []);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const poner = (id, v) => setMarca((m) => { const n = { ...m }; if (n[id] === v) delete n[id]; else n[id] = v; return n; });
   const cuenta = (v) => Object.values(marca).filter((x) => x === v).length;
-  const sinReservar = (filas || []).filter((f) => f.reserva === 'sin_reservar' || f.reserva === 'pendiente').length;
-  const visibles = (filas || []).filter((f) => !filtro || f.reserva === filtro);
+  // A quién hay que confirmarle: todos menos el que se gradúa (salvo que repita) y el que no sigue.
+  const aplica = (f) => marca[f.estudiante_id] !== 'retirar' && (f.reserva !== 'gradua' || marca[f.estudiante_id] === 'repite');
+  const sinPagar = (f) => conReserva && aplica(f) && f.reserva !== 'pagada';
+  const porConfirmar = (filas || []).filter(sinPagar);
+  const visibles = (filas || []).filter((f) => !filtro || (filtro === 'por_confirmar' ? sinPagar(f) : f.reserva === filtro));
+  const gradua = (filas || []).filter((f) => f.reserva === 'gradua' && !marca[f.estudiante_id]).length;
 
   const ok = async () => {
     if (confirmar.trim() !== nombreSig) return error('Falta confirmar', `Escribe ${nombreSig} para confirmar.`);
@@ -640,6 +654,7 @@ function CambioAnioDialog({ actual, siguiente, onClose, onDone, error }) {
       p_retirar: Object.entries(marca).filter(([, v]) => v === 'retirar').map(([id]) => id),
       p_preparar: preparar,
       p_mes_inicio: Number(mesInicio), p_meses: Number(meses),
+      // Quién queda por confirmar lo decide la base (mira el pago en ese momento).
     });
     setGuardando(false);
     if (e) return error('No se pudo cambiar de año', e);
@@ -665,35 +680,38 @@ function CambioAnioDialog({ actual, siguiente, onClose, onDone, error }) {
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={preparar} onChange={(e) => setPreparar(e.target.checked)} />
-                Preparar la cuenta del año nuevo de cada estudiante
+                Preparar la cuenta del año nuevo de los que siguen
               </label>
               <label className="text-xs font-bold text-gray-600 uppercase ml-auto">
                 Mostrar
                 <select className={`${campo} w-44 mt-1`} value={filtro} onChange={(e) => setFiltro(e.target.value)}>
                   <option value="">Todos ({filas.length})</option>
+                  <option value="por_confirmar">Quedan por confirmar ({porConfirmar.length})</option>
                   <option value="sin_reservar">Sin reservar</option>
-                  <option value="pendiente">Reservó sin pagar</option>
+                  <option value="pendiente">Cargada sin pagar</option>
                   <option value="pagada">Reservó y pagó</option>
                   <option value="gradua">Se gradúan</option>
                 </select>
               </label>
             </div>
-            {sinReservar > 0 && (
+            {porConfirmar.length > 0 && (
               <div className="text-sm rounded-md bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2">
-                {sinReservar} estudiante{sinReservar === 1 ? '' : 's'} no {sinReservar === 1 ? 'ha' : 'han'} pagado la reservación. Si alguno no va a seguir, márcalo en <b>No sigue</b>; a los que sigan se les carga la reservación en la cuenta nueva.
+                <b>{porConfirmar.length}</b> estudiante{porConfirmar.length === 1 ? ' no ha' : 's no han'} pagado la reservación: suben de curso pero quedan
+                <b> por confirmar</b>, sin aula y sin mensualidades, hasta que la paguen en la Caja. Si sabes que alguno se va, márcalo en <b>No sigue</b>.
               </div>
             )}
             <div className="border rounded-md max-h-[45vh] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-100 text-xs text-gray-600">
-                  <tr><th className="text-left px-2 py-1.5">Estudiante</th><th className="text-left">Curso → próximo</th><th className="text-left">Reserva</th><th className="w-20">Repite</th><th className="w-20">No sigue</th></tr>
+                  <tr><th className="text-left px-2 py-1.5">Estudiante</th><th className="text-left">Curso → próximo</th><th className="text-left">Reserva</th><th className="w-16">Sigue</th><th className="w-16">Repite</th><th className="w-16">No sigue</th></tr>
                 </thead>
                 <tbody>
                   {visibles.map((f) => (
-                    <tr key={f.estudiante_id} className={`border-t ${marca[f.estudiante_id] === 'retirar' ? 'bg-red-50' : marca[f.estudiante_id] === 'repite' ? 'bg-amber-50' : ''}`}>
+                    <tr key={f.estudiante_id} className={`border-t ${marca[f.estudiante_id] === 'retirar' ? 'bg-red-50' : marca[f.estudiante_id] === 'repite' ? 'bg-amber-50' : sinPagar(f) ? 'bg-gray-50 text-gray-500' : ''}`}>
                       <td className="px-2 py-1">{f.estudiante} <span className="text-xs text-gray-400">· Fam. {f.familia}</span></td>
                       <td className="text-xs">{f.curso} → <b>{marca[f.estudiante_id] === 'repite' ? f.curso : marca[f.estudiante_id] === 'retirar' ? '—' : f.curso_siguiente}</b></td>
                       <td className={`text-xs ${f.reserva === 'pagada' ? 'text-emerald-700' : f.reserva === 'gradua' ? 'text-gray-500' : 'text-amber-700'}`}>{RESERVA_TXT[f.reserva] || f.reserva}</td>
+                      <td className="text-center text-xs">{!aplica(f) ? null : sinPagar(f) ? <span className="text-amber-700" title="Sin la reservación pagada">Por confirmar</span> : <span className="text-emerald-700 font-bold" title="Pagó la reservación">✓</span>}</td>
                       <td className="text-center"><input type="checkbox" checked={marca[f.estudiante_id] === 'repite'} onChange={() => poner(f.estudiante_id, 'repite')} /></td>
                       <td className="text-center"><input type="checkbox" checked={marca[f.estudiante_id] === 'retirar'} onChange={() => poner(f.estudiante_id, 'retirar')} /></td>
                     </tr>
@@ -702,9 +720,10 @@ function CambioAnioDialog({ actual, siguiente, onClose, onDone, error }) {
               </table>
             </div>
             <div className="text-sm text-gray-700">
-              Suben de curso: <b>{filas.length - cuenta('repite') - cuenta('retirar') - filas.filter((f) => f.reserva === 'gradua' && !marca[f.estudiante_id]).length}</b> ·
-              Repiten: <b>{cuenta('repite')}</b> · Se gradúan: <b>{filas.filter((f) => f.reserva === 'gradua' && !marca[f.estudiante_id]).length}</b> ·
-              No siguen: <b>{cuenta('retirar')}</b>
+              Suben de curso: <b>{filas.length - cuenta('repite') - cuenta('retirar') - gradua}</b> ·
+              Repiten: <b>{cuenta('repite')}</b> · Se gradúan: <b>{gradua}</b> ·
+              No siguen: <b>{cuenta('retirar')}</b> ·
+              <span className={porConfirmar.length ? 'text-amber-700' : ''}> Por confirmar: <b>{porConfirmar.length}</b></span>
             </div>
             <div className="rounded-md border border-red-200 bg-red-50/60 p-3 space-y-2">
               <p className="text-sm text-red-900">Esto no se deshace con un botón: {actual.nombre} queda cerrado y {nombreSig} pasa a ser el año actual. Para confirmar escribe <b>{nombreSig}</b>.</p>
