@@ -85,3 +85,6 @@ vault/**/*.conflicto-*.md
 .latido-*
 scripts/.meta-token-ultimo.log
 sql/dgii_cron_revisar_pendientes.sql
+
+# Archivos de la publicación anterior (scripts/conservar-assets.mjs)
+.assets-anteriores/
