@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +14,12 @@ import { descargarRespaldoTenant } from '@/lib/backupTenant';
 const PerfilEmpresa = () => {
   const { toast } = useToast();
   const { profile, empresa, tenantId } = useAuth();
+  // (07/11/2026) El plan sale de la suscripción vigente (tenants.plan se queda
+  // viejo: decía EDUCA PRO con la empresa en EDUCA INICIAL).
+  const { planActual } = useSuscripcion();
+  // Lo de motos (precios de placa/GPS/casco/seguro, Carta de Ruta, Cobranzas)
+  // no aplica a colegios, servicios ni inmobiliarias.
+  const esDeMotos = !['educativo', 'servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio);
   // (21/10/2026) La empresa ACTIVA, no la del perfil: el súper admin no tiene
   // empresa en el perfil (la pantalla se quedaba cargando para siempre) y quien
   // trabaja varias empresas editaba la del perfil aunque tuviera otra abierta.
@@ -176,7 +183,7 @@ const PerfilEmpresa = () => {
               <p className="text-xs text-blue-200 italic">Configuración de datos de tu negocio</p>
             </div>
             <div className="ml-auto text-xs bg-white/10 px-3 py-1 rounded-full font-bold uppercase">
-              Plan: {tenant.plan}
+              Plan: {planActual || tenant.plan}
             </div>
           </div>
 
@@ -260,7 +267,7 @@ const PerfilEmpresa = () => {
             </div>
 
             {/* Precios de Add-ons para Solicitudes de Compra (motos) */}
-            <div className="border-t border-gray-200 pt-5">
+            {esDeMotos && <div className="border-t border-gray-200 pt-5">
               <h3 className="text-sm font-black text-gray-700 uppercase mb-1">Precios para Solicitudes de Compra</h3>
               <p className="text-[11px] text-gray-500 italic mb-3">
                 Estos valores se usan como precio por defecto de los add-ons al crear una Solicitud de Compra. Se suman al financiamiento cuando el cliente marca "si aplica".
@@ -286,31 +293,21 @@ const PerfilEmpresa = () => {
                   </div>
                 ))}
               </div>
-            </div>
+            </div>}
 
-            {/* Info badges */}
+            {/* Info badges: el plan y lo que la empresa tiene encendido */}
             <div className="flex flex-wrap gap-2">
               <div className="bg-blue-50 text-blue-700 text-[10px] font-bold px-3 py-1 rounded-full border border-blue-200 uppercase">
-                Plan: {tenant.plan}
+                Plan: {planActual || tenant.plan}
               </div>
-              {tenant.feat_carta_ruta && (
+              {esDeMotos && tenant.feat_carta_ruta && (
                 <div className="bg-green-50 text-green-700 text-[10px] font-bold px-3 py-1 rounded-full border border-green-200 uppercase">
                   ✓ Carta de Ruta
                 </div>
               )}
-              {tenant.feat_cobranzas && (
+              {esDeMotos && tenant.feat_cobranzas && (
                 <div className="bg-green-50 text-green-700 text-[10px] font-bold px-3 py-1 rounded-full border border-green-200 uppercase">
                   ✓ Cobranzas
-                </div>
-              )}
-              {!tenant.feat_carta_ruta && (
-                <div className="bg-gray-100 text-gray-400 text-[10px] font-bold px-3 py-1 rounded-full border border-gray-200 uppercase">
-                  ✗ Carta de Ruta
-                </div>
-              )}
-              {!tenant.feat_cobranzas && (
-                <div className="bg-gray-100 text-gray-400 text-[10px] font-bold px-3 py-1 rounded-full border border-gray-200 uppercase">
-                  ✗ Cobranzas
                 </div>
               )}
             </div>
