@@ -48,7 +48,7 @@ const INCLUYE = {
       'Inventario, compras y suplidores',
       'Cotizaciones en PDF listas para WhatsApp',
       'Cuentas por cobrar y por pagar',
-      'Reportes 606 y 607',
+      'Reportes DGII 606, 607 y 608',
     ],
   },
   PRO: {
@@ -58,7 +58,7 @@ const INCLUYE = {
       'Embudo de ventas que se mueve solo con IA',
       'Lee tus facturas de compra con una foto',
       'Cobranzas y recordatorios',
-      'Cuentas bancarias y reportes avanzados',
+      'Contabilidad: cuentas bancarias, flujo de caja, estado de resultado y libros contables',
       'Nómina: sueldos, TSS y adelantos',
     ],
   },

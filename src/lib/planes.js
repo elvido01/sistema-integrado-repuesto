@@ -1,7 +1,9 @@
 // Qué incluye cada plan. (06/11/2026) Nómina: del plan Pro en adelante
 // (PRO, ENTERPRISE y, en colegios, EDUCA PRO y EDUCA TOTAL). Decisión del dueño.
+// (07/11/2026) La prueba gratis (TRIAL) ve todo lo de Pro: quien prueba lo
+// completo compra más. Decisión del dueño.
 
-export const PLANES_PRO_EN_ADELANTE = ['PRO', 'ENTERPRISE', 'EDUCA PRO', 'EDUCA TOTAL'];
+export const PLANES_PRO_EN_ADELANTE = ['TRIAL', 'PRO', 'ENTERPRISE', 'EDUCA PRO', 'EDUCA TOTAL'];
 
 export const esPlanProOMas = (planNombre) =>
   PLANES_PRO_EN_ADELANTE.includes(String(planNombre || '').trim().toUpperCase());
@@ -13,7 +15,7 @@ export const FUNCIONES_PRO = { nomina: 'Nómina' };
 // EDUCA TOTAL a precio completo. Una empresa con precio especial
 // (tenants.precio_especial, p. ej. el precio fundador del Centenario) no lo
 // trae: el CRM es del plan a precio completo. Decisión del dueño.
-export const PLANES_CRM = ['PRO', 'ENTERPRISE', 'EDUCA PRO', 'EDUCA TOTAL'];
+export const PLANES_CRM = ['TRIAL', 'PRO', 'ENTERPRISE', 'EDUCA PRO', 'EDUCA TOTAL'];
 
 export const puedeCrm = (planNombre, especial) =>
   PLANES_CRM.includes(String(planNombre || '').trim().toUpperCase()) && !especial;
@@ -23,7 +25,7 @@ export const puedeCrm = (planNombre, especial) =>
 // qué hace y cuánto más cuesta (no abre pestaña). Lo de dos planes más
 // arriba no se enseña: hace ruido. Decisión del dueño.
 const ESCALON = {
-  TRIAL: 0, SERVICIOS: 0, BASICO: 0, PRO: 1, ENTERPRISE: 2,
+  SERVICIOS: 0, BASICO: 0, TRIAL: 1, PRO: 1, ENTERPRISE: 2,
   'EDUCA INICIAL': 0, 'EDUCA PRO': 1, 'EDUCA TOTAL': 2,
 };
 const esEduca = (p) => String(p || '').toUpperCase().startsWith('EDUCA');
@@ -45,6 +47,32 @@ export const FUNCIONES_PLAN = {
     titulo: 'Sales Hub',
     descripcion: 'Los mensajes de WhatsApp, Instagram y Facebook en una sola bandeja, con seguimiento de cada cliente.',
     incluye: { PRO: ['Nómina del personal', 'Más usuarios'], 'EDUCA PRO': ['Recordatorios de pago por WhatsApp', 'Nómina del personal', 'Hasta 800 estudiantes'] },
+  },
+  // (07/11/2026) Contabilidad: del plan Pro en adelante (los reportes DGII
+  // 606/607/608 quedan en todos los planes: son obligación).
+  'cuentas-bancarias': {
+    planes: PLANES_PRO_EN_ADELANTE,
+    titulo: 'Cuentas bancarias',
+    descripcion: 'El saldo de cada cuenta en vivo, con depósitos, transferencias y pagos que salen del banco.',
+    incluye: { PRO: ['Flujo de caja y estado de resultado', 'Libros contables', 'Nómina y Sales Hub'] },
+  },
+  'flujo-caja': {
+    planes: PLANES_PRO_EN_ADELANTE,
+    titulo: 'Flujo de caja',
+    descripcion: 'Cuánto dinero entró y salió cada día, de dónde vino y en qué se fue.',
+    incluye: { PRO: ['Cuentas bancarias con saldos en vivo', 'Estado de resultado y libros contables', 'Nómina y Sales Hub'] },
+  },
+  'estado-resultados': {
+    planes: PLANES_PRO_EN_ADELANTE,
+    titulo: 'Estado de resultado',
+    descripcion: 'Ventas, costos y gastos del período para saber cuánto ganó de verdad.',
+    incluye: { PRO: ['Flujo de caja', 'Cuentas bancarias y libros contables', 'Nómina y Sales Hub'] },
+  },
+  'libros-contables': {
+    planes: PLANES_PRO_EN_ADELANTE,
+    titulo: 'Libros contables',
+    descripcion: 'Libros de ventas, compras, cobros, pagos e inventario listos para su contador.',
+    incluye: { PRO: ['Estado de resultado y flujo de caja', 'Cuentas bancarias', 'Nómina y Sales Hub'] },
   },
   'colegio-notas': {
     planes: ['EDUCA TOTAL'],
@@ -80,7 +108,8 @@ export function accesoFuncion(id, { planActual, especial = null, superAdmin = fa
   const permitido = id === 'whatsapp-crm' ? puedeCrm(actual, especial) : f.planes.includes(actual);
   if (permitido) return { estado: 'libre' };
   if (f.planes.includes(actual)) return { estado: 'oculta' }; // lo quita el precio especial
-  const misma = f.planes.filter((p) => esEduca(p) === esEduca(actual) && ESCALON[p] !== undefined);
+  // La prueba gratis no se ofrece como plan a contratar.
+  const misma = f.planes.filter((p) => p !== 'TRIAL' && esEduca(p) === esEduca(actual) && ESCALON[p] !== undefined);
   if (!misma.length || ESCALON[actual] === undefined) return { estado: 'oculta' };
   const plan = misma.reduce((a, b) => (ESCALON[b] < ESCALON[a] ? b : a));
   return ESCALON[plan] - ESCALON[actual] === 1 ? { estado: 'mejorar', plan } : { estado: 'oculta' };

@@ -94,3 +94,15 @@ describe('funciones de un plan mayor en el menú', () => {
     expect(etiquetaPlan('pro')).toBe('PRO');
   });
 });
+
+describe('contabilidad en Pro y la prueba gratis', () => {
+  it('Básico ve la contabilidad con ★ PRO; la prueba gratis la tiene', () => {
+    expect(accesoFuncion('flujo-caja', { planActual: 'BASICO' })).toEqual({ estado: 'mejorar', plan: 'PRO' });
+    expect(accesoFuncion('cuentas-bancarias', { planActual: 'TRIAL' }).estado).toBe('libre');
+    expect(accesoFuncion('whatsapp-crm', { planActual: 'TRIAL' }).estado).toBe('libre');
+    expect(accesoFuncion('libros-contables', { planActual: 'PRO' }).estado).toBe('libre');
+  });
+  it('los reportes DGII no tienen plan (obligación)', () => {
+    expect(accesoFuncion('reportes-dgii', { planActual: 'BASICO' }).estado).toBe('libre');
+  });
+});

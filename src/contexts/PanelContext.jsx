@@ -105,6 +105,7 @@ const NotaCreditoFinancieraPage = lazy(() => import('@/pages/NotaCreditoFinancie
 import RouteGuard from '@/components/auth/RouteGuard';
 import SuperAdminGuard from '@/components/auth/SuperAdminGuard';
 import PlanGate from '@/components/auth/PlanGate';
+import { PLANES_PRO_EN_ADELANTE } from '@/lib/planes';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const Protected = ({ module, children }) => (
@@ -174,16 +175,16 @@ const componentMapping = {
   'contratos-alquiler': { component: () => <Protected module="ventas"><ContratosAlquilerPage /></Protected>, icon: FileText, name: 'Contratos de Alquiler' },
   'documentacion-cliente': { component: () => <Protected module="documentacion-cliente"><DocumentacionClientePage /></Protected>, icon: FileImage, name: 'Documentación Cliente' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },
-  'libros-contables': { component: () => <Protected module="libros-contables"><LibrosContablesPage /></Protected>, icon: FileText, name: 'Libros Contables' },
-  'estado-resultados': { component: () => <Protected module="estado-resultados"><EstadoResultadosPage /></Protected>, icon: DollarSign, name: 'Estado de Resultado' },
+  'libros-contables': { component: () => <Protected module="libros-contables"><PlanGate planes={PLANES_PRO_EN_ADELANTE} nombre="Libros Contables" mensaje={<>Disponible del plan <b className="text-violet-600">Pro</b> en adelante.</>}><LibrosContablesPage /></PlanGate></Protected>, icon: FileText, name: 'Libros Contables' },
+  'estado-resultados': { component: () => <Protected module="estado-resultados"><PlanGate planes={PLANES_PRO_EN_ADELANTE} nombre="Estado de Resultado" mensaje={<>Disponible del plan <b className="text-violet-600">Pro</b> en adelante.</>}><EstadoResultadosPage /></PlanGate></Protected>, icon: DollarSign, name: 'Estado de Resultado' },
   'alertas-gerenciales': { component: () => <Protected module="alertas-gerenciales"><AlertasGerencialesPage /></Protected>, icon: BellRing, name: 'Alertas Gerenciales' },
   'rentabilidad-diaria': { component: () => <Protected module="rentabilidad-diaria"><RentabilidadDiariaPage /></Protected>, icon: DollarSign, name: 'Rentabilidad Diaria' },
   'inventario-inteligente': { component: () => <Protected module="inventario-inteligente"><InventarioInteligentePage /></Protected>, icon: Warehouse, name: 'Inventario Inteligente' },
-  'flujo-caja': { component: () => <Protected module="flujo-caja"><FlujoCajaPage /></Protected>, icon: DollarSign, name: 'Flujo de Caja' },
+  'flujo-caja': { component: () => <Protected module="flujo-caja"><PlanGate planes={PLANES_PRO_EN_ADELANTE} nombre="Flujo de Caja" mensaje={<>Disponible del plan <b className="text-violet-600">Pro</b> en adelante.</>}><FlujoCajaPage /></PlanGate></Protected>, icon: DollarSign, name: 'Flujo de Caja' },
   'cartera-clientes': { component: () => <Protected module="cartera-clientes"><CarteraClientesPage /></Protected>, icon: Users, name: 'Cartera de Clientes' },
   'recomendador-precios': { component: () => <Protected module="recomendador-precios"><RecomendadorPreciosPage /></Protected>, icon: DollarSign, name: 'Recomendador de Precios' },
   'cierre-caja': { component: () => <Protected module="cierre-caja"><CierreCajaPage /></Protected>, icon: Settings, name: 'Cierre de Caja' },
-  'cuentas-bancarias': { component: () => <Protected module="cuentas-bancarias"><CuentasBancariasPage /></Protected>, icon: Landmark, name: 'Cuentas Bancarias' },
+  'cuentas-bancarias': { component: () => <Protected module="cuentas-bancarias"><PlanGate planes={PLANES_PRO_EN_ADELANTE} nombre="Cuentas Bancarias" mensaje={<>Disponible del plan <b className="text-violet-600">Pro</b> en adelante.</>}><CuentasBancariasPage /></PlanGate></Protected>, icon: Landmark, name: 'Cuentas Bancarias' },
   'config_sistema': { component: () => <Protected module="config_sistema"><ConfiguracionSistemaPage /></Protected>, icon: Settings, name: 'Configuracion del Sistema' },
   'perfil-empresa': { component: () => <Protected module="perfil-empresa"><PerfilEmpresa /></Protected>, icon: Building2, name: 'Perfil Empresa' },
   'comprobantes-fiscales': { component: () => <Protected module="comprobantes-fiscales"><ComprobantesPage /></Protected>, icon: FileText, name: 'Comprobantes Fiscales' },

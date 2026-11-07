@@ -172,6 +172,7 @@ const navItems = [
       { title: 'Otras Transacciones', id: 'otras-transacciones', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'Histórico de Cliente', id: 'historico-cliente', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'Lista de Chasis en Préstamos', id: 'lista-chasis-prestamos', icon: Receipt, featFlag: 'feat_financiera' },
+      { title: 'SAN Ahorro', id: 'san', icon: PiggyBank, modulo: 'san' },
     ],
   },
   {
@@ -188,11 +189,18 @@ const navItems = [
     ],
   },
   {
-    title: 'Cuentas Bancarias',
+    // (07/11/2026) Contabilidad: bancos, flujo, estado de resultado y libros
+    // (plan Pro; lib/planes), y lo fiscal (DGII y comprobantes, todos los planes).
+    title: 'Contabilidad',
     icon: Landmark,
     subItems: [
       { title: 'Cuentas y Saldos', id: 'cuentas-bancarias', icon: Landmark },
-      { title: 'SAN Ahorro', id: 'san', icon: PiggyBank, modulo: 'san' },
+      { title: 'Flujo de Caja', id: 'flujo-caja', icon: DollarSign },
+      { title: 'Estado de Resultado', id: 'estado-resultados', icon: DollarSign },
+      { title: 'Libros Contables', id: 'libros-contables', icon: FileText },
+      { title: 'Reportes DGII (606/607/608)', id: 'reportes-dgii', icon: FileText },
+      { title: 'Comprobantes Fiscales', id: 'comprobantes-fiscales', icon: FileText },
+      { title: 'Monitor e-CF DGII', id: 'dgii-monitor', icon: FileText },
     ],
   },
   {
@@ -203,13 +211,9 @@ const navItems = [
       { title: 'Transacciones de Inventario', id: 'reporte-movimientos', ocultarEnTipos: ['servicios'] },
       { title: 'Transacciones Diarias', id: 'reporte-transacciones-diarias', icon: ListChecks },
       { title: 'Inventario Físico', id: 'inventario-fisico', icon: Archive, ocultarEnTipos: ['servicios'] },
-      { title: 'Reportes DGII (606/607/608)', id: 'reportes-dgii', icon: FileText },
-      { title: 'Libros Contables', id: 'libros-contables', icon: FileText },
-      { title: 'Estado de Resultado', id: 'estado-resultados', icon: DollarSign },
       { title: 'Alertas Gerenciales', id: 'alertas-gerenciales', icon: BellRing },
       { title: 'Rentabilidad Diaria', id: 'rentabilidad-diaria', icon: DollarSign },
       { title: 'Inventario Inteligente', id: 'inventario-inteligente', icon: Warehouse, ocultarEnTipos: ['servicios', 'inmobiliaria'] },
-      { title: 'Flujo de Caja', id: 'flujo-caja', icon: DollarSign },
       { title: 'Cartera de Clientes', id: 'cartera-clientes', icon: Users },
       { title: 'Recomendador de Precios', id: 'recomendador-precios', icon: DollarSign, ocultarEnTipos: ['servicios', 'inmobiliaria'] },
     ],
@@ -236,8 +240,6 @@ const navItems = [
       { title: 'Configuraciones del Sistema', id: 'config_sistema', icon: Settings },
       { title: 'Perfil Empresa', id: 'perfil-empresa', icon: Building2 },
       { title: 'Cierre de Caja', id: 'cierre-caja', icon: Settings },
-      { title: 'Comprobantes Fiscales', id: 'comprobantes-fiscales', icon: FileText },
-      { title: 'Monitor e-CF DGII', id: 'dgii-monitor', icon: FileText },
     ],
   },
 ];
