@@ -186,6 +186,8 @@ export const SuscripcionProvider = ({ children }) => {
 
   // (07/11/2026) Precio especial pactado con la empresa (tenants.precio_especial):
   // cambia lo que cobra Planes, el tope de usuarios/estudiantes y quita el CRM.
+  // Vale solo en su plan (tenants.plan_especial; null = en cualquiera): si la
+  // empresa sube a otro plan, rige lo de ese plan → especialVigente = null.
   // null = la empresa va con los precios y límites normales del plan.
   const [especial, setEspecial] = useState(null);
   useEffect(() => {
@@ -199,6 +201,7 @@ export const SuscripcionProvider = ({ children }) => {
           nota: data.precio_especial_nota || '',
           limiteUsuarios: data.limite_usuarios_especial || null,
           limiteEstudiantes: data.limite_estudiantes_especial || null,
+          plan: data.plan_especial || null,
         } : null);
       });
     return () => { vivo = false; };
@@ -223,6 +226,8 @@ export const SuscripcionProvider = ({ children }) => {
   const planActual = suscripcion?.plan || null;
   const limites = suscripcion?.limites || {};
   const features = suscripcion?.features || {};
+  const especialVigente = especial && (!especial.plan || String(especial.plan).toUpperCase() === String(planActual || '').toUpperCase())
+    ? especial : null;
 
   const validarAccion = useCallback((accion = 'general') => {
     if (isSuperAdmin) {
@@ -295,9 +300,10 @@ export const SuscripcionProvider = ({ children }) => {
     validarAccion,
     renovarPlan,
     especial,
+    especialVigente,
     refetch: fetchSuscripcion
   }), [
-    suscripcion, loading, planes, especial,
+    suscripcion, loading, planes, especial, especialVigente,
     isActiva, isVencida, isTrial, diasRestantes, porVencer, planActual, limites, features,
     validarAccion, renovarPlan, fetchSuscripcion
   ]);

@@ -280,7 +280,7 @@ const listVariants = {
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const { openPanel, activePanel } = usePanels();
   const { profile, permissions, user, signOut, isSuperAdmin, tenantId, empresa } = useAuth();
-  const { planActual, especial } = useSuscripcion();
+  const { planActual, especialVigente } = useSuscripcion();
   // Nómina: plan Pro en adelante (incluye EDUCA PRO / EDUCA TOTAL en colegios).
   const puedeNomina = isSuperAdmin || esPlanProOMas(planActual);
   const { theme, toggleTheme } = useTheme();
@@ -478,7 +478,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 && !(sub.moduloOr && tieneModulo(empresa, sub.moduloOr))) return false;
             if (sub.adminOnly && !['admin', 'owner', 'manager', 'gerente'].includes(profile?.role)) return false; // ej. Nota de Crédito
             // Sales Hub: PRO/ENTERPRISE y EDUCA PRO/TOTAL a precio completo (lib/planes).
-            if (sub.id === 'whatsapp-crm' && !(isSuperAdmin || puedeCrm(planActual, especial))) return false;
+            if (sub.id === 'whatsapp-crm' && !(isSuperAdmin || puedeCrm(planActual, especialVigente))) return false;
             if (sub.id === 'nomina' && !puedeNomina) return false;
             return canAccess(profile, permissions, sub.permissionKey || sub.id);
           });

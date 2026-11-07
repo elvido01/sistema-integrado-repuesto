@@ -16,10 +16,12 @@ const MESES_GRATIS_ANUAL = 2;
 const DIAS_ANUAL = 365;
 
 // (07/11/2026) Precio especial pactado con una empresa (tenants.precio_especial,
-// p. ej. el precio fundador del primer colegio). Vale para el plan Pro de su
-// segmento, con sus propios límites de usuarios y estudiantes si los tiene, y
-// SIN el Sales Hub / CRM (es del plan a precio completo; lib/planes). Pagando
-// anual no se le suman meses gratis: el precio especial ya es la rebaja.
+// p. ej. el plan fundador del primer colegio). Vale en SU plan
+// (tenants.plan_especial; si no lo tiene, el Pro del segmento), con sus propios
+// límites de usuarios y estudiantes si los tiene, y SIN el Sales Hub / CRM.
+// Si el especial rebaja el precio, pagando anual no se suman meses gratis (la
+// rebaja ya es el descuento); si no lo rebaja (Centenario: EDUCA INICIAL a su
+// mismo precio con el tope extendido a 700 estudiantes), cobra normal.
 const PLAN_DEL_ESPECIAL = { educativo: 'EDUCA PRO' };
 
 // (20/10/2026) Lo que incluye cada plan, contado como beneficio y no como
@@ -70,6 +72,8 @@ const INCLUYE = {
       'Mensualidades con recargo automático',
       'Recibos en ticket y en hoja, cierre de caja',
       'Reportes de cobros y de quién debe',
+      'Reservación de cupo y proyección del año',
+      'Antigüedad de saldos (30, 60 días)',
     ],
   },
   'EDUCA PRO': {
@@ -77,8 +81,6 @@ const INCLUYE = {
     items: [
       'Hasta 800 estudiantes y 6 usuarios',
       'Sales Hub: WhatsApp, Instagram y Facebook en una sola bandeja',
-      'Reservación de cupo y proyección del año',
-      'Antigüedad de saldos (30, 60 días)',
       'Nómina del personal: sueldos, TSS y adelantos',
     ],
   },
@@ -146,11 +148,12 @@ const PlanesPage = () => {
 
   // Precio especial de esta empresa (null = precios normales).
   const { empresa, isSuperAdmin } = useAuth();
-  const planDelEspecial = PLAN_DEL_ESPECIAL[empresa?.tipo_negocio] || 'PRO';
+  const planDelEspecial = especial?.plan || PLAN_DEL_ESPECIAL[empresa?.tipo_negocio] || 'PRO';
   const tieneEspecial = (plan) => !!especial && plan.nombre === planDelEspecial;
-  // Lo que se cobra: con especial, el especial (anual = 12 meses, sin meses gratis).
+  const rebaja = (plan) => tieneEspecial(plan) && especial.precio < Number(plan.precio);
+  // Lo que se cobra: con rebaja, el especial (anual = 12 meses, sin meses gratis).
   const montoDe = (plan) => {
-    if (tieneEspecial(plan)) return especial.precio * (esAnual ? 12 : 1);
+    if (rebaja(plan)) return especial.precio * (esAnual ? 12 : 1);
     return esAnual ? precioAnual(plan.precio) : plan.precio;
   };
 
@@ -168,8 +171,12 @@ const PlanesPage = () => {
     if (!tieneEspecial(plan)) return items;
     const est = Number(limiteDe(plan, 'limite_estudiantes')).toLocaleString();
     const usu = limiteDe(plan, 'limite_usuarios');
-    return items.filter((t) => !t.startsWith('Sales Hub'))
-      .map((t) => t.replace(/Hasta [\d,]+ estudiantes y \d+ usuarios/, `Hasta ${est} estudiantes y ${usu} usuarios`));
+    const hasta = `Hasta ${est} estudiantes y ${usu} usuarios`;
+    const base = items.filter((t) => !t.startsWith('Sales Hub'))
+      .map((t) => t.replace(/Hasta [\d,]+ estudiantes y \d+ usuarios/, hasta));
+    // El tope pactado, si el plan no lo dice ya.
+    if (especial.limiteEstudiantes && !base.includes(hasta)) base.unshift(hasta);
+    return base;
   };
 
   const handleSelectPlan = (plan) => {
@@ -326,7 +333,7 @@ const PlanesPage = () => {
                       {montoDe(plan)?.toLocaleString()}
                     </span>
                   </div>
-                  {tieneEspecial(plan) ? (
+                  {rebaja(plan) ? (
                     <div className="mt-1 space-y-0.5">
                       <p className="text-gray-400 text-xs font-medium">
                         {esAnual ? 'por año' : 'por mes'} ·{' '}
@@ -350,6 +357,9 @@ const PlanesPage = () => {
                     <p className="text-gray-400 text-xs font-medium mt-1">
                       por mes · {plan.duracion_dias} días
                     </p>
+                  )}
+                  {tieneEspecial(plan) && !rebaja(plan) && (
+                    <p className="text-emerald-600 text-[11px] font-black uppercase mt-0.5" title={especial.nota}>Su plan especial</p>
                   )}
                 </div>
 

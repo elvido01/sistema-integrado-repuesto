@@ -13,8 +13,8 @@ import { puedeCrm } from '@/lib/planes';
 // crm: la regla del Sales Hub (lib/planes): también EDUCA PRO/TOTAL, y no con precio especial.
 export default function PlanGate({ planes = ['PRO', 'ENTERPRISE'], nombre = 'Esta función', crm = false, children }) {
     const { isSuperAdmin } = useAuth();
-    const { planActual, especial } = useSuscripcion();
-    const permitido = isSuperAdmin || (crm ? puedeCrm(planActual, especial) : planes.includes((planActual || '').toUpperCase()));
+    const { planActual, especialVigente } = useSuscripcion();
+    const permitido = isSuperAdmin || (crm ? puedeCrm(planActual, especialVigente) : planes.includes((planActual || '').toUpperCase()));
 
     if (permitido) return children;
 
