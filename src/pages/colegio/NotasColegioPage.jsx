@@ -12,7 +12,7 @@
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { BookOpen, Loader2, Save, Printer, Plus, RefreshCw } from 'lucide-react';
+import { BookOpen, Loader2, Save, Printer, Plus, RefreshCw, Key, Globe } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -23,7 +23,7 @@ import { boletinHTML } from '@/lib/printBoletin';
 import { COMPETENCIAS, PERIODOS, NIVELES_CON_NOTAS, finalArea, notaValida } from '@/lib/colegio';
 
 const campo = 'h-9 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
-const PESTANAS = [['registrar', 'Registrar notas'], ['boletines', 'Boletines'], ['asignaturas', 'Asignaturas']];
+const PESTANAS = [['registrar', 'Registrar notas'], ['boletines', 'Boletines'], ['pagina', 'Página web (padres)'], ['asignaturas', 'Asignaturas']];
 const nombreBoletin = (e) => `${e.apellidos}, ${e.nombres}`.toUpperCase();
 const txt = (v) => (v === null || v === undefined ? '' : String(Number(v)));
 
@@ -137,6 +137,7 @@ export default function NotasColegioPage() {
         {cargando ? <div className="py-16 flex justify-center"><Loader2 className="w-7 h-7 animate-spin text-blue-600" /></div>
           : !anio ? <p className="text-sm text-gray-600">No hay año escolar actual. Créalo en Configuración del Colegio.</p>
           : pestana === 'asignaturas' ? <Asignaturas asignaturas={asignaturas} tenantId={tenantId} recargar={cargarBase} error={error} toast={toast} />
+          : pestana === 'pagina' ? <PaginaWeb anio={anio} tenantId={tenantId} filtros={filtros} curso={curso} seccion={seccion} error={error} toast={toast} />
           : (
             <div className="space-y-3">
               {filtros}
@@ -477,6 +478,166 @@ function Asignaturas({ asignaturas, tenantId, recargar, error, toast }) {
         <Button onClick={agregar} disabled={!nueva.trim()}><Plus className="w-4 h-4 mr-1" /> Agregar</Button>
       </div>
       <p className="text-xs text-gray-500">Salen en el boletín en este orden. No se borran (pueden tener notas): se desactivan.</p>
+    </div>
+  );
+}
+
+// ── Notas en la página web (padres y estudiantes) ─────────────────────────
+// La dirección publica cada período cuando está listo; cada estudiante entra
+// a la página con su clave y ve las notas publicadas del año actual.
+const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]);
+const claveBonita = (c) => (c ? `${c.slice(0, 4)}-${c.slice(4)}` : '');
+
+function PaginaWeb({ anio, tenantId, filtros, curso, seccion, error, toast }) {
+  const [publicados, setPublicados] = useState(null);
+  const [cambiando, setCambiando] = useState(null);
+  const [lista, setLista] = useState(null);
+  const [ocupado, setOcupado] = useState('');
+  const [sitio, setSitio] = useState(null);
+
+  const cargarPublicados = useCallback(async () => {
+    const [{ data, error: e }, { data: si }] = await Promise.all([
+      supabase.from('edu_notas_publicadas').select('periodo').eq('tenant_id', tenantId).eq('anio_id', anio.id),
+      supabase.from('edu_sitio').select('slug, dominio').eq('tenant_id', tenantId).maybeSingle(),
+    ]);
+    if (e) error('No se pudo leer qué está publicado', e);
+    setPublicados(new Set((data || []).map((x) => x.periodo)));
+    setSitio(si || null);
+  }, [tenantId, anio, error]);
+  useEffect(() => { cargarPublicados(); }, [cargarPublicados]);
+
+  const cargarLista = useCallback(async () => {
+    if (!curso) { setLista(null); return; }
+    let q = supabase.from('edu_estudiantes').select('id, nombres, apellidos, seccion, clave_portal')
+      .eq('tenant_id', tenantId).eq('curso_id', curso.id).eq('estado', 'activo').order('apellidos').order('nombres');
+    if (seccion) q = q.eq('seccion', seccion);
+    const { data, error: e } = await q;
+    if (e) error('No se pudieron cargar los estudiantes', e);
+    setLista(data || []);
+  }, [tenantId, curso, seccion, error]);
+  useEffect(() => { cargarLista(); }, [cargarLista]);
+
+  const alternar = async (p) => {
+    const esta = publicados.has(p);
+    if (!window.confirm(esta
+      ? `¿Quitar el período ${p} de la página? Los padres dejarán de verlo.`
+      : `¿Publicar las notas del período ${p}? Los padres y estudiantes las verán con su clave.`)) return;
+    setCambiando(p);
+    try {
+      const { data, error: e } = esta
+        ? await supabase.from('edu_notas_publicadas').delete().match({ anio_id: anio.id, periodo: p }).select('periodo')
+        : await supabase.from('edu_notas_publicadas').insert({ tenant_id: tenantId, anio_id: anio.id, periodo: p }).select('periodo');
+      if (e) throw e;
+      if (!data?.length) throw new Error('Sin permiso');
+      toast({ title: esta ? `Período ${p} quitado de la página` : `Período ${p} publicado` });
+      await cargarPublicados();
+    } catch (e) {
+      error('No se pudo cambiar', e);
+    } finally {
+      setCambiando(null);
+    }
+  };
+
+  const darClaves = async (estudianteId = null) => {
+    if (estudianteId && !window.confirm('¿Darle una clave nueva? La anterior deja de funcionar.')) return;
+    setOcupado(estudianteId || 'todas');
+    try {
+      const { data, error: e } = await supabase.rpc('edu_generar_claves_portal', estudianteId ? { p_estudiante: estudianteId } : { p_curso: curso.id });
+      if (e) throw e;
+      toast({ title: estudianteId ? 'Clave nueva lista' : `${data || 0} claves nuevas` });
+      await cargarLista();
+    } catch (e) {
+      error('No se pudieron crear las claves', e);
+    } finally {
+      setOcupado('');
+    }
+  };
+
+  const imprimirClaves = async () => {
+    const conClave = (lista || []).filter((e) => e.clave_portal);
+    if (!conClave.length) { error('Primero dé las claves'); return; }
+    setOcupado('imprimir');
+    try {
+      const colegio = await datosColegio(tenantId);
+      const url = sitio?.dominio ? sitio.dominio : sitio ? `${window.location.host}/sitio/${sitio.slug}` : window.location.host;
+      const tarjetas = conClave.map((e) => `
+        <div class="t">
+          <div class="c">${esc(colegio.nombre)}</div>
+          <div class="n">${esc(`${e.nombres} ${e.apellidos}`)}</div>
+          <div class="g">${esc(curso.nombre)}${e.seccion ? ` · Sección ${esc(e.seccion)}` : ''}</div>
+          <div class="k">${esc(claveBonita(e.clave_portal))}</div>
+          <div class="i">Para ver las notas entre a <b>${esc(url)}</b>, vaya a <b>Notas</b> y escriba esta clave. Guárdela: es personal.</div>
+        </div>`).join('');
+      await printHtmlSmart(`<html><head><meta charset="utf-8"><style>
+        @page { size: letter; margin: 10mm; }
+        body { font-family: Arial, sans-serif; margin: 0; }
+        .w { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+        .t { border: 1px dashed #888; border-radius: 6px; padding: 5mm; page-break-inside: avoid; }
+        .c { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #555; }
+        .n { font-size: 15px; font-weight: bold; margin-top: 3px; }
+        .g { font-size: 11px; color: #444; }
+        .k { font-family: 'Courier New', monospace; font-size: 24px; font-weight: bold; letter-spacing: 3px; margin: 6px 0; }
+        .i { font-size: 10px; color: #333; }
+      </style></head><body><div class="w">${tarjetas}</div></body></html>`, { tipo: 'carta' });
+    } catch (e) {
+      error('No se pudo imprimir', e);
+    } finally {
+      setOcupado('');
+    }
+  };
+
+  const faltan = (lista || []).filter((e) => !e.clave_portal).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border p-4 space-y-3">
+        <div className="flex items-center gap-2"><Globe className="w-5 h-5 text-blue-700" /><h2 className="font-bold text-gray-900">Períodos publicados en la página</h2></div>
+        <p className="text-xs text-gray-500">Publique cada período cuando las notas estén completas. La recuperación y la calificación final salen cuando los 4 están publicados.</p>
+        {!publicados ? <Loader2 className="w-5 h-5 animate-spin text-blue-600" /> : (
+          <div className="flex flex-wrap gap-2">
+            {PERIODOS.map((p) => (
+              <button key={p} type="button" onClick={() => alternar(p)} disabled={cambiando !== null}
+                className={`rounded-lg border px-4 py-2 text-sm font-bold ${publicados.has(p) ? 'bg-green-600 border-green-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                {cambiando === p ? <Loader2 className="w-4 h-4 animate-spin inline" /> : `P${p}`} · {publicados.has(p) ? 'Publicado' : 'No publicado'}
+              </button>
+            ))}
+          </div>
+        )}
+        {!sitio && <p className="text-xs text-amber-700">El colegio todavía no ha creado su página web (Colegio → Página Web).</p>}
+      </div>
+
+      <div className="bg-white rounded-xl border p-4 space-y-3">
+        <div className="flex items-center gap-2"><Key className="w-5 h-5 text-blue-700" /><h2 className="font-bold text-gray-900">Claves de los estudiantes</h2></div>
+        <p className="text-xs text-gray-500">Cada estudiante tiene su clave para ver sus notas. Imprímalas y entréguelas a los padres.</p>
+        {filtros}
+        {!curso ? <p className="text-sm text-gray-500">Escoja el curso.</p>
+          : !lista ? <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+          : !lista.length ? <p className="text-sm text-gray-500">No hay estudiantes activos.</p>
+          : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {faltan > 0 && <Button size="sm" onClick={() => darClaves()} disabled={!!ocupado}>{ocupado === 'todas' ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Key className="w-4 h-4 mr-1" />} Dar clave a {faltan} sin clave</Button>}
+                <Button size="sm" variant="outline" onClick={imprimirClaves} disabled={!!ocupado}>{ocupado === 'imprimir' ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Printer className="w-4 h-4 mr-1" />} Imprimir claves</Button>
+              </div>
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-xs uppercase text-gray-500 border-b"><th className="py-2">Estudiante</th><th>Sección</th><th>Clave</th><th /></tr></thead>
+                <tbody>
+                  {lista.map((e) => (
+                    <tr key={e.id} className="border-b last:border-0">
+                      <td className="py-2">{nombreBoletin(e)}</td>
+                      <td>{e.seccion || '—'}</td>
+                      <td className="font-mono font-bold tracking-wider">{e.clave_portal ? claveBonita(e.clave_portal) : <span className="text-gray-400 font-sans font-normal">sin clave</span>}</td>
+                      <td className="text-right">
+                        {e.clave_portal && <Button size="sm" variant="ghost" onClick={() => darClaves(e.id)} disabled={!!ocupado}>{ocupado === e.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Clave nueva'}</Button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+      </div>
     </div>
   );
 }

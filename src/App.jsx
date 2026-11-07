@@ -15,6 +15,9 @@ import NuevaPasswordForm from '@/components/auth/NuevaPasswordForm';
 const RegistroEmpresaPage = lazy(() => import('@/pages/RegistroEmpresaPage'));
 const TiendaPage = lazy(() => import('@/pages/TiendaPage'));
 const PrivacyPolicyPage = lazy(() => import('@/pages/PrivacyPolicyPage'));
+const SitioColegioPublico = lazy(() => import('@/pages/colegio/SitioColegioPublico'));
+import { supabase } from '@/lib/customSupabaseClient';
+import { esDominioPropio, urlDeAutenticacion } from '@/lib/colegioSitio';
 
 function PanelDeepLinkHandler() {
   const { openPanel } = usePanels();
@@ -152,7 +155,15 @@ function App() {
     return <Suspense fallback={<CargandoPagina />}><PrivacyPolicyPage /></Suspense>;
   }
 
-  return (
+  // ── Página web del colegio (plan Educa Total) ──
+  // motoflow.com.do/sitio/<slug> siempre; en el dominio propio del colegio,
+  // la raíz "/" (el sistema queda en /entrar).
+  const sitio = /^\/sitio\/([a-z0-9-]+)\/?$/i.exec(window.location.pathname);
+  if (sitio) {
+    return <Suspense fallback={<CargandoPagina />}><SitioColegioPublico slug={sitio[1].toLowerCase()} /></Suspense>;
+  }
+
+  const sistema = (
     <ThemeProvider>
       <AuthProvider>
         <FacturacionProvider>
@@ -164,6 +175,29 @@ function App() {
       </AuthProvider>
     </ThemeProvider>
   );
+
+  if (esDominioPropio(window.location.hostname) && window.location.pathname === '/'
+      && !urlDeAutenticacion(window.location.hash, window.location.search)) {
+    return <SitioPorDominio sistema={sistema} />;
+  }
+  return sistema;
+}
+
+// En un dominio propio: si es el de un colegio con página, la enseña; si no
+// (otra empresa con dominio propio), sigue al sistema como siempre.
+function SitioPorDominio({ sistema }) {
+  const dominio = window.location.hostname;
+  const [estado, setEstado] = useState({ listo: false, datos: null });
+  useEffect(() => {
+    let vivo = true;
+    supabase.rpc('edu_sitio_publico', { p_dominio: dominio, p_slug: null })
+      .then(({ data }) => { if (vivo) setEstado({ listo: true, datos: data || null }); },
+            () => { if (vivo) setEstado({ listo: true, datos: null }); });
+    return () => { vivo = false; };
+  }, [dominio]);
+  if (!estado.listo) return <CargandoPagina />;
+  if (!estado.datos) return sistema;
+  return <Suspense fallback={<CargandoPagina />}><SitioColegioPublico dominio={dominio} datosIniciales={estado.datos} /></Suspense>;
 }
 
 export default App;
