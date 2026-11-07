@@ -183,6 +183,8 @@ export const MODULOS_EDUCATIVO = new Set([
   'reporte-compras', 'reporte-transacciones-diarias', 'reportes-dgii', 'libros-contables',
   'estado-resultados', 'flujo-caja', 'suplidores',
   'usuarios', 'config_sistema', 'perfil-empresa', 'cierre-caja', 'comprobantes-fiscales', 'dgii-monitor',
+  // Sales Hub / CRM: solo EDUCA PRO o TOTAL a precio completo (lo decide el plan, ver lib/planes).
+  'whatsapp-crm',
 ]);
 export const esModuloDeColegio = (key) => String(key).startsWith('colegio-') || MODULOS_EDUCATIVO.has(key);
 

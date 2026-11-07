@@ -184,6 +184,26 @@ export const SuscripcionProvider = ({ children }) => {
     }
   }, []);
 
+  // (07/11/2026) Precio especial pactado con la empresa (tenants.precio_especial):
+  // cambia lo que cobra Planes, el tope de usuarios/estudiantes y quita el CRM.
+  // null = la empresa va con los precios y límites normales del plan.
+  const [especial, setEspecial] = useState(null);
+  useEffect(() => {
+    if (!tenantId) { setEspecial(null); return undefined; }
+    let vivo = true;
+    supabase.from('tenants').select('*').eq('id', tenantId).maybeSingle()
+      .then(({ data }) => {
+        if (!vivo) return;
+        setEspecial(Number(data?.precio_especial) > 0 ? {
+          precio: Number(data.precio_especial),
+          nota: data.precio_especial_nota || '',
+          limiteUsuarios: data.limite_usuarios_especial || null,
+          limiteEstudiantes: data.limite_estudiantes_especial || null,
+        } : null);
+      });
+    return () => { vivo = false; };
+  }, [tenantId]);
+
   useEffect(() => {
     fetchSuscripcion();
     fetchPlanes();
@@ -274,9 +294,10 @@ export const SuscripcionProvider = ({ children }) => {
     features,
     validarAccion,
     renovarPlan,
+    especial,
     refetch: fetchSuscripcion
   }), [
-    suscripcion, loading, planes,
+    suscripcion, loading, planes, especial,
     isActiva, isVencida, isTrial, diasRestantes, porVencer, planActual, limites, features,
     validarAccion, renovarPlan, fetchSuscripcion
   ]);

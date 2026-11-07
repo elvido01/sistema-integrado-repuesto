@@ -188,6 +188,31 @@ Deno.serve(async (req) => {
                 .select('id, tenant_id, full_name')
                 .eq('email', email)
                 .maybeSingle();
+
+            // (07/11/2026) Límite de usuarios del plan (o el especial de la
+            // empresa). Quien ya esté pasado no pierde a nadie, solo no suma.
+            // Ya vinculado a esta empresa = no es uno nuevo. El superadmin
+            // pasa (onboarding), y si el SQL aún no está corrido no se frena.
+            let yaEsDeLaEmpresa = existente?.tenant_id === callerTenantId;
+            if (existente?.id && !yaEsDeLaEmpresa) {
+                const { data: ue } = await supabaseClient.from('usuarios_empresas')
+                    .select('user_id').eq('user_id', existente.id).eq('tenant_id', callerTenantId).maybeSingle();
+                yaEsDeLaEmpresa = !!ue;
+            }
+            if (!yaEsDeLaEmpresa && !isSuperadmin) {
+                const { data: cupo, error: cupoError } = await supabaseClient.rpc('cupo_usuarios', { p_tenant: callerTenantId });
+                if (cupoError) {
+                    console.warn('[admin-management] cupo_usuarios:', cupoError.message);
+                } else if (cupo?.limite != null && Number(cupo.usados) >= Number(cupo.limite)) {
+                    return new Response(JSON.stringify({
+                        error: `Tu plan permite ${cupo.limite} usuario${cupo.limite === 1 ? '' : 's'} y ya tienes ${cupo.usados}. Para agregar otro, sube de plan o borra un usuario que ya no se use.`,
+                    }), {
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        status: 409,
+                    });
+                }
+            }
+
             if (existente?.id) {
                 const ueRolExist = role === 'admin' ? 'admin' : 'vendedor';
                 const { error: linkError } = await supabaseClient

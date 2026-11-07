@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import { supabase } from '@/lib/customSupabaseClient';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Crown, Shield, Sparkles, Clock, Check, X, Zap,
@@ -18,8 +17,9 @@ const DIAS_ANUAL = 365;
 
 // (07/11/2026) Precio especial pactado con una empresa (tenants.precio_especial,
 // p. ej. el precio fundador del primer colegio). Vale para el plan Pro de su
-// segmento, con su propio límite de estudiantes si lo tiene. Pagando anual no
-// se le suman meses gratis: el precio especial ya es la rebaja.
+// segmento, con sus propios límites de usuarios y estudiantes si los tiene, y
+// SIN el Sales Hub / CRM (es del plan a precio completo; lib/planes). Pagando
+// anual no se le suman meses gratis: el precio especial ya es la rebaja.
 const PLAN_DEL_ESPECIAL = { educativo: 'EDUCA PRO' };
 
 // (20/10/2026) Lo que incluye cada plan, contado como beneficio y no como
@@ -76,6 +76,7 @@ const INCLUYE = {
     base: 'Educa Inicial',
     items: [
       'Hasta 800 estudiantes y 6 usuarios',
+      'Sales Hub: WhatsApp, Instagram y Facebook en una sola bandeja',
       'Reservación de cupo y proyección del año',
       'Antigüedad de saldos (30, 60 días)',
       'Nómina del personal: sueldos, TSS y adelantos',
@@ -109,7 +110,7 @@ const MERCADO = [
 ];
 
 const PlanesPage = () => {
-  const { planes, planActual, suscripcion, porVencer, isVencida } = useSuscripcion();
+  const { planes, planActual, suscripcion, porVencer, isVencida, especial } = useSuscripcion();
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [showPagoModal, setShowPagoModal] = useState(false);
   const [ciclo, setCiclo] = useState('mensual'); // 'mensual' | 'anual'
@@ -144,23 +145,31 @@ const PlanesPage = () => {
 
 
   // Precio especial de esta empresa (null = precios normales).
-  const { empresa, isSuperAdmin, tenantId } = useAuth();
-  const [especial, setEspecial] = useState(null);
-  useEffect(() => {
-    if (!tenantId) return undefined;
-    let vivo = true;
-    supabase.from('tenants')
-      .select('precio_especial, precio_especial_nota, limite_estudiantes_especial')
-      .eq('id', tenantId).maybeSingle()
-      .then(({ data }) => { if (vivo) setEspecial(Number(data?.precio_especial) > 0 ? data : null); });
-    return () => { vivo = false; };
-  }, [tenantId]);
+  const { empresa, isSuperAdmin } = useAuth();
   const planDelEspecial = PLAN_DEL_ESPECIAL[empresa?.tipo_negocio] || 'PRO';
   const tieneEspecial = (plan) => !!especial && plan.nombre === planDelEspecial;
   // Lo que se cobra: con especial, el especial (anual = 12 meses, sin meses gratis).
   const montoDe = (plan) => {
-    if (tieneEspecial(plan)) return Number(especial.precio_especial) * (esAnual ? 12 : 1);
+    if (tieneEspecial(plan)) return especial.precio * (esAnual ? 12 : 1);
     return esAnual ? precioAnual(plan.precio) : plan.precio;
+  };
+
+  // Límites de la tarjeta: con especial, los pactados (si los hay).
+  const limiteDe = (plan, key) => {
+    if (tieneEspecial(plan)) {
+      if (key === 'limite_usuarios' && especial.limiteUsuarios) return especial.limiteUsuarios;
+      if (key === 'limite_estudiantes' && especial.limiteEstudiantes) return especial.limiteEstudiantes;
+    }
+    return plan[key];
+  };
+  // Lo que incluye: con especial, sin el Sales Hub y con sus límites en el texto.
+  const incluyeDe = (plan) => {
+    const items = INCLUYE[plan.nombre]?.items || [];
+    if (!tieneEspecial(plan)) return items;
+    const est = Number(limiteDe(plan, 'limite_estudiantes')).toLocaleString();
+    const usu = limiteDe(plan, 'limite_usuarios');
+    return items.filter((t) => !t.startsWith('Sales Hub'))
+      .map((t) => t.replace(/Hasta [\d,]+ estudiantes y \d+ usuarios/, `Hasta ${est} estudiantes y ${usu} usuarios`));
   };
 
   const handleSelectPlan = (plan) => {
@@ -323,7 +332,7 @@ const PlanesPage = () => {
                         {esAnual ? 'por año' : 'por mes'} ·{' '}
                         <span className="line-through">RD${(esAnual ? precioAnual(plan.precio) : plan.precio)?.toLocaleString()}</span>
                       </p>
-                      <p className="text-emerald-600 text-[11px] font-black uppercase" title={especial.precio_especial_nota || ''}>
+                      <p className="text-emerald-600 text-[11px] font-black uppercase" title={especial.nota}>
                         Su precio especial
                       </p>
                     </div>
@@ -354,8 +363,7 @@ const PlanesPage = () => {
                         {feat.label}
                       </span>
                       <span className="text-sm font-black text-gray-900">
-                        {feat.format(feat.key === 'limite_estudiantes' && tieneEspecial(plan) && especial.limite_estudiantes_especial
-                          ? especial.limite_estudiantes_especial : plan[feat.key])}
+                        {feat.format(limiteDe(plan, feat.key))}
                       </span>
                     </div>
                   ))}
@@ -368,13 +376,11 @@ const PlanesPage = () => {
                       Todo lo del {INCLUYE[plan.nombre].base}, más:
                     </p>
                   )}
-                  {(INCLUYE[plan.nombre]?.items || []).map((item) => (
+                  {incluyeDe(plan).map((item) => (
                     <div key={item} className="flex items-start gap-2">
                       <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
                       <span className="text-sm text-gray-700 leading-snug">
-                        {tieneEspecial(plan) && especial.limite_estudiantes_especial
-                          ? item.replace(/Hasta [\d,]+ estudiantes/, `Hasta ${Number(especial.limite_estudiantes_especial).toLocaleString()} estudiantes`)
-                          : item}
+                        {item}
                       </span>
                     </div>
                   ))}

@@ -8,3 +8,12 @@ export const esPlanProOMas = (planNombre) =>
 
 /** Funciones que exigen plan Pro o más. */
 export const FUNCIONES_PRO = { nomina: 'Nómina' };
+
+// (07/11/2026) Sales Hub / CRM: PRO y ENTERPRISE, y en colegios EDUCA PRO y
+// EDUCA TOTAL a precio completo. Una empresa con precio especial
+// (tenants.precio_especial, p. ej. el precio fundador del Centenario) no lo
+// trae: el CRM es del plan a precio completo. Decisión del dueño.
+export const PLANES_CRM = ['PRO', 'ENTERPRISE', 'EDUCA PRO', 'EDUCA TOTAL'];
+
+export const puedeCrm = (planNombre, especial) =>
+  PLANES_CRM.includes(String(planNombre || '').trim().toUpperCase()) && !especial;
