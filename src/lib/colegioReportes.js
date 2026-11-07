@@ -2,7 +2,7 @@
 // del colegio (parte 4, 06/11/2026).
 import { supabase } from '@/lib/customSupabaseClient';
 import { printHtmlSmart } from '@/lib/printHtmlSmart';
-import { estadoCuentaFamiliaHTML } from '@/lib/printColegio';
+import { estadoCuentaFamiliaHTML, facturaFiscalColegioHTML } from '@/lib/printColegio';
 import { diasAtraso, tramoAntiguedad, hoyRD, pendienteDe, fechaLocalRD, TANDAS_NOMBRE as TANDAS } from '@/lib/colegio';
 
 const ORDEN_TIPO = { reservacion: 1, inscripcion: 1, utileria: 2, bilingue: 3, mensualidad: 4, sala_tareas: 5, recargo: 6, otro: 7 };
@@ -87,4 +87,35 @@ export async function datosEstadoCuenta(familiaId, tenantId) {
 export async function imprimirEstadoCuenta(familiaId, tenantId) {
   const d = await datosEstadoCuenta(familiaId, tenantId);
   await printHtmlSmart(estadoCuentaFamiliaHTML(d), { tipo: 'carta' });
+}
+
+
+/** Factura con crédito fiscal (para imprimir y reimprimir). */
+export async function datosFacturaFiscal(facturaId, tenantId) {
+  const [fa, colegio] = await Promise.all([
+    supabase.from('facturas')
+      .select('numero, ncf, fecha, total, notas, forma_pago, estado, clientes(nombre, rnc), facturas_detalle(descripcion, importe, created_at)')
+      .eq('id', facturaId).eq('tenant_id', tenantId).single(),
+    datosColegio(tenantId),
+  ]);
+  if (fa.error) throw fa.error;
+  const f = fa.data;
+  // Vencimiento de la secuencia que contiene este NCF (serie + tipo + 8 dígitos): va impreso.
+  const ncf = String(f.ncf || '');
+  const num = Number(ncf.slice(3));
+  let vence = null;
+  if (num) {
+    const { data: sq } = await supabase.from('secuencias_ncf').select('fecha_vencimiento')
+      .eq('tenant_id', tenantId).eq('serie', ncf.slice(0, 1)).eq('tipo_ncf', ncf.slice(1, 3))
+      .lte('secuencia_desde', num).gte('secuencia_hasta', num)
+      .order('created_at', { ascending: false }).limit(1);
+    vence = sq?.[0]?.fecha_vencimiento || null;
+  }
+  const lineas = [...(f.facturas_detalle || [])].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  return { colegio, factura: { ...f, fecha: fechaLocalRD(f.fecha) }, vence, cliente: f.clientes || {}, lineas };
+}
+
+export async function imprimirFacturaFiscal(facturaId, tenantId) {
+  const d = await datosFacturaFiscal(facturaId, tenantId);
+  await printHtmlSmart(facturaFiscalColegioHTML(d), { tipo: 'carta' });
 }

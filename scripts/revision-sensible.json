@@ -355,7 +355,7 @@
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
     "src/pages/ComprasPage.jsx": "35e3f1502493c479",
-    "src/pages/Configuracion/CierreCajaPage.jsx": "9d8dd06eea62a90f",
+    "src/pages/Configuracion/CierreCajaPage.jsx": "2b50de559e520821",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "3cc0fae7c3fa1e09",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
     "src/pages/CuentasPorPagarPage.jsx": "efe77dc770754dee",
@@ -413,7 +413,9 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "a35f435c7685ae61"
+    "src/pages/colegio/CajaColegioPage.jsx": "4b1c2eba79e2d0e8",
+    "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
+    "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea"
   },
   "historial": [
     {
@@ -565,6 +567,16 @@
       "fecha": "2026-11-07",
       "nota": "code-review high (parte 4 colegio): 10 hallazgos, 10 arreglados - cargos anulados ya no se recrean (preparar/recargos con NOT EXISTS), cambio de ano exige p_anio_actual, caja relee el ano actual, Marcar como actual vuelve con aviso, desempate por curso, retiro por vencimiento, fecha local, edu_soy_direccion, helpers unicos en colegio.js, cache de cabecera solo si lee bien. Probado BEGIN/ROLLBACK.",
       "archivos": [
+        "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-07",
+      "nota": "code-review high (parte 5 colegio): 10 hallazgos. Arreglados 9: forma de pago '- RECIBO' (ni Cierre ni Transacciones Diarias ni flujo la cuentan; 607 si), plantilla secretaria apaga lo demas, edu_anular_factura_fiscal (direccion, 608) + boton, permiso para emitir (direccion o colegio-caja editar), nombre escrito va en la factura, orden de lineas, RD$ del aviso, limite 1000 recibos, archivos nuevos en el commit. Queda por diseno: user_module_permissions no tiene empresa (aplica igual en todo el sistema). Probado BEGIN/ROLLBACK.",
+      "archivos": [
+        "sql/centros_educativos_factura_fiscal.sql",
+        "src/components/colegio/FacturaFiscalDialog.jsx",
+        "src/pages/Configuracion/CierreCajaPage.jsx",
         "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }

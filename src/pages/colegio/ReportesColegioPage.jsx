@@ -469,7 +469,7 @@ function tablaRecibos(pagos, rango) {
     familia: `${p.tutor || ''}${p.tutor ? ' · ' : ''}Fam. ${p.familia}`, estudiantes: p.estudiantes || '',
     conceptos: [...new Set((p.lineas || []).map((l) => l.descripcion))].join(', '),
     total: Number(p.total), estado: p.anulado ? `Anulado${p.motivo_anulacion ? `: ${p.motivo_anulacion}` : ''}` : 'Vigente',
-    usuario: p.usuario || '', ri: p.recibo_ingreso || '', _anulado: p.anulado,
+    usuario: p.usuario || '', ri: p.recibo_ingreso || '', ncf: p.ncf || '', _anulado: p.anulado,
   }));
   const vig = pagos.filter((p) => !p.anulado);
   return {
@@ -477,7 +477,7 @@ function tablaRecibos(pagos, rango) {
     columnas: [
       { t: 'Recibo', k: 'numero' }, { t: 'Fecha', k: 'fecha' }, { t: 'Tutor / familia', k: 'familia' }, { t: 'Estudiante(s)', k: 'estudiantes' },
       { t: 'Conceptos', k: 'conceptos' }, { t: 'Total RD$', k: 'total', m: true }, { t: 'Estado', k: 'estado' },
-      { t: 'Cajero', k: 'usuario' }, { t: 'Ref. caja', k: 'ri' },
+      { t: 'Cajero', k: 'usuario' }, { t: 'Ref. caja', k: 'ri' }, { t: 'NCF', k: 'ncf' },
     ],
     filas,
     total: { numero: `${vig.length} vigentes`, fecha: `${pagos.length - vig.length} anulados`, total: r2(vig.reduce((s, p) => s + Number(p.total), 0)), estado: 'Total vigente' },

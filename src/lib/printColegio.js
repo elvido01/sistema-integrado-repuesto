@@ -241,4 +241,38 @@ export function reporteColegioHTML({ colegio, titulo, subtitulo, columnas, filas
 </body></html>`;
 }
 
+/**
+ * Factura con crédito fiscal (NCF B01) de un colegio: servicios educativos exentos.
+ * d = { colegio, factura: { numero, ncf, fecha, total, notas, forma_pago, estado }, vence,
+ *       cliente: { nombre, rnc }, lineas: [{ descripcion, importe }] }
+ */
+export function facturaFiscalColegioHTML(d) {
+  const f = d.factura || {};
+  const anulada = String(f.estado || '').toUpperCase() === 'ANULADA';
+  const esRnc = String(d.cliente?.rnc || '').replace(/\D/g, '').length === 9;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Factura ${esc(f.ncf || '')}</title><style>${CSS_HOJA}
+  .caja { display: flex; justify-content: space-between; gap: 16px; margin: 12px 0; }
+  .caja > div { border: 1px solid #d7dce3; border-radius: 6px; padding: 8px 10px; flex: 1; font-size: 12px; line-height: 1.6; }
+  .caja span { color: #5b6472; font-size: 10.5px; text-transform: uppercase; }
+  .ncf { font-family: Consolas, monospace; font-size: 15px; font-weight: 800; color: #b3261e; }
+  .anul { color: #b3261e; font-weight: 800; letter-spacing: 2px; font-size: 16px; text-align: center; border: 2px solid #b3261e; padding: 4px; margin-top: 8px; }
+  .firma { width: 220px; border-top: 1px solid #333; text-align: center; padding-top: 4px; font-size: 11px; color: #5b6472; margin: 40px 0 0 auto; }
+</style></head><body>
+  ${cabecera(d.colegio, 'Factura de crédito fiscal', `No. ${f.numero || ''}`)}
+  ${anulada ? '<div class="anul">ANULADA</div>' : ''}
+  <div class="caja">
+    <div><span>NCF</span><br><b class="ncf">${esc(f.ncf || '')}</b><br><span>Válido hasta</span> ${esc(fechaDO(d.vence) || '—')}<br><span>Fecha</span> ${esc(fechaDO(f.fecha))}</div>
+    <div><span>Cliente</span><br><b>${esc(d.cliente?.nombre || '')}</b><br><span>${esRnc ? 'RNC' : 'Cédula'}</span> ${esc(d.cliente?.rnc || '')}<br><span>Forma de pago</span> ${esc(String(f.forma_pago || '').replace(/ - RECIBO$/, ''))} (pagado)</div>
+  </div>
+  <table><tr><th>Descripción</th><th class="m">Cant.</th><th class="m">Precio</th><th class="m">ITBIS</th><th class="m">Importe RD$</th></tr>
+    ${(d.lineas || []).map((l) => `<tr><td>${esc(l.descripcion)}</td><td class="m">1</td><td class="m">${n2(l.importe)}</td><td class="m">E</td><td class="m">${n2(l.importe)}</td></tr>`).join('')}
+    <tr class="s"><td colspan="4">Subtotal</td><td class="m">${n2(f.total)}</td></tr>
+    <tr class="s"><td colspan="4">ITBIS (exento, art. 344 núm. 7 del Código Tributario)</td><td class="m">0.00</td></tr>
+    <tr class="t"><td colspan="4">TOTAL</td><td class="m">RD$ ${n2(f.total)}</td></tr>
+  </table>
+  <div class="nota">${esc(f.notas || '')}<br>E = exento de ITBIS. Válida para deducción de gastos educativos (Ley 179-09) a nombre del contribuyente indicado.</div>
+  <div class="firma">Firma autorizada</div>
+</body></html>`;
+}
+
 export { dinero };

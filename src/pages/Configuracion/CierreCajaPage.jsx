@@ -74,6 +74,11 @@ const escHtmlCierre = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
 // .neq('estado','ANULADA') en la consulta: en PostgREST eso descarta también
 // las filas con estado NULL, que son la mayoría de las facturas.
 const noAnulada = (f) => String(f?.estado || '').toUpperCase() !== 'ANULADA';
+// (06/11/2026) Factura con crédito fiscal del colegio: el dinero ya entró por
+// el recibo de ingreso del cobro; contarla aquí lo sumaría dos veces. Se reconoce
+// por la forma de pago ('EFECTIVO - RECIBO', 'TRANSFERENCIA - RECIBO'...), no por
+// una columna nueva: así el cierre no depende de que el SQL ya esté corrido.
+const cuentaEnCaja = (f) => noAnulada(f) && !/ - RECIBO$/i.test(String(f?.forma_pago || ''));
 
 const isMobileCashSale = (venta) => {
   const formaPago = String(venta?.forma_pago || '').toUpperCase();
@@ -191,7 +196,7 @@ const CierreCajaPage = () => {
         // Una factura anulada no entró plata a la caja. Se filtra aquí y no
         // con .neq('estado','ANULADA') porque en PostgREST eso también
         // descarta las que tienen estado NULL, que son la mayoría.
-        ventas = (ventasData || []).filter(noAnulada);
+        ventas = (ventasData || []).filter(cuentaEnCaja);
       }
 
       let ventasMovilesQuery = supabase
@@ -211,7 +216,7 @@ const CierreCajaPage = () => {
       } else {
         const ventasIds = new Set(ventas.map(v => v.id));
         const ventasMovilesFaltantes = (ventasMovilesData || [])
-          .filter(noAnulada)
+          .filter(cuentaEnCaja)
           .filter(v => isMobileCashSale(v) && !ventasIds.has(v.id));
         ventas = [...ventas, ...ventasMovilesFaltantes];
       }

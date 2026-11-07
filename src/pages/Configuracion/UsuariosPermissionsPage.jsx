@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { invocarConSesion } from '@/lib/edgeInvoke';
 import { useToast } from '@/components/ui/use-toast';
-import { MODULES } from '@/lib/permissionsHelper';
+import { MODULES as TODOS_LOS_MODULOS } from '@/lib/permissionsHelper';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { esModuloDeColegio, PLANTILLA_SECRETARIA } from '@/lib/colegio';
 import { Shield, User, Check, X, Save, RefreshCw, UserPlus, Edit } from 'lucide-react';
 import CreateUserModal from '@/components/auth/CreateUserModal';
 import EditUserModal from '@/components/auth/EditUserModal';
@@ -51,8 +53,13 @@ const mkPerms = (keys, canEdit) => keys.map((k) => ({ module_key: k, can_view: t
 // Módulos reservados a Administrador (no entran en plantillas de otros roles)
 const BLOQUEADOS_NO_ADMIN = ['usuarios', 'config_sistema', 'perfil-empresa', 'comprobantes-fiscales', 'presupuesto-inteligente'];
 
-const defaultPermsForRole = (role, allModules) => {
+const defaultPermsForRole = (role, allModules, esColegio = false) => {
     const r = String(role || '').toLowerCase();
+
+    // (06/11/2026) En un colegio el vendedor y el supervisor son la secretaria:
+    // cobrar, inscribir, caja del día, cierre, atrasados. Sin configuración ni bancos.
+    if (esColegio && ['seller', 'vendedor', 'supervisor'].includes(r)) return PLANTILLA_SECRETARIA.map((p) => ({ ...p }));
+
 
     // Vendedor (31/10/2026, pedido del dueño): ventas, cotizaciones, pedidos,
     // devoluciones y actualizar ubicación. Lo demás se marca a mano.
@@ -82,6 +89,15 @@ const defaultPermsForRole = (role, allModules) => {
     return [];
 };
 
+// Pone la plantilla y apaga todo lo demás que el usuario tenía.
+const reemplazarPermisos = (prev, tpl, userId) => {
+    const enTpl = new Set(tpl.map((t) => t.module_key));
+    return [
+        ...(prev || []).filter((x) => !enTpl.has(x.module_key)).map((x) => ({ ...x, can_view: false, can_edit: false })),
+        ...tpl.map((t) => ({ user_id: userId, ...t })),
+    ];
+};
+
 const currentMonthStart = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
@@ -89,6 +105,10 @@ const currentMonthStart = () => {
 
 const UsuariosPermissionsPage = () => {
     const { toast } = useToast();
+    // En un colegio solo salen los módulos que un colegio usa (no préstamos, GPS, etc.).
+    const { empresa } = useAuth();
+    const esColegio = empresa?.tipo_negocio === 'educativo';
+    const MODULES = esColegio ? TODOS_LOS_MODULOS.filter((m) => esModuloDeColegio(m.key)) : TODOS_LOS_MODULOS;
     const [loading, setLoading] = useState(true);
     const [users, setUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
@@ -106,7 +126,7 @@ const UsuariosPermissionsPage = () => {
     const alCrearUsuario = async (nuevo, rol) => {
         try {
             if (nuevo?.id && !isFullAccessRole(rol)) {
-                const tpl = defaultPermsForRole(rol, MODULES);
+                const tpl = defaultPermsForRole(rol, MODULES, esColegio);
                 const { data: ya, error: eYa } = await supabase
                     .from('user_module_permissions')
                     .select('module_key')
@@ -190,7 +210,7 @@ const UsuariosPermissionsPage = () => {
             // Usuario sin ningún permiso guardado (ej. creado antes de que
             // esto se guardara solo): se precargan los del rol, sin guardar.
             if (perms.length === 0 && !isFullAccessRole(user.role)) {
-                const tpl = defaultPermsForRole(user.role, MODULES);
+                const tpl = defaultPermsForRole(user.role, MODULES, esColegio);
                 setUserPermissions(tpl.map(t => ({ user_id: user.id, ...t })));
                 setSinGuardar(tpl.length > 0);
             } else {
@@ -225,10 +245,12 @@ const UsuariosPermissionsPage = () => {
     // y solo AGREGA los módulos sugeridos que falten (no borra nada).
     const aplicarPlantilla = (role, { merge = true } = {}) => {
         if (!selectedUser) return;
-        const tpl = defaultPermsForRole(role, MODULES);
+        const tpl = defaultPermsForRole(role, MODULES, esColegio);
         setUserPermissions(prev => {
             if (!merge) {
-                return tpl.map(t => ({ user_id: selectedUser.id, ...t }));
+                // Lo que no está en la plantilla queda apagado (no se omite): guardar solo
+                // actualiza filas, así que omitirlo dejaría vivo un permiso viejo en la base.
+                return reemplazarPermisos(prev, tpl, selectedUser.id);
             }
             const map = new Map((prev || []).map(p => [p.module_key, p]));
             tpl.forEach(t => {
@@ -464,7 +486,7 @@ const UsuariosPermissionsPage = () => {
                                             <SelectItem value="admin">Administrador (Acceso Total)</SelectItem>
                                             <SelectItem value="gerente">Gerente (Acceso Granular)</SelectItem>
                                             <SelectItem value="supervisor">Supervisor (Acceso Granular)</SelectItem>
-                                            <SelectItem value="seller">Vendedor (Acceso Granular)</SelectItem>
+                                            <SelectItem value="seller">{esColegio ? 'Secretaria / Caja (Acceso Granular)' : 'Vendedor (Acceso Granular)'}</SelectItem>
                                             <SelectItem value="vendedor">Vendedor Legacy</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -498,6 +520,12 @@ const UsuariosPermissionsPage = () => {
                                                     onClick={() => aplicarPlantilla(selectedUser.role, { merge: true })}>
                                                     Aplicar permisos sugeridos ({rolLabel(selectedUser.role)})
                                                 </Button>
+                                                {esColegio && (
+                                                    <Button type="button" variant="outline" size="sm" title="Cobrar, inscribir, caja del día, cierre de caja y atrasados. Sin configuración ni cuentas bancarias."
+                                                        onClick={() => { setUserPermissions((prev) => reemplazarPermisos(prev, PLANTILLA_SECRETARIA, selectedUser.id)); }}>
+                                                        Plantilla secretaria del colegio
+                                                    </Button>
+                                                )}
                                                 <Button type="button" variant="ghost" size="sm" className="text-gray-500"
                                                     onClick={() => setUserPermissions(prev => (prev || []).map(p => ({ ...p, can_view: false, can_edit: false })))}>
                                                     Limpiar todo

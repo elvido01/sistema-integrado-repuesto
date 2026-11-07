@@ -171,3 +171,29 @@ export function tramoAntiguedad(dias) {
   if (dias <= 60) return 'd60';
   return 'd60mas';
 }
+
+// (06/11/2026) Módulos que ve un colegio fuera del grupo Colegio: lo general
+// de una empresa (caja, bancos, gastos, nómina, DGII, usuarios) y el inventario
+// de UNIFORMES, que se maneja igual que en un repuestos (decisión del dueño).
+export const MODULOS_EDUCATIVO = new Set([
+  'ventas', 'devoluciones', 'mercancias', 'almacenes', 'entrada-mercancia', 'salida-mercancia',
+  'orden-compra', 'solicitudes', 'tipos-producto', 'reporte-movimientos', 'inventario-fisico',
+  'inventario-inteligente', 'etiquetas-masivas', 'clientes',
+  'recibo-ingreso', 'compras', 'pago-suplidores', 'nomina', 'cuentas-bancarias',
+  'reporte-compras', 'reporte-transacciones-diarias', 'reportes-dgii', 'libros-contables',
+  'estado-resultados', 'flujo-caja', 'suplidores',
+  'usuarios', 'config_sistema', 'perfil-empresa', 'cierre-caja', 'comprobantes-fiscales', 'dgii-monitor',
+]);
+export const esModuloDeColegio = (key) => String(key).startsWith('colegio-') || MODULOS_EDUCATIVO.has(key);
+
+// Secretaria (lo que pidió el colegio): cobrar, inscribir, familias, caja del
+// día, cierre de caja y ver quién está atrasado. NO configura, NO cuentas
+// bancarias, NO borra (eso lo frena la base). Vende uniformes en Ventas.
+export const PLANTILLA_SECRETARIA = [
+  { module_key: 'colegio-caja', can_view: true, can_edit: true },
+  { module_key: 'colegio-estudiantes', can_view: true, can_edit: true },
+  { module_key: 'colegio-reportes', can_view: true, can_edit: false },
+  { module_key: 'cierre-caja', can_view: true, can_edit: true },
+  { module_key: 'ventas', can_view: true, can_edit: true },
+  { module_key: 'clientes', can_view: true, can_edit: true },
+];

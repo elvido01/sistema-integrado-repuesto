@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Wallet, Search, Loader2, Printer, Plus, Trash2, Ban, RefreshCw, CalendarPlus, CalendarCheck, FileText, X } from 'lucide-react';
 import { imprimirEstadoCuenta } from '@/lib/colegioReportes';
+import FacturaFiscalDialog from '@/components/colegio/FacturaFiscalDialog';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -103,6 +104,7 @@ export default function CajaColegioPage() {
   const [anio, setAnio] = useState(null);
   const [anios, setAnios] = useState(new Map());   // id → año (para las deudas viejas y la reservación del próximo)
   const [reservando, setReservando] = useState(null);
+  const [facturar, setFacturar] = useState(false);   // factura con crédito fiscal de la familia abierta
   const [cfg, setCfg] = useState(null);
   const [conceptos, setConceptos] = useState([]);
   const [sel, setSel] = useState({});          // cargo_id → 'completo' | 'medio'
@@ -352,6 +354,9 @@ export default function CajaColegioPage() {
                     onClick={() => imprimirEstadoCuenta(familia.id, tenantId).catch((e) => error('No se pudo imprimir', e?.message))}>
                     <FileText className="w-4 h-4 mr-1" /> Estado de cuenta
                   </Button>
+                  <Button size="sm" variant="outline" title="Factura con NCF B01 para el padre que la pide (gastos educativos)" onClick={() => setFacturar(true)}>
+                    Factura crédito fiscal
+                  </Button>
                 </div>
                 <div className="text-xs text-gray-500">
                   {[familia.madre_nombre && `Madre: ${familia.madre_nombre} ${familia.madre_celular || ''}`, familia.padre_nombre && `Padre: ${familia.padre_nombre} ${familia.padre_celular || ''}`, familia.tutor_nombre && `Tutor: ${familia.tutor_nombre} ${familia.tutor_telefono || ''}`].filter(Boolean).join(' · ')}
@@ -557,6 +562,10 @@ export default function CajaColegioPage() {
       {preparar && (
         <PrepararCuentaDialog estudiante={preparar} anio={anio} onClose={() => setPreparar(null)} onError={error}
           onDone={(n) => { setPreparar(null); toast({ title: n ? `Cuenta preparada: ${n} cargos` : 'La cuenta ya estaba completa' }); abrirFamilia(familia.id); }} />
+      )}
+      {facturar && familia && (
+        <FacturaFiscalDialog familia={familia} tenantId={tenantId} esDireccion={esDireccion} onClose={() => setFacturar(false)} onError={error}
+          onDone={(r) => { setFacturar(false); toast({ title: `Factura ${r.ncf} emitida`, description: `RD${n2(r.total)}${r.restantes != null && r.restantes <= 10 ? ` · quedan ${r.restantes} NCF B01` : ''}` }); abrirFamilia(familia.id); }} />
       )}
       {agregar && (
         <AgregarCargoDialog estudiante={agregar} conceptos={conceptos} onClose={() => setAgregar(null)} onError={error}

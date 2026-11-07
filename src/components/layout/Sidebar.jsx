@@ -1,4 +1,5 @@
 import { tieneModulo } from '@/lib/modulos';
+import { MODULOS_EDUCATIVO } from '@/lib/colegio';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -238,15 +239,7 @@ const navItems = [
 // empresa (caja, bancos, gastos, nómina, DGII, usuarios) y el inventario de
 // UNIFORMES, que se maneja igual que en un repuestos (decisión del dueño):
 // mercancía por talla, compras, entradas, venta en el punto de venta.
-const PERMITIDOS_EDUCATIVO = new Set([
-  'ventas', 'devoluciones', 'mercancias', 'almacenes', 'entrada-mercancia', 'salida-mercancia',
-  'orden-compra', 'solicitudes', 'tipos-producto', 'reporte-movimientos', 'inventario-fisico',
-  'inventario-inteligente', 'etiquetas-masivas', 'clientes',
-  'recibo-ingreso', 'compras', 'pago-suplidores', 'nomina', 'cuentas-bancarias',
-  'reporte-compras', 'reporte-transacciones-diarias', 'reportes-dgii', 'libros-contables',
-  'estado-resultados', 'flujo-caja', 'suplidores',
-  'usuarios', 'config_sistema', 'perfil-empresa', 'cierre-caja', 'comprobantes-fiscales', 'dgii-monitor',
-]);
+const PERMITIDOS_EDUCATIVO = MODULOS_EDUCATIVO;   // la lista vive en lib/colegio (la usa también Usuarios y Permisos)
 
 // (27/10/2026) El nombre de "Mercancías" según lo que vende la empresa.
 const TITULOS_POR_TIPO = {
