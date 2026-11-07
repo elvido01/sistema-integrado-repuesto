@@ -345,7 +345,7 @@
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
     "src/lib/dgiiCertificacionStorage.js": "9b63d241c5af90e2",
-    "src/lib/dgiiExport.js": "62106dbbaadc6c0c",
+    "src/lib/dgiiExport.js": "53e904c46463e14a",
     "src/lib/dgiiRepresentacionImpresa.js": "9646fb60aae20abe",
     "src/lib/ecfImpresion.js": "7a42a9cf5f9b1f2e",
     "src/lib/nominaUtils.js": "68b952393ad68443",
@@ -375,7 +375,7 @@
     "src/pages/ReciboIngresoPage.jsx": "ccdf96e3a616f302",
     "src/pages/ReciboPagoFinancieraPage.jsx": "1c024a18864ace14",
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
-    "src/pages/ReportesDGIIPage.jsx": "72d5921bed6fdbed",
+    "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
     "src/pages/VentasPage.jsx": "a794db359189ee06",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
@@ -585,6 +585,14 @@
       "nota": "code-review high: 10 hallazgos (por_confirmar sin salida sin concepto reserva, lista del cliente vieja, no_continua sin rol direccion, meses pasados con recargo, anulacion sin revertir, por_confirmar de año anterior, abono parcial, texto caja, etiquetas, doble clic) - todos arreglados y probados en transaccion (sql v2)",
       "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-07",
+      "nota": "code-review high: 10 hallazgos en 606 (forma de pago Contado->07, columnas sin datos, notas/ISR rechazables, tarjeta de credito, RNC propio B13, servicios en col 8, tipo 01-11, doble validacion, alerta muerta); 9 corregidos con pruebas; pendiente: validar NCF al guardar la compra (ComprasPage)",
+      "archivos": [
+        "src/lib/dgiiExport.js",
+        "src/pages/ReportesDGIIPage.jsx"
       ]
     }
   ]

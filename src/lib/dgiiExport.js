@@ -9,6 +9,9 @@ const pad = (n, len = 2) => String(n).padStart(len, '0');
 // Fecha YYYYMMDD a partir de Date o string ISO
 export const fmtFecha = (d) => {
   if (!d) return '';
+  // (07/11/2026) Una fecha sola ("2026-10-15") se toma tal cual: new Date()
+  // la lee como medianoche UTC y en RD (UTC-4) salía el día anterior.
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d.replace(/-/g, '');
   const dt = d instanceof Date ? d : new Date(d);
   if (isNaN(dt.getTime())) return '';
   return `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}`;
@@ -98,50 +101,164 @@ export const generar607 = (ventas) => {
 // 14. ITBIS al costo  15. ITBIS adelantar  16. ITBIS percibido compras
 // 17. Tipo retención ISR  18. Monto retención renta  19. ISR percibido
 // 20. ISC  21. Otros impuestos  22. Propina legal  23. Forma de pago
-export const generar606 = (compras) => {
-  return compras.map(c => {
-    const rnc = cleanRncCedula(c.suplidor_rnc);
-    const tipoId = rnc ? tipoIdentificacion(rnc) : '';
-    const tipoBienes = c.tipo_bienes_servicios || '09'; // default: gastos generales
-
-    const formaPago = (c.forma_pago || 'EFECTIVO').toUpperCase();
-    const tipoPagoDgii = formaPago.includes('EFECTIVO') ? '01'
-      : (formaPago.includes('CHEQUE') || formaPago.includes('TRANSFER') || formaPago.includes('DEPOSIT')) ? '02'
-      : formaPago.includes('TARJETA') ? '03'
-      : formaPago.includes('CREDITO') || formaPago.includes('CRÉDITO') ? '04'
-      : '07';
-
-    const itbisRetenido = parseFloat(c.itbis_total || 0) * parseFloat(c.itbis_retenido_pct || 0) / 100;
-    const isrRetenido = parseFloat(c.total_compra || 0) * parseFloat(c.isr_retenido_pct || 0) / 100;
-
-    const fila = [
-      rnc,                             // 1
-      tipoId,                          // 2
-      tipoBienes,                      // 3
-      c.ncf || '',                     // 4
-      c.ncf_modificado || '',          // 5
-      fmtFecha(c.fecha),               // 6
-      fmtFecha(c.fecha_pago || c.fecha), // 7
-      '0.00',                          // 8 monto servicios
-      fmtMonto(c.total_gravado),       // 9 monto bienes
-      fmtMonto(c.total_compra),        // 10
-      fmtMonto(c.itbis_total),         // 11
-      fmtMonto(itbisRetenido),         // 12
-      '0.00',                          // 13
-      '0.00',                          // 14
-      fmtMonto(c.itbis_total),         // 15 ITBIS por adelantar (default = facturado)
-      '0.00',                          // 16
-      '',                              // 17 tipo retención ISR
-      fmtMonto(isrRetenido),           // 18
-      '0.00',                          // 19
-      '0.00',                          // 20
-      '0.00',                          // 21
-      '0.00',                          // 22
-      tipoPagoDgii,                    // 23
-    ];
-    return fila.join('|');
-  }).join('\n');
+// (07/11/2026) Qué entra al 606 (instructivo DGII feb. 2026, Norma 07-2018):
+// comprobantes que sustentan costo, gasto o crédito fiscal. La factura de
+// CONSUMO (B02 / E32, consumidor final) no va: no da crédito fiscal. Las e-CF
+// recibidas SÍ se reportan. Lo que no entra se enseña aparte con el motivo y
+// qué hacer, para que el contador no lo descubra cuando la DGII lo rechace.
+export const TIPOS_606 = {
+  B01: 'Crédito fiscal', B03: 'Nota de débito', B04: 'Nota de crédito', B11: 'Comprobante de compras',
+  B13: 'Gastos menores', B14: 'Régimen especial', B15: 'Gubernamental', B17: 'Pagos al exterior',
+  E31: 'Crédito fiscal electrónico', E33: 'Nota de débito electrónica', E34: 'Nota de crédito electrónica',
+  E41: 'Compras electrónico', E43: 'Gastos menores electrónico', E44: 'Régimen especial electrónico',
+  E45: 'Gubernamental electrónico', E47: 'Pagos al exterior electrónico',
 };
+const CONSUMO = { B02: true, E32: true };
+// Los que el negocio emite a su nombre (no hay RNC de suplidor): va el propio.
+const CON_RNC_PROPIO = { B13: true, B17: true, E43: true, E47: true };
+const NOTAS_CREDITO_DEBITO = { B03: true, B04: true, E33: true, E34: true };
+
+/** "e310000000123 " → "E310000000123" (sin espacios ni guiones). */
+export const normalizarNcf = (ncf) => String(ncf || '').toUpperCase().replace(/[\s-]/g, '');
+
+/** Estructura válida: B + 10 dígitos (11) o E + 12 dígitos (13). */
+export const ncfBienEscrito = (ncf) => /^B\d{10}$|^E\d{12}$/.test(ncf);
+
+/**
+ * Forma de pago del 606 (col. 23). Compras guarda forma_pago 'Contado' /
+ * 'Credito' (y a veces el detalle en tipo_pago_detalle): 'Contado' sin más
+ * detalle = efectivo. "Tarjeta de crédito" es tarjeta, no compra a crédito.
+ */
+export const formaPago606 = (c) => {
+  const t = `${c.forma_pago || ''} ${c.tipo_pago_detalle || ''}`.toUpperCase();
+  if (t.includes('TARJETA')) return '03';
+  if (t.includes('CHEQUE') || t.includes('TRANSFER') || t.includes('DEPOSIT')) return '02';
+  if (t.includes('PERMUTA')) return '05';
+  if (t.includes('NOTA')) return '06';
+  if (t.includes('MIXTO')) return '07';
+  if (/CR[EÉ]DITO/.test(t)) return '04';
+  return '01'; // contado / efectivo
+};
+const esCredito = (c) => formaPago606(c) === '04';
+
+/** Tipo de bienes y servicios (col. 3): '01'..'11'; lo que no sea, '09' (costo de venta). */
+export const tipoBS606 = (c) => {
+  const n = parseInt(String(c.tipo_bienes_servicios ?? '').trim(), 10);
+  return n >= 1 && n <= 11 ? pad(n) : '09';
+};
+// Tipos que son servicios: personal, trabajos y servicios, arrendamientos,
+// financieros y seguros. Su monto va en la col. 8 (servicios), no en la 9.
+const TIPOS_SERVICIO = { '01': true, '02': true, '03': true, '07': true, '11': true };
+const retencionIsr = (c) => (parseFloat(c.total_gravado || 0) + parseFloat(c.total_exento || 0)) * parseFloat(c.isr_retenido_pct || 0) / 100;
+const retencionItbis = (c) => parseFloat(c.itbis_total || 0) * parseFloat(c.itbis_retenido_pct || 0) / 100;
+
+/**
+ * Separa las compras del mes: las que van en el 606 (con avisos) y las que
+ * no van, cada una con el motivo y qué hacer.
+ * compras: filas con ncf, suplidor_rnc, total_gravado, total_exento, ...
+ */
+export const revisar606 = (compras, rncEmpresa = '') => {
+  const incluidas = [];
+  const excluidas = [];
+  const vistos = new Set();
+  const propio = cleanRncCedula(rncEmpresa);
+  for (const c of compras || []) {
+    const ncf = normalizarNcf(c.ncf);
+    const tipo = ncf.slice(0, 3);
+    const fuera = (motivo, accion) => excluidas.push({ ...c, ncf, tipo, motivo, accion });
+    if (!ncfBienEscrito(ncf)) {
+      fuera(`NCF mal escrito (${ncf.length} caracteres)`, 'Corrija el NCF en la compra: B + 10 números u E + 12 números.');
+      continue;
+    }
+    if (CONSUMO[tipo]) {
+      fuera('Factura de consumo (consumidor final): no da crédito fiscal y no va en el 606',
+        'Pida al suplidor que la cambie por una de crédito fiscal (B01 o E31) a nombre de su RNC.');
+      continue;
+    }
+    if (!TIPOS_606[tipo]) {
+      fuera(`El comprobante ${tipo} no se reporta en el 606`, 'Revise que el NCF sea el de la factura del suplidor.');
+      continue;
+    }
+    let rnc = cleanRncCedula(c.suplidor_rnc);
+    if (CON_RNC_PROPIO[tipo]) {
+      // Gastos menores / pagos al exterior: va el RNC de la empresa, nunca el del suplidor.
+      if (propio.length !== 9 && propio.length !== 11) {
+        fuera(`${TIPOS_606[tipo]}: va con el RNC de su empresa y no está configurado`, 'Ponga el RNC en Perfil Empresa.');
+        continue;
+      }
+      rnc = propio;
+    }
+    if (rnc.length !== 9 && rnc.length !== 11) {
+      fuera('El suplidor no tiene RNC o cédula válido', 'Complete el RNC (9 dígitos) o la cédula (11) en la ficha del suplidor.');
+      continue;
+    }
+    const clave = `${rnc}|${ncf}`;
+    if (vistos.has(clave)) {
+      fuera('Repetida: la misma factura del mismo suplidor ya está en el reporte', 'Revise si la compra se registró dos veces.');
+      continue;
+    }
+    // Lo que la DGII rechaza por un dato que el sistema no guarda: fuera,
+    // para completarlo a mano en la herramienta (sale en la hoja aparte).
+    if (NOTAS_CREDITO_DEBITO[tipo] && !c.ncf_modificado) {
+      fuera('Nota de crédito/débito: falta el NCF de la factura que modifica', 'Agréguela en la herramienta de la DGII con el NCF modificado (columna 5).');
+      continue;
+    }
+    if (retencionIsr(c) > 0 && !c.tipo_retencion_isr) {
+      fuera('Tiene retención de ISR pero no el tipo de retención', 'Agréguela en la herramienta de la DGII escogiendo el tipo de retención (columna 17).');
+      continue;
+    }
+    vistos.add(clave);
+    const avisos = [];
+    if (c.tipo_bienes_servicios && tipoBS606(c) !== String(c.tipo_bienes_servicios).trim().padStart(2, '0')) {
+      avisos.push(`Tipo de bienes y servicios "${c.tipo_bienes_servicios}" no existe: se reporta como 09`);
+    }
+    incluidas.push({ ...c, ncf, tipo, rnc_606: rnc, avisos });
+  }
+  return { incluidas, excluidas };
+};
+
+/** Las 23 columnas del 606 de una compra ya revisada (revisar606). */
+export const fila606 = (c) => {
+  const rnc = c.rnc_606 || cleanRncCedula(c.suplidor_rnc);
+  const tipoBS = tipoBS606(c);
+  const monto = parseFloat(c.total_gravado || 0) + parseFloat(c.total_exento || 0); // sin impuestos
+  const servicios = TIPOS_SERVICIO[tipoBS] ? monto : 0;
+  const bienes = monto - servicios;
+  const itbisRet = retencionItbis(c);
+  const isrRet = retencionIsr(c);
+  // Fecha de pago: obligatoria si hay retenciones; vacía si es a crédito y no se ha pagado.
+  const fechaPago = c.fecha_pago ? fmtFecha(c.fecha_pago)
+    : (itbisRet > 0 || isrRet > 0 || !esCredito(c)) ? fmtFecha(c.fecha) : '';
+  return [
+    rnc,                                         // 1 RNC/Cédula
+    tipoIdentificacion(rnc),                     // 2 Tipo Id (1 RNC, 2 cédula)
+    tipoBS,                                      // 3 Tipo bienes y servicios (01-11)
+    normalizarNcf(c.ncf),                        // 4 NCF
+    normalizarNcf(c.ncf_modificado),             // 5 NCF modificado
+    fmtFecha(c.fecha),                           // 6 Fecha comprobante
+    fechaPago,                                   // 7 Fecha pago
+    fmtMonto(servicios),                         // 8 Monto servicios
+    fmtMonto(bienes),                            // 9 Monto bienes
+    fmtMonto(monto),                             // 10 Total monto facturado (servicios + bienes)
+    fmtMonto(c.itbis_total),                     // 11 ITBIS facturado
+    fmtMonto(itbisRet),                          // 12 ITBIS retenido
+    '0.00',                                      // 13 ITBIS sujeto a proporcionalidad
+    '0.00',                                      // 14 ITBIS llevado al costo
+    fmtMonto(c.itbis_total),                     // 15 ITBIS por adelantar (facturado − al costo)
+    '0.00',                                      // 16 ITBIS percibido (inhabilitado por la DGII)
+    isrRet > 0 ? (c.tipo_retencion_isr || '') : '', // 17 Tipo retención ISR
+    fmtMonto(isrRet),                            // 18 Monto retención renta
+    '0.00',                                      // 19 ISR percibido (inhabilitado)
+    '0.00',                                      // 20 ISC
+    '0.00',                                      // 21 Otros impuestos/tasas
+    '0.00',                                      // 22 Propina legal
+    formaPago606(c),                             // 23 Forma de pago
+  ];
+};
+
+/** TXT del 606: solo lo que revisar606 deja entrar. */
+export const generar606 = (compras, rncEmpresa = '') =>
+  revisar606(compras, rncEmpresa).incluidas.map((c) => fila606(c).join('|')).join('\n');
 
 // ─────────────────────────────────────────────────────────
 // 608 — NCF ANULADOS

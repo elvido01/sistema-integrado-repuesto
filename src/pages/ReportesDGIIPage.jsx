@@ -11,7 +11,7 @@ import { Download, FileText, Loader2, AlertCircle, FileSpreadsheet } from 'lucid
 import ExcelJS from 'exceljs';
 import { rangoDeFechas } from '@/lib/dateUtils';
 import {
-  generar606, generar607, generar608,
+  generar607, generar608, revisar606, fila606, TIPOS_606, tipoBS606,
   downloadTxt, nombreArchivoDgii, fmtMonto, cleanRncCedula, tipoIdentificacion, fmtFecha,
 } from '@/lib/dgiiExport';
 
@@ -148,21 +148,21 @@ const ReportesDGIIPage = () => {
     total: ventas.reduce((s, v) => s + parseFloat(v.total || 0), 0),
   }), [ventas]);
 
+  // (07/11/2026) Qué entra al 606 y qué no (lib/dgiiExport → revisar606).
+  const rev606 = useMemo(() => revisar606(compras, empresa?.rnc), [compras, empresa]);
   const totales606 = useMemo(() => ({
-    cant: compras.length,
-    subtotal: compras.reduce((s, c) => s + parseFloat(c.total_gravado || 0) + parseFloat(c.total_exento || 0), 0),
-    itbis: compras.reduce((s, c) => s + parseFloat(c.itbis_total || 0), 0),
-    total: compras.reduce((s, c) => s + parseFloat(c.total_compra || 0), 0),
-  }), [compras]);
+    cant: rev606.incluidas.length,
+    subtotal: rev606.incluidas.reduce((s, c) => s + parseFloat(c.total_gravado || 0) + parseFloat(c.total_exento || 0), 0),
+    itbis: rev606.incluidas.reduce((s, c) => s + parseFloat(c.itbis_total || 0), 0),
+    total: rev606.incluidas.reduce((s, c) => s + parseFloat(c.total_compra || 0), 0),
+  }), [rev606]);
 
   // ── Validación: registros con problemas ──
   const alertas607 = useMemo(() => {
     return ventas.filter(v => !v.cliente_rnc || cleanRncCedula(v.cliente_rnc).length < 9).length;
   }, [ventas]);
 
-  const alertas606 = useMemo(() => {
-    return compras.filter(c => !c.suplidor_rnc || cleanRncCedula(c.suplidor_rnc).length < 9).length;
-  }, [compras]);
+  const conAviso606 = rev606.incluidas.filter((c) => c.avisos.length).length;
 
   // ── Exportar TXT ──
   const exportTxt = (reporte) => {
@@ -170,7 +170,7 @@ const ReportesDGIIPage = () => {
     const filename = nombreArchivoDgii(reporte, rnc, year, month);
     let contenido = '';
     if (reporte === '607') contenido = generar607(ventas);
-    else if (reporte === '606') contenido = generar606(compras);
+    else if (reporte === '606') contenido = rev606.incluidas.map((c) => fila606(c).join('|')).join('\n');
     else if (reporte === '608') contenido = generar608(anulados.map(a => ({ ncf: a.ncf, fecha: a.updated_at || a.fecha, tipo_anulacion: '02' })));
 
     if (!contenido) {
@@ -210,30 +210,35 @@ const ReportesDGIIPage = () => {
         forma_pago: v.forma_pago || '',
       }));
     } else if (reporte === '606') {
-      ws.columns = [
-        { header: 'RNC/Cédula', key: 'rnc', width: 15 },
-        { header: 'Suplidor', key: 'suplidor', width: 30 },
-        { header: 'Tipo ID', key: 'tipoId', width: 8 },
-        { header: 'Tipo B/S', key: 'tipoBS', width: 10 },
-        { header: 'NCF', key: 'ncf', width: 15 },
-        { header: 'Fecha', key: 'fecha', width: 12 },
-        { header: 'Monto Bienes', key: 'monto', width: 14 },
-        { header: 'ITBIS', key: 'itbis', width: 12 },
-        { header: 'Total', key: 'total', width: 12 },
-        { header: 'Forma Pago', key: 'forma_pago', width: 14 },
-      ];
-      compras.forEach(c => ws.addRow({
-        rnc: cleanRncCedula(c.suplidor_rnc) || '(sin RNC)',
-        suplidor: c.suplidor_nombre || '',
-        tipoId: c.suplidor_rnc ? tipoIdentificacion(c.suplidor_rnc) : '',
-        tipoBS: c.tipo_bienes_servicios || '09',
-        ncf: c.ncf,
-        fecha: fmtFecha(c.fecha),
-        monto: parseFloat(c.total_gravado || 0),
-        itbis: parseFloat(c.itbis_total || 0),
-        total: parseFloat(c.total_compra || 0),
-        forma_pago: c.forma_pago || '',
-      }));
+      const COLS = ['RNC o Cédula', 'Tipo Id', 'Tipo Bienes y Servicios Comprados', 'NCF', 'NCF o Documento Modificado',
+        'Fecha Comprobante', 'Fecha Pago', 'Monto Facturado en Servicios', 'Monto Facturado en Bienes', 'Total Monto Facturado',
+        'ITBIS Facturado', 'ITBIS Retenido', 'ITBIS sujeto a Proporcionalidad (Art. 349)', 'ITBIS llevado al Costo',
+        'ITBIS por Adelantar', 'ITBIS percibido en compras', 'Tipo de Retención en ISR', 'Monto Retención Renta',
+        'ISR Percibido en compras', 'Impuesto Selectivo al Consumo', 'Otros Impuestos/Tasas', 'Monto Propina Legal', 'Forma de Pago'];
+      ws.columns = [...COLS.map((h, i) => ({ header: h, key: `c${i}`, width: i < 7 ? 15 : 13 })),
+        { header: 'Suplidor (no se pega)', key: 'sup', width: 30 }, { header: 'Aviso (no se pega)', key: 'aviso', width: 45 }];
+      // Códigos y NCF como texto: Excel no les quita los ceros.
+      rev606.incluidas.forEach((c) => {
+        const f = fila606(c);
+        const fila = {};
+        f.forEach((v, i) => { fila[`c${i}`] = (i >= 7 && i <= 21 && i !== 16) ? Number(v || 0) : v; });
+        ws.addRow({ ...fila, sup: c.suplidor_nombre || '', aviso: c.avisos.join(' · ') });
+      });
+      ws.getRow(1).font = { bold: true };
+      if (rev606.excluidas.length) {
+        const wx = wb.addWorksheet('No van en el 606');
+        wx.columns = [
+          { header: 'Fecha', key: 'fecha', width: 12 }, { header: 'NCF', key: 'ncf', width: 16 },
+          { header: 'Suplidor', key: 'sup', width: 30 }, { header: 'RNC', key: 'rnc', width: 14 },
+          { header: 'Total', key: 'total', width: 12 }, { header: 'Por qué no va', key: 'motivo', width: 60 },
+          { header: 'Qué hacer', key: 'accion', width: 60 },
+        ];
+        rev606.excluidas.forEach((c) => wx.addRow({
+          fecha: fmtFecha(c.fecha), ncf: c.ncf, sup: c.suplidor_nombre || '', rnc: cleanRncCedula(c.suplidor_rnc),
+          total: parseFloat(c.total_compra || 0), motivo: c.motivo, accion: c.accion,
+        }));
+        wx.getRow(1).font = { bold: true };
+      }
     } else if (reporte === '608') {
       ws.columns = [
         { header: 'NCF', key: 'ncf', width: 15 },
@@ -371,13 +376,19 @@ const ReportesDGIIPage = () => {
             {/* 606 */}
             <TabsContent value="606" className="mt-4">
               <ReporteSection
-                titulo="606 — Reporte de Compras"
-                subtitulo={`${compras.length} compras con NCF · Subtotal RD$ ${totales606.subtotal.toLocaleString('es-DO', { minimumFractionDigits: 2 })} · ITBIS RD$ ${totales606.itbis.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
-                alertas={alertas606}
+                titulo="606 — Reporte de Compras y Gastos"
+                subtitulo={`${totales606.cant} van en el 606 · Monto RD$ ${totales606.subtotal.toLocaleString('es-DO', { minimumFractionDigits: 2 })} · ITBIS RD$ ${totales606.itbis.toLocaleString('es-DO', { minimumFractionDigits: 2 })}${rev606.excluidas.length ? ` · ${rev606.excluidas.length} no van (ver abajo)` : ''}`}
+                alertas={conAviso606}
+                textoAlerta="con aviso: revíselas antes de subir (fila amarilla)"
                 loading={loading}
                 onTxt={() => exportTxt('606')}
                 onExcel={() => exportExcel('606')}
               >
+                <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900 space-y-0.5">
+                  <p><b>Van en el 606:</b> {Object.keys(TIPOS_606).join(', ')}. Las facturas electrónicas (E31…) recibidas también se reportan.</p>
+                  <p><b>No van:</b> facturas de consumo B02 / E32 (consumidor final), NCF mal escritos, suplidores sin RNC y repetidas.</p>
+                  <p>Si un suplidor ya está obligado a facturar electrónico, la DGII rechaza sus facturas B: pídale la E31. El Excel trae las 23 columnas en el orden de la herramienta de la DGII para pegarlas tal cual.</p>
+                </div>
                 <Table className="text-xs">
                   <TableHeader>
                     <TableRow className="bg-slate-50">
@@ -394,25 +405,52 @@ const ReportesDGIIPage = () => {
                   <TableBody>
                     {loading ? (
                       <TableRow><TableCell colSpan={8} className="text-center py-4"><Loader2 className="h-4 w-4 animate-spin mx-auto" /></TableCell></TableRow>
-                    ) : compras.length === 0 ? (
-                      <TableRow><TableCell colSpan={8} className="text-center text-slate-400 py-4">Sin compras con NCF en el período</TableCell></TableRow>
-                    ) : compras.map(c => {
-                      const rncMalo = !c.suplidor_rnc || cleanRncCedula(c.suplidor_rnc).length < 9;
-                      return (
-                        <TableRow key={c.id} className={rncMalo ? 'bg-amber-50' : ''}>
-                          <TableCell>{fmtFecha(c.fecha)}</TableCell>
-                          <TableCell className="font-mono">{c.ncf}</TableCell>
-                          <TableCell className="truncate max-w-[200px]">{c.suplidor_nombre}</TableCell>
-                          <TableCell className="font-mono">{cleanRncCedula(c.suplidor_rnc) || <span className="text-amber-600">(falta)</span>}</TableCell>
-                          <TableCell>{c.tipo_bienes_servicios || '09'}</TableCell>
-                          <TableCell className="text-right">{fmtMonto(c.total_gravado)}</TableCell>
-                          <TableCell className="text-right">{fmtMonto(c.itbis_total)}</TableCell>
-                          <TableCell className="text-right font-bold">{fmtMonto(c.total_compra)}</TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    ) : rev606.incluidas.length === 0 ? (
+                      <TableRow><TableCell colSpan={8} className="text-center text-slate-400 py-4">Sin compras para el 606 en el período</TableCell></TableRow>
+                    ) : rev606.incluidas.map(c => (
+                      <TableRow key={c.id} className={c.avisos.length ? 'bg-amber-50' : ''} title={c.avisos.join(' · ')}>
+                        <TableCell>{fmtFecha(c.fecha)}</TableCell>
+                        <TableCell className="font-mono">{c.ncf}<span className="ml-1 text-[10px] text-slate-400">{TIPOS_606[c.tipo]}</span></TableCell>
+                        <TableCell className="truncate max-w-[200px]">{c.suplidor_nombre}{c.avisos.length > 0 && <span className="block text-[10px] text-amber-700">{c.avisos.join(' · ')}</span>}</TableCell>
+                        <TableCell className="font-mono">{c.rnc_606}</TableCell>
+                        <TableCell>{tipoBS606(c)}</TableCell>
+                        <TableCell className="text-right">{fmtMonto(parseFloat(c.total_gravado || 0) + parseFloat(c.total_exento || 0))}</TableCell>
+                        <TableCell className="text-right">{fmtMonto(c.itbis_total)}</TableCell>
+                        <TableCell className="text-right font-bold">{fmtMonto(c.total_compra)}</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
+                {!loading && rev606.excluidas.length > 0 && (
+                  <div className="mt-5">
+                    <h3 className="text-sm font-bold text-red-700 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> No van en el 606 ({rev606.excluidas.length})</h3>
+                    <p className="text-xs text-slate-500 mb-2">No salen en el TXT ni en la hoja principal del Excel (van en la hoja "No van en el 606").</p>
+                    <Table className="text-xs">
+                      <TableHeader>
+                        <TableRow className="bg-red-50">
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>NCF</TableHead>
+                          <TableHead>Suplidor</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead>Por qué no va</TableHead>
+                          <TableHead>Qué hacer</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rev606.excluidas.map(c => (
+                          <TableRow key={c.id}>
+                            <TableCell>{fmtFecha(c.fecha)}</TableCell>
+                            <TableCell className="font-mono">{c.ncf || '—'}</TableCell>
+                            <TableCell className="truncate max-w-[180px]">{c.suplidor_nombre}</TableCell>
+                            <TableCell className="text-right">{fmtMonto(c.total_compra)}</TableCell>
+                            <TableCell className="text-red-700">{c.motivo}</TableCell>
+                            <TableCell className="text-slate-600">{c.accion}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </ReporteSection>
             </TabsContent>
 
@@ -457,7 +495,7 @@ const ReportesDGIIPage = () => {
   );
 };
 
-const ReporteSection = ({ titulo, subtitulo, alertas, loading, onTxt, onExcel, children }) => (
+const ReporteSection = ({ titulo, subtitulo, alertas, textoAlerta, loading, onTxt, onExcel, children }) => (
   <div className="space-y-3">
     <div className="flex justify-between items-start gap-4 border-b pb-3">
       <div>
@@ -465,7 +503,7 @@ const ReporteSection = ({ titulo, subtitulo, alertas, loading, onTxt, onExcel, c
         <p className="text-xs text-slate-500 mt-0.5">{subtitulo}</p>
         {alertas > 0 && (
           <p className="text-xs text-amber-700 mt-1 flex items-center gap-1">
-            <AlertCircle className="w-3 h-3" /> {alertas} registro{alertas !== 1 ? 's' : ''} sin RNC/Cédula válido — revisar antes de subir a DGII
+            <AlertCircle className="w-3 h-3" /> {alertas} registro{alertas !== 1 ? 's' : ''} {textoAlerta || 'sin RNC/Cédula válido — revisar antes de subir a DGII'}
           </p>
         )}
       </div>
