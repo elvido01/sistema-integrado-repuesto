@@ -146,6 +146,23 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
     return () => { vivo = false; clearTimeout(t); };
   }, [open, est.curso_id, est.tanda, est.seccion, estudiante?.id]);
   // Al editar solo cuenta si se mueve de curso, tanda o sección (o vuelve de retirado).
+  // Sección por defecto (cupo por sección): la A hasta que se llene, luego
+  // la B… Solo al inscribir y mientras nadie la haya escrito a mano; se
+  // puede cambiar siempre (decisión del colegio o de la familia).
+  const [seccionAMano, setSeccionAMano] = useState(false);
+  useEffect(() => { if (open) setSeccionAMano(false); }, [open, estudiante?.id]);
+  useEffect(() => {
+    if (!open || editando || seccionAMano || !curso?.cupo_por_seccion || !(Number(curso?.cupos?.[est.tanda]) > 0)) return undefined;
+    let vivo = true;
+    (async () => {
+      for (const letra of 'ABCDEFGH') {
+        const { data } = await supabase.rpc('edu_cupo_curso', { p_curso: curso.id, p_tanda: est.tanda, p_seccion: letra, p_excluir: null });
+        if (!vivo) return;
+        if (!data?.cupo || data.quedan > 0) { setEst((p) => (p.seccion === letra ? p : { ...p, seccion: letra })); return; }
+      }
+    })();
+    return () => { vivo = false; };
+  }, [open, editando, seccionAMano, curso, est.tanda]); // eslint-disable-line react-hooks/exhaustive-deps
   const ocupaLugarNuevo = !editando
     || est.curso_id !== estudiante.curso_id || est.tanda !== estudiante.tanda
     || (cupo?.por_seccion && String(est.seccion || '').trim().toUpperCase() !== String(estudiante.seccion || '').trim().toUpperCase());
@@ -277,7 +294,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                   {(curso?.tandas || []).map((t) => <option key={t} value={t}>{TANDAS[t]}</option>)}
                 </select>
                 <input className={`${campo.replace('w-full', '')} w-14 shrink-0 text-center uppercase`} maxLength={3} placeholder="A" title="Sección (A, B...): sale en el boletín de notas"
-                  value={est.seccion || ''} onChange={(e) => s('seccion', e.target.value)} />
+                  value={est.seccion || ''} onChange={(e) => { setSeccionAMano(true); s('seccion', e.target.value); }} />
               </div>
             </Campo>
             <Campo label="Condición">
