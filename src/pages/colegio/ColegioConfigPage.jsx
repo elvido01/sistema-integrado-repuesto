@@ -16,6 +16,7 @@ import { Helmet } from 'react-helmet';
 import { GraduationCap, Loader2, Plus, Save, RefreshCw, CheckCircle2, Ban, Star, ArrowRightCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/customSupabaseClient';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -224,7 +225,7 @@ function Tarifas({ tarifas, cfg, anioActual, guardando, nuevaTarifa, setNuevaTar
         <label className="text-xs font-bold text-gray-600 uppercase">
           Incremento automático
           <div className="flex gap-2 mt-1">
-            <input type="number" min="0" step="50" className={`${campo} w-32`} value={inc} onChange={(e) => setInc(e.target.value)} />
+            <input type="text" inputMode="decimal" className={`${campo} w-32`} value={fmtMontoInput(inc)} onChange={(e) => setInc(parseMontoInput(e.target.value))} />
             <Button size="sm" variant="outline" onClick={guardarIncremento} disabled={String(incremento) === inc}>
               <Save className="w-4 h-4" />
             </Button>
@@ -242,8 +243,8 @@ function Tarifas({ tarifas, cfg, anioActual, guardando, nuevaTarifa, setNuevaTar
         <div className="flex flex-wrap items-end gap-3 rounded-md border border-emerald-200 bg-emerald-50/50 p-3">
           <label className="text-xs font-bold text-gray-600 uppercase">
             Mensualidad RD$
-            <input type="number" min="1" step="50" autoFocus className={`${campo} w-40 mt-1`} value={nuevaTarifa.monto}
-              onChange={(e) => setNuevaTarifa((p) => ({ ...p, monto: e.target.value }))} />
+            <input type="text" inputMode="decimal" autoFocus className={`${campo} w-40 mt-1`} value={fmtMontoInput(nuevaTarifa.monto)}
+              onChange={(e) => setNuevaTarifa((p) => ({ ...p, monto: parseMontoInput(e.target.value) }))} />
           </label>
           <label className="text-xs font-bold text-gray-600 uppercase flex-1 min-w-[200px]">
             Nota (opcional)
@@ -348,7 +349,7 @@ function Conceptos({ conceptos, guardando, actualizar, insertar }) {
                   <td className="pr-2 w-32">
                     {esMensualidad
                       ? <span className="text-xs text-gray-500">Según tarifa</span>
-                      : <input type="number" min="0" className={campo} value={valor(c, 'monto')} onChange={(e) => cambio(c.id, 'monto', e.target.value)} />}
+                      : <input type="text" inputMode="decimal" className={campo} value={fmtMontoInput(valor(c, 'monto'))} onChange={(e) => cambio(c.id, 'monto', parseMontoInput(e.target.value))} />}
                   </td>
                   <td className="pr-2 w-24">
                     <select className={campo} value={valor(c, 'moneda')} disabled={esMensualidad} onChange={(e) => cambio(c.id, 'moneda', e.target.value)}>
@@ -390,7 +391,7 @@ function Conceptos({ conceptos, guardando, actualizar, insertar }) {
           </label>
           <label className="text-xs font-bold text-gray-600 uppercase">
             Monto
-            <input type="number" min="0" className={`${campo} w-32 mt-1`} value={nuevo.monto} onChange={(e) => setNuevo((p) => ({ ...p, monto: e.target.value }))} />
+            <input type="text" inputMode="decimal" className={`${campo} w-32 mt-1`} value={fmtMontoInput(nuevo.monto)} onChange={(e) => setNuevo((p) => ({ ...p, monto: parseMontoInput(e.target.value) }))} />
           </label>
           <label className="text-xs font-bold text-gray-600 uppercase">
             Moneda

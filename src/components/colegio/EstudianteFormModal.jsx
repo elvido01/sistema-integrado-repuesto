@@ -4,8 +4,9 @@
 // fija: el nuevo recibe la del hermano que ya está o la tarifa más reciente;
 // un acuerdo se escribe a mano. La foto es obligatoria al inscribir.
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, Users, UserPlus } from 'lucide-react';
+import { Loader2, Search, Users } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import FotoEstudiante from '@/components/colegio/FotoEstudiante';
@@ -42,7 +43,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
   const [hermanos, setHermanos] = useState([]);
   const [buscarFam, setBuscarFam] = useState('');
   const [resultadosFam, setResultadosFam] = useState([]);
-  const [modoFamilia, setModoFamilia] = useState('buscar');   // buscar | nueva | elegida
+  const [modoFamilia, setModoFamilia] = useState('nueva');    // nueva | elegida (de un hermano)
   const [guardando, setGuardando] = useState(false);
   const [becaModo, setBecaModo] = useState('0');
 
@@ -59,8 +60,12 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
       setModoFamilia('elegida');
       cargarFamilia(estudiante.familia_id);
     } else {
-      setEst(EST_VACIO); setFam(FAMILIA_VACIA); setFamiliaId(null); setHermanos([]);
-      setModoFamilia('buscar'); setBuscarFam(''); setResultadosFam([]); setBecaModo('0');
+      // Familia nueva de entrada: los datos de los padres se ven sin tocar
+      // nada. Si tiene hermanos, se busca arriba y se llenan solos.
+      const sug = tarifaParaNuevo(tarifas, []);
+      setEst(sug ? { ...EST_VACIO, tarifa_mensual: String(sug.monto), tarifa_id: sug.tarifa_id } : EST_VACIO);
+      setFam(FAMILIA_VACIA); setFamiliaId(null); setHermanos([]);
+      setModoFamilia('nueva'); setBuscarFam(''); setResultadosFam([]); setBecaModo('0');
     }
   }, [open, estudiante?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -77,7 +82,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
 
   // Buscar familias existentes (por apellidos o por padres)
   useEffect(() => {
-    if (modoFamilia !== 'buscar' || buscarFam.trim().length < 2) { setResultadosFam([]); return undefined; }
+    if (modoFamilia !== 'nueva' || editando || buscarFam.trim().length < 2) { setResultadosFam([]); return undefined; }
     const t = setTimeout(async () => {
       const q = buscarFam.trim().replace(/[%,()]/g, ' ');
       const { data } = await supabase.from('edu_familias')
@@ -88,9 +93,10 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
       setResultadosFam(data || []);
     }, 250);
     return () => clearTimeout(t);
-  }, [buscarFam, modoFamilia, tenantId]);
+  }, [buscarFam, modoFamilia, editando, tenantId]);
 
   const elegirFamilia = async (fa) => {
+    setResultadosFam([]); setBuscarFam('');
     setFamiliaId(fa.id);
     setModoFamilia('elegida');
     const hs = await cargarFamilia(fa.id);
@@ -103,7 +109,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
 
   const nuevaFamilia = () => {
     setFamiliaId(null); setHermanos([]); setModoFamilia('nueva');
-    setFam({ ...FAMILIA_VACIA, nombre: buscarFam.trim() });
+    setFam(FAMILIA_VACIA); setBuscarFam(''); setResultadosFam([]);
     if (!editando) {
       const sug = tarifaParaNuevo(tarifas, []);
       if (sug) setEst((p) => ({ ...p, tarifa_mensual: String(sug.monto), tarifa_id: sug.tarifa_id, tarifa_acuerdo: false, tarifa_nota: '' }));
@@ -137,8 +143,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
     if (!est.curso_id || !est.tanda) return onError('Faltan datos', 'Escoge curso y tanda.');
     if (!(Number(est.tarifa_mensual) > 0)) return onError('Falta la mensualidad', 'Escoge una tarifa o escribe el monto del acuerdo.');
     if (!editando && !est.foto_path) return onError('Falta la foto', 'La foto del estudiante es obligatoria: tómala con la cámara o súbela.');
-    if (modoFamilia === 'buscar') return onError('Falta la familia', 'Busca la familia (si tiene hermanos en el colegio) o crea una nueva.');
-    if (modoFamilia === 'nueva' && !fam.nombre.trim()) return onError('Falta la familia', 'Escribe los apellidos de la familia.');
+    if (!fam.nombre.trim() && !est.apellidos.trim()) return onError('Falta la familia', 'Escribe los apellidos de la familia.');
     if (!fam.madre_nombre?.trim() && !fam.padre_nombre?.trim() && !fam.tutor_nombre?.trim()) {
       return onError('Faltan los padres', 'Escribe al menos la madre, el padre o el tutor.');
     }
@@ -146,7 +151,8 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
     setGuardando(true);
     try {
       // 1. Familia
-      const datosFam = limpio({ ...fam });
+      // Sin apellidos de familia: los del estudiante.
+      const datosFam = limpio({ ...fam, nombre: fam.nombre.trim() || est.apellidos.trim() });
       delete datosFam.id; delete datosFam.tenant_id; delete datosFam.created_at; delete datosFam.updated_at; delete datosFam.cliente_id;
       if (!datosFam.estado_padres) datosFam.estado_padres = null;
       let famId = familiaId;
@@ -204,30 +210,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
         {/* ── Familia ───────────────────────────────────────────── */}
         <section className="rounded-lg border border-gray-200 p-3">
           <h3 className="text-sm font-black text-blue-800 uppercase mb-2 flex items-center gap-2"><Users className="w-4 h-4" /> Familia</h3>
-          {modoFamilia === 'buscar' && (
-            <div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />
-                  <input autoFocus className={`${campo} pl-8`} placeholder="¿Tiene hermanos en el colegio? Busca por apellidos, madre o padre…"
-                    value={buscarFam} onChange={(e) => setBuscarFam(e.target.value)} />
-                </div>
-                <Button type="button" variant="outline" onClick={nuevaFamilia}><UserPlus className="w-4 h-4 mr-1" /> Familia nueva</Button>
-              </div>
-              {resultadosFam.length > 0 && (
-                <div className="mt-2 border rounded-md divide-y">
-                  {resultadosFam.map((r) => (
-                    <button key={r.id} type="button" onClick={() => elegirFamilia(r)} className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm">
-                      <b>{r.nombre}</b>
-                      <span className="text-gray-500"> · {[r.madre_nombre, r.padre_nombre, r.tutor_nombre].filter(Boolean).join(' / ') || 'sin padres'}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {modoFamilia !== 'buscar' && (
+          {(
             <>
               {hermanos.length > 0 && (
                 <div className="mb-3 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm">
@@ -236,7 +219,33 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <Campo label="Familia (apellidos) *" className="md:col-span-2"><input className={campo} value={fam.nombre} onChange={(e) => f('nombre', e.target.value)} /></Campo>
+                <div className="md:col-span-2 relative">
+                  <span className={etiqueta}>Familia (apellidos) *</span>
+                  <div className="relative mt-1">
+                    {modoFamilia === 'nueva' && !editando && <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />}
+                    <input className={`${campo} ${modoFamilia === 'nueva' && !editando ? 'pl-8' : ''}`} autoComplete="off"
+                      placeholder={editando ? '' : 'Escribe los apellidos (si tiene hermanos, sale la familia)'}
+                      value={fam.nombre}
+                      onChange={(e) => { f('nombre', e.target.value); if (modoFamilia === 'nueva' && !editando) setBuscarFam(e.target.value); }} />
+                  </div>
+                  {modoFamilia === 'nueva' && !editando && resultadosFam.length > 0 && (
+                    <div className="absolute z-20 left-0 right-0 mt-1 bg-white border rounded-md shadow-lg divide-y max-h-64 overflow-auto">
+                      <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-50">Familias ya registradas: escoge una y sus datos se llenan solos</div>
+                      {resultadosFam.map((r) => (
+                        <button key={r.id} type="button" onClick={() => elegirFamilia(r)} className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm">
+                          <b>{r.nombre}</b>
+                          <span className="text-gray-500"> · {[r.madre_nombre, r.padre_nombre, r.tutor_nombre].filter(Boolean).join(' / ') || 'sin padres'}</span>
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => setResultadosFam([])} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-blue-700">
+                        Ninguna: es una familia nueva
+                      </button>
+                    </div>
+                  )}
+                  {modoFamilia === 'elegida' && !editando && (
+                    <p className="text-xs text-emerald-700 mt-1">Familia ya registrada: datos cargados. Si cambias algo, se actualiza para todos los hermanos.</p>
+                  )}
+                </div>
                 <Campo label="Los padres están">
                   <select className={campo} value={fam.estado_padres || ''} onChange={(e) => f('estado_padres', e.target.value)}>
                     <option value="">—</option>
@@ -264,9 +273,9 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                 <Campo label="Teléfono del tutor"><input className={campo} value={fam.tutor_telefono} onChange={(e) => f('tutor_telefono', e.target.value)} /></Campo>
                 <Campo label="Dirección del tutor"><input className={campo} value={fam.tutor_direccion} onChange={(e) => f('tutor_direccion', e.target.value)} /></Campo>
               </div>
-              {!editando && (
-                <button type="button" className="mt-2 text-xs text-blue-700 underline" onClick={() => { setModoFamilia('buscar'); setFamiliaId(null); setHermanos([]); }}>
-                  Cambiar de familia
+              {!editando && modoFamilia === 'elegida' && (
+                <button type="button" className="mt-2 text-xs text-blue-700 underline" onClick={nuevaFamilia}>
+                  No es esta familia: llenar una nueva
                 </button>
               )}
             </>
@@ -341,8 +350,8 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
               </select>
             </Campo>
             <Campo label="Mensualidad RD$">
-              <input type="number" min="0" step="50" className={campo} value={est.tarifa_mensual}
-                disabled={!est.tarifa_acuerdo} onChange={(e) => s('tarifa_mensual', e.target.value)} />
+              <input type="text" inputMode="decimal" className={campo} value={fmtMontoInput(est.tarifa_mensual)}
+                disabled={!est.tarifa_acuerdo} onChange={(e) => s('tarifa_mensual', parseMontoInput(e.target.value))} />
             </Campo>
             <Campo label="Beca (solo mensualidades)">
               <div className="flex gap-2">
