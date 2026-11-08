@@ -16,7 +16,7 @@ import { Wallet, Search, Loader2, Printer, Plus, Trash2, Ban, RefreshCw, Calenda
 import { imprimirEstadoCuenta } from '@/lib/colegioReportes';
 import FacturaFiscalDialog from '@/components/colegio/FacturaFiscalDialog';
 import { supabase } from '@/lib/customSupabaseClient';
-import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
+import MontoInput from '@/components/ui/MontoInput';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -530,7 +530,7 @@ export default function CajaColegioPage() {
                       <select className={`${campo} flex-1`} value={f.forma} onChange={(e) => setForma(i, 'forma', e.target.value)}>
                         {FORMAS.map((x) => <option key={x} value={x}>{x}</option>)}
                       </select>
-                      <input type="text" inputMode="decimal" className={`${campo} w-32 text-right`} value={fmtMontoInput(f.monto)} onChange={(e) => setForma(i, 'monto', parseMontoInput(e.target.value))} />
+                      <MontoInput className={`${campo} w-32 text-right`} value={f.monto} onChange={(v) => setForma(i, 'monto', v)} />
                       {formas.length > 1 && <Button size="sm" variant="ghost" onClick={() => setFormas((fs) => fs.filter((_, j) => j !== i))}><Trash2 className="w-4 h-4" /></Button>}
                     </div>
                     {conBanco(f.forma) && (
@@ -656,8 +656,8 @@ function AgregarCargoDialog({ estudiante, conceptos, onClose, onDone, onError })
   const opciones = conceptos.filter((c) => !['mensualidad', 'recargo'].includes(c.tipo));
   const [concepto, setConcepto] = useState(opciones[0]?.id || '');
   const c = opciones.find((x) => x.id === concepto);
-  const [monto, setMonto] = useState(c ? String(c.monto) : '');
-  useEffect(() => { if (c) setMonto(String(c.monto)); }, [concepto]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [monto, setMonto] = useState(c ? String(Math.round(Number(c.monto) * 100) / 100) : '');
+  useEffect(() => { if (c) setMonto(String(Math.round(Number(c.monto) * 100) / 100)); }, [concepto]); // eslint-disable-line react-hooks/exhaustive-deps
   const [guardando, setGuardando] = useState(false);
   const ok = async () => {
     setGuardando(true);
@@ -678,7 +678,7 @@ function AgregarCargoDialog({ estudiante, conceptos, onClose, onDone, onError })
         </label>
         <label className="block text-xs font-bold text-gray-600 uppercase">
           Monto {c?.moneda === 'USD' ? 'US$' : 'RD$'}
-          <input type="text" inputMode="decimal" className={`${campo} w-full mt-1`} value={fmtMontoInput(monto)} onChange={(e) => setMonto(parseMontoInput(e.target.value))} />
+          <MontoInput className={`${campo} w-full mt-1`} value={monto} onChange={(v) => setMonto(v)} />
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>

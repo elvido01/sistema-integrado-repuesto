@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Search, Users } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
-import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
+import MontoInput from '@/components/ui/MontoInput';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import FotoEstudiante from '@/components/colegio/FotoEstudiante';
@@ -350,8 +350,8 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
               </select>
             </Campo>
             <Campo label="Mensualidad RD$">
-              <input type="text" inputMode="decimal" className={campo} value={fmtMontoInput(est.tarifa_mensual)}
-                disabled={!est.tarifa_acuerdo} onChange={(e) => s('tarifa_mensual', parseMontoInput(e.target.value))} />
+              <MontoInput className={campo} value={est.tarifa_mensual}
+                disabled={!est.tarifa_acuerdo} onChange={(v) => s('tarifa_mensual', v)} />
             </Campo>
             <Campo label="Beca (solo mensualidades)">
               <div className="flex gap-2">
