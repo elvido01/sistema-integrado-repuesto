@@ -280,8 +280,12 @@ export default function CajaColegioPage() {
     return () => clearTimeout(t);
   }, [buscar, tenantId, cursos]);
 
+  // Solo cuenta la última familia pedida: si se abren dos seguidas y la
+  // primera tarda más, no pisa a la segunda. Devuelve true si se abrió.
+  const aperturaRef = React.useRef(0);
   const abrirFamilia = useCallback(async (familiaId) => {
-    if (!anio) return error('Un momento', 'Todavía se está cargando el año escolar. Vuelve a intentarlo.');
+    if (!anio) { error('Un momento', 'Todavía se está cargando el año escolar. Vuelve a intentarlo.'); return false; }
+    const yo = ++aperturaRef.current;
     setCargando(true);
     try {
       // Recargos al día (no duplica) ANTES de leer lo que debe.
@@ -302,6 +306,7 @@ export default function CajaColegioPage() {
         supabase.from('edu_anios').select('*').eq('tenant_id', tenantId),   // la reservación pudo crear el año próximo
       ]);
       if (eC) throw eC;
+      if (yo !== aperturaRef.current) return false;   // ya se pidió otra familia
       const mapa = new Map((an || []).map((a) => [a.id, a]));
       // El año actual se relee: el panel sigue montado aunque en Configuración se cambie de año.
       const actual = [...mapa.values()].find((a) => a.actual) || anio;
@@ -313,10 +318,12 @@ export default function CajaColegioPage() {
       setSel({}); setAnioCompleto({}); setTasa('');
       setFormas([{ ...FORMA_INICIAL }]);
       setBuscar(''); setResultados([]);
+      return true;
     } catch (e) {
-      error('No se pudo abrir la familia', e?.message);
+      if (yo === aperturaRef.current) error('No se pudo abrir la familia', e?.message);
+      return false;
     } finally {
-      setCargando(false);
+      if (yo === aperturaRef.current) setCargando(false);
     }
   }, [tenantId, anio, error]);
 
@@ -331,6 +338,13 @@ export default function CajaColegioPage() {
     const el = buscadorRef.current;
     if (el && !el.closest('.pointer-events-none') && document.visibilityState === 'visible') el.focus();
   }, 0);
+  // Ojito de Recibos de hoy: abre la familia sin buscarla. Si hay algo
+  // marcado para cobrar en la que está abierta, pregunta antes.
+  const verFamilia = async (id) => {
+    if (familia && familia.id !== id && Object.keys(sel).length
+      && !window.confirm(`Tienes cosas marcadas para cobrar a la familia ${familia.nombre}. ¿Dejarlas y abrir la otra?`)) return;
+    if (await abrirFamilia(id)) buscadorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
   const cerrarFamilia = () => {
     setFamilia(null); setEstudiantes([]); setCargos([]);
     setSel({}); setAnioCompleto({}); setTasa('');
@@ -715,7 +729,7 @@ export default function CajaColegioPage() {
                     <td>Familia {r.edu_familias?.nombre || ''}</td>
                     <td className="text-right font-mono">RD${n2(r.total)}</td>
                     <td className="text-right pr-3 whitespace-nowrap">
-                      <Button size="sm" variant="ghost" title="Ver la familia (sin buscarla)" disabled={!r.familia_id || cobrando} onClick={async () => { await abrirFamilia(r.familia_id); buscadorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}><Eye className="w-4 h-4" /></Button>
+                      <Button size="sm" variant="ghost" title="Ver la familia (sin buscarla)" disabled={!r.familia_id || cobrando || cargando} aria-label={`Ver la familia de ${numeroRecibo(r.numero)}`} onClick={() => verFamilia(r.familia_id)}><Eye className="w-4 h-4" /></Button>
                       <Button size="sm" variant="ghost" title="Ticket" onClick={() => imprimirReciboColegio(r.id, tenantId, 'ticket').catch((e) => error('No se pudo imprimir', e?.message))}><Printer className="w-4 h-4" /></Button>
                       <Button size="sm" variant="ghost" title="Hoja" onClick={() => imprimirReciboColegio(r.id, tenantId, 'hoja').catch((e) => error('No se pudo imprimir', e?.message))}>Hoja</Button>
                       {esDireccion && !r.anulado && <Button size="sm" variant="ghost" title="Anular" onClick={() => anular(r)}><Ban className="w-4 h-4 text-red-600" /></Button>}
