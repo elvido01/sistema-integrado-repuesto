@@ -67,7 +67,7 @@ export const COLUMNAS_PLANTILLA = [
   'Madre', 'Teléfono madre', 'Padre', 'Teléfono padre', 'Tutor', 'Teléfono tutor', 'Dirección', 'Sector', 'Notas',
 ];
 
-const quitarTildes = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+export const quitarTildes = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 const texto = (v) => { const s = String(v ?? '').trim(); return s || null; };
 
 /** Fecha de Excel (número de serie) o texto dd/mm/aaaa → 'YYYY-MM-DD'. */

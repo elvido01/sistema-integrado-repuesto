@@ -44,8 +44,12 @@ const toAscii = (s: string): string =>
 const CP437: Record<string, number> = {
     'ñ': 0xA4, 'Ñ': 0xA5, 'á': 0xA0, 'é': 0x82, 'í': 0xA1, 'ó': 0xA2, 'ú': 0xA3,
     'É': 0x90, 'ü': 0x81, 'Ü': 0x9A, '¿': 0xA8, '¡': 0xAD, 'ç': 0x87, 'Ç': 0x80,
+    'º': 0xA7, 'ª': 0xA6, '°': 0xF8,
 };
-export const ESC_TABLA_437 = '\x1Bt\x00';   // Epson y compatibles (la Star lo ignora sin imprimir nada)
+// ESC t 0 = tabla 437 (Epson y compatibles; la Star lo ignora sin imprimir nada).
+// FS . = apaga el modo chino de doble byte de las clónicas POS-80/XP-80 (si
+// no, la ñ se come la letra siguiente). En la Star lo quita ajustarParaImpresora.
+export const ESC_TABLA_437 = '\x1Bt\x00\x1C.';
 export const toCP437 = (s: string): string =>
     Array.from(s.normalize('NFC'), (ch) => {
         if (CP437[ch] != null) return String.fromCharCode(CP437[ch]);
@@ -753,8 +757,6 @@ export function buildCompraEscPos(
 // Otras impresoras (Epson y compatibles): GS v 0, que es el estándar.
 // Devuelve bytes crudos (no pasar por toAscii: la imagen usa bytes > 127).
 export const LOGO_PUNTOS = 240;           // 30 mm a 8 puntos/mm, en cualquier impresora
-export const LOGO_COLUMNAS_STAR = LOGO_PUNTOS;
-export const LOGO_PUNTOS_ESCPOS = LOGO_PUNTOS;
 const AVANCE_BANDA_STAR = 7;
 
 export interface LogoBits { w: number; h: number; negro: (x: number, y: number) => boolean }

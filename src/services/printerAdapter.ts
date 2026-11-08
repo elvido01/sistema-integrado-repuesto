@@ -233,9 +233,11 @@ export function ajustarParaImpresora(printerName: string, escpos: string): strin
     let s = escpos.replace(/\x1DV[\x00\x01\x30\x31]/g, '').replace(/\x1DV[\x41\x42][\s\S]/g, '');
     // (08/11/2026) Texto con ñ/tildes (tabla 437): la Star la escoge con
     // ESC GS t 1 (probado en papel); cada ESC @ la reinicia, se pone detrás.
-    // Solo si hay letras así: los tickets de solo ASCII quedan igual.
+    // Solo si hay bytes así (letras, o el largo de un QR): los tickets de solo
+    // ASCII quedan igual. Escoger la tabla no cambia el texto ASCII.
     if (/[\x80-\xFF]/.test(s)) s = s.replace(/\x1B@/g, '\x1B@\x1B\x1Dt\x01');
-    return s;
+    // FS . (modo chino de las clónicas) no está probado en la Star: fuera.
+    return s.replace(/\x1C\./g, '');
 }
 
 export async function printRawEscPos(printerName: string, escpos: string) {

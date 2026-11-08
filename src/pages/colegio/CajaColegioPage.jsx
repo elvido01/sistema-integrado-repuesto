@@ -24,7 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { printHtmlSmart, isSilentPrintEnabled } from '@/lib/printHtmlSmart';
 import { reciboColegioTicketHTML, reciboColegioHojaHTML, numeroRecibo } from '@/lib/printColegio';
-import { mesesDelAnio, MESES, hoyRD, pendienteDe, TANDAS_NOMBRE as TANDAS, ESTADO_ESTUDIANTE } from '@/lib/colegio';
+import { mesesDelAnio, MESES, hoyRD, pendienteDe, quitarTildes, TANDAS_NOMBRE as TANDAS, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 
 const n2 = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const campo = 'h-9 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
@@ -133,10 +133,15 @@ async function imprimirReciboNativo(d) {
   return true;
 }
 
+// Búsqueda: palabras sin puntuación (máx. 5) y su patrón sin tildes para la base.
+export const palabrasDeBusqueda = (q) => quitarTildes(q).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5);
+const CLASE = { a: '[aáà]', e: '[eéè]', i: '[iíì]', o: '[oóò]', u: '[uúüù]', n: '[nñ]' };
+export const patronSinTildes = (palabra) => Array.from(palabra, (c) => CLASE[c] || c).join('');
+
 // Logo → grises al ancho pedido (se guarda mientras la página esté abierta).
 // · Alto máximo 1.5 × ancho: un logo vertical no gasta medio rollo.
 // · Se achica por mitades (de un golpe se pierden las letras finas), pero el
-//   primer lienzo ya va a 4× el ancho final: una foto de 6000 px no traba la caja.
+//   primer lienzo va a 8× el ancho final (y de ahí por mitades): una foto de 6000 px no traba la caja.
 // · Transparente = blanco.
 const cacheLogo = new Map();
 function logoEnGrises(url, anchoMax) {
@@ -147,6 +152,7 @@ function logoEnGrises(url, anchoMax) {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         try {
+          if (!img.naturalWidth || !img.naturalHeight) throw new Error('El logo no tiene tamaño (¿SVG?)');
           const proporcion = img.naturalHeight / img.naturalWidth;
           const w = proporcion > 1.5 ? Math.max(1, Math.round(anchoMax * 1.5 / proporcion)) : anchoMax;
           const h = Math.max(1, Math.round(w * proporcion));
@@ -155,7 +161,7 @@ function logoEnGrises(url, anchoMax) {
             const x = c.getContext('2d'); x.imageSmoothingQuality = 'high';
             return [c, x];
           };
-          const w0 = Math.min(img.naturalWidth, w * 4); const h0 = Math.max(1, Math.round(w0 * proporcion));
+          const w0 = Math.min(img.naturalWidth, w * 8); const h0 = Math.max(1, Math.round(w0 * proporcion));
           let [src, sx] = lienzo(w0, h0);
           sx.fillStyle = '#fff'; sx.fillRect(0, 0, w0, h0); sx.drawImage(img, 0, 0, w0, h0);
           while (src.width / 2 >= w * 1.5) {
@@ -247,27 +253,22 @@ export default function CajaColegioPage() {
       const esNum = /^\d+$/.test(q);
       // (08/11/2026) Cada palabra por separado, en cualquier campo: "ANA BATIS"
       // no encontraba a ANA (nombre) BATISTA (apellido) porque se buscaba la
-      // frase entera. Las vocales valen con o sin tilde (PEREZ = PÉREZ).
-      const palabras = q.replace(/[%,()_*\\.:"']/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5)
-        .map((w) => w.replace(/[aeiouáéíóúü]/gi, '_'));
+      // frase entera. Vocales y ñ valen con o sin tilde (PEREZ = PÉREZ,
+      // PENA = PEÑA): en la base con una expresión [eé], [nñ]… exacta, así no
+      // trae de más; una coma o un punto no cuentan.
+      const palabras = palabrasDeBusqueda(q);
+      if (!esNum && !palabras.length) { if (yo === busquedaRef.current) setResultados([]); return; }
       let qe = supabase.from('edu_estudiantes').select('id, nombres, apellidos, matricula, familia_id, curso_id, estado').eq('tenant_id', tenantId);
       let qf = supabase.from('edu_familias').select('id, nombre, madre_nombre, padre_nombre, tutor_nombre').eq('tenant_id', tenantId);
       if (esNum) qe = qe.eq('matricula', Number(q));
-      else for (const w of palabras) {
-        qe = qe.or(`nombres.ilike.%${w}%,apellidos.ilike.%${w}%`);
-        qf = qf.or(`nombre.ilike.%${w}%,madre_nombre.ilike.%${w}%,padre_nombre.ilike.%${w}%,tutor_nombre.ilike.%${w}%`);
+      else for (const w of palabras.map(patronSinTildes)) {
+        qe = qe.or(`nombres.imatch.${w},apellidos.imatch.${w}`);
+        qf = qf.or(`nombre.imatch.${w},madre_nombre.imatch.${w},padre_nombre.imatch.${w},tutor_nombre.imatch.${w}`);
       }
-      const [es0, fa0] = await Promise.all([
-        qe.order('apellidos').order('nombres').limit(esNum ? 12 : 400),
-        esNum ? Promise.resolve({ data: [] }) : qf.order('nombre').limit(300),
+      const [es, fa] = await Promise.all([
+        qe.order('apellidos').order('nombres').limit(12),
+        esNum || !palabras.length ? Promise.resolve({ data: [] }) : qf.order('nombre').limit(8),
       ]);
-      // La base trae de más (la vocal comodín); aquí se deja solo lo que tiene
-      // TODAS las palabras, comparando sin tildes.
-      const sinTilde = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-      const buscadas = q.split(/\s+/).filter(Boolean).map(sinTilde);
-      const tieneTodas = (...campos) => { const t = sinTilde(campos.join(' ')); return buscadas.every((w) => t.includes(w)); };
-      const es = { data: esNum ? es0.data : (es0.data || []).filter((e) => tieneTodas(e.nombres, e.apellidos)).slice(0, 12) };
-      const fa = { data: (fa0.data || []).filter((f) => tieneTodas(f.nombre, f.madre_nombre, f.padre_nombre, f.tutor_nombre)).slice(0, 8) };
       const r = [
         ...(es.data || []).map((e) => ({ tipo: 'est', id: e.id, familia_id: e.familia_id, titulo: `${e.nombres} ${e.apellidos}`, sub: `Mat. ${e.matricula} · ${cursos.get(e.curso_id) || ''}${e.estado !== 'activo' ? ` · ${ESTADO_ESTUDIANTE[e.estado] || e.estado}` : ''}` })),
         ...(fa.data || []).map((f) => ({ tipo: 'fam', id: f.id, familia_id: f.id, titulo: `Familia ${f.nombre}`, sub: [f.madre_nombre, f.padre_nombre, f.tutor_nombre].filter(Boolean).join(' / ') })),

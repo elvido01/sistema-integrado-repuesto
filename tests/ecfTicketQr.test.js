@@ -49,7 +49,7 @@ describe('ticket de e-CF por el agente (fuentes nativas)', () => {
     expect(escpos).not.toContain(GS + 'v0');               // no la imagen que salía basura
     expect(escpos).toContain('E320000000054');
     expect(escpos).toContain('jSux58');
-  });
+  }, 30000);   // printPOS es grande: con todas las pruebas a la vez tardaba más de 5 s en cargar
 
   it('otra marca (Epson): QR ESC/POS estándar', async () => {
     impresora = 'EPSON TM-T20';
@@ -57,16 +57,16 @@ describe('ticket de e-CF por el agente (fuentes nativas)', () => {
     await imprimirFactura({ ...venta }, { printFormat: 'pos_4inch', printMethod: 'agent' });
     expect(crudos[0].escpos).toContain(GS + '(k');
     expect(crudos[0].escpos).not.toContain(ESC + GS + 'yS0');
-  });
+  }, 30000);
 
   it('si el agente falla, sale el ticket como imagen (con su QR)', async () => {
     agenteFalla = true;
     const { imprimirFactura } = await import('../src/lib/printPOS.js');
     await imprimirFactura({ ...venta }, { printFormat: 'pos_4inch', printMethod: 'agent', onError: () => {} });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(imagenes).toHaveLength(1);
+    // la imagen sale después (asíncrona): se espera a que llegue, no 50 ms fijos
+    await vi.waitFor(() => expect(imagenes).toHaveLength(1), { timeout: 10000 });
     expect(imagenes[0]).toContain('data:image/png;base64');
-  });
+  }, 30000);
 });
 
 describe('ticket nativo: hora, cliente genérico y monto', () => {
