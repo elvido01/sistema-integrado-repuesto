@@ -7,7 +7,8 @@ export const numeroRecibo = (n) => `RC-${String(n).padStart(6, '0')}`;
 const fechaDO = (f) => (f ? new Date(`${String(f).slice(0, 10)}T12:00:00`).toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
 const horaDO = (t) => (t ? new Date(t).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Santo_Domingo' }) : '');
 
-const NOTA_FISCAL = 'Este recibo no es comprobante fiscal. Si necesita factura con crédito fiscal para su declaración de gastos educativos, solicítela en caja.';
+export const NOTA_FISCAL_COLEGIO = 'Este recibo no es comprobante fiscal. Si necesita factura con crédito fiscal para su declaración de gastos educativos, solicítela en caja.';
+const NOTA_FISCAL = NOTA_FISCAL_COLEGIO;
 
 /**
  * datos = {

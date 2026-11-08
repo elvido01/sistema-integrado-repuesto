@@ -38,6 +38,20 @@ describe('recibo del colegio con letras de la impresora', () => {
     expect(s.endsWith('\x1dV\x00')).toBe(true);
   });
 
+  it('textos largos pasan a la línea siguiente y nada se pierde', () => {
+    const largo = buildReciboColegioEscPos({
+      ...datos,
+      colegio: { ...datos.colegio, direccion: 'Calle Duarte #45, Sector Los Jardines del Norte, Santiago de los Caballeros' },
+      pago: { ...datos.pago, formas_pago: [{ forma: 'Transferencia Banco Popular', referencia: 'TRX-2026110812345678', monto: 7000 }] },
+      estudiantes: [{ nombre: 'JUAN', curso: 'x', pendiente: 0, lineas: [{ descripcion: '   ', monto: 7000 }] }],
+    });
+    const vis = largo.split('\n').map((l) => l.replace(/\x1b[@E][\x00\x01]?|\x1ba[\x00-\x02]|\x1bd.|\x1dV./g, ''));
+    for (const l of vis) expect(l.length).toBeLessThanOrEqual(42);
+    expect(largo).toContain('Caballeros');           // la dirección no se corta
+    expect(largo).toContain('TRX-2026110812345678');
+    expect(largo).toContain('(sin descripcion)');    // la línea sin descripción sí sale con su monto
+  });
+
   it('anulado se marca', () => {
     expect(buildReciboColegioEscPos({ ...datos, pago: { ...datos.pago, anulado: true } })).toContain('ANULADO');
   });

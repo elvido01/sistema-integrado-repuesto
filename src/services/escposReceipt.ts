@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import { importeLineaCompra } from '@/lib/compraLinea';
+import { numeroRecibo, NOTA_FISCAL_COLEGIO } from '@/lib/printColegio';
 /**
  * ESC/POS command builder for Star TSP143 receipt printer.
  * Generates raw text commands for native printer font output via QZ Tray.
@@ -745,7 +746,12 @@ export interface ReciboColegioData {
 
 export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     const p = d.pago;
-    const n2 = (v: unknown) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const n2 = (v: unknown) => fmt(Number(v || 0));
+    // Fila "texto ....... monto": si no cabe, el texto va arriba y el monto solo.
+    const fila = (texto: string, monto: string): string[] => {
+        const partes = wrapLines(texto.trim() || '(sin descripcion)', W - monto.length - 1);
+        return partes.map((t, i) => (i === partes.length - 1 ? leftRight(t, monto) : t));
+    };
     const f = String(p.fecha || '');
     const fecha = /^\d{4}-\d{2}-\d{2}/.test(f) ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : '';
     const hora = p.created_at
@@ -757,13 +763,19 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
 
     const lines: string[] = [];
     lines.push(CMD.INIT);
-    lines.push(buildHeader(d.colegio));
+    // Cabecera propia: buildHeader corta en 42 y la dirección del colegio es larga.
+    const c = d.colegio || {};
+    for (const l of wrapLines(String(c.nombre || '').toUpperCase())) lines.push(CMD.BOLD_ON + centerLine(l) + CMD.BOLD_OFF);
+    if (c.rnc) lines.push(centerLine(`RNC ${c.rnc}`));
+    for (const l of wrapLines(String(c.direccion || ''))) lines.push(centerLine(l));
+    if (c.telefono) lines.push(centerLine(`Tel. ${c.telefono}`));
+    lines.push(dashLine());
     lines.push(CMD.BOLD_ON + centerLine('RECIBO DE INGRESO') + CMD.BOLD_OFF);
     if (p.anulado) lines.push(CMD.BOLD_ON + centerLine('*** ANULADO ***') + CMD.BOLD_OFF);
     lines.push('');
-    lines.push(leftRight('No.', `RC-${String(p.numero).padStart(6, '0')}`));
+    lines.push(leftRight('No.', numeroRecibo(p.numero)));
     lines.push(leftRight('Fecha', `${fecha} ${hora}`.trim()));
-    if (p.recibo_ingreso) lines.push(leftRight('Ref. caja', String(p.recibo_ingreso)));
+    if (p.recibo_ingreso) lines.push(...fila('Ref. caja', String(p.recibo_ingreso)));
     lines.push(dashLine());
     for (const e of d.estudiantes) {
         for (const l of wrapLines(`Estudiante: ${e.nombre}`.toUpperCase())) lines.push(CMD.BOLD_ON + l + CMD.BOLD_OFF);
@@ -771,31 +783,29 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     }
     const quien = fam.tutor_nombre || fam.madre_nombre || fam.padre_nombre || fam.nombre || '';
     for (const l of wrapLines(`${fam.tutor_nombre ? 'Tutor' : 'Familia'}: ${quien}`)) lines.push(l);
-    if (d.anio?.nombre) lines.push(`Ano escolar: ${d.anio.nombre}`);
+    lines.push(`Año escolar: ${d.anio?.nombre || ''}`);
     lines.push(dashLine());
     for (const e of d.estudiantes) {
         for (const l of e.lineas) {
-            const desc = `${l.descripcion}${varios ? ` (${e.nombre.split(' ')[0]})` : ''}`;
-            const monto = l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(l.monto);
-            const partes = wrapLines(desc, W - monto.length - 1);
-            partes.forEach((t, i) => lines.push(i === partes.length - 1 ? leftRight(t, monto) : t));
+            const desc = `${String(l.descripcion || '').trim() || '(sin descripcion)'}${varios ? ` (${e.nombre.split(' ')[0]})` : ''}`;
+            lines.push(...fila(desc, l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(l.monto)));
         }
     }
-    if (p.anio_completo) lines.push('Ano completo con descuento');
+    if (p.anio_completo) for (const l of wrapLines('Año completo con descuento en las mensualidades')) lines.push(l);
     lines.push(dashLine());
     lines.push(CMD.BOLD_ON + leftRight('TOTAL RD$', n2(p.total)) + CMD.BOLD_OFF);
     if (p.tasa_usd && d.estudiantes.some((e) => e.lineas.some((l) => l.moneda === 'USD'))) lines.push(`Tasa US$: ${n2(p.tasa_usd)}`);
     for (const fp of (p.formas_pago || []).filter((x) => Number(x.monto) > 0)) {
-        lines.push(leftRight(`${fp.forma}${fp.referencia ? ` #${fp.referencia}` : ''}`, n2(fp.monto)));
+        lines.push(...fila(`${fp.forma}${fp.referencia ? ` #${fp.referencia}` : ''}`, n2(fp.monto)));
     }
     lines.push(dashLine());
-    lines.push(leftRight('Pendiente del ano', n2(pendiente)));
-    if (d.proximoPago) for (const l of wrapLines(`Proximo pago: ${d.proximoPago}`)) lines.push(l);
+    lines.push(leftRight('Pendiente del año', n2(pendiente)));
+    if (d.proximoPago) for (const l of wrapLines(`Próximo pago: ${d.proximoPago}`)) lines.push(l);
     lines.push(dashLine());
     if (p.usuario) for (const l of wrapLines(`Atendido por: ${p.usuario}`)) lines.push(l);
-    for (const l of wrapLines('Este recibo no es comprobante fiscal. Si necesita factura con credito fiscal para su declaracion de gastos educativos, solicitela en caja.')) lines.push(l);
+    for (const l of wrapLines(NOTA_FISCAL_COLEGIO)) lines.push(l);
     lines.push('');
-    lines.push(centerLine('Gracias!'));
+    lines.push(centerLine('¡Gracias!'));
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
     return toAscii(lines.join(CMD.LF));

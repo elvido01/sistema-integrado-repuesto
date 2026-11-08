@@ -94,26 +94,27 @@ export async function imprimirReciboColegio(pagoId, tenantId, formato) {
 }
 
 // Con el agente de impresión: letras de la impresora (mismo tamaño que la
-// factura de Repuestos Morla). Si no hay agente o falla, sale como imagen.
+// factura de Repuestos Morla). Sin agente o sin impresora térmica → imagen.
+// Si el envío al agente falla NO se repite como imagen: el ticket pudo haber
+// salido (agente lento) y serían dos recibos; el error se ve y se reimprime.
+const TERMICAS = ['Star TSP143', 'TSP143', 'TSP100', 'POS-80', 'POS80', 'XP-80', 'EPSON TM', 'Thermal', 'Receipt'];
 async function imprimirReciboNativo(d) {
+  if (!isSilentPrintEnabled()) return false;
+  let impresora; let escpos; let enviar;
   try {
-    if (!isSilentPrintEnabled()) return false;
-    const { agentIsAvailable } = await import('@/services/motoflowPrintAgent');
-    if (!(await agentIsAvailable())) return false;
-    const { buildReciboColegioEscPos } = await import('@/services/escposReceipt');
-    const { findReceiptPrinter, printRawEscPos, setPreferredBackend, getPreferredBackend } = await import('@/services/printerAdapter');
-    const previo = getPreferredBackend();
-    setPreferredBackend('agent');
-    try {
-      await printRawEscPos(await findReceiptPrinter([]), buildReciboColegioEscPos(d));
-    } finally {
-      setPreferredBackend(previo);
-    }
-    return true;
+    const [agente, recibo, adaptador] = await Promise.all([
+      import('@/services/motoflowPrintAgent'), import('@/services/escposReceipt'), import('@/services/printerAdapter'),
+    ]);
+    if (!(await agente.agentIsAvailable())) return false;
+    impresora = await adaptador.findReceiptPrinter(TERMICAS);
+    escpos = recibo.buildReciboColegioEscPos(d);
+    enviar = adaptador.printEscPosPorAgente;
   } catch (e) {
-    console.warn('[colegio] recibo nativo falló, uso imagen:', e?.message || e);
+    console.warn('[colegio] sin impresora para el recibo nativo, uso imagen:', e?.message || e);
     return false;
   }
+  await enviar(impresora, escpos);
+  return true;
 }
 
 export default function CajaColegioPage() {

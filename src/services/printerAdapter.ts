@@ -234,6 +234,15 @@ export async function printRawEscPos(printerName: string, escpos: string) {
     return printRaw(printerName, ajustarParaImpresora(printerName, escpos), { format: 'escpos' });
 }
 
+/**
+ * (08/11/2026) ESC/POS directo al agente, SIN tocar la preferencia guardada
+ * (setPreferredBackend('agent') + restaurar dejaba la preferencia cambiada si
+ * se imprimían dos cosas a la vez o se cerraba la pestaña a mitad).
+ */
+export async function printEscPosPorAgente(printerName: string, escpos: string) {
+    await agentPrintRaw(printerName, ajustarParaImpresora(printerName, escpos), { format: 'escpos' });
+}
+
 export async function printRawEpl(printerName: string, epl: string) {
     return printRaw(printerName, epl, { format: 'epl' });
 }
