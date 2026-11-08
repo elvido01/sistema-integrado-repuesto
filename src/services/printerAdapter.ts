@@ -239,8 +239,10 @@ export async function printRawEscPos(printerName: string, escpos: string) {
  * (setPreferredBackend('agent') + restaurar dejaba la preferencia cambiada si
  * se imprimían dos cosas a la vez o se cerraba la pestaña a mitad).
  */
-export async function printEscPosPorAgente(printerName: string, escpos: string) {
-    await agentPrintRaw(printerName, ajustarParaImpresora(printerName, escpos), { format: 'escpos' });
+export async function printEscPosPorAgente(printerName: string, escpos: string, imagenAntes = '') {
+    // imagenAntes (logo en bytes crudos) va tal cual: el ajuste de la Star
+    // busca bytes de corte y podría tocar los datos de la imagen.
+    await agentPrintRaw(printerName, imagenAntes + ajustarParaImpresora(printerName, escpos), { format: 'escpos' });
 }
 
 export async function printRawEpl(printerName: string, epl: string) {

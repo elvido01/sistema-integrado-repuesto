@@ -113,8 +113,44 @@ async function imprimirReciboNativo(d) {
     console.warn('[colegio] sin impresora para el recibo nativo, uso imagen:', e?.message || e);
     return false;
   }
-  await enviar(impresora, escpos);
+  // Logo arriba (si no se puede cargar, el recibo sale sin él).
+  let logo = '';
+  try {
+    const { logoEscPos, LOGO_COLUMNAS_STAR, LOGO_PUNTOS_ESCPOS } = await import('@/services/escposReceipt');
+    const modo = /star|tsp/i.test(impresora) ? 'star' : 'escpos';
+    const bits = d.colegio?.logo_url ? await logoEnBits(d.colegio.logo_url, modo === 'star' ? LOGO_COLUMNAS_STAR : LOGO_PUNTOS_ESCPOS) : null;
+    if (bits) logo = logoEscPos(bits, modo);
+  } catch (e) {
+    console.warn('[colegio] recibo sin logo:', e?.message || e);
+  }
+  await enviar(impresora, escpos, logo);
   return true;
+}
+
+// Logo → blanco y negro al ancho pedido (se guarda mientras la página esté abierta).
+const cacheLogo = new Map();
+function logoEnBits(url, ancho) {
+  const clave = `${url}|${ancho}`;
+  if (!cacheLogo.has(clave)) {
+    cacheLogo.set(clave, new Promise((ok, mal) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const w = ancho; const h = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * ancho));
+          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          const cx = cv.getContext('2d');
+          cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);   // fondo transparente = blanco
+          cx.drawImage(img, 0, 0, w, h);
+          const px = cx.getImageData(0, 0, w, h).data;
+          ok({ w, h, negro: (x, y) => { const i = (y * w + x) * 4; return (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) < 140; } });
+        } catch (e) { mal(e); }
+      };
+      img.onerror = () => mal(new Error('No se pudo cargar el logo'));
+      img.src = url;
+    }).catch((e) => { cacheLogo.delete(clave); throw e; }));
+  }
+  return cacheLogo.get(clave);
 }
 
 export default function CajaColegioPage() {

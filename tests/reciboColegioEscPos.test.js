@@ -56,3 +56,28 @@ describe('recibo del colegio con letras de la impresora', () => {
     expect(buildReciboColegioEscPos({ ...datos, pago: { ...datos.pago, anulado: true } })).toContain('ANULADO');
   });
 });
+
+import { logoEscPos } from '@/services/escposReceipt';
+
+describe('logo en el ticket', () => {
+  // cuadro negro de 16x10
+  const logo = { w: 16, h: 10, negro: () => true };
+
+  it('Star: bandas ESC K centradas y deja la impresora como estaba', () => {
+    const s = logoEscPos(logo, 'star');
+    const b = Array.from(s, (c) => c.charCodeAt(0));
+    expect(b.slice(0, 5)).toEqual([0x1b, 0x40, 0x1b, 0x33, 4]);
+    const bandas = s.split('\x1bK').length - 1;
+    expect(bandas).toBe(2);                         // 10 filas = 2 bandas de 8
+    const n = (192 - 16) / 2 + 16;                  // relleno para centrar + ancho
+    expect(b[6]).toBe(0x4b); expect(b[7] + b[8] * 256).toBe(n);
+    expect(s.endsWith('\x1b@')).toBe(true);
+  });
+
+  it('otras impresoras: GS v 0 con el tamaño correcto', () => {
+    const s = logoEscPos(logo, 'escpos');
+    const b = Array.from(s, (c) => c.charCodeAt(0));
+    const i = b.indexOf(0x76);
+    expect(b.slice(i - 1, i + 7)).toEqual([0x1d, 0x76, 0x30, 0, 2, 0, 10, 0]);   // 2 bytes de ancho, 10 de alto
+  });
+});
