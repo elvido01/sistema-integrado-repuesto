@@ -258,13 +258,13 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
               </div>
               {['madre', 'padre'].map((k) => (
                 <div key={k} className="grid grid-cols-1 md:grid-cols-6 gap-3 mt-3">
-                  <Campo label={k === 'madre' ? 'Nombre de la madre' : 'Nombre del padre'} className="md:col-span-2">
+                  <Campo label={k === 'madre' ? 'Nombre de la madre' : 'Nombre del padre'} className="md:col-span-3">
                     <input className={campo} value={fam[`${k}_nombre`]} onChange={(e) => f(`${k}_nombre`, e.target.value)} />
                   </Campo>
-                  <Campo label="Ocupación"><input className={campo} value={fam[`${k}_profesion`]} onChange={(e) => f(`${k}_profesion`, e.target.value)} /></Campo>
-                  <Campo label="Lugar de trabajo"><input className={campo} value={fam[`${k}_trabajo`]} onChange={(e) => f(`${k}_trabajo`, e.target.value)} /></Campo>
-                  <Campo label="Celular"><input className={campo} value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, e.target.value)} /></Campo>
-                  <Campo label="Teléfono"><input className={campo} value={fam[`${k}_telefono`]} onChange={(e) => f(`${k}_telefono`, e.target.value)} /></Campo>
+                  <Campo label="Ocupación" className="md:col-span-1"><input className={campo} value={fam[`${k}_profesion`]} onChange={(e) => f(`${k}_profesion`, e.target.value)} /></Campo>
+                  <Campo label="Lugar de trabajo" className="md:col-span-2"><input className={campo} value={fam[`${k}_trabajo`]} onChange={(e) => f(`${k}_trabajo`, e.target.value)} /></Campo>
+                  <Campo label="Celular" className="md:col-span-2"><input className={campo} value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, e.target.value)} /></Campo>
+                  <Campo label="Teléfono" className="md:col-span-2"><input className={campo} value={fam[`${k}_telefono`]} onChange={(e) => f(`${k}_telefono`, e.target.value)} /></Campo>
                   <Campo label="Correo" className="md:col-span-2"><input type="email" className={campo} value={fam[`${k}_correo`]} onChange={(e) => f(`${k}_correo`, e.target.value)} /></Campo>
                 </div>
               ))}
