@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "30ae68266f98bf00",
+    "src/pages/colegio/CajaColegioPage.jsx": "f8e443f000bd9554",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -604,6 +604,13 @@
         "sql/compras_itbis_incluido_importe.sql",
         "src/lib/compraLinea.js",
         "src/pages/ComprasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-08",
+      "nota": "code-review high CajaColegioPage (montos con comas): 8 hallazgos; arreglados coma decimal de teclado espanol (100x), cursor que saltaba, backspace sobre coma, pegado europeo, monto del concepto sin redondear, componente comun MontoInput; quedan: 17+ digitos pierde precision (no aplica a montos reales)",
+      "archivos": [
+        "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }
   ]
