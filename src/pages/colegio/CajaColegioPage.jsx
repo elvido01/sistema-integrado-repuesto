@@ -318,6 +318,15 @@ export default function CajaColegioPage() {
     }
   }, [tenantId, anio, error]);
 
+  const buscadorRef = React.useRef(null);
+  const cerrarFamilia = () => {
+    setFamilia(null); setEstudiantes([]); setCargos([]);
+    setSel({}); setAnioCompleto({}); setTasa('');
+    setFormas([{ forma: 'Efectivo', monto: '', referencia: '', cuenta_id: null, banco: '', alias: '' }]);
+    setBuscar(''); setResultados([]);
+    setTimeout(() => buscadorRef.current?.focus(), 0);
+  };
+
   // ── Lo que se va a cobrar ──
   const lineas = useMemo(() => {
     const pct = Number(cfg?.descuento_anual_pct || 0);
@@ -369,12 +378,15 @@ export default function CajaColegioPage() {
         p_anio_completo: Object.entries(anioCompleto).filter(([, on]) => on).map(([id]) => id),
       });
       if (e) throw e;
+      // (08/11/2026) Cobrado: la familia se cierra en seguida (antes de
+      // imprimir) para que no se le cobre dos veces; el buscador queda listo
+      // para la siguiente. El recibo sale en "Recibos de hoy".
+      cerrarFamilia();
       toast({ title: `Cobrado ${numeroRecibo(data.numero)}`, description: `RD$${n2(data.total)} · Recibo de ingreso ${data.recibo_ingreso}` });
+      cargarRecibosHoy();
       if (formato !== 'ninguno') {
         try { await imprimirReciboColegio(data.pago_id, tenantId, formato); } catch (pe) { error('Se cobró, pero no se pudo imprimir', pe?.message); }
       }
-      await abrirFamilia(familia.id);
-      cargarRecibosHoy();
     } catch (e) {
       error('No se pudo cobrar', e?.message);
     } finally {
@@ -443,7 +455,7 @@ export default function CajaColegioPage() {
 
         <div className="relative bg-white border border-gray-200 rounded-lg p-3">
           <Search className="w-4 h-4 text-gray-400 absolute left-5 top-5.5" style={{ top: 22 }} />
-          <input autoFocus className={`${campo} w-full pl-8`} disabled={!anio}
+          <input ref={buscadorRef} autoFocus className={`${campo} w-full pl-8`} disabled={!anio}
             placeholder={anio ? 'Buscar estudiante, matrícula, familia, madre o padre…' : 'Cargando el año escolar…'}
             value={buscar} onChange={(e) => setBuscar(e.target.value)} />
           {resultados.length > 0 && (
