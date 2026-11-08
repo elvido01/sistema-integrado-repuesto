@@ -244,16 +244,30 @@ export default function CajaColegioPage() {
     const yo = ++busquedaRef.current;
     if (q.length < 2) { setResultados([]); return undefined; }
     const t = setTimeout(async () => {
-      const limpio = q.replace(/[%,()]/g, ' ');
       const esNum = /^\d+$/.test(q);
-      const [es, fa] = await Promise.all([
-        supabase.from('edu_estudiantes').select('id, nombres, apellidos, matricula, familia_id, curso_id, estado')
-          .eq('tenant_id', tenantId)
-          .or(esNum ? `matricula.eq.${q}` : `nombres.ilike.%${limpio}%,apellidos.ilike.%${limpio}%`).order('apellidos').limit(12),
-        esNum ? Promise.resolve({ data: [] }) : supabase.from('edu_familias').select('id, nombre, madre_nombre, padre_nombre, tutor_nombre')
-          .eq('tenant_id', tenantId)
-          .or(`nombre.ilike.%${limpio}%,madre_nombre.ilike.%${limpio}%,padre_nombre.ilike.%${limpio}%,tutor_nombre.ilike.%${limpio}%`).order('nombre').limit(8),
+      // (08/11/2026) Cada palabra por separado, en cualquier campo: "ANA BATIS"
+      // no encontraba a ANA (nombre) BATISTA (apellido) porque se buscaba la
+      // frase entera. Las vocales valen con o sin tilde (PEREZ = PÉREZ).
+      const palabras = q.replace(/[%,()_*\\.:"']/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5)
+        .map((w) => w.replace(/[aeiouáéíóúü]/gi, '_'));
+      let qe = supabase.from('edu_estudiantes').select('id, nombres, apellidos, matricula, familia_id, curso_id, estado').eq('tenant_id', tenantId);
+      let qf = supabase.from('edu_familias').select('id, nombre, madre_nombre, padre_nombre, tutor_nombre').eq('tenant_id', tenantId);
+      if (esNum) qe = qe.eq('matricula', Number(q));
+      else for (const w of palabras) {
+        qe = qe.or(`nombres.ilike.%${w}%,apellidos.ilike.%${w}%`);
+        qf = qf.or(`nombre.ilike.%${w}%,madre_nombre.ilike.%${w}%,padre_nombre.ilike.%${w}%,tutor_nombre.ilike.%${w}%`);
+      }
+      const [es0, fa0] = await Promise.all([
+        qe.order('apellidos').order('nombres').limit(esNum ? 12 : 400),
+        esNum ? Promise.resolve({ data: [] }) : qf.order('nombre').limit(300),
       ]);
+      // La base trae de más (la vocal comodín); aquí se deja solo lo que tiene
+      // TODAS las palabras, comparando sin tildes.
+      const sinTilde = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      const buscadas = q.split(/\s+/).filter(Boolean).map(sinTilde);
+      const tieneTodas = (...campos) => { const t = sinTilde(campos.join(' ')); return buscadas.every((w) => t.includes(w)); };
+      const es = { data: esNum ? es0.data : (es0.data || []).filter((e) => tieneTodas(e.nombres, e.apellidos)).slice(0, 12) };
+      const fa = { data: (fa0.data || []).filter((f) => tieneTodas(f.nombre, f.madre_nombre, f.padre_nombre, f.tutor_nombre)).slice(0, 8) };
       const r = [
         ...(es.data || []).map((e) => ({ tipo: 'est', id: e.id, familia_id: e.familia_id, titulo: `${e.nombres} ${e.apellidos}`, sub: `Mat. ${e.matricula} · ${cursos.get(e.curso_id) || ''}${e.estado !== 'activo' ? ` · ${ESTADO_ESTUDIANTE[e.estado] || e.estado}` : ''}` })),
         ...(fa.data || []).map((f) => ({ tipo: 'fam', id: f.id, familia_id: f.id, titulo: `Familia ${f.nombre}`, sub: [f.madre_nombre, f.padre_nombre, f.tutor_nombre].filter(Boolean).join(' / ') })),
