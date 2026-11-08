@@ -63,15 +63,17 @@ describe('logo en el ticket', () => {
   // cuadro negro de 16x10
   const logo = { w: 16, h: 10, negro: () => true };
 
-  it('Star: bandas ESC K centradas y deja la impresora como estaba', () => {
+  it('Star: bandas de 24 puntos (ESC X) centradas y deja la impresora como estaba', () => {
     const s = logoEscPos(logo, 'star');
     const b = Array.from(s, (c) => c.charCodeAt(0));
-    expect(b.slice(0, 5)).toEqual([0x1b, 0x40, 0x1b, 0x33, 4]);
-    const bandas = s.split('\x1bK').length - 1;
-    expect(bandas).toBe(2);                         // 10 filas = 2 bandas de 8
-    const n = (192 - 16) / 2 + 16;                  // relleno para centrar + ancho
-    expect(b[6]).toBe(0x4b); expect(b[7] + b[8] * 256).toBe(n);
-    expect(s.endsWith('\x1b@')).toBe(true);
+    expect(b.slice(0, 5)).toEqual([0x1b, 0x40, 0x1b, 0x33, 12]);
+    expect(s.split('X').length - 1).toBe(1);   // 10 filas = 1 banda de 24
+    const n = (576 - 16) / 2 + 16;                  // relleno para centrar + ancho
+    expect(b[6]).toBe(0x58); expect(b[7] + b[8] * 256).toBe(n);
+    expect(b.length).toBe(5 + 4 + n * 3 + 1 + 2);   // 3 bytes por columna
+    expect(b.filter((x, i) => x === 0x1b && b[i + 1] === 0x58).length).toBe(1);
+    expect(b.slice(-2)).toEqual([0x1b, 0x40]);
+    expect(s.endsWith('@')).toBe(true);
   });
 
   it('otras impresoras: GS v 0 con el tamaño correcto', () => {

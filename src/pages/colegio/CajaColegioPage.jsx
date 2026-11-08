@@ -141,12 +141,24 @@ function logoEnBits(url, ancho) {
       img.onload = () => {
         try {
           const w = ancho; const h = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * ancho));
+          // Se achica a la mitad varias veces (de un solo golpe se pierden las
+          // letras finas del logo), sobre fondo blanco (transparente = blanco).
+          let src = document.createElement('canvas');
+          src.width = img.naturalWidth; src.height = img.naturalHeight;
+          let sx = src.getContext('2d');
+          sx.fillStyle = '#fff'; sx.fillRect(0, 0, src.width, src.height); sx.drawImage(img, 0, 0);
+          while (src.width / 2 >= w * 1.5) {
+            const half = document.createElement('canvas');
+            half.width = Math.round(src.width / 2); half.height = Math.round(src.height / 2);
+            const hx = half.getContext('2d'); hx.imageSmoothingQuality = 'high';
+            hx.drawImage(src, 0, 0, half.width, half.height);
+            src = half; sx = hx;
+          }
           const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-          const cx = cv.getContext('2d');
-          cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);   // fondo transparente = blanco
-          cx.drawImage(img, 0, 0, w, h);
+          const cx = cv.getContext('2d'); cx.imageSmoothingQuality = 'high';
+          cx.drawImage(src, 0, 0, w, h);
           const px = cx.getImageData(0, 0, w, h).data;
-          ok({ w, h, negro: (x, y) => { const i = (y * w + x) * 4; return (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) < 140; } });
+          ok({ w, h, negro: (x, y) => { const i = (y * w + x) * 4; return (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) < 160; } });
         } catch (e) { mal(e); }
       };
       img.onerror = () => mal(new Error('No se pudo cargar el logo'));

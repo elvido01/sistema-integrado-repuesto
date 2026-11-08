@@ -726,13 +726,13 @@ export function buildCompraEscPos(
 }
 
 // ── Logo en el ticket (08/11/2026) ─────────────────────────────────────────
-// Probado en la Star TSP143 de Morla (modo Star): de 3 formas solo salió la
-// imagen por bandas "ESC K" (la A); el raster Star "ESC * r" botó papel con
-// basura y GS v 0 ya imprimía basura antes. En esa Star cada columna de ESC K
-// sale ~3 puntos de ancho: 192 columnas ≈ todo el ancho del papel.
+// Probado en la Star TSP143 de Morla (modo Star): el raster Star "ESC * r"
+// botó papel con basura y GS v 0 ya imprimía basura antes. ESC K (8 puntos)
+// salía pero con puntos gruesos y las letras del logo no se leían; ESC X
+// (24 puntos, resolución completa) se lee bien.
 // Otras impresoras (Epson y compatibles): GS v 0, que es el estándar.
 // Devuelve bytes crudos (no pasar por toAscii: la imagen usa bytes > 127).
-export const LOGO_COLUMNAS_STAR = 80;     // ≈ 30 mm en la Star
+export const LOGO_COLUMNAS_STAR = 240;    // 30 mm en la Star (ESC X, 8 puntos/mm)
 export const LOGO_PUNTOS_ESCPOS = 200;    // ≈ 25 mm a 203 ppp
 
 export interface LogoBits { w: number; h: number; negro: (x: number, y: number) => boolean }
@@ -741,16 +741,21 @@ export function logoEscPos(logo: LogoBits, modo: 'star' | 'escpos'): string {
     const { w, h, negro } = logo;
     const out: number[] = [];
     if (modo === 'star') {
-        const pad = Math.max(0, Math.floor((192 - w) / 2));      // centrado
-        out.push(0x1b, 0x40, 0x1b, 0x33, 4);                      // init + avance 1 mm por banda
-        for (let y0 = 0; y0 < h; y0 += 8) {
+        // ESC X: bandas de 24 puntos a resolución completa (8 puntos/mm). Con
+        // ESC K (8 puntos, cada punto ~3 veces más grueso) las letras del
+        // logo no se leían.
+        const pad = Math.max(0, Math.floor((576 - w) / 2));      // centrado en 72 mm
+        out.push(0x1b, 0x40, 0x1b, 0x33, 12);                     // init + avance 3 mm (24 puntos) por banda
+        for (let y0 = 0; y0 < h; y0 += 24) {
             const n = pad + w;
-            out.push(0x1b, 0x4b, n & 0xff, n >> 8);
-            for (let i = 0; i < pad; i++) out.push(0);
+            out.push(0x1b, 0x58, n & 0xff, n >> 8);
+            for (let i = 0; i < pad; i++) out.push(0, 0, 0);
             for (let x = 0; x < w; x++) {
-                let b = 0;
-                for (let k = 0; k < 8; k++) if (y0 + k < h && negro(x, y0 + k)) b |= 0x80 >> k;
-                out.push(b);
+                for (let byte = 0; byte < 3; byte++) {
+                    let b = 0;
+                    for (let k = 0; k < 8; k++) { const y = y0 + byte * 8 + k; if (y < h && negro(x, y)) b |= 0x80 >> k; }
+                    out.push(b);
+                }
             }
             out.push(0x0a);
         }
