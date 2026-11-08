@@ -207,88 +207,13 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
           <DialogTitle>{editando ? `Ficha de ${estudiante.nombres} ${estudiante.apellidos} · Matrícula ${estudiante.matricula}` : 'Inscribir estudiante'}</DialogTitle>
         </DialogHeader>
 
-        {/* ── Familia ───────────────────────────────────────────── */}
-        <section className="rounded-lg border border-gray-200 p-3">
-          <h3 className="text-sm font-black text-blue-800 uppercase mb-2 flex items-center gap-2"><Users className="w-4 h-4" /> Familia</h3>
-          {(
-            <>
-              {hermanos.length > 0 && (
-                <div className="mb-3 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm">
-                  <b>Hermanos en el colegio:</b>{' '}
-                  {hermanos.map((h) => `${h.nombres} (${nombreCurso(h.curso_id)}${h.estado !== 'activo' ? `, ${ESTADO_ESTUDIANTE[h.estado] || h.estado}` : ''})`).join(' · ')}
-                </div>
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="md:col-span-2 relative">
-                  <span className={etiqueta}>Familia (apellidos) *</span>
-                  <div className="relative mt-1">
-                    {modoFamilia === 'nueva' && !editando && <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />}
-                    <input className={`${campo} ${modoFamilia === 'nueva' && !editando ? 'pl-8' : ''}`} autoComplete="off"
-                      placeholder={editando ? '' : 'Escribe los apellidos (si tiene hermanos, sale la familia)'}
-                      value={fam.nombre}
-                      onChange={(e) => { f('nombre', e.target.value); if (modoFamilia === 'nueva' && !editando) setBuscarFam(e.target.value); }} />
-                  </div>
-                  {modoFamilia === 'nueva' && !editando && resultadosFam.length > 0 && (
-                    <div className="absolute z-20 left-0 right-0 mt-1 bg-white border rounded-md shadow-lg divide-y max-h-64 overflow-auto">
-                      <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-50">Familias ya registradas: escoge una y sus datos se llenan solos</div>
-                      {resultadosFam.map((r) => (
-                        <button key={r.id} type="button" onClick={() => elegirFamilia(r)} className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm">
-                          <b>{r.nombre}</b>
-                          <span className="text-gray-500"> · {[r.madre_nombre, r.padre_nombre, r.tutor_nombre].filter(Boolean).join(' / ') || 'sin padres'}</span>
-                        </button>
-                      ))}
-                      <button type="button" onClick={() => setResultadosFam([])} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-blue-700">
-                        Ninguna: es una familia nueva
-                      </button>
-                    </div>
-                  )}
-                  {modoFamilia === 'elegida' && !editando && (
-                    <p className="text-xs text-emerald-700 mt-1">Familia ya registrada: datos cargados. Si cambias algo, se actualiza para todos los hermanos.</p>
-                  )}
-                </div>
-                <Campo label="Los padres están">
-                  <select className={campo} value={fam.estado_padres || ''} onChange={(e) => f('estado_padres', e.target.value)}>
-                    <option value="">—</option>
-                    {Object.entries(ESTADO_PADRES).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
-                  </select>
-                </Campo>
-                <Campo label="Teléfono residencial"><input className={campo} value={fam.telefono_residencial} onChange={(e) => f('telefono_residencial', e.target.value)} /></Campo>
-                <Campo label="Dirección residencial" className="md:col-span-3"><input className={campo} value={fam.direccion} onChange={(e) => f('direccion', e.target.value)} /></Campo>
-                <Campo label="Sector"><input className={campo} value={fam.sector} onChange={(e) => f('sector', e.target.value)} /></Campo>
-              </div>
-              {['madre', 'padre'].map((k) => (
-                <div key={k} className="grid grid-cols-1 md:grid-cols-6 gap-3 mt-3">
-                  <Campo label={k === 'madre' ? 'Nombre de la madre' : 'Nombre del padre'} className="md:col-span-3">
-                    <input className={campo} value={fam[`${k}_nombre`]} onChange={(e) => f(`${k}_nombre`, e.target.value)} />
-                  </Campo>
-                  <Campo label="Ocupación" className="md:col-span-1"><input className={campo} value={fam[`${k}_profesion`]} onChange={(e) => f(`${k}_profesion`, e.target.value)} /></Campo>
-                  <Campo label="Lugar de trabajo" className="md:col-span-2"><input className={campo} value={fam[`${k}_trabajo`]} onChange={(e) => f(`${k}_trabajo`, e.target.value)} /></Campo>
-                  <Campo label="Celular" className="md:col-span-2"><input className={campo} value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, e.target.value)} /></Campo>
-                  <Campo label="Teléfono" className="md:col-span-2"><input className={campo} value={fam[`${k}_telefono`]} onChange={(e) => f(`${k}_telefono`, e.target.value)} /></Campo>
-                  <Campo label="Correo" className="md:col-span-2"><input type="email" className={campo} value={fam[`${k}_correo`]} onChange={(e) => f(`${k}_correo`, e.target.value)} /></Campo>
-                </div>
-              ))}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
-                <Campo label="Tutor (si no es el padre ni la madre)" className="md:col-span-2"><input className={campo} value={fam.tutor_nombre} onChange={(e) => f('tutor_nombre', e.target.value)} /></Campo>
-                <Campo label="Teléfono del tutor"><input className={campo} value={fam.tutor_telefono} onChange={(e) => f('tutor_telefono', e.target.value)} /></Campo>
-                <Campo label="Dirección del tutor"><input className={campo} value={fam.tutor_direccion} onChange={(e) => f('tutor_direccion', e.target.value)} /></Campo>
-              </div>
-              {!editando && modoFamilia === 'elegida' && (
-                <button type="button" className="mt-2 text-xs text-blue-700 underline" onClick={nuevaFamilia}>
-                  No es esta familia: llenar una nueva
-                </button>
-              )}
-            </>
-          )}
-        </section>
-
         {/* ── Estudiante ────────────────────────────────────────── */}
         <section className="rounded-lg border border-gray-200 p-3">
           <h3 className="text-sm font-black text-blue-800 uppercase mb-2">Datos personales</h3>
           <div className="flex flex-col md:flex-row gap-4">
             <FotoEstudiante tenantId={tenantId} path={est.foto_path} onChange={(p) => s('foto_path', p)} onError={onError} />
             <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Campo label="Nombres *"><input className={campo} value={est.nombres} onChange={(e) => s('nombres', e.target.value)} /></Campo>
+              <Campo label="Nombres *"><input autoFocus={!editando} className={campo} value={est.nombres} onChange={(e) => s('nombres', e.target.value)} /></Campo>
               <Campo label="Apellidos *"><input className={campo} value={est.apellidos} onChange={(e) => s('apellidos', e.target.value)} /></Campo>
               <Campo label={`Fecha de nacimiento${edad != null ? ` · ${edad} años` : ''}`}>
                 <input type="date" className={campo} value={est.fecha_nacimiento || ''} onChange={(e) => s('fecha_nacimiento', e.target.value)} />
@@ -376,6 +301,81 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
           </div>
           {est.tarifa_acuerdo && (
             <input className={`${campo} mt-2`} placeholder="Nota del acuerdo" value={est.tarifa_nota} onChange={(e) => s('tarifa_nota', e.target.value)} />
+          )}
+        </section>
+
+        {/* ── Familia ───────────────────────────────────────────── */}
+        <section className="rounded-lg border border-gray-200 p-3">
+          <h3 className="text-sm font-black text-blue-800 uppercase mb-2 flex items-center gap-2"><Users className="w-4 h-4" /> Familia</h3>
+          {(
+            <>
+              {hermanos.length > 0 && (
+                <div className="mb-3 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm">
+                  <b>Hermanos en el colegio:</b>{' '}
+                  {hermanos.map((h) => `${h.nombres} (${nombreCurso(h.curso_id)}${h.estado !== 'activo' ? `, ${ESTADO_ESTUDIANTE[h.estado] || h.estado}` : ''})`).join(' · ')}
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="md:col-span-2 relative">
+                  <span className={etiqueta}>Familia (apellidos) *</span>
+                  <div className="relative mt-1">
+                    {modoFamilia === 'nueva' && !editando && <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />}
+                    <input className={`${campo} ${modoFamilia === 'nueva' && !editando ? 'pl-8' : ''}`} autoComplete="off"
+                      placeholder={editando ? '' : 'Escribe los apellidos (si tiene hermanos, sale la familia)'}
+                      value={fam.nombre}
+                      onChange={(e) => { f('nombre', e.target.value); if (modoFamilia === 'nueva' && !editando) setBuscarFam(e.target.value); }} />
+                  </div>
+                  {modoFamilia === 'nueva' && !editando && resultadosFam.length > 0 && (
+                    <div className="absolute z-20 left-0 right-0 mt-1 bg-white border rounded-md shadow-lg divide-y max-h-64 overflow-auto">
+                      <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-50">Familias ya registradas: escoge una y sus datos se llenan solos</div>
+                      {resultadosFam.map((r) => (
+                        <button key={r.id} type="button" onClick={() => elegirFamilia(r)} className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm">
+                          <b>{r.nombre}</b>
+                          <span className="text-gray-500"> · {[r.madre_nombre, r.padre_nombre, r.tutor_nombre].filter(Boolean).join(' / ') || 'sin padres'}</span>
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => setResultadosFam([])} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-blue-700">
+                        Ninguna: es una familia nueva
+                      </button>
+                    </div>
+                  )}
+                  {modoFamilia === 'elegida' && !editando && (
+                    <p className="text-xs text-emerald-700 mt-1">Familia ya registrada: datos cargados. Si cambias algo, se actualiza para todos los hermanos.</p>
+                  )}
+                </div>
+                <Campo label="Los padres están">
+                  <select className={campo} value={fam.estado_padres || ''} onChange={(e) => f('estado_padres', e.target.value)}>
+                    <option value="">—</option>
+                    {Object.entries(ESTADO_PADRES).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+                  </select>
+                </Campo>
+                <Campo label="Teléfono residencial"><input className={campo} value={fam.telefono_residencial} onChange={(e) => f('telefono_residencial', e.target.value)} /></Campo>
+                <Campo label="Dirección residencial" className="md:col-span-3"><input className={campo} value={fam.direccion} onChange={(e) => f('direccion', e.target.value)} /></Campo>
+                <Campo label="Sector"><input className={campo} value={fam.sector} onChange={(e) => f('sector', e.target.value)} /></Campo>
+              </div>
+              {['madre', 'padre'].map((k) => (
+                <div key={k} className="grid grid-cols-1 md:grid-cols-6 gap-3 mt-3">
+                  <Campo label={k === 'madre' ? 'Nombre de la madre' : 'Nombre del padre'} className="md:col-span-3">
+                    <input className={campo} value={fam[`${k}_nombre`]} onChange={(e) => f(`${k}_nombre`, e.target.value)} />
+                  </Campo>
+                  <Campo label="Ocupación" className="md:col-span-1"><input className={campo} value={fam[`${k}_profesion`]} onChange={(e) => f(`${k}_profesion`, e.target.value)} /></Campo>
+                  <Campo label="Lugar de trabajo" className="md:col-span-2"><input className={campo} value={fam[`${k}_trabajo`]} onChange={(e) => f(`${k}_trabajo`, e.target.value)} /></Campo>
+                  <Campo label="Celular" className="md:col-span-2"><input className={campo} value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, e.target.value)} /></Campo>
+                  <Campo label="Teléfono" className="md:col-span-2"><input className={campo} value={fam[`${k}_telefono`]} onChange={(e) => f(`${k}_telefono`, e.target.value)} /></Campo>
+                  <Campo label="Correo" className="md:col-span-2"><input type="email" className={campo} value={fam[`${k}_correo`]} onChange={(e) => f(`${k}_correo`, e.target.value)} /></Campo>
+                </div>
+              ))}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
+                <Campo label="Tutor (si no es el padre ni la madre)" className="md:col-span-2"><input className={campo} value={fam.tutor_nombre} onChange={(e) => f('tutor_nombre', e.target.value)} /></Campo>
+                <Campo label="Teléfono del tutor"><input className={campo} value={fam.tutor_telefono} onChange={(e) => f('tutor_telefono', e.target.value)} /></Campo>
+                <Campo label="Dirección del tutor"><input className={campo} value={fam.tutor_direccion} onChange={(e) => f('tutor_direccion', e.target.value)} /></Campo>
+              </div>
+              {!editando && modoFamilia === 'elegida' && (
+                <button type="button" className="mt-2 text-xs text-blue-700 underline" onClick={nuevaFamilia}>
+                  No es esta familia: llenar una nueva
+                </button>
+              )}
+            </>
           )}
         </section>
 
