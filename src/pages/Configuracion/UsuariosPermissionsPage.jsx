@@ -108,7 +108,10 @@ const UsuariosPermissionsPage = () => {
     // En un colegio solo salen los módulos que un colegio usa (no préstamos, GPS, etc.).
     const { empresa } = useAuth();
     const esColegio = empresa?.tipo_negocio === 'educativo';
-    const MODULES = esColegio ? TODOS_LOS_MODULOS.filter((m) => esModuloDeColegio(m.key)) : TODOS_LOS_MODULOS;
+    // Colegio: solo lo que un colegio usa. Las demás empresas: todo menos lo del colegio (08/11/2026).
+    const MODULES = esColegio
+        ? TODOS_LOS_MODULOS.filter((m) => esModuloDeColegio(m.key))
+        : TODOS_LOS_MODULOS.filter((m) => !m.key.startsWith('colegio-'));
     const [loading, setLoading] = useState(true);
     const [users, setUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
