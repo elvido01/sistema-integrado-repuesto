@@ -183,6 +183,8 @@ export const MODULOS_EDUCATIVO = new Set([
   'ventas', 'devoluciones', 'mercancias', 'almacenes', 'entrada-mercancia', 'salida-mercancia',
   'orden-compra', 'solicitudes', 'tipos-producto', 'reporte-movimientos', 'inventario-fisico',
   'inventario-inteligente', 'etiquetas-masivas', 'clientes',
+  // (08/11/2026) Ventas pide vendedor (quién vendió el uniforme o el libro).
+  'vendedores',
   'recibo-ingreso', 'compras', 'pago-suplidores', 'nomina', 'cuentas-bancarias',
   'reporte-compras', 'reporte-transacciones-diarias', 'reportes-dgii', 'libros-contables',
   'estado-resultados', 'flujo-caja', 'suplidores',
