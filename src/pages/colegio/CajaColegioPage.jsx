@@ -184,6 +184,8 @@ function logoEnGrises(url, anchoMax) {
   return cacheLogo.get(clave);
 }
 
+const FORMA_INICIAL = { forma: 'Efectivo', monto: '', referencia: '', cuenta_id: null, banco: '', alias: '' };
+
 export default function CajaColegioPage() {
   const { tenantId, profile } = useAuth();
   const { toast } = useToast();
@@ -203,7 +205,7 @@ export default function CajaColegioPage() {
   const [sel, setSel] = useState({});          // cargo_id → 'completo' | 'medio'
   const [anioCompleto, setAnioCompleto] = useState({});   // estudiante_id → bool
   const [tasa, setTasa] = useState('');
-  const [formas, setFormas] = useState([{ forma: 'Efectivo', monto: '', referencia: '', cuenta_id: null, banco: '', alias: '' }]);
+  const [formas, setFormas] = useState([{ ...FORMA_INICIAL }]);
   const [formato, setFormato] = useState(() => { try { return localStorage.getItem('colegio_formato_recibo') || 'ticket'; } catch { return 'ticket'; } });
   const [cobrando, setCobrando] = useState(false);
   const [cargando, setCargando] = useState(false);
@@ -309,7 +311,7 @@ export default function CajaColegioPage() {
       if (actual.id !== anio.id) setAnio(actual);
       setFamilia(fa.data); setEstudiantes(es.data || []); setCargos(visibles);
       setSel({}); setAnioCompleto({}); setTasa('');
-      setFormas([{ forma: 'Efectivo', monto: '', referencia: '', cuenta_id: null, banco: '', alias: '' }]);
+      setFormas([{ ...FORMA_INICIAL }]);
       setBuscar(''); setResultados([]);
     } catch (e) {
       error('No se pudo abrir la familia', e?.message);
@@ -319,12 +321,22 @@ export default function CajaColegioPage() {
   }, [tenantId, anio, error]);
 
   const buscadorRef = React.useRef(null);
+  // La familia que está en pantalla AHORA (la respuesta de un cobro puede
+  // llegar cuando la cajera ya abrió otra).
+  const familiaAbierta = React.useRef(null);
+  useEffect(() => { familiaAbierta.current = familia?.id || null; }, [familia]);
+  // El cursor al buscador, solo si esta pestaña es la que se ve (las
+  // escondidas siguen montadas con pointer-events-none).
+  const enfocarBuscador = () => setTimeout(() => {
+    const el = buscadorRef.current;
+    if (el && !el.closest('.pointer-events-none') && document.visibilityState === 'visible') el.focus();
+  }, 0);
   const cerrarFamilia = () => {
     setFamilia(null); setEstudiantes([]); setCargos([]);
     setSel({}); setAnioCompleto({}); setTasa('');
-    setFormas([{ forma: 'Efectivo', monto: '', referencia: '', cuenta_id: null, banco: '', alias: '' }]);
+    setFormas([{ ...FORMA_INICIAL }]);
     setBuscar(''); setResultados([]);
-    setTimeout(() => buscadorRef.current?.focus(), 0);
+    enfocarBuscador();
   };
 
   // ── Lo que se va a cobrar ──
@@ -366,9 +378,11 @@ export default function CajaColegioPage() {
     if (Math.abs(sumaFormas - total) > 0.01) return error('Las formas de pago no cuadran', `Suman RD$${n2(sumaFormas)} y el total es RD$${n2(total)}.`);
     if (formas.some((f) => conBanco(f.forma) && Number(f.monto) > 0 && !f.cuenta_id)) return error('Falta la cuenta', 'Escoge a qué cuenta bancaria entró la transferencia, tarjeta o cheque.');
     setCobrando(true);
+    const fid = familia.id;
+    let cobrado = null;
     try {
       const { data, error: e } = await supabase.rpc('edu_cobrar', {
-        p_familia: familia.id,
+        p_familia: fid,
         p_lineas: lineas.map((l) => ({ cargo_id: l.cargo.id, monto: l.monto })),
         p_formas: formas.filter((f) => Number(f.monto) > 0).map((f) => ({
           forma: f.forma, monto: Number(f.monto), referencia: f.referencia || null,
@@ -378,19 +392,26 @@ export default function CajaColegioPage() {
         p_anio_completo: Object.entries(anioCompleto).filter(([, on]) => on).map(([id]) => id),
       });
       if (e) throw e;
-      // (08/11/2026) Cobrado: la familia se cierra en seguida (antes de
-      // imprimir) para que no se le cobre dos veces; el buscador queda listo
-      // para la siguiente. El recibo sale en "Recibos de hoy".
-      cerrarFamilia();
-      toast({ title: `Cobrado ${numeroRecibo(data.numero)}`, description: `RD$${n2(data.total)} · Recibo de ingreso ${data.recibo_ingreso}` });
-      cargarRecibosHoy();
-      if (formato !== 'ninguno') {
-        try { await imprimirReciboColegio(data.pago_id, tenantId, formato); } catch (pe) { error('Se cobró, pero no se pudo imprimir', pe?.message); }
-      }
+      cobrado = data;
     } catch (e) {
       error('No se pudo cobrar', e?.message);
+      // El cobro pudo grabarse aunque la respuesta no llegara (red): se
+      // vuelve a leer la familia, así lo ya pagado no queda marcado para
+      // cobrarlo otra vez.
+      if (familiaAbierta.current === fid) abrirFamilia(fid);
     } finally {
       setCobrando(false);
+    }
+    if (!cobrado) return;
+    // (08/11/2026) Cobrado: la familia se cierra en seguida (antes de
+    // imprimir) para que no se le cobre dos veces; el buscador queda listo
+    // para la siguiente. Si la cajera ya abrió otra familia, esa no se toca.
+    if (familiaAbierta.current === fid) cerrarFamilia();
+    toast({ title: `Cobrado ${numeroRecibo(cobrado.numero)}`, description: `RD$${n2(cobrado.total)} · Recibo de ingreso ${cobrado.recibo_ingreso}` });
+    cargarRecibosHoy();
+    if (formato !== 'ninguno') {
+      try { await imprimirReciboColegio(cobrado.pago_id, tenantId, formato); } catch (pe) { error('Se cobró, pero no se pudo imprimir', pe?.message); }
+      if (!familiaAbierta.current) enfocarBuscador();   // el diálogo de imprimir se lleva el cursor
     }
   };
 
