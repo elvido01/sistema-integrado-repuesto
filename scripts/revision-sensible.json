@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "885592c22b5609ce",
+    "src/pages/colegio/CajaColegioPage.jsx": "8d976dbcd3b64dd6",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -616,6 +616,13 @@
     {
       "fecha": "2026-11-08",
       "nota": "code-review high recibo nativo colegio: 10 hallazgos; arreglados preferencia global de impresora (helper directo al agente), doble recibo si el agente tarda, direccion cortada, formas de pago largas, linea sin descripcion, textos distintos, numeroRecibo/fmt reusados, una sola busqueda de impresora; queda: el patron viejo setPreferredBackend en otras 4 pantallas (no es de este cambio)",
+      "archivos": [
+        "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-08",
+      "nota": "code-review high logo recibo colegio: 10 hallazgos; arreglados espera sin limite del logo (3 s), GS v 0 en bloques, fromCharCode por pedazos, regla Star compartida, import repetido; no se cambio: proporcion del logo en Star (la prueba impresa salio redonda), cache por URL (cada subida trae nombre nuevo), tramado (logos de colegio son de linea)",
       "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
       ]
