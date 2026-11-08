@@ -31,6 +31,18 @@ const EST_VACIO = {
 };
 const limpio = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'string' ? (v.trim() || null) : v]));
 
+// Teléfono RD mientras se escribe: 8093905965 → 809-390-5965 (máx. 10 cifras;
+// un 1 delante se quita).
+export function fmtTel(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') d = d.slice(1);
+  d = d.slice(0, 10);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+}
+const TEL = { type: 'tel', inputMode: 'tel', placeholder: '809-000-0000', autoComplete: 'off' };
+
 function Campo({ label, children, className = '' }) {
   return <label className={`block ${className}`}><span className={etiqueta}>{label}</span><div className="mt-1">{children}</div></label>;
 }
@@ -216,7 +228,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
               <Campo label="Nombres *"><input autoFocus={!editando} className={campo} value={est.nombres} onChange={(e) => s('nombres', e.target.value)} /></Campo>
               <Campo label="Apellidos *"><input className={campo} value={est.apellidos} onChange={(e) => s('apellidos', e.target.value)} /></Campo>
               <Campo label={`Fecha de nacimiento${edad != null ? ` · ${edad} años` : ''}`}>
-                <input type="date" className={campo} value={est.fecha_nacimiento || ''} onChange={(e) => s('fecha_nacimiento', e.target.value)} />
+                <input type="date" min="1990-01-01" max={new Date().toISOString().slice(0, 10)} className={campo} value={est.fecha_nacimiento || ''} onChange={(e) => s('fecha_nacimiento', e.target.value)} />
               </Campo>
               <Campo label="Lugar de nacimiento"><input className={campo} value={est.lugar_nacimiento} onChange={(e) => s('lugar_nacimiento', e.target.value)} /></Campo>
               <Campo label="Número de hermanos"><input type="number" min="0" className={campo} value={est.numero_hermanos ?? ''} onChange={(e) => s('numero_hermanos', e.target.value)} /></Campo>
@@ -238,10 +250,10 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
             </Campo>
             <Campo label="Tanda * · Sección">
               <div className="flex gap-2">
-                <select className={`${campo} flex-1 min-w-0`} value={est.tanda || ''} onChange={(e) => s('tanda', e.target.value)} disabled={!curso}>
+                <select className={`${campo} flex-1 min-w-[7rem]`} value={est.tanda || ''} onChange={(e) => s('tanda', e.target.value)} disabled={!curso}>
                   {(curso?.tandas || []).map((t) => <option key={t} value={t}>{TANDAS[t]}</option>)}
                 </select>
-                <input className={`${campo} w-14 text-center uppercase`} maxLength={3} placeholder="A" title="Sección (A, B...): sale en el boletín de notas"
+                <input className={`${campo.replace('w-full', '')} w-14 shrink-0 text-center uppercase`} maxLength={3} placeholder="A" title="Sección (A, B...): sale en el boletín de notas"
                   value={est.seccion || ''} onChange={(e) => s('seccion', e.target.value)} />
               </div>
             </Campo>
@@ -342,7 +354,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                     {Object.entries(ESTADO_PADRES).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
                   </select>
                 </Campo>
-                <Campo label="Teléfono residencial"><input className={campo} value={fam.telefono_residencial} onChange={(e) => f('telefono_residencial', e.target.value)} /></Campo>
+                <Campo label="Teléfono residencial"><input {...TEL} className={campo} value={fam.telefono_residencial} onChange={(e) => f('telefono_residencial', fmtTel(e.target.value))} /></Campo>
                 <Campo label="Dirección residencial" className="md:col-span-3"><input className={campo} value={fam.direccion} onChange={(e) => f('direccion', e.target.value)} /></Campo>
                 <Campo label="Sector"><input className={campo} value={fam.sector} onChange={(e) => f('sector', e.target.value)} /></Campo>
               </div>
@@ -353,14 +365,14 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                   </Campo>
                   <Campo label="Ocupación" className="md:col-span-1"><input className={campo} value={fam[`${k}_profesion`]} onChange={(e) => f(`${k}_profesion`, e.target.value)} /></Campo>
                   <Campo label="Lugar de trabajo" className="md:col-span-2"><input className={campo} value={fam[`${k}_trabajo`]} onChange={(e) => f(`${k}_trabajo`, e.target.value)} /></Campo>
-                  <Campo label="Celular" className="md:col-span-2"><input className={campo} value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, e.target.value)} /></Campo>
-                  <Campo label="Teléfono" className="md:col-span-2"><input className={campo} value={fam[`${k}_telefono`]} onChange={(e) => f(`${k}_telefono`, e.target.value)} /></Campo>
+                  <Campo label="Celular" className="md:col-span-2"><input {...TEL} className={campo} value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, fmtTel(e.target.value))} /></Campo>
+                  <Campo label="Teléfono" className="md:col-span-2"><input {...TEL} className={campo} value={fam[`${k}_telefono`]} onChange={(e) => f(`${k}_telefono`, fmtTel(e.target.value))} /></Campo>
                   <Campo label="Correo" className="md:col-span-2"><input type="email" className={campo} value={fam[`${k}_correo`]} onChange={(e) => f(`${k}_correo`, e.target.value)} /></Campo>
                 </div>
               ))}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
                 <Campo label="Tutor (si no es el padre ni la madre)" className="md:col-span-2"><input className={campo} value={fam.tutor_nombre} onChange={(e) => f('tutor_nombre', e.target.value)} /></Campo>
-                <Campo label="Teléfono del tutor"><input className={campo} value={fam.tutor_telefono} onChange={(e) => f('tutor_telefono', e.target.value)} /></Campo>
+                <Campo label="Teléfono del tutor"><input {...TEL} className={campo} value={fam.tutor_telefono} onChange={(e) => f('tutor_telefono', fmtTel(e.target.value))} /></Campo>
                 <Campo label="Dirección del tutor"><input className={campo} value={fam.tutor_direccion} onChange={(e) => f('tutor_direccion', e.target.value)} /></Campo>
               </div>
               {!editando && modoFamilia === 'elegida' && (
