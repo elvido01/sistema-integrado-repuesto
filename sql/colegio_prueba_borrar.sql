@@ -35,10 +35,13 @@ BEGIN
   GET DIAGNOSTICS v_est = ROW_COUNT;
   DELETE FROM public.edu_familias WHERE id IN (SELECT id FROM _fam);
   GET DIAGNOSTICS v_fam = ROW_COUNT;
-  -- Clientes que el cobro creó para esas familias, si nada más los usa.
+  -- Clientes que el cobro creó para esas familias (y su copia en el
+  -- CENTENARIO 1, clientes compartidos), si nada más los usa.
+  CREATE TEMP TABLE _cli ON COMMIT DROP AS
+    SELECT x.id FROM (SELECT cliente_id AS id FROM _fam UNION SELECT cliente_fiscal_id FROM _fam) x WHERE x.id IS NOT NULL;
+  INSERT INTO _cli SELECT e.par_id FROM public.clientes_espejo e WHERE e.cliente_id IN (SELECT id FROM _cli);
   DELETE FROM public.clientes c
-   WHERE c.tenant_id = v_t
-     AND c.id IN (SELECT cliente_id FROM _fam UNION SELECT cliente_fiscal_id FROM _fam)
+   WHERE c.id IN (SELECT id FROM _cli)
      AND NOT EXISTS (SELECT 1 FROM public.facturas f WHERE f.cliente_id = c.id)
      AND NOT EXISTS (SELECT 1 FROM public.recibos_ingreso r WHERE r.cliente_id = c.id);
   GET DIAGNOSTICS v_cli = ROW_COUNT;
@@ -48,13 +51,19 @@ END $borrar$;
 -- Uniformes y libros de prueba (colegio_prueba_uniformes_libros.sql):
 -- los que no se vendieron se borran; los vendidos se desactivan (la factura
 -- los necesita). Los tipos UNIFORMES y LIBROS se quedan.
+-- Incluye sus gemelos del CENTENARIO 1 (inventario compartido).
 DO $productos$
-DECLARE v_t uuid := '8bcd59ef-9502-486c-b919-c77b991387bb'; v_b int; v_d int;
+DECLARE v_t uuid := '8bcd59ef-9502-486c-b919-c77b991387bb'; v_t2 uuid; v_b int; v_d int;
 BEGIN
+  SELECT inventario_compartido_con INTO v_t2 FROM public.config_empresa WHERE tenant_id = v_t;
   CREATE TEMP TABLE _prod ON COMMIT DROP AS
-    SELECT p.id, EXISTS (SELECT 1 FROM public.facturas_detalle fd WHERE fd.producto_id = p.id) AS vendido
-      FROM public.productos p WHERE p.tenant_id = v_t AND p.referencia = 'PRUEBA';
-  DELETE FROM public.inventario_movimientos WHERE tenant_id = v_t AND referencia_doc = 'PRUEBA-INICIAL'
+    -- Vendido en CUALQUIERA de los dos colegios = no se borra ninguno de los
+    -- gemelos (borrar un movimiento copiado borra también el original).
+    SELECT p.id, EXISTS (SELECT 1 FROM public.facturas_detalle fd
+                          WHERE fd.producto_id = p.id
+                             OR fd.producto_id IN (SELECT e.par_id FROM public.productos_espejo e WHERE e.producto_id = p.id)) AS vendido
+      FROM public.productos p WHERE p.tenant_id IN (v_t, v_t2) AND p.referencia = 'PRUEBA';
+  DELETE FROM public.inventario_movimientos WHERE tenant_id IN (v_t, v_t2)
      AND producto_id IN (SELECT id FROM _prod WHERE NOT vendido);
   DELETE FROM public.presentaciones WHERE producto_id IN (SELECT id FROM _prod WHERE NOT vendido);
   DELETE FROM public.productos WHERE id IN (SELECT id FROM _prod WHERE NOT vendido);
