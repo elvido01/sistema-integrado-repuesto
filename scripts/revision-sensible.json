@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "b0a118a46a1cc189",
+    "src/pages/colegio/CajaColegioPage.jsx": "31fe8a47100c7b17",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -637,6 +637,13 @@
     {
       "fecha": "2026-11-08",
       "nota": "code-review high cerrar familia al cobrar: 8 hallazgos; arreglados respuesta tardia que cerraba otra familia, error de red deja lo pagado marcado (se relee), boton trabado mientras imprime, foco en pestana escondida, foco perdido tras el dialogo de imprimir, forma inicial repetida; no cambiado: factura/estado de cuenta ya no quedan a un clic tras cobrar (lo pidio el dueno), dialogos abiertos (no se pueden abrir mientras se cobra)",
+      "archivos": [
+        "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-08",
+      "nota": "code-review high ojito recibos de hoy: 8 hallazgos; arreglados perder lo marcado sin aviso (confirm), aperturas que se pisan (token en abrirFamilia), doble clic mientras carga, scroll aunque no abrio, scroll de toda la pagina (nearest), aria-label, helper verFamilia",
       "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
       ]
