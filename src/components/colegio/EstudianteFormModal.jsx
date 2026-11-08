@@ -219,13 +219,6 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                 <input type="date" className={campo} value={est.fecha_nacimiento || ''} onChange={(e) => s('fecha_nacimiento', e.target.value)} />
               </Campo>
               <Campo label="Lugar de nacimiento"><input className={campo} value={est.lugar_nacimiento} onChange={(e) => s('lugar_nacimiento', e.target.value)} /></Campo>
-              <Campo label="Celular"><input className={campo} value={est.celular} onChange={(e) => s('celular', e.target.value)} /></Campo>
-              <Campo label="Tel. trabajo / otro">
-                <div className="flex gap-2">
-                  <input className={campo} placeholder="Trabajo" value={est.telefono_trabajo} onChange={(e) => s('telefono_trabajo', e.target.value)} />
-                  <input className={campo} placeholder="Otro" value={est.otro_telefono} onChange={(e) => s('otro_telefono', e.target.value)} />
-                </div>
-              </Campo>
               <Campo label="Número de hermanos"><input type="number" min="0" className={campo} value={est.numero_hermanos ?? ''} onChange={(e) => s('numero_hermanos', e.target.value)} /></Campo>
               <Campo label="Edades de los hermanos"><input className={campo} placeholder="Ej. 5, 9, 12" value={est.edades_hermanos} onChange={(e) => s('edades_hermanos', e.target.value)} /></Campo>
               <Campo label="Posición en la familia"><input className={campo} placeholder="Ej. 2do de 3" value={est.posicion_familia} onChange={(e) => s('posicion_familia', e.target.value)} /></Campo>
