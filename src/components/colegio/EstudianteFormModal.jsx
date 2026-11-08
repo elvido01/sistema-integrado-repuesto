@@ -131,6 +131,24 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
   };
 
   const curso = useMemo(() => cursos.find((c) => c.id === est.curso_id), [cursos, est.curso_id]);
+
+  // Cupo del curso/tanda (y sección si el cupo es por sección).
+  const [cupo, setCupo] = useState(null);
+  useEffect(() => {
+    if (!open || !est.curso_id || !est.tanda) { setCupo(null); return undefined; }
+    let vivo = true;
+    const t = setTimeout(async () => {
+      const { data } = await supabase.rpc('edu_cupo_curso', {
+        p_curso: est.curso_id, p_tanda: est.tanda, p_seccion: est.seccion || null, p_excluir: estudiante?.id || null,
+      });
+      if (vivo) setCupo(data?.cupo ? data : null);
+    }, 250);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [open, est.curso_id, est.tanda, est.seccion, estudiante?.id]);
+  // Al editar solo cuenta si se mueve de curso, tanda o sección (o vuelve de retirado).
+  const ocupaLugarNuevo = !editando
+    || est.curso_id !== estudiante.curso_id || est.tanda !== estudiante.tanda
+    || (cupo?.por_seccion && String(est.seccion || '').trim().toUpperCase() !== String(estudiante.seccion || '').trim().toUpperCase());
   useEffect(() => {
     if (curso && !curso.tandas.includes(est.tanda)) s('tanda', curso.tandas[0]);
   }, [curso]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -155,6 +173,9 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
     // Validaciones de la ficha
     if (!est.nombres.trim() || !est.apellidos.trim()) return onError('Faltan datos', 'Escribe nombres y apellidos del estudiante.');
     if (!est.curso_id || !est.tanda) return onError('Faltan datos', 'Escoge curso y tanda.');
+    if (cupo && cupo.quedan <= 0 && ocupaLugarNuevo && ['activo', 'por_confirmar'].includes(est.estado || 'activo')) {
+      return onError('Curso lleno', `${curso?.nombre || 'El curso'} ya tiene ${cupo.ocupados} de ${cupo.cupo}${cupo.por_seccion ? ` en la sección ${cupo.seccion || '(sin sección)'}` : ''}. Escoge otra tanda o sección, o sube el cupo en Configuración → Cursos.`);
+    }
     if (!(Number(est.tarifa_mensual) > 0)) return onError('Falta la mensualidad', 'Escoge una tarifa o escribe el monto del acuerdo.');
     if (!editando && !est.foto_path) return onError('Falta la foto', 'La foto del estudiante es obligatoria: tómala con la cámara o súbela.');
     if (!fam.nombre.trim() && !est.apellidos.trim()) return onError('Falta la familia', 'Escribe los apellidos de la familia.');
@@ -303,6 +324,12 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
             </Campo>
           </div>
           <div className="mt-3 text-sm text-gray-700 flex flex-wrap gap-x-6 gap-y-1">
+            {cupo && (
+              <span className={cupo.quedan <= 0 && ocupaLugarNuevo ? 'text-red-600 font-semibold' : cupo.quedan <= 3 ? 'text-amber-700' : 'text-emerald-700'}>
+                Cupo{cupo.por_seccion ? ` sección ${cupo.seccion || '(sin sección)'}` : ''}: {cupo.ocupados} de {cupo.cupo}
+                {cupo.quedan <= 0 ? ' · LLENO' : ` · quedan ${cupo.quedan}`}
+              </span>
+            )}
             <span>Paga cada mes: <b>{fmt(mensualConBeca)}</b>{Number(est.beca_pct) > 0 ? ` (beca ${Number(est.beca_pct)}%)` : ''}{est.sala_tareas ? ` + Sala de Tareas ${fmt(conceptoSala(cfg))}` : ''}</span>
             {est.tarifa_nota && <span className="text-emerald-700">{est.tarifa_nota}</span>}
           </div>

@@ -427,6 +427,15 @@ function Cursos({ cursos, guardando, actualizar, insertar }) {
     actualizar('edu_cursos', c.id, { tandas });
   };
 
+  // Cupo máximo por tanda: se escribe una vez y sirve todos los años.
+  const guardarCupo = (c, t, valor) => {
+    const n = parseInt(String(valor).replace(/\D/g, ''), 10);
+    const cupos = { ...(c.cupos || {}) };
+    if (n > 0) cupos[t] = n; else delete cupos[t];
+    if (JSON.stringify(cupos) === JSON.stringify(c.cupos || {})) return;
+    actualizar('edu_cursos', c.id, { cupos });
+  };
+
   const guardarNuevo = async () => {
     if (!nuevo?.nombre?.trim()) return;
     const orden = (cursos.reduce((m, c) => Math.max(m, c.orden || 0), 0)) + 1;
@@ -437,13 +446,16 @@ function Cursos({ cursos, guardando, actualizar, insertar }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
-        El orden sirve para el cambio de año: cada estudiante pasa al curso que sigue. Marca en qué tandas se da cada curso.
+        El orden sirve para el cambio de año: cada estudiante pasa al curso que sigue. Marca en qué tandas se da cada curso
+        y, si quieres, el <b>cupo máximo</b> (cuántos estudiantes caben). Se escribe una vez y sirve todos los años; vacío = sin límite.
+        Si el curso tiene varias aulas (A, B…), marca <b>Por sección</b> y el cupo es para cada una.
       </p>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs uppercase text-gray-500 border-b">
             <th className="py-2 w-14">Orden</th><th>Curso</th><th>Nivel</th>
             {TANDAS.map(([k, t]) => <th key={k} className="text-center">{t}</th>)}
+            <th className="text-center" title="El cupo es para cada sección (A, B…)">Por sección</th>
             <th className="text-center">Activo</th>
           </tr>
         </thead>
@@ -458,9 +470,19 @@ function Cursos({ cursos, guardando, actualizar, insertar }) {
               <td>{NIVELES[c.nivel]}</td>
               {TANDAS.map(([k]) => (
                 <td key={k} className="text-center">
-                  <input type="checkbox" checked={c.tandas.includes(k)} disabled={guardando} onChange={() => alternarTanda(c, k)} />
+                  <div className="flex items-center justify-center gap-1.5">
+                    <input type="checkbox" checked={c.tandas.includes(k)} disabled={guardando} onChange={() => alternarTanda(c, k)} />
+                    {c.tandas.includes(k) && (
+                      <input key={`${c.id}-${k}-${c.cupos?.[k] ?? ''}`} inputMode="numeric" placeholder="cupo" title="Cupo máximo (vacío = sin límite)"
+                        className={`${campo} w-16 text-center`} defaultValue={c.cupos?.[k] ?? ''} disabled={guardando}
+                        onBlur={(e) => guardarCupo(c, k, e.target.value)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+                    )}
+                  </div>
                 </td>
               ))}
+              <td className="text-center">
+                <input type="checkbox" checked={!!c.cupo_por_seccion} disabled={guardando} onChange={() => actualizar('edu_cursos', c.id, { cupo_por_seccion: !c.cupo_por_seccion })} />
+              </td>
               <td className="text-center">
                 <input type="checkbox" checked={c.activo} disabled={guardando} onChange={() => actualizar('edu_cursos', c.id, { activo: !c.activo })} />
               </td>
