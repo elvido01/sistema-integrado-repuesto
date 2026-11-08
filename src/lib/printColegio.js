@@ -29,10 +29,10 @@ export function reciboColegioTicketHTML(d) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(numeroRecibo(p.numero))}</title>
 <style>
   @page { size: 80mm auto; margin: 0; }
-  body { margin: 0; padding: 6px 8px 14px; width: 72mm; font-family: Consolas, "Courier New", monospace; font-size: 11.5px; line-height: 1.4; color: #000; }
+  body { margin: 0; padding: 6px 8px 14px; width: 72mm; font-family: Consolas, "Courier New", monospace; font-size: 13px; line-height: 1.4; color: #000; }
   .c { text-align: center; } .b { font-weight: 700; } .sep { border-top: 1px dashed #000; margin: 6px 0; }
   .r { display: flex; justify-content: space-between; gap: 6px; } .tot { font-size: 14px; font-weight: 700; }
-  .peq { font-size: 10px; } img { width: 56px; height: 56px; display: block; margin: 0 auto 4px; filter: grayscale(1); }
+  .peq { font-size: 11.5px; } img { width: 56px; height: 56px; display: block; margin: 0 auto 4px; filter: grayscale(1); }
   .anulado { border: 2px solid #000; text-align: center; font-weight: 700; padding: 2px; margin: 4px 0; }
 </style></head><body>
   ${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : ''}

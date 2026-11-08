@@ -723,3 +723,80 @@ export function buildCompraEscPos(
     lines.push(CMD.CUT);
     return toAscii(lines.join(CMD.LF));
 }
+
+// ── Recibo de la Caja del Colegio (08/11/2026) ─────────────────────────────
+// Con las letras de la impresora, como la factura de Repuestos Morla (por
+// imagen salía muy pequeño). Mismo contenido que reciboColegioTicketHTML.
+export interface ReciboColegioData {
+    colegio?: EmpresaConfig;
+    pago: {
+        numero: number; fecha?: string; created_at?: string; total?: number; anulado?: boolean; recibo_ingreso?: string;
+        anio_completo?: boolean; tasa_usd?: number; usuario?: string;
+        formas_pago?: { forma: string; monto: number; referencia?: string }[];
+    };
+    familia?: { nombre?: string; madre_nombre?: string; padre_nombre?: string; tutor_nombre?: string };
+    anio?: { nombre?: string } | null;
+    estudiantes: {
+        nombre: string; curso?: string; tanda?: string; pendiente?: number;
+        lineas: { descripcion: string; moneda?: string; monto_moneda?: number; monto: number }[];
+    }[];
+    proximoPago?: string;
+}
+
+export function buildReciboColegioEscPos(d: ReciboColegioData): string {
+    const p = d.pago;
+    const n2 = (v: unknown) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const f = String(p.fecha || '');
+    const fecha = /^\d{4}-\d{2}-\d{2}/.test(f) ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : '';
+    const hora = p.created_at
+        ? new Date(p.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Santo_Domingo' })
+        : '';
+    const varios = d.estudiantes.length > 1;
+    const pendiente = d.estudiantes.reduce((s, e) => s + Number(e.pendiente || 0), 0);
+    const fam = d.familia || {};
+
+    const lines: string[] = [];
+    lines.push(CMD.INIT);
+    lines.push(buildHeader(d.colegio));
+    lines.push(CMD.BOLD_ON + centerLine('RECIBO DE INGRESO') + CMD.BOLD_OFF);
+    if (p.anulado) lines.push(CMD.BOLD_ON + centerLine('*** ANULADO ***') + CMD.BOLD_OFF);
+    lines.push('');
+    lines.push(leftRight('No.', `RC-${String(p.numero).padStart(6, '0')}`));
+    lines.push(leftRight('Fecha', `${fecha} ${hora}`.trim()));
+    if (p.recibo_ingreso) lines.push(leftRight('Ref. caja', String(p.recibo_ingreso)));
+    lines.push(dashLine());
+    for (const e of d.estudiantes) {
+        for (const l of wrapLines(`Estudiante: ${e.nombre}`.toUpperCase())) lines.push(CMD.BOLD_ON + l + CMD.BOLD_OFF);
+        for (const l of wrapLines(`Curso: ${e.curso || ''}${e.tanda ? ` - ${e.tanda}` : ''}`)) lines.push(l);
+    }
+    const quien = fam.tutor_nombre || fam.madre_nombre || fam.padre_nombre || fam.nombre || '';
+    for (const l of wrapLines(`${fam.tutor_nombre ? 'Tutor' : 'Familia'}: ${quien}`)) lines.push(l);
+    if (d.anio?.nombre) lines.push(`Ano escolar: ${d.anio.nombre}`);
+    lines.push(dashLine());
+    for (const e of d.estudiantes) {
+        for (const l of e.lineas) {
+            const desc = `${l.descripcion}${varios ? ` (${e.nombre.split(' ')[0]})` : ''}`;
+            const monto = l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(l.monto);
+            const partes = wrapLines(desc, W - monto.length - 1);
+            partes.forEach((t, i) => lines.push(i === partes.length - 1 ? leftRight(t, monto) : t));
+        }
+    }
+    if (p.anio_completo) lines.push('Ano completo con descuento');
+    lines.push(dashLine());
+    lines.push(CMD.BOLD_ON + leftRight('TOTAL RD$', n2(p.total)) + CMD.BOLD_OFF);
+    if (p.tasa_usd && d.estudiantes.some((e) => e.lineas.some((l) => l.moneda === 'USD'))) lines.push(`Tasa US$: ${n2(p.tasa_usd)}`);
+    for (const fp of (p.formas_pago || []).filter((x) => Number(x.monto) > 0)) {
+        lines.push(leftRight(`${fp.forma}${fp.referencia ? ` #${fp.referencia}` : ''}`, n2(fp.monto)));
+    }
+    lines.push(dashLine());
+    lines.push(leftRight('Pendiente del ano', n2(pendiente)));
+    if (d.proximoPago) for (const l of wrapLines(`Proximo pago: ${d.proximoPago}`)) lines.push(l);
+    lines.push(dashLine());
+    if (p.usuario) for (const l of wrapLines(`Atendido por: ${p.usuario}`)) lines.push(l);
+    for (const l of wrapLines('Este recibo no es comprobante fiscal. Si necesita factura con credito fiscal para su declaracion de gastos educativos, solicitela en caja.')) lines.push(l);
+    lines.push('');
+    lines.push(centerLine('Gracias!'));
+    lines.push(CMD.FEED_3);
+    lines.push(CMD.CUT);
+    return toAscii(lines.join(CMD.LF));
+}

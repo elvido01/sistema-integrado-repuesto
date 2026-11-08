@@ -22,7 +22,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
-import { printHtmlSmart } from '@/lib/printHtmlSmart';
+import { printHtmlSmart, isSilentPrintEnabled } from '@/lib/printHtmlSmart';
 import { reciboColegioTicketHTML, reciboColegioHojaHTML, numeroRecibo } from '@/lib/printColegio';
 import { mesesDelAnio, MESES, hoyRD, pendienteDe, TANDAS_NOMBRE as TANDAS, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 
@@ -90,7 +90,30 @@ export async function datosReciboColegio(pagoId, tenantId) {
 export async function imprimirReciboColegio(pagoId, tenantId, formato) {
   const d = await datosReciboColegio(pagoId, tenantId);
   if (formato === 'hoja') await printHtmlSmart(reciboColegioHojaHTML(d), { tipo: 'carta' });
-  else await printHtmlSmart(reciboColegioTicketHTML(d), { tipo: 'ticket', anchoMM: 80 });
+  else if (!(await imprimirReciboNativo(d))) await printHtmlSmart(reciboColegioTicketHTML(d), { tipo: 'ticket', anchoMM: 80 });
+}
+
+// Con el agente de impresión: letras de la impresora (mismo tamaño que la
+// factura de Repuestos Morla). Si no hay agente o falla, sale como imagen.
+async function imprimirReciboNativo(d) {
+  try {
+    if (!isSilentPrintEnabled()) return false;
+    const { agentIsAvailable } = await import('@/services/motoflowPrintAgent');
+    if (!(await agentIsAvailable())) return false;
+    const { buildReciboColegioEscPos } = await import('@/services/escposReceipt');
+    const { findReceiptPrinter, printRawEscPos, setPreferredBackend, getPreferredBackend } = await import('@/services/printerAdapter');
+    const previo = getPreferredBackend();
+    setPreferredBackend('agent');
+    try {
+      await printRawEscPos(await findReceiptPrinter([]), buildReciboColegioEscPos(d));
+    } finally {
+      setPreferredBackend(previo);
+    }
+    return true;
+  } catch (e) {
+    console.warn('[colegio] recibo nativo falló, uso imagen:', e?.message || e);
+    return false;
+  }
 }
 
 export default function CajaColegioPage() {
