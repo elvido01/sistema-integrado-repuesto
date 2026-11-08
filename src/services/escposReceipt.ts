@@ -729,13 +729,44 @@ export function buildCompraEscPos(
 // Probado en la Star TSP143 de Morla (modo Star): el raster Star "ESC * r"
 // botó papel con basura y GS v 0 ya imprimía basura antes. ESC K (8 puntos)
 // salía pero con puntos gruesos y las letras del logo no se leían; ESC X
-// (24 puntos, resolución completa) se lee bien.
+// (24 puntos, resolución completa) se lee bien. El dueño escogió en papel:
+// 3 cm, con punteado (el libro y los colores claros salen) y "franjas 7"
+// (ESC 3 7: con 12, que en teoría son 24 puntos, quedaban rayas blancas).
 // Otras impresoras (Epson y compatibles): GS v 0, que es el estándar.
 // Devuelve bytes crudos (no pasar por toAscii: la imagen usa bytes > 127).
-export const LOGO_COLUMNAS_STAR = 240;    // 30 mm en la Star (ESC X, 8 puntos/mm)
-export const LOGO_PUNTOS_ESCPOS = 200;    // ≈ 25 mm a 203 ppp
+export const LOGO_PUNTOS = 240;           // 30 mm a 8 puntos/mm, en cualquier impresora
+export const LOGO_COLUMNAS_STAR = LOGO_PUNTOS;
+export const LOGO_PUNTOS_ESCPOS = LOGO_PUNTOS;
+const AVANCE_BANDA_STAR = 7;
 
 export interface LogoBits { w: number; h: number; negro: (x: number, y: number) => boolean }
+
+/**
+ * Grises (0 negro … 255 blanco, fila por fila) → puntos de la impresora.
+ * Star: punteado Floyd–Steinberg (probado en papel). Otras: umbral 140 (como
+ * antes; el punteado no se ha probado ahí).
+ */
+export function logoDesdeGrises(gris: ArrayLike<number>, w: number, h: number, modo: 'star' | 'escpos'): LogoBits {
+    const puntos = new Uint8Array(w * h);
+    if (modo === 'star') {
+        const g = Float32Array.from(gris as ArrayLike<number>);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const i = y * w + x; const v = g[i]; const n = v < 128 ? 0 : 255; const e = v - n;
+                puntos[i] = n === 0 ? 1 : 0;
+                if (x + 1 < w) g[i + 1] += e * 7 / 16;
+                if (y + 1 < h) {
+                    if (x > 0) g[i + w - 1] += e * 3 / 16;
+                    g[i + w] += e * 5 / 16;
+                    if (x + 1 < w) g[i + w + 1] += e / 16;
+                }
+            }
+        }
+    } else {
+        for (let i = 0; i < w * h; i++) puntos[i] = gris[i] < 140 ? 1 : 0;
+    }
+    return { w, h, negro: (x, y) => puntos[y * w + x] === 1 };
+}
 
 export function logoEscPos(logo: LogoBits, modo: 'star' | 'escpos'): string {
     const { w, h, negro } = logo;
@@ -745,7 +776,7 @@ export function logoEscPos(logo: LogoBits, modo: 'star' | 'escpos'): string {
         // ESC K (8 puntos, cada punto ~3 veces más grueso) las letras del
         // logo no se leían.
         const pad = Math.max(0, Math.floor((576 - w) / 2));      // centrado en 72 mm
-        out.push(0x1b, 0x40, 0x1b, 0x33, 12);                     // init + avance 3 mm (24 puntos) por banda
+        out.push(0x1b, 0x40, 0x1b, 0x33, AVANCE_BANDA_STAR);      // init + avance por banda (probado en papel)
         for (let y0 = 0; y0 < h; y0 += 24) {
             const n = pad + w;
             out.push(0x1b, 0x58, n & 0xff, n >> 8);

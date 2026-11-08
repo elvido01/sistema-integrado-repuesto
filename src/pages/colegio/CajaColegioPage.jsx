@@ -118,11 +118,14 @@ async function imprimirReciboNativo(d) {
   let logo = '';
   try {
     const modo = adaptador.esImpresoraStar(impresora) ? 'star' : 'escpos';
-    const ancho = modo === 'star' ? recibo.LOGO_COLUMNAS_STAR : recibo.LOGO_PUNTOS_ESCPOS;
-    const bits = d.colegio?.logo_url
-      ? await Promise.race([logoEnBits(d.colegio.logo_url, ancho), new Promise((_, mal) => setTimeout(() => mal(new Error('el logo tardó mucho')), 3000))])
-      : null;
-    if (bits) logo = recibo.logoEscPos(bits, modo);
+    if (d.colegio?.logo_url) {
+      let reloj;
+      const g = await Promise.race([
+        logoEnGrises(d.colegio.logo_url, recibo.LOGO_PUNTOS),
+        new Promise((_, mal) => { reloj = setTimeout(() => mal(new Error('el logo tardó mucho')), 3000); }),
+      ]).finally(() => clearTimeout(reloj));
+      logo = recibo.logoEscPos(recibo.logoDesdeGrises(g.gris, g.w, g.h, modo), modo);
+    }
   } catch (e) {
     console.warn('[colegio] recibo sin logo:', e?.message || e);
   }
@@ -130,35 +133,42 @@ async function imprimirReciboNativo(d) {
   return true;
 }
 
-// Logo → blanco y negro al ancho pedido (se guarda mientras la página esté abierta).
+// Logo → grises al ancho pedido (se guarda mientras la página esté abierta).
+// · Alto máximo 1.5 × ancho: un logo vertical no gasta medio rollo.
+// · Se achica por mitades (de un golpe se pierden las letras finas), pero el
+//   primer lienzo ya va a 4× el ancho final: una foto de 6000 px no traba la caja.
+// · Transparente = blanco.
 const cacheLogo = new Map();
-function logoEnBits(url, ancho) {
-  const clave = `${url}|${ancho}`;
+function logoEnGrises(url, anchoMax) {
+  const clave = `${url}|${anchoMax}`;
   if (!cacheLogo.has(clave)) {
     cacheLogo.set(clave, new Promise((ok, mal) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         try {
-          const w = ancho; const h = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * ancho));
-          // Se achica a la mitad varias veces (de un solo golpe se pierden las
-          // letras finas del logo), sobre fondo blanco (transparente = blanco).
-          let src = document.createElement('canvas');
-          src.width = img.naturalWidth; src.height = img.naturalHeight;
-          let sx = src.getContext('2d');
-          sx.fillStyle = '#fff'; sx.fillRect(0, 0, src.width, src.height); sx.drawImage(img, 0, 0);
+          const proporcion = img.naturalHeight / img.naturalWidth;
+          const w = proporcion > 1.5 ? Math.max(1, Math.round(anchoMax * 1.5 / proporcion)) : anchoMax;
+          const h = Math.max(1, Math.round(w * proporcion));
+          const lienzo = (cw, ch) => {
+            const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+            const x = c.getContext('2d'); x.imageSmoothingQuality = 'high';
+            return [c, x];
+          };
+          const w0 = Math.min(img.naturalWidth, w * 4); const h0 = Math.max(1, Math.round(w0 * proporcion));
+          let [src, sx] = lienzo(w0, h0);
+          sx.fillStyle = '#fff'; sx.fillRect(0, 0, w0, h0); sx.drawImage(img, 0, 0, w0, h0);
           while (src.width / 2 >= w * 1.5) {
-            const half = document.createElement('canvas');
-            half.width = Math.round(src.width / 2); half.height = Math.round(src.height / 2);
-            const hx = half.getContext('2d'); hx.imageSmoothingQuality = 'high';
+            const [half, hx] = lienzo(Math.round(src.width / 2), Math.round(src.height / 2));
             hx.drawImage(src, 0, 0, half.width, half.height);
-            src = half; sx = hx;
+            src = half;
           }
-          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-          const cx = cv.getContext('2d'); cx.imageSmoothingQuality = 'high';
+          const [, cx] = lienzo(w, h);
           cx.drawImage(src, 0, 0, w, h);
           const px = cx.getImageData(0, 0, w, h).data;
-          ok({ w, h, negro: (x, y) => { const i = (y * w + x) * 4; return (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) < 160; } });
+          const gris = new Uint8Array(w * h);
+          for (let i = 0; i < w * h; i++) gris[i] = Math.round(px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114);
+          ok({ w, h, gris });
         } catch (e) { mal(e); }
       };
       img.onerror = () => mal(new Error('No se pudo cargar el logo'));

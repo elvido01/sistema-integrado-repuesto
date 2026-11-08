@@ -66,7 +66,7 @@ describe('logo en el ticket', () => {
   it('Star: bandas de 24 puntos (ESC X) centradas y deja la impresora como estaba', () => {
     const s = logoEscPos(logo, 'star');
     const b = Array.from(s, (c) => c.charCodeAt(0));
-    expect(b.slice(0, 5)).toEqual([0x1b, 0x40, 0x1b, 0x33, 12]);
+    expect(b.slice(0, 5)).toEqual([0x1b, 0x40, 0x1b, 0x33, 7]);
     expect(s.split('X').length - 1).toBe(1);   // 10 filas = 1 banda de 24
     const n = (576 - 16) / 2 + 16;                  // relleno para centrar + ancho
     expect(b[6]).toBe(0x58); expect(b[7] + b[8] * 256).toBe(n);
@@ -81,5 +81,20 @@ describe('logo en el ticket', () => {
     const b = Array.from(s, (c) => c.charCodeAt(0));
     const i = b.indexOf(0x76);
     expect(b.slice(i - 1, i + 7)).toEqual([0x1d, 0x76, 0x30, 0, 2, 0, 10, 0]);   // 2 bytes de ancho, 10 de alto
+  });
+});
+
+import { logoDesdeGrises } from '@/services/escposReceipt';
+
+describe('logo: de grises a puntos', () => {
+  it('Star: punteado (un gris medio sale mitad puntos)', () => {
+    const w = 20, h = 20, gris = new Array(w * h).fill(128);
+    const l = logoDesdeGrises(gris, w, h, 'star');
+    let n = 0; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (l.negro(x, y)) n++;
+    expect(n).toBeGreaterThan(150); expect(n).toBeLessThan(250);
+  });
+  it('otras: umbral (negro sale negro, claro sale blanco)', () => {
+    const l = logoDesdeGrises([0, 139, 141, 255], 4, 1, 'escpos');
+    expect([0, 1, 2, 3].map((x) => l.negro(x, 0))).toEqual([true, true, false, false]);
   });
 });
