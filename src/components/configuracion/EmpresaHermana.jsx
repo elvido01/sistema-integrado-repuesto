@@ -24,6 +24,7 @@ export default function EmpresaHermana() {
   const [nombre, setNombre] = useState('');
   const [conInventario, setConInventario] = useState(true);
   const [conClientes, setConClientes] = useState(true);
+  const [conUsuarios, setConUsuarios] = useState(false);
   const [creando, setCreando] = useState(false);
   const [creada, setCreada] = useState(null);       // respuesta de crear_empresa_hermana
   const [abriendo, setAbriendo] = useState(false);
@@ -48,11 +49,13 @@ export default function EmpresaHermana() {
       `Se creará "${n}" con ${que} de esta empresa.\n\n`
       + (conInventario ? 'Lo que se venda o entre en una baja o sube en la otra.\n' : '')
       + (conClientes ? 'Los clientes nuevos o editados aparecen en las dos.\n' : '')
+      + (conUsuarios ? 'Los usuarios de esta empresa también podrán entrar a la nueva (con sus mismos permisos).\n'
+        : 'Solo tú podrás entrar a la nueva; a los demás los agregas después.\n')
       + 'Cada empresa factura, cobra, cierra caja y declara lo suyo.\n\n'
       + 'Solo se puede crear una empresa hermana. ¿Continuar?',
     )) return;
     setCreando(true);
-    const { data, error } = await supabase.rpc('crear_empresa_hermana', { p_nombre: n, p_inventario: conInventario, p_clientes: conClientes });
+    const { data, error } = await supabase.rpc('crear_empresa_hermana', { p_nombre: n, p_inventario: conInventario, p_clientes: conClientes, p_usuarios: conUsuarios });
     setCreando(false);
     if (error) return toast({ title: 'No se pudo crear', description: error.message, variant: 'destructive' });
     setCreada(data);
@@ -91,7 +94,10 @@ export default function EmpresaHermana() {
             <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 space-y-2">
               <p>
                 Lista: <b>{creada.nombre}</b>, en prueba hasta el {new Date(creada.prueba_hasta).toLocaleDateString('es-DO')}. Ábrela y llena su RNC,
-                dirección, teléfono y logo aquí mismo (Perfil Empresa). Para que otros usuarios entren, agrégalos en Usuarios y Permisos de esa empresa.
+                dirección, teléfono y logo aquí mismo (Perfil Empresa).{' '}
+                {creada.usuarios > 1
+                  ? `Pueden entrar ${creada.usuarios} usuarios (los de esta empresa, con sus mismos permisos).`
+                  : 'Solo tú puedes entrar: a los demás los agregas en Usuarios y Permisos de esa empresa.'}
               </p>
               <Button size="sm" onClick={abrir} disabled={abriendo} className="h-8">
                 {abriendo ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <ArrowRightLeft className="w-4 h-4 mr-1" />} Abrir {creada.nombre}
@@ -113,6 +119,10 @@ export default function EmpresaHermana() {
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="w-4 h-4" checked={conClientes} onChange={(e) => setConClientes(e.target.checked)} />
               Compartir clientes
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="w-4 h-4" checked={conUsuarios} onChange={(e) => setConUsuarios(e.target.checked)} />
+              Dar acceso a los usuarios de esta empresa
             </label>
           </div>
           <div className="flex flex-wrap items-center gap-2">

@@ -6,7 +6,7 @@
 -- CLIENTES, sin tocar el sistema. Es lo que se hizo a mano con
 -- Caminero ↔ MotoPréstamos y Centenario ↔ Centenario 1.
 --
--- · crear_empresa_hermana(nombre, inventario, clientes): se escoge qué se
+-- · crear_empresa_hermana(nombre, inventario, clientes, usuarios): se escoge qué se
 --   comparte (las dos casillas vienen marcadas). Solo admin/dueño de la empresa activa
 --   (o super admin). Una sola hermana por empresa (el espejo es de a dos).
 --   La nueva: mismo tipo de negocio, SIN RNC ni datos (los pone el dueño en
@@ -82,7 +82,11 @@ $function$;
 REVOKE ALL ON FUNCTION private.copiar_a_empresa_hermana(uuid, uuid, boolean, boolean) FROM PUBLIC, anon, authenticated;
 
 -- ── El botón ───────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.crear_empresa_hermana(p_nombre text, p_inventario boolean DEFAULT true, p_clientes boolean DEFAULT true)
+-- (otros argumentos = otra función: se borran las versiones anteriores)
+DROP FUNCTION IF EXISTS public.crear_empresa_hermana(text);
+DROP FUNCTION IF EXISTS public.crear_empresa_hermana(text, boolean, boolean);
+CREATE OR REPLACE FUNCTION public.crear_empresa_hermana(p_nombre text, p_inventario boolean DEFAULT true, p_clientes boolean DEFAULT true,
+                                                        p_usuarios boolean DEFAULT false)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -133,9 +137,24 @@ BEGIN
   END IF;
   UPDATE private.tenant_onboarding_claims SET claimed_by = v_uid, claimed_at = now() WHERE tenant_id = v_nuevo;
 
-  -- Acceso: quien la creó.
+  -- Acceso: quien la creó (dueño) y, si se marcó, los usuarios de esta
+  -- empresa con el mismo rol. Sus permisos de módulos son del usuario y
+  -- valen en las dos.
   INSERT INTO public.usuarios_empresas (user_id, tenant_id, rol) VALUES (v_uid, v_nuevo, 'owner')
   ON CONFLICT DO NOTHING;
+  IF COALESCE(p_usuarios, false) THEN
+    INSERT INTO public.usuarios_empresas (user_id, tenant_id, rol)
+    -- usuarios_empresas.rol solo acepta owner/admin/usuario/vendedor.
+    SELECT DISTINCT ON (u.user_id) u.user_id, v_nuevo,
+           CASE WHEN u.rol IN ('owner', 'admin') THEN u.rol
+                WHEN u.rol IN ('seller', 'vendedor') THEN 'vendedor' ELSE 'usuario' END
+      FROM (SELECT p.id AS user_id, COALESCE(p.role, 'seller') AS rol FROM public.profiles p WHERE p.tenant_id = v_t
+            UNION ALL
+            SELECT ue.user_id, COALESCE(ue.rol, 'seller') FROM public.usuarios_empresas ue WHERE ue.tenant_id = v_t) u
+     WHERE u.user_id <> v_uid
+       AND NOT EXISTS (SELECT 1 FROM public.usuarios_empresas x WHERE x.user_id = u.user_id AND x.tenant_id = v_nuevo)
+     ORDER BY u.user_id;
+  END IF;
 
   -- Se apuntan una a la otra y se copia todo.
   UPDATE public.config_empresa SET inventario_compartido_con = CASE WHEN p_inventario THEN v_nuevo END,
@@ -146,11 +165,12 @@ BEGIN
 
   RETURN jsonb_build_object('id', v_nuevo, 'nombre', v_nombre, 'prueba_hasta', v_fin,
     'productos', (SELECT count(*) FROM public.productos WHERE tenant_id = v_nuevo),
-    'clientes', (SELECT count(*) FROM public.clientes WHERE tenant_id = v_nuevo));
+    'clientes', (SELECT count(*) FROM public.clientes WHERE tenant_id = v_nuevo),
+    'usuarios', (SELECT count(*) FROM public.usuarios_empresas WHERE tenant_id = v_nuevo));
 END;
 $function$;
-REVOKE ALL ON FUNCTION public.crear_empresa_hermana(text, boolean, boolean) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.crear_empresa_hermana(text, boolean, boolean) TO authenticated;
+REVOKE ALL ON FUNCTION public.crear_empresa_hermana(text, boolean, boolean, boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.crear_empresa_hermana(text, boolean, boolean, boolean) TO authenticated;
 
 -- ── Para la pantalla: ¿con quién comparte? ─────────────────────────────
 CREATE OR REPLACE FUNCTION public.get_empresa_hermana()
