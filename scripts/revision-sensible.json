@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "8d976dbcd3b64dd6",
+    "src/pages/colegio/CajaColegioPage.jsx": "71d036017578b2ac",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -623,6 +623,13 @@
     {
       "fecha": "2026-11-08",
       "nota": "code-review high logo recibo colegio: 10 hallazgos; arreglados espera sin limite del logo (3 s), GS v 0 en bloques, fromCharCode por pedazos, regla Star compartida, import repetido; no se cambio: proporcion del logo en Star (la prueba impresa salio redonda), cache por URL (cada subida trae nombre nuevo), tramado (logos de colegio son de linea)",
+      "archivos": [
+        "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-08",
+      "nota": "code-review high e4a6689b0..b8d970ac4 (logo punteado, ñ y tildes, buscador): 10 hallazgos; arreglados busqueda con coma/punto vacia, estudiantes perdidos por el limite (ahora imatch exacto sin tildes), ñ en la base, modo chino de clonicas (FS .), º ª °, SVG sin tamano, achicado real por mitades, constantes muertas y quitarTildes repetido; no cambiado: centrado Star asume papel de 80 mm (todas las Star del grupo son 80 mm), cache del logo ya se borra al fallar",
       "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
       ]
