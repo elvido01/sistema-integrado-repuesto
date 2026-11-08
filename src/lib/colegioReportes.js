@@ -2,8 +2,8 @@
 // del colegio (parte 4, 06/11/2026).
 import { supabase } from '@/lib/customSupabaseClient';
 import { printHtmlSmart } from '@/lib/printHtmlSmart';
-import { estadoCuentaFamiliaHTML, facturaFiscalColegioHTML } from '@/lib/printColegio';
-import { diasAtraso, tramoAntiguedad, hoyRD, pendienteDe, fechaLocalRD, TANDAS_NOMBRE as TANDAS } from '@/lib/colegio';
+import { estadoCuentaFamiliaHTML, facturaFiscalColegioHTML, fichaInscripcionHTML } from '@/lib/printColegio';
+import { diasAtraso, tramoAntiguedad, hoyRD, pendienteDe, fechaLocalRD, edadDe, ESTADO_ESTUDIANTE, TANDAS_NOMBRE as TANDAS } from '@/lib/colegio';
 
 const ORDEN_TIPO = { reservacion: 1, inscripcion: 1, utileria: 2, bilingue: 3, mensualidad: 4, sala_tareas: 5, recargo: 6, otro: 7 };
 
@@ -87,6 +87,52 @@ export async function datosEstadoCuenta(familiaId, tenantId) {
 export async function imprimirEstadoCuenta(familiaId, tenantId) {
   const d = await datosEstadoCuenta(familiaId, tenantId);
   await printHtmlSmart(estadoCuentaFamiliaHTML(d), { tipo: 'carta' });
+}
+
+const ESTADO_PADRES_TXT = { casados: 'Casados', union_libre: 'Unión libre', separados: 'Separados', divorciados: 'Divorciados', fallecidos: 'Fallecidos', otro: 'Otro' };
+
+// La foto está en un bucket privado: se baja y va DENTRO de la hoja (data
+// URL), así imprime igual por el navegador o por el agente.
+async function fotoComoDataUrl(path) {
+  if (!path) return '';
+  try {
+    const { data, error } = await supabase.storage.from('edu-fotos').download(path);
+    if (error || !data) return '';
+    return await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => ok(''); r.readAsDataURL(data); });
+  } catch { return ''; }
+}
+
+/** Ficha de inscripción de un estudiante (hoja carta para el archivo físico). */
+export async function imprimirFichaEstudiante(estudianteId, tenantId) {
+  const { data: e, error } = await supabase.from('edu_estudiantes').select('*').eq('id', estudianteId).eq('tenant_id', tenantId).single();
+  if (error) throw error;
+  const [fa, cu, an, hs, colegio, foto] = await Promise.all([
+    supabase.from('edu_familias').select('*').eq('id', e.familia_id).eq('tenant_id', tenantId).maybeSingle(),
+    supabase.from('edu_cursos').select('id, nombre').eq('tenant_id', tenantId),
+    supabase.from('edu_anios').select('nombre').eq('tenant_id', tenantId).eq('actual', true).maybeSingle(),
+    supabase.from('edu_estudiantes').select('id, nombres, curso_id, estado').eq('familia_id', e.familia_id).eq('tenant_id', tenantId).neq('id', e.id),
+    datosColegio(tenantId),
+    fotoComoDataUrl(e.foto_path),
+  ]);
+  if (fa.error) throw fa.error;
+  const cursoN = new Map((cu.data || []).map((c) => [c.id, c.nombre]));
+  const f = fa.data || {};
+  const html = fichaInscripcionHTML({
+    colegio, anio: an.data?.nombre || '', fecha: new Date().toLocaleString('es-DO', { timeZone: 'America/Santo_Domingo' }), foto,
+    est: {
+      ...e,
+      fecha_nacimiento: e.fecha_nacimiento ? new Date(`${e.fecha_nacimiento}T12:00:00`).toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '',
+      edad: edadDe(e.fecha_nacimiento),
+      curso: cursoN.get(e.curso_id) || '', tanda: TANDAS[e.tanda] || e.tanda || '',
+      condicion: e.condicion === 'nuevo' ? 'Nuevo ingreso' : 'Continuante',
+      mensualidad: Number(e.tarifa_mensual || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      beca_pct: Number(e.beca_pct || 0),
+      estado: ESTADO_ESTUDIANTE[e.estado] || e.estado,
+    },
+    fam: { ...f, estado_padres: ESTADO_PADRES_TXT[f.estado_padres] || '' },
+    hermanos: (hs.data || []).filter((h) => h.estado === 'activo' || h.estado === 'por_confirmar').map((h) => `${h.nombres} (${cursoN.get(h.curso_id) || ''})`),
+  });
+  await printHtmlSmart(html, { tipo: 'carta' });
 }
 
 

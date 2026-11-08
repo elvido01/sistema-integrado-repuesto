@@ -10,7 +10,7 @@
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { GraduationCap, Plus, Upload, RefreshCw, Search, Loader2, AlertTriangle, UserMinus, UserCheck, Camera } from 'lucide-react';
+import { GraduationCap, Plus, Upload, RefreshCw, Search, Loader2, AlertTriangle, UserMinus, UserCheck, Camera, Printer } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import EstudianteFormModal from '@/components/colegio/EstudianteFormModal';
 import ImportarEstudiantesModal from '@/components/colegio/ImportarEstudiantesModal';
 import { edadDe, ESTADO_ESTUDIANTE } from '@/lib/colegio';
+import { imprimirFichaEstudiante } from '@/lib/colegioReportes';
 
 const fmt = (v) => `RD$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const campo = 'h-9 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
@@ -42,6 +43,14 @@ export default function EstudiantesPage() {
   const [fEstado, setFEstado] = useState('activo');
   const [ficha, setFicha] = useState(null);         // null | {} (nuevo) | estudiante
   const [importar, setImportar] = useState(false);
+  const [imprimiendo, setImprimiendo] = useState(null);
+  // Ficha de inscripción en hoja carta, para el archivo físico del colegio.
+  const imprimirFicha = async (e) => {
+    setImprimiendo(e.id);
+    try { await imprimirFichaEstudiante(e.id, tenantId); }
+    catch (err) { toast({ title: 'No se pudo imprimir la ficha', description: err?.message || String(err), variant: 'destructive' }); }
+    finally { setImprimiendo(null); }
+  };
   const [retirando, setRetirando] = useState(null);
 
   const error = useCallback((t, d) => toast({ title: t, description: d ? String(d) : undefined, variant: 'destructive' }), [toast]);
@@ -230,6 +239,9 @@ export default function EstudiantesPage() {
                       </td>
                       <td className="text-center text-xs">{e.sala_tareas ? 'Sala de Tareas' : ''}</td>
                       <td className="text-right pr-3" onClick={(ev) => ev.stopPropagation()}>
+                        <Button size="sm" variant="ghost" title="Imprimir ficha de inscripción" disabled={imprimiendo === e.id} onClick={() => imprimirFicha(e)}>
+                          {imprimiendo === e.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                        </Button>
                         {e.estado === 'por_confirmar' ? (
                           <Button size="sm" variant="ghost" disabled={retirando === e.id} title="No sigue (queda retirado). Para que siga, paga la reservación en la Caja." onClick={() => noSigue(e)}><UserMinus className="w-4 h-4" /></Button>
                         ) : e.estado === 'activo' ? (

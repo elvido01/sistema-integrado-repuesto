@@ -275,4 +275,67 @@ export function facturaFiscalColegioHTML(d) {
 </body></html>`;
 }
 
+/**
+ * Ficha de inscripción (hoja carta) para el archivo físico del colegio.
+ * d = { colegio, anio, fecha, foto (data URL o ''),
+ *       est: { matricula, nombres, apellidos, fecha_nacimiento, edad, lugar_nacimiento, numero_hermanos,
+ *              edades_hermanos, posicion_familia, curso, tanda, seccion, condicion, mensualidad, beca_pct,
+ *              beca_motivo, sala_tareas, notas, estado },
+ *       fam: { nombre, estado_padres, direccion, sector, telefono_residencial, madre_*, padre_*, tutor_* },
+ *       hermanos: ['Nombre (curso)'] }
+ */
+export function fichaInscripcionHTML(d) {
+  const e = d.est || {}; const f = d.fam || {};
+  const v = (x) => (x == null || x === '' ? '&nbsp;' : esc(x));
+  const campo = (label, valor, ancho = 1) => `<div class="cp" style="grid-column: span ${ancho}"><span>${esc(label)}</span><b>${v(valor)}</b></div>`;
+  const padre = (k, titulo) => `
+    <h2>${titulo}</h2>
+    <div class="g">
+      ${campo('Nombre', f[`${k}_nombre`], 3)}${campo('Ocupación', f[`${k}_profesion`])}${campo('Lugar de trabajo', f[`${k}_trabajo`], 2)}
+      ${campo('Celular', f[`${k}_celular`], 2)}${campo('Teléfono', f[`${k}_telefono`], 2)}${campo('Correo', f[`${k}_correo`], 2)}
+    </div>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Ficha ${esc(e.apellidos || '')} ${esc(e.nombres || '')}</title>
+<style>${CSS_HOJA}
+  .top { display: flex; gap: 14px; margin-top: 10px; }
+  .foto { width: 30mm; height: 38mm; border: 1px solid #9aa1ab; display: flex; align-items: center; justify-content: center; color: #9aa1ab; font-size: 10px; flex-shrink: 0; overflow: hidden; }
+  .foto img { width: 100%; height: 100%; object-fit: cover; }
+  .g { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px 10px; }
+  .top .g { flex: 1; align-content: start; }
+  .cp { border-bottom: 1px solid #c6ccd4; padding: 1px 0 2px; min-width: 0; }
+  .cp span { display: block; font-size: 8.5px; color: #5b6472; text-transform: uppercase; letter-spacing: .3px; }
+  .cp b { display: block; font-size: 11.5px; font-weight: 600; min-height: 15px; overflow-wrap: anywhere; }
+  h2 { border-bottom: 2px solid #16325c; padding-bottom: 2px; margin: 12px 0 6px; text-transform: uppercase; letter-spacing: .4px; }
+  .firmas { display: flex; gap: 40px; margin-top: 46px; }
+  .firmas div { flex: 1; border-top: 1px solid #1b2330; text-align: center; padding-top: 3px; font-size: 10.5px; }
+</style></head><body>
+  ${cabecera(d.colegio, 'Ficha de inscripción', `Año escolar ${d.anio || ''}`)}
+  <div class="top">
+    <div class="foto">${d.foto ? `<img src="${d.foto}" alt="">` : 'FOTO'}</div>
+    <div class="g">
+      ${campo('Matrícula', e.matricula)}${campo('Apellidos', e.apellidos, 3)}${campo('Estado', e.estado, 2)}
+      ${campo('Nombres', e.nombres, 4)}${campo('Fecha de nacimiento', e.fecha_nacimiento)}${campo('Edad', e.edad != null ? `${e.edad} años` : '')}
+      ${campo('Lugar de nacimiento', e.lugar_nacimiento, 3)}${campo('Núm. de hermanos', e.numero_hermanos)}${campo('Edades de los hermanos', e.edades_hermanos)}${campo('Posición en la familia', e.posicion_familia)}
+    </div>
+  </div>
+  <h2>Inscripción</h2>
+  <div class="g">
+    ${campo('Curso', e.curso, 2)}${campo('Tanda', e.tanda)}${campo('Sección', e.seccion)}${campo('Condición', e.condicion, 2)}
+    ${campo('Mensualidad RD$', e.mensualidad)}${campo('Beca', e.beca_pct > 0 ? `${e.beca_pct}%` : 'No')}${campo('Motivo de la beca', e.beca_motivo, 2)}${campo('Sala de Tareas', e.sala_tareas ? 'Sí' : 'No', 2)}
+  </div>
+  <h2>Familia</h2>
+  <div class="g">
+    ${campo('Familia', f.nombre, 3)}${campo('Los padres están', f.estado_padres)}${campo('Teléfono residencial', f.telefono_residencial, 2)}
+    ${campo('Dirección residencial', f.direccion, 4)}${campo('Sector', f.sector, 2)}
+    ${d.hermanos?.length ? campo('Hermanos en el colegio', d.hermanos.join(' · '), 6) : ''}
+  </div>
+  ${padre('madre', 'Madre')}
+  ${padre('padre', 'Padre')}
+  <h2>Tutor (si no es el padre ni la madre)</h2>
+  <div class="g">${campo('Nombre', f.tutor_nombre, 3)}${campo('Teléfono', f.tutor_telefono)}${campo('Dirección', f.tutor_direccion, 2)}</div>
+  ${e.notas ? `<h2>Notas</h2><div>${esc(e.notas)}</div>` : ''}
+  <div class="firmas"><div>Firma del padre, madre o tutor</div><div>Firma y sello del colegio</div></div>
+  <div class="nota">Impreso el ${esc(d.fecha || '')}. Datos confidenciales del estudiante y su familia.</div>
+</body></html>`;
+}
+
 export { dinero };

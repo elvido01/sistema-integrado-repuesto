@@ -4,7 +4,8 @@
 // fija: el nuevo recibe la del hermano que ya está o la tarifa más reciente;
 // un acuerdo se escribe a mano. La foto es obligatoria al inscribir.
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, Users } from 'lucide-react';
+import { Loader2, Search, Users, Printer } from 'lucide-react';
+import { imprimirFichaEstudiante } from '@/lib/colegioReportes';
 import { supabase } from '@/lib/customSupabaseClient';
 import MontoInput from '@/components/ui/MontoInput';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -57,6 +58,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
   const [resultadosFam, setResultadosFam] = useState([]);
   const [modoFamilia, setModoFamilia] = useState('nueva');    // nueva | elegida (de un hermano)
   const [guardando, setGuardando] = useState(false);
+  const [imprimiendo, setImprimiendo] = useState(false);
   const [becaModo, setBecaModo] = useState('0');
 
   const s = (k, v) => setEst((p) => ({ ...p, [k]: v }));
@@ -387,6 +389,12 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
         <Campo label="Notas"><textarea className={`${campo} h-16 py-1`} value={est.notas || ''} onChange={(e) => s('notas', e.target.value)} /></Campo>
 
         <div className="flex justify-end gap-2 pt-2">
+          {editando && (
+            <Button variant="outline" className="mr-auto" disabled={imprimiendo || guardando} title="Imprime lo guardado (guarda primero si cambiaste algo)"
+              onClick={async () => { setImprimiendo(true); try { await imprimirFichaEstudiante(estudiante.id, tenantId); } catch (e) { onError('No se pudo imprimir la ficha', e?.message || String(e)); } finally { setImprimiendo(false); } }}>
+              {imprimiendo ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Printer className="w-4 h-4 mr-1" />} Imprimir ficha
+            </Button>
+          )}
           <Button variant="ghost" onClick={onClose} disabled={guardando}>Cancelar</Button>
           <Button onClick={guardar} disabled={guardando}>
             {guardando && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} {editando ? 'Guardar cambios' : 'Inscribir'}
