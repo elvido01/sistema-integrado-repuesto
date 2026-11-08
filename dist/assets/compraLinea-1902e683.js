@@ -1,0 +1,1 @@
+function s(t,r){const c=Number(t==null?void 0:t.cantidad)||0,u=Number(t==null?void 0:t.costo_unitario)||0,o=Number((c*u).toFixed(2)),i=Number((o*((Number(t==null?void 0:t.descuento_pct)||0)/100)).toFixed(2)),e=Number((o-i).toFixed(2)),n=Number(t==null?void 0:t.itbis_pct)||0;return n>0&&!r?Number((e+Math.trunc(e*n*100)/100).toFixed(2)):e}export{s as i};
