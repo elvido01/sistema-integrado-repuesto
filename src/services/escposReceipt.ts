@@ -757,17 +757,26 @@ export function logoEscPos(logo: LogoBits, modo: 'star' | 'escpos'): string {
         out.push(0x1b, 0x40);                                     // deja la impresora como estaba
     } else {
         const bw = Math.ceil(w / 8);
-        out.push(0x1b, 0x40, 0x1b, 0x61, 1, 0x1d, 0x76, 0x30, 0, bw & 0xff, bw >> 8, h & 0xff, h >> 8);
-        for (let y = 0; y < h; y++) {
-            for (let xb = 0; xb < bw; xb++) {
-                let b = 0;
-                for (let k = 0; k < 8; k++) { const x = xb * 8 + k; if (x < w && negro(x, y)) b |= 0x80 >> k; }
-                out.push(b);
+        out.push(0x1b, 0x40, 0x1b, 0x61, 1);
+        // En bloques de 128 filas, como escposRaster: las clónicas con poca
+        // memoria pierden un GS v 0 muy alto.
+        for (let y0 = 0; y0 < h; y0 += 128) {
+            const hh = Math.min(128, h - y0);
+            out.push(0x1d, 0x76, 0x30, 0, bw & 0xff, bw >> 8, hh & 0xff, hh >> 8);
+            for (let y = y0; y < y0 + hh; y++) {
+                for (let xb = 0; xb < bw; xb++) {
+                    let b = 0;
+                    for (let k = 0; k < 8; k++) { const x = xb * 8 + k; if (x < w && negro(x, y)) b |= 0x80 >> k; }
+                    out.push(b);
+                }
             }
         }
         out.push(0x0a, 0x1b, 0x61, 0, 0x1b, 0x40);
     }
-    return String.fromCharCode(...out);
+    // Por pedazos: con ...out entero una imagen grande revienta la pila.
+    let s = '';
+    for (let i = 0; i < out.length; i += 0x2000) s += String.fromCharCode(...out.slice(i, i + 0x2000));
+    return s;
 }
 
 // ── Recibo de la Caja del Colegio (08/11/2026) ─────────────────────────────

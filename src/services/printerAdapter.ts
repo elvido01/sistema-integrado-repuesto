@@ -225,8 +225,11 @@ export async function printRaw(
  * (ESC d 3) YA corta, y el corte ESC/POS (GS V …) no lo entienden y salía
  * como una "v" arriba del ticket siguiente. En una Star se quita.
  */
+/** Star (modo Star) por el nombre: una sola regla para el corte y el logo. */
+export const esImpresoraStar = (printerName: string): boolean => /star|tsp/i.test(String(printerName || ''));
+
 export function ajustarParaImpresora(printerName: string, escpos: string): string {
-    if (!/star|tsp/i.test(String(printerName || ''))) return escpos;
+    if (!esImpresoraStar(printerName)) return escpos;
     return escpos.replace(/\x1DV[\x00\x01\x30\x31]/g, '').replace(/\x1DV[\x41\x42][\s\S]/g, '');
 }
 

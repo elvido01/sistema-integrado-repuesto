@@ -100,30 +100,33 @@ export async function imprimirReciboColegio(pagoId, tenantId, formato) {
 const TERMICAS = ['Star TSP143', 'TSP143', 'TSP100', 'POS-80', 'POS80', 'XP-80', 'EPSON TM', 'Thermal', 'Receipt'];
 async function imprimirReciboNativo(d) {
   if (!isSilentPrintEnabled()) return false;
-  let impresora; let escpos; let enviar;
+  let impresora; let escpos; let recibo; let adaptador;
   try {
-    const [agente, recibo, adaptador] = await Promise.all([
+    let agente;
+    [agente, recibo, adaptador] = await Promise.all([
       import('@/services/motoflowPrintAgent'), import('@/services/escposReceipt'), import('@/services/printerAdapter'),
     ]);
     if (!(await agente.agentIsAvailable())) return false;
     impresora = await adaptador.findReceiptPrinter(TERMICAS);
     escpos = recibo.buildReciboColegioEscPos(d);
-    enviar = adaptador.printEscPosPorAgente;
   } catch (e) {
     console.warn('[colegio] sin impresora para el recibo nativo, uso imagen:', e?.message || e);
     return false;
   }
-  // Logo arriba (si no se puede cargar, el recibo sale sin él).
+  // Logo arriba. Si no carga en 3 s (o falla), el recibo sale sin él: no se
+  // queda esperando (y no salen dos al darle otra vez).
   let logo = '';
   try {
-    const { logoEscPos, LOGO_COLUMNAS_STAR, LOGO_PUNTOS_ESCPOS } = await import('@/services/escposReceipt');
-    const modo = /star|tsp/i.test(impresora) ? 'star' : 'escpos';
-    const bits = d.colegio?.logo_url ? await logoEnBits(d.colegio.logo_url, modo === 'star' ? LOGO_COLUMNAS_STAR : LOGO_PUNTOS_ESCPOS) : null;
-    if (bits) logo = logoEscPos(bits, modo);
+    const modo = adaptador.esImpresoraStar(impresora) ? 'star' : 'escpos';
+    const ancho = modo === 'star' ? recibo.LOGO_COLUMNAS_STAR : recibo.LOGO_PUNTOS_ESCPOS;
+    const bits = d.colegio?.logo_url
+      ? await Promise.race([logoEnBits(d.colegio.logo_url, ancho), new Promise((_, mal) => setTimeout(() => mal(new Error('el logo tardó mucho')), 3000))])
+      : null;
+    if (bits) logo = recibo.logoEscPos(bits, modo);
   } catch (e) {
     console.warn('[colegio] recibo sin logo:', e?.message || e);
   }
-  await enviar(impresora, escpos, logo);
+  await adaptador.printEscPosPorAgente(impresora, escpos, logo);
   return true;
 }
 
