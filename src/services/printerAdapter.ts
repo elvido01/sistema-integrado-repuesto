@@ -230,7 +230,12 @@ export const esImpresoraStar = (printerName: string): boolean => /star|tsp/i.tes
 
 export function ajustarParaImpresora(printerName: string, escpos: string): string {
     if (!esImpresoraStar(printerName)) return escpos;
-    return escpos.replace(/\x1DV[\x00\x01\x30\x31]/g, '').replace(/\x1DV[\x41\x42][\s\S]/g, '');
+    let s = escpos.replace(/\x1DV[\x00\x01\x30\x31]/g, '').replace(/\x1DV[\x41\x42][\s\S]/g, '');
+    // (08/11/2026) Texto con ñ/tildes (tabla 437): la Star la escoge con
+    // ESC GS t 1 (probado en papel); cada ESC @ la reinicia, se pone detrás.
+    // Solo si hay letras así: los tickets de solo ASCII quedan igual.
+    if (/[\x80-\xFF]/.test(s)) s = s.replace(/\x1B@/g, '\x1B@\x1B\x1Dt\x01');
+    return s;
 }
 
 export async function printRawEscPos(printerName: string, escpos: string) {

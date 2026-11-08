@@ -36,6 +36,24 @@ const toAscii = (s: string): string =>
         .replace(/[¿¡]/g, '')
         .replace(/[^\x00-\x7F]/g, '');
 
+// (08/11/2026) Con la tabla de letras 437 la impresora SÍ trae ñ, Ñ, tildes
+// minúsculas, É, ü, ¿ y ¡ (probado en la Star de Morla con ESC GS t 1; en
+// Epson es ESC t 0). La 437 no tiene Á Í Ó Ú: esas van sin tilde. Lo demás
+// que no está, a ASCII como antes. Por ahora solo lo usa el recibo del colegio
+// ("Ano escolar" en un colegio no se puede).
+const CP437: Record<string, number> = {
+    'ñ': 0xA4, 'Ñ': 0xA5, 'á': 0xA0, 'é': 0x82, 'í': 0xA1, 'ó': 0xA2, 'ú': 0xA3,
+    'É': 0x90, 'ü': 0x81, 'Ü': 0x9A, '¿': 0xA8, '¡': 0xAD, 'ç': 0x87, 'Ç': 0x80,
+};
+export const ESC_TABLA_437 = '\x1Bt\x00';   // Epson y compatibles (la Star lo ignora sin imprimir nada)
+export const toCP437 = (s: string): string =>
+    Array.from(s.normalize('NFC'), (ch) => {
+        if (CP437[ch] != null) return String.fromCharCode(CP437[ch]);
+        const code = ch.charCodeAt(0);
+        if (code < 0x80) return ch;
+        return ch.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x00-\x7F]/g, '');
+    }).join('');
+
 // ── Width: Star TSP143 = 42 chars/line (Font A, 80mm) ──
 const W = 42;
 
@@ -839,7 +857,7 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     const n2 = (v: unknown) => fmt(Number(v || 0));
     // Fila "texto ....... monto": si no cabe, el texto va arriba y el monto solo.
     const fila = (texto: string, monto: string): string[] => {
-        const partes = wrapLines(texto.trim() || '(sin descripcion)', W - monto.length - 1);
+        const partes = wrapLines(texto.trim() || '(sin descripción)', W - monto.length - 1);
         return partes.map((t, i) => (i === partes.length - 1 ? leftRight(t, monto) : t));
     };
     const f = String(p.fecha || '');
@@ -852,7 +870,7 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     const fam = d.familia || {};
 
     const lines: string[] = [];
-    lines.push(CMD.INIT);
+    lines.push(CMD.INIT + ESC_TABLA_437);   // tabla 437: ñ y tildes (en la Star la pone ajustarParaImpresora)
     // Cabecera propia: buildHeader corta en 42 y la dirección del colegio es larga.
     const c = d.colegio || {};
     for (const l of wrapLines(String(c.nombre || '').toUpperCase())) lines.push(CMD.BOLD_ON + centerLine(l) + CMD.BOLD_OFF);
@@ -877,7 +895,7 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     lines.push(dashLine());
     for (const e of d.estudiantes) {
         for (const l of e.lineas) {
-            const desc = `${String(l.descripcion || '').trim() || '(sin descripcion)'}${varios ? ` (${e.nombre.split(' ')[0]})` : ''}`;
+            const desc = `${String(l.descripcion || '').trim() || '(sin descripción)'}${varios ? ` (${e.nombre.split(' ')[0]})` : ''}`;
             lines.push(...fila(desc, l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(l.monto)));
         }
     }
@@ -898,5 +916,5 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     lines.push(centerLine('¡Gracias!'));
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
-    return toAscii(lines.join(CMD.LF));
+    return toCP437(lines.join(CMD.LF));
 }
