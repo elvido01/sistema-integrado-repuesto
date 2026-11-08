@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Save, Loader2, Building2, Upload, Image, Download } from 'lucide-react';
 import { descargarRespaldoTenant } from '@/lib/backupTenant';
+import EmpresaHermana from '@/components/configuracion/EmpresaHermana';
 
 const PerfilEmpresa = () => {
   const { toast } = useToast();
@@ -311,6 +312,9 @@ const PerfilEmpresa = () => {
                 </div>
               )}
             </div>
+
+            {/* Empresa hermana: inventario y clientes compartidos */}
+            <EmpresaHermana />
 
             {/* Respaldo de Datos */}
             <div className="border-t border-gray-200 pt-5">

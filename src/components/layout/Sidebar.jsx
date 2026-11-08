@@ -308,10 +308,14 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const [cambiandoEmpresa, setCambiandoEmpresa] = useState(false);
 
   useEffect(() => {
-    if (!user?.id) { setMisEmpresas([]); return; }
-    supabase.rpc('get_mis_empresas').then(({ data, error }) => {
+    if (!user?.id) { setMisEmpresas([]); return undefined; }
+    const leer = () => supabase.rpc('get_mis_empresas').then(({ data, error }) => {
       if (!error && Array.isArray(data)) setMisEmpresas(data);
     }, () => {});
+    leer();
+    // (08/11/2026) Al crear una empresa hermana (Perfil Empresa) sale en el selector.
+    window.addEventListener('mf:empresas-cambiaron', leer);
+    return () => window.removeEventListener('mf:empresas-cambiaron', leer);
   }, [user?.id]);
 
   const cambiarEmpresa = async (nuevoTenant) => {
