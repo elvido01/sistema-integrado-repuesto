@@ -45,6 +45,25 @@ BEGIN
   RAISE NOTICE 'Borrados: % estudiantes, % familias, % cobros, % recibos de ingreso, % clientes', v_est, v_fam, v_pag, v_ri, v_cli;
 END $borrar$;
 
+-- Uniformes y libros de prueba (colegio_prueba_uniformes_libros.sql):
+-- los que no se vendieron se borran; los vendidos se desactivan (la factura
+-- los necesita). Los tipos UNIFORMES y LIBROS se quedan.
+DO $productos$
+DECLARE v_t uuid := '8bcd59ef-9502-486c-b919-c77b991387bb'; v_b int; v_d int;
+BEGIN
+  CREATE TEMP TABLE _prod ON COMMIT DROP AS
+    SELECT p.id, EXISTS (SELECT 1 FROM public.facturas_detalle fd WHERE fd.producto_id = p.id) AS vendido
+      FROM public.productos p WHERE p.tenant_id = v_t AND p.referencia = 'PRUEBA';
+  DELETE FROM public.inventario_movimientos WHERE tenant_id = v_t AND referencia_doc = 'PRUEBA-INICIAL'
+     AND producto_id IN (SELECT id FROM _prod WHERE NOT vendido);
+  DELETE FROM public.presentaciones WHERE producto_id IN (SELECT id FROM _prod WHERE NOT vendido);
+  DELETE FROM public.productos WHERE id IN (SELECT id FROM _prod WHERE NOT vendido);
+  GET DIAGNOSTICS v_b = ROW_COUNT;
+  UPDATE public.productos SET activo = false WHERE id IN (SELECT id FROM _prod WHERE vendido);
+  GET DIAGNOSTICS v_d = ROW_COUNT;
+  RAISE NOTICE 'Productos de prueba: % borrados, % desactivados (ya vendidos)', v_b, v_d;
+END $productos$;
+
 -- Facturas fiscales hechas a familias de prueba (no se borran):
 SELECT f.ncf, f.fecha, c.nombre FROM public.facturas f JOIN public.clientes c ON c.id = f.cliente_id
  WHERE f.tenant_id = '8bcd59ef-9502-486c-b919-c77b991387bb' AND f.forma_pago LIKE '% - RECIBO'
