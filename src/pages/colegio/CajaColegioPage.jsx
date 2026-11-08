@@ -12,7 +12,7 @@
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { Wallet, Search, Loader2, Printer, Plus, Trash2, Ban, RefreshCw, CalendarPlus, CalendarCheck, FileText, X, UserMinus } from 'lucide-react';
+import { Wallet, Search, Loader2, Printer, Plus, Trash2, Ban, RefreshCw, CalendarPlus, CalendarCheck, FileText, X, UserMinus, Eye } from 'lucide-react';
 import { imprimirEstadoCuenta } from '@/lib/colegioReportes';
 import FacturaFiscalDialog from '@/components/colegio/FacturaFiscalDialog';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -715,6 +715,7 @@ export default function CajaColegioPage() {
                     <td>Familia {r.edu_familias?.nombre || ''}</td>
                     <td className="text-right font-mono">RD${n2(r.total)}</td>
                     <td className="text-right pr-3 whitespace-nowrap">
+                      <Button size="sm" variant="ghost" title="Ver la familia (sin buscarla)" disabled={!r.familia_id || cobrando} onClick={async () => { await abrirFamilia(r.familia_id); buscadorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}><Eye className="w-4 h-4" /></Button>
                       <Button size="sm" variant="ghost" title="Ticket" onClick={() => imprimirReciboColegio(r.id, tenantId, 'ticket').catch((e) => error('No se pudo imprimir', e?.message))}><Printer className="w-4 h-4" /></Button>
                       <Button size="sm" variant="ghost" title="Hoja" onClick={() => imprimirReciboColegio(r.id, tenantId, 'hoja').catch((e) => error('No se pudo imprimir', e?.message))}>Hoja</Button>
                       {esDireccion && !r.anulado && <Button size="sm" variant="ghost" title="Anular" onClick={() => anular(r)}><Ban className="w-4 h-4 text-red-600" /></Button>}
