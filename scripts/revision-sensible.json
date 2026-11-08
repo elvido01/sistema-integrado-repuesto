@@ -354,7 +354,7 @@
     "src/lib/printNominaFirmas.js": "3dc0d0313bba5afb",
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
-    "src/pages/ComprasPage.jsx": "35e3f1502493c479",
+    "src/pages/ComprasPage.jsx": "a557e85ae695d18f",
     "src/pages/Configuracion/CierreCajaPage.jsx": "2b50de559e520821",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "3cc0fae7c3fa1e09",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
@@ -415,7 +415,9 @@
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
     "src/pages/colegio/CajaColegioPage.jsx": "30ae68266f98bf00",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
-    "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea"
+    "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
+    "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
+    "src/lib/compraLinea.js": "23cb74e4cfc96c56"
   },
   "historial": [
     {
@@ -593,6 +595,15 @@
       "archivos": [
         "src/lib/dgiiExport.js",
         "src/pages/ReportesDGIIPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-08",
+      "nota": "code-review high: 10 hallazgos en Compras/ITBIS incluido (SQL duplicado, itbis_pct de la orden /100, USD redondeo, redondeo SQL distinto, lineas de paquete, edicion sin recalcular, ticket y 4 copias de la regla); corregidos con regla unica lib/compraLinea + pruebas; queda: totals de cabecera con su formula propia (a proposito)",
+      "archivos": [
+        "sql/compras_itbis_incluido_importe.sql",
+        "src/lib/compraLinea.js",
+        "src/pages/ComprasPage.jsx"
       ]
     }
   ]

@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { importeLineaCompra } from '@/lib/compraLinea';
 /**
  * ESC/POS command builder for Star TSP143 receipt printer.
  * Generates raw text commands for native printer font output via QZ Tray.
@@ -666,13 +667,8 @@ interface CompraDetalle {
 // Total de la línea con ITBIS. Se calcula (no se toma importe): con "ITBIS
 // incluido" compras_detalle.importe trae el ITBIS sumado dos veces y las líneas
 // no cuadraban con el TOTAL (OC-0393: 12,330.80 contra 10,449.84).
-export const totalLineaCompra = (item: CompraDetalle, itbisIncluido = false): number => {
-    const cant = Number(item.cantidad || 0), costo = Number(item.costo_unitario || 0);
-    if (!cant || !costo) return Number(item.importe || 0);
-    const base = cant * costo * (1 - Number(item.descuento_pct || 0) / 100);
-    const tasa = Number(item.itbis_pct || 0) > 1 ? Number(item.itbis_pct) / 100 : Number(item.itbis_pct || 0);
-    return Math.round((itbisIncluido ? base : base * (1 + tasa)) * 100) / 100;
-};
+export const totalLineaCompra = (item: CompraDetalle, itbisIncluido = false): number =>
+    importeLineaCompra(item, itbisIncluido);
 
 export function buildCompraEscPos(
     compra: CompraData,

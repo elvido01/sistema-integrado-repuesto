@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { importeLineaCompra } from '@/lib/compraLinea';
 import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
@@ -286,13 +287,17 @@ const ComprasPage = () => {
       const aUSD = (v) => Number(((Number(v) || 0) / tasaCompraUSD).toFixed(2));
 
       if (filaDetalle.compras_detalle) {
-        setDetalles(filaDetalle.compras_detalle.map(d => ({
-          ...d,
-          costo_unitario: tasaCompraUSD ? aUSD(d.costo_unitario) : d.costo_unitario,
-          importe: tasaCompraUSD ? aUSD(d.importe) : d.importe,
-          original_id: d.id,
-          id: Math.random() // for local unique key rendering
-        })));
+        setDetalles(filaDetalle.compras_detalle.map(d => {
+          const costo = tasaCompraUSD ? aUSD(d.costo_unitario) : d.costo_unitario;
+          return {
+            ...d,
+            costo_unitario: costo,
+            // Se recalcula con la regla única: lo que se ve es lo que se guarda.
+            importe: importeLineaCompra({ ...d, costo_unitario: costo }, filaDetalle.itbis_incluido ?? false),
+            original_id: d.id,
+            id: Math.random() // for local unique key rendering
+          };
+        }));
       }
 
       if (esGrupo) {
@@ -370,10 +375,17 @@ const ComprasPage = () => {
         unidad: d.unidad || 'UND',
         costo_unitario: tasaOrden > 0 ? aUSD(d.precio) : (d.precio || 0),
         descuento_pct: d.descuento_pct || 0,
-        itbis_pct: d.itbis_pct ? (parseFloat(d.itbis_pct) / 100) : 0.18,
-        importe: tasaOrden > 0 ? aUSD(d.importe) : d.importe,
+        // ordenes_compra_detalle.itbis_pct es decimal (0.18); antes se dividía
+        // otra vez entre 100 (0.0018) y un 0 (exento) se volvía 18%.
+        itbis_pct: d.itbis_pct == null || d.itbis_pct === '' ? 0.18
+          : (Number(d.itbis_pct) > 1 ? Number(d.itbis_pct) / 100 : Number(d.itbis_pct)),
         producto_id: d.producto_id,
         is_matched: true
+      })).map(d => ({
+        ...d,
+        // (07/11/2026) La orden trae el importe CON ITBIS; copiarlo en una
+        // compra "ITBIS incluido" sumaba el ITBIS dos veces (lib/compraLinea).
+        importe: importeLineaCompra(d, orderData.itbis_incluido ?? true),
       }));
 
       setDetalles(loadedDetails);
@@ -396,6 +408,21 @@ const ComprasPage = () => {
     };
     cargarOrden();
   }, [ordenParaFacturar, setOrdenParaFacturar, toast]);
+
+  // (07/11/2026) Al cambiar "ITBIS incluido" se recalcula el total de cada
+  // línea (antes se quedaba como estaba y el ITBIS salía doble o faltaba).
+  useEffect(() => {
+    setDetalles(prev => {
+      let cambio = false;
+      const next = prev.map(d => {
+        const importe = importeLineaCompra(d, compra.itbis_incluido);
+        if (Math.abs((Number(d.importe) || 0) - importe) < 0.005) return d;
+        cambio = true;
+        return { ...d, importe };
+      });
+      return cambio ? next : prev;
+    });
+  }, [compra.itbis_incluido]);
 
   const totals = useMemo(() => {
     let exento = 0;
@@ -1039,15 +1066,8 @@ const ComprasPage = () => {
         lineasAbiertas += 1;
       }
 
-      // La base se calcula restando el descuento
-      const baseCalculo = cantidad * costo * (1 - discount_pct);
-
-      // Si el ITBIS no está incluido, lo sumamos al importe de la línea (TRUNCANDO ITBIS)
-      let importe = baseCalculo;
-      if (itbis_pct > 0 && !compra.itbis_incluido) {
-        const itbisValor = Math.trunc((baseCalculo * itbis_pct) * 100) / 100;
-        importe = baseCalculo + itbisValor;
-      }
+      // Total de la línea: la regla única (lib/compraLinea).
+      const importe = importeLineaCompra({ cantidad, costo_unitario: costo, descuento_pct: discount_pct * 100, itbis_pct }, compra.itbis_incluido);
 
       return {
         id: Math.random(),
@@ -1091,22 +1111,8 @@ const ComprasPage = () => {
     const costo = parseFloat(currentDetalle.costo_unitario) || 0;
     const descuento = parseFloat(currentDetalle.descuento_pct) || 0;
 
-    let importe = 0;
-    const subtotal = Number((cantidad * costo).toFixed(2));
-    const descValor = Number((subtotal * (descuento / 100)).toFixed(2));
-    const baseCalculo = Number((subtotal - descValor).toFixed(2));
-
-    if (currentDetalle.itbis_pct > 0) {
-      if (compra.itbis_incluido) {
-        importe = baseCalculo;
-      } else {
-        // TRUNCAR A 2 DECIMALES SEGUN REQUERIMIENTO USER
-        const itbisValor = Math.trunc((baseCalculo * currentDetalle.itbis_pct) * 100) / 100;
-        importe = Number((baseCalculo + itbisValor).toFixed(2));
-      }
-    } else {
-      importe = baseCalculo;
-    }
+    // Total de la línea: la regla única (lib/compraLinea).
+    const importe = importeLineaCompra({ cantidad, costo_unitario: costo, descuento_pct: descuento, itbis_pct: currentDetalle.itbis_pct }, compra.itbis_incluido);
 
     const lineaFinal = { ...currentDetalle, cantidad, costo_unitario: costo, descuento_pct: descuento, importe: Number(importe.toFixed(2)) };
 
@@ -1152,14 +1158,7 @@ const ComprasPage = () => {
       const cantPrev = parseFloat(currentDetalle.cantidad) || 0;
       const costoPrev = parseFloat(currentDetalle.costo_unitario) || 0;
       const descPrev = parseFloat(currentDetalle.descuento_pct) || 0;
-      const subtotalPrev = Number((cantPrev * costoPrev).toFixed(2));
-      const descValorPrev = Number((subtotalPrev * (descPrev / 100)).toFixed(2));
-      const basePrev = Number((subtotalPrev - descValorPrev).toFixed(2));
-      let importePrev = basePrev;
-      if (currentDetalle.itbis_pct > 0 && !compra.itbis_incluido) {
-        const itbisVal = Math.trunc((basePrev * currentDetalle.itbis_pct) * 100) / 100;
-        importePrev = Number((basePrev + itbisVal).toFixed(2));
-      }
+      const importePrev = importeLineaCompra({ cantidad: cantPrev, costo_unitario: costoPrev, descuento_pct: descPrev, itbis_pct: currentDetalle.itbis_pct }, compra.itbis_incluido);
       setDetalles(prev => {
         const next = [...prev];
         if (editingDetalleIndex < next.length) {
@@ -1386,9 +1385,12 @@ const ComprasPage = () => {
     const usd = esUSD && Number(tasaDia) > 0;
     const tasa = Number(tasaDia) || 0;
     const rd = (v) => Number(((Number(v) || 0) * tasa).toFixed(2));
-    const detallesGuardar = usd
-      ? detalles.map(d => ({ ...d, costo_unitario: rd(d.costo_unitario), importe: rd(d.importe) }))
-      : detalles;
+    // El total de cada línea sale de la regla única (lib/compraLinea), en la
+    // moneda de pantalla, y después se pasa a RD$ igual que el total de la compra.
+    const detallesGuardar = detalles.map(d => {
+      const importe = importeLineaCompra(d, compra.itbis_incluido);
+      return usd ? { ...d, costo_unitario: rd(d.costo_unitario), importe: rd(importe) } : { ...d, importe };
+    });
     const totalsGuardar = usd
       ? { exento: rd(totals.exento), gravado: rd(totals.gravado), descuento: rd(totals.descuento), itbis: rd(totals.itbis), total: rd(totals.total) }
       : totals;
