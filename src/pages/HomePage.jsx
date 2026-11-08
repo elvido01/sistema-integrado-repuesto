@@ -26,6 +26,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
+import { TARJETAS_DASHBOARD, permisosDashboard } from '@/lib/permissionsHelper';
 import { isSameWeek, addDays, isBefore, startOfToday, differenceInMonths, differenceInYears, addWeeks, addMonths, addYears } from 'date-fns';
 
 const parseLocalDate = (value) => {
@@ -49,9 +50,15 @@ const getStartOfTodayISO = () => {
 
 const HomePage = () => {
   const { toast } = useToast();
-  const { profile, empresa, tenantId } = useAuth();
+  const { profile, empresa, tenantId, permissions } = useAuth();
   const { openPanel } = usePanels();
   const isAdmin = ['admin', 'owner', 'manager', 'gerente'].includes(profile?.role);
+  // (08/11/2026) Cada tarjeta se da por usuario en Usuarios y Permisos
+  // (sección Dashboard). Dueño/admin: todas. Gerente/manager: todas hasta que
+  // se le marque alguna (así nadie pierde nada al publicar). Los demás: solo
+  // lo marcado. Editar = los botones Nuevo / Pagar / Editar de esa tarjeta.
+  const { verTarjeta, editarTarjeta } = permisosDashboard(profile, permissions);
+  const verDashboard = TARJETAS_DASHBOARD.some(verTarjeta);
 
   // UI Stats (Originales)
   const [stats, setStats] = useState({
@@ -294,25 +301,25 @@ const HomePage = () => {
 
   // Initial load
   useEffect(() => {
-    if (!isAdmin || !tenantId) {
+    if (!verDashboard || !tenantId) {
       setLoading(false);
       return;
     }
     fetchDashboardData();
-  }, [isAdmin, tenantId, fetchDashboardData]);
+  }, [verDashboard, tenantId, fetchDashboardData]);
 
   // Auto-refresh logic (5 minutes)
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!verDashboard) return;
     const interval = setInterval(() => {
       fetchDashboardData(true);
     }, 5 * 60 * 1000); 
     return () => clearInterval(interval);
-  }, [isAdmin, fetchDashboardData]);
+  }, [verDashboard, fetchDashboardData]);
 
   // Refresco inmediato de caja/dashboard cuando cambian movimientos financieros.
   useEffect(() => {
-    if (!isAdmin || !tenantId) return;
+    if (!verDashboard || !tenantId) return;
 
     const scheduleRefresh = () => {
       if (realtimeRefreshRef.current) clearTimeout(realtimeRefreshRef.current);
@@ -345,7 +352,7 @@ const HomePage = () => {
       window.removeEventListener('focus', onFocus);
       supabase.removeChannel(channel);
     };
-  }, [isAdmin, tenantId, fetchDashboardData]);
+  }, [verDashboard, tenantId, fetchDashboardData]);
 
   const handleAddCommitment = () => {
     setSelectedCommitment(null);
@@ -696,7 +703,7 @@ const HomePage = () => {
         {isAdmin && <InsightsBanner />}
 
         {/* Panel Administrativo Financiero */}
-        {isAdmin && (
+        {verDashboard && (
           <>
             {loading ? (
               <div className="flex justify-center items-center py-10 h-[60vh]">
@@ -709,7 +716,7 @@ const HomePage = () => {
               <div className="max-w-7xl mx-auto space-y-6 px-4">
                 
                 {/* 0. ESTADO DE SUSCRIPCIÓN */}
-                <motion.div
+                {verTarjeta('dash-plan') && <motion.div
                   initial={{ y: 10, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.2, duration: 0.3 }}
@@ -717,7 +724,7 @@ const HomePage = () => {
                   <SuscripcionStatusCard
                     onRenovar={() => openPanel('planes')}
                   />
-                </motion.div>
+                </motion.div>}
 
                 {/* 1. ANÁLISIS PROFUNDO Y ESTRATÉGICO (Grid Principal de 3) */}
                 <motion.div 
@@ -726,44 +733,44 @@ const HomePage = () => {
                   transition={{ delay: 0.3, duration: 0.4 }}
                   className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4"
                 >
-                  <CommitmentsCard 
-                    compromisos={finanzas.compromisos} 
+                  {verTarjeta('dash-compromisos') && <CommitmentsCard
+                    compromisos={finanzas.compromisos}
                     caja={finanzas.cajaActualContadoHoy}
                     excedente={finanzas.caja}
-                    onAdd={handleAddCommitment}
-                    onEdit={handleEditCommitment}
-                    onPay={handlePayCommitment}
+                    onAdd={editarTarjeta('dash-compromisos') ? handleAddCommitment : undefined}
+                    onEdit={editarTarjeta('dash-compromisos') ? handleEditCommitment : undefined}
+                    onPay={editarTarjeta('dash-compromisos') ? handlePayCommitment : undefined}
                     customTotal={totalCompromisosPagarSemana}
-                  />
+                  />}
 
-                  <DailyExpensesCard
+                  {verTarjeta('dash-gastos') && <DailyExpensesCard
                     gastos={finanzas.gastosDiariosHoy}
                     caja={finanzas.cajaActualContadoHoy}
-                    onAdd={handleAddDailyExpense}
-                    onEdit={handleEditDailyExpense}
-                  />
+                    onAdd={editarTarjeta('dash-gastos') ? handleAddDailyExpense : undefined}
+                    onEdit={editarTarjeta('dash-gastos') ? handleEditDailyExpense : undefined}
+                  />}
                   
                   {/* Compromisos Suplidores (Nuevo) */}
-                  <SupplierCommitmentsCard
+                  {verTarjeta('dash-suplidores') && <SupplierCommitmentsCard
                     commitments={finanzas.suplidorCompromisos}
                     caja={finanzas.caja}
                     customTotal={totalPagosSuplidoresSemana}
-                    onPay={handlePaySupplierCommitment}
-                  />
+                    onPay={editarTarjeta('dash-suplidores') ? handlePaySupplierCommitment : undefined}
+                  />}
 
                   {/* Flujo neto acumulado del mes (+ Metas y proyecciones) */}
-                  <FlujoNetoCard
+                  {verTarjeta('dash-flujo') && <FlujoNetoCard
                     data={finanzas.flujoNeto}
                     loading={loading}
                     onRetry={() => fetchDashboardData(true)}
                     ventasMesTotal={esVentasTerceros ? ventasTerceros.mesTotal : null}
                     cobradoMes={esVentasTerceros ? ventasTerceros.cobradoMes : null}
                     ingresosDealer={ingresosDealer}
-                  />
+                  />}
                 </motion.div>
 
                 {/* 3. SECCIÓN TÁCTICA (Summary Cards) */}
-                <motion.div
+                {verTarjeta('dash-resumen') && <motion.div
                   initial={{ y: 30, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.6, duration: 0.4 }}
@@ -797,7 +804,7 @@ const HomePage = () => {
                     color="purple"
                     description="referencias únicas"
                   />
-                </motion.div>
+                </motion.div>}
 
               </div>
             )}
@@ -805,7 +812,7 @@ const HomePage = () => {
         )}
       </motion.div>
 
-      {isAdmin && (
+      {editarTarjeta('dash-compromisos') && (
         <CommitmentFormModal
           isOpen={isCommitmentModalOpen}
           onClose={(success) => {
@@ -817,7 +824,7 @@ const HomePage = () => {
         />
       )}
 
-      {isAdmin && (
+      {editarTarjeta('dash-gastos') && (
         <DailyExpenseModal
           isOpen={isDailyExpenseModalOpen}
           gasto={gastoParaEditar}

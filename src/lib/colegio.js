@@ -192,7 +192,7 @@ export const MODULOS_EDUCATIVO = new Set([
   // Sales Hub / CRM: solo EDUCA PRO o TOTAL a precio completo (lo decide el plan, ver lib/planes).
   'whatsapp-crm',
 ]);
-export const esModuloDeColegio = (key) => String(key).startsWith('colegio-') || MODULOS_EDUCATIVO.has(key);
+export const esModuloDeColegio = (key) => String(key).startsWith('colegio-') || String(key).startsWith('dash-') || MODULOS_EDUCATIVO.has(key);
 
 // Secretaria (lo que pidió el colegio): cobrar, inscribir, familias, caja del
 // día, cierre de caja y ver quién está atrasado. NO configura, NO cuentas

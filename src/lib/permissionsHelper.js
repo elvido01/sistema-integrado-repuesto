@@ -33,7 +33,35 @@ export const canEdit = (profile, permissions, moduleKey) => {
     return perm ? !!perm.can_edit : false;
 };
 
+// ── Tarjetas del Dashboard (08/11/2026) ─────────────────────────────────
+// Cada empresa decide qué tarjetas ve cada usuario (Usuarios y Permisos →
+// "Dashboard - …"). Ver = la tarjeta; Editar = sus botones (Nuevo, Pagar,
+// Editar).
+//   · admin / owner: todas, siempre.
+//   · manager / gerente: todas MIENTRAS no tenga ninguna casilla de Dashboard
+//     guardada (era lo que veían antes); en cuanto se le marca alguna, solo
+//     lo marcado.
+//   · los demás (cajera, secretaria, vendedor…): solo lo marcado.
+export const TARJETAS_DASHBOARD = ['dash-plan', 'dash-compromisos', 'dash-gastos', 'dash-suplidores', 'dash-flujo', 'dash-resumen'];
+
+export function permisosDashboard(profile, permissions) {
+    const rol = profile?.role;
+    const todo = rol === 'admin' || rol === 'owner'
+        || ((rol === 'manager' || rol === 'gerente')
+            && !(permissions || []).some((p) => TARJETAS_DASHBOARD.includes(p.module_key)));
+    return {
+        verTarjeta: (k) => todo || canAccess(profile, permissions, k),
+        editarTarjeta: (k) => todo || (canAccess(profile, permissions, k) && canEdit(profile, permissions, k)),
+    };
+}
+
 export const MODULES = [
+    { key: 'dash-plan', label: 'Dashboard - Plan y suscripción' },
+    { key: 'dash-compromisos', label: 'Dashboard - Compromisos a pagar (Editar: crear y pagar)' },
+    { key: 'dash-gastos', label: 'Dashboard - Gastos diarios (Editar: registrar y corregir gastos)' },
+    { key: 'dash-suplidores', label: 'Dashboard - Compromisos suplidores (Editar: pagar)' },
+    { key: 'dash-flujo', label: 'Dashboard - Flujo neto del mes, metas y proyección' },
+    { key: 'dash-resumen', label: 'Dashboard - Resumen (ventas del día, inventario crítico, clientes, catálogo)' },
     { key: 'colegio-caja', label: 'Colegio - Caja (cobrar mensualidades y conceptos; anular solo la dirección)' },
     { key: 'colegio-estudiantes', label: 'Colegio - Estudiantes y familias (inscribir, editar, retirar)' },
     { key: 'colegio-reportes', label: 'Colegio - Reportes (deudores, cobros, arqueo, reservas)' },

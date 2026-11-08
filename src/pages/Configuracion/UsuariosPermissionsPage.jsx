@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { invocarConSesion } from '@/lib/edgeInvoke';
 import { useToast } from '@/components/ui/use-toast';
-import { MODULES as TODOS_LOS_MODULOS } from '@/lib/permissionsHelper';
+import { MODULES as TODOS_LOS_MODULOS, TARJETAS_DASHBOARD } from '@/lib/permissionsHelper';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { esModuloDeColegio, PLANTILLA_SECRETARIA } from '@/lib/colegio';
 import { Shield, User, Check, X, Save, RefreshCw, UserPlus, Edit } from 'lucide-react';
@@ -214,7 +214,14 @@ const UsuariosPermissionsPage = () => {
                 setUserPermissions(tpl.map(t => ({ user_id: user.id, ...t })));
                 setSinGuardar(tpl.length > 0);
             } else {
-                setUserPermissions(perms);
+                // Gerente sin ninguna casilla de Dashboard guardada: hoy ve TODAS
+                // las tarjetas (lib/permissionsHelper). Se muestran marcadas para
+                // que la pantalla diga lo que de verdad ve.
+                const esGerente = ['manager', 'gerente'].includes(String(user.role || '').toLowerCase());
+                const sinDash = !perms.some((p) => TARJETAS_DASHBOARD.includes(p.module_key));
+                setUserPermissions(esGerente && sinDash
+                    ? [...perms, ...TARJETAS_DASHBOARD.map((k) => ({ user_id: user.id, module_key: k, can_view: true, can_edit: true }))]
+                    : perms);
                 setSinGuardar(false);
             }
             if (goalRes.error) {
