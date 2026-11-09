@@ -5,7 +5,8 @@ const crudos = [];
 const imagenes = [];
 let impresora = 'Star TSP100 Cutter (TSP143)';
 let agenteFalla = false;
-vi.mock('@/services/printerAdapter', () => ({
+vi.mock('@/services/printerAdapter', async (importOriginal) => ({
+  esImpresoraStar: (await importOriginal()).esImpresoraStar,
   findReceiptPrinter: vi.fn(async () => impresora),
   printRawEscPos: vi.fn(async (nombre, escpos) => { if (agenteFalla) throw new Error('agente caído'); crudos.push({ nombre, escpos }); }),
   setPreferredBackend: vi.fn(),
@@ -118,5 +119,18 @@ describe('cotización y Star', () => {
     const t = 'hola\x1Bd\x03\x1DV\x00';
     expect(ajustarParaImpresora('Star TSP100 Cutter (TSP143)', t)).toBe('hola\x1Bd\x03');
     expect(ajustarParaImpresora('EPSON TM-T20', t)).toBe(t);
+  });
+});
+
+describe('esImpresoraStar', () => {
+  it('Star y TSP sí; 3nStar (clónica ESC/POS) y otras no', async () => {
+    const { esImpresoraStar } = await import('../src/services/printerAdapter');
+    expect(esImpresoraStar('Star TSP100 Cutter (TSP143)')).toBe(true);
+    expect(esImpresoraStar('TSP143')).toBe(true);
+    expect(esImpresoraStar('3nStar RPT008')).toBe(false);
+    expect(esImpresoraStar('3nStar Flexible 35')).toBe(false);
+    expect(esImpresoraStar('3n Star POS-80')).toBe(false);
+    expect(esImpresoraStar('EPSON TM-T20')).toBe(false);
+    expect(esImpresoraStar('POS-80')).toBe(false);
   });
 });

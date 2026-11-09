@@ -226,7 +226,11 @@ export async function printRaw(
  * como una "v" arriba del ticket siguiente. En una Star se quita.
  */
 /** Star (modo Star) por el nombre: una sola regla para el corte y el logo. */
-export const esImpresoraStar = (printerName: string): boolean => /star|tsp/i.test(String(printerName || ''));
+// 3nStar (clónica ESC/POS, 09/11/2026) lleva "star" en el nombre pero NO es Star.
+export const esImpresoraStar = (printerName: string): boolean => {
+    const n = String(printerName || '');
+    return /star|tsp/i.test(n) && !/3n[\s-]*star/i.test(n);
+};
 
 export function ajustarParaImpresora(printerName: string, escpos: string): string {
     if (!esImpresoraStar(printerName)) return escpos;
