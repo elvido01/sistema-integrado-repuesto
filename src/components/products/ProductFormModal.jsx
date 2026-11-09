@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import ColoresProducto from '@/components/products/ColoresProducto';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useCatalogData } from '@/hooks/useSupabase';
@@ -517,6 +518,11 @@ const ProductFormModal = ({ isOpen, onClose, onSave, product }) => {
                     loadVersion={loadVersion}
                   />
                 </div>
+
+                {/* (09/11/2026) Ventanas y aluminio: colores del producto y venta por pies. Solo tipo 'aluminio'. */}
+                {tipoEmpresa === 'aluminio' && isEditing && formData.id && (
+                  <div className="mb-2"><ColoresProducto productoId={formData.id} /></div>
+                )}
 
                 <Tabs defaultValue="presentaciones" className="w-full">
                   <TabsList className={`grid ${hasTienda ? 'grid-cols-4' : 'grid-cols-3'} w-full ${hasTienda ? 'max-w-lg' : 'max-w-md'} h-9`}>

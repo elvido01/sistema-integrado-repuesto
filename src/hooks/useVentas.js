@@ -616,7 +616,18 @@ export const useVentas = () => {
     return Math.round((recibido - totals.totalFactura) * 100) / 100 || 0;
   }, [montoRecibido, pagos, totals.totalFactura]);
 
-  const addProductToInvoice = useCallback((product) => {
+  // (09/11/2026) Ventanas y aluminio: la página puede quedarse con el producto
+  // escogido para preguntar el color y si va por unidad o por pies
+  // (VentasPage → VarianteVentaModal). Devuelve true si lo tomó. Fuera de las
+  // empresas de aluminio la página no pone nada y todo sigue igual.
+  const interceptorProductoRef = useRef(null);
+  const setInterceptorProducto = useCallback((fn) => { interceptorProductoRef.current = fn; }, []);
+
+  // opciones (solo las usa el modal de color/pies): directo = no volver a
+  // interceptar; cantidad = fracción de barra (5 pies de 20 = 0.25);
+  // nota = "5 PIES" (va en la descripción y la línea queda aparte).
+  const addProductToInvoice = useCallback((product, opciones = {}) => {
+    if (!opciones.directo && interceptorProductoRef.current && interceptorProductoRef.current(product)) return;
     let priceToUse = product.precio || 0;
     let maxDesc = product.max_descuento || 0;
     const itbis_pct = normalizeItbisPct(product.itbis_pct);
@@ -679,6 +690,16 @@ export const useVentas = () => {
       existencia_morla: product.existencia ?? product.existencia_morla ?? null,
       local_suplidor_sugerido: product.local_suplidor_sugerido || null,
     };
+
+    if (opciones.cantidad > 0) {
+      newItem.cantidad = opciones.cantidad;
+      if (opciones.nota) {
+        newItem.id = `${product.id}-${opciones.nota}-${Date.now()}`;   // no se suma con otra línea del mismo producto
+        newItem.descripcion = `${product.descripcion} (${opciones.nota})`;
+        newItem.unidad = 'BARRA';
+      }
+      Object.assign(newItem, calculateItemValues(newItem));
+    }
 
     setCurrentItem(conPromo(newItem, promoRef.current));
     setItemCode(product.codigo);
@@ -746,6 +767,23 @@ export const useVentas = () => {
     } catch (error) {
       toast({ title: 'Error Inesperado', description: 'Ocurrió un error al buscar el producto.', variant: 'destructive' });
     }
+  }, [addProductToInvoice, toast]);
+
+  // (09/11/2026) Ventanas y aluminio: agrega el color escogido (otro producto)
+  // con su presentación, como si se hubiera buscado (addProductToInvoice
+  // aplica el precio del nivel del cliente). Sin volver a interceptar.
+  const agregarProductoPorId = useCallback(async (productoId, opciones = {}) => {
+    const { data, error } = await supabase.from('productos').select('*, presentaciones(*)').eq('id', productoId).maybeSingle();
+    if (error || !data) {
+      toast({ title: 'No se pudo agregar', description: error?.message || 'Producto no encontrado.', variant: 'destructive' });
+      return;
+    }
+    const pres = data.presentaciones || [];
+    const mainPres = pres.find((x) => x.afecta_ft) || pres[0];
+    const { data: existencia } = await supabase.rpc('get_stock_actual', { producto_uuid: productoId });
+    const prod = { ...data, presentaciones: pres, existencia: Number(existencia) || 0 };
+    if (mainPres) prod.precio = parseFloat(mainPres.precio1 || 0);
+    addProductToInvoice(prod, { ...opciones, directo: true });
   }, [addProductToInvoice, toast]);
 
   // >>> EL CODIGO DE PROMOCION SE TECLEA DONDE LOS CODIGOS DE PIEZA <<<
@@ -1576,8 +1614,13 @@ export const useVentas = () => {
       setManualClienteNombre(factura.manual_cliente_nombre || '');
       setNotas(factura.notas || '');
 
-      const mappedItems = detalles.map(d => {
+      // (09/11/2026) Dos líneas del mismo producto (ventanas: "5 PIES" y "8 PIES")
+      // quedan como líneas separadas: la segunda lleva un id de línea propio.
+      const idsUsados = new Set();
+      const mappedItems = detalles.map((d, idx) => {
         const itbis_pct = normalizeItbisPct(d.productos?.itbis_pct);
+        const idLinea = idsUsados.has(d.producto_id) ? `${d.producto_id}-L${idx}` : d.producto_id;
+        idsUsados.add(d.producto_id);
         const totalLine = d.importe || 0;
         const baseLine = totalLine / (1 + itbis_pct);
         const itbisLine = totalLine - baseLine;
@@ -1591,7 +1634,7 @@ export const useVentas = () => {
         const descPct = brutoTotal > 0 ? (d.descuento / brutoTotal) * 100 : 0;
 
         return {
-          id: d.producto_id, // Use product id as key
+          id: idLinea, // id del producto (o de línea si el producto se repite)
           producto_id: d.producto_id,
           codigo: d.codigo,
           descripcion: d.descripcion,
@@ -1896,6 +1939,8 @@ export const useVentas = () => {
     handleSelectCliente,
     handleSave,
     addProductToInvoice,
+    agregarProductoPorId,
+    setInterceptorProducto,
     handleUpdateItem,
     handleDeleteItem,
     handleAddProductByCode,

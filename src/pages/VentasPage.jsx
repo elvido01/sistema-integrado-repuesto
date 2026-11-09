@@ -7,6 +7,7 @@ import VentasTable from '@/components/ventas/VentasTable';
 import LineasServicios from '@/components/ventas/LineasServicios';
 import VentasFooter from '@/components/ventas/VentasFooter';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
+import VarianteVentaModal from '@/components/ventas/VarianteVentaModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
 import SugerenciasEquivalentesModal from '@/components/ventas/SugerenciasEquivalentesModal';
@@ -84,7 +85,26 @@ const VentasPage = () => {
     ncfPreview,
     pideCanalOrigen,
     canalOrigen,
+    agregarProductoPorId,
+    setInterceptorProducto,
   } = useVentas();
+
+  // (09/11/2026) Ventanas y aluminio: antes de agregar un producto se pregunta
+  // el color y si va por unidad o por pies (VarianteVentaModal). Si no tiene
+  // colores ni largo de barra, el modal lo agrega directo. Otros tipos: nada.
+  const [varianteDe, setVarianteDe] = useState(null);
+  const esAluminio = empresa?.tipo_negocio === 'aluminio';
+  // Mientras el agente arma o corrige la factura, los productos entran directo
+  // (no puede contestar el modal y cada uno taparía al anterior).
+  const agenteArmandoRef = useRef(false);
+  useEffect(() => {
+    setInterceptorProducto(esAluminio ? (product) => {
+      if (agenteArmandoRef.current) return false;
+      setVarianteDe(product);
+      return true;
+    } : null);
+    return () => setInterceptorProducto(null);
+  }, [esAluminio, setInterceptorProducto]);
 
   const { activePanel } = usePanels();
   const { setSidebarOpen } = useLayout();
@@ -323,9 +343,12 @@ const VentasPage = () => {
           for (const it of antes) {
             if (quitar.has(codigo(it.codigo))) handleDeleteItem(it.id);
           }
-          for (const l of orden.agregar || []) {
-            for (let i = 0; i < l.cantidad; i++) await handleAddProductByCode(l.codigo);
-          }
+          agenteArmandoRef.current = true;
+          try {
+            for (const l of orden.agregar || []) {
+              for (let i = 0; i < l.cantidad; i++) await handleAddProductByCode(l.codigo);
+            }
+          } finally { agenteArmandoRef.current = false; }
 
           // Que se diga cuando se pidió quitar algo que no estaba. Callarlo
           // deja creer que se corrigió, y lo que se ve en pantalla es lo que
@@ -370,11 +393,14 @@ const VentasPage = () => {
           // mismo camino que teclear el código en la fila amarilla, así que
           // pasa por el control de existencia, las sugerencias de
           // equivalentes y el bloqueo de venta bajo costo.
-          for (const l of orden.lineas || []) {
-            for (let i = 0; i < l.cantidad; i++) {
-              await handleAddProductByCode(l.codigo);
+          agenteArmandoRef.current = true;
+          try {
+            for (const l of orden.lineas || []) {
+              for (let i = 0; i < l.cantidad; i++) {
+                await handleAddProductByCode(l.codigo);
+              }
             }
-          }
+          } finally { agenteArmandoRef.current = false; }
           if (orden.cliente_nombre) setManualClienteNombre(orden.cliente_nombre);
           if (orden.cliente_id) {
             const { data: cli } = await supabase.from('clientes').select('*')
@@ -711,11 +737,13 @@ const VentasPage = () => {
         }
       }
       addProductToInvoice(processedProduct);
-      checkAndSuggestEquivalentes(processedProduct);
+      // En aluminio el producto puede ser el "modelo" sin existencia propia (la
+      // tienen sus colores): el aviso de equivalentes lo da después la línea real.
+      if (!esAluminio) checkAndSuggestEquivalentes(processedProduct);
     } catch (e) {
       console.error("Error fetching presentations", e);
       addProductToInvoice(product);
-      checkAndSuggestEquivalentes(product);
+      if (!esAluminio) checkAndSuggestEquivalentes(product);
     } finally {
       setIsProductSearchModalOpen(false);
       // Focus will return to Cantidad via VentasTable useEffect
@@ -851,6 +879,15 @@ const VentasPage = () => {
         pideCanalOrigen={pideCanalOrigen}
         canalOrigen={canalOrigen}
       />
+
+      {varianteDe && (
+        <VarianteVentaModal
+          producto={varianteDe}
+          onCancelar={() => setVarianteDe(null)}
+          onDirecto={() => { const p = varianteDe; setVarianteDe(null); addProductToInvoice(p, { directo: true }); }}
+          onAgregar={({ productoId, cantidad, nota }) => { setVarianteDe(null); agregarProductoPorId(productoId, { cantidad, nota }); }}
+        />
+      )}
 
       <ProductSearchModal
         isOpen={isProductSearchModalOpen}

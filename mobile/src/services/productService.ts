@@ -88,3 +88,31 @@ export async function fetchProductos(
     hasMore: total > offset + pageSize,
   };
 }
+
+// (09/11/2026) Un producto por id con sus precios 1-4 (como fetchProductos).
+// Lo usa el color/pies de Ventanas para meter el color escogido al carrito.
+export async function fetchProductoPorId(id: string): Promise<Producto | null> {
+  const { data: p, error } = await supabase.from('productos').select('*, presentaciones(*)').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!p) return null;
+  const pres = Array.isArray(p.presentaciones) ? p.presentaciones : [];
+  const primera = pres.find((x: any) => x.afecta_ft) || pres[0] || {};
+  const precio1 = Number(primera.precio1) || Number(p.precio) || 0;
+  const { data: ex } = await supabase.rpc('get_stock_actual', { producto_uuid: id });
+  return {
+    id: p.id,
+    codigo: p.codigo,
+    descripcion: p.descripcion,
+    referencia: p.referencia,
+    ubicacion: p.ubicacion || null,
+    existencia: Number(ex) || 0,
+    precio_venta_1: precio1,
+    precio_venta_2: Number(primera.precio2) || precio1,
+    precio_venta_3: Number(primera.precio3) || 0,
+    precio_venta_4: Number(primera.precio4) || 0,
+    costo: Number(p.costo) || 0,
+    suplidor_id: p.suplidor_id || null,
+    itbis_pct: p.itbis_pct != null ? Number(p.itbis_pct) : 0.18,
+    url_imagen: p.imagen_url || undefined,
+  };
+}

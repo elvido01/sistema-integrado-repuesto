@@ -13,13 +13,17 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Clipboard from 'expo-clipboard';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import { supabase } from '@/src/supabase/client';
+import VarianteVenta from '@/src/components/ventanas/VarianteVenta';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
 
 export default function CatalogoScreen() {
   const insets = useSafeAreaInsets();
-  const { tenantId } = useAuthStore();
+  const { tenantId, empresa } = useAuthStore();
+  // (09/11/2026) Ventanas y aluminio: al agregar se escoge color y Unidad/Pies.
+  const esAluminio = empresa?.tipo_negocio === 'aluminio';
+  const [varianteDe, setVarianteDe] = useState<any | null>(null);
   const includeZeroStock = tenantId !== CAMINERO_MOTORS_TENANT;
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -64,13 +68,17 @@ export default function CatalogoScreen() {
     const prev = lastTapRef.current;
     if (prev && prev.id === item.id && now - prev.time < 300) {
       lastTapRef.current = null;
-      // double tap → abre modal de cantidad
-      setCartModalProducto(item);
-      setCartModalQty('1');
+      // double tap → abre modal de cantidad (aluminio: primero color y Unidad/Pies)
+      if (esAluminio) {
+        setVarianteDe(item);
+      } else {
+        setCartModalProducto(item);
+        setCartModalQty('1');
+      }
     } else {
       lastTapRef.current = { id: item.id, time: now };
     }
-  }, [modoCarrito, router]);
+  }, [modoCarrito, router, esAluminio]);
 
   // Sube una imagen local (URI) al bucket product-images y actualiza productos.imagen_url
   const uploadProductImage = async (localUri: string, producto: any) => {
@@ -494,6 +502,11 @@ export default function CatalogoScreen() {
           initialNumToRender={10}
           windowSize={5}
         />
+      )}
+
+      {varianteDe && (
+        <VarianteVenta producto={varianteDe} onCerrar={() => setVarianteDe(null)}
+          onNormal={() => { const p = varianteDe; setVarianteDe(null); setCartModalProducto(p); setCartModalQty('1'); }} />
       )}
 
       {/* Modal cantidad (modo venta, double tap): agregar al carrito */}

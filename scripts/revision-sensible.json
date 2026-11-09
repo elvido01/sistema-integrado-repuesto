@@ -340,7 +340,7 @@
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "34d5096e9d4a5d03",
+    "src/hooks/useVentas.js": "f4230cae8c2d3bae",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -377,13 +377,13 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "a794db359189ee06",
+    "src/pages/VentasPage.jsx": "6db6c3acc7234217",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
     "src/repositories/ventas/facturasRepository.js": "4adec86b83d8196e",
     "src/services/comprasInteligentesService.js": "38f50108ac180fa0",
-    "src/services/sendToOrdenCompra.js": "eb74f73013c50c4f",
+    "src/services/sendToOrdenCompra.js": "bc8d9578d3a17589",
     "supabase/functions/dgii-callback/deno.json": "39b1cba2499fdc2a",
     "supabase/functions/dgii-callback/import_map.json": "3d5861c491100d4a",
     "supabase/functions/dgii-callback/index.ts": "bb6a9eb0238cd9d4",
@@ -417,7 +417,8 @@
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
-    "src/lib/compraLinea.js": "23cb74e4cfc96c56"
+    "src/lib/compraLinea.js": "23cb74e4cfc96c56",
+    "src/components/ventas/VarianteVentaModal.jsx": "df0e7bef10acd12a"
   },
   "historial": [
     {
@@ -654,6 +655,16 @@
       "archivos": [
         "mobile/app/existencia/index.tsx",
         "mobile/app/solicitudes-compra/index.tsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-09",
+      "nota": "code-review high: 10 hallazgos; arreglados 9 (id de linea PIES en orden de compra, lineas repetidas al reabrir, precio de la presentacion en el modal, agente sin modal, equivalentes, colores desactivados se reactivan, detalle movil, una sola llamada, existencia del color); aceptado: redondeo a 4 decimales en barras que no dividen exacto (20 pies es exacto)",
+      "archivos": [
+        "src/components/ventas/VarianteVentaModal.jsx",
+        "src/hooks/useVentas.js",
+        "src/pages/VentasPage.jsx",
+        "src/services/sendToOrdenCompra.js"
       ]
     }
   ]

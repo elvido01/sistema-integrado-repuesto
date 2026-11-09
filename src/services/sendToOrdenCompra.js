@@ -46,7 +46,8 @@ export async function sendProductToOrdenCompra(product, options = {}) {
         const { data: productData, error: productError } = await supabase
             .from('productos')
             .select('id, codigo, descripcion, suplidor_id, costo, itbis_pct, activo')
-            .eq('id', product.id)
+            // Una línea de factura vendida por pies tiene un id de línea propio: el producto es producto_id.
+            .eq('id', product.producto_id || product.id)
             .single();
 
         if (productError || !productData) {

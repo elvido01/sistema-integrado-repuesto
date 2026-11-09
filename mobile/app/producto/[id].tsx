@@ -6,6 +6,8 @@ import { useCartStore } from '@/src/store/useCartStore';
 import { ArrowLeft, ShoppingCart, Share2, Package } from 'lucide-react-native';
 import { shareToWhatsApp } from '@/src/utils/whatsapp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuthStore } from '@/src/store/useAuthStore';
+import VarianteVenta from '@/src/components/ventanas/VarianteVenta';
 
 export default function ProductoDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -15,6 +17,9 @@ export default function ProductoDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [cantidad, setCantidad] = useState(1);
   const { addItem } = useCartStore();
+  // (09/11/2026) Ventanas y aluminio: antes de agregar se escoge color y Unidad/Pies.
+  const esAluminio = useAuthStore((s) => s.empresa?.tipo_negocio === 'aluminio');
+  const [variante, setVariante] = useState(false);
 
   useEffect(() => {
     async function fetchProducto() {
@@ -33,6 +38,10 @@ export default function ProductoDetailScreen() {
   }, [id]);
 
   const handleAddToCart = () => {
+    if (esAluminio && !variante) { setVariante(true); return; }
+    agregarNormal();
+  };
+  const agregarNormal = () => {
     addItem(producto, cantidad);
     Alert.alert('Éxito', 'Producto agregado al carrito', [
       { text: 'Seguir comprando', style: 'cancel' },
@@ -117,6 +126,10 @@ export default function ProductoDetailScreen() {
           <Text className="text-white font-bold text-lg">Agregar al Carrito</Text>
         </TouchableOpacity>
       </View>
+      {variante && (
+        <VarianteVenta producto={producto} onCerrar={() => setVariante(false)}
+          onNormal={() => { setVariante(false); agregarNormal(); }} />
+      )}
     </View>
   );
 }
