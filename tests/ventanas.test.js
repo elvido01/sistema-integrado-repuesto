@@ -98,3 +98,27 @@ describe('presupuesto (igual que vent_crear_cotizacion)', () => {
     expect(r.faltan.length).toBe(1);
   });
 });
+
+describe('croquisVidrios', () => {
+  it('agrupa vidrios iguales y cuenta pie² por ventana × cantidad', async () => {
+    const { croquisVidrios, pedidoVidrioTexto } = await import('../src/lib/ventanas.js');
+    const piezas = { s1: [
+      { id: 'a', nombre: 'Cristal ancho', tipo: 'cristal', base: 'ancho', por_hoja: true, descuento: 2, cant_fija: 0, cant_por_hoja: 1, orden: 1 },
+      { id: 'b', nombre: 'Cristal alto', tipo: 'cristal', base: 'alto', por_hoja: false, descuento: 3, cant_fija: 0, cant_por_hoja: 1, orden: 2 },
+    ] };
+    const medidas = [
+      { sistema_id: 's1', hojas: 2, ancho: 40, alto: 39, cantidad: 2 },
+      { sistema_id: 's1', hojas: 2, ancho: 40, alto: 39, cantidad: 1 },
+      { sistema_id: 'sx', hojas: 2, ancho: 30, alto: 30, cantidad: 1 },
+    ];
+    const c = croquisVidrios(medidas, piezas);
+    expect(c.ventanas[0].vidrio).toMatchObject({ ancho: 18, alto: 36, porVentana: 2, cantidad: 4 });
+    expect(c.ventanas[2].vidrio).toBeNull();
+    expect(c.pedido).toHaveLength(1);
+    expect(c.pedido[0]).toMatchObject({ ancho: 18, alto: 36, cantidad: 6, ventanas: [1, 2] });
+    expect(c.totalPie2).toBeCloseTo(27, 2);
+    const t = pedidoVidrioTexto({ empresa: 'D Mario', proyecto: { nombre: 'Casa', numero: 3 }, croquis: c, tipoVidrio: 'claro 5 mm' });
+    expect(t).toContain('6 × 18" × 36"');
+    expect(t).toContain('Vidrio: claro 5 mm');
+  });
+});

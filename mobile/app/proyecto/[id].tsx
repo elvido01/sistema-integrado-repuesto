@@ -8,6 +8,7 @@ import { ArrowLeft, Trash2, Pencil } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/src/supabase/client';
 import { useAuthStore } from '@/src/store/useAuthStore';
+import CroquisVidrios from '@/src/components/ventanas/CroquisVidrios';
 import { ESTADOS_PROYECTO, numeroProyecto, pulgadasTexto, medidaRazonable, COLORES_ALUMINIO, desgloseVentana, materialesProyecto, presupuestoProyecto } from '@/src/lib/ventanas';
 
 const FRACCIONES: [string, number][] = [['0', 0], ['⅛', 0.125], ['¼', 0.25], ['⅜', 0.375], ['½', 0.5], ['⅝', 0.625], ['¾', 0.75], ['⅞', 0.875]];
@@ -55,7 +56,7 @@ export default function ProyectoScreen() {
   const [editando, setEditando] = useState<string | null>(null);
   const [intento, setIntento] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [tab, setTab] = useState<'medidas' | 'desglose' | 'materiales' | 'presupuesto'>('medidas');
+  const [tab, setTab] = useState<'medidas' | 'desglose' | 'materiales' | 'vidrios' | 'presupuesto'>('medidas');
   const [piezasPorSistema, setPiezasPorSistema] = useState<Record<string, any[]>>({});
   const [cfg, setCfg] = useState<any>(null);
   const [precios, setPrecios] = useState<any[]>([]);
@@ -169,12 +170,17 @@ export default function ProyectoScreen() {
         </ScrollView>
 
         <View className="flex-row bg-white rounded-xl border border-gray-200 p-1 mb-3">
-          {([['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Material'], ['presupuesto', 'Precio']] as const).map(([k, t]) => (
+          {([['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Material'], ['vidrios', 'Vidrios'], ['presupuesto', 'Precio']] as const).map(([k, t]) => (
             <TouchableOpacity key={k} onPress={() => setTab(k)} className={`flex-1 py-2 rounded-lg items-center ${tab === k ? 'bg-blue-700' : ''}`}>
-              <Text className={`font-semibold ${tab === k ? 'text-white' : 'text-gray-600'}`}>{t}</Text>
+              <Text numberOfLines={1} className={`text-[13px] font-semibold ${tab === k ? 'text-white' : 'text-gray-600'}`}>{t}</Text>
             </TouchableOpacity>
           ))}
         </View>
+
+        {tab === 'vidrios' && (
+          <CroquisVidrios proyecto={p} medidas={medidas} piezasPorSistema={piezasPorSistema} nombreSistema={nombreSistema}
+            empresaNombre={useAuthStore.getState().empresa?.nombre || ''} />
+        )}
 
         {tab === 'desglose' && (medidas.length ? medidas.map((me, i) => {
           const cortes = desgloseVentana(me, piezasPorSistema[me.sistema_id] || []);

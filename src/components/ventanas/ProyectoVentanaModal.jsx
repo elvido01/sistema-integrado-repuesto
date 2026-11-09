@@ -9,7 +9,8 @@ import { Loader2, Trash2, Pencil, Ruler, Printer } from 'lucide-react';
 import { DesgloseVentanas, MaterialesVentanas } from '@/components/ventanas/DesgloseProyecto';
 import PresupuestoProyecto from '@/components/ventanas/PresupuestoProyecto';
 import { useToast } from '@/components/ui/use-toast';
-import { desgloseProyectoHTML } from '@/lib/printVentanas';
+import { desgloseProyectoHTML, croquisVidriosHTML } from '@/lib/printVentanas';
+import CroquisVidrios from '@/components/ventanas/CroquisVidrios';
 import { printHtmlSmart } from '@/lib/printHtmlSmart';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -39,6 +40,11 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
   const [piezasPorSistema, setPiezasPorSistema] = useState({});
   const [cfg, setCfg] = useState(null);
   const [imprimiendo, setImprimiendo] = useState(false);
+  const [empresaNombre, setEmpresaNombre] = useState('');
+
+  useEffect(() => {
+    supabase.from('config_empresa').select('nombre').eq('tenant_id', tenantId).maybeSingle().then(({ data }) => setEmpresaNombre(data?.nombre || ''));
+  }, [tenantId]);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -126,12 +132,16 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
     if (error || !data?.length) { onError('No se guardó el corte', error?.message || 'Sin permiso'); cargar(); }
   };
 
-  const imprimir = async () => {
+  // croquis: null = hoja del desglose; texto = croquis de vidrios con ese tipo de vidrio.
+  const imprimir = async (croquis = null) => {
     setImprimiendo(true);
     try {
       const { data: e } = await supabase.from('config_empresa').select('nombre, direccion1, direccion2, telefono, logo_url').eq('tenant_id', tenantId).maybeSingle();
       const empresa = e ? { nombre: e.nombre, logo_url: e.logo_url, telefono: e.telefono, direccion: [e.direccion1, e.direccion2].filter(Boolean).join(', ') } : {};
-      await printHtmlSmart(desgloseProyectoHTML({ empresa, proyecto: p, medidas, nombreSistema, piezasPorSistema, cfg }), { tipo: 'carta' });
+      const html = croquis !== null
+        ? croquisVidriosHTML({ empresa, proyecto: p, medidas, nombreSistema, piezasPorSistema, tipoVidrio: croquis })
+        : desgloseProyectoHTML({ empresa, proyecto: p, medidas, nombreSistema, piezasPorSistema, cfg });
+      await printHtmlSmart(html, { tipo: 'carta' });
     } catch (err) {
       onError('No se pudo imprimir', err?.message);
     } finally {
@@ -172,17 +182,22 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
             </section>
 
             <div className="flex flex-wrap items-center gap-2">
-              {[['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Materiales y barras'], ['presupuesto', 'Presupuesto']].map(([k, t]) => (
+              {[['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Materiales y barras'], ['croquis', 'Croquis de vidrios'], ['presupuesto', 'Presupuesto']].map(([k, t]) => (
                 <button key={k} type="button" onClick={() => setTab(k)}
                   className={`px-4 py-1.5 rounded-md text-sm font-semibold border ${tab === k ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-300'}`}>{t}</button>
               ))}
-              <Button size="sm" variant="outline" className="ml-auto" onClick={imprimir} disabled={imprimiendo || !medidas.length}>
+              <Button size="sm" variant="outline" className="ml-auto" onClick={() => imprimir()} disabled={imprimiendo || !medidas.length}>
                 {imprimiendo ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Printer className="w-4 h-4 mr-1" />} Imprimir / PDF
               </Button>
             </div>
 
             {tab === 'desglose' && <DesgloseVentanas medidas={medidas} nombreSistema={nombreSistema} piezasPorSistema={piezasPorSistema} onMarcar={marcarCorte} />}
             {tab === 'materiales' && <MaterialesVentanas medidas={medidas} piezasPorSistema={piezasPorSistema} cfg={cfg} />}
+            {tab === 'croquis' && (
+              <CroquisVidrios proyecto={p} medidas={medidas} nombreSistema={nombreSistema} piezasPorSistema={piezasPorSistema}
+                empresaNombre={empresaNombre} imprimiendo={imprimiendo} onImprimir={(tipo) => imprimir(tipo || '')}
+                onAviso={(t, d) => toast({ title: t, description: d })} />
+            )}
             {tab === 'presupuesto' && (
               <PresupuestoProyecto proyecto={p} medidas={medidas} nombreSistema={nombreSistema} tenantId={tenantId} onError={onError}
                 onCotizado={(c) => { toast({ title: `Cotización ${c.numero} creada`, description: `RD${Number(c.total).toLocaleString('en-US', { minimumFractionDigits: 2 })} · el proyecto pasó a Cotizado` }); cargar(); }} />

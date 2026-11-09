@@ -155,3 +155,50 @@ export function materialesProyecto(medidas, piezasPorSistema, config = {}) {
   }).sort((a, b) => a.perfil.localeCompare(b.perfil) || a.color.localeCompare(b.color));
   return { perfiles: lista, cristales, totalPie2: cristales.reduce((s, c) => s + c.pie2, 0), largoBarra, merma };
 }
+
+// ── Croquis de vidrios (09/11/2026) ─────────────────────────────────────
+// Por ventana: el vidrio de cada hoja (cristal ancho × cristal alto del
+// desglose) y cuántos lleva. "Pedido": los vidrios iguales juntos (para
+// mandarlos a cortar), con pie² y en qué ventanas van.
+export function croquisVidrios(medidas, piezasPorSistema) {
+  const ventanas = [];
+  const grupos = new Map();
+  (medidas || []).forEach((m, i) => {
+    const cortes = desgloseVentana(m, piezasPorSistema[m.sistema_id] || []);
+    const an = cortes.find((c) => c.pieza.tipo === 'cristal' && c.pieza.base === 'ancho');
+    const al = cortes.find((c) => c.pieza.tipo === 'cristal' && c.pieza.base === 'alto');
+    if (!an || !al) { ventanas.push({ n: i + 1, medida: m, vidrio: null }); return; }
+    const veces = Number(m.cantidad) || 1;
+    const porVentana = Math.min(an.porVentana, al.porVentana);
+    const vidrio = { ancho: an.largo, alto: al.largo, porVentana, cantidad: porVentana * veces, pie2: r2((an.largo * al.largo) / 144 * porVentana * veces) };
+    ventanas.push({ n: i + 1, medida: m, vidrio });
+    const k = `${vidrio.ancho}x${vidrio.alto}`;
+    const g = grupos.get(k) || { ancho: vidrio.ancho, alto: vidrio.alto, cantidad: 0, pie2: 0, ventanas: [] };
+    g.cantidad += vidrio.cantidad;
+    g.pie2 = r2(g.pie2 + vidrio.pie2);
+    g.ventanas.push(i + 1);
+    grupos.set(k, g);
+  });
+  const pedido = [...grupos.values()].sort((a, b) => b.ancho * b.alto - a.ancho * a.alto);
+  return {
+    ventanas,
+    pedido,
+    totalPiezas: pedido.reduce((s, g) => s + g.cantidad, 0),
+    totalPie2: r2(pedido.reduce((s, g) => s + g.pie2, 0)),
+  };
+}
+
+// Texto para mandar el pedido de vidrio por WhatsApp.
+export function pedidoVidrioTexto({ empresa, proyecto, croquis, tipoVidrio }) {
+  const lineas = croquis.pedido.map((g) => `• ${g.cantidad} × ${pulgadasTexto(g.ancho)}" × ${pulgadasTexto(g.alto)}"  (${g.pie2.toFixed(2)} pie²)`);
+  return [
+    `*Pedido de vidrio*${empresa ? ` — ${empresa}` : ''}`,
+    `${proyecto.nombre} · ${numeroProyecto(proyecto.numero)}`,
+    tipoVidrio ? `Vidrio: ${tipoVidrio}` : null,
+    '',
+    ...lineas,
+    '',
+    `Total: ${croquis.totalPiezas} pieza(s) · ${croquis.totalPie2.toFixed(2)} pie²`,
+    'Medidas en pulgadas (ancho × alto).',
+  ].filter((x) => x !== null).join('\n');
+}
