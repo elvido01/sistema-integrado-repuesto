@@ -13,6 +13,7 @@ export type QuickAccessOption = {
 // daba error: simplemente no pasaba nada, que es la peor forma de fallar.
 export const QUICK_ACCESS_OPTIONS: QuickAccessOption[] = [
   { name: 'index', label: 'Inicio' },
+  { name: 'proyectos', label: 'Proyectos', moduleKey: 'vent-proyectos' },
   { name: 'hermes', label: 'Hermes', moduleKey: 'hermes-chat' },
   { name: 'scanner', label: 'Scanner', moduleKey: 'scanner' },
   { name: 'catalogo', label: 'Catalogo', moduleKey: 'catalogo' },

@@ -11,6 +11,7 @@ export type MobileModule = {
 };
 
 export const MOBILE_MODULES: MobileModule[] = [
+  { key: 'vent-proyectos', label: 'Proyectos (ventanas)', description: 'Proyectos y medidas de ventanas en la obra.' },
   { key: 'scanner', label: 'Scanner', description: 'Escaneo rapido de codigos.' },
   { key: 'catalogo', label: 'Catalogo', description: 'Buscar productos y agregar al carrito.' },
   { key: 'ventas', label: 'Venta / POS', description: 'Facturar desde la app movil.' },

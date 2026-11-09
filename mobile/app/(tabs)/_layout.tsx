@@ -7,6 +7,7 @@ import { DEFAULT_QUICK_ACCESS, QUICK_ACCESS_OPTIONS, getQuickAccessTabs, subscri
 
 type TabName =
   | 'index'
+  | 'proyectos'
   | 'hermes'
   | 'scanner'
   | 'catalogo'
@@ -32,6 +33,12 @@ const TAB_CONFIG: Record<TabName, TabConfig> = {
   index: {
     title: 'Inicio',
     icon: Home,
+  },
+  // (09/11/2026) Ventanas y aluminio: solo empresas tipo 'aluminio'.
+  proyectos: {
+    title: 'Proyectos',
+    icon: ClipboardList,
+    moduleKey: 'vent-proyectos',
   },
   // La pantalla trae su propia cabecera (nombre, estado y el botón de
   // conversación nueva), así que la del navegador sobra: dos cabeceras
@@ -110,16 +117,18 @@ const TAB_CONFIG: Record<TabName, TabConfig> = {
 };
 
 export default function TabLayout() {
-  const { user, profile, permissions } = useAuthStore();
+  const { user, profile, permissions, empresa } = useAuthStore();
+  const esAluminio = empresa?.tipo_negocio === 'aluminio';
   const [quickTabs, setQuickTabs] = useState(DEFAULT_QUICK_ACCESS);
   const visibleQuickTabs = useMemo(
     () =>
       quickTabs.filter((name) => {
         const config = TAB_CONFIG[name as TabName];
         if (!config) return false;
+        if (name === 'proyectos' && !esAluminio) return false;
         return !config.moduleKey || canAccessModule(profile, permissions, config.moduleKey);
       }),
-    [permissions, profile, quickTabs]
+    [permissions, profile, quickTabs, esAluminio]
   );
   const hiddenQuickTabs = QUICK_ACCESS_OPTIONS
     .map((option) => option.name)

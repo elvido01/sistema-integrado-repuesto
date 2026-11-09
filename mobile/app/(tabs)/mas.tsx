@@ -22,7 +22,7 @@ const describirJs = () => {
 };
 
 export default function MasScreen() {
-  const { signOut, user, tenantId, profile, permissions } = useAuthStore();
+  const { signOut, user, tenantId, profile, permissions, empresa } = useAuthStore();
   const router = useRouter();
   const isCamineroMotors = tenantId === CAMINERO_MOTORS_TENANT;
   const [quickTabs, setQuickTabs] = useState<string[]>([]);
@@ -41,6 +41,10 @@ export default function MasScreen() {
   }, [user?.id]);
 
   const menuItems = [
+    // (09/11/2026) Ventanas y aluminio: proyectos y medidas en la obra.
+    ...(empresa?.tipo_negocio === 'aluminio'
+      ? [{ title: 'Proyectos', icon: ClipboardList, route: '/(tabs)/proyectos', color: '#1d4ed8', moduleKey: 'vent-proyectos', quickName: 'proyectos' }]
+      : []),
     // Hermes primero: es lo que se abre a diario. moduleKey propio para
     // que se pueda quitar por permisos como cualquier otro modulo.
     { title: 'Hermes', icon: Bot, route: '/hermes', color: '#059669', moduleKey: 'hermes-chat', quickName: 'hermes' },
