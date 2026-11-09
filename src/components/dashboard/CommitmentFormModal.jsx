@@ -4,6 +4,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import MontoInput from '@/components/ui/MontoInput';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Trash2 } from 'lucide-react';
@@ -168,7 +169,7 @@ const CommitmentFormModal = ({ compromiso, isOpen, onClose, tenantId }) => {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="monto">Monto (DOP)</Label>
-              <Input id="monto" name="monto" type="number" step="0.01" min="0" value={formData.monto} onChange={handleChange} required />
+              <MontoInput as={Input} id="monto" name="monto" value={formData.monto} onChange={(v) => setFormData((prev) => ({ ...prev, monto: parseFloat(v) || 0 }))} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="fecha">Fecha Límite</Label>

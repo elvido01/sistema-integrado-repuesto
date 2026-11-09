@@ -5,6 +5,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import MontoInput from '@/components/ui/MontoInput';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
@@ -480,10 +481,10 @@ const ReciboIngresoPage = ({ extraData }) => {
                             />
                           </TableCell>
                           <TableCell className="p-0">
-                            <Input
-                              type="number"
+                            <MontoInput
+                              as={Input}
                               value={pago.monto}
-                              onChange={(e) => handlePagoChange(pago.id, 'monto', e.target.value)}
+                              onChange={(v) => handlePagoChange(pago.id, 'monto', v)}
                               className="h-6 border-0 rounded-none text-[11px] font-black text-right pr-2 focus:ring-0 shadow-none text-red-600"
                             />
                           </TableCell>
@@ -543,10 +544,10 @@ const ReciboIngresoPage = ({ extraData }) => {
                             {parseFloat(f.monto_pendiente) < 0 && <span className="text-[9px] block text-orange-700 font-bold">⚠ ANOMALÍA</span>}
                           </TableCell>
                           <TableCell className="p-0 text-right bg-yellow-50/50">
-                            <Input
-                              type="number"
+                            <MontoInput
+                              as={Input}
                               value={f.abono}
-                              onChange={(e) => handleAbonoChange(f.id, e.target.value)}
+                              onChange={(v) => handleAbonoChange(f.id, v)}
                               className="text-[12px] font-black text-right h-7 border-0 rounded-none bg-transparent focus:ring-0 shadow-none text-red-700 font-mono"
                             />
                           </TableCell>

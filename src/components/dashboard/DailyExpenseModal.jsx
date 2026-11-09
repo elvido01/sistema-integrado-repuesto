@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import MontoInput from '@/components/ui/MontoInput';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -751,15 +752,13 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
           {modo === 'gasto' ? (
             <div className="space-y-2">
               <Label htmlFor="monto-gasto">Monto (DOP)</Label>
-              <Input
+              <MontoInput
+                as={Input}
                 ref={montoInputRef}
                 id="monto-gasto"
                 name="monto"
-                type="number"
-                step="0.01"
-                min="0.01"
                 value={formData.monto}
-                onChange={handleChange}
+                onChange={(v) => setFormData((prev) => ({ ...prev, monto: v }))}
                 placeholder="0.00"
                 required
               />
@@ -872,12 +871,10 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                           </span>
                         </button>
                         {on ? (
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
+                          <MontoInput
+                            as={Input}
                             value={marcados[c.id]}
-                            onChange={(ev) => setMarcados((p) => ({ ...p, [c.id]: ev.target.value }))}
+                            onChange={(v) => setMarcados((p) => ({ ...p, [c.id]: v }))}
                             placeholder="0.00"
                             className="w-24 shrink-0 h-7 px-2 text-xs text-right font-bold"
                           />

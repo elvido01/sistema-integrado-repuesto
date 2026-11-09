@@ -335,7 +335,7 @@
     "src/components/ventas/LineasServicios.jsx": "faaa9576a84fe5ce",
     "src/components/ventas/ProductSearchModal.jsx": "8715b24d7a79c7a9",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
-    "src/components/ventas/VentasFooter.jsx": "d41b7a5f356e2269",
+    "src/components/ventas/VentasFooter.jsx": "4dcf873fcfbe610a",
     "src/components/ventas/VentasHeader.jsx": "5f2e5eb96ffe733b",
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
@@ -372,7 +372,7 @@
     "src/pages/OrdenCompraPage.jsx.bak": "110571cb948515bc",
     "src/pages/PagoComisionesPage.jsx": "93b599205d8ae46c",
     "src/pages/PagoSuplidoresPage.jsx": "b949de6dd5010136",
-    "src/pages/ReciboIngresoPage.jsx": "ccdf96e3a616f302",
+    "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
     "src/pages/ReciboPagoFinancieraPage.jsx": "1c024a18864ace14",
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
@@ -672,6 +672,14 @@
       "nota": "code-review high (tanda tickets 437 / plan / cotizacion pies): 10 hallazgos; arreglados 9 (QZ manda bytes en base64, WebUSB byte a byte + ajuste Star, linea por pies aparte al reabrir y desde cotizacion/pedido con idsDeLinea, primera linea PIES tambien aparte, trigger tambien al borrar, sin respaldo que cambiaba solo la etiqueta del plan, regex sin caracteres invisibles, fraccion que redondea a 0 avisa); aceptado: consulta extra al escoger color",
       "archivos": [
         "src/hooks/useVentas.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-09",
+      "nota": "code-review high (MontoInput en ventas/recibo/gastos/compromisos): 8 hallazgos; arreglados 5 (decimal se perdia si la pantalla guarda numero -> crudoAMostrar, ref como callback, type/inputMode no se pueden sobreescribir, cero a la izquierda); 3 de estilo sin efecto",
+      "archivos": [
+        "src/components/ventas/VentasFooter.jsx",
+        "src/pages/ReciboIngresoPage.jsx"
       ]
     }
   ]

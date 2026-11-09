@@ -3,6 +3,7 @@ import { montoConComas } from '@/lib/formatoMonto';
 import { agentIsAvailable } from '@/services/motoflowPrintAgent';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import MontoInput from '@/components/ui/MontoInput';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -270,15 +271,14 @@ const VentasFooter = ({
               value={currentRef}
               onChange={e => setCurrentRef(e.target.value)}
             />
-            <Input
+            <MontoInput
+              as={Input}
               ref={montoInputRef}
               id="input-monto-pago"
-              type="number"
-              inputMode="decimal"
               className="h-7 w-[100px] text-right text-[14px] font-black text-green-700 border-gray-300 rounded-none bg-white focus:ring-green-500 shadow-inner"
               placeholder={isCredit ? 'Abono...' : '0.00'}
               value={montoRecibido}
-              onChange={e => setMontoRecibido(e.target.value)}
+              onChange={(v) => setMontoRecibido(v)}
               onFocus={handleMontoFocus}
               onBlur={() => setTimeout(() => setIsMontoFocused(false), 120)}
               onKeyDown={(e) => {

@@ -36,3 +36,14 @@ describe('MontoInput', () => {
     expect(normalizarPegado('2500')).toBe('2500');
   });
 });
+
+describe('crudoAMostrar (la pantalla guarda el monto como número)', () => {
+  it('conserva el punto y los ceros tecleados mientras valgan lo mismo', async () => {
+    const { crudoAMostrar } = await import('../src/components/ui/MontoInput.jsx');
+    expect(crudoAMostrar('100.', 100)).toBe('100.');
+    expect(crudoAMostrar('100.50', 100.5)).toBe('100.50');
+    expect(crudoAMostrar('', 0)).toBe('');
+    expect(crudoAMostrar('2500', 2000)).toBe(2000);      // la pantalla lo topó: manda la pantalla
+    expect(crudoAMostrar(null, 1500)).toBe(1500);         // nada tecleado todavía
+  });
+});
