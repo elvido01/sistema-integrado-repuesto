@@ -8,6 +8,7 @@ import { emitInventarioActualizado } from '@/lib/catalogEvents';
 import { IDS_GENERICOS, ID_GENERICO_BASE } from '@/lib/clienteGenerico';
 import { CANAL_POR_DEFECTO, nombreCanal } from '@/lib/canalesOrigen';
 import { conChasis } from '@/lib/chasisFactura';
+import { esLineaFraccion } from '@/lib/ventanas';
 
 const CLIENTE_GENERICO = {
   id: ID_GENERICO_BASE,
@@ -35,7 +36,7 @@ const normalizeItbisPct = (value) => {
 const idsDeLinea = (detalles) => {
   const usados = new Set();
   return (detalles || []).map((d, idx) => {
-    const aparte = usados.has(d.producto_id) || /\(\d+(\.\d+)? PIES\)$/.test(String(d.descripcion || ''));
+    const aparte = usados.has(d.producto_id) || esLineaFraccion(d);
     usados.add(d.producto_id);
     return aparte ? `${d.producto_id}-L${idx}` : d.producto_id;
   });
@@ -709,7 +710,7 @@ export const useVentas = () => {
       if (opciones.nota) {
         newItem.id = `${product.id}-${opciones.nota}-${Date.now()}`;   // no se suma con otra línea del mismo producto
         newItem.descripcion = `${product.descripcion} (${opciones.nota})`;
-        newItem.unidad = 'BARRA';
+        newItem.unidad = /PLANCHA/.test(opciones.nota) ? 'PLANCHA' : 'BARRA';
       }
       Object.assign(newItem, calculateItemValues(newItem));
     }

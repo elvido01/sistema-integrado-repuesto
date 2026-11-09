@@ -156,3 +156,26 @@ describe('formas de cobrar y fracciones', () => {
     expect(v.planchasVidrio(60, 96, 72, true).texto).toBe('1 1/4');   // 60 ÷ 48 = 1.25
   });
 });
+
+describe('vidrio por cuartos de plancha', () => {
+  it('lee la cantidad escrita como fracción y la lleva al ¼', async () => {
+    const { leerCuartos } = await import('../src/lib/ventanas.js');
+    expect(leerCuartos('3/4')).toBe(0.75);
+    expect(leerCuartos('1 1/2')).toBe(1.5);
+    expect(leerCuartos('0,75')).toBe(0.75);
+    expect(leerCuartos('2')).toBe(2);
+    expect(leerCuartos('1.6')).toBe(1.5);
+    expect(leerCuartos('0.1')).toBe(0);
+    expect(leerCuartos('')).toBe(0);
+  });
+  it('línea aparte solo por la unidad o la nota exacta, no por el nombre del producto', async () => {
+    const { esLineaFraccion } = await import('../src/lib/ventanas.js');
+    expect(esLineaFraccion({ descripcion: 'PERFIL P40 (5 PIES)' })).toBe(true);
+    expect(esLineaFraccion({ descripcion: 'VIDRIO 3MM (3/4 PLANCHA)' })).toBe(true);
+    expect(esLineaFraccion({ descripcion: 'VIDRIO 3MM (1 1/2 PLANCHA)' })).toBe(true);
+    expect(esLineaFraccion({ descripcion: 'VIDRIO', unidad: 'PLANCHA' })).toBe(true);
+    expect(esLineaFraccion({ descripcion: 'MANGUERA GASOLINA (ROLLO 25 PIES)' })).toBe(false);
+    expect(esLineaFraccion({ descripcion: 'LAMINA ZINC (CAL 26 PLANCHA)' })).toBe(false);
+    expect(esLineaFraccion({ descripcion: 'ACEITE', unidad: 'UND' })).toBe(false);
+  });
+});

@@ -18,6 +18,7 @@ import { es } from 'date-fns/locale';
 import { generateCotizacionPDF } from '@/components/common/PDFGenerator';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import VarianteVentaModal from '@/components/ventas/VarianteVentaModal';
+import { esLineaFraccion } from '@/lib/ventanas';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import { IDS_GENERICOS, ID_GENERICO_BASE, ID_GENERICO_FINAL, esClienteGenerico } from '@/lib/clienteGenerico';
 
@@ -126,7 +127,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
         descuento_pct: d.descuento_pct || 0,
         imagen_url: d.productos?.imagen_url,
         // Ventanas: la línea vendida por pies sigue aparte al reabrir.
-        lineaAparte: /\(\d+(\.\d+)? PIES\)$/.test(String(d.descripcion || '')),
+        lineaAparte: esLineaFraccion(d),
       })));
     }
   }, [toast]);
@@ -249,7 +250,7 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
       }
       if (opciones.nota) {
         newItem.descripcion = `${product.descripcion} (${opciones.nota})`;
-        newItem.unidad = 'BARRA';
+        newItem.unidad = /PLANCHA/.test(opciones.nota) ? 'PLANCHA' : 'BARRA';
         newItem.lineaAparte = true;
       }
     }

@@ -11,11 +11,12 @@ import { X, Minus, Plus, Check } from 'lucide-react-native';
 import { supabase } from '@/src/supabase/client';
 import { useCartStore, nuevaLineaId } from '@/src/store/useCartStore';
 import { fetchProductoPorId } from '@/src/services/productService';
+import { aCuartos, leerCuartos } from '@/src/lib/ventanas';
 
 const fmt = (v: number) => `RD$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const r4 = (v: number) => Math.round(v * 10000) / 10000;
 
-type Variante = { id: string; codigo: string; descripcion: string; color: string | null; precio: number; largo_pies: number | null; existencia: number | null };
+type Variante = { id: string; codigo: string; descripcion: string; color: string | null; precio: number; largo_pies: number | null; vende_cuartos?: boolean; existencia: number | null };
 
 export default function VarianteVenta({ producto, onCerrar, onNormal }: { producto: any; onCerrar: () => void; onNormal: () => void }) {
   const addItem = useCartStore((s) => s.addItem);
@@ -34,11 +35,12 @@ export default function VarianteVenta({ producto, onCerrar, onNormal }: { produc
       if (!vivo) return;
       const lista: Variante[] = !error && Array.isArray(data?.variantes) ? data.variantes : [];
       const largoPropio = Number(data?.largo_pies) || 0;
-      if (!lista.length && !largoPropio) { onNormal(); return; }
+      const cuartosPropio = !!data?.vende_cuartos;
+      if (!lista.length && !largoPropio && !cuartosPropio) { onNormal(); return; }
       setVariantes(lista);
       setElegido(lista.find((v) => v.id === producto.id) || (lista.length ? null : {
         id: producto.id, codigo: producto.codigo, descripcion: producto.descripcion, color: null,
-        precio: Number(producto.precio_venta_1 ?? producto.precio) || 0, largo_pies: largoPropio, existencia: producto.existencia ?? null,
+        precio: Number(producto.precio_venta_1 ?? producto.precio) || 0, largo_pies: largoPropio, vende_cuartos: cuartosPropio, existencia: producto.existencia ?? null,
       }));
       setCargando(false);
     })();
@@ -46,7 +48,11 @@ export default function VarianteVenta({ producto, onCerrar, onNormal }: { produc
   }, [producto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const largo = Number(elegido?.largo_pies) || 0;
-  const n = Number(cantidad) || 0;
+  // Vidrio por cuartos de plancha: la cantidad va al ¼ más cercano.
+  const cuartos = !!elegido?.vende_cuartos && modo !== 'pies';
+  const paso = cuartos ? 0.25 : 1;
+  const n = cuartos ? leerCuartos(cantidad) : (Number(cantidad) || 0);
+  const notaCuartos = cuartos && !Number.isInteger(n) ? `${aCuartos(n).texto} PLANCHA` : null;
   const fraccion = modo === 'pies' && largo ? r4(n / largo) : n;
   const total = (Number(elegido?.precio) || 0) * fraccion;
 
@@ -56,10 +62,10 @@ export default function VarianteVenta({ producto, onCerrar, onNormal }: { produc
     try {
       const prod = await fetchProductoPorId(elegido.id);
       if (!prod) throw new Error('Producto no encontrado.');
-      if (modo === 'pies') {
+      if (modo === 'pies' || notaCuartos) {
         addLineaServicio({
           ...prod, lineaId: nuevaLineaId(), naturaleza: 'bien',
-          descripcion: `${prod.descripcion} (${n} PIES)`,
+          descripcion: `${prod.descripcion} (${notaCuartos || `${n} PIES`})`,
           cantidad: fraccion, precioSeleccionado: prod.precio_venta_1, descuento: 0,
         });
       } else {
@@ -83,7 +89,7 @@ export default function VarianteVenta({ producto, onCerrar, onNormal }: { produc
             <Text className="text-lg font-bold flex-1 pr-2">{producto.descripcion}</Text>
             <TouchableOpacity onPress={onCerrar}><X color="#6b7280" size={24} /></TouchableOpacity>
           </View>
-          <Text className="text-blue-700 font-semibold mb-3">{fmt(Number(elegido?.precio) || 0)} / {largo ? `barra de ${largo}'` : 'unidad'}</Text>
+          <Text className="text-blue-700 font-semibold mb-3">{fmt(Number(elegido?.precio) || 0)} / {largo ? `barra de ${largo}'` : elegido?.vende_cuartos ? 'plancha' : 'unidad'}</Text>
 
           {largo > 0 && (
             <View className="flex-row bg-gray-100 rounded-xl p-1 mb-3">
@@ -117,17 +123,29 @@ export default function VarianteVenta({ producto, onCerrar, onNormal }: { produc
             </>
           )}
 
-          <Text className="text-xs font-bold text-gray-600 mb-1 mt-1">{modo === 'pies' ? 'Cantidad de pies' : 'Cantidad de unidades'}</Text>
+          <Text className="text-xs font-bold text-gray-600 mb-1 mt-1">{modo === 'pies' ? 'Cantidad de pies' : cuartos ? 'Cantidad de planchas' : 'Cantidad de unidades'}</Text>
           <View className="flex-row items-center mb-3">
-            <TouchableOpacity onPress={() => setCantidad(String(Math.max(0, n - 1)))} className="border border-gray-300 rounded-xl p-3"><Minus color="#374151" size={18} /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setCantidad(String(Math.max(0, n - paso)))} className="border border-gray-300 rounded-xl p-3"><Minus color="#374151" size={18} /></TouchableOpacity>
             <TextInput className="border border-gray-300 rounded-xl mx-2 px-3 py-2.5 text-lg font-bold text-center w-24" keyboardType="decimal-pad"
-              value={cantidad} onChangeText={(t) => setCantidad(t.replace(/[^\d.]/g, ''))} />
-            <TouchableOpacity onPress={() => setCantidad(String(n + 1))} className="border border-gray-300 rounded-xl p-3"><Plus color="#374151" size={18} /></TouchableOpacity>
+              value={cantidad} onChangeText={(t) => setCantidad(t.replace(cuartos ? /[^\d., /]/g : /[^\d.]/g, ''))} />
+            <TouchableOpacity onPress={() => setCantidad(String(n + paso))} className="border border-gray-300 rounded-xl p-3"><Plus color="#374151" size={18} /></TouchableOpacity>
             {modo === 'pies' && largo > 0 ? <Text className="text-xs text-gray-500 ml-2">= {fraccion} de barra</Text> : null}
+            {cuartos ? <Text className={`text-xs ml-2 ${n > 0 ? 'text-gray-500' : 'text-red-600'}`}>{n > 0 ? `= ${aCuartos(n).texto}` : 'ej. 3/4'}</Text> : null}
           </View>
+          {cuartos ? (
+            <View className="flex-row items-center mb-3">
+              <Text className="text-xs text-gray-500 mr-2">Plancha:</Text>
+              {([['¼', 0.25], ['½', 0.5], ['¾', 0.75], ['1', 1]] as [string, number][]).map(([t, v]) => (
+                <TouchableOpacity key={t} onPress={() => setCantidad(String(v))}
+                  className={`px-4 py-2 rounded-lg border mr-2 ${n === v ? 'bg-blue-700 border-blue-700' : 'bg-white border-gray-300'}`}>
+                  <Text className={`font-bold ${n === v ? 'text-white' : 'text-gray-700'}`}>{t}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
 
           <View className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex-row items-center justify-between mb-3">
-            <Text className="text-gray-600">Total a agregar{'\n'}<Text className="font-bold text-gray-900">{modo === 'pies' ? `${n} pies` : `${n} unidad(es)`}</Text></Text>
+            <Text className="text-gray-600">Total a agregar{'\n'}<Text className="font-bold text-gray-900">{modo === 'pies' ? `${n} pies` : cuartos ? `${aCuartos(n).texto} plancha(s)` : `${n} unidad(es)`}</Text></Text>
             <Text className="text-xl font-black text-blue-800">{fmt(total)}</Text>
           </View>
 

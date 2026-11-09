@@ -161,6 +161,19 @@ export function materialVentana(m, piezas) {
   return { piesPerfil: pulg / 12, pie2Vidrio };
 }
 
+// Línea de factura/cotización/pedido vendida por pies o por cuartos de
+// plancha (va aparte: no se suma con otra del mismo producto). Por la unidad
+// (cotizaciones y pedidos la guardan) o por la nota exacta de la descripción
+// ("(5 PIES)", "(3/4 PLANCHA)"): un "ROLLO 25 PIES" en el nombre no cuenta.
+export const esLineaFraccion = (d) => ['BARRA', 'PLANCHA'].includes(String(d?.unidad || '').toUpperCase())
+  || /\((\d+(\.\d+)? PIES|(\d+ )?(1\/4|1\/2|3\/4) PLANCHA)\)$/.test(String(d?.descripcion || ''));
+
+// Cantidad de planchas escrita como "3/4", "1 1/2", "0,75" o "2" → al ¼.
+export function leerCuartos(texto) {
+  const v = leerPulgadas(texto);
+  return v == null ? 0 : Math.round(v * 4) / 4;
+}
+
 // Fracciones (Configuración del desglose → "Mostrar fracción"): un número de
 // barras o planchas hacia arriba al ¼ (2.1 → 2 1/4). Sin fracción: entero.
 export function aCuartos(v) {

@@ -22,7 +22,7 @@ export default function ColoresProducto({ productoId }) {
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    const { data: p } = await supabase.from('productos').select('id, codigo, descripcion, variante_de, largo_pies').eq('id', productoId).maybeSingle();
+    const { data: p } = await supabase.from('productos').select('*').eq('id', productoId).maybeSingle();
     setProd(p || null);
     setLargo(p?.largo_pies != null ? String(p.largo_pies) : '');
     if (p?.variante_de) {
@@ -53,6 +53,19 @@ export default function ColoresProducto({ productoId }) {
     return undefined;
   };
 
+  // Por cuartos de plancha: también al principal y a todos sus colores.
+  const guardarCuartos = async (si) => {
+    const principal = prod.variante_de || prod.id;
+    setGuardando(true);
+    const { data, error: e } = await supabase.from('productos').update({ vende_cuartos: si })
+      .or(`id.eq.${principal},variante_de.eq.${principal}`).select('id');
+    setGuardando(false);
+    if (e || !data?.length) return error('No se guardó', e?.message || 'Sin permiso');
+    toast({ title: si ? 'Se vende por cuartos de plancha' : 'Se vende por plancha completa' });
+    cargar();
+    return undefined;
+  };
+
   const crearColores = async () => {
     if (!marcados.length) return error('Escoge los colores', 'Marca los colores que quieres crear.');
     setGuardando(true);
@@ -70,7 +83,7 @@ export default function ColoresProducto({ productoId }) {
 
   return (
     <div className="rounded-md border border-blue-200 bg-blue-50/40 p-3 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-bold text-blue-900"><Palette className="w-4 h-4" /> Colores y venta por pies</div>
+      <div className="flex items-center gap-2 text-sm font-bold text-blue-900"><Palette className="w-4 h-4" /> Colores, venta por pies y por cuartos de plancha</div>
 
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-xs text-gray-600">Largo de la barra (pies)
@@ -80,6 +93,11 @@ export default function ColoresProducto({ productoId }) {
         <Button type="button" size="sm" variant="outline" onClick={guardarLargo} disabled={guardando}>Guardar largo</Button>
         <span className="text-[11px] text-gray-500">Con largo, al facturar se escoge Unidad o Pies (5 pies de 20 = 0.25 de barra). Vacío = solo por unidad.</span>
       </div>
+
+      <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" checked={!!prod.vende_cuartos} disabled={guardando} onChange={(e) => guardarCuartos(e.target.checked)} />
+        Se vende por cuartos de plancha (vidrio): al facturar se escoge ¼, ½, ¾ o la plancha completa
+      </label>
 
       {base ? (
         <p className="text-xs text-gray-700">

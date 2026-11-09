@@ -340,7 +340,7 @@
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "e8b81b9ca29413e9",
+    "src/hooks/useVentas.js": "3e93dfb60b34e130",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -418,7 +418,7 @@
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
     "src/lib/compraLinea.js": "23cb74e4cfc96c56",
-    "src/components/ventas/VarianteVentaModal.jsx": "df0e7bef10acd12a"
+    "src/components/ventas/VarianteVentaModal.jsx": "b5614dae50ceb98e"
   },
   "historial": [
     {
@@ -680,6 +680,14 @@
       "archivos": [
         "src/components/ventas/VentasFooter.jsx",
         "src/pages/ReciboIngresoPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-09",
+      "nota": "code-review high (vidrio por cuartos): 9 hallazgos; arreglados 8 (cantidad '3/4' se leia 34 -> leerCuartos en web y app, aviso al redondear y en 0, linea aparte por unidad o nota exacta y no por el nombre del producto, ColoresProducto select *, sin DROP en el SQL, 'plancha' en el precio, paso unico); aceptado: la nota en la descripcion como respaldo para facturas (no guardan unidad)",
+      "archivos": [
+        "src/components/ventas/VarianteVentaModal.jsx",
+        "src/hooks/useVentas.js"
       ]
     }
   ]
