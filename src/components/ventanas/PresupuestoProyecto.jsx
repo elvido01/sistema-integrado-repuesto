@@ -10,12 +10,12 @@ import { usePanels } from '@/contexts/PanelContext';
 import { Button } from '@/components/ui/button';
 import MontoInput from '@/components/ui/MontoInput';
 import BuscarProducto from '@/components/ventanas/BuscarProducto';
-import { presupuestoProyecto, pulgadasTexto } from '@/lib/ventanas';
+import { presupuestoProyecto, pulgadasTexto, cobroTexto } from '@/lib/ventanas';
 
 const fmt = (v) => `RD$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const campo = 'h-8 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
 
-export default function PresupuestoProyecto({ proyecto, medidas, nombreSistema, tenantId, onError, onCotizado }) {
+export default function PresupuestoProyecto({ proyecto, medidas, nombreSistema, tenantId, onError, onCotizado, piezasPorSistema = {} }) {
   const { openPanel } = usePanels();
   const [precios, setPrecios] = useState([]);
   const [extras, setExtras] = useState([]);
@@ -41,7 +41,7 @@ export default function PresupuestoProyecto({ proyecto, medidas, nombreSistema, 
   }, [tenantId, proyecto.id, proyecto.cotizacion_id]);
   useEffect(() => { cargar(); }, [cargar]);
 
-  const calc = useMemo(() => presupuestoProyecto(medidas, precios, extras), [medidas, precios, extras]);
+  const calc = useMemo(() => presupuestoProyecto(medidas, precios, extras, piezasPorSistema), [medidas, precios, extras, piezasPorSistema]);
 
   const agregarExtra = async () => {
     if (!nuevo.producto) return onError('Falta el producto', 'Busca el producto del catálogo.');
@@ -90,13 +90,13 @@ export default function PresupuestoProyecto({ proyecto, medidas, nombreSistema, 
 
       <table className="w-full text-sm">
         <thead><tr className="text-left text-[11px] uppercase text-gray-500 border-b">
-          <th className="py-1.5">Descripción</th><th className="text-right">pie²</th><th className="text-center">Cant.</th><th className="text-right">Precio</th><th className="text-right pr-2">Importe</th><th />
+          <th className="py-1.5">Descripción</th><th className="text-right">Cobro</th><th className="text-center">Cant.</th><th className="text-right">Precio</th><th className="text-right pr-2">Importe</th><th />
         </tr></thead>
         <tbody>
           {calc.lineas.map((l, i) => (l.tipo === 'ventana' ? (
             <tr key={`v${i}`} className="border-b">
               <td className="py-1.5">{nombreSistema(l.medida.sistema_id)}{l.medida.color ? ` ${l.medida.color}` : ''} · {pulgadasTexto(l.medida.ancho)}" × {pulgadasTexto(l.medida.alto)}"{l.medida.ubicacion ? ` · ${l.medida.ubicacion}` : ''}</td>
-              <td className="text-right">{l.precio.modo === 'pie2' ? l.pie2.toFixed(2) : '—'}</td>
+              <td className="text-right text-xs text-gray-600">{cobroTexto(l)}</td>
               <td className="text-center">{l.cantidad}</td>
               <td className="text-right font-mono">{fmt(l.unitario)}</td>
               <td className="text-right pr-2 font-mono">{fmt(l.importe)}</td><td />

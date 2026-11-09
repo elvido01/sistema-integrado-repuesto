@@ -199,7 +199,7 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
                 onAviso={(t, d) => toast({ title: t, description: d })} />
             )}
             {tab === 'presupuesto' && (
-              <PresupuestoProyecto proyecto={p} medidas={medidas} nombreSistema={nombreSistema} tenantId={tenantId} onError={onError}
+              <PresupuestoProyecto proyecto={p} medidas={medidas} nombreSistema={nombreSistema} tenantId={tenantId} onError={onError} piezasPorSistema={piezasPorSistema}
                 onCotizado={(c) => { toast({ title: `Cotización ${c.numero} creada`, description: `RD${Number(c.total).toLocaleString('en-US', { minimumFractionDigits: 2 })} · el proyecto pasó a Cotizado` }); cargar(); }} />
             )}
 

@@ -41,6 +41,8 @@ export default function DesgloseConfigPage() {
   const [cfg, setCfg] = useState(null);
   const [barraPies, setBarraPies] = useState('20');
   const [merma, setMerma] = useState('1/8');
+  const [fraccion, setFraccion] = useState(false);
+  const [plancha, setPlancha] = useState({ ancho: '96', alto: '72' });
   const [guardando, setGuardando] = useState(false);
   const [prueba, setPrueba] = useState({ ancho: '40', alto: '40', hojas: 2 });
   const [nuevoSistema, setNuevoSistema] = useState('');
@@ -64,6 +66,8 @@ export default function DesgloseConfigPage() {
       setCfg(cf.data);
       setBarraPies(String(Number(cf.data.largo_barra) / 12));
       setMerma(pulgadasTexto(cf.data.merma_corte));
+      setFraccion(!!cf.data.mostrar_fraccion);
+      if (cf.data.plancha_ancho) setPlancha({ ancho: pulgadasTexto(cf.data.plancha_ancho), alto: pulgadasTexto(cf.data.plancha_alto) });
     }
     return undefined;
   }, [tenantId, error]);
@@ -148,8 +152,13 @@ export default function DesgloseConfigPage() {
   const guardarConfig = async () => {
     const pies = Number(String(barraPies).replace(',', '.'));
     const mm = leerPulgadas(merma);
+    const pa = leerPulgadas(plancha.ancho); const ph = leerPulgadas(plancha.alto);
     if (!(pies > 0) || mm == null) return error('Datos no válidos', 'Largo de barra en pies (ej. 20) y merma en pulgadas (ej. 1/8).');
-    const { data, error: e } = await supabase.from('vent_config').upsert({ tenant_id: tenantId, largo_barra: pies * 12, merma_corte: mm, updated_at: new Date().toISOString() }, { onConflict: 'tenant_id' }).select('*');
+    if (!(pa > 0) || !(ph > 0)) return error('Plancha no válida', 'Ancho y alto de la plancha de vidrio en pulgadas (ej. 96 × 72).');
+    const { data, error: e } = await supabase.from('vent_config').upsert({
+      tenant_id: tenantId, largo_barra: pies * 12, merma_corte: mm,
+      mostrar_fraccion: fraccion, plancha_ancho: pa, plancha_alto: ph, updated_at: new Date().toISOString(),
+    }, { onConflict: 'tenant_id' }).select('*');
     if (e || !data?.length) return error('No se guardó', e?.message || 'Sin permiso');
     setCfg(data[0]);
     toast({ title: 'Barras guardadas', description: `${pies}' (${pies * 12}") · merma ${pulgadasTexto(mm)}" por corte` });
@@ -203,7 +212,16 @@ export default function DesgloseConfigPage() {
           <label><span className={etiqueta}>Se pierde por corte (pulgadas)</span>
             <input className={`${campo} mt-1 w-24 block`} value={merma} onChange={(e) => setMerma(e.target.value)} />
           </label>
-          <Button size="sm" variant="outline" onClick={guardarConfig}><Save className="w-4 h-4 mr-1" /> Guardar barras</Button>
+          <label><span className={etiqueta}>Plancha de vidrio (pulgadas)</span>
+            <span className="flex items-center gap-1 mt-1">
+              <input className={`${campo} w-16`} value={plancha.ancho} onChange={(e) => setPlancha((x) => ({ ...x, ancho: e.target.value }))} />×
+              <input className={`${campo} w-16`} value={plancha.alto} onChange={(e) => setPlancha((x) => ({ ...x, alto: e.target.value }))} />
+            </span>
+          </label>
+          <label className="flex items-center gap-2 text-sm mb-1.5" title="Última barra y planchas en 1/4, 1/2, 3/4 en vez de redondear a la unidad completa">
+            <input type="checkbox" checked={fraccion} onChange={(e) => setFraccion(e.target.checked)} /> Mostrar fracción de materiales (¼ ½ ¾)
+          </label>
+          <Button size="sm" variant="outline" onClick={guardarConfig}><Save className="w-4 h-4 mr-1" /> Guardar barras y planchas</Button>
           {cfg && <span className="text-xs text-gray-500">Actual: {Number(cfg.largo_barra) / 12}' ({Number(cfg.largo_barra)}") · merma {pulgadasTexto(cfg.merma_corte)}"</span>}
         </section>
 

@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/src/supabase/client';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import CroquisVidrios from '@/src/components/ventanas/CroquisVidrios';
-import { ESTADOS_PROYECTO, numeroProyecto, pulgadasTexto, medidaRazonable, COLORES_ALUMINIO, desgloseVentana, materialesProyecto, presupuestoProyecto } from '@/src/lib/ventanas';
+import { ESTADOS_PROYECTO, numeroProyecto, pulgadasTexto, medidaRazonable, COLORES_ALUMINIO, desgloseVentana, materialesProyecto, presupuestoProyecto, cobroTexto, barrasConFraccion, planchasVidrio } from '@/src/lib/ventanas';
 
 const FRACCIONES: [string, number][] = [['0', 0], ['⅛', 0.125], ['¼', 0.25], ['⅜', 0.375], ['½', 0.5], ['⅝', 0.625], ['¾', 0.75], ['⅞', 0.875]];
 
@@ -212,15 +212,18 @@ export default function ProyectoScreen() {
 
         {tab === 'materiales' && (() => {
           const mat = materialesProyecto(medidas, piezasPorSistema, cfg || {});
+          const fraccion = !!cfg?.mostrar_fraccion;
+          const barrasDe = (x: any) => (fraccion ? barrasConFraccion(x.plan, mat.largoBarra) : { valor: x.barras, texto: String(x.barras) });
+          const planchas = planchasVidrio(mat.totalPie2, cfg?.plancha_ancho, cfg?.plancha_alto, fraccion);
           if (!medidas.length) return <Text className="text-gray-400 text-center py-6">Primero agrega las medidas.</Text>;
           return (
             <View>
-              <Text className="text-sm font-bold text-gray-700 mb-2">Perfiles · {mat.perfiles.reduce((s: number, x: any) => s + x.barras, 0)} barra(s) de {mat.largoBarra / 12}'</Text>
+              <Text className="text-sm font-bold text-gray-700 mb-2">Perfiles · {mat.perfiles.reduce((s: number, x: any) => s + barrasDe(x).valor, 0)} barra(s) de {mat.largoBarra / 12}'</Text>
               {mat.perfiles.map((x: any) => (
                 <View key={`${x.perfil}|${x.color}`} className="bg-white rounded-xl border border-gray-200 p-3 mb-2">
                   <View className="flex-row justify-between">
                     <Text className="font-bold flex-1">{x.perfil}{x.color ? ` · ${x.color}` : ''}</Text>
-                    <Text className="font-bold text-blue-800">{x.barras} barra(s)</Text>
+                    <Text className="font-bold text-blue-800">{barrasDe(x).texto} barra(s)</Text>
                   </View>
                   <Text className="text-xs text-gray-500">{x.cortes.length} cortes · {x.pies.toFixed(2)}' · {x.metros.toFixed(2)} m</Text>
                   {x.plan.barras.map((b: any, i: number) => (
@@ -228,7 +231,7 @@ export default function ProyectoScreen() {
                   ))}
                 </View>
               ))}
-              <Text className="text-sm font-bold text-gray-700 mt-3 mb-2">Cristales · {mat.totalPie2.toFixed(2)} pie²</Text>
+              <Text className="text-sm font-bold text-gray-700 mt-3 mb-2">Cristales · {mat.totalPie2.toFixed(2)} pie²{mat.totalPie2 > 0 ? ` · ≈ ${planchas.texto} plancha(s)` : ''}</Text>
               {mat.cristales.map((c: any, i: number) => (
                 <View key={i} className="flex-row justify-between bg-white rounded-xl border border-gray-200 p-3 mb-2">
                   <Text className="flex-1">{c.cantidad} × {pulgadasTexto(c.ancho)}" × {pulgadasTexto(c.alto)}"</Text>
@@ -241,7 +244,7 @@ export default function ProyectoScreen() {
 
         {tab === 'presupuesto' && (() => {
           if (!medidas.length) return <Text className="text-gray-400 text-center py-6">Primero agrega las medidas.</Text>;
-          const calc = presupuestoProyecto(medidas, precios, extras as any);
+          const calc = presupuestoProyecto(medidas, precios, extras as any, piezasPorSistema);
           const fmt = (v: number) => `RD$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
           const crear = async () => {
             setCotizando(true);
@@ -265,7 +268,7 @@ export default function ProyectoScreen() {
                       {l.tipo === 'ventana' ? `${pulgadasTexto(l.medida.ancho)}" × ${pulgadasTexto(l.medida.alto)}"` : (l.extra.descripcion || l.extra.productos?.descripcion)}
                     </Text>
                     <Text className="text-xs text-gray-500">
-                      {l.tipo === 'ventana' ? `${nombreSistema(l.medida.sistema_id)}${l.precio.modo === 'pie2' ? ` · ${l.pie2.toFixed(2)} pie²` : ''}` : 'Extra'} · {l.cantidad} × {fmt(l.unitario)}
+                      {l.tipo === 'ventana' ? `${nombreSistema(l.medida.sistema_id)} · ${cobroTexto(l)}` : 'Extra'} · {l.cantidad} × {fmt(l.unitario)}
                     </Text>
                   </View>
                   <Text className="font-bold">{fmt(l.importe)}</Text>

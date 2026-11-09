@@ -122,3 +122,37 @@ describe('croquisVidrios', () => {
     expect(t).toContain('Vidrio: claro 5 mm');
   });
 });
+
+describe('formas de cobrar y fracciones', () => {
+  it('m², pie lineal, material + mano de obra y mínimo', async () => {
+    const v = await import('../src/lib/ventanas.js');
+    const piezas = { s1: [
+      { id: 'l', nombre: 'Lateral', tipo: 'perfil', base: 'alto', por_hoja: false, descuento: 0, cant_fija: 2, cant_por_hoja: 0, orden: 1 },
+      { id: 'c', nombre: 'Cabezal', tipo: 'perfil', base: 'ancho', por_hoja: false, descuento: 0, cant_fija: 2, cant_por_hoja: 0, orden: 2 },
+      { id: 'a', nombre: 'Cristal ancho', tipo: 'cristal', base: 'ancho', por_hoja: true, descuento: 0, cant_fija: 0, cant_por_hoja: 1, orden: 3 },
+      { id: 'b', nombre: 'Cristal alto', tipo: 'cristal', base: 'alto', por_hoja: false, descuento: 0, cant_fija: 0, cant_por_hoja: 1, orden: 4 },
+    ] };
+    const m = { sistema_id: 's1', hojas: 2, ancho: 48, alto: 36, cantidad: 2, color: '' };
+    const base = { sistema_id: 's1', color: '', producto_id: 'x', minimo_pie2: 0 };
+    const linea = (p) => v.presupuestoProyecto([m], [{ ...base, ...p }], [], piezas).lineas[0];
+    expect(linea({ modo: 'm2', precio: 1000 }).unitario).toBe(1110);             // 48×36" = 1.11 m²
+    expect(linea({ modo: 'pie_lineal', precio: 100 }).unitario).toBe(1400);      // 2×(48+36)/12 = 14'
+    expect(linea({ modo: 'pie2', precio: 100, minimo_pie2: 15 }).unitario).toBe(1500);   // 12 pie² < mínimo 15
+    const mo = linea({ modo: 'material_mo', precio: 0, precio_perfil_pie: 10, precio_vidrio_pie2: 50, mano_obra: 500 });
+    // perfil: 2×36 + 2×48 = 168" = 14' → 140; vidrio 2 × (24×36/144 = 6) = 12 pie² → 600; + 500
+    expect(mo.unitario).toBe(1240);
+    expect(mo.importe).toBe(2480);
+    expect(v.cobroTexto(mo)).toContain('M.O.');
+    expect(v.presupuestoProyecto([m], [{ ...base, modo: 'material_mo', precio: 0 }], [], piezas).faltan).toHaveLength(1);
+  });
+  it('cuartos, barras con fracción y planchas', async () => {
+    const v = await import('../src/lib/ventanas.js');
+    expect(v.aCuartos(2.1).texto).toBe('2 1/4');
+    expect(v.aCuartos(2).texto).toBe('2');
+    expect(v.aCuartos(0.6).texto).toBe('3/4');
+    const plan = v.planBarras([200, 100], 240, 0);   // barra 1: 200 (sobra 40) · barra 2: 100 (sobra 140)
+    expect(v.barrasConFraccion(plan, 240).texto).toBe('1 1/2');
+    expect(v.planchasVidrio(60, 96, 72, false).texto).toBe('2');   // plancha 48 pie²
+    expect(v.planchasVidrio(60, 96, 72, true).texto).toBe('1 1/4');   // 60 ÷ 48 = 1.25
+  });
+});

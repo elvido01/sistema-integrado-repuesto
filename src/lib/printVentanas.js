@@ -1,13 +1,16 @@
 // Hoja carta del desglose de un proyecto de ventanas (09/11/2026): datos del
 // proyecto, cortes de cada ventana, perfiles (pies y barras con su plan de
 // corte) y cristales. Se imprime o se guarda como PDF (printHtmlSmart).
-import { desgloseVentana, materialesProyecto, croquisVidrios, pulgadasTexto, numeroProyecto, estadoProyecto } from '@/lib/ventanas';
+import { desgloseVentana, materialesProyecto, croquisVidrios, pulgadasTexto, numeroProyecto, estadoProyecto, barrasConFraccion, planchasVidrio } from '@/lib/ventanas';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pg = (v) => `${pulgadasTexto(v)}"`;
 
 export function desgloseProyectoHTML({ empresa, proyecto, medidas, nombreSistema, piezasPorSistema, cfg }) {
   const mat = materialesProyecto(medidas, piezasPorSistema, cfg || {});
+  const fraccion = !!cfg?.mostrar_fraccion;
+  const barrasTxt = (p) => (fraccion ? barrasConFraccion(p.plan, mat.largoBarra).texto : String(p.barras));
+  const planchas = planchasVidrio(mat.totalPie2, cfg?.plancha_ancho, cfg?.plancha_alto, fraccion);
   const cliente = proyecto.clientes?.nombre || proyecto.cliente_nombre || 'Cliente por defecto';
   const ventanas = medidas.map((m, i) => {
     const cortes = desgloseVentana(m, piezasPorSistema[m.sistema_id] || []);
@@ -19,7 +22,7 @@ export function desgloseProyectoHTML({ empresa, proyecto, medidas, nombreSistema
   }).join('');
   const perfiles = mat.perfiles.map((p) => `<tr>
       <td><b>${esc(p.perfil)}</b></td><td>${esc(p.color || '—')}</td><td class="c">${p.cortes.length}</td>
-      <td class="m">${p.pies.toFixed(2)}'</td><td class="m">${p.metros.toFixed(2)} m</td><td class="c"><b>${p.barras}</b></td></tr>
+      <td class="m">${p.pies.toFixed(2)}'</td><td class="m">${p.metros.toFixed(2)} m</td><td class="c"><b>${barrasTxt(p)}</b></td></tr>
       <tr class="plan"><td colspan="6">${p.plan.barras.map((b, i) => `Barra ${i + 1}: ${b.cortes.map(pg).join(' + ')} <i>(sobra ${pg(b.sobrante)})</i>`).join('<br>')}</td></tr>`).join('');
   const cristales = mat.cristales.map((c) => `<tr><td>${esc(pg(c.medida.ancho))} × ${esc(pg(c.medida.alto))}${c.medida.ubicacion ? ` · ${esc(c.medida.ubicacion)}` : ''}</td>
       <td class="m">${esc(pg(c.ancho))} × ${esc(pg(c.alto))}</td><td class="c">${c.cantidad}</td><td class="m">${c.pie2.toFixed(2)}</td></tr>`).join('');
@@ -58,7 +61,7 @@ export function desgloseProyectoHTML({ empresa, proyecto, medidas, nombreSistema
   <div class="grid">${ventanas}</div>
   <h2>Perfiles · barras de ${mat.largoBarra / 12}' (${mat.largoBarra}")</h2>
   <table><thead><tr><th>Perfil</th><th>Color</th><th class="c">Cortes</th><th class="m">Pies</th><th class="m">Metros</th><th class="c">Barras</th></tr></thead><tbody>${perfiles}</tbody></table>
-  <h2>Cristales · ${mat.totalPie2.toFixed(2)} pie²</h2>
+  <h2>Cristales · ${mat.totalPie2.toFixed(2)} pie²${mat.totalPie2 > 0 ? ` · ≈ ${planchas.texto} plancha(s) de ${esc(pg(Number(cfg?.plancha_ancho) || 96))} × ${esc(pg(Number(cfg?.plancha_alto) || 72))}` : ''}</h2>
   <table><thead><tr><th>Ventana</th><th class="m">Cristal</th><th class="c">Cant.</th><th class="m">pie²</th></tr></thead><tbody>${cristales || '<tr><td colspan="4">Sin cristales</td></tr>'}</tbody></table>
   <div class="nota">Medidas en pulgadas. Se pierde ${pg(mat.merma)} por corte.</div>
 </body></html>`;

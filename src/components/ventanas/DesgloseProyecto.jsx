@@ -5,7 +5,7 @@
 //   (con el plan de corte de cada barra), y los cristales en pie².
 import React, { useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
-import { desgloseVentana, materialesProyecto, pulgadasTexto } from '@/lib/ventanas';
+import { desgloseVentana, materialesProyecto, pulgadasTexto, barrasConFraccion, planchasVidrio } from '@/lib/ventanas';
 
 export function DesgloseVentanas({ medidas, nombreSistema, piezasPorSistema, onMarcar }) {
   if (!medidas.length) return <div className="py-10 text-center text-sm text-gray-400">Primero agrega las medidas.</div>;
@@ -54,7 +54,11 @@ export function MaterialesVentanas({ medidas, piezasPorSistema, cfg }) {
   const [abierto, setAbierto] = useState(null);
   const mat = useMemo(() => materialesProyecto(medidas, piezasPorSistema, cfg || {}), [medidas, piezasPorSistema, cfg]);
   if (!medidas.length) return <div className="py-10 text-center text-sm text-gray-400">Primero agrega las medidas.</div>;
-  const totalBarras = mat.perfiles.reduce((s, p) => s + p.barras, 0);
+  // Con "Mostrar fracción" (Configuración del desglose) la última barra va en ¼ ½ ¾.
+  const fraccion = !!cfg?.mostrar_fraccion;
+  const barrasDe = (p) => (fraccion ? barrasConFraccion(p.plan, mat.largoBarra) : { valor: p.barras, texto: String(p.barras) });
+  const totalBarras = mat.perfiles.reduce((s, p) => s + barrasDe(p).valor, 0);
+  const planchas = planchasVidrio(mat.totalPie2, cfg?.plancha_ancho, cfg?.plancha_alto, fraccion);
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -81,7 +85,7 @@ export function MaterialesVentanas({ medidas, piezasPorSistema, cfg }) {
                   <td>{p.color || '—'}</td>
                   <td className="text-center">{p.cortes.length}</td>
                   <td className="text-right font-mono">{UNIDADES[unidad].f(p)}</td>
-                  <td className="text-right pr-2 font-bold">{p.barras}</td>
+                  <td className="text-right pr-2 font-bold">{barrasDe(p).texto}</td>
                 </tr>
                 {abierto === k && (
                   <tr className="bg-gray-50"><td /><td colSpan={5} className="py-2">
@@ -99,7 +103,10 @@ export function MaterialesVentanas({ medidas, piezasPorSistema, cfg }) {
         </tbody>
       </table>
       <div>
-        <div className="text-sm font-bold text-gray-700 mb-1">Cristales · {mat.totalPie2.toFixed(2)} pie²</div>
+        <div className="text-sm font-bold text-gray-700 mb-1">
+          Cristales · {mat.totalPie2.toFixed(2)} pie²
+          {mat.totalPie2 > 0 && <span className="font-normal text-gray-500"> · ≈ {planchas.texto} plancha(s) de {pulgadasTexto(Number(cfg?.plancha_ancho) || 96)}" × {pulgadasTexto(Number(cfg?.plancha_alto) || 72)}" (por pie², sin acomodar los pedazos)</span>}
+        </div>
         {mat.cristales.length ? (
           <table className="w-full text-sm">
             <thead><tr className="text-left text-[11px] uppercase text-gray-500 border-b"><th className="py-1.5">Ventana</th><th>Medida</th><th className="text-center">Cant.</th><th className="text-right pr-2">pie²</th></tr></thead>

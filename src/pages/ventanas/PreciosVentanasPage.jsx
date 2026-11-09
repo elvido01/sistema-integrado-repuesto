@@ -17,7 +17,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import MontoInput from '@/components/ui/MontoInput';
 import BuscarProducto from '@/components/ventanas/BuscarProducto';
-import { COLORES_ALUMINIO } from '@/lib/ventanas';
+import { COLORES_ALUMINIO, MODOS_COBRO, modoCobro } from '@/lib/ventanas';
 
 const campo = 'h-8 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
 
@@ -43,14 +43,17 @@ export default function PreciosVentanasPage() {
     setCargando(false);
     if (si.error || pr.error) { error('No se pudo cargar', (si.error || pr.error).message); return; }
     setSistemas(si.data || []);
-    setFilas((pr.data || []).map((p) => ({ ...p, precio: String(p.precio), producto: p.productos || null })));
+    setFilas((pr.data || []).map((p) => ({
+      ...p, precio: String(p.precio), producto: p.productos || null,
+      precio_perfil_pie: String(p.precio_perfil_pie ?? 0), precio_vidrio_pie2: String(p.precio_vidrio_pie2 ?? 0), mano_obra: String(p.mano_obra ?? 0),
+    })));
     setBorradas([]); setSucio(false);
   }, [tenantId, error]);
   useEffect(() => { cargar(); }, [cargar]);
 
   const cambiar = (id, k, v) => { setFilas((fs) => fs.map((f) => (f.id === id ? { ...f, [k]: v } : f))); setSucio(true); };
   const agregar = (sistemaId, color = '') => {
-    setFilas((fs) => [...fs, { id: `nuevo-${Date.now()}-${Math.random()}`, _nuevo: true, sistema_id: sistemaId, color, modo: 'pie2', precio: '', minimo_pie2: 0, producto: null }]);
+    setFilas((fs) => [...fs, { id: `nuevo-${Date.now()}-${Math.random()}`, _nuevo: true, sistema_id: sistemaId, color, modo: 'pie2', precio: '', minimo_pie2: 0, producto: null, precio_perfil_pie: '', precio_vidrio_pie2: '', mano_obra: '' }]);
     setSucio(true);
   };
   const quitar = (f) => { setFilas((fs) => fs.filter((x) => x.id !== f.id)); if (!f._nuevo) setBorradas((b) => [...b, f.id]); setSucio(true); };
@@ -72,6 +75,7 @@ export default function PreciosVentanasPage() {
         ...(f._nuevo ? {} : { id: f.id }),
         tenant_id: tenantId, sistema_id: f.sistema_id, color: f.color || '', modo: f.modo,
         precio: Number(f.precio) || 0, minimo_pie2: Number(f.minimo_pie2) || 0, producto_id: f.producto?.id || null,
+        precio_perfil_pie: Number(f.precio_perfil_pie) || 0, precio_vidrio_pie2: Number(f.precio_vidrio_pie2) || 0, mano_obra: Number(f.mano_obra) || 0,
         updated_at: new Date().toISOString(),
       }));
       const viejas = datos.filter((d) => d.id); const nuevas = datos.filter((d) => !d.id);
@@ -101,13 +105,13 @@ export default function PreciosVentanasPage() {
           </Button>
         </div>
         <p className="text-sm text-gray-600">
-          Precio de venta <b>con ITBIS</b>. Por pie²: ancho × alto ÷ 144 (con el mínimo de pie² por ventana). El producto es el que sale en la cotización y la factura
+          Precio de venta <b>con ITBIS</b>. Por pie²: ancho × alto ÷ 144 · por m²: ancho × alto en metros · por pie lineal: el contorno (2 × (ancho + alto)) en pies; los tres con un mínimo por ventana. Material + mano de obra: pies de perfil y pie² de vidrio del desglose por su precio, más la mano de obra de cada ventana. El producto es el que sale en la cotización y la factura
           (por ejemplo, VENTANA TRADICIONAL BLANCO). Si un color tiene otro precio, agrégalo aparte: manda sobre el general.
         </p>
         <div className="rounded-lg bg-white border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm min-w-[900px]">
             <thead><tr className="text-left text-[11px] uppercase text-gray-500 border-b">
-              <th className="py-2 px-3">Sistema</th><th>Color</th><th>Cobrar</th><th>Precio (RD$)</th><th>Mínimo pie²</th><th className="w-[320px]">Producto que se factura</th><th />
+              <th className="py-2 px-3">Sistema</th><th>Color</th><th>Cobrar</th><th>Precio (RD$)</th><th>Mínimo</th><th className="w-[320px]">Producto que se factura</th><th />
             </tr></thead>
             <tbody>
               {sistemas.filter((s) => s.activo).map((s) => {
@@ -132,12 +136,27 @@ export default function PreciosVentanasPage() {
                         </td>
                         <td className="pr-1">
                           <select className={campo} value={f.modo} onChange={(e) => cambiar(f.id, 'modo', e.target.value)}>
-                            <option value="pie2">Por pie²</option><option value="unidad">Por unidad</option>
+                            {MODOS_COBRO.map((m) => <option key={m.k} value={m.k}>{m.t}</option>)}
                           </select>
                         </td>
-                        <td className="pr-1"><MontoInput className={`${campo} w-28 text-right`} value={f.precio} onChange={(v) => cambiar(f.id, 'precio', v)} /></td>
                         <td className="pr-1">
-                          <input className={`${campo} w-20 text-right`} inputMode="decimal" disabled={f.modo !== 'pie2'} value={f.minimo_pie2}
+                          {f.modo === 'material_mo' ? (
+                            <div className="space-y-1 py-1">
+                              {[['precio_perfil_pie', 'Perfil por pie'], ['precio_vidrio_pie2', 'Vidrio por pie²'], ['mano_obra', 'Mano de obra']].map(([k, t]) => (
+                                <label key={k} className="flex items-center gap-1 text-[11px] text-gray-500">
+                                  <MontoInput className={`${campo} w-24 text-right`} value={f[k]} onChange={(v) => cambiar(f.id, k, v)} /> {t}
+                                </label>
+                              ))}
+                            </div>
+                          ) : (
+                            <label className="flex items-center gap-1 text-[11px] text-gray-500">
+                              <MontoInput className={`${campo} w-28 text-right`} value={f.precio} onChange={(v) => cambiar(f.id, 'precio', v)} />
+                              {modoCobro(f.modo).u ? `por ${modoCobro(f.modo).u}` : ''}
+                            </label>
+                          )}
+                        </td>
+                        <td className="pr-1">
+                          <input className={`${campo} w-20 text-right`} inputMode="decimal" disabled={!modoCobro(f.modo).u} value={f.minimo_pie2}
                             onChange={(e) => cambiar(f.id, 'minimo_pie2', e.target.value.replace(/[^\d.]/g, ''))} />
                         </td>
                         <td className="pr-1"><BuscarProducto tenantId={tenantId} value={f.producto} onChange={(p) => cambiar(f.id, 'producto', p)} /></td>

@@ -84,30 +84,111 @@ export function desgloseVentana(medida, piezas) {
 }
 
 // ── Presupuesto (09/11/2026) ────────────────────────────────────────────
-// Igual que vent_crear_cotizacion (SQL): por ventana, precio por pie²
-// (ancho × alto ÷ 144 a 2 decimales, con mínimo) o fijo por unidad; el
-// precio del color manda sobre el general (color ''). Precios con ITBIS.
+// Igual que vent_crear_cotizacion (SQL, sql/ventanas_cobro.sql). Por ventana,
+// según el modo del precio (el del color manda sobre el general, color ''):
+// · pie2        ancho × alto ÷ 144 (2 decimales, con mínimo) × precio
+// · m2          ancho × alto en m² (con mínimo) × precio
+// · pie_lineal  2 × (ancho + alto) ÷ 12 (con mínimo) × precio
+// · unidad      precio fijo
+// · material_mo pies de perfil × precio_perfil_pie + pie² de vidrio ×
+//               precio_vidrio_pie2 + mano_obra (material del desglose)
+// Precios con ITBIS.
 const r2 = (v) => Math.round(v * 100) / 100;
 export const pie2Ventana = (m) => r2((Number(m.ancho) * Number(m.alto)) / 144);
+export const m2Ventana = (m) => r2(Number(m.ancho) * Number(m.alto) * 0.00064516);
+export const pieLinealVentana = (m) => r2((2 * (Number(m.ancho) + Number(m.alto))) / 12);
+
+export const MODOS_COBRO = [
+  { k: 'pie2', t: 'Por pie²', u: 'pie²' },
+  { k: 'm2', t: 'Por m²', u: 'm²' },
+  { k: 'pie_lineal', t: 'Por pie lineal', u: 'pie lineal' },
+  { k: 'unidad', t: 'Por unidad', u: null },
+  { k: 'material_mo', t: 'Material + mano de obra', u: null },
+];
+export const modoCobro = (k) => MODOS_COBRO.find((x) => x.k === k) || MODOS_COBRO[0];
 
 export function precioDeVentana(m, precios) {
   const delSistema = (precios || []).filter((p) => p.sistema_id === m.sistema_id);
   return delSistema.find((p) => p.color && p.color === (m.color || '')) || delSistema.find((p) => !p.color) || null;
 }
 
-export function presupuestoProyecto(medidas, precios, extras = []) {
+const precioCompleto = (p) => p && p.producto_id && (p.modo === 'material_mo'
+  ? (Number(p.precio_perfil_pie) || 0) + (Number(p.precio_vidrio_pie2) || 0) + (Number(p.mano_obra) || 0) > 0
+  : Number(p.precio) > 0);
+
+export function presupuestoProyecto(medidas, precios, extras = [], piezasPorSistema = {}) {
   const lineas = [];
   const faltan = [];
   for (const m of medidas) {
     const p = precioDeVentana(m, precios);
-    if (!p || !p.producto_id || !(Number(p.precio) > 0)) { faltan.push(m); continue; }
-    const pie2 = Math.max(pie2Ventana(m), Number(p.minimo_pie2) || 0);
-    const unitario = p.modo === 'unidad' ? Number(p.precio) : r2(pie2 * Number(p.precio));
-    lineas.push({ tipo: 'ventana', medida: m, precio: p, pie2, cantidad: Number(m.cantidad) || 1, unitario, importe: r2(unitario * (Number(m.cantidad) || 1)) });
+    if (!precioCompleto(p)) { faltan.push(m); continue; }
+    let medidaCobro = null;
+    let unitario;
+    if (p.modo === 'unidad') {
+      unitario = Number(p.precio);
+    } else if (p.modo === 'material_mo') {
+      const mat = materialVentana(m, piezasPorSistema[m.sistema_id] || []);
+      unitario = r2(mat.piesPerfil * (Number(p.precio_perfil_pie) || 0) + mat.pie2Vidrio * (Number(p.precio_vidrio_pie2) || 0) + (Number(p.mano_obra) || 0));
+      medidaCobro = mat;
+    } else {
+      const base = p.modo === 'm2' ? m2Ventana(m) : p.modo === 'pie_lineal' ? pieLinealVentana(m) : pie2Ventana(m);
+      medidaCobro = Math.max(base, Number(p.minimo_pie2) || 0);
+      unitario = r2(medidaCobro * Number(p.precio));
+    }
+    const cantidad = Number(m.cantidad) || 1;
+    lineas.push({ tipo: 'ventana', medida: m, precio: p, medidaCobro, pie2: p.modo === 'pie2' ? medidaCobro : pie2Ventana(m), cantidad, unitario, importe: r2(unitario * cantidad) });
   }
   for (const e of extras) lineas.push({ tipo: 'extra', extra: e, cantidad: Number(e.cantidad) || 0, unitario: Number(e.precio) || 0, importe: r2((Number(e.precio) || 0) * (Number(e.cantidad) || 0)) });
   const total = r2(lineas.reduce((s, l) => s + l.importe, 0));
   return { lineas, faltan, total };
+}
+
+// Texto corto de cómo se cobra una línea: "12.50 pie²", "material + M.O."…
+export function cobroTexto(l) {
+  if (!l || l.tipo !== 'ventana') return '';
+  const md = modoCobro(l.precio.modo);
+  if (l.precio.modo === 'unidad') return 'por unidad';
+  if (l.precio.modo === 'material_mo') return `${l.medidaCobro.piesPerfil.toFixed(1)}' perfil + ${l.medidaCobro.pie2Vidrio.toFixed(2)} pie² vidrio + M.O.`;
+  return `${Number(l.medidaCobro).toFixed(2)} ${md.u}`;
+}
+
+// Material de UNA ventana (como private.vent_material_ventana): pies de
+// perfil cortado y pie² de vidrio según el desglose de su sistema.
+export function materialVentana(m, piezas) {
+  const cortes = desgloseVentana({ ...m, cantidad: 1 }, piezas || []);
+  const pulg = cortes.filter((c) => c.pieza.tipo === 'perfil').reduce((s, c) => s + c.porVentana * c.largo, 0);
+  const an = cortes.find((c) => c.pieza.tipo === 'cristal' && c.pieza.base === 'ancho');
+  const al = cortes.find((c) => c.pieza.tipo === 'cristal' && c.pieza.base === 'alto');
+  const pie2Vidrio = an && al ? (an.largo * al.largo / 144) * Math.min(an.porVentana, al.porVentana) : 0;
+  return { piesPerfil: pulg / 12, pie2Vidrio };
+}
+
+// Fracciones (Configuración del desglose → "Mostrar fracción"): un número de
+// barras o planchas hacia arriba al ¼ (2.1 → 2 1/4). Sin fracción: entero.
+export function aCuartos(v) {
+  const q = Math.ceil(Math.round(Number(v || 0) * 1000) / 1000 * 4) / 4;
+  const ent = Math.floor(q); const fr = q - ent;
+  const t = fr === 0.25 ? '1/4' : fr === 0.5 ? '1/2' : fr === 0.75 ? '3/4' : '';
+  return { valor: q, texto: t ? (ent ? `${ent} ${t}` : t) : String(ent) };
+}
+
+// Barras de un perfil con la última en fracción: las enteras del plan menos
+// la última + lo que se usa de la última (largo − sobrante) ÷ largo.
+export function barrasConFraccion(plan, largoBarra) {
+  const n = plan.barras.length;
+  if (!n) return aCuartos(0);
+  const ultima = plan.barras[n - 1];
+  return aCuartos(n - 1 + (largoBarra - ultima.sobrante) / largoBarra);
+}
+
+// Planchas de vidrio aproximadas por pie² (no acomoda los pedazos).
+export function planchasVidrio(totalPie2, planchaAncho = 96, planchaAlto = 72, fraccion = false) {
+  const porPlancha = (Number(planchaAncho) * Number(planchaAlto)) / 144;
+  if (!(porPlancha > 0) || !(totalPie2 > 0)) return { valor: 0, texto: '0', porPlancha };
+  const crudo = totalPie2 / porPlancha;
+  if (fraccion) return { ...aCuartos(crudo), porPlancha };
+  const ent = Math.ceil(Math.round(crudo * 1000) / 1000);
+  return { valor: ent, texto: String(ent), porPlancha };
 }
 
 // Barras: "primero el más largo" en la barra donde quepa (con lo que se
