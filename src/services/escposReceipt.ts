@@ -55,7 +55,7 @@ export const ESC_TABLA_437 = '\x1Bt\x00\x1C.';
 // sale byte por byte como antes en cualquier impresora.
 const textoTicket = (s: string): string => {
     const t = toCP437(s);
-    return /[-ÿ]/.test(t) ? t : t.split(ESC_TABLA_437).join('');
+    return /[\x80-\xFF]/.test(t) ? t : t.split(ESC_TABLA_437).join('');
 };
 export const toCP437 = (s: string): string =>
     Array.from(s.normalize('NFC'), (ch) => {

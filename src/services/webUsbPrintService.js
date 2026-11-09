@@ -106,7 +106,9 @@ function findBulkOutEndpoint(device) {
 /**
  * Conecta y envía datos raw a un dispositivo USB
  */
-async function sendRawToDevice(device, data) {
+// binario: data ya son bytes (ticket ESC/POS con tabla 437 o imagen); si no,
+// es texto (etiquetas EPL/ZPL) y va en UTF-8 como siempre.
+async function sendRawToDevice(device, data, binario = false) {
   try {
     await device.open();
 
@@ -122,8 +124,9 @@ async function sendRawToDevice(device, data) {
     await device.claimInterface(endpoint.interfaceNumber);
 
     // Convertir string a Uint8Array
-    const encoder = new TextEncoder();
-    const rawData = encoder.encode(data);
+    const rawData = binario
+      ? Uint8Array.from(Array.from(data, (c) => c.charCodeAt(0) & 0xff))
+      : new TextEncoder().encode(data);
 
     // Enviar en chunks de 64 bytes (tamaño típico de endpoint bulk)
     const CHUNK_SIZE = 64;
@@ -248,7 +251,11 @@ export async function webUsbPrintEscPos(escposData) {
   }
 
   try {
-    await sendRawToDevice(device, escposData);
+    // (09/11/2026) Byte por byte (no UTF-8: la ñ 0xA4 salía en dos bytes) y,
+    // si es una Star, el mismo ajuste que por el agente (tabla, corte).
+    const { ajustarParaImpresora } = await import('@/services/printerAdapter');
+    const datos = device.vendorId === 0x0519 ? ajustarParaImpresora('Star', escposData) : escposData;
+    await sendRawToDevice(device, datos, true);
     console.log('[WebUSB] ESC/POS enviado a:', getDeviceName(device));
   } catch (err) {
     // Si falla, limpiar dispositivo cacheado para que pida de nuevo

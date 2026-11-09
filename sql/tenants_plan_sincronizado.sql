@@ -36,14 +36,14 @@ SECURITY DEFINER
 SET search_path TO 'pg_catalog', 'public'
 AS $function$
 BEGIN
-  PERFORM private.tenant_plan_desde_suscripcion(NEW.tenant_id);
+  PERFORM private.tenant_plan_desde_suscripcion(CASE WHEN TG_OP = 'DELETE' THEN OLD.tenant_id ELSE NEW.tenant_id END);
   RETURN NULL;
 END;
 $function$;
 
 DROP TRIGGER IF EXISTS trg_suscripcion_plan_a_tenant ON public.suscripciones;
 CREATE TRIGGER trg_suscripcion_plan_a_tenant
-  AFTER INSERT OR UPDATE OF plan_id, fecha_fin ON public.suscripciones
+  AFTER INSERT OR DELETE OR UPDATE OF plan_id, fecha_fin, created_at ON public.suscripciones
   FOR EACH ROW EXECUTE FUNCTION private.trg_suscripcion_plan_a_tenant();
 
 -- Corregir las que hoy no coinciden.

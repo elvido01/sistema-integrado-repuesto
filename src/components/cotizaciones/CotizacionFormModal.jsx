@@ -17,6 +17,7 @@ import { format, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { generateCotizacionPDF } from '@/components/common/PDFGenerator';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
+import VarianteVentaModal from '@/components/ventas/VarianteVentaModal';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import { IDS_GENERICOS, ID_GENERICO_BASE, ID_GENERICO_FINAL, esClienteGenerico } from '@/lib/clienteGenerico';
 
@@ -57,7 +58,10 @@ const CLIENTE_GENERICO = {
 
 const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
   const { toast } = useToast();
-  const { profile } = useAuth();
+  const { profile, empresa: empresaAuth } = useAuth();
+  // (09/11/2026) Ventanas y aluminio: color y Unidad/Pies antes de cotizar.
+  const esAluminio = empresaAuth?.tipo_negocio === 'aluminio';
+  const [varianteDe, setVarianteDe] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
   const [modalSessionKey, setModalSessionKey] = useState(0);
@@ -121,6 +125,8 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
         itbis_pct: (d.itbis_valor / (d.importe - d.itbis_valor)) || 0.18, // Rough estimate if not in row
         descuento_pct: d.descuento_pct || 0,
         imagen_url: d.productos?.imagen_url,
+        // Ventanas: la línea vendida por pies sigue aparte al reabrir.
+        lineaAparte: /\(\d+(\.\d+)? PIES\)$/.test(String(d.descripcion || '')),
       })));
     }
   }, [toast]);
@@ -168,7 +174,14 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
     setCliente(CLIENTE_GENERICO);
   };
 
-  const handleSelectProduct = (product) => {
+  // Aluminio: primero el cuadro de color y Unidad/Pies (VarianteVentaModal);
+  // si el producto no tiene colores ni largo de barra, entra directo.
+  const handleSelectProduct = (product, opciones = {}) => {
+    if (esAluminio && !opciones.directo) {
+      setIsProductSearchOpen(false);
+      setVarianteDe(product);
+      return;
+    }
     // Apply price level logic
     const nivel = cliente?.precio_nivel || 1;
     const p1 = product.presentaciones && product.presentaciones.length > 0
@@ -227,6 +240,19 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
       max_descuento: maxDesc,
       imagen_url: product.imagen_url
     };
+    if (opciones.cantidad > 0) {
+      // Cotización guarda 2 decimales: 5 pies de 20 = 0.25 exacto.
+      newItem.cantidad = Math.round(opciones.cantidad * 100) / 100;
+      if (!(newItem.cantidad > 0)) {
+        toast({ title: 'Cantidad muy pequeña', description: 'La cotización guarda 2 decimales de barra: esa cantidad de pies queda en 0.', variant: 'destructive' });
+        return;
+      }
+      if (opciones.nota) {
+        newItem.descripcion = `${product.descripcion} (${opciones.nota})`;
+        newItem.unidad = 'BARRA';
+        newItem.lineaAparte = true;
+      }
+    }
     setCurrentItem(newItem);
     setItemCode(product.codigo);
     setIsProductSearchOpen(false);
@@ -291,7 +317,8 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
     if (!currentItem || !currentItem.cantidad || currentItem.cantidad <= 0) return;
 
     setArticulos(prev => {
-      const existingIndex = prev.findIndex(a => a.producto_id === currentItem.producto_id);
+      // Una línea por pies ("5 PIES") va aparte: no se suma con otra del mismo producto.
+      const existingIndex = currentItem.lineaAparte ? -1 : prev.findIndex(a => a.producto_id === currentItem.producto_id && !a.lineaAparte);
       if (existingIndex >= 0) {
         const updated = [...prev];
         updated[existingIndex].cantidad += currentItem.cantidad;
@@ -817,6 +844,19 @@ const CotizacionFormModal = ({ isOpen, onClose, editingCotizacion = null }) => {
         </DialogContent>
       </Dialog>
       <ProductSearchModal isOpen={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} onSelectProduct={handleSelectProduct} sessionKey={modalSessionKey} />
+      {varianteDe && (
+        <VarianteVentaModal
+          producto={varianteDe}
+          onCancelar={() => setVarianteDe(null)}
+          onDirecto={() => { const p = varianteDe; setVarianteDe(null); handleSelectProduct(p, { directo: true }); }}
+          onAgregar={async ({ productoId, cantidad, nota }) => {
+            setVarianteDe(null);
+            const { data, error } = await supabase.from('productos').select('*, presentaciones(*)').eq('id', productoId).maybeSingle();
+            if (error || !data) { toast({ title: 'No se pudo agregar', description: error?.message || 'Producto no encontrado.', variant: 'destructive' }); return; }
+            handleSelectProduct(data, { directo: true, cantidad, nota });
+          }}
+        />
+      )}
       <ClienteSearchModal isOpen={isClienteSearchOpen} onClose={() => setIsClienteSearchOpen(false)} onSelectCliente={handleSelectCliente} />
     </>
   );

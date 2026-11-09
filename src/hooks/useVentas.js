@@ -28,6 +28,19 @@ const normalizeItbisPct = (value) => {
   return Number.isFinite(parsed) ? parsed : DEFAULT_ITBIS_PCT;
 };
 
+// (09/11/2026) id de cada línea al cargar una factura, cotización o pedido.
+// Normalmente el del producto; pero si el producto se repite, o la línea es
+// de ventanas vendida por pies ("… (5 PIES)"), lleva un id propio para no
+// sumarse ni borrarse junto con otra del mismo producto.
+const idsDeLinea = (detalles) => {
+  const usados = new Set();
+  return (detalles || []).map((d, idx) => {
+    const aparte = usados.has(d.producto_id) || /\(\d+(\.\d+)? PIES\)$/.test(String(d.descripcion || ''));
+    usados.add(d.producto_id);
+    return aparte ? `${d.producto_id}-L${idx}` : d.producto_id;
+  });
+};
+
 export const useVentas = () => {
   const { toast } = useToast();
   const { user, empresa, tenantId, fiscalActivo, fiscalModo } = useAuth();
@@ -1614,13 +1627,10 @@ export const useVentas = () => {
       setManualClienteNombre(factura.manual_cliente_nombre || '');
       setNotas(factura.notas || '');
 
-      // (09/11/2026) Dos líneas del mismo producto (ventanas: "5 PIES" y "8 PIES")
-      // quedan como líneas separadas: la segunda lleva un id de línea propio.
-      const idsUsados = new Set();
+      const idsLinea = idsDeLinea(detalles);
       const mappedItems = detalles.map((d, idx) => {
         const itbis_pct = normalizeItbisPct(d.productos?.itbis_pct);
-        const idLinea = idsUsados.has(d.producto_id) ? `${d.producto_id}-L${idx}` : d.producto_id;
-        idsUsados.add(d.producto_id);
+        const idLinea = idsLinea[idx];
         const totalLine = d.importe || 0;
         const baseLine = totalLine / (1 + itbis_pct);
         const itbisLine = totalLine - baseLine;
@@ -1693,7 +1703,9 @@ export const useVentas = () => {
       const { data: detallesData, error: detallesError } = await supabase.from('cotizaciones_detalle').select(`*, productos(*)`).eq('cotizacion_id', cotizacion.id);
       if (detallesError) throw detallesError;
 
-      const newItems = detallesData.map(d => {
+      const idsLinea = idsDeLinea(detallesData);
+      const newItems = detallesData.map((d, idx) => {
+        const idLinea = idsLinea[idx];
         const itbis_pct = normalizeItbisPct(d.productos?.itbis_pct);
         const precioConItbis = parseFloat(d.precio_unitario || 0);
 
@@ -1705,7 +1717,7 @@ export const useVentas = () => {
         const itbisMonto = importeNeto - baseImponible;
 
         return {
-          id: d.producto_id,
+          id: idLinea,
           producto_id: d.producto_id,
           codigo: d.codigo,
           descripcion: d.descripcion,
@@ -1849,10 +1861,11 @@ export const useVentas = () => {
       const { data: detallesData, error: detallesError } = await supabase.from('pedidos_detalle').select(`*, productos(*)`).eq('pedido_id', pedido.id);
       if (detallesError) throw detallesError;
 
-      const newItems = detallesData.map(d => {
+      const idsLinea = idsDeLinea(detallesData);
+      const newItems = detallesData.map((d, idx) => {
         const itbis_pct = normalizeItbisPct(d.productos?.itbis_pct);
         return {
-          id: d.producto_id,
+          id: idsLinea[idx],
           producto_id: d.producto_id,
           codigo: d.codigo,
           descripcion: d.descripcion,

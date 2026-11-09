@@ -292,14 +292,10 @@ const AdminDashboard = () => {
       const { error } = await supabase.rpc('admin_cambiar_plan', { 
         p_tenant_id: tenantId, p_plan_nombre: planNombre 
       });
-      if (error) {
-        // Fallback: actualizar solo el campo plan del tenant
-        const { error: directErr } = await supabase
-          .from('tenants')
-          .update({ plan: planNombre.toLowerCase(), updated_at: new Date().toISOString() })
-          .eq('id', tenantId);
-        if (directErr) throw directErr;
-      }
+      // (09/11/2026) Sin "plan de respaldo": cambiar solo tenants.plan dejaba la
+      // suscripción igual y decía "Plan Cambiado". El nombre lo pone el trigger
+      // de la suscripción (sql/tenants_plan_sincronizado.sql).
+      if (error) throw error;
       toast({ title: '✅ Plan Cambiado', description: `Plan actualizado a "${planNombre}"` });
       await fetchAll();
     } catch (err) {

@@ -17,7 +17,7 @@
       "src/components/ventas/DocumentSearchModal.jsx": 1,
       "src/hooks/useSupabase.js": 1,
       "src/hooks/useVentas.js": 8,
-      "src/pages/Admin/AdminDashboard.jsx": 4,
+      "src/pages/Admin/AdminDashboard.jsx": 3,
       "src/pages/Admin/MasterPanel.jsx": 3,
       "src/pages/AlertasGerencialesPage.jsx": 1,
       "src/pages/CartaRutaPage.jsx": 4,

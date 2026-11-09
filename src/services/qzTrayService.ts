@@ -360,10 +360,16 @@ export async function qzPrintRawEscPos(printerName: string, escposData: string) 
         copies: 1
     });
 
+    // (09/11/2026) Los tickets ya vienen en BYTES (tabla 437 para la ñ, el QR
+    // como imagen): se mandan tal cual en base64. Como texto, QZ los volvía a
+    // codificar en cp437 y la ñ (0xA4) salía como "?".
+    let binario = "";
+    for (let i = 0; i < escposData.length; i++) binario += String.fromCharCode(escposData.charCodeAt(i) & 0xff);
     console.log("[QZ] Enviando ESC/POS RAW a:", printerName);
     return await qz.print(config, [{
         type: "raw",
         format: "command",
-        data: escposData
+        flavor: "base64",
+        data: btoa(binario)
     }]);
 }
