@@ -227,7 +227,26 @@ export async function printRaw(
  */
 /** Star (modo Star) por el nombre: una sola regla para el corte y el logo. */
 // 3nStar (clónica ESC/POS, 09/11/2026) lleva "star" en el nombre pero NO es Star.
+// (09/11/2026) Cada PC puede decir qué es su impresora de recibos
+// (Configuración → Impresoras → Tipo de impresora): 'star', 'escpos' o
+// 'auto' (por el nombre, lo de siempre). Se guarda en esta PC (localStorage).
+export const TIPO_IMPRESORA_KEY = 'mf.tipoImpresoraRecibos';
+export type TipoImpresora = 'auto' | 'star' | 'escpos';
+export function getTipoImpresora(): TipoImpresora {
+    try {
+        const v = globalThis.localStorage?.getItem(TIPO_IMPRESORA_KEY);
+        return v === 'star' || v === 'escpos' ? v : 'auto';
+    } catch { return 'auto'; }
+}
+export function setTipoImpresora(t: TipoImpresora) {
+    try {
+        if (t === 'auto') globalThis.localStorage?.removeItem(TIPO_IMPRESORA_KEY);
+        else globalThis.localStorage?.setItem(TIPO_IMPRESORA_KEY, t);
+    } catch { /* sin almacenamiento: queda por el nombre */ }
+}
 export const esImpresoraStar = (printerName: string): boolean => {
+    const tipo = getTipoImpresora();
+    if (tipo !== 'auto') return tipo === 'star';
     const n = String(printerName || '');
     return /star|tsp/i.test(n) && !/3n[\s-]*star/i.test(n);
 };

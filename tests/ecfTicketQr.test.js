@@ -134,3 +134,19 @@ describe('esImpresoraStar', () => {
     expect(esImpresoraStar('POS-80')).toBe(false);
   });
 });
+
+describe('tipo de impresora escogido en la PC', () => {
+  it('Star u otra marca manda sobre el nombre; automático vuelve al nombre', async () => {
+    const mem = {};
+    globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => { mem[k] = String(v); }, removeItem: (k) => { delete mem[k]; } };
+    const { esImpresoraStar, setTipoImpresora } = await vi.importActual('../src/services/printerAdapter');
+    setTipoImpresora('escpos');
+    expect(esImpresoraStar('Star TSP100 Cutter (TSP143)')).toBe(false);
+    setTipoImpresora('star');
+    expect(esImpresoraStar('POS-80')).toBe(true);
+    setTipoImpresora('auto');
+    expect(esImpresoraStar('Star TSP100 Cutter (TSP143)')).toBe(true);
+    expect(esImpresoraStar('3nStar RPT008')).toBe(false);
+    delete globalThis.localStorage;
+  });
+});

@@ -21,7 +21,7 @@ import {
   agentRestartSelf,
   agentClearStalePrintJobs,
 } from '@/services/motoflowPrintAgent';
-import { setPreferredBackend, getPreferredBackend } from '@/services/printerAdapter';
+import { setPreferredBackend, getPreferredBackend, getTipoImpresora, setTipoImpresora } from '@/services/printerAdapter';
 import { isSilentPrintEnabled, setSilentPrintEnabled } from '@/lib/printHtmlSmart';
 
 // localStorage keys para impresoras QZ Tray (todas las Windows)
@@ -39,6 +39,7 @@ const PrinterSettings = () => {
   const [qzAvailable, setQzAvailable] = useState(false);
   const [qzPrinters, setQzPrinters] = useState([]);
   const [qzReceipt, setQzReceipt] = useState(() => localStorage.getItem(QZ_RECEIPT_KEY) || '');
+  const [tipoImpresora, setTipoImpresoraState] = useState(() => getTipoImpresora());
   const [qzLabel, setQzLabel] = useState(() => localStorage.getItem(QZ_LABEL_KEY) || '');
   const [qzInvoice, setQzInvoice] = useState(() => localStorage.getItem(QZ_INVOICE_KEY) || '');
   const [qzLoading, setQzLoading] = useState(false);
@@ -244,6 +245,27 @@ const PrinterSettings = () => {
             (debe mostrar texto) y pulsa <b>Detectar</b>. Cuando el badge diga <b>ACTIVO</b>, imprimirá sin diálogo.
           </div>
         )}
+      </div>
+
+      {/* (09/11/2026) Tipo de la impresora de recibos de ESTA PC. Decide el
+          QR, el logo, el corte y la ñ. "Automático" = por el nombre. */}
+      <div className="border border-slate-200 rounded-lg p-4 bg-white">
+        <div className="flex items-center gap-2 mb-1">
+          <Printer className="w-5 h-5 text-slate-700" />
+          <h3 className="text-sm font-bold uppercase text-slate-700">Tipo de impresora de recibos (esta PC)</h3>
+        </div>
+        <p className="text-[11px] text-slate-500 mb-2">
+          Si el QR, el logo o la ñ salen mal, escoge aquí la marca. Automático la adivina por el nombre (Star/TSP = Star; 3nStar y las demás = otra marca).
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {[['auto', 'Automático (por el nombre)'], ['star', 'Star (TSP100 / TSP143)'], ['escpos', 'Otra marca (Epson, 3nStar, Xprinter, POS-80…)']].map(([k, t]) => (
+            <button key={k} type="button"
+              onClick={() => { setTipoImpresora(k); setTipoImpresoraState(k); toast({ title: 'Tipo de impresora guardado', description: `${t}. Aplica a lo próximo que se imprima en esta PC.` }); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold border ${tipoImpresora === k ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-300'}`}>
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ===========================================================
