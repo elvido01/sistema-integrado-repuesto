@@ -55,6 +55,7 @@ const EstudiantesPage = lazy(() => import('@/pages/colegio/EstudiantesPage'));
 const CajaColegioPage = lazy(() => import('@/pages/colegio/CajaColegioPage'));
 const ProyectosVentanasPage = lazy(() => import('@/pages/ventanas/ProyectosVentanasPage'));
 const DesgloseConfigPage = lazy(() => import('@/pages/ventanas/DesgloseConfigPage'));
+const PreciosVentanasPage = lazy(() => import('@/pages/ventanas/PreciosVentanasPage'));
 const ReportesColegioPage = lazy(() => import('@/pages/colegio/ReportesColegioPage'));
 const NotasColegioPage = lazy(() => import('@/pages/colegio/NotasColegioPage'));
 const TareasColegioPage = lazy(() => import('@/pages/colegio/TareasColegioPage'));
@@ -168,6 +169,7 @@ const componentMapping = {
   'inmuebles-vendidos': { component: () => <Protected module="ventas"><InmueblesVendidosPage /></Protected>, icon: FileText, name: 'Inmuebles Vendidos' },
   'colegio-config': { component: () => <Protected module="colegio-config"><ColegioConfigPage /></Protected>, icon: FileText, name: 'Configuración del Colegio' },
   'colegio-estudiantes': { component: () => <Protected module="colegio-estudiantes"><EstudiantesPage /></Protected>, icon: Users, name: 'Estudiantes' },
+  'vent-precios': { component: () => <Protected module="vent-precios"><PreciosVentanasPage /></Protected>, icon: FileText, name: 'Precios de ventanas' },
   'vent-desglose': { component: () => <Protected module="vent-desglose"><DesgloseConfigPage /></Protected>, icon: FileText, name: 'Configuración del desglose' },
   'vent-proyectos': { component: () => <Protected module="vent-proyectos"><ProyectosVentanasPage /></Protected>, icon: FileText, name: 'Proyectos' },
   'colegio-caja': { component: () => <Protected module="colegio-caja"><CajaColegioPage /></Protected>, icon: Wallet, name: 'Caja del Colegio' },

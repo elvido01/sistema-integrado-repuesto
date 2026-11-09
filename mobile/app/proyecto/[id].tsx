@@ -8,7 +8,7 @@ import { ArrowLeft, Trash2, Pencil } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/src/supabase/client';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { ESTADOS_PROYECTO, numeroProyecto, pulgadasTexto, medidaRazonable, COLORES_ALUMINIO, desgloseVentana, materialesProyecto } from '@/src/lib/ventanas';
+import { ESTADOS_PROYECTO, numeroProyecto, pulgadasTexto, medidaRazonable, COLORES_ALUMINIO, desgloseVentana, materialesProyecto, presupuestoProyecto } from '@/src/lib/ventanas';
 
 const FRACCIONES: [string, number][] = [['0', 0], ['⅛', 0.125], ['¼', 0.25], ['⅜', 0.375], ['½', 0.5], ['⅝', 0.625], ['¾', 0.75], ['⅞', 0.875]];
 
@@ -54,15 +54,22 @@ export default function ProyectoScreen() {
   const [editando, setEditando] = useState<string | null>(null);
   const [intento, setIntento] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [tab, setTab] = useState<'medidas' | 'desglose' | 'materiales'>('medidas');
+  const [tab, setTab] = useState<'medidas' | 'desglose' | 'materiales' | 'presupuesto'>('medidas');
   const [piezasPorSistema, setPiezasPorSistema] = useState<Record<string, any[]>>({});
   const [cfg, setCfg] = useState<any>(null);
+  const [precios, setPrecios] = useState<any[]>([]);
+  const [extras, setExtras] = useState<any[]>([]);
+  const [cotizando, setCotizando] = useState(false);
 
   const cargar = useCallback(async () => {
-    const [pz, cf] = await Promise.all([
+    const [pz, cf, prc, ex] = await Promise.all([
       supabase.from('vent_piezas').select('*').eq('tenant_id', tenantId).eq('activo', true).order('orden'),
       supabase.from('vent_config').select('*').eq('tenant_id', tenantId).maybeSingle(),
+      supabase.from('vent_precios').select('*').eq('tenant_id', tenantId),
+      supabase.from('vent_proyecto_extras').select('*, productos(codigo, descripcion)').eq('proyecto_id', id).eq('tenant_id', tenantId).order('orden'),
     ]);
+    setPrecios(prc.data || []);
+    setExtras(ex.data || []);
     const porSistema: Record<string, any[]> = {};
     for (const x of pz.data || []) (porSistema[x.sistema_id] = porSistema[x.sistema_id] || []).push(x);
     setPiezasPorSistema(porSistema);
@@ -161,7 +168,7 @@ export default function ProyectoScreen() {
         </ScrollView>
 
         <View className="flex-row bg-white rounded-xl border border-gray-200 p-1 mb-3">
-          {([['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Materiales']] as const).map(([k, t]) => (
+          {([['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Material'], ['presupuesto', 'Precio']] as const).map(([k, t]) => (
             <TouchableOpacity key={k} onPress={() => setTab(k)} className={`flex-1 py-2 rounded-lg items-center ${tab === k ? 'bg-blue-700' : ''}`}>
               <Text className={`font-semibold ${tab === k ? 'text-white' : 'text-gray-600'}`}>{t}</Text>
             </TouchableOpacity>
@@ -221,6 +228,50 @@ export default function ProyectoScreen() {
                   <Text className="font-semibold">{c.pie2.toFixed(2)} pie²</Text>
                 </View>
               ))}
+            </View>
+          );
+        })()}
+
+        {tab === 'presupuesto' && (() => {
+          if (!medidas.length) return <Text className="text-gray-400 text-center py-6">Primero agrega las medidas.</Text>;
+          const calc = presupuestoProyecto(medidas, precios, extras as any);
+          const fmt = (v: number) => `RD$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          const crear = async () => {
+            setCotizando(true);
+            const { data, error } = await supabase.rpc('vent_crear_cotizacion', { p_proyecto: id, p_dias_vigencia: 15 });
+            setCotizando(false);
+            if (error) { Alert.alert('No se pudo crear la cotización', error.message); return; }
+            Alert.alert(`Cotización ${data.numero}`, `${fmt(data.total)} · el proyecto pasó a Cotizado`);
+            cargar();
+          };
+          return (
+            <View>
+              {calc.faltan.length > 0 && (
+                <View className="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3">
+                  <Text className="text-amber-800 text-sm">Sin precio: {[...new Set(calc.faltan.map((m: any) => nombreSistema(m.sistema_id)))].join(', ')}. Ponlo en la web: Ventanas → Precios.</Text>
+                </View>
+              )}
+              {calc.lineas.map((l: any, i: number) => (
+                <View key={i} className="flex-row justify-between bg-white rounded-xl border border-gray-200 p-3 mb-2">
+                  <View className="flex-1 pr-2">
+                    <Text className="font-semibold">
+                      {l.tipo === 'ventana' ? `${pulgadasTexto(l.medida.ancho)}" × ${pulgadasTexto(l.medida.alto)}"` : (l.extra.descripcion || l.extra.productos?.descripcion)}
+                    </Text>
+                    <Text className="text-xs text-gray-500">
+                      {l.tipo === 'ventana' ? `${nombreSistema(l.medida.sistema_id)}${l.precio.modo === 'pie2' ? ` · ${l.pie2.toFixed(2)} pie²` : ''}` : 'Extra'} · {l.cantidad} × {fmt(l.unitario)}
+                    </Text>
+                  </View>
+                  <Text className="font-bold">{fmt(l.importe)}</Text>
+                </View>
+              ))}
+              <View className="flex-row justify-between items-center bg-blue-50 border border-blue-200 rounded-xl p-4 mt-1">
+                <Text className="font-bold">Total (ITBIS incluido)</Text>
+                <Text className="font-black text-lg">{fmt(calc.total)}</Text>
+              </View>
+              <TouchableOpacity onPress={crear} disabled={cotizando || calc.faltan.length > 0}
+                className={`rounded-xl py-4 items-center mt-3 ${calc.faltan.length ? 'bg-gray-300' : 'bg-blue-700'}`}>
+                {cotizando ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold">{p.cotizacion_id ? 'Crear cotización nueva' : 'Crear cotización'}</Text>}
+              </TouchableOpacity>
             </View>
           );
         })()}

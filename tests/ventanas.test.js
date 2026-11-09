@@ -77,3 +77,24 @@ describe('desglose', () => {
     expect(m.cristales[0]).toMatchObject({ ancho: 18, alto: 36.625, cantidad: 2 });
   });
 });
+
+import { presupuestoProyecto } from '@/lib/ventanas';
+
+describe('presupuesto (igual que vent_crear_cotizacion)', () => {
+  const precios = [{ sistema_id: 's', color: '', modo: 'pie2', precio: 250, minimo_pie2: 4, producto_id: 'p1' }];
+  it('pie², mínimo y extras', () => {
+    const r = presupuestoProyecto([
+      { sistema_id: 's', ancho: 40.5, alto: 40.125, cantidad: 1, color: 'Blanco' },
+      { sistema_id: 's', ancho: 12, alto: 12, cantidad: 2, color: 'Bronce' },
+    ], precios, [{ producto_id: 'mo', cantidad: 1, precio: 3000 }]);
+    expect(r.lineas.map((l) => l.importe)).toEqual([2822.5, 2000, 3000]);
+    expect(r.total).toBe(7822.5);
+    expect(r.faltan).toEqual([]);
+  });
+  it('el precio del color manda; sin precio queda en faltan', () => {
+    const p2 = [...precios, { sistema_id: 's', color: 'Negro', modo: 'unidad', precio: 9000, minimo_pie2: 0, producto_id: 'p2' }];
+    const r = presupuestoProyecto([{ sistema_id: 's', ancho: 40, alto: 40, cantidad: 1, color: 'Negro' }, { sistema_id: 'x', ancho: 40, alto: 40, cantidad: 1 }], p2);
+    expect(r.lineas[0].unitario).toBe(9000);
+    expect(r.faltan.length).toBe(1);
+  });
+});

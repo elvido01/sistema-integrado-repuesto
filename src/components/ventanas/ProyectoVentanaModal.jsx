@@ -7,6 +7,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Trash2, Pencil, Ruler, Printer } from 'lucide-react';
 import { DesgloseVentanas, MaterialesVentanas } from '@/components/ventanas/DesgloseProyecto';
+import PresupuestoProyecto from '@/components/ventanas/PresupuestoProyecto';
+import { useToast } from '@/components/ui/use-toast';
 import { desgloseProyectoHTML } from '@/lib/printVentanas';
 import { printHtmlSmart } from '@/lib/printHtmlSmart';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -30,7 +32,8 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
   const [intento, setIntento] = useState(false);      // mostrar "Revise la medida" tras intentar agregar
   const [guardando, setGuardando] = useState(false);
   const anchoRef = useRef(null);
-  const [tab, setTab] = useState('medidas');          // medidas | desglose | materiales
+  const [tab, setTab] = useState('medidas');          // medidas | desglose | materiales | presupuesto
+  const { toast } = useToast();
   const [piezasPorSistema, setPiezasPorSistema] = useState({});
   const [cfg, setCfg] = useState(null);
   const [imprimiendo, setImprimiendo] = useState(false);
@@ -167,7 +170,7 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
             </section>
 
             <div className="flex flex-wrap items-center gap-2">
-              {[['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Materiales y barras']].map(([k, t]) => (
+              {[['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Materiales y barras'], ['presupuesto', 'Presupuesto']].map(([k, t]) => (
                 <button key={k} type="button" onClick={() => setTab(k)}
                   className={`px-4 py-1.5 rounded-md text-sm font-semibold border ${tab === k ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-300'}`}>{t}</button>
               ))}
@@ -178,6 +181,10 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
 
             {tab === 'desglose' && <DesgloseVentanas medidas={medidas} nombreSistema={nombreSistema} piezasPorSistema={piezasPorSistema} onMarcar={marcarCorte} />}
             {tab === 'materiales' && <MaterialesVentanas medidas={medidas} piezasPorSistema={piezasPorSistema} cfg={cfg} />}
+            {tab === 'presupuesto' && (
+              <PresupuestoProyecto proyecto={p} medidas={medidas} nombreSistema={nombreSistema} tenantId={tenantId} onError={onError}
+                onCotizado={(c) => { toast({ title: `Cotización ${c.numero} creada`, description: `RD${Number(c.total).toLocaleString('en-US', { minimumFractionDigits: 2 })} · el proyecto pasó a Cotizado` }); cargar(); }} />
+            )}
 
             {tab === 'medidas' && <>
             {/* Control de medidas */}

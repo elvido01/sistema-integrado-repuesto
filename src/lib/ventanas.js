@@ -81,6 +81,33 @@ export function desgloseVentana(medida, piezas) {
     .sort((a, b) => (a.pieza.orden || 0) - (b.pieza.orden || 0));
 }
 
+// ── Presupuesto (09/11/2026) ────────────────────────────────────────────
+// Igual que vent_crear_cotizacion (SQL): por ventana, precio por pie²
+// (ancho × alto ÷ 144 a 2 decimales, con mínimo) o fijo por unidad; el
+// precio del color manda sobre el general (color ''). Precios con ITBIS.
+const r2 = (v) => Math.round(v * 100) / 100;
+export const pie2Ventana = (m) => r2((Number(m.ancho) * Number(m.alto)) / 144);
+
+export function precioDeVentana(m, precios) {
+  const delSistema = (precios || []).filter((p) => p.sistema_id === m.sistema_id);
+  return delSistema.find((p) => p.color && p.color === (m.color || '')) || delSistema.find((p) => !p.color) || null;
+}
+
+export function presupuestoProyecto(medidas, precios, extras = []) {
+  const lineas = [];
+  const faltan = [];
+  for (const m of medidas) {
+    const p = precioDeVentana(m, precios);
+    if (!p || !p.producto_id || !(Number(p.precio) > 0)) { faltan.push(m); continue; }
+    const pie2 = Math.max(pie2Ventana(m), Number(p.minimo_pie2) || 0);
+    const unitario = p.modo === 'unidad' ? Number(p.precio) : r2(pie2 * Number(p.precio));
+    lineas.push({ tipo: 'ventana', medida: m, precio: p, pie2, cantidad: Number(m.cantidad) || 1, unitario, importe: r2(unitario * (Number(m.cantidad) || 1)) });
+  }
+  for (const e of extras) lineas.push({ tipo: 'extra', extra: e, cantidad: Number(e.cantidad) || 0, unitario: Number(e.precio) || 0, importe: r2((Number(e.precio) || 0) * (Number(e.cantidad) || 0)) });
+  const total = r2(lineas.reduce((s, l) => s + l.importe, 0));
+  return { lineas, faltan, total };
+}
+
 // Barras: "primero el más largo" en la barra donde quepa (con lo que se
 // pierde en cada corte). Devuelve cuántas barras y qué va en cada una.
 export function planBarras(cortes, largoBarra = 240, merma = 0.125) {

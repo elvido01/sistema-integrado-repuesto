@@ -63,6 +63,7 @@ export const MODULES = [
     { key: 'dash-flujo', label: 'Dashboard - Flujo neto del mes, metas y proyección' },
     { key: 'dash-resumen', label: 'Dashboard - Resumen (ventas del día, inventario crítico, clientes, catálogo)' },
     { key: 'vent-proyectos', label: 'Ventanas - Proyectos, medidas, desglose y materiales' },
+    { key: 'vent-precios', label: 'Ventanas - Precios (por pie² o unidad, producto que se factura)' },
     { key: 'vent-desglose', label: 'Ventanas - Configuración del desglose (piezas, descuentos, barras)' },
     { key: 'colegio-caja', label: 'Colegio - Caja (cobrar mensualidades y conceptos; anular solo la dirección)' },
     { key: 'colegio-estudiantes', label: 'Colegio - Estudiantes y familias (inscribir, editar, retirar)' },
