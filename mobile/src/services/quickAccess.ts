@@ -64,3 +64,19 @@ export function subscribeQuickAccess(listener: (tabs: string[]) => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
+
+// (09/11/2026) Qué accesos aplican a ESTA empresa. Una sola regla para la
+// barra de abajo, el menú Más y Configuración: antes Configuración ofrecía
+// Hermes o Proyectos en cualquier empresa y al encenderlos no pasaba nada.
+export const MORLA_TENANT = '00000000-0000-0000-0000-000000000001';
+export const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
+// Más de 5 + "Mas" no caben: los nombres salen cortados ("Cotizaci…").
+export const MAX_QUICK_ACCESS = 5;
+
+export function accesoAplica(name: string, ctx: { tenantId?: string | null; tipoNegocio?: string | null }) {
+  if (name === 'proyectos') return ctx.tipoNegocio === 'aluminio';
+  if (name === 'hermes') return ctx.tenantId === MORLA_TENANT;   // prueba solo en Repuestos Morla
+  if (name === 'recibo-pago-financiera' || name === 'solicitudes') return ctx.tenantId === CAMINERO_MOTORS_TENANT;
+  if (name === 'recibo-ingreso') return ctx.tenantId !== CAMINERO_MOTORS_TENANT;
+  return true;
+}

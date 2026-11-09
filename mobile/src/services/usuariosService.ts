@@ -130,10 +130,12 @@ export async function actualizarUsuario(input: ActualizarUsuarioInput): Promise<
   }
 
   if (input.role) {
-    const { error } = await supabase
+    const { data: rolOk, error } = await supabase
       .from('profiles')
       .update({ role: input.role })
-      .eq('id', input.userId);
+      .eq('id', input.userId)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!rolOk?.length) throw new Error('No se cambió el cargo (sin permiso sobre ese usuario).');
   }
 }

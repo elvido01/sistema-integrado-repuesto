@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { canAccessModule } from '@/src/services/permissions';
-import { getQuickAccessTabs, saveQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
-
-const CAMINERO_MOTORS_TENANT = 'b39506c3-27dc-467d-830b-096731b83113';
+import { CAMINERO_MOTORS_TENANT, MAX_QUICK_ACCESS, accesoAplica, getQuickAccessTabs, saveQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
 
 // De dónde salió el JavaScript que se está ejecutando. En desarrollo
 // expo-updates está apagado y no hay nada que decir; en una app instalada
@@ -69,7 +67,8 @@ export default function MasScreen() {
     // Solo admin/owner: no existe permiso 'usuarios' para vendedores, así
     // que canAccessModule lo deja pasar únicamente a full-access roles.
     { title: 'Usuarios', icon: Users, route: '/usuarios', color: '#7c3aed', moduleKey: 'usuarios' },
-  ].filter((item) => canAccessModule(profile, permissions, item.moduleKey));
+  ].filter((item) => canAccessModule(profile, permissions, item.moduleKey)
+    && (!item.quickName || accesoAplica(item.quickName, { tenantId, tipoNegocio: empresa?.tipo_negocio })));
 
   const roleLabel = profile?.role === 'admin'
     ? 'Administrador'
@@ -79,6 +78,11 @@ export default function MasScreen() {
 
   const toggleQuickAccess = async (name: string) => {
     const exists = quickTabs.includes(name);
+    const fijos = quickTabs.filter((t) => accesoAplica(t, { tenantId, tipoNegocio: empresa?.tipo_negocio }));
+    if (!exists && fijos.length >= MAX_QUICK_ACCESS) {
+      Alert.alert('Barra llena', `Abajo caben ${MAX_QUICK_ACCESS} accesos. Quita uno para fijar este.`);
+      return;
+    }
     const next = exists ? quickTabs.filter((tab) => tab !== name) : [...quickTabs, name];
     const saved = await saveQuickAccessTabs(next, user?.id);
     setQuickTabs(saved);

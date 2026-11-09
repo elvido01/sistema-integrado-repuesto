@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, CheckCircle2, Loader2, MapPin, Plus, ScanLine, Search, X } from 'lucide-react-native';
 import { supabase } from '@/src/supabase/client';
+import { productoPorCodigo } from '@/src/services/productoPorCodigo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Ubicacion = {
@@ -98,14 +99,9 @@ export default function ActualizarUbicacionScreen() {
     setLoading(true);
     setProduct(null);
     try {
-      const { data, error } = await supabase
-        .from('productos')
-        .select('id, descripcion, ubicacion')
-        .or(`codigo.eq.${trimmed},referencia.eq.${trimmed}`)
-        .limit(1);
-
-      if (error) throw error;
-      if (!data || data.length === 0) throw new Error('Producto no encontrado.');
+      const encontrado = await productoPorCodigo(trimmed, 'id, descripcion, ubicacion');
+      if (!encontrado) throw new Error('Producto no encontrado.');
+      const data = [encontrado];
 
       const foundProduct = data[0] as ProductoEncontrado;
       setProduct(foundProduct);
@@ -214,12 +210,14 @@ export default function ActualizarUbicacionScreen() {
     setSaving(true);
     try {
       const finalLocation = ubicacion.trim().toUpperCase();
-      const { error } = await supabase
+      const { data: ubOk, error } = await supabase
         .from('productos')
         .update({ ubicacion: finalLocation })
-        .eq('id', product.id);
+        .eq('id', product.id)
+        .select('id');
 
       if (error) throw error;
+      if (!ubOk?.length) throw new Error('No se guardó la ubicación (sin permiso o el producto ya no existe).');
 
       Alert.alert('Exito', `La ubicacion se actualizo a ${finalLocation}.`);
       resetForm();

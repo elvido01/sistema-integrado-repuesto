@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/src/supabase/client';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { MOBILE_MODULES, ModulePermission, canAccessModule, isFullAccessRole } from '@/src/services/permissions';
-import { DEFAULT_QUICK_ACCESS, QUICK_ACCESS_OPTIONS, getQuickAccessTabs, saveQuickAccessTabs } from '@/src/services/quickAccess';
+import { DEFAULT_QUICK_ACCESS, MAX_QUICK_ACCESS, QUICK_ACCESS_OPTIONS, accesoAplica, getQuickAccessTabs, saveQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
 
 type EmployeeProfile = {
   id: string;
@@ -30,10 +30,9 @@ const getRoleLabel = (role?: string | null) => ROLE_OPTIONS.find((option) => opt
 export default function ConfiguracionMobileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, profile, permissions, tenantId, refreshProfile } = useAuthStore();
+  const { user, profile, permissions, tenantId, empresa, refreshProfile } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [savingQuickAccess, setSavingQuickAccess] = useState(false);
   const [users, setUsers] = useState<EmployeeProfile[]>([]);
   const [selectedUser, setSelectedUser] = useState<EmployeeProfile | null>(null);
   const [selectedRole, setSelectedRole] = useState('seller');
@@ -48,12 +47,23 @@ export default function ConfiguracionMobileScreen() {
     selectedPermissions.forEach((perm) => map.set(perm.module_key, perm));
     return map;
   }, [selectedPermissions]);
+  // (09/11/2026) Solo lo que aplica a esta empresa y a este usuario (la misma
+  // regla de la barra): antes salían Hermes o Proyectos en cualquier empresa.
+  const opcionesQuickAccess = useMemo(
+    () => QUICK_ACCESS_OPTIONS.filter((o) => accesoAplica(o.name, { tenantId, tipoNegocio: empresa?.tipo_negocio })
+      && (!o.moduleKey || canAccessModule(profile, permissions, o.moduleKey))),
+    [tenantId, empresa?.tipo_negocio, profile, permissions]
+  );
+  const tabsActivos = useMemo(
+    () => quickAccessTabs.filter((n) => opcionesQuickAccess.some((o) => o.name === n)).slice(0, MAX_QUICK_ACCESS),
+    [quickAccessTabs, opcionesQuickAccess]
+  );
   const orderedQuickAccessOptions = useMemo(() => {
-    const optionMap = new Map(QUICK_ACCESS_OPTIONS.map((option) => [option.name, option]));
-    const enabled = quickAccessTabs.map((name) => optionMap.get(name)).filter(Boolean) as typeof QUICK_ACCESS_OPTIONS;
-    const disabled = QUICK_ACCESS_OPTIONS.filter((option) => !quickAccessTabs.includes(option.name));
+    const optionMap = new Map(opcionesQuickAccess.map((option) => [option.name, option]));
+    const enabled = tabsActivos.map((name) => optionMap.get(name)).filter(Boolean) as typeof QUICK_ACCESS_OPTIONS;
+    const disabled = opcionesQuickAccess.filter((option) => !tabsActivos.includes(option.name));
     return [...enabled, ...disabled];
-  }, [quickAccessTabs]);
+  }, [tabsActivos, opcionesQuickAccess]);
 
   const selectUser = useCallback(async (user: EmployeeProfile) => {
     setSelectedUser(user);
@@ -102,38 +112,42 @@ export default function ConfiguracionMobileScreen() {
 
   useEffect(() => {
     getQuickAccessTabs(user?.id).then(setQuickAccessTabs);
+    const unsubscribe = subscribeQuickAccess(setQuickAccessTabs);
+    return () => { unsubscribe(); };
   }, [user?.id]);
 
+  // Cada cambio se guarda en el acto (09/11/2026): antes había que bajar hasta
+  // "Guardar accesos rapidos" y el botón grande "Guardar cambios" (que es de
+  // los permisos) no los guardaba, así que la barra no cambiaba.
+  const guardarQuickAccess = async (next: string[]) => {
+    setQuickAccessTabs(next);
+    try {
+      await saveQuickAccessTabs(next, user?.id);
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudieron guardar los accesos rapidos.');
+    }
+  };
+
   const setQuickAccessEnabled = (tabName: string, enabled: boolean) => {
-    setQuickAccessTabs((prev) => {
-      if (enabled) {
-        return prev.includes(tabName) ? prev : [...prev, tabName];
+    if (enabled) {
+      if (tabsActivos.includes(tabName)) return;
+      if (tabsActivos.length >= MAX_QUICK_ACCESS) {
+        Alert.alert('Barra llena', `Abajo caben ${MAX_QUICK_ACCESS} accesos. Apaga uno para encender este.`);
+        return;
       }
-      return prev.filter((name) => name !== tabName);
-    });
+      guardarQuickAccess([...tabsActivos, tabName]);
+    } else {
+      guardarQuickAccess(tabsActivos.filter((name) => name !== tabName));
+    }
   };
 
   const moveQuickAccess = (tabName: string, direction: -1 | 1) => {
-    setQuickAccessTabs((prev) => {
-      const index = prev.indexOf(tabName);
-      const nextIndex = index + direction;
-      if (index < 0 || nextIndex < 0 || nextIndex >= prev.length) return prev;
-      const next = [...prev];
-      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      return next;
-    });
-  };
-
-  const saveQuickAccess = async () => {
-    setSavingQuickAccess(true);
-    try {
-      await saveQuickAccessTabs(quickAccessTabs, user?.id);
-      Alert.alert('Guardado', 'Accesos rapidos actualizados.');
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'No se pudieron guardar los accesos rapidos.');
-    } finally {
-      setSavingQuickAccess(false);
-    }
+    const index = tabsActivos.indexOf(tabName);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= tabsActivos.length) return;
+    const next = [...tabsActivos];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    guardarQuickAccess(next);
   };
 
   const setModuleAccess = (moduleKey: string, enabled: boolean) => {
@@ -168,12 +182,14 @@ export default function ConfiguracionMobileScreen() {
     if (!selectedUser) return;
     setSaving(true);
     try {
-      const { error: profileError } = await supabase
+      const { data: rolOk, error: profileError } = await supabase
         .from('profiles')
         .update({ role: selectedRole })
-        .eq('id', selectedUser.id);
+        .eq('id', selectedUser.id)
+        .select('id');
 
       if (profileError) throw profileError;
+      if (!rolOk?.length) throw new Error('No se cambió el cargo (sin permiso sobre ese usuario).');
 
       const payload = MOBILE_MODULES.map((module) => {
         const perm = selectedPermissionMap.get(module.key);
@@ -246,13 +262,13 @@ export default function ConfiguracionMobileScreen() {
               <Settings color="#1d4ed8" size={20} />
               <View className="ml-2 flex-1">
                 <Text className="text-slate-900 font-black">Accesos rapidos inferiores</Text>
-                <Text className="text-slate-500 text-xs">Puedes quitar o cambiar el orden. Mas queda fijo.</Text>
+                <Text className="text-slate-500 text-xs">{`Se guarda solo al tocar. Hasta ${MAX_QUICK_ACCESS} abajo; Mas queda fijo.`}</Text>
               </View>
             </View>
 
             {orderedQuickAccessOptions.map((option) => {
-              const enabled = quickAccessTabs.includes(option.name);
-              const enabledIndex = quickAccessTabs.indexOf(option.name);
+              const enabled = tabsActivos.includes(option.name);
+              const enabledIndex = tabsActivos.indexOf(option.name);
               return (
                 <View key={option.name} className="flex-row items-center py-3 border-t border-slate-100">
                   <Switch value={enabled} onValueChange={(value) => setQuickAccessEnabled(option.name, value)} />
@@ -265,9 +281,9 @@ export default function ConfiguracionMobileScreen() {
                     <ArrowUp color="#475569" size={18} />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    className={`w-9 h-9 rounded-lg items-center justify-center ${enabled && enabledIndex < quickAccessTabs.length - 1 ? 'bg-slate-100' : 'bg-slate-50 opacity-40'}`}
+                    className={`w-9 h-9 rounded-lg items-center justify-center ${enabled && enabledIndex < tabsActivos.length - 1 ? 'bg-slate-100' : 'bg-slate-50 opacity-40'}`}
                     onPress={() => moveQuickAccess(option.name, 1)}
-                    disabled={!enabled || enabledIndex >= quickAccessTabs.length - 1}
+                    disabled={!enabled || enabledIndex >= tabsActivos.length - 1}
                   >
                     <ArrowDown color="#475569" size={18} />
                   </TouchableOpacity>
@@ -275,14 +291,6 @@ export default function ConfiguracionMobileScreen() {
               );
             })}
 
-            <TouchableOpacity
-              className={`mt-2 rounded-xl py-3 flex-row justify-center items-center ${savingQuickAccess ? 'bg-slate-400' : 'bg-blue-800'}`}
-              onPress={saveQuickAccess}
-              disabled={savingQuickAccess}
-            >
-              {savingQuickAccess ? <ActivityIndicator color="white" /> : <Save color="white" size={18} />}
-              <Text className="text-white font-black ml-2">{savingQuickAccess ? 'Guardando...' : 'Guardar accesos rapidos'}</Text>
-            </TouchableOpacity>
           </View>
 
           <Text className="text-[11px] font-black uppercase text-slate-500 mb-2">Empleados</Text>
@@ -343,7 +351,7 @@ export default function ConfiguracionMobileScreen() {
                 </View>
               ) : null}
 
-              {MOBILE_MODULES.map((module) => {
+              {MOBILE_MODULES.filter((m) => accesoAplica(({ 'vent-proyectos': 'proyectos', 'solicitudes-compras': 'solicitudes' } as Record<string, string>)[m.key] || 'index', { tenantId, tipoNegocio: empresa?.tipo_negocio })).map((module) => {
                 const perm = selectedPermissionMap.get(module.key);
                 const canView = selectedHasFullAccess || !!perm?.can_view;
                 const canEdit = selectedHasFullAccess || !!perm?.can_edit;

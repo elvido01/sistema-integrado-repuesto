@@ -114,12 +114,14 @@ export default function CatalogoScreen() {
         .getPublicUrl(uploadData.path);
       const publicUrl = urlData.publicUrl;
 
-      const { error: updateError } = await supabase
+      const { data: fotoOk, error: updateError } = await supabase
         .from('productos')
         .update({ imagen_url: publicUrl })
-        .eq('id', producto.id);
+        .eq('id', producto.id)
+        .select('id');
 
       if (updateError) throw updateError;
+      if (!fotoOk?.length) throw new Error('La foto subió pero el producto no se actualizó (sin permiso o ya no existe).');
 
       // Actualizar el modal y refrescar la lista
       setProductoModal((prev: any) => (prev ? { ...prev, url_imagen: publicUrl } : prev));

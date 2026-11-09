@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, Boxes, Calculator, Loader2, ScanBarcode, ScanLine, Search, X } from 'lucide-react-native';
 import { supabase } from '@/src/supabase/client';
+import { productoPorCodigo } from '@/src/services/productoPorCodigo';
 import { fetchProductos, Producto } from '@/src/services/productService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -61,14 +62,9 @@ export default function ActualizarExistenciaScreen() {
     setLoading(true);
     setProduct(null);
     try {
-      const { data, error } = await supabase
-        .from('productos')
-        .select('id, codigo, descripcion, costo')
-        .or(`codigo.eq.${trimmed},referencia.eq.${trimmed}`)
-        .limit(1);
-
-      if (error) throw error;
-      if (!data || data.length === 0) throw new Error('Producto no encontrado.');
+      const encontrado = await productoPorCodigo(trimmed, 'id, codigo, descripcion, costo');
+      if (!encontrado) throw new Error('Producto no encontrado.');
+      const data = [encontrado];
 
       const found = data[0];
       const { data: stockData, error: stockError } = await supabase.rpc('get_stock_actual', {

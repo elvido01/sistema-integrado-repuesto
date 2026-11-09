@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router';
 import { Barcode, Bot, Boxes, ClipboardList, FileText, Home, List, ListOrdered, MapPin, Menu, Printer, Receipt, Settings, ShoppingCart } from 'lucide-react-native';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { canAccessModule } from '@/src/services/permissions';
-import { DEFAULT_QUICK_ACCESS, QUICK_ACCESS_OPTIONS, getQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
+import { DEFAULT_QUICK_ACCESS, MAX_QUICK_ACCESS, QUICK_ACCESS_OPTIONS, accesoAplica, getQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
 
 type TabName =
   | 'index'
@@ -117,18 +117,18 @@ const TAB_CONFIG: Record<TabName, TabConfig> = {
 };
 
 export default function TabLayout() {
-  const { user, profile, permissions, empresa } = useAuthStore();
-  const esAluminio = empresa?.tipo_negocio === 'aluminio';
+  const { user, profile, permissions, empresa, tenantId } = useAuthStore();
+  const tipoNegocio = empresa?.tipo_negocio;
   const [quickTabs, setQuickTabs] = useState(DEFAULT_QUICK_ACCESS);
   const visibleQuickTabs = useMemo(
     () =>
       quickTabs.filter((name) => {
         const config = TAB_CONFIG[name as TabName];
         if (!config) return false;
-        if (name === 'proyectos' && !esAluminio) return false;
+        if (!accesoAplica(name, { tenantId, tipoNegocio })) return false;
         return !config.moduleKey || canAccessModule(profile, permissions, config.moduleKey);
-      }),
-    [permissions, profile, quickTabs, esAluminio]
+      }).slice(0, MAX_QUICK_ACCESS),
+    [permissions, profile, quickTabs, tenantId, tipoNegocio]
   );
   const hiddenQuickTabs = QUICK_ACCESS_OPTIONS
     .map((option) => option.name)

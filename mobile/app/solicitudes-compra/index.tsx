@@ -578,8 +578,8 @@ export default function SolicitudesCompraMobileScreen() {
         text: 'Anular',
         style: 'destructive',
         onPress: async () => {
-          const { error } = await supabase.from('solicitudes_compras').update({ estado: 'Anulada' }).eq('id', row.id);
-          if (error) Alert.alert('Error', error.message);
+          const { data: anOk, error } = await supabase.from('solicitudes_compras').update({ estado: 'Anulada' }).eq('id', row.id).select('id');
+          if (error || !anOk?.length) Alert.alert('Error', error?.message || 'No se anuló (sin permiso o ya no existe).');
           else {
             setSelected(null);
             loadData();
