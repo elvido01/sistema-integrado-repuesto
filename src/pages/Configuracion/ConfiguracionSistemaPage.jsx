@@ -628,6 +628,7 @@ const ConfiguracionSistemaPage = () => {
                                         <SelectItem value="servicios">Servicios (sin inventario)</SelectItem>
                                         <SelectItem value="inmobiliaria">Inmobiliaria (solares, alquileres)</SelectItem>
                                         <SelectItem value="educativo">Centro educativo (colegios)</SelectItem>
+                                        <SelectItem value="aluminio">Ventanas y aluminio</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">

@@ -62,6 +62,7 @@ export const MODULES = [
     { key: 'dash-suplidores', label: 'Dashboard - Compromisos suplidores (Editar: pagar)' },
     { key: 'dash-flujo', label: 'Dashboard - Flujo neto del mes, metas y proyección' },
     { key: 'dash-resumen', label: 'Dashboard - Resumen (ventas del día, inventario crítico, clientes, catálogo)' },
+    { key: 'vent-proyectos', label: 'Ventanas - Proyectos y medidas' },
     { key: 'colegio-caja', label: 'Colegio - Caja (cobrar mensualidades y conceptos; anular solo la dirección)' },
     { key: 'colegio-estudiantes', label: 'Colegio - Estudiantes y familias (inscribir, editar, retirar)' },
     { key: 'colegio-reportes', label: 'Colegio - Reportes (deudores, cobros, arqueo, reservas)' },

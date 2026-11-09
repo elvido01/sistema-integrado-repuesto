@@ -187,6 +187,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
                   { v: 'servicios', t: 'Servicios', d: 'Sin inventario: honorarios, mantenimiento' },
                   { v: 'inmobiliaria', t: 'Inmobiliaria', d: 'Solares, ventas a plazos, alquileres' },
                   { v: 'educativo', t: 'Centro educativo', d: 'Colegios: estudiantes y mensualidades' },
+                  { v: 'aluminio', t: 'Ventanas y aluminio', d: 'Proyectos, medidas y desglose de ventanas' },
                 ].map(o => (
                   <button
                     key={o.v}

@@ -3,6 +3,7 @@ import { MODULOS_EDUCATIVO } from '@/lib/colegio';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
+  FolderKanban,
   Home,
   ShoppingCart,
   Truck,
@@ -63,6 +64,14 @@ import { useWhatsAppNotifications } from '@/contexts/WhatsAppNotificationContext
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
 
 const navItems = [
+  {
+    // (09/11/2026) Ventanas y aluminio. Solo tipo 'aluminio'.
+    title: 'Ventanas',
+    icon: FolderKanban,
+    subItems: [
+      { title: 'Proyectos', id: 'vent-proyectos', icon: FolderKanban, soloTipos: ['aluminio'] },
+    ],
+  },
   {
     // (06/11/2026) Centros educativos (colegios). Solo tipo 'educativo'.
     title: 'Colegio',

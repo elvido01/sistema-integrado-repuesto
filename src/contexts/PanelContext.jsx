@@ -53,6 +53,7 @@ const InmueblesVendidosPage = lazy(() => import('@/pages/InmueblesVendidosPage')
 const ColegioConfigPage = lazy(() => import('@/pages/colegio/ColegioConfigPage'));
 const EstudiantesPage = lazy(() => import('@/pages/colegio/EstudiantesPage'));
 const CajaColegioPage = lazy(() => import('@/pages/colegio/CajaColegioPage'));
+const ProyectosVentanasPage = lazy(() => import('@/pages/ventanas/ProyectosVentanasPage'));
 const ReportesColegioPage = lazy(() => import('@/pages/colegio/ReportesColegioPage'));
 const NotasColegioPage = lazy(() => import('@/pages/colegio/NotasColegioPage'));
 const TareasColegioPage = lazy(() => import('@/pages/colegio/TareasColegioPage'));
@@ -166,6 +167,7 @@ const componentMapping = {
   'inmuebles-vendidos': { component: () => <Protected module="ventas"><InmueblesVendidosPage /></Protected>, icon: FileText, name: 'Inmuebles Vendidos' },
   'colegio-config': { component: () => <Protected module="colegio-config"><ColegioConfigPage /></Protected>, icon: FileText, name: 'Configuración del Colegio' },
   'colegio-estudiantes': { component: () => <Protected module="colegio-estudiantes"><EstudiantesPage /></Protected>, icon: Users, name: 'Estudiantes' },
+  'vent-proyectos': { component: () => <Protected module="vent-proyectos"><ProyectosVentanasPage /></Protected>, icon: FileText, name: 'Proyectos' },
   'colegio-caja': { component: () => <Protected module="colegio-caja"><CajaColegioPage /></Protected>, icon: Wallet, name: 'Caja del Colegio' },
   'colegio-reportes': { component: () => <Protected module="colegio-reportes"><ReportesColegioPage /></Protected>, icon: BarChart2, name: 'Reportes del Colegio' },
   // (07/11/2026) Registro de notas y boletín MINERD: plan EDUCA TOTAL.
