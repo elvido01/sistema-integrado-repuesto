@@ -51,11 +51,12 @@ describe('ticket de e-CF por el agente (fuentes nativas)', () => {
     expect(escpos).toContain('jSux58');
   }, 30000);   // printPOS es grande: con todas las pruebas a la vez tardaba más de 5 s en cargar
 
-  it('otra marca (Epson): QR ESC/POS estándar', async () => {
+  it('otra marca (Epson, 3nStar): QR como imagen GS v 0 (las clónicas imprimen GS ( k como texto)', async () => {
     impresora = 'EPSON TM-T20';
     const { imprimirFactura } = await import('../src/lib/printPOS.js');
     await imprimirFactura({ ...venta }, { printFormat: 'pos_4inch', printMethod: 'agent' });
-    expect(crudos[0].escpos).toContain(GS + '(k');
+    expect(crudos[0].escpos).toContain(GS + 'v0');
+    expect(crudos[0].escpos).not.toContain(GS + '(k');
     expect(crudos[0].escpos).not.toContain(ESC + GS + 'yS0');
   }, 30000);
 

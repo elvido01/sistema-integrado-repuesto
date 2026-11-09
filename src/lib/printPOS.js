@@ -2160,7 +2160,9 @@ export const printFacturaQZ = async (factura) => {
 
     const printerName = await findReceiptPrinter(RECEIPT_PRINTER_NAMES);
     // QR del e-CF con el comando que entiende la impresora (escposReceipt → qrNativo).
-    const qr = /star|tsp/i.test(String(printerName || '')) ? 'star' : 'escpos';
+    // Las clónicas (3nStar Flexible 35, 09/11/2026) imprimen GS ( k como texto:
+    // fuera de las Star el QR va como imagen (GS v 0), que imprimen todas.
+    const qr = /star|tsp/i.test(String(printerName || '')) ? 'star' : 'raster';
     const escpos = buildFacturaEscPos(await prepararEcfImpresion(factura), _empresaConfig, { qr });
 
     console.log("[QZ-POS] Imprimiendo factura via ESC/POS...");
