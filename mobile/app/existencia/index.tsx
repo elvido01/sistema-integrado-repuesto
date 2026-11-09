@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, Modal, StyleSheet, ScrollView, ActivityIndicator, FlatList } from 'react-native';
 import { Camera, CameraView } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -55,22 +55,25 @@ export default function ActualizarExistenciaScreen() {
     return `${y}-${m}-${day}`;
   };
 
+  const busquedaRef = useRef(0);
   const handleProductSearch = useCallback(async (searchCodigo: string) => {
     const trimmed = searchCodigo.trim();
     if (!trimmed) return;
+    const miBusqueda = ++busquedaRef.current;   // la respuesta de un código viejo no pisa la del nuevo
 
     setLoading(true);
     setProduct(null);
     try {
-      const encontrado = await productoPorCodigo(trimmed, 'id, codigo, descripcion, costo');
+      const encontrado = await productoPorCodigo<{ id: string; codigo: string; descripcion: string; costo: number | null }>(trimmed, 'id, codigo, descripcion, costo');
+      if (busquedaRef.current !== miBusqueda) return;   // ya se escaneó otro código
       if (!encontrado) throw new Error('Producto no encontrado.');
-      const data = [encontrado];
 
-      const found = data[0];
+      const found = encontrado;
       const { data: stockData, error: stockError } = await supabase.rpc('get_stock_actual', {
         producto_uuid: found.id,
       });
       if (stockError) throw stockError;
+      if (busquedaRef.current !== miBusqueda) return;
 
       const existencia = Number(stockData || 0);
       const foundProduct = {
@@ -84,11 +87,12 @@ export default function ActualizarExistenciaScreen() {
       setProduct(foundProduct);
       setNuevaExistencia(String(existencia));
     } catch (error: any) {
+      if (busquedaRef.current !== miBusqueda) return;
       Alert.alert('Error', error.message || 'No se pudo buscar el producto.');
       setProduct(null);
       setNuevaExistencia('');
     } finally {
-      setLoading(false);
+      if (busquedaRef.current === miBusqueda) setLoading(false);
     }
   }, []);
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, Modal, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Camera, CameraView } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -92,26 +92,29 @@ export default function ActualizarUbicacionScreen() {
     setSaving(false);
   };
 
+  const busquedaRef = useRef(0);
   const handleProductSearch = useCallback(async (searchCodigo: string) => {
     const trimmed = searchCodigo.trim();
     if (!trimmed) return;
+    const miBusqueda = ++busquedaRef.current;   // la respuesta de un código viejo no pisa la del nuevo
 
     setLoading(true);
     setProduct(null);
     try {
-      const encontrado = await productoPorCodigo(trimmed, 'id, descripcion, ubicacion');
+      const encontrado = await productoPorCodigo<ProductoEncontrado>(trimmed, 'id, descripcion, ubicacion');
+      if (busquedaRef.current !== miBusqueda) return;   // ya se escaneó otro código
       if (!encontrado) throw new Error('Producto no encontrado.');
-      const data = [encontrado];
 
-      const foundProduct = data[0] as ProductoEncontrado;
+      const foundProduct = encontrado;
       setProduct(foundProduct);
       setUbicacion(foundProduct.ubicacion || '');
       setUbicacionSearch(foundProduct.ubicacion || '');
     } catch (error: any) {
+      if (busquedaRef.current !== miBusqueda) return;
       Alert.alert('Error', error.message || 'No se pudo buscar el producto.');
       setProduct(null);
     } finally {
-      setLoading(false);
+      if (busquedaRef.current === miBusqueda) setLoading(false);
     }
   }, []);
 
