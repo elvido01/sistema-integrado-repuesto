@@ -12,6 +12,7 @@ import {
 } from '@/src/services/dashboardService';
 import { fetchSanDashboard, suscribirSan, SanDashboard, SAN_VACIO } from '@/src/services/sanService';
 import { fetchCuentasBanco, totalCuentas, CuentaBanco } from '@/src/services/cuentasService';
+import VentanasInicio from '@/src/components/ventanas/VentanasInicio';
 
 const money = (value: number) =>
   `RD$${Number(value || 0).toLocaleString('es-DO', {
@@ -363,6 +364,8 @@ function SellerDashboard({
         <Text className="text-2xl font-black text-slate-950" numberOfLines={1}>{nombre}</Text>
       </View>
 
+      <VentanasInicio />
+
       <View className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm mb-4">
         <View className="flex-row items-start justify-between">
           <View className="flex-row items-center flex-1 pr-3">
@@ -571,6 +574,9 @@ export default function DashboardScreen() {
         <Text className="text-gray-500 text-xs font-bold uppercase tracking-wider">Dashboard</Text>
         <Text className="text-2xl font-black text-gray-950" numberOfLines={1}>{nombre}</Text>
       </View>
+
+      {/* Ventanas y aluminio: crear proyecto por sistema, accesos y recientes (solo tipo 'aluminio'). */}
+      <VentanasInicio />
 
       <View className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
         <View className="flex-row items-start justify-between">

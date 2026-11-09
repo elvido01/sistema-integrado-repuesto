@@ -20,7 +20,9 @@ const campo = 'h-10 w-full rounded-md border border-gray-300 px-3 text-sm bg-whi
 const etiqueta = 'text-[11px] font-bold text-gray-600 uppercase';
 const MEDIDA_VACIA = { ancho: '', alto: '', cantidad: '1', color: '', ubicacion: '' };
 
-export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, onError }) {
+// sistemaInicial: el sistema escogido en el Inicio de Ventanas ("Crear proyecto
+// · Ventana Tradicional"): la primera medida ya viene con él.
+export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, onError, sistemaInicial = null }) {
   const [cargando, setCargando] = useState(true);
   const [p, setP] = useState(null);
   const [sistemas, setSistemas] = useState([]);
@@ -56,8 +58,8 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
     setP(pr.data);
     setSistemas(si.data || []);
     setMedidas(me.data || []);
-    setSistemaId((actual) => actual || si.data?.[0]?.id || '');
-  }, [proyectoId, tenantId, onError, onClose]);
+    setSistemaId((actual) => actual || ((si.data || []).some((x) => x.id === sistemaInicial) ? sistemaInicial : si.data?.[0]?.id) || '');
+  }, [proyectoId, tenantId, onError, onClose, sistemaInicial]);
   useEffect(() => { cargar(); }, [cargar]);
 
   const sistema = useMemo(() => sistemas.find((x) => x.id === sistemaId), [sistemas, sistemaId]);

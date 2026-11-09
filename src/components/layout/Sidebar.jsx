@@ -69,6 +69,7 @@ const navItems = [
     title: 'Ventanas',
     icon: FolderKanban,
     subItems: [
+      { title: 'Inicio', id: 'vent-inicio', icon: FolderKanban, soloTipos: ['aluminio'], permissionKey: 'vent-proyectos' },
       { title: 'Proyectos', id: 'vent-proyectos', icon: FolderKanban, soloTipos: ['aluminio'] },
       { title: 'Precios', id: 'vent-precios', icon: DollarSign, soloTipos: ['aluminio'] },
       { title: 'Configuración del desglose', id: 'vent-desglose', icon: Settings, soloTipos: ['aluminio'] },

@@ -19,7 +19,7 @@ const fmtTel = (v) => {
   return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
 };
 
-export default function NuevoProyectoModal({ tenantId, siguiente, onClose, onCreado, onError }) {
+export default function NuevoProyectoModal({ tenantId, siguiente, onClose, onCreado, onError, sistemaNombre = null }) {
   const [f, setF] = useState({ nombre: `Proyecto ${siguiente}`, cliente_nombre: '', direccion: '', telefono: '', fecha_cita: '', hora_cita: '', notas: '' });
   const [cliente, setCliente] = useState(null);       // del catálogo
   const [buscar, setBuscar] = useState('');
@@ -69,6 +69,11 @@ export default function NuevoProyectoModal({ tenantId, siguiente, onClose, onCre
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>Nuevo proyecto</DialogTitle></DialogHeader>
         <div className="space-y-3">
+          {sistemaNombre && (
+            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm">
+              <span className="text-[11px] text-gray-500 uppercase font-bold block">Ventana preseleccionada</span><b>{sistemaNombre}</b>
+            </div>
+          )}
           <label className="block"><span className={etiqueta}>Nombre del proyecto</span>
             <input className={`${campo} mt-1`} value={f.nombre} onChange={(e) => s('nombre', e.target.value)} />
           </label>

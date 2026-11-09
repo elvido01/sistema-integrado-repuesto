@@ -37,7 +37,8 @@ function Medida({ titulo, entero, fraccion, setEntero, setFraccion, mal }: {
 }
 
 export default function ProyectoScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // sistema: el tipo de ventana escogido en el Inicio (la primera medida ya viene con él).
+  const { id, sistema: sistemaParam } = useLocalSearchParams<{ id: string; sistema?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { tenantId } = useAuthStore();
@@ -81,8 +82,8 @@ export default function ProyectoScreen() {
     ]);
     if (pr.error) { Alert.alert('No se pudo abrir', pr.error.message); router.back(); return; }
     setP(pr.data); setSistemas(si.data || []); setMedidas(me.data || []);
-    setSistemaId((s) => s || si.data?.[0]?.id || '');
-  }, [id, tenantId, router]);
+    setSistemaId((s) => s || ((si.data || []).some((x: any) => x.id === sistemaParam) ? String(sistemaParam) : si.data?.[0]?.id) || '');
+  }, [id, tenantId, router, sistemaParam]);
   useFocusEffect(useCallback(() => { cargar(); }, [cargar]));
 
   const sistema = useMemo(() => sistemas.find((x) => x.id === sistemaId), [sistemas, sistemaId]);
