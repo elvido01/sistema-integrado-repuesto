@@ -39,8 +39,8 @@ const toAscii = (s: string): string =>
 // (08/11/2026) Con la tabla de letras 437 la impresora SÍ trae ñ, Ñ, tildes
 // minúsculas, É, ü, ¿ y ¡ (probado en la Star de Morla con ESC GS t 1; en
 // Epson es ESC t 0). La 437 no tiene Á Í Ó Ú: esas van sin tilde. Lo demás
-// que no está, a ASCII como antes. Por ahora solo lo usa el recibo del colegio
-// ("Ano escolar" en un colegio no se puede).
+// que no está, a ASCII como antes. Lo usan el recibo del colegio y (09/11) la factura, cotización, recibo de ingreso y compra.
+// (En un colegio "Ano escolar" no se puede; en Morla tampoco "PINON".)
 const CP437: Record<string, number> = {
     'ñ': 0xA4, 'Ñ': 0xA5, 'á': 0xA0, 'é': 0x82, 'í': 0xA1, 'ó': 0xA2, 'ú': 0xA3,
     'É': 0x90, 'ü': 0x81, 'Ü': 0x9A, '¿': 0xA8, '¡': 0xAD, 'ç': 0x87, 'Ç': 0x80,
@@ -50,6 +50,13 @@ const CP437: Record<string, number> = {
 // FS . = apaga el modo chino de doble byte de las clónicas POS-80/XP-80 (si
 // no, la ñ se come la letra siguiente). En la Star lo quita ajustarParaImpresora.
 export const ESC_TABLA_437 = '\x1Bt\x00\x1C.';
+// (09/11/2026) Para los tickets de Morla: convierte a la 437 y, si al final no
+// quedó ninguna letra especial, quita el aviso de tabla: un ticket solo ASCII
+// sale byte por byte como antes en cualquier impresora.
+const textoTicket = (s: string): string => {
+    const t = toCP437(s);
+    return /[-ÿ]/.test(t) ? t : t.split(ESC_TABLA_437).join('');
+};
 export const toCP437 = (s: string): string =>
     Array.from(s.normalize('NFC'), (ch) => {
         if (CP437[ch] != null) return String.fromCharCode(CP437[ch]);
@@ -173,7 +180,7 @@ function buildHeader(empresa?: EmpresaConfig, overrideName?: string): string {
         lines.push(centerLine(`RNC: ${empresa.rnc}`));
     }
     lines.push('');
-    return toAscii(lines.join(CMD.LF));
+    return lines.join(CMD.LF);   // sin convertir: lo convierte el ticket que lo usa (convertir dos veces borra la ñ)
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -304,7 +311,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     const lines: string[] = [];
 
     // ── Init + Header ──
-    lines.push(CMD.INIT);
+    lines.push(CMD.INIT + ESC_TABLA_437);   // (09/11/2026) tabla 437: ñ y tildes (en la Star la pone ajustarParaImpresora)
     lines.push(buildHeader(empresa, factura.nombre_emisor_ncf));
     const ecf = factura.ecf || null;
     if (ecf) {
@@ -418,7 +425,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     // imprimir raster: el comando nativo de QR (GS ( k) no lo tienen todas.
     // Va FUERA de toAscii, que borraría los bytes > 0x7F de la imagen.
     if (ecf && (ecf.qr_url || ecf.codigo_seguridad)) {
-        const antes = toAscii(lines.join(CMD.LF)) + CMD.LF + CMD.LF; // aire entre el vendedor y el QR
+        const antes = textoTicket(lines.join(CMD.LF)) + CMD.LF + CMD.LF; // aire entre el vendedor y el QR
         const despues: string[] = [];
         if (ecf.codigo_seguridad) despues.push(centerLine(`Codigo de seguridad: ${ecf.codigo_seguridad}`));
         if (ecf.fecha_firma) despues.push(centerLine(`Fecha firma digital: ${ecf.fecha_firma}`));
@@ -427,14 +434,14 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
         despues.push(CMD.CUT);
         return antes
             + (ecf.qr_url ? qrNativo(toAscii(ecf.qr_url), opciones.qr || 'raster') : '') + CMD.LF
-            + toAscii(despues.join(CMD.LF));
+            + textoTicket(despues.join(CMD.LF));
     }
 
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
-    return toAscii(lines.join(CMD.LF));
+    return textoTicket(lines.join(CMD.LF));
 }
 
 /**
@@ -522,7 +529,7 @@ export function buildCotizacionEscPos(
     const lines: string[] = [];
 
     // ── Init + Header ──
-    lines.push(CMD.INIT);
+    lines.push(CMD.INIT + ESC_TABLA_437);   // (09/11/2026) tabla 437: ñ y tildes (en la Star la pone ajustarParaImpresora)
     lines.push(buildHeader(empresa));
     lines.push(CMD.BOLD_ON + centerLine('COTIZACION') + CMD.BOLD_OFF);
     lines.push('');
@@ -573,7 +580,7 @@ export function buildCotizacionEscPos(
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
-    return toAscii(lines.join(CMD.LF));
+    return textoTicket(lines.join(CMD.LF));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -610,7 +617,7 @@ export function buildReciboIngresoEscPos(
 
     const lines: string[] = [];
 
-    lines.push(CMD.INIT);
+    lines.push(CMD.INIT + ESC_TABLA_437);   // (09/11/2026) tabla 437: ñ y tildes (en la Star la pone ajustarParaImpresora)
     lines.push(buildHeader(empresa));
     lines.push(CMD.DOUBLE_H);
     lines.push(CMD.BOLD_ON + centerLine('RECIBO DE INGRESO') + CMD.BOLD_OFF);
@@ -653,7 +660,7 @@ export function buildReciboIngresoEscPos(
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
-    return toAscii(lines.join(CMD.LF));
+    return textoTicket(lines.join(CMD.LF));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -708,7 +715,7 @@ export function buildCompraEscPos(
     const credito = /CR[EÉ]DITO/i.test(String(compra.forma_pago || ''));
 
     const lines: string[] = [];
-    lines.push(CMD.INIT);
+    lines.push(CMD.INIT + ESC_TABLA_437);   // (09/11/2026) tabla 437: ñ y tildes (en la Star la pone ajustarParaImpresora)
     lines.push(buildHeader(empresa));
     lines.push(CMD.BOLD_ON + centerLine('COMPRA DE MERCANCIA') + CMD.BOLD_OFF);
     lines.push('');
@@ -744,7 +751,7 @@ export function buildCompraEscPos(
     if (empresa?.nombre) lines.push(centerLine(String(empresa.nombre)));
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
-    return toAscii(lines.join(CMD.LF));
+    return textoTicket(lines.join(CMD.LF));
 }
 
 // ── Logo en el ticket (08/11/2026) ─────────────────────────────────────────
