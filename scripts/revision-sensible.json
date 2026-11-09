@@ -5,10 +5,10 @@
     "mobile/app/(tabs)/pos.tsx": "2c717fdf40d3f06d",
     "mobile/app/(tabs)/recibo-ingreso.tsx": "5a2d47c165dc6679",
     "mobile/app/(tabs)/recibo-pago-financiera.tsx": "6d2c015654ac5900",
-    "mobile/app/existencia/index.tsx": "a2cbc70f80c67ea7",
+    "mobile/app/existencia/index.tsx": "e00bf91a67289cd8",
     "mobile/app/recibo-ingreso/index.tsx": "ded4296193bd97d0",
     "mobile/app/recibo-pago-financiera/index.tsx": "7710348bed06f254",
-    "mobile/app/solicitudes-compra/index.tsx": "dfb2b8eadf197098",
+    "mobile/app/solicitudes-compra/index.tsx": "fe1b768707ce57c6",
     "mobile/services/printFactura.ts": "54b1417ac2daad3f",
     "mobile/services/printReciboFinanciera.ts": "d42fc2404d90363f",
     "mobile/services/printReciboIngreso.ts": "f45ebb063412733a",
@@ -646,6 +646,14 @@
       "nota": "code-review high ojito recibos de hoy: 8 hallazgos; arreglados perder lo marcado sin aviso (confirm), aperturas que se pisan (token en abrirFamilia), doble clic mientras carga, scroll aunque no abrio, scroll de toda la pagina (nearest), aria-label, helper verFamilia",
       "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-09",
+      "nota": "code-review high: 8 hallazgos (activo/reemplazado_por, nulls, carrera de busqueda, mayusculas, re-anular, tipado, codigo muerto) arreglados; 2 query extra aceptadas",
+      "archivos": [
+        "mobile/app/existencia/index.tsx",
+        "mobile/app/solicitudes-compra/index.tsx"
       ]
     }
   ]

@@ -55,14 +55,9 @@
       "src/services/sendToOrdenCompra.js": 5,
       "src/services/socialMetricsService.js": 2,
       "src/services/solicitudesService.js": 4,
-      "mobile/app/(tabs)/catalogo.tsx": 1,
       "mobile/app/(tabs)/cotizaciones.tsx": 2,
       "mobile/app/(tabs)/orden-compra.tsx": 1,
       "mobile/app/(tabs)/pedidos.tsx": 1,
-      "mobile/app/configuracion/index.tsx": 1,
-      "mobile/app/solicitudes-compra/index.tsx": 1,
-      "mobile/app/ubicacion/index.tsx": 1,
-      "mobile/src/services/usuariosService.ts": 1,
       "supabase/functions/admin-management/index.ts": 2,
       "supabase/functions/dgii-callback/index.ts": 2,
       "supabase/functions/emitir-fiscal/index.ts": 14,
@@ -93,8 +88,6 @@
       "src/pages/ReciboPagoFinancieraPage.jsx": 5,
       "src/pages/SeguimientosHoyPage.jsx": 1,
       "src/pages/SolicitudesComprasPage.jsx": 2,
-      "mobile/app/existencia/index.tsx": 1,
-      "mobile/app/ubicacion/index.tsx": 1,
       "mobile/src/services/reciboIngresoService.ts": 1,
       "supabase/functions/dgii-receptor/index.ts": 1,
       "supabase/functions/hermes-sugerir/index.ts": 1,
@@ -128,5 +121,5 @@
       "registrar_pago_prestamo"
     ]
   },
-  "actualizado": "2026-11-05"
+  "actualizado": "2026-11-09"
 }
