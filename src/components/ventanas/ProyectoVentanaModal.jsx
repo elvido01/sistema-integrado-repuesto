@@ -5,7 +5,10 @@
 // Fuera de 6"–400" avisa "Revise la medida" y no la agrega.
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Trash2, Pencil, Ruler } from 'lucide-react';
+import { Loader2, Trash2, Pencil, Ruler, Printer } from 'lucide-react';
+import { DesgloseVentanas, MaterialesVentanas } from '@/components/ventanas/DesgloseProyecto';
+import { desgloseProyectoHTML } from '@/lib/printVentanas';
+import { printHtmlSmart } from '@/lib/printHtmlSmart';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -27,14 +30,24 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
   const [intento, setIntento] = useState(false);      // mostrar "Revise la medida" tras intentar agregar
   const [guardando, setGuardando] = useState(false);
   const anchoRef = useRef(null);
+  const [tab, setTab] = useState('medidas');          // medidas | desglose | materiales
+  const [piezasPorSistema, setPiezasPorSistema] = useState({});
+  const [cfg, setCfg] = useState(null);
+  const [imprimiendo, setImprimiendo] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    const [pr, si, me] = await Promise.all([
+    const [pr, si, me, pz, cf] = await Promise.all([
       supabase.from('vent_proyectos').select('*, clientes(nombre, telefono, direccion)').eq('id', proyectoId).eq('tenant_id', tenantId).single(),
       supabase.from('vent_sistemas').select('*').eq('tenant_id', tenantId).eq('activo', true).order('orden'),
       supabase.from('vent_medidas').select('*').eq('proyecto_id', proyectoId).eq('tenant_id', tenantId).order('orden').order('created_at'),
+      supabase.from('vent_piezas').select('*').eq('tenant_id', tenantId).eq('activo', true).order('orden'),
+      supabase.from('vent_config').select('*').eq('tenant_id', tenantId).maybeSingle(),
     ]);
+    const porSistema = {};
+    for (const x of pz.data || []) (porSistema[x.sistema_id] = porSistema[x.sistema_id] || []).push(x);
+    setPiezasPorSistema(porSistema);
+    setCfg(cf.data || null);
     setCargando(false);
     if (pr.error) { onError('No se pudo abrir el proyecto', pr.error.message); onClose(); return; }
     setP(pr.data);
@@ -98,6 +111,29 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
 
   const totalVentanas = medidas.reduce((s, x) => s + Number(x.cantidad || 0), 0);
 
+  // Marcar / desmarcar un corte hecho (taller).
+  const marcarCorte = async (me, piezaId) => {
+    const hechos = new Set(me.cortes_hechos || []);
+    if (hechos.has(piezaId)) hechos.delete(piezaId); else hechos.add(piezaId);
+    const nuevos = [...hechos];
+    setMedidas((ms) => ms.map((x) => (x.id === me.id ? { ...x, cortes_hechos: nuevos } : x)));
+    const { data, error } = await supabase.from('vent_medidas').update({ cortes_hechos: nuevos }).eq('id', me.id).eq('tenant_id', tenantId).select('id');
+    if (error || !data?.length) { onError('No se guardó el corte', error?.message || 'Sin permiso'); cargar(); }
+  };
+
+  const imprimir = async () => {
+    setImprimiendo(true);
+    try {
+      const { data: e } = await supabase.from('config_empresa').select('nombre, direccion1, direccion2, telefono, logo_url').eq('tenant_id', tenantId).maybeSingle();
+      const empresa = e ? { nombre: e.nombre, logo_url: e.logo_url, telefono: e.telefono, direccion: [e.direccion1, e.direccion2].filter(Boolean).join(', ') } : {};
+      await printHtmlSmart(desgloseProyectoHTML({ empresa, proyecto: p, medidas, nombreSistema, piezasPorSistema, cfg }), { tipo: 'carta' });
+    } catch (err) {
+      onError('No se pudo imprimir', err?.message);
+    } finally {
+      setImprimiendo(false);
+    }
+  };
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
@@ -130,6 +166,20 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
               </div>
             </section>
 
+            <div className="flex flex-wrap items-center gap-2">
+              {[['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Materiales y barras']].map(([k, t]) => (
+                <button key={k} type="button" onClick={() => setTab(k)}
+                  className={`px-4 py-1.5 rounded-md text-sm font-semibold border ${tab === k ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-300'}`}>{t}</button>
+              ))}
+              <Button size="sm" variant="outline" className="ml-auto" onClick={imprimir} disabled={imprimiendo || !medidas.length}>
+                {imprimiendo ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Printer className="w-4 h-4 mr-1" />} Imprimir / PDF
+              </Button>
+            </div>
+
+            {tab === 'desglose' && <DesgloseVentanas medidas={medidas} nombreSistema={nombreSistema} piezasPorSistema={piezasPorSistema} onMarcar={marcarCorte} />}
+            {tab === 'materiales' && <MaterialesVentanas medidas={medidas} piezasPorSistema={piezasPorSistema} cfg={cfg} />}
+
+            {tab === 'medidas' && <>
             {/* Control de medidas */}
             <section className="rounded-lg border border-blue-200 bg-blue-50/40 p-3 space-y-3">
               <h3 className="text-sm font-black text-blue-800 uppercase flex items-center gap-2"><Ruler className="w-4 h-4" /> Control de medidas (pulgadas)</h3>
@@ -217,9 +267,7 @@ export default function ProyectoVentanaModal({ proyectoId, tenantId, onClose, on
                 <div className="py-8 text-center text-sm text-gray-400">Todavía no hay medidas. Agrega la primera ventana arriba.</div>
               )}
             </section>
-            <p className="text-xs text-gray-500">
-              El desglose de cortes, las barras y el presupuesto se agregan en la próxima parte (con las hojas de desglose del taller).
-            </p>
+            </>}
           </div>
         )}
       </DialogContent>

@@ -70,6 +70,7 @@ const navItems = [
     icon: FolderKanban,
     subItems: [
       { title: 'Proyectos', id: 'vent-proyectos', icon: FolderKanban, soloTipos: ['aluminio'] },
+      { title: 'Configuración del desglose', id: 'vent-desglose', icon: Settings, soloTipos: ['aluminio'] },
     ],
   },
   {

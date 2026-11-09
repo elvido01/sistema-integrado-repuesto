@@ -36,7 +36,7 @@ export function pulgadasTexto(valor) {
   if (!n16) return String(ent);
   let num = n16; let den = 16;
   while (num % 2 === 0) { num /= 2; den /= 2; }
-  return `${ent} ${num}/${den}`;
+  return ent ? `${ent} ${num}/${den}` : `${num}/${den}`;
 }
 
 // Medida razonable para una ventana o puerta (pulgadas). Fuera de esto:
@@ -60,3 +60,69 @@ export const estadoProyecto = (k) => ESTADOS_PROYECTO.find((e) => e.k === k) || 
 export const COLORES_ALUMINIO = ['Blanco', 'Negro', 'Inox', 'Plata', 'Bronce', 'Caoba'];
 
 export const numeroProyecto = (n) => `PRY-${String(n || 0).padStart(4, '0')}`;
+
+// ── Desglose (09/11/2026) ───────────────────────────────────────────────
+// Medida de corte = (base ÷ (hojas si por_hoja)) − descuento, a 1/16".
+// Cantidad = (cant_fija + cant_por_hoja × hojas) × cantidad de ventanas.
+const a16 = (v) => Math.round(v * 16) / 16;
+
+export function desgloseVentana(medida, piezas) {
+  const hojas = Number(medida.hojas) || 1;
+  const veces = Number(medida.cantidad) || 1;
+  return (piezas || [])
+    .filter((p) => p.activo !== false)
+    .map((p) => {
+      const base = p.base === 'alto' ? Number(medida.alto) : Number(medida.ancho);
+      const largo = a16(base / (p.por_hoja ? hojas : 1) - Number(p.descuento || 0));
+      const porVentana = Number(p.cant_fija || 0) + Number(p.cant_por_hoja || 0) * hojas;
+      return { pieza: p, largo, cantidad: Math.max(0, porVentana) * veces, porVentana: Math.max(0, porVentana) };
+    })
+    .filter((c) => c.cantidad > 0 && c.largo > 0)
+    .sort((a, b) => (a.pieza.orden || 0) - (b.pieza.orden || 0));
+}
+
+// Barras: "primero el más largo" en la barra donde quepa (con lo que se
+// pierde en cada corte). Devuelve cuántas barras y qué va en cada una.
+export function planBarras(cortes, largoBarra = 240, merma = 0.125) {
+  const lista = [...cortes].sort((a, b) => b - a);
+  const barras = [];
+  const sinCaber = [];
+  for (const c of lista) {
+    if (c > largoBarra) { sinCaber.push(c); continue; }
+    let b = barras.find((x) => x.libre >= c + (x.cortes.length ? merma : 0));
+    if (!b) { b = { cortes: [], libre: largoBarra }; barras.push(b); }
+    b.libre -= c + (b.cortes.length ? merma : 0);
+    b.cortes.push(c);
+  }
+  return { barras: barras.map((b) => ({ cortes: b.cortes, sobrante: a16(b.libre) })), sinCaber };
+}
+
+// Materiales de un proyecto: perfiles (por perfil + color: pulgadas, pies,
+// metros, barras) y cristales (cada pedazo con su área en pie²).
+export function materialesProyecto(medidas, piezasPorSistema, config = {}) {
+  const largoBarra = Number(config.largo_barra) || 240;
+  const merma = config.merma_corte != null ? Number(config.merma_corte) : 0.125;
+  const perfiles = new Map();
+  const cristales = [];
+  for (const m of medidas) {
+    const cortes = desgloseVentana(m, piezasPorSistema[m.sistema_id] || []);
+    const anchos = cortes.filter((c) => c.pieza.tipo === 'cristal' && c.pieza.base === 'ancho');
+    const altos = cortes.filter((c) => c.pieza.tipo === 'cristal' && c.pieza.base === 'alto');
+    if (anchos[0] && altos[0]) {
+      const n = Math.min(anchos[0].cantidad, altos[0].cantidad);
+      cristales.push({ medida: m, ancho: anchos[0].largo, alto: altos[0].largo, cantidad: n, pie2: Math.round(((anchos[0].largo * altos[0].largo) / 144) * n * 100) / 100 });
+    }
+    for (const c of cortes.filter((x) => x.pieza.tipo === 'perfil')) {
+      const nombre = c.pieza.perfil || c.pieza.nombre;
+      const clave = `${nombre}|${m.color || ''}`;
+      if (!perfiles.has(clave)) perfiles.set(clave, { perfil: nombre, color: m.color || '', cortes: [] });
+      for (let i = 0; i < c.cantidad; i++) perfiles.get(clave).cortes.push(c.largo);
+    }
+  }
+  const lista = [...perfiles.values()].map((p) => {
+    const pulgadas = p.cortes.reduce((s, x) => s + x, 0);
+    const plan = planBarras(p.cortes, largoBarra, merma);
+    return { ...p, pulgadas, pies: pulgadas / 12, metros: pulgadas * 0.0254, barras: plan.barras.length, plan };
+  }).sort((a, b) => a.perfil.localeCompare(b.perfil) || a.color.localeCompare(b.color));
+  return { perfiles: lista, cristales, totalPie2: cristales.reduce((s, c) => s + c.pie2, 0), largoBarra, merma };
+}

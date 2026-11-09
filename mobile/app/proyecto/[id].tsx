@@ -8,7 +8,7 @@ import { ArrowLeft, Trash2, Pencil } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/src/supabase/client';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { ESTADOS_PROYECTO, estadoProyecto, numeroProyecto, pulgadasTexto, medidaRazonable, COLORES_ALUMINIO } from '@/src/lib/ventanas';
+import { ESTADOS_PROYECTO, numeroProyecto, pulgadasTexto, medidaRazonable, COLORES_ALUMINIO, desgloseVentana, materialesProyecto } from '@/src/lib/ventanas';
 
 const FRACCIONES: [string, number][] = [['0', 0], ['⅛', 0.125], ['¼', 0.25], ['⅜', 0.375], ['½', 0.5], ['⅝', 0.625], ['¾', 0.75], ['⅞', 0.875]];
 
@@ -54,8 +54,19 @@ export default function ProyectoScreen() {
   const [editando, setEditando] = useState<string | null>(null);
   const [intento, setIntento] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [tab, setTab] = useState<'medidas' | 'desglose' | 'materiales'>('medidas');
+  const [piezasPorSistema, setPiezasPorSistema] = useState<Record<string, any[]>>({});
+  const [cfg, setCfg] = useState<any>(null);
 
   const cargar = useCallback(async () => {
+    const [pz, cf] = await Promise.all([
+      supabase.from('vent_piezas').select('*').eq('tenant_id', tenantId).eq('activo', true).order('orden'),
+      supabase.from('vent_config').select('*').eq('tenant_id', tenantId).maybeSingle(),
+    ]);
+    const porSistema: Record<string, any[]> = {};
+    for (const x of pz.data || []) (porSistema[x.sistema_id] = porSistema[x.sistema_id] || []).push(x);
+    setPiezasPorSistema(porSistema);
+    setCfg(cf.data || null);
     const [pr, si, me] = await Promise.all([
       supabase.from('vent_proyectos').select('*, clientes(nombre)').eq('id', id).eq('tenant_id', tenantId).single(),
       supabase.from('vent_sistemas').select('*').eq('tenant_id', tenantId).eq('activo', true).order('orden'),
@@ -116,6 +127,16 @@ export default function ProyectoScreen() {
     } },
   ]);
 
+  // Marcar / desmarcar un corte hecho (taller).
+  const marcarCorte = async (me: any, piezaId: string) => {
+    const hechos = new Set<string>(me.cortes_hechos || []);
+    if (hechos.has(piezaId)) hechos.delete(piezaId); else hechos.add(piezaId);
+    const nuevos = [...hechos];
+    setMedidas((ms) => ms.map((x) => (x.id === me.id ? { ...x, cortes_hechos: nuevos } : x)));
+    const { data, error } = await supabase.from('vent_medidas').update({ cortes_hechos: nuevos }).eq('id', me.id).eq('tenant_id', tenantId).select('id');
+    if (error || !data?.length) { Alert.alert('No se guardó el corte', error?.message || 'Sin permiso'); cargar(); }
+  };
+
   if (!p) return <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" color="#1d4ed8" /></View>;
   const nombreSistema = (sid: string) => sistemas.find((x) => x.id === sid)?.nombre || '—';
   const total = medidas.reduce((s, x) => s + Number(x.cantidad || 0), 0);
@@ -139,6 +160,72 @@ export default function ProyectoScreen() {
           ))}
         </ScrollView>
 
+        <View className="flex-row bg-white rounded-xl border border-gray-200 p-1 mb-3">
+          {([['medidas', 'Medidas'], ['desglose', 'Desglose'], ['materiales', 'Materiales']] as const).map(([k, t]) => (
+            <TouchableOpacity key={k} onPress={() => setTab(k)} className={`flex-1 py-2 rounded-lg items-center ${tab === k ? 'bg-blue-700' : ''}`}>
+              <Text className={`font-semibold ${tab === k ? 'text-white' : 'text-gray-600'}`}>{t}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {tab === 'desglose' && (medidas.length ? medidas.map((me, i) => {
+          const cortes = desgloseVentana(me, piezasPorSistema[me.sistema_id] || []);
+          const hechos = new Set<string>(me.cortes_hechos || []);
+          const listos = cortes.filter((c: any) => hechos.has(c.pieza.id)).length;
+          const terminada = cortes.length > 0 && listos === cortes.length;
+          return (
+            <View key={me.id} className={`rounded-2xl border p-3 mb-3 ${terminada ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-gray-200'}`}>
+              <View className="flex-row justify-between mb-1">
+                <Text className="font-bold flex-1">Ventana {i + 1}{me.cantidad > 1 ? ` (×${me.cantidad})` : ''} · {pulgadasTexto(me.ancho)}" × {pulgadasTexto(me.alto)}"</Text>
+                <Text className={`text-xs font-bold ${terminada ? 'text-emerald-700' : 'text-gray-500'}`}>{terminada ? '✓ Terminada' : `${listos}/${cortes.length}`}</Text>
+              </View>
+              <Text className="text-xs text-gray-500 mb-2">{nombreSistema(me.sistema_id)} · {me.hojas} hojas{me.color ? ` · ${me.color}` : ''}{me.ubicacion ? ` · ${me.ubicacion}` : ''}</Text>
+              {cortes.map((c: any) => {
+                const ok = hechos.has(c.pieza.id);
+                return (
+                  <TouchableOpacity key={c.pieza.id} onPress={() => marcarCorte(me, c.pieza.id)} className="flex-row items-center py-2 border-b border-gray-100">
+                    <View className={`w-6 h-6 rounded-md border mr-3 items-center justify-center ${ok ? 'bg-emerald-600 border-emerald-600' : 'border-gray-400'}`}>
+                      {ok ? <Text className="text-white font-bold">✓</Text> : null}
+                    </View>
+                    <Text className={`flex-1 ${ok ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{c.pieza.nombre}</Text>
+                    <Text className={`font-bold ${ok ? 'text-gray-400' : 'text-gray-900'}`}>{c.cantidad} × {pulgadasTexto(c.largo)}"</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        }) : <Text className="text-gray-400 text-center py-6">Primero agrega las medidas.</Text>)}
+
+        {tab === 'materiales' && (() => {
+          const mat = materialesProyecto(medidas, piezasPorSistema, cfg || {});
+          if (!medidas.length) return <Text className="text-gray-400 text-center py-6">Primero agrega las medidas.</Text>;
+          return (
+            <View>
+              <Text className="text-sm font-bold text-gray-700 mb-2">Perfiles · {mat.perfiles.reduce((s: number, x: any) => s + x.barras, 0)} barra(s) de {mat.largoBarra / 12}'</Text>
+              {mat.perfiles.map((x: any) => (
+                <View key={`${x.perfil}|${x.color}`} className="bg-white rounded-xl border border-gray-200 p-3 mb-2">
+                  <View className="flex-row justify-between">
+                    <Text className="font-bold flex-1">{x.perfil}{x.color ? ` · ${x.color}` : ''}</Text>
+                    <Text className="font-bold text-blue-800">{x.barras} barra(s)</Text>
+                  </View>
+                  <Text className="text-xs text-gray-500">{x.cortes.length} cortes · {x.pies.toFixed(2)}' · {x.metros.toFixed(2)} m</Text>
+                  {x.plan.barras.map((b: any, i: number) => (
+                    <Text key={i} className="text-[11px] text-gray-500 mt-0.5">Barra {i + 1}: {b.cortes.map((c: number) => `${pulgadasTexto(c)}"`).join(' + ')} · sobra {pulgadasTexto(b.sobrante)}"</Text>
+                  ))}
+                </View>
+              ))}
+              <Text className="text-sm font-bold text-gray-700 mt-3 mb-2">Cristales · {mat.totalPie2.toFixed(2)} pie²</Text>
+              {mat.cristales.map((c: any, i: number) => (
+                <View key={i} className="flex-row justify-between bg-white rounded-xl border border-gray-200 p-3 mb-2">
+                  <Text className="flex-1">{c.cantidad} × {pulgadasTexto(c.ancho)}" × {pulgadasTexto(c.alto)}"</Text>
+                  <Text className="font-semibold">{c.pie2.toFixed(2)} pie²</Text>
+                </View>
+              ))}
+            </View>
+          );
+        })()}
+
+        {tab === 'medidas' && <>
         <View className="bg-white rounded-2xl border border-blue-200 p-4 mb-4">
           <Text className="text-sm font-black text-blue-800 uppercase mb-2">Control de medidas</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
@@ -193,6 +280,7 @@ export default function ProyectoScreen() {
           </View>
         ))}
         {!medidas.length && <Text className="text-gray-400 text-center py-6">Todavía no hay medidas.</Text>}
+        </>}
         <View className="h-10" />
       </ScrollView>
     </View>
