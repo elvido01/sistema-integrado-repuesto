@@ -333,14 +333,14 @@
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
     "src/components/ventas/LineasServicios.jsx": "faaa9576a84fe5ce",
-    "src/components/ventas/ProductSearchModal.jsx": "8715b24d7a79c7a9",
+    "src/components/ventas/ProductSearchModal.jsx": "17352986c94c36b2",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "4dcf873fcfbe610a",
     "src/components/ventas/VentasHeader.jsx": "5f2e5eb96ffe733b",
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "3e93dfb60b34e130",
+    "src/hooks/useVentas.js": "be607d0700760913",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "6db6c3acc7234217",
+    "src/pages/VentasPage.jsx": "97f3c92096c63647",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -697,6 +697,15 @@
       "archivos": [
         "sql/ecf_quitar_secuencia.sql",
         "src/components/configuracion/DgiiSecuenciasEcf.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-10",
+      "nota": "code-review high x2: 1ra 10 hallazgos -> rediseño (traspaso al grabar la venta por trigger, no al escoger; ficha por id; precios al dia; espejo por codigo sin mayusculas; marcas/tipos/modelos por _espejo_*; filtros y busqueda por palabras). 2da 10 hallazgos -> solo ventas FT-, venta de la gemela en MotoPrestamos tambien trae, fallos anotados en catalogo_hermano_fallos, reposicion no pide piezas traidas, unidades con chasis no, stock por LATERAL, validacion/aviso cuentan lo de aqui. Queda: orden de despliegue (SQL antes del front, verificado en publica)",
+      "archivos": [
+        "src/components/ventas/ProductSearchModal.jsx",
+        "src/hooks/useVentas.js",
+        "src/pages/VentasPage.jsx"
       ]
     }
   ]

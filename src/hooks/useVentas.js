@@ -901,7 +901,7 @@ export const useVentas = () => {
 
     const { data: productos, error } = await supabase
       .from('productos')
-      .select('id, codigo, descripcion, min_stock, max_stock, suplidor_id, activo')
+      .select('id, codigo, descripcion, min_stock, max_stock, suplidor_id, activo, traido_de')
       .in('id', productIds);
 
     if (error || !productos?.length) {
@@ -915,7 +915,9 @@ export const useVentas = () => {
     // Las existencias, TODAS A LA VEZ. Esto preguntaba una por una, en fila:
     // una venta de ocho renglones eran ocho viajes al servidor esperándose
     // unos a otros. Ahora salen juntos y se espera una sola vez.
-    const activos = productos.filter((p) => p.activo);
+    // Pieza traída del catálogo de otra empresa del grupo: la repone esa
+    // empresa, no esta (sql/vender_catalogo_hermano.sql).
+    const activos = productos.filter((p) => p.activo && !p.traido_de);
     const existencias = await Promise.all(activos.map(async (p) => {
       const { data, error } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
       return { id: p.id, existencia: Number(data || 0), error };

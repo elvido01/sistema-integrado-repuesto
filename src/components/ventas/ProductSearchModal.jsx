@@ -30,6 +30,7 @@ const ProductSearchModal = ({
   sessionKey = null,
   useConfigDefault = false,
   onlyWithStock = false, // si true: solo productos con existencia > 0 y oculta el checkbox
+  permiteTraspaso = false, // solo Ventas: traer piezas de la otra empresa del grupo (mueve inventario)
 }) => {
   const { toast } = useToast();
   const { tenantId, user, empresa } = useAuth();
@@ -61,6 +62,12 @@ const ProductSearchModal = ({
   const esVieja = !!empresa?.solo_consulta;
   const tieneVieja = !!empresa?.empresa_vieja_tenant_id;
   const [buscarEnVieja, setBuscarEnVieja] = useState(false);
+  // (10/11/2026) Vender del catálogo de otra empresa del grupo (Caminero
+  // Motors ← Repuestos Caminero): se traspasa SOLO la cantidad a vender y se
+  // factura aquí, con el comprobante de esta empresa. sql/vender_catalogo_hermano.sql
+  const tieneHermana = permiteTraspaso && !!empresa?.vende_catalogo_de;
+  const [buscarEnHermana, setBuscarEnHermana] = useState(false);
+  const [nombreHermana, setNombreHermana] = useState('');
   const [trayendo, setTrayendo] = useState(null); // product id en traslado
 
   const handleMoverAMorlaNuevo = async (product) => {
@@ -147,6 +154,26 @@ const ProductSearchModal = ({
       try {
         const offset = page * PAGE_LIMIT;
 
+        // Modo "Buscar en <empresa del grupo>": solo piezas con existencia allá.
+        if (buscarEnHermana && tieneHermana) {
+          const { data: dataH, error: errH } = await supabase.rpc('buscar_catalogo_hermano', {
+            p_limit: PAGE_LIMIT,
+            p_offset: offset,
+            p_search: orNull(debouncedSearchTerm),
+            p_marca: orNull(debouncedMarcaFilter),
+            p_modelo: orNull(debouncedModeloFilter),
+          });
+          if (reqId !== requestIdRef.current) return;
+          if (errH) throw errH;
+          const filas = (dataH || []).map((r) => ({ ...r, _vieja: true, _hermana: true }));
+          if (filas[0]?.origen_nombre) setNombreHermana(filas[0].origen_nombre);
+          setProducts((prev) => (isNewSearch ? filas : [...prev, ...filas]));
+          if (isNewSearch) setSelectedIndex(-1);
+          setHasMore(filas.length === PAGE_LIMIT);
+          setCurrentPage(page);
+          return;
+        }
+
         // Modo "Traer de Morla Vieja": busca el catálogo viejo desde la nueva
         if (buscarEnVieja && tieneVieja) {
           const { data: dataVieja, error: errVieja } = await supabase.rpc('buscar_productos_vieja', {
@@ -232,13 +259,14 @@ const ProductSearchModal = ({
         if (reqId === requestIdRef.current) setLoading(false);
       }
     },
-    [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock, onlyWithStock, buscarEnVieja, tieneVieja]
+    [toast, debouncedSearchTerm, debouncedMarcaFilter, debouncedModeloFilter, includeZeroStock, onlyWithStock, buscarEnVieja, tieneVieja, buscarEnHermana, tieneHermana]
   );
 
   // Doble clic (o Enter) sobre una pieza de la VIEJA: se mueve al sistema
   // nuevo (con su existencia, borrándose de la vieja) y cae a la factura.
   const handleTraerDeVieja = async (product) => {
     if (trayendo) return;
+    if (product._hermana) { traerDeHermana(product); return; }
     setTrayendo(product.id);
     try {
       const { data, error } = await supabase.rpc('mover_producto_de_vieja', { p_producto_id: product.id });
@@ -268,12 +296,51 @@ const ProductSearchModal = ({
       setTrayendo(null);
     }
   };
+  // Pieza de la otra empresa: se pregunta cuántas y la pieza queda lista en
+  // esta empresa (con el costo y precio de hoy de la otra). El inventario NO
+  // se mueve aquí: al GRABAR la factura la base pasa de la otra lo que falte
+  // (trg_venta_trae_de_catalogo). Escogerla y no venderla no cambia nada.
+  const traerDeHermana = async (product) => {
+    const exist = Number(product.existencia) || 0;
+    const origen = product.origen_nombre || "la otra empresa";
+    const txt = window.prompt(`¿Cuántas ${product.codigo} vas a vender? En ${origen} hay ${exist}.
+
+Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprobante fiscal de aquí.`, "1");
+    if (txt == null) return;
+    const cant = Number(String(txt).replace(",", ".").trim());
+    if (!(cant > 0)) { toast({ variant: "destructive", title: "Cantidad no válida", description: "Escribe cuántas vas a vender." }); return; }
+    setTrayendo(product.id);
+    try {
+      const { data, error } = await supabase.rpc("preparar_de_catalogo_hermano", { p_producto_id: product.id });
+      if (error) throw error;
+      const { data: prod, error: e2 } = await supabase.from("productos").select("*").eq("id", data?.id).maybeSingle();
+      if (e2 || !prod) throw new Error(`La pieza quedó como "${data?.codigo}" pero no se pudo cargar: búscala normal.`);
+      const aqui = Math.max(0, Number(data?.existencia_aqui || 0));
+      const alla = Math.max(0, Number(data?.existencia_origen || 0));
+      if (cant > aqui + alla) {
+        toast({ variant: "destructive", title: "No alcanza", description: `Entre esta empresa (${aqui}) y ${origen} (${alla}) hay ${aqui + alla}.` });
+        return;
+      }
+      const pasan = Math.max(0, cant - aqui);
+      toast({
+        title: `⇄ ${prod.codigo} de ${origen}`,
+        description: `${data?.nuevo ? "Pieza nueva en esta empresa. " : ""}${pasan > 0 ? `Al grabar la factura se pasa${pasan === 1 ? "" : "n"} ${pasan} de ${origen}.` : "Ya hay suficientes aquí: no se pasa nada."}`,
+        duration: 5000,
+      });
+      onSelectProduct({ ...prod, existencia: aqui + alla, _cantidadTraida: cant });
+      onClose();
+    } catch (err) {
+      toast({ variant: "destructive", title: `No se pudo traer de ${origen}`, description: err.message, duration: 6000 });
+    } finally {
+      setTrayendo(null);
+    }
+  };
   const loaderRef = useRef(null);
 
   // Cargar membresías de grupos equivalentes para las filas visibles (batch,
   // solo ids no consultados antes). Pinta el badge 🔗 con detalle al hover.
   useEffect(() => {
-    if (buscarEnVieja) return undefined; // productos de otra empresa: sin grupos
+    if (buscarEnVieja || buscarEnHermana) return undefined; // productos de otra empresa: sin grupos
     const ids = products.map((p) => p.id).filter((id) => !gruposConsultadosRef.current.has(id));
     if (ids.length === 0) return undefined;
     ids.forEach((id) => gruposConsultadosRef.current.add(id));
@@ -302,6 +369,7 @@ const ProductSearchModal = ({
       setAutoCeros(false);
       autoCerosSigRef.current = null;
       setBuscarEnVieja(false);
+      setBuscarEnHermana(false);
     }
   }, [isOpen, includeZeroStockDefault]);
 
@@ -541,15 +609,36 @@ const ProductSearchModal = ({
                     <Checkbox
                       id="buscar-en-vieja"
                       checked={buscarEnVieja}
-                      onCheckedChange={(v) => setBuscarEnVieja(!!v)}
+                      onCheckedChange={(v) => { setBuscarEnVieja(!!v); if (v) setBuscarEnHermana(false); }}
                     />
                     <Label htmlFor="buscar-en-vieja" className="text-sm font-bold text-amber-700 flex items-center gap-1">
                       <ArrowRightLeft className="w-3.5 h-3.5" /> Buscar en la empresa vieja
                     </Label>
                   </div>
                 )}
+                {tieneHermana && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="buscar-en-hermana"
+                      checked={buscarEnHermana}
+                      onCheckedChange={(v) => { setBuscarEnHermana(!!v); if (v) setBuscarEnVieja(false); }}
+                    />
+                    <Label htmlFor="buscar-en-hermana" className="text-sm font-bold text-amber-700 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3.5 h-3.5" /> Buscar en {nombreHermana || 'la otra empresa'}
+                    </Label>
+                  </div>
+                )}
               </div>
             </div>
+            {buscarEnHermana && (
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
+                <ArrowRightLeft className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                <p className="text-xs text-amber-800">
+                  <b>Buscando en {nombreHermana || 'la otra empresa'}</b> (solo piezas con existencia). Doble clic (o Enter): dices cuántas,
+                  queda en la factura y, <b>al grabarla</b>, esas se pasan a esta empresa y salen con el comprobante fiscal de aquí.
+                </p>
+              </div>
+            )}
             {buscarEnVieja && (
               <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
                 <ArrowRightLeft className="h-4 w-4 text-amber-600 flex-shrink-0" />
@@ -605,7 +694,7 @@ const ProductSearchModal = ({
                             <div className="flex items-center gap-1.5">
                               <span className={codigosLargos ? '' : 'overflow-hidden text-ellipsis'}>{product.codigo}</span>
                               <span className={`px-1.5 rounded-full text-[9px] font-bold flex-shrink-0 ${idx === selectedIndex ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-900'}`}>
-                                VIEJA
+                                {product._hermana ? 'OTRA EMPRESA' : 'VIEJA'}
                               </span>
                             </div>
                           </TableCell>

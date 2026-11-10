@@ -736,13 +736,14 @@ const VentasPage = () => {
           processedProduct.max_descuento = parseFloat(mainPres.descuento_pct || 0);
         }
       }
-      addProductToInvoice(processedProduct);
+      // Pieza traída de la otra empresa del grupo: entra con la cantidad traspasada.
+      addProductToInvoice(processedProduct, product._cantidadTraida > 0 ? { cantidad: product._cantidadTraida } : {});
       // En aluminio el producto puede ser el "modelo" sin existencia propia (la
       // tienen sus colores): el aviso de equivalentes lo da después la línea real.
       if (!esAluminio) checkAndSuggestEquivalentes(processedProduct);
     } catch (e) {
       console.error("Error fetching presentations", e);
-      addProductToInvoice(product);
+      addProductToInvoice(product, product._cantidadTraida > 0 ? { cantidad: product._cantidadTraida } : {});
       if (!esAluminio) checkAndSuggestEquivalentes(product);
     } finally {
       setIsProductSearchModalOpen(false);
@@ -895,6 +896,7 @@ const VentasPage = () => {
         onSelectProduct={handleProductSearchSelect}
         sessionKey={modalSessionKey}
         useConfigDefault={true}
+        permiteTraspaso
       />
 
       <ClienteSearchModal
