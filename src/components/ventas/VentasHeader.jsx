@@ -293,8 +293,10 @@ const VentasHeader = ({
             <div className="grid grid-cols-4 gap-x-1.5 gap-y-1 items-center">
               <Label className="col-span-1 text-[10px] font-black text-gray-400 uppercase tracking-tight text-right">COMPROB:</Label>
               {ncfPreview?.electronico ? (
-                <div className="col-span-3 h-5 text-[10px] font-bold border border-gray-300 bg-white flex items-center px-2 shadow-sm">
+                <div className="col-span-3 h-5 text-[10px] font-bold border border-gray-300 bg-white flex items-center px-2 shadow-sm"
+                  title={ncfPreview.motivo ? 'El cliente está marcado crédito fiscal, pero su RNC/cédula no es válido (9 u 11 dígitos, no todo ceros): corrígelo en la ficha del cliente y vuelve a escogerlo.' : undefined}>
                   {ncfPreview.nombre} <span className="ml-1 text-emerald-600">(ELECTRÓNICA)</span>
+                  {ncfPreview.motivo && <span className="ml-1 text-red-600">· {ncfPreview.motivo}</span>}
                 </div>
               ) : (
               <Select value={cliente?.tipo_ncf || '02'}>

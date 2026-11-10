@@ -9,6 +9,7 @@ import { IDS_GENERICOS, ID_GENERICO_BASE } from '@/lib/clienteGenerico';
 import { CANAL_POR_DEFECTO, nombreCanal } from '@/lib/canalesOrigen';
 import { conChasis } from '@/lib/chasisFactura';
 import { esLineaFraccion } from '@/lib/ventanas';
+import { docFiscalValido, tipoExigeRnc } from '@/lib/docFiscal';
 
 const CLIENTE_GENERICO = {
   id: ID_GENERICO_BASE,
@@ -365,11 +366,13 @@ export const useVentas = () => {
     // E31 si tiene RNC/cédula válido y no está marcado consumo; si no, E32.
     if (fiscalActivo && fiscalModo === 'produccion') {
       try {
-        const doc = String(clienteVenta?.rnc || '').replace(/\D/g, '');
-        const rncValido = (doc.length === 9 || doc.length === 11) && !/^0+$/.test(doc);
+        const rncValido = docFiscalValido(clienteVenta?.rnc);
         // El tipo_ncf del cliente tal cual: vacío con RNC válido es E31 en el builder.
         const tipoCli = String((clienteVenta ? clienteVenta.tipo_ncf : tipoNcf) || '').toUpperCase().replace(/^[BE]/, '');
         const tipoEcf = !rncValido || tipoCli === '02' || tipoCli === '32' ? '32' : '31';
+        // Marcado crédito fiscal pero con RNC/cédula inválido: se dice por qué sale consumo.
+        const motivo = !rncValido && tipoExigeRnc(tipoCli) ? 'RNC INVÁLIDO' : null;
+        const ponerConMotivo = (v) => poner(motivo ? { ...v, motivo } : v);
         const { data: seq, error } = await supabase
           .from('ecf_secuencias')
           .select('serie, tipo_ecf, desde, hasta, ultimo')
@@ -381,13 +384,13 @@ export const useVentas = () => {
           .maybeSingle();
         if (error) throw error;
         const nombre = tipoEcf === '31' ? 'E31 - CRÉDITO FISCAL' : 'E32 - CONSUMO';
-        if (!seq) { poner({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `Sin secuencia E${tipoEcf}` }); return; }
+        if (!seq) { ponerConMotivo({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `Sin secuencia E${tipoEcf}` }); return; }
         // get_next_encf_empresa da siempre ultimo+1.
         const siguiente = Number(seq.ultimo || 0) + 1;
-        if (siguiente < Number(seq.desde || 1)) { poner({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `E${tipoEcf} mal cargada (revisar secuencia)` }); return; }
-        if (siguiente > Number(seq.hasta)) { poner({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `E${tipoEcf} agotada` }); return; }
+        if (siguiente < Number(seq.desde || 1)) { ponerConMotivo({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `E${tipoEcf} mal cargada (revisar secuencia)` }); return; }
+        if (siguiente > Number(seq.hasta)) { ponerConMotivo({ ncf: null, tipo_ncf: tipoEcf, electronico: true, nombre, aviso: `E${tipoEcf} agotada` }); return; }
         const quedan = Number(seq.hasta) - siguiente + 1;
-        poner({ ncf: `${seq.serie || 'E'}${tipoEcf}${String(siguiente).padStart(10, '0')}`, tipo_ncf: tipoEcf, electronico: true, nombre, quedan });
+        ponerConMotivo({ ncf: `${seq.serie || 'E'}${tipoEcf}${String(siguiente).padStart(10, '0')}`, tipo_ncf: tipoEcf, electronico: true, nombre, quedan });
       } catch (err) {
         console.warn('No se pudo obtener preview e-NCF:', err.message);
         poner({ ncf: null, electronico: true, nombre: 'e-CF', aviso: 'No se pudo leer la secuencia' });

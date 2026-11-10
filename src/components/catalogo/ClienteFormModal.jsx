@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from '@/components/ui/textarea';
+import { problemaDocFiscal } from '@/lib/docFiscal';
 
 // Ficha extendida (formulario fisico "DATOS DE CLIENTE") — solo empresas dealer.
 const emptyFicha = () => ({
@@ -238,6 +239,16 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     return true;
   };
 
+  // Crédito fiscal (y especial/gubernamental) exige un RNC de 9 dígitos o una
+  // cédula de 11; si no, la factura electrónica sale como consumo. Se avisa al
+  // guardar (no bloquea: un cliente viejo con el dato malo se puede seguir
+  // editando, por ejemplo el teléfono).
+  const confirmarDocFiscal = () => {
+    const problema = problemaDocFiscal(formData.rnc, formData.tipo_ncf);
+    if (!problema) return true;
+    return window.confirm(`${problema}\n\nCon el tipo de comprobante "Crédito Fiscal" (o especial/gubernamental) hace falta un RNC o cédula válido; si no, la factura electrónica sale como consumo.\n\nCancelar = corregir el RNC (pestaña Información Personal) o cambiar el Tipo NCF a 02 - Consumo.\nAceptar = guardar así.`);
+  };
+
   // Evita que Enter cierre/envíe el formulario desde un input
   // (en textarea Enter sigue funcionando para saltar de línea).
   const handleKeyDown = (e) => {
@@ -259,6 +270,7 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     // Solo se guarda cuando el usuario está en la última pestaña.
     if (!isLastTab) { handleNext(); return; }
     if (!validatePersonal()) return;
+    if (!confirmarDocFiscal()) return;
     setIsSubmitting(true);
 
     const dataToSubmit = {

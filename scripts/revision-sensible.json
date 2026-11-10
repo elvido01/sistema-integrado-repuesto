@@ -336,11 +336,11 @@
     "src/components/ventas/ProductSearchModal.jsx": "17352986c94c36b2",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "4dcf873fcfbe610a",
-    "src/components/ventas/VentasHeader.jsx": "5f2e5eb96ffe733b",
+    "src/components/ventas/VentasHeader.jsx": "3693b8bbec6ef90f",
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "be607d0700760913",
+    "src/hooks/useVentas.js": "260e8c9186d7572d",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "97f3c92096c63647",
+    "src/pages/VentasPage.jsx": "1a5660697d4c8781",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -419,7 +419,8 @@
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
     "src/lib/compraLinea.js": "23cb74e4cfc96c56",
     "src/components/ventas/VarianteVentaModal.jsx": "b5614dae50ceb98e",
-    "sql/ecf_quitar_secuencia.sql": "1421b83e85017acd"
+    "sql/ecf_quitar_secuencia.sql": "1421b83e85017acd",
+    "src/lib/docFiscal.js": "11a1686c5671f4fe"
   },
   "historial": [
     {
@@ -705,6 +706,16 @@
       "archivos": [
         "src/components/ventas/ProductSearchModal.jsx",
         "src/hooks/useVentas.js",
+        "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-10",
+      "nota": "code-review high: 9 hallazgos; arreglados 6 (F10 pregunta antes de grabar consumo a un cliente credito fiscal con RNC invalido, la ficha avisa y no bloquea editar clientes viejos, mensaje de todo ceros, mensaje sin decir consumo para NCF papel, VentasPage usa docFiscalValido, archivos nuevos en el commit). Quedan: refresco del aviso sin volver a escoger el cliente; regla copiada del builder (igual criterio, con prueba)",
+      "archivos": [
+        "src/components/ventas/VentasHeader.jsx",
+        "src/hooks/useVentas.js",
+        "src/lib/docFiscal.js",
         "src/pages/VentasPage.jsx"
       ]
     }

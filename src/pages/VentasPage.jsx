@@ -26,6 +26,7 @@ import { Gift, Loader2, X } from 'lucide-react';
 import { nombreCanal } from '@/lib/canalesOrigen';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { esClienteGenerico } from '@/lib/clienteGenerico';
+import { docFiscalValido, tipoExigeRnc } from '@/lib/docFiscal';
 import { useLayout } from '@/contexts/LayoutContext';
 
 const VentasPage = () => {
@@ -549,9 +550,8 @@ const VentasPage = () => {
     // RD$250,000 o más si el comprador no está identificado, y el número queda
     // gastado (D Mario FT-6, E320000000002). Se frena antes de grabar.
     // Cédula/RNC (9 u 11 dígitos) o pasaporte (va como IdentificadorExtranjero).
-    const idCliente = String(cliente?.rnc || '').replace(/\D/g, '');
     const pasaporte = String(cliente?.rnc || '').toUpperCase().replace(/[\s-]/g, '');
-    const clienteIdentificado = ((idCliente.length === 9 || idCliente.length === 11) && !/^0+$/.test(idCliente))
+    const clienteIdentificado = docFiscalValido(cliente?.rnc)
       || (/^[A-Z0-9]{5,20}$/.test(pasaporte) && /[A-Z]/.test(pasaporte) && /[1-9]/.test(pasaporte));
     if (fiscalActivo && fiscalModo === 'produccion' && Number(totals?.totalFactura || 0) >= 250000 && !clienteIdentificado) {
       toast({
@@ -561,6 +561,13 @@ const VentasPage = () => {
         duration: 9000,
       });
       return;
+    }
+    // (10/11/2026) Cliente marcado crédito fiscal con RNC/cédula inválido: la
+    // factura electrónica sale como CONSUMO (E32) y el cliente pierde su
+    // crédito fiscal. Se pregunta antes de gastar el número.
+    if (fiscalActivo && fiscalModo === 'produccion' && tipoExigeRnc(cliente?.tipo_ncf) && !docFiscalValido(cliente?.rnc)) {
+      const ok = window.confirm(`${cliente?.nombre || 'El cliente'} está marcado CRÉDITO FISCAL, pero su RNC/cédula (${cliente?.rnc || 'vacío'}) no es válido: un RNC lleva 9 dígitos y una cédula 11.\n\nSi grabas así, la factura sale como CONSUMO (E32).\n\nAceptar = grabar como consumo.\nCancelar = corregir el RNC en la ficha del cliente y volver a escogerlo.`);
+      if (!ok) return;
     }
     const activeVendedor = vendedores.find(v => v.id === selectedVendedor);
     handleSave(async (facturaData, marca) => {
