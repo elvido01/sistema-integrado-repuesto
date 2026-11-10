@@ -308,7 +308,7 @@
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
     "src/components/configuracion/DgiiRecepcionRunner.jsx": "1d70110142f92c7e",
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
-    "src/components/configuracion/DgiiSecuenciasEcf.jsx": "8e721645f8743464",
+    "src/components/configuracion/DgiiSecuenciasEcf.jsx": "2998c13ae91abc82",
     "src/components/configuracion/DgiiSimulacionRunner.jsx": "d00cb0b02e42771b",
     "src/components/configuracion/IntegracionFiscalSettings.jsx": "9481b3e1e437658c",
     "src/components/dashboard/FinancialAlert.jsx": "94f13ee0e3bbaa79",
@@ -418,7 +418,8 @@
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
     "src/lib/compraLinea.js": "23cb74e4cfc96c56",
-    "src/components/ventas/VarianteVentaModal.jsx": "b5614dae50ceb98e"
+    "src/components/ventas/VarianteVentaModal.jsx": "b5614dae50ceb98e",
+    "sql/ecf_quitar_secuencia.sql": "1421b83e85017acd"
   },
   "historial": [
     {
@@ -688,6 +689,14 @@
       "archivos": [
         "src/components/ventas/VarianteVentaModal.jsx",
         "src/hooks/useVentas.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-10",
+      "nota": "code-review high: 9 hallazgos; arreglados 7 (desactivar en vez de borrar para conservar el contador, chequeo amplio de comprobantes ncf/encf/encf_asignado, rol de la empresa activa, boton solo en rango desde 1 sin usar, aviso E31/E32, try/finally, bloqueo guardar/quitar); RNC compartido entre empresas queda igual que ecf_cargar_secuencia; auditoria por fila conservada + RAISE LOG",
+      "archivos": [
+        "sql/ecf_quitar_secuencia.sql",
+        "src/components/configuracion/DgiiSecuenciasEcf.jsx"
       ]
     }
   ]

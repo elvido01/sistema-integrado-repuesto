@@ -19,7 +19,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Hash, Loader2, Plus } from 'lucide-react';
+import { Hash, Loader2, Plus, Trash2 } from 'lucide-react';
 import { encf, leerSecuencia, validarRango, sugerirDesde } from '@/lib/ecfSecuencias';
 
 const TIPOS = [
@@ -54,7 +54,8 @@ export default function DgiiSecuenciasEcf() {
     setCargando(true);
     const { data, error } = await supabase.rpc('ecf_secuencias_mias');
     setErrorLectura(error ? error.message : null);
-    if (!error) setFilas(data || []);
+    // Un rango quitado queda desactivado (guarda su contador) y no se muestra.
+    if (!error) setFilas((data || []).filter((x) => x.activo !== false));
     setCargando(false);
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
@@ -94,8 +95,9 @@ export default function DgiiSecuenciasEcf() {
       toast({ variant: 'destructive', title: 'No se guardó', description: 'No se pudieron leer las secuencias actuales. Reintenta.' });
       return;
     }
-    setFilas(frescas || []);
-    const viva = (frescas || []).find((x) => String(x.tipo_ecf) === String(tipo)) || null;
+    const vivas = (frescas || []).filter((x) => x.activo !== false);
+    setFilas(vivas);
+    const viva = vivas.find((x) => String(x.tipo_ecf) === String(tipo)) || null;
     const r = validarRango(tipo, desde, hasta, viva);
     if (r.error) {
       toast({ variant: 'destructive', title: 'Revisa el rango', description: r.error });
@@ -129,6 +131,32 @@ Si es una autorización NUEVA de la DGII, no la cargues así: pon «Desde» en $
     cargar();
   };
 
+  // (10/11/2026) Quitar un rango cargado por error. Solo si nunca se usó:
+  // la base lo vuelve a comprobar (sql/ecf_quitar_secuencia.sql).
+  const [quitando, setQuitando] = useState(null);
+  const quitar = async (f) => {
+    if (quitando || guardando) return;
+    const clave = ['31', '32'].includes(String(f.tipo_ecf))
+      ? `\n\nOJO: sin E${f.tipo_ecf} no se pueden emitir ${String(f.tipo_ecf) === '31' ? 'facturas de crédito fiscal' : 'facturas de consumo'} electrónicas hasta que cargues un rango autorizado.`
+      : '';
+    if (!window.confirm(`¿Quitar el rango E${f.tipo_ecf} (${encf(f.tipo_ecf, f.desde)} a ${encf(f.tipo_ecf, f.hasta)})?\n\nHazlo solo si se cargó por error (por ejemplo, un tipo que la DGII no te autorizó).${clave}`)) return;
+    setQuitando(f.tipo_ecf);
+    let error = null;
+    try {
+      ({ error } = await supabase.rpc('ecf_quitar_secuencia', { p_tipo: String(f.tipo_ecf) }));
+    } catch (e) {
+      error = e;
+    } finally {
+      setQuitando(null);
+    }
+    if (error) {
+      toast({ variant: 'destructive', title: 'No se quitó', description: error.message });
+      return;
+    }
+    toast({ title: `Rango E${f.tipo_ecf} quitado` });
+    cargar();
+  };
+
   return (
     <div className="border-t pt-4 space-y-3">
       <Label className="text-[11px] font-bold text-gray-700 uppercase flex items-center gap-1">
@@ -138,7 +166,7 @@ Si es una autorización NUEVA de la DGII, no la cargues así: pon «Desde» en $
         <p>Después de certificarte, pide tus secuencias en la <b>Oficina Virtual de la DGII</b> (menú de Facturación Electrónica, solicitud de secuencias e-NCF).</p>
         <p>Cuando te las aprueben, pon aquí cada rango tal como te lo dio la DGII: el tipo, el primer número y el último.
           Puedes escribir el número (600) o pegar el e-NCF completo (E320000000600).
-          Si un rango se tecleó mal, se corrige dejando el mismo «Desde» y poniendo el «Hasta» bueno.
+          Si un rango se tecleó mal, se corrige dejando el mismo «Desde» y poniendo el «Hasta» bueno. Si cargaste un tipo que no te autorizaron, quítalo con el zafacón (solo mientras no se haya usado ningún número).
           La <b>fecha de vencimiento</b> va arriba, en «Vencimiento secuencia e-CF» (la exigen los E31).</p>
         <p>Si te autorizan más números de un tipo que ya tienes, cárgalos <b>cuando se acaben los actuales</b>: el rango nuevo reemplaza al anterior y los números que le quedaban ya no se usan (cada autorización vence por su lado). Nunca se repite un número.</p>
       </div>
@@ -165,6 +193,7 @@ Si es una autorización NUEVA de la DGII, no la cargues así: pon «Desde» en $
                 <th className="px-2 py-1">Hasta</th>
                 <th className="px-2 py-1">Próximo</th>
                 <th className="px-2 py-1 text-right">Quedan</th>
+                <th className="px-2 py-1 w-8" />
               </tr>
             </thead>
             <tbody>
@@ -180,6 +209,15 @@ Si es una autorización NUEVA de la DGII, no la cargues así: pon «Desde» en $
                     <td className={`px-2 py-1 text-right font-bold ${poco ? 'text-red-600' : 'text-emerald-700'}`}>
                       {Number(f.quedan).toLocaleString('es-DO')}{poco ? ' · pide más' : ''}
                     </td>
+                    <td className="px-1 py-1 text-right">
+                      {Number(f.desde) === 1 && Number(f.ultimo) < Number(f.desde) && (
+                        <button type="button" onClick={() => quitar(f)} disabled={!!quitando || guardando}
+                          title="Quitar este rango (solo si se cargó por error y no se ha usado)"
+                          className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
+                          {quitando === f.tipo_ecf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -191,7 +229,7 @@ Si es una autorización NUEVA de la DGII, no la cargues así: pon «Desde» en $
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
         <div className="space-y-1">
           <Label className="text-[10px] font-bold text-gray-600 uppercase">Tipo</Label>
-          <select value={tipo} onChange={(e) => cambiarTipo(e.target.value)} disabled={guardando}
+          <select value={tipo} onChange={(e) => cambiarTipo(e.target.value)} disabled={guardando || !!quitando}
             className="w-full h-10 rounded-md border border-input bg-white px-2 text-sm">
             {TIPOS.map((t) => <option key={t.v} value={t.v}>{t.t}</option>)}
           </select>
@@ -199,14 +237,14 @@ Si es una autorización NUEVA de la DGII, no la cargues así: pon «Desde» en $
         <div className="space-y-1">
           <Label className="text-[10px] font-bold text-gray-600 uppercase">Desde (número)</Label>
           <Input inputMode="numeric" value={desde} onChange={(e) => { setDesdeTocado(true); setDesde(e.target.value.slice(0, 20)); }}
-            placeholder="primer nº" autoComplete="off" disabled={guardando} />
+            placeholder="primer nº" autoComplete="off" disabled={guardando || !!quitando} />
         </div>
         <div className="space-y-1">
           <Label className="text-[10px] font-bold text-gray-600 uppercase">Hasta (número)</Label>
           <Input inputMode="numeric" value={hasta} onChange={(e) => setHasta(e.target.value.slice(0, 20))}
-            placeholder="último nº" autoComplete="off" disabled={guardando} />
+            placeholder="último nº" autoComplete="off" disabled={guardando || !!quitando} />
         </div>
-        <Button onClick={guardar} disabled={guardando || cargando || !!errorLectura || !rango || !!rango.error} className="h-10">
+        <Button onClick={guardar} disabled={guardando || !!quitando || cargando || !!errorLectura || !rango || !!rango.error} className="h-10">
           {guardando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />} Guardar rango
         </Button>
       </div>
