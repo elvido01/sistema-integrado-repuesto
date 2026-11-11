@@ -138,13 +138,26 @@ Deno.serve(async (req: Request) => {
         if (!GEMINI_API_KEY) throw new Error('Falta GEMINI_API_KEY en las variables de la función.');
 
         const FORMATO = `{
-  "invoice": { "supplier_name": "", "supplier_rnc": "", "invoice_number": "", "ncf": "", "date": "YYYY-MM-DD", "reference": "" },
+  "invoice": { "supplier_name": "", "supplier_rnc": "", "invoice_number": "", "ncf": "", "date": "YYYY-MM-DD", "reference": "", "discount_pct": 0, "subtotal": 0, "total": 0 },
   "items": [ { "code": "", "reference": "", "description": "", "qty": 1, "unit": "UND", "unit_cost": 0, "discount_pct": 0, "itbis_pct": 0.18, "line_total": 0 } ]
 }`;
 
+        // (11/11/2026) Reglas que faltaban: el descuento GENERAL del pie no
+        // tenía dónde ir ("Descuento 15%" de G&G se perdía), y leyendo la
+        // imagen se cruzaban cantidades y precios entre filas parecidas.
+        const REGLAS = `REGLAS:
+- Cada fila de la tabla es UNA pieza: código, cantidad, precio e importe salen de la MISMA fila. No mezcles valores de filas vecinas aunque las descripciones se parezcan.
+- unit_cost es el precio unitario TAL COMO ESTÁ IMPRESO en la fila, antes de cualquier descuento. line_total es el importe impreso de esa fila. No los recalcules ni los cambies para que cuadren: si al leer no cuadran, vuelve a mirar la fila, pero devuelve lo impreso.
+- No inventes ni repitas filas: devuelve tantas como tenga la tabla, en el mismo orden.
+- code y reference siempre como texto entre comillas, con sus ceros a la izquierda ("003730", no 3730).
+- discount_pct de cada item: el PORCENTAJE de descuento propio de esa línea (15 para 15%), o 0 si no tiene.
+- invoice.discount_pct: el PORCENTAJE del descuento GENERAL del pie (por ejemplo "Descuento 15%" junto al subtotal → 15), o 0 si no hay. Nunca el monto en pesos.
+- invoice.subtotal: el subtotal del pie ANTES del descuento general y del ITBIS. invoice.total: el total final impreso.`;
+
         const promptTexto = `Extrae los datos de esta factura de repuestos en formato JSON puro.
 Extrae: Nombre Suplidor, RNC, Número Factura, NCF, Fecha (YYYY-MM-DD).
-Para los items extrae: Código, Referencia, Descripción, Cantidad, Unidad, Costo (neto), Descuento %, ITBIS % e Importe.
+Para los items extrae: Código, Referencia, Descripción, Cantidad, Unidad, Costo (precio unitario impreso), Descuento %, ITBIS % e Importe.
+${REGLAS}
 
 OCR TEXT:
 ${fullOcrText}
@@ -158,14 +171,15 @@ ${FORMATO}`;
         const promptImagen = `Estas imágenes son las páginas de UNA factura de repuestos (${imagenes.length} página(s)).
 Léelas y devuelve JSON puro, sin explicaciones y sin markdown.
 Extrae: Nombre Suplidor, RNC, Número Factura, NCF, Fecha (YYYY-MM-DD).
-Para los items extrae: Código, Referencia, Descripción, Cantidad, Unidad, Costo (neto), Descuento %, ITBIS % e Importe.
+Para los items extrae: Código, Referencia, Descripción, Cantidad, Unidad, Costo (precio unitario impreso), Descuento %, ITBIS % e Importe.
 Respeta los números tal como están impresos: no redondees ni recalcules.
+${REGLAS}
 Incluye además "ocr_text" con TODO el texto que leíste, línea por línea, en el orden de la página.
 
 JSON FORMAT:
 {
   "ocr_text": "",
-  "invoice": { "supplier_name": "", "supplier_rnc": "", "invoice_number": "", "ncf": "", "date": "YYYY-MM-DD", "reference": "" },
+  "invoice": { "supplier_name": "", "supplier_rnc": "", "invoice_number": "", "ncf": "", "date": "YYYY-MM-DD", "reference": "", "discount_pct": 0, "subtotal": 0, "total": 0 },
   "items": [ { "code": "", "reference": "", "description": "", "qty": 1, "unit": "UND", "unit_cost": 0, "discount_pct": 0, "itbis_pct": 0.18, "line_total": 0 } ]
 }`;
 
@@ -208,7 +222,7 @@ JSON FORMAT:
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 contents: [{ parts: partes }],
-                                generationConfig: { temperature: 0.1 },
+                                generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
                             }),
                         }
                     );

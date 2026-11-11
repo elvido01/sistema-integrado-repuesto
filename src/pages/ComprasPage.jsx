@@ -968,8 +968,18 @@ const ComprasPage = () => {
       fecha: invoice.date ? new Date(`${invoice.date}T12:00:00`) : prev.fecha,
     }));
 
+    // Descuento general al pie de la factura, en fracción. Se pide en
+    // porcentaje (15 = 15%); un valor menor que 1 se toma como ya en fracción.
+    let descGeneral = Number(invoice?.discount_pct) || 0;
+    if (descGeneral >= 1) descGeneral = descGeneral / 100;
+    if (!(descGeneral > 0 && descGeneral < 1)) descGeneral = 0;
+
     // 3. Procesar Items y buscar en Inventario
     const processedItems = await Promise.all(extractedItems.map(async (item) => {
+      // Con la respuesta en JSON, un código de solo números puede venir como
+      // número (3730): se pasa a texto para no romper la lectura.
+      if (item.code != null && typeof item.code !== 'string') item.code = String(item.code);
+      if (item.reference != null && typeof item.reference !== 'string') item.reference = String(item.reference);
       let producto_id = null;
       let matched = false;
       let descripcion = item.description || '';
@@ -978,8 +988,12 @@ const ComprasPage = () => {
       let itbis_pct = item.itbis_pct || 0.18;
       if (itbis_pct > 1) itbis_pct = itbis_pct / 100;
 
-      let discount_pct = item.discount_pct || 0;
-      if (discount_pct > 1) discount_pct = discount_pct / 100;
+      let discount_pct = Number(item.discount_pct) || 0;
+      if (discount_pct >= 1) discount_pct = discount_pct / 100;
+      if (!(discount_pct > 0 && discount_pct < 1)) discount_pct = 0;
+      // (11/11/2026) Descuento general del pie ("Descuento 15%"): va encima
+      // del descuento propio de cada línea (10% y luego 15% = 23.5%).
+      if (descGeneral > 0) discount_pct = 1 - (1 - discount_pct) * (1 - descGeneral);
 
       let productoCosto = 0;
       let productoItbis = null;
@@ -1091,10 +1105,32 @@ const ComprasPage = () => {
 
     setDetalles(processedItems);
 
+    // Fila por fila: cantidad × precio contra el importe impreso de la fila
+    // (bruto, menos su descuento propio, o con ITBIS: cualquiera de las
+    // formas en que lo imprimen). Si no cuadra con ninguna, esa fila se leyó
+    // mal (cantidad o precio cruzado con la de al lado) y se dice cuál.
+    const cerca = (a, b) => Math.abs(a - b) <= Math.max(1, Math.abs(b) * 0.01);
+    const filasMal = extractedItems.filter((it) => {
+      const total = Number(it.line_total) || 0;
+      if (!(total > 0)) return false;
+      const bruto = (Number(it.qty) || 0) * (Number(it.unit_cost) || 0);
+      let d = Number(it.discount_pct) || 0;
+      if (d >= 1) d /= 100;
+      let itb = Number(it.itbis_pct) || 0;
+      if (itb >= 1) itb /= 100;
+      const neto = bruto * (1 - d);
+      return ![bruto, neto, bruto * (1 + itb), neto * (1 + itb)].some((v) => cerca(v, total));
+    }).map((it) => it.code || it.description).filter(Boolean);
+    const noCuadra = filasMal.length > 0;
+
     toast({
-      title: "Factura Procesada",
+      title: noCuadra ? 'Factura leída: revisa las líneas' : 'Factura Procesada',
+      variant: noCuadra ? 'destructive' : undefined,
+      duration: noCuadra ? 12000 : undefined,
       description: [
         `${processedItems.length} items.`,
+        descGeneral > 0 ? `Se aplicó el descuento general de ${Math.round(descGeneral * 10000) / 100}% a las líneas sin descuento propio.` : '',
+        noCuadra ? `Cantidad × precio no da el importe impreso en: ${filasMal.slice(0, 6).join(', ')}${filasMal.length > 6 ? ` y ${filasMal.length - 6} más` : ''}. Compáralas con la factura.` : '',
         lineasAbiertas > 0 ? `${lineasAbiertas} venian en paquete y se abrieron a unidades.` : '',
         lineasPorMemoria > 0 ? `${lineasPorMemoria} se reconocieron por el codigo del suplidor.` : '',
         'Revise los datos.',
