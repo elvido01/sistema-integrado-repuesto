@@ -138,8 +138,13 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
-  doc.text(tituloComprobante(factura), boxX + boxW / 2, by + 4, { align: 'center', maxWidth: boxW });
-  by += 7;
+  // (11/11/2026) "FACTURA DE CRÉDITO FISCAL ELECTRÓNICA" no cabe en una línea:
+  // la segunda se montaba sobre la primera fila del recuadro (BRIMAR). El
+  // recuadro baja según las líneas que ocupe el título.
+  const lineasTitulo = doc.splitTextToSize(tituloComprobante(factura), boxW - 4);
+  const altoLineaTitulo = (doc.getFontSize() * 1.15) / doc.internal.scaleFactor;
+  doc.text(lineasTitulo, boxX + boxW / 2, by + 4, { align: 'center', lineHeightFactor: 1.15 });
+  by += 7 + (lineasTitulo.length - 1) * altoLineaTitulo; // una línea: igual que antes
 
   const filasDoc = [
     ['No', numeroStr],
@@ -247,6 +252,9 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
   });
 
   y = doc.lastAutoTable.finalY + 5;
+  // (11/11/2026) Totales + QR del e-CF + firmas ocupan ~75 mm: si no caben,
+  // van en hoja nueva (antes se salían por debajo y el QR no salía).
+  if (y > H - 80) { doc.addPage(); y = 20; }
 
   // ---------- TOTALES ----------
   const totalRow = (etiqueta, valor, negrita = false, size = 9) => {

@@ -286,7 +286,7 @@
     "src/components/common/pdf/comisionPDF.js": "9670fced39020a00",
     "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
     "src/components/common/pdf/devolucionPDF.js": "91b42af5e95a7340",
-    "src/components/common/pdf/facturaCartaPDF.js": "19ef9ee58303cd13",
+    "src/components/common/pdf/facturaCartaPDF.js": "5f3318bd00fa0150",
     "src/components/common/pdf/facturaPDF.js": "6b7580e23cb79eda",
     "src/components/common/pdf/pagoCompromisoPDF.js": "b6467cc47e39114e",
     "src/components/common/pdf/pagoSuplidorPDF.js": "824f535b5c3e07e3",
@@ -765,6 +765,13 @@
         "src/pages/Configuracion/DgiiMonitorPage.jsx",
         "supabase/functions/emitir-fiscal/dgii_xml_builder.ts",
         "supabase/functions/emitir-fiscal/index.ts"
+      ]
+    },
+    {
+      "fecha": "2026-11-11",
+      "nota": "code-review high: facturaCartaPDF titulo en varias lineas baja el recuadro (alto de linea derivado de la fuente, margen 4 mm, una linea igual que antes); totales+QR+firmas pasan a hoja nueva si no caben.",
+      "archivos": [
+        "src/components/common/pdf/facturaCartaPDF.js"
       ]
     }
   ]
