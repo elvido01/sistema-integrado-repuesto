@@ -16,7 +16,7 @@
 // La referencia viaja dentro de la descripción ("… — PAGO DE 5%") para que
 // salga en todos los formatos de impresión sin tocarlos.
 // =====================================================================
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Plus, Trash2, Percent, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -36,6 +36,13 @@ const SEP = ' — ';
 const MAX_NOMBRE = 80;
 const largo = (t) => [...String(t || '')].length;
 const largoRef = (ref) => (String(ref || '').trim() ? largo(ref) + SEP.length : 0);
+// (11/11/2026) El cotejo «incluyen ITBIS» se recuerda por empresa en esta
+// computadora, aunque se salga del sistema, hasta que se cambie a mano.
+const CLAVE_CON_ITBIS = 'servicios_incluyen_itbis_';
+const leerConItbis = (tenantId) => {
+  if (!tenantId) return true;
+  try { const v = localStorage.getItem(CLAVE_CON_ITBIS + tenantId); return v === null ? true : v === '1'; } catch { return true; }
+};
 const recortar = (t, max) => [...String(t || '')].slice(0, Math.max(0, max)).join('');
 const partir = (it) => {
   if (it._desc !== undefined) return { desc: it._desc, ref: it._ref || '' };
@@ -53,7 +60,12 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
   const { toast } = useToast();
   const [catalogo, setCatalogo] = useState([]);
   const [general, setGeneral] = useState(null);
-  const [conItbis, setConItbis] = useState(true);     // el monto que se escribe ya trae el ITBIS
+  // El monto que se escribe ya trae el ITBIS. (11/11/2026) Se recuerda como se
+  // dejó la última vez en esta computadora y empresa, aunque se salga del
+  // sistema, hasta que se cambie a mano.
+  const [conItbis, setConItbis] = useState(() => leerConItbis(tenantId));
+  const conItbisRef = useRef(conItbis);
+  conItbisRef.current = conItbis;
   const [calc, setCalc] = useState(null);            // { lid, base, pct }
   const [cfg, setCfg] = useState(null);
   const [cargando, setCargando] = useState(true);
@@ -129,11 +141,25 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
 
   // Cambiar el cotejo vuelve a leer SOLO los montos tecleados: 52,000 sin
   // cotejo = 52,000 + 18%.
-  const cambiarConItbis = (v) => {
+  // guardar=false: se aplica la preferencia guardada (no la cambió el usuario).
+  const cambiarConItbis = (v, guardar = true) => {
+    if (guardar && tenantId) {
+      try { localStorage.setItem(CLAVE_CON_ITBIS + tenantId, v ? '1' : '0'); } catch { /* sin storage: solo esta vez */ }
+    }
     setConItbis(v);
     setItems((prev) => prev.map((it, i) => (it._tecleado
       ? armar({ ...it, _lid: it._lid || `x${i}`, _conItbis: v }, {}) : it)));
   };
+
+  // La sesión puede llegar sin empresa en el primer render: cuando llega, se
+  // aplica SU preferencia y se releen las líneas ya tecleadas (el cotejo y
+  // los montos nunca quedan distintos).
+  useEffect(() => {
+    if (!tenantId) return;
+    const v = leerConItbis(tenantId);
+    if (v !== conItbisRef.current) cambiarConItbis(v, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
 
   const agregar = () => {
     if (!general) { toast({ variant: 'destructive', title: 'Todavía cargando el servicio general…' }); return; }
@@ -193,9 +219,12 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
     <div className="flex flex-col">
       <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-1.5 text-xs">
         <span className="font-bold uppercase text-slate-600">Detalle de la factura</span>
-        <label className="flex items-center gap-1.5 text-slate-600">
+        {/* Apagado se marca en ámbar: se recuerda entre sesiones y cambia el total (+18%). */}
+        <label className={`flex items-center gap-1.5 rounded px-1.5 ${conItbis ? 'text-slate-600' : 'bg-amber-100 font-semibold text-amber-900 ring-1 ring-amber-300'}`}
+          title="Se recuerda como lo dejes en esta computadora, hasta que lo cambies">
           <input type="checkbox" checked={conItbis} onChange={(e) => cambiarConItbis(e.target.checked)} />
           Los montos que escribo <b>incluyen ITBIS</b>
+          {!conItbis && <span>— se le suma el 18%</span>}
         </label>
       </div>
 

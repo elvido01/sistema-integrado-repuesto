@@ -332,7 +332,7 @@
     "src/components/ventas/CotizacionSearchModal.jsx": "ea0cda9ca966e217",
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
-    "src/components/ventas/LineasServicios.jsx": "b19a941b77e3c2f4",
+    "src/components/ventas/LineasServicios.jsx": "56e232d74c5e6d84",
     "src/components/ventas/ProductSearchModal.jsx": "17352986c94c36b2",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "4dcf873fcfbe610a",
@@ -793,6 +793,13 @@
       "archivos": [
         "src/components/ventas/VentasHeader.jsx",
         "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-11",
+      "nota": "code-review high: cotejo incluyen ITBIS recordado por empresa en la PC; al llegar la empresa se aplica y se releen las lineas tecleadas; no se guarda sin empresa; apagado se marca en ambar.",
+      "archivos": [
+        "src/components/ventas/LineasServicios.jsx"
       ]
     }
   ]
