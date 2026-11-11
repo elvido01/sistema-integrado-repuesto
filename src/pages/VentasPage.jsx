@@ -85,6 +85,7 @@ const VentasPage = () => {
     manualClienteNombre,
     setManualClienteNombre,
     ncfPreview,
+    loadNcfPreview,
     pideCanalOrigen,
     canalOrigen,
     agregarProductoPorId,
@@ -591,6 +592,36 @@ const VentasPage = () => {
         description: 'Para facturas de RD$250,000 o más la DGII exige identificar al comprador. Elige o crea el cliente con su documento y vuelve a pulsar F10.',
         duration: 9000,
       });
+      return;
+    }
+    // (11/11/2026) Ya se puede encender producción con E31 o E32 sola (BRIMAR
+    // solo tiene E31). Si esta venta cae en el tipo que la empresa no tiene (o
+    // está agotado), la DGII no la puede emitir y la cola la reintentaría en
+    // vano: se frena aquí, antes de grabar.
+    // Editar una factura ya hecha no toma número nuevo: no aplica. Y el aviso
+    // tiene que ser del tipo que le toca a ESTE cliente (mismo criterio que
+    // loadNcfPreview), no uno viejo de otro cliente.
+    const tipoCliEcf = String(cliente?.tipo_ncf || '').toUpperCase().replace(/^[BE]/, '');
+    const tipoEsperado = !docFiscalValido(cliente?.rnc) || tipoCliEcf === '02' || tipoCliEcf === '32' ? '32' : '31';
+    const avisoSec = String(ncfPreview?.aviso || '');
+    if (fiscalActivo && fiscalModo === 'produccion' && !editingFacturaId && ncfPreview?.electronico
+        && !ncfPreview?.ncf && ncfPreview?.tipo_ncf === tipoEsperado
+        && /^(Sin secuencia|E\d+ agotada|E\d+ mal cargada)/.test(avisoSec)) {
+      const t = ncfPreview.tipo_ncf;
+      const nombre = empresa?.nombre || 'La empresa';
+      const como = avisoSec.startsWith('Sin secuencia') ? `no tiene números E${t} cargados`
+        : avisoSec.includes('agotada') ? `ya gastó todos sus números E${t}` : `tiene la secuencia E${t} mal cargada`;
+      toast({
+        variant: 'destructive',
+        title: `No se puede facturar: ${nombre} ${como}`,
+        description: t === '32'
+          ? 'Esta venta sale como CONSUMO (E32). Escoge un cliente con RNC o cédula válida marcado crédito fiscal, o carga/corrige la E32 en Configuración → Secuencias e-NCF autorizadas.'
+          : `Esta venta sale como CRÉDITO FISCAL (E${t}). Carga/corrige la E${t} en Configuración → Secuencias e-NCF autorizadas, o márcale al cliente consumo.`,
+        duration: 10000,
+      });
+      // Se vuelve a leer la secuencia: si la acaban de cargar en
+      // Configuración, el próximo F10 ya pasa sin re-escoger al cliente.
+      loadNcfPreview?.(cliente?.tipo_ncf || '02', cliente);
       return;
     }
     // (10/11/2026) Cliente marcado crédito fiscal con RNC/cédula inválido: la

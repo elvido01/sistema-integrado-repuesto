@@ -87,10 +87,12 @@ async function resolveEmisorConfig(supabase, tenantId, integConfig) {
 // falta, guarda los demás datos, se queda en pruebas y dice qué falta. Al
 // encender se anota config.produccion_desde: la cola de reintentos nunca emite
 // una venta hecha antes (ya se entregó sin comprobante).
-// E32 es obligatoria (casi toda venta es consumo). E31/E34 no bloquean: hay
-// negocios autorizados solo para consumo; si faltan se avisa al encender.
+// (11/11/2026) Hace falta E31 o E32, no las dos: hay negocios autorizados solo
+// para consumo y otros (BRIMAR) que solo facturan a empresas con RNC. La que
+// falte se avisa al encender, igual que la E34.
 const SECUENCIAS_AVISO = [
-  ["31", "E31 (crédito fiscal): las ventas a clientes con RNC saldrán sin comprobante"],
+  ["31", "E31 (crédito fiscal): las ventas a clientes con RNC o cédula válida (salvo los marcados consumo) no se podrán facturar"],
+  ["32", "E32 (consumo): las ventas a consumidor (cliente sin RNC o cédula válida, o marcado consumo) no se podrán facturar"],
   ["34", "E34 (nota de crédito): las devoluciones no llevarán nota"],
 ];
 
@@ -119,8 +121,10 @@ async function requisitosProduccion(supabase, tenantId, config, soloCert = false
     .select("tipo_ecf, hasta, ultimo")
     .eq("tenant_id", tenantId).eq("ambiente", "Produccion").eq("activo", true);
   tipos = (secs || []).filter((x) => Number(x.ultimo || 0) < Number(x.hasta || 0)).map((x) => x.tipo_ecf).sort();
-  if (!tipos.includes("32")) faltas.push("la secuencia de PRODUCCIÓN E32 (consumo) con números disponibles (cárgala en «Secuencias e-NCF autorizadas»)");
-  for (const [t, txt] of SECUENCIAS_AVISO) if (!tipos.includes(t)) avisos.push(`sin secuencia ${txt}`);
+  if (!tipos.includes("31") && !tipos.includes("32")) faltas.push("una secuencia de PRODUCCIÓN E31 (crédito fiscal) o E32 (consumo) con números disponibles (cárgala en «Secuencias e-NCF autorizadas»)");
+  // Sin ninguna de las dos ya es una falta: no se repite como aviso.
+  const hayVenta = tipos.includes("31") || tipos.includes("32");
+  for (const [t, txt] of SECUENCIAS_AVISO) if (!tipos.includes(t) && (hayVenta || t === "34")) avisos.push(`sin secuencia ${txt}`);
   }
 
   let cert = null, privateKey = null;

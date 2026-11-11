@@ -103,8 +103,30 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
     const l = it._lid || `x${i}`;
     if (l !== lid) return it;
     const { desc, ref } = partir(it);
-    return armar({ _lid: l, _desc: desc, _ref: ref, _monto: it._monto ?? n(it.precio) / factor, _conItbis: it._conItbis ?? conItbis, producto_id: it.producto_id, naturaleza: it.naturaleza }, cambios);
+    // (11/11/2026) El monto que se TECLEA se lee con el cotejo de ahora. Antes
+    // la línea se quedaba con el cotejo de cuando se abrió (BRIMAR: quitó el
+    // cotejo, escribió 52,000 y salió con el ITBIS dentro). Lo que no se teclea
+    // (precio del catálogo, comisión «más ITBIS», factura guardada) trae su
+    // propio _conItbis y el cotejo no lo cambia.
+    const tecleado = '_monto' in cambios && !('_conItbis' in cambios);
+    const extra = tecleado ? { _conItbis: conItbis, _tecleado: true } : {};
+    // Línea guardada (sin _monto): su total = precio × cantidad, con ITBIS.
+    const sinMonto = it._monto === undefined;
+    return armar({
+      _lid: l, _desc: desc, _ref: ref,
+      _monto: sinMonto ? (n(it.precio) * n(it.cantidad || 1)) / factor : it._monto,
+      _conItbis: sinMonto ? true : (it._conItbis ?? conItbis), _tecleado: it._tecleado,
+      producto_id: it.producto_id, naturaleza: it.naturaleza,
+    }, { ...cambios, ...extra });
   }));
+
+  // Cambiar el cotejo vuelve a leer SOLO los montos tecleados: 52,000 sin
+  // cotejo = 52,000 + 18%.
+  const cambiarConItbis = (v) => {
+    setConItbis(v);
+    setItems((prev) => prev.map((it, i) => (it._tecleado
+      ? armar({ ...it, _lid: it._lid || `x${i}`, _conItbis: v }, {}) : it)));
+  };
 
   const agregar = () => {
     if (!general) { toast({ variant: 'destructive', title: 'Todavía cargando el servicio general…' }); return; }
@@ -130,8 +152,10 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
       producto_id: pid,
       naturaleza: p?.naturaleza,
       _desc: fila?._desc || (p && p.codigo !== 'SERV-GENERAL' ? p.descripcion : ''),
-      _monto: n(fila?._monto) || n(p?.precio),
-      _conItbis: true,
+      // Lo ya tecleado se queda como se escribió; si no, el precio del catálogo (trae ITBIS).
+      ...(n(fila?._monto) && fila?._tecleado
+        ? { _monto: fila._monto, _conItbis: fila._conItbis ?? conItbis }
+        : { _monto: n(fila?._monto) || n(p?.precio), _conItbis: true, _tecleado: false }),
     });
   };
 
@@ -162,7 +186,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
       <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-1.5 text-xs">
         <span className="font-bold uppercase text-slate-600">Detalle de la factura</span>
         <label className="flex items-center gap-1.5 text-slate-600">
-          <input type="checkbox" checked={conItbis} onChange={(e) => setConItbis(e.target.checked)} />
+          <input type="checkbox" checked={conItbis} onChange={(e) => cambiarConItbis(e.target.checked)} />
           Los montos que escribo <b>incluyen ITBIS</b>
         </label>
       </div>
@@ -245,6 +269,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
                           _monto: (n(calc.base) * n(calc.pct) / 100).toFixed(2),
                           _ref: f._ref || `PAGO DE ${n(calc.pct)}%`,
                           _conItbis: false,   // la comisión es la base; el ITBIS va encima
+                          _tecleado: false,   // el cotejo no la cambia
                         });
                         setCalc(null);
                       }}>

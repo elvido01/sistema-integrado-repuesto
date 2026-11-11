@@ -181,7 +181,7 @@ Si es una autorización NUEVA de la DGII, no la cargues así: pon «Desde» en $
         </p>
       ) : filas.length === 0 ? (
         <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
-          Todavía no hay secuencias cargadas: no se pueden emitir facturas electrónicas en producción hasta que pongas al menos E31 y E32.
+          Todavía no hay secuencias cargadas: no se pueden emitir facturas electrónicas en producción hasta que pongas al menos la E31 (crédito fiscal) o la E32 (consumo).
         </p>
       ) : (
         <div className="overflow-x-auto border rounded">

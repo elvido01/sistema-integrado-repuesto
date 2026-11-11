@@ -308,7 +308,7 @@
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
     "src/components/configuracion/DgiiRecepcionRunner.jsx": "1d70110142f92c7e",
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
-    "src/components/configuracion/DgiiSecuenciasEcf.jsx": "2998c13ae91abc82",
+    "src/components/configuracion/DgiiSecuenciasEcf.jsx": "6c1cd4a119298802",
     "src/components/configuracion/DgiiSimulacionRunner.jsx": "d00cb0b02e42771b",
     "src/components/configuracion/IntegracionFiscalSettings.jsx": "9481b3e1e437658c",
     "src/components/dashboard/FinancialAlert.jsx": "94f13ee0e3bbaa79",
@@ -332,7 +332,7 @@
     "src/components/ventas/CotizacionSearchModal.jsx": "ea0cda9ca966e217",
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
-    "src/components/ventas/LineasServicios.jsx": "faaa9576a84fe5ce",
+    "src/components/ventas/LineasServicios.jsx": "e976aa55781292aa",
     "src/components/ventas/ProductSearchModal.jsx": "17352986c94c36b2",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "4dcf873fcfbe610a",
@@ -340,7 +340,7 @@
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "aafb786103f53a6f",
+    "src/hooks/useVentas.js": "a94c2d7d191eb439",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "831e39afb1b3ba1f",
+    "src/pages/VentasPage.jsx": "08fa278aaa550dcc",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -398,7 +398,7 @@
     "supabase/functions/emitir-fiscal/dgii_signer.ts": "3ab01a57d8c1f932",
     "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "56d1a888f4c748fd",
     "supabase/functions/emitir-fiscal/import_map.json": "3d5861c491100d4a",
-    "supabase/functions/emitir-fiscal/index.ts": "a3a683b6a13beab5",
+    "supabase/functions/emitir-fiscal/index.ts": "ee397c15a214f151",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
     "supabase/functions/motoflow-compras-advisor/index.ts": "e873b25160eded59",
     "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
@@ -734,6 +734,17 @@
       "nota": "code-review high: 10 hallazgos; arreglados 8 (costo = precio impreso antes de descuento para no descontar doble, descuento general encima del propio de la linea, reglas del prompt sin contradiccion y sin recalcular lo impreso, porcentaje vs monto explicito y >=1 como porcentaje, codigos numericos a texto, chequeo fila por fila contra el importe impreso nombrando la fila, sin RD$ fijo). Quedan: update de productos sin select (caso viejo en la base del revisor)",
       "archivos": [
         "src/pages/ComprasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-11",
+      "nota": "code-review high x3: ITBIS servicios = cotejo solo sobre montos tecleados (catalogo/comision/factura guardada intactos); produccion con E31 o E32; F10 frena venta sin secuencia del tipo del cliente (no en edicion, refresca preview). Pendiente conocido: POS movil no tiene el freno; descuento de lineas guardadas preexistente.",
+      "archivos": [
+        "src/components/configuracion/DgiiSecuenciasEcf.jsx",
+        "src/components/ventas/LineasServicios.jsx",
+        "src/hooks/useVentas.js",
+        "src/pages/VentasPage.jsx",
+        "supabase/functions/emitir-fiscal/index.ts"
       ]
     }
   ]

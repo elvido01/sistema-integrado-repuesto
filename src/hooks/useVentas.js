@@ -2021,6 +2021,7 @@ export const useVentas = () => {
     manualClienteNombre,
     setManualClienteNombre,
     ncfPreview,
+    loadNcfPreview,
     pideCanalOrigen,
     canalOrigen,
   };
