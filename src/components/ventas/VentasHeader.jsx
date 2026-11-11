@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, Calendar as CalendarIcon, X, Loader2, FileEdit, FileText, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { esClienteGenerico } from '@/lib/clienteGenerico';
+import { formatoDocDgii, docFiscalValido } from '@/lib/docFiscal';
 
 const VentasHeader = ({
   cliente,
@@ -46,6 +47,8 @@ const VentasHeader = ({
   setMoneda,
   tasaCambio = '',
   setTasaCambio,
+  // (11/11/2026) Lupa del RNC: busca/crea el cliente con los datos de la DGII.
+  onBuscarRnc,
 }) => {
   const { empresa } = useAuth();
   const nombreEmpresa = empresa?.nombre || 'Sistema';
@@ -53,6 +56,19 @@ const VentasHeader = ({
   const isGeneric = !cliente?.id ||
     esClienteGenerico(cliente) ||
     cliente.nombre?.toUpperCase().includes('GENERICO');
+
+  // Con el cliente genérico el RNC se puede escribir: Enter o la lupa lo
+  // buscan en la DGII y crean el cliente. Con un cliente ya escogido se ve su
+  // RNC con guiones, como lo escribe la DGII.
+  const [rncInput, setRncInput] = useState('');
+  const [buscandoRnc, setBuscandoRnc] = useState(false);
+  useEffect(() => { setRncInput(''); }, [cliente?.id]);
+  const puedeBuscarRnc = isGeneric && !!onBuscarRnc;
+  const buscarRnc = async () => {
+    if (!puedeBuscarRnc || buscandoRnc || !rncInput.trim()) return;
+    setBuscandoRnc(true);
+    try { await onBuscarRnc(rncInput.trim()); } finally { setBuscandoRnc(false); }
+  };
 
   const handleClienteCodigoKeyDown = (e) => {
     if (e.key === 'Enter' && clienteCodigoInput.trim()) {
@@ -166,11 +182,33 @@ const VentasHeader = ({
               <Label className="text-[11px] font-black text-gray-500 uppercase tracking-tight">RNC:</Label>
             </div>
             <div className="col-span-3">
-              <Input
-                className="h-5 text-[11px] font-medium border-gray-300 rounded-none bg-gray-50 text-gray-700 uppercase"
-                value={cliente?.rnc || '000000000'}
-                readOnly
-              />
+              {puedeBuscarRnc ? (
+                <div className="flex gap-0.5">
+                  <Input
+                    className="h-5 text-[11px] font-medium border-blue-300 rounded-none bg-white text-[#0a1e3a] uppercase"
+                    placeholder="RNC O CÉDULA + ENTER"
+                    title="Escribe el RNC o la cédula y pulsa Enter (o la lupa): se busca en la DGII y el cliente se crea solo"
+                    value={rncInput}
+                    onChange={(e) => setRncInput(e.target.value.replace(/[^0-9-]/g, '').slice(0, 13))}
+                    // Si se sale del campo con un RNC/cédula completo, se aplica solo:
+                    // un número a la vista que no entra en la factura confunde.
+                    onBlur={() => { setRncInput((v) => formatoDocDgii(v)); if (docFiscalValido(rncInput)) buscarRnc(); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarRnc(); } }}
+                  />
+                  <Button type="button" variant="default" size="sm" disabled={buscandoRnc || !rncInput.trim()}
+                    title="Buscar en la DGII"
+                    className="h-5 w-6 p-0 bg-[#0a1e3a] hover:bg-[#0a1e3a]/90 text-white rounded-none"
+                    onClick={buscarRnc}>
+                    {buscandoRnc ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                  </Button>
+                </div>
+              ) : (
+                <Input
+                  className="h-5 text-[11px] font-medium border-gray-300 rounded-none bg-gray-50 text-gray-700 uppercase"
+                  value={cliente?.rnc ? formatoDocDgii(cliente.rnc) : '000000000'}
+                  readOnly
+                />
+              )}
             </div>
             <div className="col-span-2"></div>
 

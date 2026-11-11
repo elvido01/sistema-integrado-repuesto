@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { formatoDocDgii } from '@/lib/docFiscal';
 import { Helmet } from 'react-helmet';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -31,7 +32,10 @@ const ClientesPage = () => {
         let query = supabase.from('clientes').select('*').order('nombre', { ascending: true }).limit(200);
         if (t) {
             const like = `%${t}%`;
-            query = query.or(`nombre.ilike.${like},codigo.ilike.${like},rnc.ilike.${like},telefono.ilike.${like}`);
+            // El RNC se ve con guiones (130-55836-1) y puede estar guardado sin ellos: también por dígitos.
+            const dig = t.replace(/\D/g, '');
+            const porDigitos = dig.length >= 5 && dig !== t ? `,rnc.ilike.%${dig}%,codigo.ilike.%${dig}%` : '';
+            query = query.or(`nombre.ilike.${like},codigo.ilike.${like},rnc.ilike.${like},telefono.ilike.${like}${porDigitos}`);
         }
         const { data, error } = await query;
         if (error) {
@@ -161,7 +165,7 @@ const ClientesPage = () => {
                                                     <span>{cliente.nombre}</span>
                                                 </div>
                                             </TableCell>
-                                            <TableCell>{cliente.rnc}</TableCell>
+                                            <TableCell>{formatoDocDgii(cliente.rnc)}</TableCell>
                                             <TableCell>{cliente.telefono}</TableCell>
                                             <TableCell>{cliente.email}</TableCell>
                                             <TableCell>{cliente.activo ? 'Activo' : 'Inactivo'}</TableCell>

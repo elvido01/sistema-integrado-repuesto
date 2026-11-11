@@ -286,7 +286,7 @@
     "src/components/common/pdf/comisionPDF.js": "9670fced39020a00",
     "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
     "src/components/common/pdf/devolucionPDF.js": "91b42af5e95a7340",
-    "src/components/common/pdf/facturaCartaPDF.js": "5f3318bd00fa0150",
+    "src/components/common/pdf/facturaCartaPDF.js": "9fea72ff484b416c",
     "src/components/common/pdf/facturaPDF.js": "6b7580e23cb79eda",
     "src/components/common/pdf/pagoCompromisoPDF.js": "b6467cc47e39114e",
     "src/components/common/pdf/pagoSuplidorPDF.js": "824f535b5c3e07e3",
@@ -328,7 +328,7 @@
     "src/components/suscripcion/AdminCuentasBancarias.jsx": "09c92f2d9f3b6262",
     "src/components/suscripcion/AdminPagosReview.jsx": "f544b6f5e6a2f1a6",
     "src/components/suscripcion/PagoTransferenciaModal.jsx": "5c151a306c9eeb05",
-    "src/components/ventas/ClienteSearchModal.jsx": "04ad8d58c995a4d5",
+    "src/components/ventas/ClienteSearchModal.jsx": "7587474a58870326",
     "src/components/ventas/CotizacionSearchModal.jsx": "ea0cda9ca966e217",
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
@@ -336,7 +336,7 @@
     "src/components/ventas/ProductSearchModal.jsx": "17352986c94c36b2",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "4dcf873fcfbe610a",
-    "src/components/ventas/VentasHeader.jsx": "3693b8bbec6ef90f",
+    "src/components/ventas/VentasHeader.jsx": "8d8ad119e8c7ac4d",
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "08fa278aaa550dcc",
+    "src/pages/VentasPage.jsx": "2a12af9f4441e6e6",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -420,9 +420,10 @@
     "src/lib/compraLinea.js": "23cb74e4cfc96c56",
     "src/components/ventas/VarianteVentaModal.jsx": "b5614dae50ceb98e",
     "sql/ecf_quitar_secuencia.sql": "1421b83e85017acd",
-    "src/lib/docFiscal.js": "11a1686c5671f4fe",
+    "src/lib/docFiscal.js": "545261c10cc50d1e",
     "src/components/ventas/VentaTactil.jsx": "bd54c65910029cfe",
-    "sql/nota_factura_empresa.sql": "44c80d0af1f42ace"
+    "sql/nota_factura_empresa.sql": "44c80d0af1f42ace",
+    "sql/dgii_contribuyentes.sql": "2c89f17a81f082e0"
   },
   "historial": [
     {
@@ -772,6 +773,18 @@
       "nota": "code-review high: facturaCartaPDF titulo en varias lineas baja el recuadro (alto de linea derivado de la fuente, margen 4 mm, una linea igual que antes); totales+QR+firmas pasan a hoja nueva si no caben.",
       "archivos": [
         "src/components/common/pdf/facturaCartaPDF.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-11",
+      "nota": "code-review high: RNC con guiones solo al mostrar (000000000 sin disfrazar), busqueda por digitos; lupa RNC en Ventas -> cliente_desde_rnc (solo por RNC, no por codigo; inactivo no se escoge; codigo libre; indice por digitos), RNC escrito se aplica al salir del campo; cargador DGII: estado por coincidencia exacta desde el final, error claro de token, quita los que la DGII ya no publica solo con listado completo. Probado el SQL en transaccion revertida.",
+      "archivos": [
+        "sql/dgii_contribuyentes.sql",
+        "src/components/common/pdf/facturaCartaPDF.js",
+        "src/components/ventas/ClienteSearchModal.jsx",
+        "src/components/ventas/VentasHeader.jsx",
+        "src/lib/docFiscal.js",
+        "src/pages/VentasPage.jsx"
       ]
     }
   ]

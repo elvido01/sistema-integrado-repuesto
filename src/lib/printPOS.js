@@ -1,4 +1,5 @@
 import { formatInTimeZone, formatFechaDMY } from './dateUtils';
+import { formatoDocDgii } from '@/lib/docFiscal';
 import { prepararEcfImpresion, ecfBloqueHtml, ecfVenceHtml, esEncf, extrasFacturaHtml } from '@/lib/ecfImpresion';
 import { printHtmlSmart, printViaBrowser, isSilentPrintEnabled } from './printHtmlSmart';
 import { IDS_GENERICOS } from '@/lib/clienteGenerico';
@@ -45,7 +46,8 @@ export const setEmpresaPrintConfig = (empresa) => {
       direccion: empresa.direccion || '',
       ciudad: empresa.ciudad || '',
       telefono: empresa.telefono || '',
-      rnc: empresa.rnc || '',
+      // Con guiones, como lo escribe la DGII (solo se muestra).
+      rnc: formatoDocDgii(empresa.rnc || ''),
       slogan: empresa.slogan || '',
       // Nombre ante la DGII. En una persona fisica NO es el nombre del
       // negocio: Repuestos Morla factura a nombre de Elvido Manuel
@@ -206,7 +208,7 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
 
         ${client.rnc && client.rnc !== '000000000' ? `
         <div class="client-info-row">
-          <span>RNC    : ${client.rnc}</span>
+          <span>RNC    : ${formatoDocDgii(client.rnc)}</span>
         </div>
         ` : ''}
         ${/* Sin dirección o teléfono (cliente genérico) no se gastan líneas en "N/A". */ ''}
@@ -398,7 +400,7 @@ const printFacturaDealerFullPage = (factura) => {
           ${emp.slogan ? `<div class="slogan">${emp.slogan}</div>` : ''}
           ${emp.direccion ? `<p>${emp.direccion}</p>` : ''}
           ${emp.telefono ? `<p>${emp.telefono}</p>` : ''}
-          ${emp.rnc ? `<p>${emp.rnc}</p>` : ''}
+          ${emp.rnc ? `<p>${formatoDocDgii(emp.rnc)}</p>` : ''}
         </div>
         <div class="doc">
           <div class="t">${factura.ecf ? factura.ecf.titulo : 'FACTURA'}</div>
@@ -751,7 +753,7 @@ const printFacturaFullPage = (factura, printFormat) => {
         </div>
         <div class="info-row">
           <span class="label">RNC:</span>
-          <span class="value">${client.rnc && client.rnc !== '000000000' ? client.rnc : 'N/A'}</span>
+          <span class="value">${client.rnc && client.rnc !== '000000000' ? formatoDocDgii(client.rnc) : 'N/A'}</span>
         </div>
       </div>
 
@@ -2520,7 +2522,7 @@ export const printOrdenCompraPOS = (orden, suplidor, detalles, paperSize = '4inc
           <span>${(suplidor?.nombre || 'N/A').toUpperCase()}</span>
         </div>
         <div class="client-info-row">
-          <span>RNC: ${suplidor?.rnc || 'N/A'}</span>
+          <span>RNC: ${suplidor?.rnc ? formatoDocDgii(suplidor.rnc) : 'N/A'}</span>
         </div>
       </div>
 

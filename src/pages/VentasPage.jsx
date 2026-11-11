@@ -212,6 +212,44 @@ const VentasPage = () => {
     }
   };
 
+  // (11/11/2026) Lupa del RNC: el cliente se busca por RNC/cédula; si no es
+  // cliente todavía y está en el registro de la DGII, se crea con su razón
+  // social (crédito fiscal) y queda escogido. sql/dgii_contribuyentes.sql
+  const handleBuscarRnc = async (doc) => {
+    try {
+      const { data, error } = await supabase.rpc('cliente_desde_rnc', { p_doc: doc });
+      if (error) throw error;
+      if (!data?.ok) {
+        const msg = {
+          formato: 'Un RNC lleva 9 dígitos y una cédula 11.',
+          no_inscrito: data?.cargado === false
+            ? 'Todavía no está cargado el listado de la DGII. Crea el cliente a mano por ahora.'
+            : 'Ese RNC/cédula no está inscrito como contribuyente en la DGII. Revisa el número.',
+          sin_empresa: 'No se pudo saber la empresa activa. Refresca la página.',
+          inactivo: `Ese RNC es de ${data?.nombre || 'un cliente'} (${data?.codigo || ''}), que está DESACTIVADO. Actívalo en Clientes si quieres facturarle.`,
+        }[data?.motivo] || 'No se pudo buscar el RNC.';
+        toast({ variant: 'destructive', title: 'RNC no encontrado', description: msg, duration: 8000 });
+        return;
+      }
+      const c = data.cliente;
+      handleSelectCliente(c);
+      setClienteCodigoInput(c.codigo || '');
+      const estado = String(data.estado_dgii || '').toUpperCase();
+      toast({
+        title: data.existente ? `Cliente: ${c.nombre}` : `Cliente nuevo: ${c.nombre}`,
+        description: data.existente
+          ? 'Ya estaba en tus clientes.'
+          : 'Creado con los datos de la DGII (crédito fiscal). La próxima vez ya aparece.',
+      });
+      if (estado && estado !== 'ACTIVO') {
+        toast({ variant: 'destructive', title: `Ojo: en la DGII figura ${estado}`, description: 'Confirma con el cliente antes de facturarle crédito fiscal.', duration: 10000 });
+      }
+      setTimeout(() => document.getElementById('input-codigo')?.focus(), 100);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo buscar el RNC', description: err.message || String(err) });
+    }
+  };
+
   // Modal de búsqueda de producto
   const [isProductSearchModalOpen, setIsProductSearchModalOpen] = useState(false);
   const [modalSessionKey, setModalSessionKey] = useState(0);
@@ -880,6 +918,7 @@ const VentasPage = () => {
           setClienteCodigoInput('');
         }}
         onSearchClienteByCodigo={handleSearchClienteByCodigo}
+        onBuscarRnc={handleBuscarRnc}
         clienteCodigoInput={clienteCodigoInput}
         setClienteCodigoInput={setClienteCodigoInput}
         vendedores={vendedores}

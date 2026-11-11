@@ -23,3 +23,14 @@ export function problemaDocFiscal(rnc, tipo) {
   if (/^0+$/.test(d)) return 'El RNC/cédula no puede ser todo ceros.';
   return `El RNC/cédula tiene ${d.length} dígito${d.length === 1 ? '' : 's'}: un RNC lleva 9 y una cédula 11.`;
 }
+
+// (11/11/2026) Cómo lo escribe la DGII: RNC (9) 130-55836-1, cédula (11)
+// 028-0015556-2. Solo para MOSTRAR: en la base se compara por dígitos.
+// Lo que no sea 9 u 11 dígitos (pasaporte, vacío) se devuelve tal cual.
+export function formatoDocDgii(v) {
+  const d = soloDigitos(v);
+  if (/^0+$/.test(d)) return String(v ?? '').trim(); // 000000000 = sin RNC, no se disfraza
+  if (d.length === 9) return `${d.slice(0, 3)}-${d.slice(3, 8)}-${d.slice(8)}`;
+  if (d.length === 11) return `${d.slice(0, 3)}-${d.slice(3, 10)}-${d.slice(10)}`;
+  return String(v ?? '').trim();
+}

@@ -18,6 +18,7 @@
 // una sola vez en los totales. En la base, facturas_detalle.importe viene
 // CON ITBIS (20,791.60) y precio sin él, así que aquí se resta.
 import jsPDF from 'jspdf';
+import { formatoDocDgii } from '@/lib/docFiscal';
 import { prepararEcfImpresion } from '@/lib/ecfImpresion';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
@@ -125,7 +126,7 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
     .forEach((linea) => { doc.text(String(linea), M, y); y += 4; });
   if (empresa.rnc) {
     doc.setFont('helvetica', 'bold');
-    doc.text(`RNC: ${empresa.rnc}`, M, y);
+    doc.text(`RNC: ${formatoDocDgii(empresa.rnc)}`, M, y);
     y += 4;
   }
   const yEmisorFin = y;
@@ -185,7 +186,7 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
   const clienteNombre = (isGeneric && factura.manual_cliente_nombre)
     ? factura.manual_cliente_nombre.toUpperCase()
     : (cliente.nombre || 'CLIENTE GENERICO').toUpperCase();
-  const rncCliente = cliente.rnc && cliente.rnc !== '000000000' ? cliente.rnc : null;
+  const rncCliente = cliente.rnc && cliente.rnc !== '000000000' ? formatoDocDgii(cliente.rnc) : null;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);

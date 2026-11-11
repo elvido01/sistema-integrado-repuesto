@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { formatoDocDgii } from '@/lib/docFiscal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,10 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
       let query = supabase.from('clientes').select('*').eq('activo', true);
 
       if (searchTerm) {
-        query = query.or(`nombre.ilike.%${searchTerm}%,rnc.ilike.%${searchTerm}%,codigo.ilike.%${searchTerm}%`);
+        // El RNC se ve con guiones y puede estar guardado sin ellos: también por dígitos.
+        const dig = String(searchTerm).replace(/\D/g, '');
+        const porDigitos = dig.length >= 5 && dig !== String(searchTerm).trim() ? `,rnc.ilike.%${dig}%,codigo.ilike.%${dig}%` : '';
+        query = query.or(`nombre.ilike.%${searchTerm}%,rnc.ilike.%${searchTerm}%,codigo.ilike.%${searchTerm}%${porDigitos}`);
       }
 
       query = query.order('nombre', { ascending: true }).limit(50);
@@ -93,7 +97,7 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
                   >
                     <TableCell className="font-mono text-sm whitespace-nowrap">{cliente.codigo || '—'}</TableCell>
                     <TableCell className="font-medium">{cliente.nombre}</TableCell>
-                    <TableCell className="whitespace-nowrap">{cliente.rnc}</TableCell>
+                    <TableCell className="whitespace-nowrap">{formatoDocDgii(cliente.rnc)}</TableCell>
                     <TableCell className="whitespace-nowrap">{cliente.telefono}</TableCell>
                     <TableCell>{cliente.autorizar_credito ? 'Sí' : 'No'}</TableCell>
                   </TableRow>
