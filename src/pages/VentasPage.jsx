@@ -216,6 +216,13 @@ const VentasPage = () => {
   // cliente todavía y está en el registro de la DGII, se crea con su razón
   // social (crédito fiscal) y queda escogido. sql/dgii_contribuyentes.sql
   const handleBuscarRnc = async (doc) => {
+    // RNC borrado del todo: se quita el cliente (vuelve al genérico).
+    if (!String(doc || '').trim()) {
+      handleSelectCliente(null);
+      setClienteCodigoInput('');
+      setManualClienteNombre('');
+      return true;
+    }
     try {
       const { data, error } = await supabase.rpc('cliente_desde_rnc', { p_doc: doc });
       if (error) throw error;
@@ -229,7 +236,7 @@ const VentasPage = () => {
           inactivo: `Ese RNC es de ${data?.nombre || 'un cliente'} (${data?.codigo || ''}), que está DESACTIVADO. Actívalo en Clientes si quieres facturarle.`,
         }[data?.motivo] || 'No se pudo buscar el RNC.';
         toast({ variant: 'destructive', title: 'RNC no encontrado', description: msg, duration: 8000 });
-        return;
+        return false;
       }
       const c = data.cliente;
       handleSelectCliente(c);
@@ -245,8 +252,10 @@ const VentasPage = () => {
         toast({ variant: 'destructive', title: `Ojo: en la DGII figura ${estado}`, description: 'Confirma con el cliente antes de facturarle crédito fiscal.', duration: 10000 });
       }
       setTimeout(() => document.getElementById('input-codigo')?.focus(), 100);
+      return true;
     } catch (err) {
       toast({ variant: 'destructive', title: 'No se pudo buscar el RNC', description: err.message || String(err) });
+      return false;
     }
   };
 

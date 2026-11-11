@@ -10,7 +10,7 @@ import { format } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { esClienteGenerico } from '@/lib/clienteGenerico';
-import { formatoDocDgii, docFiscalValido } from '@/lib/docFiscal';
+import { formatoDocDgii, docFiscalValido, soloDigitos } from '@/lib/docFiscal';
 
 const VentasHeader = ({
   cliente,
@@ -57,17 +57,27 @@ const VentasHeader = ({
     esClienteGenerico(cliente) ||
     cliente.nombre?.toUpperCase().includes('GENERICO');
 
-  // Con el cliente genérico el RNC se puede escribir: Enter o la lupa lo
-  // buscan en la DGII y crean el cliente. Con un cliente ya escogido se ve su
-  // RNC con guiones, como lo escribe la DGII.
-  const [rncInput, setRncInput] = useState('');
+  // El RNC se escribe aquí (si quien llama pasa onBuscarRnc): Enter o la lupa
+  // lo buscan en la DGII y escogen/crean el cliente.
+  //  - Cliente genérico: salir del campo con un RNC completo también lo busca.
+  //  - (11/11/2026) Cliente ya escogido: se puede corregir el RNC, pero SOLO se
+  //    aplica con Enter o la lupa (nunca por perder el foco); vacío + Enter =
+  //    quitar el cliente. Si la búsqueda falla, o se sale sin aplicar, vuelve
+  //    el RNC del cliente: nunca queda a la vista uno que no es el de la factura.
+  //  - Editando una factura ya hecha no se toca (su comprobante ya salió).
+  const rncCliente = !isGeneric && docFiscalValido(cliente?.rnc) ? formatoDocDgii(cliente.rnc) : '';
+  const [rncInput, setRncInput] = useState(rncCliente);
   const [buscandoRnc, setBuscandoRnc] = useState(false);
-  useEffect(() => { setRncInput(''); }, [cliente?.id]);
-  const puedeBuscarRnc = isGeneric && !!onBuscarRnc;
+  useEffect(() => { setRncInput(rncCliente); }, [cliente, rncCliente]);
+  const puedeBuscarRnc = !!onBuscarRnc && !editingFacturaNumero;
+  const cambioRnc = soloDigitos(rncInput) !== soloDigitos(rncCliente);
   const buscarRnc = async () => {
-    if (!puedeBuscarRnc || buscandoRnc || !rncInput.trim()) return;
+    if (!puedeBuscarRnc || buscandoRnc || !cambioRnc) return;
     setBuscandoRnc(true);
-    try { await onBuscarRnc(rncInput.trim()); } finally { setBuscandoRnc(false); }
+    try {
+      const ok = await onBuscarRnc(soloDigitos(rncInput) ? rncInput.trim() : '');
+      if (!ok) setRncInput(rncCliente);
+    } finally { setBuscandoRnc(false); }
   };
 
   const handleClienteCodigoKeyDown = (e) => {
@@ -185,17 +195,32 @@ const VentasHeader = ({
               {puedeBuscarRnc ? (
                 <div className="flex gap-0.5">
                   <Input
-                    className="h-5 text-[11px] font-medium border-blue-300 rounded-none bg-white text-[#0a1e3a] uppercase"
+                    className={`h-5 text-[11px] font-medium rounded-none bg-white text-[#0a1e3a] uppercase ${cambioRnc && rncInput.trim() && !docFiscalValido(rncInput) ? 'border-red-500 bg-red-50' : 'border-blue-300'}`}
                     placeholder="RNC O CÉDULA + ENTER"
-                    title="Escribe el RNC o la cédula y pulsa Enter (o la lupa): se busca en la DGII y el cliente se crea solo"
+                    title="Escribe el RNC o la cédula y pulsa Enter (o la lupa): se busca en la DGII y el cliente se crea solo. Para cambiarlo, corrígelo aquí y pulsa Enter; bórralo todo y Enter para volver al cliente genérico. Esc deshace."
                     value={rncInput}
                     onChange={(e) => setRncInput(e.target.value.replace(/[^0-9-]/g, '').slice(0, 13))}
                     // Si se sale del campo con un RNC/cédula completo, se aplica solo:
                     // un número a la vista que no entra en la factura confunde.
-                    onBlur={() => { setRncInput((v) => formatoDocDgii(v)); if (docFiscalValido(rncInput)) buscarRnc(); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarRnc(); } }}
+                    onBlur={() => {
+                      if (buscandoRnc) return;
+                      if (isGeneric) {
+                        setRncInput((v) => formatoDocDgii(v));
+                        if (docFiscalValido(rncInput)) buscarRnc();
+                      } else if (cambioRnc) {
+                        setRncInput(rncCliente); // sin Enter no se aplica: vuelve el del cliente
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); buscarRnc(); }
+                      // F10 con un RNC escrito sin aplicar: primero se aplica (la
+                      // factura no se graba con un RNC distinto al que se ve).
+                      if (e.key === 'F10' && cambioRnc) { e.preventDefault(); e.stopPropagation(); buscarRnc(); }
+                      // Escape deshace lo escrito (y no cierra la venta).
+                      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setRncInput(rncCliente); }
+                    }}
                   />
-                  <Button type="button" variant="default" size="sm" disabled={buscandoRnc || !rncInput.trim()}
+                  <Button type="button" variant="default" size="sm" disabled={buscandoRnc || !cambioRnc}
                     title="Buscar en la DGII"
                     className="h-5 w-6 p-0 bg-[#0a1e3a] hover:bg-[#0a1e3a]/90 text-white rounded-none"
                     onClick={buscarRnc}>

@@ -336,7 +336,7 @@
     "src/components/ventas/ProductSearchModal.jsx": "17352986c94c36b2",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "4dcf873fcfbe610a",
-    "src/components/ventas/VentasHeader.jsx": "8d8ad119e8c7ac4d",
+    "src/components/ventas/VentasHeader.jsx": "a41a590e95029aa7",
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "2a12af9f4441e6e6",
+    "src/pages/VentasPage.jsx": "a2afa7576267818c",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -784,6 +784,14 @@
         "src/components/ventas/ClienteSearchModal.jsx",
         "src/components/ventas/VentasHeader.jsx",
         "src/lib/docFiscal.js",
+        "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-11",
+      "nota": "code-review high: RNC editable con cliente escogido solo se aplica con Enter/lupa (F10 lo aplica primero), se revierte si falla o al salir sin aplicar, vacio+Enter quita cliente y limpia nombre manual, bloqueado editando factura hecha.",
+      "archivos": [
+        "src/components/ventas/VentasHeader.jsx",
         "src/pages/VentasPage.jsx"
       ]
     }
