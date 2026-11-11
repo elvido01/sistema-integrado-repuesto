@@ -68,6 +68,18 @@ const normalizeDgiiDate = (d) => {
   return fmtDate(d);
 };
 
+// (11/11/2026) La DGII exige el teléfono como ###-###-####: "8292951927" dio
+// Aceptado Condicional (1273, TelefonoEmisor no es válido) en BRIMAR E310000000002.
+// Con 10 dígitos se le ponen los guiones; si no se puede, no se manda.
+export function telefonoDgii(tel) {
+  // El primer número de 10 dígitos que aparezca ("809-555-1234 / 829-…",
+  // "+1 (809) 555 1234 ext. 3"); el resto se ignora.
+  const m = String(tel || '').match(/(?:\+?1[\s.-]*)?\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})(?!\d)/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+// Lista de teléfonos del emisor ya en formato DGII (sin vacíos ni repetidos).
+const telsEmisor = (lista) => [...new Set((lista || []).map(telefonoDgii).filter(Boolean))];
+
 // (05/11/2026) Fecha DGII desde lo que trae un xlsx: texto dd-MM-yyyy
 // [HH:mm:ss] tal cual, serial de Excel (redondeado al segundo, sin zona) o
 // Date/ISO en hora de RD (el servidor corre en UTC).
@@ -421,7 +433,7 @@ function buildEmisorXml(e, fechaEmision) {
       ${tag("DireccionEmisor", e.direccion)}
       ${tag("Municipio", codigoProvinciaMunicipio(e.municipio, "municipio"))}
       ${tag("Provincia", codigoProvinciaMunicipio(e.provincia, "provincia"))}
-      ${e.telefono?.length ? `<TablaTelefonoEmisor>${e.telefono.map(t => `<TelefonoEmisor>${xmlEscape(t)}</TelefonoEmisor>`).join("")}</TablaTelefonoEmisor>` : ""}
+      ${telsEmisor(e.telefono).length ? `<TablaTelefonoEmisor>${telsEmisor(e.telefono).map(t => `<TelefonoEmisor>${xmlEscape(t)}</TelefonoEmisor>`).join("")}</TablaTelefonoEmisor>` : ""}
       ${tag("CorreoEmisor", e.email)}
       <FechaEmision>${fmtDate(fechaEmision)}</FechaEmision>
     </Emisor>`;
@@ -1368,31 +1380,54 @@ function validarAnecf(input) {
   }
 }
 
+// (11/11/2026) Reescrito según "Formato Anulación de e-NCF v1.0" (DGII). El
+// anterior nunca se había usado en producción y la DGII lo rechazó por XSD
+// (RNCEmisor en vez de RncEmisor, NCFDesde en vez de la tabla de rangos).
+// Estructura: Encabezado (Version, RncEmisor, CantidadeNCFAnulados,
+// FechaHoraAnulacioneNCF dd-MM-AAAA HH:mm:ss) + DetalleAnulacion con una
+// <Anulacion> por TIPO de e-CF (NoLinea, TipoeCF, tabla de rangos, cantidad).
 export function buildAnecfXml(input) {
   validarAnecf(input);
   const rangos = input.rangos || [{ inicial: input.ncf_inicial, final: input.ncf_final }];
-
-  const rangosXml = rangos.map((r, idx) => `
-      <Anulacion>
-        <NoLinea>${idx + 1}</NoLinea>
-        <NCFDesde>${xmlEscape(r.inicial)}</NCFDesde>
-        <NCFHasta>${xmlEscape(r.final)}</NCFHasta>
-      </Anulacion>`.trim()).join("\n      ");
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<ANECF xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="ANECF.xsd">
-  <Encabezado>
-    <Version>1.0</Version>
-    <RNCEmisor>${xmlEscape(input.rnc_emisor)}</RNCEmisor>
-    <CantidadeNCFAnulados>${rangos.length}</CantidadeNCFAnulados>
-    <FechaHoraAnulacion>${fmtDate(input.fecha_anulacion)}</FechaHoraAnulacion>
-  </Encabezado>
-  <DetalleAnulacion>
-      ${rangosXml}
-  </DetalleAnulacion>
-</ANECF>`.trim();
-
-  return xml;
+  const cuantos = (r) => Number(String(r.final).slice(3)) - Number(String(r.inicial).slice(3)) + 1;
+  for (const r of rangos) {
+    if (r.inicial.slice(0, 3) !== r.final.slice(0, 3)) throw new Error(`ANECF: ${r.inicial} y ${r.final} no son de la misma serie y tipo`);
+    if (cuantos(r) < 1) throw new Error(`ANECF: ${r.final} es menor que ${r.inicial}`);
+  }
+  const porTipo = new Map();
+  for (const r of rangos) {
+    const tipo = r.inicial.slice(1, 3);
+    if (!porTipo.has(tipo)) porTipo.set(tipo, []);
+    porTipo.get(tipo).push(r);
+  }
+  // Rangos que se pisan harían que la cantidad declarada no cuadre.
+  const orden = [...rangos].sort((a, b) => (a.inicial < b.inicial ? -1 : 1));
+  for (let i = 1; i < orden.length; i++) {
+    if (orden[i].inicial.slice(0, 3) === orden[i - 1].final.slice(0, 3) && orden[i].inicial <= orden[i - 1].final) {
+      throw new Error(`ANECF: los rangos ${orden[i - 1].inicial}-${orden[i - 1].final} y ${orden[i].inicial}-${orden[i].final} se pisan`);
+    }
+  }
+  const total = rangos.reduce((a, r) => a + cuantos(r), 0);
+  // dd-MM-AAAA HH:mm:ss en hora de RD. Ya en ese formato se respeta; un ISO o
+  // Date se convierte; sin fecha válida, la hora de ahora.
+  const fecha = (() => {
+    const v = input.fecha_anulacion;
+    if (/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$/.test(String(v || ""))) return v;
+    const t = new Date(v).getTime();
+    if (!Number.isFinite(t)) return nowDgiiDateTime();
+    const rd = new Date(t - 4 * 3600000);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${p(rd.getUTCDate())}-${p(rd.getUTCMonth() + 1)}-${rd.getUTCFullYear()} ${p(rd.getUTCHours())}:${p(rd.getUTCMinutes())}:${p(rd.getUTCSeconds())}`;
+  })();
+  const detalle = [...porTipo.entries()].map(([tipo, rs], idx) =>
+    `<Anulacion><NoLinea>${idx + 1}</NoLinea><TipoeCF>${tipo}</TipoeCF><TablaRangoSecuenciasAnuladaseNCF>` +
+    rs.map((r) => `<Secuencias><SecuenciaeNCFDesde>${xmlEscape(r.inicial)}</SecuenciaeNCFDesde><SecuenciaeNCFHasta>${xmlEscape(r.final)}</SecuenciaeNCFHasta></Secuencias>`).join("") +
+    `</TablaRangoSecuenciasAnuladaseNCF><CantidadeNCFAnulados>${rs.reduce((a, r) => a + cuantos(r), 0)}</CantidadeNCFAnulados></Anulacion>`).join("");
+  return `<?xml version="1.0" encoding="utf-8"?>` +
+    `<ANECF xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">` +
+    `<Encabezado><Version>1.0</Version><RncEmisor>${xmlEscape(input.rnc_emisor)}</RncEmisor>` +
+    `<CantidadeNCFAnulados>${total}</CantidadeNCFAnulados><FechaHoraAnulacioneNCF>${fecha}</FechaHoraAnulacioneNCF></Encabezado>` +
+    `<DetalleAnulacion>${detalle}</DetalleAnulacion></ANECF>`;
 }
 
 // ════════════════════════════════════════════════════════

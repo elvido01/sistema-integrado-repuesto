@@ -396,7 +396,7 @@
     "supabase/functions/emitir-fiscal/dgii_municipios.ts": "05e84e0c74dc6806",
     "supabase/functions/emitir-fiscal/dgii_rfce_produccion.ts": "b237ba185ea7fe97",
     "supabase/functions/emitir-fiscal/dgii_signer.ts": "3ab01a57d8c1f932",
-    "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "56d1a888f4c748fd",
+    "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "f8f45d9abf17451d",
     "supabase/functions/emitir-fiscal/import_map.json": "3d5861c491100d4a",
     "supabase/functions/emitir-fiscal/index.ts": "ee397c15a214f151",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
@@ -745,6 +745,13 @@
         "src/hooks/useVentas.js",
         "src/pages/VentasPage.jsx",
         "supabase/functions/emitir-fiscal/index.ts"
+      ]
+    },
+    {
+      "fecha": "2026-11-11",
+      "nota": "code-review high: dgii_xml_builder ANECF reescrito segun Formato Anulacion e-NCF v1.0 (RncEmisor, FechaHoraAnulacioneNCF, tabla de rangos por TipoeCF, rangos que se pisan rechazados, fecha ISO a hora RD); telefono emisor ###-###-#### en el builder del Emisor. Hallazgos atendidos; printPOS margenes repetidos por hoja y tipo carta.",
+      "archivos": [
+        "supabase/functions/emitir-fiscal/dgii_xml_builder.ts"
       ]
     }
   ]

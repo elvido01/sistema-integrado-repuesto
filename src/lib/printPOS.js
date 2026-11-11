@@ -537,12 +537,21 @@ const printFacturaFullPage = (factura, printFormat) => {
     <head>
       <meta charset="UTF-8">
       <style>
+        /* (11/11/2026) Margen de página 0: con margen en @page el navegador
+           imprime arriba la fecha/hora y el título ("Ventas — MotoFlow") y
+           abajo la dirección web (BRIMAR). Los lados van en el padding del body
+           y arriba/abajo en las filas vacías de table.pagina, que se repiten en
+           CADA hoja (una factura larga no queda pegada al borde en la 2.ª). */
         @page {
-          margin: ${isHalf ? '8mm 10mm' : '12mm 15mm'};
+          margin: 0;
           size: ${pageSize};
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        table.pagina { width: 100%; border-collapse: collapse; }
+        table.pagina > thead > tr > td, table.pagina > tfoot > tr > td { height: ${isHalf ? '8mm' : '12mm'}; padding: 0; border: 0; }
+        table.pagina > tbody > tr > td { padding: 0; border: 0; vertical-align: top; }
         body {
+          padding: 0 ${isHalf ? '10mm' : '15mm'};
           font-family: Arial, Helvetica, sans-serif;
           font-size: ${isHalf ? '11px' : '13px'};
           color: #000;
@@ -663,12 +672,6 @@ const printFacturaFullPage = (factura, printFormat) => {
           border-top: 1px solid #ccc;
           padding-top: 4px;
         }
-        .footer-copy {
-          text-align: center;
-          font-size: ${isHalf ? '9px' : '10px'};
-          color: #888;
-          margin-top: ${isHalf ? '6px' : '10px'};
-        }
         .ncf-box {
           border: 2px solid #000;
           padding: ${isHalf ? '3px 8px' : '5px 12px'};
@@ -690,6 +693,7 @@ const printFacturaFullPage = (factura, printFormat) => {
       </style>
     </head>
     <body onload="window.print()">
+    <table class="pagina"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td>
 
       <!-- HEADER: Empresa -->
       <div class="header">
@@ -804,15 +808,13 @@ const printFacturaFullPage = (factura, printFormat) => {
         &nbsp;&nbsp;|&nbsp;&nbsp;
         <span>Vendedor: ${factura.vendedor || _empresaConfig.nombre}</span>
       </div>
-      <div class="footer-copy">
-        Generado con MotoFlow — Sistema de Gestión Integral
-      </div>
-
+    </td></tr></tbody></table>
     </body>
     </html>
   `;
 
-  emitirImpresion(factura._moneda === 'USD' ? html.replace(/RD\$/g, 'US$') : html, { tipo: 'ticket', anchoMM: 72 });
+  // Hoja carta / media carta: a la impresora de hojas, no a la de tickets.
+  emitirImpresion(factura._moneda === 'USD' ? html.replace(/RD\$/g, 'US$') : html, { tipo: 'carta' });
 };
 
 export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
