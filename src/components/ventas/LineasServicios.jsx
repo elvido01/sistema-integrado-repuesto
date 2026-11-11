@@ -30,6 +30,13 @@ const nuevoLid = () => `l${Date.now()}_${seq++}`;
 
 // La descripción guardada = descripción + " — " + referencia.
 const SEP = ' — ';
+// (11/11/2026) La DGII admite 80 caracteres en el nombre del artículo del e-CF
+// (BRIMAR E310000000003 rechazado con 86). Descripción + " — " + referencia
+// no pasan de 80. (El comprobante igual corta en 80 por si llega más largo.)
+const MAX_NOMBRE = 80;
+const largo = (t) => [...String(t || '')].length;
+const largoRef = (ref) => (String(ref || '').trim() ? largo(ref) + SEP.length : 0);
+const recortar = (t, max) => [...String(t || '')].slice(0, Math.max(0, max)).join('');
 const partir = (it) => {
   if (it._desc !== undefined) return { desc: it._desc, ref: it._ref || '' };
   const d = String(it.descripcion || '');
@@ -151,7 +158,8 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
     cambiar(lid, {
       producto_id: pid,
       naturaleza: p?.naturaleza,
-      _desc: fila?._desc || (p && p.codigo !== 'SERV-GENERAL' ? p.descripcion : ''),
+      // También aquí rige el tope de 80 (descripción + referencia).
+      _desc: recortar(fila?._desc || (p && p.codigo !== 'SERV-GENERAL' ? p.descripcion : ''), MAX_NOMBRE - largoRef(fila?._ref)),
       // Lo ya tecleado se queda como se escribió; si no, el precio del catálogo (trae ITBIS).
       ...(n(fila?._monto) && fila?._tecleado
         ? { _monto: fila._monto, _conItbis: fila._conItbis ?? conItbis }
@@ -226,11 +234,14 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
                 </td>
                 <td className="border-r border-slate-200">
                   <textarea rows={2} className={`${celda} resize-y uppercase`} placeholder="Ej. Factura pago de comisión por venta de solares Primaveral"
-                    value={f._desc} onChange={(e) => cambiar(f._lid, { _desc: e.target.value })} />
+                    value={f._desc} onChange={(e) => cambiar(f._lid, { _desc: recortar(e.target.value, MAX_NOMBRE - largoRef(f._ref)) })} />
+                  <div className={`px-2 pb-1 text-right text-[10px] ${largo(f._desc) + largoRef(f._ref) >= MAX_NOMBRE ? 'font-bold text-red-600' : 'text-slate-400'}`}>
+                    {largo(f._desc) + largoRef(f._ref)}/{MAX_NOMBRE}
+                  </div>
                 </td>
                 <td className="border-r border-slate-200">
                   <input className={`${celda} uppercase`} placeholder="Ej. Pago de 5%" value={f._ref}
-                    onChange={(e) => cambiar(f._lid, { _ref: e.target.value })} />
+                    onChange={(e) => cambiar(f._lid, { _ref: recortar(e.target.value, MAX_NOMBRE - largo(f._desc) - SEP.length) })} />
                 </td>
                 <td className="border-r border-slate-200">
                   <div className="flex items-center">
@@ -267,7 +278,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
                       onClick={() => {
                         cambiar(f._lid, {
                           _monto: (n(calc.base) * n(calc.pct) / 100).toFixed(2),
-                          _ref: f._ref || `PAGO DE ${n(calc.pct)}%`,
+                          _ref: f._ref || recortar(`PAGO DE ${n(calc.pct)}%`, MAX_NOMBRE - largo(f._desc) - SEP.length),
                           _conItbis: false,   // la comisión es la base; el ITBIS va encima
                           _tecleado: false,   // el cotejo no la cambia
                         });

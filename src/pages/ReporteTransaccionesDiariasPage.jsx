@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -12,7 +13,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
-import { Calendar as CalendarIcon, Search, Printer, X, Loader2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Printer, X, Loader2, FileDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePanels } from '@/contexts/PanelContext';
 import { generateTransaccionesReportePDF, generateFacturaPDF, generateFacturaCartaPDF, generateDevolucionPDF, generateReciboPDF } from '@/components/common/PDFGenerator';
@@ -137,6 +138,25 @@ const ReporteTransaccionesDiariasPage = () => {
   // Doble clic = reimprimir. Ctrl + doble clic = BAJAR EL PDF en hoja carta,
   // que es lo que hace falta para mandarle la factura a un cliente por
   // correo o WhatsApp: el dialogo de impresion no deja archivo.
+  // (11/11/2026) Clic derecho en una fila: reimprimir o bajar el PDF en hoja
+  // carta (antes solo con Ctrl + doble clic, que nadie sabía).
+  const [menuFila, setMenuFila] = useState(null); // { x, y, t }
+  useEffect(() => {
+    if (!menuFila) return undefined;
+    const cerrar = () => setMenuFila(null);
+    // Escape cierra SOLO el menú: en captura y sin propagar, para que el
+    // atajo del panel (Escape = cerrar reporte) no lo oiga.
+    const tecla = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMenuFila(null); } };
+    window.addEventListener('click', cerrar);
+    window.addEventListener('scroll', cerrar, true);
+    window.addEventListener('keydown', tecla, true);
+    return () => {
+      window.removeEventListener('click', cerrar);
+      window.removeEventListener('scroll', cerrar, true);
+      window.removeEventListener('keydown', tecla, true);
+    };
+  }, [menuFila]);
+
   const handleRowDoubleClick = async (transaction, comoPdf = false) => {
     const parts = transaction.transaccion.split('-');
     if (parts.length < 2) return;
@@ -149,6 +169,7 @@ const ReporteTransaccionesDiariasPage = () => {
         const { data: factura, error } = await supabase
           .from('facturas')
           .select('*, facturas_detalle(*, productos(*)), clientes(*), perfiles:usuario_id(email, nombre_completo)')
+          .eq('tenant_id', tenantId)   // el número se repite entre empresas (empresa hermana)
           .eq('numero', numeroInt)
           .single();
         if (error) throw error;
@@ -509,8 +530,12 @@ const ReporteTransaccionesDiariasPage = () => {
                     <TableRow
                       key={index}
                       className="hover:bg-slate-50 cursor-pointer [&>td]:py-1 [&>td]:text-[13px]"
-                      title="Doble clic: reimprimir · Ctrl + doble clic: descargar PDF (hoja carta)"
+                      title="Doble clic: reimprimir · Clic derecho: reimprimir o PDF en hoja carta"
                       onDoubleClick={(e) => handleRowDoubleClick(t, e.ctrlKey || e.metaKey)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setMenuFila({ x: Math.min(e.clientX, window.innerWidth - 260), y: Math.min(e.clientY, window.innerHeight - 110), t });
+                      }}
                     >
                       <TableCell className="whitespace-nowrap">{formatInTimeZone(t.fecha, 'dd/MM/yyyy')}</TableCell>
                       <TableCell className="font-mono">{t.transaccion}</TableCell>
@@ -525,6 +550,26 @@ const ReporteTransaccionesDiariasPage = () => {
                   ))
                 )}
               </TableBody>
+              {menuFila && createPortal(
+                  <div
+                    className="fixed z-[100] w-60 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-[13px] shadow-lg"
+                    style={{ left: menuFila.x, top: menuFila.y }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="px-3 py-1 text-[11px] font-semibold text-slate-500">{menuFila.t.transaccion}</div>
+                    <button type="button" className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-100"
+                      onClick={() => { const t = menuFila.t; setMenuFila(null); handleRowDoubleClick(t, false); }}>
+                      <Printer className="h-4 w-4" /> Reimprimir
+                    </button>
+                    {String(menuFila.t.transaccion || '').startsWith('FT-') && (
+                      <button type="button" className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-100"
+                        onClick={() => { const t = menuFila.t; setMenuFila(null); handleRowDoubleClick(t, true); }}>
+                        <FileDown className="h-4 w-4" /> Reimprimir en hoja carta (PDF)
+                      </button>
+                    )}
+                  </div>,
+                  document.body,
+              )}
               <TableFooter className="sticky bottom-0 bg-slate-200 z-10">
                 <TableRow className="font-bold text-slate-900 hover:bg-slate-200">
                   <TableCell colSpan={6} className="text-right uppercase text-xs text-slate-900">Totales →</TableCell>

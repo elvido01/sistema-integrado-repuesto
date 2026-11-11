@@ -151,6 +151,22 @@ const fechaVencimientoSecuenciaXml = (input) =>
     ? `<FechaVencimientoSecuencia>${xmlEscape(normalizeDgiiDate(input.fecha_vencimiento_secuencia))}</FechaVencimientoSecuencia>`
     : "";
 
+// (11/11/2026) NombreItem admite 80 caracteres (AlfaNum80): BRIMAR
+// E310000000003 se rechazó con una descripción de 85 y el número se perdió.
+// Se corta en 80 (en un espacio si se puede) y el texto completo va en
+// DescripcionItem (hasta 1000), que la DGII pone en la representación.
+export function nombreItemDgii(desc) {
+  const t = [...String(desc ?? "").trim()];
+  if (t.length <= 80) return t.join("");
+  const corte = t.slice(0, 80).join("");
+  const esp = corte.lastIndexOf(" ");
+  return (esp >= 50 ? corte.slice(0, esp) : corte).trim();
+}
+export function descripcionItemDgii(desc) {
+  const t = [...String(desc ?? "").trim()];
+  return t.length > 80 ? t.slice(0, 1000).join("") : null;
+}
+
 const tag = (name, value, opts = {}) => {
   // Genera <Name>value</Name>. Si value es null/undefined/'', omite el tag
   // a menos que opts.always=true.
@@ -366,8 +382,9 @@ function buildItemsXml(items) {
       <NumeroLinea>${numeroLinea}</NumeroLinea>
       ${tag("IndicadorFacturacion", it.indicador_facturacion || "1")}
       ${retencionXml(it)}
-      ${tag("NombreItem", it.descripcion)}
+      ${tag("NombreItem", nombreItemDgii(it.descripcion))}
       ${tag("IndicadorBienoServicio", it.indicador_bien_servicio || "1")}
+      ${tag("DescripcionItem", descripcionItemDgii(it.descripcion))}
       <CantidadItem>${cantidad}</CantidadItem>
       ${tag("UnidadMedida", it.unidad_medida || "43")}
       <PrecioUnitarioItem>${fmtMoney(precio)}</PrecioUnitarioItem>

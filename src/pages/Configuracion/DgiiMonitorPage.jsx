@@ -233,13 +233,34 @@ const DgiiMonitorPage = () => {
       toast({ title: 'Sin factura', description: 'Este documento no tiene factura asociada.', variant: 'destructive' });
       return;
     }
+    // (11/11/2026) Antes llamaba a dgii_send_to_dgii, que mandaba SIEMPRE el
+    // E<tipo>0000000001 y chocaba con el registro anterior.
+    //  - Rechazado por la DGII: ese número ya no se puede reenviar (la DGII
+    //    devuelve el rechazo viejo). Sale con el número siguiente y el
+    //    rechazado se anula en la DGII.
+    //  - Error de envío (nunca llegó): se reintenta con su MISMO número.
+    // Las notas (E33/E34) también guardan factura_id (el de la factura
+    // original): reintentarlas por aquí emitiría la FACTURA otra vez.
+    const tipoDoc = String(doc.tipo_ecf || String(doc.encf || '').slice(1, 3));
+    if (['33', '34'].includes(tipoDoc)) {
+      toast({ title: 'Es una nota, no una factura', description: 'Las notas de crédito/débito se rehacen desde la devolución.', variant: 'destructive' });
+      return;
+    }
+    const rechazado = doc.estado_dgii === 'rechazado';
+    if (rechazado) {
+      const ok = window.confirm(
+        `La DGII rechazó ${doc.encf || 'este comprobante'}. Ese número no se puede volver a enviar.\n\n` +
+        'Antes de seguir, corrige lo que dijo la DGII (mira el mensaje del rechazo).\n\n' +
+        `Aceptar = emitir la factura con el número siguiente y anular ${doc.encf || 'el rechazado'} en la DGII.\n` +
+        'Después hay que reimprimirla y entregar la nueva al cliente.');
+      if (!ok) return;
+    }
     setRetryingId(doc.id);
     try {
       const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
-        body: {
-          action: 'dgii_send_to_dgii',
-          factura_id: doc.factura_id,
-        },
+        body: rechazado
+          ? { action: 'dgii_reemitir_rechazado', documento_id: doc.id }
+          : { action: 'emitir_factura', factura_id: doc.factura_id },
       });
       if (error) {
         let msg = error.message;
@@ -252,9 +273,20 @@ const DgiiMonitorPage = () => {
         throw new Error(msg);
       }
       if (!data?.ok) throw new Error(data?.error || 'No se pudo reintentar');
+      const an = data.anulacion;
       toast({
-        title: '✅ Reenviado',
-        description: `e-NCF: ${data.encf} · TrackId: ${data.trackId}`,
+        title: rechazado ? `✅ Emitida con ${data.ncf}` : `✅ Reenviada (${data.ncf})`,
+        description: rechazado
+          ? (!an
+              ? 'Reimprime la factura y entrega la nueva.'
+              : an.omitida
+                ? `${data.encf_rechazado} no se anuló: ${an.motivo}. Reimprime la factura y entrega la nueva.`
+                : an.ok
+                ? `${data.encf_rechazado} anulado en la DGII. Reimprime la factura y entrega la nueva.`
+                : `OJO: ${data.encf_rechazado} NO se pudo anular${an.error ? ` (${an.error})` : ''}. Avisa al soporte. Reimprime la factura.`)
+          : 'Reimprime la factura si el cliente ya se llevó una sin e-CF.',
+        variant: rechazado && an && !an.ok && !an.omitida ? 'destructive' : undefined,
+        duration: 10000,
       });
       await fetchDocumentos();
     } catch (err) {
@@ -453,7 +485,7 @@ const DgiiMonitorPage = () => {
                           {consultando === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
                         </Button>
                       )}
-                      {(d.estado === 'error' || d.estado_dgii === 'rechazado') && d.factura_id && (
+                      {(d.estado === 'error' || d.estado_dgii === 'rechazado') && d.estado !== 'anulado' && d.factura_id && (
                         <Button
                           size="sm"
                           variant="outline"

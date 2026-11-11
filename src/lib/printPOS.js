@@ -16,6 +16,8 @@ const emitirImpresion = (html, opts = {}) => {
   }
 };
 
+const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 const formatCurrency = (value) => {
   return (parseFloat(value) || 0).toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -49,6 +51,10 @@ export const setEmpresaPrintConfig = (empresa) => {
       // negocio: Repuestos Morla factura a nombre de Elvido Manuel
       // Caminero Morla, y un comprobante fiscal tiene que decirlo.
       razonSocial: empresa.razon_social || '',
+      // (11/11/2026) Logo de la empresa: sale arriba en la hoja carta/media.
+      logoUrl: empresa.logo_url || '',
+      // (11/11/2026) Nota al pie de la hoja carta: la escribe cada empresa.
+      notaFactura: empresa.nota_factura || '',
     };
   }
 };
@@ -564,6 +570,13 @@ const printFacturaFullPage = (factura, printFormat) => {
           border-bottom: 2px solid #000;
           padding-bottom: ${isHalf ? '6px' : '10px'};
         }
+        .header .logo {
+          display: block;
+          margin: 0 auto ${isHalf ? '3px' : '6px'};
+          max-height: ${isHalf ? '34px' : '58px'};
+          max-width: 60%;
+          object-fit: contain;
+        }
         .header h1 {
           font-size: ${isHalf ? '16px' : '20px'};
           font-weight: 900;
@@ -697,6 +710,7 @@ const printFacturaFullPage = (factura, printFormat) => {
 
       <!-- HEADER: Empresa -->
       <div class="header">
+        ${_empresaConfig.logoUrl ? `<img class="logo" src="${escHtml(_empresaConfig.logoUrl)}" alt="">` : ''}
         <h1>${emisorNombre}</h1>
         ${mostrarRazon ? `<p>${emisorRazon}</p>` : ''}
         ${_empresaConfig.direccion ? `<p>${_empresaConfig.direccion}</p>` : ''}
@@ -768,10 +782,8 @@ const printFacturaFullPage = (factura, printFormat) => {
 
       ${renderFacturaNotas(factura.notas)}
 
-      <!-- NOTAS -->
-      <p class="notas">
-        Los precios incluyen instalación y transporte, entrega de 1 a 4 días laborables. Las ventas válidas por 5 días. Aceptamos devoluciones e intercambios con factura.
-      </p>
+      <!-- NOTA de la empresa (Configuración del Sistema); vacía = no sale -->
+      ${_empresaConfig.notaFactura ? `<p class="notas">${escHtml(_empresaConfig.notaFactura)}</p>` : ''}
 
       <!-- TOTALES -->
       <div class="totales-box">

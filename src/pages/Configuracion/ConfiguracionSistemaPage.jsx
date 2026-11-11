@@ -58,6 +58,7 @@ const ConfiguracionSistemaPage = () => {
         telefono: '',
         fax: '',
         slogan: '',
+        nota_factura: '',
         moneda_principal: 'DOP - PESOS',
         itbis_pct: 18,
         moneda_precios: 'DOP - PESOS',
@@ -124,6 +125,7 @@ const ConfiguracionSistemaPage = () => {
                     telefono: data.telefono || '',
                     fax: data.fax || '',
                     slogan: data.slogan || '',
+                    nota_factura: data.nota_factura || '',
                     moneda_principal: data.moneda_principal || 'DOP - PESOS',
                     itbis_pct: data.itbis_pct || 0,
                     moneda_precios: data.moneda_precios || 'DOP - PESOS',
@@ -528,6 +530,16 @@ const ConfiguracionSistemaPage = () => {
                         <div className="space-y-1.5">
                             <Label htmlFor="slogan" className="text-[11px] font-bold text-gray-700 uppercase">Slogan / Frase</Label>
                             <Input id="slogan" value={formData.slogan} onChange={handleInputChange} className="h-9 italic text-gray-600" />
+                        </div>
+
+                        {/* (11/11/2026) Antes la hoja carta traía una nota fija de tienda
+                            ("Los precios incluyen instalación y transporte...") en TODAS
+                            las empresas. Ahora cada una escribe la suya; vacía = no sale. */}
+                        <div className="space-y-1.5">
+                            <Label htmlFor="nota_factura" className="text-[11px] font-bold text-gray-700 uppercase">Nota al pie de la factura (hoja carta)</Label>
+                            <textarea id="nota_factura" rows={2} maxLength={400} value={formData.nota_factura || ''} onChange={handleInputChange}
+                                placeholder="Ej.: Garantía de 6 meses. No se aceptan devoluciones después de 48 horas. (Si lo dejas vacío, no sale nada.)"
+                                className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm" />
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">

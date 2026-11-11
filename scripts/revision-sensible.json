@@ -286,7 +286,7 @@
     "src/components/common/pdf/comisionPDF.js": "9670fced39020a00",
     "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
     "src/components/common/pdf/devolucionPDF.js": "91b42af5e95a7340",
-    "src/components/common/pdf/facturaCartaPDF.js": "7afca93593ae70bc",
+    "src/components/common/pdf/facturaCartaPDF.js": "19ef9ee58303cd13",
     "src/components/common/pdf/facturaPDF.js": "6b7580e23cb79eda",
     "src/components/common/pdf/pagoCompromisoPDF.js": "b6467cc47e39114e",
     "src/components/common/pdf/pagoSuplidorPDF.js": "824f535b5c3e07e3",
@@ -332,7 +332,7 @@
     "src/components/ventas/CotizacionSearchModal.jsx": "ea0cda9ca966e217",
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
-    "src/components/ventas/LineasServicios.jsx": "e976aa55781292aa",
+    "src/components/ventas/LineasServicios.jsx": "b19a941b77e3c2f4",
     "src/components/ventas/ProductSearchModal.jsx": "17352986c94c36b2",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "4dcf873fcfbe610a",
@@ -356,7 +356,7 @@
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
     "src/pages/ComprasPage.jsx": "e02bf19cdb614f8c",
     "src/pages/Configuracion/CierreCajaPage.jsx": "2b50de559e520821",
-    "src/pages/Configuracion/DgiiMonitorPage.jsx": "3cc0fae7c3fa1e09",
+    "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
     "src/pages/CuentasPorPagarPage.jsx": "efe77dc770754dee",
     "src/pages/DevolucionesPage.jsx": "3ea88c27d05f760b",
@@ -396,9 +396,9 @@
     "supabase/functions/emitir-fiscal/dgii_municipios.ts": "05e84e0c74dc6806",
     "supabase/functions/emitir-fiscal/dgii_rfce_produccion.ts": "b237ba185ea7fe97",
     "supabase/functions/emitir-fiscal/dgii_signer.ts": "3ab01a57d8c1f932",
-    "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "f8f45d9abf17451d",
+    "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "a5e2e74119b21ac0",
     "supabase/functions/emitir-fiscal/import_map.json": "3d5861c491100d4a",
-    "supabase/functions/emitir-fiscal/index.ts": "ee397c15a214f151",
+    "supabase/functions/emitir-fiscal/index.ts": "73e77ce217b3befb",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
     "supabase/functions/motoflow-compras-advisor/index.ts": "e873b25160eded59",
     "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
@@ -421,7 +421,8 @@
     "src/components/ventas/VarianteVentaModal.jsx": "b5614dae50ceb98e",
     "sql/ecf_quitar_secuencia.sql": "1421b83e85017acd",
     "src/lib/docFiscal.js": "11a1686c5671f4fe",
-    "src/components/ventas/VentaTactil.jsx": "bd54c65910029cfe"
+    "src/components/ventas/VentaTactil.jsx": "bd54c65910029cfe",
+    "sql/nota_factura_empresa.sql": "44c80d0af1f42ace"
   },
   "historial": [
     {
@@ -752,6 +753,18 @@
       "nota": "code-review high: dgii_xml_builder ANECF reescrito segun Formato Anulacion e-NCF v1.0 (RncEmisor, FechaHoraAnulacioneNCF, tabla de rangos por TipoeCF, rangos que se pisan rechazados, fecha ISO a hora RD); telefono emisor ###-###-#### en el builder del Emisor. Hallazgos atendidos; printPOS margenes repetidos por hoja y tipo carta.",
       "archivos": [
         "supabase/functions/emitir-fiscal/dgii_xml_builder.ts"
+      ]
+    },
+    {
+      "fecha": "2026-11-11",
+      "nota": "code-review high: logo en hoja carta y PDF (escapado, guarda de tamaño 0), nota al pie configurable por empresa, tope 80 en descripcion+referencia (tambien catalogo/calculadora), clic derecho solo PDF en FT y Escape no cierra el panel, FT filtrado por tenant, reemision de rechazados: no anuladas/devueltas, historial de rechazos, XML se rearma, apartado 3 min; NombreItem 80 + DescripcionItem.",
+      "archivos": [
+        "sql/nota_factura_empresa.sql",
+        "src/components/common/pdf/facturaCartaPDF.js",
+        "src/components/ventas/LineasServicios.jsx",
+        "src/pages/Configuracion/DgiiMonitorPage.jsx",
+        "supabase/functions/emitir-fiscal/dgii_xml_builder.ts",
+        "supabase/functions/emitir-fiscal/index.ts"
       ]
     }
   ]

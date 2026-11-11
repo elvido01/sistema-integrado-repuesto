@@ -96,6 +96,86 @@ const SECUENCIAS_AVISO = [
   ["34", "E34 (nota de crédito): las devoluciones no llevarán nota"],
 ];
 
+// Anula en la DGII un rango de e-NCF que no se usó (ANECF) y marca las filas
+// locales como anuladas (las aceptadas por la DGII nunca). (11/11/2026) Sale
+// de la acción dgii_anular_ecf para que la reemisión de un rechazado la use.
+// marcarLocal=false: la reemisión de un rechazado no marca filas (la fila ya
+// lleva el número nuevo; si el update principal falló aún tendría el viejo).
+async function anularEncfDgii(supabase, tenantId, { ncf_inicial, ncf_final, fecha_anulacion, marcarLocal = true } = {}) {
+      if (!ncf_inicial) throw new Error("ncf_inicial requerido");
+      const { data: integ } = await supabase
+        .from("integraciones_fiscales")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .eq("proveedor", "dgii_directo")
+        .maybeSingle();
+      if (!integ?.config) throw new Error("No hay config DGII directo");
+      const ambiente = integ.config.ambiente || "TesteCF";
+      const anecfXml = buildAnecfXml({
+        rnc_emisor: integ.config.rnc_emisor,
+        fecha_anulacion: fecha_anulacion || new Date().toISOString(),
+        ncf_inicial,
+        ncf_final: ncf_final || ncf_inicial,
+      });
+      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
+      const { xmlFirmado } = await signXmlGenerico(anecfXml, cert, privateKey);
+      const auth = await authenticate(cert, privateKey, ambiente);
+      const respuesta = await enviarAnulacion(xmlFirmado, auth.token, ambiente);
+      // (11/11/2026) Un 200 no basta: la DGII contesta codigo 15 "Satisfactorio"
+      // cuando anula; otra cosa es que no lo hizo.
+      const satisf = String(respuesta?.codigo ?? "") === "15" || /satisfactorio/i.test(String(respuesta?.nombre || ""));
+      if (!satisf) throw new Error(`La DGII no anuló ${ncf_inicial}: ${JSON.stringify(respuesta?.mensajes || respuesta).slice(0, 250)}`);
+
+      if (!marcarLocal) return { ok: true, ambiente, ncf_inicial, ncf_final: ncf_final || ncf_inicial, respuesta };
+      // 4. Marcar las filas en documentos_fiscales como anuladas
+      // Fase 0.7: NO sobreescribir filas en estados terminales DGII
+      // (aceptado / aceptado_condicional). Anular un e-CF ya aceptado
+      // por DGII tiene implicaciones legales y no debe pasar silencioso.
+      const { data: anuladas, error: updErr } = await supabase
+        .from("documentos_fiscales")
+        .update({
+          estado: "anulado",
+          estado_dgii: "anulado",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("tenant_id", tenantId)
+        .gte("encf", ncf_inicial)
+        .lte("encf", ncf_final || ncf_inicial)
+        .not("estado_dgii", "in", "(aceptado,aceptado_condicional)")
+        .select("id, encf, estado_dgii");
+
+      if (updErr) {
+        console.error("[dgii_anular_ecf] error actualizando documentos_fiscales:", updErr);
+      }
+
+      // Recolectar e-NCFs que NO se actualizaron (ya estaban aceptados)
+      const { data: bloqueados } = await supabase
+        .from("documentos_fiscales")
+        .select("encf, estado_dgii")
+        .eq("tenant_id", tenantId)
+        .gte("encf", ncf_inicial)
+        .lte("encf", ncf_final || ncf_inicial)
+        .in("estado_dgii", ["aceptado", "aceptado_condicional"]);
+
+      if (bloqueados && bloqueados.length > 0) {
+        console.warn(
+          `[dgii_anular_ecf] AVISO: ${bloqueados.length} e-CF ya aceptados por DGII NO fueron anulados localmente. Anulacion sigue valida en DGII; revisar manualmente:`,
+          bloqueados.map(b => b.encf).join(", ")
+        );
+      }
+
+      return {
+        ok: true,
+        ambiente,
+        ncf_inicial,
+        ncf_final: ncf_final || ncf_inicial,
+        respuesta,
+        anuladas_localmente: anuladas?.length ?? 0,
+        ya_aceptadas_dgii_no_modificadas: bloqueados?.length ?? 0,
+        bloqueados: bloqueados?.map(b => b.encf) ?? [],
+      };
+}
+
 // soloCert = la empresa ya emite y solo se cambia el certificado: se revisa
 // el certificado (y que la DGII lo acepte), no las secuencias ni los datos.
 async function requisitosProduccion(supabase, tenantId, config, soloCert = false) {
@@ -1018,7 +1098,9 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
 // la cola de reintento (dgii_reintentar_pendientes). Devuelve el resultado o
 // lanza.
 // ============================================================
-async function emitirFacturaFiscal(supabase, tenantId, factura_id, callerUserId) {
+// opts.docReservado (11/11/2026): id de la fila que dgii_reemitir_rechazado ya
+// apartó en "procesando"; esa no cuenta como "se está emitiendo en otro lado".
+async function emitirFacturaFiscal(supabase, tenantId, factura_id, callerUserId, opts = {}) {
 
   // 1. Cargar integración del tenant
   const { data: integ, error: integError } = await supabase
@@ -1044,6 +1126,9 @@ async function emitirFacturaFiscal(supabase, tenantId, factura_id, callerUserId)
     .single();
 
   if (facturaError || !factura) throw new Error("Factura no encontrada");
+  // (11/11/2026) Una venta anulada no lleva comprobante nuevo (la cola ya lo
+  // saltaba; el Monitor y la reemisión de rechazados no).
+  if (String(factura.estado || "").toUpperCase() === "ANULADA") throw new Error("La factura está anulada: no se le emite comprobante");
 
   // 3. Verificar que no esté ya emitida
   const { data: existingDoc } = await supabase
@@ -1079,15 +1164,20 @@ async function emitirFacturaFiscal(supabase, tenantId, factura_id, callerUserId)
 
   // 6. Registro. (10/10/2026) Si un intento anterior de ESTA factura falló,
   //    se reusa su fila: guarda el e-NCF (y el XML) que ya tomó.
-  const { data: previo } = await supabase
-    .from("documentos_fiscales")
-    .select("id, estado, retry_count, request_payload, updated_at")
-    .eq("factura_id", factura.id)
-    .in("estado", ["error", "procesando"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (previo?.estado === "procesando" && Date.now() - new Date(previo.updated_at).getTime() < 3 * 60 * 1000) {
+  // Con docReservado se usa ESA fila (las notas guardan el mismo factura_id).
+  const { data: previo } = opts.docReservado
+    ? await supabase.from("documentos_fiscales")
+      .select("id, estado, retry_count, request_payload, updated_at")
+      .eq("id", opts.docReservado).maybeSingle()
+    : await supabase
+      .from("documentos_fiscales")
+      .select("id, estado, retry_count, request_payload, updated_at")
+      .eq("factura_id", factura.id)
+      .in("estado", ["error", "procesando"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+  if (previo?.estado === "procesando" && previo.id !== opts.docReservado && Date.now() - new Date(previo.updated_at).getTime() < 3 * 60 * 1000) {
     throw new Error("Esta factura ya se está emitiendo en este momento; espera un minuto.");
   }
   let docFiscal;
@@ -2833,83 +2923,114 @@ Deno.serve(async (req) => {
     // ── ACTION: dgii_anular_ecf ──
     // Anula uno o varios e-NCF previamente emitidos. Genera un ANECF
     // firmado y lo envia al endpoint de anulaciones.
-    if (action === "dgii_anular_ecf") {
-      const { ncf_inicial, ncf_final, fecha_anulacion } = body;
-      if (!ncf_inicial) throw new Error("ncf_inicial requerido");
-
-      const { data: integ } = await supabase
-        .from("integraciones_fiscales")
-        .select("config")
-        .eq("tenant_id", tenantId)
-        .eq("proveedor", "dgii_directo")
-        .maybeSingle();
-      if (!integ?.config) throw new Error("No hay config DGII directo");
-      const ambiente = integ.config.ambiente || "TesteCF";
-
-      // 1. Generar ANECF
-      const anecfInput = {
-        rnc_emisor: integ.config.rnc_emisor,
-        fecha_anulacion: fecha_anulacion || new Date().toISOString(),
-        ncf_inicial,
-        ncf_final: ncf_final || ncf_inicial,
+    // ── ACTION: dgii_reemitir_rechazado (11/11/2026) ──
+    // Una factura que la DGII RECHAZÓ no se puede reenviar con el mismo e-NCF:
+    // la DGII devuelve el TrackId viejo con el mismo rechazo (BRIMAR
+    // E310000000001). Se emite con el número siguiente (camino normal de
+    // emitirFacturaFiscal, ya con la causa corregida) y el rechazado se anula
+    // con ANECF si la DGII dijo que no lo contó como usado.
+    if (action === "dgii_reemitir_rechazado") {
+      const { documento_id } = body;
+      if (!documento_id) throw new Error("documento_id requerido");
+      const { data: doc } = await supabase.from("documentos_fiscales")
+        .select("id, factura_id, encf, ncf, tipo_ecf, ambiente, estado, estado_dgii, updated_at, request_payload, arecf_payload")
+        .eq("id", documento_id).eq("tenant_id", tenantId).maybeSingle();
+      if (!doc) throw new Error("Documento no encontrado");
+      if (doc.estado_dgii !== "rechazado") throw new Error("Este comprobante no está rechazado por la DGII");
+      if (doc.estado === "anulado") throw new Error("Este comprobante ya se dio de baja; no se reemite");
+      // logEcfStart pone tipo_documento='factura' también en las notas: se mira el tipo.
+      const tipoDoc = String(doc.tipo_ecf || String(doc.encf || doc.ncf || "").slice(1, 3));
+      if (!doc.factura_id || ["33", "34"].includes(tipoDoc)) {
+        throw new Error("Solo se reemiten facturas; una nota de crédito/débito rechazada se rehace desde la devolución");
+      }
+      const rp = doc.request_payload || {};
+      // Fila recién rechazada (emitido): el rechazado es SU número. Fila de un
+      // reintento de reemisión que falló (error/procesando): el de la traza, y
+      // si ese intento ya tomó número nuevo, se reusa.
+      const fresca = doc.estado === "emitido";
+      const rechazado = fresca ? (doc.encf || doc.ncf) : (rp.encf_rechazado || doc.encf || doc.ncf);
+      const nuevoPrevio = !fresca && rp.encf_asignado && rp.encf_asignado !== rechazado ? rp.encf_asignado : null;
+      // Historial: un segundo rechazo no borra el registro del primero (ni si
+      // su anulación quedó pendiente).
+      const historial = fresca
+        ? [...(rp.historial_rechazos || []), ...(rp.encf_rechazado ? [{ encf: rp.encf_rechazado, anulacion: rp.anulacion_rechazado || null }] : [])]
+        : (rp.historial_rechazos || []);
+      const traza = {
+        encf_rechazado: rechazado,
+        rechazo_anterior: fresca ? { arecf: doc.arecf_payload, impresion: rp.impresion || null, xml_path: rp.xml_path || null } : (rp.rechazo_anterior || null),
+        historial_rechazos: historial,
       };
-      const anecfXml = buildAnecfXml(anecfInput);
-
-      // 2. Cargar .p12 + firmar
-      const { cert, privateKey } = await loadAndParseP12(supabase, integ.config);
-      const { xmlFirmado } = await signXmlGenerico(anecfXml, cert, privateKey);
-
-      // 3. Autenticar y enviar
-      const auth = await authenticate(cert, privateKey, ambiente);
-      const respuesta = await enviarAnulacion(xmlFirmado, auth.token, ambiente);
-
-      // 4. Marcar las filas en documentos_fiscales como anuladas
-      // Fase 0.7: NO sobreescribir filas en estados terminales DGII
-      // (aceptado / aceptado_condicional). Anular un e-CF ya aceptado
-      // por DGII tiene implicaciones legales y no debe pasar silencioso.
-      const { data: anuladas, error: updErr } = await supabase
-        .from("documentos_fiscales")
+      // Devuelta del todo = no hay venta que comprobar.
+      const { data: devs } = await supabase.from("devoluciones").select("id").eq("factura_id", doc.factura_id).limit(1); // revisado: solo importa si existe alguna, no cuál
+      if (devs?.length) throw new Error("La factura tiene una devolución: no se reemite. Revisa el caso a mano.");
+      // Se aparta la fila en "procesando": un segundo clic a la vez no pasa.
+      // Una apartada hace más de 3 min (función caída) se puede retomar.
+      const hace3 = new Date(Date.now() - 3 * 60000).toISOString(); // mismo plazo que emitirFacturaFiscal
+      const { data: apartada } = await supabase.from("documentos_fiscales")
         .update({
-          estado: "anulado",
-          estado_dgii: "anulado",
+          estado: "procesando",
+          // El número nuevo de un intento fallido se reusa, pero el XML se
+          // vuelve a armar: si el fallo fue de contenido, ya está corregido.
+          request_payload: { ...traza, ...(nuevoPrevio ? { encf_asignado: nuevoPrevio } : {}) },
           updated_at: new Date().toISOString(),
         })
-        .eq("tenant_id", tenantId)
-        .gte("encf", ncf_inicial)
-        .lte("encf", ncf_final || ncf_inicial)
-        .not("estado_dgii", "in", "(aceptado,aceptado_condicional)")
-        .select("id, encf, estado_dgii");
+        .eq("id", doc.id).eq("estado_dgii", "rechazado")
+        .or(`estado.in.(emitido,error),and(estado.eq.procesando,updated_at.lt.${hace3})`)
+        .select("id");
+      if (!apartada?.length) throw new Error("Este comprobante ya se está reemitiendo; espera un minuto y refresca.");
 
-      if (updErr) {
-        console.error("[dgii_anular_ecf] error actualizando documentos_fiscales:", updErr);
+      let r;
+      try {
+        r = await emitirFacturaFiscal(supabase, tenantId, doc.factura_id, callerUserId, { docReservado: doc.id });
+      } catch (e) {
+        // Lo que falla antes de emitir (factura no encontrada, ya emitida…)
+        // no debe dejar la fila trabada en "procesando".
+        const { error: eSuelta } = await supabase.from("documentos_fiscales")
+          .update({ estado: "error", error_message: String(e?.message || e).slice(0, 500), updated_at: new Date().toISOString() })
+          .eq("id", doc.id).eq("estado", "procesando").select("id");
+        if (eSuelta) console.error("[reemitir] soltar fila:", eSuelta.message);
+        throw e;
       }
+      // La traza del rechazo se queda junto al comprobante nuevo.
+      const { data: actual } = await supabase.from("documentos_fiscales").select("request_payload").eq("id", doc.id).maybeSingle();
+      const { data: conTraza, error: eTraza } = await supabase.from("documentos_fiscales")
+        .update({ request_payload: { ...(actual?.request_payload || {}), ...traza } })
+        .eq("id", doc.id).select("id");
+      if (eTraza || !conTraza?.length) console.error("[reemitir] no se guardó la traza del rechazo:", eTraza?.message || "0 filas", traza);
 
-      // Recolectar e-NCFs que NO se actualizaron (ya estaban aceptados)
-      const { data: bloqueados } = await supabase
-        .from("documentos_fiscales")
-        .select("encf, estado_dgii")
-        .eq("tenant_id", tenantId)
-        .gte("encf", ncf_inicial)
-        .lte("encf", ncf_final || ncf_inicial)
-        .in("estado_dgii", ["aceptado", "aceptado_condicional"]);
-
-      if (bloqueados && bloqueados.length > 0) {
-        console.warn(
-          `[dgii_anular_ecf] AVISO: ${bloqueados.length} e-CF ya aceptados por DGII NO fueron anulados localmente. Anulacion sigue valida en DGII; revisar manualmente:`,
-          bloqueados.map(b => b.encf).join(", ")
-        );
+      // Se anula solo si la DGII dijo que NO contó el número como usado, y en
+      // el MISMO ambiente donde se rechazó (uno de certificación no se toca en producción).
+      const arecf = traza.rechazo_anterior?.arecf || doc.arecf_payload || {};
+      const usada = arecf.secuenciaUtilizada ?? arecf.SecuenciaUtilizada;
+      const ambienteAhora = r.impresion?.ambiente || doc.ambiente;
+      let anulacion = null;
+      if (!rechazado || rechazado === r.ncf) {
+        anulacion = null;
+      } else if (usada !== false) {
+        anulacion = { ok: false, omitida: true, motivo: "la DGII no confirmó que el número quedara sin usar" };
+      } else if (doc.ambiente && doc.ambiente !== ambienteAhora) {
+        anulacion = { ok: false, omitida: true, motivo: `se rechazó en ${doc.ambiente} y la empresa ahora está en ${ambienteAhora}` };
+      } else {
+        try {
+          anulacion = await anularEncfDgii(supabase, tenantId, { ncf_inicial: rechazado, marcarLocal: false });
+        } catch (e) {
+          anulacion = { ok: false, error: String(e?.message || e).slice(0, 300) };
+        }
       }
+      // Queda guardado: si la anulación falló o se saltó, se sabe cuál falta.
+      if (anulacion) {
+        const { data: fila } = await supabase.from("documentos_fiscales").select("request_payload").eq("id", doc.id).maybeSingle();
+        const { error: eAn } = await supabase.from("documentos_fiscales")
+          .update({ request_payload: { ...(fila?.request_payload || {}), anulacion_rechazado: { encf: rechazado, ...anulacion, respuesta: undefined, en: new Date().toISOString() } } })
+          .eq("id", doc.id).select("id");
+        if (eAn) console.error("[reemitir] guardar anulación:", eAn.message);
+      }
+      return new Response(JSON.stringify({ ...r, encf_rechazado: rechazado, anulacion }), { status: 200, headers: corsHeaders });
+    }
 
-      return new Response(JSON.stringify({
-        ok: true,
-        ambiente,
-        ncf_inicial,
-        ncf_final: ncf_final || ncf_inicial,
-        respuesta,
-        anuladas_localmente: anuladas?.length ?? 0,
-        ya_aceptadas_dgii_no_modificadas: bloqueados?.length ?? 0,
-        bloqueados: bloqueados?.map(b => b.encf) ?? [],
-      }), { status: 200, headers: corsHeaders });
+    if (action === "dgii_anular_ecf") {
+      const r = await anularEncfDgii(supabase, tenantId, body);
+      return new Response(JSON.stringify(r), { status: 200, headers: corsHeaders });
     }
 
     // ── ACTION: dgii_enviar_rfce ──

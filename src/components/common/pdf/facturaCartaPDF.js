@@ -80,7 +80,7 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
   // (10/10/2026) e-CF: título electrónico, e-NCF, vencimiento y el QR de la DGII.
   const factura = await prepararEcfImpresion(facturaIn);
   const ecf = factura.ecf || null;
-  const firma = await cargarImagen(empresa.firma_url);
+  const [firma, logo] = await Promise.all([cargarImagen(empresa.firma_url), cargarImagen(empresa.logo_url)]);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
@@ -97,6 +97,17 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
   const comercial = String(empresa.nombre || '').trim();
 
   let y = 18;
+  // (11/11/2026) Logo arriba a la izquierda (hasta 16 mm de alto y 70 de
+  // ancho); el nombre y los datos bajan debajo de él.
+  if (logo && logo.w > 0 && logo.h > 0) {
+    let lh = 16;
+    let lw = (logo.w / logo.h) * lh;
+    if (lw > 70) { lw = 70; lh = (logo.h / logo.w) * lw; }
+    try {
+      doc.addImage(logo.dataUrl, 'PNG', M, 10, lw, lh);
+      y = 10 + lh + 6;
+    } catch (_) { /* sin logo: el PDF sale igual */ }
+  }
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.text(String(emisor).toUpperCase(), M, y);
@@ -337,6 +348,15 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
   doc.setFontSize(7.5);
   doc.text('Entregado por', M + 29, yFirma + 3.5, { align: 'center' });
   doc.text('Recibido conforme', R - 29, yFirma + 3.5, { align: 'center' });
+
+  // (11/11/2026) Nota de la empresa (Configuración del Sistema); vacía = no sale.
+  if (String(empresa.nota_factura || '').trim()) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.5);
+    const lineasNota = doc.splitTextToSize(String(empresa.nota_factura).trim(), W - 2 * M).slice(0, 2);
+    doc.text(lineasNota, W / 2, H - 14.5 - (lineasNota.length - 1) * 3.2, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+  }
 
   doc.setFontSize(6.5);
   doc.text(
