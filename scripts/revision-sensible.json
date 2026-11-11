@@ -340,7 +340,7 @@
     "src/components/ventas/VentasTable.jsx": "214fd03d123f7ca2",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "260e8c9186d7572d",
+    "src/hooks/useVentas.js": "aafb786103f53a6f",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "1a5660697d4c8781",
+    "src/pages/VentasPage.jsx": "831e39afb1b3ba1f",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -420,7 +420,8 @@
     "src/lib/compraLinea.js": "23cb74e4cfc96c56",
     "src/components/ventas/VarianteVentaModal.jsx": "b5614dae50ceb98e",
     "sql/ecf_quitar_secuencia.sql": "1421b83e85017acd",
-    "src/lib/docFiscal.js": "11a1686c5671f4fe"
+    "src/lib/docFiscal.js": "11a1686c5671f4fe",
+    "src/components/ventas/VentaTactil.jsx": "bd54c65910029cfe"
   },
   "historial": [
     {
@@ -716,6 +717,15 @@
         "src/components/ventas/VentasHeader.jsx",
         "src/hooks/useVentas.js",
         "src/lib/docFiscal.js",
+        "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-11",
+      "nota": "code-review high: 10 hallazgos; arreglados 8 (cuenta bancaria de tarjeta/transferencia resuelta antes de grabar y el cobro espera a que este puesta, pantalla tactil por portal encima del menu lateral con dialogos encima, contado sin pagos partidos viejos y espera a paymentType contado, precio por nivel del cliente compartiendo armarLinea con la fila amarilla, se esconde sin desmontarse al cambiar de panel, recibido con un solo punto, F3/F10 apagados con la tactil abierta y aviso sin decir F10, archivos nuevos en el commit). Quedan: menos en cantidades fraccionarias borra la linea (cafeteria vende unidades)",
+      "archivos": [
+        "src/components/ventas/VentaTactil.jsx",
+        "src/hooks/useVentas.js",
         "src/pages/VentasPage.jsx"
       ]
     }

@@ -8,6 +8,7 @@ import LineasServicios from '@/components/ventas/LineasServicios';
 import VentasFooter from '@/components/ventas/VentasFooter';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import VarianteVentaModal from '@/components/ventas/VarianteVentaModal';
+import VentaTactil from '@/components/ventas/VentaTactil';
 import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import DocumentSearchModal from '@/components/ventas/DocumentSearchModal';
 import SugerenciasEquivalentesModal from '@/components/ventas/SugerenciasEquivalentesModal';
@@ -87,6 +88,7 @@ const VentasPage = () => {
     pideCanalOrigen,
     canalOrigen,
     agregarProductoPorId,
+    agregarLineaDirecta,
     setInterceptorProducto,
   } = useVentas();
 
@@ -108,6 +110,35 @@ const VentasPage = () => {
   }, [esAluminio, setInterceptorProducto]);
 
   const { activePanel } = usePanels();
+
+  // (11/11/2026) Cafetería: Ventas abre en pantalla táctil (VentaTactil).
+  // Cobrar ahí usa el mismo camino que el agente: pone la forma de pago y lo
+  // recibido, y el efecto de cobroPedido pulsa F10 cuando la pantalla ya lo
+  // refleja (grabar, imprimir, caja, cierre y e-CF como siempre).
+  const esCafeteria = empresa?.tipo_negocio === 'cafeteria';
+  const [modoTactil, setModoTactil] = useState(true);
+  const tactilAbierto = esCafeteria && modoTactil;
+  const cobrarTactil = async ({ forma_pago, recibido }) => {
+    // Tarjeta/transferencia: la cuenta a la que entra, como la escoge el pie
+    // de la factura (CuentaBancariaSelect): default de Ventas → default
+    // general → primera. Sin esto se grababa antes de que el pie la cargara.
+    let cuenta = null;
+    if (forma_pago !== 'EFECTIVO') {
+      const [{ data: lista }, { data: defs }] = await Promise.all([
+        supabase.rpc('get_cuentas_seleccionables', { p_moneda: 'DOP' }),
+        supabase.from('cuentas_bancarias_default').select('modulo, cuenta_id').eq('tenant_id', tenantId),
+      ]);
+      const cuentas = (lista || []).filter((c) => c.moneda === 'DOP');
+      const defId = (defs || []).find((d) => d.modulo === 'ventas')?.cuenta_id || empresa?.cuenta_bancaria_default_id;
+      cuenta = (cuentas.find((c) => c.id === defId) || cuentas[0])?.id || null;
+      setCuentaBancoId(cuenta);
+    }
+    setPagos([]);
+    setPaymentType('contado');
+    setTipoPago(forma_pago);
+    setMontoRecibido(String(recibido));
+    setCobroPedido({ tipo: 'cobrar_venta', forma_pago, recibido, contado: true, cuenta, pedidoEn: Date.now() });
+  };
   const { setSidebarOpen } = useLayout();
 
   // (29/10/2026) El punto de venta necesita todo el ancho: en pantallas
@@ -688,8 +719,12 @@ const VentasPage = () => {
     // quedaría esperando y saltaría el aviso de los 3 segundos. Es preferible
     // a grabar una de verdad en cero.)
     const totalesListos = items.length > 0 && Number(totals?.totalFactura) > 0;
+    // Pantalla táctil (cafetería): además, de contado, sin pagos partidos
+    // viejos y con la cuenta del banco puesta (tarjeta/transferencia).
+    const tactilListo = !cobroPedido.contado || (paymentType === 'contado' && pagos.length === 0
+      && (cobroPedido.cuenta == null || cuentaBancoId === cobroPedido.cuenta));
 
-    if (!formaLista || !montoListo || !totalesListos) {
+    if (!formaLista || !montoListo || !totalesListos || !tactilListo) {
       // Un reloj de verdad, no una comprobación de fecha: si el estado no
       // llega, este efecto no se vuelve a ejecutar solo y la espera quedaría
       // colgada en silencio. Cuando el estado sí llega, el efecto se repite y
@@ -699,7 +734,9 @@ const VentasPage = () => {
         toast({
           variant: 'destructive',
           title: 'No grabé la factura',
-          description: 'La pantalla no terminó de armarse. Revísala y pulsa F10.',
+          description: cobroPedido.contado
+            ? 'La pantalla no terminó de armarse. Toca Cobrar otra vez; si se repite, revísala en "Factura normal".'
+            : 'La pantalla no terminó de armarse. Revísala y pulsa F10.',
         });
       }, 3000);
       return () => clearTimeout(reloj);
@@ -707,11 +744,13 @@ const VentasPage = () => {
 
     setCobroPedido(null);
     handleConfirmAndPrint();
-  }, [cobroPedido, tipoPago, montoRecibido, items, totals, handleConfirmAndPrint, toast]);
+  }, [cobroPedido, tipoPago, montoRecibido, items, totals, paymentType, pagos, cuentaBancoId, handleConfirmAndPrint, toast]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       if (activePanel !== 'ventas') return;
+      // Con la pantalla táctil encima, F3/F10 no actúan sobre la factura de abajo.
+      if (tactilAbierto) return;
 
       if (e.key === 'F3') {
         e.preventDefault();
@@ -725,7 +764,7 @@ const VentasPage = () => {
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [handleConfirmAndPrint, activePanel]);
+  }, [handleConfirmAndPrint, activePanel, tactilAbierto]);
 
   const handleProductSearchSelect = async (product) => {
     try {
@@ -765,6 +804,28 @@ const VentasPage = () => {
   return (
     <div className="bg-gray-50 h-full flex flex-col">
       <Helmet><title>Ventas — MotoFlow</title></Helmet>
+
+      {tactilAbierto && (
+        <VentaTactil
+          visible={activePanel === 'ventas'}
+          titulo={empresa?.nombre}
+          items={items}
+          total={totals?.totalFactura}
+          isSaving={isSaving || !!cobroPedido}
+          onAgregar={agregarLineaDirecta}
+          onCantidad={(id, n) => handleUpdateItem(id, 'cantidad', n)}
+          onQuitar={handleDeleteItem}
+          onLimpiar={resetVenta}
+          onCobrar={cobrarTactil}
+          onSalir={() => setModoTactil(false)}
+        />
+      )}
+      {esCafeteria && !modoTactil && (
+        <button type="button" onClick={() => setModoTactil(true)}
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 px-5 h-12 rounded-full bg-emerald-600 text-white font-black shadow-lg">
+          Pantalla táctil
+        </button>
+      )}
 
       {empresa?.solo_consulta && (
         <div className="bg-amber-100 border-b-2 border-amber-400 text-amber-900 px-4 py-2 text-sm font-bold text-center">

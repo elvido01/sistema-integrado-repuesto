@@ -20,7 +20,7 @@ const PerfilEmpresa = () => {
   const { planActual } = useSuscripcion();
   // Lo de motos (precios de placa/GPS/casco/seguro, Carta de Ruta, Cobranzas)
   // no aplica a colegios, servicios ni inmobiliarias.
-  const esDeMotos = !['educativo', 'servicios', 'inmobiliaria', 'aluminio'].includes(empresa?.tipo_negocio);
+  const esDeMotos = !['educativo', 'servicios', 'inmobiliaria', 'aluminio', 'cafeteria'].includes(empresa?.tipo_negocio);
   // (21/10/2026) La empresa ACTIVA, no la del perfil: el súper admin no tiene
   // empresa en el perfil (la pantalla se quedaba cargando para siempre) y quien
   // trabaja varias empresas editaba la del perfil aunque tuviera otra abierta.

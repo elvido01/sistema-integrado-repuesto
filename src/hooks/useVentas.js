@@ -643,8 +643,10 @@ export const useVentas = () => {
   // opciones (solo las usa el modal de color/pies): directo = no volver a
   // interceptar; cantidad = fracción de barra (5 pies de 20 = 0.25);
   // nota = "5 PIES" (va en la descripción y la línea queda aparte).
-  const addProductToInvoice = useCallback((product, opciones = {}) => {
-    if (!opciones.directo && interceptorProductoRef.current && interceptorProductoRef.current(product)) return;
+  // La línea de un producto con el precio de la factura (presentación que
+  // factura y nivel de precio del cliente). La usan la fila amarilla
+  // (addProductToInvoice) y la pantalla táctil (agregarLineaDirecta).
+  const armarLinea = (product, opciones = {}) => {
     let priceToUse = product.precio || 0;
     let maxDesc = product.max_descuento || 0;
     const itbis_pct = normalizeItbisPct(product.itbis_pct);
@@ -718,9 +720,38 @@ export const useVentas = () => {
       Object.assign(newItem, calculateItemValues(newItem));
     }
 
+    return newItem;
+  };
+
+  const addProductToInvoice = useCallback((product, opciones = {}) => {
+    if (!opciones.directo && interceptorProductoRef.current && interceptorProductoRef.current(product)) return;
+    const newItem = armarLinea(product, opciones);
     setCurrentItem(conPromo(newItem, promoRef.current));
     setItemCode(product.codigo);
-  }, [cliente]);
+  }, [cliente]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // (11/11/2026) Cafetería, pantalla táctil: un toque agrega la línea directo
+  // a la factura (sin pasar por la fila amarilla). Si ya está, suma 1. Mismo
+  // precio que la factura normal (armarLinea) y el mismo bloqueo bajo costo.
+  const agregarLineaDirecta = useCallback((product) => {
+    const nueva = conPromo(armarLinea(product), promoRef.current);
+    const bc = checkBajoCosto(nueva);
+    if (bc) {
+      toast({ title: 'Precio por debajo del costo', description: `${describeBajoCosto(nueva, bc)} Corrige el precio en el producto.`, variant: 'destructive', duration: 7000 });
+      return false;
+    }
+    setItems((prev) => {
+      const i = prev.findIndex((x) => x.id === product.id);
+      if (i >= 0) {
+        const u = [...prev];
+        const e = { ...u[i], cantidad: Number(u[i].cantidad || 0) + 1 };
+        u[i] = { ...e, ...calculateItemValues(e) };
+        return u;
+      }
+      return [...prev, nueva];
+    });
+    return true;
+  }, [toast, empresa, cliente]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const agregarPiezaPorCodigo = useCallback(async (code) => {
     if (!code.trim()) return;
@@ -1959,6 +1990,7 @@ export const useVentas = () => {
     handleSave,
     addProductToInvoice,
     agregarProductoPorId,
+    agregarLineaDirecta,
     setInterceptorProducto,
     handleUpdateItem,
     handleDeleteItem,

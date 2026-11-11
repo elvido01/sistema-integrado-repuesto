@@ -195,9 +195,9 @@ const navItems = [
       { title: 'Almacenes', id: 'almacenes', icon: Warehouse, ocultarEnTipos: ['servicios'] },
       { title: 'Entrada Mercancía', id: 'entrada-mercancia', icon: Download, ocultarEnTipos: ['servicios'] },
       { title: 'Salida Mercancía', id: 'salida-mercancia', icon: Upload, ocultarEnTipos: ['servicios'] },
-      { title: 'Actualizar Ubicación', id: 'actualizar-ubicacion', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
+      { title: 'Actualizar Ubicación', id: 'actualizar-ubicacion', ocultarEnTipos: ['servicios', 'inmobiliaria', 'cafeteria'] },
       { title: 'Imp. Etiquetas', id: 'etiquetas-masivas', icon: Barcode, ocultarEnTipos: ['servicios', 'inmobiliaria'] },
-      { title: 'Solicitudes Agotados', id: 'solicitudes', icon: ClipboardList, ocultarEnTipos: ['servicios', 'inmobiliaria'] },
+      { title: 'Solicitudes Agotados', id: 'solicitudes', icon: ClipboardList, ocultarEnTipos: ['servicios', 'inmobiliaria', 'cafeteria'] },
     ],
   },
   {
@@ -239,9 +239,9 @@ const navItems = [
       { title: 'Suplidores', id: 'suplidores', icon: Truck },
       { title: 'Mercancías', id: 'mercancias', icon: Package },
       { title: 'Tipos de Producto', id: 'tipos-producto' },
-      { title: 'Marcas', id: 'marcas', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
-      { title: 'Modelos', id: 'modelos', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
-      { title: 'Ubicaciones', id: 'ubicaciones', ocultarEnTipos: ['servicios', 'inmobiliaria'] },
+      { title: 'Marcas', id: 'marcas', ocultarEnTipos: ['servicios', 'inmobiliaria', 'cafeteria'] },
+      { title: 'Modelos', id: 'modelos', ocultarEnTipos: ['servicios', 'inmobiliaria', 'cafeteria'] },
+      { title: 'Ubicaciones', id: 'ubicaciones', ocultarEnTipos: ['servicios', 'inmobiliaria', 'cafeteria'] },
     ],
   },
   {
@@ -267,6 +267,7 @@ const TITULOS_POR_TIPO = {
   servicios: { mercancias: 'Servicios' },
   inmobiliaria: { mercancias: 'Inmuebles y Servicios' },
   educativo: { mercancias: 'Uniformes y Mercancías' },
+  cafeteria: { mercancias: 'Menú y Productos' },
 };
 const tituloPorTipo = (sub, tipo) => TITULOS_POR_TIPO[tipo]?.[sub.id] || sub.title;
 

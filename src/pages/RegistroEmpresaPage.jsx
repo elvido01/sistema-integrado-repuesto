@@ -188,6 +188,7 @@ const RegistroEmpresaPage = ({ onVolver }) => {
                   { v: 'inmobiliaria', t: 'Inmobiliaria', d: 'Solares, ventas a plazos, alquileres' },
                   { v: 'educativo', t: 'Centro educativo', d: 'Colegios: estudiantes y mensualidades' },
                   { v: 'aluminio', t: 'Ventanas y aluminio', d: 'Proyectos, medidas y desglose de ventanas' },
+                  { v: 'cafeteria', t: 'Cafetería', d: 'Venta rápida con pantalla táctil' },
                 ].map(o => (
                   <button
                     key={o.v}
