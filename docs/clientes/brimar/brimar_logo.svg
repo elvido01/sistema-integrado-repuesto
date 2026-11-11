@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="1 38 172 34" width="1720" height="340">
+  <defs>
+    <linearGradient id="az" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7fb2e5"/>
+      <stop offset="0.55" stop-color="#3a78c2"/>
+      <stop offset="1" stop-color="#1d4f99"/>
+    </linearGradient>
+    <clipPath id="vela">
+      <path d="M3 70 A33.2 33.2 0 0 1 24.5 39.6 V70 Z"/>
+    </clipPath>
+  </defs>
+  <!-- Vela: franjas azules con la columna naranja -->
+  <g clip-path="url(#vela)">
+    <g fill="url(#az)">
+      <rect x="0" y="39.5" width="20.2" height="3.4"/>
+      <rect x="0" y="44.4" width="20.2" height="3.6"/>
+      <rect x="0" y="49.6" width="20.2" height="3.6"/>
+      <rect x="0" y="55" width="20.2" height="3.8"/>
+      <rect x="0" y="60.6" width="20.2" height="3.9"/>
+      <rect x="0" y="66.4" width="20.2" height="3.6"/>
+    </g>
+    <g fill="#1d4f99">
+      <rect x="21.2" y="39.5" width="3.4" height="3.4"/>
+      <rect x="21.2" y="44.4" width="3.4" height="3.6"/>
+      <rect x="21.2" y="49.6" width="3.4" height="3.6"/>
+      <rect x="21.2" y="55" width="3.4" height="3.8"/>
+      <rect x="21.2" y="60.6" width="3.4" height="3.9"/>
+      <rect x="21.2" y="66.4" width="3.4" height="3.6"/>
+    </g>
+    <g fill="#f39a1e">
+      <rect x="21.2" y="40.6" width="1.7" height="1.7"/>
+      <rect x="21.2" y="45.2" width="1.7" height="1.9"/>
+      <rect x="21.2" y="50.4" width="1.7" height="1.9"/>
+      <rect x="21.2" y="55.8" width="1.7" height="2.1"/>
+      <rect x="21.2" y="61.4" width="1.7" height="2.4"/>
+      <rect x="20.2" y="64.6" width="4.4" height="1.6"/>
+      <rect x="20.2" y="66.4" width="1.8" height="1.6"/>
+    </g>
+  </g>
+  <!-- BRIMAR -->
+  <g fill="none" stroke="#1d3a6c" stroke-width="3.1" stroke-linejoin="miter" stroke-miterlimit="2">
+    <path d="M29.6 70 V46.05 H38 A5.45 5.45 0 0 1 38 56.95 H29.6 M37 56.95 H39.3 A5.72 5.72 0 0 1 39.3 68.4 H29.6"/>
+    <path d="M53.6 70 V46.05 H61.4 A5.95 5.95 0 0 1 61.4 57.95 H53.6"/>
+    <path d="M61.2 57.95 L69.6 70"/>
+    <path d="M76.5 44.5 V70"/>
+    <path stroke-linejoin="bevel" d="M85.5 70 V46 L98 68.4 L110.6 46 V70"/>
+    <path stroke-linejoin="bevel" d="M119.6 70 L134 46.2 L148.4 70"/>
+    <path d="M124.6 62 H143.4"/>
+    <path d="M154.5 70 V46.05 H160.8 A5.75 5.75 0 0 1 160.8 57.55 H154.5"/>
+    <path d="M160.6 57.55 L169.8 70"/>
+  </g>
+</svg>
