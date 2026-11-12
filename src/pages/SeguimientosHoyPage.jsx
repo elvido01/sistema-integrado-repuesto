@@ -7,11 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, Search, MessageCircle, CalendarClock, Ban, ShieldAlert, PackageSearch } from 'lucide-react';
+import { Loader2, RefreshCw, Search, MessageCircle, CalendarClock, Ban, ShieldAlert, PackageSearch, Copy, Send } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
 import {
   normalizarTelefonoRD, clasificarSeguimiento, ordenarSeguimientos,
   filtrarSeguimientos, resumenSeguimientos, ultimaNota, validarAccionEstado,
+  mensajeDeSeguimiento, enlaceWhatsAppSeguimiento,
 } from '@/lib/seguimientosUtils';
 
 const hoyLocal = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
@@ -77,6 +78,19 @@ const SeguimientosHoyPage = () => {
     [fichas, filtros, ctx]
   );
   const resumen = useMemo(() => resumenSeguimientos(fichas, ctx), [fichas, ctx]);
+
+  // (12/11/2026) "Precio sin respuesta": el mensaje listo para mandarle. Se
+  // copia (para pegarlo en el chat) o, si se conoce su número, se abre
+  // WhatsApp con el mensaje ya escrito.
+  const copiarMensaje = async (f) => {
+    const texto = mensajeDeSeguimiento(f);
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast({ title: 'Mensaje copiado', description: texto, duration: 6000 });
+    } catch {
+      toast({ variant: 'destructive', title: 'No se pudo copiar', description: texto, duration: 15000 });
+    }
+  };
 
   const abrirGestionar = (f) => {
     setForm({
@@ -291,6 +305,22 @@ const SeguimientosHoyPage = () => {
                       disabled={!f.telefono} onClick={() => verConversacion(f)}>
                       <MessageCircle className="w-4 h-4" />
                     </Button>
+                    {f.estado === 'precio_enviado' && (() => {
+                      const url = enlaceWhatsAppSeguimiento(f, mensajeDeSeguimiento(f));
+                      return (
+                        <>
+                          <Button size="sm" variant="ghost" title={`Copiar el mensaje de seguimiento:\n${mensajeDeSeguimiento(f)}`}
+                            onClick={() => copiarMensaje(f)}>
+                            <Copy className="w-4 h-4" />
+                          </Button>
+                          {url && (
+                            <Button size="sm" variant="ghost" asChild title="Abrir WhatsApp con el mensaje ya escrito">
+                              <a href={url} target="_blank" rel="noopener noreferrer"><Send className="w-4 h-4 text-emerald-600" /></a>
+                            </Button>
+                          )}
+                        </>
+                      );
+                    })()}
                   </td>
                 </tr>
               );

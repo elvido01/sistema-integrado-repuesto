@@ -6,6 +6,9 @@ import {
   filtrarSeguimientos,
   resumenSeguimientos,
   ultimaNota,
+  precioQueSeLeDio,
+  mensajeDeSeguimiento,
+  enlaceWhatsAppSeguimiento,
 } from '../src/lib/seguimientosUtils.js';
 
 const HOY = '2026-07-18';
@@ -143,3 +146,32 @@ describe('ultimaNota', () => {
     expect(ultimaNota(null)).toBe('');
   });
 });
+
+describe('mensaje de seguimiento (precio sin respuesta)', () => {
+  it('saca el precio de la nota automática', () => {
+    expect(precioQueSeLeDio('05/11 18:49 precio que le diste: «4,435»')).toBe('4,435');
+    expect(precioQueSeLeDio('nota a mano')).toBe('');
+    expect(precioQueSeLeDio(null)).toBe('');
+  });
+  it('precio suelto: "te lo había dejado en"', () => {
+    const m = mensajeDeSeguimiento({ notas: '05/11 18:49 precio que le diste: «4,435»' });
+    expect(m).toContain('Te lo había dejado en 4,435.');
+  });
+  it('precio en frase: se cita tal cual', () => {
+    const m = mensajeDeSeguimiento({ notas: '30/10 17:01 precio que le diste: «Farol delantero a 450»' });
+    expect(m).toContain('Te había dicho: Farol delantero a 450.');
+  });
+  it('sin precio: mensaje genérico', () => {
+    expect(mensajeDeSeguimiento({ notas: '' })).toMatch(/¿Todavía te interesa lo que me preguntaste\?/);
+  });
+  it('enlace de WhatsApp solo si el nombre es el número', () => {
+    const url = enlaceWhatsAppSeguimiento({ cliente_nombre: '+1 (829) 842-5722', telefono: '18099800016' }, 'Buen día. ¿Sí?');
+    expect(url).toBe('https://wa.me/18298425722?text=' + encodeURIComponent('Buen día. ¿Sí?'));
+    expect(enlaceWhatsAppSeguimiento({ cliente_nombre: '809-555-1234' }, 'x')).toBe('https://wa.me/18095551234?text=x');
+    // nombre de persona o de usuario: el teléfono guardado puede ser un id interno
+    expect(enlaceWhatsAppSeguimiento({ cliente_nombre: '@sr._r_arno', telefono: '18495820691' }, 'x')).toBeNull();
+    expect(enlaceWhatsAppSeguimiento({ cliente_nombre: 'Ruben Crx250', telefono: '18292951927' }, 'x')).toBeNull();
+    expect(enlaceWhatsAppSeguimiento({ cliente_nombre: '12345' }, 'x')).toBeNull();
+  });
+});
+

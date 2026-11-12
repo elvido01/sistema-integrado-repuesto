@@ -93,3 +93,34 @@ export function ultimaNota(notas) {
   const lineas = String(notas || '').split('\n').map((l) => l.trim()).filter(Boolean);
   return lineas.length ? lineas[lineas.length - 1] : '';
 }
+
+// (12/11/2026) Seguimiento de "precio sin respuesta": el mensaje listo para
+// mandarle al cliente. El precio sale de la nota que deja el seguimiento
+// automático: `DD/MM HH:MI precio que le diste: «…»`.
+export function precioQueSeLeDio(notas) {
+  const m = /precio que le diste:\s*«([^»]*)»/i.exec(String(notas || ''));
+  return m ? m[1].trim() : '';
+}
+
+export function mensajeDeSeguimiento(ficha) {
+  const precio = precioQueSeLeDio(ficha?.notas);
+  if (!precio) return 'Buen día. ¿Todavía te interesa lo que me preguntaste? Me avisas y te atiendo de una vez.';
+  // Un precio suelto ("4,435") se dice distinto que una frase ("Farol delantero a 450").
+  const soloNumero = /^[\d.,\s$RDrd]+$/.test(precio);
+  return soloNumero
+    ? `Buen día. ¿Todavía te interesa lo que me preguntaste? Te lo había dejado en ${precio}. Me avisas y te atiendo de una vez.`
+    : `Buen día. ¿Todavía te interesa? Te había dicho: ${precio}. Me avisas y te atiendo de una vez.`;
+}
+
+// Enlace para abrir WhatsApp con el mensaje ya escrito. El teléfono guardado de
+// un chat del espejo puede ser un id interno (@lid) que no es su número: solo
+// se confía cuando el NOMBRE del contacto es el propio número ("+1 (829) 842-5722").
+// Si no, devuelve null y se copia el mensaje a mano.
+export function enlaceWhatsAppSeguimiento(ficha, mensaje) {
+  const nombre = String(ficha?.cliente_nombre || '');
+  if (!/^[\d\s()+\-.]+$/.test(nombre)) return null;
+  let d = nombre.replace(/\D/g, '');
+  if (d.length === 10) d = `1${d}`;
+  if (d.length !== 11 || !/^1(809|829|849)/.test(d)) return null;
+  return `https://wa.me/${d}?text=${encodeURIComponent(mensaje || '')}`;
+}

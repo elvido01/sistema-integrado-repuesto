@@ -23,6 +23,10 @@ const NotificationBell = () => {
         } else if (notif.tipo === 'resumen_ai_ceo') {
             openPanel('ai-ceo');
             setPanelOpen(false);
+        } else if (notif.tipo === 'crm_seguimiento') {
+            // (12/11/2026) "Le diste precio y no volvió a escribir".
+            openPanel('seguimientos-hoy');
+            setPanelOpen(false);
         }
     };
     const panelRef = useRef(null);
@@ -117,6 +121,7 @@ const NotificationBell = () => {
                                                 title={
                                                     n.tipo === 'credito_vencido' ? 'Doble clic para abrir Recibo de Ingreso'
                                                     : n.tipo === 'resumen_ai_ceo' ? 'Doble clic para abrir MOTOFLOW IA CEO'
+                                                    : n.tipo === 'crm_seguimiento' ? 'Doble clic para abrir Seguimientos de Hoy'
                                                     : 'Doble clic para ir al módulo'
                                                 }
                                                 className={`px-4 py-3.5 hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer select-none ${
