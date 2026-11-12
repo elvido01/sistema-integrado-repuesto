@@ -70,6 +70,25 @@ Deno.serve(async () => {
     await supabase.rpc('crm_calientes_soltar', { p_conversation_id: k.conversation_id, p_user_msg_at: k.user_msg_at });
   }
 
+  // (12/11/2026) Seguimiento de "precio sin respuesta" (sql/crm_seguimiento_por_telegram.sql):
+  // le diste precio, calló 18 h. Llega con el mensaje listo para copiar (en
+  // Telegram, tocar el texto gris lo copia). Si la función no existe todavía
+  // (SQL sin correr), se salta sin romper.
+  let seguimientos = 0;
+  const { data: sg, error: eSg } = await supabase.rpc('crm_seguimientos_tomar_avisos');
+  if (eSg) console.error('[omni-avisos-ventana] seguimientos', eSg.message);
+  for (const k of sg || []) {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: textoSeguimiento(k), parse_mode: 'HTML', disable_web_page_preview: true }),
+    }).catch(() => null);
+    if (r?.ok) { seguimientos++; continue; }
+    fallidos++;
+    console.error('[omni-avisos-ventana] telegram seguimiento', r?.status, r ? (await r.text()).slice(0, 200) : 'sin respuesta');
+    await supabase.rpc('crm_seguimientos_soltar_aviso', { p_seguimiento_id: k.id });
+  }
+
   // (12/11/2026) "Dónde se te caen las ventas" (sql/crm_reporte_embudo.sql):
   // los lunes el de la semana pasada y el día 1 el del mes pasado, una vez.
   // Si la función no existe todavía (SQL sin correr), se salta sin romper.
@@ -87,8 +106,40 @@ Deno.serve(async () => {
     console.error('[omni-avisos-ventana] telegram reporte', r?.status);
     await supabase.rpc('crm_reporte_soltar', { p_tenant: rp.tenant_id, p_periodo: rp.periodo, p_desde: rp.desde });
   }
-  return json({ ok: true, enviados, casos, calientes, reportes, fallidos });
+  return json({ ok: true, enviados, casos, calientes, seguimientos, reportes, fallidos });
 });
+
+// Este mensaje va con parse_mode HTML (por el <code> que se copia al tocarlo):
+// todo lo que venga de un chat se escapa.
+const esc = (t: any) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function mensajeParaElCliente(k: any) {
+  const precio = String(k.precio || '').trim();
+  // Un precio suelto ("4,435") se dice distinto que una frase ("Farol delantero a 450").
+  const soloNumero = /^[\d.,\s$RDrd]+$/.test(precio);
+  if (!precio) return 'Buen día. ¿Todavía te interesa lo que me preguntaste? Me avisas y te atiendo de una vez.';
+  return soloNumero
+    ? `Buen día. ¿Todavía te interesa lo que me preguntaste? Te lo había dejado en ${precio}. Me avisas y te atiendo de una vez.`
+    : `Buen día. ¿Todavía te interesa? Te había dicho: ${precio}. Me avisas y te atiendo de una vez.`;
+}
+function textoSeguimiento(k: any) {
+  const que = [k.producto, k.moto].filter(Boolean).join(' · ');
+  const pregunta = String(k.pregunta || '').trim();
+  // Si el precio ya dice la pieza ("Farol delantero a 450") no se agrega lo
+  // que "buscaba": lo último que preguntó puede ser otra cosa y confunde.
+  const precioSeExplica = /[a-záéíóúñ]{4,}/i.test(String(k.precio || ''));
+  const contexto = precioSeExplica ? null
+    : que ? `• Buscaba: ${esc(que)}`
+    : pregunta.length > 8 ? `• Preguntaba: «${esc(pregunta)}»` : null;
+  return [
+    `🔁 Dale seguimiento · ${esc(CANAL[k.plataforma] || k.plataforma)} · ${esc(k.cliente)}`,
+    `Le diste precio${k.cuando ? ` el ${esc(k.cuando)}` : ''} y no volvió a escribir.`,
+    k.precio ? `• Precio que le diste: «${esc(k.precio)}»` : null,
+    contexto,
+    '',
+    'Toca el texto para copiarlo y pégaselo:',
+    `<code>${esc(mensajeParaElCliente(k))}</code>`,
+  ].filter((x) => x !== null).join(String.fromCharCode(10));
+}
 
 const CUANDO_TXT = { hoy: 'lo necesita HOY', esta_semana: 'lo quiere esta semana', sin_prisa: 'sin prisa' };
 const PRES_TXT = { economico: 'busca económico', original: 'quiere original' };
