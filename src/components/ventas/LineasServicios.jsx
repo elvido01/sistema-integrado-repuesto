@@ -51,12 +51,16 @@ const partir = (it) => {
   return i > 0 ? { desc: d.slice(0, i), ref: d.slice(i + SEP.length) } : { desc: d, ref: '' };
 };
 
-export default function LineasServicios({ items, setItems, cliente, moneda = 'DOP', tasa = '' }) {
+export default function LineasServicios({ items, setItems, cliente, moneda = 'DOP', tasa = '', emiteEcf: emiteEcfProp }) {
   // (28/10/2026) En US$ los montos se escriben en dólares y se guardan en
   // pesos (× tasa): la venta, la caja y el 607 siguen en pesos.
   const factor = moneda === 'USD' && n(tasa) > 0 ? n(tasa) : 1;
   const sim = moneda === 'USD' ? 'US$' : 'RD$';
-  const { tenantId, fiscalActivo } = useAuth();
+  const { tenantId, fiscalActivo, fiscalModo } = useAuth();
+  // (11/11/2026) Sale e-CF solo en PRODUCCIÓN; en pruebas la factura lleva NCF
+  // de papel (B01) y la base SÍ calcula la retención del 30% (Grupo Ycast):
+  // la pantalla mostraba 0 y la factura impresa traía la retención.
+  const emiteEcf = emiteEcfProp ?? (fiscalActivo && fiscalModo === 'produccion');
   const { toast } = useToast();
   const [catalogo, setCatalogo] = useState([]);
   const [general, setGeneral] = useState(null);
@@ -201,7 +205,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
     const itbis = filas.reduce((s, f) => s + n(f.itbis), 0) / factor;
     let retI = 0; let retS = 0;
     if (cliente?.agente_retencion && cfg) {
-      const fRet = cfg.emisor_persona_fisica ? 1 : (fiscalActivo ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0));
+      const fRet = cfg.emisor_persona_fisica ? 1 : (emiteEcf ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0));
       for (const f of filas) {
         if (f.naturaleza !== 'servicio') continue;
         if (f.servicio_tipo === 'profesional') retI += (n(f.itbis) / factor) * fRet;
@@ -211,7 +215,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
       }
     }
     return { total, totalRD, itbis, subtotal: total - itbis, retI, retS };
-  }, [filas, cliente, cfg, fiscalActivo, factor]);
+  }, [filas, cliente, cfg, emiteEcf, factor]);
 
   const celda = 'w-full bg-transparent px-2 py-1.5 text-[13px] focus:bg-yellow-50 focus:outline-none';
 
@@ -345,7 +349,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
               <div className="text-[10px] text-slate-400">Estimado: la retención definitiva se calcula al grabar.</div>
             </>
           )}
-          {cliente?.agente_retencion && t.retI + t.retS === 0 && (
+          {cliente?.agente_retencion && t.retI + t.retS === 0 && emiteEcf && !cfg?.emisor_persona_fisica && (
             <div className="text-[10px] text-slate-500">Cliente agente de retención: con e-CF y emisor persona jurídica no se retiene ITBIS (Norma 02-2026).</div>
           )}
         </div>

@@ -119,6 +119,9 @@ export const useVentas = () => {
   const promoRef = useRef(null);
   useEffect(() => { promoRef.current = promoAplicada; }, [promoAplicada]);
   const [ncfPreview, setNcfPreview] = useState(null); // { ncf: 'B0100000334', tipo_ncf: '01' }
+  // (11/11/2026) El comprobante de la factura que se está editando: decide si
+  // lleva retención (B01 sí, e-CF de persona jurídica no), como en la base.
+  const [editingFacturaNcf, setEditingFacturaNcf] = useState(null);
 
   /* Edit Mode State */
   const [editingFacturaId, setEditingFacturaId] = useState(null);
@@ -462,6 +465,7 @@ export const useVentas = () => {
     setPrintFormat(empresa?.formato_factura || 'pos_4inch');
     setEditingFacturaId(null);
     setEditingFacturaNumero(null);
+    setEditingFacturaNcf(null);
     setPedidoId(null);
     setManualClienteNombre('');
     setNotas('');
@@ -1653,6 +1657,7 @@ export const useVentas = () => {
       // Load data into state
       setEditingFacturaId(factura.id);
       setEditingFacturaNumero(factura.numero);
+      setEditingFacturaNcf(factura.ncf || null);
       setCliente(factura.clientes || CLIENTE_GENERICO);
       setMoneda(factura.moneda === 'USD' ? 'USD' : 'DOP');
       setTasaCambio(factura.tasa_cambio ? String(factura.tasa_cambio) : '');
@@ -2017,6 +2022,7 @@ export const useVentas = () => {
     /* Edit Mode Exports */
     editingFacturaId,
     editingFacturaNumero,
+    editingFacturaNcf,
     loadInvoiceByNumero,
     manualClienteNombre,
     setManualClienteNombre,

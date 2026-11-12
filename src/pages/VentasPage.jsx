@@ -81,6 +81,7 @@ const VentasPage = () => {
     notas, setNotas,
     editingFacturaId,
     editingFacturaNumero,
+    editingFacturaNcf,
     loadInvoiceByNumero,
     manualClienteNombre,
     setManualClienteNombre,
@@ -971,7 +972,9 @@ const VentasPage = () => {
               (servicio · descripción · referencia · monto), no por códigos con
               existencia. Ver components/ventas/LineasServicios.jsx */}
           {['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio) ? (
-            <LineasServicios items={items} setItems={setItems} cliente={cliente} moneda={moneda} tasa={tasaCambio} />
+            <LineasServicios items={items} setItems={setItems} cliente={cliente} moneda={moneda} tasa={tasaCambio}
+              // Lleva e-CF ESTA factura (no la empresa): la base retiene según el NCF real.
+              emiteEcf={editingFacturaId ? /^E\d{12}$/.test(String(editingFacturaNcf || '').trim()) : !!ncfPreview?.electronico} />
           ) : (
           <VentasTable
             items={items}
