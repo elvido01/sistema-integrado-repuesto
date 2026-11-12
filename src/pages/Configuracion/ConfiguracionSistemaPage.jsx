@@ -604,71 +604,71 @@ const ConfiguracionSistemaPage = () => {
                                     <Input id="direccion1" value={formData.direccion1} onChange={handleInputChange} className="h-9 text-xs mb-1" placeholder="Línea 1" />
                                     <Input id="direccion2" value={formData.direccion2} onChange={handleInputChange} className="h-9 text-xs" placeholder="Línea 2" />
                                 </div>
-                            </div>
-                        </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                             <div className="space-y-1.5">
-                                <Label htmlFor="email" className="text-[11px] font-bold text-gray-700 uppercase">Email</Label>
-                                <div className="flex items-center">
-                                    <div className="bg-gray-200 border border-r-0 h-9 w-9 flex items-center justify-center rounded-l-md"><Mail className="w-4 h-4 text-gray-500" /></div>
-                                    <Input id="email" type="email" value={formData.email} onChange={handleInputChange} className="h-9 rounded-l-none" />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                 <div className="space-y-1.5">
+                                    <Label htmlFor="email" className="text-[11px] font-bold text-gray-700 uppercase">Email</Label>
+                                    <div className="flex items-center">
+                                        <div className="bg-gray-200 border border-r-0 h-9 w-9 flex items-center justify-center rounded-l-md"><Mail className="w-4 h-4 text-gray-500" /></div>
+                                        <Input id="email" type="email" value={formData.email} onChange={handleInputChange} className="h-9 rounded-l-none" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="telefono" className="text-[11px] font-bold text-gray-700 uppercase">Teléfono</Label>
+                                        <Input id="telefono" value={formData.telefono} onChange={handleInputChange} className="h-9" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="fax" className="text-[11px] font-bold text-gray-700 uppercase">Fax</Label>
+                                        <Input id="fax" value={formData.fax} onChange={handleInputChange} className="h-9" />
+                                    </div>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="slogan" className="text-[11px] font-bold text-gray-700 uppercase">Slogan / Frase</Label>
+                                <Input id="slogan" value={formData.slogan} onChange={handleInputChange} className="h-9 italic text-gray-600" />
+                            </div>
+
+                            {/* (11/11/2026) Antes la hoja carta traía una nota fija de tienda
+                                ("Los precios incluyen instalación y transporte...") en TODAS
+                                las empresas. Ahora cada una escribe la suya; vacía = no sale. */}
+                            <div className="space-y-1.5">
+                                <Label htmlFor="nota_factura" className="text-[11px] font-bold text-gray-700 uppercase">Nota al pie de la factura (hoja carta)</Label>
+                                <textarea id="nota_factura" rows={2} maxLength={400} value={formData.nota_factura || ''} onChange={handleInputChange}
+                                    placeholder="Ej.: Garantía de 6 meses. No se aceptan devoluciones después de 48 horas. (Si lo dejas vacío, no sale nada.)"
+                                    className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm" />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="space-y-1.5">
-                                    <Label htmlFor="telefono" className="text-[11px] font-bold text-gray-700 uppercase">Teléfono</Label>
-                                    <Input id="telefono" value={formData.telefono} onChange={handleInputChange} className="h-9" />
+                                    <Label className="text-[11px] font-bold text-gray-700 uppercase">Moneda Principal</Label>
+                                    <Select value={formData.moneda_principal} onValueChange={(v) => handleSelectChange('moneda_principal', v)}>
+                                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="DOP - PESOS">DOP - PESOS</SelectItem>
+                                            <SelectItem value="USD - DOLARES">USD - DOLARES</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label htmlFor="fax" className="text-[11px] font-bold text-gray-700 uppercase">Fax</Label>
-                                    <Input id="fax" value={formData.fax} onChange={handleInputChange} className="h-9" />
+                                    <Label className="text-[11px] font-bold text-gray-700 uppercase">% del ITBIS</Label>
+                                    <div className="flex items-center">
+                                        <Input id="itbis_pct" type="number" value={formData.itbis_pct} onChange={handleNumberChange} className="h-9 rounded-r-none text-right font-bold" />
+                                        <div className="bg-gray-200 border border-l-0 h-9 px-3 flex items-center justify-center rounded-r-md text-xs font-bold">%</div>
+                                    </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[11px] font-bold text-gray-700 uppercase">Moneda para Precios</Label>
+                                    <Select value={formData.moneda_precios} onValueChange={(v) => handleSelectChange('moneda_precios', v)}>
+                                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="DOP - PESOS">DOP - PESOS</SelectItem>
+                                            <SelectItem value="USD - DOLARES">USD - DOLARES</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="slogan" className="text-[11px] font-bold text-gray-700 uppercase">Slogan / Frase</Label>
-                            <Input id="slogan" value={formData.slogan} onChange={handleInputChange} className="h-9 italic text-gray-600" />
-                        </div>
-
-                        {/* (11/11/2026) Antes la hoja carta traía una nota fija de tienda
-                            ("Los precios incluyen instalación y transporte...") en TODAS
-                            las empresas. Ahora cada una escribe la suya; vacía = no sale. */}
-                        <div className="space-y-1.5">
-                            <Label htmlFor="nota_factura" className="text-[11px] font-bold text-gray-700 uppercase">Nota al pie de la factura (hoja carta)</Label>
-                            <textarea id="nota_factura" rows={2} maxLength={400} value={formData.nota_factura || ''} onChange={handleInputChange}
-                                placeholder="Ej.: Garantía de 6 meses. No se aceptan devoluciones después de 48 horas. (Si lo dejas vacío, no sale nada.)"
-                                className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm" />
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
-                            <div className="space-y-1.5">
-                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Moneda Principal</Label>
-                                <Select value={formData.moneda_principal} onValueChange={(v) => handleSelectChange('moneda_principal', v)}>
-                                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="DOP - PESOS">DOP - PESOS</SelectItem>
-                                        <SelectItem value="USD - DOLARES">USD - DOLARES</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-[11px] font-bold text-gray-700 uppercase">% del ITBIS</Label>
-                                <div className="flex items-center">
-                                    <Input id="itbis_pct" type="number" value={formData.itbis_pct} onChange={handleNumberChange} className="h-9 rounded-r-none text-right font-bold" />
-                                    <div className="bg-gray-200 border border-l-0 h-9 px-3 flex items-center justify-center rounded-r-md text-xs font-bold">%</div>
-                                </div>
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Moneda para Precios</Label>
-                                <Select value={formData.moneda_precios} onValueChange={(v) => handleSelectChange('moneda_precios', v)}>
-                                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="DOP - PESOS">DOP - PESOS</SelectItem>
-                                        <SelectItem value="USD - DOLARES">USD - DOLARES</SelectItem>
-                                    </SelectContent>
-                                </Select>
                             </div>
                         </div>
 
