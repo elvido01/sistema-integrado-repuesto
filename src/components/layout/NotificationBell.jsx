@@ -27,6 +27,11 @@ const NotificationBell = () => {
             // (12/11/2026) "Le diste precio y no volvió a escribir".
             openPanel('seguimientos-hoy');
             setPanelOpen(false);
+        } else if (['crm_caliente', 'crm_reporte', 'crm_embudo'].includes(notif.tipo)) {
+            // (12/11/2026) Avisos del CRM (cliente esperando, resumen del
+            // embudo, quiere comprar / reclamo): al Sales Hub.
+            openPanel('whatsapp-crm');
+            setPanelOpen(false);
         }
     };
     const panelRef = useRef(null);
@@ -122,6 +127,7 @@ const NotificationBell = () => {
                                                     n.tipo === 'credito_vencido' ? 'Doble clic para abrir Recibo de Ingreso'
                                                     : n.tipo === 'resumen_ai_ceo' ? 'Doble clic para abrir MOTOFLOW IA CEO'
                                                     : n.tipo === 'crm_seguimiento' ? 'Doble clic para abrir Seguimientos de Hoy'
+                                                    : ['crm_caliente', 'crm_reporte', 'crm_embudo'].includes(n.tipo) ? 'Doble clic para abrir el Sales Hub'
                                                     : 'Doble clic para ir al módulo'
                                                 }
                                                 className={`px-4 py-3.5 hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer select-none ${
@@ -130,6 +136,8 @@ const NotificationBell = () => {
                                                             ? 'bg-red-50/40 dark:bg-red-900/10 border-l-4 border-l-red-500'
                                                             : n.tipo === 'resumen_ai_ceo'
                                                             ? 'bg-violet-50/40 dark:bg-violet-900/10 border-l-4 border-l-violet-500'
+                                                            : n.tipo === 'crm_caliente'
+                                                            ? 'bg-amber-50/60 dark:bg-amber-900/10 border-l-4 border-l-amber-500'
                                                             : 'bg-blue-50/30 dark:bg-blue-900/10 border-l-4 border-l-morla-blue')
                                                         : 'pl-[19px]'
                                                 }`}
