@@ -52,6 +52,24 @@ Deno.serve(async () => {
     console.error('[omni-avisos-ventana] telegram caso', r?.status);
     await supabase.rpc('crm_casos_soltar_aviso', { p_caso_id: k.id });
   }
+  // (12/11/2026) Cliente CALIENTE esperando 15+ min (sql/crm_cliente_caliente_esperando.sql):
+  // 70+ de intención, lo necesita hoy, o ya tiene precio. Si la función no
+  // existe todavía (SQL sin correr), se salta sin romper.
+  let calientes = 0;
+  const { data: cal, error: eCal } = await supabase.rpc('crm_calientes_tomar');
+  if (eCal) console.error('[omni-avisos-ventana] calientes', eCal.message);
+  for (const k of cal || []) {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: textoCaliente(k), disable_web_page_preview: true }),
+    }).catch(() => null);
+    if (r?.ok) { calientes++; continue; }
+    fallidos++;
+    console.error('[omni-avisos-ventana] telegram caliente', r?.status);
+    await supabase.rpc('crm_calientes_soltar', { p_conversation_id: k.conversation_id, p_user_msg_at: k.user_msg_at });
+  }
+
   // (12/11/2026) "Dónde se te caen las ventas" (sql/crm_reporte_embudo.sql):
   // los lunes el de la semana pasada y el día 1 el del mes pasado, una vez.
   // Si la función no existe todavía (SQL sin correr), se salta sin romper.
@@ -69,8 +87,24 @@ Deno.serve(async () => {
     console.error('[omni-avisos-ventana] telegram reporte', r?.status);
     await supabase.rpc('crm_reporte_soltar', { p_tenant: rp.tenant_id, p_periodo: rp.periodo, p_desde: rp.desde });
   }
-  return json({ ok: true, enviados, casos, reportes, fallidos });
+  return json({ ok: true, enviados, casos, calientes, reportes, fallidos });
 });
+
+const CUANDO_TXT = { hoy: 'lo necesita HOY', esta_semana: 'lo quiere esta semana', sin_prisa: 'sin prisa' };
+const PRES_TXT = { economico: 'busca económico', original: 'quiere original' };
+function textoCaliente(k: any) {
+  const que = [k.producto, k.moto].filter(Boolean).join(' · ');
+  const extra = [CUANDO_TXT[k.cuando], k.presupuesto === 'monto' ? k.presupuesto_detalle : PRES_TXT[k.presupuesto]].filter(Boolean).join(', ');
+  const etapa = k.etapa === 'listo_para_comprar' ? 'listo para comprar' : k.etapa === 'cotizado' ? 'ya tiene precio' : `${k.puntaje ?? 0}/100`;
+  return [
+    `🔥 Cliente caliente esperando · ${CANAL[k.plataforma] || k.plataforma} · ${k.cliente}`,
+    `Lleva ${horas(k.minutos)} sin respuesta (${etapa}).`,
+    que ? `• Busca: ${que}` : null,
+    extra ? `• ${extra.charAt(0).toUpperCase()}${extra.slice(1)}` : null,
+    k.ultimo ? `• Último mensaje: «${k.ultimo}»` : null,
+    k.siguiente_paso ? `→ ${k.siguiente_paso}` : null,
+  ].filter(Boolean).join(String.fromCharCode(10));
+}
 
 const pct = (a: number, b: number) => (b > 0 ? `${Math.round((100 * a) / b)}%` : '—');
 function minutos(m: any) {
