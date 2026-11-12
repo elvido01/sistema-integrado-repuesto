@@ -423,7 +423,10 @@
     "src/lib/docFiscal.js": "545261c10cc50d1e",
     "src/components/ventas/VentaTactil.jsx": "bd54c65910029cfe",
     "sql/nota_factura_empresa.sql": "44c80d0af1f42ace",
-    "sql/dgii_contribuyentes.sql": "2c89f17a81f082e0"
+    "sql/dgii_contribuyentes.sql": "2c89f17a81f082e0",
+    "sql/reporte_intereses_cobrados.sql": "bccba7f352c814c7",
+    "src/components/common/pdf/interesesCobradosPDF.js": "042ff0918afa6af7",
+    "src/pages/InteresesCobradosPage.jsx": "fe26325dc03f5247"
   },
   "historial": [
     {
@@ -844,6 +847,15 @@
       "nota": "code-review high (3 pasadas) VentasPage vendedor: arreglado auto-asignar silencioso, recarga de vendedores, doble guardado durante await, try/catch, aviso antes de NCF/RNC; quedan previos: editar factura reasigna vendedor, vendedor desactivado en cache",
       "archivos": [
         "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-12",
+      "nota": "code-review high InteresesCobradosPage + get_intereses_cobrados + desglose-pagos-siif: arreglado filas viejas al cambiar filtro, cliente escrito sin buscar, pago solo a cargos marcado 'sin', LIMIT silencioso (ahora excepcion), recibos duplicados entre bases, mora en idempotencia, paginado del detalle, lotes de update, nota PDF fuera de pagina, helpers de fecha. Aceptado: en pagos SiiF los cargos van dentro de capital (igual que el reporte del SiiF)",
+      "archivos": [
+        "sql/reporte_intereses_cobrados.sql",
+        "src/components/common/pdf/interesesCobradosPDF.js",
+        "src/pages/InteresesCobradosPage.jsx"
       ]
     }
   ]

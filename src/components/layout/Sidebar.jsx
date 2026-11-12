@@ -184,6 +184,7 @@ const navItems = [
       { title: 'Otras Transacciones', id: 'otras-transacciones', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'Histórico de Cliente', id: 'historico-cliente', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'Lista de Chasis en Préstamos', id: 'lista-chasis-prestamos', icon: Receipt, featFlag: 'feat_financiera' },
+      { title: 'Interés Cobrado o Acreditado', id: 'intereses-cobrados', icon: Receipt, featFlag: 'feat_financiera' },
       { title: 'SAN Ahorro', id: 'san', icon: PiggyBank, modulo: 'san' },
     ],
   },

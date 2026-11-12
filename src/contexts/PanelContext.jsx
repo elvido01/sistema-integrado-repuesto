@@ -99,6 +99,7 @@ const OtrasTransaccionesPage = lazy(() => import('@/pages/OtrasTransaccionesPage
 const HistoricoClientePage = lazy(() => import('@/pages/HistoricoClientePage'));
 const NotasComentariosPage = lazy(() => import('@/pages/NotasComentariosPage'));
 const ListaChasisPrestamosPage = lazy(() => import('@/pages/ListaChasisPrestamosPage'));
+const InteresesCobradosPage = lazy(() => import('@/pages/InteresesCobradosPage'));
 const ResumenCarteraPage = lazy(() => import('@/pages/ResumenCarteraPage'));
 const GestionCobroPage = lazy(() => import('@/pages/GestionCobroPage'));
 const CuentasIncobrablesPage = lazy(() => import('@/pages/CuentasIncobrablesPage'));
@@ -224,6 +225,7 @@ const componentMapping = {
   'historico-cliente': { component: () => <Protected module="historico-cliente"><HistoricoClientePage /></Protected>, icon: Receipt, name: 'Histórico de Cliente' },
   'notas-comentarios': { component: () => <Protected module="notas-comentarios"><NotasComentariosPage /></Protected>, icon: FileText, name: 'Notas y Comentarios' },
   'lista-chasis-prestamos': { component: () => <Protected module="lista-chasis-prestamos"><ListaChasisPrestamosPage /></Protected>, icon: Receipt, name: 'Lista de Chasis en Préstamos' },
+  'intereses-cobrados': { component: () => <Protected module="intereses-cobrados"><InteresesCobradosPage /></Protected>, icon: Receipt, name: 'Interés Cobrado o Acreditado' },
   'resumen-cartera': { component: () => <Protected module="resumen-cartera"><ResumenCarteraPage /></Protected>, icon: PieChart, name: 'Resumen de Cartera' },
   'san': { component: () => <Protected module="san"><SanPage /></Protected>, icon: PiggyBank, name: 'SAN Ahorro' },
 };

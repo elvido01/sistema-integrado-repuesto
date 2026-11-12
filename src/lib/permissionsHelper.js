@@ -140,4 +140,5 @@ export const MODULES = [
     { key: 'otras-transacciones', label: 'Financiera - Otras Transacciones' },
     { key: 'historico-cliente', label: 'Financiera - Histórico de Cliente' },
     { key: 'lista-chasis-prestamos', label: 'Financiera - Lista de Chasis en Préstamos' },
+    { key: 'intereses-cobrados', label: 'Financiera - Interés Cobrado o Acreditado' },
 ];
