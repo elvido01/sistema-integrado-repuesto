@@ -537,8 +537,8 @@ const VentasPage = () => {
         setVendedores(vendedoresData);
         if (vendedoresData.length === 0) {
           toast({
-            title: 'Esta empresa no tiene vendedores',
-            description: 'Puedes facturar igual: la venta queda a nombre de tu usuario. Si quieres vendedores (para comisiones), créalos en Catálogo → Vendedores.',
+            title: 'Debe crear un vendedor',
+            description: 'Esta empresa no tiene vendedores y sin vendedor no se puede facturar. Créalo en Catálogo → Vendedores.',
             variant: 'warning'
           });
         }
@@ -626,7 +626,7 @@ const VentasPage = () => {
     }
   };
 
-  const handleConfirmAndPrint = () => {
+  const handleConfirmAndPrint = async () => {
     // Morla Vieja (solo consulta): el POS se abre solo para consultar y mover
     // productos al sistema nuevo. No se puede facturar.
     if (empresa?.solo_consulta) {
@@ -636,6 +636,41 @@ const VentasPage = () => {
         description: `${empresa?.nombre || 'Esta empresa'} es solo para consultar y mover productos al sistema nuevo. No se puede vender desde esta empresa.`,
         duration: 6000,
       });
+      return;
+    }
+    // (12/11/2026) VENDEDOR: sin él la base rechazaba la factura con un
+    // mensaje técnico ("invalid input syntax for type uuid"). Si no hay uno
+    // escogido se vuelve a leer la lista (lo pudieron crear con Ventas
+    // abierta) y se deja escogido el del usuario o el primero, PERO no se
+    // graba en esta pasada: se avisa cuál quedó para que lo confirmen (la
+    // comisión es de quien vendió). Sin ninguno, se avisa claro y no se graba.
+    const vendedorFactura = vendedores.find(v => v.id === selectedVendedor);
+    if (!vendedorFactura) {
+      let lista = null, errVend = null;
+      try {
+        const r = await supabase.from('vendedores').select('id, nombre').eq('activo', true).order('nombre', { ascending: true });
+        lista = r.data; errVend = r.error;
+      } catch (e) { errVend = e; }
+      if (!errVend && lista?.length) {
+        const elegido = lista.find(v => v.id === user?.id) || lista[0];
+        setVendedores(lista);
+        setSelectedVendedor(elegido.id);
+        toast({
+          variant: 'warning',
+          title: 'Revisa el vendedor',
+          description: `Quedó escogido ${elegido.nombre}. Si es otro, cámbialo en la cabecera (Más datos en el teléfono) y vuelve a cobrar.`,
+          duration: 10000,
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: errVend ? 'No se pudieron leer los vendedores' : 'Debe crear un vendedor',
+          description: errVend
+            ? `${errVend.message || errVend}. Intenta de nuevo.`
+            : 'Esta empresa no tiene vendedores y sin vendedor no se puede facturar. Créalo en Catálogo → Vendedores y vuelve a cobrar.',
+          duration: 10000,
+        });
+      }
       return;
     }
     // (14/10/2026) La DGII rechaza la factura de consumo electrónica de
@@ -691,7 +726,6 @@ const VentasPage = () => {
       const ok = window.confirm(`${cliente?.nombre || 'El cliente'} está marcado CRÉDITO FISCAL, pero su RNC/cédula (${cliente?.rnc || 'vacío'}) no es válido: un RNC lleva 9 dígitos y una cédula 11.\n\nSi grabas así, la factura sale como CONSUMO (E32).\n\nAceptar = grabar como consumo.\nCancelar = corregir el RNC en la ficha del cliente y volver a escogerlo.`);
       if (!ok) return;
     }
-    const activeVendedor = vendedores.find(v => v.id === selectedVendedor);
     handleSave(async (facturaData, marca) => {
       if (facturaData) {
         let facturaParaImprimir = facturaData;
@@ -769,7 +803,7 @@ const VentasPage = () => {
         fetchNextNumero();
         setTimeout(() => document.getElementById('input-codigo')?.focus(), 150);
       }
-    }, activeVendedor?.nombre, selectedVendedor,
+    }, vendedorFactura.nombre, vendedorFactura.id,
        // Cómo se imprimió, para poder comparar: el agente, el diálogo del
        // navegador y el PDF no tardan lo mismo ni de lejos.
        isSilentPrintEnabled() ? 'silencioso' : printMethod);

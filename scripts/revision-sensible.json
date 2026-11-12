@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "3e069d91225de2cd",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "fd7902adf5feb9bc",
+    "src/pages/VentasPage.jsx": "927653bdd019274f",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -837,6 +837,13 @@
       "nota": "code-review high: sello de la empresa; 10 hallazgos, arreglados: sello en consulta aparte (no tumba config si falta columna), no se borra el sello viejo antes de guardar, refresco de sesion al guardar, sello tambien en factura dealer, impresion espera imagenes (4s max), sello achicado a 600px, SQL al git; aceptado: limpieza de fondo puede aclarar sellos muy palidos; duplicacion de subida firma/sello pendiente",
       "archivos": [
         "src/components/common/pdf/facturaCartaPDF.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-12",
+      "nota": "code-review high (3 pasadas) VentasPage vendedor: arreglado auto-asignar silencioso, recarga de vendedores, doble guardado durante await, try/catch, aviso antes de NCF/RNC; quedan previos: editar factura reasigna vendedor, vendedor desactivado en cache",
+      "archivos": [
+        "src/pages/VentasPage.jsx"
       ]
     }
   ]
