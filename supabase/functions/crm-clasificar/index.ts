@@ -49,6 +49,8 @@ Las 3 preguntas de un buen vendedor (qué busca, para cuándo, cuánto quiere ga
 - cuando: para cuándo lo necesita, SOLO si se nota en la conversación. "hoy" (lo necesita hoy, la moto está parada, "ahorita", "voy para allá"), "esta_semana" (en estos días, el fin de semana), "sin_prisa" (está averiguando, "más adelante", "para cuando cobre"), "no_dice" si no hay forma de saberlo. No lo inventes.
 - presupuesto: qué tipo de precio busca. "economico" (lo más barato, "genérico", "de los baratos", se queja del precio), "original" (original, de marca, la mejor calidad), "monto" (dijo una cantidad: ponla en presupuesto_detalle, ej. "hasta RD$1,500"), "no_dice" si no hay forma de saberlo.
 - presupuesto_detalle: la cantidad o frase corta que dijo el cliente sobre el precio; null si no dijo nada.
+- tienda_dio_precio: true si en algún mensaje de la TIENDA hay un precio escrito de una pieza (ej. "3,750", "La batería vale 1,300", "700"), aunque después el cliente haya preguntado por otra cosa. Medidas ("120 70 17"), teléfonos y direcciones NO son precios. Un "[audio]" de la tienda no cuenta: no sabes qué dijo. false si no hay ninguno.
+Los mensajes vienen en orden, del más viejo al más nuevo. "Gracias por comunicarte con…" y "En este momento no podemos responder…" son saludos automáticos de WhatsApp: no cuentan como que la tienda contestó.
 urgente: true solo si el cliente espera respuesta y lleva rato sin ella, o es un reclamo.
 "[audio]" o "[image]" significa que mandó un audio o una foto que no puedes ver: no inventes su contenido.
 Resumen y siguiente_paso: en español dominicano, cortos (máx 120 caracteres), concretos, para el vendedor.
@@ -69,7 +71,7 @@ const ESQUEMA = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['etapa', 'motivo_etapa', 'categoria', 'intencion_compra', 'urgente', 'producto', 'moto', 'cuando', 'presupuesto', 'presupuesto_detalle', 'resumen', 'siguiente_paso', 'caso'],
+    required: ['etapa', 'motivo_etapa', 'categoria', 'intencion_compra', 'urgente', 'producto', 'moto', 'cuando', 'presupuesto', 'presupuesto_detalle', 'tienda_dio_precio', 'resumen', 'siguiente_paso', 'caso'],
     properties: {
       etapa: { type: 'string', enum: ETAPAS },
       motivo_etapa: { type: 'string' },
@@ -82,6 +84,7 @@ const ESQUEMA = {
       cuando: { type: 'string', enum: ['hoy', 'esta_semana', 'sin_prisa', 'no_dice'] },
       presupuesto: { type: 'string', enum: ['economico', 'original', 'monto', 'no_dice'] },
       presupuesto_detalle: { type: ['string', 'null'] },
+      tienda_dio_precio: { type: 'boolean' },
       resumen: { type: 'string' },
       siguiente_paso: { type: 'string' },
       // (20/10/2026) El caso para una persona (sql/crm_casos.sql).
