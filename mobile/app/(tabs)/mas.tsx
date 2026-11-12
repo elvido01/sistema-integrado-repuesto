@@ -3,9 +3,11 @@ import { Alert, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users } from 'lucide-react-native';
+import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users, Repeat } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { canAccessModule } from '@/src/services/permissions';
+import { supabase } from '@/src/supabase/client';
+import { hoyRD } from '@/src/lib/seguimientos';
 import { CAMINERO_MOTORS_TENANT, MAX_QUICK_ACCESS, accesoAplica, getQuickAccessTabs, saveQuickAccessTabs, subscribeQuickAccess } from '@/src/services/quickAccess';
 
 // De dónde salió el JavaScript que se está ejecutando. En desarrollo
@@ -25,6 +27,20 @@ export default function MasScreen() {
   const isCamineroMotors = tenantId === CAMINERO_MOTORS_TENANT;
   const [quickTabs, setQuickTabs] = useState<string[]>([]);
   const descripcionJs = describirJs();
+  // (12/11/2026) Seguimientos del CRM: clientes a los que se les dio precio y
+  // no volvieron a escribir. Solo tiendas (repuestos / dealer). El número de
+  // los que tocan hoy sale al lado del nombre.
+  const tipo = empresa?.tipo_negocio || 'repuestos';
+  const conSeguimientos = tipo === 'repuestos' || tipo === 'dealer';
+  const [segPendientes, setSegPendientes] = useState(0);
+  useEffect(() => {
+    if (!conSeguimientos || !tenantId) return;
+    let vivo = true;
+    supabase.from('crm_seguimiento').select('id', { count: 'exact', head: true })
+      .eq('estado', 'precio_enviado').lte('fecha_seguimiento', hoyRD())
+      .then(({ count }) => { if (vivo) setSegPendientes(count || 0); });
+    return () => { vivo = false; };
+  }, [conSeguimientos, tenantId]);
 
   useEffect(() => {
     let mounted = true;
@@ -46,6 +62,9 @@ export default function MasScreen() {
     // Hermes primero: es lo que se abre a diario. moduleKey propio para
     // que se pueda quitar por permisos como cualquier otro modulo.
     { title: 'Hermes', icon: Bot, route: '/hermes', color: '#059669', moduleKey: 'hermes-chat', quickName: 'hermes' },
+    ...(conSeguimientos
+      ? [{ title: segPendientes > 0 ? `Seguimientos (${segPendientes})` : 'Seguimientos', icon: Repeat, route: '/seguimientos', color: '#059669', moduleKey: 'clientes' }]
+      : []),
     { title: 'Scanner', icon: Barcode, route: '/(tabs)/scanner', color: '#8b5cf6', moduleKey: 'scanner', quickName: 'scanner' },
     {
       title: isCamineroMotors ? 'Recibo de Pago' : 'Recibo de Ingreso',
