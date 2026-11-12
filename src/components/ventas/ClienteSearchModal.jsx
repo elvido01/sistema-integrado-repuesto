@@ -8,7 +8,7 @@ import { Loader2, Search } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 
-const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
+const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente, movil = false }) => {
   const { toast } = useToast();
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -54,11 +54,11 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+      <DialogContent className={movil ? "max-w-none w-screen h-[100dvh] rounded-none flex flex-col p-3" : "max-w-4xl h-[80vh] flex flex-col"}>
         <DialogHeader>
           <DialogTitle>Buscar Cliente</DialogTitle>
         </DialogHeader>
-        <div className="p-4 border-b">
+        <div className={movil ? "pb-2 border-b" : "p-4 border-b"}>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
@@ -74,11 +74,11 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
           <Table>
             <TableHeader className="sticky top-0 bg-white z-10">
               <TableRow>
-                <TableHead className="w-[130px] whitespace-nowrap">Código</TableHead>
+                {!movil && <TableHead className="w-[130px] whitespace-nowrap">Código</TableHead>}
                 <TableHead>Nombre</TableHead>
                 <TableHead className="w-[130px] whitespace-nowrap">RNC/Cédula</TableHead>
-                <TableHead className="w-[110px] whitespace-nowrap">Teléfono</TableHead>
-                <TableHead className="w-[70px]">Crédito</TableHead>
+                {!movil && <TableHead className="w-[110px] whitespace-nowrap">Teléfono</TableHead>}
+                {!movil && <TableHead className="w-[70px]">Crédito</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -92,14 +92,16 @@ const ClienteSearchModal = ({ isOpen, onClose, onSelectCliente }) => {
                 clientes.map((cliente) => (
                   <TableRow
                     key={cliente.id}
-                    onDoubleClick={() => onSelectCliente(cliente)}
+                    // Teléfono: un toque escoge (y sin doble clic, que lo escogería dos veces).
+                    onDoubleClick={movil ? undefined : () => onSelectCliente(cliente)}
+                    onClick={movil ? () => onSelectCliente(cliente) : undefined}
                     className="cursor-pointer hover:bg-muted/50"
                   >
-                    <TableCell className="font-mono text-sm whitespace-nowrap">{cliente.codigo || '—'}</TableCell>
+                    {!movil && <TableCell className="font-mono text-sm whitespace-nowrap">{cliente.codigo || '—'}</TableCell>}
                     <TableCell className="font-medium">{cliente.nombre}</TableCell>
                     <TableCell className="whitespace-nowrap">{formatoDocDgii(cliente.rnc)}</TableCell>
-                    <TableCell className="whitespace-nowrap">{cliente.telefono}</TableCell>
-                    <TableCell>{cliente.autorizar_credito ? 'Sí' : 'No'}</TableCell>
+                    {!movil && <TableCell className="whitespace-nowrap">{cliente.telefono}</TableCell>}
+                    {!movil && <TableCell>{cliente.autorizar_credito ? 'Sí' : 'No'}</TableCell>}
                   </TableRow>
                 ))
               ) : (

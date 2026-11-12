@@ -31,6 +31,7 @@ const ProductSearchModal = ({
   useConfigDefault = false,
   onlyWithStock = false, // si true: solo productos con existencia > 0 y oculta el checkbox
   permiteTraspaso = false, // solo Ventas: traer piezas de la otra empresa del grupo (mueve inventario)
+  movil = false, // (11/11/2026) teléfono: pantalla completa y un toque escoge
 }) => {
   const { toast } = useToast();
   const { tenantId, user, empresa } = useAuth();
@@ -536,7 +537,7 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-gray-50/30 border-2 border-morla-gold shadow-2xl [&>button[class*='absolute']]:hidden">
+      <DialogContent className={`${movil ? 'max-w-none w-screen h-[100dvh] rounded-none border-0' : 'max-w-6xl h-[90vh] border-2'} flex flex-col p-0 gap-0 overflow-hidden bg-gray-50/30 border-morla-gold shadow-2xl [&>button[class*='absolute']]:hidden`}>
         {/* Custom Header matching "información de la mercancía" */}
         <div className="bg-blue-300 border-b border-blue-400 px-4 py-2 flex items-center justify-between flex-shrink-0">
           <h2 className="text-md font-bold text-blue-900 uppercase tracking-wider">Buscar Producto</h2>
@@ -553,8 +554,8 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
 
         <div className="flex-grow flex flex-col overflow-hidden">
           {/* Filter Area in a White Card */}
-          <div className="p-4 flex-shrink-0">
-            <div className="bg-white border rounded-md shadow-sm p-4 space-y-4">
+          <div className={`${movil ? 'p-2' : 'p-4'} flex-shrink-0`}>
+            <div className={`bg-white border rounded-md shadow-sm ${movil ? 'p-2 space-y-2' : 'p-4 space-y-4'}`}>
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="relative flex-grow">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -661,11 +662,41 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
           </div>
 
           {/* Table Area also in a White Card wrapper */}
-          <div className="flex-grow overflow-hidden px-4 pb-4">
+          <div className={`flex-grow overflow-hidden ${movil ? 'px-2 pb-2' : 'px-4 pb-4'}`}>
             <div className="h-full bg-white border rounded-md shadow-sm overflow-hidden flex flex-col">
               {/* Single Horizontal Scroll Container */}
               <div className="flex-grow overflow-auto scrollbar-thin scrollbar-thumb-slate-300">
-                <div className="min-w-[960px]">
+                <div className={movil ? '' : 'min-w-[960px]'}>
+                  {movil ? (
+                    // (11/11/2026) Teléfono: un toque escoge (en la tabla es doble clic).
+                    <div className="divide-y">
+                      {products.map((product) => (
+                        <button key={product.id} type="button" disabled={trayendo === product.id}
+                          onClick={() => {
+                            if (product._vieja) { handleTraerDeVieja(product); return; }
+                            onSelectProduct(product);
+                            onClose();
+                          }}
+                          className={`flex w-full items-start gap-2 px-3 py-2.5 text-left active:bg-blue-50 ${product._vieja ? 'bg-amber-50' : 'bg-white'}`}>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold leading-tight text-slate-800">{product.descripcion}</div>
+                            <div className="mt-0.5 text-xs text-slate-500">
+                              <b className="text-blue-900">{product.codigo}</b>
+                              {product.referencia ? ` · ${product.referencia}` : ''}
+                              {product.ubicacion ? ` · ${product.ubicacion}` : ''}
+                              {product._vieja && <span className="ml-1 rounded-full bg-amber-200 px-1.5 text-[9px] font-bold text-amber-900">{product._hermana ? 'OTRA EMPRESA' : 'VIEJA'}</span>}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="font-mono text-sm font-black text-blue-900">{formatPrice(precioVenta(product))}</div>
+                            <div className={`text-xs font-bold ${Number(product.existencia) > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                              {trayendo === product.id ? <Loader2 className="inline h-3 w-3 animate-spin" /> : `Exist. ${Number(product.existencia ?? 0)}`}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
                   <Table className="w-full table-fixed overflow-visible">
                     <TableHeader className="sticky top-0 bg-gray-100 z-10 shadow-sm">
                       <TableRow className="hover:bg-transparent border-b">
@@ -829,6 +860,7 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
                       ))}
                     </TableBody>
                   </Table>
+                  )}
                   <div ref={loaderRef} className="h-12 flex justify-center items-center bg-white">
                     {loading && <Loader2 className="w-5 h-5 animate-spin text-blue-600" />}
                     {!loading && !hasMore && products.length > 0 && (
@@ -865,7 +897,7 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
         </div>
 
         {/* Consistent Footer */}
-        <div className="border-t bg-gray-100 px-6 py-3 flex justify-end gap-3 flex-shrink-0">
+        <div className={`border-t bg-gray-100 px-6 py-3 justify-end gap-3 flex-shrink-0 ${movil ? 'hidden' : 'flex'}`}>
           <Button
             variant="outline"
             onClick={onClose}

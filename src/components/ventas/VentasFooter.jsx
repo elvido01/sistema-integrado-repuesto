@@ -51,6 +51,7 @@ const VentasFooter = ({
   setNotas,
   pideCanalOrigen = false,
   canalOrigen = '',
+  movil = false,
 }) => {
   const { empresa } = useAuth();
   const nombreEmpresa = empresa?.nombre || 'Sistema';
@@ -62,6 +63,20 @@ const VentasFooter = ({
   const [isMontoFocused, setIsMontoFocused] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const montoInputRef = useRef(null);
+  // Vista de teléfono: la hoja de cobro. Se cierra sola cuando la venta queda
+  // vacía (se grabó o se borró).
+  const [cobrando, setCobrando] = useState(false);
+  useEffect(() => { if (!(Number(totals?.totalFactura) > 0)) setCobrando(false); }, [totals?.totalFactura]);
+  // Pago mixto en el teléfono (no hay Enter): al Grabar, lo que queda en
+  // "Recibido" entra como un pago más (con su forma y referencia) y se graba
+  // en el render siguiente, ya con la lista completa de pagos.
+  const [grabarTrasPago, setGrabarTrasPago] = useState(false);
+  useEffect(() => {
+    if (!grabarTrasPago) return;
+    setGrabarTrasPago(false);
+    handleFacturar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grabarTrasPago]);
 
   useEffect(() => {
     if (showPrintOptions) {
@@ -146,6 +161,201 @@ const VentasFooter = ({
   const isCredit = paymentType === 'credito';
 
   const printLabel = printFormat === 'pos_4inch' ? '4 Pulgadas' : printFormat === 'half_page' ? '8.5 X 5.5' : '8.5 X 11';
+
+  // Diálogo "pago insuficiente" (las dos vistas).
+  const alertaPago = (
+    <AlertDialog open={alertOpen} onOpenChange={setAlertOpen}>
+      <AlertDialogContent className="max-w-[400px] border-2 border-gray-400 bg-[#f0f0f0] p-0 rounded-lg shadow-2xl">
+        <AlertDialogHeader className="bg-gradient-to-r from-[#0a1e3a] to-[#1a3a5c] px-4 py-2 rounded-t-md">
+          <AlertDialogTitle className="text-white text-sm font-bold">{nombreEmpresa} - Punto de Venta</AlertDialogTitle>
+        </AlertDialogHeader>
+        <div className="flex items-start gap-4 px-6 py-5">
+          <div className="flex-shrink-0">
+            <AlertCircle className="w-10 h-10 text-red-600" />
+          </div>
+          <AlertDialogDescription className="text-[14px] text-gray-900 font-semibold leading-snug pt-1">
+            El Cambio NO puede ser Menor que 0.00 (cero).
+            <br />
+            <span className="text-[12px] text-gray-600 font-normal mt-1 block">
+              Monto Recibido: RD$ {montoConComas((pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0)))}
+              <br />
+              Total Factura: RD$ {montoConComas(totals.totalFactura)}
+              <br />
+              Faltante: RD$ {montoConComas(Math.max(0, totals.totalFactura - (pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0))))}
+            </span>
+          </AlertDialogDescription>
+        </div>
+        <AlertDialogFooter className="px-4 py-3 bg-gray-100 border-t border-gray-300 rounded-b-md">
+          <AlertDialogAction className="bg-[#0a1e3a] hover:bg-[#0a1e3a]/90 text-white font-bold px-8 h-9" onClick={() => setAlertOpen(false)}>
+            Aceptar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
+  // ===== Vista de teléfono (11/11/2026) =====
+  // Abajo solo el total y "Cobrar". Cobrar abre una hoja con lo mismo del pie
+  // completo (contado/crédito, forma de pago, cuenta, pagos mixtos, recibido,
+  // cambio, notas, formato) y el mismo Grabar (misma validación de pago).
+  if (movil) {
+    const pagado = pagos.reduce((s, p) => s + Number(p.monto), 0);
+    const faltaCobrar = Math.max(0, Math.round((totals.totalFactura - pagado) * 100) / 100);
+    const hayLineas = Number(totals.totalFactura || 0) > 0;
+    const fila = 'flex items-center justify-between py-1 text-sm';
+    return (
+      <div className="flex-shrink-0 border-t-2 border-gray-400 bg-white" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {pideCanalOrigen && canalOrigen && canalOrigen !== CANAL_POR_DEFECTO && (
+          <div className="bg-[#eef7ff] px-3 py-1 text-xs font-bold text-[#0a1e3a]">
+            Vino por {emojiCanal(canalOrigen)} {nombreCanal(canalOrigen)}
+          </div>
+        )}
+        <div className="flex items-center gap-2 px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-bold uppercase text-gray-500">Total factura</div>
+            <div className="truncate font-mono text-2xl font-black leading-tight text-[#c00000]">RD$ {montoConComas(totals.totalFactura)}</div>
+          </div>
+          <button type="button" disabled={!hayLineas || isSaving} onClick={() => setCobrando(true)}
+            className="h-12 rounded-lg bg-[#0a1e3a] px-6 text-base font-black uppercase text-white shadow disabled:opacity-40">
+            {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Cobrar'}
+          </button>
+        </div>
+
+        {cobrando && (
+          <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={() => !isSaving && setCobrando(false)}>
+            <div className="max-h-[92vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}
+              style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
+                <span className="text-lg font-black text-[#0a1e3a]">Cobrar</span>
+                <button type="button" onClick={() => setCobrando(false)} disabled={isSaving} className="p-1 text-gray-500"><X className="h-6 w-6" /></button>
+              </div>
+
+              <div className="space-y-3 px-4 py-3">
+                <div className="rounded-lg bg-gray-50 px-3 py-2">
+                  <div className={fila}><span className="text-gray-500">Subtotal</span><span className="font-mono">{montoConComas(totals.subTotal)}</span></div>
+                  {Number(totals.totalDescuento) > 0 && <div className={fila}><span className="text-gray-500">Descuento</span><span className="font-mono">{montoConComas(totals.totalDescuento)}</span></div>}
+                  {Number(recargo) > 0 && <div className={fila}><span className="text-gray-500">Recargo</span><span className="font-mono">{montoConComas(Number(recargo))}</span></div>}
+                  <div className={fila}><span className="text-gray-500">ITBIS</span><span className="font-mono">{montoConComas(totals.totalItbis)}</span></div>
+                  <div className="flex items-center justify-between border-t pt-1 text-lg font-black text-[#c00000]"><span>Total</span><span className="font-mono">RD$ {montoConComas(totals.totalFactura)}</span></div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {['contado', 'credito'].map((t) => {
+                    const off = t === 'credito' && !cliente?.autorizar_credito;
+                    return (
+                      <button key={t} type="button" disabled={off} onClick={() => setPaymentType(t)}
+                        className={`h-11 rounded-lg border-2 text-sm font-black uppercase ${paymentType === t ? 'border-[#0a1e3a] bg-[#0a1e3a] text-white' : 'border-gray-300 bg-white text-[#0a1e3a]'} disabled:opacity-40`}>
+                        {t === 'contado' ? 'Contado' : 'Crédito'}
+                      </button>
+                    );
+                  })}
+                </div>
+                {!cliente?.autorizar_credito && <div className="-mt-2 text-[11px] text-gray-400">Crédito: solo con un cliente autorizado.</div>}
+                {isCredit && (
+                  <label className="flex items-center gap-2 text-sm font-bold text-gray-600">
+                    Días de crédito
+                    <Input type="number" inputMode="numeric" className="h-10 w-24 text-center text-base" value={diasCredito} onChange={(e) => setDiasCredito(e.target.value)} />
+                  </label>
+                )}
+
+                <div className="space-y-2">
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'CHEQUE'].map((f) => (
+                      <button key={f} type="button" onClick={() => setTipoPago(f)}
+                        className={`h-10 rounded-md border text-[10px] font-black ${tipoPago === f ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-gray-300 bg-white text-gray-700'}`}>
+                        {f === 'TRANSFERENCIA' ? 'TRANSF.' : f}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-1.5">
+                    <MontoInput as={Input} id="input-monto-pago" inputMode="decimal"
+                      className="h-12 flex-1 text-right font-mono text-xl font-black text-green-700"
+                      placeholder={isCredit ? 'Inicial / abono' : 'Recibido'}
+                      value={montoRecibido} onChange={(v) => setMontoRecibido(v)} />
+                    {!isCredit && faltaCobrar > 0 && (
+                      <button type="button" onClick={() => setMontoRecibido(String(faltaCobrar))}
+                        className="h-12 rounded-md border border-emerald-600 px-3 text-xs font-black text-emerald-700">Exacto</button>
+                    )}
+                  </div>
+                  {tipoPago !== 'EFECTIVO' && (
+                    <Input className="h-10 text-base uppercase" placeholder="Referencia (opcional)" value={currentRef} onChange={(e) => setCurrentRef(e.target.value)} />
+                  )}
+                  {tipoPago && tipoPago !== 'EFECTIVO' && (paymentType === 'contado' || (parseFloat(montoRecibido) || 0) > 0) && (
+                    <CuentaBancariaSelect value={cuentaBancoId} onChange={setCuentaBancoId} moneda="DOP" contexto="ventas"
+                      label={paymentType === 'credito' ? 'Inicial entra a la cuenta' : 'Entra a la cuenta'} />
+                  )}
+                  <button type="button" onClick={addPago} disabled={!(parseFloat(montoRecibido) > 0)}
+                    className="text-xs font-bold text-blue-700 disabled:text-gray-300">
+                    + Pagar una parte así y el resto con otra forma
+                  </button>
+                  {pagos.length > 0 && (
+                    <div className="divide-y rounded-md border">
+                      {pagos.map((p, idx) => (
+                        <div key={idx} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                          <span className="font-bold">{p.tipo}</span>
+                          <span className="flex-1 truncate text-gray-500">{p.ref}</span>
+                          <span className="font-mono font-black text-green-700">{montoConComas(Number(p.monto))}</span>
+                          <button type="button" onClick={() => removePago(idx)} className="p-1 text-red-500"><Trash2 className="h-4 w-4" /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="text-[11px] font-bold uppercase text-gray-500">{isCredit ? 'Abono' : 'Recibido'}</div>
+                    <div className="font-mono text-lg font-black text-[#0a1e3a]">{montoConComas(totalAbonado)}</div>
+                  </div>
+                  <div className={`rounded-lg px-3 py-2 ${isCredit ? (pendiente > 0 ? 'bg-orange-50' : 'bg-green-50') : (cambio < 0 ? 'bg-red-50' : 'bg-green-50')}`}>
+                    <div className="text-[11px] font-bold uppercase text-gray-500">{isCredit ? 'Pendiente' : 'Cambio'}</div>
+                    <div className={`font-mono text-lg font-black ${isCredit ? (pendiente > 0 ? 'text-orange-700' : 'text-green-700') : (cambio < 0 ? 'text-red-600' : 'text-green-700')}`}>
+                      {montoConComas(isCredit ? pendiente : cambio)}
+                    </div>
+                  </div>
+                </div>
+
+                <textarea className="h-16 w-full resize-none rounded-md border border-gray-300 bg-[#ffffd9] p-2 text-base"
+                  placeholder="Nota de la factura (opcional)" value={notas} onChange={(e) => setNotas && setNotas(e.target.value)} />
+
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={printFormat} onChange={(e) => setPrintFormat(e.target.value)} className="h-10 rounded-md border border-gray-300 bg-white px-2 text-sm font-bold">
+                    <option value="pos_4inch">4 pulgadas</option>
+                    <option value="half_page">Media página</option>
+                    <option value="full_page">Página completa</option>
+                  </select>
+                  <select value={printMethod} onChange={(e) => setPrintMethod(e.target.value)} className="h-10 rounded-md border border-gray-300 bg-white px-2 text-sm font-bold">
+                    <option value="browser">Imprimir</option>
+                    <option value="pdf">PDF (para enviar)</option>
+                    {printMethod && !['browser', 'pdf'].includes(printMethod) && <option value={printMethod}>{printMethod}</option>}
+                  </select>
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button type="button" disabled={isSaving}
+                    onClick={() => { if (window.confirm('¿Borrar esta venta y empezar de nuevo?')) { setCobrando(false); resetVenta(); } }}
+                    className="h-12 rounded-lg border border-gray-300 px-4 text-sm font-bold text-red-600">
+                    Borrar venta
+                  </button>
+                  <button type="button" ref={grabarBtnRef} disabled={isSaving || grabarTrasPago}
+                    onClick={() => {
+                      // Igual que Enter en la computadora: con otros pagos, o con
+                      // referencia escrita, lo recibido entra a la lista de pagos.
+                      if ((parseFloat(montoRecibido) || 0) > 0 && (pagos.length > 0 || currentRef.trim())) { addPago(); setGrabarTrasPago(true); return; }
+                      handleFacturar();
+                    }}
+                    className="flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 text-base font-black uppercase text-white shadow disabled:opacity-50">
+                    {isSaving && <Loader2 className="h-5 w-5 animate-spin" />} Grabar factura
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {alertaPago}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -434,35 +644,7 @@ const VentasFooter = ({
         </button>
       </div>
 
-      {/* Alert Dialog - Pago insuficiente */}
-      <AlertDialog open={alertOpen} onOpenChange={setAlertOpen}>
-        <AlertDialogContent className="max-w-[400px] border-2 border-gray-400 bg-[#f0f0f0] p-0 rounded-lg shadow-2xl">
-          <AlertDialogHeader className="bg-gradient-to-r from-[#0a1e3a] to-[#1a3a5c] px-4 py-2 rounded-t-md">
-            <AlertDialogTitle className="text-white text-sm font-bold">{nombreEmpresa} - Punto de Venta</AlertDialogTitle>
-          </AlertDialogHeader>
-          <div className="flex items-start gap-4 px-6 py-5">
-            <div className="flex-shrink-0">
-              <AlertCircle className="w-10 h-10 text-red-600" />
-            </div>
-            <AlertDialogDescription className="text-[14px] text-gray-900 font-semibold leading-snug pt-1">
-              El Cambio NO puede ser Menor que 0.00 (cero).
-              <br />
-              <span className="text-[12px] text-gray-600 font-normal mt-1 block">
-                Monto Recibido: RD$ {montoConComas((pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0)))}
-                <br />
-                Total Factura: RD$ {montoConComas(totals.totalFactura)}
-                <br />
-                Faltante: RD$ {montoConComas(Math.max(0, totals.totalFactura - (pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0))))}
-              </span>
-            </AlertDialogDescription>
-          </div>
-          <AlertDialogFooter className="px-4 py-3 bg-gray-100 border-t border-gray-300 rounded-b-md">
-            <AlertDialogAction className="bg-[#0a1e3a] hover:bg-[#0a1e3a]/90 text-white font-bold px-8 h-9" onClick={() => setAlertOpen(false)}>
-              Aceptar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {alertaPago}
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { montoConComas } from '@/lib/formatoMonto';
-import { Search, Trash2, Loader2, Package, Truck } from 'lucide-react';
+import { Search, Trash2, Loader2, Package, Truck, Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -21,7 +21,9 @@ const VentasTable = ({
   updateCurrentItem = () => { },
   commitCurrentItem = () => { },
   clearCurrentItem = () => { },
-  userRole = 'seller'
+  userRole = 'seller',
+  movil = false,
+  editandoIndex = null,
 }) => {
   const { toast } = useToast();
   const [sendingToOrder, setSendingToOrder] = useState(null);
@@ -55,7 +57,6 @@ const VentasTable = ({
       setSendingToOrder(null);
     }
   };
-  console.log('VentasTable Render Check:', { itemsCount: items?.length, currentItemExists: !!currentItem });
   const emptyRowsCount = Math.max(0, 12 - items.length);
 
   const prevItemIdRef = React.useRef(null);
@@ -63,6 +64,8 @@ const VentasTable = ({
   React.useEffect(() => {
     if (currentItem && currentItem.id !== prevItemIdRef.current) {
       prevItemIdRef.current = currentItem.id;
+      // En el teléfono no se abre el teclado solo: la cantidad va con − / +.
+      if (movil) return;
       setTimeout(() => {
         document.getElementById('input-cantidad')?.focus();
         document.getElementById('input-cantidad')?.select();
@@ -95,6 +98,113 @@ const VentasTable = ({
       </span>
     );
   };
+
+  // ===== Vista de teléfono (11/11/2026) =====
+  // Las mismas funciones de la tabla (fila amarilla = tarjeta "por agregar",
+  // mismo commit con su bloqueo bajo costo y tope de descuento), en tarjetas.
+  if (movil) {
+    const puedePrecio = userRole === 'admin' || userRole === 'owner';
+    const caja = 'h-11 w-full rounded-md border border-gray-300 bg-white px-2 text-right font-mono text-base font-bold';
+    const cantidadMas = (d) => updateCurrentItem('cantidad', Math.max(1, Number(currentItem?.cantidad || 0) + d));
+    // La tarjeta amarilla es una línea YA agregada (se tocó para corregirla).
+    const editando = !!currentItem && editandoIndex !== null && editandoIndex >= 0 && items[editandoIndex]?.id === currentItem.id;
+    // Mientras hay algo en la tarjeta amarilla, las demás tarjetas no se tocan:
+    // al agregar, la línea se escribe por su posición (useVentas.commitCurrentItem).
+    const ocupado = !!currentItem;
+    return (
+      <div className="space-y-2 bg-slate-100 p-2">
+        <div className="flex gap-1.5">
+          <input id="input-codigo" autoComplete="off" enterKeyHint="search"
+            className="h-11 min-w-0 flex-1 rounded-md border border-gray-300 bg-[#fff8b0] px-3 text-base font-bold uppercase text-[#0a1e3a] placeholder:font-normal placeholder:normal-case placeholder:text-gray-400"
+            placeholder="Código de la pieza" value={itemCode}
+            onChange={(e) => setItemCode(e.target.value)} onKeyDown={onItemCodeKeyDown} />
+          <button type="button" onClick={onProductSearch}
+            className="flex h-11 shrink-0 items-center gap-1 rounded-md bg-[#0a1e3a] px-4 text-sm font-bold text-white">
+            <Search className="h-5 w-5" /> Buscar
+          </button>
+        </div>
+
+        {currentItem && (
+          <div className="space-y-2 rounded-lg border-2 border-yellow-400 bg-[#fffbd6] p-3 shadow">
+            <div>
+              <div className="text-base font-black uppercase leading-tight text-blue-900">{currentItem.descripcion}</div>
+              <div className="text-xs text-gray-500">{[currentItem.codigo, currentItem.ubicacion].filter(Boolean).join(' · ')}</div>
+              <LocalSupplierHint item={currentItem} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-3 text-[11px] font-bold uppercase text-gray-500">Cantidad
+                <div className="mt-0.5 flex items-center gap-1">
+                  <button type="button" onClick={() => cantidadMas(-1)} className="flex h-11 w-12 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white"><Minus className="h-5 w-5" /></button>
+                  <input id="movil-cantidad" type="number" inputMode="decimal" className={caja + ' text-center'} min="1"
+                    value={currentItem.cantidad} onChange={(e) => updateCurrentItem('cantidad', e.target.value)} />
+                  <button type="button" onClick={() => cantidadMas(1)} className="flex h-11 w-12 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white"><Plus className="h-5 w-5" /></button>
+                </div>
+              </div>
+              <label className="col-span-2 text-[11px] font-bold uppercase text-gray-500">Precio
+                <input id="movil-precio" type="number" inputMode="decimal" className={caja + ' mt-0.5 disabled:bg-gray-100'} min="0"
+                  disabled={!puedePrecio} value={currentItem.precio} onChange={(e) => updateCurrentItem('precio', e.target.value)} />
+              </label>
+              <label className="text-[11px] font-bold uppercase text-gray-500">Desc. %
+                <input id="movil-descuento" type="number" inputMode="decimal" className={caja + ' mt-0.5 text-red-600'} min="0" step="0.01"
+                  value={currentItem.descuento} onChange={(e) => updateCurrentItem('descuento', e.target.value)} />
+              </label>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">ITBIS {montoConComas(Number(currentItem.itbis || 0))}</span>
+              <span className="font-mono text-lg font-black text-blue-900">{montoConComas(Number(currentItem.importe || 0))}</span>
+            </div>
+            <div className="flex gap-2">
+              {editando ? (
+                <>
+                  <button type="button" onClick={() => { const id = currentItem.id; clearCurrentItem(); onDeleteItem(id); }}
+                    className="h-11 rounded-md border border-red-300 bg-white px-3 text-sm font-bold text-red-600">Eliminar línea</button>
+                  <button type="button" onClick={clearCurrentItem} className="h-11 rounded-md border border-gray-300 bg-white px-3 text-sm font-bold text-gray-600">Cancelar</button>
+                  <button type="button" onClick={commitCurrentItem} className="h-11 flex-1 rounded-md bg-emerald-600 text-base font-black text-white">Guardar</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={clearCurrentItem} className="h-11 rounded-md border border-gray-300 bg-white px-4 text-sm font-bold text-red-600">Quitar</button>
+                  <button type="button" onClick={commitCurrentItem} className="h-11 flex-1 rounded-md bg-emerald-600 text-base font-black text-white">Agregar a la factura</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {items.map((item, index) => item && (
+          <div key={item.id || index}
+            className={`flex items-start gap-2 rounded-lg border bg-white p-2.5 shadow-sm ${index === editandoIndex && ocupado ? 'border-yellow-400 ring-2 ring-yellow-300' : 'border-gray-300'} ${ocupado ? 'opacity-60' : ''}`}
+            onClick={() => { if (!ocupado && onEditItem) onEditItem(item); }}>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold uppercase leading-tight text-gray-800">{item.descripcion}</div>
+              <div className="text-xs text-gray-500">
+                {item.codigo} · {montoConComas(Number(item.precio || 0))}
+                {Number(item.descuento) > 0 && <span className="text-red-600"> · -{Number(item.descuento)}%</span>}
+              </div>
+              <LocalSupplierHint item={item} />
+              <div className="mt-1.5 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <button type="button" disabled={ocupado || Number(item.cantidad) <= 1}
+                  onClick={() => onUpdateItem(item.id, 'cantidad', Math.max(1, Number(item.cantidad || 0) - 1))}
+                  className="flex h-9 w-10 items-center justify-center rounded-md border border-gray-300 disabled:opacity-30"><Minus className="h-4 w-4" /></button>
+                <span className="w-10 text-center font-mono text-base font-black">{item.cantidad}</span>
+                <button type="button" disabled={ocupado} onClick={() => onUpdateItem(item.id, 'cantidad', Number(item.cantidad || 0) + 1)}
+                  className="flex h-9 w-10 items-center justify-center rounded-md border border-gray-300 disabled:opacity-30"><Plus className="h-4 w-4" /></button>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <span className="font-mono text-base font-black text-blue-900">{montoConComas(Number(item.importe || 0))}</span>
+              <button type="button" title="Quitar" disabled={ocupado} onClick={(e) => { e.stopPropagation(); onDeleteItem(item.id); }}
+                className="p-1.5 text-red-500 disabled:opacity-30"><Trash2 className="h-5 w-5" /></button>
+            </div>
+          </div>
+        ))}
+
+        {items.length === 0 && !currentItem && (
+          <div className="py-10 text-center text-sm text-gray-400">Escribe el código o toca <b>Buscar</b> para agregar piezas.</div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex-grow border-2 border-gray-500 bg-[#f5f5f0] flex flex-col shadow-inner">

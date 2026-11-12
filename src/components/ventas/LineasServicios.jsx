@@ -51,7 +51,7 @@ const partir = (it) => {
   return i > 0 ? { desc: d.slice(0, i), ref: d.slice(i + SEP.length) } : { desc: d, ref: '' };
 };
 
-export default function LineasServicios({ items, setItems, cliente, moneda = 'DOP', tasa = '', emiteEcf: emiteEcfProp }) {
+export default function LineasServicios({ items, setItems, cliente, moneda = 'DOP', tasa = '', emiteEcf: emiteEcfProp, movil = false }) {
   // (28/10/2026) En US$ los montos se escriben en dólares y se guardan en
   // pesos (× tasa): la venta, la caja y el 607 siguen en pesos.
   const factor = moneda === 'USD' && n(tasa) > 0 ? n(tasa) : 1;
@@ -219,19 +219,127 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
 
   const celda = 'w-full bg-transparent px-2 py-1.5 text-[13px] focus:bg-yellow-50 focus:outline-none';
 
+  // Opciones del servicio (las dos vistas).
+  const opciones = (
+    <>
+                {general && <option value={general.id}>Servicio general</option>}
+                {catalogo.filter((p) => p.naturaleza === 'servicio').length > 0 && (
+                  <optgroup label="Servicios">
+                    {catalogo.filter((p) => p.naturaleza === 'servicio').map((p) => <option key={p.id} value={p.id}>{p.descripcion}</option>)}
+                  </optgroup>
+                )}
+                {catalogo.filter((p) => p.naturaleza === 'inmueble').length > 0 && (
+                  <optgroup label="Inmuebles">
+                    {catalogo.filter((p) => p.naturaleza === 'inmueble').map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.descripcion}</option>)}
+                  </optgroup>
+                )}
+    </>
+  );
+  const quitar = (lid) => setItems((prev) => prev.filter((it, i) => (it._lid || `x${i}`) !== lid));
+  const ponDesc = (f, v) => cambiar(f._lid, { _desc: recortar(v, MAX_NOMBRE - largoRef(f._ref)) });
+  const ponRef = (f, v) => cambiar(f._lid, { _ref: recortar(v, MAX_NOMBRE - largo(f._desc) - SEP.length) });
+  const ponMonto = (f, v) => cambiar(f._lid, { _monto: v.replace(/[^0-9.]/g, '') });
+  const usarCalc = (f) => {
+    cambiar(f._lid, {
+      _monto: (n(calc.base) * n(calc.pct) / 100).toFixed(2),
+      _ref: f._ref || recortar(`PAGO DE ${n(calc.pct)}%`, MAX_NOMBRE - largo(f._desc) - SEP.length),
+      _conItbis: false,   // la comisión es la base; el ITBIS va encima
+      _tecleado: false,   // el cotejo no la cambia
+    });
+    setCalc(null);
+  };
+  const contador = (f) => (
+    <div className={`px-2 pb-1 text-right text-[10px] ${largo(f._desc) + largoRef(f._ref) >= MAX_NOMBRE ? 'font-bold text-red-600' : 'text-slate-400'}`}>
+      {largo(f._desc) + largoRef(f._ref)}/{MAX_NOMBRE}
+    </div>
+  );
+  const calculadora = (f) => (
+    <>
+      <span className="mr-2 font-semibold text-blue-900">Calcular comisión:</span>
+      <input className="h-7 w-40 rounded border px-2 text-right" inputMode="decimal" placeholder="Valor de la venta"
+        value={calc.base} onChange={(e) => setCalc({ ...calc, base: e.target.value.replace(/[^0-9.]/g, '') })} />
+      <span className="mx-1">×</span>
+      <input className="h-7 w-16 rounded border px-2 text-right" inputMode="decimal" value={calc.pct}
+        onChange={(e) => setCalc({ ...calc, pct: e.target.value.replace(/[^0-9.]/g, '') })} />
+      <span className="mx-1">% =</span>
+      <b>{money(n(calc.base) * n(calc.pct) / 100)}</b>
+      <button type="button" className="ml-3 rounded bg-blue-600 px-2 py-1 font-bold text-white" onClick={() => usarCalc(f)}>
+        Usar (más ITBIS)
+      </button>
+    </>
+  );
+
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-1.5 text-xs">
+      <div className={`flex border-b bg-slate-50 px-3 py-1.5 text-xs ${movil ? 'flex-col gap-1 py-2 text-sm' : 'items-center justify-between'}`}>
         <span className="font-bold uppercase text-slate-600">Detalle de la factura</span>
         {/* Apagado se marca en ámbar: se recuerda entre sesiones y cambia el total (+18%). */}
         <label className={`flex items-center gap-1.5 rounded px-1.5 ${conItbis ? 'text-slate-600' : 'bg-amber-100 font-semibold text-amber-900 ring-1 ring-amber-300'}`}
           title="Se recuerda como lo dejes en esta computadora, hasta que lo cambies">
-          <input type="checkbox" checked={conItbis} onChange={(e) => cambiarConItbis(e.target.checked)} />
+          <input type="checkbox" className={movil ? 'h-5 w-5' : ''} checked={conItbis} onChange={(e) => cambiarConItbis(e.target.checked)} />
           Los montos que escribo <b>incluyen ITBIS</b>
           {!conItbis && <span>— se le suma el 18%</span>}
         </label>
       </div>
 
+      {movil ? (
+        <div className="space-y-3 bg-slate-100 p-2">
+          {cargando && <div className="py-6 text-center text-slate-400"><Loader2 className="inline h-4 w-4 animate-spin" /> Cargando servicios…</div>}
+          {filas.map((f, i) => (
+            <div key={f._lid} className="space-y-2 rounded-lg border border-slate-300 bg-white p-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-400">{i + 1}</span>
+                <select className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 text-sm font-semibold"
+                  value={f.producto_id || ''} onChange={(e) => elegirProducto(f._lid, e.target.value)}>
+                  {opciones}
+                </select>
+                <button type="button" title="Quitar línea" className="p-2 text-slate-400" onClick={() => quitar(f._lid)}>
+                  <Trash2 className="h-5 w-5" />
+                </button>
+              </div>
+              <div>
+                <textarea rows={2} className="w-full resize-none rounded-md border border-slate-300 px-2 py-1.5 text-base uppercase"
+                  placeholder="Descripción del servicio" value={f._desc} onChange={(e) => ponDesc(f, e.target.value)} />
+                {contador(f)}
+              </div>
+              <input className="h-10 w-full rounded-md border border-slate-300 px-2 text-base uppercase" placeholder="Referencia (opcional)"
+                value={f._ref} onChange={(e) => ponRef(f, e.target.value)} />
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{sim}</span>
+                  <input className="h-12 w-full rounded-md border border-slate-300 pl-11 pr-2 text-right font-mono text-xl font-black" inputMode="decimal"
+                    placeholder="0.00" value={f._monto || ''} onChange={(e) => ponMonto(f, e.target.value)} />
+                </div>
+                <button type="button" title="Calcular un porcentaje (comisión)"
+                  className={`flex h-12 w-12 items-center justify-center rounded-md border ${calc?.lid === f._lid ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-500'}`}
+                  onClick={() => setCalc(calc?.lid === f._lid ? null : { lid: f._lid, base: '', pct: '5' })}>
+                  <Percent className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="text-right text-xs text-slate-500">
+                ITBIS: {f.naturaleza === 'inmueble' ? 'exento' : <span className="font-mono">{money(n(f.itbis) / factor)}</span>}
+              </div>
+              {calc?.lid === f._lid && (
+                <div className="space-y-2 rounded-md bg-blue-50 p-2 text-sm">
+                  <div className="font-semibold text-blue-900">Calcular comisión</div>
+                  <div className="flex items-center gap-1">
+                    <input className="h-10 min-w-0 flex-1 rounded border px-2 text-right text-base" inputMode="decimal" placeholder="Valor de la venta"
+                      value={calc.base} onChange={(e) => setCalc({ ...calc, base: e.target.value.replace(/[^0-9.]/g, '') })} />
+                    <span>×</span>
+                    <input className="h-10 w-16 rounded border px-2 text-right text-base" inputMode="decimal" value={calc.pct}
+                      onChange={(e) => setCalc({ ...calc, pct: e.target.value.replace(/[^0-9.]/g, '') })} />
+                    <span>%</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <b className="font-mono">= {money(n(calc.base) * n(calc.pct) / 100)}</b>
+                    <button type="button" className="h-10 rounded bg-blue-600 px-3 font-bold text-white" onClick={() => usarCalc(f)}>Usar (más ITBIS)</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
       <table className="w-full border-collapse">
         <thead>
           <tr className="bg-[#d9d4c7] text-left text-[12px] font-black uppercase text-slate-800">
@@ -252,34 +360,22 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
               <tr className="border-b border-slate-200 align-top odd:bg-white even:bg-slate-50/60">
                 <td className="border-r border-slate-200">
                   <select className={celda} value={f.producto_id || ''} onChange={(e) => elegirProducto(f._lid, e.target.value)}>
-                    {general && <option value={general.id}>Servicio general</option>}
-                    {catalogo.filter((p) => p.naturaleza === 'servicio').length > 0 && (
-                      <optgroup label="Servicios">
-                        {catalogo.filter((p) => p.naturaleza === 'servicio').map((p) => <option key={p.id} value={p.id}>{p.descripcion}</option>)}
-                      </optgroup>
-                    )}
-                    {catalogo.filter((p) => p.naturaleza === 'inmueble').length > 0 && (
-                      <optgroup label="Inmuebles">
-                        {catalogo.filter((p) => p.naturaleza === 'inmueble').map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.descripcion}</option>)}
-                      </optgroup>
-                    )}
+                    {opciones}
                   </select>
                 </td>
                 <td className="border-r border-slate-200">
                   <textarea rows={2} className={`${celda} resize-y uppercase`} placeholder="Ej. Factura pago de comisión por venta de solares Primaveral"
-                    value={f._desc} onChange={(e) => cambiar(f._lid, { _desc: recortar(e.target.value, MAX_NOMBRE - largoRef(f._ref)) })} />
-                  <div className={`px-2 pb-1 text-right text-[10px] ${largo(f._desc) + largoRef(f._ref) >= MAX_NOMBRE ? 'font-bold text-red-600' : 'text-slate-400'}`}>
-                    {largo(f._desc) + largoRef(f._ref)}/{MAX_NOMBRE}
-                  </div>
+                    value={f._desc} onChange={(e) => ponDesc(f, e.target.value)} />
+                  {contador(f)}
                 </td>
                 <td className="border-r border-slate-200">
                   <input className={`${celda} uppercase`} placeholder="Ej. Pago de 5%" value={f._ref}
-                    onChange={(e) => cambiar(f._lid, { _ref: recortar(e.target.value, MAX_NOMBRE - largo(f._desc) - SEP.length) })} />
+                    onChange={(e) => ponRef(f, e.target.value)} />
                 </td>
                 <td className="border-r border-slate-200">
                   <div className="flex items-center">
                     <input className={`${celda} text-right font-mono font-bold`} inputMode="decimal" value={f._monto || ''}
-                      placeholder="0.00" onChange={(e) => cambiar(f._lid, { _monto: e.target.value.replace(/[^0-9.]/g, '') })} />
+                      placeholder="0.00" onChange={(e) => ponMonto(f, e.target.value)} />
                     <button type="button" title="Calcular un porcentaje (comisión)" className="px-1 text-slate-400 hover:text-blue-600"
                       onClick={() => setCalc(calc?.lid === f._lid ? null : { lid: f._lid, base: '', pct: '5' })}>
                       <Percent className="h-3.5 w-3.5" />
@@ -291,7 +387,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
                 </td>
                 <td className="text-center">
                   <button type="button" title="Quitar línea" className="p-1.5 text-slate-400 hover:text-red-600"
-                    onClick={() => setItems((prev) => prev.filter((it, i) => (it._lid || `x${i}`) !== f._lid))}>
+                    onClick={() => quitar(f._lid)}>
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </td>
@@ -299,26 +395,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
               {calc?.lid === f._lid && (
                 <tr className="bg-blue-50">
                   <td colSpan={6} className="px-3 py-2 text-[12px]">
-                    <span className="mr-2 font-semibold text-blue-900">Calcular comisión:</span>
-                    <input className="h-7 w-40 rounded border px-2 text-right" inputMode="decimal" placeholder="Valor de la venta"
-                      value={calc.base} onChange={(e) => setCalc({ ...calc, base: e.target.value.replace(/[^0-9.]/g, '') })} />
-                    <span className="mx-1">×</span>
-                    <input className="h-7 w-16 rounded border px-2 text-right" inputMode="decimal" value={calc.pct}
-                      onChange={(e) => setCalc({ ...calc, pct: e.target.value.replace(/[^0-9.]/g, '') })} />
-                    <span className="mx-1">% =</span>
-                    <b>{money(n(calc.base) * n(calc.pct) / 100)}</b>
-                    <button type="button" className="ml-3 rounded bg-blue-600 px-2 py-1 font-bold text-white"
-                      onClick={() => {
-                        cambiar(f._lid, {
-                          _monto: (n(calc.base) * n(calc.pct) / 100).toFixed(2),
-                          _ref: f._ref || recortar(`PAGO DE ${n(calc.pct)}%`, MAX_NOMBRE - largo(f._desc) - SEP.length),
-                          _conItbis: false,   // la comisión es la base; el ITBIS va encima
-                          _tecleado: false,   // el cotejo no la cambia
-                        });
-                        setCalc(null);
-                      }}>
-                      Usar (más ITBIS)
-                    </button>
+                    {calculadora(f)}
                   </td>
                 </tr>
               )}
@@ -326,12 +403,13 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
           ))}
         </tbody>
       </table>
+      )}
 
       <div className="flex flex-wrap items-start justify-between gap-3 border-t bg-white px-3 py-2">
-        <button type="button" onClick={agregar} className="inline-flex items-center gap-1 rounded border border-dashed border-slate-400 px-3 py-1.5 text-[12px] font-bold text-slate-600 hover:bg-slate-50">
+        <button type="button" onClick={agregar} className={`inline-flex items-center gap-1 rounded border border-dashed border-slate-400 font-bold text-slate-600 hover:bg-slate-50 ${movil ? 'h-11 w-full justify-center text-sm' : 'px-3 py-1.5 text-[12px]'}`}>
           <Plus className="h-3.5 w-3.5" /> Agregar línea
         </button>
-        <div className="min-w-[260px] text-[12px]">
+        <div className={movil ? 'w-full text-sm' : 'min-w-[260px] text-[12px]'}>
           <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-mono">{money(t.subtotal)}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">ITBIS</span><span className="font-mono">{money(t.itbis)}</span></div>
           <div className="flex justify-between font-bold"><span>Total {sim}</span><span className="font-mono">{money(t.total)}</span></div>

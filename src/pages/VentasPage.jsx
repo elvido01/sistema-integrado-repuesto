@@ -29,6 +29,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { esClienteGenerico } from '@/lib/clienteGenerico';
 import { docFiscalValido, tipoExigeRnc } from '@/lib/docFiscal';
 import { useLayout } from '@/contexts/LayoutContext';
+import { useEsTelefono, leerVistaCompleta, guardarVistaCompleta } from '@/hooks/useEsTelefono';
+import { Smartphone } from 'lucide-react';
 
 const VentasPage = () => {
   const { toast } = useToast();
@@ -72,6 +74,7 @@ const VentasPage = () => {
     commitCurrentItem,
     clearCurrentItem,
     editItem,
+    editingItemIndex,
     printFormat, setPrintFormat,
     printMethod, setPrintMethod,
     recargo, setRecargo,
@@ -142,6 +145,15 @@ const VentasPage = () => {
     setCobroPedido({ tipo: 'cobrar_venta', forma_pago, recibido, contado: true, cuenta, pedidoEn: Date.now() });
   };
   const { setSidebarOpen } = useLayout();
+
+  // (11/11/2026) Punto de venta en el teléfono: la misma venta (mismo
+  // useVentas, mismo F10/grabar, NCF, e-CF y retenciones) con otra forma:
+  // cabecera compacta, líneas en tarjetas y "Cobrar" abajo. Se puede pedir la
+  // vista completa (se recuerda en ese teléfono) y volver.
+  const esTelefono = useEsTelefono();
+  const [vistaCompleta, setVistaCompleta] = useState(leerVistaCompleta);
+  const movil = esTelefono && !vistaCompleta;
+  const cambiarVista = (completa) => { guardarVistaCompleta(completa); setVistaCompleta(completa); };
 
   // (29/10/2026) El punto de venta necesita todo el ancho: en pantallas
   // medianas, al entrar a Ventas (o al achicar la ventana) se recoge el menú
@@ -912,6 +924,9 @@ const VentasPage = () => {
         </div>
       )}
 
+      {/* En el teléfono la cabecera sube con las líneas (un solo desplazamiento)
+          y abajo queda fija la barra de cobro. En la computadora, igual que antes. */}
+      <div className={movil ? 'flex min-h-0 flex-1 flex-col overflow-y-auto' : 'contents'}>
       <VentasHeader
         {...(['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio)
           ? { moneda, setMoneda, tasaCambio, setTasaCambio } : {})}
@@ -950,10 +965,18 @@ const VentasPage = () => {
         manualClienteNombre={manualClienteNombre}
         setManualClienteNombre={setManualClienteNombre}
         ncfPreview={ncfPreview}
+        movil={movil}
+        onVistaCompleta={() => cambiarVista(true)}
       />
+      {esTelefono && !movil && (
+        <button type="button" onClick={() => cambiarVista(false)}
+          className="flex items-center justify-center gap-1 bg-emerald-600 py-1.5 text-xs font-black uppercase text-white">
+          <Smartphone className="h-4 w-4" /> Volver a la vista de teléfono
+        </button>
+      )}
 
-      <main className="flex-1 min-h-0 overflow-hidden">
-        <div className="h-full overflow-y-auto bg-white shadow border-b border-gray-300">
+      <main className={movil ? 'flex-1 bg-white' : 'flex-1 min-h-0 overflow-hidden'}>
+        <div className={movil ? '' : 'h-full overflow-y-auto bg-white shadow border-b border-gray-300'}>
           {/* Codigo de promocion tecleado en la fila amarilla (T101, I101...). */}
           {promoAplicada && (
             <div className="flex items-center gap-2 border-b border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-800">
@@ -974,7 +997,8 @@ const VentasPage = () => {
           {['servicios', 'inmobiliaria'].includes(empresa?.tipo_negocio) ? (
             <LineasServicios items={items} setItems={setItems} cliente={cliente} moneda={moneda} tasa={tasaCambio}
               // Lleva e-CF ESTA factura (no la empresa): la base retiene según el NCF real.
-              emiteEcf={editingFacturaId ? /^E\d{12}$/.test(String(editingFacturaNcf || '').trim()) : !!ncfPreview?.electronico} />
+              emiteEcf={editingFacturaId ? /^E\d{12}$/.test(String(editingFacturaNcf || '').trim()) : !!ncfPreview?.electronico}
+              movil={movil} />
           ) : (
           <VentasTable
             items={items}
@@ -994,10 +1018,13 @@ const VentasPage = () => {
             commitCurrentItem={commitCurrentItem}
             clearCurrentItem={clearCurrentItem}
             userRole={profile?.role}
+            movil={movil}
+            editandoIndex={editingItemIndex}
           />
           )}
         </div>
       </main>
+      </div>
 
       <VentasFooter
         cliente={cliente}
@@ -1029,6 +1056,7 @@ const VentasPage = () => {
         setNotas={setNotas}
         pideCanalOrigen={pideCanalOrigen}
         canalOrigen={canalOrigen}
+        movil={movil}
       />
 
       {varianteDe && (
@@ -1047,9 +1075,11 @@ const VentasPage = () => {
         sessionKey={modalSessionKey}
         useConfigDefault={true}
         permiteTraspaso
+        movil={movil}
       />
 
       <ClienteSearchModal
+        movil={movil}
         isOpen={isClienteSearchModalOpen}
         onClose={handleCloseClienteSearch}
         onSelectCliente={(cliente) => {

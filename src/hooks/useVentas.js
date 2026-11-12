@@ -2019,6 +2019,9 @@ export const useVentas = () => {
     commitCurrentItem,
     clearCurrentItem,
     editItem,
+    // (11/11/2026) Vista de teléfono: saber si la tarjeta amarilla es una
+    // línea ya agregada (corregir/eliminar) o una pieza nueva.
+    editingItemIndex,
     /* Edit Mode Exports */
     editingFacturaId,
     editingFacturaNumero,
