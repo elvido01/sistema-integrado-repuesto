@@ -57,6 +57,9 @@ export const setEmpresaPrintConfig = (empresa) => {
       logoUrl: empresa.logo_url || '',
       // (11/11/2026) Nota al pie de la hoja carta: la escribe cada empresa.
       notaFactura: empresa.nota_factura || '',
+      // (12/11/2026) Firma y sello: salen en la hoja carta/media solo si la empresa los subió.
+      firmaUrl: empresa.firma_url || '',
+      selloUrl: empresa.sello_url || '',
     };
   }
 };
@@ -333,6 +336,22 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
 // pago con inicial/pagares. Se usa cuando la factura viene de una solicitud
 // financiada (factura.solicitud presente). El cliente mostrado es el COMPRADOR
 // real (manual_cliente_nombre / solicitud), no la financiera.
+// (12/11/2026) Firma y sello de la empresa sobre "Entregado por" (hoja carta /
+// media carta). Sin firma ni sello, las rayas quedan en blanco como antes.
+const firmaSelloHtml = (isHalf, recibe = 'Recibido conforme') => `
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:${isHalf ? '10px' : '22px'}; page-break-inside:avoid;">
+        <div style="position:relative; width:42%; text-align:center;">
+          <div style="height:${isHalf ? '40px' : '56px'}; display:flex; align-items:flex-end; justify-content:center;">
+            ${_empresaConfig.firmaUrl ? `<img src="${escHtml(_empresaConfig.firmaUrl)}" alt="" style="max-height:100%; max-width:70%; object-fit:contain;">` : ''}
+          </div>
+          ${_empresaConfig.selloUrl ? `<img src="${escHtml(_empresaConfig.selloUrl)}" alt="" style="position:absolute; right:-${isHalf ? '40px' : '64px'}; bottom:-${isHalf ? '6px' : '10px'}; max-height:${isHalf ? '58px' : '84px'}; max-width:${isHalf ? '90px' : '130px'}; object-fit:contain;">` : ''}
+          <div style="border-top:1px solid #000; padding-top:2px; font-size:${isHalf ? '10px' : '11px'};">Entregado por</div>
+        </div>
+        <div style="width:42%; text-align:center;">
+          <div style="border-top:1px solid #000; padding-top:2px; font-size:${isHalf ? '10px' : '11px'};">${recibe}</div>
+        </div>
+      </div>`;
+
 const printFacturaDealerFullPage = (factura) => {
   const emp = _empresaConfig;
   const sol = factura.solicitud || {};
@@ -480,10 +499,11 @@ const printFacturaDealerFullPage = (factura) => {
       ${extrasFacturaHtml(factura)}
       ${ecfBloqueHtml(factura.ecf, { qr: '30mm' })}
 
+      ${(_empresaConfig.firmaUrl || _empresaConfig.selloUrl) ? firmaSelloHtml(false, 'Recibido por') : `
       <div class="firmas">
         <div class="f">Entregado por</div>
         <div class="f">Recibido por</div>
-      </div>
+      </div>`}
 
       <div class="nota">
         NOTA: Las facturas a crédito vencen según las condiciones de pago indicadas, devengan intereses mensuales a partir de su vencimiento.
@@ -810,6 +830,8 @@ const printFacturaFullPage = (factura, printFormat) => {
 
       ${extrasFacturaHtml(factura)}
       ${ecfBloqueHtml(factura.ecf, { qr: '30mm', fuente: '11px' })}
+
+      ${(_empresaConfig.firmaUrl || _empresaConfig.selloUrl) ? firmaSelloHtml(isHalf) : ''}
 
       ${factura.forma_pago === 'CREDITO' ? `
       <div class="footer-info">

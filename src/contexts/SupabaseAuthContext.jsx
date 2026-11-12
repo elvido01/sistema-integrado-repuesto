@@ -103,7 +103,14 @@ export const AuthProvider = ({ children }) => {
           // Normaliza direccion1/2 → direccion para compatibilidad con PDFs
           const direccion = [empresaData.direccion1, empresaData.direccion2]
             .filter(Boolean).join(', ');
-          setEmpresa({ ...empresaData, direccion });
+          // (12/11/2026) El sello va en su propia consulta: si falta la columna
+          // (SQL sin correr) solo se queda sin sello, sin tumbar lo demás.
+          let sello_url = null;
+          try {
+            const r = await supabase.from('config_empresa').select('sello_url').eq('tenant_id', activeTid).maybeSingle();
+            if (!r.error) sello_url = r.data?.sello_url || null;
+          } catch { /* sin sello */ }
+          setEmpresa({ ...empresaData, direccion, sello_url });
         } else {
           setEmpresa(null);
         }

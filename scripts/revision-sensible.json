@@ -286,7 +286,7 @@
     "src/components/common/pdf/comisionPDF.js": "9670fced39020a00",
     "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
     "src/components/common/pdf/devolucionPDF.js": "91b42af5e95a7340",
-    "src/components/common/pdf/facturaCartaPDF.js": "9fea72ff484b416c",
+    "src/components/common/pdf/facturaCartaPDF.js": "be6b1e4159c48bb0",
     "src/components/common/pdf/facturaPDF.js": "6b7580e23cb79eda",
     "src/components/common/pdf/pagoCompromisoPDF.js": "b6467cc47e39114e",
     "src/components/common/pdf/pagoSuplidorPDF.js": "824f535b5c3e07e3",
@@ -304,7 +304,7 @@
     "src/components/compras/SuplidorVirtualMenu.jsx": "a99bc9d7b867d4a6",
     "src/components/configuracion/DgiiAprobacionComercialRunner.jsx": "b73f21888e93614d",
     "src/components/configuracion/DgiiCertificacionRunner.jsx": "ad60fe3cddd203e7",
-    "src/components/configuracion/DgiiCertificadoUploader.jsx": "943ac6f537ae4d6e",
+    "src/components/configuracion/DgiiCertificadoUploader.jsx": "cedb5cd979796dcd",
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
     "src/components/configuracion/DgiiRecepcionRunner.jsx": "1d70110142f92c7e",
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
@@ -823,6 +823,20 @@
         "src/components/ventas/VentasTable.jsx",
         "src/hooks/useVentas.js",
         "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-12",
+      "nota": "code-review high: DGII recogida en produccion; 10 hallazgos: se esconde con CSS (no desmonta runners), barra arriba de la guia, botones de prueba (XML/Enviar/Firmar) ocultos en produccion, ambiente local + modo fiscal, sin cert no recoge, reset por empresa, aria-expanded y flex-wrap",
+      "archivos": [
+        "src/components/configuracion/DgiiCertificadoUploader.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-12",
+      "nota": "code-review high: sello de la empresa; 10 hallazgos, arreglados: sello en consulta aparte (no tumba config si falta columna), no se borra el sello viejo antes de guardar, refresco de sesion al guardar, sello tambien en factura dealer, impresion espera imagenes (4s max), sello achicado a 600px, SQL al git; aceptado: limpieza de fondo puede aclarar sellos muy palidos; duplicacion de subida firma/sello pendiente",
+      "archivos": [
+        "src/components/common/pdf/facturaCartaPDF.js"
       ]
     }
   ]

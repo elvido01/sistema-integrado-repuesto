@@ -40,12 +40,14 @@ const OMNI_BETA_EXTENSION_DOWNLOAD_URL = `/downloads/motoflow-omni-beta-extensio
 
 const ConfiguracionSistemaPage = () => {
     const { toast } = useToast();
-    const { tenantId } = useAuth();
+    const { tenantId, refreshPermissions } = useAuth();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [subiendoFirma, setSubiendoFirma] = useState(false);
     const firmaInputRef = useRef(null);
+    const [subiendoSello, setSubiendoSello] = useState(false);
+    const selloInputRef = useRef(null);
     const fileInputRef = useRef(null);
 
     const [formData, setFormData] = useState({
@@ -65,6 +67,7 @@ const ConfiguracionSistemaPage = () => {
         modo_fecha: 1,
         logo_url: '',
         firma_url: '',
+        sello_url: '',
         meta_ventas: 150000,
         meta_flujo_neto_mensual: 0,
         incremento_meta_pct: 0,
@@ -132,6 +135,7 @@ const ConfiguracionSistemaPage = () => {
                     modo_fecha: data.modo_fecha || 1,
                     logo_url: data.logo_url || '',
                     firma_url: data.firma_url || '',
+                    sello_url: data.sello_url || '',
                     meta_ventas: data.meta_ventas || 150000,
                     meta_flujo_neto_mensual: data.meta_flujo_neto_mensual ?? 0,
                     incremento_meta_pct: data.incremento_meta_pct || 0,
@@ -281,6 +285,9 @@ const ConfiguracionSistemaPage = () => {
                 console.warn('Columnas omitidas al guardar config (faltan migraciones):', omitidas);
             }
             toast({ title: 'Éxito', description: 'Configuración actualizada correctamente.' });
+            // (12/11/2026) Que las facturas tomen ya el logo/firma/sello/nota
+            // nuevos, sin tener que salir y volver a entrar.
+            try { refreshPermissions?.(); } catch { /* se toma al volver a entrar */ }
         } catch (error) {
             console.error('CRITICAL Error saving config:', error);
             toast({ variant: 'destructive', title: 'Error', description: `No se pudo guardar la configuración: ${error.message || 'Error desconocido'}` });
@@ -373,6 +380,73 @@ const ConfiguracionSistemaPage = () => {
         } finally {
             setSubiendoFirma(false);
             if (firmaInputRef.current) firmaInputRef.current.value = '';
+        }
+    };
+
+    // Achica una imagen (Blob/File) a `max` px del lado mayor y la deja en PNG
+    // (conserva la transparencia del sello limpio).
+    const achicarImagen = (blob, max) => new Promise((resolve) => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+                const c = document.createElement('canvas');
+                c.width = Math.max(1, Math.round(img.naturalWidth * k));
+                c.height = Math.max(1, Math.round(img.naturalHeight * k));
+                c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                c.toBlob((b) => resolve(b || blob), 'image/png');
+            } catch { resolve(blob); } finally { URL.revokeObjectURL(url); }
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(blob); };
+        img.src = url;
+    });
+
+    // (12/11/2026) SELLO de la empresa: hay empresas que firman y sellan sus
+    // facturas. Sale junto a la firma, sobre "Entregado por". Mismo limpiado de
+    // fondo que la firma (la foto del sello en papel queda transparente).
+    const handleSelloUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+            toast({ variant: 'destructive', title: 'Formato no válido', description: 'Solo se permiten imágenes PNG, JPG o WebP.' });
+            return;
+        }
+        setSubiendoSello(true);
+        try {
+            const limpia = await limpiarFirmaPNG(file);
+            // Se achica a 600 px como máximo: una foto de 12 MP haría cada PDF pesadísimo.
+            const archivo = await achicarImagen(limpia || file, 600);
+            const fileName = `sello_empresa_${tenantId}_${Date.now()}.png`;
+            // El sello anterior NO se borra aquí: la factura lo sigue usando hasta
+            // que se pulse Guardar (si se sale sin guardar, no queda roto).
+            const { data, error } = await supabase.storage
+                .from('product-images')
+                .upload(`company/${fileName}`, archivo, { contentType: 'image/png' });
+            if (error) throw error;
+            const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(data.path);
+            setFormData(prev => ({ ...prev, sello_url: urlData.publicUrl }));
+            toast({ title: 'Sello cargado', description: 'Sale junto a la firma en la factura de hoja grande. Recuerda Guardar.' });
+        } catch (error) {
+            console.error('Error subiendo el sello:', error);
+            toast({ variant: 'destructive', title: 'Error', description: 'No se pudo subir el sello.' });
+        } finally {
+            setSubiendoSello(false);
+            if (selloInputRef.current) selloInputRef.current.value = '';
+        }
+    };
+
+    const handleRemoveSello = async () => {
+        if (!formData.sello_url) return;
+        setSubiendoSello(true);
+        try {
+            // Solo se quita del formulario; el archivo queda hasta guardar.
+            setFormData(prev => ({ ...prev, sello_url: '' }));
+            toast({ title: 'Sello eliminado', description: 'Las facturas salen sin sello. Recuerda Guardar.' });
+        } catch (error) {
+            console.error('Error eliminando el sello:', error);
+        } finally {
+            setSubiendoSello(false);
         }
     };
 
@@ -478,6 +552,32 @@ const ConfiguracionSistemaPage = () => {
                                 <p className="text-[9px] text-gray-500 text-center leading-tight">
                                     Sale sobre la línea <b>Entregado por</b>. Sube la <b>foto de la firma en
                                     papel</b>: el sistema le quita el fondo y la recorta sola.
+                                </p>
+
+                                {/* SELLO — algunas empresas firman y sellan la factura. */}
+                                <Label className="text-[11px] font-bold text-gray-600 uppercase block text-center pt-2">Sello de la Empresa</Label>
+                                <div className="w-full h-28 bg-white border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group">
+                                    {subiendoSello ? (
+                                        <Loader2 className="h-6 w-6 animate-spin text-morla-blue" />
+                                    ) : formData.sello_url ? (
+                                        <>
+                                            <img src={formData.sello_url} alt="Sello" className="max-w-full max-h-full object-contain p-1" />
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                                <Button size="icon" variant="destructive" className="h-7 w-7" onClick={handleRemoveSello}><Trash2 className="w-3.5 h-3.5" /></Button>
+                                                <Button size="icon" variant="secondary" className="h-7 w-7" onClick={() => selloInputRef.current?.click()}><Upload className="w-3.5 h-3.5" /></Button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex flex-col items-center text-center p-2 cursor-pointer" onClick={() => selloInputRef.current?.click()}>
+                                            <Upload className="w-6 h-6 text-gray-300 mb-1" />
+                                            <span className="text-[10px] text-gray-400 font-bold uppercase">Subir sello</span>
+                                        </div>
+                                    )}
+                                    <input ref={selloInputRef} type="file" className="hidden" accept="image/*" onChange={handleSelloUpload} />
+                                </div>
+                                <p className="text-[9px] text-gray-500 text-center leading-tight">
+                                    Sale junto a la firma en la factura de <b>hoja grande</b>. Sube una <b>foto del
+                                    sello en papel blanco</b>: se le quita el fondo solo.
                                 </p>
 	                            </div>
 

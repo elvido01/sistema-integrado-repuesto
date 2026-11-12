@@ -39,10 +39,23 @@ export function printViaBrowser(html) {
     doc.write(html);
     doc.close();
     // Muchas plantillas ya traen onload="window.print()"; si no, lo forzamos.
+    const quitar = () => setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
     if (!/window\.print\(\)/.test(html)) {
-        setTimeout(() => { try { iframe.contentWindow.print(); } catch (_) { /* noop */ } }, 250);
+        // (12/11/2026) Logo, firma y sello vienen de internet: se espera a que
+        // carguen (máximo 4 s) para que no salgan en blanco en el papel.
+        const lanzar = () => { try { iframe.contentWindow.print(); } catch (_) { /* noop */ } quitar(); };
+        const pend = Array.from(doc.images || []).filter((i) => !i.complete);
+        if (!pend.length) {
+            setTimeout(lanzar, 250);
+        } else {
+            let listo = false;
+            const fin = () => { if (!listo && pend.every((i) => i.complete)) { listo = true; setTimeout(lanzar, 100); } };
+            pend.forEach((i) => { i.addEventListener('load', fin); i.addEventListener('error', fin); });
+            setTimeout(() => { if (!listo) { listo = true; lanzar(); } }, 4000);
+        }
+    } else {
+        quitar();
     }
-    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
 }
 
 /**

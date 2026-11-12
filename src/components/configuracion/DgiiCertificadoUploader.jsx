@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ShieldCheck, Upload, Loader2, FileLock2, Eye, EyeOff, Trash2, BadgeCheck, AlertTriangle, FileCode2, X, Send, FileSignature, Download, FileText } from 'lucide-react';
+import { ChevronDown, ChevronRight, ShieldCheck, Upload, Loader2, FileLock2, Eye, EyeOff, Trash2, BadgeCheck, AlertTriangle, FileCode2, X, Send, FileSignature, Download, FileText } from 'lucide-react';
 import { downloadRepresentacionImpresa } from '@/lib/dgiiRepresentacionImpresa';
 import DgiiCertificacionRunner from './DgiiCertificacionRunner';
 import DgiiAprobacionComercialRunner from './DgiiAprobacionComercialRunner';
@@ -67,11 +67,22 @@ const AMBIENTES = [
 
 const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
   const { toast } = useToast();
-  const { tenantId, empresa } = useAuth();
+  const { tenantId, empresa, fiscalModo } = useAuth();
+  // (12/11/2026) Con la empresa ya en PRODUCCIÓN, la postulación y los pasos de
+  // certificación (1 al 11) ya se hicieron: se recogen en una barra para que la
+  // configuración no sea tan larga. Se pueden abrir cuando haga falta.
+  const [verCertificacion, setVerCertificacion] = useState(false);
+  useEffect(() => { setVerCertificacion(false); }, [tenantId]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [info, setInfo] = useState(null); // { configured, rnc_emisor, ambiente, ... }
+  // Solo se recoge con certificado cargado y en producción (por el modo fiscal
+  // de la empresa o por el ambiente guardado aquí). Se esconde con CSS, no se
+  // desmonta: si una prueba está corriendo, sigue con su pantalla y su estado.
+  const enProduccion = !!info?.configured
+    && (fiscalModo === 'produccion' || /^produc/i.test(String(info?.ambiente || '')));
+  const recogido = enProduccion && !verCertificacion;
 
   const [file, setFile] = useState(null);
   const [password, setPassword] = useState('');
@@ -772,7 +783,17 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
       {/* (28/10/2026) Paso 1 de la DGII: va DESPUÉS de llenar los datos y subir el
           certificado, porque el archivo de postulación se firma con ese .p12. */}
       <div className="border-t pt-6 mt-2 space-y-3">
-        <DgiiGuiaPostulacion certificadoListo={!!info?.configured} />
+        {enProduccion && (
+          <button type="button" onClick={() => setVerCertificacion((v) => !v)} aria-expanded={verCertificacion}
+            className="w-full flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-[13px] hover:bg-slate-100">
+            {verCertificacion ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+            <BadgeCheck className="w-4 h-4 text-emerald-600" />
+            <span className="font-bold text-slate-700">Certificación con la DGII terminada</span>
+            <span className="text-slate-500">· postulación, set de pruebas, simulación y receptor (pasos 1 al 11)</span>
+            <span className="ml-auto text-[12px] font-semibold text-blue-700">{verCertificacion ? 'Ocultar' : 'Ver pasos'}</span>
+          </button>
+        )}
+        <div className={recogido ? 'hidden' : ''}><DgiiGuiaPostulacion certificadoListo={!!info?.configured} /></div>
         {info?.configured && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[12px] text-emerald-800 space-y-3">
           <div className="flex flex-wrap items-start gap-2">
@@ -793,6 +814,7 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
               >
                 <BadgeCheck className="w-3.5 h-3.5 mr-1" /> Validar
               </Button>
+              {!recogido && (
               <Button
                 type="button"
                 variant="outline"
@@ -805,6 +827,8 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
                 {generatingXml ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileCode2 className="w-3.5 h-3.5 mr-1" />}
                 XML
               </Button>
+              )}
+              {!recogido && (
               <Button
                 type="button"
                 variant="outline"
@@ -817,6 +841,8 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
                 {generatingXml ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5 mr-1" />}
                 XML firmado
               </Button>
+              )}
+              {!recogido && (
               <Button
                 type="button"
                 variant="outline"
@@ -829,6 +855,7 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
                 {saving ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
                 Enviar a DGII
               </Button>
+              )}
               <input
                 ref={externalXmlInputRef}
                 type="file"
@@ -836,6 +863,7 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
                 onChange={handleSignExternalXml}
                 className="hidden"
               />
+              {!recogido && (
               <Button
                 type="button"
                 variant="outline"
@@ -848,6 +876,7 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
                 {signingExternal ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileSignature className="w-3.5 h-3.5 mr-1" />}
                 Firmar XML
               </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -900,31 +929,31 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
 
       {/* Set de Pruebas DGII (Paso 2 certificacion) — solo si hay cert configurado */}
       {info?.configured && (
-        <div className="border-t pt-6 mt-2">
+        <div className={`border-t pt-6 mt-2 ${recogido ? 'hidden' : ''}`}>
           <DgiiCertificacionRunner />
         </div>
       )}
 
       {info?.configured && (
-        <div className="border-t pt-6 mt-2">
+        <div className={`border-t pt-6 mt-2 ${recogido ? 'hidden' : ''}`}>
           <DgiiAprobacionComercialRunner />
         </div>
       )}
 
       {info?.configured && (
-        <div className="border-t pt-6 mt-2">
+        <div className={`border-t pt-6 mt-2 ${recogido ? 'hidden' : ''}`}>
           <DgiiSimulacionRunner />
         </div>
       )}
 
       {info?.configured && (
-        <div className="border-t pt-6 mt-2">
+        <div className={`border-t pt-6 mt-2 ${recogido ? 'hidden' : ''}`}>
           <DgiiRepresentacionImpresaRunner configInfo={info} />
         </div>
       )}
 
       {info?.configured && (
-        <div className="border-t pt-6 mt-2">
+        <div className={`border-t pt-6 mt-2 ${recogido ? 'hidden' : ''}`}>
           <DgiiRecepcionRunner configInfo={info} />
         </div>
       )}

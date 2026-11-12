@@ -81,7 +81,7 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
   // (10/10/2026) e-CF: título electrónico, e-NCF, vencimiento y el QR de la DGII.
   const factura = await prepararEcfImpresion(facturaIn);
   const ecf = factura.ecf || null;
-  const [firma, logo] = await Promise.all([cargarImagen(empresa.firma_url), cargarImagen(empresa.logo_url)]);
+  const [firma, logo, sello] = await Promise.all([cargarImagen(empresa.firma_url), cargarImagen(empresa.logo_url), cargarImagen(empresa.sello_url)]);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
@@ -347,6 +347,21 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
       doc.addImage(firma.dataUrl, 'PNG', M + 29 - fw / 2, yFirma - fh - 0.5, fw, fh);
     } catch (e) {
       // Una firma que no se puede dibujar no debe tumbar la factura.
+    }
+  }
+
+  // (12/11/2026) Sello de la empresa: a la derecha de la firma, montado un
+  // poco sobre la raya como se sella en papel. Vacío = no sale.
+  if (sello && sello.w > 0 && sello.h > 0) {
+    const altoMax = 20;
+    const anchoMax = 32;
+    let sw = (sello.w / sello.h) * altoMax;
+    let sh = altoMax;
+    if (sw > anchoMax) { sw = anchoMax; sh = (sello.h / sello.w) * anchoMax; }
+    try {
+      doc.addImage(sello.dataUrl, 'PNG', M + 50, yFirma + 3 - sh, sw, sh);
+    } catch (e) {
+      // Un sello que no se puede dibujar no debe tumbar la factura.
     }
   }
 
