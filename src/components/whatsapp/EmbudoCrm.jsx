@@ -8,11 +8,18 @@
 //
 // Arriba sale "lo que pidieron y no teníamos": las conversaciones perdidas
 // porque la tienda no tenía la pieza. Es demanda que se fue.
+//
+// (12/11/2026) Idea del video del "ARM":
+// · "Dónde se te caen las ventas": el embudo del período en números y el
+//   paso con peor conversión (sql/crm_reporte_embudo.sql). El mismo resumen
+//   llega por Telegram los lunes (semana) y el día 1 (mes).
+// · En cada tarjeta, para CUÁNDO lo necesita y CUÁNTO quiere gastar (el
+//   clasificador los saca de la conversación; "no_dice" no se muestra).
 // ============================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Loader2, RefreshCw, MessageCircle, Flame, PackageX } from 'lucide-react';
+import { Loader2, RefreshCw, MessageCircle, Flame, PackageX, TrendingDown } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -31,6 +38,16 @@ const ETAPAS = [
 const COLUMNAS = ETAPAS.filter((e) => e.value !== 'spam');
 const RED = { whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Facebook', tiktok: 'TikTok', youtube: 'YouTube' };
 
+const CUANDO = { hoy: '⏱ Lo necesita hoy', esta_semana: '📅 Esta semana', sin_prisa: '🐢 Sin prisa' };
+const PRESUPUESTO = { economico: '💲 Busca económico', original: '⭐ Quiere original' };
+const pct = (a, b) => (b > 0 ? Math.round((100 * a) / b) : null);
+const minutos = (m) => {
+  if (m == null) return '—';
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h} h` : `${Math.round(h / 24)} días`;
+};
+
 const hace = (f) => {
   try { return f ? formatDistanceToNow(new Date(f), { addSuffix: true, locale: es }) : ''; } catch { return ''; }
 };
@@ -41,6 +58,7 @@ export default function EmbudoCrm({ open, onOpenChange, onAbrirConversacion }) {
   const [dias, setDias] = useState(30);
   const [filas, setFilas] = useState([]);
   const [cargando, setCargando] = useState(false);
+  const [reporte, setReporte] = useState(null);
 
   const cargar = useCallback(async () => {
     const tenantId = profile?.tenant_id;
@@ -58,6 +76,10 @@ export default function EmbudoCrm({ open, onOpenChange, onAbrirConversacion }) {
       .limit(400);
     if (error) toast({ variant: 'destructive', title: 'No se pudo cargar el embudo', description: error.message });
     else setFilas(data || []);
+    // El resumen es aparte: si la función no existe todavía (SQL sin correr)
+    // o falla, el embudo se sigue viendo, solo sin el resumen.
+    const { data: rep, error: eRep } = await supabase.rpc('crm_reporte_embudo_mio', { p_dias: dias });
+    setReporte(eRep ? null : rep);
     setCargando(false);
   }, [profile?.tenant_id, dias, toast]);
 
@@ -114,6 +136,60 @@ export default function EmbudoCrm({ open, onOpenChange, onAbrirConversacion }) {
           </DialogDescription>
         </DialogHeader>
 
+        {reporte && reporte.llegaron > 0 && (() => {
+          const r = reporte;
+          const pasos = [
+            { k: 'llegaron', label: 'Escribieron', n: r.llegaron },
+            { k: 'contestar', label: 'Contestados', n: r.contestadas, de: r.llegaron },
+            { k: 'preguntaron', label: 'Pidieron pieza', n: r.preguntaron },
+            { k: 'precio', label: 'Con precio', n: r.cotizados, de: r.preguntaron },
+            { k: 'listos', label: 'Listos', n: r.listos },
+            { k: 'cierre', label: 'Compraron', n: r.ganados, de: r.cotizados },
+          ];
+          const flojo = r.paso_flojo?.paso;
+          return (
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="flex items-center gap-1.5 font-bold text-slate-800">
+                  <TrendingDown className="h-4 w-4 text-rose-500" /> Dónde se te caen las ventas
+                </span>
+                {r.paso_flojo && (
+                  <span className="rounded-full bg-rose-100 px-2 py-0.5 font-semibold text-rose-800">
+                    Paso más flojo: {r.paso_flojo.nombre} ({r.paso_flojo.pasaron} de {r.paso_flojo.base}, {r.paso_flojo.pct}%)
+                  </span>
+                )}
+                {r.sin_contestar > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
+                    {r.sin_contestar} esperando respuesta (últimas 48 h)
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-stretch gap-1">
+                {pasos.map((p, i) => {
+                  const porc = p.de != null ? pct(p.n, p.de) : null;
+                  const malo = flojo && p.k === flojo;
+                  return (
+                    <React.Fragment key={p.k}>
+                      {i > 0 && <span className="self-center text-slate-300">›</span>}
+                      <div className={`min-w-[5.5rem] rounded-md border px-2 py-1 text-center ${malo ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50'}`}>
+                        <div className="text-base font-black text-slate-900">{p.n}</div>
+                        <div className="text-[10px] text-slate-600">{p.label}{porc != null ? ` · ${porc}%` : ''}</div>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+              <div className="mt-1.5 text-[11px] text-slate-500">
+                Primera respuesta: la mitad en {minutos(r.mediana_min)}
+                {r.medidas_resp > 0 ? ` · ${pct(r.en_15min, r.medidas_resp)}% en 15 min o menos` : ''}
+                {r.mediana_min_ig != null ? ` · Instagram/Messenger: ${minutos(r.mediana_min_ig)}` : ''}
+                {r.dijeron_cuando > 0 ? ` · ${r.dijeron_cuando} dijeron para cuándo (${r.para_hoy} para hoy)` : ''}
+                {' '}· sin TikTok (el espejo no trae la hora real).
+              </div>
+            </div>
+          );
+        })()}
+
         {noTeniamos.length > 0 && (
           <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
             <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-rose-800">
@@ -159,6 +235,18 @@ export default function EmbudoCrm({ open, onOpenChange, onAbrirConversacion }) {
                         </div>
                         {(c.producto || c.moto) && (
                           <div className="mt-1 font-medium text-slate-800">{[c.producto, c.moto].filter(Boolean).join(' · ')}</div>
+                        )}
+                        {(CUANDO[c.cuando] || PRESUPUESTO[c.presupuesto] || c.presupuesto_detalle) && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {CUANDO[c.cuando] && (
+                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${c.cuando === 'hoy' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'}`}>{CUANDO[c.cuando]}</span>
+                            )}
+                            {(PRESUPUESTO[c.presupuesto] || c.presupuesto_detalle) && (
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                                {c.presupuesto === 'monto' || !PRESUPUESTO[c.presupuesto] ? `💲 ${c.presupuesto_detalle}` : PRESUPUESTO[c.presupuesto]}
+                              </span>
+                            )}
+                          </div>
                         )}
                         {c.resumen && <div className="mt-1 text-slate-600">{c.resumen}</div>}
                         {c.siguiente_paso && <div className="mt-1 text-[11px] font-medium text-emerald-700">→ {c.siguiente_paso}</div>}

@@ -43,7 +43,12 @@ Etapas del embudo:
 - spam: publicidad, cadenas, bots, mensajes que no son de un cliente.
 
 Categoría = lo principal que el cliente quiere AHORA: precio, disponibilidad, compatibilidad, envio, pago, reclamo (garantía, pieza mala, devolución, queja), saludo, spam, otro.
-intencion_compra: 0 a 100, qué tan probable es que compre pronto.
+intencion_compra: 0 a 100, qué tan probable es que compre pronto. Súbela si dijo que lo necesita hoy o ya pidió precio de una pieza concreta; bájala si solo curiosea.
+
+Las 3 preguntas de un buen vendedor (qué busca, para cuándo, cuánto quiere gastar). "producto" y "moto" ya dicen qué busca. Además:
+- cuando: para cuándo lo necesita, SOLO si se nota en la conversación. "hoy" (lo necesita hoy, la moto está parada, "ahorita", "voy para allá"), "esta_semana" (en estos días, el fin de semana), "sin_prisa" (está averiguando, "más adelante", "para cuando cobre"), "no_dice" si no hay forma de saberlo. No lo inventes.
+- presupuesto: qué tipo de precio busca. "economico" (lo más barato, "genérico", "de los baratos", se queja del precio), "original" (original, de marca, la mejor calidad), "monto" (dijo una cantidad: ponla en presupuesto_detalle, ej. "hasta RD$1,500"), "no_dice" si no hay forma de saberlo.
+- presupuesto_detalle: la cantidad o frase corta que dijo el cliente sobre el precio; null si no dijo nada.
 urgente: true solo si el cliente espera respuesta y lleva rato sin ella, o es un reclamo.
 "[audio]" o "[image]" significa que mandó un audio o una foto que no puedes ver: no inventes su contenido.
 Resumen y siguiente_paso: en español dominicano, cortos (máx 120 caracteres), concretos, para el vendedor.
@@ -64,7 +69,7 @@ const ESQUEMA = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['etapa', 'motivo_etapa', 'categoria', 'intencion_compra', 'urgente', 'producto', 'moto', 'resumen', 'siguiente_paso', 'caso'],
+    required: ['etapa', 'motivo_etapa', 'categoria', 'intencion_compra', 'urgente', 'producto', 'moto', 'cuando', 'presupuesto', 'presupuesto_detalle', 'resumen', 'siguiente_paso', 'caso'],
     properties: {
       etapa: { type: 'string', enum: ETAPAS },
       motivo_etapa: { type: 'string' },
@@ -73,6 +78,10 @@ const ESQUEMA = {
       urgente: { type: 'boolean' },
       producto: { type: ['string', 'null'] },
       moto: { type: ['string', 'null'] },
+      // (12/11/2026) Para cuándo y cuánto (idea del video del "ARM").
+      cuando: { type: 'string', enum: ['hoy', 'esta_semana', 'sin_prisa', 'no_dice'] },
+      presupuesto: { type: 'string', enum: ['economico', 'original', 'monto', 'no_dice'] },
+      presupuesto_detalle: { type: ['string', 'null'] },
       resumen: { type: 'string' },
       siguiente_paso: { type: 'string' },
       // (20/10/2026) El caso para una persona (sql/crm_casos.sql).

@@ -218,6 +218,15 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
     '16. Precios SIN centavos: RD$ 241, no RD$ 241,23.',
     '17. Si el mensaje NO es de un cliente (cadena, noticia, publicidad, enlace suelto,',
     '   mensaje personal o del sistema), escribe solo: NO_RESPONDER',
+    // (12/11/2026) Las 3 preguntas del buen vendedor: qué busca, para cuándo
+    // y cuánto. "Qué" ya se sabe; el "para cuándo" casi nadie lo dice y es lo
+    // que separa al que compra hoy del que averigua (el clasificador lo lee).
+    '18. Si en tu respuesta le das precio o le dices que SI la tienes, y en la conversacion',
+    '   el cliente todavia no ha dicho para cuando la necesita, termina con UNA pregunta',
+    '   corta: "¿para cuando la necesitas?". Una sola vez por conversacion: si ya se le',
+    '   pregunto o ya dijo que viene, que la quiere hoy o que la separen, no la hagas.',
+    '   Si hay original y economica, puedes preguntar "¿la quieres original o de las',
+    '   economicas?" en vez de dar todas las opciones.',
     ...(ctx.tienda ? [
       '',
       `DATOS DE LA TIENDA: ${[ctx.tienda.nombre, ctx.tienda.direccion1 || ctx.tienda.direccion, ctx.tienda.telefono ? `tel. ${ctx.tienda.telefono}` : null].filter(Boolean).join(' · ')}.`,
