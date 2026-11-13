@@ -125,11 +125,37 @@ const ReportesDGIIPage = () => {
         cliente_nombre: r.clientes?.nombre,
         cliente_rnc: r.clientes?.rnc,
       })));
-      setCompras((c || []).map(r => ({
-        ...r,
-        suplidor_nombre: r.proveedores?.nombre,
-        suplidor_rnc: r.proveedores?.rnc,
-      })));
+      // (12/11/2026) Comprobantes de gastos APROBADOS (foto de la factura del
+      // gasto: sql/ayudante_contable_fase2.sql). Entran al 606 como una compra
+      // más. Si la tabla no existe todavía, el 606 sale solo con las compras.
+      const FORMA = { '01': 'Contado', '02': 'Transferencia', '03': 'Tarjeta', '04': 'Credito' };
+      const { data: gc, error: egc } = await supabase
+        .from('gastos_comprobantes')
+        .select('id, fecha, ncf, rnc, proveedor_nombre, tipo_bs, monto_gravado, monto_exento, itbis, propina, total, forma_pago')
+        .eq('estado', 'aprobado')
+        .gte('fecha', desde)
+        .lte('fecha', hasta)
+        .order('fecha', { ascending: true })
+        .limit(5000);
+      // Solo se perdona que la tabla no exista todavía; cualquier otro fallo
+      // se avisa: un 606 sin los gastos no puede salir callado.
+      if (egc && !/gastos_comprobantes|42P01|PGRST205/i.test(`${egc.code || ''} ${egc.message || ''}`)) throw egc;
+      const gastosComoCompras = (gc || []).map((g) => ({
+        id: `gasto-${g.id}`, numero: 'GASTO', fecha: g.fecha, ncf: g.ncf,
+        tipo_bienes_servicios: g.tipo_bs, total_exento: g.monto_exento, total_gravado: g.monto_gravado,
+        itbis_total: g.itbis, total_compra: g.total, propina: g.propina, forma_pago: FORMA[g.forma_pago] || 'Contado',
+        itbis_retenido_pct: 0, isr_retenido_pct: 0,
+        suplidor_nombre: g.proveedor_nombre, suplidor_rnc: g.rnc, es_gasto: true,
+      }));
+
+      setCompras([
+        ...(c || []).map(r => ({
+          ...r,
+          suplidor_nombre: r.proveedores?.nombre,
+          suplidor_rnc: r.proveedores?.rnc,
+        })),
+        ...gastosComoCompras,
+      ].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))));
       setAnulados(a || []);
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error al cargar datos', description: error.message });

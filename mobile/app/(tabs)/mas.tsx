@@ -68,6 +68,7 @@ export default function MasScreen() {
     // (12/11/2026) Ayudante contable: ITBIS estimado y compromisos con la DGII.
     // Mismo permiso que Reportes DGII en la web.
     { title: 'Mi Contabilidad', icon: Calculator, route: '/contabilidad', color: '#1d4ed8', moduleKey: 'reportes-dgii' },
+    { title: 'Comprobantes de gastos', icon: Receipt, route: '/comprobantes', color: '#0f766e', moduleKey: 'reportes-dgii', clave: 'comprobantes-gastos' },
     { title: 'Scanner', icon: Barcode, route: '/(tabs)/scanner', color: '#8b5cf6', moduleKey: 'scanner', quickName: 'scanner' },
     {
       title: isCamineroMotors ? 'Recibo de Pago' : 'Recibo de Ingreso',
@@ -126,7 +127,7 @@ export default function MasScreen() {
           const isPinned = item.quickName ? quickTabs.includes(item.quickName) : false;
           return (
             <View
-              key={item.moduleKey}
+              key={(item as any).clave || item.moduleKey}
               className={`flex-row items-center p-4 ${index !== menuItems.length - 1 ? 'border-b border-gray-100' : ''}`}
             >
               <TouchableOpacity

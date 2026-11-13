@@ -32,6 +32,7 @@ const MOTIVOS = {
   tipo: ['Comprobante que no va en el 606', 'Revise que el NCF sea el de la factura del suplidor.'],
   rnc: ['Suplidor sin RNC o cédula válido', 'Complete el RNC (9 dígitos) o la cédula (11) en la ficha del suplidor.'],
   rnc_empresa: ['Falta el RNC de su empresa', 'Póngalo en Perfil Empresa: los gastos menores van con el RNC propio.'],
+  repetida: ['Factura repetida (mismo RNC y NCF)', 'Está dos veces: en Compras y como comprobante de gasto, o digitada doble. Deje una sola.'],
 };
 
 const MiContabilidadPage = () => {
@@ -81,6 +82,7 @@ const MiContabilidadPage = () => {
   const compras = data?.compras;
   const ventas = data?.ventas;
   const gastos = data?.gastos_sin_comprobante;
+  const cg = data?.comprobantes_gastos || { por_revisar: 0, por_revisar_itbis: 0, aprobados: 0, aprobados_itbis: 0 };
   const hoy = hoyRD();
   const anios = [periodo.anio - 1, periodo.anio, periodo.anio + 1].filter((a, i, arr) => arr.indexOf(a) === i);
 
@@ -171,6 +173,16 @@ const MiContabilidadPage = () => {
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600" />
                 <div className="text-sm font-extrabold text-slate-800">Lo que le falta al mes</div>
+              </div>
+              <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                <span className="mr-auto">
+                  {cg.por_revisar > 0
+                    ? <><b>{cg.por_revisar} comprobante(s) de gastos por revisar</b> (ITBIS {fmt(cg.por_revisar_itbis)}): hasta que los apruebe no cuentan.</>
+                    : <>Facturas de gastos con NCF (supermercado, combustible, servicios): suba la foto y entran al 606.{cg.aprobados > 0 ? ` Este mes van ${cg.aprobados} aprobadas (ITBIS ${fmt(cg.aprobados_itbis)}).` : ''}</>}
+                </span>
+                <Button size="sm" variant="outline" className="h-7" onClick={() => openPanel('comprobantes-gastos')}>
+                  {cg.por_revisar > 0 ? 'Revisarlos' : 'Subir comprobantes'}
+                </Button>
               </div>
               {compras.fuera === 0 && ventas.sin_ncf === 0 && gastos.cantidad === 0 ? (
                 <div className="text-sm text-emerald-700">Todo en orden: todas las compras entran al 606 y todas las ventas llevan comprobante.</div>

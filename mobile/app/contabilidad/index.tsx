@@ -25,6 +25,7 @@ const MOTIVOS: Record<string, string> = {
   tipo: 'Comprobante que no va en el 606',
   rnc: 'Suplidor sin RNC o cédula válido',
   rnc_empresa: 'Falta el RNC de su empresa',
+  repetida: 'Factura repetida (mismo RNC y NCF)',
 };
 
 export default function ContabilidadScreen() {

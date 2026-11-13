@@ -251,7 +251,7 @@ export const fila606 = (c) => {
     '0.00',                                      // 19 ISR percibido (inhabilitado)
     '0.00',                                      // 20 ISC
     '0.00',                                      // 21 Otros impuestos/tasas
-    '0.00',                                      // 22 Propina legal
+    fmtMonto(c.propina || 0),                    // 22 Propina legal (comprobantes de gastos)
     formaPago606(c),                             // 23 Forma de pago
   ];
 };
