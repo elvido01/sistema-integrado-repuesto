@@ -39,6 +39,8 @@ describe('607: forma de pago y monto facturado', () => {
     expect(formaPago607({ forma_pago: 'CONTADO', tipo_pago: 'TRANSFERENCIA' })).toBe('cheque');
     expect(formaPago607({ forma_pago: 'CONTADO', tipo_pago: 'TARJETA DE CREDITO' })).toBe('tarjeta');
     expect(formaPago607({})).toBe('otros');
+    // dos medios distintos: no se sabe cuánto fue con cada uno
+    expect(formaPago607({ forma_pago: 'CONTADO', tipo_pago: 'EFECTIVO/TARJETA' })).toBe('otros');
   });
   it('el monto facturado es total − ITBIS (con el descuento ya restado)', () => {
     // subtotal 1000, descuento 100, ITBIS 162, total 1062

@@ -312,6 +312,8 @@ GRANT EXECUTE ON FUNCTION public.contab_configurar(boolean, int) TO authenticate
 
 -- Avisos en la campanita: 3 días antes y el día que vence. Solo empresas
 -- que lo encendieron. No repite el mismo aviso el mismo día.
+-- (13/11/2026) VERSIÓN VIEJA: la vigente de contab_avisos_diarios, _contab_compromisos y
+-- contab_resumen_mes está en ayudante_contable_fase3.sql / fase4.sql. No volver a correr este archivo.
 CREATE OR REPLACE FUNCTION public.contab_avisos_diarios()
 RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $f$

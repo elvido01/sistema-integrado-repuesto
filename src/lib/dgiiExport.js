@@ -55,6 +55,10 @@ export const formaPago607 = (v) => {
   const forma = String(v.forma_pago || '').toUpperCase();
   const tipo = String(v.tipo_pago || '').toUpperCase();
   if (/CR[EÉ]DITO/.test(forma) || /^CR[EÉ]DITO$/.test(tipo)) return 'credito';
+  // Varios medios en una venta (EFECTIVO/TARJETA): el reparto no se guarda,
+  // así que no se le atribuye todo a uno: va a "otras formas".
+  const medios = [/TARJETA|VISA|MASTER/, /CHEQUE|TRANSFER|DEP[OÓ]SIT/, /EFECTIVO/].filter((r) => r.test(tipo)).length;
+  if (medios > 1) return 'otros';
   const t = `${forma} ${tipo}`;
   if (/TARJETA|VISA|MASTER/.test(t)) return 'tarjeta';
   if (/CHEQUE|TRANSFER|DEP[OÓ]SIT/.test(t)) return 'cheque';

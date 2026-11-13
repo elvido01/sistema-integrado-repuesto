@@ -8,8 +8,9 @@
 // Fase 3 (13/11/2026): pestañas «IT-1» (hoja casilla por casilla, RPC
 // contab_hoja_it1) y «Guía» (paso a paso, RPC contab_guia). El texto de la
 // guía viene de la base: es el mismo de la web.
+// Fase 4: pestaña «Ahorro» (RPC contab_recomendaciones): cómo pagar menos, legal.
 // ============================================================
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +30,8 @@ const MOTIVOS: Record<string, string> = {
   rnc: 'Suplidor sin RNC o cédula válido',
   rnc_empresa: 'Falta el RNC de su empresa',
   repetida: 'Factura repetida (mismo RNC y NCF)',
+  nota: 'Notas de crédito/débito: se agregan a mano en la DGII',
+  ret_isr: 'Con retención de ISR: se agregan a mano en la DGII',
 };
 
 const num = (v: any) => (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -60,13 +63,16 @@ export default function ContabilidadScreen() {
   const [loading, setLoading] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
-  const [tab, setTab] = useState<'resumen' | 'hoja' | 'guia'>('resumen');
+  const [tab, setTab] = useState<'resumen' | 'hoja' | 'ahorro' | 'guia'>('resumen');
   const [extra, setExtra] = useState<any>(null);      // hoja o guía del período
   const [cargandoExtra, setCargandoExtra] = useState(false);
   const hoy = hoyRD();
 
+  const pedido = useRef(0); // descarta la respuesta de un mes que ya no se mira
   const cargar = useCallback(async () => {
+    const n = ++pedido.current;
     const { data: r, error } = await supabase.rpc('contab_resumen_mes', { p_anio: periodo.anio, p_mes: periodo.mes });
+    if (n !== pedido.current) return;
     if (error) { Alert.alert('No se pudo cargar', error.message); setData(null); }
     else setData(r);
     setLoading(false);
@@ -81,7 +87,7 @@ export default function ContabilidadScreen() {
     let vivo = true;
     setExtra(null);
     setCargandoExtra(true);
-    supabase.rpc(tab === 'hoja' ? 'contab_hoja_it1' : 'contab_guia', { p_anio: periodo.anio, p_mes: periodo.mes })
+    supabase.rpc(tab === 'hoja' ? 'contab_hoja_it1' : tab === 'ahorro' ? 'contab_recomendaciones' : 'contab_guia', { p_anio: periodo.anio, p_mes: periodo.mes })
       .then(({ data: r, error }) => {
         if (!vivo) return;
         if (error) Alert.alert('No se pudo cargar', error.message);
@@ -145,7 +151,7 @@ export default function ContabilidadScreen() {
       </View>
 
       <View className="bg-white flex-row px-2 py-1.5 border-b border-gray-200">
-        {([['resumen', 'Resumen'], ['hoja', 'IT-1'], ['guia', 'Guía']] as const).map(([k, t]) => (
+        {([['resumen', 'Resumen'], ['hoja', 'IT-1'], ['ahorro', 'Ahorro'], ['guia', 'Guía']] as const).map(([k, t]) => (
           <TouchableOpacity key={k} onPress={() => setTab(k)}
             className={`flex-1 mx-0.5 py-2 rounded-lg items-center ${tab === k ? 'bg-blue-700' : 'bg-gray-100'}`}>
             <Text className={`text-sm font-bold ${tab === k ? 'text-white' : 'text-gray-600'}`}>{t}</Text>
@@ -245,6 +251,60 @@ export default function ContabilidadScreen() {
                 {extra.r.avisos.map((x: string) => <Text key={x} className="text-xs text-gray-700 mb-1.5">• {x}</Text>)}
               </View>
             )}
+          </ScrollView>
+        ) : tab === 'ahorro' ? (
+          <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 24 }}>
+            <View className="bg-white border border-gray-200 rounded-xl p-4 mb-3">
+              <Text className="text-[11px] font-black text-gray-500 uppercase tracking-wider">Lo que puede dejar de pagar</Text>
+              {Number(extra.r.ahorro_seguro) > 0 ? (
+                <>
+                  <Text className="text-3xl font-black text-emerald-700 mt-1">{fmt(extra.r.ahorro_seguro)}</Text>
+                  <Text className="text-xs font-bold text-emerald-700">de ITBIS que ya pagó y no está restando</Text>
+                </>
+              ) : (
+                <Text className="text-base font-bold text-gray-800 mt-1">
+                  {extra.r.exenta ? 'Sus ingresos son exentos de ITBIS: el ahorro está en la renta, documentando cada gasto.' : 'Este mes está aprovechando todo el ITBIS de sus compras registradas.'}
+                </Text>
+              )}
+              <Text className="text-[11px] text-gray-500 mt-2">
+                {Number(extra.r.ahorro_posible) > 0 ? `Y hasta ${fmt(extra.r.ahorro_posible)} más por confirmar. ` : ''}
+                {Number(extra.r.anio_perdido) > 0 && !extra.r.exenta ? `En lo que va de ${periodo.anio}: ${fmt(extra.r.anio_perdido)} de ITBIS que no entró al 606. ` : ''}
+                Todo dentro de la ley: pedir y guardar bien los comprobantes.
+              </Text>
+            </View>
+            {(extra.r.items || []).map((x: any) => {
+              const color = x.tipo === 'ahorro' ? 'text-emerald-700' : x.tipo === 'riesgo' ? 'text-red-700' : 'text-gray-500';
+              const borde = x.tipo === 'ahorro' ? 'border-emerald-200' : x.tipo === 'riesgo' ? 'border-red-200' : 'border-gray-200';
+              return (
+                <View key={x.clave} className={`bg-white border ${borde} rounded-xl p-4 mb-3`}>
+                  <Text className={`text-[11px] font-black uppercase tracking-wider ${color}`}>
+                    {x.tipo === 'ahorro' ? 'Ahorro' : x.tipo === 'riesgo' ? 'Riesgo' : 'Para tener en cuenta'}
+                  </Text>
+                  <Text className="text-sm font-bold text-gray-900 mt-0.5">{x.titulo}</Text>
+                  {x.ahorro != null && (
+                    <Text className="text-lg font-black text-emerald-700 mt-1">
+                      {fmt(x.ahorro)}<Text className="text-[11px] font-normal text-gray-500"> {x.estimado ? 'tope estimado' : 'de ITBIS'}</Text>
+                    </Text>
+                  )}
+                  <Text className="text-sm text-gray-700 mt-2">{x.detalle}</Text>
+                  <Text className="text-sm text-gray-900 mt-2"><Text className="font-bold">Qué hacer: </Text>{x.que_hacer}</Text>
+                  {!!x.base && <Text className="text-[11px] text-gray-500 mt-2">Base: {x.base}</Text>}
+                  {(x.panel === 'comprobantes-gastos' || x.panel === 'mi-contabilidad') && (
+                    <TouchableOpacity onPress={() => (x.panel === 'comprobantes-gastos' ? router.push('/comprobantes' as any) : setTab('resumen'))}
+                      className="mt-3 border border-blue-200 bg-blue-50 rounded-lg py-2">
+                      <Text className="text-sm font-bold text-blue-800 text-center">
+                        {x.panel === 'comprobantes-gastos' ? 'Abrir Comprobantes de gastos' : 'Ver el Resumen'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
+            <View className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <Text className="text-xs text-amber-900">
+                Salen de lo registrado en MotoFlow y son una orientación. Antes de una decisión grande, confírmela con un contador.
+              </Text>
+            </View>
           </ScrollView>
         ) : (
           <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 24 }}>
@@ -350,7 +410,7 @@ export default function ContabilidadScreen() {
               {compras.fuera > 0 && (
                 <View className="mb-2">
                   <Text className="text-sm font-bold text-red-700">
-                    {compras.fuera} compra(s) no entran al 606: se pierden {fmt(compras.itbis_perdido)} de ITBIS.
+                    {compras.fuera} compra(s) no salen en el TXT del 606{Number(compras.itbis_perdido) > 0 ? `: se pierden ${fmt(compras.itbis_perdido)} de ITBIS` : ''}.
                   </Text>
                   {(compras.motivos || []).map((m: any) => (
                     <Text key={m.motivo} className="text-xs text-gray-700 mt-0.5">

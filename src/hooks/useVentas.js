@@ -939,7 +939,7 @@ export const useVentas = () => {
 
     const { data: productos, error } = await supabase
       .from('productos')
-      .select('id, codigo, descripcion, min_stock, max_stock, suplidor_id, activo, traido_de')
+      .select('id, codigo, descripcion, min_stock, max_stock, suplidor_id, activo, traido_de, naturaleza')
       .in('id', productIds);
 
     if (error || !productos?.length) {
@@ -955,7 +955,9 @@ export const useVentas = () => {
     // unos a otros. Ahora salen juntos y se espera una sola vez.
     // Pieza traída del catálogo de otra empresa del grupo: la repone esa
     // empresa, no esta (sql/vender_catalogo_hermano.sql).
-    const activos = productos.filter((p) => p.activo && !p.traido_de);
+    // (13/11/2026) Un servicio o un inmueble no tiene existencia que reponer:
+    // antes salia el aviso rojo 'Reposicion pendiente ... SERV-GENERAL' en cada venta.
+    const activos = productos.filter((p) => p.activo && !p.traido_de && (p.naturaleza || 'bien') === 'bien');
     const existencias = await Promise.all(activos.map(async (p) => {
       const { data, error } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
       return { id: p.id, existencia: Number(data || 0), error };

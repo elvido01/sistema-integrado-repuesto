@@ -7,7 +7,7 @@
 // las casillas siguen el "Instructivo Llenado del Formulario IT-1" de la DGII.
 // Es una hoja de trabajo: no envía nada a la DGII.
 // ============================================================
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -38,9 +38,13 @@ const HojaIT1 = ({ periodo, onSaldoGuardado }) => {
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
 
+  const pedido = useRef(0); // descarta la respuesta de un mes que ya no se mira
+
   const cargar = useCallback(async () => {
+    const n = ++pedido.current;
     setLoading(true);
     const { data: r, error } = await supabase.rpc('contab_hoja_it1', { p_anio: periodo.anio, p_mes: periodo.mes });
+    if (n !== pedido.current) return;
     if (error) {
       toast({ variant: 'destructive', title: 'No se pudo cargar la hoja', description: error.message });
       setData(null);

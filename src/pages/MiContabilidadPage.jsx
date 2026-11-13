@@ -10,9 +10,9 @@
 // Todo sale de la RPC contab_resumen_mes (sql/ayudante_contable_fase1.sql),
 // la misma que usa la app. Es un ESTIMADO: no sustituye la declaración.
 // Fase 3 (13/11/2026): pestañas «Hoja del IT-1» (casilla por casilla) y
-// «Guía paso a paso» (components/contabilidad).
+// «Guía paso a paso» (components/contabilidad). Fase 4: «Pague menos».
 // ============================================================
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, RefreshCw, Calculator, AlertTriangle, CalendarCheck, CheckCircle2, Circle, Bell, BellOff, FileText } from 'lucide-react';
 import HojaIT1 from '@/components/contabilidad/HojaIT1';
 import GuiaContable from '@/components/contabilidad/GuiaContable';
+import RecomendacionesContables from '@/components/contabilidad/RecomendacionesContables';
 import { formatFechaDMY } from '@/lib/dateUtils';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -37,6 +38,8 @@ const MOTIVOS = {
   rnc: ['Suplidor sin RNC o cédula válido', 'Complete el RNC (9 dígitos) o la cédula (11) en la ficha del suplidor.'],
   rnc_empresa: ['Falta el RNC de su empresa', 'Póngalo en Perfil Empresa: los gastos menores van con el RNC propio.'],
   repetida: ['Factura repetida (mismo RNC y NCF)', 'Está dos veces: en Compras y como comprobante de gasto, o digitada doble. Deje una sola.'],
+  nota: ['Notas de crédito o débito del suplidor', 'No se pierde: agréguela a mano en la herramienta de la DGII con el NCF que modifica. La nota de crédito resta ITBIS.'],
+  ret_isr: ['Compras con retención de ISR', 'No se pierde: agréguela a mano en la herramienta de la DGII escogiendo el tipo de retención.'],
 };
 
 const MiContabilidadPage = () => {
@@ -51,11 +54,15 @@ const MiContabilidadPage = () => {
   const [loading, setLoading] = useState(false);
   const [saldo, setSaldo] = useState('');
   const [guardando, setGuardando] = useState(false);
-  const [tab, setTab] = useState('resumen'); // resumen | hoja | guia
+  const [tab, setTab] = useState('resumen'); // resumen | hoja | ahorro | guia
+
+  const pedido = useRef(0); // descarta la respuesta de un mes que ya no se mira
 
   const cargar = useCallback(async () => {
+    const n = ++pedido.current;
     setLoading(true);
     const { data: r, error } = await supabase.rpc('contab_resumen_mes', { p_anio: periodo.anio, p_mes: periodo.mes });
+    if (n !== pedido.current) return;
     if (error) {
       toast({ variant: 'destructive', title: 'No se pudo cargar', description: error.message });
       setData(null);
@@ -113,7 +120,7 @@ const MiContabilidadPage = () => {
         </div>
 
         <div className="flex flex-wrap gap-1 bg-white rounded-lg border shadow-sm p-1">
-          {[['resumen', 'Resumen del mes'], ['hoja', 'Hoja del IT-1'], ['guia', 'Guía paso a paso']].map(([k, t]) => (
+          {[['resumen', 'Resumen del mes'], ['hoja', 'Hoja del IT-1'], ['ahorro', 'Pague menos'], ['guia', 'Guía paso a paso']].map(([k, t]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
               className={`flex-1 min-w-[120px] rounded-md px-3 py-1.5 text-sm font-bold ${tab === k ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
               {t}
@@ -123,6 +130,8 @@ const MiContabilidadPage = () => {
 
         {tab === 'hoja' ? (
           <HojaIT1 periodo={periodo} onSaldoGuardado={cargar} />
+        ) : tab === 'ahorro' ? (
+          <RecomendacionesContables periodo={periodo} onVerPestana={setTab} />
         ) : tab === 'guia' ? (
           <GuiaContable periodo={periodo} onVerPestana={setTab} />
         ) : loading && !data ? (
@@ -191,6 +200,7 @@ const MiContabilidadPage = () => {
               )}
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" className="h-7" onClick={() => setTab('hoja')}>Ver casilla por casilla (Hoja del IT-1)</Button>
+                <Button size="sm" variant="outline" className="h-7" onClick={() => setTab('ahorro')}>¿Cómo pagar menos?</Button>
                 <Button size="sm" variant="outline" className="h-7" onClick={() => setTab('guia')}>¿Cómo se declara? Guía paso a paso</Button>
               </div>
             </div>
@@ -218,7 +228,7 @@ const MiContabilidadPage = () => {
                   {compras.fuera > 0 && (
                     <div className="rounded-md border border-rose-200 bg-rose-50 p-3">
                       <div className="font-bold text-rose-800">
-                        {compras.fuera} compra(s) no entran al 606: se pierden {fmt(compras.itbis_perdido)} de ITBIS que podría restar.
+                        {compras.fuera} compra(s) no salen en el TXT del 606{Number(compras.itbis_perdido) > 0 ? <>: se pierden {fmt(compras.itbis_perdido)} de ITBIS que podría restar</> : null}.
                       </div>
                       <ul className="mt-1.5 space-y-1">
                         {compras.motivos.map((m) => (

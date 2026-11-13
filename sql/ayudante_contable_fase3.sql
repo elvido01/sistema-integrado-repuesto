@@ -51,6 +51,11 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
         WHEN left(c.ncf, 3) NOT IN ('B01','B03','B04','B11','B13','B14','B15','B17','E31','E33','E34','E41','E43','E44','E45','E47') THEN 'tipo'
         WHEN left(c.ncf, 3) IN ('B13','B17','E43','E47') AND length((SELECT rnc FROM emp)) NOT IN (9, 11) THEN 'rnc_empresa'
         WHEN left(c.ncf, 3) NOT IN ('B13','B17','E43','E47') AND length(c.rnc) NOT IN (9, 11) THEN 'rnc'
+        -- MotoFlow no guarda el NCF modificado ni el tipo de retención de ISR:
+        -- revisar606 las deja fuera del TXT (se agregan a mano en la herramienta
+        -- de la DGII), así que aquí tampoco cuentan como "en el 606".
+        WHEN left(c.ncf, 3) IN ('B03','B04','E33','E34') THEN 'nota'
+        WHEN c.isr_pct > 0 THEN 'ret_isr'
         ELSE 'ok' END AS motivo0
       FROM c
   )
@@ -104,6 +109,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
          CASE WHEN f.itbis = 0 THEN 0 ELSE LEAST(COALESCE(d.base16, 0), f.total - f.itbis) END,
          f.itbis, f.total, f.itbis_retenido,
          CASE WHEN f.fp ~ 'CR[EÉ]DITO' OR f.tp ~ '^CR[EÉ]DITO$' THEN 'credito'
+              -- Varios medios en una venta (EFECTIVO/TARJETA): el reparto no se guarda.
+              WHEN (f.tp ~ 'TARJETA|VISA|MASTER')::int + (f.tp ~ 'CHEQUE|TRANSFER|DEP[OÓ]SIT')::int + (f.tp ~ 'EFECTIVO')::int > 1 THEN 'otros'
               WHEN f.fp || ' ' || f.tp ~ 'TARJETA|VISA|MASTER' THEN 'tarjeta'
               WHEN f.fp || ' ' || f.tp ~ 'CHEQUE|TRANSFER|DEP[OÓ]SIT' THEN 'cheque'
               WHEN f.fp || ' ' || f.tp ~ 'EFECTIVO|CONTADO' THEN 'efectivo'
@@ -245,12 +252,14 @@ BEGIN
   -- ===== Compras: lo que entra al 606 y lo que no =====
   SELECT jsonb_build_object(
       'en_606', count(*) FILTER (WHERE k.motivo = 'ok'),
-      -- Las notas de crédito del suplidor (B04/E34) restan crédito.
-      'itbis_adelantado', COALESCE(sum(CASE WHEN k.tipo IN ('B04', 'E34') THEN -k.itbis ELSE k.itbis END) FILTER (WHERE k.motivo = 'ok'), 0),
-      'itbis_retenido_a_suplidores', COALESCE(sum(k.itbis_ret) FILTER (WHERE k.motivo = 'ok'), 0),
-      'isr_retenido_a_suplidores', COALESCE(sum(k.isr_ret) FILTER (WHERE k.motivo = 'ok'), 0),
+      'itbis_adelantado', COALESCE(sum(k.itbis) FILTER (WHERE k.motivo = 'ok'), 0),
+      -- Lo retenido se debe igual, aunque esa compra se agregue a mano al 606.
+      'itbis_retenido_a_suplidores', COALESCE(sum(k.itbis_ret) FILTER (WHERE k.motivo IN ('ok', 'ret_isr')), 0),
+      'isr_retenido_a_suplidores', COALESCE(sum(k.isr_ret) FILTER (WHERE k.motivo IN ('ok', 'ret_isr')), 0),
       'fuera', count(*) FILTER (WHERE k.motivo <> 'ok'),
-      'itbis_perdido', COALESCE(sum(k.itbis) FILTER (WHERE k.motivo <> 'ok'), 0),
+      -- 'nota' y 'ret_isr' no se pierden: se agregan a mano en la herramienta de la DGII.
+      'itbis_perdido', COALESCE(sum(k.itbis) FILTER (WHERE k.motivo NOT IN ('ok', 'nota', 'ret_isr')), 0),
+      'a_mano', count(*) FILTER (WHERE k.motivo IN ('nota', 'ret_isr')),
       'motivos', COALESCE((SELECT jsonb_agg(jsonb_build_object('motivo', m.motivo, 'cantidad', m.n, 'monto', m.monto, 'itbis', m.itbis) ORDER BY m.itbis DESC)
                              FROM (SELECT k2.motivo, count(*) n, sum(k2.total) monto, sum(k2.itbis) itbis
                                      FROM public._contab_compras_606(v_t, v_ini, v_fin) k2
@@ -366,16 +375,17 @@ BEGIN
     FROM public._contab_ventas_607(v_t, v_ini, v_fin) v;
 
   -- 606: ITBIS por adelantar (bienes / servicios) y retenciones a suplidores.
-  SELECT COALESCE(sum(CASE WHEN k.tipo IN ('B04','E34') THEN -k.itbis ELSE k.itbis END) FILTER (WHERE NOT k.es_servicio), 0),
-         COALESCE(sum(CASE WHEN k.tipo IN ('B04','E34') THEN -k.itbis ELSE k.itbis END) FILTER (WHERE k.es_servicio), 0),
-         COALESCE(sum(k.itbis_ret), 0), COALESCE(sum(k.isr_ret), 0),
-         COALESCE(sum(k.itbis_ret) FILTER (WHERE length(k.rnc) = 11), 0),
-         COALESCE(sum(k.itbis_ret) FILTER (WHERE length(k.rnc) <> 11), 0),
+  SELECT COALESCE(sum(k.itbis) FILTER (WHERE k.motivo = 'ok' AND NOT k.es_servicio), 0),
+         COALESCE(sum(k.itbis) FILTER (WHERE k.motivo = 'ok' AND k.es_servicio), 0),
+         COALESCE(sum(k.itbis_ret) FILTER (WHERE k.motivo IN ('ok', 'ret_isr')), 0),
+         COALESCE(sum(k.isr_ret) FILTER (WHERE k.motivo = 'ret_isr'), 0),
+         COALESCE(sum(k.itbis_ret) FILTER (WHERE k.motivo IN ('ok', 'ret_isr') AND length(k.rnc) = 11), 0),
+         COALESCE(sum(k.itbis_ret) FILTER (WHERE k.motivo IN ('ok', 'ret_isr') AND length(k.rnc) <> 11), 0),
          COALESCE(jsonb_agg(jsonb_build_object('suplidor', k.proveedor, 'rnc', k.rnc, 'ncf', k.ncf, 'base', round(k.base, 2),
-                    'pct', k.isr_pct, 'monto', k.isr_ret) ORDER BY k.proveedor, k.ncf) FILTER (WHERE k.isr_ret > 0), '[]'::jsonb)
+                    'pct', k.isr_pct, 'monto', k.isr_ret) ORDER BY k.proveedor, k.ncf)
+                  FILTER (WHERE k.motivo = 'ret_isr' AND k.isr_ret > 0), '[]'::jsonb)
     INTO v_ad_bienes, v_ad_serv, v_ret_supl, v_isr, v_ret_fisica, v_ret_soc, v_ir17
-    FROM public._contab_compras_606(v_t, v_ini, v_fin) k
-   WHERE k.motivo = 'ok';
+    FROM public._contab_compras_606(v_t, v_ini, v_fin) k;
 
   -- ===== IT-1 =====
   c1  := round(v_total - v_nc_monto, 2);                       -- Anexo A, casilla 11
@@ -409,6 +419,10 @@ BEGIN
   IF round(v_ret_cli, 2) > 0 THEN
     v_avisos := v_avisos || jsonb_build_array(
       'Lo que le retuvieron va en el Anexo A, casillas 27 a 31 según quién retuvo (tarjetas: 27; una sociedad por servicios: 29; el Estado: 31). La suma pasa sola a la casilla 30.');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public._contab_compras_606(v_t, v_ini, v_fin) k WHERE k.motivo IN ('nota', 'ret_isr')) THEN
+    v_avisos := v_avisos || jsonb_build_array(
+      'Hay notas de crédito/débito de suplidores o compras con retención de ISR. No salen en el TXT del 606 de MotoFlow ni en las casillas 22 a 25 de esta hoja: agréguelas a mano en la herramienta de la DGII. Al ITBIS deducible súmele el de las compras con retención y las notas de débito, y RÉSTELE el de las notas de crédito.');
   END IF;
   v_avisos := v_avisos || jsonb_build_array(
     'Las importaciones (ITBIS pagado en Aduanas, casilla 24) no están en MotoFlow: si importó, súmelas del lado de la DGA.');

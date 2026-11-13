@@ -6,7 +6,7 @@
 // (sql/ayudante_contable_fase3.sql), que lo arma según la empresa; la app
 // usa la misma, así que un cambio allá llega a los dos lados.
 // ============================================================
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { usePanels } from '@/contexts/PanelContext';
@@ -19,9 +19,13 @@ const GuiaContable = ({ periodo, onVerPestana }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const pedido = useRef(0); // descarta la respuesta de un mes que ya no se mira
+
   const cargar = useCallback(async () => {
+    const n = ++pedido.current;
     setLoading(true);
     const { data: r, error } = await supabase.rpc('contab_guia', { p_anio: periodo.anio, p_mes: periodo.mes });
+    if (n !== pedido.current) return;
     if (error) {
       toast({ variant: 'destructive', title: 'No se pudo cargar la guía', description: error.message });
       setData(null);

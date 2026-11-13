@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -34,6 +34,35 @@ const rangoMes = (year, month) => {
   };
 };
 
+// (13/11/2026) PostgREST corta en 1000 filas: sin paginar, un mes grande
+// salía con el TXT incompleto. armar() devuelve la consulta ya ordenada.
+const traerTodo = async (armar) => {
+  const out = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await armar().range(desde, desde + 999);
+    if (error) throw error;
+    for (const r of data || []) out.push(r);
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+};
+
+// NCF de las facturas que lo tienen en documentos_fiscales. En lotes de 200
+// (la URL tiene tope) y por fecha: si hay varios, queda el más reciente.
+const ncfDeDocumentos = async (ids, soloEmitidos) => {
+  const mapa = new Map();
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200);
+    const docs = await traerTodo(() => {
+      let q = supabase.from('documentos_fiscales').select('id, factura_id, ncf, proveedor_number, encf, created_at').in('factura_id', lote);
+      if (soloEmitidos) q = q.eq('estado', 'emitido');
+      return q.order('created_at', { ascending: true }).order('id', { ascending: true });
+    });
+    docs.forEach((d) => { const n = d.ncf || d.encf || d.proveedor_number; if (n) mapa.set(d.factura_id, n); });
+  }
+  return mapa;
+};
+
 const ReportesDGIIPage = () => {
   const { empresa, tenantId } = useAuth();
   const { toast } = useToast();
@@ -48,36 +77,28 @@ const ReportesDGIIPage = () => {
 
   const { desde, hasta } = useMemo(() => rangoMes(year, month), [year, month]);
 
+  const pedido = useRef(0); // para descartar la respuesta de un mes que ya no se está mirando
+
   const cargarDatos = useCallback(async () => {
     if (!tenantId) return;
+    const n = ++pedido.current;
     setLoading(true);
     try {
       // 607: ventas con NCF en el mes (no anuladas).
       // El NCF puede estar en facturas.ncf O en documentos_fiscales.ncf
       // (cuando se emitio via PSFE como Alegra). Buscamos en ambas fuentes.
-      const { data: vRaw, error: ev } = await supabase
+      const vRaw = await traerTodo(() => supabase
         .from('facturas')
         .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, itbis_retenido, isr_retenido, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
         .gte('fecha', rangoDeFechas(desde, hasta).desde)
         .lte('fecha', rangoDeFechas(desde, hasta).hasta)
         .neq('estado', 'ANULADA')
         .eq('es_saldo_inicial', false) // saldos iniciales: deuda vieja, no venta de este periodo
-        .order('fecha', { ascending: true });
-      if (ev) throw ev;
+        .order('fecha', { ascending: true }).order('id', { ascending: true }));
 
       // Para las facturas sin NCF directo, buscar en documentos_fiscales
       const facturasSinNcf = (vRaw || []).filter(f => !f.ncf || f.ncf === '');
-      let docsByFacturaId = new Map();
-      if (facturasSinNcf.length > 0) {
-        const { data: docs } = await supabase
-          .from('documentos_fiscales')
-          .select('factura_id, ncf, proveedor_number, encf')
-          .in('factura_id', facturasSinNcf.map(f => f.id))
-          .eq('estado', 'emitido');
-        (docs || []).forEach(d => {
-          docsByFacturaId.set(d.factura_id, d.ncf || d.encf || d.proveedor_number);
-        });
-      }
+      const docsByFacturaId = await ncfDeDocumentos(facturasSinNcf.map(f => f.id), true);
 
       const v = (vRaw || []).map(f => ({
         ...f,
@@ -85,62 +106,55 @@ const ReportesDGIIPage = () => {
       })).filter(f => f.ncf && f.ncf !== '');
 
       // 606: compras con NCF en el mes
-      const { data: c, error: ec } = await supabase
+      // Sin las anuladas ni los saldos iniciales, igual que la Hoja del IT-1
+      // (_contab_compras_606): una compra anulada no se reporta.
+      const c = await traerTodo(() => supabase
         .from('compras')
-        .select('id, numero, fecha, ncf, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc)')
+        .select('id, numero, fecha, ncf, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc)')
         .gte('fecha', desde)
         .lte('fecha', hasta)
         .not('ncf', 'is', null)
         .neq('ncf', '')
-        .order('fecha', { ascending: true });
-      if (ec) throw ec;
+        .or('estado.is.null,estado.neq.ANULADA')
+        .not('es_saldo_inicial', 'is', true)
+        .order('fecha', { ascending: true }).order('id', { ascending: true }));
 
       // 608: facturas anuladas en el mes (mismo fallback de NCF que 607)
-      const { data: aRaw, error: ea } = await supabase
+      const aRaw = await traerTodo(() => supabase
         .from('facturas')
         .select('id, numero, fecha, ncf, updated_at, estado')
         .gte('fecha', rangoDeFechas(desde, hasta).desde)
         .lte('fecha', rangoDeFechas(desde, hasta).hasta)
         .eq('estado', 'ANULADA')
-        .order('fecha', { ascending: true });
-      if (ea) throw ea;
+        .order('fecha', { ascending: true }).order('id', { ascending: true }));
 
       const anuladasSinNcf = (aRaw || []).filter(f => !f.ncf || f.ncf === '');
-      let docsAnul = new Map();
-      if (anuladasSinNcf.length > 0) {
-        const { data: docs } = await supabase
-          .from('documentos_fiscales')
-          .select('factura_id, ncf, proveedor_number, encf')
-          .in('factura_id', anuladasSinNcf.map(f => f.id));
-        (docs || []).forEach(d => {
-          docsAnul.set(d.factura_id, d.ncf || d.encf || d.proveedor_number);
-        });
-      }
+      const docsAnul = await ncfDeDocumentos(anuladasSinNcf.map(f => f.id), false);
       const a = (aRaw || []).map(f => ({
         ...f,
         ncf: f.ncf || docsAnul.get(f.id) || null,
       })).filter(f => f.ncf && f.ncf !== '');
 
-      setVentas((v || []).map(r => ({
+      const ventasNuevas = (v || []).map(r => ({
         ...r,
         cliente_nombre: r.clientes?.nombre,
         cliente_rnc: r.clientes?.rnc,
-      })));
+      }));
       // (12/11/2026) Comprobantes de gastos APROBADOS (foto de la factura del
       // gasto: sql/ayudante_contable_fase2.sql). Entran al 606 como una compra
-      // más. Si la tabla no existe todavía, el 606 sale solo con las compras.
+      // más. Si esta consulta falla no sale nada: un 606 sin los gastos no puede salir callado.
       const FORMA = { '01': 'Contado', '02': 'Transferencia', '03': 'Tarjeta', '04': 'Credito' };
-      const { data: gc, error: egc } = await supabase
+      const gc = await traerTodo(() => supabase
         .from('gastos_comprobantes')
         .select('id, fecha, ncf, rnc, proveedor_nombre, tipo_bs, monto_gravado, monto_exento, itbis, propina, total, forma_pago')
         .eq('estado', 'aprobado')
+        .eq('entra_606', true)
         .gte('fecha', desde)
         .lte('fecha', hasta)
-        .order('fecha', { ascending: true })
-        .limit(5000);
-      // Solo se perdona que la tabla no exista todavía; cualquier otro fallo
-      // se avisa: un 606 sin los gastos no puede salir callado.
-      if (egc && !/gastos_comprobantes|42P01|PGRST205/i.test(`${egc.code || ''} ${egc.message || ''}`)) throw egc;
+        .order('fecha', { ascending: true }).order('id', { ascending: true }));
+      if (n !== pedido.current) return; // ya se pidió otro mes
+      // Los tres juntos y al final: nunca un mes con las ventas de otro.
+      setVentas(ventasNuevas);
       const gastosComoCompras = (gc || []).map((g) => ({
         id: `gasto-${g.id}`, numero: 'GASTO', fecha: g.fecha, ncf: g.ncf,
         tipo_bienes_servicios: g.tipo_bs, total_exento: g.monto_exento, total_gravado: g.monto_gravado,
@@ -159,9 +173,13 @@ const ReportesDGIIPage = () => {
       ].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))));
       setAnulados(a || []);
     } catch (error) {
-      toast({ variant: 'destructive', title: 'Error al cargar datos', description: error.message });
+      if (n === pedido.current) {
+        // Sin datos a medias en pantalla: no se puede bajar un TXT de un mes con filas de otro.
+        setVentas([]); setCompras([]); setAnulados([]);
+        toast({ variant: 'destructive', title: 'Error al cargar datos', description: error.message });
+      }
     } finally {
-      setLoading(false);
+      if (n === pedido.current) setLoading(false);
     }
   }, [tenantId, desde, hasta, toast]);
 
