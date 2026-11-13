@@ -217,12 +217,19 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
       const fRet = pf ? 1 : (emiteEcf ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0));
       for (const f of filas) {
         if (f.naturaleza !== 'servicio') continue;
+        // La línea completa (cantidad y descuento), como la guarda la venta:
+        // importe e ITBIS de la línea, igual que recalcular_retenciones_factura.
+        const neto = n(f.precio) * n(f.cantidad || 1) * (1 - n(f.descuento) / 100);
+        const itbisLinea = neto - neto / (1 + pct(f.itbis_pct));
         // A persona física se le retiene el ITBIS de todo servicio; a sociedad, solo el de los profesionales.
-        if (pf || f.servicio_tipo === 'profesional') retI += (n(f.itbis) / factor) * fRet;
-        const base = (n(f.precio) - n(f.itbis)) / factor;
+        if (pf || f.servicio_tipo === 'profesional') retI += itbisLinea * fRet;
+        const base = neto - itbisLinea;
         if (pf && ['profesional', 'alquiler'].includes(f.servicio_tipo)) retS += base * n(cfg.isr_retencion_pct ?? 15) / 100;
         if (pf && f.servicio_tipo === 'tecnico') retS += base * n(cfg.isr_retencion_tecnico_pct ?? 3) / 100;
       }
+      // Redondeo como la base: cada retención por su lado (en pesos), luego a la moneda.
+      retI = Math.round(retI * 100) / 100 / factor;
+      retS = Math.round(retS * 100) / 100 / factor;
     }
     // La propina se escribe en la moneda de la venta y se guarda en pesos.
     const prop = n(propina) / factor;
@@ -230,6 +237,8 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
   }, [filas, cliente, cfg, pf, emiteEcf, factor, propina]);
   // La venta sabe cuánto le van a retener (para no cobrarla de contado por el total).
   useEffect(() => { onRetencion?.(Math.round((t.retI + t.retS) * factor * 100) / 100); }, [t.retI, t.retS, factor, onRetencion]);
+  // Si esta pantalla se cierra, la venta deja de esperar una retención.
+  useEffect(() => () => onRetencion?.(0), [onRetencion]);
   const usaPropina = !!cfg?.usa_propina || n(propina) > 0;
   // Lo que se teclea se guarda como texto (si no, el punto decimal se borra al escribir).
   const [propTxt, setPropTxt] = useState('');
