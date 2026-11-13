@@ -332,7 +332,7 @@
     "src/components/ventas/CotizacionSearchModal.jsx": "ea0cda9ca966e217",
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
-    "src/components/ventas/LineasServicios.jsx": "61c17a6ee2e45db3",
+    "src/components/ventas/LineasServicios.jsx": "5e5d7f778c89af5b",
     "src/components/ventas/ProductSearchModal.jsx": "9e0d52ea0eb3c5a0",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "e5e6958a6e76e566",
@@ -427,7 +427,9 @@
     "sql/reporte_intereses_cobrados.sql": "bccba7f352c814c7",
     "src/components/common/pdf/interesesCobradosPDF.js": "042ff0918afa6af7",
     "src/pages/InteresesCobradosPage.jsx": "fe26325dc03f5247",
-    "sql/retencion_tecnicos_y_propina.sql": "6fc2ee64cfb21e1d"
+    "sql/retencion_tecnicos_y_propina.sql": "6fc2ee64cfb21e1d",
+    "sql/cliente_cobro_neto.sql": "7bdd5abc958a8250",
+    "src/lib/facturaNeto.js": "211f62a421afd1a8"
   },
   "historial": [
     {
@@ -907,6 +909,15 @@
       "nota": "code-review high (2 pasadas sobre contado con retencion): enfoque descartado y revertido; se conserva solo el calculo de la retencion estimada (hallazgos 2, 3 y 5 de la primera pasada)",
       "archivos": [
         "src/components/ventas/LineasServicios.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-13",
+      "nota": "code-review high: 10 hallazgos; arreglados: propina ya no se enciende sola al editar ni queda al cambiar de cliente, calculo sobre la factura completa (varias lineas), redondeo de la propina igual al e-CF (barrido 57k precios), solo pesos, propina solo si el e-CF la admite, regla de retencion unica por linea, netos se limpian al quitar linea",
+      "archivos": [
+        "sql/cliente_cobro_neto.sql",
+        "src/components/ventas/LineasServicios.jsx",
+        "src/lib/facturaNeto.js"
       ]
     }
   ]
