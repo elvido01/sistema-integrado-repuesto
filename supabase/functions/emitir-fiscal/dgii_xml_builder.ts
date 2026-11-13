@@ -237,7 +237,7 @@ const reconcileTotalesWithItems = (totales, items) => {
   next.monto_gravado_18 = Number(montoGravado18.toFixed(2));
   next.monto_exento = Number(montoExento.toFixed(2));
   next.total_itbis_18 = montoGravado18 > 0 ? itbis18 : 0;
-  next.monto_total = Number((montoGravado18 + montoExento + itbis18).toFixed(2));
+  next.monto_total = Number((montoGravado18 + montoExento + itbis18 + (Number(next.propina_legal) || 0)).toFixed(2));
   // itbis_total sin sufijo se elimina: DGII solo acepta TotalITBIS1 dentro de <Totales>
   return next;
 };
@@ -388,7 +388,7 @@ function buildItemsXml(items) {
       <CantidadItem>${cantidad}</CantidadItem>
       ${tag("UnidadMedida", it.unidad_medida || "43")}
       <PrecioUnitarioItem>${fmtMoney(precio)}</PrecioUnitarioItem>
-      ${descuento > 0 ? `<DescuentoMonto>${fmtMoney(descuento)}</DescuentoMonto>` : ""}
+      ${descuento > 0 ? `<DescuentoMonto>${fmtMoney(descuento)}</DescuentoMonto>` : ""}${it.impuesto_adicional ? `<TablaImpuestoAdicional><ImpuestoAdicional><TipoImpuesto>${it.impuesto_adicional}</TipoImpuesto></ImpuestoAdicional></TablaImpuestoAdicional>` : ""}
       ${it.otra_moneda ? `<OtraMonedaDetalle><PrecioOtraMoneda>${fmtMoney(it.otra_moneda.precio)}</PrecioOtraMoneda><MontoItemOtraMoneda>${fmtMoney(it.otra_moneda.monto)}</MontoItemOtraMoneda></OtraMonedaDetalle>` : ""}
       <MontoItem>${fmtMoney(monto)}</MontoItem>
     </Item>`.trim();
@@ -407,7 +407,7 @@ function buildTotalesXml(t) {
       ${t.monto_exento ? `<MontoExento>${fmtMoney(t.monto_exento)}</MontoExento>` : ""}
       ${t.total_itbis_18 ? `<ITBIS1>18</ITBIS1>` : ""}
       ${t.total_itbis_18 ? `<TotalITBIS>${fmtMoney(t.itbis_total ?? t.total_itbis_18)}</TotalITBIS>` : ""}
-      ${t.total_itbis_18 ? `<TotalITBIS1>${fmtMoney(t.total_itbis_18)}</TotalITBIS1>` : ""}
+      ${t.total_itbis_18 ? `<TotalITBIS1>${fmtMoney(t.total_itbis_18)}</TotalITBIS1>` : ""}${t.propina_legal > 0 ? `<MontoImpuestoAdicional>${fmtMoney(t.propina_legal)}</MontoImpuestoAdicional><ImpuestosAdicionales><ImpuestoAdicional><TipoImpuesto>001</TipoImpuesto><TasaImpuestoAdicional>10</TasaImpuestoAdicional><OtrosImpuestosAdicionales>${fmtMoney(t.propina_legal)}</OtrosImpuestosAdicionales></ImpuestoAdicional></ImpuestosAdicionales>` : ""}
       <MontoTotal>${fmtMoney(t.monto_total)}</MontoTotal>
       ${t.monto_periodo != null ? `<MontoPeriodo>${fmtMoney(t.monto_periodo)}</MontoPeriodo>` : ""}
       ${t.valor_pagar != null ? `<ValorPagar>${fmtMoney(t.valor_pagar)}</ValorPagar>` : ""}
@@ -1100,6 +1100,27 @@ export function buildEcfXml(tipo_ecf, input) {
 // + el config del emisor (de integraciones_fiscales) y arma el objeto
 // que espera buildXmlTipo32. Esto centraliza la traduccion.
 
+// (13/11/2026) Propina legal en el e-CF (Tabla I, código 001, 10 %): impuesto
+// adicional sobre el monto de cada ítem (IndicadorMontoGravado = 0: montos sin
+// ITBIS). Base = suma de los MontoItem (cantidad × precio, redondeado por
+// línea), igual que src/lib/propinaLegal.js en la venta.
+export const montoItemDgii = (d) => Number(((Number(d.cantidad) || 0) * (Number(d.precio) || Number(d.precio_unitario) || 0)).toFixed(2));
+export const propinaLegalDgii = (detalles) =>
+  Number(((detalles || []).reduce((s, d) => s + montoItemDgii(d), 0) * 0.10).toFixed(2));
+
+/** Por qué la propina de esta factura no puede ir en su e-CF, o null. */
+export function problemaPropinaEcf(factura, detalles, cliente, tipoEcf = tipoEcfDeCliente(cliente)) {
+  const propina = Number(factura?.propina) || 0;
+  if (propina <= 0) return null;
+  if (tipoEcf !== "31") return "La propina en factura electrónica solo va en crédito fiscal (E31): el cliente debe tener RNC.";
+  if (factura.moneda === "USD") return "La propina en factura electrónica en US$ todavía no está disponible.";
+  const legal = propinaLegalDgii(detalles);
+  if (Math.abs(legal - propina) > 0.01) {
+    return `En factura electrónica la propina es la legal: 10% = ${legal.toFixed(2)}. La factura tiene ${propina.toFixed(2)}.`;
+  }
+  return null;
+}
+
 export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf) {
   if (!factura) throw new Error("facturaToEcfInput: factura es requerida");
   if (!Array.isArray(detalles) || detalles.length === 0) {
@@ -1176,9 +1197,22 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
     const rate = it.itbis_pct > 1 ? it.itbis_pct / 100 : it.itbis_pct;
     return s + Number((it.monto_item * rate).toFixed(2));
   }, 0);
-  const total = totalGravado + totalExento + totalItbis;
+  // (13/11/2026) Propina legal (Tabla I, código 001, 10 %): impuesto adicional
+  // sobre el monto de cada ítem (IndicadorMontoGravado = 0: montos sin ITBIS).
+  // Solo E31 en pesos: el RFCE del E32 y la otra moneda no la llevan todavía.
+  // La factura guarda la propina; si no es el 10 % exacto, no se emite (el
+  // total del XML no cuadraría con el de la factura).
+  const tipoParaPropina = encf && /^E\d{2}/.test(String(encf)) ? String(encf).slice(1, 3) : tipoEcf;
+  const malPropina = problemaPropinaEcf(factura, detalles, cliente, tipoParaPropina);
+  if (malPropina) throw new Error(malPropina);
+  let propinaLegal = 0;
+  if ((Number(factura.propina) || 0) > 0) {
+    propinaLegal = Number((items.reduce((s, it) => s + it.monto_item, 0) * 0.10).toFixed(2));
+    for (const it of items) it.impuesto_adicional = "001";
+  }
+  const total = totalGravado + totalExento + totalItbis + propinaLegal;
 
-  console.log("[facturaToEcfInput] Calculated totals:", { totalGravado, totalExento, totalItbis, total });
+  console.log("[facturaToEcfInput] Calculated totals:", { totalGravado, totalExento, totalItbis, propinaLegal, total });
 
   // (28/10/2026) Factura en US$: los montos de arriba están en PESOS (es lo
   // que guarda la factura). En la otra moneda = pesos ÷ tasa de la factura.
@@ -1237,6 +1271,7 @@ export function facturaToEcfInput(factura, detalles, cliente, configEmisor, encf
       monto_exento: Number(totalExento.toFixed(2)),
       itbis_total: Number(totalItbis.toFixed(2)),
       total_itbis_18: Number(totalItbis.toFixed(2)),
+      propina_legal: propinaLegal,
       monto_total: Number(total.toFixed(2)),
     },
     forma_pago: factura.forma_pago === "CREDITO" ? "04" : "01",

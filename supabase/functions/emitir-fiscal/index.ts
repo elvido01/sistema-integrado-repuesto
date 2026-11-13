@@ -3,7 +3,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import forge from "https://esm.sh/node-forge@1.3.1";
-import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii, compradorIdentificado, tipoEcfDeCliente, nowDgiiDateTime } from "./dgii_xml_builder.ts";
+import { buildEcfXml, facturaToEcfInput, notaToEcfInput, buildAnecfXml, buildRfceXml, buildAcecfXml, rncValidoDgii, compradorIdentificado, tipoEcfDeCliente, nowDgiiDateTime, problemaPropinaEcf } from "./dgii_xml_builder.ts";
 import { buildEcfFromTestRow, buildRfceFromTestRow } from "./dgii_certif_builder.ts";
 import { signEcfXml, signXmlGenerico } from "./dgii_signer.ts";
 import { buildRfceDesdeEcf } from "./dgii_rfce_produccion.ts";
@@ -964,6 +964,9 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
         "Asígnale a la venta un cliente con su documento y vuelve a emitir. No se gastó ningún número.",
       );
     }
+    // (13/11/2026) Propina que no puede ir en el e-CF: también ANTES del número.
+    const malPropina = problemaPropinaEcf(factura, detalles, cliente, tipoEcf);
+    if (malPropina) throw new Error(`${malPropina} No se gastó ningún número.`);
     const { data: nuevo, error: encfErr } = await supabase.rpc("get_next_encf_empresa", {
       p_tenant: factura.tenant_id,
       p_tipo_ecf: tipoEcf,

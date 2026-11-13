@@ -23,6 +23,7 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { Plus, Trash2, Percent, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { cleanRncCedula } from '@/lib/dgiiExport';
+import { propinaLegal } from '@/lib/propinaLegal';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -244,6 +245,23 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
     setPropTxt(limpio);
     setPropina?.(Math.round(n(limpio) * factor * 100) / 100);
   };
+  // «10 %» = propina legal: sigue al monto si cambian las líneas. Escribir
+  // otra cifra la quita. En e-CF es la única que se puede (código 001, 10 %).
+  // Misma cuenta que el e-CF (lib/propinaLegal): en pesos.
+  const diezPctRD = propinaLegal(filas);
+  const diezPct = Math.round((diezPctRD / factor) * 100) / 100;   // en la moneda de la venta
+  const [legal, setLegal] = useState(false);
+  useEffect(() => {
+    if (legal && Math.round(n(propina) * 100) !== Math.round(diezPctRD * 100)) { setPropTxt(diezPct ? diezPct.toFixed(2) : ''); setPropina?.(diezPctRD); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legal, diezPctRD]);
+  // Factura que se abre con su propina en el 10 %: el botón queda encendido.
+  // Venta nueva (sin líneas): apagado.
+  useEffect(() => {
+    if (!filas.length) setLegal(false);
+    else if (n(propina) > 0 && Math.abs(n(propina) - diezPctRD) <= 0.01) setLegal(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propina, filas.length]);
 
   const celda = 'w-full bg-transparent px-2 py-1.5 text-[13px] focus:bg-yellow-50 focus:outline-none';
 
@@ -444,17 +462,17 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
             <div className="flex items-center justify-between gap-2 py-0.5">
               <span className="text-slate-500">Propina</span>
               <span className="flex items-center gap-1">
-                <button type="button" title="Propina legal: 10% del monto sin ITBIS" disabled={emiteEcf}
-                  className="rounded border border-slate-300 px-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                  onClick={() => ponPropina((t.subtotal * 0.10).toFixed(2))}>10%</button>
+                <button type="button" title="Propina legal: 10% del monto sin ITBIS (toque otra vez para quitarla)"
+                  className={`rounded border px-1.5 text-[11px] font-bold ${legal ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                  onClick={() => { if (legal) { setLegal(false); ponPropina(''); } else { setLegal(true); setPropTxt(diezPct ? diezPct.toFixed(2) : ''); setPropina?.(diezPctRD); } }}>10%</button>
                 <input className={`rounded border border-slate-300 px-1.5 text-right font-mono ${movil ? 'h-9 w-28 text-base' : 'h-6 w-24'}`}
                   inputMode="decimal" placeholder="0.00" value={propTxt}
-                  onChange={(e) => ponPropina(e.target.value)} disabled={emiteEcf}
-                  title={emiteEcf ? 'La propina todavía no va en la factura electrónica' : 'No lleva ITBIS ni retención'} />
+                  onChange={(e) => { setLegal(false); ponPropina(e.target.value); }} readOnly={emiteEcf}
+                  title={emiteEcf ? 'En factura electrónica solo la propina legal (botón 10%)' : 'No lleva ITBIS ni retención'} />
               </span>
             </div>
           )}
-          {usaPropina && emiteEcf && <div className="text-[10px] text-amber-700">La propina todavía no se puede poner en un e-CF.</div>}
+          {usaPropina && emiteEcf && <div className="text-[10px] text-slate-500">Factura electrónica: solo la propina legal del 10% (botón), y solo a clientes con RNC. Una propina voluntaria se cobra aparte.</div>}
           <div className="flex justify-between font-bold"><span>Total {sim}</span><span className="font-mono">{money(t.total)}</span></div>
           {moneda === 'USD' && (
             <div className="flex justify-between text-[11px] text-slate-500">

@@ -10,6 +10,7 @@ import { CANAL_POR_DEFECTO, nombreCanal } from '@/lib/canalesOrigen';
 import { conChasis } from '@/lib/chasisFactura';
 import { esLineaFraccion } from '@/lib/ventanas';
 import { docFiscalValido, tipoExigeRnc } from '@/lib/docFiscal';
+import { propinaLegal } from '@/lib/propinaLegal';
 
 const CLIENTE_GENERICO = {
   id: ID_GENERICO_BASE,
@@ -105,6 +106,8 @@ export const useVentas = () => {
   // LineasServicios con la misma regla que la base; la definitiva la pone
   // recalcular_retenciones_factura al grabar las líneas).
   const [retencionEstimada, setRetencionEstimada] = useState(0);
+  // Propina con que se abrió la factura (no se cambia en un e-CF ya enviado).
+  const propinaOriginalRef = useRef(0);
   // (28/10/2026) Factura en US$: la base sigue en pesos (montos de siempre);
   // la moneda y la tasa se guardan para imprimir y para el e-CF (OtraMoneda).
   const [moneda, setMoneda] = useState('DOP');
@@ -1076,13 +1079,32 @@ export const useVentas = () => {
       }
     }
 
-    // (13/11/2026) La propina en el e-CF va como impuesto adicional (código
-    // 001, 10 %) y emitir-fiscal todavía no lo arma: no se emite un e-CF cuyo
-    // total no cuadre con su XML.
-    const esEcf = editingFacturaId ? /^E\d{12}$/.test(String(editingFacturaNcf || '').trim()) : (fiscalActivo && fiscalModo === 'produccion');
-    if (totals.propina > 0 && esEcf) {
-      toast({ variant: 'destructive', title: 'Propina en factura electrónica', description: 'Todavía no se puede poner propina en un e-CF. Quítela o cóbrela aparte.' });
+    // (13/11/2026) En el e-CF la propina va como impuesto adicional código 001
+    // (propina legal, 10 %): solo crédito fiscal (E31), en pesos y exactamente
+    // el 10 %. Misma regla que facturaToEcfInput (emitir-fiscal): si no se
+    // cumple, aquí se avisa en vez de grabar una factura que no se puede emitir.
+    const ncfEditado = String(editingFacturaNcf || '').trim();
+    const ecfYaEmitido = !!editingFacturaId && /^E\d{12}$/.test(ncfEditado);
+    // Ya en la DGII: su XML no cambia, así que la propina tampoco.
+    if (ecfYaEmitido && Math.round(totals.propina * 100) !== Math.round(propinaOriginalRef.current * 100)) {
+      toast({ variant: 'destructive', title: 'Factura electrónica ya enviada', description: 'La propina de un e-CF ya emitido no se puede cambiar. Para corregirla, anule o emita una nota.' });
       return;
+    }
+    // Sin e-NCF todavía (pendiente de la DGII) pero en producción: también es e-CF.
+    const esEcf = ecfYaEmitido || (fiscalActivo && fiscalModo === 'produccion');
+    if (totals.propina > 0 && esEcf) {
+      // E31 = el comprobante que se ve en pantalla (el número manda si ya lo tiene).
+      const tipoEcf = ecfYaEmitido ? ncfEditado.slice(1, 3) : String(ncfPreview?.tipo_ncf || '');
+      const esE31 = tipoEcf === '31' || (!tipoEcf && docFiscalValido(cliente?.rnc));
+      const legal = propinaLegal(items);
+      if (!esE31 || moneda === 'USD') {
+        toast({ variant: 'destructive', title: 'Propina en factura electrónica', description: 'Solo va en factura de crédito fiscal (cliente con RNC) y en pesos. Quítela o cóbrela aparte.' });
+        return;
+      }
+      if (Math.abs(legal - totals.propina) > 0.01) {
+        toast({ variant: 'destructive', title: 'Propina en factura electrónica', description: `En el e-CF la propina es la legal: 10% = RD$ ${legal.toFixed(2)}. Toque el botón 10% o quítela.` });
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -1704,6 +1726,7 @@ export const useVentas = () => {
       setMontoRecibido(factura.monto_recibido?.toString() || '');
       setRecargo(factura.recargo || 0);
       setPropina(Number(factura.propina) || 0);
+      propinaOriginalRef.current = Number(factura.propina) || 0;
       setManualClienteNombre(factura.manual_cliente_nombre || '');
       setNotas(factura.notas || '');
 
