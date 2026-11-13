@@ -56,6 +56,19 @@ describe('607: forma de pago y monto facturado', () => {
   });
 });
 
+describe('607 con propina y retenciones (factura de AMSTAR a Oscar Aristy)', () => {
+  it('la propina va en la col. 16 y no en el monto facturado', () => {
+    const cols = generar607([{ ncf: 'B0100000385', fecha: '2026-11-11', cliente_rnc: '101894229', subtotal: 515.47, itbis: 92.78,
+      propina: 100, total: 708.25, itbis_retenido: 92.78, isr_retenido: 15.46, forma_pago: 'CREDITO', tipo_pago: 'CREDITO' }]).split('|');
+    expect(cols[7]).toBe('515.47');   // 8 monto facturado
+    expect(cols[8]).toBe('92.78');    // 9 ITBIS
+    expect(cols[9]).toBe('92.78');    // 10 ITBIS retenido por terceros
+    expect(cols[11]).toBe('15.46');   // 12 retención de renta
+    expect(cols[15]).toBe('100.00');  // 16 propina legal
+    expect(cols[19]).toBe('708.25');  // 20 a crédito
+  });
+});
+
 describe('608', () => {
   it('NCF, fecha y tipo de anulación', () => {
     expect(generar608([{ ncf: 'B0100000009', fecha: '2026-10-02', tipo_anulacion: '05' }])).toBe('B0100000009|20261002|05');

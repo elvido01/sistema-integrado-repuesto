@@ -236,6 +236,7 @@ const VentasFooter = ({
                   {Number(totals.totalDescuento) > 0 && <div className={fila}><span className="text-gray-500">Descuento</span><span className="font-mono">{montoConComas(totals.totalDescuento)}</span></div>}
                   {Number(recargo) > 0 && <div className={fila}><span className="text-gray-500">Recargo</span><span className="font-mono">{montoConComas(Number(recargo))}</span></div>}
                   <div className={fila}><span className="text-gray-500">ITBIS</span><span className="font-mono">{montoConComas(totals.totalItbis)}</span></div>
+                  {Number(totals.propina) > 0 && <div className={fila}><span className="text-gray-500">Propina</span><span className="font-mono">{montoConComas(totals.propina)}</span></div>}
                   <div className="flex items-center justify-between border-t pt-1 text-lg font-black text-[#c00000]"><span>Total</span><span className="font-mono">RD$ {montoConComas(totals.totalFactura)}</span></div>
                 </div>
 

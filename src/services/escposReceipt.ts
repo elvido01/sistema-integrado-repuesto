@@ -204,6 +204,7 @@ interface FacturaData {
     // inmueble (lib/ecfImpresion.js → completarExtras).
     itbis_retenido?: number;
     isr_retenido?: number;
+    propina?: number;
     _tiene_inmueble?: boolean;
     _moneda?: string;
     _tasa?: number;
@@ -374,6 +375,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     lines.push(totalsRow('Sub-Total :', fmt(subtotal)));
     lines.push(totalsRow('Descuento en Items:', fmt(factura.descuento || 0)));
     lines.push(totalsRow('ITBIS :', fmt(totalItbis)));
+    if (Number(factura.propina) > 0) lines.push(totalsRow('Propina :', fmt(Number(factura.propina))));
     lines.push(padR('Valores en', W - 12) + padL('============', 12));
     lines.push(padR(factura._moneda === 'USD' ? 'USD' : 'DOP', 10) + CMD.BOLD_ON + padL('TOTAL :', W - 10 - 12) + padL(fmt(factura.total || 0), 12) + CMD.BOLD_OFF);
     if (factura._moneda === 'USD' && factura._tasa) {
@@ -387,7 +389,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     if (retItbis + retIsr > 0) {
         if (retItbis > 0) lines.push(totalsRow('ITBIS retenido:', '-' + fmt(retItbis)));
         if (retIsr > 0) lines.push(totalsRow('ISR retenido:', '-' + fmt(retIsr)));
-        lines.push(CMD.BOLD_ON + totalsRow('NETO A COBRAR:', fmt((Number(factura.total) || 0) - retItbis - retIsr)) + CMD.BOLD_OFF);
+        lines.push(CMD.BOLD_ON + totalsRow('TOTAL A PAGAR:', fmt((Number(factura.total) || 0) - retItbis - retIsr)) + CMD.BOLD_OFF);
     }
     if (factura._tiene_inmueble) {
         lines.push(dashLine());

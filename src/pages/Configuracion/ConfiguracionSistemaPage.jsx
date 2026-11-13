@@ -91,6 +91,8 @@ const ConfiguracionSistemaPage = () => {
         emisor_persona_fisica: false,
         retencion_itbis_aplica: true,
         isr_retencion_pct: 15,
+        isr_retencion_tecnico_pct: 3,
+        usa_propina: false,
         incluir_existencias_cero_default: true,
         cobranza_hora_corte: '17:50',
         cobranza_buscador_telefono: '',
@@ -159,6 +161,8 @@ const ConfiguracionSistemaPage = () => {
                     emisor_persona_fisica: !!data.emisor_persona_fisica,
                     retencion_itbis_aplica: data.retencion_itbis_aplica !== false,
                     isr_retencion_pct: data.isr_retencion_pct ?? 15,
+                    isr_retencion_tecnico_pct: data.isr_retencion_tecnico_pct ?? 3,
+                    usa_propina: !!data.usa_propina,
                     incluir_existencias_cero_default: data.incluir_existencias_cero_default ?? true,
                     cobranza_hora_corte: (data.cobranza_hora_corte || '17:50').slice(0, 5),
                     cobranza_buscador_telefono: data.cobranza_buscador_telefono || '',
@@ -231,6 +235,8 @@ const ConfiguracionSistemaPage = () => {
                 // La inmobiliaria vende solares a plazos con el motor de préstamos.
                 feat_financiera: ['financiera', 'inmobiliaria'].includes(formData.tipo_negocio),
                 isr_retencion_pct: Number.isFinite(parseFloat(formData.isr_retencion_pct)) ? parseFloat(formData.isr_retencion_pct) : 15,
+                isr_retencion_tecnico_pct: Number.isFinite(parseFloat(formData.isr_retencion_tecnico_pct)) ? parseFloat(formData.isr_retencion_tecnico_pct) : 3,
+                usa_propina: !!formData.usa_propina,
                 updated_at: new Date().toISOString()
             };
             
@@ -756,7 +762,7 @@ const ConfiguracionSistemaPage = () => {
                                 <label className="flex items-start gap-2 text-sm">
                                     <input type="checkbox" className="mt-1" checked={!!formData.emisor_persona_fisica}
                                         onChange={(e) => setFormData(prev => ({ ...prev, emisor_persona_fisica: e.target.checked }))} />
-                                    <span>La empresa factura como <strong>persona física</strong> (profesional independiente). Le retienen el <strong>100% del ITBIS</strong> y el ISR de abajo.</span>
+                                    <span>La empresa factura como <strong>persona física</strong> (profesional independiente). Le retienen el <strong>100% del ITBIS</strong> y el ISR de abajo. Si el RNC es una cédula (11 dígitos) se toma como persona física aunque no esté marcado.</span>
                                 </label>
                                 <label className="flex items-start gap-2 text-sm">
                                     <input type="checkbox" className="mt-1" checked={formData.retencion_itbis_aplica !== false}
@@ -769,6 +775,18 @@ const ConfiguracionSistemaPage = () => {
                                         value={formData.isr_retencion_pct}
                                         onChange={(e) => setFormData(prev => ({ ...prev, isr_retencion_pct: e.target.value }))} />
                                     <span>% <span className="text-[10px] text-gray-500">(15% desde el 01/07/2026, Ley 30-26)</span></span>
+                                </label>
+                                <label className="flex items-center gap-2 text-sm">
+                                    <span>Retención de ISR a servicios <strong>técnicos</strong> (lavado, limpieza, mecánica, albañilería):</span>
+                                    <input type="number" min="0" max="100" step="0.5" className="h-8 w-20 rounded border px-2 text-right font-bold"
+                                        value={formData.isr_retencion_tecnico_pct}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, isr_retencion_tecnico_pct: e.target.value }))} />
+                                    <span>% <span className="text-[10px] text-gray-500">(era 2%; 3% con la Ley 30-26)</span></span>
+                                </label>
+                                <label className="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" className="mt-1" checked={!!formData.usa_propina}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, usa_propina: e.target.checked }))} />
+                                    <span>Mostrar el campo <strong>Propina</strong> al facturar servicios (legal 10% o el monto que deje el cliente). No lleva ITBIS ni retención y va aparte en el 607.</span>
                                 </label>
                                 <p className="text-[10px] text-gray-500 italic">Solo aplica a líneas de SERVICIO y a clientes marcados como "Agente de retención". La factura vale su total; lo que se cobra es el neto. Confirma las tasas con tu contador.</p>
                             </div>

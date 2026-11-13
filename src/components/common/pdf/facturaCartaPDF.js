@@ -270,6 +270,7 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
   totalRow('Descuentos', factura.descuento || 0);
   totalRow('Otros Cargos', factura.recargo || 0);
   totalRow('ITBIS', factura.itbis);
+  if (Number(factura.propina) > 0) totalRow('Propina', factura.propina);
   doc.setLineWidth(0.3);
   doc.line(R - 55, y - 3, R, y - 3);
   y += 0.5;
@@ -299,7 +300,7 @@ export const generateFacturaCartaPDF = async (facturaIn, empresa = {}, accion = 
   if (retI + retS > 0) {
     if (retI > 0) totalRow('ITBIS retenido', -retI);
     if (retS > 0) totalRow('ISR retenido', -retS);
-    totalRow('Neto a cobrar', (Number(factura.total) || 0) - retI - retS, true, 10);
+    totalRow('Total a pagar (neto)', (Number(factura.total) || 0) - retI - retS, true, 10);
   }
   if (factura._tiene_inmueble) {
     doc.setFont('helvetica', 'italic');

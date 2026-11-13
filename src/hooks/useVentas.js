@@ -98,6 +98,13 @@ export const useVentas = () => {
   const [printFormat, setPrintFormat] = useState(() => empresa?.formato_factura || 'pos_4inch'); // pos_4inch, half_page, full_page
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('ventas_printMethod') || 'browser');
   const [recargo, setRecargo] = useState(0);
+  // (13/11/2026) Propina (legal 10 % o voluntaria): no lleva ITBIS ni retención,
+  // suma al total y va aparte en el 607 (sql/retencion_tecnicos_y_propina.sql).
+  const [propina, setPropina] = useState(0);
+  // Retención que el cliente empresa le hará a esta venta (la estima
+  // LineasServicios con la misma regla que la base; la definitiva la pone
+  // recalcular_retenciones_factura al grabar las líneas).
+  const [retencionEstimada, setRetencionEstimada] = useState(0);
   // (28/10/2026) Factura en US$: la base sigue en pesos (montos de siempre);
   // la moneda y la tasa se guardan para imprimir y para el e-CF (OtraMoneda).
   const [moneda, setMoneda] = useState('DOP');
@@ -455,6 +462,8 @@ export const useVentas = () => {
     setCurrentItem(null);
     setEditingItemIndex(null);
     setRecargo(0);
+    setPropina(0);
+    setRetencionEstimada(0);
     setMoneda('DOP');
     setTasaCambio('');
     setTipoPago('EFECTIVO');
@@ -615,15 +624,17 @@ export const useVentas = () => {
       };
     }, { subTotal: 0, totalDescuento: 0, totalItbis: 0, totalFactura: 0 });
 
-    const finalTotal = (calculated.totalFactura || 0) + Number(recargo || 0);
+    const propinaN = Math.max(0, Math.round(Number(propina || 0) * 100) / 100);
+    const finalTotal = (calculated.totalFactura || 0) + Number(recargo || 0) + propinaN;
 
     return {
       subTotal: calculated.subTotal || 0,
       totalDescuento: calculated.totalDescuento || 0,
       totalItbis: calculated.totalItbis || 0,
+      propina: propinaN,
       totalFactura: finalTotal
     };
-  }, [items, recargo]);
+  }, [items, recargo, propina]);
 
   // Igual que arriba: derivado, no guardado. Era un efecto que corría un
   // render DESPUÉS de que totals cambiara, así que al grabar en el acto el
@@ -1046,6 +1057,13 @@ export const useVentas = () => {
         return;
       }
     }
+    // (13/11/2026) Con retención, lo que entra es el neto y la caja cuenta el
+    // total: se factura a crédito y el pago del cliente se registra en Recibos
+    // de Ingreso (el pendiente ya queda en el neto).
+    if (paymentType === 'contado' && retencionEstimada > 0) {
+      toast({ title: 'Factúrela a crédito', description: `El cliente le retiene RD$ ${retencionEstimada.toFixed(2)}: cobra el neto (RD$ ${(totals.totalFactura - retencionEstimada).toFixed(2)}). Póngala a crédito y registre el pago en Recibos de Ingreso.`, variant: 'destructive', duration: 9000 });
+      return;
+    }
     // Validar que el monto recibido no sea menor al total para ventas de contado
     if (paymentType === 'contado') {
       const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
@@ -1056,6 +1074,15 @@ export const useVentas = () => {
         toast({ title: 'Monto insuficiente', description: `El monto recibido (RD$ ${recibido.toFixed(2)}) no puede ser menor al total de la factura (RD$ ${totals.totalFactura.toFixed(2)}).`, variant: 'destructive' });
         return;
       }
+    }
+
+    // (13/11/2026) La propina en el e-CF va como impuesto adicional (código
+    // 001, 10 %) y emitir-fiscal todavía no lo arma: no se emite un e-CF cuyo
+    // total no cuadre con su XML.
+    const esEcf = editingFacturaId ? /^E\d{12}$/.test(String(editingFacturaNcf || '').trim()) : (fiscalActivo && fiscalModo === 'produccion');
+    if (totals.propina > 0 && esEcf) {
+      toast({ variant: 'destructive', title: 'Propina en factura electrónica', description: 'Todavía no se puede poner propina en un e-CF. Quítela o cóbrela aparte.' });
+      return;
     }
 
     setIsSaving(true);
@@ -1176,6 +1203,9 @@ export const useVentas = () => {
         // Con codigo de promocion el canal va siempre, piloto o no: es la
         // razon de ser del codigo.
         ...(promoAplicada ? { promo_codigo_id: promoAplicada.id, canal_origen: promoAplicada.canal } : {}),
+        // Solo cuando hay propina (o se está editando una que la tenía): el
+        // payload de las demás ventas no cambia.
+        ...(totals.propina > 0 || editingFacturaId ? { propina: totals.propina } : {}),
       };
 
       // === Asignar NCF automático según tipo_ncf del cliente (01, 02, 31, 32...) ===
@@ -1207,6 +1237,11 @@ export const useVentas = () => {
 
       let activeFactura;
 
+      if (editingFacturaId && facturaData.forma_pago === 'CREDITO') {
+        const { data: ret } = await supabase.from('facturas').select('itbis_retenido, isr_retenido').eq('id', editingFacturaId).maybeSingle();
+        const yaRetenido = (Number(ret?.itbis_retenido) || 0) + (Number(ret?.isr_retenido) || 0);
+        if (yaRetenido > 0) facturaData.monto_pendiente = Math.max(0, facturaData.monto_pendiente - yaRetenido);
+      }
       if (editingFacturaId) {
         // Mode Update
         const { data, error: updateError } = await supabase
@@ -1668,6 +1703,7 @@ export const useVentas = () => {
       setDiasCredito(factura.dias_credito || 0);
       setMontoRecibido(factura.monto_recibido?.toString() || '');
       setRecargo(factura.recargo || 0);
+      setPropina(Number(factura.propina) || 0);
       setManualClienteNombre(factura.manual_cliente_nombre || '');
       setNotas(factura.notas || '');
 
@@ -1700,6 +1736,8 @@ export const useVentas = () => {
           importe: totalLine,
           costo_unitario: Number(d.costo_unitario || d.productos?.costo || 0),
           max_descuento: d.productos?.max_descuento || 0,
+          naturaleza: d.naturaleza || d.productos?.naturaleza || 'bien',
+          servicio_tipo: d.servicio_tipo || d.productos?.servicio_tipo || null,
         };
       });
 
@@ -2008,6 +2046,8 @@ export const useVentas = () => {
     handleSelectCotizacion,
     handleSelectCotizacionMagna,
     recargo, setRecargo,
+    propina, setPropina,
+    setRetencionEstimada,
     tipoPago, setTipoPago,
     cuentaBancoId, setCuentaBancoId,
     notas, setNotas,

@@ -78,6 +78,8 @@ const VentasPage = () => {
     printFormat, setPrintFormat,
     printMethod, setPrintMethod,
     recargo, setRecargo,
+    propina, setPropina,
+    setRetencionEstimada,
     tipoPago, setTipoPago,
     cuentaBancoId, setCuentaBancoId,
     pagos, setPagos,
@@ -1032,7 +1034,7 @@ const VentasPage = () => {
             <LineasServicios items={items} setItems={setItems} cliente={cliente} moneda={moneda} tasa={tasaCambio}
               // Lleva e-CF ESTA factura (no la empresa): la base retiene según el NCF real.
               emiteEcf={editingFacturaId ? /^E\d{12}$/.test(String(editingFacturaNcf || '').trim()) : !!ncfPreview?.electronico}
-              movil={movil} />
+              movil={movil} propina={propina} setPropina={setPropina} onRetencion={setRetencionEstimada} />
           ) : (
           <VentasTable
             items={items}

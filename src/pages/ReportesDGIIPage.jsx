@@ -89,7 +89,7 @@ const ReportesDGIIPage = () => {
       // (cuando se emitio via PSFE como Alegra). Buscamos en ambas fuentes.
       const vRaw = await traerTodo(() => supabase
         .from('facturas')
-        .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, itbis_retenido, isr_retenido, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
+        .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, propina, itbis_retenido, isr_retenido, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
         .gte('fecha', rangoDeFechas(desde, hasta).desde)
         .lte('fecha', rangoDeFechas(desde, hasta).hasta)
         .neq('estado', 'ANULADA')
@@ -254,6 +254,7 @@ const ReportesDGIIPage = () => {
         { header: 'Fecha', key: 'fecha', width: 12 },
         { header: 'Subtotal', key: 'subtotal', width: 12 },
         { header: 'ITBIS', key: 'itbis', width: 12 },
+        { header: 'Propina', key: 'propina', width: 10 },
         { header: 'Total', key: 'total', width: 12 },
         { header: 'Forma Pago', key: 'forma_pago', width: 14 },
       ];
@@ -264,6 +265,7 @@ const ReportesDGIIPage = () => {
         ncf: v.ncf,
         fecha: fmtFecha(v.fecha),
         subtotal: montoFacturado607(v),
+        propina: parseFloat(v.propina || 0),
         itbis: parseFloat(v.itbis || 0),
         total: parseFloat(v.total || 0),
         forma_pago: v.forma_pago || '',

@@ -220,6 +220,8 @@ export const generateFacturaPDF = async (facturaIn, empresa = {}) => {
 
     // ITBIS
     addTotalRow("ITBIS :", formatCurrency(factura.itbis));
+    // (13/11/2026) Propina: suma al total, sin ITBIS.
+    if (Number(factura.propina) > 0) addTotalRow("Propina :", formatCurrency(factura.propina));
 
     // Separator ==========
     doc.setFontSize(10);
@@ -233,6 +235,15 @@ export const generateFacturaPDF = async (facturaIn, empresa = {}) => {
     doc.text(formatCurrency(factura.total), totValuesX, currentY, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     currentY += 14;
+
+    // Retenciones del cliente agente de retención: lo que se cobra es el neto.
+    const retI = Number(factura.itbis_retenido) || 0;
+    const retS = Number(factura.isr_retenido) || 0;
+    if (retI + retS > 0) {
+      if (retI > 0) addTotalRow("ITBIS retenido :", '-' + formatCurrency(retI));
+      if (retS > 0) addTotalRow("ISR retenido :", '-' + formatCurrency(retS));
+      addTotalRow("TOTAL A PAGAR :", formatCurrency((Number(factura.total) || 0) - retI - retS), true, 11);
+    }
 
     // --- Separator ---
     doc.setLineDashPattern([2, 2], 0);

@@ -57,13 +57,15 @@ export default function NaturalezaProducto({ formData, setFormData }) {
             <span className="text-[11px] font-semibold text-gray-600">Tipo de servicio (decide las retenciones)</span>
             <select className={campo} value={formData.servicio_tipo || 'profesional'}
               onChange={(e) => setFormData((p) => ({ ...p, servicio_tipo: e.target.value }))}>
-              <option value="profesional">Profesional (honorarios, asesoría, mantenimiento)</option>
+              <option value="profesional">Profesional (honorarios, asesoría, comisiones)</option>
+              <option value="tecnico">Técnico (lavado, limpieza, mecánica, albañilería, plomería)</option>
               <option value="alquiler">Alquiler (local, vivienda, equipo)</option>
-              <option value="otro">Otro (sin retención)</option>
+              <option value="otro">Otro (sin retención de ISR)</option>
             </select>
           </label>
           <p className="text-[10px] text-gray-500 leading-snug">
-            El alquiler de <b>vivienda familiar</b> es exento de ITBIS: ponle ITBIS 0%. El de local comercial lleva 18%.
+            Si su empresa es persona física, el cliente empresa le retiene ISR: profesional y alquiler 15%, técnico 3% (se cambia en Configuración), y el ITBIS completo.
+            El alquiler de <b>vivienda familiar</b> es exento de ITBIS: ponle ITBIS 0%.
           </p>
         </div>
       )}

@@ -15,10 +15,14 @@
 //
 // La referencia viaja dentro de la descripción ("… — PAGO DE 5%") para que
 // salga en todos los formatos de impresión sin tocarlos.
+//
+// (13/11/2026) Propina (si la empresa la usa) y retención a servicios
+// técnicos (ISR 3 %): sql/retencion_tecnicos_y_propina.sql.
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Plus, Trash2, Percent, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { cleanRncCedula } from '@/lib/dgiiExport';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -51,7 +55,7 @@ const partir = (it) => {
   return i > 0 ? { desc: d.slice(0, i), ref: d.slice(i + SEP.length) } : { desc: d, ref: '' };
 };
 
-export default function LineasServicios({ items, setItems, cliente, moneda = 'DOP', tasa = '', emiteEcf: emiteEcfProp, movil = false }) {
+export default function LineasServicios({ items, setItems, cliente, moneda = 'DOP', tasa = '', emiteEcf: emiteEcfProp, movil = false, propina = 0, setPropina, onRetencion }) {
   // (28/10/2026) En US$ los montos se escriben en dólares y se guardan en
   // pesos (× tasa): la venta, la caja y el 607 siguen en pesos.
   const factor = moneda === 'USD' && n(tasa) > 0 ? n(tasa) : 1;
@@ -81,7 +85,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
         supabase.from('productos').select('id, codigo, descripcion, precio, costo, itbis_pct, naturaleza, servicio_tipo')
           .eq('tenant_id', tenantId).eq('activo', true).in('naturaleza', ['servicio', 'inmueble']).order('descripcion').limit(500),
         supabase.rpc('asegurar_servicio_general'),
-        supabase.from('config_empresa').select('emisor_persona_fisica, retencion_itbis_aplica, isr_retencion_pct').eq('tenant_id', tenantId).maybeSingle(),
+        supabase.from('config_empresa').select('rnc, emisor_persona_fisica, retencion_itbis_aplica, isr_retencion_pct, isr_retencion_tecnico_pct, usa_propina').eq('tenant_id', tenantId).maybeSingle(),
       ]);
       if (!vivo) return;
       setCatalogo((prods || []).filter((p) => p.codigo !== 'SERV-GENERAL'));
@@ -199,23 +203,47 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
 
   // Totales y retención ESTIMADA (la definitiva la calcula la base al grabar,
   // con el NCF ya asignado): misma regla que recalcular_retenciones_factura.
+  // Persona física: el indicador o un RNC de 11 dígitos (cédula). Misma regla
+  // que recalcular_retenciones_factura (sql/retencion_tecnicos_y_propina.sql).
+  const pf = !!cfg && (!!cfg.emisor_persona_fisica || cleanRncCedula(cfg.rnc).length === 11);
   const t = useMemo(() => {
     const totalRD = filas.reduce((s, f) => s + n(f.precio) * n(f.cantidad || 1), 0);
     const total = totalRD / factor;
     const itbis = filas.reduce((s, f) => s + n(f.itbis), 0) / factor;
     let retI = 0; let retS = 0;
+    // Persona física: el indicador o un RNC de 11 dígitos (cédula).
     if (cliente?.agente_retencion && cfg) {
-      const fRet = cfg.emisor_persona_fisica ? 1 : (emiteEcf ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0));
+      const fRet = pf ? 1 : (emiteEcf ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0));
       for (const f of filas) {
         if (f.naturaleza !== 'servicio') continue;
-        if (f.servicio_tipo === 'profesional') retI += (n(f.itbis) / factor) * fRet;
-        if (cfg.emisor_persona_fisica && ['profesional', 'alquiler'].includes(f.servicio_tipo)) {
-          retS += ((n(f.precio) - n(f.itbis)) / factor) * n(cfg.isr_retencion_pct ?? 15) / 100;
-        }
+        // A persona física se le retiene el ITBIS de todo servicio; a sociedad, solo el de los profesionales.
+        if (pf || f.servicio_tipo === 'profesional') retI += (n(f.itbis) / factor) * fRet;
+        const base = (n(f.precio) - n(f.itbis)) / factor;
+        if (pf && ['profesional', 'alquiler'].includes(f.servicio_tipo)) retS += base * n(cfg.isr_retencion_pct ?? 15) / 100;
+        if (pf && f.servicio_tipo === 'tecnico') retS += base * n(cfg.isr_retencion_tecnico_pct ?? 3) / 100;
       }
     }
-    return { total, totalRD, itbis, subtotal: total - itbis, retI, retS };
-  }, [filas, cliente, cfg, emiteEcf, factor]);
+    // La propina se escribe en la moneda de la venta y se guarda en pesos.
+    const prop = n(propina) / factor;
+    return { total: total + prop, totalRD: totalRD + n(propina), itbis, subtotal: total - itbis, prop, retI, retS };
+  }, [filas, cliente, cfg, pf, emiteEcf, factor, propina]);
+  // La venta sabe cuánto le van a retener (para no cobrarla de contado por el total).
+  useEffect(() => { onRetencion?.(Math.round((t.retI + t.retS) * factor * 100) / 100); }, [t.retI, t.retS, factor, onRetencion]);
+  const usaPropina = !!cfg?.usa_propina || n(propina) > 0;
+  // Lo que se teclea se guarda como texto (si no, el punto decimal se borra al escribir).
+  const [propTxt, setPropTxt] = useState('');
+  useEffect(() => {
+    // Propina puesta desde afuera (factura cargada, venta nueva): se muestra.
+    if (Math.round(n(propTxt) * factor * 100) !== Math.round(n(propina) * 100)) {
+      setPropTxt(n(propina) ? String(Math.round((n(propina) / factor) * 100) / 100) : '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propina, factor]);
+  const ponPropina = (v) => {
+    const limpio = String(v).replace(/[^0-9.]/g, '').replace(/^(\d*\.\d{0,2}).*$/, '$1');
+    setPropTxt(limpio);
+    setPropina?.(Math.round(n(limpio) * factor * 100) / 100);
+  };
 
   const celda = 'w-full bg-transparent px-2 py-1.5 text-[13px] focus:bg-yellow-50 focus:outline-none';
 
@@ -412,6 +440,21 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
         <div className={movil ? 'w-full text-sm' : 'min-w-[260px] text-[12px]'}>
           <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-mono">{money(t.subtotal)}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">ITBIS</span><span className="font-mono">{money(t.itbis)}</span></div>
+          {usaPropina && setPropina && (
+            <div className="flex items-center justify-between gap-2 py-0.5">
+              <span className="text-slate-500">Propina</span>
+              <span className="flex items-center gap-1">
+                <button type="button" title="Propina legal: 10% del monto sin ITBIS" disabled={emiteEcf}
+                  className="rounded border border-slate-300 px-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  onClick={() => ponPropina((t.subtotal * 0.10).toFixed(2))}>10%</button>
+                <input className={`rounded border border-slate-300 px-1.5 text-right font-mono ${movil ? 'h-9 w-28 text-base' : 'h-6 w-24'}`}
+                  inputMode="decimal" placeholder="0.00" value={propTxt}
+                  onChange={(e) => ponPropina(e.target.value)} disabled={emiteEcf}
+                  title={emiteEcf ? 'La propina todavía no va en la factura electrónica' : 'No lleva ITBIS ni retención'} />
+              </span>
+            </div>
+          )}
+          {usaPropina && emiteEcf && <div className="text-[10px] text-amber-700">La propina todavía no se puede poner en un e-CF.</div>}
           <div className="flex justify-between font-bold"><span>Total {sim}</span><span className="font-mono">{money(t.total)}</span></div>
           {moneda === 'USD' && (
             <div className="flex justify-between text-[11px] text-slate-500">
@@ -423,11 +466,11 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
             <>
               {t.retI > 0 && <div className="flex justify-between text-amber-800"><span>ITBIS retenido por el cliente</span><span className="font-mono">-{money(t.retI)}</span></div>}
               {t.retS > 0 && <div className="flex justify-between text-amber-800"><span>ISR retenido por el cliente</span><span className="font-mono">-{money(t.retS)}</span></div>}
-              <div className="flex justify-between border-t font-black text-emerald-800"><span>Neto a cobrar</span><span className="font-mono">{money(t.total - t.retI - t.retS)}</span></div>
-              <div className="text-[10px] text-slate-400">Estimado: la retención definitiva se calcula al grabar.</div>
+              <div className="flex justify-between border-t font-black text-emerald-800"><span>Total a pagar (neto)</span><span className="font-mono">{money(t.total - t.retI - t.retS)}</span></div>
+              <div className="text-[10px] text-slate-400">Estimado: la retención definitiva se calcula al grabar. Va a crédito: el cliente paga el neto.</div>
             </>
           )}
-          {cliente?.agente_retencion && t.retI + t.retS === 0 && emiteEcf && !cfg?.emisor_persona_fisica && (
+          {cliente?.agente_retencion && t.retI + t.retS === 0 && emiteEcf && !pf && (
             <div className="text-[10px] text-slate-500">Cliente agente de retención: con e-CF y emisor persona jurídica no se retiene ITBIS (Norma 02-2026).</div>
           )}
         </div>

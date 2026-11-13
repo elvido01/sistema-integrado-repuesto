@@ -66,8 +66,12 @@ export const formaPago607 = (v) => {
   return 'otros';
 };
 
-/** Monto facturado sin impuestos: total − ITBIS (ya con descuentos y recargos). */
-export const montoFacturado607 = (v) => (parseFloat(v.total) || 0) - (parseFloat(v.itbis) || 0);
+/**
+ * Monto facturado sin impuestos: total − ITBIS − propina (ya con descuentos y
+ * recargos). La propina va en su columna (16) y no es operación del IT-1
+ * (DGII, consulta 22 de oct. 2023).
+ */
+export const montoFacturado607 = (v) => (parseFloat(v.total) || 0) - (parseFloat(v.itbis) || 0) - (parseFloat(v.propina) || 0);
 
 export const generar607 = (ventas) => {
   return ventas.map(v => {
@@ -101,7 +105,7 @@ export const generar607 = (ventas) => {
       '0.00',                          // 13
       '0.00',                          // 14
       '0.00',                          // 15
-      '0.00',                          // 16
+      fmtMonto(v.propina || 0),        // 16 monto propina legal
       fmtMonto(efectivo),              // 17
       fmtMonto(cheque),                // 18
       fmtMonto(tarjeta),               // 19

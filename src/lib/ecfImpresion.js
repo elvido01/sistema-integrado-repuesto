@@ -50,14 +50,14 @@ async function completarExtras(factura) {
       supabase.from('facturas').select('*').eq('id', factura.id).maybeSingle(),
       supabase.from('facturas_detalle').select('naturaleza').eq('factura_id', factura.id),
     ]);
-    if (!e1 && f) { out.itbis_retenido = Number(f.itbis_retenido) || 0; out.isr_retenido = Number(f.isr_retenido) || 0; }
+    if (!e1 && f) { out.itbis_retenido = Number(f.itbis_retenido) || 0; out.isr_retenido = Number(f.isr_retenido) || 0; out.propina = Number(f.propina) || 0; }
     if (!e2) out._tiene_inmueble = (dets || []).some((d) => d.naturaleza === 'inmueble');
     // (28/10/2026) Factura en US$: los montos guardados están en pesos; para
     // imprimir se pasan a dólares con SU tasa (la del día de la factura).
     if (!e1 && f?.moneda === 'USD' && Number(f.tasa_cambio) > 0) {
       const tasa = Number(f.tasa_cambio);
       const div = (v) => (v == null || v === '' ? v : Math.round((Number(v) / tasa) * 100) / 100);
-      for (const k of ['subtotal', 'descuento', 'itbis', 'total', 'recargo', 'monto_recibido', 'cambio', 'monto_pendiente', 'itbis_retenido', 'isr_retenido']) {
+      for (const k of ['subtotal', 'descuento', 'itbis', 'total', 'recargo', 'monto_recibido', 'cambio', 'monto_pendiente', 'itbis_retenido', 'isr_retenido', 'propina']) {
         if (k in out) out[k] = div(out[k]);
       }
       const conv = (d) => ({ ...d, precio: div(d.precio), importe: div(d.importe), itbis: div(d.itbis) });
@@ -78,6 +78,10 @@ export function extrasFacturaHtml(factura, { fuente = '12px' } = {}) {
   if (!factura) return '';
   const ri = Number(factura.itbis_retenido) || 0;
   const rs = Number(factura.isr_retenido) || 0;
+  const pr = Number(factura.propina) || 0;
+  const usd = factura._moneda === 'USD';
+  // En US$ todo lo de abajo ya viene en dólares (completarExtras).
+  const mon = (v) => `${usd ? 'US$' : 'RD$'} ${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const partes = [];
   if (factura._moneda === 'USD') {
     partes.push(`<div style="margin:6px 0;font-size:${fuente};line-height:1.35;border:1px solid #000;padding:4px 6px;">
@@ -85,12 +89,18 @@ export function extrasFacturaHtml(factura, { fuente = '12px' } = {}) {
       Total equivalente en pesos: <b>RD&#36; ${Number(factura._total_rd || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
     </div>`);
   }
+  // (13/11/2026) Propina: ya está dentro del total; se enseña aparte porque no
+  // lleva ITBIS ni retención (sql/retencion_tecnicos_y_propina.sql).
+  if (pr > 0 && ri + rs === 0) {
+    partes.push(`<div style="margin:6px 0 4px auto;max-width:300px;font-size:${fuente};line-height:1.35;display:flex;justify-content:space-between;"><span>Propina (incluida en el total)</span><span>${mon(pr)}</span></div>`);
+  }
   if (ri + rs > 0) {
     const fila = (k, v, b = false) => `<div style="display:flex;justify-content:space-between;${b ? 'font-weight:900;border-top:1px solid #000;padding-top:2px;' : ''}"><span>${k}</span><span>${v}</span></div>`;
     partes.push(`<div style="margin:6px 0 4px auto;max-width:300px;font-size:${fuente};line-height:1.35;">
+      ${pr > 0 ? fila('Propina (incluida en el total)', mon(pr)) : ''}
       ${ri > 0 ? fila('ITBIS retenido por el cliente', `- ${mon(ri)}`) : ''}
       ${rs > 0 ? fila('ISR retenido por el cliente', `- ${mon(rs)}`) : ''}
-      ${fila(`NETO A COBRAR${factura._moneda === 'USD' ? ' US$' : ''}`, (factura._moneda === 'USD' ? 'US$ ' : 'RD$ ') + Number((Number(factura.total) || 0) - ri - rs).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), true)}
+      ${fila(`TOTAL A PAGAR (NETO)${factura._moneda === 'USD' ? ' US$' : ''}`, (factura._moneda === 'USD' ? 'US$ ' : 'RD$ ') + Number((Number(factura.total) || 0) - ri - rs).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), true)}
     </div>`);
   }
   if (factura._tiene_inmueble) {
