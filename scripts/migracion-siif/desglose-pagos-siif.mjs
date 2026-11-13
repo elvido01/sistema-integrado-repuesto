@@ -88,7 +88,7 @@ for (const base of EMP.bases) {
   }
   const antes = recibos.length;
   const unicos = [...visto.entries()].filter(([k]) => !malos.has(k)).map(([, r]) => r);
-  recibos.length = 0; recibos.push(...unicos);
+  recibos.length = 0; for (const r of unicos) recibos.push(r); // sin spread: 150k elementos revientan la pila
   if (malos.size) console.log(`  ${malos.size} recibos repetidos entre bases con cifras distintas: se saltan`);
   if (antes !== recibos.length) console.log(`  ${antes - recibos.length} filas repetidas/descartadas`);
 }
