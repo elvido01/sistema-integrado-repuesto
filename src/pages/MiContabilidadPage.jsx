@@ -9,6 +9,8 @@
 //      presentarlos; con avisos en la campanita si se encienden.
 // Todo sale de la RPC contab_resumen_mes (sql/ayudante_contable_fase1.sql),
 // la misma que usa la app. Es un ESTIMADO: no sustituye la declaración.
+// Fase 3 (13/11/2026): pestañas «Hoja del IT-1» (casilla por casilla) y
+// «Guía paso a paso» (components/contabilidad).
 // ============================================================
 import React, { useCallback, useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
@@ -18,6 +20,8 @@ import { usePanels } from '@/contexts/PanelContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, RefreshCw, Calculator, AlertTriangle, CalendarCheck, CheckCircle2, Circle, Bell, BellOff, FileText } from 'lucide-react';
+import HojaIT1 from '@/components/contabilidad/HojaIT1';
+import GuiaContable from '@/components/contabilidad/GuiaContable';
 import { formatFechaDMY } from '@/lib/dateUtils';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -47,6 +51,7 @@ const MiContabilidadPage = () => {
   const [loading, setLoading] = useState(false);
   const [saldo, setSaldo] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [tab, setTab] = useState('resumen'); // resumen | hoja | guia
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -107,7 +112,20 @@ const MiContabilidadPage = () => {
           </Button>
         </div>
 
-        {loading && !data ? (
+        <div className="flex flex-wrap gap-1 bg-white rounded-lg border shadow-sm p-1">
+          {[['resumen', 'Resumen del mes'], ['hoja', 'Hoja del IT-1'], ['guia', 'Guía paso a paso']].map(([k, t]) => (
+            <button key={k} type="button" onClick={() => setTab(k)}
+              className={`flex-1 min-w-[120px] rounded-md px-3 py-1.5 text-sm font-bold ${tab === k ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'hoja' ? (
+          <HojaIT1 periodo={periodo} onSaldoGuardado={cargar} />
+        ) : tab === 'guia' ? (
+          <GuiaContable periodo={periodo} onVerPestana={setTab} />
+        ) : loading && !data ? (
           <div className="bg-white rounded-lg border p-10 text-center"><Loader2 className="w-6 h-6 animate-spin inline text-slate-400" /></div>
         ) : !data ? null : (
           <>
@@ -160,12 +178,21 @@ const MiContabilidadPage = () => {
                   </tr>
                 </tbody>
               </table>
-              {(Number(compras.itbis_retenido_a_suplidores) > 0 || Number(compras.isr_retenido_a_suplidores) > 0) && (
+              {Number(it.retenido_a_suplidores) > 0 && (
                 <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
-                  Aparte, por el <b>IR-17</b> debe pagar lo que le retuvo a suplidores:
-                  ITBIS {fmt(compras.itbis_retenido_a_suplidores)} · ISR {fmt(compras.isr_retenido_a_suplidores)}.
+                  En el mismo IT-1 paga además el <b>ITBIS que usted le retuvo a suplidores</b>: {fmt(it.retenido_a_suplidores)}.
+                  {' '}Total a pagar en el IT-1: <b>{fmt(it.total_a_pagar)}</b>.
                 </div>
               )}
+              {Number(compras.isr_retenido_a_suplidores) > 0 && (
+                <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+                  Aparte, por el <b>IR-17</b> (día 10) paga el ISR que le retuvo a suplidores: {fmt(compras.isr_retenido_a_suplidores)}.
+                </div>
+              )}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" className="h-7" onClick={() => setTab('hoja')}>Ver casilla por casilla (Hoja del IT-1)</Button>
+                <Button size="sm" variant="outline" className="h-7" onClick={() => setTab('guia')}>¿Cómo se declara? Guía paso a paso</Button>
+              </div>
             </div>
 
             {/* 2. Lo que le falta al mes */}

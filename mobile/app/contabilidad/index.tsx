@@ -5,12 +5,15 @@
 // RPC contab_resumen_mes: ITBIS estimado del mes, lo que le falta al mes
 // y los compromisos con la DGII, que se marcan con un toque.
 // Es un ESTIMADO: no sustituye la declaración.
+// Fase 3 (13/11/2026): pestañas «IT-1» (hoja casilla por casilla, RPC
+// contab_hoja_it1) y «Guía» (paso a paso, RPC contab_guia). El texto de la
+// guía viene de la base: es el mismo de la web.
 // ============================================================
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Calculator, CheckCircle2, ChevronLeft, ChevronRight, Circle } from 'lucide-react-native';
+import { ArrowLeft, Calculator, CheckCircle2, ChevronLeft, ChevronRight, Circle, ExternalLink } from 'lucide-react-native';
 import { supabase } from '@/src/supabase/client';
 import { hoyRD } from '@/src/lib/seguimientos';
 
@@ -28,6 +31,23 @@ const MOTIVOS: Record<string, string> = {
   repetida: 'Factura repetida (mismo RNC y NCF)',
 };
 
+const num = (v: any) => (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const Fila = ({ cas, nombre, valor, fuerte, nota }: any) => (
+  <View className={`flex-row items-start py-1.5 border-t border-gray-100 ${fuerte ? 'bg-gray-50' : ''}`}>
+    <Text className="w-10 text-[11px] text-gray-400 mt-0.5">{cas}</Text>
+    <View className="flex-1 pr-2">
+      <Text className={`text-sm ${fuerte ? 'font-bold text-gray-900' : 'text-gray-700'}`}>{nombre}</Text>
+      {!!nota && <Text className="text-[11px] text-gray-500">{nota}</Text>}
+    </View>
+    <Text className={`text-sm text-gray-900 ${fuerte ? 'font-bold' : 'font-semibold'}`}>{num(valor)}</Text>
+  </View>
+);
+
+const Titulo = ({ children }: any) => (
+  <Text className="text-[11px] font-black text-gray-500 uppercase tracking-wider mt-3 mb-1">{children}</Text>
+);
+
 export default function ContabilidadScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -40,6 +60,9 @@ export default function ContabilidadScreen() {
   const [loading, setLoading] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
+  const [tab, setTab] = useState<'resumen' | 'hoja' | 'guia'>('resumen');
+  const [extra, setExtra] = useState<any>(null);      // hoja o guía del período
+  const [cargandoExtra, setCargandoExtra] = useState(false);
   const hoy = hoyRD();
 
   const cargar = useCallback(async () => {
@@ -51,6 +74,39 @@ export default function ContabilidadScreen() {
   }, [periodo]);
 
   useEffect(() => { setLoading(true); cargar(); }, [cargar]);
+
+  // Hoja del IT-1 y guía: se piden al abrir su pestaña o cambiar de mes.
+  useEffect(() => {
+    if (tab === 'resumen') return;
+    let vivo = true;
+    setExtra(null);
+    setCargandoExtra(true);
+    supabase.rpc(tab === 'hoja' ? 'contab_hoja_it1' : 'contab_guia', { p_anio: periodo.anio, p_mes: periodo.mes })
+      .then(({ data: r, error }) => {
+        if (!vivo) return;
+        if (error) Alert.alert('No se pudo cargar', error.message);
+        else setExtra({ tab, r });
+        setCargandoExtra(false);
+      });
+    return () => { vivo = false; };
+  }, [tab, periodo]);
+
+  const sig = periodo.mes === 12 ? { anio: periodo.anio + 1, mes: 1 } : { anio: periodo.anio, mes: periodo.mes + 1 };
+  const guardarSaldoSiguiente = (monto: number) => {
+    Alert.alert('Guardar saldo a favor', `${MESES[sig.mes - 1]} ${sig.anio} arrancará con RD$ ${num(monto)} a favor. Hágalo después de declarar.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Guardar', onPress: async () => {
+        const { error } = await supabase.rpc('contab_guardar_saldo', { p_anio: sig.anio, p_mes: sig.mes, p_monto: monto });
+        if (error) Alert.alert('No se pudo guardar', error.message);
+        else { Alert.alert('Guardado', 'Saldo a favor guardado.'); cargar(); }
+      } },
+    ]);
+  };
+
+  const abrirPaso = (p: any) => {
+    if (p.panel === 'comprobantes-gastos') router.push('/comprobantes' as any);
+    else if (p.panel === 'mi-contabilidad') setTab(/IT-1|IR-17/.test(p.titulo) ? 'hoja' : 'resumen');
+  };
 
   const mover = (d: number) => setPeriodo((p) => {
     const n = p.mes + d;
@@ -88,7 +144,163 @@ export default function ContabilidadScreen() {
         <TouchableOpacity onPress={() => mover(1)} className="p-2"><ChevronRight color="#374151" size={22} /></TouchableOpacity>
       </View>
 
-      {loading ? (
+      <View className="bg-white flex-row px-2 py-1.5 border-b border-gray-200">
+        {([['resumen', 'Resumen'], ['hoja', 'IT-1'], ['guia', 'Guía']] as const).map(([k, t]) => (
+          <TouchableOpacity key={k} onPress={() => setTab(k)}
+            className={`flex-1 mx-0.5 py-2 rounded-lg items-center ${tab === k ? 'bg-blue-700' : 'bg-gray-100'}`}>
+            <Text className={`text-sm font-bold ${tab === k ? 'text-white' : 'text-gray-600'}`}>{t}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {tab !== 'resumen' ? (
+        cargandoExtra || !extra || extra.tab !== tab ? (
+          <View className="flex-1 items-center justify-center">{cargandoExtra && <ActivityIndicator size="large" color="#1d4ed8" />}</View>
+        ) : tab === 'hoja' ? (
+          <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 24 }}>
+            <View className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3">
+              <Text className="text-xs text-blue-900">
+                Hoja de trabajo con las casillas del formulario oficial. La Oficina Virtual llena sola varias con su 606 y su 607: si un número no coincide, no envíe todavía.
+                {!extra.r.cerrado ? ' El mes no ha terminado: los números van a cambiar.' : ''}
+              </Text>
+            </View>
+
+            <View className="bg-white border border-gray-200 rounded-xl p-4 mb-3">
+              <Text className="text-sm font-black text-gray-900">Anexo A · se envía primero</Text>
+              <Titulo>II. Ventas por comprobante (sin impuestos)</Titulo>
+              {(extra.r.anexo.ncf || []).filter((n: any) => n.cantidad > 0 || n.cas <= 2).map((n: any) => (
+                <Fila key={n.cas} cas={n.cas} nombre={`${n.nombre} · ${n.cantidad}`} valor={n.monto} />
+              ))}
+              <Fila cas="11" nombre="Total de operaciones" valor={extra.r.anexo.c11} fuerte />
+              <Titulo>III. Por forma de pago (con impuestos)</Titulo>
+              <Fila cas="12" nombre="Efectivo" valor={extra.r.anexo.pago.c12} />
+              <Fila cas="13" nombre="Cheque / transferencia" valor={extra.r.anexo.pago.c13} />
+              <Fila cas="14" nombre="Tarjeta" valor={extra.r.anexo.pago.c14} />
+              <Fila cas="15" nombre="A crédito" valor={extra.r.anexo.pago.c15} />
+              {Number(extra.r.anexo.pago.c18) > 0 && <Fila cas="18" nombre="Otras formas" valor={extra.r.anexo.pago.c18} />}
+              <Fila cas="19" nombre="Total por tipo de venta" valor={extra.r.anexo.c19} fuerte />
+              <Titulo>IV. Por tipo de ingreso</Titulo>
+              <Fila cas="20" nombre="Ingresos por operaciones" valor={extra.r.anexo.c20} />
+              {Number(extra.r.anexo.retenciones_que_le_hicieron) > 0 && (
+                <>
+                  <Titulo>V. Retenciones que le hicieron</Titulo>
+                  <Fila cas="27-31" nombre="ITBIS que le retuvieron" valor={extra.r.anexo.retenciones_que_le_hicieron}
+                    nota="Tarjetas (27), una sociedad (29), el Estado (31)." />
+                </>
+              )}
+              <Titulo>IX. ITBIS pagado deducible (del 606)</Titulo>
+              <Fila cas="50" nombre="En compras locales de bienes" valor={extra.r.anexo.c50} />
+              <Fila cas="51" nombre="En servicios" valor={extra.r.anexo.c51} />
+              <Fila cas="56" nombre="Total ITBIS deducible" valor={extra.r.anexo.c56.total} fuerte />
+            </View>
+
+            <View className="bg-white border border-gray-200 rounded-xl p-4 mb-3">
+              <Text className="text-sm font-black text-gray-900">Formulario IT-1</Text>
+              <Titulo>II. Ingresos por operaciones</Titulo>
+              <Fila cas="1" nombre="Total de operaciones" valor={extra.r.it1.c1} />
+              <Fila cas="4" nombre="Ventas exentas" valor={extra.r.it1.c4} />
+              <Fila cas="10" nombre="Total operaciones gravadas" valor={extra.r.it1.c10} fuerte />
+              <Fila cas="11" nombre="Gravadas al 18 %" valor={extra.r.it1.c11} />
+              {Number(extra.r.it1.c12) > 0 && <Fila cas="12" nombre="Gravadas al 16 %" valor={extra.r.it1.c12} />}
+              <Titulo>III. Liquidación</Titulo>
+              <Fila cas="16" nombre="ITBIS cobrado (18 %)" valor={extra.r.it1.c16} />
+              {Number(extra.r.it1.c17) > 0 && <Fila cas="17" nombre="ITBIS cobrado (16 %)" valor={extra.r.it1.c17} />}
+              <Fila cas="21" nombre="Total ITBIS cobrado" valor={extra.r.it1.c21} fuerte />
+              <Fila cas="22" nombre="ITBIS en compras locales" valor={extra.r.it1.c22} />
+              <Fila cas="23" nombre="ITBIS en servicios" valor={extra.r.it1.c23} />
+              <Fila cas="24" nombre="ITBIS en importaciones" valor={extra.r.it1.c24} nota="MotoFlow no lo tiene." />
+              <Fila cas="25" nombre="Total ITBIS deducible" valor={extra.r.it1.c25} fuerte />
+              <Fila cas="26" nombre="Impuesto a pagar" valor={extra.r.it1.c26} />
+              <Fila cas="27" nombre="Saldo a favor" valor={extra.r.it1.c27} />
+              <Fila cas="29" nombre="Saldo a favor anterior" valor={extra.r.it1.c29} />
+              <Fila cas="30" nombre="Pagos por retenciones" valor={extra.r.it1.c30} />
+              <Fila cas="33" nombre="Diferencia a pagar" valor={extra.r.it1.c33} fuerte />
+              <Fila cas="34" nombre="Nuevo saldo a favor" valor={extra.r.it1.c34} fuerte />
+              {Number(extra.r.it1.c60) > 0 && (
+                <Fila cas="60" nombre="ITBIS que usted retuvo a suplidores" valor={extra.r.it1.c60} nota="Debe cuadrar con el 606." />
+              )}
+              <Fila cas="68" nombre="Total general a pagar" valor={extra.r.it1.c68} fuerte nota="Sin recargos: si declara a tiempo." />
+              <TouchableOpacity onPress={() => guardarSaldoSiguiente(Number(extra.r.it1.c34) || 0)}
+                className="mt-3 border border-emerald-300 bg-emerald-50 rounded-lg py-2.5 px-3">
+                <Text className="text-sm font-bold text-emerald-800 text-center">
+                  Guardar RD$ {num(extra.r.it1.c34)} a favor para {MESES[sig.mes - 1]}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {(extra.r.ir17?.filas || []).length > 0 && (
+              <View className="bg-white border border-gray-200 rounded-xl p-4 mb-3">
+                <Text className="text-sm font-black text-gray-900">IR-17 · ISR retenido a suplidores</Text>
+                <Text className="text-[11px] text-gray-500 mb-1">Día 10. Primero el Anexo R9C.</Text>
+                {extra.r.ir17.filas.map((f: any) => (
+                  <Fila key={`${f.rnc}-${f.ncf}`} cas={`${Number(f.pct)}%`} nombre={f.suplidor || f.rnc} nota={`${f.ncf} · sobre ${num(f.base)}`} valor={f.monto} />
+                ))}
+                <Fila cas="" nombre="Total a pagar en el IR-17" valor={extra.r.ir17.total_isr} fuerte />
+              </View>
+            )}
+
+            {(extra.r.avisos || []).length > 0 && (
+              <View className="bg-white border border-amber-200 rounded-xl p-4">
+                <Text className="text-[11px] font-black text-amber-700 uppercase tracking-wider mb-1">Antes de enviar</Text>
+                {extra.r.avisos.map((x: string) => <Text key={x} className="text-xs text-gray-700 mb-1.5">• {x}</Text>)}
+              </View>
+            )}
+          </ScrollView>
+        ) : (
+          <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 24 }}>
+            <View className="bg-white border border-gray-200 rounded-xl p-3 mb-3">
+              <Text className="text-sm font-black text-gray-900">Qué hacer para estar al día con la DGII</Text>
+              <Text className="text-xs text-gray-500 mt-0.5">
+                {extra.r.contribuyente}{extra.r.rnc ? ` · ${extra.r.rnc}` : ''}{extra.r.nomina ? ' · con nómina' : ''}. Fechas del mes escogido.
+              </Text>
+            </View>
+            {(extra.r.pasos || []).map((p: any) => (
+              <View key={p.n} className="bg-white border border-gray-200 rounded-xl p-4 mb-3">
+                <View className="flex-row items-start">
+                  <View className="w-7 h-7 rounded-full bg-blue-700 items-center justify-center mr-2.5">
+                    <Text className="text-white text-xs font-black">{p.n}</Text>
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-sm font-bold text-gray-900">{p.titulo}</Text>
+                    <Text className="text-xs font-semibold text-blue-800">{p.cuando}</Text>
+                  </View>
+                </View>
+                {(p.pasos || []).map((x: string, i: number) => (
+                  <Text key={x} className="text-sm text-gray-700 mt-2">{i + 1}. {x}</Text>
+                ))}
+                {(p.panel === 'comprobantes-gastos' || p.panel === 'mi-contabilidad') && (
+                  <TouchableOpacity onPress={() => abrirPaso(p)} className="mt-3 border border-blue-200 bg-blue-50 rounded-lg py-2">
+                    <Text className="text-sm font-bold text-blue-800 text-center">
+                      {p.panel === 'comprobantes-gastos' ? 'Abrir Comprobantes de gastos' : /IT-1|IR-17/.test(p.titulo) ? 'Ver la Hoja del IT-1' : 'Ver el Resumen'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {p.panel === 'reportes-dgii' && (
+                  <Text className="text-[11px] text-gray-500 mt-2">Los TXT se bajan desde la página web (Reportes DGII).</Text>
+                )}
+              </View>
+            ))}
+            <View className="bg-white border border-gray-200 rounded-xl p-4 mb-3">
+              <Text className="text-[11px] font-black text-gray-500 uppercase tracking-wider mb-1">Plantillas y páginas oficiales</Text>
+              {(extra.r.plantillas || []).map((l: any) => (
+                <TouchableOpacity key={l.url} onPress={() => Linking.openURL(l.url).catch(() => Alert.alert('No se pudo abrir el enlace'))}
+                  className="flex-row items-start py-2.5 border-t border-gray-100">
+                  <ExternalLink color="#9ca3af" size={16} />
+                  <View className="flex-1 ml-2">
+                    <Text className="text-sm font-semibold text-blue-800">{l.nombre}</Text>
+                    <Text className="text-xs text-gray-500">{l.detalle}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {(extra.r.notas || []).length > 0 && (
+              <View className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                {extra.r.notas.map((x: string) => <Text key={x} className="text-xs text-amber-900 mb-1">• {x}</Text>)}
+              </View>
+            )}
+          </ScrollView>
+        )
+      ) : loading ? (
         <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" color="#1d4ed8" /></View>
       ) : !data ? null : (
         <ScrollView
@@ -116,8 +328,18 @@ export default function ContabilidadScreen() {
                 </View>
               ))}
             </View>
+            {Number(it.retenido_a_suplidores) > 0 && (
+              <Text className="text-xs text-amber-800 mt-2">
+                En el mismo IT-1 paga además el ITBIS que le retuvo a suplidores: {fmt(it.retenido_a_suplidores)}. Total: {fmt(it.total_a_pagar)}.
+              </Text>
+            )}
+            {Number(compras.isr_retenido_a_suplidores) > 0 && (
+              <Text className="text-xs text-amber-800 mt-1">
+                Aparte, por el IR-17 (día 10): ISR retenido {fmt(compras.isr_retenido_a_suplidores)}.
+              </Text>
+            )}
             <Text className="text-[11px] text-gray-500 mt-2">
-              {data.cerrado ? 'Mes cerrado.' : 'El mes no ha terminado: el número cambia con cada venta y compra.'} Es un estimado; el saldo a favor se escribe en la página web.
+              {data.cerrado ? 'Mes cerrado.' : 'El mes no ha terminado: el número cambia con cada venta y compra.'} Es un estimado. El detalle casilla por casilla está en la pestaña IT-1.
             </Text>
           </View>
 

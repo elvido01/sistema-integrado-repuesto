@@ -44,21 +44,40 @@ export const tipoIdentificacion = (rncCedula) => {
 // 12. Retención renta  13. ISR percibido  14. ISC  15. Otros impuestos
 // 16. Monto propina legal  17. Efectivo  18. Cheque/Transf  19. Tarjeta
 // 20. Crédito  21. Bonos  22. Permuta  23. Otras formas
+/**
+ * (13/11/2026) Forma de pago de una venta para el 607 y el IT-1.
+ * En facturas, forma_pago dice CONTADO / CREDITO y tipo_pago el medio
+ * (EFECTIVO, TRANSFERENCIA, TARJETA...). Antes se miraban al revés y toda
+ * venta de contado caía en "otras formas" (col. 23) en vez de efectivo.
+ * La misma regla está en SQL: _contab_ventas_607 (ayudante_contable_fase3.sql).
+ */
+export const formaPago607 = (v) => {
+  const forma = String(v.forma_pago || '').toUpperCase();
+  const tipo = String(v.tipo_pago || '').toUpperCase();
+  if (/CR[EÉ]DITO/.test(forma) || /^CR[EÉ]DITO$/.test(tipo)) return 'credito';
+  const t = `${forma} ${tipo}`;
+  if (/TARJETA|VISA|MASTER/.test(t)) return 'tarjeta';
+  if (/CHEQUE|TRANSFER|DEP[OÓ]SIT/.test(t)) return 'cheque';
+  if (/EFECTIVO|CONTADO/.test(t)) return 'efectivo';
+  return 'otros';
+};
+
+/** Monto facturado sin impuestos: total − ITBIS (ya con descuentos y recargos). */
+export const montoFacturado607 = (v) => (parseFloat(v.total) || 0) - (parseFloat(v.itbis) || 0);
+
 export const generar607 = (ventas) => {
   return ventas.map(v => {
     const rnc = cleanRncCedula(v.cliente_rnc);
     const tipoId = rnc ? tipoIdentificacion(rnc) : '';
-    const formaPago = (v.forma_pago || 'EFECTIVO').toUpperCase();
-    const tipoPago = (v.tipo_pago || 'contado').toLowerCase();
 
     // Distribución por forma de pago (monto total en una sola columna)
     const monto = parseFloat(v.total || 0);
-    const esCredito = tipoPago === 'credito' || tipoPago === 'crédito';
-    const efectivo = !esCredito && formaPago.includes('EFECTIVO') ? monto : 0;
-    const cheque = !esCredito && (formaPago.includes('CHEQUE') || formaPago.includes('TRANSFER') || formaPago.includes('DEPOSIT')) ? monto : 0;
-    const tarjeta = !esCredito && (formaPago.includes('TARJETA') || formaPago.includes('VISA') || formaPago.includes('MASTER')) ? monto : 0;
-    const credito = esCredito ? monto : 0;
-    const otros = (efectivo + cheque + tarjeta + credito === 0) ? monto : 0;
+    const fp = formaPago607(v);
+    const efectivo = fp === 'efectivo' ? monto : 0;
+    const cheque = fp === 'cheque' ? monto : 0;
+    const tarjeta = fp === 'tarjeta' ? monto : 0;
+    const credito = fp === 'credito' ? monto : 0;
+    const otros = fp === 'otros' ? monto : 0;
 
     const fila = [
       rnc,                             // 1
@@ -70,7 +89,7 @@ export const generar607 = (ventas) => {
       // (27/10/2026) Retenciones del cliente agente de retención (servicios).
       // La fecha de retención real es la del pago; se usa la del comprobante.
       (Number(v.itbis_retenido) || 0) + (Number(v.isr_retenido) || 0) > 0 ? fmtFecha(v.fecha) : '', // 7 fecha retención
-      fmtMonto(v.subtotal),            // 8 monto facturado (sin ITBIS)
+      fmtMonto(montoFacturado607(v)),  // 8 monto facturado sin ITBIS (total − ITBIS: el subtotal no trae el descuento)
       fmtMonto(v.itbis),               // 9
       fmtMonto(v.itbis_retenido || 0), // 10 ITBIS retenido por terceros
       '0.00',                          // 11
@@ -88,7 +107,7 @@ export const generar607 = (ventas) => {
       fmtMonto(otros),                 // 23
     ];
     return fila.join('|');
-  }).join('\n');
+  }).join('\r\n');
 };
 
 // ─────────────────────────────────────────────────────────
@@ -258,7 +277,7 @@ export const fila606 = (c) => {
 
 /** TXT del 606: solo lo que revisar606 deja entrar. */
 export const generar606 = (compras, rncEmpresa = '') =>
-  revisar606(compras, rncEmpresa).incluidas.map((c) => fila606(c).join('|')).join('\n');
+  revisar606(compras, rncEmpresa).incluidas.map((c) => fila606(c).join('|')).join('\r\n');
 
 // ─────────────────────────────────────────────────────────
 // 608 — NCF ANULADOS
@@ -274,7 +293,28 @@ export const generar608 = (anulados) => {
       a.tipo_anulacion || '02',
     ];
     return fila.join('|');
-  }).join('\n');
+  }).join('\r\n');
+};
+
+// ─────────────────────────────────────────────────────────
+// Archivo TXT como lo genera la herramienta oficial
+// ─────────────────────────────────────────────────────────
+// (13/11/2026) Cotejado con las macros de las herramientas Excel de la DGII
+// (606 de oct. 2025, 607 de may. 2023 y 608): la PRIMERA línea es el
+// encabezado  <formato>|<RNC>|<AAAAMM>|<cantidad de registros>  y después va
+// un registro por línea, separados por CRLF, sin salto al final. Sin el
+// encabezado la Oficina Virtual no reconoce el archivo.
+export const MAX_REGISTROS_DGII = { 606: 10000, 607: 65000 };
+
+/**
+ * detalle: las líneas ya armadas (generar607/608 o fila606.join('|')),
+ * separadas por salto de línea. Devuelve '' si no hay registros.
+ */
+export const armarTxtDgii = (reporte, rnc, year, month, detalle) => {
+  const lineas = String(detalle || '').split(/\r?\n/).filter((l) => l.trim() !== '');
+  if (!lineas.length) return '';
+  const encabezado = [reporte, cleanRncCedula(rnc), `${year}${pad(month)}`, lineas.length].join('|');
+  return [encabezado, ...lineas].join('\r\n');
 };
 
 // ─────────────────────────────────────────────────────────

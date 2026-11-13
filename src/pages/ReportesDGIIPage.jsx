@@ -13,6 +13,7 @@ import { rangoDeFechas } from '@/lib/dateUtils';
 import {
   generar607, generar608, revisar606, fila606, TIPOS_606, tipoBS606,
   downloadTxt, nombreArchivoDgii, fmtMonto, cleanRncCedula, tipoIdentificacion, fmtFecha,
+  armarTxtDgii, MAX_REGISTROS_DGII, montoFacturado607,
 } from '@/lib/dgiiExport';
 
 const MESES = [
@@ -169,7 +170,7 @@ const ReportesDGIIPage = () => {
   // ── Totales ──
   const totales607 = useMemo(() => ({
     cant: ventas.length,
-    subtotal: ventas.reduce((s, v) => s + parseFloat(v.subtotal || 0), 0),
+    subtotal: ventas.reduce((s, v) => s + montoFacturado607(v), 0), // sin ITBIS y ya con descuentos
     itbis: ventas.reduce((s, v) => s + parseFloat(v.itbis || 0), 0),
     total: ventas.reduce((s, v) => s + parseFloat(v.total || 0), 0),
   }), [ventas]);
@@ -200,11 +201,25 @@ const ReportesDGIIPage = () => {
     else if (reporte === '608') contenido = generar608(anulados.map(a => ({ ncf: a.ncf, fecha: a.updated_at || a.fecha, tipo_anulacion: '02' })));
 
     if (!contenido) {
-      toast({ title: 'Sin datos', description: `No hay registros para el ${reporte} del período seleccionado.` });
+      toast({ title: 'Sin datos', description: `No hay registros para el ${reporte} del período. Si no hubo operaciones, preséntelo en la Oficina Virtual como «Declaración en cero».` });
       return;
     }
-    downloadTxt(contenido, filename);
-    toast({ title: 'Archivo generado', description: filename });
+    // (13/11/2026) El RNC va en la primera línea del archivo: sin él la DGII lo rechaza.
+    const rncLimpio = cleanRncCedula(rnc);
+    if (rncLimpio.length !== 9 && rncLimpio.length !== 11) {
+      toast({ variant: 'destructive', title: 'Falta el RNC de la empresa', description: 'El archivo lleva el RNC (9 dígitos) o la cédula (11) en la primera línea. Póngalo en Perfil Empresa.' });
+      return;
+    }
+    // Con el encabezado de la herramienta oficial: <formato>|<RNC>|<AAAAMM>|<registros>.
+    const txt = armarTxtDgii(reporte, rnc, year, month, contenido);
+    const registros = txt.split('\r\n').length - 1;
+    const tope = MAX_REGISTROS_DGII[reporte];
+    if (tope && registros > tope) {
+      toast({ variant: 'destructive', title: `El ${reporte} tiene ${registros} registros`, description: `La DGII acepta hasta ${tope.toLocaleString('en-US')} por archivo. Consulte cómo dividir el envío antes de subirlo.` });
+      return;
+    }
+    downloadTxt(txt, filename);
+    toast({ title: 'Archivo generado', description: `${filename} · ${registros} registro(s), listo para subir a la Oficina Virtual.` });
   };
 
   // ── Exportar Excel (preview para contador) ──
@@ -230,7 +245,7 @@ const ReportesDGIIPage = () => {
         tipoId: v.cliente_rnc ? tipoIdentificacion(v.cliente_rnc) : '',
         ncf: v.ncf,
         fecha: fmtFecha(v.fecha),
-        subtotal: parseFloat(v.subtotal || 0),
+        subtotal: montoFacturado607(v),
         itbis: parseFloat(v.itbis || 0),
         total: parseFloat(v.total || 0),
         forma_pago: v.forma_pago || '',
@@ -388,7 +403,7 @@ const ReportesDGIIPage = () => {
                           <TableCell className="font-mono">{v.ncf}</TableCell>
                           <TableCell className="truncate max-w-[200px]">{v.cliente_nombre}</TableCell>
                           <TableCell className="font-mono">{cleanRncCedula(v.cliente_rnc) || <span className="text-amber-600">(falta)</span>}</TableCell>
-                          <TableCell className="text-right">{fmtMonto(v.subtotal)}</TableCell>
+                          <TableCell className="text-right">{fmtMonto(montoFacturado607(v))}</TableCell>
                           <TableCell className="text-right">{fmtMonto(v.itbis)}</TableCell>
                           <TableCell className="text-right font-bold">{fmtMonto(v.total)}</TableCell>
                         </TableRow>
