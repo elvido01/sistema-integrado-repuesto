@@ -286,8 +286,8 @@
     "src/components/common/pdf/comisionPDF.js": "9670fced39020a00",
     "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
     "src/components/common/pdf/devolucionPDF.js": "91b42af5e95a7340",
-    "src/components/common/pdf/facturaCartaPDF.js": "be6b1e4159c48bb0",
-    "src/components/common/pdf/facturaPDF.js": "6b7580e23cb79eda",
+    "src/components/common/pdf/facturaCartaPDF.js": "9268cebc44ed6364",
+    "src/components/common/pdf/facturaPDF.js": "19fbec0f585cdf1a",
     "src/components/common/pdf/pagoCompromisoPDF.js": "b6467cc47e39114e",
     "src/components/common/pdf/pagoSuplidorPDF.js": "824f535b5c3e07e3",
     "src/components/common/pdf/reciboPDF.js": "5f98be62fb5785d5",
@@ -332,22 +332,22 @@
     "src/components/ventas/CotizacionSearchModal.jsx": "ea0cda9ca966e217",
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
-    "src/components/ventas/LineasServicios.jsx": "2d55a807abf15b4c",
+    "src/components/ventas/LineasServicios.jsx": "f9a33b72c9c6dd6d",
     "src/components/ventas/ProductSearchModal.jsx": "9e0d52ea0eb3c5a0",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
-    "src/components/ventas/VentasFooter.jsx": "c8393fc8eeea49fb",
+    "src/components/ventas/VentasFooter.jsx": "e5e6958a6e76e566",
     "src/components/ventas/VentasHeader.jsx": "45cf0d1265396b2c",
     "src/components/ventas/VentasTable.jsx": "1e7f3e0995ccdd41",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "192d102a8e234373",
+    "src/hooks/useVentas.js": "19dfebdd6c353791",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
     "src/lib/dgiiCertificacionStorage.js": "9b63d241c5af90e2",
-    "src/lib/dgiiExport.js": "947d7b82bb638094",
+    "src/lib/dgiiExport.js": "95405379a0adcb71",
     "src/lib/dgiiRepresentacionImpresa.js": "9646fb60aae20abe",
-    "src/lib/ecfImpresion.js": "7a42a9cf5f9b1f2e",
+    "src/lib/ecfImpresion.js": "33142e9057386d28",
     "src/lib/nominaUtils.js": "68b952393ad68443",
     "src/lib/paqueteDeCompra.js": "629c5f5d21f039f2",
     "src/lib/printInformePrestamo.js": "74b12b4bd5b20f2d",
@@ -375,9 +375,9 @@
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
     "src/pages/ReciboPagoFinancieraPage.jsx": "1c024a18864ace14",
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
-    "src/pages/ReportesDGIIPage.jsx": "3a67ccfc4b17a2a3",
+    "src/pages/ReportesDGIIPage.jsx": "dd64896e2ed7a355",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "927653bdd019274f",
+    "src/pages/VentasPage.jsx": "ab560f91c8cb0b3a",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -426,7 +426,8 @@
     "sql/dgii_contribuyentes.sql": "2c89f17a81f082e0",
     "sql/reporte_intereses_cobrados.sql": "bccba7f352c814c7",
     "src/components/common/pdf/interesesCobradosPDF.js": "042ff0918afa6af7",
-    "src/pages/InteresesCobradosPage.jsx": "fe26325dc03f5247"
+    "src/pages/InteresesCobradosPage.jsx": "fe26325dc03f5247",
+    "sql/retencion_tecnicos_y_propina.sql": "6fc2ee64cfb21e1d"
   },
   "historial": [
     {
@@ -873,6 +874,22 @@
         "src/hooks/useVentas.js",
         "src/lib/dgiiExport.js",
         "src/pages/ReportesDGIIPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-13",
+      "nota": "code-review high: 10 hallazgos (propina en e-CF al editar, pendiente a credito al editar con retencion, contado con retencion, decimales de la propina, US$ en impreso, naturaleza al editar, PDF POS, Excel 607, regla PF duplicada) arreglados; sin tocar: reportes de ventas que suman total con propina",
+      "archivos": [
+        "sql/retencion_tecnicos_y_propina.sql",
+        "src/components/common/pdf/facturaCartaPDF.js",
+        "src/components/common/pdf/facturaPDF.js",
+        "src/components/ventas/LineasServicios.jsx",
+        "src/components/ventas/VentasFooter.jsx",
+        "src/hooks/useVentas.js",
+        "src/lib/dgiiExport.js",
+        "src/lib/ecfImpresion.js",
+        "src/pages/ReportesDGIIPage.jsx",
+        "src/pages/VentasPage.jsx"
       ]
     }
   ]
