@@ -340,12 +340,12 @@
     "src/components/ventas/VentasTable.jsx": "1e7f3e0995ccdd41",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "4341f14db77c4b62",
+    "src/hooks/useVentas.js": "192d102a8e234373",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
     "src/lib/dgiiCertificacionStorage.js": "9b63d241c5af90e2",
-    "src/lib/dgiiExport.js": "8218170f7aaa5044",
+    "src/lib/dgiiExport.js": "947d7b82bb638094",
     "src/lib/dgiiRepresentacionImpresa.js": "9646fb60aae20abe",
     "src/lib/ecfImpresion.js": "7a42a9cf5f9b1f2e",
     "src/lib/nominaUtils.js": "68b952393ad68443",
@@ -375,7 +375,7 @@
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
     "src/pages/ReciboPagoFinancieraPage.jsx": "1c024a18864ace14",
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
-    "src/pages/ReportesDGIIPage.jsx": "4ec0027918d35e9a",
+    "src/pages/ReportesDGIIPage.jsx": "3a67ccfc4b17a2a3",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
     "src/pages/VentasPage.jsx": "927653bdd019274f",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
@@ -862,6 +862,15 @@
       "fecha": "2026-11-13",
       "nota": "code-review high fase 2 ayudante contable (ReportesDGII + comprobantes de gastos): arreglado lista por fecha de factura, cuadre de montos, doble conteo RNC+NCF, propina col.22, error callado del 606, fecha real, RNC del cliente, HEIC, etiqueta 'va al 606' (entra_606), notas credito/debito fuera, fotos huerfanas",
       "archivos": [
+        "src/lib/dgiiExport.js",
+        "src/pages/ReportesDGIIPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-13",
+      "nota": "code-review high (2 pasadas): 10 + 10 hallazgos; arreglados: paginacion >1000 filas, lotes de documentos_fiscales, respuestas viejas, notas/retencion ISR aparte, por_revisar solo entra_606, gastos ya documentados, avisos aislados por empresa, reposicion sin servicios. Sin tocar: consultas en fila (rendimiento)",
+      "archivos": [
+        "src/hooks/useVentas.js",
         "src/lib/dgiiExport.js",
         "src/pages/ReportesDGIIPage.jsx"
       ]
