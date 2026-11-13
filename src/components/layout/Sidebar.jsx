@@ -211,6 +211,7 @@ const navItems = [
       { title: 'Flujo de Caja', id: 'flujo-caja', icon: DollarSign },
       { title: 'Estado de Resultado', id: 'estado-resultados', icon: DollarSign },
       { title: 'Libros Contables', id: 'libros-contables', icon: FileText },
+      { title: 'Mi Contabilidad', id: 'mi-contabilidad', icon: FileText, permissionKey: 'reportes-dgii' },
       { title: 'Reportes DGII (606/607/608)', id: 'reportes-dgii', icon: FileText },
       { title: 'Comprobantes Fiscales', id: 'comprobantes-fiscales', icon: FileText },
       { title: 'Monitor e-CF DGII', id: 'dgii-monitor', icon: FileText },

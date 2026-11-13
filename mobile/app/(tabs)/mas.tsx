@@ -3,7 +3,7 @@ import { Alert, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users, Repeat } from 'lucide-react-native';
+import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users, Repeat, Calculator } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { canAccessModule } from '@/src/services/permissions';
 import { supabase } from '@/src/supabase/client';
@@ -65,6 +65,9 @@ export default function MasScreen() {
     ...(conSeguimientos
       ? [{ title: segPendientes > 0 ? `Seguimientos (${segPendientes})` : 'Seguimientos', icon: Repeat, route: '/seguimientos', color: '#059669', moduleKey: 'clientes' }]
       : []),
+    // (12/11/2026) Ayudante contable: ITBIS estimado y compromisos con la DGII.
+    // Mismo permiso que Reportes DGII en la web.
+    { title: 'Mi Contabilidad', icon: Calculator, route: '/contabilidad', color: '#1d4ed8', moduleKey: 'reportes-dgii' },
     { title: 'Scanner', icon: Barcode, route: '/(tabs)/scanner', color: '#8b5cf6', moduleKey: 'scanner', quickName: 'scanner' },
     {
       title: isCamineroMotors ? 'Recibo de Pago' : 'Recibo de Ingreso',

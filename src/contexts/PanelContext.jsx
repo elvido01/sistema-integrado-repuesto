@@ -65,6 +65,7 @@ import PlanProGate from '@/components/common/PlanProGate';
 const ContratosAlquilerPage = lazy(() => import('@/pages/ContratosAlquilerPage'));
 const DocumentacionClientePage = lazy(() => import('@/pages/DocumentacionClientePage'));
 const ReportesDGIIPage = lazy(() => import('@/pages/ReportesDGIIPage'));
+const MiContabilidadPage = lazy(() => import('@/pages/MiContabilidadPage'));
 const LibrosContablesPage = lazy(() => import('@/pages/LibrosContablesPage'));
 const EstadoResultadosPage = lazy(() => import('@/pages/EstadoResultadosPage'));
 const AlertasGerencialesPage = lazy(() => import('@/pages/AlertasGerencialesPage'));
@@ -184,6 +185,8 @@ const componentMapping = {
   'contratos-alquiler': { component: () => <Protected module="ventas"><ContratosAlquilerPage /></Protected>, icon: FileText, name: 'Contratos de Alquiler' },
   'documentacion-cliente': { component: () => <Protected module="documentacion-cliente"><DocumentacionClientePage /></Protected>, icon: FileImage, name: 'Documentación Cliente' },
   'reportes-dgii': { component: () => <Protected module="reportes-dgii"><ReportesDGIIPage /></Protected>, icon: FileText, name: 'Reportes DGII' },
+  // (12/11/2026) Ayudante contable: mismo permiso que Reportes DGII.
+  'mi-contabilidad': { component: () => <Protected module="reportes-dgii"><MiContabilidadPage /></Protected>, icon: FileText, name: 'Mi Contabilidad' },
   'libros-contables': { component: () => <Protected module="libros-contables"><PlanGate planes={PLANES_PRO_EN_ADELANTE} nombre="Libros Contables" mensaje={<>Disponible del plan <b className="text-violet-600">Pro</b> en adelante.</>}><LibrosContablesPage /></PlanGate></Protected>, icon: FileText, name: 'Libros Contables' },
   'estado-resultados': { component: () => <Protected module="estado-resultados"><PlanGate planes={PLANES_PRO_EN_ADELANTE} nombre="Estado de Resultado" mensaje={<>Disponible del plan <b className="text-violet-600">Pro</b> en adelante.</>}><EstadoResultadosPage /></PlanGate></Protected>, icon: DollarSign, name: 'Estado de Resultado' },
   'alertas-gerenciales': { component: () => <Protected module="alertas-gerenciales"><AlertasGerencialesPage /></Protected>, icon: BellRing, name: 'Alertas Gerenciales' },

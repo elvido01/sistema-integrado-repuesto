@@ -27,6 +27,10 @@ const NotificationBell = () => {
             // (12/11/2026) "Le diste precio y no volvió a escribir".
             openPanel('seguimientos-hoy');
             setPanelOpen(false);
+        } else if (notif.tipo === 'contab_compromiso') {
+            // (12/11/2026) Vence un compromiso con la DGII.
+            openPanel('mi-contabilidad');
+            setPanelOpen(false);
         } else if (['crm_caliente', 'crm_reporte', 'crm_embudo'].includes(notif.tipo)) {
             // (12/11/2026) Avisos del CRM (cliente esperando, resumen del
             // embudo, quiere comprar / reclamo): al Sales Hub.
@@ -127,6 +131,7 @@ const NotificationBell = () => {
                                                     n.tipo === 'credito_vencido' ? 'Doble clic para abrir Recibo de Ingreso'
                                                     : n.tipo === 'resumen_ai_ceo' ? 'Doble clic para abrir MOTOFLOW IA CEO'
                                                     : n.tipo === 'crm_seguimiento' ? 'Doble clic para abrir Seguimientos de Hoy'
+                                                    : n.tipo === 'contab_compromiso' ? 'Doble clic para abrir Mi Contabilidad'
                                                     : ['crm_caliente', 'crm_reporte', 'crm_embudo'].includes(n.tipo) ? 'Doble clic para abrir el Sales Hub'
                                                     : 'Doble clic para ir al módulo'
                                                 }
