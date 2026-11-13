@@ -1,13 +1,14 @@
 // =====================================================================
 // Propina legal (10 %) — 13/11/2026
 // ---------------------------------------------------------------------
-// La misma base que el e-CF (supabase/functions/emitir-fiscal/
+// La misma cuenta que el e-CF (supabase/functions/emitir-fiscal/
 // dgii_xml_builder.ts → propinaLegalDgii): la suma de los montos de las líneas
-// SIN ITBIS, redondeados línea por línea, por 10 %. Si las dos cuentas no dan
-// lo mismo, la factura no se puede emitir.
+// SIN ITBIS, redondeados línea por línea, por 10 %, redondeando con toFixed
+// igual que allá (en un .xx5 Math.round y toFixed no siempre coinciden). Si
+// las dos cuentas no dan lo mismo, la factura no se puede emitir.
 // =====================================================================
 
-const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+const r2 = (v) => Number((Number(v) || 0).toFixed(2));
 const pct = (v) => { const x = Number(v || 0); return x > 1 ? x / 100 : x; };
 
 /** Monto sin ITBIS de una línea de la venta (precio CON ITBIS, descuento en %). */
