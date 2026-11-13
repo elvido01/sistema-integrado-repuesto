@@ -20,12 +20,10 @@
 // técnicos (ISR 3 %): sql/retencion_tecnicos_y_propina.sql.
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { Plus, Trash2, Percent, Loader2, HandCoins } from 'lucide-react';
+import { Plus, Trash2, Percent, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { cleanRncCedula } from '@/lib/dgiiExport';
 import { propinaLegal } from '@/lib/propinaLegal';
-import { precioLineaDesdeNeto } from '@/lib/facturaNeto';
-import { docFiscalValido } from '@/lib/docFiscal';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -78,9 +76,6 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
   const conItbisRef = useRef(conItbis);
   conItbisRef.current = conItbis;
   const [calc, setCalc] = useState(null);            // { lid, base, pct }
-  // (13/11/2026) «El cliente paga»: { [lid]: texto } y la línea abierta a mano.
-  const [netos, setNetos] = useState({});
-  const [netoAbierto, setNetoAbierto] = useState(null);
   const [cfg, setCfg] = useState(null);
   const [cargando, setCargando] = useState(true);
 
@@ -212,16 +207,6 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
   // Persona física: el indicador o un RNC de 11 dígitos (cédula). Misma regla
   // que recalcular_retenciones_factura (sql/retencion_tecnicos_y_propina.sql).
   const pf = !!cfg && (!!cfg.emisor_persona_fisica || cleanRncCedula(cfg.rnc).length === 11);
-  // Qué le retiene el cliente a una línea: fracción del ITBIS y tasa de ISR.
-  const retencionLinea = useCallback((f) => {
-    if (!cliente?.agente_retencion || !cfg || f.naturaleza !== 'servicio') return { retItbis: 0, isr: 0 };
-    // A persona física se le retiene el ITBIS de todo servicio; a sociedad, solo el de los profesionales.
-    const retItbis = pf ? 1 : (f.servicio_tipo === 'profesional' ? (emiteEcf ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0)) : 0);
-    const isr = !pf ? 0
-      : ['profesional', 'alquiler'].includes(f.servicio_tipo) ? n(cfg.isr_retencion_pct ?? 15) / 100
-      : f.servicio_tipo === 'tecnico' ? n(cfg.isr_retencion_tecnico_pct ?? 3) / 100 : 0;
-    return { retItbis, isr };
-  }, [cliente, cfg, pf, emiteEcf]);
   const t = useMemo(() => {
     const totalRD = filas.reduce((s, f) => s + n(f.precio) * n(f.cantidad || 1), 0);
     const total = totalRD / factor;
@@ -229,14 +214,18 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
     let retI = 0; let retS = 0;
     // Persona física: el indicador o un RNC de 11 dígitos (cédula).
     if (cliente?.agente_retencion && cfg) {
+      const fRet = pf ? 1 : (emiteEcf ? 0 : (cfg.retencion_itbis_aplica !== false ? 0.30 : 0));
       for (const f of filas) {
-        const r = retencionLinea(f);
+        if (f.naturaleza !== 'servicio') continue;
         // La línea completa (cantidad y descuento), como la guarda la venta:
         // importe e ITBIS de la línea, igual que recalcular_retenciones_factura.
         const neto = n(f.precio) * n(f.cantidad || 1) * (1 - n(f.descuento) / 100);
         const itbisLinea = neto - neto / (1 + pct(f.itbis_pct));
-        retI += itbisLinea * r.retItbis;
-        retS += (neto - itbisLinea) * r.isr;
+        // A persona física se le retiene el ITBIS de todo servicio; a sociedad, solo el de los profesionales.
+        if (pf || f.servicio_tipo === 'profesional') retI += itbisLinea * fRet;
+        const base = neto - itbisLinea;
+        if (pf && ['profesional', 'alquiler'].includes(f.servicio_tipo)) retS += base * n(cfg.isr_retencion_pct ?? 15) / 100;
+        if (pf && f.servicio_tipo === 'tecnico') retS += base * n(cfg.isr_retencion_tecnico_pct ?? 3) / 100;
       }
       // Redondeo como la base: cada retención por su lado (en pesos), luego a la moneda.
       retI = Math.round(retI * 100) / 100 / factor;
@@ -245,7 +234,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
     // La propina se escribe en la moneda de la venta y se guarda en pesos.
     const prop = n(propina) / factor;
     return { total: total + prop, totalRD: totalRD + n(propina), itbis, subtotal: total - itbis, prop, retI, retS };
-  }, [filas, cliente, cfg, factor, propina, retencionLinea]);
+  }, [filas, cliente, cfg, pf, emiteEcf, factor, propina]);
   // La venta sabe cuánto le van a retener (para no cobrarla de contado por el total).
   useEffect(() => { onRetencion?.(Math.round((t.retI + t.retS) * factor * 100) / 100); }, [t.retI, t.retS, factor, onRetencion]);
   // Si esta pantalla se cierra, la venta deja de esperar una retención.
@@ -276,54 +265,6 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [legal, diezPctRD]);
   // Factura que se abre con su propina en el 10 %: el botón queda encendido.
-  // ── Factura desde lo que paga el cliente (cliente.cobro_neto) ──
-  // Solo en pesos. La propina legal entra si el cliente paga neto (o si el 10 %
-  // ya está puesto), la empresa la usa y el comprobante la admite: en e-CF
-  // solo crédito fiscal (E31), es decir, cliente con RNC que no sea consumo.
-  const tipoCli = String(cliente?.tipo_ncf || '').toUpperCase().replace(/^[BE]/, '');
-  const ecfAdmitePropina = !emiteEcf || (docFiscalValido(cliente?.rnc) && !['02', '32'].includes(tipoCli));
-  const propinaEnNeto = usaPropina && !!setPropina && factor === 1 && ecfAdmitePropina && (!!cliente?.cobro_neto || legal);
-  const lineasNeto = () => filas.map((f) => ({
-    precio: n(f.precio) * n(f.cantidad || 1) * (1 - n(f.descuento) / 100),
-    itbis: f.naturaleza === 'inmueble' ? 0 : pct(f.itbis_pct ?? 0.18),
-    ...retencionLinea(f),
-  }));
-  const calcNeto = (f) => {
-    const idx = filas.findIndex((x) => x._lid === f._lid);
-    return precioLineaDesdeNeto(lineasNeto(), idx, n(netos[f._lid]), { propina: propinaEnNeto });
-  };
-  const usarNeto = (f) => {
-    const r = calcNeto(f);
-    if (!(r.precio > 0)) return;
-    cambiar(f._lid, { _monto: r.precio.toFixed(2), _conItbis: true, _tecleado: false });
-    if (propinaEnNeto && !legal) setLegal(true);   // la propina legal entra en la cuenta
-    setNetoAbierto(null);
-  };
-  const verNeto = (f) => factor === 1 && (!!cliente?.cobro_neto || netoAbierto === f._lid);
-  // Pasar de un cliente que paga neto a otro: la propina que puso «Usar» se quita.
-  const eraNeto = useRef(false);
-  useEffect(() => {
-    if (eraNeto.current && !cliente?.cobro_neto && legal) { setLegal(false); ponPropina(''); }
-    eraNeto.current = !!cliente?.cobro_neto;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cliente?.id]);
-  const filaNeto = (f) => {
-    const r = n(netos[f._lid]) > 0 ? calcNeto(f) : null;
-    return (
-      <div className={`flex flex-wrap items-center gap-1.5 ${movil ? 'text-sm' : 'text-[12px]'}`}>
-        <span className="font-semibold text-blue-900">El cliente paga:</span>
-        <input className={`rounded border px-2 text-right font-mono ${movil ? 'h-10 w-32 text-base' : 'h-7 w-28'}`} inputMode="decimal" placeholder="600.00"
-          value={netos[f._lid] || ''} onChange={(e) => setNetos((p) => ({ ...p, [f._lid]: e.target.value.replace(/[^0-9.]/g, '') }))} />
-        {r && (
-          <span className="text-slate-600">
-            → servicio <b className="font-mono">{money(r.base)}</b> + ITBIS{propinaEnNeto ? ' + propina 10%' : ''}; paga <b className="font-mono">{money(r.neto)}</b>
-            {Math.abs(r.neto - n(netos[f._lid])) >= 0.005 && <span className="text-amber-700"> (no hay un precio que dé exacto {money(n(netos[f._lid]))})</span>}
-          </span>
-        )}
-        <button type="button" disabled={!r} className={`rounded bg-blue-600 font-bold text-white disabled:opacity-40 ${movil ? 'h-10 px-3' : 'px-2 py-1'}`} onClick={() => usarNeto(f)}>Usar</button>
-      </div>
-    );
-  };
   // Venta nueva (sin líneas): apagado.
   useEffect(() => {
     if (!filas.length) setLegal(false);
@@ -349,10 +290,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
                 )}
     </>
   );
-  const quitar = (lid) => {
-    setNetos({}); setNetoAbierto(null);   // los índices de las líneas viejas se corren
-    setItems((prev) => prev.filter((it, i) => (it._lid || `x${i}`) !== lid));
-  };
+  const quitar = (lid) => setItems((prev) => prev.filter((it, i) => (it._lid || `x${i}`) !== lid));
   const ponDesc = (f, v) => cambiar(f._lid, { _desc: recortar(v, MAX_NOMBRE - largoRef(f._ref)) });
   const ponRef = (f, v) => cambiar(f._lid, { _ref: recortar(v, MAX_NOMBRE - largo(f._desc) - SEP.length) });
   const ponMonto = (f, v) => cambiar(f._lid, { _monto: v.replace(/[^0-9.]/g, '') });
@@ -432,15 +370,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
                   onClick={() => setCalc(calc?.lid === f._lid ? null : { lid: f._lid, base: '', pct: '5' })}>
                   <Percent className="h-5 w-5" />
                 </button>
-                {!cliente?.cobro_neto && factor === 1 && (
-                  <button type="button" title="Calcular desde lo que paga el cliente"
-                    className={`flex h-12 w-12 items-center justify-center rounded-md border ${netoAbierto === f._lid ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-500'}`}
-                    onClick={() => setNetoAbierto(netoAbierto === f._lid ? null : f._lid)}>
-                    <HandCoins className="h-5 w-5" />
-                  </button>
-                )}
               </div>
-              {verNeto(f) && <div className="rounded-md bg-blue-50 p-2">{filaNeto(f)}</div>}
               <div className="text-right text-xs text-slate-500">
                 ITBIS: {f.naturaleza === 'inmueble' ? 'exento' : <span className="font-mono">{money(n(f.itbis) / factor)}</span>}
               </div>
@@ -505,12 +435,6 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
                       onClick={() => setCalc(calc?.lid === f._lid ? null : { lid: f._lid, base: '', pct: '5' })}>
                       <Percent className="h-3.5 w-3.5" />
                     </button>
-                    {!cliente?.cobro_neto && factor === 1 && (
-                      <button type="button" title="Calcular desde lo que paga el cliente" className="px-1 text-slate-400 hover:text-blue-600"
-                        onClick={() => setNetoAbierto(netoAbierto === f._lid ? null : f._lid)}>
-                        <HandCoins className="h-3.5 w-3.5" />
-                      </button>
-                    )}
                   </div>
                 </td>
                 <td className="border-r border-slate-200 px-2 py-1.5 text-right font-mono text-[12px] text-slate-600">
@@ -528,11 +452,6 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
                   <td colSpan={6} className="px-3 py-2 text-[12px]">
                     {calculadora(f)}
                   </td>
-                </tr>
-              )}
-              {verNeto(f) && (
-                <tr className="bg-blue-50/70">
-                  <td colSpan={6} className="px-3 py-1.5">{filaNeto(f)}</td>
                 </tr>
               )}
             </React.Fragment>

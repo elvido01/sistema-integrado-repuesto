@@ -77,7 +77,6 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     mora_pct: 0,
     generar_mora: true, // cotejo "Generar Cargos por Atrasos (MORA)?"
     agente_retencion: false,
-    cobro_neto: false,
     tipo_ncf: '02', // Consumidor Final
     precio_nivel: 1,
   });
@@ -113,7 +112,6 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           mora_pct: cliente.mora_pct || 0,
           generar_mora: cliente.generar_mora ?? true,
           agente_retencion: !!cliente.agente_retencion,
-          cobro_neto: !!cliente.cobro_neto,
           tipo_ncf: cliente.tipo_ncf || '02',
           precio_nivel: cliente.precio_nivel || 1,
         });
@@ -137,7 +135,6 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
           mora_pct: prefill?.mora_pct || 0,
           generar_mora: prefill?.generar_mora ?? true,
           agente_retencion: false,
-          cobro_neto: false,
           tipo_ncf: '02',
           precio_nivel: 1,
         });
@@ -179,7 +176,6 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
         mora_pct: row.mora_pct || 0,
         generar_mora: row.generar_mora ?? true,
         agente_retencion: !!row.agente_retencion,
-        cobro_neto: !!row.cobro_neto,
         tipo_ncf: row.tipo_ncf || '02',
         precio_nivel: row.precio_nivel || 1,
       });
@@ -296,8 +292,6 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
     // Solo donde aplica: en las demás empresas no se manda (no cambia nada).
     if (showRetencion) dataToSubmit.agente_retencion = !!formData.agente_retencion;
     else delete dataToSubmit.agente_retencion;
-    if (showRetencion) dataToSubmit.cobro_neto = !!formData.cobro_neto;
-    else delete dataToSubmit.cobro_neto;
 
     // Actualiza si es edición (prop cliente) o si el código coincidió con un
     // cliente existente al teclearlo (matchedId). Si no, inserta uno nuevo.
@@ -482,15 +476,6 @@ const ClienteFormModal = ({ cliente, isOpen, onClose, prefill }) => {
                   <Label htmlFor="agente_retencion" className="leading-snug">
                     <b>Agente de retención</b> — es una empresa que al pagarnos servicios retiene ITBIS/ISR.
                     Sus facturas de servicios muestran la retención y se cobra el <b>neto</b>.
-                  </Label>
-                </div>
-              )}
-              {showRetencion && (
-                <div className="flex items-start space-x-2 rounded-md border border-blue-200 bg-blue-50 p-3">
-                  <Checkbox id="cobro_neto" checked={!!formData.cobro_neto} onCheckedChange={(checked) => handleCheckedChange('cobro_neto', checked)} />
-                  <Label htmlFor="cobro_neto" className="leading-snug">
-                    <b>Factura desde lo que paga</b> — el cliente paga una cifra fija (ej. RD$ 600) y la factura se calcula hacia atrás:
-                    precio con ITBIS, propina legal y sus retenciones. Al facturarle aparece «El cliente paga» en cada línea.
                   </Label>
                 </div>
               )}
