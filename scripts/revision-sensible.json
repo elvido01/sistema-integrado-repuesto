@@ -7,14 +7,14 @@
     "mobile/app/(tabs)/recibo-pago-financiera.tsx": "6d2c015654ac5900",
     "mobile/app/existencia/index.tsx": "e00bf91a67289cd8",
     "mobile/app/recibo-ingreso/index.tsx": "ded4296193bd97d0",
-    "mobile/app/recibo-pago-financiera/index.tsx": "7710348bed06f254",
+    "mobile/app/recibo-pago-financiera/index.tsx": "6d5bf99ec22a1e33",
     "mobile/app/solicitudes-compra/index.tsx": "fe1b768707ce57c6",
     "mobile/services/printFactura.ts": "54b1417ac2daad3f",
     "mobile/services/printReciboFinanciera.ts": "d42fc2404d90363f",
     "mobile/services/printReciboIngreso.ts": "f45ebb063412733a",
     "mobile/src/services/ecfService.ts": "3ed2c78df1d88e8f",
     "mobile/src/services/reciboIngresoService.ts": "0712cb95834020b7",
-    "mobile/src/services/reciboPagoFinancieraService.ts": "5cbc079b86b4d420",
+    "mobile/src/services/reciboPagoFinancieraService.ts": "e7b2536640a7a833",
     "sql/acierto_compras.sql": "8c435e3fdca58847",
     "sql/activar_suscripcion_motoprestamos.sql": "5b541a6538ba4f19",
     "sql/adicional_cargo_financiamiento.sql": "80b75652d64f2ccf",
@@ -373,7 +373,7 @@
     "src/pages/PagoComisionesPage.jsx": "93b599205d8ae46c",
     "src/pages/PagoSuplidoresPage.jsx": "b949de6dd5010136",
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
-    "src/pages/ReciboPagoFinancieraPage.jsx": "1c024a18864ace14",
+    "src/pages/ReciboPagoFinancieraPage.jsx": "edc2ea78ad549ed7",
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "dd64896e2ed7a355",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
@@ -429,7 +429,13 @@
     "src/pages/InteresesCobradosPage.jsx": "fe26325dc03f5247",
     "sql/retencion_tecnicos_y_propina.sql": "6fc2ee64cfb21e1d",
     "sql/cliente_cobro_neto.sql": "7bdd5abc958a8250",
-    "sql/cliente_cobro_neto_quitar.sql": "5c9bbe5fbd652c19"
+    "sql/cliente_cobro_neto_quitar.sql": "5c9bbe5fbd652c19",
+    "sql/interes_siif_reporte_inversiones.sql": "31897d106fa09899",
+    "sql/interes_siif_reporte_naranjos.sql": "d5a21c8e02a87839",
+    "sql/interes_siif_reporte_odalys.sql": "0a354be70e35e50a",
+    "sql/prestamos_vencidos_renovar.sql": "a0d54ed0b4de1114",
+    "sql/prestamos_vencidos_renovar_movil.sql": "114bbad0c62f8e93",
+    "sql/reporte_interes_siif_cuotas.sql": "018f6b7d234a703a"
   },
   "historial": [
     {
@@ -927,6 +933,21 @@
         "sql/cliente_cobro_neto_quitar.sql",
         "src/components/ventas/LineasServicios.jsx",
         "src/lib/facturaNeto.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-14",
+      "nota": "code-review high: 10 hallazgos. Arreglados: offset 200M de prestamos_02 en el script SiiF (lo aplicado en Naranjos verificado sin choques: 0 cuotas en riesgo; falta completar prestamos_02 con el disco), cuota debe cuadrar con el pendiente del SiiF, script se detiene sin respaldo, aviso de vencido sin monto (no incluia mora/interes corriente) y con descarte de respuesta vieja, codigo muerto en la extension. Aceptados como limitacion: reporte recalcula por empresa (rendimiento), reimpresion sigue con abono_interes (decision solo-reporte), re-migracion con --force borra siif_interes (anotado).",
+      "archivos": [
+        "mobile/app/recibo-pago-financiera/index.tsx",
+        "mobile/src/services/reciboPagoFinancieraService.ts",
+        "sql/interes_siif_reporte_inversiones.sql",
+        "sql/interes_siif_reporte_naranjos.sql",
+        "sql/interes_siif_reporte_odalys.sql",
+        "sql/prestamos_vencidos_renovar.sql",
+        "sql/prestamos_vencidos_renovar_movil.sql",
+        "sql/reporte_interes_siif_cuotas.sql",
+        "src/pages/ReciboPagoFinancieraPage.jsx"
       ]
     }
   ]
