@@ -40,12 +40,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.loadEnvFile(path.join(__dirname, '.env'));
 
 const EMPRESAS = {
-  odalys: { tenant: 'c05a1d05-0d1e-4a2b-8c3f-0da1e5000005', bases: ['prestamos_05'] },
-  inversiones: { tenant: 'c07a1d07-1e2f-4b3c-9d4a-107a10500007', bases: ['cpf_inv_los_naranjos'] },
-  naranjos: { tenant: '766fe3d6-6885-4f2b-b2cc-1a91db696fb4', bases: ['prestamos_01', 'prestamos_02'] },
+  // offset = el que le sumó la migración al legacy_id (fase3-cargar-prestamos:
+  // prestamos_02 de Naranjos va +200_000_000; fase-financiera-cxc usa 0).
+  odalys: { tenant: 'c05a1d05-0d1e-4a2b-8c3f-0da1e5000005', bases: [['prestamos_05', 0]] },
+  inversiones: { tenant: 'c07a1d07-1e2f-4b3c-9d4a-107a10500007', bases: [['cpf_inv_los_naranjos', 0]] },
+  naranjos: { tenant: '766fe3d6-6885-4f2b-b2cc-1a91db696fb4', bases: [['prestamos_01', 0], ['prestamos_02', 200_000_000]] },
 };
 const SOLO_REPORTE = process.argv.includes('--reporte');
-const args = process.argv.slice(2).filter((a) => a !== '--reporte');
+const VERSION_ARG = process.argv.slice(2).find((a) => /^--v\d+$/.test(a)) || '';   // --v2 → archivo _v2
+const args = process.argv.slice(2).filter((a) => a !== '--reporte' && a !== VERSION_ARG);
 const key = args.find((a) => EMPRESAS[a]);
 const DIR = args.find((a) => a !== key);
 if (!key || !DIR) { console.error('Uso: node interes-cuotas-siif.mjs <odalys|inversiones|naranjos> <carpeta-respaldo>'); process.exit(1); }
@@ -58,19 +61,24 @@ const txt = (v) => String(v ?? '').trim();
 const r2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 
 // ---- 1) SiiF: interés y débito de cada cuota, por (legacy_id del préstamo, número de cuota) ----
-const siif = new Map();     // `${legacy}|${cuota}` → { debito, interes }
-for (const base of EMP.bases) {
+// Solo filas PENDIENTES de cuota (PT, no INT): son las que la migración cargó.
+// Si un número de cuota se repite en el mismo préstamo, la migración le dio
+// otro número a una de ellas: esa cuota queda AMBIGUA y no se toca.
+const siif = new Map();     // `${legacy}|${cuota}` → { debito, interes, pendiente } | null (ambigua)
+for (const [base, offset] of EMP.bases) {
   const file = path.join(DIR, `${base}.${FECHA_DIR}.SQL`);
-  if (!fs.existsSync(file)) { console.warn(`(no está ${file})`); continue; }
+  // Sin el respaldo no se arma nada: un SQL sin datos borraría lo que hay.
+  if (!fs.existsSync(file)) { console.error(`No está ${file} (¿disco conectado?)`); process.exit(1); }
   const pr = await parseTable(file, 'prestamos');
-  const legacyDeNum = new Map(pr.rows.map((r) => [txt(r.num_transaccion), Number(r.id)]));
+  const legacyDeNum = new Map(pr.rows.map((r) => [txt(r.num_transaccion), Number(r.id) + offset]));
   const pend = await parseTable(file, 'cxc_pendiente');
   for (const r of pend.rows) {
-    if (txt(r.tip_transaccion) !== 'PT') continue;
+    if (txt(r.tip_transaccion) !== 'PT' || txt(r.concepto) === 'INT' || !(n(r.pendiente) > 0)) continue;
     const legacy = legacyDeNum.get(txt(r.num_transaccion));
     const mc = /^0*(\d+)/.exec(txt(r.cuota));
     if (!legacy || !mc) continue;
-    siif.set(`${legacy}|${parseInt(mc[1], 10)}`, { debito: n(r.debito), interes: n(r.interes) });
+    const k = `${legacy}|${parseInt(mc[1], 10)}`;
+    siif.set(k, siif.has(k) ? null : { debito: n(r.debito), interes: n(r.interes), pendiente: n(r.pendiente) });
   }
 }
 console.log(`SiiF: ${siif.size} cuotas con su interés`);
@@ -94,6 +102,7 @@ const porPrestamo = new Map();
 for (const c of cuotas) { if (!porPrestamo.has(c.prestamo_id)) porPrestamo.set(c.prestamo_id, []); porPrestamo.get(c.prestamo_id).push(c); }
 
 const candidatas = [];   // cuotas a corregir
+let noCuadra = 0;
 const sinDato = [];
 for (const p of prestamos) {
   if (p.es_solo_interes) continue;
@@ -104,6 +113,8 @@ for (const p of prestamos) {
     const s = siif.get(`${p.legacy_id}|${c.numero_cuota}`);
     if (!s || s.interes <= 0) continue;
     const pendiente = n(c.monto_cuota);
+    // La fila del SiiF tiene que ser la misma cuota que cargó la migración.
+    if (Math.abs(s.pendiente - pendiente) >= 0.01) { noCuadra++; continue; }
     const pagadoEnSiif = Math.max(0, s.debito - pendiente);
     const intPend = r2(Math.max(0, Math.min(pendiente, s.interes - pagadoEnSiif)));
     if (intPend <= 0) continue;
@@ -112,16 +123,20 @@ for (const p of prestamos) {
   }
   if (!tocadas) sinDato.push(p.numero);
 }
-console.log(`Préstamos migrados revisados: ${prestamos.length} · cuotas a corregir: ${candidatas.length} · préstamos sin interés en el SiiF: ${sinDato.length}`);
+console.log(`Préstamos migrados revisados: ${prestamos.length} · cuotas a corregir: ${candidatas.length} · préstamos sin interés en el SiiF: ${sinDato.length} · cuotas que no cuadran con el SiiF (no se tocan): ${noCuadra}`);
 
 if (SOLO_REPORTE) {
-  const salidaR = path.join(__dirname, '..', '..', 'sql', `interes_siif_reporte_${key}.sql`);
+  const VERSION = VERSION_ARG.slice(2);
+  const nombreR = `interes_siif_reporte_${key}${VERSION ? `_${VERSION}` : ''}.sql`;
+  const salidaR = path.join(__dirname, '..', '..', 'sql', nombreR);
   fs.writeFileSync(salidaR, [
     `-- Interés del SiiF por cuota, SOLO para el reporte: ${key} (respaldo ${FECHA_DIR}).`,
     `-- Generado por scripts/migracion-siif/interes-cuotas-siif.mjs --reporte el ${new Date().toISOString().slice(0, 10)}.`,
     `-- ${candidatas.length} cuotas. Llena prestamo_cuotas.siif_interes; no cambia capital, interés, pagos ni balances.`,
+    `-- Primero borra lo que haya puesto una versión anterior (solo la columna de consulta).`,
+    `UPDATE public.prestamo_cuotas SET siif_interes = NULL WHERE tenant_id = '${EMP.tenant}' AND siif_interes IS NOT NULL;`,
     ...candidatas.map(({ c, intPend }) => `UPDATE public.prestamo_cuotas SET siif_interes = ${intPend} WHERE id = '${c.id}' AND interes = 0;`),
-    `SELECT registrar_migracion('interes_siif_reporte_${key}.sql');`,
+    `SELECT registrar_migracion('${nombreR}');`,
     '',
   ].join('\n'));
   console.log(`SQL (solo reporte): ${salidaR}`);

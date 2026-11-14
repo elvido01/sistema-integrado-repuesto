@@ -111,6 +111,24 @@ export async function getPrestamosClienteFinanciera(clienteId: string): Promise<
   return normalizeEstado(data);
 }
 
+export type PrestamoVencido = {
+  prestamo_id: string;
+  numero: string;
+  ultima_cuota: string;
+  dias_vencido: number;
+  pendiente: number;
+};
+
+/** Préstamos del cliente cuya última cuota ya venció y siguen debiendo
+ *  (sql/prestamos_vencidos_renovar_movil.sql). Solo un aviso: si falla, []. */
+export async function getPrestamosVencidosFinanciera(clienteId: string): Promise<PrestamoVencido[]> {
+  const { data, error } = await supabase.rpc('get_prestamos_vencidos_financiera_externa', {
+    p_cliente_id: clienteId,
+  });
+  if (error) return [];
+  return Array.isArray(data) ? (data as PrestamoVencido[]) : [];
+}
+
 export async function registrarPagoPrestamoFinanciera(params: {
   clienteId: string;
   monto: number;

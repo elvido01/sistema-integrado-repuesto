@@ -1419,17 +1419,11 @@ async function marcarPrestamosVencidos(gestionCobro, headers) {
       body: '{}'
     });
     if (!Array.isArray(vencidos) || !vencidos.length) return;
+    // Cada caso de Gestion de Cobro es un prestamo (prestamo_id).
     const porPrestamo = new Map(vencidos.map((v) => [v.prestamo_id, v]));
-    const porCliente = new Map();
-    for (const v of vencidos) {
-      if (!porCliente.has(v.cliente_id)) porCliente.set(v.cliente_id, []);
-      porCliente.get(v.cliente_id).push(v);
-    }
     for (const c of gestionCobro.clientes) {
-      const lista = c.prestamo_id && porPrestamo.has(c.prestamo_id)
-        ? [porPrestamo.get(c.prestamo_id)]
-        : (c.prestamo_id ? [] : (porCliente.get(c.cliente_id) || []));
-      if (lista.length) c.vencidos_renovar = lista;
+      const v = porPrestamo.get(c.prestamo_id);
+      if (v) c.vencidos_renovar = [v];
     }
   } catch {
     // Sin el RPC la lista sale como antes.

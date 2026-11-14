@@ -32,6 +32,8 @@ import {
   FinancieraDebugResumen,
   EstadoPrestamosFinanciera,
   getPrestamosClienteFinanciera,
+  getPrestamosVencidosFinanciera,
+  type PrestamoVencido,
   registrarPagoPrestamoFinanciera,
 } from '@/src/services/reciboPagoFinancieraService';
 import { formatFechaDMY } from '@/src/utils/formatDate';
@@ -96,6 +98,9 @@ export default function ReciboPagoFinancieraScreen() {
   const [imprimiendo, setImprimiendo] = useState(false);
   const [compartiendo, setCompartiendo] = useState(false);
   const lastCuotaTapRef = useRef<{ id: string | null; at: number }>({ id: null, at: 0 });
+  // Préstamo vencido (última cuota ya pasó): se recomienda renovar. Solo aviso.
+  const [vencidos, setVencidos] = useState<PrestamoVencido[]>([]);
+  const vencidosPedidoRef = useRef(0);
 
   const cobrador = profile?.nombre_completo || profile?.full_name || user?.email || null;
   const montoNumber = Number(String(monto).replace(/,/g, '')) || 0;
@@ -122,6 +127,11 @@ export default function ReciboPagoFinancieraScreen() {
     setCliente(selected);
     setClientModalOpen(false);
     setLoadingEstado(true);
+    const pedido = ++vencidosPedidoRef.current;
+    setVencidos([]);
+    getPrestamosVencidosFinanciera(selected.id).then((lista) => {
+      if (pedido === vencidosPedidoRef.current) setVencidos(lista);
+    });
     try {
       const data = await getPrestamosClienteFinanciera(selected.id);
       setEstado(data);
@@ -547,6 +557,17 @@ export default function ReciboPagoFinancieraScreen() {
             </View>
             <Search color="#64748b" size={20} />
           </TouchableOpacity>
+
+          {cliente && vencidos.length > 0 && (
+            <View className="bg-orange-50 border border-orange-300 rounded-xl p-3 mb-3">
+              <Text className="text-orange-800 font-bold text-sm">⚠️ Préstamo vencido · se recomienda renovar</Text>
+              {vencidos.map((v) => (
+                <Text key={v.prestamo_id} className="text-orange-800 text-xs mt-0.5">
+                  {v.numero}: venció el {formatFechaDMY(v.ultima_cuota)}
+                </Text>
+              ))}
+            </View>
+          )}
 
           <View className="bg-white border border-gray-200 rounded-xl p-3 mb-3">
             <View className="flex-row items-center">
