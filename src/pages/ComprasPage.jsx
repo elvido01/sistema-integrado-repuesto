@@ -1250,6 +1250,28 @@ const ComprasPage = () => {
       return;
     }
 
+    // Nota de CRÉDITO del suplidor (B04/E34): aquí entraría como una compra
+    // más y SUBIRÍA el inventario y la deuda en vez de bajarlos. Hasta que
+    // exista la devolución a suplidor con su nota fiscal, no se graba aquí.
+    const ncfCompra = String(compra.ncf || '').trim().toUpperCase();
+    if (/^(B04|E34)/.test(ncfCompra)) {
+      toast({
+        variant: "destructive",
+        title: "Las notas de crédito del suplidor no van en Compras",
+        description: "Aquí subiría el inventario y lo que se le debe. Saque la mercancía con Salida de inventario «Devolución a suplidor» y agregue la nota en la herramienta del 606 de la DGII.",
+        duration: 12000,
+      });
+      return;
+    }
+    // Nota de débito (B03/E33): el NCF que modifica tiene que estar bien escrito.
+    if (/^(B03|E33)/.test(ncfCompra)) {
+      const mod = String(compra.ncf_modificado || '').trim().toUpperCase().replace(/[\s-]/g, '');
+      if (mod && !/^B\d{10}$|^E\d{12}$/.test(mod)) {
+        toast({ variant: "destructive", title: "NCF que modifica mal escrito", description: "Es el NCF de la factura que esta nota corrige: B + 10 números u E + 12 números." });
+        return;
+      }
+    }
+
     if (esUSD && !(Number(tasaDia) > 0)) {
       toast({
         variant: "destructive",

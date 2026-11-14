@@ -21,7 +21,9 @@ const TIPOS_RETENCION_ISR = [
   [8, 'Juegos telefónicos'],
   [9, 'Subsector ganadería de carne bovina'],
 ];
-const esNotaCreditoDebito = (ncf) => /^(B03|B04|E33|E34)/i.test(String(ncf || '').trim());
+// Solo notas de DÉBITO: las de crédito (B04/E34) no se graban en Compras (subirían
+// el inventario y la deuda); ComprasPage lo explica al guardar.
+const esNotaCreditoDebito = (ncf) => /^(B03|E33)/i.test(String(ncf || '').trim());
 
 const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplidorSearch, onEditSuplidor }) => {
   const selectedProveedor = proveedores.find(p => p.id === compra.suplidor_id);
@@ -96,7 +98,7 @@ const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplido
                 id="ncf-modificado"
                 value={compra.ncf_modificado || ''}
                 className={`h-7 text-xs uppercase ${compra.ncf_modificado ? '' : 'border-amber-400 bg-amber-50'}`}
-                placeholder="NCF de la factura que esta nota corrige (ej. B0100000123)"
+                placeholder="NCF de la factura que esta nota de débito corrige (ej. B0100000123)"
                 onChange={e => setCompra({ ...compra, ncf_modificado: e.target.value.toUpperCase() })}
               />
             </div>

@@ -38,8 +38,8 @@ const MOTIVOS = {
   rnc: ['Suplidor sin RNC o cédula válido', 'Complete el RNC (9 dígitos) o la cédula (11) en la ficha del suplidor.'],
   rnc_empresa: ['Falta el RNC de su empresa', 'Póngalo en Perfil Empresa: los gastos menores van con el RNC propio.'],
   repetida: ['Factura repetida (mismo RNC y NCF)', 'Está dos veces: en Compras y como comprobante de gasto, o digitada doble. Deje una sola.'],
-  nota: ['Notas de crédito o débito del suplidor', 'No se pierde: agréguela a mano en la herramienta de la DGII con el NCF que modifica. La nota de crédito resta ITBIS.'],
-  ret_isr: ['Compras con retención de ISR', 'No se pierde: agréguela a mano en la herramienta de la DGII escogiendo el tipo de retención.'],
+  nota: ['Notas de crédito o débito del suplidor', 'Nota de débito: escriba en la compra el «NCF que modifica» y entra sola al 606. Nota de crédito: agréguela a mano en la herramienta de la DGII (resta ITBIS).'],
+  ret_isr: ['Compras con retención de ISR', 'Escoja en la compra el «tipo de retención» y entra sola al 606.'],
 };
 
 const MiContabilidadPage = () => {

@@ -11,7 +11,7 @@
 // versión): se toma con calidad baja para que pese poco; el bucket no
 // acepta más de 2 MB.
 // ============================================================
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
@@ -64,6 +64,7 @@ export default function ComprobantesScreen() {
   // «¿De qué gasto es?»: gastos recientes sin comprobante, el más parecido primero.
   const [gastos, setGastos] = useState<GastoDiario[]>([]);
   const [gastoSel, setGastoSel] = useState<string | null>(null);
+  const gastosPedidoRef = useRef(0);   // descarta la respuesta de un comprobante anterior
 
   const cargar = useCallback(async () => {
     // Lo SUBIDO en los últimos 60 días + todo lo que siga por revisar. Por fecha
@@ -151,7 +152,6 @@ export default function ComprobantesScreen() {
     setFotoUrl(null);
     setGastoSel(f.gasto_id || null);
     setGastos([]);
-    cargarGastos(f);
     if (f.imagen_path) {
       const { data } = await supabase.storage.from('comprobantes').createSignedUrl(f.imagen_path, 600);
       setFotoUrl(data?.signedUrl || null);
@@ -160,25 +160,37 @@ export default function ComprobantesScreen() {
 
   // Gastos de los 30 días antes de la factura (y 7 después), sin anular, que no
   // tengan ya otro comprobante. El de monto más cercano al total va primero.
-  const cargarGastos = async (f: Comprobante) => {
+  const cargarGastos = async (compId: string, fecha: string, totalTxt: string, actual: string | null) => {
     if (!tenantId) return;
-    const d0 = new Date(`${fechaValida(f.fecha) ? f.fecha : hoyRD()}T12:00:00Z`);
+    const pedido = ++gastosPedidoRef.current;
+    const d0 = new Date(`${fechaValida(fecha) ? fecha : hoyRD()}T12:00:00Z`);
     const desde = new Date(d0.getTime() - 30 * 86400000).toISOString().slice(0, 10);
     const hasta = new Date(d0.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-    const [{ data: gs }, { data: usados }] = await Promise.all([
-      supabase.from('gastos_diarios').select('id, fecha, monto, descripcion, cuenta_bancaria_id')
-        .eq('tenant_id', tenantId).eq('anulado', false).not('es_tercero', 'is', true).gte('fecha', desde).lte('fecha', hasta)
-        .order('fecha', { ascending: false }).limit(150),
-      supabase.from('gastos_comprobantes').select('gasto_id').not('gasto_id', 'is', null).neq('estado', 'descartado').neq('id', f.id),
-    ]);
+    const { data: gs } = await supabase.from('gastos_diarios').select('id, fecha, monto, descripcion, cuenta_bancaria_id')
+      .eq('tenant_id', tenantId).eq('anulado', false).not('es_tercero', 'is', true).gte('fecha', desde).lte('fecha', hasta)
+      .order('fecha', { ascending: false }).limit(150);
+    const ids = ((gs || []) as GastoDiario[]).map((g) => g.id);
+    // Solo se preguntan los de ESTOS gastos (no todos los de la empresa).
+    const { data: usados } = ids.length
+      ? await supabase.from('gastos_comprobantes').select('gasto_id').in('gasto_id', ids).neq('estado', 'descartado').neq('id', compId)
+      : { data: [] as any[] };
+    if (pedido !== gastosPedidoRef.current) return;
     const ocupados = new Set((usados || []).map((u: any) => u.gasto_id));
-    const total = Number(f.total) || 0;
+    const total = num(totalTxt);
     const lista = ((gs || []) as GastoDiario[])
-      .filter((g) => !ocupados.has(g.id) || g.id === f.gasto_id)
+      .filter((g) => !ocupados.has(g.id) || g.id === actual)
       .sort((a, b) => Math.abs((Number(a.monto) || 0) - total) - Math.abs((Number(b.monto) || 0) - total))
       .slice(0, 8);
     setGastos(lista);
   };
+  // Con la fecha y el total del formulario (los que el usuario corrige), no
+  // los leídos de la foto. Espera a que deje de teclear.
+  useEffect(() => {
+    if (!edit) return;
+    const t = setTimeout(() => cargarGastos(edit.id, form.fecha, form.total, edit.gasto_id), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit?.id, form.fecha, form.total]);
 
   const guardar = async (estado: 'aprobado' | 'descartado' | null) => {
     if (!edit) return;
@@ -308,9 +320,10 @@ export default function ComprobantesScreen() {
                 </View>
               ))}
               <Text className="text-xs font-semibold text-gray-600 mt-3 mb-1">¿De qué gasto diario es?</Text>
-              {gastos.length === 0 ? (
-                <Text className="text-[11px] text-gray-400">No hay gastos diarios recientes sin comprobante.</Text>
-              ) : (
+              {gastos.length === 0 && (
+                <Text className="text-[11px] text-gray-400 mb-1">No hay gastos diarios cerca de esa fecha sin comprobante.</Text>
+              )}
+              {(
                 <View className="bg-white border border-gray-200 rounded-lg">
                   {[{ id: null as string | null, fecha: '', monto: 0, descripcion: 'Ninguno (no es de un gasto diario)', cuenta_bancaria_id: null }, ...gastos].map((g, i) => {
                     const sel = gastoSel === g.id;

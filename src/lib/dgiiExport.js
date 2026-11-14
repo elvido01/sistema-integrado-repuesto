@@ -229,12 +229,12 @@ export const revisar606 = (compras, rncEmpresa = '') => {
     }
     // Lo que la DGII rechaza por un dato que el sistema no guarda: fuera,
     // para completarlo a mano en la herramienta (sale en la hoja aparte).
-    if (NOTAS_CREDITO_DEBITO[tipo] && !c.ncf_modificado) {
-      fuera('Nota de crédito/débito: falta el NCF de la factura que modifica', 'Agréguela en la herramienta de la DGII con el NCF modificado (columna 5).');
+    if (NOTAS_CREDITO_DEBITO[tipo] && !ncfBienEscrito(normalizarNcf(c.ncf_modificado))) {
+      fuera('Nota de crédito/débito: falta (o está mal escrito) el NCF de la factura que modifica', 'Nota de débito: complételo en la compra. Nota de crédito: agréguela en la herramienta de la DGII con el NCF modificado (columna 5).');
       continue;
     }
     if (retencionIsr(c) > 0 && !c.tipo_retencion_isr) {
-      fuera('Tiene retención de ISR pero no el tipo de retención', 'Agréguela en la herramienta de la DGII escogiendo el tipo de retención (columna 17).');
+      fuera('Tiene retención de ISR pero no el tipo de retención', 'Escoja el tipo de retención en la compra y vuelva a generar el 606.');
       continue;
     }
     vistos.add(clave);
