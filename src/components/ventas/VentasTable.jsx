@@ -207,7 +207,7 @@ const VentasTable = ({
   }
 
   return (
-    <div className="pos-moderno pos-tabla flex-grow bg-[#f5f5f0] flex flex-col">
+    <div className="pos-moderno flex-grow bg-[#f5f5f0] flex flex-col">
       <div className="flex-grow overflow-y-auto scrollbar-thin scrollbar-thumb-gray-400">
         <Table className="border-collapse">
           <TableHeader className="sticky top-0 z-10 border-b border-gray-400 shadow-sm">

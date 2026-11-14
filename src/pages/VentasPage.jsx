@@ -1011,7 +1011,7 @@ const VentasPage = () => {
         </button>
       )}
 
-      <main className={movil ? 'flex-1 bg-white' : 'flex-1 min-h-0 overflow-hidden px-2 pb-2'}>
+      <main className={movil ? 'flex-1 bg-white' : 'flex-1 min-h-0 overflow-hidden px-2 pb-2 pt-2'}>
         <div className={movil ? '' : 'h-full overflow-y-auto bg-white shadow-sm border border-gray-300 rounded-lg'}>
           {/* Codigo de promocion tecleado en la fila amarilla (T101, I101...). */}
           {promoAplicada && (
