@@ -2600,11 +2600,35 @@ Deno.serve(async (req) => {
         .eq("id", devolucion_id).eq("tenant_id", tenantId).maybeSingle();
       if (!devolucion) throw new Error("Devolución no encontrada");
 
-      // Ya emitida: se devuelve la que hay (nunca dos notas por una devolución).
-      const { data: vivo } = await supabase.from("documentos_fiscales")
-        .select("id, estado, encf, track_id, retry_count, request_payload, updated_at")
+      // Ya emitida: se devuelve la que hay (nunca dos notas por una devolución)
+      // y se repara el vínculo con la devolución si un guardado anterior falló.
+      // Si la DGII la RECHAZÓ, se rehace con otro número: la fila rechazada
+      // pasa a 'error' guardando su número para darlo de baja (ANECF).
+      let { data: vivo } = await supabase.from("documentos_fiscales")
+        .select("id, estado, estado_dgii, encf, track_id, retry_count, request_payload, updated_at, devolucion_id")
         .eq("devolucion_id", devolucion_id).in("estado", ["procesando", "emitido"]).maybeSingle();
+      if (vivo?.estado === "emitido" && vivo.estado_dgii === "rechazado") {
+        const rp = vivo.request_payload || {};
+        const { data: suelta, error: eS } = await supabase.from("documentos_fiscales").update({
+          estado: "error",
+          error_message: `La DGII rechazó ${vivo.encf}: se rehace con otro número (dar de baja ${vivo.encf}).`,
+          request_payload: { ...rp, encf_asignado: null, xml_path_asignado: null,
+            encf_rechazado: vivo.encf, historial_rechazos: [...(rp.historial_rechazos || []), { encf: vivo.encf }] },
+          updated_at: new Date().toISOString(),
+        }).eq("id", vivo.id).eq("estado", "emitido").select("id");
+        if (eS || !suelta?.length) throw new Error(`No se pudo apartar la nota rechazada: ${eS?.message || "otro usuario la está rehaciendo"}`);
+        const { error: eD } = await supabase.from("devoluciones")
+          .update({ encf: null, documento_fiscal_id: null, ncf_modificado: null }).eq("id", devolucion_id).select("id");
+        if (eD) throw new Error(`No se pudo soltar la nota rechazada de la devolución: ${eD.message}`);
+        vivo = null;
+      }
       if (vivo?.estado === "emitido") {
+        if (devolucion.encf !== vivo.encf || devolucion.documento_fiscal_id !== vivo.id) {
+          const { error: eL } = await supabase.from("devoluciones")
+            .update({ encf: vivo.encf, documento_fiscal_id: vivo.id, ncf_modificado: vivo.request_payload?.encf_modificado || devolucion.ncf_modificado })
+            .eq("id", devolucion_id).select("id");
+          if (eL) throw new Error(`La nota ${vivo.encf} existe pero no se pudo unir a la devolución: ${eL.message}`);
+        }
         return new Response(JSON.stringify({ ok: true, ya_emitida: true, encf: vivo.encf, trackId: vivo.track_id, documento_id: vivo.id }),
           { status: 200, headers: corsHeaders });
       }
@@ -2630,21 +2654,37 @@ Deno.serve(async (req) => {
         throw new Error(`La factura #${facturaOrig.numero} no salió con comprobante electrónico (E31/E32): no se le puede hacer nota de crédito electrónica.`);
       }
 
+      // Un intento anterior de ESTA devolución que falló (o quedó colgado).
+      const { data: previo } = vivo ? { data: vivo } : await supabase.from("documentos_fiscales")
+        .select("id, estado, encf, retry_count, request_payload, updated_at")
+        .eq("devolucion_id", devolucion_id).eq("estado", "error").order("created_at", { ascending: false }).limit(1).maybeSingle(); // revisado: el último intento fallido
+      const yaTieneNumero = !!previo?.request_payload?.encf_asignado;
+
       // Más de 30 días: la nota ya no rebaja el ITBIS (IndicadorNotaCredito 1).
-      // Hasta confirmarlo con el contador, no se emite automática.
-      const hoyRD = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santo_Domingo" });
-      const fechaFact = String(facturaOrig.fecha || "").slice(0, 10);
+      // Hasta confirmarlo con el contador, no se emite automática. Un reintento
+      // que YA tomó número no se frena: su envío pudo haber llegado.
+      const enRD = (v) => {
+        const t = String(v || "");
+        if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+        const d = new Date(t);
+        return isNaN(d.getTime()) ? t.slice(0, 10) : d.toLocaleDateString("en-CA", { timeZone: "America/Santo_Domingo" });
+      };
+      const hoyRD = enRD(new Date().toISOString());
+      const fechaFact = enRD(facturaOrig.fecha);
       const dias = Math.round((Date.parse(`${hoyRD}T12:00:00Z`) - Date.parse(`${fechaFact}T12:00:00Z`)) / 86400000);
-      if (!(dias >= 0) || dias > 30) {
+      if (!yaTieneNumero && (!(dias >= 0) || dias > 30)) {
         throw new Error(`La factura es del ${fechaFact} (${dias} días). Pasados 30 días la nota de crédito ya no rebaja el ITBIS: consúltelo con su contador antes de emitirla. No se gastó ningún número.`);
       }
 
       // Descripción de cada artículo: la de la factura original.
-      const { data: detFact } = await supabase.from("facturas_detalle").select("producto_id, descripcion, naturaleza").eq("factura_id", facturaOrig.id);
-      const descDe = new Map((detFact || []).map((d) => [d.producto_id, d]));
+      const { data: detFact } = await supabase.from("facturas_detalle").select("producto_id, descripcion, naturaleza, precio").eq("factura_id", facturaOrig.id);
+      // La línea de la factura del mismo producto y precio (la devolución
+      // copia el precio de la línea); si no hay, la del mismo producto.
+      const lineaDe = (d) => (detFact || []).find((f) => f.producto_id === d.producto_id && Math.abs((Number(f.precio) || 0) - (Number(d.precio) || 0)) < 0.005)
+        || (detFact || []).find((f) => d.producto_id && f.producto_id === d.producto_id) || null;
       const itemsNota = devDetalles.map((d) => ({
-        descripcion: descDe.get(d.producto_id)?.descripcion || "Artículo devuelto",
-        naturaleza: descDe.get(d.producto_id)?.naturaleza || null,
+        descripcion: lineaDe(d)?.descripcion || "Artículo devuelto",
+        naturaleza: lineaDe(d)?.naturaleza || null,
         cantidad: Number(d.cantidad) || 0,
         precio: Number(d.precio) || 0,
         itbis: d.itbis,
@@ -2668,16 +2708,16 @@ Deno.serve(async (req) => {
         { ncf: encfOriginal, fecha: fechaFact }, cliente, configEmisor, "E340000000000", opcionesNota));
 
       // Fila del documento: la de un intento fallido de ESTA devolución, o nueva.
-      const { data: previo } = vivo ? { data: vivo } : await supabase.from("documentos_fiscales")
-        .select("id, estado, encf, retry_count, request_payload, updated_at")
-        .eq("devolucion_id", devolucion_id).eq("estado", "error").order("created_at", { ascending: false }).limit(1).maybeSingle(); // revisado: el último intento fallido
+      // Se toma SOLO si sigue como se leyó: dos personas reintentando a la vez
+      // no pueden emitir dos notas.
       let doc;
       if (previo) {
         const { data: r, error: e } = await supabase.from("documentos_fiscales")
           .update({ estado: "procesando", error_message: null, retry_count: (previo.retry_count || 0) + 1, updated_at: new Date().toISOString() })
-          .eq("id", previo.id).select().single();
-        if (e || !r) throw new Error(`No se pudo retomar la nota: ${e?.message || "sin fila"}`);
-        doc = r;
+          .eq("id", previo.id).eq("estado", previo.estado).eq("updated_at", previo.updated_at).select();
+        if (e) throw new Error(`No se pudo retomar la nota: ${e.message}`);
+        if (!r?.length) throw new Error("Esta nota de crédito ya se está emitiendo; espera un minuto.");
+        doc = r[0];
       } else {
         const { data: r, error: e } = await supabase.from("documentos_fiscales").insert({
           tenant_id: tenantId, devolucion_id, factura_id: null, proveedor: "dgii_directo",
@@ -2688,9 +2728,10 @@ Deno.serve(async (req) => {
       }
       const guardarTraza = async (extra) => {
         doc.request_payload = { ...(doc.request_payload || {}), ...extra };
-        const { error: e } = await supabase.from("documentos_fiscales")
-          .update({ request_payload: doc.request_payload, updated_at: new Date().toISOString() }).eq("id", doc.id);
-        if (e) console.error("nota: guardar traza:", e.message);
+        const { data: g, error: e } = await supabase.from("documentos_fiscales")
+          .update({ request_payload: doc.request_payload, updated_at: new Date().toISOString() }).eq("id", doc.id).select("id");
+        // Sin guardar el número no se sigue: un reintento tomaría otro (hueco).
+        if (e || !g?.length) throw new Error(`No se pudo guardar el número de la nota: ${e?.message || "sin fila"}`);
       };
 
       try {
@@ -2728,6 +2769,8 @@ Deno.serve(async (req) => {
           codigo_seguridad: String(signatureValue || "").slice(0, 6),
           fecha_firma: delXml("FechaHoraFirma"), fecha_emision: delXml("FechaEmision"),
           monto_total: delXml("MontoTotal"), rnc_emisor: delXml("RNCEmisor"), rnc_comprador: delXml("RNCComprador"),
+          // Lo que dice el e-CF: el 607 declara ESTOS montos (no los de la devolución).
+          total_itbis: delXml("TotalITBIS") || "0",
           encf_modificado: encfOriginal,
         };
 
@@ -2736,7 +2779,7 @@ Deno.serve(async (req) => {
         let recepcion = null;
         if (esReintento) {
           try {
-            const t = await consultarTrackIds(integ.config.rnc_emisor, encf, auth.token, ambiente);
+            const t = await consultarTrackIds(configEmisor.rnc_emisor, encf, auth.token, ambiente);
             const arr = Array.isArray(t) ? t : (t?.trackIds || t?.TrackIds || []);
             const ult = arr[arr.length - 1];
             const tid = ult?.trackId || ult?.TrackId;
@@ -2747,26 +2790,35 @@ Deno.serve(async (req) => {
         const trackId = recepcion.trackId || recepcion.TrackId || recepcion.trackid;
         if (!trackId) throw new Error(`La DGII no devolvió TrackId. Respuesta: ${JSON.stringify(recepcion).slice(0, 300)}`);
 
-        const { error: updErr } = await supabase.from("documentos_fiscales").update({
-          estado: "emitido", estado_dgii: "enviado", encf, ncf: encf, proveedor_number: encf,
-          proveedor_invoice_id: trackId, track_id: trackId, tipo_ecf: "34", ambiente,
+        // La nota YA está en la DGII: no se puede perder. Si el guardado
+        // completo falla (índices únicos), se guarda sin esas columnas.
+        const comun = {
+          estado: "emitido", estado_dgii: "enviado", ncf: encf, proveedor_number: encf, tipo_ecf: "34", ambiente,
           xml_firmado_path: xmlPath,
           request_payload: { ...(doc.request_payload || {}), tipo_ecf: "34", ambiente, impresion, xml_path: xmlPath, encf_modificado: encfOriginal },
           response_payload: recepcion, emitted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-        }).eq("id", doc.id);
-        if (updErr) console.error("nota: update documento:", updErr.message);
-        const { error: devErr } = await supabase.from("devoluciones")
-          .update({ encf, documento_fiscal_id: doc.id, ncf_modificado: encfOriginal }).eq("id", devolucion_id);
-        if (devErr) console.error("nota: update devolución:", devErr.message);
+        };
+        const { data: u1, error: updErr } = await supabase.from("documentos_fiscales")
+          .update({ ...comun, encf, proveedor_invoice_id: trackId, track_id: trackId }).eq("id", doc.id).select("id");
+        let avisoGuardado = null;
+        if (updErr || !u1?.length) {
+          const { data: u2, error: updErr2 } = await supabase.from("documentos_fiscales")
+            .update({ ...comun, error_message: `update parcial: ${updErr?.message || "sin fila"}`.slice(0, 500) }).eq("id", doc.id).select("id");
+          if (updErr2 || !u2?.length) avisoGuardado = `La DGII recibió ${encf} (TrackId ${trackId}) pero no se pudo guardar: anótelo y avise a soporte.`;
+        }
+        const { data: d1, error: devErr } = await supabase.from("devoluciones")
+          .update({ encf, documento_fiscal_id: doc.id, ncf_modificado: encfOriginal }).eq("id", devolucion_id).select("id");
+        if (devErr || !d1?.length) avisoGuardado = avisoGuardado || `La nota ${encf} salió, pero no se pudo unir a la devolución: vuelva a buscar la factura y pulse «Emitir nota ahora» (no emite otra, solo la une).`;
 
         return new Response(JSON.stringify({
           ok: true, encf, tipo_ecf: "34", encf_modificado: encfOriginal, ambiente, trackId,
-          xml_path: xmlPath, documento_id: doc.id, impresion,
+          xml_path: xmlPath, documento_id: doc.id, impresion, aviso: avisoGuardado,
         }), { status: 200, headers: corsHeaders });
       } catch (err) {
-        await supabase.from("documentos_fiscales").update({
+        const { error: eErr } = await supabase.from("documentos_fiscales").update({
           estado: "error", error_message: String(err?.message || err).slice(0, 500), updated_at: new Date().toISOString(),
-        }).eq("id", doc.id);
+        }).eq("id", doc.id).select("id");
+        if (eErr) console.error("nota: marcar error:", eErr.message);
         throw err;
       }
     }

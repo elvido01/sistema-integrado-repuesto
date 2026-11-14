@@ -135,25 +135,35 @@ const ReportesDGIIPage = () => {
         ncf: f.ncf || docsAnul.get(f.id) || null,
       })).filter(f => f.ncf && f.ncf !== '');
 
-      // (14/11/2026) Notas de crédito electrónicas (E34) de las devoluciones
-      // del mes: van en el 607 como una línea más, con el NCF que modifican.
+      // (14/11/2026) Notas de crédito electrónicas (E34) de las devoluciones:
+      // van en el 607 como una línea más, con el NCF que modifican. El MES y
+      // los MONTOS son los del e-CF (fecha de emisión, MontoTotal, TotalITBIS),
+      // no los de la devolución: lo declarado cuadra con lo que tiene la DGII.
       // Solo las emitidas que la DGII no rechazó.
+      const rangoNc = rangoDeFechas(desde, hasta);
       const ncRaw = await traerTodo(() => supabase
-        .from('devoluciones')
-        .select('id, numero, fecha_devolucion, encf, ncf_modificado, itbis_total, total_devolucion, cliente_info, documento:documentos_fiscales!devoluciones_documento_fiscal_id_fkey(estado, estado_dgii), factura:facturas(forma_pago, tipo_pago, clientes(nombre, rnc))')
-        .not('encf', 'is', null)
-        .gte('fecha_devolucion', desde)
-        .lte('fecha_devolucion', hasta)
-        .order('fecha_devolucion', { ascending: true }).order('id', { ascending: true }));
+        .from('documentos_fiscales')
+        .select('id, encf, emitted_at, estado_dgii, request_payload, devolucion:devoluciones!documentos_fiscales_devolucion_id_fkey(numero, ncf_modificado, cliente_info, factura:facturas(forma_pago, tipo_pago, clientes(nombre, rnc)))')
+        .eq('tipo_documento', 'nota_credito')
+        .eq('estado', 'emitido')
+        .gte('emitted_at', rangoNc.desde)
+        .lte('emitted_at', rangoNc.hasta)
+        .order('emitted_at', { ascending: true }).order('id', { ascending: true }));
       const notasCredito = (ncRaw || [])
-        .filter((d) => d.documento?.estado === 'emitido' && d.documento?.estado_dgii !== 'rechazado')
-        .map((d) => ({
-          id: `nc-${d.id}`, numero: `DV-${d.numero}`, fecha: d.fecha_devolucion, ncf: d.encf, ncf_modificado: d.ncf_modificado,
-          itbis: d.itbis_total, total: d.total_devolucion, propina: 0,
-          forma_pago: d.factura?.forma_pago, tipo_pago: d.factura?.tipo_pago, es_nota_credito: true,
-          cliente_nombre: d.factura?.clientes?.nombre || d.cliente_info?.nombre,
-          cliente_rnc: d.factura?.clientes?.rnc || d.cliente_info?.rnc,
-        }));
+        .filter((d) => d.estado_dgii !== 'rechazado' && d.encf)
+        .map((d) => {
+          const imp = d.request_payload?.impresion || {};
+          const dv = d.devolucion || {};
+          return {
+            id: `nc-${d.id}`, numero: `DV-${dv.numero ?? ''}`,
+            fecha: new Date(d.emitted_at).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }),
+            ncf: d.encf, ncf_modificado: d.request_payload?.encf_modificado || dv.ncf_modificado,
+            itbis: Number(imp.total_itbis) || 0, total: Number(imp.monto_total) || 0, propina: 0,
+            forma_pago: dv.factura?.forma_pago, tipo_pago: dv.factura?.tipo_pago, es_nota_credito: true,
+            cliente_nombre: dv.factura?.clientes?.nombre || dv.cliente_info?.nombre,
+            cliente_rnc: dv.factura?.clientes?.rnc || dv.cliente_info?.rnc,
+          };
+        });
 
       const ventasNuevas = [...(v || []).map(r => ({
         ...r,

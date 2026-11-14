@@ -70,9 +70,15 @@ const DevolucionesPage = () => {
   // o menos: lleva nota de crédito E34. Pasados 30 días la nota ya no rebaja el
   // ITBIS: el emisor no la emite sola (hay que consultarlo con el contador).
   const ecfDeFactura = (f) => (/^E3[12]\d{10}$/.test(String(f?.ncf || '')) ? f.ncf : null);
+  const enRD = (v) => {
+    const t = String(v || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? t.slice(0, 10) : d.toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
+  };
   const diasDeFactura = (f) => {
-    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
-    const fe = String(f?.fecha || '').slice(0, 10);
+    const hoy = enRD(new Date().toISOString());
+    const fe = enRD(f?.fecha);
     return Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${fe}T12:00:00Z`)) / 86400000);
   };
 
@@ -90,6 +96,7 @@ const DevolucionesPage = () => {
         throw new Error(msg);
       }
       if (!data?.ok) throw new Error(data?.error || 'La DGII no aceptó la nota');
+      if (data.aviso) toast({ variant: 'destructive', title: 'Revise esta nota de crédito', description: data.aviso, duration: 20000 });
       toast({
         title: data.ya_emitida ? 'Esta devolución ya tenía su nota de crédito' : '🧾 Nota de crédito enviada a la DGII',
         description: `e-NCF ${data.encf}${data.encf_modificado ? ` · modifica ${data.encf_modificado}` : ''}. La DGII confirma en unos minutos (Monitor DGII).`,
@@ -127,14 +134,14 @@ const DevolucionesPage = () => {
       // 1. Check if a return already exists for this invoice
       const { data: existingReturn, error: checkError } = await supabase
         .from('devoluciones')
-        .select('id, numero, encf, notas, factura:facturas(ncf, fecha)')
+        .select('id, numero, encf, notas, factura:facturas(ncf, fecha), documento:documentos_fiscales!devoluciones_documento_fiscal_id_fkey(estado_dgii)')
         .eq('tenant_id', tenantId)
         .eq('factura_id', (await supabase.from('facturas').select('id').eq('tenant_id', tenantId).eq('numero', facturaNumero).single()).data?.id)
         .maybeSingle();
 
       if (existingReturn) {
         // Quedó sin su nota de crédito: se ofrece reintentarla.
-        if (!existingReturn.encf && ecfDeFactura(existingReturn.factura)) {
+        if ((!existingReturn.encf || existingReturn.documento?.estado_dgii === 'rechazado') && ecfDeFactura(existingReturn.factura)) {
           setNotaPendiente(existingReturn);
         }
         toast({
@@ -735,7 +742,9 @@ const DevolucionesPage = () => {
             )}
             {notaPendiente && (
               <div className="mx-1 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900">
-                La devolución DV-{notaPendiente.numero} de esta factura quedó sin su nota de crédito.
+                {notaPendiente.documento?.estado_dgii === 'rechazado'
+                  ? `La DGII rechazó la nota ${notaPendiente.encf} de la devolución DV-${notaPendiente.numero}: se rehace con otro número.`
+                  : `La devolución DV-${notaPendiente.numero} de esta factura quedó sin su nota de crédito.`}
                 <button
                   type="button"
                   disabled={emitiendoDgii}
