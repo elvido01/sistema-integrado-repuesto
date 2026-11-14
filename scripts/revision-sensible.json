@@ -345,7 +345,7 @@
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
     "src/lib/dgiiCertificacionStorage.js": "9b63d241c5af90e2",
-    "src/lib/dgiiExport.js": "95405379a0adcb71",
+    "src/lib/dgiiExport.js": "c3c4700059a994c5",
     "src/lib/dgiiRepresentacionImpresa.js": "9646fb60aae20abe",
     "src/lib/ecfImpresion.js": "33142e9057386d28",
     "src/lib/nominaUtils.js": "68b952393ad68443",
@@ -438,16 +438,6 @@
     "sql/reporte_interes_siif_cuotas.sql": "018f6b7d234a703a"
   },
   "historial": [
-    {
-      "fecha": "2026-10-30",
-      "nota": "code-review high (2 rondas) de 3ccb2bda + f0abd708: arreglados encabezado del emisor por nombre (Caminero/Morla sin RNC), cliente generico de cotizacion, error de red tratado como sin e-CF, ficha de cliente no encontrada, timeout e-CF 150 s, RNC 9/11 para 01, nulls en ultimo numero, updates de cotizacion/pedido sin select, titulo e-CF de 58 mm",
-      "archivos": [
-        "mobile/app/(tabs)/pos.tsx",
-        "mobile/services/printFactura.ts",
-        "mobile/src/services/ecfService.ts",
-        "src/pages/VentasPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-10-31",
       "nota": "code-review high x4 de secuencias e-NCF: campo acepta numero o e-NCF pegado (valida tipo, sin inventar con puntos), bloqueo de solape en pantalla y en SQL, correccion con mismo Desde, confirmacion si quedan numeros o hay salto, relectura antes de guardar, doble clic. Pendiente conocido: vencimiento por rango (hoy uno por empresa).",
@@ -953,6 +943,13 @@
         "src/components/ventas/VentasHeader.jsx",
         "src/components/ventas/VentasTable.jsx",
         "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-14",
+      "nota": "code-review high (607 tipo ingreso + comprobante en gasto diario): 10 hallazgos. Arreglados: gasto anulado descarta su comprobante (trigger en gastos_diarios), resumen y Pague menos excluyen gastos con comprobante unido y la resta aproximada usa solo los sueltos, forma de pago banco=02, no se inventa el total (monto del gasto en la nota), subida en segundo plano sin bloquear el PDF, un comprobante por gasto. SQL aplicado antes del deploy. Aceptados: 607 '1' (herramienta oficial + instructivo DGII; XML e-CF es otra especificacion), copia de subida en la app movil, hoyRD repetido.",
+      "archivos": [
+        "src/lib/dgiiExport.js"
       ]
     }
   ]
