@@ -20,7 +20,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Loader2, Upload, RefreshCw, CheckCircle2, AlertTriangle, Ban, Receipt } from 'lucide-react';
 import { formatFechaDMY } from '@/lib/dateUtils';
-import { achicarFoto, rutaComprobante, fechaValida, TIPOS_GASTO_606, FORMAS_PAGO_606 } from '@/lib/imagenComprobante';
+import { fechaValida, TIPOS_GASTO_606, FORMAS_PAGO_606 } from '@/lib/imagenComprobante';
+import { subirComprobante } from '@/lib/subirComprobante';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
@@ -76,36 +77,13 @@ const ComprobantesGastosPage = () => {
     const lista = Array.from(archivos || []).filter((a) => a.type.startsWith('image/'));
     if (!lista.length) return;
     let creados = 0, sinLeer = 0, repetidos = 0, ilegibles = 0;
-    // Una foto que no llegó a registrarse no se queda ocupando espacio.
-    const quitarFoto = (path) => supabase.storage.from('comprobantes').remove([path]).catch(() => {});
     for (let i = 0; i < lista.length; i++) {
       setSubiendo(`${i + 1} de ${lista.length}`);
-      let path = null;
-      try {
-        const foto = await achicarFoto(lista[i]);
-        if (!foto) { ilegibles++; continue; }   // el navegador no la pudo abrir (HEIC, archivo dañado)
-        path = rutaComprobante(tenantId);
-        const { error: eUp } = await supabase.storage.from('comprobantes').upload(path, foto, { contentType: 'image/jpeg' });
-        if (eUp) throw new Error(eUp.message);
-
-        let d = {};
-        const { data: r, error: eFn } = await supabase.functions.invoke('leer-comprobante', { body: { path } });
-        if (eFn || !r?.ok) sinLeer++; else d = r.datos || {};
-
-        const { error: eIns } = await supabase.from('gastos_comprobantes').insert({
-          tenant_id: tenantId, fecha: fechaValida(d.fecha) ? d.fecha : hoyRD(), rnc: d.rnc || '', proveedor_nombre: d.proveedor_nombre || null,
-          ncf: d.ncf || '', tipo_bs: d.tipo_bs || 2, monto_gravado: d.monto_gravado || 0, monto_exento: d.monto_exento || 0,
-          itbis: d.itbis || 0, propina: d.propina || 0, total: d.total || 0, forma_pago: d.forma_pago || '01',
-          imagen_path: path, lectura: d, origen: 'web',
-        }).select('id');
-        if (eIns) {
-          await quitarFoto(path);
-          if (/gastos_comprobantes_unico/.test(eIns.message)) repetidos++;
-          else throw new Error(eIns.message);
-        } else creados++;
-      } catch (e) {
-        toast({ variant: 'destructive', title: `No se pudo subir ${lista[i].name}`, description: e.message });
-      }
+      const r = await subirComprobante(lista[i], { tenantId, origen: 'web' });
+      if (r.ok) { creados++; if (r.sinLeer) sinLeer++; }
+      else if (r.ilegible) ilegibles++;
+      else if (r.repetido) repetidos++;
+      else toast({ variant: 'destructive', title: `No se pudo subir ${lista[i].name}`, description: r.error });
     }
     setSubiendo(null);
     if (inputRef.current) inputRef.current.value = '';

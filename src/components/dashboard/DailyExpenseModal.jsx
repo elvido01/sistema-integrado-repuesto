@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, HandCoins, ReceiptText, Check } from 'lucide-react';
+import { Loader2, HandCoins, ReceiptText, Check, Camera, X } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -14,6 +14,7 @@ import { generateGastoDiarioPDF } from '@/components/common/pdf/gastoDiarioPDF';
 import { printGastoDiarioPOS } from '@/lib/printPOS';
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { formatFechaDMY, formatDateForSupabase } from '@/lib/dateUtils';
+import { subirComprobante } from '@/lib/subirComprobante';
 
 // Hoy en Santo Domingo. toISOString() da la fecha UTC: después de las 8 pm
 // el gasto salía con la fecha de mañana.
@@ -70,6 +71,37 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
   const { user, tenantId, empresa } = useAuth();
   const montoInputRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Foto del comprobante fiscal (opcional). Se sube DESPUÉS de guardar el gasto
+  // y queda unida a él (gastos_comprobantes.gasto_id) "por revisar": así el
+  // gasto puede entrar al 606. No cambia la caja ni el monto del gasto.
+  const [comprobante, setComprobante] = useState(null);
+  const comprobanteRef = useRef(null);
+  const quitarComprobante = () => {
+    setComprobante(null);
+    if (comprobanteRef.current) comprobanteRef.current.value = '';
+  };
+  // Si falla, el gasto igual quedó guardado: solo se avisa.
+  const adjuntarComprobante = async (gastoId, fecha, monto) => {
+    if (!comprobante || !gastoId) return;
+    const r = await subirComprobante(comprobante, { tenantId, origen: 'web', gastoId, fecha, total: monto });
+    quitarComprobante();
+    if (r.ok) {
+      toast({
+        title: 'Comprobante guardado',
+        description: `${r.sinLeer ? 'No se pudo leer solo: complete los datos. ' : ''}Revíselo en Contabilidad → Comprobantes de gastos y apruébelo para que entre al 606.`,
+        duration: 8000,
+      });
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'El gasto se guardó, pero el comprobante no',
+        description: r.ilegible ? 'No se pudo abrir la foto (¿formato HEIC del iPhone?). Súbala como JPG en Comprobantes de gastos.'
+          : r.repetido ? 'Ese comprobante (mismo RNC y NCF) ya estaba registrado.'
+          : `${r.error || 'Error desconocido'}. Súbalo en Comprobantes de gastos.`,
+        duration: 9000,
+      });
+    }
+  };
   const [formData, setFormData] = useState({
     fecha: todayISO(),
     tipo_gasto: 'Operativo',
@@ -290,6 +322,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setBusquedaCli('');
     setPendSel({});
     setFiltroPend('');
+    quitarComprobante();
   };
 
   // Buscar mientras se escribe, sin disparar una consulta por tecla.
@@ -343,6 +376,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
       // Doble clic en la tarjeta del dashboard: abre directo en edición
       if (gasto?.id) editarGasto(gasto);
       else { setModo('gasto'); resetForm(); }
+      quitarComprobante();
       setHuboCambios(false);
       setClaveOpen(false);
       setClave('');
@@ -558,6 +592,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         if (!actualizados?.length) throw new Error('No se actualizó el gasto. Recarga la lista y vuelve a intentarlo.');
         autFechaRef.current = null;
         toast({ title: 'Gasto actualizado', description: 'La caja se recalcula con el nuevo monto.' });
+        await adjuntarComprobante(editandoId, formData.fecha, monto);
         setHuboCambios(true);
         setIsSubmitting(false);
         // Si viniste con doble clic sobre un gasto, ya terminaste: cerrar.
@@ -607,6 +642,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
           });
         }
       }
+
+      await adjuntarComprobante(gastoCreado?.id, formData.fecha, monto);
 
       toast({
         title: 'Gasto diario registrado',
@@ -1040,6 +1077,32 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
                 placeholder="Ej: Combustible, merienda, envio..."
                 required
               />
+              <input
+                ref={comprobanteRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => setComprobante(e.target.files?.[0] || null)}
+              />
+              {comprobante ? (
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800">
+                  <Camera className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">Comprobante: {comprobante.name}</span>
+                  <button type="button" onClick={quitarComprobante} title="Quitar la foto" className="rounded p-0.5 hover:bg-emerald-100">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => comprobanteRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  title="Foto de la factura con NCF: se lee sola y, al aprobarla, el gasto entra al 606"
+                >
+                  <Camera className="h-4 w-4" /> Comprobante fiscal (opcional)
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex items-center justify-between gap-3 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-1.5">
