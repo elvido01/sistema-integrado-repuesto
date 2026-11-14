@@ -89,7 +89,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     if (!archivo || !gastoId) return;
     (async () => {
       const { data: ya } = await supabase.from('gastos_comprobantes').select('id')
-        .eq('gasto_id', gastoId).neq('estado', 'descartado').limit(1);
+        .eq('gasto_id', gastoId).neq('estado', 'descartado').limit(1); // revisado: solo importa si existe alguno, no cuál
       if (ya?.length) {
         toast({ variant: 'destructive', title: 'Ese gasto ya tiene su comprobante', description: 'No se subió otro. Revíselo o descártelo en Contabilidad → Comprobantes de gastos.', duration: 9000 });
         return;
