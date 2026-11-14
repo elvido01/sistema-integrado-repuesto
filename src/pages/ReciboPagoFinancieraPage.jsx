@@ -103,6 +103,9 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [estado, setEstado] = useState(null);
   const [clienteMandadoBuscar, setClienteMandadoBuscar] = useState(false);
   const [promesa, setPromesa] = useState(null); // promesa de pago activa (Gestión de Cobro)
+  // Préstamos cuya última cuota ya venció y siguen debiendo: se recomienda
+  // renovar (sql/prestamos_vencidos_renovar.sql). Solo aviso, no cobra nada.
+  const [vencidos, setVencidos] = useState([]);
   const [ultimoPago, setUltimoPago] = useState(null);
   const [numero, setNumero] = useState('—');
   const [loading, setLoading] = useState(false);
@@ -194,6 +197,10 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       if (promError && promError.code !== '42P01') console.warn('promesa:', promError.message);
       setPromesa(proms?.[0]?.fecha_promesa ? proms[0] : null);
 
+      const { data: venc, error: vencError } = await supabase.rpc('get_prestamos_vencidos', { p_cliente_id: clienteId });
+      if (vencError) console.warn('vencidos:', vencError.message);
+      setVencidos(Array.isArray(venc) ? venc : []);
+
       // Estado de la mora del cliente (para el switch en tiempo real).
       // El campo muestra la tasa EFECTIVA: la del cliente, o la default de la
       // empresa cuando el cliente esta en 0 — asi se nota que el cotejo esta
@@ -234,6 +241,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       toast({ variant: 'destructive', title: 'No se pudo cargar el estado', description: e.message });
       setEstado(null);
       setClienteMandadoBuscar(false);
+      setVencidos([]);
     }
     setLoading(false);
   }, [toast, moraDefaultRef]);
@@ -328,7 +336,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   };
 
   const nuevo = () => {
-    setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput(''); setPromesa(null);
+    setCliente(null); setEstado(null); setClienteMandadoBuscar(false); setUltimoPago(null); setCodigoInput(''); setPromesa(null); setVencidos([]);
     setAbonos({}); setEditKey(null); setMontoText(''); setMontoObjetivo(null); setComentarios(''); setForma('Efectivo'); setCuenta(''); setBanco(''); setCuentaId(null);
     setPrestamoFiltro('todos'); setReimpNumero(null); setReimpVista(null); cargarProximoNumero();
   };
@@ -936,6 +944,15 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                   </SelectContent>
                 </Select>
               </div>
+              {vencidos.length > 0 && (
+                <div
+                  className="text-[11px] font-bold rounded px-1.5 py-0.5 border leading-tight text-orange-800 bg-orange-50 border-orange-300"
+                  title="La última cuota ya venció y el préstamo todavía tiene balance. No genera interés después del plazo."
+                >
+                  ⚠️ PRÉSTAMO VENCIDO · SE RECOMIENDA RENOVAR:{' '}
+                  {vencidos.map((v) => `${v.numero} (venció ${formatFechaDMY(v.ultima_cuota)}, debe RD$ ${fmt(v.pendiente)})`).join(' · ')}
+                </div>
+              )}
               {promesa && (
                 <div
                   className={`text-[11px] font-bold rounded px-1.5 py-0.5 border truncate leading-tight ${promesa.fecha_promesa < hoy()

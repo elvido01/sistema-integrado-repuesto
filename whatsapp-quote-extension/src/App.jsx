@@ -125,8 +125,20 @@ const GESTION_COBRO_TABS = [
   { key: 'robados', label: 'Robados' },
   { key: 'sin_respuesta', label: 'Sin respuesta' },
   { key: 'criticos', label: 'Casos criticos' },
+  // Ultima cuota ya vencida y sigue debiendo: no genera interes, se
+  // recomienda renovar (sql/prestamos_vencidos_renovar.sql, 14/11/2026).
+  { key: 'vencidos_renovar', label: 'Prestamo vencido: renovar' },
   { key: 'reenviar', label: 'Para reenviar' }
 ];
+
+// Texto del aviso "prestamo vencido" de un caso de cobro.
+function textoVencidoRenovar(cliente) {
+  const v = (cliente?.vencidos_renovar || [])[0];
+  if (!v) return '';
+  const f = String(v.ultima_cuota || '').split('-');
+  const fecha = f.length === 3 ? `${f[2]}/${f[1]}/${f[0]}` : v.ultima_cuota;
+  return `Prestamo vencido desde ${fecha}: se recomienda renovar`;
+}
 
 // Normaliza un telefono dominicano al formato de wa.me (1 + 10 digitos).
 function normalizePhone(raw, options = {}) {
@@ -3251,6 +3263,7 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
           if (tabKey === 'sin_respuesta') return !cliente.tiene_promesa && !cliente.seg_fecha && !cliente.tiene_respuesta;
           if (tabKey === 'criticos') return Boolean(cliente.caso_critico || (cliente.prioridad === 'Alta' && (cliente.dias_mas_vencido >= 31 || !cliente.tiene_promesa)));
           if (tabKey === 'reenviar') return Boolean(cliente.por_reenviar);
+          if (tabKey === 'vencidos_renovar') return Boolean(cliente.vencidos_renovar?.length);
           return true;
         };
         const tabCounts = Object.fromEntries(
@@ -3382,6 +3395,9 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
                     <strong>{cliente.cliente_nombre}</strong>
                     <span className="mf-cob-head-badges">
                       {cliente.por_reenviar && <span className="mf-cob-badge is-reenviar">Reenviar</span>}
+                      {cliente.vencidos_renovar?.length > 0 && (
+                        <span className="mf-cob-badge is-vencido" title={textoVencidoRenovar(cliente)}>Vencido: renovar</span>
+                      )}
                       <span className={`mf-cob-badge${cliente.dias_mas_vencido >= 30 ? ' is-red' : ''}`}>
                         {cliente.dias_mas_vencido}d
                       </span>
@@ -3403,6 +3419,9 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
                   <div className="mf-cob-card-facts">
                     {cliente.cuotas_atrasadas} {cuentaLabel}: {(cliente.facturas || []).map((f) => f.numero).join(', ') || deudaLabel}
                   </div>
+                  {cliente.vencidos_renovar?.length > 0 && (
+                    <div className="mf-cob-vencido">{textoVencidoRenovar(cliente)}</div>
+                  )}
 
                   {usaAccionesWhatsAppCobro && (
                     <>
@@ -3717,6 +3736,7 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
           if (tabKey === 'sin_respuesta') return !cliente.tiene_promesa && !cliente.seg_fecha && !cliente.tiene_respuesta;
           if (tabKey === 'criticos') return Boolean(cliente.caso_critico || (cliente.prioridad === 'Alta' && (cliente.dias_mas_vencido >= 31 || !cliente.tiene_promesa)));
           if (tabKey === 'reenviar') return Boolean(cliente.por_reenviar);
+          if (tabKey === 'vencidos_renovar') return Boolean(cliente.vencidos_renovar?.length);
           return true;
         };
         const tabCounts = Object.fromEntries(
@@ -3819,6 +3839,9 @@ Se borra lo que ya se había copiado de este chat y no se vuelve a copiar. ` +
                           <td>
                             <b className="mf-days">{cliente.dias_mas_vencido || 0} dias</b>
                             <small>{cliente.bucket || '-'}</small>
+                            {cliente.vencidos_renovar?.length > 0 && (
+                              <small className="mf-cob-vencido" title={textoVencidoRenovar(cliente)}>Vencido: renovar</small>
+                            )}
                           </td>
                           <td className="mf-price">{money.format(Number(cliente.total_atrasado) || 0)}</td>
                           <td>

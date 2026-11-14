@@ -1555,6 +1555,23 @@ export const styles = `
     color: #ffffff;
   }
 
+  .mf-cob-badge.is-vencido {
+    background: #7c2d12;
+    color: #ffffff;
+  }
+
+  .mf-cob-vencido {
+    display: block;
+    margin-top: 4px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
   .mf-cob-card-info {
     display: flex;
     align-items: center;

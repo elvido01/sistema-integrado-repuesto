@@ -1406,6 +1406,36 @@ export async function getEstadoCuenta(clienteId) {
 // Lista de cobranza:
 // - Repuestos: TODOS los clientes con facturas vencidas + su seguimiento.
 // - Financiera/MotoPrestamos: clientes con prestamos atrasados, agrupados por cliente.
+
+// Préstamos cuya última cuota ya venció y siguen debiendo: "se recomienda
+// renovar" (sql/prestamos_vencidos_renovar.sql). Solo marca a los clientes de
+// la lista; si el RPC no existe o falla, la lista sale igual que antes.
+async function marcarPrestamosVencidos(gestionCobro, headers) {
+  if (!gestionCobro?.clientes?.length) return;
+  try {
+    const vencidos = await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/get_prestamos_vencidos`, {
+      method: 'POST',
+      headers,
+      body: '{}'
+    });
+    if (!Array.isArray(vencidos) || !vencidos.length) return;
+    const porPrestamo = new Map(vencidos.map((v) => [v.prestamo_id, v]));
+    const porCliente = new Map();
+    for (const v of vencidos) {
+      if (!porCliente.has(v.cliente_id)) porCliente.set(v.cliente_id, []);
+      porCliente.get(v.cliente_id).push(v);
+    }
+    for (const c of gestionCobro.clientes) {
+      const lista = c.prestamo_id && porPrestamo.has(c.prestamo_id)
+        ? [porPrestamo.get(c.prestamo_id)]
+        : (c.prestamo_id ? [] : (porCliente.get(c.cliente_id) || []));
+      if (lista.length) c.vencidos_renovar = lista;
+    }
+  } catch {
+    // Sin el RPC la lista sale como antes.
+  }
+}
+
 export async function getClientesMorosos() {
   const headers = await getAuthHeaders();
 
@@ -1432,6 +1462,7 @@ export async function getClientesMorosos() {
       body: '{}'
     });
     if (gestionCobro?.clientes?.length || isFinancieraEmpresa(empresa)) {
+      await marcarPrestamosVencidos(gestionCobro, headers);
       return gestionCobro;
     }
   } catch {
