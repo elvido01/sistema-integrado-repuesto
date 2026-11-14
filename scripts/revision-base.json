@@ -60,7 +60,7 @@
       "mobile/app/(tabs)/pedidos.tsx": 1,
       "supabase/functions/admin-management/index.ts": 2,
       "supabase/functions/dgii-callback/index.ts": 2,
-      "supabase/functions/emitir-fiscal/index.ts": 14,
+      "supabase/functions/emitir-fiscal/index.ts": 13,
       "supabase/functions/hermes-publication-bridge/index.ts": 2,
       "supabase/functions/ia-ceo-guia/index.ts": 4,
       "supabase/functions/meta-messages-webhook/index.ts": 2,
@@ -121,5 +121,5 @@
       "registrar_pago_prestamo"
     ]
   },
-  "actualizado": "2026-11-09"
+  "actualizado": "2026-11-14"
 }
