@@ -335,9 +335,9 @@
     "src/components/ventas/LineasServicios.jsx": "61c17a6ee2e45db3",
     "src/components/ventas/ProductSearchModal.jsx": "9e0d52ea0eb3c5a0",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
-    "src/components/ventas/VentasFooter.jsx": "e5e6958a6e76e566",
-    "src/components/ventas/VentasHeader.jsx": "45cf0d1265396b2c",
-    "src/components/ventas/VentasTable.jsx": "1e7f3e0995ccdd41",
+    "src/components/ventas/VentasFooter.jsx": "2fbfcd31c2637f34",
+    "src/components/ventas/VentasHeader.jsx": "a70b598a2132cb65",
+    "src/components/ventas/VentasTable.jsx": "5f4f6f02114febfa",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
     "src/hooks/useVentas.js": "5e9c7232e9e45e5b",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "dd64896e2ed7a355",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "ab560f91c8cb0b3a",
+    "src/pages/VentasPage.jsx": "4b501b8f867f4b34",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -438,11 +438,6 @@
     "sql/reporte_interes_siif_cuotas.sql": "018f6b7d234a703a"
   },
   "historial": [
-    {
-      "fecha": "2026-10-30",
-      "nota": "punto de partida",
-      "archivos": 402
-    },
     {
       "fecha": "2026-10-30",
       "nota": "code-review high (2 rondas) de 3ccb2bda + f0abd708: arreglados encabezado del emisor por nombre (Caminero/Morla sin RNC), cliente generico de cotizacion, error de red tratado como sin e-CF, ficha de cliente no encontrada, timeout e-CF 150 s, RNC 9/11 para 01, nulls en ultimo numero, updates de cotizacion/pedido sin select, titulo e-CF de 58 mm",
@@ -948,6 +943,16 @@
         "sql/prestamos_vencidos_renovar_movil.sql",
         "sql/reporte_interes_siif_cuotas.sql",
         "src/pages/ReciboPagoFinancieraPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-14",
+      "nota": "code-review high (estilo POS): 9 hallazgos. Arreglados: regla global de radio/foco quitada (tapaba focus:ring-green del Monto y navy de Notas, rompia grupos campo+boton, tocaba SelectTrigger); foco por defecto movido a @layer components con outline transparente (alto contraste); padding superior de la tabla; quitado override de bordes y transicion de la tabla. Solo quedan cambios de clases en contenedores (redondeo, sombra, bordes finos, espaciado). Sin cambios de logica.",
+      "archivos": [
+        "src/components/ventas/VentasFooter.jsx",
+        "src/components/ventas/VentasHeader.jsx",
+        "src/components/ventas/VentasTable.jsx",
+        "src/pages/VentasPage.jsx"
       ]
     }
   ]
