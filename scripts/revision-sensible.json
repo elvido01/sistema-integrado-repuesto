@@ -295,7 +295,7 @@
     "src/components/compras/AgenteCambioSuplidor.jsx": "5a6e7b9765ba4f47",
     "src/components/compras/CompraDetalles.jsx": "27df8ec3e61b1387",
     "src/components/compras/CompraFooter.jsx": "25d112bb2fc5327b",
-    "src/components/compras/CompraHeader.jsx": "5b1100223eada3df",
+    "src/components/compras/CompraHeader.jsx": "bc580cc829a0b23a",
     "src/components/compras/CompraInteligentePanel.jsx": "ff804e5782a420d7",
     "src/components/compras/InvoiceUploadModal.jsx": "a209c4511074cee9",
     "src/components/compras/PrecisionOcrModal.jsx": "900ae224342d8381",
@@ -345,7 +345,7 @@
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
     "src/lib/dgiiCertificacionStorage.js": "9b63d241c5af90e2",
-    "src/lib/dgiiExport.js": "c3c4700059a994c5",
+    "src/lib/dgiiExport.js": "728c64c3e5e2b2b6",
     "src/lib/dgiiRepresentacionImpresa.js": "9646fb60aae20abe",
     "src/lib/ecfImpresion.js": "33142e9057386d28",
     "src/lib/nominaUtils.js": "68b952393ad68443",
@@ -354,12 +354,12 @@
     "src/lib/printNominaFirmas.js": "3dc0d0313bba5afb",
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
-    "src/pages/ComprasPage.jsx": "e02bf19cdb614f8c",
+    "src/pages/ComprasPage.jsx": "37de711bfccebf19",
     "src/pages/Configuracion/CierreCajaPage.jsx": "2b50de559e520821",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
     "src/pages/CuentasPorPagarPage.jsx": "efe77dc770754dee",
-    "src/pages/DevolucionesPage.jsx": "3ea88c27d05f760b",
+    "src/pages/DevolucionesPage.jsx": "ef3ba04a21050944",
     "src/pages/FinancieraPrestamosPage.jsx": "d357e2238c8baf89",
     "src/pages/FlujoCajaPage.jsx": "780178bdfa02b360",
     "src/pages/GestionCobroPage.jsx": "ab20e6df03486db2",
@@ -375,7 +375,7 @@
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
     "src/pages/ReciboPagoFinancieraPage.jsx": "edc2ea78ad549ed7",
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
-    "src/pages/ReportesDGIIPage.jsx": "dd64896e2ed7a355",
+    "src/pages/ReportesDGIIPage.jsx": "e24fcaa5857a150f",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
     "src/pages/VentasPage.jsx": "4b501b8f867f4b34",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
@@ -396,9 +396,9 @@
     "supabase/functions/emitir-fiscal/dgii_municipios.ts": "05e84e0c74dc6806",
     "supabase/functions/emitir-fiscal/dgii_rfce_produccion.ts": "b237ba185ea7fe97",
     "supabase/functions/emitir-fiscal/dgii_signer.ts": "3ab01a57d8c1f932",
-    "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "2aa62a64403887e5",
+    "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "3ce87e291d537075",
     "supabase/functions/emitir-fiscal/import_map.json": "3d5861c491100d4a",
-    "supabase/functions/emitir-fiscal/index.ts": "8d27fe1e37398546",
+    "supabase/functions/emitir-fiscal/index.ts": "b2878ba40923239b",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
     "supabase/functions/motoflow-compras-advisor/index.ts": "e873b25160eded59",
     "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
@@ -435,19 +435,13 @@
     "sql/interes_siif_reporte_odalys.sql": "0a354be70e35e50a",
     "sql/prestamos_vencidos_renovar.sql": "a0d54ed0b4de1114",
     "sql/prestamos_vencidos_renovar_movil.sql": "114bbad0c62f8e93",
-    "sql/reporte_interes_siif_cuotas.sql": "018f6b7d234a703a"
+    "sql/reporte_interes_siif_cuotas.sql": "018f6b7d234a703a",
+    "sql/ayudante_textos_compras_606.sql": "c94c091b192a8610",
+    "sql/compras_nota_y_retencion_606.sql": "83c05455a39592cf",
+    "sql/it1_notas_credito_ecf.sql": "8de1e6256ca43ae3",
+    "sql/nota_credito_devolucion.sql": "83dbfa957ee1ac97"
   },
   "historial": [
-    {
-      "fecha": "2026-10-31",
-      "nota": "code-review high x4 de secuencias e-NCF: campo acepta numero o e-NCF pegado (valida tipo, sin inventar con puntos), bloqueo de solape en pantalla y en SQL, correccion con mismo Desde, confirmacion si quedan numeros o hay salto, relectura antes de guardar, doble clic. Pendiente conocido: vencimiento por rango (hoy uno por empresa).",
-      "archivos": [
-        "sql/ecf_secuencia_sin_solape.sql",
-        "sql/ecf_secuencias_por_empresa.sql",
-        "src/components/configuracion/DgiiSecuenciasEcf.jsx",
-        "src/lib/ecfSecuencias.js"
-      ]
-    },
     {
       "fecha": "2026-10-31",
       "nota": "code-review high x2 vencimiento secuencia e-CF: quitado aviso fijo 31-12-2028; fecha normalizada DD-MM-AAAA (acepta / y AA); no guarda fecha invalida, vencida, ni vacia en Produccion; texto: va en todos menos E32",
@@ -950,6 +944,23 @@
       "nota": "code-review high (607 tipo ingreso + comprobante en gasto diario): 10 hallazgos. Arreglados: gasto anulado descarta su comprobante (trigger en gastos_diarios), resumen y Pague menos excluyen gastos con comprobante unido y la resta aproximada usa solo los sueltos, forma de pago banco=02, no se inventa el total (monto del gasto en la nota), subida en segundo plano sin bloquear el PDF, un comprobante por gasto. SQL aplicado antes del deploy. Aceptados: 607 '1' (herramienta oficial + instructivo DGII; XML e-CF es otra especificacion), copia de subida en la app movil, hoyRD repetido.",
       "archivos": [
         "src/lib/dgiiExport.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-14",
+      "nota": "code-review high en tres rondas: (1) 606 notas/retencion ISR + app gasto: 10 hallazgos arreglados (Compras bloquea B04/E34, NCF modificado validado, textos, app Ninguno/guard/recalculo); (2) nota E34: 10 hallazgos, arreglados rechazada se rehace, guardados verificados con respaldo, plazo no frena reintento con numero, toma atomica, 607/IT-1 por emision y montos del e-CF, fecha RD, RNC resuelto, descripcion por producto+precio, updates con select; XML validado contra XSD oficial e-CF 34; 807 tests verdes.",
+      "archivos": [
+        "sql/ayudante_textos_compras_606.sql",
+        "sql/compras_nota_y_retencion_606.sql",
+        "sql/it1_notas_credito_ecf.sql",
+        "sql/nota_credito_devolucion.sql",
+        "src/components/compras/CompraHeader.jsx",
+        "src/lib/dgiiExport.js",
+        "src/pages/ComprasPage.jsx",
+        "src/pages/DevolucionesPage.jsx",
+        "src/pages/ReportesDGIIPage.jsx",
+        "supabase/functions/emitir-fiscal/dgii_xml_builder.ts",
+        "supabase/functions/emitir-fiscal/index.ts"
       ]
     }
   ]
