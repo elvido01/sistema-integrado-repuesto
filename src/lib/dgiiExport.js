@@ -92,7 +92,10 @@ export const generar607 = (ventas) => {
       tipoId,                          // 2
       v.ncf || '',                     // 3
       v.ncf_modificado || '',          // 4
-      '01',                            // 5 Tipo ingreso: operaciones (default)
+      // 5 Tipo ingreso: 1 = operaciones (no financieros). UN dígito, como lo
+      //   escribe la herramienta Excel oficial del 607 y lo lista el instructivo
+      //   de la DGII (dic. 2025: valores 1 a 6). Antes iba '01'.
+      '1',
       fmtFecha(v.fecha),               // 6
       // (27/10/2026) Retenciones del cliente agente de retención (servicios).
       // La fecha de retención real es la del pago; se usa la del comprobante.

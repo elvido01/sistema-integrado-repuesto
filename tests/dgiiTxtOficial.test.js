@@ -69,6 +69,13 @@ describe('607 con propina y retenciones (factura de AMSTAR a Oscar Aristy)', () 
   });
 });
 
+describe('607: tipo de ingreso', () => {
+  it('va con un dígito (1 = operaciones), como la herramienta oficial', () => {
+    const cols = generar607([{ ncf: 'B0200000001', fecha: '2026-11-03', itbis: 18, total: 118, forma_pago: 'CONTADO', tipo_pago: 'EFECTIVO' }]).split('|');
+    expect(cols[4]).toBe('1');
+  });
+});
+
 describe('608', () => {
   it('NCF, fecha y tipo de anulación', () => {
     expect(generar608([{ ncf: 'B0100000009', fecha: '2026-10-02', tipo_anulacion: '05' }])).toBe('B0100000009|20261002|05');
