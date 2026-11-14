@@ -360,7 +360,7 @@ const VentasFooter = ({
 
   return (
     <div
-      className={`flex-shrink-0 border-t-2 border-gray-500 bg-[#f0efe8] relative ${
+      className={`pos-moderno flex-shrink-0 border-t border-gray-300 bg-[#f0efe8] relative shadow-[0_-4px_14px_rgba(10,30,58,0.07)] ${
         isMontoFocused ? 'max-md:fixed max-md:left-0 max-md:right-0 max-md:z-[70] max-md:shadow-2xl' : ''
       }`}
       style={isMontoFocused ? { bottom: `${keyboardInset}px` } : undefined}
@@ -368,7 +368,7 @@ const VentasFooter = ({
 
       {/* Popup panel: Notas - opens UPWARD from the bar */}
       {showNotas && (
-        <div className="absolute bottom-full left-0 w-[41.666%] border-2 border-gray-500 border-b-0 bg-[#faf9f4] shadow-lg z-30">
+        <div className="absolute bottom-full left-0 w-[41.666%] border border-gray-300 border-b-0 rounded-t-lg overflow-hidden bg-[#faf9f4] shadow-lg z-30">
           <div className="px-2 py-1 bg-gradient-to-r from-[#d4d4cc] to-[#c8c8c0] border-b border-gray-400">
             <span className="text-[11px] font-black text-[#0a1e3a] uppercase">Notas y Comentarios</span>
           </div>
@@ -385,7 +385,7 @@ const VentasFooter = ({
 
       {/* Popup panel: Print Options - opens UPWARD from the bar */}
       {showPrintOptions && (
-        <div className="absolute bottom-full right-0 w-[58.333%] border-2 border-gray-500 border-b-0 bg-[#faf9f4] shadow-lg z-30">
+        <div className="absolute bottom-full right-0 w-[58.333%] border border-gray-300 border-b-0 rounded-t-lg overflow-hidden bg-[#faf9f4] shadow-lg z-30">
           <div className="px-2 py-1 bg-gradient-to-r from-[#d4d4cc] to-[#c8c8c0] border-b border-gray-400">
             <span className="text-[11px] font-black text-[#0a1e3a] uppercase">Formato de Impresión</span>
           </div>
@@ -429,7 +429,7 @@ const VentasFooter = ({
           Solo se AVISA, y solo cuando no es la tienda: enseñar un dato no
           cuesta un clic; pedirlo sí. */}
       {pideCanalOrigen && canalOrigen && canalOrigen !== CANAL_POR_DEFECTO && (
-        <div className="flex items-center gap-1.5 px-2 py-1 border-b-2 border-gray-500 bg-[#eef7ff]">
+        <div className="flex items-center gap-1.5 px-2 py-1 border-b border-gray-300 bg-[#eef7ff]">
           <span className="text-[10px] font-black text-[#0a1e3a] uppercase">Vino por</span>
           <span className="text-[11px] font-black text-[#0a1e3a]">
             {emojiCanal(canalOrigen)} {nombreCanal(canalOrigen)}
@@ -441,7 +441,7 @@ const VentasFooter = ({
       <div className="grid grid-cols-12 gap-0">
 
         {/* ===== LEFT: Forma de Pago ===== */}
-        <div className="col-span-5 border-r-2 border-gray-500 bg-[#faf9f4]">
+        <div className="col-span-5 border-r border-gray-300 bg-[#faf9f4]">
           {/* Row 1: Tipo de pago */}
           <div className="flex items-center gap-2 px-2 py-1 border-b border-gray-300 bg-[#0a1e3a]/5">
             <RadioGroup value={paymentType} onValueChange={setPaymentType} className="flex gap-3">
@@ -600,7 +600,7 @@ const VentasFooter = ({
           </div>
 
           {/* TOTAL FACTURA + Buttons */}
-          <div className="flex items-center border-t-2 border-gray-600 bg-gradient-to-r from-[#fff8e0] to-[#fff0c0]">
+          <div className="flex items-center border-t border-gray-300 bg-gradient-to-r from-[#fff8e0] to-[#fff0c0]">
             <div className="flex justify-between items-center flex-1 px-3 h-9">
               <span className="text-[16px] font-black text-[#ff0000] uppercase tracking-tighter">TOTAL FACTURA</span>
               <span className="font-mono text-[20px] font-black text-[#ff0000] tracking-tighter leading-none">
@@ -632,7 +632,7 @@ const VentasFooter = ({
       {/* Bottom toolbar: aligned with grid columns (5/12 left, 7/12 right) */}
       <div className="grid grid-cols-12 gap-0 border-t border-gray-400 bg-gradient-to-b from-[#e8e8e0] to-[#d8d8d0]">
         <button
-          className={`col-span-5 h-6 text-[11px] font-bold uppercase border-r-2 border-gray-500 transition-colors ${showNotas ? 'bg-[#0a1e3a] text-white' : 'text-gray-700 hover:bg-gray-300'}`}
+          className={`col-span-5 h-6 text-[11px] font-bold uppercase border-r border-gray-300 transition-colors ${showNotas ? 'bg-[#0a1e3a] text-white' : 'text-gray-700 hover:bg-gray-300'}`}
           onClick={() => { setShowNotas(!showNotas); setShowPrintOptions(false); }}
         >
           Notas y Comentarios

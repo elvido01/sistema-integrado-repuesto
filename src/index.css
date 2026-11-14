@@ -356,3 +356,29 @@ input[type=number] {
 .custom-sidebar-scroll-light::-webkit-scrollbar-thumb:hover {
   background: rgba(147, 174, 219, 0.5);
 }
+/* ── Punto de venta: acabado moderno (14/11/2026) ──────────────────────
+   Solo forma: esquinas, líneas más finas, foco visible y transiciones.
+   No cambia colores ni botones (los <button> no se tocan). */
+.pos-moderno input:not([type="checkbox"]):not([type="radio"]),
+.pos-moderno textarea,
+.pos-moderno [role="combobox"] {
+  border-radius: 6px;
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+.pos-moderno input:not([type="checkbox"]):not([type="radio"]):focus,
+.pos-moderno textarea:focus,
+.pos-moderno [role="combobox"]:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .18);
+}
+/* Tabla: rejilla más suave y fila que responde al pasar el ratón. */
+.pos-tabla th,
+.pos-tabla td {
+  border-color: rgba(107, 114, 128, .28);
+}
+.pos-tabla tbody tr {
+  transition: background-color .12s ease;
+}
+.pos-tabla thead th {
+  letter-spacing: .02em;
+}

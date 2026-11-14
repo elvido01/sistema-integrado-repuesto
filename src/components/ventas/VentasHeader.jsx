@@ -294,9 +294,9 @@ const VentasHeader = ({
   }
 
   return (
-    <div className="bg-[#f0efe8] space-y-0 border-b-2 border-gray-500">
+    <div className="pos-moderno bg-[#f0efe8] space-y-0 border-b border-gray-300">
       {/* Top Utility Bar - Solid Navy */}
-      <div className="bg-[#0a1e3a] text-white flex items-center justify-between px-2 py-0.5 h-8">
+      <div className="bg-[#0a1e3a] text-white flex items-center justify-between px-3 py-0.5 h-9 shadow-md">
         <TooltipProvider>
           <div className="flex items-center gap-1">
             <Tooltip>
@@ -352,10 +352,10 @@ const VentasHeader = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-0 p-1 px-1.5">
+      <div className="grid grid-cols-12 gap-2 p-2">
         {/* Client Data Section */}
-        <div className="col-span-8 bg-[#faf9f4] border-2 border-gray-400 mb-0">
-          <div className="py-0.5 px-2 bg-gradient-to-r from-[#d4d4cc] to-[#c8c8c0] border-b-2 border-gray-500">
+        <div className="col-span-8 bg-[#faf9f4] border border-gray-300 rounded-lg shadow-sm overflow-hidden mb-0">
+          <div className="py-1 px-3 bg-gradient-to-r from-[#d4d4cc] to-[#c8c8c0] border-b border-gray-300">
             <h2 className="text-[12px] font-black text-[#0a1e3a] uppercase tracking-wider inline-block">DATOS DEL CLIENTE</h2>
             <span className="float-right text-[10px] text-[#0a1e3a]/60 font-bold tracking-widest uppercase mt-0.5">TECLA F3 PARA BUSCAR</span>
           </div>
@@ -484,8 +484,8 @@ const VentasHeader = ({
         </div>
 
         {/* Detalles de la Factura */}
-        <div className="col-span-4 bg-[#faf9f4] border-2 border-gray-400">
-          <div className="px-2 py-0.5 bg-gradient-to-r from-[#d4d4cc] to-[#c8c8c0] border-b-2 border-gray-500">
+        <div className="col-span-4 bg-[#faf9f4] border border-gray-300 rounded-lg shadow-sm overflow-hidden">
+          <div className="px-3 py-1 bg-gradient-to-r from-[#d4d4cc] to-[#c8c8c0] border-b border-gray-300">
             <div className="flex items-center justify-between h-6">
               <h2 className="text-[11px] font-black text-[#0a1e3a] uppercase tracking-wide whitespace-nowrap">DETALLES FACTURA</h2>
 

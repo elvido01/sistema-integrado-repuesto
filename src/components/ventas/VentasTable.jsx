@@ -207,10 +207,10 @@ const VentasTable = ({
   }
 
   return (
-    <div className="flex-grow border-2 border-gray-500 bg-[#f5f5f0] flex flex-col shadow-inner">
+    <div className="pos-moderno pos-tabla flex-grow bg-[#f5f5f0] flex flex-col">
       <div className="flex-grow overflow-y-auto scrollbar-thin scrollbar-thumb-gray-400">
         <Table className="border-collapse">
-          <TableHeader className="sticky top-0 z-10 border-b-2 border-gray-600 shadow-sm">
+          <TableHeader className="sticky top-0 z-10 border-b border-gray-400 shadow-sm">
             <TableRow className="hover:bg-transparent border-none h-7 bg-gradient-to-b from-[#d4d4cc] to-[#c0c0b8]">
               <TableHead className="h-7 p-1 w-[120px] text-[13px] font-black text-gray-800 border-r border-gray-500 uppercase">
                 <div className="flex items-center justify-between">
@@ -232,7 +232,7 @@ const VentasTable = ({
           </TableHeader>
           <TableBody>
             {/* STAGING ROW - Amarillo fuerte como el sistema antiguo */}
-            <TableRow className="sticky top-7 bg-[#fff8b0] z-20 border-b-2 border-gray-600 shadow-lg h-8 group">
+            <TableRow className="sticky top-7 bg-[#fff8b0] z-20 border-b border-gray-400 shadow-md h-8 group">
               <TableCell className="p-1 border-r border-gray-500">
                 <input
                   id="input-codigo"
