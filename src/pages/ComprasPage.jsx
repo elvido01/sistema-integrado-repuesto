@@ -73,6 +73,9 @@ const ComprasPage = () => {
     numero: '',
     fecha: getCurrentDateInTimeZone(),
     ncf: '',
+    ncf_modificado: '',        // nota de crédito/débito del suplidor (606 col. 5)
+    isr_retenido_pct: 0,       // retención de ISR al suplidor (606), no cambia la CxP
+    tipo_retencion_isr: null,  // código 1..9 del 606
     referencia: '',
     tipo_bienes_servicios: '09',
     sub_tipo: 'Compra de Merc',
@@ -266,6 +269,9 @@ const ComprasPage = () => {
         // corrido, asi que cada edicion retrocedia la fecha un dia.
         fecha: new Date(`${String(filaDetalle.fecha).slice(0, 10)}T12:00:00`),
         ncf: filaDetalle.ncf || '',
+        ncf_modificado: filaDetalle.ncf_modificado || '',
+        isr_retenido_pct: Number(filaDetalle.isr_retenido_pct) || 0,
+        tipo_retencion_isr: filaDetalle.tipo_retencion_isr ?? null,
         referencia: data.referencia || '',
         tipo_bienes_servicios: filaDetalle.tipo_bienes_servicios || '09',
         sub_tipo: filaDetalle.sub_tipo || 'Compra de Merc',
@@ -1436,6 +1442,12 @@ const ComprasPage = () => {
       // Editando, el número es el que tenía (ver numeroOriginal arriba).
       ...(isEditMode && numeroOriginal.current ? { numero: numeroOriginal.current } : {}),
       fecha: formatDateForSupabase(compra.fecha),
+      // Datos del 606: el NCF modificado solo en notas de crédito/débito, y el
+      // tipo de retención solo si hay retención de ISR.
+      ncf_modificado: /^(B03|B04|E33|E34)/i.test(String(compra.ncf || '').trim())
+        ? (String(compra.ncf_modificado || '').trim().toUpperCase() || null) : null,
+      isr_retenido_pct: Number(compra.isr_retenido_pct) > 0 ? Number(compra.isr_retenido_pct) : 0,
+      tipo_retencion_isr: Number(compra.isr_retenido_pct) > 0 ? (compra.tipo_retencion_isr || null) : null,
       total_exento: totalsGuardar.exento,
       total_gravado: totalsGuardar.gravado,
       descuento_total: totalsGuardar.descuento,
@@ -1531,6 +1543,10 @@ const ComprasPage = () => {
           numero: `${baseNum}-${String(idx + 1).padStart(2, '0')}`,
           referencia: refPagare(idx, plazo),
           ncf: idx === 0 ? (compra.ncf || null) : null,
+          // Los datos fiscales van solo en la fila que lleva el NCF.
+          ncf_modificado: idx === 0 ? compraData.ncf_modificado : null,
+          isr_retenido_pct: idx === 0 ? compraData.isr_retenido_pct : 0,
+          tipo_retencion_isr: idx === 0 ? compraData.tipo_retencion_isr : null,
           total_exento: montoRD,
           total_gravado: 0,
           descuento_total: 0,

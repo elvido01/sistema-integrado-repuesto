@@ -110,7 +110,7 @@ const ReportesDGIIPage = () => {
       // (_contab_compras_606): una compra anulada no se reporta.
       const c = await traerTodo(() => supabase
         .from('compras')
-        .select('id, numero, fecha, ncf, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc)')
+        .select('id, numero, fecha, ncf, ncf_modificado, tipo_retencion_isr, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc)')
         .gte('fecha', desde)
         .lte('fecha', hasta)
         .not('ncf', 'is', null)

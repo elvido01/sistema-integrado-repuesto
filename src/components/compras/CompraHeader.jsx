@@ -9,8 +9,23 @@ import { format } from 'date-fns';
 import { Calendar as CalendarIcon, Search, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// Tipos de retención de ISR del 606 (instructivo oficial de la DGII, col. 17).
+const TIPOS_RETENCION_ISR = [
+  [1, 'Alquileres'],
+  [2, 'Honorarios por servicios'],
+  [3, 'Otras rentas'],
+  [4, 'Otras rentas (rentas presuntas)'],
+  [5, 'Intereses a personas jurídicas residentes'],
+  [6, 'Intereses a personas físicas residentes'],
+  [7, 'Retención por proveedores del Estado'],
+  [8, 'Juegos telefónicos'],
+  [9, 'Subsector ganadería de carne bovina'],
+];
+const esNotaCreditoDebito = (ncf) => /^(B03|B04|E33|E34)/i.test(String(ncf || '').trim());
+
 const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplidorSearch, onEditSuplidor }) => {
   const selectedProveedor = proveedores.find(p => p.id === compra.suplidor_id);
+  const conRetencionIsr = Number(compra.isr_retenido_pct) > 0;
 
   return (
     <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-6 border rounded-b-lg bg-gray-50/50">
@@ -71,6 +86,48 @@ const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplido
                 onChange={e => setCompra({ ...compra, referencia: e.target.value })}
               />
             </div>
+          </div>
+
+          {/* Nota de crédito/débito del suplidor: el 606 pide el NCF que modifica (col. 5). */}
+          {esNotaCreditoDebito(compra.ncf) && (
+            <div className="flex items-center gap-2">
+              <Label htmlFor="ncf-modificado" className="text-[11px] font-bold w-16 shrink-0 leading-tight">NCF que modifica</Label>
+              <Input
+                id="ncf-modificado"
+                value={compra.ncf_modificado || ''}
+                className={`h-7 text-xs uppercase ${compra.ncf_modificado ? '' : 'border-amber-400 bg-amber-50'}`}
+                placeholder="NCF de la factura que esta nota corrige (ej. B0100000123)"
+                onChange={e => setCompra({ ...compra, ncf_modificado: e.target.value.toUpperCase() })}
+              />
+            </div>
+          )}
+
+          {/* Retención de ISR al suplidor (606 col. 17-18). Solo reportes: no
+              cambia lo que se le debe en CxP. */}
+          <div className="flex items-center gap-2">
+            <Label htmlFor="isr-retenido" className="text-[11px] font-bold w-16 shrink-0 leading-tight">Retención ISR %</Label>
+            <Input
+              id="isr-retenido"
+              type="number" min="0" max="100" step="0.01"
+              value={compra.isr_retenido_pct || ''}
+              placeholder="0"
+              className="h-7 text-xs w-20"
+              onChange={e => setCompra({ ...compra, isr_retenido_pct: e.target.value })}
+              title="Solo si usted le retuvo ISR al suplidor. Va en el 606; no cambia lo que se le debe."
+            />
+            {conRetencionIsr && (
+              <Select
+                value={compra.tipo_retencion_isr ? String(compra.tipo_retencion_isr) : ''}
+                onValueChange={v => setCompra({ ...compra, tipo_retencion_isr: Number(v) })}
+              >
+                <SelectTrigger className={`h-7 text-[11px] bg-white flex-1 ${compra.tipo_retencion_isr ? '' : 'border-amber-400'}`}>
+                  <SelectValue placeholder="Tipo de retención (606)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIPOS_RETENCION_ISR.map(([k, t]) => <SelectItem key={k} value={String(k)}>{k} · {t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* Row 3: Tipo and Sub-Tipo */}

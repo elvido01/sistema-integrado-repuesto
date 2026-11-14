@@ -76,6 +76,25 @@ describe('607: tipo de ingreso', () => {
   });
 });
 
+describe('606: nota de crédito y retención de ISR (datos guardados en Compras)', () => {
+  const base = { fecha: '2026-10-20', total_gravado: 1000, total_exento: 0, itbis_total: 180, total_compra: 1180, forma_pago: 'Contado', suplidor_rnc: '131123456' };
+  it('la nota de crédito con su NCF modificado entra; sin él, queda fuera para ponerla a mano', () => {
+    const { incluidas, excluidas } = revisar606([
+      { ...base, id: 1, ncf: 'B0400000099', ncf_modificado: 'B0100000123' },
+      { ...base, id: 2, ncf: 'B0400000098' },
+    ]);
+    expect(incluidas.map((c) => c.id)).toEqual([1]);
+    expect(excluidas.map((c) => c.id)).toEqual([2]);
+    expect(fila606(incluidas[0])[4]).toBe('B0100000123');
+  });
+  it('la retención de ISR con su tipo entra con el código en la col. 17', () => {
+    const { incluidas } = revisar606([{ ...base, id: 3, ncf: 'B0100000097', isr_retenido_pct: 10, tipo_retencion_isr: 2 }]);
+    const f = fila606(incluidas[0]);
+    expect(String(f[16])).toBe('2');
+    expect(Number(f[17])).toBeGreaterThan(0);
+  });
+});
+
 describe('608', () => {
   it('NCF, fecha y tipo de anulación', () => {
     expect(generar608([{ ncf: 'B0100000009', fecha: '2026-10-02', tipo_anulacion: '05' }])).toBe('B0100000009|20261002|05');
