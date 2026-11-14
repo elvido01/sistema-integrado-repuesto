@@ -135,11 +135,31 @@ const ReportesDGIIPage = () => {
         ncf: f.ncf || docsAnul.get(f.id) || null,
       })).filter(f => f.ncf && f.ncf !== '');
 
-      const ventasNuevas = (v || []).map(r => ({
+      // (14/11/2026) Notas de crédito electrónicas (E34) de las devoluciones
+      // del mes: van en el 607 como una línea más, con el NCF que modifican.
+      // Solo las emitidas que la DGII no rechazó.
+      const ncRaw = await traerTodo(() => supabase
+        .from('devoluciones')
+        .select('id, numero, fecha_devolucion, encf, ncf_modificado, itbis_total, total_devolucion, cliente_info, documento:documentos_fiscales!devoluciones_documento_fiscal_id_fkey(estado, estado_dgii), factura:facturas(forma_pago, tipo_pago, clientes(nombre, rnc))')
+        .not('encf', 'is', null)
+        .gte('fecha_devolucion', desde)
+        .lte('fecha_devolucion', hasta)
+        .order('fecha_devolucion', { ascending: true }).order('id', { ascending: true }));
+      const notasCredito = (ncRaw || [])
+        .filter((d) => d.documento?.estado === 'emitido' && d.documento?.estado_dgii !== 'rechazado')
+        .map((d) => ({
+          id: `nc-${d.id}`, numero: `DV-${d.numero}`, fecha: d.fecha_devolucion, ncf: d.encf, ncf_modificado: d.ncf_modificado,
+          itbis: d.itbis_total, total: d.total_devolucion, propina: 0,
+          forma_pago: d.factura?.forma_pago, tipo_pago: d.factura?.tipo_pago, es_nota_credito: true,
+          cliente_nombre: d.factura?.clientes?.nombre || d.cliente_info?.nombre,
+          cliente_rnc: d.factura?.clientes?.rnc || d.cliente_info?.rnc,
+        }));
+
+      const ventasNuevas = [...(v || []).map(r => ({
         ...r,
         cliente_nombre: r.clientes?.nombre,
         cliente_rnc: r.clientes?.rnc,
-      }));
+      })), ...notasCredito];
       // (12/11/2026) Comprobantes de gastos APROBADOS (foto de la factura del
       // gasto: sql/ayudante_contable_fase2.sql). Entran al 606 como una compra
       // más. Si esta consulta falla no sale nada: un 606 sin los gastos no puede salir callado.
@@ -188,9 +208,10 @@ const ReportesDGIIPage = () => {
   // ── Totales ──
   const totales607 = useMemo(() => ({
     cant: ventas.length,
-    subtotal: ventas.reduce((s, v) => s + montoFacturado607(v), 0), // sin ITBIS y ya con descuentos
-    itbis: ventas.reduce((s, v) => s + parseFloat(v.itbis || 0), 0),
-    total: ventas.reduce((s, v) => s + parseFloat(v.total || 0), 0),
+    // Las notas de crédito (E34) van en positivo en el TXT pero RESTAN aquí.
+    subtotal: ventas.reduce((s, v) => s + (v.es_nota_credito ? -1 : 1) * montoFacturado607(v), 0), // sin ITBIS y ya con descuentos
+    itbis: ventas.reduce((s, v) => s + (v.es_nota_credito ? -1 : 1) * parseFloat(v.itbis || 0), 0),
+    total: ventas.reduce((s, v) => s + (v.es_nota_credito ? -1 : 1) * parseFloat(v.total || 0), 0),
   }), [ventas]);
 
   // (07/11/2026) Qué entra al 606 y qué no (lib/dgiiExport → revisar606).

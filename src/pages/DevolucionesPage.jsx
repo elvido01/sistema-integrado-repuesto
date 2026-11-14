@@ -62,6 +62,53 @@ const DevolucionesPage = () => {
   const [imprimir, setImprimir] = useState(false);
   const [emitirDgii, setEmitirDgii] = useState(false);
   const [emitiendoDgii, setEmitiendoDgii] = useState(false);
+  // Devolución ya grabada de esta factura que quedó SIN su nota de crédito
+  // (la DGII no respondió, etc.): se puede reintentar.
+  const [notaPendiente, setNotaPendiente] = useState(null);
+
+  // (14/11/2026) Factura con comprobante electrónico (E31/E32) de hace 30 días
+  // o menos: lleva nota de crédito E34. Pasados 30 días la nota ya no rebaja el
+  // ITBIS: el emisor no la emite sola (hay que consultarlo con el contador).
+  const ecfDeFactura = (f) => (/^E3[12]\d{10}$/.test(String(f?.ncf || '')) ? f.ncf : null);
+  const diasDeFactura = (f) => {
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
+    const fe = String(f?.fecha || '').slice(0, 10);
+    return Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${fe}T12:00:00Z`)) / 86400000);
+  };
+
+  // Emite la nota de crédito electrónica de una devolución YA grabada. Si falla,
+  // la devolución queda y se reintenta buscando la factura otra vez.
+  const emitirNota = async (devolucionId, razon) => {
+    setEmitiendoDgii(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
+        body: { action: 'dgii_emitir_nota_credito', devolucion_id: devolucionId, razon_modificacion: razon || undefined },
+      });
+      if (error) {
+        let msg = error.message;
+        try { const j = await error.context?.json?.(); if (j?.error) msg = j.error; } catch { /* sin cuerpo */ }
+        throw new Error(msg);
+      }
+      if (!data?.ok) throw new Error(data?.error || 'La DGII no aceptó la nota');
+      toast({
+        title: data.ya_emitida ? 'Esta devolución ya tenía su nota de crédito' : '🧾 Nota de crédito enviada a la DGII',
+        description: `e-NCF ${data.encf}${data.encf_modificado ? ` · modifica ${data.encf_modificado}` : ''}. La DGII confirma en unos minutos (Monitor DGII).`,
+        duration: 10000,
+      });
+      setNotaPendiente(null);
+      return true;
+    } catch (e) {
+      toast({
+        variant: 'destructive',
+        title: 'La devolución quedó guardada, pero la nota de crédito no salió',
+        description: `${e.message} · Para reintentar, busque la factura otra vez en Devoluciones.`,
+        duration: 15000,
+      });
+      return false;
+    } finally {
+      setEmitiendoDgii(false);
+    }
+  };
   // (10/10/2026) Número de la última devolución grabada. El número lo pone la
   // base al grabar (secuencia compartida entre empresas): antes no se sabe.
   // Queda visible hasta que se busque otra factura.
@@ -80,12 +127,16 @@ const DevolucionesPage = () => {
       // 1. Check if a return already exists for this invoice
       const { data: existingReturn, error: checkError } = await supabase
         .from('devoluciones')
-        .select('id, numero')
+        .select('id, numero, encf, notas, factura:facturas(ncf, fecha)')
         .eq('tenant_id', tenantId)
         .eq('factura_id', (await supabase.from('facturas').select('id').eq('tenant_id', tenantId).eq('numero', facturaNumero).single()).data?.id)
         .maybeSingle();
 
       if (existingReturn) {
+        // Quedó sin su nota de crédito: se ofrece reintentarla.
+        if (!existingReturn.encf && ecfDeFactura(existingReturn.factura)) {
+          setNotaPendiente(existingReturn);
+        }
         toast({
           variant: 'destructive',
           title: 'Factura ya devuelta',
@@ -116,6 +167,8 @@ const DevolucionesPage = () => {
 
       setFactura(facturaData);
       setCliente(facturaData.cliente);
+      // Con comprobante electrónico y 30 días o menos: la nota va marcada.
+      setEmitirDgii(!!ecfDeFactura(facturaData) && diasDeFactura(facturaData) <= 30);
       setAvailableItems(detallesData.map(d => ({
         ...d,
         ubicacion: d.producto?.ubicacion || 'N/A'
@@ -338,43 +391,10 @@ const DevolucionesPage = () => {
         printDevolucionPOS(devolucion, factura, cliente, detallesDevolucion);
       }
 
-      // Emitir Nota de Credito DGII (Tipo 34) si el checkbox esta activo y la
-      // factura original tuvo e-NCF. Sin e-NCF original no hay nada que modificar.
-      if (emitirDgii) {
-        const facturaTeniaEcf = !!(factura.ncf && /^E\d{12}$/.test(factura.ncf));
-        if (!facturaTeniaEcf) {
-          toast({
-            variant: 'destructive',
-            title: 'Sin e-NCF original',
-            description: 'La factura original no se emitio con e-CF DGII, no se puede generar Nota de Credito Tipo 34.',
-          });
-        } else {
-          setEmitiendoDgii(true);
-          try {
-            const { data: dgiiData, error: dgiiErr } = await supabase.functions.invoke('emitir-fiscal', {
-              body: {
-                action: 'dgii_emitir_nota_credito',
-                devolucion_id: devolucion.id,
-                codigo_modificacion: '1', // 1 = Anulacion total/parcial por devolucion
-                razon_modificacion: notas || 'Devolucion de mercancia',
-              },
-            });
-            if (dgiiErr) throw dgiiErr;
-            if (!dgiiData?.ok) throw new Error(dgiiData?.error || 'DGII no acepto la nota');
-            toast({
-              title: '🧾 Nota de Credito enviada a DGII',
-              description: `e-NCF ${dgiiData.encf} · TrackId ${dgiiData.trackId}`,
-            });
-          } catch (dgiiErr) {
-            toast({
-              variant: 'destructive',
-              title: 'Error emitiendo Nota a DGII',
-              description: dgiiErr.message || 'Revisa la configuracion DGII.',
-            });
-          } finally {
-            setEmitiendoDgii(false);
-          }
-        }
+      // Nota de crédito electrónica (E34): la devolución ya quedó grabada; si
+      // la nota falla, se reintenta buscando la factura de nuevo.
+      if (emitirDgii && ecfDeFactura(factura)) {
+        await emitirNota(devolucion.id, motivo || notas);
       }
 
       resetForm(true);
@@ -400,6 +420,7 @@ const DevolucionesPage = () => {
     setFecha(getCurrentDateInTimeZone());
     setImprimir(false);
     setEmitirDgii(false);
+    setNotaPendiente(null);
   };
 
   const handleKeyDown = useCallback((e) => {
@@ -697,17 +718,35 @@ const DevolucionesPage = () => {
                 id="emitir-dgii"
                 checked={emitirDgii}
                 onCheckedChange={setEmitirDgii}
-                disabled={!factura || !(factura.ncf && /^E\d{12}$/.test(factura.ncf))}
+                disabled={!factura || !ecfDeFactura(factura) || diasDeFactura(factura) > 30}
                 className="border-slate-400"
               />
               <Label
                 htmlFor="emitir-dgii"
-                className={`text-[10px] font-bold uppercase cursor-pointer ${(!factura || !(factura.ncf && /^E\d{12}$/.test(factura.ncf))) ? 'text-slate-400' : 'text-emerald-700'}`}
+                className={`text-[10px] font-bold uppercase cursor-pointer ${(!factura || !ecfDeFactura(factura)) ? 'text-slate-400' : 'text-emerald-700'}`}
               >
-                Emitir Nota de Crédito DGII (Tipo 34) {emitiendoDgii && <Loader2 className="inline w-3 h-3 animate-spin ml-1" />}
+                Emitir nota de crédito electrónica (E34) {emitiendoDgii && <Loader2 className="inline w-3 h-3 animate-spin ml-1" />}
               </Label>
             </div>
-            {factura && !(factura.ncf && /^E\d{12}$/.test(factura.ncf)) && (
+            {factura && ecfDeFactura(factura) && diasDeFactura(factura) > 30 && (
+              <p className="text-[10px] text-amber-700 italic px-1">
+                La factura tiene {diasDeFactura(factura)} días: pasados 30 la nota ya no rebaja el ITBIS. Consúltelo con su contador; la devolución se puede grabar sin nota.
+              </p>
+            )}
+            {notaPendiente && (
+              <div className="mx-1 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900">
+                La devolución DV-{notaPendiente.numero} de esta factura quedó sin su nota de crédito.
+                <button
+                  type="button"
+                  disabled={emitiendoDgii}
+                  onClick={() => emitirNota(notaPendiente.id)}
+                  className="ml-2 rounded bg-emerald-600 px-2 py-0.5 font-bold text-white disabled:opacity-50"
+                >
+                  {emitiendoDgii ? 'Enviando…' : 'Emitir nota ahora'}
+                </button>
+              </div>
+            )}
+            {factura && !ecfDeFactura(factura) && (
               <p className="text-[10px] text-amber-600 italic px-1">
                 La factura original no tiene e-NCF DGII — no se puede emitir Nota Tipo 34.
               </p>

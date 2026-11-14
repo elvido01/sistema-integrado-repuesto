@@ -1316,22 +1316,33 @@ export function notaToEcfInput(nota, facturaOriginal, cliente, configEmisor, enc
   // Tipo: 33 (debito) o 34 (credito) — viene de la nota o se infiere
   const tipoEcf = (nota.tipo === "debito" || nota.tipo === "33") ? "33" : "34";
 
-  // Items del AJUSTE (no toda la factura, sólo lo que cambia)
+  // Items del AJUSTE (no toda la factura, sólo lo que cambia).
+  // (14/11/2026) Igual que facturaToEcfInput: precio = base SIN ITBIS (como lo
+  // guarda la venta y lo copia la devolución); si la línea trae el MONTO de
+  // ITBIS (d.itbis), ese manda y la tasa se deduce (0 → exenta, ~16 % → 16).
   const items = (nota.items || []).map((d, idx) => {
     const cantidad = Number(d.cantidad) || 0;
     const precio = Number(d.precio) || 0;
     const descuento = 0;
     const monto = Number((cantidad * precio).toFixed(2));
-    const itbisPct = Number(d.itbis_pct);
-    const aplicaItbis = isFinite(itbisPct) ? itbisPct > 0 : true;
+    const itbisMonto = Number(d.itbis);
+    const tieneMonto = d.itbis !== null && d.itbis !== undefined && isFinite(itbisMonto);
+    const pctCampo = Number(d.itbis_pct);
+    const pctDeducido = tieneMonto && monto > 0 ? itbisMonto / monto : NaN;
+    const itbisPct = d.itbis_pct !== null && d.itbis_pct !== undefined && isFinite(pctCampo)
+      ? (pctCampo > 1 ? pctCampo / 100 : pctCampo)
+      : (isFinite(pctDeducido) ? (Math.abs(pctDeducido - 0.16) < 0.01 ? 0.16 : (pctDeducido > 0.005 ? 0.18 : 0)) : 0.18);
+    const aplicaItbis = itbisPct > 0;
     return {
       descripcion: d.descripcion || `Ajuste ${idx + 1}`,
       cantidad,
       precio_unitario: precio,
       descuento_monto: descuento,
       indicador_facturacion: aplicaItbis ? "1" : "4",
+      indicador_bien_servicio: d.naturaleza === "servicio" ? "2" : "1",
       monto_item: Number(monto.toFixed(2)),
-      itbis_pct: aplicaItbis ? (isFinite(itbisPct) && itbisPct > 0 ? itbisPct : 0.18) : 0,
+      itbis_pct: aplicaItbis ? itbisPct : 0,
+      itbis_monto: aplicaItbis && tieneMonto && itbisMonto > 0 ? Number(itbisMonto.toFixed(2)) : null,
       unidad_medida: "43",
     };
   });
@@ -1343,13 +1354,18 @@ export function notaToEcfInput(nota, facturaOriginal, cliente, configEmisor, enc
     it.indicador_facturacion === "4" ? s + it.monto_item : s, 0);
   const totalItbis = items.reduce((s, it) => {
     if (it.indicador_facturacion !== "1") return s;
+    if (it.itbis_monto != null) return s + it.itbis_monto;
     const rate = it.itbis_pct > 1 ? it.itbis_pct / 100 : it.itbis_pct;
     return s + Number((it.monto_item * rate).toFixed(2));
   }, 0);
   const total = totalGravado + totalExento + totalItbis;
 
-  // Formato de fecha del NCF original: DD-MM-YYYY (lo que pide DGII)
+  // Formato de fecha del NCF original: DD-MM-YYYY (lo que pide DGII).
+  // 'YYYY-MM-DD' se toma tal cual: new Date() lo leería en UTC y en Santo
+  // Domingo podría correrse un día.
   const fechaNcfMod = (() => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(facturaOriginal.fecha || ""));
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
     const d = facturaOriginal.fecha ? new Date(facturaOriginal.fecha) : null;
     if (!d || isNaN(d.getTime())) return "";
     return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
@@ -1358,6 +1374,9 @@ export function notaToEcfInput(nota, facturaOriginal, cliente, configEmisor, enc
   return {
     tipo_ecf: tipoEcf,
     encf,
+    // 0 = dentro de los 30 días de la factura (afecta el ITBIS). Quien emite
+    // después de 30 días tiene que pasar "1" a propósito.
+    indicador_nota_credito: opts.indicador_nota_credito ?? "0",
     fecha_emision: nota.fecha || new Date().toISOString(),
     emisor: {
       rnc: configEmisor.rnc_emisor,
