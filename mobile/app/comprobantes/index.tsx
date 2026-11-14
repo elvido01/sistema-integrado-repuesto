@@ -28,7 +28,10 @@ type Comprobante = {
   id: string; fecha: string; rnc: string; proveedor_nombre: string | null; ncf: string;
   monto_gravado: number; monto_exento: number; itbis: number; propina: number; total: number;
   estado: 'por_revisar' | 'aprobado' | 'descartado'; avisos: string[]; imagen_path: string | null; entra_606: boolean;
+  gasto_id: string | null; forma_pago: string;
 };
+// Gasto diario (anotado en la web) al que se puede unir el comprobante.
+type GastoDiario = { id: string; fecha: string; monto: number; descripcion: string; cuenta_bancaria_id: string | null };
 
 const fmt = (v: any) => `RD$ ${(Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fdate = (d: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
@@ -58,13 +61,16 @@ export default function ComprobantesScreen() {
   const [form, setForm] = useState({ fecha: '', rnc: '', ncf: '', monto_gravado: '', monto_exento: '', itbis: '', total: '' });
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  // «¿De qué gasto es?»: gastos recientes sin comprobante, el más parecido primero.
+  const [gastos, setGastos] = useState<GastoDiario[]>([]);
+  const [gastoSel, setGastoSel] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     // Lo SUBIDO en los últimos 60 días + todo lo que siga por revisar. Por fecha
     // de subida y no de la factura: si la fecha se leyó mal, no desaparece.
     const desde = new Date(Date.now() - 60 * 86400000).toISOString();
     const { data, error } = await supabase.from('gastos_comprobantes')
-      .select('id, fecha, rnc, proveedor_nombre, ncf, monto_gravado, monto_exento, itbis, propina, total, estado, avisos, imagen_path, entra_606')
+      .select('id, fecha, rnc, proveedor_nombre, ncf, monto_gravado, monto_exento, itbis, propina, total, estado, avisos, imagen_path, entra_606, gasto_id, forma_pago')
       .or(`creado_at.gte.${desde},estado.eq.por_revisar`)
       .order('creado_at', { ascending: false }).limit(200);
     if (error) Alert.alert('No se pudieron cargar los comprobantes', error.message);
@@ -143,10 +149,35 @@ export default function ComprobantesScreen() {
       monto_gravado: String(f.monto_gravado ?? ''), monto_exento: String(f.monto_exento ?? ''), itbis: String(f.itbis ?? ''), total: String(f.total ?? ''),
     });
     setFotoUrl(null);
+    setGastoSel(f.gasto_id || null);
+    setGastos([]);
+    cargarGastos(f);
     if (f.imagen_path) {
       const { data } = await supabase.storage.from('comprobantes').createSignedUrl(f.imagen_path, 600);
       setFotoUrl(data?.signedUrl || null);
     }
+  };
+
+  // Gastos de los 30 días antes de la factura (y 7 después), sin anular, que no
+  // tengan ya otro comprobante. El de monto más cercano al total va primero.
+  const cargarGastos = async (f: Comprobante) => {
+    if (!tenantId) return;
+    const d0 = new Date(`${fechaValida(f.fecha) ? f.fecha : hoyRD()}T12:00:00Z`);
+    const desde = new Date(d0.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+    const hasta = new Date(d0.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+    const [{ data: gs }, { data: usados }] = await Promise.all([
+      supabase.from('gastos_diarios').select('id, fecha, monto, descripcion, cuenta_bancaria_id')
+        .eq('tenant_id', tenantId).eq('anulado', false).not('es_tercero', 'is', true).gte('fecha', desde).lte('fecha', hasta)
+        .order('fecha', { ascending: false }).limit(150),
+      supabase.from('gastos_comprobantes').select('gasto_id').not('gasto_id', 'is', null).neq('estado', 'descartado').neq('id', f.id),
+    ]);
+    const ocupados = new Set((usados || []).map((u: any) => u.gasto_id));
+    const total = Number(f.total) || 0;
+    const lista = ((gs || []) as GastoDiario[])
+      .filter((g) => !ocupados.has(g.id) || g.id === f.gasto_id)
+      .sort((a, b) => Math.abs((Number(a.monto) || 0) - total) - Math.abs((Number(b.monto) || 0) - total))
+      .slice(0, 8);
+    setGastos(lista);
   };
 
   const guardar = async (estado: 'aprobado' | 'descartado' | null) => {
@@ -156,6 +187,9 @@ export default function ComprobantesScreen() {
     const { data, error } = await supabase.from('gastos_comprobantes').update({
       fecha: form.fecha, rnc: form.rnc, ncf: form.ncf,
       monto_gravado: num(form.monto_gravado), monto_exento: num(form.monto_exento), itbis: num(form.itbis), total: num(form.total),
+      gasto_id: gastoSel,
+      // Gasto pagado desde el banco: en el 606 es transferencia/cheque (02).
+      ...(gastoSel && gastos.find((g) => g.id === gastoSel)?.cuenta_bancaria_id && edit.forma_pago === '01' ? { forma_pago: '02' } : {}),
       ...(estado ? { estado } : {}),
     }).eq('id', edit.id).select('id, avisos, entra_606');
     setGuardando(false);
@@ -273,8 +307,28 @@ export default function ComprobantesScreen() {
                   />
                 </View>
               ))}
+              <Text className="text-xs font-semibold text-gray-600 mt-3 mb-1">¿De qué gasto diario es?</Text>
+              {gastos.length === 0 ? (
+                <Text className="text-[11px] text-gray-400">No hay gastos diarios recientes sin comprobante.</Text>
+              ) : (
+                <View className="bg-white border border-gray-200 rounded-lg">
+                  {[{ id: null as string | null, fecha: '', monto: 0, descripcion: 'Ninguno (no es de un gasto diario)', cuenta_bancaria_id: null }, ...gastos].map((g, i) => {
+                    const sel = gastoSel === g.id;
+                    return (
+                      <TouchableOpacity key={g.id || 'ninguno'} onPress={() => setGastoSel(g.id)}
+                        className={`flex-row items-center px-3 py-2 ${i ? 'border-t border-gray-100' : ''} ${sel ? 'bg-blue-50' : ''}`}>
+                        <View className={`w-4 h-4 rounded-full border mr-2 ${sel ? 'bg-blue-600 border-blue-600' : 'border-gray-400'}`} />
+                        <Text className="flex-1 text-xs text-gray-800" numberOfLines={1}>
+                          {g.id ? `${fdate(g.fecha)} · ${g.descripcion}` : g.descripcion}
+                        </Text>
+                        {g.id ? <Text className="text-xs font-bold text-gray-900 ml-2">{fmt(g.monto)}</Text> : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
               <Text className="text-[11px] text-gray-500 mt-2">
-                Compare con la foto. El tipo de gasto, la forma de pago y los demás datos se ajustan en la página web.
+                Compare con la foto. El tipo de gasto y los demás datos se ajustan en la página web.
               </Text>
               <TouchableOpacity disabled={guardando} onPress={() => guardar('aprobado')}
                 className="flex-row items-center justify-center bg-emerald-600 rounded-lg py-3 mt-4">
