@@ -80,11 +80,25 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
     setComprobante(null);
     if (comprobanteRef.current) comprobanteRef.current.value = '';
   };
-  // Si falla, el gasto igual quedó guardado: solo se avisa.
-  const adjuntarComprobante = async (gastoId, fecha, monto) => {
-    if (!comprobante || !gastoId) return;
-    const r = await subirComprobante(comprobante, { tenantId, origen: 'web', gastoId, fecha, total: monto });
+  // Se lanza SIN esperar (subir + leer tarda varios segundos): el gasto ya
+  // quedó guardado, el comprobante del gasto se imprime y la ventana se
+  // cierra. Si falla, solo se avisa. Un gasto tiene UN comprobante.
+  const adjuntarComprobante = (gastoId, fecha, monto, formaPago) => {
+    const archivo = comprobante;
     quitarComprobante();
+    if (!archivo || !gastoId) return;
+    (async () => {
+      const { data: ya } = await supabase.from('gastos_comprobantes').select('id')
+        .eq('gasto_id', gastoId).neq('estado', 'descartado').limit(1);
+      if (ya?.length) {
+        toast({ variant: 'destructive', title: 'Ese gasto ya tiene su comprobante', description: 'No se subió otro. Revíselo o descártelo en Contabilidad → Comprobantes de gastos.', duration: 9000 });
+        return;
+      }
+      const r = await subirComprobante(archivo, { tenantId, origen: 'web', gastoId, fecha, monto, formaPago });
+      avisarComprobante(r);
+    })().catch((e) => avisarComprobante({ ok: false, error: e?.message }));
+  };
+  const avisarComprobante = (r) => {
     if (r.ok) {
       toast({
         title: 'Comprobante guardado',
@@ -592,7 +606,7 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         if (!actualizados?.length) throw new Error('No se actualizó el gasto. Recarga la lista y vuelve a intentarlo.');
         autFechaRef.current = null;
         toast({ title: 'Gasto actualizado', description: 'La caja se recalcula con el nuevo monto.' });
-        await adjuntarComprobante(editandoId, formData.fecha, monto);
+        adjuntarComprobante(editandoId, formData.fecha, monto, bancoLock ? '02' : null);
         setHuboCambios(true);
         setIsSubmitting(false);
         // Si viniste con doble clic sobre un gasto, ya terminaste: cerrar.
@@ -643,7 +657,8 @@ const DailyExpenseModal = ({ isOpen, onClose, gasto = null }) => {
         }
       }
 
-      await adjuntarComprobante(gastoCreado?.id, formData.fecha, monto);
+      // Banco = cheque/transferencia (02) en el 606; efectivo o externo, lo que lea la foto.
+      adjuntarComprobante(gastoCreado?.id, formData.fecha, monto, desdeBanco ? '02' : null);
 
       toast({
         title: 'Gasto diario registrado',

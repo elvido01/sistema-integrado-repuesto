@@ -16,10 +16,12 @@ const hoyRD = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/
  * @param {string} [o.origen]      'web' | 'app' (CHECK de la tabla); el gasto diario es 'web' + gastoId
  * @param {string} [o.gastoId]      gasto diario al que pertenece
  * @param {string} [o.fecha]        fecha a usar si la lectura no trae una válida
- * @param {number} [o.total]        total a usar si la lectura no trae uno
+ * @param {number} [o.monto]        monto anotado del gasto: NO se usa como total de la
+ *                                  factura (apagaría el aviso "Falta el total"); va en la nota
+ * @param {string} [o.formaPago]    forma de pago 606 si la lectura no la trae ('01'..'04')
  * @returns {Promise<{ok:boolean, ilegible?:boolean, repetido?:boolean, sinLeer?:boolean, error?:string}>}
  */
-export async function subirComprobante(archivo, { tenantId, origen = 'web', gastoId = null, fecha = null, total = null }) {
+export async function subirComprobante(archivo, { tenantId, origen = 'web', gastoId = null, fecha = null, monto = null, formaPago = null }) {
   const foto = await achicarFoto(archivo);
   if (!foto) return { ok: false, ilegible: true };   // HEIC de iPhone en Chrome, archivo dañado
   const path = rutaComprobante(tenantId);
@@ -34,12 +36,12 @@ export async function subirComprobante(archivo, { tenantId, origen = 'web', gast
     if (eFn || !r?.ok) sinLeer = true; else d = r.datos || {};
 
     const fechaUsar = fechaValida(d.fecha) ? d.fecha : (fechaValida(fecha) ? fecha : hoyRD());
-    const totalUsar = Number(d.total) > 0 ? d.total : (Number(total) > 0 ? Number(total) : 0);
+    const nota = Number(monto) > 0 ? `Gasto diario anotado por RD$ ${Number(monto).toFixed(2)}.` : null;
     const { error: eIns } = await supabase.from('gastos_comprobantes').insert({
       tenant_id: tenantId, fecha: fechaUsar, rnc: d.rnc || '', proveedor_nombre: d.proveedor_nombre || null,
       ncf: d.ncf || '', tipo_bs: d.tipo_bs || 2, monto_gravado: d.monto_gravado || 0, monto_exento: d.monto_exento || 0,
-      itbis: d.itbis || 0, propina: d.propina || 0, total: totalUsar, forma_pago: d.forma_pago || '01',
-      imagen_path: path, lectura: d, origen, ...(gastoId ? { gasto_id: gastoId } : {}),
+      itbis: d.itbis || 0, propina: d.propina || 0, total: d.total || 0, forma_pago: d.forma_pago || formaPago || '01',
+      imagen_path: path, lectura: d, origen, nota, ...(gastoId ? { gasto_id: gastoId } : {}),
     }).select('id');
     if (eIns) {
       await quitarFoto();
