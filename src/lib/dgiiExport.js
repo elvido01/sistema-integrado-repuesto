@@ -252,7 +252,12 @@ export const fila606 = (c) => {
   const rnc = c.rnc_606 || cleanRncCedula(c.suplidor_rnc);
   const tipoBS = tipoBS606(c);
   const monto = parseFloat(c.total_gravado || 0) + parseFloat(c.total_exento || 0); // sin impuestos
-  const servicios = TIPOS_SERVICIO[tipoBS] ? monto : 0;
+  // (15/11/2026) Si la compra trae líneas de productos de SERVICIO (p. ej. los
+  // cargos de envío o comisión de un suplidor), van en la col. 8 y el resto en
+  // bienes; si no, como siempre: todo según el tipo de bienes y servicios.
+  const servicios = c.monto_servicios != null && isFinite(Number(c.monto_servicios))
+    ? Math.min(monto, Math.max(0, Number(c.monto_servicios)))
+    : (TIPOS_SERVICIO[tipoBS] ? monto : 0);
   const bienes = monto - servicios;
   const itbisRet = retencionItbis(c);
   const isrRet = retencionIsr(c);

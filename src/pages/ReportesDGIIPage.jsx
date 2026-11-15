@@ -110,7 +110,7 @@ const ReportesDGIIPage = () => {
       // (_contab_compras_606): una compra anulada no se reporta.
       const c = await traerTodo(() => supabase
         .from('compras')
-        .select('id, numero, fecha, ncf, ncf_modificado, tipo_retencion_isr, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc)')
+        .select('id, numero, fecha, ncf, ncf_modificado, tipo_retencion_isr, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc), compras_detalle(importe, itbis_pct, productos(naturaleza))')
         .gte('fecha', desde)
         .lte('fecha', hasta)
         .not('ncf', 'is', null)
@@ -194,11 +194,24 @@ const ReportesDGIIPage = () => {
       }));
 
       setCompras([
-        ...(c || []).map(r => ({
-          ...r,
-          suplidor_nombre: r.proveedores?.nombre,
-          suplidor_rnc: r.proveedores?.rnc,
-        })),
+        ...(c || []).map(r => {
+          // Base (sin ITBIS) de las líneas que son productos de SERVICIO: van
+          // en la col. 8 del 606. Sin líneas de servicio, null (como antes).
+          const lineasServ = (r.compras_detalle || []).filter((d) => d.productos?.naturaleza === 'servicio');
+          const montoServicios = lineasServ.length
+            ? Math.round(lineasServ.reduce((s, d) => {
+              const pct = Number(d.itbis_pct) || 0;
+              return s + (Number(d.importe) || 0) / (1 + (pct > 1 ? pct / 100 : pct));
+            }, 0) * 100) / 100
+            : null;
+          const { compras_detalle: _det, ...resto } = r;
+          return {
+            ...resto,
+            monto_servicios: montoServicios,
+            suplidor_nombre: r.proveedores?.nombre,
+            suplidor_rnc: r.proveedores?.rnc,
+          };
+        }),
         ...gastosComoCompras,
       ].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))));
       setAnulados(a || []);
