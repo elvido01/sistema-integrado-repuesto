@@ -125,6 +125,25 @@ describe('606: factura repartida en dos fichas del mismo suplidor (dos vendedore
     expect(incluidas).toHaveLength(1);
     expect(excluidas[0].motivo).toContain('retenciones distintas');
   });
+  it('otra fecha u otra forma de pago no se junta', () => {
+    const { incluidas, excluidas } = revisar606([
+      { ...base, id: 1, suplidor_id: 'a', total_gravado: 1000, itbis_total: 180 },
+      { ...base, id: 2, suplidor_id: 'b', fecha: '2026-10-04', total_gravado: 500, itbis_total: 90 },
+      { ...base, id: 3, suplidor_id: 'b', forma_pago: 'Contado', total_gravado: 500, itbis_total: 90 },
+    ]);
+    expect(incluidas).toHaveLength(1);
+    expect(fila606(incluidas[0])[10]).toBe('180.00');
+    expect(excluidas).toHaveLength(2);
+  });
+  it('un comprobante de gasto con la misma factura de una compra es repetida, no se suma', () => {
+    const { incluidas, excluidas } = revisar606([
+      { ...base, id: 1, suplidor_id: 'a', total_gravado: 1000, itbis_total: 180 },
+      { ...base, id: 'gasto-1', es_gasto: true, total_gravado: 1000, itbis_total: 180 },
+    ]);
+    expect(incluidas).toHaveLength(1);
+    expect(fila606(incluidas[0])[10]).toBe('180.00');
+    expect(excluidas[0].motivo).toContain('Repetida');
+  });
 });
 
 describe('608', () => {
