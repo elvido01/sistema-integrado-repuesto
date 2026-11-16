@@ -262,13 +262,14 @@ interface FacturaData {
  */
 export type ModoQr = 'star' | 'escpos' | 'raster';
 
-export function qrNativo(texto: string, modo: ModoQr = 'raster'): string {
+// celda: puntos por módulo del QR (5 = el del e-CF, ~2.5 cm; 3 = el chico del pie).
+export function qrNativo(texto: string, modo: ModoQr = 'raster', celda = 5): string {
     const b = (n: number) => String.fromCharCode(n & 0xff);
     if (modo === 'star') {
         // Centrado del modo Star (ESC GS a n), modelo 2, corrección M, celda 5
         // (~2.5 cm: lo mínimo legible; con 6 salía de ~3 cm y el dueño lo quiso más chico).
         return ESC + GS + 'a' + b(1)
-            + ESC + GS + 'yS0' + b(2) + ESC + GS + 'yS1' + b(1) + ESC + GS + 'yS2' + b(5)
+            + ESC + GS + 'yS0' + b(2) + ESC + GS + 'yS1' + b(1) + ESC + GS + 'yS2' + b(celda)
             + ESC + GS + 'yD1' + b(0) + b(texto.length) + b(texto.length >> 8) + texto
             + ESC + GS + 'yP'
             + ESC + GS + 'a' + b(0);
@@ -277,13 +278,13 @@ export function qrNativo(texto: string, modo: ModoQr = 'raster'): string {
         const len = texto.length + 3;
         return CMD.CENTER
             + GS + '(k' + b(4) + b(0) + '1A2' + b(0)
-            + GS + '(k' + b(3) + b(0) + '1C' + b(5)
+            + GS + '(k' + b(3) + b(0) + '1C' + b(celda)
             + GS + '(k' + b(3) + b(0) + '1E1'
             + GS + '(k' + b(len) + b(len >> 8) + '1P0' + texto
             + GS + '(k' + b(3) + b(0) + '1Q0'
             + CMD.LEFT;
     }
-    return CMD.CENTER + qrRasterEscPos(texto) + CMD.LEFT;
+    return CMD.CENTER + qrRasterEscPos(texto, celda) + CMD.LEFT;
 }
 
 export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig, opciones: { qr?: ModoQr } = {}): string {
@@ -463,7 +464,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
 function pieMotoFlowConQr(modo: ModoQr): string {
     if (!pieMotoFlowVisible()) return '';
     return CMD.LF + textoTicket(dashLine()) + CMD.LF
-        + qrNativo('https://' + pieMotoFlowLineasTexto(true)[1], modo) + CMD.LF
+        + qrNativo('https://' + pieMotoFlowLineasTexto(true)[1], modo, 3) + CMD.LF // chico: ~1.2 cm
         + textoTicket(pieMotoFlowLineasTexto(true).map(centerLine).join(CMD.LF)) + CMD.LF;
 }
 
