@@ -17,6 +17,37 @@ const AdminEmpresaDetalle = ({ tenantId, onClose }) => {
   // registró con un número invertido y no podía confirmar la cuenta).
   const [editandoCorreo, setEditandoCorreo] = useState(null);   // { user_id, email }
   const [guardandoCorreo, setGuardandoCorreo] = useState(false);
+  // (16/11/2026) Pie "Sistema de Gestión MotoFlow" en sus recibos de 80 mm:
+  // sale en todas; solo el súper admin lo quita (tenants.sin_pie_motoflow).
+  const [sinPie, setSinPie] = useState(null); // null = cargando
+  const [guardandoPie, setGuardandoPie] = useState(false);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    let vivo = true;
+    setSinPie(null);
+    supabase.from('tenants').select('sin_pie_motoflow').eq('id', tenantId).maybeSingle()
+      .then(({ data: t, error }) => { if (vivo && !error) setSinPie(t?.sin_pie_motoflow === true); });
+    return () => { vivo = false; };
+  }, [tenantId]);
+
+  const cambiarPie = async () => {
+    if (sinPie === null) return;
+    setGuardandoPie(true);
+    try {
+      const nuevo = !sinPie;
+      const { data: filas, error } = await supabase.from('tenants')
+        .update({ sin_pie_motoflow: nuevo }).eq('id', tenantId).select('sin_pie_motoflow');
+      if (error) throw error;
+      if (!filas?.length) throw new Error('No se guardó (sin permiso de súper admin).');
+      setSinPie(filas[0].sin_pie_motoflow === true);
+      toast({ title: nuevo ? 'Sus recibos ya no llevan el pie de MotoFlow' : 'Sus recibos vuelven a llevar el pie de MotoFlow', description: 'La empresa lo verá al recargar MotoFlow.' });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'No se pudo cambiar', description: err.message });
+    } finally {
+      setGuardandoPie(false);
+    }
+  };
 
   const guardarCorreo = async () => {
     const email = String(editandoCorreo?.email || '').trim().toLowerCase();
@@ -303,6 +334,17 @@ const AdminEmpresaDetalle = ({ tenantId, onClose }) => {
                       }`}>
                         {data.empresa?.activo ? 'Activa' : 'Inactiva'}
                       </span>
+                    </div>
+                    <div className="col-span-2 flex items-center justify-between gap-3 border-t border-gray-200 pt-3">
+                      <div>
+                        <p className="text-gray-400 font-medium">Pie MotoFlow en recibos de 80 mm</p>
+                        <p className="font-bold text-gray-700">
+                          {sinPie === null ? 'Cargando…' : sinPie ? 'Quitado: sus recibos no lo llevan' : 'Sale: "Sistema de Gestión MotoFlow · motoflow.com.do"'}
+                        </p>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={cambiarPie} disabled={sinPie === null || guardandoPie}>
+                        {guardandoPie ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (sinPie ? 'Volver a ponerlo' : 'Quitar pie')}
+                      </Button>
                     </div>
                   </div>
                 </div>

@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import { importeLineaCompra } from '@/lib/compraLinea';
+import { pieMotoFlowVisible } from '@/lib/pieMotoFlow';
 import { numeroRecibo, NOTA_FISCAL_COLEGIO } from '@/lib/printColegio';
 /**
  * ESC/POS command builder for Star TSP143 receipt printer.
@@ -113,11 +114,11 @@ const centerLine = (text: string) => {
 
 // (16/11/2026) Pie "hecho con MotoFlow" (publicidad) en los tickets del
 // cliente; en ESC/POS directo solo el texto (sin acentos: toAscii).
-const pieMotoFlowLineas = (): string[] => [
+const pieMotoFlowLineas = (): string[] => (!pieMotoFlowVisible() ? [] : [
     dashLine(),
     centerLine('Sistema de Gestion MotoFlow'),
     centerLine('motoflow.com.do'),
-];
+]);
 
 /** Join left + right text with space fill */
 const leftRight = (left: string, right: string) => {

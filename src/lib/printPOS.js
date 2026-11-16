@@ -1,4 +1,4 @@
-import { pieMotoFlowHtml } from '@/lib/pieMotoFlow';
+import { pieMotoFlowHtml, setPieMotoFlowVisible } from '@/lib/pieMotoFlow';
 import { formatInTimeZone, formatFechaDMY } from './dateUtils';
 import { formatoDocDgii } from '@/lib/docFiscal';
 import { prepararEcfImpresion, ecfBloqueHtml, ecfVenceHtml, esEncf, extrasFacturaHtml } from '@/lib/ecfImpresion';
@@ -62,6 +62,8 @@ export const setEmpresaPrintConfig = (empresa) => {
       firmaUrl: empresa.firma_url || '',
       selloUrl: empresa.sello_url || '',
     };
+    // (16/11/2026) Pie "Sistema de Gestión MotoFlow": lo quita solo el súper admin.
+    setPieMotoFlowVisible(!empresa.sin_pie_motoflow);
   }
 };
 

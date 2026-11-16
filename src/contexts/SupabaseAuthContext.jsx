@@ -110,7 +110,15 @@ export const AuthProvider = ({ children }) => {
             const r = await supabase.from('config_empresa').select('sello_url').eq('tenant_id', activeTid).maybeSingle();
             if (!r.error) sello_url = r.data?.sello_url || null;
           } catch { /* sin sello */ }
-          setEmpresa({ ...empresaData, direccion, sello_url });
+          // (16/11/2026) Pie "Sistema de Gestión MotoFlow" en los recibos: lo
+          // quita solo el súper admin (tenants.sin_pie_motoflow). Si la
+          // consulta falla, el pie sale (como en todas).
+          let sin_pie_motoflow = false;
+          try {
+            const r = await supabase.from('tenants').select('sin_pie_motoflow').eq('id', activeTid).maybeSingle();
+            if (!r.error) sin_pie_motoflow = r.data?.sin_pie_motoflow === true;
+          } catch { /* con pie */ }
+          setEmpresa({ ...empresaData, direccion, sello_url, sin_pie_motoflow });
         } else {
           setEmpresa(null);
         }
