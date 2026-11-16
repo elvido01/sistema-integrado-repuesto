@@ -287,7 +287,7 @@
     "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
     "src/components/common/pdf/devolucionPDF.js": "91b42af5e95a7340",
     "src/components/common/pdf/facturaCartaPDF.js": "9268cebc44ed6364",
-    "src/components/common/pdf/facturaPDF.js": "19fbec0f585cdf1a",
+    "src/components/common/pdf/facturaPDF.js": "43171a4cdf6579ba",
     "src/components/common/pdf/pagoCompromisoPDF.js": "b6467cc47e39114e",
     "src/components/common/pdf/pagoSuplidorPDF.js": "824f535b5c3e07e3",
     "src/components/common/pdf/reciboPDF.js": "5f98be62fb5785d5",
@@ -445,14 +445,6 @@
     "sql/morla_ncf_hao_oc0378.sql": "ee361d8662005c68"
   },
   "historial": [
-    {
-      "fecha": "2026-11-02",
-      "nota": "code-review high x2: 1a pasada 10 hallazgos (v_cta sin asignar, coincidencia multiple, anular/corregir por digitos, reparacion, suma del detalle, alias) corregidos; 2a pasada: corregir monto buscaba despues de cambiar el monto, respaldo sin limite de fecha, desempate, banco anterior al pasar a cheque, numero repetido, linea negativa - corregidos y probados en simulacro (editar ida/vuelta, anular, corregir monto, cobertura 357/357). Pendiente menor: escape HTML en otras lineas del impreso (preexistente)",
-      "archivos": [
-        "sql/recibo_transferencia_sale_de_la_caja.sql",
-        "src/pages/Configuracion/CierreCajaPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-02",
       "nota": "code-review high x2 sobre recibo_ingreso_amarrado_a_su_pago.sql: 1a pasada (digitos repetidos 6/7 cifras, v_pago sin asignar, renumerar bajaba el MAX y tocaba turno cerrado, todas las empresas, backfill codicioso, financiera externa, eficiencia) y 2a pasada (financiera externa con contador aparte, concurrencia sin candado, numeros raros, prioridad de referencia, backfill repetible) corregidos; simulacro con registrar_pago_prestamo real: pago 0148846 -> RI-0148846 amarrado, recibos de hoy intactos, 0 pagos del mes sin amarre. Aceptado: v_seq sin uso y la sobrecarga de 9 argumentos (preexistentes)",
@@ -967,6 +959,13 @@
         "sql/morla_ncf_hao_oc0378.sql",
         "src/lib/dgiiExport.js",
         "src/pages/ReportesDGIIPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-16",
+      "nota": "code-review high (8f1ad9354..HEAD, 9 hallazgos): arreglados - QR 18 mm con margen de 4 modulos, flag del pie se reinicia con empresa null, pie en cotizacion y colegio ESC/POS, separador del PDF hasta rightX, Admin con error visible y sin pisar otra empresa, sello+pie en Promise.all, textos del pie centralizados; 812 tests y build OK. Sin arreglar: flag global (las rutas de impresion no reciben siempre la empresa)",
+      "archivos": [
+        "src/components/common/pdf/facturaPDF.js"
       ]
     }
   ]
