@@ -345,7 +345,7 @@
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
     "src/lib/dgiiCertificacionStorage.js": "9b63d241c5af90e2",
-    "src/lib/dgiiExport.js": "728c64c3e5e2b2b6",
+    "src/lib/dgiiExport.js": "7c836e7d2843778d",
     "src/lib/dgiiRepresentacionImpresa.js": "9646fb60aae20abe",
     "src/lib/ecfImpresion.js": "33142e9057386d28",
     "src/lib/nominaUtils.js": "68b952393ad68443",
@@ -375,7 +375,7 @@
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
     "src/pages/ReciboPagoFinancieraPage.jsx": "edc2ea78ad549ed7",
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
-    "src/pages/ReportesDGIIPage.jsx": "e24fcaa5857a150f",
+    "src/pages/ReportesDGIIPage.jsx": "f9b72605c952d1ac",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
     "src/pages/VentasPage.jsx": "4b501b8f867f4b34",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
@@ -439,17 +439,12 @@
     "sql/ayudante_textos_compras_606.sql": "c94c091b192a8610",
     "sql/compras_nota_y_retencion_606.sql": "83c05455a39592cf",
     "sql/it1_notas_credito_ecf.sql": "8de1e6256ca43ae3",
-    "sql/nota_credito_devolucion.sql": "83dbfa957ee1ac97"
+    "sql/nota_credito_devolucion.sql": "83dbfa957ee1ac97",
+    "sql/compras_606_factura_repartida.sql": "af117af60441d1fa",
+    "sql/elite_royal_prestige_compras.sql": "e8bc45e8d04759fc",
+    "sql/morla_ncf_hao_oc0378.sql": "ee361d8662005c68"
   },
   "historial": [
-    {
-      "fecha": "2026-10-31",
-      "nota": "code-review high x2 vencimiento secuencia e-CF: quitado aviso fijo 31-12-2028; fecha normalizada DD-MM-AAAA (acepta / y AA); no guarda fecha invalida, vencida, ni vacia en Produccion; texto: va en todos menos E32",
-      "archivos": [
-        "src/components/configuracion/DgiiCertificadoUploader.jsx",
-        "src/components/configuracion/DgiiSimulacionRunner.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-02",
       "nota": "code-review high x2: 1a pasada 10 hallazgos (v_cta sin asignar, coincidencia multiple, anular/corregir por digitos, reparacion, suma del detalle, alias) corregidos; 2a pasada: corregir monto buscaba despues de cambiar el monto, respaldo sin limite de fecha, desempate, banco anterior al pasar a cheque, numero repetido, linea negativa - corregidos y probados en simulacro (editar ida/vuelta, anular, corregir monto, cobertura 357/357). Pendiente menor: escape HTML en otras lineas del impreso (preexistente)",
@@ -961,6 +956,17 @@
         "src/pages/ReportesDGIIPage.jsx",
         "supabase/functions/emitir-fiscal/dgii_xml_builder.ts",
         "supabase/functions/emitir-fiscal/index.ts"
+      ]
+    },
+    {
+      "fecha": "2026-11-16",
+      "nota": "code-review high (df01c3ac8..HEAD, 10 hallazgos): arreglados - gasto+compra con el mismo NCF ya no se suman (repetida), factura repartida solo entre compras de fichas distintas con misma fecha/forma de pago/retenciones, 606 y hoja IT-1 con la misma regla y orden (probado con compras de prueba en transaccion y 17 tests); pendientes anotados - hoja IT-1 separa bienes/servicios por tipo_bienes_servicios (no por linea), notas E34 de Elite cuentan positivas en reportes de compras fuera del 606, carga de detalle en ReportesDGII, script Elite de un solo uso",
+      "archivos": [
+        "sql/compras_606_factura_repartida.sql",
+        "sql/elite_royal_prestige_compras.sql",
+        "sql/morla_ncf_hao_oc0378.sql",
+        "src/lib/dgiiExport.js",
+        "src/pages/ReportesDGIIPage.jsx"
       ]
     }
   ]
