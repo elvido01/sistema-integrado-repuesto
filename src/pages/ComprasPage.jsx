@@ -54,6 +54,9 @@ const ComprasPage = () => {
   // sumada dos veces (444 unidades fantasma). Aquí vive el número con que se
   // abrió la compra; el siguiente número solo entra en una compra nueva.
   const numeroOriginal = useRef(null);
+  // (16/11/2026) "ITBIS incluido" marcado SOLO por una factura de precio neto
+  // (no por la persona): la próxima foto que no sea de precio neto lo quita.
+  const itbisPorNetoRef = useRef(false);
   const [proveedores, setProveedores] = useState([]);
   const [tasaDia, setTasaDia] = useState(0); // RD$ por US$ (suplidores que facturan en dólares)
   const [almacenes, setAlmacenes] = useState([]);
@@ -416,6 +419,9 @@ const ComprasPage = () => {
     };
     cargarOrden();
   }, [ordenParaFacturar, setOrdenParaFacturar, toast]);
+
+  // Desmarcado (a mano, compra nueva o por otra foto): ya no es "del precio neto".
+  useEffect(() => { if (!compra.itbis_incluido) itbisPorNetoRef.current = false; }, [compra.itbis_incluido]);
 
   // (07/11/2026) Al cambiar "ITBIS incluido" se recalcula el total de cada
   // línea (antes se quedaba como estaba y el ITBIS salía doble o faltaba).
@@ -1002,10 +1008,19 @@ const ComprasPage = () => {
     // va con ITBIS incluido, sin descuento (aplicarlo era cobrarlo dos veces),
     // y el costo de cada fila sale de su importe ÷ cantidad.
     const modoNeto = esFacturaPrecioNeto(extractedItems, invoice);
-    const itbisIncluidoOcr = modoNeto ? true : compra.itbis_incluido;
+    // Si una foto anterior lo marcó SOLA (precio neto) y esta no es de precio
+    // neto, se desmarca: no se hereda de otra factura. Si lo marcó la persona,
+    // se respeta.
+    let itbisIncluidoOcr = compra.itbis_incluido;
     if (modoNeto) {
       descGeneral = 0;
+      itbisIncluidoOcr = true;
+      itbisPorNetoRef.current = true;
       setCompra(prev => ({ ...prev, itbis_incluido: true }));
+    } else if (itbisPorNetoRef.current && compra.itbis_incluido) {
+      itbisIncluidoOcr = false;
+      itbisPorNetoRef.current = false;
+      setCompra(prev => ({ ...prev, itbis_incluido: false }));
     }
 
     // 3. Procesar Items y buscar en Inventario
@@ -1020,7 +1035,8 @@ const ComprasPage = () => {
       let descripcion = item.description || '';
 
       // Pre-procesar porcentajes (si vienen como 18 en lugar de 0.18)
-      let itbis_pct = item.itbis_pct || 0.18;
+      // Un 0 leído es EXENTO (antes `|| 0.18` lo volvía 18%); sin dato, 18%.
+      let itbis_pct = item.itbis_pct == null || item.itbis_pct === '' || isNaN(Number(item.itbis_pct)) ? 0.18 : Number(item.itbis_pct);
       if (itbis_pct > 1) itbis_pct = itbis_pct / 100;
 
       let discount_pct = Number(item.discount_pct) || 0;
@@ -1161,7 +1177,8 @@ const ComprasPage = () => {
       const neto = bruto * (1 - d);
       return ![bruto, neto, bruto * (1 + itb), neto * (1 + itb)].some((v) => cerca(v, total));
     }).map((it) => it.code || it.description).filter(Boolean);
-    const noCuadra = filasMal.length > 0;
+    // Con precio neto el costo sale del importe de cada fila: ya cuadra.
+    const noCuadra = !modoNeto && filasMal.length > 0;
 
     toast({
       title: noCuadra ? 'Factura leída: revisa las líneas' : 'Factura Procesada',
