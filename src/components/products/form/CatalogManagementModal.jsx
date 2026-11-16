@@ -147,6 +147,16 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
     }
   };
 
+  // (16/11/2026) Al escribir un nombre NUEVO, la lista se filtra con lo
+  // escrito (sin importar mayúsculas ni acentos) para ver si ya está creado.
+  // Al editar uno existente (fila seleccionada) se ve la lista completa.
+  const normalizar = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+  const buscado = isEditing ? '' : normalizar(formData.nombre);
+  const visibles = buscado
+    ? items.filter((it) => columns.some((col) => normalizar(it[col.accessor]).includes(buscado)))
+    : items;
+  const yaExiste = buscado ? items.find((it) => normalizar(it.nombre) === buscado) : null;
+
   // =================================================================
   // 2. EARLY RETURNS - Can now happen after all hooks are called.
   // =================================================================
@@ -203,6 +213,15 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
                     <Label htmlFor="activo" className="text-sm">Activo</Label>
                   </div>
                 </div>
+                {buscado && !loading && (
+                  <p className={`text-xs font-semibold ${yaExiste ? 'text-red-600' : visibles.length ? 'text-amber-700' : 'text-emerald-700'}`}>
+                    {yaExiste
+                      ? `"${yaExiste.nombre}" ya está creado: selecciónelo en la lista en vez de crearlo otra vez.`
+                      : visibles.length
+                        ? `No existe con ese nombre exacto; hay ${visibles.length} parecido(s) abajo. Revise antes de crearlo.`
+                        : 'No está creado: puede guardarlo.'}
+                  </p>
+                )}
               </div>
 
               <div className="flex-1 px-4 pb-4 overflow-hidden">
@@ -221,8 +240,10 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
                     <TableBody>
                       {loading ? (
                         <TableRow><TableCell colSpan={columns.length + 1} className="text-center py-4">Cargando...</TableCell></TableRow>
+                      ) : visibles.length === 0 ? (
+                        <TableRow><TableCell colSpan={columns.length + 1} className="text-center py-4 text-xs text-gray-500">Ninguno coincide con "{formData.nombre}".</TableCell></TableRow>
                       ) : (
-                        items.map((item) => (
+                        visibles.map((item) => (
                           <TableRow
                             key={item.id}
                             onClick={() => handleSelectRow(item)}
