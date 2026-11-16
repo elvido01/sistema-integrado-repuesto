@@ -22,6 +22,7 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
   const [isEditing, setIsEditing] = useState(false);
 
   const { title = 'Catálogo', table, columns = [], extraData = {} } = config || {};
+  const normalizar = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
   const marcaId = extraData?.marca_id;
 
   const getInitialFormData = useCallback(() => {
@@ -93,10 +94,10 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
       return;
     }
 
-    // Check for duplicates (case-insensitive)
-    const nombreNorm = formData.nombre.trim().toUpperCase();
+    // Check for duplicates (sin importar mayúsculas ni acentos: "Piston" = "PISTÓN")
+    const nombreNorm = normalizar(formData.nombre);
     const duplicate = items.find(item =>
-      item.nombre?.trim().toUpperCase() === nombreNorm &&
+      normalizar(item.nombre) === nombreNorm &&
       (!isEditing || item.id !== selectedItem?.id)
     );
     if (duplicate) {
@@ -150,12 +151,12 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
   // (16/11/2026) Al escribir un nombre NUEVO, la lista se filtra con lo
   // escrito (sin importar mayúsculas ni acentos) para ver si ya está creado.
   // Al editar uno existente (fila seleccionada) se ve la lista completa.
-  const normalizar = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
   const buscado = isEditing ? '' : normalizar(formData.nombre);
   const visibles = buscado
     ? items.filter((it) => columns.some((col) => normalizar(it[col.accessor]).includes(buscado)))
     : items;
-  const yaExiste = buscado ? items.find((it) => normalizar(it.nombre) === buscado) : null;
+  // También por código (ubicaciones): "A-01" escrito en el nombre.
+  const yaExiste = buscado ? items.find((it) => normalizar(it.nombre) === buscado || (it.codigo != null && normalizar(it.codigo) === buscado)) : null;
 
   // =================================================================
   // 2. EARLY RETURNS - Can now happen after all hooks are called.
@@ -240,7 +241,7 @@ const CatalogManagementModal = ({ isOpen, onClose, config, onSaveSuccess, keepOp
                     <TableBody>
                       {loading ? (
                         <TableRow><TableCell colSpan={columns.length + 1} className="text-center py-4">Cargando...</TableCell></TableRow>
-                      ) : visibles.length === 0 ? (
+                      ) : visibles.length === 0 && buscado ? (
                         <TableRow><TableCell colSpan={columns.length + 1} className="text-center py-4 text-xs text-gray-500">Ninguno coincide con "{formData.nombre}".</TableCell></TableRow>
                       ) : (
                         visibles.map((item) => (

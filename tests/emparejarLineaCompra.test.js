@@ -26,6 +26,14 @@ describe('emparejar línea de compra', () => {
   it('la foto sin descripción: se confía en el código', () => {
     expect(elegirProducto({ code: '004264' }, PEDRO, [varilla]).producto.id).toBe(1);
   });
+  it('mismo código del mismo suplidor: misma pieza aunque la describa distinto', () => {
+    const espejo = { id: 9, codigo: '1234', descripcion: 'RETROVISOR IZQUIERDO', suplidor_id: PEDRO };
+    expect(elegirProducto({ code: '1234', description: 'ESPEJO RETROV. IZQ' }, PEDRO, [espejo]).producto.id).toBe(9);
+  });
+  it('otra ficha del suplidor: basta una palabra en común (abreviada vale)', () => {
+    const espejo = { id: 9, codigo: '1234', descripcion: 'RETROVISOR IZQUIERDO', suplidor_id: GG };
+    expect(elegirProducto({ code: '1234', description: 'ESPEJO RETROV. IZQ' }, PEDRO, [espejo]).producto.id).toBe(9);
+  });
   it('CG-200 y CG200 cuentan como la misma palabra', () => {
     expect(palabrasEnComun('MOTOR CG-200', 'MOTOR ARRANQUE CG200')).toBe(2);
   });

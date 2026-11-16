@@ -706,7 +706,8 @@ const ComprasPage = () => {
     const suggestedPrice = suggestedMargin > 0 && fallbackCost > 0 ? Number((fallbackCost * (1 + suggestedMargin / 100)).toFixed(2)) : 0;
 
     return {
-      codigo: line.codigo || '',
+      // Si ese código ya es OTRA pieza, se deja vacío para que se escriba uno nuevo.
+      codigo: line.aviso_codigo ? '' : (line.codigo || ''),
       referencia: line.referencia || '',
       descripcion,
       costo: fallbackCost,
@@ -821,6 +822,18 @@ const ComprasPage = () => {
           .ilike('codigo', productPayload.codigo.trim())
           .limit(1);
         const yaEsta = existentes?.[0];
+
+        // (16/11/2026) La línea venía marcada "ese código es OTRA pieza": no se
+        // engancha callada a esa pieza (era justo el error que se quería evitar).
+        const lineaActiva = detalles.find((x) => x.id === activeLineId);
+        if (yaEsta && lineaActiva?.aviso_codigo) {
+          toast({
+            variant: 'destructive',
+            title: 'Ese código es de otra pieza',
+            description: `"${yaEsta.codigo}" ya es ${yaEsta.descripcion}. Póngale otro código a este artículo (p. ej. con la letra del suplidor delante).`,
+          });
+          return;
+        }
 
         if (yaEsta && codigoEsChasis) {
           toast({
@@ -989,6 +1002,7 @@ const ComprasPage = () => {
       if (item.reference != null && typeof item.reference !== 'string') item.reference = String(item.reference);
       let producto_id = null;
       let matched = false;
+      let matchedCodigo = null;
       let descripcion = item.description || '';
 
       // Pre-procesar porcentajes (si vienen como 18 en lugar de 0.18)
@@ -1027,6 +1041,7 @@ const ComprasPage = () => {
         if (product) {
           producto_id = product.id;
           matched = true;
+          matchedCodigo = product.codigo || null;
           productoCosto = product.costo || 0;
           productoItbis = product.itbis_pct ?? null;
           descripcion = product.descripcion;
@@ -1086,7 +1101,10 @@ const ComprasPage = () => {
 
       return {
         id: Math.random(),
-        codigo: item.code || '',
+        // Emparejada: el código NUESTRO (V004264), no el del suplidor, que en
+        // el catálogo puede ser otra pieza. La memoria del suplidor se aprende
+        // de extracted_json al guardar (aprender_codigos_de_compra).
+        codigo: (matched && matchedCodigo) || item.code || '',
         referencia: item.reference || '',
         descripcion,
         cantidad,

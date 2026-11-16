@@ -1386,7 +1386,7 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
         body {
           width: ${bodyW}; margin: 0; padding: 3mm 2mm;
           box-sizing: border-box; overflow: hidden;
-          font-family: Arial, Helvetica, sans-serif; font-size: ${fBase}; line-height: 1.15; color: #000; font-weight: 700;
+          font-family: Arial, Helvetica, sans-serif; font-size: ${fBase}; line-height: 1.15; color: #000; font-weight: 400;
         }
         .text-center { text-align: center; }
         .bold { font-weight: 900; }
@@ -1657,7 +1657,7 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
           box-sizing: border-box;
           font-family: Arial, Helvetica, sans-serif;
           font-size: ${baseFontSize};
-          font-weight: 700;
+          font-weight: 400;
           line-height: 1.15;
           color: #000;
           letter-spacing: 0.2px;
@@ -1866,7 +1866,7 @@ export const printCotizacionMagnaPOS = (cotizacion, paperSize = '4inch', lines =
           box-sizing: border-box;
           font-family: Arial, Helvetica, sans-serif;
           font-size: ${baseFontSize};
-          font-weight: 700;
+          font-weight: 400;
           line-height: 1.15;
           color: #000;
           letter-spacing: 0.2px;
