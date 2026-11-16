@@ -440,20 +440,31 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
         if (ecf.codigo_seguridad) despues.push(centerLine(`Codigo de seguridad: ${ecf.codigo_seguridad}`));
         if (ecf.fecha_firma) despues.push(centerLine(`Fecha firma digital: ${ecf.fecha_firma}`));
         despues.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
-        despues.push(...pieMotoFlowLineas());
-        despues.push(CMD.FEED_3);
-        despues.push(CMD.CUT);
         return antes
             + (ecf.qr_url ? qrNativo(toAscii(ecf.qr_url), opciones.qr || 'raster') : '') + CMD.LF
-            + textoTicket(despues.join(CMD.LF));
+            + textoTicket(despues.join(CMD.LF))
+            + pieMotoFlowConQr(opciones.qr || 'raster')
+            + textoTicket([CMD.FEED_3, CMD.CUT].join(CMD.LF));
     }
 
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
-    lines.push(...pieMotoFlowLineas());
-    lines.push(CMD.FEED_3);
-    lines.push(CMD.CUT);
 
-    return textoTicket(lines.join(CMD.LF));
+    return textoTicket(lines.join(CMD.LF))
+        + pieMotoFlowConQr(opciones.qr || 'raster')
+        + textoTicket([CMD.FEED_3, CMD.CUT].join(CMD.LF));
+}
+
+/**
+ * (16/11/2026) Pie "Sistema de Gestion MotoFlow" de la FACTURA con su QR a
+ * motoflow.com.do, impreso igual que el QR del e-CF (imagen o comando nativo
+ * según la impresora) y fuera de toAscii. Los demás tickets llevan solo el
+ * texto (pieMotoFlowLineas). Vacío si el súper admin quitó el pie.
+ */
+function pieMotoFlowConQr(modo: ModoQr): string {
+    if (!pieMotoFlowVisible()) return '';
+    return CMD.LF + textoTicket(dashLine()) + CMD.LF
+        + qrNativo('https://' + pieMotoFlowLineasTexto(true)[1], modo) + CMD.LF
+        + textoTicket(pieMotoFlowLineasTexto(true).map(centerLine).join(CMD.LF)) + CMD.LF;
 }
 
 /**
