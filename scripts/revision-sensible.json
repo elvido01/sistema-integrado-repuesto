@@ -293,7 +293,7 @@
     "src/components/common/pdf/reciboPDF.js": "5f98be62fb5785d5",
     "src/components/common/pdf/reciboPagoFinancieraPDF.js": "2406de5e17bc89cc",
     "src/components/compras/AgenteCambioSuplidor.jsx": "5a6e7b9765ba4f47",
-    "src/components/compras/CompraDetalles.jsx": "27df8ec3e61b1387",
+    "src/components/compras/CompraDetalles.jsx": "6e9b10e09deaf43f",
     "src/components/compras/CompraFooter.jsx": "25d112bb2fc5327b",
     "src/components/compras/CompraHeader.jsx": "bc580cc829a0b23a",
     "src/components/compras/CompraInteligentePanel.jsx": "ff804e5782a420d7",
@@ -354,7 +354,7 @@
     "src/lib/printNominaFirmas.js": "3dc0d0313bba5afb",
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
-    "src/pages/ComprasPage.jsx": "37de711bfccebf19",
+    "src/pages/ComprasPage.jsx": "44dfcdf025dc0366",
     "src/pages/Configuracion/CierreCajaPage.jsx": "2b50de559e520821",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
@@ -442,16 +442,10 @@
     "sql/nota_credito_devolucion.sql": "83dbfa957ee1ac97",
     "sql/compras_606_factura_repartida.sql": "af117af60441d1fa",
     "sql/elite_royal_prestige_compras.sql": "e8bc45e8d04759fc",
-    "sql/morla_ncf_hao_oc0378.sql": "ee361d8662005c68"
+    "sql/morla_ncf_hao_oc0378.sql": "ee361d8662005c68",
+    "src/lib/emparejarLineaCompra.js": "00037880ad4f8242"
   },
   "historial": [
-    {
-      "fecha": "2026-11-02",
-      "nota": "code-review high x2 sobre recibo_ingreso_amarrado_a_su_pago.sql: 1a pasada (digitos repetidos 6/7 cifras, v_pago sin asignar, renumerar bajaba el MAX y tocaba turno cerrado, todas las empresas, backfill codicioso, financiera externa, eficiencia) y 2a pasada (financiera externa con contador aparte, concurrencia sin candado, numeros raros, prioridad de referencia, backfill repetible) corregidos; simulacro con registrar_pago_prestamo real: pago 0148846 -> RI-0148846 amarrado, recibos de hoy intactos, 0 pagos del mes sin amarre. Aceptado: v_seq sin uso y la sobrecarga de 9 argumentos (preexistentes)",
-      "archivos": [
-        "sql/recibo_ingreso_amarrado_a_su_pago.sql"
-      ]
-    },
     {
       "fecha": "2026-11-02",
       "nota": "code-review high (detalle desplegable de transferencias en el cierre): corregidos numero de cuenta mostrado como pago (solo con cuenta_id), numero repetido (compara digitos), agrupacion de destino sin mayusculas/espacios, lineas abiertas al cambiar de dia/cajero. Aceptados: detalle guardado en la foto del cierre (sirve para reimprimir identico), Sin forma detallada sin detalle, estilo propio de la fila",
@@ -966,6 +960,15 @@
       "nota": "code-review high (8f1ad9354..HEAD, 9 hallazgos): arreglados - QR 18 mm con margen de 4 modulos, flag del pie se reinicia con empresa null, pie en cotizacion y colegio ESC/POS, separador del PDF hasta rightX, Admin con error visible y sin pisar otra empresa, sello+pie en Promise.all, textos del pie centralizados; 812 tests y build OK. Sin arreglar: flag global (las rutas de impresion no reciben siempre la empresa)",
       "archivos": [
         "src/components/common/pdf/facturaPDF.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-16",
+      "nota": "code-review high (aee215d01..HEAD, 10 hallazgos): arreglados - '+' en linea 'otra pieza' ya no engancha a la pieza equivocada (codigo vacio y bloqueo), regla del codigo aflojada (mismo suplidor = misma pieza, abreviaturas), referencia con separadores, consulta unica limit 60, se guarda codigo nuestro (la memoria aprende de extracted_json), duplicado sin acentos y por codigo en catalogos, negrita del cuerpo en financiera/cotizaciones. Probado con la factura real de Pedro: solo cambian las 2 lineas que estaban mal; 820 tests",
+      "archivos": [
+        "src/components/compras/CompraDetalles.jsx",
+        "src/lib/emparejarLineaCompra.js",
+        "src/pages/ComprasPage.jsx"
       ]
     }
   ]
