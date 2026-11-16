@@ -108,7 +108,12 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
   const is4inch = printFormat === 'pos_4inch';
   const pageWidth = is4inch ? '100mm' : '80mm';
   const bodyWidth = is4inch ? '72mm' : '68mm';
-  const baseFontSize = is4inch ? '15px' : '14px';
+  // (16/11/2026) Recibo COMPACTO, como los sistemas comerciales: texto del
+  // tamaño de la letra A de la térmica (~3 mm, 42-48 caracteres por línea),
+  // sin negrita salvo nombre, título del e-CF y total, y poco espacio entre
+  // líneas. Antes 14-15 px todo en negrita: una venta de un artículo gastaba
+  // casi el doble de papel. QR del e-CF a 25 mm (la DGII pide mínimo 22 mm).
+  const baseFontSize = is4inch ? '12.5px' : '12px';
 
   const html = `
     <!DOCTYPE html>
@@ -128,52 +133,54 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
         body {
           width: ${bodyWidth};
           margin: 0;
-          padding: 2mm 4mm;
+          padding: 1mm 3mm;
           box-sizing: border-box;
           font-family: Arial, Helvetica, sans-serif;
           font-size: ${baseFontSize};
-          font-weight: 700;
-          line-height: 1.2;
+          font-weight: 400;
+          line-height: 1.15;
           color: #000;
-          letter-spacing: 0.2px;
           -webkit-print-color-adjust: exact;
         }
+        p { margin: 0; }
+        strong, .bold { font-weight: 700; }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
-        .header { margin-bottom: 4px; }
-        .header h1 { font-size: 20px; margin: 0; font-weight: 900; letter-spacing: 0.5px; }
-        .header p { margin: 1px 0; font-size: 13px; color: #000; }
+        .header { margin-bottom: 2px; }
+        .header h1 { font-size: 16px; margin: 0 0 1px; font-weight: 900; }
+        .header p { margin: 0; font-size: 11px; color: #000; }
 
-        .section { margin-bottom: 4px; }
-        .row { display: flex; justify-content: space-between; margin-bottom: 1px; font-size: 14px; }
-        .client-info-row { display: flex; gap: 6px; margin-bottom: 1px; font-size: 14px; }
-        .separator { border-top: 1px dashed #000; margin: 4px 0; height: 0; }
-        .double-separator { border-top: 2px double #000; margin: 4px 0; height: 0; }
+        .section { margin-bottom: 2px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 0; }
+        .client-info-row { display: flex; gap: 4px; margin-bottom: 0; }
+        .separator { border-top: 1px dashed #000; margin: 3px 0; height: 0; }
+        .double-separator { border-top: 2px double #000; margin: 3px 0; height: 0; }
 
         .num { font-family: Arial, Helvetica, sans-serif; }
 
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        th { text-align: left; padding-bottom: 2px; font-size: 13px; border-bottom: 1px solid #000; }
-        .item-name { text-transform: uppercase; padding-top: 4px; font-size: 14px; word-wrap: break-word; line-height: 1.2; }
-        .item-details { padding-bottom: 2px; font-size: 15px; }
+        th { text-align: left; padding-bottom: 1px; font-size: 10.5px; font-weight: 700; border-bottom: 1px solid #000; }
+        .item-name { text-transform: uppercase; padding-top: 2px; word-wrap: break-word; line-height: 1.15; }
+        .item-details { padding-bottom: 1px; }
         .item-details td.text-right { font-family: Arial, Helvetica, sans-serif; }
 
-        .totals-container { margin-top: 4px; padding-top: 2px; }
-        .totals-row { display: flex; justify-content: flex-end; margin-bottom: 1px; font-size: 14px; }
+        .totals-container { margin-top: 2px; }
+        .totals-row { display: flex; justify-content: flex-end; margin-bottom: 0; }
         .totals-label { text-align: right; padding-right: 6px; flex: 1; }
         .totals-value { text-align: right; width: 80px; font-variant-numeric: tabular-nums; font-family: Arial, Helvetica, sans-serif; }
 
-        .grand-total { font-size: 17px; margin-top: 2px; padding-top: 4px; font-weight: 900; border-top: 2px solid #000; }
-        .footer { margin-top: 8px; font-size: 13px; line-height: 1.2; padding-top: 4px; }
-        .notas-factura { margin: 4px 0; font-size: 13px; line-height: 1.25; font-weight: 700; white-space: pre-wrap; word-break: break-word; }
+        .grand-total { font-size: 15px; margin-top: 2px; padding-top: 2px; font-weight: 900; border-top: 1px solid #000; }
+        .footer { margin-top: 4px; font-size: 11px; line-height: 1.15; }
+        .notas-factura { margin: 3px 0; font-size: 11px; line-height: 1.2; white-space: pre-wrap; word-break: break-word; }
+        .ecf-ri { margin-top: 4px !important; line-height: 1.2 !important; }
       </style>
     </head>
     <body onload="window.print()">
       <div class="header text-center">
         ${getHeaderHTML(factura.nombre_emisor_ncf)}
         ${factura.ecf
-          ? `<div style="margin-top: 4px; font-size: 13px; font-weight: 700; line-height: 1.2;">${factura.ecf.titulo}</div>`
-          : `<div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">FACTURA</div>`}
+          ? `<div style="margin-top: 2px; font-size: 12px; font-weight: 700; line-height: 1.15;">${factura.ecf.titulo}</div>`
+          : `<div style="margin-top: 2px; font-size: 13px; font-weight: 700; letter-spacing: 1px;">FACTURA</div>`}
       </div>
 
       <div class="section">
@@ -233,7 +240,7 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
       </div>
 
       <div class="separator"></div>
-      <div style="font-size: 13px; font-weight: normal; margin-bottom: 2px;">Descripcion de la Mercancia</div>
+      <div style="font-size: 10.5px; margin-bottom: 1px;">Descripcion de la Mercancia</div>
       <table>
         <thead>
           <tr>
@@ -246,7 +253,7 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
         <tbody>
           ${details.map(item => `
             <tr>
-              <td colspan="4" class="item-name" style="padding-top: 4px;">${(item.descripcion || '').toUpperCase()}</td>
+              <td colspan="4" class="item-name">${(item.descripcion || '').toUpperCase()}</td>
             </tr>
             <tr class="item-details">
               <td width="22%" style="white-space: nowrap;">${item.cantidad} UND</td>
@@ -264,12 +271,13 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
           <div class="totals-label">Sub-Total :</div>
           <div class="totals-value">${formatCurrency(factura.subtotal)}</div>
         </div>
+        ${Number(factura.descuento || 0) > 0.004 ? `
         <div class="totals-row">
           <div class="totals-label">Descuento en Items :</div>
           <div class="totals-value">${formatCurrency(factura.descuento)}</div>
-        </div>
+        </div>` : ''}
         <div style="display: flex; justify-content: space-between;">
-          <div style="width: 70px; font-weight: normal; font-size: 12px; margin-top: 2px;">
+          <div style="width: 60px; font-size: 10px; margin-top: 2px;">
             Valores en<br/>DOP
           </div>
           <div style="flex-grow: 1;">
@@ -278,10 +286,6 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
               <div class="totals-value">${formatCurrency(factura.itbis)}</div>
             </div>
             
-            <div class="row" style="justify-content: flex-end; margin: 2px 0;">
-              <span style="letter-spacing: -1px;">==========</span>
-            </div>
-
             <div class="totals-row grand-total">
               <div class="totals-label">TOTAL :</div>
               <div class="totals-value">${formatCurrency(factura.total)}</div>
@@ -323,11 +327,11 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
       ${renderFacturaNotas(factura.notas)}
 
       ${extrasFacturaHtml(factura)}
-      ${ecfBloqueHtml(factura.ecf, { qr: is4inch ? '32mm' : '30mm', fuente: '12px' })}
+      ${ecfBloqueHtml(factura.ecf, { qr: '25mm', fuente: '10.5px' })}
 
       <div class="footer">
         <p>Vendedor : ${factura.vendedor || _empresaConfig.nombre}</p>
-        <p class="text-center" style="margin-top: 5px;">*** GRACIAS POR SU COMPRA ***</p>
+        <p class="text-center" style="margin-top: 2px; font-weight: 700;">*** GRACIAS POR SU COMPRA ***</p>
       </div>
       ${pieMotoFlowHtml()}
     </body>
