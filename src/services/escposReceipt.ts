@@ -111,6 +111,14 @@ const centerLine = (text: string) => {
     return ' '.repeat(pad) + text;
 };
 
+// (16/11/2026) Pie "hecho con MotoFlow" (publicidad) en los tickets del
+// cliente; en ESC/POS directo solo el texto (sin acentos: toAscii).
+const pieMotoFlowLineas = (): string[] => [
+    dashLine(),
+    centerLine('Sistema de Gestion MotoFlow'),
+    centerLine('motoflow.com.do'),
+];
+
 /** Join left + right text with space fill */
 const leftRight = (left: string, right: string) => {
     const space = W - left.length - right.length;
@@ -432,6 +440,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
         if (ecf.codigo_seguridad) despues.push(centerLine(`Codigo de seguridad: ${ecf.codigo_seguridad}`));
         if (ecf.fecha_firma) despues.push(centerLine(`Fecha firma digital: ${ecf.fecha_firma}`));
         despues.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
+        despues.push(...pieMotoFlowLineas());
         despues.push(CMD.FEED_3);
         despues.push(CMD.CUT);
         return antes
@@ -440,6 +449,7 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
     }
 
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
+    lines.push(...pieMotoFlowLineas());
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
@@ -658,6 +668,7 @@ export function buildReciboIngresoEscPos(
     lines.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU PAGO ***') + CMD.BOLD_OFF);
     lines.push('');
     lines.push('Recibido por: ____________________________');
+    lines.push(...pieMotoFlowLineas());
     lines.push(CMD.NORMAL);
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);

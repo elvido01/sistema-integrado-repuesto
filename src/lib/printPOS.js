@@ -1,3 +1,4 @@
+import { pieMotoFlowHtml } from '@/lib/pieMotoFlow';
 import { formatInTimeZone, formatFechaDMY } from './dateUtils';
 import { formatoDocDgii } from '@/lib/docFiscal';
 import { prepararEcfImpresion, ecfBloqueHtml, ecfVenceHtml, esEncf, extrasFacturaHtml } from '@/lib/ecfImpresion';
@@ -322,6 +323,7 @@ export const printFacturaPOS = async (facturaIn, printFormat = 'pos_4inch') => {
         <p>Vendedor : ${factura.vendedor || _empresaConfig.nombre}</p>
         <p class="text-center" style="margin-top: 5px;">*** GRACIAS POR SU COMPRA ***</p>
       </div>
+      ${pieMotoFlowHtml()}
     </body>
     </html>
   `;
@@ -1012,6 +1014,7 @@ export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
         <p class="text-center" style="margin-top: 8px;">COMPROBANTE DE DEVOLUCION</p>
         <p class="text-center" style="font-size: 9px; margin-top: 4px;">Este documento acredita el ingreso de la mercancía al almacén.</p>
       </div>
+      ${pieMotoFlowHtml()}
     </body>
     </html>
   `;
@@ -1120,6 +1123,7 @@ export const printReciboPOS = (reciboData) => {
         <p>*** GRACIAS POR SU PAGO ***</p>
         <p>Le Atendio: ${_empresaConfig.nombre}</p>
       </div>
+      ${pieMotoFlowHtml()}
     </body>
     </html>
   `;
@@ -1224,6 +1228,7 @@ export const printRecibo4Pulgadas = (reciboData) => {
         <p>*** GRACIAS POR SU PREFERENCIA ***</p>
         <p>Recibido por: __________________________</p>
       </div>
+      ${pieMotoFlowHtml()}
     </body>
     </html>
   `;
@@ -1321,6 +1326,7 @@ export const printNotaCreditoPOS = (notaData) => {
         <p>*** DESCUENTO APLICADO — NO REPRESENTA DINERO EN CAJA ***</p>
         <p>Autorizado por: __________________________</p>
       </div>
+      ${pieMotoFlowHtml()}
     </body>
     </html>
   `;
@@ -1438,6 +1444,7 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
       <div class="footer">
         <p class="bold">*** GRACIAS POR SU PAGO ***</p>
       </div>
+      ${pieMotoFlowHtml()}
     </body>
     </html>
   `;
@@ -1776,6 +1783,7 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
         <p>Los precios estan sujetos a cambios sin previo aviso.</p>
         <p style="margin-top: 5px;">${_empresaConfig.nombre}</p>
       </div>
+      ${pieMotoFlowHtml()}
     </body>
     </html>
   `;
@@ -1942,6 +1950,7 @@ export const printCotizacionMagnaPOS = (cotizacion, paperSize = '4inch', lines =
         <p>Los precios están sujetos a cambios sin previo aviso.</p>
         <p style="margin-top: 5px;">ELVIDO MANUEL CAMINERO MORLA</p>
       </div>
+      ${pieMotoFlowHtml()}
     </body>
     </html>
   `;

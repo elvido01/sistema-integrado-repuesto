@@ -323,7 +323,19 @@ export const generateFacturaPDF = async (facturaIn, empresa = {}) => {
 
     doc.setFontSize(10);
     doc.text("*** GRACIAS POR SU COMPRA ***", pageWidth / 2, currentY, { align: 'center' });
-    currentY += 15;
+    currentY += 13;
+
+    // (16/11/2026) Pie "hecho con MotoFlow" (publicidad), como en el ticket.
+    doc.setLineDashPattern([2, 2], 0);
+    doc.line(marginLeft, currentY, pageWidth - marginLeft, currentY);
+    currentY += 9;
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Sistema de Gestión MotoFlow', pageWidth / 2, currentY, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    currentY += 9;
+    doc.text('motoflow.com.do', pageWidth / 2, currentY, { align: 'center' });
+    currentY += 12;
 
     return currentY;
   };
