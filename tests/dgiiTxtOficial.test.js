@@ -95,6 +95,38 @@ describe('606: nota de crédito y retención de ISR (datos guardados en Compras)
   });
 });
 
+describe('606: factura repartida en dos fichas del mismo suplidor (dos vendedores)', () => {
+  const base = { fecha: '2026-10-03', total_exento: 0, forma_pago: 'Credito', suplidor_rnc: '102626413', ncf: 'E310000024983' };
+  it('dos fichas distintas: UNA línea con los montos sumados', () => {
+    const { incluidas, excluidas } = revisar606([
+      { ...base, id: 1, numero: 'OC-0368', suplidor_id: 'a', total_gravado: 1000, itbis_total: 180, total_compra: 1180 },
+      { ...base, id: 2, numero: 'OC-0369', suplidor_id: 'b', total_gravado: 500, itbis_total: 90, total_compra: 590 },
+    ]);
+    expect(excluidas).toHaveLength(0);
+    expect(incluidas).toHaveLength(1);
+    const f = fila606(incluidas[0]);
+    expect(f[9]).toBe('1500.00');
+    expect(f[10]).toBe('270.00');
+    expect(incluidas[0].avisos.join(' ')).toContain('OC-0368 + OC-0369');
+  });
+  it('la misma ficha dos veces sigue siendo repetida', () => {
+    const { incluidas, excluidas } = revisar606([
+      { ...base, id: 1, suplidor_id: 'a', total_gravado: 1000, itbis_total: 180 },
+      { ...base, id: 2, suplidor_id: 'a', total_gravado: 1000, itbis_total: 180 },
+    ]);
+    expect(incluidas).toHaveLength(1);
+    expect(excluidas[0].motivo).toContain('Repetida');
+  });
+  it('con retenciones distintas no se junta: queda fuera para corregir', () => {
+    const { incluidas, excluidas } = revisar606([
+      { ...base, id: 1, suplidor_id: 'a', total_gravado: 1000, itbis_total: 180 },
+      { ...base, id: 2, suplidor_id: 'b', total_gravado: 500, itbis_total: 90, itbis_retenido_pct: 30 },
+    ]);
+    expect(incluidas).toHaveLength(1);
+    expect(excluidas[0].motivo).toContain('retenciones distintas');
+  });
+});
+
 describe('608', () => {
   it('NCF, fecha y tipo de anulación', () => {
     expect(generar608([{ ncf: 'B0100000009', fecha: '2026-10-02', tipo_anulacion: '05' }])).toBe('B0100000009|20261002|05');

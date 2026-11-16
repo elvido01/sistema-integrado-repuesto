@@ -190,7 +190,7 @@ const retencionItbis = (c) => parseFloat(c.itbis_total || 0) * parseFloat(c.itbi
 export const revisar606 = (compras, rncEmpresa = '') => {
   const incluidas = [];
   const excluidas = [];
-  const vistos = new Set();
+  const vistos = new Map(); // "rnc|ncf" → { idx en incluidas, fichas del suplidor ya vistas }
   const propio = cleanRncCedula(rncEmpresa);
   for (const c of compras || []) {
     const ncf = normalizarNcf(c.ncf);
@@ -223,7 +223,8 @@ export const revisar606 = (compras, rncEmpresa = '') => {
       continue;
     }
     const clave = `${rnc}|${ncf}`;
-    if (vistos.has(clave)) {
+    const previa = vistos.get(clave);
+    if (previa && previa.fichas.has(c.suplidor_id ?? null)) {
       fuera('Repetida: la misma factura del mismo suplidor ya está en el reporte', 'Revise si la compra se registró dos veces.');
       continue;
     }
@@ -237,7 +238,36 @@ export const revisar606 = (compras, rncEmpresa = '') => {
       fuera('Tiene retención de ISR pero no el tipo de retención', 'Escoja el tipo de retención en la compra y vuelva a generar el 606.');
       continue;
     }
-    vistos.add(clave);
+    if (previa) {
+      // (16/11/2026) La misma factura cargada en DOS fichas del mismo suplidor
+      // (una empresa con dos vendedores, p. ej. Pedro Racing o G&G/HAO): es una
+      // sola factura repartida. Va en UNA línea con los montos sumados; la DGII
+      // no acepta el mismo NCF dos veces.
+      const a = incluidas[previa.idx];
+      if (Number(a.isr_retenido_pct || 0) !== Number(c.isr_retenido_pct || 0)
+        || Number(a.itbis_retenido_pct || 0) !== Number(c.itbis_retenido_pct || 0)
+        || (a.tipo_retencion_isr || null) !== (c.tipo_retencion_isr || null)) {
+        fuera('La misma factura está en dos fichas del suplidor con retenciones distintas',
+          'Ponga las mismas retenciones en las dos compras y vuelva a generar el 606.');
+        continue;
+      }
+      const servicios = (x) => (x.monto_servicios != null && isFinite(Number(x.monto_servicios))
+        ? Number(x.monto_servicios)
+        : (TIPOS_SERVICIO[tipoBS606(x)] ? parseFloat(x.total_gravado || 0) + parseFloat(x.total_exento || 0) : 0));
+      const suma = (k) => parseFloat(a[k] || 0) + parseFloat(c[k] || 0);
+      incluidas[previa.idx] = {
+        ...a,
+        total_gravado: suma('total_gravado'), total_exento: suma('total_exento'),
+        itbis_total: suma('itbis_total'), total_compra: suma('total_compra'), propina: suma('propina'),
+        monto_servicios: servicios(a) + servicios(c),
+        juntadas: [...(a.juntadas || [a.numero]), c.numero],
+        avisos: [...a.avisos.filter((t) => !t.startsWith('Una sola factura')),
+          `Una sola factura repartida en dos fichas del suplidor: ${[...(a.juntadas || [a.numero]), c.numero].filter(Boolean).join(' + ')} (montos sumados)`],
+      };
+      previa.fichas.add(c.suplidor_id ?? null);
+      continue;
+    }
+    vistos.set(clave, { idx: incluidas.length, fichas: new Set([c.suplidor_id ?? null]) });
     const avisos = [];
     if (c.tipo_bienes_servicios && tipoBS606(c) !== String(c.tipo_bienes_servicios).trim().padStart(2, '0')) {
       avisos.push(`Tipo de bienes y servicios "${c.tipo_bienes_servicios}" no existe: se reporta como 09`);
