@@ -5,6 +5,7 @@ import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { factorDePaquete } from '@/lib/paqueteDeCompra';
+import { buscarProductoDeLinea } from '@/lib/emparejarLineaCompra';
 import PrecisionOcrModal from '@/components/compras/PrecisionOcrModal';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -1004,30 +1005,24 @@ const ComprasPage = () => {
       let productoCosto = 0;
       let productoItbis = null;
 
+      let avisoCodigo = null;
       if (item.code) {
         // Corrección de OCR: Si la IA lee '1-' o 'l-' al inicio de un código, reemplazarlo por 'I-' mayúscula
         item.code = item.code.replace(/^[1l]-/i, 'I-');
 
-        let { data: product } = await supabase
-          .from('productos')
-          .select('id, descripcion, costo, itbis_pct, referencia, suplidor_id, marca_id, modelos_ids')
-          .ilike('codigo', item.code)
-          .maybeSingle();
-
-        // No emparejo por codigo. Puede que ya sepamos que ESE codigo de
-        // ESTE suplidor es una pieza nuestra: se aprendio de una factura
-        // anterior donde alguien la busco a mano.
-        if (!product) {
-          const memoria = codigosSuplidor[String(item.code).trim().toUpperCase()];
-          if (memoria?.producto_id) {
-            const { data: porMemoria } = await supabase
-              .from('productos')
-              .select('id, descripcion, costo, itbis_pct, referencia, suplidor_id, marca_id, modelos_ids')
-              .eq('id', memoria.producto_id)
-              .maybeSingle();
-            if (porMemoria) { product = porMemoria; lineasPorMemoria += 1; }
-          }
-        }
+        // (16/11/2026) Antes bastaba el CÓDIGO: el 004264 de Pedro Racing
+        // (motor de arranque, nuestro V004264) caía en el 004264 de G&G (una
+        // varilla de freno). Ahora, en este orden:
+        //   1. lo que este suplidor ya nos enseñó (memoria de códigos);
+        //   2. la misma REFERENCIA de la factura (mejor si es del mismo suplidor);
+        //   3. el código igual, o con letras delante (V004264, TVS003730), solo
+        //      si es del mismo suplidor o la descripción se parece.
+        // Si el código existe pero es otra pieza, la línea queda por crear con
+        // un aviso, en vez de meter la compra en el artículo equivocado.
+        const r = await buscarProductoDeLinea(item, compra.suplidor_id, codigosSuplidor);
+        let product = r.producto;
+        if (r.porMemoria) lineasPorMemoria += 1;
+        avisoCodigo = r.aviso;
 
         if (product) {
           producto_id = product.id;
@@ -1105,7 +1100,8 @@ const ComprasPage = () => {
         // Se deja anotado para poder decirlo en pantalla: una cantidad que
         // cambia sola sin avisar da mas miedo que confianza.
         paquete_abierto: paquete.factor > 1 ? paquete.factor : null,
-        paquete_origen: paquete.origen
+        paquete_origen: paquete.origen,
+        aviso_codigo: avisoCodigo,
       };
     }));
 

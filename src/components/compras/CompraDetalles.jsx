@@ -190,7 +190,12 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="p-0 px-2 text-[11px] h-9">{d.descripcion}</TableCell>
+                  <TableCell className="p-0 px-2 text-[11px] h-9">
+                    {d.descripcion}
+                    {!d.producto_id && d.aviso_codigo && (
+                      <div className="text-[10px] font-semibold text-red-600 leading-tight">⚠ {d.aviso_codigo}</div>
+                    )}
+                  </TableCell>
                   <TableCell className="w-[70px] p-0 px-2 text-center text-[11px] h-9 font-mono">{Number(d.cantidad).toFixed(2)}</TableCell>
                   <TableCell className="w-[70px] p-0 px-2 text-center text-[11px] h-9">{d.unidad}</TableCell>
                   <TableCell className="w-[100px] p-0 px-2 text-right text-[11px] h-9 font-mono">{fmt(d.costo_unitario)}</TableCell>
