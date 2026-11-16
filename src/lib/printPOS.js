@@ -64,6 +64,10 @@ export const setEmpresaPrintConfig = (empresa) => {
     };
     // (16/11/2026) Pie "Sistema de Gestión MotoFlow": lo quita solo el súper admin.
     setPieMotoFlowVisible(!empresa.sin_pie_motoflow);
+  } else {
+    // Empresa sin config (o cambiando de empresa): el pie vuelve al de todas,
+    // no se queda el de la empresa anterior.
+    setPieMotoFlowVisible(true);
   }
 };
 

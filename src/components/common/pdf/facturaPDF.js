@@ -4,7 +4,7 @@ import { formatInTimeZone } from '@/lib/dateUtils';
 import { formatCurrency } from './pdfUtils';
 import { IDS_GENERICOS } from '@/lib/clienteGenerico';
 import { prepararEcfImpresion } from '@/lib/ecfImpresion';
-import { pieMotoFlowVisible } from '@/lib/pieMotoFlow';
+import { pieMotoFlowVisible, pieMotoFlowLineasTexto } from '@/lib/pieMotoFlow';
 
 export const generateFacturaPDF = async (facturaIn, empresa = {}) => {
   // (10/10/2026) e-CF: título electrónico, e-NCF, vencimiento y el QR de la DGII.
@@ -329,14 +329,15 @@ export const generateFacturaPDF = async (facturaIn, empresa = {}) => {
     // (16/11/2026) Pie "hecho con MotoFlow" (publicidad), como en el ticket.
     if (!pieMotoFlowVisible()) return currentY + 2;
     doc.setLineDashPattern([2, 2], 0);
-    doc.line(marginLeft, currentY, pageWidth - marginLeft, currentY);
+    doc.line(marginLeft, currentY, rightX, currentY);
     currentY += 9;
+    const [pieNombre, pieUrl] = pieMotoFlowLineasTexto();
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
-    doc.text('Sistema de Gestión MotoFlow', pageWidth / 2, currentY, { align: 'center' });
+    doc.text(pieNombre, pageWidth / 2, currentY, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     currentY += 9;
-    doc.text('motoflow.com.do', pageWidth / 2, currentY, { align: 'center' });
+    doc.text(pieUrl, pageWidth / 2, currentY, { align: 'center' });
     currentY += 12;
 
     return currentY;

@@ -105,19 +105,15 @@ export const AuthProvider = ({ children }) => {
             .filter(Boolean).join(', ');
           // (12/11/2026) El sello va en su propia consulta: si falta la columna
           // (SQL sin correr) solo se queda sin sello, sin tumbar lo demás.
-          let sello_url = null;
-          try {
-            const r = await supabase.from('config_empresa').select('sello_url').eq('tenant_id', activeTid).maybeSingle();
-            if (!r.error) sello_url = r.data?.sello_url || null;
-          } catch { /* sin sello */ }
-          // (16/11/2026) Pie "Sistema de Gestión MotoFlow" en los recibos: lo
-          // quita solo el súper admin (tenants.sin_pie_motoflow). Si la
-          // consulta falla, el pie sale (como en todas).
-          let sin_pie_motoflow = false;
-          try {
-            const r = await supabase.from('tenants').select('sin_pie_motoflow').eq('id', activeTid).maybeSingle();
-            if (!r.error) sin_pie_motoflow = r.data?.sin_pie_motoflow === true;
-          } catch { /* con pie */ }
+          // (16/11/2026) Y el pie "Sistema de Gestión MotoFlow" en los recibos:
+          // lo quita solo el súper admin (tenants.sin_pie_motoflow); si la
+          // consulta falla, el pie sale (como en todas). Las dos a la vez.
+          const [rSello, rPie] = await Promise.all([
+            supabase.from('config_empresa').select('sello_url').eq('tenant_id', activeTid).maybeSingle().then((r) => r, () => null),
+            supabase.from('tenants').select('sin_pie_motoflow').eq('id', activeTid).maybeSingle().then((r) => r, () => null),
+          ]);
+          const sello_url = rSello && !rSello.error ? (rSello.data?.sello_url || null) : null;
+          const sin_pie_motoflow = !!(rPie && !rPie.error && rPie.data?.sin_pie_motoflow === true);
           setEmpresa({ ...empresaData, direccion, sello_url, sin_pie_motoflow });
         } else {
           setEmpresa(null);

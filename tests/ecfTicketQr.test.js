@@ -108,8 +108,12 @@ describe('cotización y Star', () => {
     const { buildCotizacionEscPos } = await import('../src/services/escposReceipt.ts');
     const t = buildCotizacionEscPos({ numero: 1, fecha_cotizacion: '2026-11-06' }, [], { nombre: 'Colegio X', telefono: '809-111-2222' });
     expect(t).toContain('COLEGIO X');
-    expect(t).not.toContain('MOTOFLOW');
-    expect(t).not.toContain('MotoFlow');
+    // (16/11/2026) El pie "Sistema de Gestion MotoFlow" va al final a
+    // propósito; el resto del ticket es de la empresa.
+    const sinPie = t.replace(/Sistema de Gestion MotoFlow|motoflow\.com\.do/g, '');
+    expect(sinPie).not.toContain('MOTOFLOW');
+    expect(sinPie).not.toContain('MotoFlow');
+    expect(t).toContain('Sistema de Gestion MotoFlow');
     expect(t).not.toContain('Baldemiro');
     expect(t).toContain('6/11/2026');
   });

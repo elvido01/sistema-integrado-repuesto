@@ -23,7 +23,7 @@ const MainLayout = () => {
   const { empresa } = useAuth();
 
   useEffect(() => {
-    if (empresa) setEmpresaPrintConfig(empresa);
+    setEmpresaPrintConfig(empresa); // null también: no arrastra el pie de la empresa anterior
   }, [empresa]);
 
   useEffect(() => {

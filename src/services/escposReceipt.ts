@@ -1,6 +1,6 @@
 import QRCode from 'qrcode';
 import { importeLineaCompra } from '@/lib/compraLinea';
-import { pieMotoFlowVisible } from '@/lib/pieMotoFlow';
+import { pieMotoFlowVisible, pieMotoFlowLineasTexto } from '@/lib/pieMotoFlow';
 import { numeroRecibo, NOTA_FISCAL_COLEGIO } from '@/lib/printColegio';
 /**
  * ESC/POS command builder for Star TSP143 receipt printer.
@@ -116,8 +116,7 @@ const centerLine = (text: string) => {
 // cliente; en ESC/POS directo solo el texto (sin acentos: toAscii).
 const pieMotoFlowLineas = (): string[] => (!pieMotoFlowVisible() ? [] : [
     dashLine(),
-    centerLine('Sistema de Gestion MotoFlow'),
-    centerLine('motoflow.com.do'),
+    ...pieMotoFlowLineasTexto(true).map(centerLine),
 ]);
 
 /** Join left + right text with space fill */
@@ -590,6 +589,7 @@ export function buildCotizacionEscPos(
     lines.push(centerLine('sin previo aviso.'));
     lines.push('');
     lines.push(centerLine(String(empresa?.nombre || 'MotoFlow').toUpperCase()));
+    lines.push(...pieMotoFlowLineas());
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
 
@@ -937,6 +937,7 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     for (const l of wrapLines(NOTA_FISCAL_COLEGIO)) lines.push(l);
     lines.push('');
     lines.push(centerLine('¡Gracias!'));
+    lines.push(...pieMotoFlowLineas());
     lines.push(CMD.FEED_3);
     lines.push(CMD.CUT);
     return toCP437(lines.join(CMD.LF));

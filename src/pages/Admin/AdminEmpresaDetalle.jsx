@@ -20,26 +20,36 @@ const AdminEmpresaDetalle = ({ tenantId, onClose }) => {
   // (16/11/2026) Pie "Sistema de Gestión MotoFlow" en sus recibos de 80 mm:
   // sale en todas; solo el súper admin lo quita (tenants.sin_pie_motoflow).
   const [sinPie, setSinPie] = useState(null); // null = cargando
+  const [errorPie, setErrorPie] = useState('');
   const [guardandoPie, setGuardandoPie] = useState(false);
+  const tenantPieRef = React.useRef(tenantId);
+  tenantPieRef.current = tenantId;
 
   useEffect(() => {
     if (!tenantId) return;
     let vivo = true;
     setSinPie(null);
+    setErrorPie('');
     supabase.from('tenants').select('sin_pie_motoflow').eq('id', tenantId).maybeSingle()
-      .then(({ data: t, error }) => { if (vivo && !error) setSinPie(t?.sin_pie_motoflow === true); });
+      .then(({ data: t, error }) => {
+        if (!vivo) return;
+        if (error) setErrorPie(error.message || 'No se pudo leer');
+        else setSinPie(t?.sin_pie_motoflow === true);
+      });
     return () => { vivo = false; };
   }, [tenantId]);
 
   const cambiarPie = async () => {
     if (sinPie === null) return;
+    const tid = tenantId; // la respuesta solo cuenta si sigue abierta esta empresa
     setGuardandoPie(true);
     try {
       const nuevo = !sinPie;
       const { data: filas, error } = await supabase.from('tenants')
-        .update({ sin_pie_motoflow: nuevo }).eq('id', tenantId).select('sin_pie_motoflow');
+        .update({ sin_pie_motoflow: nuevo }).eq('id', tid).select('sin_pie_motoflow');
       if (error) throw error;
       if (!filas?.length) throw new Error('No se guardó (sin permiso de súper admin).');
+      if (tenantPieRef.current !== tid) return;
       setSinPie(filas[0].sin_pie_motoflow === true);
       toast({ title: nuevo ? 'Sus recibos ya no llevan el pie de MotoFlow' : 'Sus recibos vuelven a llevar el pie de MotoFlow', description: 'La empresa lo verá al recargar MotoFlow.' });
     } catch (err) {
@@ -339,7 +349,7 @@ const AdminEmpresaDetalle = ({ tenantId, onClose }) => {
                       <div>
                         <p className="text-gray-400 font-medium">Pie MotoFlow en recibos de 80 mm</p>
                         <p className="font-bold text-gray-700">
-                          {sinPie === null ? 'Cargando…' : sinPie ? 'Quitado: sus recibos no lo llevan' : 'Sale: "Sistema de Gestión MotoFlow · motoflow.com.do"'}
+                          {errorPie ? `No se pudo leer: ${errorPie}` : sinPie === null ? 'Cargando…' : sinPie ? 'Quitado: sus recibos no lo llevan' : 'Sale: "Sistema de Gestión MotoFlow · motoflow.com.do"'}
                         </p>
                       </div>
                       <Button size="sm" variant="outline" onClick={cambiarPie} disabled={sinPie === null || guardandoPie}>
