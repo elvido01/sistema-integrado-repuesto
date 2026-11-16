@@ -442,7 +442,9 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
         if (ecf.fecha_firma) despues.push(centerLine(`Fecha firma digital: ${ecf.fecha_firma}`));
         despues.push(CMD.BOLD_ON + centerLine('*** GRACIAS POR SU COMPRA ***') + CMD.BOLD_OFF);
         return antes
-            + (ecf.qr_url ? qrNativo(toAscii(ecf.qr_url), opciones.qr || 'raster') : '') + CMD.LF
+            // (16/11/2026) Celda 4: ~45 módulos × 4 puntos ≈ 22.5 mm (la DGII
+            // pide mínimo 22 × 22 mm); con 5 salía de ~28 mm y gastaba papel.
+            + (ecf.qr_url ? qrNativo(toAscii(ecf.qr_url), opciones.qr || 'raster', 4) : '') + CMD.LF
             + textoTicket(despues.join(CMD.LF))
             + pieMotoFlowConQr(opciones.qr || 'raster')
             + textoTicket([CMD.FEED_3, CMD.CUT].join(CMD.LF));
@@ -463,9 +465,68 @@ export function buildFacturaEscPos(factura: FacturaData, empresa?: EmpresaConfig
  */
 function pieMotoFlowConQr(modo: ModoQr): string {
     if (!pieMotoFlowVisible()) return '';
+    const [nombre, url] = pieMotoFlowLineasTexto(true);
+    // Como en el recibo de la web: QR chico a la izquierda y el texto al lado,
+    // en UNA imagen. Las Star no imprimen esa imagen (raster): ahí, QR y debajo
+    // el texto, como antes.
+    const imagen = modo === 'star' ? '' : pieRasterEscPos('https://' + url, nombre, url);
+    if (imagen) return CMD.LF + textoTicket(dashLine()) + CMD.LF + CMD.CENTER + imagen + CMD.LEFT + CMD.LF;
     return CMD.LF + textoTicket(dashLine()) + CMD.LF
-        + qrNativo('https://' + pieMotoFlowLineasTexto(true)[1], modo, 3) + CMD.LF // chico: ~1.2 cm
-        + textoTicket(pieMotoFlowLineasTexto(true).map(centerLine).join(CMD.LF)) + CMD.LF;
+        + qrNativo('https://' + url, modo, 3) + CMD.LF // chico: ~1.2 cm
+        + textoTicket([nombre, url].map(centerLine).join(CMD.LF)) + CMD.LF;
+}
+
+/**
+ * El pie como imagen ESC/POS (GS v 0): QR a la izquierda (3 puntos por
+ * módulo, ~1.2 cm) y dos líneas de texto a la derecha. Se dibuja en un canvas
+ * del navegador; sin canvas (pruebas, servidor) devuelve '' y se usa el pie
+ * de siempre.
+ */
+function pieRasterEscPos(urlQr: string, linea1: string, linea2: string): string {
+    try {
+        if (typeof document === 'undefined') return '';
+        const qr = QRCode.create(urlQr, { errorCorrectionLevel: 'M' });
+        const n = qr.modules.size;
+        const esc = 3, margen = 2;
+        const ladoQr = (n + margen * 2) * esc;
+        const ancho = 384; // 48 mm: cabe en 58 y 80 mm, centrado
+        const alto = Math.max(ladoQr, 60);
+        const canvas = document.createElement('canvas');
+        canvas.width = ancho; canvas.height = alto;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return '';
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, ancho, alto);
+        ctx.fillStyle = '#000';
+        const y0 = Math.floor((alto - ladoQr) / 2);
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+            if (qr.modules.get(r, c)) ctx.fillRect((c + margen) * esc, y0 + (r + margen) * esc, esc, esc);
+        }
+        const xTexto = ladoQr + 8;
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 19px Arial, Helvetica, sans-serif';
+        ctx.fillText(linea1, xTexto, alto / 2 - 11, ancho - xTexto - 2);
+        ctx.font = '18px Arial, Helvetica, sans-serif';
+        ctx.fillText(linea2, xTexto, alto / 2 + 12, ancho - xTexto - 2);
+        const px = ctx.getImageData(0, 0, ancho, alto).data;
+        const anchoBytes = ancho / 8;
+        let datos = '';
+        for (let y = 0; y < alto; y++) {
+            for (let bx = 0; bx < anchoBytes; bx++) {
+                let byte = 0;
+                for (let bit = 0; bit < 8; bit++) {
+                    const i = (y * ancho + bx * 8 + bit) * 4;
+                    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+                    if (lum < 140) byte |= 0x80 >> bit;
+                }
+                datos += String.fromCharCode(byte);
+            }
+        }
+        return GS + 'v' + '0' + '\x00'
+            + String.fromCharCode(anchoBytes & 0xff, (anchoBytes >> 8) & 0xff, alto & 0xff, (alto >> 8) & 0xff)
+            + datos;
+    } catch {
+        return '';
+    }
 }
 
 /**
