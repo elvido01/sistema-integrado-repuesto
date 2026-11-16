@@ -1050,20 +1050,20 @@ export const printReciboPOS = (reciboData) => {
         body {
           width: 78mm; margin: 0; padding: 2mm 4mm; box-sizing: border-box;
           font-family: Arial, Helvetica, sans-serif;
-          font-size: 16px; font-weight: 800; line-height: 1.25; color: #000;
+          font-size: 13px; font-weight: 400; line-height: 1.15; color: #000;
           letter-spacing: 0.2px;
         }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .bold { font-weight: 900; }
         .header { margin-bottom: 4px; }
-        .header h1 { font-size: 22px; margin: 0; font-weight: 900; letter-spacing: 0.5px; }
-        .header p { margin: 1px 0; font-size: 14px; color: #000; }
+        .header h1 { font-size: 17.5px; margin: 0; font-weight: 900;  }
+        .header p { margin: 1px 0; font-size: 11px; color: #000; }
         .separator { border-top: 1px dashed #000; margin: 4px 0; }
         table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-        th { text-align: left; font-size: 15px; padding-bottom: 2px; border-bottom: 1px solid #000; }
-        td { font-size: 16px; padding: 3px 0; }
-        .total-row { font-weight: 900; font-size: 20px; margin-top: 6px; padding-top: 4px; border-top: 2px solid #000; display: flex; justify-content: space-between; }
+        th { text-align: left; font-size: 12px; padding-bottom: 2px; border-bottom: 1px solid #000; }
+        td { font-size: 13px; padding: 1px 0; }
+        .total-row { font-weight: 900; font-size: 16px; margin-top: 6px; padding-top: 4px; border-top: 2px solid #000; display: flex; justify-content: space-between; }
       </style>
     </head>
     <body onload="window.print()">
@@ -1082,7 +1082,7 @@ export const printReciboPOS = (reciboData) => {
       </div>
 
       <div class="separator"></div>
-      <div class="bold" style="font-size: 16px; margin-bottom: 2px;">FACTURAS ABONADAS:</div>
+      <div class="bold" style="font-size: 13px; margin-bottom: 2px;">FACTURAS ABONADAS:</div>
       <table>
         <thead>
           <tr>
@@ -1101,7 +1101,7 @@ export const printReciboPOS = (reciboData) => {
       </table>
 
       <div class="separator"></div>
-      <div class="bold" style="font-size: 16px; margin-bottom: 2px;">DETALLE DE PAGO:</div>
+      <div class="bold" style="font-size: 13px; margin-bottom: 2px;">DETALLE DE PAGO:</div>
       <table>
         <tbody>
           ${formasPago.map(f => `
@@ -1115,7 +1115,7 @@ export const printReciboPOS = (reciboData) => {
 
       <div class="separator"></div>
       <div style="margin-top: 4px;">
-        <div style="display: flex; justify-content: space-between; font-size: 16px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px;">
           <span>Balance Anterior:</span>
           <span>${formatCurrency(balanceAnterior)}</span>
         </div>
@@ -1123,13 +1123,13 @@ export const printReciboPOS = (reciboData) => {
           <span>TOTAL PAGADO:</span>
           <span>${formatCurrency(totalPagado)}</span>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 16px; margin-top: 2px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 2px;">
           <span>Balance Actual:</span>
           <span class="bold">${formatCurrency(balanceActual)}</span>
         </div>
       </div>
 
-      <div class="text-center" style="margin-top: 15px; font-size: 15px;">
+      <div class="text-center" style="margin-top: 15px; font-size: 12px;">
         <p>*** GRACIAS POR SU PAGO ***</p>
         <p>Le Atendio: ${_empresaConfig.nombre}</p>
       </div>
@@ -1158,26 +1158,26 @@ export const printRecibo4Pulgadas = (reciboData) => {
            contenido y lo corría a la derecha (se cortaba al imprimir). */
         body {
           width: 98mm; margin: 0; padding: 3mm 4mm; box-sizing: border-box;
-          font-family: Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.32; color: #000; font-weight: 700;
+          font-family: Arial, Helvetica, sans-serif; font-size: 13px; line-height: 1.15; color: #000; font-weight: 400;
         }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .bold { font-weight: 900; }
         .header { margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
-        .header h1 { font-size: 22px; margin: 0; font-weight: 900; }
-        .header p { margin: 2px 0; font-size: 14px; }
+        .header h1 { font-size: 17.5px; margin: 0; font-weight: 900; }
+        .header p { margin: 2px 0; font-size: 11px; }
         .separator { border-top: 1px dashed #000; margin: 6px 0; }
         table { width: 100%; border-collapse: collapse; margin-top: 5px; }
-        th { text-align: left; font-size: 15px; border-bottom: 1px solid #000; padding: 3px 0; }
-        td { font-size: 16px; padding: 4px 0; }
-        .total-row { font-weight: 900; font-size: 21px; margin-top: 8px; display: flex; justify-content: space-between; border-top: 2px solid #000; padding-top: 5px; }
-        .footer { margin-top: 20px; text-align: center; font-size: 15px; border-top: 1px dashed #ccc; padding-top: 10px; }
+        th { text-align: left; font-size: 12px; border-bottom: 1px solid #000; padding: 1px 0; }
+        td { font-size: 13px; padding: 1px 0; }
+        .total-row { font-weight: 900; font-size: 17px; margin-top: 8px; display: flex; justify-content: space-between; border-top: 2px solid #000; padding-top: 5px; }
+        .footer { margin-top: 6px; text-align: center; font-size: 12px; border-top: 1px dashed #ccc; padding-top: 4px; }
       </style>
     </head>
     <body onload="window.print()">
       <div class="header text-center">
         ${getHeaderHTML()}
-        <div style="margin-top: 6px; font-weight: 900; font-size: 18px;">RECIBO DE INGRESO</div>
+        <div style="margin-top: 6px; font-weight: 900; font-size: 14.5px;">RECIBO DE INGRESO</div>
       </div>
 
       <div style="margin-bottom: 10px;">
@@ -1188,7 +1188,7 @@ export const printRecibo4Pulgadas = (reciboData) => {
         <div style="margin-top: 5px;"><span class="bold">CLIENTE:</span> ${clienteNombre.toUpperCase()}</div>
       </div>
 
-      <div class="bold" style="font-size: 16px; margin-bottom: 3px; background: #eee; padding: 3px;">FACTURAS ABONADAS:</div>
+      <div class="bold" style="font-size: 13px; margin-bottom: 3px; background: #eee; padding: 3px;">FACTURAS ABONADAS:</div>
       <table>
         <thead>
           <tr>
@@ -1207,7 +1207,7 @@ export const printRecibo4Pulgadas = (reciboData) => {
       </table>
 
       <div class="separator"></div>
-      <div class="bold" style="font-size: 16px; margin-bottom: 3px; background: #eee; padding: 3px;">DETALLE DE PAGO:</div>
+      <div class="bold" style="font-size: 13px; margin-bottom: 3px; background: #eee; padding: 3px;">DETALLE DE PAGO:</div>
       <table>
         <tbody>
           ${formasPago.map(f => `
@@ -1220,7 +1220,7 @@ export const printRecibo4Pulgadas = (reciboData) => {
       </table>
 
       <div style="margin-top: 10px; background: #f9f9f9; padding: 5px; border: 1px solid #ddd;">
-        <div style="display: flex; justify-content: space-between; font-size: 16px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px;">
           <span>Balance Anterior:</span>
           <span>${formatCurrency(balanceAnterior)}</span>
         </div>
@@ -1228,7 +1228,7 @@ export const printRecibo4Pulgadas = (reciboData) => {
           <span>TOTAL PAGADO:</span>
           <span>${formatCurrency(totalPagado)}</span>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 17px; margin-top: 4px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13.5px; margin-top: 4px;">
           <span class="bold">Balance Actual:</span>
           <span class="bold">${formatCurrency(balanceActual)}</span>
         </div>
@@ -1267,26 +1267,26 @@ export const printNotaCreditoPOS = (notaData) => {
            contenido y lo corría a la derecha (se cortaba al imprimir). */
         body {
           width: 98mm; margin: 0; padding: 3mm 4mm; box-sizing: border-box;
-          font-family: Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.32; color: #000; font-weight: 700;
+          font-family: Arial, Helvetica, sans-serif; font-size: 13px; line-height: 1.15; color: #000; font-weight: 400;
         }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .bold { font-weight: 900; }
         .header { margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
-        .header h1 { font-size: 22px; margin: 0; font-weight: 900; }
-        .header p { margin: 2px 0; font-size: 14px; }
+        .header h1 { font-size: 17.5px; margin: 0; font-weight: 900; }
+        .header p { margin: 2px 0; font-size: 11px; }
         .separator { border-top: 1px dashed #000; margin: 6px 0; }
         table { width: 100%; border-collapse: collapse; margin-top: 5px; }
-        th { text-align: left; font-size: 15px; border-bottom: 1px solid #000; padding: 3px 0; }
-        td { font-size: 16px; padding: 4px 0; }
-        .total-row { font-weight: 900; font-size: 21px; margin-top: 8px; display: flex; justify-content: space-between; border-top: 2px solid #000; padding-top: 5px; }
-        .footer { margin-top: 20px; text-align: center; font-size: 15px; border-top: 1px dashed #ccc; padding-top: 10px; }
+        th { text-align: left; font-size: 12px; border-bottom: 1px solid #000; padding: 1px 0; }
+        td { font-size: 13px; padding: 1px 0; }
+        .total-row { font-weight: 900; font-size: 17px; margin-top: 8px; display: flex; justify-content: space-between; border-top: 2px solid #000; padding-top: 5px; }
+        .footer { margin-top: 6px; text-align: center; font-size: 12px; border-top: 1px dashed #ccc; padding-top: 4px; }
       </style>
     </head>
     <body onload="window.print()">
       <div class="header text-center">
         ${getHeaderHTML()}
-        <div style="margin-top: 6px; font-weight: 900; font-size: 18px;">NOTA DE CRÉDITO</div>
+        <div style="margin-top: 6px; font-weight: 900; font-size: 14.5px;">NOTA DE CRÉDITO</div>
       </div>
 
       <div style="margin-bottom: 10px;">
@@ -1297,7 +1297,7 @@ export const printNotaCreditoPOS = (notaData) => {
         <div style="margin-top: 5px;"><span class="bold">CLIENTE:</span> ${(clienteNombre || 'N/A').toUpperCase()}</div>
       </div>
 
-      <div class="bold" style="font-size: 16px; margin-bottom: 3px; background: #eee; padding: 3px;">LÍNEAS ACREDITADAS:</div>
+      <div class="bold" style="font-size: 13px; margin-bottom: 3px; background: #eee; padding: 3px;">LÍNEAS ACREDITADAS:</div>
       <table>
         <thead>
           <tr>
@@ -1316,7 +1316,7 @@ export const printNotaCreditoPOS = (notaData) => {
       </table>
 
       <div style="margin-top: 10px; background: #f9f9f9; padding: 5px; border: 1px solid #ddd;">
-        <div style="display: flex; justify-content: space-between; font-size: 16px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px;">
           <span>Balance Anterior:</span>
           <span>${formatCurrency(balanceAnterior)}</span>
         </div>
@@ -1324,13 +1324,13 @@ export const printNotaCreditoPOS = (notaData) => {
           <span>TOTAL ACREDITADO:</span>
           <span>${formatCurrency(totalAcreditado)}</span>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 17px; margin-top: 4px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13.5px; margin-top: 4px;">
           <span class="bold">Balance Actual:</span>
           <span class="bold">${formatCurrency(balanceActual)}</span>
         </div>
       </div>
 
-      ${comentarios ? `<p style="margin-top: 8px; font-size: 14px;"><span class="bold">MOTIVO:</span> ${comentarios}</p>` : ''}
+      ${comentarios ? `<p style="margin-top: 8px; font-size: 11px;"><span class="bold">MOTIVO:</span> ${comentarios}</p>` : ''}
 
       <div class="footer">
         <p>*** DESCUENTO APLICADO — NO REPRESENTA DINERO EN CAJA ***</p>
@@ -1367,13 +1367,13 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
   const is4inch = paperSize !== '80mm';
   const pageW = is4inch ? '101.6mm' : '80mm';
   const bodyW = is4inch ? '96mm' : '64mm';
-  const fBase = is4inch ? '16px' : '13px';
-  const fH1 = is4inch ? '22px' : '17px';
-  const fTitulo = is4inch ? '18px' : '15px';
-  const fMonto = is4inch ? '19px' : '16px';
-  const fNombre = is4inch ? '17px' : '14px';
-  const fDet = is4inch ? '15px' : '13px';
-  const fTot = is4inch ? '18px' : '15px';
+  const fBase = is4inch ? '13px' : '10.5px';
+  const fH1 = is4inch ? '17.5px' : '13.5px';
+  const fTitulo = is4inch ? '14.5px' : '12px';
+  const fMonto = is4inch ? '15px' : '13px';
+  const fNombre = is4inch ? '13.5px' : '11px';
+  const fDet = is4inch ? '12px' : '10.5px';
+  const fTot = is4inch ? '14.5px' : '12px';
 
   const html = `
     <!DOCTYPE html>
@@ -1386,13 +1386,13 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
         body {
           width: ${bodyW}; margin: 0; padding: 3mm 2mm;
           box-sizing: border-box; overflow: hidden;
-          font-family: Arial, Helvetica, sans-serif; font-size: ${fBase}; line-height: 1.32; color: #000; font-weight: 700;
+          font-family: Arial, Helvetica, sans-serif; font-size: ${fBase}; line-height: 1.15; color: #000; font-weight: 700;
         }
         .text-center { text-align: center; }
         .bold { font-weight: 900; }
         .header { margin-bottom: 8px; border-bottom: 2px solid #000; padding-bottom: 5px; }
         .header h1 { font-size: ${fH1}; margin: 0; font-weight: 900; }
-        .header p { margin: 2px 0; font-size: 14px; }
+        .header p { margin: 2px 0; font-size: 11px; }
         .row { display: flex; justify-content: space-between; }
         .separator { border-top: 1px dashed #000; margin: 6px 0; }
         p { margin: 1px 0; }
@@ -1630,10 +1630,10 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
   const pageWidth = is4inch ? '101.6mm' : '80mm';
   const bodyWidth = is4inch ? '72mm' : '68mm';
   const bodyPadding = is4inch ? '2mm 4mm' : '2mm 4mm';
-  const baseFontSize = is4inch ? '15px' : '14px';
-  const headerFontSize = is4inch ? '22px' : '20px';
-  const subFontSize = is4inch ? '13px' : '13px';
-  const totalFontSize = is4inch ? '18px' : '17px';
+  const baseFontSize = is4inch ? '12px' : '11px';
+  const headerFontSize = is4inch ? '17.5px' : '16px';
+  const subFontSize = is4inch ? '10.5px' : '10.5px';
+  const totalFontSize = is4inch ? '14.5px' : '13.5px';
 
   const html = `
     <!DOCTYPE html>
@@ -1658,7 +1658,7 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
           font-family: Arial, Helvetica, sans-serif;
           font-size: ${baseFontSize};
           font-weight: 700;
-          line-height: 1.2;
+          line-height: 1.15;
           color: #000;
           letter-spacing: 0.2px;
           -webkit-print-color-adjust: exact;
@@ -1666,35 +1666,35 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .header { margin-bottom: 4px; }
-        .header h1 { font-size: ${headerFontSize}; margin: 0; font-weight: 900; letter-spacing: 0.5px; }
+        .header h1 { font-size: ${headerFontSize}; margin: 0; font-weight: 900;  }
         .header p { margin: 1px 0; font-size: ${subFontSize}; color: #000; }
         
         .section { margin-bottom: 4px; }
-        .row { display: flex; justify-content: space-between; margin-bottom: 1px; font-size: 14px; }
-        .client-info-row { display: flex; gap: 6px; margin-bottom: 1px; font-size: 14px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 1px; font-size: 11px; }
+        .client-info-row { display: flex; gap: 6px; margin-bottom: 1px; font-size: 11px; }
         .separator { border-top: 1px dashed #000; margin: 4px 0; height: 0; }
         
         .num { font-family: Arial, Helvetica, sans-serif; }
         
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         th { text-align: left; padding-bottom: 2px; font-size: ${baseFontSize}; border-bottom: 1px solid #000; }
-        .item-name { text-transform: uppercase; padding-top: 4px; font-size: ${baseFontSize}; word-wrap: break-word; line-height: 1.2; }
-        .item-details { padding-bottom: 2px; font-size: 15px; }
+        .item-name { text-transform: uppercase; padding-top: 4px; font-size: ${baseFontSize}; word-wrap: break-word; line-height: 1.15; }
+        .item-details { padding-bottom: 2px; font-size: 12px; }
         .item-details td.text-right { font-family: Arial, Helvetica, sans-serif; }
         
         .totals-container { margin-top: 4px; padding-top: 2px; }
-        .totals-row { display: flex; justify-content: flex-end; margin-bottom: 1px; font-size: 14px; }
+        .totals-row { display: flex; justify-content: flex-end; margin-bottom: 1px; font-size: 11px; }
         .totals-label { text-align: right; padding-right: 6px; flex: 1; }
         .totals-value { text-align: right; width: 80px; font-variant-numeric: tabular-nums; font-family: Arial, Helvetica, sans-serif; }
         
         .grand-total { font-size: ${totalFontSize}; margin-top: 2px; padding-top: 4px; font-weight: 900; border-top: 2px solid #000; }
-        .footer { margin-top: 8px; font-size: ${subFontSize}; line-height: 1.2; padding-top: 4px; }
+        .footer { margin-top: 8px; font-size: ${subFontSize}; line-height: 1.15; padding-top: 4px; }
       </style>
     </head>
     <body onload="window.print()">
       <div class="header text-center">
         ${getHeaderHTML()}
-        <div style="margin-top: 4px; font-size: 16px; letter-spacing: 1px;">COTIZACION</div>
+        <div style="margin-top: 4px; font-size: 13px; letter-spacing: 1px;">COTIZACION</div>
       </div>
 
       <div class="section">
@@ -1765,7 +1765,7 @@ export const printCotizacionPOS = (cotizacion, detalles, paperSize = '4inch') =>
           <div class="totals-value">${formatCurrency(0)}</div>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <div style="width: 70px; font-weight: normal; font-size: 12px; margin-top: 2px;">
+          <div style="width: 70px; font-weight: normal; font-size: 9.5px; margin-top: 2px;">
             Valores en<br/>DOP
           </div>
           <div style="flex-grow: 1;">
@@ -1824,10 +1824,10 @@ export const printCotizacionMagnaPOS = (cotizacion, paperSize = '4inch', lines =
   const is4inch = paperSize === '4inch';
   const pageWidth = is4inch ? '101.6mm' : '80mm';
   const bodyWidth = is4inch ? '72mm' : '68mm';
-  const baseFontSize = is4inch ? '15px' : '14px';
-  const headerFontSize = is4inch ? '20px' : '18px';
-  const subFontSize = is4inch ? '13px' : '12px';
-  const totalFontSize = is4inch ? '18px' : '17px';
+  const baseFontSize = is4inch ? '12px' : '11px';
+  const headerFontSize = is4inch ? '16px' : '14.5px';
+  const subFontSize = is4inch ? '10.5px' : '9.5px';
+  const totalFontSize = is4inch ? '14.5px' : '13.5px';
 
   // Generate lines HTML for POS
   const linesHtml = lines.map((l, i) => {
@@ -1867,7 +1867,7 @@ export const printCotizacionMagnaPOS = (cotizacion, paperSize = '4inch', lines =
           font-family: Arial, Helvetica, sans-serif;
           font-size: ${baseFontSize};
           font-weight: 700;
-          line-height: 1.2;
+          line-height: 1.15;
           color: #000;
           letter-spacing: 0.2px;
           -webkit-print-color-adjust: exact;
@@ -1875,28 +1875,28 @@ export const printCotizacionMagnaPOS = (cotizacion, paperSize = '4inch', lines =
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .header { margin-bottom: 4px; }
-        .header h1 { font-size: ${headerFontSize}; margin: 0; font-weight: 900; letter-spacing: 0.5px; }
+        .header h1 { font-size: ${headerFontSize}; margin: 0; font-weight: 900;  }
         .header p { margin: 1px 0; font-size: ${subFontSize}; color: #000; }
 
         .section { margin-bottom: 4px; }
-        .row { display: flex; justify-content: space-between; margin-bottom: 1px; font-size: 14px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 1px; font-size: 11px; }
         .separator { border-top: 1px dashed #000; margin: 4px 0; height: 0; }
         .num { font-family: Arial, Helvetica, sans-serif; }
 
         .totals-container { margin-top: 4px; padding-top: 2px; }
-        .totals-row { display: flex; justify-content: flex-end; margin-bottom: 1px; font-size: 14px; }
+        .totals-row { display: flex; justify-content: flex-end; margin-bottom: 1px; font-size: 11px; }
         .totals-label { text-align: right; padding-right: 6px; flex: 1; }
         .totals-value { text-align: right; width: 100px; font-variant-numeric: tabular-nums; font-family: Arial, Helvetica, sans-serif; }
 
         .grand-total { font-size: ${totalFontSize}; margin-top: 2px; padding-top: 4px; font-weight: 900; border-top: 2px solid #000; }
-        .footer { margin-top: 8px; font-size: ${subFontSize}; line-height: 1.2; padding-top: 4px; }
+        .footer { margin-top: 8px; font-size: ${subFontSize}; line-height: 1.15; padding-top: 4px; }
       </style>
     </head>
     <body onload="window.print()">
       <div class="header text-center">
         <h1>ELVIDO MANUEL CAMINERO MORLA</h1>
         <p class="num" style="margin-top: 4px; font-weight: bold;">RNC: 028-0099156-0</p>
-        <div style="margin-top: 6px; font-size: 16px; letter-spacing: 1px;">COTIZACIÓN</div>
+        <div style="margin-top: 6px; font-size: 13px; letter-spacing: 1px;">COTIZACIÓN</div>
       </div>
 
       <div class="separator"></div>
@@ -1949,7 +1949,7 @@ export const printCotizacionMagnaPOS = (cotizacion, paperSize = '4inch', lines =
       <div class="separator"></div>
 
       ${cotizacion.notas ? `
-        <div class="section" style="font-size: 12px; font-weight: normal;">
+        <div class="section" style="font-size: 9.5px; font-weight: normal;">
           <span style="font-weight: bold;">Notas:</span> ${cotizacion.notas}
         </div>
         <div class="separator"></div>
