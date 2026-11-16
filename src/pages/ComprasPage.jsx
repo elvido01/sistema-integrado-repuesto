@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { factorDePaquete } from '@/lib/paqueteDeCompra';
 import { buscarProductoDeLinea } from '@/lib/emparejarLineaCompra';
+import { esFacturaPrecioNeto } from '@/lib/facturaPrecioNeto';
 import PrecisionOcrModal from '@/components/compras/PrecisionOcrModal';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -994,6 +995,19 @@ const ComprasPage = () => {
     if (descGeneral >= 1) descGeneral = descGeneral / 100;
     if (!(descGeneral > 0 && descGeneral < 1)) descGeneral = 0;
 
+    // (16/11/2026) FACTURA CON PRECIO NETO (Pedro Racing: "Precio lista 179.60
+    // · Precio neto 190.74 · Importe 1,144.41"). El neto ya trae el descuento
+    // y el ITBIS: 179.60 − 10% + 18% = 190.74. Si los importes de las filas
+    // suman el TOTAL de la factura, esos importes son lo que se paga: la compra
+    // va con ITBIS incluido, sin descuento (aplicarlo era cobrarlo dos veces),
+    // y el costo de cada fila sale de su importe ÷ cantidad.
+    const modoNeto = esFacturaPrecioNeto(extractedItems, invoice);
+    const itbisIncluidoOcr = modoNeto ? true : compra.itbis_incluido;
+    if (modoNeto) {
+      descGeneral = 0;
+      setCompra(prev => ({ ...prev, itbis_incluido: true }));
+    }
+
     // 3. Procesar Items y buscar en Inventario
     const processedItems = await Promise.all(extractedItems.map(async (item) => {
       // Con la respuesta en JSON, un código de solo números puede venir como
@@ -1012,6 +1026,7 @@ const ComprasPage = () => {
       let discount_pct = Number(item.discount_pct) || 0;
       if (discount_pct >= 1) discount_pct = discount_pct / 100;
       if (!(discount_pct > 0 && discount_pct < 1)) discount_pct = 0;
+      if (modoNeto) discount_pct = 0; // el precio neto ya lo trae
       // (11/11/2026) Descuento general del pie ("Descuento 15%"): va encima
       // del descuento propio de cada línea (10% y luego 15% = 23.5%).
       if (descGeneral > 0) discount_pct = 1 - (1 - discount_pct) * (1 - descGeneral);
@@ -1083,6 +1098,11 @@ const ComprasPage = () => {
       if (productoItbis !== null) itbis_pct = productoItbis;
       let costo = item.unit_cost || productoCosto;
       let cantidad = item.qty || 0;
+      // Precio neto: manda el importe impreso de la fila (si la IA tomó el
+      // precio de lista en vez del neto, el importe lo corrige).
+      if (modoNeto && Number(item.line_total) > 0 && Number(cantidad) > 0) {
+        costo = Math.round((Number(item.line_total) / Number(cantidad)) * 10000) / 10000;
+      }
 
       // ABRIR EL PAQUETE. La factura dice 1 caja de 100 tornillos a 583; en
       // inventario entran 100 tornillos a 5.83. El importe de la linea NO
@@ -1097,7 +1117,7 @@ const ComprasPage = () => {
       }
 
       // Total de la línea: la regla única (lib/compraLinea).
-      const importe = importeLineaCompra({ cantidad, costo_unitario: costo, descuento_pct: discount_pct * 100, itbis_pct }, compra.itbis_incluido);
+      const importe = importeLineaCompra({ cantidad, costo_unitario: costo, descuento_pct: discount_pct * 100, itbis_pct }, itbisIncluidoOcr);
 
       return {
         id: Math.random(),
@@ -1149,6 +1169,7 @@ const ComprasPage = () => {
       duration: noCuadra ? 12000 : undefined,
       description: [
         `${processedItems.length} items.`,
+        modoNeto ? 'La factura trae PRECIO NETO (ya con descuento e ITBIS): se marcó "ITBIS incluido" y no se aplicó descuento; cada costo sale del importe de la fila.' : '',
         descGeneral > 0 ? `Se aplicó el descuento general de ${Math.round(descGeneral * 10000) / 100}% a las líneas sin descuento propio.` : '',
         noCuadra ? `Cantidad × precio no da el importe impreso en: ${filasMal.slice(0, 6).join(', ')}${filasMal.length > 6 ? ` y ${filasMal.length - 6} más` : ''}. Compáralas con la factura.` : '',
         lineasAbiertas > 0 ? `${lineasAbiertas} venian en paquete y se abrieron a unidades.` : '',
