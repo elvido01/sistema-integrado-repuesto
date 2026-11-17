@@ -66,135 +66,157 @@ const ncfDeDocumentos = async (ids, soloEmitidos) => {
 // (17/11/2026) Lo de un mes (607, 606 y 608), en una función aparte: la usa
 // la pantalla para el mes elegido y el Excel de varios meses, mes por mes
 // (cada 606 se revisa dentro de su mes, como se declara).
-const traerPeriodo = async (desde, hasta) => {
-  // 607: ventas con NCF en el mes (no anuladas).
-  // El NCF puede estar en facturas.ncf O en documentos_fiscales.ncf
-  // (cuando se emitio via PSFE como Alegra). Buscamos en ambas fuentes.
-  const vRaw = await traerTodo(() => supabase
-    .from('facturas')
-    .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, propina, itbis_retenido, isr_retenido, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
-    .gte('fecha', rangoDeFechas(desde, hasta).desde)
-    .lte('fecha', rangoDeFechas(desde, hasta).hasta)
-    .neq('estado', 'ANULADA')
-    .eq('es_saldo_inicial', false) // saldos iniciales: deuda vieja, no venta de este periodo
-    .order('fecha', { ascending: true }).order('id', { ascending: true }));
+// Cada consulta va filtrada por la empresa con la que se empezó: si alguien
+// cambia de empresa a mitad de un rango, no se mezclan meses de dos empresas.
+// `que` dice qué reportes hacen falta (el Excel de un rango trae solo uno).
+const TODO = { v607: true, c606: true, a608: true };
+const traerPeriodo = async (desde, hasta, tenant, que = TODO) => {
+  if (!tenant) throw new Error('No hay empresa activa.');
+  const rango = rangoDeFechas(desde, hasta);
+  let ventas = [];
+  let compras = [];
+  let anulados = [];
 
-  // Para las facturas sin NCF directo, buscar en documentos_fiscales
-  const facturasSinNcf = (vRaw || []).filter(f => !f.ncf || f.ncf === '');
-  const docsByFacturaId = await ncfDeDocumentos(facturasSinNcf.map(f => f.id), true);
+  if (que.v607) {
+    // 607: ventas con NCF en el mes (no anuladas).
+    // El NCF puede estar en facturas.ncf O en documentos_fiscales.ncf
+    // (cuando se emitio via PSFE como Alegra). Buscamos en ambas fuentes.
+    const vRaw = await traerTodo(() => supabase
+      .from('facturas')
+      .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, propina, itbis_retenido, isr_retenido, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
+      .eq('tenant_id', tenant)
+      .gte('fecha', rango.desde)
+      .lte('fecha', rango.hasta)
+      .neq('estado', 'ANULADA')
+      .eq('es_saldo_inicial', false) // saldos iniciales: deuda vieja, no venta de este periodo
+      .order('fecha', { ascending: true }).order('id', { ascending: true }));
 
-  const v = (vRaw || []).map(f => ({
-    ...f,
-    ncf: f.ncf || docsByFacturaId.get(f.id) || null,
-  })).filter(f => f.ncf && f.ncf !== '');
+    // Para las facturas sin NCF directo, buscar en documentos_fiscales
+    const facturasSinNcf = (vRaw || []).filter(f => !f.ncf || f.ncf === '');
+    const docsByFacturaId = await ncfDeDocumentos(facturasSinNcf.map(f => f.id), true);
 
-  // 606: compras con NCF en el mes
-  // Sin las anuladas ni los saldos iniciales, igual que la Hoja del IT-1
-  // (_contab_compras_606): una compra anulada no se reporta.
-  const c = await traerTodo(() => supabase
-    .from('compras')
-    .select('id, numero, fecha, ncf, ncf_modificado, tipo_retencion_isr, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc), compras_detalle(importe, itbis_pct, productos(naturaleza))')
-    .gte('fecha', desde)
-    .lte('fecha', hasta)
-    .not('ncf', 'is', null)
-    .neq('ncf', '')
-    .or('estado.is.null,estado.neq.ANULADA')
-    .not('es_saldo_inicial', 'is', true)
-    .order('fecha', { ascending: true }).order('id', { ascending: true }));
+    const v = (vRaw || []).map(f => ({
+      ...f,
+      ncf: f.ncf || docsByFacturaId.get(f.id) || null,
+    })).filter(f => f.ncf && f.ncf !== '');
 
-  // 608: facturas anuladas en el mes (mismo fallback de NCF que 607)
-  const aRaw = await traerTodo(() => supabase
-    .from('facturas')
-    .select('id, numero, fecha, ncf, updated_at, estado')
-    .gte('fecha', rangoDeFechas(desde, hasta).desde)
-    .lte('fecha', rangoDeFechas(desde, hasta).hasta)
-    .eq('estado', 'ANULADA')
-    .order('fecha', { ascending: true }).order('id', { ascending: true }));
+    // (14/11/2026) Notas de crédito electrónicas (E34) de las devoluciones:
+    // van en el 607 como una línea más, con el NCF que modifican. El MES y
+    // los MONTOS son los del e-CF (fecha de emisión, MontoTotal, TotalITBIS),
+    // no los de la devolución: lo declarado cuadra con lo que tiene la DGII.
+    // Solo las emitidas que la DGII no rechazó.
+    const ncRaw = await traerTodo(() => supabase
+      .from('documentos_fiscales')
+      .select('id, encf, emitted_at, estado_dgii, request_payload, devolucion:devoluciones!documentos_fiscales_devolucion_id_fkey(numero, ncf_modificado, cliente_info, factura:facturas(forma_pago, tipo_pago, clientes(nombre, rnc)))')
+      .eq('tenant_id', tenant)
+      .eq('tipo_documento', 'nota_credito')
+      .eq('estado', 'emitido')
+      .gte('emitted_at', rango.desde)
+      .lte('emitted_at', rango.hasta)
+      .order('emitted_at', { ascending: true }).order('id', { ascending: true }));
+    const notasCredito = (ncRaw || [])
+      .filter((d) => d.estado_dgii !== 'rechazado' && d.encf)
+      .map((d) => {
+        const imp = d.request_payload?.impresion || {};
+        const dv = d.devolucion || {};
+        return {
+          id: `nc-${d.id}`, numero: `DV-${dv.numero ?? ''}`,
+          fecha: new Date(d.emitted_at).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }),
+          ncf: d.encf, ncf_modificado: d.request_payload?.encf_modificado || dv.ncf_modificado,
+          itbis: Number(imp.total_itbis) || 0, total: Number(imp.monto_total) || 0, propina: 0,
+          forma_pago: dv.factura?.forma_pago, tipo_pago: dv.factura?.tipo_pago, es_nota_credito: true,
+          cliente_nombre: dv.factura?.clientes?.nombre || dv.cliente_info?.nombre,
+          cliente_rnc: dv.factura?.clientes?.rnc || dv.cliente_info?.rnc,
+        };
+      });
 
-  const anuladasSinNcf = (aRaw || []).filter(f => !f.ncf || f.ncf === '');
-  const docsAnul = await ncfDeDocumentos(anuladasSinNcf.map(f => f.id), false);
-  const a = (aRaw || []).map(f => ({
-    ...f,
-    ncf: f.ncf || docsAnul.get(f.id) || null,
-  })).filter(f => f.ncf && f.ncf !== '');
+    ventas = [...v.map(r => ({
+      ...r,
+      cliente_nombre: r.clientes?.nombre,
+      cliente_rnc: r.clientes?.rnc,
+    })), ...notasCredito];
+  }
 
-  // (14/11/2026) Notas de crédito electrónicas (E34) de las devoluciones:
-  // van en el 607 como una línea más, con el NCF que modifican. El MES y
-  // los MONTOS son los del e-CF (fecha de emisión, MontoTotal, TotalITBIS),
-  // no los de la devolución: lo declarado cuadra con lo que tiene la DGII.
-  // Solo las emitidas que la DGII no rechazó.
-  const rangoNc = rangoDeFechas(desde, hasta);
-  const ncRaw = await traerTodo(() => supabase
-    .from('documentos_fiscales')
-    .select('id, encf, emitted_at, estado_dgii, request_payload, devolucion:devoluciones!documentos_fiscales_devolucion_id_fkey(numero, ncf_modificado, cliente_info, factura:facturas(forma_pago, tipo_pago, clientes(nombre, rnc)))')
-    .eq('tipo_documento', 'nota_credito')
-    .eq('estado', 'emitido')
-    .gte('emitted_at', rangoNc.desde)
-    .lte('emitted_at', rangoNc.hasta)
-    .order('emitted_at', { ascending: true }).order('id', { ascending: true }));
-  const notasCredito = (ncRaw || [])
-    .filter((d) => d.estado_dgii !== 'rechazado' && d.encf)
-    .map((d) => {
-      const imp = d.request_payload?.impresion || {};
-      const dv = d.devolucion || {};
-      return {
-        id: `nc-${d.id}`, numero: `DV-${dv.numero ?? ''}`,
-        fecha: new Date(d.emitted_at).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }),
-        ncf: d.encf, ncf_modificado: d.request_payload?.encf_modificado || dv.ncf_modificado,
-        itbis: Number(imp.total_itbis) || 0, total: Number(imp.monto_total) || 0, propina: 0,
-        forma_pago: dv.factura?.forma_pago, tipo_pago: dv.factura?.tipo_pago, es_nota_credito: true,
-        cliente_nombre: dv.factura?.clientes?.nombre || dv.cliente_info?.nombre,
-        cliente_rnc: dv.factura?.clientes?.rnc || dv.cliente_info?.rnc,
-      };
-    });
+  if (que.c606) {
+    // 606: compras con NCF en el mes
+    // Sin las anuladas ni los saldos iniciales, igual que la Hoja del IT-1
+    // (_contab_compras_606): una compra anulada no se reporta.
+    const c = await traerTodo(() => supabase
+      .from('compras')
+      .select('id, numero, fecha, ncf, ncf_modificado, tipo_retencion_isr, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc), compras_detalle(importe, itbis_pct, productos(naturaleza))')
+      .eq('tenant_id', tenant)
+      .gte('fecha', desde)
+      .lte('fecha', hasta)
+      .not('ncf', 'is', null)
+      .neq('ncf', '')
+      .or('estado.is.null,estado.neq.ANULADA')
+      .not('es_saldo_inicial', 'is', true)
+      .order('fecha', { ascending: true }).order('id', { ascending: true }));
 
-  const ventasNuevas = [...(v || []).map(r => ({
-    ...r,
-    cliente_nombre: r.clientes?.nombre,
-    cliente_rnc: r.clientes?.rnc,
-  })), ...notasCredito];
-  // (12/11/2026) Comprobantes de gastos APROBADOS (foto de la factura del
-  // gasto: sql/ayudante_contable_fase2.sql). Entran al 606 como una compra
-  // más. Si esta consulta falla no sale nada: un 606 sin los gastos no puede salir callado.
-  const FORMA = { '01': 'Contado', '02': 'Transferencia', '03': 'Tarjeta', '04': 'Credito' };
-  const gc = await traerTodo(() => supabase
-    .from('gastos_comprobantes')
-    .select('id, fecha, ncf, rnc, proveedor_nombre, tipo_bs, monto_gravado, monto_exento, itbis, propina, total, forma_pago')
-    .eq('estado', 'aprobado')
-    .eq('entra_606', true)
-    .gte('fecha', desde)
-    .lte('fecha', hasta)
-    .order('fecha', { ascending: true }).order('id', { ascending: true }));
-  const gastosComoCompras = (gc || []).map((g) => ({
-    id: `gasto-${g.id}`, numero: 'GASTO', fecha: g.fecha, ncf: g.ncf,
-    tipo_bienes_servicios: g.tipo_bs, total_exento: g.monto_exento, total_gravado: g.monto_gravado,
-    itbis_total: g.itbis, total_compra: g.total, propina: g.propina, forma_pago: FORMA[g.forma_pago] || 'Contado',
-    itbis_retenido_pct: 0, isr_retenido_pct: 0,
-    suplidor_nombre: g.proveedor_nombre, suplidor_rnc: g.rnc, es_gasto: true,
-  }));
+    // (12/11/2026) Comprobantes de gastos APROBADOS (foto de la factura del
+    // gasto: sql/ayudante_contable_fase2.sql). Entran al 606 como una compra
+    // más. Si esta consulta falla no sale nada: un 606 sin los gastos no puede salir callado.
+    const FORMA = { '01': 'Contado', '02': 'Transferencia', '03': 'Tarjeta', '04': 'Credito' };
+    const gc = await traerTodo(() => supabase
+      .from('gastos_comprobantes')
+      .select('id, fecha, ncf, rnc, proveedor_nombre, tipo_bs, monto_gravado, monto_exento, itbis, propina, total, forma_pago')
+      .eq('tenant_id', tenant)
+      .eq('estado', 'aprobado')
+      .eq('entra_606', true)
+      .gte('fecha', desde)
+      .lte('fecha', hasta)
+      .order('fecha', { ascending: true }).order('id', { ascending: true }));
+    const gastosComoCompras = (gc || []).map((g) => ({
+      id: `gasto-${g.id}`, numero: 'GASTO', fecha: g.fecha, ncf: g.ncf,
+      tipo_bienes_servicios: g.tipo_bs, total_exento: g.monto_exento, total_gravado: g.monto_gravado,
+      itbis_total: g.itbis, total_compra: g.total, propina: g.propina, forma_pago: FORMA[g.forma_pago] || 'Contado',
+      itbis_retenido_pct: 0, isr_retenido_pct: 0,
+      suplidor_nombre: g.proveedor_nombre, suplidor_rnc: g.rnc, es_gasto: true,
+    }));
 
-  const comprasNuevas = [
-    ...(c || []).map(r => {
-      // Base (sin ITBIS) de las líneas que son productos de SERVICIO: van
-      // en la col. 8 del 606. Sin líneas de servicio, null (como antes).
-      const lineasServ = (r.compras_detalle || []).filter((d) => d.productos?.naturaleza === 'servicio');
-      const montoServicios = lineasServ.length
-        ? Math.round(lineasServ.reduce((s, d) => {
-          const pct = Number(d.itbis_pct) || 0;
-          return s + (Number(d.importe) || 0) / (1 + (pct > 1 ? pct / 100 : pct));
-        }, 0) * 100) / 100
-        : null;
-      const { compras_detalle: _det, ...resto } = r;
-      return {
-        ...resto,
-        monto_servicios: montoServicios,
-        suplidor_nombre: r.proveedores?.nombre,
-        suplidor_rnc: r.proveedores?.rnc,
-      };
-    }),
-    ...gastosComoCompras,
-  ].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
-  return { ventas: ventasNuevas, compras: comprasNuevas, anulados: a || [] };
+    compras = [
+      ...(c || []).map(r => {
+        // Base (sin ITBIS) de las líneas que son productos de SERVICIO: van
+        // en la col. 8 del 606. Sin líneas de servicio, null (como antes).
+        const lineasServ = (r.compras_detalle || []).filter((d) => d.productos?.naturaleza === 'servicio');
+        const montoServicios = lineasServ.length
+          ? Math.round(lineasServ.reduce((s, d) => {
+            const pct = Number(d.itbis_pct) || 0;
+            return s + (Number(d.importe) || 0) / (1 + (pct > 1 ? pct / 100 : pct));
+          }, 0) * 100) / 100
+          : null;
+        const { compras_detalle: _det, ...resto } = r;
+        return {
+          ...resto,
+          monto_servicios: montoServicios,
+          suplidor_nombre: r.proveedores?.nombre,
+          suplidor_rnc: r.proveedores?.rnc,
+        };
+      }),
+      ...gastosComoCompras,
+    ].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  }
+
+  if (que.a608) {
+    // 608: facturas anuladas en el mes (mismo fallback de NCF que 607)
+    const aRaw = await traerTodo(() => supabase
+      .from('facturas')
+      .select('id, numero, fecha, ncf, updated_at, estado')
+      .eq('tenant_id', tenant)
+      .gte('fecha', rango.desde)
+      .lte('fecha', rango.hasta)
+      .eq('estado', 'ANULADA')
+      .order('fecha', { ascending: true }).order('id', { ascending: true }));
+
+    const anuladasSinNcf = (aRaw || []).filter(f => !f.ncf || f.ncf === '');
+    const docsAnul = await ncfDeDocumentos(anuladasSinNcf.map(f => f.id), false);
+    anulados = (aRaw || []).map(f => ({
+      ...f,
+      ncf: f.ncf || docsAnul.get(f.id) || null,
+    })).filter(f => f.ncf && f.ncf !== '');
+  }
+
+  return { ventas, compras, anulados };
 };
 
 const ReportesDGIIPage = () => {
@@ -208,6 +230,9 @@ const ReportesDGIIPage = () => {
   const [ventas, setVentas] = useState([]);
   const [compras, setCompras] = useState([]);
   const [anulados, setAnulados] = useState([]);
+  // Mes y empresa de lo que está en pantalla: el Excel de un mes sale con ESTO,
+  // no con el selector (que cambia antes de que llegue el mes nuevo).
+  const [cargado, setCargado] = useState(null);
 
   const { desde, hasta } = useMemo(() => rangoMes(year, month), [year, month]);
 
@@ -217,23 +242,25 @@ const ReportesDGIIPage = () => {
     if (!tenantId) return;
     const n = ++pedido.current;
     setLoading(true);
+    setCargado(null);
     try {
-      const datos = await traerPeriodo(desde, hasta);
+      const datos = await traerPeriodo(desde, hasta, tenantId);
       if (n !== pedido.current) return; // ya se pidió otro mes
       // Los tres juntos y al final: nunca un mes con las ventas de otro.
       setVentas(datos.ventas);
       setCompras(datos.compras);
       setAnulados(datos.anulados);
+      setCargado({ year, month, tenantId });
     } catch (error) {
       if (n === pedido.current) {
         // Sin datos a medias en pantalla: no se puede bajar un TXT de un mes con filas de otro.
-        setVentas([]); setCompras([]); setAnulados([]);
+        setVentas([]); setCompras([]); setAnulados([]); setCargado(null);
         toast({ variant: 'destructive', title: 'Error al cargar datos', description: error.message });
       }
     } finally {
       if (n === pedido.current) setLoading(false);
     }
-  }, [tenantId, desde, hasta, toast]);
+  }, [tenantId, desde, hasta, year, month, toast]);
 
   useEffect(() => { cargarDatos(); }, [cargarDatos]);
 
@@ -301,6 +328,7 @@ const ReportesDGIIPage = () => {
   const exportExcel = async (reporte, periodos) => {
     const varios = periodos.length > 1;
     const per = (p) => `${p.year}${String(p.month).padStart(2, '0')}`;
+    const r2 = (x) => Math.round(x * 100) / 100;
     const primero = periodos[0];
     const ultimo = periodos[periodos.length - 1];
     const wb = new ExcelJS.Workbook();
@@ -344,7 +372,7 @@ const ReportesDGIIPage = () => {
             periodo: per(p),
           });
         });
-        resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.ventas.length, monto, itbis, total });
+        resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.ventas.length, monto: r2(monto), itbis: r2(itbis), total: r2(total) });
       });
     } else if (reporte === '606') {
       const COLS = ['RNC o Cédula', 'Tipo Id', 'Tipo Bienes y Servicios Comprados', 'NCF', 'NCF o Documento Modificado',
@@ -369,7 +397,7 @@ const ReportesDGIIPage = () => {
           total += parseFloat(c.total_compra || 0);
         });
         p.rev606.excluidas.forEach((c) => excluidas.push({ c, periodo: per(p) }));
-        resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.rev606.incluidas.length, monto, itbis, total, noVan: p.rev606.excluidas.length });
+        resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.rev606.incluidas.length, monto: r2(monto), itbis: r2(itbis), total: r2(total), noVan: p.rev606.excluidas.length });
       });
       if (excluidas.length) {
         const wx = wb.addWorksheet('No van en el 606');
@@ -444,7 +472,13 @@ const ReportesDGIIPage = () => {
   };
 
   // El mes que está en pantalla.
-  const excelDelMes = (reporte) => exportExcel(reporte, [{ year, month, ventas, rev606, anulados }]);
+  const excelDelMes = (reporte) => {
+    if (!cargado || cargado.year !== year || cargado.month !== month || cargado.tenantId !== tenantId) {
+      toast({ title: 'Espere un momento', description: 'El mes todavía se está cargando.' });
+      return;
+    }
+    exportExcel(reporte, [{ year: cargado.year, month: cargado.month, ventas, rev606, anulados }]);
+  };
 
   // ── Excel de varios meses ──
   const [rDesdeY, setRDesdeY] = useState(hoy.getFullYear());
@@ -454,9 +488,12 @@ const ReportesDGIIPage = () => {
   const [rangoEstado, setRangoEstado] = useState(null); // texto mientras carga
   const tenantRef = useRef(tenantId);
   tenantRef.current = tenantId;
+  const enCurso = useRef(false); // dos clics rápidos no arman dos archivos
+  const montado = useRef(true); // si sale de la pantalla, no baja nada
+  useEffect(() => { montado.current = true; return () => { montado.current = false; }; }, []);
 
   const excelDelRango = async (reporte) => {
-    if (rangoEstado) return;
+    if (enCurso.current) return;
     const ini = rDesdeY * 12 + (rDesdeM - 1);
     const fin = rHastaY * 12 + (rHastaM - 1);
     if (fin < ini) {
@@ -468,23 +505,27 @@ const ReportesDGIIPage = () => {
       return;
     }
     const tenantInicio = tenantId;
+    const que = { v607: reporte === '607', c606: reporte === '606', a608: reporte === '608' };
     const periodos = [];
+    enCurso.current = true;
     try {
       for (let k = ini; k <= fin; k++) {
         const y = Math.floor(k / 12);
         const m = (k % 12) + 1;
         setRangoEstado(`Cargando ${MESES[m - 1]} ${y}… (${k - ini + 1} de ${fin - ini + 1})`);
         const r = rangoMes(y, m);
-        const d = await traerPeriodo(r.desde, r.hasta);
-        // Si cambió de empresa a mitad, no se mezcla nada.
+        const d = await traerPeriodo(r.desde, r.hasta, tenantInicio, que);
+        if (!montado.current) return;
+        // Las consultas ya van con la empresa del inicio; esto solo avisa.
         if (tenantRef.current !== tenantInicio) throw new Error('Cambió de empresa mientras se cargaba. Vuelva a intentarlo.');
-        periodos.push({ year: y, month: m, ventas: d.ventas, rev606: revisar606(d.compras, empresa?.rnc), anulados: d.anulados });
+        periodos.push({ year: y, month: m, ventas: d.ventas, rev606: que.c606 ? revisar606(d.compras, empresa?.rnc) : null, anulados: d.anulados });
       }
       await exportExcel(reporte, periodos);
     } catch (error) {
-      toast({ variant: 'destructive', title: 'No se pudo armar el Excel', description: error.message });
+      if (montado.current) toast({ variant: 'destructive', title: 'No se pudo armar el Excel', description: error.message });
     } finally {
-      setRangoEstado(null);
+      enCurso.current = false;
+      if (montado.current) setRangoEstado(null);
     }
   };
 
