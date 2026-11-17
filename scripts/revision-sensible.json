@@ -375,7 +375,7 @@
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
     "src/pages/ReciboPagoFinancieraPage.jsx": "edc2ea78ad549ed7",
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
-    "src/pages/ReportesDGIIPage.jsx": "f9b72605c952d1ac",
+    "src/pages/ReportesDGIIPage.jsx": "1a7755683bc8601b",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
     "src/pages/VentasPage.jsx": "4b501b8f867f4b34",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
@@ -447,14 +447,6 @@
     "src/lib/facturaPrecioNeto.js": "dae79ed4d30cd0cc"
   },
   "historial": [
-    {
-      "fecha": "2026-11-03",
-      "nota": "code-review high: 10 hallazgos; aplicados fallback ante cualquier error, filtro get_user_tenant en la funcion, RPC en paralelo y una sola llamada; resto intencional o fuera de alcance (extension WhatsApp)",
-      "archivos": [
-        "sql/gestion_cobro_interes_atrasado.sql",
-        "src/pages/GestionCobroPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-03",
       "nota": "code-review high: sin errores de calculo; misma regla que la pagina; 8 notas (4 ya existian, contador de periodos y aviso de 3 dias para prestamos a interes quedan como mejora); tiempo 0.12s->0.16s",
@@ -971,6 +963,13 @@
       "archivos": [
         "src/lib/facturaPrecioNeto.js",
         "src/pages/ComprasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-17",
+      "nota": "code-review high 4802f911d..HEAD: arreglados empresa explicita en consultas, carga solo del reporte pedido, doble clic (ref), descarga tras desmontar, Excel del mes con periodo cargado, redondeo del resumen; 608 fecha=updated_at es previo e igual al TXT (no se toca)",
+      "archivos": [
+        "src/pages/ReportesDGIIPage.jsx"
       ]
     }
   ]
