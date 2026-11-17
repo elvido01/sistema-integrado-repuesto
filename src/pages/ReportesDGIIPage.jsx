@@ -63,6 +63,140 @@ const ncfDeDocumentos = async (ids, soloEmitidos) => {
   return mapa;
 };
 
+// (17/11/2026) Lo de un mes (607, 606 y 608), en una función aparte: la usa
+// la pantalla para el mes elegido y el Excel de varios meses, mes por mes
+// (cada 606 se revisa dentro de su mes, como se declara).
+const traerPeriodo = async (desde, hasta) => {
+  // 607: ventas con NCF en el mes (no anuladas).
+  // El NCF puede estar en facturas.ncf O en documentos_fiscales.ncf
+  // (cuando se emitio via PSFE como Alegra). Buscamos en ambas fuentes.
+  const vRaw = await traerTodo(() => supabase
+    .from('facturas')
+    .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, propina, itbis_retenido, isr_retenido, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
+    .gte('fecha', rangoDeFechas(desde, hasta).desde)
+    .lte('fecha', rangoDeFechas(desde, hasta).hasta)
+    .neq('estado', 'ANULADA')
+    .eq('es_saldo_inicial', false) // saldos iniciales: deuda vieja, no venta de este periodo
+    .order('fecha', { ascending: true }).order('id', { ascending: true }));
+
+  // Para las facturas sin NCF directo, buscar en documentos_fiscales
+  const facturasSinNcf = (vRaw || []).filter(f => !f.ncf || f.ncf === '');
+  const docsByFacturaId = await ncfDeDocumentos(facturasSinNcf.map(f => f.id), true);
+
+  const v = (vRaw || []).map(f => ({
+    ...f,
+    ncf: f.ncf || docsByFacturaId.get(f.id) || null,
+  })).filter(f => f.ncf && f.ncf !== '');
+
+  // 606: compras con NCF en el mes
+  // Sin las anuladas ni los saldos iniciales, igual que la Hoja del IT-1
+  // (_contab_compras_606): una compra anulada no se reporta.
+  const c = await traerTodo(() => supabase
+    .from('compras')
+    .select('id, numero, fecha, ncf, ncf_modificado, tipo_retencion_isr, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc), compras_detalle(importe, itbis_pct, productos(naturaleza))')
+    .gte('fecha', desde)
+    .lte('fecha', hasta)
+    .not('ncf', 'is', null)
+    .neq('ncf', '')
+    .or('estado.is.null,estado.neq.ANULADA')
+    .not('es_saldo_inicial', 'is', true)
+    .order('fecha', { ascending: true }).order('id', { ascending: true }));
+
+  // 608: facturas anuladas en el mes (mismo fallback de NCF que 607)
+  const aRaw = await traerTodo(() => supabase
+    .from('facturas')
+    .select('id, numero, fecha, ncf, updated_at, estado')
+    .gte('fecha', rangoDeFechas(desde, hasta).desde)
+    .lte('fecha', rangoDeFechas(desde, hasta).hasta)
+    .eq('estado', 'ANULADA')
+    .order('fecha', { ascending: true }).order('id', { ascending: true }));
+
+  const anuladasSinNcf = (aRaw || []).filter(f => !f.ncf || f.ncf === '');
+  const docsAnul = await ncfDeDocumentos(anuladasSinNcf.map(f => f.id), false);
+  const a = (aRaw || []).map(f => ({
+    ...f,
+    ncf: f.ncf || docsAnul.get(f.id) || null,
+  })).filter(f => f.ncf && f.ncf !== '');
+
+  // (14/11/2026) Notas de crédito electrónicas (E34) de las devoluciones:
+  // van en el 607 como una línea más, con el NCF que modifican. El MES y
+  // los MONTOS son los del e-CF (fecha de emisión, MontoTotal, TotalITBIS),
+  // no los de la devolución: lo declarado cuadra con lo que tiene la DGII.
+  // Solo las emitidas que la DGII no rechazó.
+  const rangoNc = rangoDeFechas(desde, hasta);
+  const ncRaw = await traerTodo(() => supabase
+    .from('documentos_fiscales')
+    .select('id, encf, emitted_at, estado_dgii, request_payload, devolucion:devoluciones!documentos_fiscales_devolucion_id_fkey(numero, ncf_modificado, cliente_info, factura:facturas(forma_pago, tipo_pago, clientes(nombre, rnc)))')
+    .eq('tipo_documento', 'nota_credito')
+    .eq('estado', 'emitido')
+    .gte('emitted_at', rangoNc.desde)
+    .lte('emitted_at', rangoNc.hasta)
+    .order('emitted_at', { ascending: true }).order('id', { ascending: true }));
+  const notasCredito = (ncRaw || [])
+    .filter((d) => d.estado_dgii !== 'rechazado' && d.encf)
+    .map((d) => {
+      const imp = d.request_payload?.impresion || {};
+      const dv = d.devolucion || {};
+      return {
+        id: `nc-${d.id}`, numero: `DV-${dv.numero ?? ''}`,
+        fecha: new Date(d.emitted_at).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }),
+        ncf: d.encf, ncf_modificado: d.request_payload?.encf_modificado || dv.ncf_modificado,
+        itbis: Number(imp.total_itbis) || 0, total: Number(imp.monto_total) || 0, propina: 0,
+        forma_pago: dv.factura?.forma_pago, tipo_pago: dv.factura?.tipo_pago, es_nota_credito: true,
+        cliente_nombre: dv.factura?.clientes?.nombre || dv.cliente_info?.nombre,
+        cliente_rnc: dv.factura?.clientes?.rnc || dv.cliente_info?.rnc,
+      };
+    });
+
+  const ventasNuevas = [...(v || []).map(r => ({
+    ...r,
+    cliente_nombre: r.clientes?.nombre,
+    cliente_rnc: r.clientes?.rnc,
+  })), ...notasCredito];
+  // (12/11/2026) Comprobantes de gastos APROBADOS (foto de la factura del
+  // gasto: sql/ayudante_contable_fase2.sql). Entran al 606 como una compra
+  // más. Si esta consulta falla no sale nada: un 606 sin los gastos no puede salir callado.
+  const FORMA = { '01': 'Contado', '02': 'Transferencia', '03': 'Tarjeta', '04': 'Credito' };
+  const gc = await traerTodo(() => supabase
+    .from('gastos_comprobantes')
+    .select('id, fecha, ncf, rnc, proveedor_nombre, tipo_bs, monto_gravado, monto_exento, itbis, propina, total, forma_pago')
+    .eq('estado', 'aprobado')
+    .eq('entra_606', true)
+    .gte('fecha', desde)
+    .lte('fecha', hasta)
+    .order('fecha', { ascending: true }).order('id', { ascending: true }));
+  const gastosComoCompras = (gc || []).map((g) => ({
+    id: `gasto-${g.id}`, numero: 'GASTO', fecha: g.fecha, ncf: g.ncf,
+    tipo_bienes_servicios: g.tipo_bs, total_exento: g.monto_exento, total_gravado: g.monto_gravado,
+    itbis_total: g.itbis, total_compra: g.total, propina: g.propina, forma_pago: FORMA[g.forma_pago] || 'Contado',
+    itbis_retenido_pct: 0, isr_retenido_pct: 0,
+    suplidor_nombre: g.proveedor_nombre, suplidor_rnc: g.rnc, es_gasto: true,
+  }));
+
+  const comprasNuevas = [
+    ...(c || []).map(r => {
+      // Base (sin ITBIS) de las líneas que son productos de SERVICIO: van
+      // en la col. 8 del 606. Sin líneas de servicio, null (como antes).
+      const lineasServ = (r.compras_detalle || []).filter((d) => d.productos?.naturaleza === 'servicio');
+      const montoServicios = lineasServ.length
+        ? Math.round(lineasServ.reduce((s, d) => {
+          const pct = Number(d.itbis_pct) || 0;
+          return s + (Number(d.importe) || 0) / (1 + (pct > 1 ? pct / 100 : pct));
+        }, 0) * 100) / 100
+        : null;
+      const { compras_detalle: _det, ...resto } = r;
+      return {
+        ...resto,
+        monto_servicios: montoServicios,
+        suplidor_nombre: r.proveedores?.nombre,
+        suplidor_rnc: r.proveedores?.rnc,
+      };
+    }),
+    ...gastosComoCompras,
+  ].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  return { ventas: ventasNuevas, compras: comprasNuevas, anulados: a || [] };
+};
+
 const ReportesDGIIPage = () => {
   const { empresa, tenantId } = useAuth();
   const { toast } = useToast();
@@ -84,137 +218,12 @@ const ReportesDGIIPage = () => {
     const n = ++pedido.current;
     setLoading(true);
     try {
-      // 607: ventas con NCF en el mes (no anuladas).
-      // El NCF puede estar en facturas.ncf O en documentos_fiscales.ncf
-      // (cuando se emitio via PSFE como Alegra). Buscamos en ambas fuentes.
-      const vRaw = await traerTodo(() => supabase
-        .from('facturas')
-        .select('id, numero, fecha, ncf, tipo_ncf, subtotal, itbis, total, propina, itbis_retenido, isr_retenido, forma_pago, tipo_pago, estado, cliente_id, clientes(nombre, rnc)')
-        .gte('fecha', rangoDeFechas(desde, hasta).desde)
-        .lte('fecha', rangoDeFechas(desde, hasta).hasta)
-        .neq('estado', 'ANULADA')
-        .eq('es_saldo_inicial', false) // saldos iniciales: deuda vieja, no venta de este periodo
-        .order('fecha', { ascending: true }).order('id', { ascending: true }));
-
-      // Para las facturas sin NCF directo, buscar en documentos_fiscales
-      const facturasSinNcf = (vRaw || []).filter(f => !f.ncf || f.ncf === '');
-      const docsByFacturaId = await ncfDeDocumentos(facturasSinNcf.map(f => f.id), true);
-
-      const v = (vRaw || []).map(f => ({
-        ...f,
-        ncf: f.ncf || docsByFacturaId.get(f.id) || null,
-      })).filter(f => f.ncf && f.ncf !== '');
-
-      // 606: compras con NCF en el mes
-      // Sin las anuladas ni los saldos iniciales, igual que la Hoja del IT-1
-      // (_contab_compras_606): una compra anulada no se reporta.
-      const c = await traerTodo(() => supabase
-        .from('compras')
-        .select('id, numero, fecha, ncf, ncf_modificado, tipo_retencion_isr, tipo_bienes_servicios, total_exento, total_gravado, itbis_total, total_compra, forma_pago, tipo_pago_detalle, itbis_retenido_pct, isr_retenido_pct, suplidor_id, proveedores(nombre, rnc), compras_detalle(importe, itbis_pct, productos(naturaleza))')
-        .gte('fecha', desde)
-        .lte('fecha', hasta)
-        .not('ncf', 'is', null)
-        .neq('ncf', '')
-        .or('estado.is.null,estado.neq.ANULADA')
-        .not('es_saldo_inicial', 'is', true)
-        .order('fecha', { ascending: true }).order('id', { ascending: true }));
-
-      // 608: facturas anuladas en el mes (mismo fallback de NCF que 607)
-      const aRaw = await traerTodo(() => supabase
-        .from('facturas')
-        .select('id, numero, fecha, ncf, updated_at, estado')
-        .gte('fecha', rangoDeFechas(desde, hasta).desde)
-        .lte('fecha', rangoDeFechas(desde, hasta).hasta)
-        .eq('estado', 'ANULADA')
-        .order('fecha', { ascending: true }).order('id', { ascending: true }));
-
-      const anuladasSinNcf = (aRaw || []).filter(f => !f.ncf || f.ncf === '');
-      const docsAnul = await ncfDeDocumentos(anuladasSinNcf.map(f => f.id), false);
-      const a = (aRaw || []).map(f => ({
-        ...f,
-        ncf: f.ncf || docsAnul.get(f.id) || null,
-      })).filter(f => f.ncf && f.ncf !== '');
-
-      // (14/11/2026) Notas de crédito electrónicas (E34) de las devoluciones:
-      // van en el 607 como una línea más, con el NCF que modifican. El MES y
-      // los MONTOS son los del e-CF (fecha de emisión, MontoTotal, TotalITBIS),
-      // no los de la devolución: lo declarado cuadra con lo que tiene la DGII.
-      // Solo las emitidas que la DGII no rechazó.
-      const rangoNc = rangoDeFechas(desde, hasta);
-      const ncRaw = await traerTodo(() => supabase
-        .from('documentos_fiscales')
-        .select('id, encf, emitted_at, estado_dgii, request_payload, devolucion:devoluciones!documentos_fiscales_devolucion_id_fkey(numero, ncf_modificado, cliente_info, factura:facturas(forma_pago, tipo_pago, clientes(nombre, rnc)))')
-        .eq('tipo_documento', 'nota_credito')
-        .eq('estado', 'emitido')
-        .gte('emitted_at', rangoNc.desde)
-        .lte('emitted_at', rangoNc.hasta)
-        .order('emitted_at', { ascending: true }).order('id', { ascending: true }));
-      const notasCredito = (ncRaw || [])
-        .filter((d) => d.estado_dgii !== 'rechazado' && d.encf)
-        .map((d) => {
-          const imp = d.request_payload?.impresion || {};
-          const dv = d.devolucion || {};
-          return {
-            id: `nc-${d.id}`, numero: `DV-${dv.numero ?? ''}`,
-            fecha: new Date(d.emitted_at).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }),
-            ncf: d.encf, ncf_modificado: d.request_payload?.encf_modificado || dv.ncf_modificado,
-            itbis: Number(imp.total_itbis) || 0, total: Number(imp.monto_total) || 0, propina: 0,
-            forma_pago: dv.factura?.forma_pago, tipo_pago: dv.factura?.tipo_pago, es_nota_credito: true,
-            cliente_nombre: dv.factura?.clientes?.nombre || dv.cliente_info?.nombre,
-            cliente_rnc: dv.factura?.clientes?.rnc || dv.cliente_info?.rnc,
-          };
-        });
-
-      const ventasNuevas = [...(v || []).map(r => ({
-        ...r,
-        cliente_nombre: r.clientes?.nombre,
-        cliente_rnc: r.clientes?.rnc,
-      })), ...notasCredito];
-      // (12/11/2026) Comprobantes de gastos APROBADOS (foto de la factura del
-      // gasto: sql/ayudante_contable_fase2.sql). Entran al 606 como una compra
-      // más. Si esta consulta falla no sale nada: un 606 sin los gastos no puede salir callado.
-      const FORMA = { '01': 'Contado', '02': 'Transferencia', '03': 'Tarjeta', '04': 'Credito' };
-      const gc = await traerTodo(() => supabase
-        .from('gastos_comprobantes')
-        .select('id, fecha, ncf, rnc, proveedor_nombre, tipo_bs, monto_gravado, monto_exento, itbis, propina, total, forma_pago')
-        .eq('estado', 'aprobado')
-        .eq('entra_606', true)
-        .gte('fecha', desde)
-        .lte('fecha', hasta)
-        .order('fecha', { ascending: true }).order('id', { ascending: true }));
+      const datos = await traerPeriodo(desde, hasta);
       if (n !== pedido.current) return; // ya se pidió otro mes
       // Los tres juntos y al final: nunca un mes con las ventas de otro.
-      setVentas(ventasNuevas);
-      const gastosComoCompras = (gc || []).map((g) => ({
-        id: `gasto-${g.id}`, numero: 'GASTO', fecha: g.fecha, ncf: g.ncf,
-        tipo_bienes_servicios: g.tipo_bs, total_exento: g.monto_exento, total_gravado: g.monto_gravado,
-        itbis_total: g.itbis, total_compra: g.total, propina: g.propina, forma_pago: FORMA[g.forma_pago] || 'Contado',
-        itbis_retenido_pct: 0, isr_retenido_pct: 0,
-        suplidor_nombre: g.proveedor_nombre, suplidor_rnc: g.rnc, es_gasto: true,
-      }));
-
-      setCompras([
-        ...(c || []).map(r => {
-          // Base (sin ITBIS) de las líneas que son productos de SERVICIO: van
-          // en la col. 8 del 606. Sin líneas de servicio, null (como antes).
-          const lineasServ = (r.compras_detalle || []).filter((d) => d.productos?.naturaleza === 'servicio');
-          const montoServicios = lineasServ.length
-            ? Math.round(lineasServ.reduce((s, d) => {
-              const pct = Number(d.itbis_pct) || 0;
-              return s + (Number(d.importe) || 0) / (1 + (pct > 1 ? pct / 100 : pct));
-            }, 0) * 100) / 100
-            : null;
-          const { compras_detalle: _det, ...resto } = r;
-          return {
-            ...resto,
-            monto_servicios: montoServicios,
-            suplidor_nombre: r.proveedores?.nombre,
-            suplidor_rnc: r.proveedores?.rnc,
-          };
-        }),
-        ...gastosComoCompras,
-      ].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))));
-      setAnulados(a || []);
+      setVentas(datos.ventas);
+      setCompras(datos.compras);
+      setAnulados(datos.anulados);
     } catch (error) {
       if (n === pedido.current) {
         // Sin datos a medias en pantalla: no se puede bajar un TXT de un mes con filas de otro.
@@ -285,9 +294,19 @@ const ReportesDGIIPage = () => {
   };
 
   // ── Exportar Excel (preview para contador) ──
-  const exportExcel = async (reporte) => {
+  // (17/11/2026) Uno o varios meses en el mismo archivo. Con varios, cada fila
+  // lleva su período (AAAAMM) al final —en el 606 después de las 23 columnas,
+  // para que se sigan pegando tal cual— y hay una hoja "Resumen" mes por mes.
+  // periodos: [{ year, month, ventas, rev606, anulados }]
+  const exportExcel = async (reporte, periodos) => {
+    const varios = periodos.length > 1;
+    const per = (p) => `${p.year}${String(p.month).padStart(2, '0')}`;
+    const primero = periodos[0];
+    const ultimo = periodos[periodos.length - 1];
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(`${reporte} ${year}-${String(month).padStart(2, '0')}`);
+    const ws = wb.addWorksheet(varios ? `${reporte} ${per(primero)}-${per(ultimo)}` : `${reporte} ${primero.year}-${String(primero.month).padStart(2, '0')}`);
+    const colPeriodo = varios ? [{ header: 'Período', key: 'periodo', width: 10 }] : [];
+    const resumen = [];
 
     if (reporte === '607') {
       ws.columns = [
@@ -301,19 +320,32 @@ const ReportesDGIIPage = () => {
         { header: 'Propina', key: 'propina', width: 10 },
         { header: 'Total', key: 'total', width: 12 },
         { header: 'Forma Pago', key: 'forma_pago', width: 14 },
+        ...colPeriodo,
       ];
-      ventas.forEach(v => ws.addRow({
-        rnc: cleanRncCedula(v.cliente_rnc) || '(sin RNC)',
-        cliente: v.cliente_nombre || '',
-        tipoId: v.cliente_rnc ? tipoIdentificacion(v.cliente_rnc) : '',
-        ncf: v.ncf,
-        fecha: fmtFecha(v.fecha),
-        subtotal: montoFacturado607(v),
-        propina: parseFloat(v.propina || 0),
-        itbis: parseFloat(v.itbis || 0),
-        total: parseFloat(v.total || 0),
-        forma_pago: v.forma_pago || '',
-      }));
+      periodos.forEach((p) => {
+        let monto = 0; let itbis = 0; let total = 0;
+        p.ventas.forEach((v) => {
+          // Las notas de crédito (E34) van en positivo en la fila pero RESTAN en el resumen.
+          const signo = v.es_nota_credito ? -1 : 1;
+          monto += signo * montoFacturado607(v);
+          itbis += signo * parseFloat(v.itbis || 0);
+          total += signo * parseFloat(v.total || 0);
+          ws.addRow({
+            rnc: cleanRncCedula(v.cliente_rnc) || '(sin RNC)',
+            cliente: v.cliente_nombre || '',
+            tipoId: v.cliente_rnc ? tipoIdentificacion(v.cliente_rnc) : '',
+            ncf: v.ncf,
+            fecha: fmtFecha(v.fecha),
+            subtotal: montoFacturado607(v),
+            propina: parseFloat(v.propina || 0),
+            itbis: parseFloat(v.itbis || 0),
+            total: parseFloat(v.total || 0),
+            forma_pago: v.forma_pago || '',
+            periodo: per(p),
+          });
+        });
+        resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.ventas.length, monto, itbis, total });
+      });
     } else if (reporte === '606') {
       const COLS = ['RNC o Cédula', 'Tipo Id', 'Tipo Bienes y Servicios Comprados', 'NCF', 'NCF o Documento Modificado',
         'Fecha Comprobante', 'Fecha Pago', 'Monto Facturado en Servicios', 'Monto Facturado en Bienes', 'Total Monto Facturado',
@@ -321,26 +353,35 @@ const ReportesDGIIPage = () => {
         'ITBIS por Adelantar', 'ITBIS percibido en compras', 'Tipo de Retención en ISR', 'Monto Retención Renta',
         'ISR Percibido en compras', 'Impuesto Selectivo al Consumo', 'Otros Impuestos/Tasas', 'Monto Propina Legal', 'Forma de Pago'];
       ws.columns = [...COLS.map((h, i) => ({ header: h, key: `c${i}`, width: i < 7 ? 15 : 13 })),
-        { header: 'Suplidor (no se pega)', key: 'sup', width: 30 }, { header: 'Aviso (no se pega)', key: 'aviso', width: 45 }];
-      // Códigos y NCF como texto: Excel no les quita los ceros.
-      rev606.incluidas.forEach((c) => {
-        const f = fila606(c);
-        const fila = {};
-        f.forEach((v, i) => { fila[`c${i}`] = (i >= 7 && i <= 21 && i !== 16) ? Number(v || 0) : v; });
-        ws.addRow({ ...fila, sup: c.suplidor_nombre || '', aviso: c.avisos.join(' · ') });
+        { header: 'Suplidor (no se pega)', key: 'sup', width: 30 }, { header: 'Aviso (no se pega)', key: 'aviso', width: 45 },
+        ...colPeriodo];
+      const excluidas = [];
+      periodos.forEach((p) => {
+        let monto = 0; let itbis = 0; let total = 0;
+        // Códigos y NCF como texto: Excel no les quita los ceros.
+        p.rev606.incluidas.forEach((c) => {
+          const f = fila606(c);
+          const fila = {};
+          f.forEach((v, i) => { fila[`c${i}`] = (i >= 7 && i <= 21 && i !== 16) ? Number(v || 0) : v; });
+          ws.addRow({ ...fila, sup: c.suplidor_nombre || '', aviso: c.avisos.join(' · '), periodo: per(p) });
+          monto += parseFloat(c.total_gravado || 0) + parseFloat(c.total_exento || 0);
+          itbis += parseFloat(c.itbis_total || 0);
+          total += parseFloat(c.total_compra || 0);
+        });
+        p.rev606.excluidas.forEach((c) => excluidas.push({ c, periodo: per(p) }));
+        resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.rev606.incluidas.length, monto, itbis, total, noVan: p.rev606.excluidas.length });
       });
-      ws.getRow(1).font = { bold: true };
-      if (rev606.excluidas.length) {
+      if (excluidas.length) {
         const wx = wb.addWorksheet('No van en el 606');
         wx.columns = [
           { header: 'Fecha', key: 'fecha', width: 12 }, { header: 'NCF', key: 'ncf', width: 16 },
           { header: 'Suplidor', key: 'sup', width: 30 }, { header: 'RNC', key: 'rnc', width: 14 },
           { header: 'Total', key: 'total', width: 12 }, { header: 'Por qué no va', key: 'motivo', width: 60 },
-          { header: 'Qué hacer', key: 'accion', width: 60 },
+          { header: 'Qué hacer', key: 'accion', width: 60 }, ...colPeriodo,
         ];
-        rev606.excluidas.forEach((c) => wx.addRow({
+        excluidas.forEach(({ c, periodo }) => wx.addRow({
           fecha: fmtFecha(c.fecha), ncf: c.ncf, sup: c.suplidor_nombre || '', rnc: cleanRncCedula(c.suplidor_rnc),
-          total: parseFloat(c.total_compra || 0), motivo: c.motivo, accion: c.accion,
+          total: parseFloat(c.total_compra || 0), motivo: c.motivo, accion: c.accion, periodo,
         }));
         wx.getRow(1).font = { bold: true };
       }
@@ -349,28 +390,102 @@ const ReportesDGIIPage = () => {
         { header: 'NCF', key: 'ncf', width: 15 },
         { header: 'Fecha', key: 'fecha', width: 12 },
         { header: 'Tipo Anulación', key: 'tipo', width: 15 },
+        ...colPeriodo,
       ];
-      anulados.forEach(a => ws.addRow({
-        ncf: a.ncf,
-        fecha: fmtFecha(a.updated_at || a.fecha),
-        tipo: '02 - Errores de impresión',
-      }));
+      periodos.forEach((p) => {
+        p.anulados.forEach((a) => ws.addRow({
+          ncf: a.ncf,
+          fecha: fmtFecha(a.updated_at || a.fecha),
+          tipo: '02 - Errores de impresión',
+          periodo: per(p),
+        }));
+        resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.anulados.length });
+      });
     }
 
     ws.getRow(1).font = { bold: true };
     ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } };
+
+    if (varios) {
+      const wr = wb.addWorksheet('Resumen');
+      const conMontos = reporte !== '608';
+      wr.columns = [
+        { header: 'Período', key: 'periodo', width: 10 }, { header: 'Mes', key: 'mes', width: 16 },
+        { header: 'Registros', key: 'registros', width: 10 },
+        ...(conMontos ? [
+          { header: 'Monto (sin ITBIS)', key: 'monto', width: 16, style: { numFmt: '#,##0.00' } },
+          { header: 'ITBIS', key: 'itbis', width: 14, style: { numFmt: '#,##0.00' } },
+          { header: 'Total', key: 'total', width: 16, style: { numFmt: '#,##0.00' } },
+        ] : []),
+        ...(reporte === '606' ? [{ header: 'No van en el 606', key: 'noVan', width: 16 }] : []),
+      ];
+      resumen.forEach((r) => wr.addRow(r));
+      const sum = (k) => Math.round(resumen.reduce((s, r) => s + (Number(r[k]) || 0), 0) * 100) / 100;
+      const tot = wr.addRow({ periodo: 'TOTAL', registros: sum('registros'), monto: sum('monto'), itbis: sum('itbis'), total: sum('total'), noVan: sum('noVan') });
+      tot.font = { bold: true };
+      wr.getRow(1).font = { bold: true };
+      wr.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } };
+    }
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${reporte}_${year}${String(month).padStart(2, '0')}.xlsx`;
+    a.download = varios ? `${reporte}_${per(primero)}-${per(ultimo)}.xlsx` : `${reporte}_${per(primero)}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast({ title: 'Excel descargado', description: `${reporte} del período ${MESES[month - 1]} ${year}` });
+    const deQue = varios
+      ? `${MESES[primero.month - 1]} ${primero.year} a ${MESES[ultimo.month - 1]} ${ultimo.year} (${periodos.length} meses)`
+      : `${MESES[primero.month - 1]} ${primero.year}`;
+    toast({ title: 'Excel descargado', description: `${reporte} · ${deQue}` });
+  };
+
+  // El mes que está en pantalla.
+  const excelDelMes = (reporte) => exportExcel(reporte, [{ year, month, ventas, rev606, anulados }]);
+
+  // ── Excel de varios meses ──
+  const [rDesdeY, setRDesdeY] = useState(hoy.getFullYear());
+  const [rDesdeM, setRDesdeM] = useState(1);
+  const [rHastaY, setRHastaY] = useState(hoy.getFullYear());
+  const [rHastaM, setRHastaM] = useState(hoy.getMonth() + 1);
+  const [rangoEstado, setRangoEstado] = useState(null); // texto mientras carga
+  const tenantRef = useRef(tenantId);
+  tenantRef.current = tenantId;
+
+  const excelDelRango = async (reporte) => {
+    if (rangoEstado) return;
+    const ini = rDesdeY * 12 + (rDesdeM - 1);
+    const fin = rHastaY * 12 + (rHastaM - 1);
+    if (fin < ini) {
+      toast({ variant: 'destructive', title: 'Rango al revés', description: 'El mes "Hasta" es anterior al mes "Desde".' });
+      return;
+    }
+    if (fin - ini + 1 > 24) {
+      toast({ variant: 'destructive', title: 'Rango muy largo', description: 'Hasta 24 meses por archivo.' });
+      return;
+    }
+    const tenantInicio = tenantId;
+    const periodos = [];
+    try {
+      for (let k = ini; k <= fin; k++) {
+        const y = Math.floor(k / 12);
+        const m = (k % 12) + 1;
+        setRangoEstado(`Cargando ${MESES[m - 1]} ${y}… (${k - ini + 1} de ${fin - ini + 1})`);
+        const r = rangoMes(y, m);
+        const d = await traerPeriodo(r.desde, r.hasta);
+        // Si cambió de empresa a mitad, no se mezcla nada.
+        if (tenantRef.current !== tenantInicio) throw new Error('Cambió de empresa mientras se cargaba. Vuelva a intentarlo.');
+        periodos.push({ year: y, month: m, ventas: d.ventas, rev606: revisar606(d.compras, empresa?.rnc), anulados: d.anulados });
+      }
+      await exportExcel(reporte, periodos);
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'No se pudo armar el Excel', description: error.message });
+    } finally {
+      setRangoEstado(null);
+    }
   };
 
   const years = Array.from({ length: 6 }, (_, i) => hoy.getFullYear() - i);
@@ -415,6 +530,41 @@ const ReportesDGIIPage = () => {
             </div>
           </div>
 
+          {/* (17/11/2026) Excel de varios meses: un archivo con todos, mes por mes. */}
+          <div className="mt-3 flex flex-wrap items-end gap-2 border-t pt-3">
+            <div className="text-xs font-semibold text-slate-600 mr-1 self-center">Excel de varios meses:</div>
+            <div>
+              <Label className="text-[10px] font-bold text-slate-500 uppercase">Desde</Label>
+              <div className="flex gap-1">
+                <select value={rDesdeM} onChange={e => setRDesdeM(parseInt(e.target.value))} className="h-8 px-1 border rounded text-xs">
+                  {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                </select>
+                <select value={rDesdeY} onChange={e => setRDesdeY(parseInt(e.target.value))} className="h-8 px-1 border rounded text-xs">
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-[10px] font-bold text-slate-500 uppercase">Hasta</Label>
+              <div className="flex gap-1">
+                <select value={rHastaM} onChange={e => setRHastaM(parseInt(e.target.value))} className="h-8 px-1 border rounded text-xs">
+                  {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                </select>
+                <select value={rHastaY} onChange={e => setRHastaY(parseInt(e.target.value))} className="h-8 px-1 border rounded text-xs">
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+            {['606', '607', '608'].map((r) => (
+              <Button key={r} variant="outline" size="sm" className="h-8" disabled={!!rangoEstado || !tenantId} onClick={() => excelDelRango(r)}>
+                <FileSpreadsheet className="w-4 h-4 mr-1" /> {r}
+              </Button>
+            ))}
+            {rangoEstado && (
+              <span className="text-xs text-blue-700 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> {rangoEstado}</span>
+            )}
+          </div>
+
           {!empresa?.rnc && (
             <div className="mt-3 flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs">
               <AlertCircle className="w-4 h-4" />
@@ -440,7 +590,7 @@ const ReportesDGIIPage = () => {
                 alertas={alertas607}
                 loading={loading}
                 onTxt={() => exportTxt('607')}
-                onExcel={() => exportExcel('607')}
+                onExcel={() => excelDelMes('607')}
               >
                 <Table className="text-xs">
                   <TableHeader>
@@ -487,7 +637,7 @@ const ReportesDGIIPage = () => {
                 textoAlerta="con aviso: revíselas antes de subir (fila amarilla)"
                 loading={loading}
                 onTxt={() => exportTxt('606')}
-                onExcel={() => exportExcel('606')}
+                onExcel={() => excelDelMes('606')}
               >
                 <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900 space-y-0.5">
                   <p><b>Van en el 606:</b> {Object.keys(TIPOS_606).join(', ')}. Las facturas electrónicas (E31…) recibidas también se reportan.</p>
@@ -567,7 +717,7 @@ const ReportesDGIIPage = () => {
                 alertas={0}
                 loading={loading}
                 onTxt={() => exportTxt('608')}
-                onExcel={() => exportExcel('608')}
+                onExcel={() => excelDelMes('608')}
               >
                 <Table className="text-xs">
                   <TableHeader>
