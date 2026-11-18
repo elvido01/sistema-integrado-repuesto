@@ -261,6 +261,22 @@ const OrdenCompraPage = () => {
     return pares;
   }, [detalles, equivalentesMap]);
 
+  // Frente al suplidor: lo que se descarta (no lo tiene, presupuesto, poca
+  // rotación...) sale de la lista para que el pedido se vaya achicando. NO se
+  // borra: se graba con su decisión y después sigue el proceso de siempre
+  // (vuelve en la próxima orden o cuando el sistema lo decida).
+  const [verDescartadas, setVerDescartadas] = useState(false);
+  // Cada orden empieza con las descartadas escondidas.
+  useEffect(() => { setVerDescartadas(false); }, [orden?.id, orden?.numero]);
+  const descartadasCount = useMemo(
+    () => detalles.filter((d) => !isDetallePedidoHoy(d)).length,
+    [detalles]
+  );
+  const detallesVisibles = useMemo(
+    () => (verDescartadas ? detalles : detalles.filter(isDetallePedidoHoy)),
+    [detalles, verDescartadas]
+  );
+
   // Cargar equivalentes de los productos en la orden
   useEffect(() => {
     let cancel = false;
@@ -877,15 +893,20 @@ const OrdenCompraPage = () => {
         (stagingItem.codigo && d.codigo === stagingItem.codigo)
       );
       if (existingIndex >= 0) {
+        // Si estaba descartada (fuera de la lista), vuelve a la orden con la
+        // cantidad tecleada: el suplidor dijo que sí la tiene.
+        const revive = !isDetallePedidoHoy(detalles[existingIndex]);
         setDetalles(prev => {
           const updated = [...prev];
-          updated[existingIndex] = {
-            ...updated[existingIndex],
-            cantidad: (parseFloat(updated[existingIndex].cantidad) || 0) + (parseFloat(stagingItem.cantidad) || 1)
-          };
+          const linea = updated[existingIndex];
+          updated[existingIndex] = revive
+            ? { ...linea, cantidad: parseFloat(stagingItem.cantidad) || 1, decision_estado: DECISION_DEFAULT, decision_motivo: null }
+            : { ...linea, cantidad: (parseFloat(linea.cantidad) || 0) + (parseFloat(stagingItem.cantidad) || 1) };
           return calculateAllImportes(updated);
         });
-        toast({ title: 'Cantidad actualizada', description: `Se sumó la cantidad al producto ${stagingItem.codigo} existente.` });
+        toast(revive
+          ? { title: 'Vuelve a la orden', description: `${stagingItem.codigo} estaba descartada; ahora va en el pedido.` }
+          : { title: 'Cantidad actualizada', description: `Se sumó la cantidad al producto ${stagingItem.codigo} existente.` });
         resetStaging();
         return;
       }
@@ -1109,6 +1130,13 @@ const OrdenCompraPage = () => {
           }
         : d
     ))));
+    if (!isDetallePedidoHoy({ decision_estado: option }) && !verDescartadas) {
+      toast({
+        title: 'Sale de la lista',
+        description: `Queda grabada como "${DECISION_OPTIONS[option].short}". Abajo puedes verla si te equivocaste.`,
+        duration: 2500,
+      });
+    }
   };
 
   const removeDetalle = (id) => {
@@ -1638,7 +1666,8 @@ const OrdenCompraPage = () => {
   // Van sin producto_id a propósito: son piezas que ni siquiera existen en el
   // catálogo (por eso se anotaron a mano). El precio queda en 0 para que se
   // escriba el que dé el suplidor.
-  const agregarPendientesVirtuales = (lista) => {
+  // `confirmado`: el suplidor dijo que lo tiene → entra como Pedido ✓.
+  const agregarPendientesVirtuales = (lista, { confirmado = false } = {}) => {
     const nuevos = (lista || []).map((it) => ({
       id: Date.now() + Math.random(),
       producto_id: it.producto_id || null,
@@ -1651,7 +1680,7 @@ const OrdenCompraPage = () => {
       itbis_pct: 0,
       importe: 0,
       existencia: 0,
-      decision_estado: DECISION_DEFAULT,
+      decision_estado: confirmado ? 'pedido' : DECISION_DEFAULT,
       decision_motivo: null,
       _sv_item_id: it.id,        // para amarrarlo al grabar
     }));
@@ -2357,7 +2386,9 @@ const OrdenCompraPage = () => {
 
       // Los pendientes del Suplidor Virtual que entraron aquí quedan amarrados a
       // la orden: cuando la mercancía se reciba, se marcan comprados solos.
-      const pendientesMetidos = detalles.filter(d => d._sv_item_id);
+      // Solo lo que va en la orden: un pendiente que entró y luego se
+      // descartó ("no lo tiene") sigue pendiente en el Suplidor Virtual.
+      const pendientesMetidos = detalles.filter(d => d._sv_item_id && isDetallePedidoHoy(d));
       if (pendientesMetidos.length > 0) {
         const idsPend = [...new Set(pendientesMetidos.map(d => d._sv_item_id))];
         const ahora = new Date().toISOString();
@@ -3037,15 +3068,6 @@ const OrdenCompraPage = () => {
         </div>
       </div>
 
-      {/* LO QUE ESTÁ ANOTADO EN EL SUPLIDOR VIRTUAL Y PARECE DE ESTE SUPLIDOR */}
-      <SugerenciasSuplidorVirtual
-        suplidorId={selectedProveedor?.id || null}
-        suplidorNombre={selectedProveedor?.nombre || ''}
-        descripcionesEnOrden={detalles.map(d => d.descripcion)}
-        onAgregar={agregarPendientesVirtuales}
-        recargar={svRecargar}
-      />
-
       {/* YELLOW STAGING ROW + TABLE */}
       <div className="border border-slate-300 rounded-sm overflow-hidden mb-3 shadow-sm">
         {/* Staging Row - Condicional por tipo de tenant */}
@@ -3272,7 +3294,7 @@ const OrdenCompraPage = () => {
               )}
             </TableHeader>
             <TableBody>
-              {detalles.length === 0 ? (
+              {detallesVisibles.length === 0 ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i} className="h-7 border-b border-slate-100">
                     {Array.from({ length: isVehicleDealer ? 10 : (mostrarInteligente ? 11 : 10) }).map((_, j) => (
@@ -3281,7 +3303,7 @@ const OrdenCompraPage = () => {
                   </TableRow>
                 ))
               ) : (
-                detalles.map((d) => {
+                detallesVisibles.map((d) => {
                   const puedeMarcarNoSuplido = ['Enviada', 'Parcial'].includes(orden.estado)
                     && !['recibida', 'cancelada'].includes(d.estado_linea || '');
                   const decision = d.decision_estado || DECISION_DEFAULT;
@@ -3456,6 +3478,34 @@ const OrdenCompraPage = () => {
           </Table>
         </div>
       </div>
+
+      {/* Lo descartado no se pierde: se graba con su decisión. Aquí se ve. */}
+      {descartadasCount > 0 && (
+        <div className="-mt-2 mb-3 flex items-center gap-2 px-2 text-[11px] text-slate-500">
+          <span>
+            {descartadasCount} descartada{descartadasCount !== 1 ? 's' : ''} fuera de la lista
+            {' '}(se graban con su decisión)
+          </span>
+          <button
+            type="button"
+            className="text-blue-600 hover:underline font-semibold"
+            onClick={() => setVerDescartadas((v) => !v)}
+          >
+            {verDescartadas ? 'Ocultarlas' : 'Verlas'}
+          </button>
+        </div>
+      )}
+
+      {/* LO QUE ESTÁ ANOTADO EN EL SUPLIDOR VIRTUAL Y PARECE DE ESTE SUPLIDOR.
+          Va al final de la lista: según se descarta lo que el suplidor no
+          tiene, aquí aparece lo siguiente que preguntarle. */}
+      <SugerenciasSuplidorVirtual
+        suplidorId={selectedProveedor?.id || null}
+        suplidorNombre={selectedProveedor?.nombre || ''}
+        descripcionesEnOrden={detalles.map(d => d.descripcion)}
+        onAgregar={agregarPendientesVirtuales}
+        recargar={svRecargar}
+      />
 
       {/* Footer Area */}
       <div className="grid grid-cols-1 md:grid-cols-[70%_30%] gap-4 mt-2">
@@ -4075,7 +4125,7 @@ const OrdenCompraPage = () => {
                       <SelectItem value="B">⭐ {eqLink.otro.codigo}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-[10px] text-slate-500">El preferido es el que la Orden Automática pide primero; el otro queda de sustituto. Si uno de los dos ya tiene grupo, el nuevo entra como sustituto y el preferido actual se respeta.</p>
+                  <p className="text-[10px] text-slate-500">El preferido es el que la Orden Automática pide primero; el otro queda de sustituto. Si uno de los dos ya tiene grupo, el nuevo entra como sustituto y el preferido actual se respeta. Cada noche el sistema deja de preferido al que más vende (salvo que lo fijes a mano en Equivalentes).</p>
                 </div>
               )}
             </div>

@@ -31,8 +31,12 @@ function firmasEnSql() {
     // descartaba entero. Pasó con mcp_resolver_entidad, que perdió p_texto
     // y dio un fallo que parecía del catálogo y era del lector. Una prueba
     // que acusa al código equivocado es peor que no tenerla.
+    //
+    // (2026-11-17) Partir por \r?\n: en una PC con fin de línea Windows el \r
+    // quedaba al final, `.` no lo cruza y `$` no casaba → el comentario no se
+    // quitaba y volvía el mismo fallo falso solo en esa PC.
     const texto = readFileSync(join(SQL, archivo), 'utf8')
-      .split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+      .split(/\r?\n/).map((l) => l.replace(/--.*$/, '')).join('\n');
     const re = /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.(mcp_\w+)\s*\(([^)]*)\)/gi;
     let m;
     while ((m = re.exec(texto)) !== null) {

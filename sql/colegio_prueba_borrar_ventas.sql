@@ -25,15 +25,39 @@ DECLARE
   v_t uuid := '8bcd59ef-9502-486c-b919-c77b991387bb';
   v_f int; v_m int;
 BEGIN
+  -- SEGUROS (code-review high 17/11/2026): SOLO la #1 de prueba. Si algo no
+  -- cuadra, el script se detiene sin borrar nada.
   CREATE TEMP TABLE _fac ON COMMIT DROP AS
     SELECT f.id, f.numero FROM public.facturas f
      WHERE f.tenant_id = v_t
+       AND f.numero = 1
        AND (f.ncf IS NULL OR f.ncf = '')
        AND NOT EXISTS (SELECT 1 FROM public.documentos_fiscales d
                         WHERE d.factura_id = f.id
-                          AND (d.encf IS NOT NULL OR d.ncf IS NOT NULL OR d.estado = 'emitido'))
+                          AND (d.encf IS NOT NULL OR d.ncf IS NOT NULL OR d.estado = 'emitido'
+                               OR NULLIF(d.track_id, '') IS NOT NULL
+                               OR NULLIF(d.estado_dgii, '') IS NOT NULL
+                               OR NULLIF(d.proveedor_number, '') IS NOT NULL))
        AND NOT EXISTS (SELECT 1 FROM public.edu_pagos p WHERE p.factura_id = f.id)
        AND NOT EXISTS (SELECT 1 FROM public.devoluciones dv WHERE dv.factura_id = f.id);
+
+  SELECT count(*) INTO v_f FROM _fac;
+  IF v_f <> 1 THEN
+    RAISE EXCEPTION 'Se esperaba exactamente la factura #1 de prueba y salieron %. No se borra nada.', v_f;
+  END IF;
+
+  -- Lo que el borrado dejaria colgando o descuadrado: si existe, se para.
+  IF EXISTS (SELECT 1 FROM public.recibos_ingreso_detalle r WHERE r.factura_id IN (SELECT id FROM _fac))
+     OR EXISTS (SELECT 1 FROM public.pagos_comisiones_facturas c WHERE c.factura_id IN (SELECT id FROM _fac))
+     OR EXISTS (SELECT 1 FROM public.movimientos_bancarios b WHERE b.origen_tipo = 'venta' AND b.origen_id IN (SELECT id FROM _fac))
+     OR EXISTS (SELECT 1 FROM public.inmuebles_vendidos i WHERE i.factura_id IN (SELECT id FROM _fac))
+     OR EXISTS (SELECT 1 FROM public.vent_proyectos v WHERE v.factura_id IN (SELECT id FROM _fac))
+     OR EXISTS (SELECT 1 FROM public.inventario_movimientos m
+                 WHERE m.tenant_id = v_t AND m.espejo_de IS NULL
+                   AND m.referencia_doc LIKE ANY (ARRAY['%FT-EDIT-REV-1', '%TRASPASO%FT-1']))
+  THEN
+    RAISE EXCEPTION 'La factura #1 tiene recibos, comisiones, banco, inmueble/proyecto, edicion o traspaso. Revisar a mano; no se borra nada.';
+  END IF;
 
   DELETE FROM public.inventario_movimientos
    WHERE tenant_id = v_t AND tipo = 'SALIDA' AND espejo_de IS NULL

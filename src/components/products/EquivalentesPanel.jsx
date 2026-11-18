@@ -86,8 +86,8 @@ export default function EquivalentesPanel({
   const [recalculando, setRecalculando] = useState(false);
   const recalcularTodos = async () => {
     if (!window.confirm(
-      'El sistema va a recalcular los preferidos según margen, rotación, confiabilidad de stock y demanda.\n\n' +
-      'Solo se cambia un preferido si la diferencia de score es >= 5 puntos.\n' +
+      'El sistema va a dejar UN preferido por grupo: la pieza que más vendió en 90 días.\n\n' +
+      'Si empatan, se queda el preferido actual. Esto también corre solo cada noche.\n' +
       'Los grupos con preferido FIJADO MANUAL no se tocan.\n\n¿Continuar?'
     )) return;
     setRecalculando(true);
@@ -420,7 +420,7 @@ export default function EquivalentesPanel({
                           {m.score_ultimo > 0 && (
                             <span
                               className="text-[9px] text-slate-400 font-mono"
-                              title={`Score último cálculo: ${m.score_ultimo}`}
+                              title={`Vendió ${Number(m.score_ultimo)} und. en 90 días (último cálculo)`}
                             >
                               {Number(m.score_ultimo).toFixed(0)}
                             </span>

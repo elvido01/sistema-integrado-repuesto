@@ -299,7 +299,7 @@
     "src/components/compras/CompraInteligentePanel.jsx": "ff804e5782a420d7",
     "src/components/compras/InvoiceUploadModal.jsx": "a209c4511074cee9",
     "src/components/compras/PrecisionOcrModal.jsx": "900ae224342d8381",
-    "src/components/compras/SugerenciasSuplidorVirtual.jsx": "158308a8bc904c41",
+    "src/components/compras/SugerenciasSuplidorVirtual.jsx": "1d86e2c571a82b4d",
     "src/components/compras/SuplidorSearchModal.jsx": "0f5b59cbb77276f2",
     "src/components/compras/SuplidorVirtualMenu.jsx": "a99bc9d7b867d4a6",
     "src/components/configuracion/DgiiAprobacionComercialRunner.jsx": "b73f21888e93614d",
@@ -368,7 +368,7 @@
     "src/pages/ListaChasisPrestamosPage.jsx": "b1b70541508a15c1",
     "src/pages/NominaPage.jsx": "6be48f0f62f10ad9",
     "src/pages/NotaCreditoFinancieraPage.jsx": "d611cbed10c32f66",
-    "src/pages/OrdenCompraPage.jsx": "e6ce908ee17e3b37",
+    "src/pages/OrdenCompraPage.jsx": "858956afad6efba2",
     "src/pages/OrdenCompraPage.jsx.bak": "110571cb948515bc",
     "src/pages/PagoComisionesPage.jsx": "93b599205d8ae46c",
     "src/pages/PagoSuplidoresPage.jsx": "b949de6dd5010136",
@@ -444,16 +444,10 @@
     "sql/elite_royal_prestige_compras.sql": "e8bc45e8d04759fc",
     "sql/morla_ncf_hao_oc0378.sql": "ee361d8662005c68",
     "src/lib/emparejarLineaCompra.js": "00037880ad4f8242",
-    "src/lib/facturaPrecioNeto.js": "dae79ed4d30cd0cc"
+    "src/lib/facturaPrecioNeto.js": "dae79ed4d30cd0cc",
+    "sql/colegio_prueba_borrar_ventas.sql": "887cb518bbbcba50"
   },
   "historial": [
-    {
-      "fecha": "2026-11-03",
-      "nota": "code-review high: sin errores de calculo; misma regla que la pagina; 8 notas (4 ya existian, contador de periodos y aviso de 3 dias para prestamos a interes quedan como mejora); tiempo 0.12s->0.16s",
-      "archivos": [
-        "sql/extension_cobro_interes_atrasado.sql"
-      ]
-    },
     {
       "fecha": "2026-11-03",
       "nota": "code-review high: 9 hallazgos; arreglados formas con monto 0, nombres unificados (Tarjeta de Crédito/Crédito) en un solo helper, STABLE en vez de IMMUTABLE, NCF de respaldo, columna PDF mas ancha; sin recibos de prestamo sin amarre ni tipo_pago MOVIL en prod; grants previos eran solo authenticated/service_role",
@@ -970,6 +964,15 @@
       "nota": "code-review high 4802f911d..HEAD: arreglados empresa explicita en consultas, carga solo del reporte pedido, doble clic (ref), descarga tras desmontar, Excel del mes con periodo cargado, redondeo del resumen; 608 fecha=updated_at es previo e igual al TXT (no se toca)",
       "archivos": [
         "src/pages/ReportesDGIIPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-18",
+      "nota": "code-review high: orden de compra (descartadas fuera de la lista, sugerencias SV al final, revive descartada, SV descartado no se amarra) 5 hallazgos corregidos + SQL ajustes probado como usuario; colegio_prueba_borrar_ventas ya corrido 17/11 sin restos, se le agregan seguros (solo #1, exactamente 1, DGII ampliado, para si hay banco/recibos/edicion)",
+      "archivos": [
+        "sql/colegio_prueba_borrar_ventas.sql",
+        "src/components/compras/SugerenciasSuplidorVirtual.jsx",
+        "src/pages/OrdenCompraPage.jsx"
       ]
     }
   ]

@@ -82,13 +82,17 @@ export default function SugerenciasSuplidorVirtual({
         [disponibles, suplidorId]
     );
 
-    const meter = (lista) => {
+    // `confirmado`: el suplidor dijo que lo tiene → entra como Pedido ✓.
+    const meter = (lista, { confirmado = false } = {}) => {
         if (!lista.length) return;
-        onAgregar?.(lista);
+        onAgregar?.(lista, { confirmado });
         setOcultos((prev) => [...prev, ...lista.map((i) => i.id)]);
+        const sinCodigo = lista.some((i) => !i.producto_id);
         toast({
             title: lista.length === 1 ? '📋 Pendiente agregado' : `📋 ${lista.length} pendientes agregados`,
-            description: 'Se marcan como pedidos cuando grabes la orden.',
+            description: sinCodigo
+                ? 'Si no tiene código, dale a "+ código" en la línea para crearlo. Se marca como pedido al grabar.'
+                : 'Se marcan como pedidos cuando grabes la orden.',
         });
     };
 
@@ -102,8 +106,8 @@ export default function SugerenciasSuplidorVirtual({
             });
             if (error) throw error;
             toast({
-                title: 'Anotado',
-                description: `"${item.descripcion}" no se te va a sugerir más para ${suplidorNombre}.`,
+                title: 'Anotado: no lo tiene',
+                description: `"${item.descripcion}" sigue en el Suplidor Virtual, pero no se te va a sugerir más para ${suplidorNombre}.`,
             });
         } catch (err) {
             toast({ variant: 'destructive', title: 'No se pudo aprender', description: err.message });
@@ -130,6 +134,7 @@ export default function SugerenciasSuplidorVirtual({
                             <b className="text-amber-800">{deEste.length}</b> pendiente{deEste.length !== 1 ? 's' : ''} del
                             {' '}Suplidor Virtual parece{deEste.length !== 1 ? 'n' : ''} de{' '}
                             <b className="uppercase">{suplidorNombre || 'este suplidor'}</b>
+                            <span className="text-slate-500"> — pregúntale si lo tiene</span>
                         </>
                     ) : (
                         <>Ninguno de los <b>{otros.length}</b> pendientes parece de <b className="uppercase">{suplidorNombre}</b></>
@@ -162,7 +167,12 @@ export default function SugerenciasSuplidorVirtual({
             {abierto && deEste.length > 0 && (
                 <div className="border-t border-amber-200 divide-y divide-amber-100">
                     {deEste.map((it) => (
-                        <Fila key={it.id} it={it} onMeter={() => meter([it])} onFuera={() => noEsDeAqui(it)} />
+                        <Fila
+                            key={it.id}
+                            it={it}
+                            onMeter={() => meter([it], { confirmado: true })}
+                            onFuera={() => noEsDeAqui(it)}
+                        />
                     ))}
                 </div>
             )}
@@ -206,9 +216,9 @@ function Fila({ it, onMeter, onFuera, ajeno = false }) {
                 variant="outline"
                 className="h-6 px-2 text-[10px] border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                 onClick={onMeter}
-                title="Meter este pendiente en la orden"
+                title={ajeno ? 'Meter este pendiente en la orden' : 'El suplidor lo tiene: entra a la orden como Pedido ✓'}
             >
-                <Plus className="h-3 w-3 mr-0.5" /> Agregar
+                <Plus className="h-3 w-3 mr-0.5" /> {ajeno ? 'Agregar' : 'Lo tiene'}
             </Button>
 
             <span className="uppercase text-xs font-semibold text-slate-800 flex-1 truncate">
@@ -249,9 +259,9 @@ function Fila({ it, onMeter, onFuera, ajeno = false }) {
                     variant="ghost"
                     className="h-6 px-1.5 text-[10px] text-slate-500 hover:text-rose-600"
                     onClick={onFuera}
-                    title="No es de este suplidor — no me lo sugieras más aquí"
+                    title="Este suplidor no lo tiene — no me lo sugieras más aquí"
                 >
-                    <X className="h-3 w-3 mr-0.5" /> No es de aquí
+                    <X className="h-3 w-3 mr-0.5" /> No lo tiene
                 </Button>
             )}
         </div>
