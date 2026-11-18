@@ -701,7 +701,7 @@ export default function CajaColegioPage() {
                     <input type="number" min="0" step="0.01" className={`${campo} w-full mt-1`} value={tasa} onChange={(e) => setTasa(e.target.value)} />
                   </label>
                 )}
-                <div className="flex justify-between items-baseline border-t pt-2">
+                <div className="flex flex-wrap justify-between items-baseline gap-x-2 border-t pt-2">
                   <span className="font-black">TOTAL</span>
                   <span className="text-2xl font-black font-mono">RD${n2(total)}</span>
                 </div>
@@ -709,13 +709,17 @@ export default function CajaColegioPage() {
                 <div className="text-xs font-bold text-gray-500 uppercase">Formas de pago</div>
                 {formas.map((f, i) => (
                   <div key={i} className="rounded-md border border-gray-200 p-2 space-y-2">
-                    {/* min-w-0 + wrap: en pantallas chicas el monto bajaba fuera del cuadro */}
+                    {/* En pantallas chicas el monto se salía del cuadro (ancho fijo). Ahora
+                        la fila se parte en dos: forma arriba (ancho para "Efectivo en
+                        dólares") y monto + borrar juntos abajo, a todo lo ancho. */}
                     <div className="flex flex-wrap gap-2">
-                      <select className={`${campo} flex-1 min-w-[7rem]`} value={f.forma} onChange={(e) => setForma(i, 'forma', e.target.value)}>
+                      <select className={`${campo} flex-[2_1_9.5rem]`} value={f.forma} onChange={(e) => setForma(i, 'forma', e.target.value)}>
                         {FORMAS.map((x) => <option key={x} value={x}>{x}</option>)}
                       </select>
-                      <MontoInput className={`${campo} flex-1 min-w-[6rem] max-w-[9rem] text-right`} value={f.monto} onChange={(v) => setForma(i, 'monto', v)} />
-                      {formas.length > 1 && <Button size="sm" variant="ghost" onClick={() => setFormas((fs) => fs.filter((_, j) => j !== i))}><Trash2 className="w-4 h-4" /></Button>}
+                      <div className="flex flex-[1_1_8.5rem] gap-1">
+                        <MontoInput className={`${campo} w-full min-w-0 text-right`} value={f.monto} onChange={(v) => setForma(i, 'monto', v)} />
+                        {formas.length > 1 && <Button size="sm" variant="ghost" className="shrink-0 px-2" onClick={() => setFormas((fs) => fs.filter((_, j) => j !== i))}><Trash2 className="w-4 h-4" /></Button>}
+                      </div>
                     </div>
                     {conBanco(f.forma) && (
                       <>
@@ -727,7 +731,7 @@ export default function CajaColegioPage() {
                     )}
                   </div>
                 ))}
-                <div className="flex justify-between text-xs">
+                <div className="flex flex-wrap justify-between gap-x-2 text-xs">
                   <button type="button" className="text-blue-700 underline" onClick={() => setFormas((fs) => [...fs, { forma: 'Transferencia', monto: '', referencia: '', cuenta_id: null, banco: '', alias: '' }])}>
                     + Otra forma de pago
                   </button>
@@ -735,8 +739,8 @@ export default function CajaColegioPage() {
                 </div>
 
                 <div className="flex items-center gap-2 text-sm">
-                  <Printer className="w-4 h-4 text-gray-500" />
-                  <select className={`${campo} flex-1 min-w-0`} value={formato} onChange={(e) => cambiarFormato(e.target.value)}>
+                  <Printer className="w-4 h-4 text-gray-500 shrink-0" />
+                  <select className={`${campo} flex-1 w-full`} value={formato} onChange={(e) => cambiarFormato(e.target.value)}>
                     <option value="ticket">Imprimir ticket</option>
                     <option value="hoja">Imprimir hoja (con tarjeta del año)</option>
                     <option value="ninguno">No imprimir</option>
