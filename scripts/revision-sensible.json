@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "31fe8a47100c7b17",
+    "src/pages/colegio/CajaColegioPage.jsx": "2c8ff47f1c36bc9c",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -445,16 +445,11 @@
     "sql/morla_ncf_hao_oc0378.sql": "ee361d8662005c68",
     "src/lib/emparejarLineaCompra.js": "00037880ad4f8242",
     "src/lib/facturaPrecioNeto.js": "dae79ed4d30cd0cc",
-    "sql/colegio_prueba_borrar_ventas.sql": "887cb518bbbcba50"
+    "sql/colegio_prueba_borrar_ventas.sql": "887cb518bbbcba50",
+    "sql/edu_cuenta_inicial_ajustes.sql": "02e57d2fc9b5cd52",
+    "sql/edu_cuenta_inicial_pagado_antes.sql": "1ea5cbb78c51f1a0"
   },
   "historial": [
-    {
-      "fecha": "2026-11-03",
-      "nota": "code-review high: 9 hallazgos; arreglados formas con monto 0, nombres unificados (Tarjeta de Crédito/Crédito) en un solo helper, STABLE en vez de IMMUTABLE, NCF de respaldo, columna PDF mas ancha; sin recibos de prestamo sin amarre ni tipo_pago MOVIL en prod; grants previos eran solo authenticated/service_role",
-      "archivos": [
-        "sql/transacciones_comentario_y_forma_pago.sql"
-      ]
-    },
     {
       "fecha": "2026-11-04",
       "nota": "code-review high: 10 hallazgos; arreglados lineas de servicio que se fundian al pasar por cotizacion/pedido (addItem con naturaleza), inmueble sale del inventario, ITBIS 0 del inmueble al recargar, orden de compra ignora servicios, cantidad fija en lineas de servicio, cambio de servicio reemplaza desc/monto, recarga por apertura con tenant_id y aviso si falla el catalogo",
@@ -973,6 +968,15 @@
         "sql/colegio_prueba_borrar_ventas.sql",
         "src/components/compras/SugerenciasSuplidorVirtual.jsx",
         "src/pages/OrdenCompraPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-18",
+      "nota": "code-review high colegio: cuenta inicial (lo pagado antes del sistema) + recargo al juntar 2 meses + mensualidad 0; 10 hallazgos corregidos (recargo por colegio, tarifa 0 no revienta cambio de anio, empezo-en, solo direccion, debe con anuales, sin recargo para toda deuda previa, textos); SQL probados como usuario",
+      "archivos": [
+        "sql/edu_cuenta_inicial_ajustes.sql",
+        "sql/edu_cuenta_inicial_pagado_antes.sql",
+        "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }
   ]

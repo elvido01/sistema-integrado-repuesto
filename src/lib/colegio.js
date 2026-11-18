@@ -149,6 +149,18 @@ export function leerPlantillaEstudiantes(filas, cursos) {
 }
 
 /** Hoy en Santo Domingo (YYYY-MM-DD). */
+/** La regla del recargo como se le explica a la familia (recibo y estado de
+ *  cuenta). recargo_meses: cuántos meses se juntan (Centenario: 2). */
+export function reglaRecargoTexto(cfg, dia) {
+  const monto = Number(cfg?.recargo_monto || 0);
+  if (monto <= 0) return '';
+  const rd = `RD$${monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const meses = Number(cfg?.recargo_meses || 1);
+  return meses <= 1
+    ? `Pagos del 1 al ${dia} de cada mes; desde el día 1 del mes siguiente se aplica un recargo de ${rd}.`
+    : `Pagos del 1 al ${dia} de cada mes; si se juntan ${meses} meses sin pagar, se aplica un recargo de ${rd} por cada mes atrasado.`;
+}
+
 export const hoyRD = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
 /** Fecha local de Santo Domingo de un timestamptz (no la de UTC). */
 export const fechaLocalRD = (ts) => (ts ? new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }) : '');

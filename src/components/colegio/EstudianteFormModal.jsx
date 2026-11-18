@@ -233,16 +233,21 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
         numero_hermanos: est.numero_hermanos === '' || est.numero_hermanos == null ? null : Number(est.numero_hermanos),
         edades_hermanos: est.edades_hermanos, posicion_familia: est.posicion_familia, notas: est.notas,
       });
+      let guardadoId = estudiante?.id || null;
       if (editando) {
         const { data, error } = await supabase.from('edu_estudiantes').update(datos).eq('id', estudiante.id).eq('tenant_id', tenantId).select('id');
         if (error) throw error;
         if (!data?.length) throw new Error('No se guardó el estudiante.');
       } else {
-        const { error } = await supabase.from('edu_estudiantes')
-          .insert({ ...datos, tenant_id: tenantId, anio_ingreso: anioActual?.anio_inicio ?? null, estado: 'activo' });
+        const { data, error } = await supabase.from('edu_estudiantes')
+          .insert({ ...datos, tenant_id: tenantId, anio_ingreso: anioActual?.anio_inicio ?? null, estado: 'activo' })
+          .select('id').single();
         if (error) throw error;
+        guardadoId = data.id;
       }
-      onSaved(editando ? 'Ficha actualizada' : 'Estudiante inscrito');
+      // El id va al padre: si el estudiante todavía no tiene la cuenta del año,
+      // se pregunta lo que ya pagó antes del sistema (CuentaInicialDialog).
+      onSaved(editando ? 'Ficha actualizada' : 'Estudiante inscrito', guardadoId);
     } catch (e) {
       onError('No se pudo guardar', e?.message);
     } finally {

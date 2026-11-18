@@ -24,7 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { printHtmlSmart, isSilentPrintEnabled } from '@/lib/printHtmlSmart';
 import { reciboColegioTicketHTML, reciboColegioHojaHTML, numeroRecibo } from '@/lib/printColegio';
-import { mesesDelAnio, MESES, hoyRD, pendienteDe, quitarTildes, TANDAS_NOMBRE as TANDAS, ESTADO_ESTUDIANTE } from '@/lib/colegio';
+import { mesesDelAnio, MESES, reglaRecargoTexto, hoyRD, pendienteDe, quitarTildes, TANDAS_NOMBRE as TANDAS, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 
 const n2 = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const campo = 'h-9 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
@@ -82,8 +82,7 @@ export async function datosReciboColegio(pagoId, tenantId) {
     familia: { ...fa.data, telefono: fa.data?.tutor_telefono || fa.data?.madre_celular || fa.data?.padre_celular || '' },
     anio: an.data, estudiantes,
     proximoPago: prox ? `${MESES[Number(prox.slice(5, 7)) - 1].toLowerCase()}, del 1 al ${dia}` : '',
-    reglaRecargo: cfg.data?.recargo_monto > 0
-      ? `Pagos del 1 al ${dia} de cada mes; desde el día 1 del mes siguiente se aplica un recargo de RD$${n2(cfg.data.recargo_monto)}.` : '',
+    reglaRecargo: reglaRecargoTexto(cfg.data, dia),
   };
 }
 
@@ -770,6 +769,10 @@ function PrepararCuentaDialog({ estudiante, anio, onClose, onDone, onError }) {
   const [guardando, setGuardando] = useState(false);
   const ok = async () => {
     if (!anio || !desde) return onError('Falta el año escolar', 'Configura el año escolar actual antes de preparar cuentas.');
+    // Sin mensualidad (importado de la lista) no se crean meses: avisar en vez de preparar a medias.
+    if (!(Number(estudiante.tarifa_mensual) > 0) && Number(estudiante.beca_pct || 0) < 100) {
+      return onError('Falta la mensualidad', `Completa la mensualidad de ${estudiante.nombres} en su ficha (Estudiantes) antes de preparar la cuenta.`);
+    }
     setGuardando(true);
     const { data, error } = await supabase.rpc('edu_preparar_cuenta', { p_estudiante: estudiante.id, p_desde: desde || null, p_anuales: anuales });
     setGuardando(false);

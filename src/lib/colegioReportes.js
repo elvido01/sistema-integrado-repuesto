@@ -3,7 +3,7 @@
 import { supabase } from '@/lib/customSupabaseClient';
 import { printHtmlSmart } from '@/lib/printHtmlSmart';
 import { estadoCuentaFamiliaHTML, facturaFiscalColegioHTML, fichaInscripcionHTML } from '@/lib/printColegio';
-import { diasAtraso, tramoAntiguedad, hoyRD, pendienteDe, fechaLocalRD, edadDe, ESTADO_ESTUDIANTE, TANDAS_NOMBRE as TANDAS } from '@/lib/colegio';
+import { reglaRecargoTexto, diasAtraso, tramoAntiguedad, hoyRD, pendienteDe, fechaLocalRD, edadDe, ESTADO_ESTUDIANTE, TANDAS_NOMBRE as TANDAS } from '@/lib/colegio';
 
 const ORDEN_TIPO = { reservacion: 1, inscripcion: 1, utileria: 2, bilingue: 3, mensualidad: 4, sala_tareas: 5, recargo: 6, otro: 7 };
 
@@ -62,7 +62,9 @@ export async function datosEstadoCuenta(familiaId, tenantId) {
         const pend = pendienteDe(c);
         const desde = c.vence || fechaLocalRD(c.created_at);   // hora local, igual que el reporte
         return {
-          descripcion: c.descripcion, anio: c.anio_id !== actual?.id ? anios.get(c.anio_id)?.nombre : '',
+          // Saldado sin recibo: se pagó en papel antes de entrar al sistema.
+          descripcion: c.saldado_antes ? `${c.descripcion} (pagado antes del sistema)` : c.descripcion,
+          anio: c.anio_id !== actual?.id ? anios.get(c.anio_id)?.nombre : '',
           moneda: c.moneda, monto: Number(c.monto), descuento: Number(c.descuento), pagado: Number(c.pagado),
           pendiente: pend, estado: c.estado,
           // la reservación del año próximo no vence todavía
@@ -79,8 +81,7 @@ export async function datosEstadoCuenta(familiaId, tenantId) {
   return {
     colegio, fecha: hoy, estudiantes, pagos: pa.data || [],
     familia: { ...f, telefono: f.tutor_telefono || f.madre_celular || f.padre_celular || f.telefono_residencial || '' },
-    reglaRecargo: cfg.data?.recargo_monto > 0
-      ? `Pagos del 1 al ${dia} de cada mes; desde el día 1 del mes siguiente se aplica un recargo de RD$${Number(cfg.data.recargo_monto).toLocaleString('en-US')}.` : '',
+    reglaRecargo: reglaRecargoTexto(cfg.data, dia),
   };
 }
 

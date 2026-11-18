@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import EstudianteFormModal from '@/components/colegio/EstudianteFormModal';
 import ImportarEstudiantesModal from '@/components/colegio/ImportarEstudiantesModal';
+import CuentaInicialDialog from '@/components/colegio/CuentaInicialDialog';
 import { edadDe, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 import { imprimirFichaEstudiante } from '@/lib/colegioReportes';
 
@@ -52,8 +53,22 @@ export default function EstudiantesPage() {
     finally { setImprimiendo(null); }
   };
   const [retirando, setRetirando] = useState(null);
+  const [cuentaInicial, setCuentaInicial] = useState(null);   // estudiante al que se le pregunta lo ya pagado
 
   const error = useCallback((t, d) => toast({ title: t, description: d ? String(d) : undefined, variant: 'destructive' }), [toast]);
+
+  // Al terminar la ficha: si está activo, tiene mensualidad y todavía no tiene
+  // la cuenta del año, se pregunta qué pagó antes del sistema.
+  const trasGuardarFicha = useCallback(async (id) => {
+    if (!id || !anioActual?.id) return;
+    const [{ data: est }, { count }] = await Promise.all([
+      supabase.from('edu_estudiantes').select('id, nombres, apellidos, condicion, tarifa_mensual, beca_pct, sala_tareas, estado')
+        .eq('id', id).eq('tenant_id', tenantId).maybeSingle(),
+      supabase.from('edu_cargos').select('id', { count: 'exact', head: true })
+        .eq('estudiante_id', id).eq('anio_id', anioActual.id).neq('estado', 'anulado'),
+    ]);
+    if (est && est.estado === 'activo' && Number(est.tarifa_mensual) > 0 && count === 0) setCuentaInicial(est);
+  }, [anioActual, tenantId]);
 
   const cargar = useCallback(async () => {
     if (!tenantId) return;
@@ -264,7 +279,21 @@ export default function EstudiantesPage() {
         <EstudianteFormModal
           open={!!ficha} onClose={() => setFicha(null)} estudiante={ficha.id ? ficha : null}
           cursos={cursos} tarifas={tarifas} anioActual={anioActual} cfg={cfg} tenantId={tenantId}
-          onError={error} onSaved={(msg) => { setFicha(null); toast({ title: msg }); cargar(); }}
+          onError={error} onSaved={(msg, id) => { setFicha(null); toast({ title: msg }); cargar(); trasGuardarFicha(id); }}
+        />
+      )}
+      {cuentaInicial && anioActual && (
+        <CuentaInicialDialog
+          estudiante={cuentaInicial} anio={anioActual} tenantId={tenantId}
+          onClose={() => setCuentaInicial(null)} onError={error}
+          onDone={(r) => {
+            setCuentaInicial(null);
+            toast({
+              title: 'Cuenta del año lista',
+              description: `${r?.saldados || 0} pagados antes del sistema · debe hoy RD$${Number(r?.debe || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                + (Number(r?.debe_usd) > 0 ? ` + US$${Number(r.debe_usd).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''),
+            });
+          }}
         />
       )}
       <ImportarEstudiantesModal
