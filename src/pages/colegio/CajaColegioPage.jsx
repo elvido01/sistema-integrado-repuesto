@@ -709,11 +709,12 @@ export default function CajaColegioPage() {
                 <div className="text-xs font-bold text-gray-500 uppercase">Formas de pago</div>
                 {formas.map((f, i) => (
                   <div key={i} className="rounded-md border border-gray-200 p-2 space-y-2">
-                    <div className="flex gap-2">
-                      <select className={`${campo} flex-1`} value={f.forma} onChange={(e) => setForma(i, 'forma', e.target.value)}>
+                    {/* min-w-0 + wrap: en pantallas chicas el monto bajaba fuera del cuadro */}
+                    <div className="flex flex-wrap gap-2">
+                      <select className={`${campo} flex-1 min-w-[7rem]`} value={f.forma} onChange={(e) => setForma(i, 'forma', e.target.value)}>
                         {FORMAS.map((x) => <option key={x} value={x}>{x}</option>)}
                       </select>
-                      <MontoInput className={`${campo} w-32 text-right`} value={f.monto} onChange={(v) => setForma(i, 'monto', v)} />
+                      <MontoInput className={`${campo} flex-1 min-w-[6rem] max-w-[9rem] text-right`} value={f.monto} onChange={(v) => setForma(i, 'monto', v)} />
                       {formas.length > 1 && <Button size="sm" variant="ghost" onClick={() => setFormas((fs) => fs.filter((_, j) => j !== i))}><Trash2 className="w-4 h-4" /></Button>}
                     </div>
                     {conBanco(f.forma) && (
@@ -735,7 +736,7 @@ export default function CajaColegioPage() {
 
                 <div className="flex items-center gap-2 text-sm">
                   <Printer className="w-4 h-4 text-gray-500" />
-                  <select className={`${campo} flex-1`} value={formato} onChange={(e) => cambiarFormato(e.target.value)}>
+                  <select className={`${campo} flex-1 min-w-0`} value={formato} onChange={(e) => cambiarFormato(e.target.value)}>
                     <option value="ticket">Imprimir ticket</option>
                     <option value="hoja">Imprimir hoja (con tarjeta del año)</option>
                     <option value="ninguno">No imprimir</option>
