@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "cc914b5b6e7cc4b5",
+    "src/pages/colegio/CajaColegioPage.jsx": "b9ccd9d2ab7f3435",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -452,18 +452,6 @@
     "sql/edu_caja_solo_cobra_ajustes.sql": "b79f4962ece6491a"
   },
   "historial": [
-    {
-      "fecha": "2026-11-04",
-      "nota": "code-review high: 10 hallazgos. Arreglados: centinela_orden_automatica_muda salta por encargo; trigger solo marca/desmarca en el CAMBIO de decision (regrabar no remarca; pedir_hoy desmarca) con simulacro OK; fallback de decisiones no borra en CHECK 23514; banco no se arrastra a pago en efectivo; etiqueta y modulo 'comision' en Cuentas Bancarias; solo_por_encargo fuera de restFormData y cargado en populateForm. No aplican: pendiente_ult_compra se deja volver (lo encargado que no llego sigue debiendose); DO del CHECK verificado en prod (un solo CHECK de origen_tipo); anulacion de comision no existe en la UI.",
-      "archivos": [
-        "sql/comision_transferencia_sale_del_banco.sql",
-        "sql/orden_compra_por_encargo_ajustes.sql",
-        "sql/orden_compra_solo_por_encargo.sql",
-        "src/pages/CuentasBancariasPage.jsx",
-        "src/pages/OrdenCompraPage.jsx",
-        "src/pages/PagoComisionesPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-04",
       "nota": "code-review high x2 (20 hallazgos): ambiente decide modo; requisitos al encender (E32 obligatoria, E31/E34 y municipio como aviso); corte produccion_desde en la cola en vez de marcar docs; cert nuevo en produccion solo revisa cert y no pisa el viejo (nombre unico + borrado del sobrante); merge sin nulls ni metadata vieja; activo respetado + dgii_activar; avisos unificados y refresco silencioso. Pendiente menor: el .p12 se abre 2 veces al guardar",
@@ -979,6 +967,13 @@
       "archivos": [
         "sql/edu_caja_solo_cobra.sql",
         "sql/edu_caja_solo_cobra_ajustes.sql",
+        "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-18",
+      "nota": "code-review high: 7 hallazgos de diseño en la fila de formas de pago (botón borrar solo, monto tope, Efectivo en dólares cortado, comentario, TOTAL/Suman sin wrap, select de impresión); corregidos y verificados con maqueta a 230/270/320/420 px",
+      "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }
