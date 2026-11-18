@@ -24,7 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { printHtmlSmart, isSilentPrintEnabled } from '@/lib/printHtmlSmart';
 import { reciboColegioTicketHTML, reciboColegioHojaHTML, numeroRecibo } from '@/lib/printColegio';
-import { mesesDelAnio, MESES, reglaRecargoTexto, hoyRD, pendienteDe, quitarTildes, TANDAS_NOMBRE as TANDAS, ESTADO_ESTUDIANTE } from '@/lib/colegio';
+import { mesesDelAnio, MESES, reglaRecargoTexto, fichaIncompleta, hoyRD, pendienteDe, quitarTildes, TANDAS_NOMBRE as TANDAS, ESTADO_ESTUDIANTE } from '@/lib/colegio';
 
 const n2 = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const campo = 'h-9 rounded-md border border-gray-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
@@ -259,8 +259,9 @@ export default function CajaColegioPage() {
       // trae de más; una coma o un punto no cuentan.
       const palabras = palabrasDeBusqueda(q);
       if (!esNum && !palabras.length) { if (yo === busquedaRef.current) setResultados([]); return; }
-      let qe = supabase.from('edu_estudiantes').select('id, nombres, apellidos, matricula, familia_id, curso_id, estado').eq('tenant_id', tenantId);
-      let qf = supabase.from('edu_familias').select('id, nombre, madre_nombre, padre_nombre, tutor_nombre').eq('tenant_id', tenantId);
+      let qe = supabase.from('edu_estudiantes').select('id, nombres, apellidos, matricula, familia_id, curso_id, estado, tarifa_mensual, beca_pct').eq('tenant_id', tenantId);
+      // Con los hijos embebidos: así se sabe en la misma consulta si alguno no tiene tarifa.
+      let qf = supabase.from('edu_familias').select('id, nombre, madre_nombre, padre_nombre, tutor_nombre, edu_estudiantes(estado, tarifa_mensual, beca_pct)').eq('tenant_id', tenantId);
       if (esNum) qe = qe.eq('matricula', Number(q));
       else for (const w of palabras.map(patronSinTildes)) {
         qe = qe.or(`nombres.imatch.${w},apellidos.imatch.${w}`);
@@ -271,8 +272,8 @@ export default function CajaColegioPage() {
         esNum || !palabras.length ? Promise.resolve({ data: [] }) : qf.order('nombre').limit(8),
       ]);
       const r = [
-        ...(es.data || []).map((e) => ({ tipo: 'est', id: e.id, familia_id: e.familia_id, titulo: `${e.nombres} ${e.apellidos}`, sub: `Mat. ${e.matricula} · ${cursos.get(e.curso_id) || ''}${e.estado !== 'activo' ? ` · ${ESTADO_ESTUDIANTE[e.estado] || e.estado}` : ''}` })),
-        ...(fa.data || []).map((f) => ({ tipo: 'fam', id: f.id, familia_id: f.id, titulo: `Familia ${f.nombre}`, sub: [f.madre_nombre, f.padre_nombre, f.tutor_nombre].filter(Boolean).join(' / ') })),
+        ...(es.data || []).map((e) => ({ tipo: 'est', id: e.id, familia_id: e.familia_id, titulo: `${e.nombres} ${e.apellidos}`, sub: `Mat. ${e.matricula} · ${cursos.get(e.curso_id) || ''}${e.estado !== 'activo' ? ` · ${ESTADO_ESTUDIANTE[e.estado] || e.estado}` : ''}`, incompleta: fichaIncompleta(e) })),
+        ...(fa.data || []).map((f) => ({ tipo: 'fam', id: f.id, familia_id: f.id, titulo: `Familia ${f.nombre}`, sub: [f.madre_nombre, f.padre_nombre, f.tutor_nombre].filter(Boolean).join(' / '), incompleta: (f.edu_estudiantes || []).some(fichaIncompleta) })),
       ];
       if (yo === busquedaRef.current) setResultados(r);   // una respuesta vieja no pisa la nueva
     }, 250);
@@ -497,6 +498,7 @@ export default function CajaColegioPage() {
               {resultados.map((r) => (
                 <button key={`${r.tipo}-${r.id}`} type="button" className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm" onClick={() => abrirFamilia(r.familia_id)}>
                   <b>{r.titulo}</b> <span className="text-gray-500">· {r.sub}</span>
+                  {r.incompleta && <span className="ml-2 text-[11px] font-bold uppercase bg-red-100 text-red-700 rounded px-1.5 py-0.5">{r.tipo === 'fam' ? 'Hay estudiante sin tarifa' : 'Sin tarifa seleccionada'}</span>}
                 </button>
               ))}
             </div>
@@ -523,10 +525,24 @@ export default function CajaColegioPage() {
                 <div className="text-xs text-gray-500">
                   {[familia.madre_nombre && `Madre: ${familia.madre_nombre} ${familia.madre_celular || ''}`, familia.padre_nombre && `Padre: ${familia.padre_nombre} ${familia.padre_celular || ''}`, familia.tutor_nombre && `Tutor: ${familia.tutor_nombre} ${familia.tutor_telefono || ''}`].filter(Boolean).join(' · ')}
                 </div>
-                <div className="mt-1 text-sm">
-                  Debe la familia: <b className="text-red-700">RD${n2(cargos.filter((c) => c.moneda === 'DOP').reduce((s, c) => s + pendienteDe(c), 0))}</b>
-                  {cargos.some((c) => c.moneda === 'USD' && pendienteDe(c) > 0) && <> + <b className="text-red-700">US${n2(cargos.filter((c) => c.moneda === 'USD').reduce((s, c) => s + pendienteDe(c), 0))}</b></>}
-                </div>
+                {(() => {
+                  // Lo de un estudiante sin tarifa no se puede cobrar: no entra en lo que se le pide a la familia.
+                  const sinTarifa = new Set(estudiantes.filter(fichaIncompleta).map((e) => e.id));
+                  const cobrables = cargos.filter((c) => !sinTarifa.has(c.estudiante_id));
+                  return (
+                    <div className="mt-1 text-sm">
+                      Debe la familia: <b className="text-red-700">RD${n2(cobrables.filter((c) => c.moneda === 'DOP').reduce((s, c) => s + pendienteDe(c), 0))}</b>
+                      {cobrables.some((c) => c.moneda === 'USD' && pendienteDe(c) > 0) && <> + <b className="text-red-700">US${n2(cobrables.filter((c) => c.moneda === 'USD').reduce((s, c) => s + pendienteDe(c), 0))}</b></>}
+                      {sinTarifa.size > 0 && <span className="text-xs text-gray-500"> (sin contar a quien no tiene tarifa)</span>}
+                    </div>
+                  );
+                })()}
+                {estudiantes.some(fichaIncompleta) && (
+                  <div className="mt-2 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    ⚠ <b>Estudiante no tiene tarifa seleccionada:</b>{' '}
+                    {estudiantes.filter(fichaIncompleta).map((e) => e.nombres).join(', ')}. No se le puede cobrar hasta que el encargado complete su ficha.
+                  </div>
+                )}
               </div>
 
               {estudiantes.map((e) => {
@@ -539,56 +555,77 @@ export default function CajaColegioPage() {
                 // Por confirmar: su reservación es la del año que ya corre (no anulada).
                 const reservaActual = e.estado === 'por_confirmar' ? suyos.find((c) => c.tipo === 'reservacion' && c.anio_id === anio?.id && pendienteDe(c) > 0) : null;
                 const reservaSig = suyos.find((c) => c.tipo === 'reservacion' && (anios.get(c.anio_id)?.anio_inicio ?? 0) > (anio?.anio_inicio ?? 0));
+                // Sin mensualidad: la caja no cobra ni carga nada (la base tampoco deja).
+                const incompleta = fichaIncompleta(e);
                 return (
-                  <div key={e.id} className={`bg-white border rounded-lg ${e.estado === 'por_confirmar' ? 'border-amber-300' : e.estado !== 'activo' ? 'opacity-60' : 'border-gray-200'}`}>
+                  <div key={e.id} className={`bg-white border rounded-lg ${incompleta ? 'border-red-300' : e.estado === 'por_confirmar' ? 'border-amber-300' : e.estado !== 'activo' ? 'opacity-60' : 'border-gray-200'}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b bg-gray-50 rounded-t-lg">
                       <div>
                         <b>{e.nombres} {e.apellidos}</b>
                         <span className="text-xs text-gray-500"> · Mat. {e.matricula} · {cursos.get(e.curso_id) || ''} · {TANDAS[e.tanda] || ''} · RD${n2(e.tarifa_mensual)}{Number(e.beca_pct) > 0 ? ` (beca ${Number(e.beca_pct)}%)` : ''}{e.estado !== 'activo' && e.estado !== 'por_confirmar' ? ` · ${ESTADO_ESTUDIANTE[e.estado] || e.estado}` : ''}</span>
                       </div>
                       <div className="flex flex-wrap gap-1 items-center">
+                        {incompleta && (
+                          <span className="text-xs font-bold uppercase text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">Sin tarifa seleccionada</span>
+                        )}
                         {e.estado === 'por_confirmar' && (
                           <>
-                            <span className="text-xs font-semibold text-amber-800 bg-amber-50 rounded px-2 py-1">
-                              {reservaActual ? `Por confirmar: cobra la reservación (${n2(pendienteDe(reservaActual))}) y entra al aula` : `Por confirmar en ${anio?.nombre || ''}: sigue al pagar la reservación`}
-                            </span>
-                            {!reservaActual && (
+                            {!incompleta && (
+                              <span className="text-xs font-semibold text-amber-800 bg-amber-50 rounded px-2 py-1">
+                                {reservaActual ? `Por confirmar: cobra la reservación (${n2(pendienteDe(reservaActual))}) y entra al aula` : `Por confirmar en ${anio?.nombre || ''}: sigue al pagar la reservación`}
+                              </span>
+                            )}
+                            {esDireccion && !incompleta && !reservaActual && (
                               <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={reservando === e.id} onClick={() => reservar(e)} title="Carga la reservación del año; al cobrarla completa queda confirmado, entra al aula y se le prepara la cuenta">
                                 {reservando === e.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CalendarCheck className="w-4 h-4 mr-1" />} Reservar cupo {anio?.nombre}
                               </Button>
                             )}
-                            <Button size="sm" variant="outline" disabled={confirmando === e.id} onClick={() => noSigue(e)} title="Se fue: queda retirado (lo que debe del año viejo se sigue cobrando)">
-                              {confirmando === e.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <UserMinus className="w-4 h-4 mr-1" />} No sigue
-                            </Button>
+                            {/* "No sigue" no es un cobro (se puede aunque no tenga tarifa), pero
+                                retirar es decisión de la dirección (la base lo exige). */}
+                            {esDireccion && (
+                              <Button size="sm" variant="outline" disabled={confirmando === e.id} onClick={() => noSigue(e)} title="Se fue: queda retirado (lo que debe del año viejo se sigue cobrando)">
+                                {confirmando === e.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <UserMinus className="w-4 h-4 mr-1" />} No sigue
+                              </Button>
+                            )}
                           </>
                         )}
-                        {e.estado === 'activo' && reservaSig && pendienteDe(reservaSig) <= 0 && (
+                        {!incompleta && e.estado === 'activo' && reservaSig && pendienteDe(reservaSig) <= 0 && (
                           <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 rounded px-2 py-1">✓ Cupo {anios.get(reservaSig.anio_id)?.nombre} reservado</span>
                         )}
-                        {e.estado === 'activo' && !reservaSig && (
+                        {esDireccion && !incompleta && e.estado === 'activo' && !reservaSig && (
                           <Button size="sm" variant="outline" disabled={reservando === e.id} onClick={() => reservar(e)} title="Cobrar ahora la reservación de cupo del año que viene">
                             {reservando === e.id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CalendarCheck className="w-4 h-4 mr-1" />} Reservar cupo {anioSig}
                           </Button>
                         )}
-                        {e.estado === 'activo' && (
+                        {esDireccion && !incompleta && e.estado === 'activo' && (
                           <Button size="sm" variant="outline" onClick={() => setPreparar(e)} title="Crear las mensualidades y conceptos del año">
                             <CalendarPlus className="w-4 h-4 mr-1" /> {suyos.length ? 'Completar cuenta' : 'Preparar cuenta del año'}
                           </Button>
                         )}
-                        {e.estado === 'activo' && suyos.length > 0 && (
+                        {esDireccion && !incompleta && e.estado === 'activo' && suyos.length > 0 && (
                           <Button size="sm" variant="ghost" onClick={() => setAgregar(e)} title="Agregar otro concepto"><Plus className="w-4 h-4" /></Button>
                         )}
                       </div>
                     </div>
-                    {suyos.length === 0 ? (
+                    {incompleta && (
+                      <div className="px-4 py-3 text-sm bg-red-50 text-red-800 border-b border-red-200">
+                        <b>Estudiante no tiene tarifa seleccionada.</b> No se le puede cobrar ni emitir recibo
+                        hasta que la dirección o la secretaría complete su ficha en <b>Colegio → Estudiantes</b>.
+                      </div>
+                    )}
+                    {incompleta && suyos.length === 0 ? null : suyos.length === 0 ? (
                       <div className="px-4 py-4 text-sm text-gray-500">{e.estado === 'por_confirmar'
-                        ? 'No debe nada. Para que siga, pulsa "Reservar cupo" y cobra la reservación: al quedar pagada entra al aula y se le prepara la cuenta.'
-                        : 'Este estudiante todavía no tiene la cuenta del año. Púlsale "Preparar cuenta del año".'}</div>
+                        ? (esDireccion
+                          ? 'No debe nada. Para que siga, pulsa "Reservar cupo" y cobra la reservación: al quedar pagada entra al aula y se le prepara la cuenta.'
+                          : 'No tiene la reservación cargada. La dirección la carga; la caja solo cobra.')
+                        : (esDireccion
+                          ? 'Este estudiante todavía no tiene la cuenta del año. Se crea al completar su ficha en Estudiantes ("Lo que ya pagó"), o con "Preparar cuenta del año".'
+                          : 'Este estudiante todavía no tiene la cuenta del año: se crea al completar su ficha en Estudiantes. La caja solo cobra lo que ya está cargado.')}</div>
                     ) : (
                       <div className="px-4 py-2">
                         {hayMensPend && Number(cfg?.descuento_anual_pct) > 0 && (
                           <label className="flex items-center gap-2 text-sm py-1 text-emerald-800">
-                            <input type="checkbox" checked={!!anioCompleto[e.id]} onChange={(ev) => marcarAnioCompleto(e, ev.target.checked)} />
+                            <input type="checkbox" checked={!!anioCompleto[e.id]} disabled={incompleta} onChange={(ev) => marcarAnioCompleto(e, ev.target.checked)} />
                             Pagar todas las mensualidades que faltan con {Number(cfg.descuento_anual_pct)}% de descuento
                           </label>
                         )}
@@ -602,7 +639,7 @@ export default function CajaColegioPage() {
                               const otroAnio = c.anio_id !== anio?.id ? anios.get(c.anio_id)?.nombre : null;
                               return (
                                 <tr key={c.id} className="border-b last:border-0">
-                                  <td className="py-1.5 w-8"><input type="checkbox" checked={marcado} disabled={delAnioCompleto} onChange={() => alternar(c)} /></td>
+                                  <td className="py-1.5 w-8"><input type="checkbox" checked={marcado} disabled={delAnioCompleto || incompleta} onChange={() => alternar(c)} /></td>
                                   <td className={vencido ? 'text-red-700' : ''}>
                                     {c.descripcion}{c.es_tercero ? <span className="text-[10px] text-gray-400"> (se le paga a la compañía)</span> : ''}
                                     {otroAnio && c.tipo !== 'reservacion' && <span className="ml-1 text-[10px] font-bold uppercase bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">año {otroAnio}</span>}
@@ -770,11 +807,11 @@ function PrepararCuentaDialog({ estudiante, anio, onClose, onDone, onError }) {
   const ok = async () => {
     if (!anio || !desde) return onError('Falta el año escolar', 'Configura el año escolar actual antes de preparar cuentas.');
     // Sin mensualidad (importado de la lista) no se crean meses: avisar en vez de preparar a medias.
-    if (!(Number(estudiante.tarifa_mensual) > 0) && Number(estudiante.beca_pct || 0) < 100) {
-      return onError('Falta la mensualidad', `Completa la mensualidad de ${estudiante.nombres} en su ficha (Estudiantes) antes de preparar la cuenta.`);
+    if (fichaIncompleta(estudiante)) {
+      return onError('Estudiante no tiene tarifa seleccionada', `Completa la ficha de ${estudiante.nombres} en Estudiantes antes de preparar la cuenta.`);
     }
     setGuardando(true);
-    const { data, error } = await supabase.rpc('edu_preparar_cuenta', { p_estudiante: estudiante.id, p_desde: desde || null, p_anuales: anuales });
+    const { data, error } = await supabase.rpc('edu_completar_cuenta', { p_estudiante: estudiante.id, p_desde: desde || null, p_anuales: anuales });
     setGuardando(false);
     if (error) return onError('No se pudo preparar la cuenta', error.message);
     return onDone(data);

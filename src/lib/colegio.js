@@ -148,7 +148,13 @@ export function leerPlantillaEstudiantes(filas, cursos) {
   return { familias, errores };
 }
 
-/** Hoy en Santo Domingo (YYYY-MM-DD). */
+/** Ficha incompleta: sin mensualidad (el Centenario entró a mitad de año con
+ *  la lista sin tarifas). No se le cobra hasta que la dirección o secretaría
+ *  complete la ficha. La beca 100% sí es legítima. Misma regla que la base
+ *  (private.edu_ficha_incompleta). */
+export const fichaIncompleta = (e) => ['activo', 'por_confirmar'].includes(e?.estado)
+  && !(Number(e?.tarifa_mensual) > 0) && Number(e?.beca_pct || 0) < 100;
+
 /** La regla del recargo como se le explica a la familia (recibo y estado de
  *  cuenta). recargo_meses: cuántos meses se juntan (Centenario: 2). */
 export function reglaRecargoTexto(cfg, dia) {
@@ -161,6 +167,7 @@ export function reglaRecargoTexto(cfg, dia) {
     : `Pagos del 1 al ${dia} de cada mes; si se juntan ${meses} meses sin pagar, se aplica un recargo de ${rd} por cada mes atrasado.`;
 }
 
+/** Hoy en Santo Domingo (YYYY-MM-DD). */
 export const hoyRD = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
 /** Fecha local de Santo Domingo de un timestamptz (no la de UTC). */
 export const fechaLocalRD = (ts) => (ts ? new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }) : '');

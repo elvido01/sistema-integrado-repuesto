@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "2c8ff47f1c36bc9c",
+    "src/pages/colegio/CajaColegioPage.jsx": "cc914b5b6e7cc4b5",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -447,17 +447,11 @@
     "src/lib/facturaPrecioNeto.js": "dae79ed4d30cd0cc",
     "sql/colegio_prueba_borrar_ventas.sql": "887cb518bbbcba50",
     "sql/edu_cuenta_inicial_ajustes.sql": "02e57d2fc9b5cd52",
-    "sql/edu_cuenta_inicial_pagado_antes.sql": "1ea5cbb78c51f1a0"
+    "sql/edu_cuenta_inicial_pagado_antes.sql": "1ea5cbb78c51f1a0",
+    "sql/edu_caja_solo_cobra.sql": "b31c31e4917e454b",
+    "sql/edu_caja_solo_cobra_ajustes.sql": "b79f4962ece6491a"
   },
   "historial": [
-    {
-      "fecha": "2026-11-04",
-      "nota": "code-review high: 10 hallazgos; arreglados lineas de servicio que se fundian al pasar por cotizacion/pedido (addItem con naturaleza), inmueble sale del inventario, ITBIS 0 del inmueble al recargar, orden de compra ignora servicios, cantidad fija en lineas de servicio, cambio de servicio reemplaza desc/monto, recarga por apertura con tenant_id y aviso si falla el catalogo",
-      "archivos": [
-        "mobile/app/(tabs)/orden-compra.tsx",
-        "mobile/app/(tabs)/pos.tsx"
-      ]
-    },
     {
       "fecha": "2026-11-04",
       "nota": "code-review high: 10 hallazgos. Arreglados: centinela_orden_automatica_muda salta por encargo; trigger solo marca/desmarca en el CAMBIO de decision (regrabar no remarca; pedir_hoy desmarca) con simulacro OK; fallback de decisiones no borra en CHECK 23514; banco no se arrastra a pago en efectivo; etiqueta y modulo 'comision' en Cuentas Bancarias; solo_por_encargo fuera de restFormData y cargado en populateForm. No aplican: pendiente_ult_compra se deja volver (lo encargado que no llego sigue debiendose); DO del CHECK verificado en prod (un solo CHECK de origen_tipo); anulacion de comision no existe en la UI.",
@@ -976,6 +970,15 @@
       "archivos": [
         "sql/edu_cuenta_inicial_ajustes.sql",
         "sql/edu_cuenta_inicial_pagado_antes.sql",
+        "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-18",
+      "nota": "code-review high colegio: sin tarifa no se cobra (trigger en edu_pago_lineas + mensajes 'estudiante no tiene tarifa seleccionada') y la caja solo cobra (preparar/reservar/agregar solo direccion, abrir reservaciones); hallazgos corregidos: secretaria con Estudiantes puede cuenta inicial, por confirmar en abrir, motivo de fallo, No sigue solo direccion, busqueda en 1 consulta, pruebas sin conteos fijos; SQL probados",
+      "archivos": [
+        "sql/edu_caja_solo_cobra.sql",
+        "sql/edu_caja_solo_cobra_ajustes.sql",
         "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }

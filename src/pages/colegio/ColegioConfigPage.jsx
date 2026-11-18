@@ -601,6 +601,8 @@ Para pasar al año siguiente usa "Cambio de año escolar".
         <Button size="sm" variant="outline" onClick={empezar}><Plus className="w-4 h-4 mr-1" /> Crear el año escolar siguiente</Button>
       )}
 
+      {actual && esDireccion && <AbrirReservaciones actual={actual} error={error} toast={toast} />}
+
       {actual && esDireccion && (
         <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 space-y-2">
           <div className="font-bold text-amber-900">Cambio de año escolar</div>
@@ -622,6 +624,39 @@ Para pasar al año siguiente usa "Cambio de año escolar".
             recargar();
           }} />
       )}
+    </div>
+  );
+}
+
+// ── Abrir reservaciones del año que viene (17/11/2026) ──────────────────
+// La caja solo cobra: la dirección carga de una vez la reservación de cupo a
+// todos los activos con tarifa que siguen (6to de secundaria se gradúa).
+// Se puede pulsar otra vez: solo carga a quien no la tiene todavía.
+function AbrirReservaciones({ actual, error, toast }) {
+  const [abriendo, setAbriendo] = useState(false);
+  const siguiente = `${actual.anio_inicio + 1}-${actual.anio_inicio + 2}`;
+  const abrir = async () => {
+    if (!window.confirm(`Se le cargará la reservación de cupo ${siguiente} a todos los estudiantes activos con tarifa (menos los que se gradúan). La caja podrá cobrarla. ¿Seguir?`)) return;
+    setAbriendo(true);
+    const { data, error: e } = await supabase.rpc('edu_abrir_reservaciones');
+    setAbriendo(false);
+    if (e) return error('No se pudieron abrir las reservaciones', e.message);
+    return toast({
+      title: `Reservaciones ${data?.anio || siguiente}: ${data?.creadas || 0} cargadas`,
+      description: `${data?.ya_tenian || 0} ya la tenían · ${data?.se_graduan || 0} se gradúan · ${data?.sin_tarifa || 0} sin tarifa (se les carga al completar la ficha y pulsar otra vez)`
+        + (data?.no_se_pudo ? ` · ${data.no_se_pudo} no se pudieron` : ''),
+    });
+  };
+  return (
+    <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
+      <div className="font-bold text-emerald-900">Reservaciones {siguiente}</div>
+      <p className="text-sm text-emerald-900">
+        La caja solo cobra lo que ya está cargado. Pulsa aquí para cargarle la reservación de cupo {siguiente} a todos los
+        estudiantes activos con tarifa. Puedes pulsarlo otra vez cuando completes más fichas: solo carga a quien no la tiene.
+      </p>
+      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={abrir} disabled={abriendo}>
+        {abriendo ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null} Abrir reservaciones {siguiente}
+      </Button>
     </div>
   );
 }

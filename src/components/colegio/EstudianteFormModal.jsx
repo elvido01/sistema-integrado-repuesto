@@ -199,6 +199,11 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
     if (!fam.madre_nombre?.trim() && !fam.padre_nombre?.trim() && !fam.tutor_nombre?.trim()) {
       return onError('Faltan los padres', 'Escribe al menos la madre, el padre o el tutor.');
     }
+    // Pedido del colegio (17/11/2026): el teléfono de la madre Y el del padre
+    // son obligatorios, aunque sea el mismo número.
+    const tieneTel = (k) => [fam[`${k}_celular`], fam[`${k}_telefono`]].some((t) => String(t || '').replace(/\D/g, '').length >= 10);
+    if (!tieneTel('madre')) return onError('Falta el teléfono de la madre', 'Escribe el celular o el teléfono de la madre (puede ser el mismo del padre).');
+    if (!tieneTel('padre')) return onError('Falta el teléfono del padre', 'Escribe el celular o el teléfono del padre (puede ser el mismo de la madre).');
 
     setGuardando(true);
     try {
@@ -416,7 +421,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
                   </Campo>
                   <Campo label="Ocupación" className="md:col-span-1"><input className={campo} value={fam[`${k}_profesion`]} onChange={(e) => f(`${k}_profesion`, e.target.value)} /></Campo>
                   <Campo label="Lugar de trabajo" className="md:col-span-2"><input className={campo} value={fam[`${k}_trabajo`]} onChange={(e) => f(`${k}_trabajo`, e.target.value)} /></Campo>
-                  <Campo label="Celular" className="md:col-span-2"><input {...TEL} className={campo} value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, fmtTel(e.target.value))} /></Campo>
+                  <Campo label="Celular * (o el teléfono)" className="md:col-span-2"><input {...TEL} className={campo} placeholder="Puede ser el mismo del otro" value={fam[`${k}_celular`]} onChange={(e) => f(`${k}_celular`, fmtTel(e.target.value))} /></Campo>
                   <Campo label="Teléfono" className="md:col-span-2"><input {...TEL} className={campo} value={fam[`${k}_telefono`]} onChange={(e) => f(`${k}_telefono`, fmtTel(e.target.value))} /></Campo>
                   <Campo label="Correo" className="md:col-span-2"><input type="email" className={campo} value={fam[`${k}_correo`]} onChange={(e) => f(`${k}_correo`, e.target.value)} /></Campo>
                 </div>
