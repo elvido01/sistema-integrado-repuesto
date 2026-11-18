@@ -44,8 +44,8 @@ describe('colegio: estudiantes', () => {
     const fila = (o) => COLUMNAS_PLANTILLA.map((k) => o[k] ?? '');
     const filas = [
       COLUMNAS_PLANTILLA,
-      fila({ 'Familia (apellidos)': 'Pérez Santana', Nombres: 'María', Apellidos: 'Pérez Santana', Curso: '3ro de primaria', Tanda: 'Matutina', Mensualidad: '5,900', 'Madre': 'Ana Santana', 'Sala de Tareas (si/no)': 'Sí' }),
-      fila({ 'Familia (apellidos)': 'perez santana', Nombres: 'José', Apellidos: 'Pérez Santana', Curso: '1ro de Secundaria', Mensualidad: 5900, 'Beca %': 50 }),
+      fila({ 'Fecha de nacimiento (dd/mm/aaaa)': '05/03/2016', 'Teléfono madre': '809-000-0000', Padre: 'José Pérez', 'Teléfono padre': '809-000-0001', 'Familia (apellidos)': 'Pérez Santana', Nombres: 'María', Apellidos: 'Pérez Santana', Curso: '3ro de primaria', Tanda: 'Matutina', Mensualidad: '5,900', 'Madre': 'Ana Santana', 'Sala de Tareas (si/no)': 'Sí' }),
+      fila({ 'Fecha de nacimiento (dd/mm/aaaa)': '05/03/2016', 'Teléfono madre': '809-000-0000', Padre: 'José Pérez', 'Teléfono padre': '809-000-0001', 'Familia (apellidos)': 'perez santana', Nombres: 'José', Apellidos: 'Pérez Santana', Curso: '1ro de Secundaria', Mensualidad: 5900, 'Beca %': 50 }),
       fila({ Nombres: 'Luis', Apellidos: 'Gómez', Curso: '1ro de Secundaria', Tanda: 'vespertina', Mensualidad: 6150 }),
       fila({ Nombres: 'Sin', Apellidos: 'Curso', Curso: 'Noveno', Mensualidad: 6150 }),
       fila({}),
