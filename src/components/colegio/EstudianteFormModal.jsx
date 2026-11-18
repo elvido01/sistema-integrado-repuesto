@@ -189,6 +189,8 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
   const guardar = async () => {
     // Validaciones de la ficha
     if (!est.nombres.trim() || !est.apellidos.trim()) return onError('Faltan datos', 'Escribe nombres y apellidos del estudiante.');
+    // Obligatoria (pedido del colegio 18/11/2026): sin ella no hay edad para el curso.
+    if (!est.fecha_nacimiento) return onError('Falta la fecha de nacimiento', 'Escribe la fecha de nacimiento del estudiante.');
     if (!est.curso_id || !est.tanda) return onError('Faltan datos', 'Escoge curso y tanda.');
     if (cupo && cupo.quedan <= 0 && ocupaLugarNuevo && ['activo', 'por_confirmar'].includes(est.estado || 'activo')) {
       return onError('Curso lleno', `${curso?.nombre || 'El curso'} ya tiene ${cupo.ocupados} de ${cupo.cupo}${cupo.por_seccion ? ` en la sección ${cupo.seccion || '(sin sección)'}` : ''}. Escoge otra tanda o sección, o sube el cupo en Configuración → Cursos.`);
@@ -277,7 +279,7 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
             <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
               <Campo label="Nombres *"><input autoFocus={!editando} className={campo} value={est.nombres} onChange={(e) => s('nombres', e.target.value)} /></Campo>
               <Campo label="Apellidos *"><input className={campo} value={est.apellidos} onChange={(e) => s('apellidos', e.target.value)} /></Campo>
-              <Campo label={`Fecha de nacimiento${edad != null ? ` · ${edad} años` : ''}`}>
+              <Campo label={`Fecha de nacimiento *${edad != null ? ` · ${edad} años` : ''}`}>
                 <input type="date" min="1990-01-01" max={new Date().toISOString().slice(0, 10)} className={campo} value={est.fecha_nacimiento || ''} onChange={(e) => s('fecha_nacimiento', e.target.value)} />
               </Campo>
               <Campo label="Lugar de nacimiento"><input className={campo} value={est.lugar_nacimiento} onChange={(e) => s('lugar_nacimiento', e.target.value)} /></Campo>
