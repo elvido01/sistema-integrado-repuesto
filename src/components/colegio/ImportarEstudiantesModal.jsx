@@ -124,7 +124,7 @@ export default function ImportarEstudiantesModal({ open, onClose, cursos, tarifa
         <DialogHeader><DialogTitle>Importar estudiantes desde Excel</DialogTitle></DialogHeader>
         <ol className="text-sm text-gray-700 list-decimal pl-5 space-y-1">
           <li>Baja la plantilla: trae los cursos y tarifas de tu colegio en la hoja "Ayuda".</li>
-          <li>Llénala en tu computadora (una fila por estudiante; los hermanos con la misma "Familia").</li>
+          <li>Llénala en tu computadora (una fila por estudiante; los hermanos con la misma "Familia"). Obligatorios: nombres, apellidos, fecha de nacimiento, curso, tanda, mensualidad, madre/padre/tutor y los teléfonos de la madre y del padre.</li>
           <li>Súbela aquí. Antes de guardar verás qué se va a crear y qué filas tienen errores.</li>
         </ol>
         <p className="text-xs text-gray-500">

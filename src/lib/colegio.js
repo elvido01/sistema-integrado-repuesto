@@ -124,8 +124,14 @@ export function leerPlantillaEstudiantes(filas, cursos) {
     const fechaTxt = c('Fecha de nacimiento (dd/mm/aaaa)');
     const fecha = fechaDeExcel(fechaTxt);
     if (fechaTxt !== '' && fechaTxt != null && !fecha) { errores.push({ fila: filaN, motivo: `Fecha no válida: "${fechaTxt}"` }); return; }
+    // Lo obligatorio de la ficha también aquí (pedido del colegio 18/11/2026).
+    if (!fecha) { errores.push({ fila: filaN, motivo: 'Falta la fecha de nacimiento' }); return; }
 
     const madre = texto(c('Madre')); const padre = texto(c('Padre'));
+    if (!madre && !padre && !texto(c('Tutor'))) { errores.push({ fila: filaN, motivo: 'Faltan los padres: escribe al menos la madre, el padre o el tutor' }); return; }
+    const telOk = (k) => String(c(k) ?? '').replace(/\D/g, '').length >= 10;
+    if (!telOk('Teléfono madre')) { errores.push({ fila: filaN, motivo: 'Falta el teléfono de la madre (puede ser el mismo del padre)' }); return; }
+    if (!telOk('Teléfono padre')) { errores.push({ fila: filaN, motivo: 'Falta el teléfono del padre (puede ser el mismo de la madre)' }); return; }
     const claveFam = quitarTildes(c('Familia (apellidos)')) || quitarTildes(`${apellidos}|${madre || ''}|${padre || ''}`);
     if (!familias.has(claveFam)) {
       familias.set(claveFam, {
