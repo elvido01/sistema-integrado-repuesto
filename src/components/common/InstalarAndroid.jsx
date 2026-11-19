@@ -2,12 +2,13 @@
 // Botón "Instalar en Android" (19/11/2026) — login e Inicio
 // ---------------------------------------------------------------------
 // La app está en PRUEBA CERRADA en Google Play: para publicarla Google exige
-// 12 testers durante 14 días. Play solo acepta grupos de Google como testers
-// por API, así que el camino sin intervención es un grupo abierto:
-//   1. La persona deja su Gmail (android_testers, para contar y escribirle).
-//   2. Se une al grupo  → 3. acepta la prueba → 4. instala.
-// El grupo está puesto como tester de la pista cerrada con
-// scripts/play-testers.mjs. Ver sql/android_testers.sql.
+// 12 testers durante 14 días. Camino A (todo automático):
+//   1. La persona deja su Gmail (RPC registrar_tester_android).
+//   2. La función android-tester lo mete al grupo de Google que es tester de
+//      la pista cerrada (Cloud Identity) y le manda el enlace por correo.
+//   3. Ella acepta la prueba e instala. Si falta configuración, queda
+//      pendiente y le llega el correo cuando se habilite.
+// Ver sql/android_testers*.sql y scripts/play-testers.mjs.
 // =====================================================================
 import React, { useState } from 'react';
 import { Loader2, ExternalLink, CheckCircle2 } from 'lucide-react';
@@ -17,7 +18,6 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 export const PAQUETE_ANDROID = 'com.motoflow.app';
-export const GRUPO_TESTERS = 'motoflow-android';
 const META_TESTERS = 12;
 const CLAVE_LOCAL = 'motoflow_tester_android';
 
@@ -48,6 +48,7 @@ export default function InstalarAndroid({ origen = 'login', className = '' }) {
   const [abierto, setAbierto] = useState(false);
   const [email, setEmail] = useState(leerLocal);
   const [registrado, setRegistrado] = useState(() => !!leerLocal());
+  const [estado, setEstado] = useState(null);   // {en_grupo, correo_enviado, pendiente} de android-tester
   const [total, setTotal] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState('');
@@ -62,13 +63,29 @@ export default function InstalarAndroid({ origen = 'login', className = '' }) {
     guardarLocal(email.trim().toLowerCase());
     setTotal(data.total);
     setRegistrado(true);
+    await procesar(email.trim().toLowerCase());
+  };
+
+  // Grupo de testers + correo con el enlace (en el servidor). Si la función
+  // no responde, el correo ya quedó anotado: se trata como pendiente.
+  const procesar = async (correo) => {
+    setEnviando(true);
+    const { data } = await supabase.functions.invoke('android-tester', { body: { email: correo } }).catch(() => ({ data: null }));
+    setEnviando(false);
+    setEstado(data?.ok ? data : { pendiente: true });
+  };
+
+  const abrir = () => {
+    setAbierto(true);
+    const guardado = leerLocal();
+    if (guardado && !estado) procesar(guardado);
   };
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setAbierto(true)}
+        onClick={abrir}
         className={`inline-flex items-center gap-2 rounded-lg bg-black px-3 py-1.5 text-left text-white shadow-sm hover:bg-gray-800 ${className}`}
         title="Instalar MotoFlow en Android"
       >
@@ -102,19 +119,30 @@ export default function InstalarAndroid({ origen = 'login', className = '' }) {
             </form>
           ) : (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>
-                  Anotado: <b>{email}</b>.{total ? ` Ya van ${total} de ${META_TESTERS} testers.` : ''} Entra con esa misma cuenta de Google en los tres pasos.
-                </span>
-              </div>
-              <Paso n={1} titulo="Únete al grupo de prueba" texto='Pulsa "Unirse al grupo".'
-                href={`https://groups.google.com/g/${GRUPO_TESTERS}`} boton="Abrir el grupo" />
-              <Paso n={2} titulo="Acepta la prueba" texto='Pulsa "Convertirse en tester". Puede tardar unos minutos después del paso 1.'
-                href={`https://play.google.com/apps/testing/${PAQUETE_ANDROID}`} boton="Aceptar la prueba" />
-              <Paso n={3} titulo="Instala MotoFlow" texto="Déjala instalada al menos 14 días y ábrela de vez en cuando: así nos ayudas a publicarla."
-                href={`https://play.google.com/store/apps/details?id=${PAQUETE_ANDROID}`} boton="Ir a la Play Store" />
-              <button type="button" className="text-[11px] text-gray-400 underline" onClick={() => { setRegistrado(false); setTotal(null); }}>
+              {enviando || !estado ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Preparando tu acceso…</div>
+              ) : estado.pendiente ? (
+                <div className="rounded-md bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                  <b>¡Anotado!</b>{total ? ` Ya van ${total} de ${META_TESTERS} testers.` : ''} Te mandaremos el enlace a <b>{email}</b> en cuanto quede habilitado. Revisa también la carpeta de spam.
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      {estado.correo_enviado
+                        ? <>Te enviamos el enlace a <b>{email}</b>. Ábrelo desde tu <b>teléfono Android</b>.</>
+                        : <>Listo: <b>{email}</b> ya es tester.</>}
+                      {total ? ` Ya van ${total} de ${META_TESTERS} testers.` : ''} O hazlo desde aquí, con esa misma cuenta de Google:
+                    </span>
+                  </div>
+                  <Paso n={1} titulo="Acepta la prueba" texto='Pulsa "Convertirse en tester". Si dice que no tienes acceso, espera unos minutos.'
+                    href={`https://play.google.com/apps/testing/${PAQUETE_ANDROID}`} boton="Aceptar la prueba" />
+                  <Paso n={2} titulo="Instala MotoFlow" texto="Déjala instalada al menos 14 días y ábrela de vez en cuando: así nos ayudas a publicarla."
+                    href={`https://play.google.com/store/apps/details?id=${PAQUETE_ANDROID}`} boton="Ir a la Play Store" />
+                </>
+              )}
+              <button type="button" className="text-[11px] text-gray-400 underline" onClick={() => { setRegistrado(false); setTotal(null); setEstado(null); }}>
                 Usar otro correo
               </button>
             </div>
