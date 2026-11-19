@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Save, Loader2, Building2, Upload, Image, Download } from 'lucide-react';
 import { descargarRespaldoTenant } from '@/lib/backupTenant';
 import EmpresaHermana from '@/components/configuracion/EmpresaHermana';
+import ConexionesCanales from '@/components/configuracion/ConexionesCanales';
 
 const PerfilEmpresa = () => {
   const { toast } = useToast();
@@ -315,6 +316,9 @@ const PerfilEmpresa = () => {
 
             {/* Empresa hermana: inventario y clientes compartidos */}
             <EmpresaHermana />
+
+            {/* Conexiones: WhatsApp oficial (y luego las demás redes) */}
+            <ConexionesCanales />
 
             {/* Respaldo de Datos */}
             <div className="border-t border-gray-200 pt-5">
