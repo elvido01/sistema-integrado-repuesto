@@ -9,14 +9,15 @@ import React from 'react';
 import { Star, Check } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
-import { FUNCIONES_PLAN } from '@/lib/planes';
+import { infoFuncion } from '@/lib/planes';
 
-const nombreBonito = (p) => String(p || '').toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+const nombreBonito = (p) => (String(p || '').toUpperCase() === 'BASICO' ? 'Básico'
+  : String(p || '').toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase()));
 const rd = (n) => `RD$ ${Number(n || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}`;
 
 export default function MejorarPlanModal({ abierta, funcion, plan, onCerrar, onVerPlanes }) {
   const { planes, planActual, especialVigente } = useSuscripcion();
-  const f = FUNCIONES_PLAN[funcion];
+  const f = infoFuncion(funcion);
   if (!f) return null;
   const destino = (planes || []).find((p) => String(p.nombre).toUpperCase() === String(plan).toUpperCase());
   const actual = (planes || []).find((p) => String(p.nombre).toUpperCase() === String(planActual || '').toUpperCase());

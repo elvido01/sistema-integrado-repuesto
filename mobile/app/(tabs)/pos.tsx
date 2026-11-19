@@ -184,20 +184,29 @@ export default function POSScreen() {
       }
       const tipoNcf = clienteReal && cliente?.tipo_ncf ? cliente.tipo_ncf : '02';
       let fiscal;
+      // (19/11/2026) Plan FREE: sin comprobantes fiscales (ni NCF ni e-CF); el
+      // servidor lo frena igual. Se pregunta junto con la configuración fiscal
+      // (en paralelo) para no sumar una espera más al cobro.
+      let esFree = false;
       try {
-        fiscal = await getFiscalConfig(tenantId);
+        const [cfg, plan] = await Promise.all([getFiscalConfig(tenantId), supabase.rpc('estado_prueba_pro')]);
+        fiscal = cfg;
+        esFree = plan?.data?.plan === 'FREE';
       } catch {
         // Sin saber si la empresa factura electrónico, cobrar podría sacar
         // una factura sin e-NCF en una empresa que ya está en producción.
         Alert.alert('Sin conexión', 'No se pudo confirmar la facturación electrónica de la empresa. Revisa la conexión y vuelve a cobrar.');
         return;
       }
-      const ecfProduccion = fiscal.activo && fiscal.modo === 'produccion';
+      // FREE: como si la empresa no facturara electrónico (no se emite e-CF ni
+      // en pruebas, no se pide NCF, no se exige RNC).
+      const fiscalActivo = fiscal.activo && !esFree;
+      const ecfProduccion = fiscalActivo && fiscal.modo === 'produccion';
 
       // Mismas reglas de la DGII que la web: crédito fiscal exige RNC, y
       // una factura de consumo de RD$250,000 o más exige identificar al
       // comprador (si no, la DGII la rechaza y el número queda gastado).
-      if (tipoNcf === '01' && !rncValido(cliente?.rnc)) {
+      if (!esFree && tipoNcf === '01' && !rncValido(cliente?.rnc)) {
         Alert.alert('Falta el RNC', `${cliente?.nombre || 'Este cliente'} es de crédito fiscal pero su ficha no tiene un RNC (9 dígitos) o cédula (11 dígitos) válido. Corrígelo en Clientes o vende como consumo.`);
         return;
       }
@@ -210,7 +219,7 @@ export default function POSScreen() {
       // NCF de papel. Si no hay secuencia activa, la venta sigue sin NCF +
       // alerta (igual que en la web).
       let ncfAsignado: string | null = null;
-      if (!ecfProduccion) {
+      if (!ecfProduccion && !esFree) {
         try {
           const { data: ncfResult } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: tipoNcf });
           if (ncfResult?.success) {
@@ -362,7 +371,7 @@ export default function POSScreen() {
         } catch (e: any) {
           Alert.alert('Factura grabada, e-CF no emitido', `FT-${venta.numero}: sin conexión con la DGII (${e?.message || e}). Se puede reintentar desde el Monitor DGII en la web.`);
         }
-      } else if (fiscal.activo) {
+      } else if (fiscalActivo) {
         emitirFacturaElectronica(venta.id)
           .then((r) => { if (!r.ok) console.warn('[e-CF pruebas]', r.error); })
           .catch((e) => console.warn('[e-CF pruebas]', e?.message || e));

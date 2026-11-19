@@ -17,8 +17,9 @@
 --     sin contar saldos iniciales.
 -- =====================================================================
 
--- El límite del plan vigente de la empresa (la suscripción activa o de prueba
--- más reciente; si no hay ninguna, la última que tuvo).
+-- El límite del plan vigente de la empresa: la suscripción CREADA más
+-- reciente, igual que check_suscripcion_activa (19/11: así la prueba de Pro
+-- gana a la de FREE, que vence en 100 años).
 CREATE OR REPLACE FUNCTION public._limite_plan(p_tenant uuid, p_que text)
 RETURNS integer
 LANGUAGE sql
@@ -34,7 +35,7 @@ AS $function$
     FROM public.suscripciones s
     JOIN public.planes pl ON pl.id = s.plan_id
    WHERE s.tenant_id = p_tenant
-   ORDER BY (s.estado IN ('trial', 'activo')) DESC, s.fecha_fin DESC
+   ORDER BY s.created_at DESC, s.fecha_fin DESC
    LIMIT 1
 $function$;
 REVOKE ALL ON FUNCTION public._limite_plan(uuid, text) FROM PUBLIC, anon, authenticated;
@@ -91,7 +92,7 @@ BEGIN
   SELECT pl.nombre INTO v_plan
     FROM public.suscripciones s JOIN public.planes pl ON pl.id = s.plan_id
    WHERE s.tenant_id = NEW.tenant_id
-   ORDER BY (s.estado IN ('trial', 'activo')) DESC, s.fecha_fin DESC
+   ORDER BY s.created_at DESC, s.fecha_fin DESC
    LIMIT 1;
 
   RAISE EXCEPTION USING

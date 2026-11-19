@@ -20,6 +20,7 @@ import { useFacturacion } from '@/contexts/FacturacionContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { escucharOrdenes } from '@/lib/puenteAgente';
 import { publicarDatos } from '@/lib/pantallaContexto';
@@ -34,7 +35,11 @@ import { Smartphone } from 'lucide-react';
 
 const VentasPage = () => {
   const { toast } = useToast();
-  const { user, profile, empresa, fiscalActivo, fiscalModo, tenantId } = useAuth();
+  const { user, profile, empresa, fiscalActivo: fiscalEmpresa, fiscalModo, tenantId } = useAuth();
+  // (19/11/2026) Plan FREE: sin comprobantes fiscales. Aunque le quede la
+  // configuración e-CF de la prueba, no se emite (emitir-fiscal también lo frena).
+  const { esFree } = useSuscripcion();
+  const fiscalActivo = fiscalEmpresa && !esFree;
   const grabarBtnRef = useRef(null);
   /* UI state for invoice editing search */
   const [isEditingNumero, setIsEditingNumero] = useState(false);

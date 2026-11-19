@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
+import TarjetaPlanFree from '@/components/dashboard/TarjetaPlanFree';
 
 const STORAGE_KEY = 'suscripcion_card_expanded';
 
@@ -31,6 +32,18 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
   const isSinVerificar = suscripcion?.estado === 'sin_verificar';
 
   if (loading || !suscripcion) return null;
+
+  // (19/11/2026) FREE no vence: su tarjeta muestra lo usado y la prueba de Pro.
+  if (esFree) {
+    if (compact) {
+      return (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold bg-emerald-50 border-emerald-100 text-emerald-700">
+          <span className="uppercase">FREE</span>
+        </div>
+      );
+    }
+    return <TarjetaPlanFree />;
+  }
 
   // Plan badge styles
   const planStyles = {

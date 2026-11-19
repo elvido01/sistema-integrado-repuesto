@@ -94,6 +94,53 @@ export const FUNCIONES_PLAN = {
   },
 };
 
+// (19/11/2026) Plan FREE (RD$0, decisión del dueño): punto de venta y
+// compras SOLO de contado, inventario básico, clientes, suplidores,
+// vendedores, caja. Sin comprobantes fiscales ni reportes. Lo que no está en
+// esta lista no se enseña, salvo lo de FUNCIONES_FREE, que sale con ★ BÁSICO.
+// El servidor frena igual crédito, NCF y cotizaciones (sql/plan_free.sql).
+/** ¿Es el plan gratis? (una sola definición para todo el sistema) */
+export const esPlanFree = (planNombre) => String(planNombre || '').trim().toUpperCase() === 'FREE';
+
+export const PERMITIDOS_FREE = new Set([
+  'ventas', 'clientes', 'vendedores', 'suplidores', 'mercancias', 'tipos-producto',
+  'marcas', 'modelos', 'ubicaciones', 'compras', 'almacenes', 'entrada-mercancia',
+  'salida-mercancia', 'etiquetas-masivas', 'cierre-caja', 'perfil-empresa',
+  'usuarios', 'config_sistema',
+]);
+
+/** Lo que FREE ve con ★ BÁSICO (la ventanita de mejorar plan). */
+export const FUNCIONES_FREE = {
+  cotizaciones: {
+    titulo: 'Cotizaciones en PDF',
+    descripcion: 'Prepara cotizaciones con tu logo y envíalas en PDF; al aprobarlas se convierten en venta.',
+    incluye: { BASICO: ['Facturación electrónica e-CF integrada', 'Ventas y compras a crédito', 'Reportes DGII 606, 607 y 608', 'Más usuarios y artículos'] },
+  },
+  'recibo-ingreso': {
+    titulo: 'Ventas a crédito y cobros',
+    descripcion: 'Vende a crédito, lleva lo que te debe cada cliente y registra sus pagos con recibo.',
+    incluye: { BASICO: ['Compras a crédito y pago a suplidores', 'Facturación electrónica e-CF integrada', 'Cotizaciones en PDF', 'Más usuarios y artículos'] },
+  },
+  'pago-suplidores': {
+    titulo: 'Compras a crédito y pago a suplidores',
+    descripcion: 'Compra a crédito y lleva lo que le debes a cada suplidor, con sus pagos.',
+    incluye: { BASICO: ['Ventas a crédito y cobros', 'Facturación electrónica e-CF integrada', 'Cotizaciones en PDF', 'Más usuarios y artículos'] },
+  },
+  'comprobantes-fiscales': {
+    titulo: 'Facturación electrónica e-CF',
+    descripcion: 'Emite tus comprobantes fiscales electrónicos directamente desde MotoFlow, sin pasar por otro sistema.',
+    incluye: { BASICO: ['Reportes DGII 606, 607 y 608', 'Ventas y compras a crédito', 'Cotizaciones en PDF', 'Más usuarios y artículos'] },
+  },
+  'reportes-dgii': {
+    titulo: 'Reportes DGII 606, 607 y 608',
+    descripcion: 'Tus reportes para la DGII listos desde tus compras y ventas.',
+    incluye: { BASICO: ['Facturación electrónica e-CF integrada', 'Ventas y compras a crédito', 'Cotizaciones en PDF', 'Más usuarios y artículos'] },
+  },
+};
+
+/** Datos de la ventanita de mejorar plan para una función. */
+export const infoFuncion = (id) => FUNCIONES_PLAN[id] || FUNCIONES_FREE[id] || null;
+
 /**
  * Cómo sale una función en el menú para este plan:
  *  'libre'   → normal;
@@ -102,9 +149,15 @@ export const FUNCIONES_PLAN = {
  *              o el plan sí la trae pero el precio especial la quita).
  */
 export function accesoFuncion(id, { planActual, especial = null, superAdmin = false } = {}) {
-  const f = FUNCIONES_PLAN[id];
-  if (!f || superAdmin) return { estado: 'libre' };
+  if (superAdmin) return { estado: 'libre' };
   const actual = norm(planActual);
+  if (esPlanFree(actual)) {
+    if (PERMITIDOS_FREE.has(id)) return { estado: 'libre' };
+    if (FUNCIONES_FREE[id]) return { estado: 'mejorar', plan: 'BASICO' };
+    return { estado: 'oculta' };
+  }
+  const f = FUNCIONES_PLAN[id];
+  if (!f) return { estado: 'libre' };
   const permitido = id === 'whatsapp-crm' ? puedeCrm(actual, especial) : f.planes.includes(actual);
   if (permitido) return { estado: 'libre' };
   if (f.planes.includes(actual)) return { estado: 'oculta' }; // lo quita el precio especial

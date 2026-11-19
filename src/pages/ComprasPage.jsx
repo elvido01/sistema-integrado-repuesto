@@ -24,6 +24,7 @@ import InvoiceUploadModal from '@/components/compras/InvoiceUploadModal';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import SuplidorFormModal from '@/components/catalogo/SuplidorFormModal';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useSuscripcion } from '@/contexts/SuscripcionContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { ImagePlus, Printer } from 'lucide-react';
 import { generateCompraPDF } from '@/components/common/PDFGenerator';
@@ -35,6 +36,8 @@ const ComprasPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, empresa } = useAuth();
+  // (19/11/2026) Plan FREE: compras solo de contado (el servidor lo frena igual).
+  const { esFree } = useSuscripcion();
   const precio2DescuentoPct = Math.max(0, Math.min(100, parseFloat(empresa?.precio2_descuento_pct) || 10));
   const precio3DescuentoPct = Math.max(0, Math.min(100, parseFloat(empresa?.precio3_descuento_pct) || 15));
   const precioCubreCostoReal = (precio, costo) => {
@@ -548,8 +551,8 @@ const ComprasPage = () => {
     setCompra(prev => ({
       ...prev,
       suplidor_id: suplidor.id,
-      forma_pago: suplidor.vende_a_credito ? 'Credito' : prev.forma_pago,
-      dias_credito: suplidor.vende_a_credito ? suplidor.dias_credito : prev.dias_credito
+      forma_pago: suplidor.vende_a_credito && !esFree ? 'Credito' : prev.forma_pago,
+      dias_credito: suplidor.vende_a_credito && !esFree ? suplidor.dias_credito : prev.dias_credito
     }));
     setIsSuplidorModalOpen(false);
   };

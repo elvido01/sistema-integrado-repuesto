@@ -11,6 +11,7 @@ import { conChasis } from '@/lib/chasisFactura';
 import { esLineaFraccion } from '@/lib/ventanas';
 import { docFiscalValido, tipoExigeRnc } from '@/lib/docFiscal';
 import { propinaLegal } from '@/lib/propinaLegal';
+import { useSuscripcion } from '@/contexts/SuscripcionContext';
 
 const CLIENTE_GENERICO = {
   id: ID_GENERICO_BASE,
@@ -47,6 +48,11 @@ const idsDeLinea = (detalles) => {
 export const useVentas = () => {
   const { toast } = useToast();
   const { user, empresa, tenantId, fiscalActivo, fiscalModo } = useAuth();
+  // (19/11/2026) Plan FREE: solo contado y sin comprobantes fiscales (ni NCF
+  // ni e-CF). El servidor frena NCF y crédito (sql/plan_free.sql) y
+  // emitir-fiscal no emite para FREE; aquí se evita quemar un número de NCF
+  // y que la venta falle al grabar.
+  const { esFree } = useSuscripcion();
   // El perfil del cajero no cambia mientras dure la sesión: se pregunta una
   // vez y se guarda aquí. Antes se consultaba en cada factura.
   const perfilRef = useRef(null);
@@ -374,6 +380,7 @@ export const useVentas = () => {
   const loadNcfPreview = useCallback(async (tipoNcf = '02', clienteVenta = null) => {
     const pedido = ++pedidoPreviewRef.current;
     const poner = (v) => { if (pedido === pedidoPreviewRef.current) setNcfPreview(v); };
+    if (esFree) { poner(null); return; }
     // Facturación electrónica en producción: el comprobante es el e-NCF que
     // pondrá emitir-fiscal. Mismo criterio que tipoEcfDeCliente del builder:
     // E31 si tiene RNC/cédula válido y no está marcado consumo; si no, E32.
@@ -438,7 +445,7 @@ export const useVentas = () => {
       console.warn('No se pudo obtener preview NCF:', err.message);
       poner(null);
     }
-  }, [fiscalActivo, fiscalModo, tenantId]);
+  }, [fiscalActivo, fiscalModo, tenantId, esFree]);
 
   // Al abrir, al cambiar de empresa o de modo fiscal, con el cliente que esté
   // puesto. Editando una factura no: esa ya tiene (o no) su comprobante.
@@ -496,7 +503,7 @@ export const useVentas = () => {
     setCliente(finalCliente);
 
     // Automation: If client has credit authorized, default to 'CREDITO'
-    if (finalCliente.autorizar_credito) {
+    if (finalCliente.autorizar_credito && !esFree) {
       setPaymentType('credito');
       setDiasCredito(finalCliente.dias_credito || 0);
     } else {
@@ -1091,7 +1098,7 @@ export const useVentas = () => {
       return;
     }
     // Sin e-NCF todavía (pendiente de la DGII) pero en producción: también es e-CF.
-    const esEcf = ecfYaEmitido || (fiscalActivo && fiscalModo === 'produccion');
+    const esEcf = ecfYaEmitido || (fiscalActivo && fiscalModo === 'produccion' && !esFree);
     if (totals.propina > 0 && esEcf) {
       // E31 = el comprobante que se ve en pantalla (el número manda si ya lo tiene).
       const tipoEcf = ecfYaEmitido ? ncfEditado.slice(1, 3) : String(ncfPreview?.tipo_ncf || '');
@@ -1239,7 +1246,7 @@ export const useVentas = () => {
       // es el e-NCF que pone emitir-fiscal al guardar: no se busca NCF de
       // papel (D Mario no tiene, y salía el aviso rojo "Sin NCF disponible").
       const conEcfEnProduccion = fiscalActivo && fiscalModo === 'produccion';
-      if (!editingFacturaId && tipoNcfCliente && !conEcfEnProduccion) {
+      if (!editingFacturaId && tipoNcfCliente && !conEcfEnProduccion && !esFree) {
         const { data: ncfResult, error: ncfError } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: tipoNcfCliente });
         marca('ncf');
         if (ncfError) throw ncfError;

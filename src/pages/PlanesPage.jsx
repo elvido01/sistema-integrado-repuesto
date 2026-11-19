@@ -203,7 +203,9 @@ const PlanesPage = () => {
   // (06/11/2026) Un colegio ve solo los planes Educa; los demás no los ven.
   const esColegio = empresa?.tipo_negocio === 'educativo';
   const esEduca = (p) => p.segmento === 'educativo';
-  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL'
+  // (19/11/2026) FREE no se contrata ni se ofrece aquí todavía: llega solo
+  // (prueba sin compra) hasta el lanzamiento. Su tarjeta está en Inicio.
+  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL' && p.nombre !== 'FREE'
     && (isSuperAdmin || esEduca(p) === esColegio)
     && (p.nombre !== 'SERVICIOS' || sinInventario || isSuperAdmin));
   const soloVistaAdmin = (plan) => (plan.nombre === 'SERVICIOS' && !sinInventario) || esEduca(plan) !== esColegio;

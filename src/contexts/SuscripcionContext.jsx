@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { esPlanFree } from '@/lib/planes';
 
 const SuscripcionContext = createContext(undefined);
 
@@ -60,6 +61,9 @@ export const SuscripcionProvider = ({ children }) => {
         )
       `)
       .eq('tenant_id', tenantId)
+      // La vigente es la CREADA más reciente, igual que check_suscripcion_activa
+      // (la de FREE vence en 100 años: por fecha_fin taparía una prueba de Pro).
+      .order('created_at', { ascending: false })
       .order('fecha_fin', { ascending: false })
       .limit(1);
 
@@ -151,6 +155,25 @@ export const SuscripcionProvider = ({ children }) => {
         return;
       }
 
+      // (19/11/2026) Plan FREE: una prueba que terminó sin que la empresa haya
+      // comprado nunca pasa a FREE en vez de quedar bloqueada (decisión del
+      // dueño). Quien compró alguna vez sigue bloqueado al vencer: el servidor
+      // lo decide (activar_free_si_corresponde, sql/plan_free.sql).
+      if (data?.estado === 'vencido' && !data?.pago_pendiente && !intentoFreeRef.current) {
+        intentoFreeRef.current = true;
+        // Un fallo aquí no puede desbloquear ni bloquear nada: se queda la
+        // respuesta que ya se tenía (el builder de supabase no trae .catch).
+        try {
+          const { data: free } = await supabase.rpc('activar_free_si_corresponde');
+          if (free?.ok) {
+            const { data: nueva } = await supabase.rpc('check_suscripcion_activa', { p_tenant_id: tenantId });
+            if (nueva) data = nueva;
+          }
+        } catch (e) {
+          console.warn('[Suscripcion] no se pudo revisar el paso a FREE:', e?.message);
+        }
+      }
+
       setSuscripcion(data);
     } catch (err) {
       console.error('[Suscripcion] Error fetching:', err);
@@ -167,6 +190,8 @@ export const SuscripcionProvider = ({ children }) => {
   }, [user, tenantId, fetchSuscripcionDirecta]);
 
   const fetchSuscripcionRef = React.useRef(null);
+  const intentoFreeRef = React.useRef(false);
+  useEffect(() => { intentoFreeRef.current = false; }, [tenantId]);
   useEffect(() => { fetchSuscripcionRef.current = fetchSuscripcion; }, [fetchSuscripcion]);
 
   const fetchPlanes = useCallback(async () => {
@@ -224,6 +249,7 @@ export const SuscripcionProvider = ({ children }) => {
   const diasRestantes = suscripcion?.dias_restantes || 0;
   const porVencer = isActiva && diasRestantes <= 3 && diasRestantes > 0;
   const planActual = suscripcion?.plan || null;
+  const esFree = esPlanFree(planActual);
   const limites = suscripcion?.limites || {};
   const features = suscripcion?.features || {};
   const especialVigente = especial && (!especial.plan || String(especial.plan).toUpperCase() === String(planActual || '').toUpperCase())
@@ -295,6 +321,7 @@ export const SuscripcionProvider = ({ children }) => {
     diasRestantes,
     porVencer,
     planActual,
+    esFree,
     limites,
     features,
     validarAccion,
@@ -304,7 +331,7 @@ export const SuscripcionProvider = ({ children }) => {
     refetch: fetchSuscripcion
   }), [
     suscripcion, loading, planes, especial, especialVigente,
-    isActiva, isVencida, isTrial, diasRestantes, porVencer, planActual, limites, features,
+    isActiva, isVencida, isTrial, diasRestantes, porVencer, planActual, esFree, limites, features,
     validarAccion, renovarPlan, fetchSuscripcion
   ]);
 

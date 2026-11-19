@@ -1105,6 +1105,15 @@ async function dgiiDirectoEmitirFactura(supabase, config, factura, detalles, cli
 // apartó en "procesando"; esa no cuenta como "se está emitiendo en otro lado".
 async function emitirFacturaFiscal(supabase, tenantId, factura_id, callerUserId, opts = {}) {
 
+  // 0. (19/11/2026) Plan FREE: sin facturación electrónica, aunque le haya
+  //    quedado la integración de la prueba (decisión del dueño). Va antes de
+  //    tocar la DGII: el trigger de facturas no frena a esta función (escribe
+  //    como service_role). sql/plan_free.sql
+  const { data: planVigente } = await supabase.rpc("_plan_vigente", { p_tenant: tenantId });
+  if (String(planVigente || "").toUpperCase() === "FREE") {
+    throw new Error("El plan FREE no incluye facturación electrónica. Viene desde el plan BÁSICO.");
+  }
+
   // 1. Cargar integración del tenant
   const { data: integ, error: integError } = await supabase
     .from("integraciones_fiscales")
