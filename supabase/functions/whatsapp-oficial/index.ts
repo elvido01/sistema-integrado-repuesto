@@ -43,8 +43,16 @@ Deno.serve(async (req: Request) => {
   try { payload = JSON.parse(crudo); } catch { return new Response('json', { status: 400 }); }
 
   try {
-    const r = await procesar(servicio(), eventosDelWebhook(payload));
-    return json({ ok: true, ...r });
+    const sb = servicio();
+    const { audios, ...r } = await procesar(sb, eventosDelWebhook(payload));
+    // Los audios se transcriben DESPUÉS de contestarle a Meta (que no espera
+    // más de unos segundos). El texto llega con un UPDATE y la captura de
+    // Hermes lo recoge (sql/whatsapp_oficial_aprende_y_apaga_espejo.sql).
+    if (audios.length) {
+      const tarea = transcribirAudios(sb, audios).catch((e) => console.warn('[whatsapp-oficial] audios', e?.message || e));
+      try { EdgeRuntime.waitUntil(tarea); } catch { await tarea; }
+    }
+    return json({ ok: true, ...r, audios: audios.length });
   } catch (e) {
     console.error('[whatsapp-oficial]', e?.message || e);
     return json({ ok: false, error: e?.message || String(e) }, 500);
@@ -73,6 +81,7 @@ async function procesar(sb: any, eventos: any[]) {
   };
   const ahora = new Date().toISOString();
   let guardados = 0, ignorados = 0;
+  const audios: { cx: any; ev: any }[] = [];   // notas de voz del cliente, para transcribir
 
   for (const ev of eventos) {
     if (ev.tipo === 'cuenta') { await eventoCuenta(sb, ev); continue; }
@@ -83,6 +92,7 @@ async function procesar(sb: any, eventos: any[]) {
       if (!ev.cliente || !ev.id) { ignorados++; continue; }
       await guardarMensaje(sb, cx, ev);
       guardados++;
+      if (ev.entrante && ev.origen === 'cliente' && ev.clase === 'audio' && ev.mediaId) audios.push({ cx, ev });
       if (ev.origen !== 'historial') {
         await sb.from('whatsapp_conexiones').update({ ultimo_mensaje_at: ahora, ultimo_webhook_at: ahora }).eq('id', cx.id).select('id');
       }
@@ -113,7 +123,72 @@ async function procesar(sb: any, eventos: any[]) {
       }
     }
   }
-  return { eventos: eventos.length, guardados, ignorados };
+  return { eventos: eventos.length, guardados, ignorados, audios };
+}
+
+// ── Notas de voz → texto ─────────────────────────────────────────────
+// El archivo se pide a Meta con el permiso de la empresa (GET /{media_id} da
+// una URL que vence en minutos y también exige el permiso) y se manda a
+// OpenAI. Si algo falla, el mensaje se queda como "🎤 Audio": nunca se pierde.
+// Modelo: WHATSAPP_TRANSCRIPCION_MODELO → JARVIS_TRANSCRIPTION_MODEL → gpt-4o-mini-transcribe.
+const MAX_AUDIO = 20 * 1024 * 1024;
+const PISTA_TRANSCRIPCION = 'Cliente de una tienda de repuestos de motocicletas en República Dominicana. '
+  + 'Habla de piezas y modelos: CG150, AX100, Boxer, GN125, Suzuki, Honda, Yamaha, TVS, Bajaj, '
+  + 'cadena, piñón, cloche, carburador, bandas de freno, gomas, aros, RD$, pesos.';
+
+async function transcribirAudios(sb: any, audios: { cx: any; ev: any }[]) {
+  const clave = Deno.env.get('OPENAI_API_KEY');
+  if (!clave) { console.warn('[whatsapp-oficial] sin OPENAI_API_KEY: audios sin transcribir'); return; }
+  const graph = `https://graph.facebook.com/${Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v23.0'}`;
+  const modelo = Deno.env.get('WHATSAPP_TRANSCRIPCION_MODELO') || Deno.env.get('JARVIS_TRANSCRIPTION_MODEL') || 'gpt-4o-mini-transcribe';
+  const tokens = new Map<string, string | null>();
+
+  for (const { cx, ev } of audios) {
+    try {
+      if (!tokens.has(cx.id)) {
+        const { data } = await sb.from('whatsapp_conexion_secretos').select('access_token').eq('conexion_id', cx.id).maybeSingle();
+        tokens.set(cx.id, data?.access_token || null);
+      }
+      const token = tokens.get(cx.id);
+      if (!token) { console.warn('[whatsapp-oficial] audio sin permiso de la empresa', cx.id); continue; }
+      const auth = { Authorization: `Bearer ${token}` };
+
+      const info = await fetch(`${graph}/${ev.mediaId}`, { headers: auth }).then((r) => r.json()).catch(() => null);
+      if (!info?.url) { console.warn('[whatsapp-oficial] Meta no dio el audio', ev.mediaId, info?.error?.message); continue; }
+      if (Number(info.file_size) > MAX_AUDIO) continue;
+      const archivo = await fetch(info.url, { headers: auth });
+      if (!archivo.ok) { console.warn('[whatsapp-oficial] descarga del audio', archivo.status); continue; }
+      const bytes = await archivo.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > MAX_AUDIO) continue;
+
+      const mime = String(info.mime_type || 'audio/ogg').split(';')[0];
+      const ext = mime.includes('mpeg') ? 'mp3' : mime.includes('mp4') || mime.includes('aac') ? 'm4a' : mime.includes('amr') ? 'amr' : 'ogg';
+      const form = new FormData();
+      form.append('file', new Blob([bytes], { type: mime }), `nota.${ext}`);
+      form.append('model', modelo);
+      form.append('language', 'es');
+      form.append('prompt', PISTA_TRANSCRIPCION);
+      const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST', headers: { Authorization: `Bearer ${clave}` }, body: form,
+      });
+      const j = await r.json().catch(() => null);
+      const texto = String(j?.text || '').trim();
+      if (!r.ok || !texto) { console.warn('[whatsapp-oficial] transcripción', r.status, j?.error?.message); continue; }
+
+      const nuevo = `🎤 ${texto}`.slice(0, 4000);
+      const { data: filas } = await sb.from('sales_messages').update({ message_text: nuevo })
+        .eq('tenant_id', cx.tenant_id).eq('platform', 'whatsapp').eq('external_message_id', ev.id)
+        .eq('message_type', 'audio').select('id, conversation_id');
+      // La vista previa de la lista decía "🎤 Audio": si sigue siendo ese, se cambia.
+      const conv = filas?.[0]?.conversation_id;
+      if (conv) {
+        await sb.from('sales_conversations').update({ last_message_preview: nuevo.slice(0, 180) })
+          .eq('id', conv).eq('last_message_preview', String(ev.texto || '').slice(0, 180)).select('id');
+      }
+    } catch (e) {
+      console.warn('[whatsapp-oficial] audio', ev.id, e?.message || e);
+    }
+  }
 }
 
 async function guardarMensaje(sb: any, cx: any, ev: any) {

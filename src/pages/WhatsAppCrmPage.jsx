@@ -23,6 +23,7 @@ import { usePanels } from '@/contexts/PanelContext';
 import { useFacturacion } from '@/contexts/FacturacionContext';
 import { useLayout } from '@/contexts/LayoutContext';
 import { ID_GENERICO_FINAL } from '@/lib/clienteGenerico';
+import { explicarFalloEnvio } from '../../supabase/functions/_shared/whatsappCloud.mjs';
 
 const scoreStyles = {
   hot: 'bg-red-100 text-red-800 border-red-200',
@@ -333,7 +334,13 @@ const normalizeSalesConversation = (conv) => ({
   customer_external_id: conv.customer_external_id,
 });
 
-const isWhatsAppConversation = (conversation) => (conversation?.platform || 'whatsapp') === 'whatsapp';
+// WhatsApp VIEJO (crm_whatsapp_*: cotización, audio, servicio manual). El
+// WhatsApp oficial (19/11/2026, Perfil Empresa → Conexiones) vive en
+// sales_conversations y se atiende como Instagram/Facebook: sales_messages +
+// meta-send-queued. Por eso aquí no cuenta como "WhatsApp".
+const isWhatsAppConversation = (conversation) => (conversation?.platform || 'whatsapp') === 'whatsapp'
+  && conversation?.source_table !== 'sales';
+const esWhatsAppOficial = (conversation) => conversation?.platform === 'whatsapp' && conversation?.source_table === 'sales';
 
 // URL del servicio del canal manual (WhatsApp Web / Baileys).
 // En local apunta al servidor que corre en tu PC; en produccion al VPS.
@@ -454,7 +461,7 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
 
   const fetchConversations = useCallback(async ({ silent = false, notify = false } = {}) => {
     if (!silent) setLoading(true);
-    const [{ data: whatsappData, error }, { data: salesData, error: salesError }] = await Promise.all([
+    const [{ data: whatsappData, error }, { data: salesData, error: salesError }, { data: oficialData }] = await Promise.all([
       supabase
         .from('crm_whatsapp_conversations_view')
         .select('*')
@@ -468,13 +475,23 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
         .neq('platform', 'whatsapp')
         .order('last_message_at', { ascending: false })
         .limit(80),
+      // WhatsApp oficial: solo los que entraron por la conexión de la empresa.
+      // Los del espejo (misma tabla) se siguen contestando en WhatsApp Web.
+      supabase
+        .from('sales_conversations_view')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('platform', 'whatsapp')
+        .eq('metadata->>source', 'whatsapp_oficial')
+        .order('last_message_at', { ascending: false })
+        .limit(80),
     ]);
 
     if (error && salesError) {
       if (!silent) toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar Sales Hub.' });
     } else {
       const whatsappRows = (whatsappData || []).map(conv => ({ ...conv, platform: 'whatsapp', source_table: 'crm_whatsapp' }));
-      const salesRows = salesError ? [] : (salesData || []).map(normalizeSalesConversation);
+      const salesRows = [...(salesError ? [] : (salesData || [])), ...(oficialData || [])].map(normalizeSalesConversation);
       const rows = [...whatsappRows, ...salesRows].sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
       setConversations(rows);
       syncUnreadCounts?.(rows);
@@ -551,7 +568,7 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
 
   // ── Registrar manualmente un mensaje entrante del cliente (canales sin API real) ──
   const handleRecordIncomingManual = async () => {
-    if (!selected || isWhatsAppConversation(selected)) return;
+    if (!selected || isWhatsAppConversation(selected) || esWhatsAppOficial(selected)) return;
     const text = window.prompt('Pega el mensaje del cliente:');
     if (!text || !text.trim()) return;
     try {
@@ -1481,10 +1498,16 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
             } else if (privadaPorComentario) {
               toast({ title: 'Privado enviado', description: 'Le llego al buzon. Tienes 24 horas para seguir conversando.' });
             } else {
-              toast({ title: 'Mensaje enviado', description: `Respuesta enviada por ${activeConversation.platform === 'instagram' ? 'Instagram' : 'Facebook'}.` });
+              const canal = { instagram: 'Instagram', whatsapp: 'WhatsApp' }[activeConversation.platform] || 'Facebook';
+              toast({ title: 'Mensaje enviado', description: `Respuesta enviada por ${canal}.` });
             }
           } else {
-            toast({ variant: 'destructive', title: 'No se envio por Meta', description: dispatched?.message?.raw_data?.dispatch_error || 'El mensaje quedo marcado como fallido.' });
+            const motivo = dispatched?.message?.raw_data?.dispatch_error;
+            toast({
+              variant: 'destructive',
+              title: esWhatsAppOficial(activeConversation) ? 'No salió por WhatsApp' : 'No se envio por Meta',
+              description: explicarFalloEnvio(motivo) || motivo || 'El mensaje quedo marcado como fallido.',
+            });
           }
         } catch (dispatchError) {
           finishOptimisticMessage(tempId, 'queued');
@@ -2670,7 +2693,7 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
                             ref={replyInputRef}
                             value={reply}
                             onChange={(e) => setReply(e.target.value)}
-                            placeholder={isWhatsAppConversation(selected)
+                            placeholder={isWhatsAppConversation(selected) || esWhatsAppOficial(selected)
                               ? 'Escribe un mensaje'
                               : (comentarioPendiente
                                 ? (modoComentario ? 'Responder el comentario en público' : 'Escribirle al privado')
@@ -2696,7 +2719,7 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
                         >
                           {sendingAudio ? <Loader2 className="h-5 w-5 animate-spin" /> : recordingAudio ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                         </Button>
-                        {selected && !isWhatsAppConversation(selected) && (
+                        {selected && !isWhatsAppConversation(selected) && !esWhatsAppOficial(selected) && (
                           <Button
                             variant="outline"
                             className="h-11 w-11 sm:h-12 sm:w-12 shrink-0 rounded-full self-end bg-white shadow-sm"

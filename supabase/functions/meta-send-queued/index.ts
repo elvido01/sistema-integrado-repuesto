@@ -9,6 +9,9 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { hayZernio, cuentaZernio, conversacionZernio, enviarPorZernio, ventanaCerrada } from '../_shared/zernio.ts';
+import { leerClaveConversacion, cuerpoTexto, motivoFalloEnvio } from '../_shared/whatsappCloud.mjs';
+
+const WHATSAPP_GRAPH_VERSION = Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v23.0';
 
 const META_GRAPH_VERSION = 'v21.0';
 const META_PLATFORMS = new Set(['instagram', 'facebook']);
@@ -88,6 +91,9 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
   if (messageError || !message) throw new Error(messageError?.message || 'mensaje_no_encontrado');
   if (message.status !== 'queued') return compactMessage(message);
   if (message.sender_type !== 'agent') return failMessage(supabase, message, 'sender_no_soportado');
+  // (19/11/2026) WhatsApp oficial: el número de la empresa conectado en
+  // Perfil Empresa → Conexiones (whatsapp_conexiones). El espejo no pasa por aquí.
+  if (message.platform === 'whatsapp') return dispatchWhatsAppOficial(supabase, tenantId, message, userId);
   if (!META_PLATFORMS.has(message.platform)) return failMessage(supabase, message, 'canal_no_meta');
   if (!SUPPORTED_TYPES.has(message.message_type)) return failMessage(supabase, message, 'tipo_no_soportado');
 
@@ -235,6 +241,80 @@ async function dispatchMessage(supabase: any, tenantId: string, messageId: strin
     .select('id, status, external_message_id')
     .single();
 
+  if (updateError) throw new Error(updateError.message);
+  return updated;
+}
+
+// ------------------------------------------------------------
+// WhatsApp oficial (Cloud API). La conversación trae en su clave el número
+// de la empresa y el del cliente (whatsapp:<phone_number_id>:<cliente>); el
+// permiso es el que guardó whatsapp-conectar, nunca sale al navegador.
+// Fuera de las 24 h del último mensaje del cliente Meta lo rechaza (131047):
+// queda 'failed' con dispatch_error='ventana_24h_cerrada' y la pantalla lo
+// explica. Plantillas: pendiente.
+async function dispatchWhatsAppOficial(supabase: any, tenantId: string, message: any, userId: string) {
+  if (message.message_type !== 'text') return failMessage(supabase, message, 'tipo_no_soportado');
+  const text = String(message.message_text || '').trim();
+  if (!text) return failMessage(supabase, message, 'texto_vacio');
+
+  const { data: conversation, error: eConv } = await supabase
+    .from('sales_conversations')
+    .select('id, tenant_id, platform, external_conversation_id')
+    .eq('id', message.conversation_id)
+    .eq('tenant_id', tenantId)
+    .single();
+  if (eConv || !conversation) return failMessage(supabase, message, eConv?.message || 'conversacion_no_encontrada');
+
+  const clave = leerClaveConversacion(conversation.external_conversation_id);
+  if (!clave) return failMessage(supabase, message, 'whatsapp_sin_conexion_oficial');
+
+  const { data: cx } = await supabase
+    .from('whatsapp_conexiones')
+    .select('id, estado')
+    .eq('tenant_id', tenantId)
+    .eq('phone_number_id', clave.phoneNumberId)
+    .maybeSingle();
+  if (!cx) return failMessage(supabase, message, 'whatsapp_sin_conexion_oficial');
+  if (cx.estado !== 'conectado') return failMessage(supabase, message, 'whatsapp_desconectado');
+
+  const { data: secreto } = await supabase
+    .from('whatsapp_conexion_secretos')
+    .select('access_token')
+    .eq('conexion_id', cx.id)
+    .maybeSingle();
+  if (!secreto?.access_token) return failMessage(supabase, message, 'permiso_vencido');
+
+  const responderA = String(message.raw_data?.responder_a || '').trim() || null;
+  const response = await fetch(`https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${clave.phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secreto.access_token}` },
+    body: JSON.stringify(cuerpoTexto(clave.cliente, text, responderA)),
+  });
+  const body = await response.json().catch(() => null);
+  const wamid = body?.messages?.[0]?.id || null;
+
+  if (!response.ok || !wamid) {
+    const motivo = motivoFalloEnvio(body, response.status);
+    if (motivo === 'permiso_vencido') {
+      await supabase.from('whatsapp_conexiones')
+        .update({ ultimo_error: 'Meta rechazó el permiso (190): hay que reconectar', updated_at: new Date().toISOString() })
+        .eq('id', cx.id).select('id');
+    }
+    return failMessage(supabase, message, motivo, { meta: body, conexion_id: cx.id, sent_by: userId });
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from('sales_messages')
+    .update({
+      status: 'sent',
+      external_message_id: wamid,
+      raw_data: { ...(message.raw_data || {}), source: 'meta_send_queued', via: 'whatsapp_oficial',
+        conexion_id: cx.id, sent_by: userId, provider_response: body },
+    })
+    .eq('id', message.id)
+    .eq('tenant_id', tenantId)
+    .select('id, status, external_message_id')
+    .single();
   if (updateError) throw new Error(updateError.message);
   return updated;
 }

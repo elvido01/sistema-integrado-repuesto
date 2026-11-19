@@ -135,3 +135,59 @@ export function avisoDesconexion(motivo) {
     ACCOUNT_DISCONNECTED: 'WhatsApp se desconectó desde la app del teléfono.',
   })[motivo] || 'WhatsApp se desconectó de MotoFlow. Vuelve a conectar desde Configuración → Conexiones.';
 }
+
+// ── Envío desde MotoFlow (meta-send-queued) ─────────────────────────────
+
+/** Clave de una conversación oficial: whatsapp:<phone_number_id>:<cliente>.
+ *  Las del espejo (whatsapp:<numero> / whatsapp:name:…) devuelven null. */
+export function leerClaveConversacion(clave) {
+  const m = /^whatsapp:(\d{6,}):(\d{6,})$/.exec(String(clave || '').trim());
+  return m ? { phoneNumberId: m[1], cliente: m[2] } : null;
+}
+
+/** Cuerpo de POST /{phone_number_id}/messages para un texto (Meta corta en 4096). */
+export function cuerpoTexto(cliente, texto, responderA = null) {
+  return {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: String(cliente),
+    type: 'text',
+    text: { preview_url: false, body: String(texto).slice(0, 4096) },
+    ...(responderA ? { context: { message_id: String(responderA) } } : {}),
+  };
+}
+
+// Códigos de error de la Cloud API que quien atiende tiene que entender.
+const MOTIVOS = {
+  131047: 'ventana_24h_cerrada',     // pasaron 24 h desde el último mensaje del cliente
+  131026: 'no_se_puede_entregar',    // número sin WhatsApp, bloqueó o versión vieja
+  131030: 'numero_no_permitido',     // número de prueba sin ese destinatario
+  131056: 'demasiados_seguidos',     // límite por par empresa-cliente
+  130429: 'demasiados_seguidos',     // límite de mensajes por segundo
+  131031: 'cuenta_bloqueada',
+  131005: 'sin_permiso',
+  10: 'sin_permiso',
+  200: 'sin_permiso',
+  190: 'permiso_vencido',            // el token de la empresa ya no sirve: reconectar
+};
+
+/** Motivo corto (para raw_data.dispatch_error) desde la respuesta de error de Meta. */
+export function motivoFalloEnvio(body, status = 0) {
+  const code = Number(body?.error?.code);
+  if (MOTIVOS[code]) return MOTIVOS[code];
+  return `meta_${code || status || 'sin_respuesta'}`;
+}
+
+/** Frase para la pantalla según el motivo. */
+export function explicarFalloEnvio(motivo) {
+  switch (motivo) {
+    case 'ventana_24h_cerrada': return 'Pasaron más de 24 horas desde el último mensaje del cliente: WhatsApp solo deja escribirle con una plantilla aprobada, o contestar desde la app del teléfono.';
+    case 'no_se_puede_entregar': return 'WhatsApp no lo pudo entregar: el número no tiene WhatsApp o bloqueó a la empresa.';
+    case 'demasiados_seguidos': return 'Demasiados mensajes seguidos a ese cliente. Espera un momento y vuelve a enviar.';
+    case 'permiso_vencido': return 'La conexión con WhatsApp venció. Ve a Perfil Empresa → Conexiones y pulsa Reconectar.';
+    case 'whatsapp_desconectado': return 'El WhatsApp de la empresa está desconectado. Ve a Perfil Empresa → Conexiones.';
+    case 'cuenta_bloqueada': return 'Meta bloqueó la cuenta de WhatsApp de la empresa. Revisa el administrador de WhatsApp de Meta.';
+    case 'sin_permiso': return 'MotoFlow no tiene permiso para enviar por ese número. Reconecta WhatsApp en Perfil Empresa → Conexiones.';
+    default: return null;
+  }
+}
