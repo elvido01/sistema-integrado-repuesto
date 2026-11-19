@@ -26,6 +26,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
+import InstalarAndroid from '@/components/common/InstalarAndroid';
 import { TARJETAS_DASHBOARD, permisosDashboard } from '@/lib/permissionsHelper';
 import { isSameWeek, addDays, isBefore, startOfToday, differenceInMonths, differenceInYears, addWeeks, addMonths, addYears } from 'date-fns';
 
@@ -696,6 +697,7 @@ const HomePage = () => {
               Asistente Financiero Inteligente
               {refreshing && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
             </h2>
+            <InstalarAndroid origen="inicio" className="mt-3" />
           </motion.div>
         </div>
 

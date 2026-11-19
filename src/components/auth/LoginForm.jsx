@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import MotoFlowLogo, { ICONO_MOTOFLOW } from '@/components/common/MotoFlowLogo';
 import { supabase } from '@/lib/customSupabaseClient';
 import { toLoginEmail } from '@/lib/loginIdentity';
+import InstalarAndroid from '@/components/common/InstalarAndroid';
 
 const LoginForm = ({ onRegistrar }) => {
   const { signIn, enviarRecuperacion } = useAuth();
@@ -269,6 +270,7 @@ const LoginForm = ({ onRegistrar }) => {
         )}
 
         <div className="mt-4 text-center">
+          <InstalarAndroid origen="login" className="mb-3" />
           <p className="text-[10px] text-gray-400">
             © 2026 {nombreMostrado} — Todos los derechos reservados
           </p>
