@@ -63,21 +63,23 @@ async function procesar(sb: any, fila: any) {
   let correo = !!fila.correo_enviado_at;
   const cambios: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
-  // 1. Al grupo de testers.
-  if (!enGrupo) {
+  // 1. Al grupo de testers (solo con grupo de Cloud Identity configurado; con
+  //    el grupo gratis de Google Groups la persona se une sola desde el correo).
+  const grupoApi = !!Deno.env.get('ANDROID_TESTERS_GRUPO');
+  if (grupoApi && !enGrupo) {
     const r = await agregarAlGrupo(fila.email);
     if (r.ok) { enGrupo = true; cambios.en_grupo_at = new Date().toISOString(); } else errores.push(r.error);
   }
 
-  // 2. El correo con el enlace (solo si ya está en el grupo: si no, el enlace no le abre).
-  if (enGrupo && puedeReenviar(fila.correo_enviado_at) && !correo) {
+  // 2. El correo con el enlace (con grupo por API, solo cuando ya está dentro).
+  if ((enGrupo || !grupoApi) && puedeReenviar(fila.correo_enviado_at) && !correo) {
     const r = await mandarCorreo(sb, fila.email);
     if (r.ok) { correo = true; cambios.correo_enviado_at = new Date().toISOString(); } else errores.push(r.error);
   }
 
   cambios.ultimo_error = errores.length ? errores.join(' · ').slice(0, 500) : null;
   await sb.from('android_testers').update(cambios).eq('email', fila.email).select('id');
-  return { en_grupo: enGrupo, correo_enviado: correo, pendiente: !enGrupo };
+  return { en_grupo: enGrupo, correo_enviado: correo, pendiente: grupoApi && !enGrupo };
 }
 
 // ── Cloud Identity: meter el correo al grupo ─────────────────────────

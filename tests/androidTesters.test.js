@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { correoValido, puedeReenviar, membresiaOk, correoBienvenida, ENLACE_PRUEBA } from '../supabase/functions/_shared/androidTesters.mjs';
+import { correoValido, puedeReenviar, membresiaOk, correoBienvenida, ENLACE_PRUEBA, ENLACE_GRUPO } from '../supabase/functions/_shared/androidTesters.mjs';
 
 describe('Testers Android automáticos', () => {
   it('valida y normaliza el correo', () => {
@@ -22,6 +22,8 @@ describe('Testers Android automáticos', () => {
   it('el correo lleva el enlace de la prueba y el correo de la persona', () => {
     const c = correoBienvenida('ana@gmail.com');
     expect(c.html).toContain(ENLACE_PRUEBA);
+    expect(c.html).toContain(ENLACE_GRUPO);
+    expect(c.text.indexOf(ENLACE_GRUPO)).toBeLessThan(c.text.indexOf(ENLACE_PRUEBA));
     expect(c.text).toContain('ana@gmail.com');
     expect(c.subject).toMatch(/Android/);
   });
