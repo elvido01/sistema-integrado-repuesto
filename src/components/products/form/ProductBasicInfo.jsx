@@ -580,7 +580,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
             </div>
 
             {/* Tipo */}
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4" data-guia="producto-tipo">
               <Label className="text-[11px] font-bold text-gray-600 uppercase text-right col-span-1">Tipo</Label>
               <div className="col-span-3 flex items-center gap-1">
                 <SearchableSelect

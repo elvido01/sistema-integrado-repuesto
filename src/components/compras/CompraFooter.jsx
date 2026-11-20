@@ -163,7 +163,7 @@ const CompraFooter = ({
                 className="space-y-4"
               >
                 <div className="flex items-center gap-6">
-                  <RadioGroup value={compra.forma_pago} onValueChange={v => { setCompra({ ...compra, forma_pago: v }); if (v !== 'Credito') setFinanciamiento(f => ({ ...f, activo: false })); }} className="flex space-x-6">
+                  <RadioGroup data-guia="compra-pago" value={compra.forma_pago} onValueChange={v => { setCompra({ ...compra, forma_pago: v }); if (v !== 'Credito') setFinanciamiento(f => ({ ...f, activo: false })); }} className="flex space-x-6">
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="Contado" id="contado" className="h-4 w-4" />
                       <Label htmlFor="contado" className="text-xs font-bold">Contado</Label>
@@ -456,7 +456,7 @@ const CompraFooter = ({
           </div>
         </div>
 
-        <div className="border-t border-gray-300 pt-3 mt-3">
+        <div className="border-t border-gray-300 pt-3 mt-3" data-guia="compra-total">
           <div className="flex justify-between items-end">
             <span className="text-sm font-black text-red-600 uppercase tracking-tighter">TOTAL COMPRA</span>
             <span className="text-3xl font-black text-red-600 font-mono leading-none tracking-tighter">

@@ -84,7 +84,7 @@ const VendedoresPage = () => {
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                             <Input placeholder="Buscar vendedor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 w-64" />
                         </div>
-                        <Button onClick={handleCreate}>
+                        <Button onClick={handleCreate} data-guia="vendedor-crear">
                             <PlusCircle className="mr-2 h-4 w-4" />
                             Crear Vendedor
                         </Button>

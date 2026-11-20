@@ -2256,6 +2256,7 @@ const ComprasPage = () => {
               className="px-8 py-5 bg-white border-2 border-morla-blue text-morla-blue hover:bg-morla-blue hover:text-white shadow-lg flex items-center gap-3 group transition-all h-11 border-b-[4px]"
               onClick={handleSave}
               disabled={isSaving}
+              data-guia="compra-grabar"
             >
               <div className="bg-morla-blue text-white px-1.5 py-0.5 rounded text-[10px] font-black group-hover:bg-white group-hover:text-morla-blue transition-colors">F10</div>
               {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}

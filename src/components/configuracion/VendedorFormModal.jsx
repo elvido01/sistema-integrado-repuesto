@@ -105,13 +105,14 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
                 <form onSubmit={handleSubmit} className="space-y-4 py-4">
                     <div className="space-y-2">
                         <Label htmlFor="nombre">Nombre Completo</Label>
-                        <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej. Juan Pérez" />
+                        <Input id="nombre" name="nombre" data-guia="vendedor-nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej. Juan Pérez" />
                     </div>
                     {/* (05/10/2026) Cada empresa paga distinto: % de la venta (Morla) o un
                         monto fijo por cada motocicleta (Caminero Motors, RD$300). */}
                     <div className="space-y-2">
                         <Label htmlFor="comision_tipo">Cómo se le paga la comisión</Label>
                         <select
+                            data-guia="vendedor-comision"
                             id="comision_tipo"
                             name="comision_tipo"
                             value={formData.comision_tipo}
@@ -169,7 +170,7 @@ const VendedorFormModal = ({ vendedor, isOpen, onClose }) => {
                         <DialogClose asChild>
                             <Button type="button" variant="secondary">Cancelar</Button>
                         </DialogClose>
-                        <Button type="submit" disabled={isSubmitting}>
+                        <Button type="submit" disabled={isSubmitting} data-guia="vendedor-guardar">
                             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {vendedor ? 'Guardar Cambios' : 'Crear Vendedor'}
                         </Button>

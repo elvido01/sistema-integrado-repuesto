@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import { SuscripcionProvider } from '@/contexts/SuscripcionContext';
 import { PanelProvider, usePanels } from '@/contexts/PanelContext';
+import { GuiaProvider } from '@/contexts/GuiaContext';
 import { FacturacionProvider } from '@/contexts/FacturacionContext';
 import { ComprasProvider } from '@/contexts/ComprasContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
@@ -130,7 +131,10 @@ function AppContent() {
           />
         </Helmet>
         <SuscripcionBlocker />
-        <MainLayout />
+        {/* (19/11/2026) Guías interactivas: ofrecen y dibujan la guía de cada módulo. */}
+        <GuiaProvider>
+          <MainLayout />
+        </GuiaProvider>
         </WhatsAppNotificationProvider>
       </PanelProvider>
     </SuscripcionProvider>

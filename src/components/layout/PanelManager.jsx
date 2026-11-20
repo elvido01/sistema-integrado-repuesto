@@ -97,6 +97,7 @@ const PanelManager = () => {
           return (
             <div
               key={panel.id}
+              data-panel={panel.id}
               className={cn(
                 "absolute inset-0 w-full h-full min-w-0 transition-opacity duration-200 bg-slate-100 dark:bg-gray-900",
                 panel.id === 'whatsapp-crm' ? 'p-0 overflow-hidden' : 'p-4 overflow-auto',

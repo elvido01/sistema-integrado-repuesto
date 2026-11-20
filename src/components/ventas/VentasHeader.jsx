@@ -275,7 +275,7 @@ const VentasHeader = ({
                 <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={date} onSelect={setDate} initialFocus /></PopoverContent>
               </Popover>
               <Select value={selectedVendedor} onValueChange={onVendedorChange}>
-                <SelectTrigger className="h-10 text-xs font-bold"><SelectValue placeholder="VENDEDOR" /></SelectTrigger>
+                <SelectTrigger data-guia="venta-vendedor" className="h-10 text-xs font-bold"><SelectValue placeholder="VENDEDOR" /></SelectTrigger>
                 <SelectContent className="bg-white">
                   {vendedores.map((v) => <SelectItem key={v.id} value={v.id} className="text-sm">{v.nombre?.toUpperCase()}</SelectItem>)}
                 </SelectContent>
@@ -569,7 +569,7 @@ const VentasHeader = ({
 
               <Label className="col-span-1 text-[10px] font-black text-gray-400 uppercase tracking-tight text-right">VENDEDOR:</Label>
               <Select value={selectedVendedor} onValueChange={onVendedorChange}>
-                <SelectTrigger className="h-5 text-[10px] font-bold border-gray-300 rounded-none bg-white col-span-3 shadow-sm">
+                <SelectTrigger data-guia="venta-vendedor" className="h-5 text-[10px] font-bold border-gray-300 rounded-none bg-white col-span-3 shadow-sm">
                   <SelectValue placeholder="VENDEDOR" />
                 </SelectTrigger>
                 <SelectContent className="bg-white">

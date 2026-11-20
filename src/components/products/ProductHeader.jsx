@@ -166,6 +166,7 @@ const ProductHeader = ({
         </Button>
 
         <Button
+          data-guia="producto-nuevo"
           onClick={onAdd}
           className="h-10 px-6 bg-morla-blue hover:bg-blue-900 text-white font-bold uppercase tracking-wider shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 border-b-4 border-blue-950"
         >

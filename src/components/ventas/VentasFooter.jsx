@@ -444,7 +444,7 @@ const VentasFooter = ({
         <div className="col-span-5 border-r border-gray-300 bg-[#faf9f4]">
           {/* Row 1: Tipo de pago */}
           <div className="flex items-center gap-2 px-2 py-1 border-b border-gray-300 bg-[#0a1e3a]/5">
-            <RadioGroup value={paymentType} onValueChange={setPaymentType} className="flex gap-3">
+            <RadioGroup data-guia="venta-pago" value={paymentType} onValueChange={setPaymentType} className="flex gap-3">
               <div className="flex items-center space-x-1">
                 <RadioGroupItem value="contado" id="contado" className="text-[#0a1e3a] w-3 h-3" />
                 <Label htmlFor="contado" className="text-[11px] font-black text-[#0a1e3a] cursor-pointer">CONTADO</Label>
@@ -600,7 +600,7 @@ const VentasFooter = ({
           </div>
 
           {/* TOTAL FACTURA + Buttons */}
-          <div className="flex items-center border-t border-gray-300 bg-gradient-to-r from-[#fff8e0] to-[#fff0c0]">
+          <div data-guia="venta-total" className="flex items-center border-t border-gray-300 bg-gradient-to-r from-[#fff8e0] to-[#fff0c0]">
             <div className="flex justify-between items-center flex-1 px-3 h-9">
               <span className="text-[16px] font-black text-[#ff0000] uppercase tracking-tighter">TOTAL FACTURA</span>
               <span className="font-mono text-[20px] font-black text-[#ff0000] tracking-tighter leading-none">
@@ -617,6 +617,7 @@ const VentasFooter = ({
               </Button>
               <Button
                 ref={grabarBtnRef}
+                data-guia="venta-grabar"
                 className="h-8 px-3 text-[12px] font-bold flex gap-1.5 items-center uppercase bg-[#0a1e3a] hover:bg-[#0a1e3a]/90 text-white shadow-sm border border-[#0a1e3a]"
                 onClick={handleFacturar}
                 disabled={isSaving}

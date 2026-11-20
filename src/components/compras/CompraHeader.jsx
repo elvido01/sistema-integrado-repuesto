@@ -172,6 +172,7 @@ const CompraHeader = ({ compra, setCompra, proveedores, almacenes, onOpenSuplido
                     value={selectedProveedor?.nombre || compra.suplidor_id || ""}
                     className="h-7 text-xs bg-white text-center font-bold"
                     placeholder="F3 Búscar"
+                    data-guia="compra-suplidor"
                     onKeyDown={(e) => e.key === 'F3' && onOpenSuplidorSearch()}
                     readOnly
                     onClick={onOpenSuplidorSearch}
