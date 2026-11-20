@@ -102,10 +102,10 @@ const ProductTable = ({
               <TableHead>Descripción</TableHead>
               <TableHead className="w-[120px] text-right">Precio</TableHead>
               <TableHead className="w-[120px]">Ubicación</TableHead>
-              <TableHead className="w-[100px]">Marca</TableHead>
-              <TableHead className="w-[100px]">Modelo</TableHead>
+              <TableHead className="hidden xl:table-cell w-[100px]">Marca</TableHead>
+              <TableHead className="hidden xl:table-cell w-[100px]">Modelo</TableHead>
               <TableHead className="w-[100px] text-right">Existencia</TableHead>
-              <TableHead className="w-[100px]">Estado</TableHead>
+              <TableHead className="hidden xl:table-cell w-[100px]">Estado</TableHead>
               <TableHead className="w-[40px] text-center" title="Tienda pública">🛒</TableHead>
             </TableRow>
           </TableHeader>
@@ -169,12 +169,12 @@ const ProductTable = ({
                         {formatPrice(product.precio)}
                       </TableCell>
                       <TableCell className="text-sm">{product.ubicacion || '-'}</TableCell>
-                      <TableCell className="text-sm">{product.marca_nombre || '-'}</TableCell>
-                      <TableCell className="text-sm">{product.modelo_nombre || '-'}</TableCell>
+                      <TableCell className="hidden xl:table-cell text-sm">{product.marca_nombre || '-'}</TableCell>
+                      <TableCell className="hidden xl:table-cell text-sm">{product.modelo_nombre || '-'}</TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {product.existencia?.toFixed(2) || '0.00'}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden xl:table-cell">
                         {getStockBadge(product.existencia, product.min_stock)}
                       </TableCell>
                       <TableCell className="text-center">

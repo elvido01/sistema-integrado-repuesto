@@ -26,16 +26,16 @@ const ProductHeader = ({
   onVerGrupos,
 }) => {
   return (
-    <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-2 gap-4">
-      <div>
-        <h1 className="text-3xl font-black text-morla-blue uppercase tracking-tight">
+    <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-2 gap-x-4 gap-y-2">
+      <div className="min-w-0">
+        <h1 className="text-2xl xl:text-3xl font-black text-morla-blue uppercase tracking-tight whitespace-nowrap">
           Maestro de Artículos
         </h1>
-        <p className="text-gray-500 text-sm font-medium">
+        <p className="hidden xl:block text-gray-500 text-sm font-medium">
           Control total de inventario y catalogación de productos.
         </p>
       </div>
-      <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+      <div className="flex flex-wrap items-center gap-2 xl:gap-3 w-full md:w-auto justify-end">
         <TooltipProvider>
           <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shadow-sm">
             <AlertDialog>
@@ -121,7 +121,7 @@ const ProductHeader = ({
                 title="Productos Equivalentes"
               >
                 <Link2 className="h-5 w-5" />
-                <span className="hidden md:inline">
+                <span className="hidden xl:inline">
                   {agrupandoMode ? `Agrupando (${agrupandoMode === true ? '' : agrupandoMode})` : 'Equivalentes'}
                 </span>
                 <ChevronDown className="h-4 w-4" />
@@ -162,7 +162,7 @@ const ProductHeader = ({
           title={hasSelection ? 'Limpiar imagen del producto seleccionado' : 'Selecciona un articulo para limpiar su imagen'}
         >
           <ImageIcon className="h-5 w-5" />
-          <span>Producto Studio</span>
+          <span className="hidden xl:inline">Producto Studio</span>
         </Button>
 
         <Button

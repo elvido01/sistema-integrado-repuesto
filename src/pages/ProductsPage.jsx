@@ -139,6 +139,20 @@ const ProductsPage = ({ extraData }) => {
   const filtersRef = useRef(filters);
   const paginationRef = useRef(pagination);
   const lastRoutedSearchRef = useRef('');
+  // (20/11/2026) En ventanas angostas el encabezado crece (el título se parte,
+  // los botones bajan) y tapaba la barra de filtros, que estaba pegada a 88 px
+  // fijos. Ahora se pega justo debajo del encabezado, mida lo que mida.
+  const encabezadoRef = useRef(null);
+  const [altoEncabezado, setAltoEncabezado] = useState(88);
+  useEffect(() => {
+    const el = encabezadoRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const medir = () => setAltoEncabezado(Math.round(el.getBoundingClientRect().height));
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => { searchTermRef.current = searchTerm; }, [searchTerm]);
   useEffect(() => { filtersRef.current = filters; }, [filters]);
@@ -717,7 +731,7 @@ const ProductsPage = ({ extraData }) => {
         transition={{ duration: 0.5 }}
         className="p-4 sm:p-6"
       >
-        <div className="sticky top-0 z-50 bg-gray-100/95 backdrop-blur supports-[backdrop-filter]:bg-gray-100/75 pt-4 pb-2 -mt-4 mb-4 border-b border-gray-200">
+        <div ref={encabezadoRef} className="sticky top-0 z-50 bg-gray-100/95 backdrop-blur supports-[backdrop-filter]:bg-gray-100/75 pt-4 pb-2 -mt-4 mb-4 border-b border-gray-200">
           <ProductHeader
             onAdd={() => handleOpenFormModal()}
             onDelete={() => selectedProduct && handleDeleteProduct(selectedProduct.id)}
@@ -734,8 +748,8 @@ const ProductsPage = ({ extraData }) => {
         <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
           {/* Barra de filtros sticky */}
           <div
-            className="sticky top-[88px] z-40 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 py-2 -mx-4 px-4"
-            style={{ '--filters-h': '56px' }}
+            className="sticky z-40 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 py-2 -mx-4 px-4"
+            style={{ '--filters-h': '56px', top: altoEncabezado }}
           >
             <ProductFilters
               searchTerm={searchTerm}
