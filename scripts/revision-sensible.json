@@ -2,7 +2,7 @@
   "huellas": {
     "mobile/app/(tabs)/existencia.tsx": "03d0199fde9d48b7",
     "mobile/app/(tabs)/orden-compra.tsx": "afb0fe45e511582d",
-    "mobile/app/(tabs)/pos.tsx": "2c717fdf40d3f06d",
+    "mobile/app/(tabs)/pos.tsx": "e60e92bb59486f78",
     "mobile/app/(tabs)/recibo-ingreso.tsx": "5a2d47c165dc6679",
     "mobile/app/(tabs)/recibo-pago-financiera.tsx": "6d2c015654ac5900",
     "mobile/app/existencia/index.tsx": "e00bf91a67289cd8",
@@ -340,7 +340,7 @@
     "src/components/ventas/VentasTable.jsx": "5f4f6f02114febfa",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "5e9c7232e9e45e5b",
+    "src/hooks/useVentas.js": "be0f15363bb95976",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -354,7 +354,7 @@
     "src/lib/printNominaFirmas.js": "3dc0d0313bba5afb",
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
-    "src/pages/ComprasPage.jsx": "662fbc5412f8565a",
+    "src/pages/ComprasPage.jsx": "25acba04e17f748d",
     "src/pages/Configuracion/CierreCajaPage.jsx": "2b50de559e520821",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "1a7755683bc8601b",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "4b501b8f867f4b34",
+    "src/pages/VentasPage.jsx": "915c47b4048e09b5",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -398,7 +398,7 @@
     "supabase/functions/emitir-fiscal/dgii_signer.ts": "3ab01a57d8c1f932",
     "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "3ce87e291d537075",
     "supabase/functions/emitir-fiscal/import_map.json": "3d5861c491100d4a",
-    "supabase/functions/emitir-fiscal/index.ts": "b2878ba40923239b",
+    "supabase/functions/emitir-fiscal/index.ts": "a73dbf87658bdfdb",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
     "supabase/functions/motoflow-compras-advisor/index.ts": "e873b25160eded59",
     "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
@@ -452,15 +452,6 @@
     "sql/edu_caja_solo_cobra_ajustes.sql": "b79f4962ece6491a"
   },
   "historial": [
-    {
-      "fecha": "2026-11-04",
-      "nota": "code-review high x2 (20 hallazgos): ambiente decide modo; requisitos al encender (E32 obligatoria, E31/E34 y municipio como aviso); corte produccion_desde en la cola en vez de marcar docs; cert nuevo en produccion solo revisa cert y no pisa el viejo (nombre unico + borrado del sobrante); merge sin nulls ni metadata vieja; activo respetado + dgii_activar; avisos unificados y refresco silencioso. Pendiente menor: el .p12 se abre 2 veces al guardar",
-      "archivos": [
-        "src/components/configuracion/DgiiCertificadoUploader.jsx",
-        "src/components/configuracion/IntegracionFiscalSettings.jsx",
-        "supabase/functions/emitir-fiscal/index.ts"
-      ]
-    },
     {
       "fecha": "2026-11-05",
       "nota": "code-review high x2 sobre el refresco del modo fiscal: 1a version (consulta por venta en VentasPage) descartada por la revision (NCF de papel con modo viejo, espera extra); 2a: refrescarFiscal en el contexto (60 s visible, al volver, tras guardar + BroadcastChannel), guardia de respuestas viejas, no apaga si la empresa activa cambio, desactivar con select. Queda: otra PC tarda hasta 60 s en enterarse",
@@ -975,6 +966,17 @@
       "nota": "code-review high: 7 hallazgos de diseño en la fila de formas de pago (botón borrar solo, monto tope, Efectivo en dólares cortado, comentario, TOTAL/Suman sin wrap, select de impresión); corregidos y verificados con maqueta a 230/270/320/420 px",
       "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-19",
+      "nota": "code-review high: 10 hallazgos (catch del builder, e-CF de FREE en web/app/emitir-fiscal, edición de facturas de la prueba, compra contado con días, orden del plan vigente, RLS de planes, RNC/espera en POS móvil, esFree centralizado, archivos sin guardar) — todos corregidos y probados",
+      "archivos": [
+        "mobile/app/(tabs)/pos.tsx",
+        "src/hooks/useVentas.js",
+        "src/pages/ComprasPage.jsx",
+        "src/pages/VentasPage.jsx",
+        "supabase/functions/emitir-fiscal/index.ts"
       ]
     }
   ]
