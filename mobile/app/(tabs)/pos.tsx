@@ -4,6 +4,7 @@ import { useCartStore, claveLinea } from '@/src/store/useCartStore';
 import ServicioLineaModal from '@/src/components/ServicioLineaModal';
 import { Trash2, Plus, Minus, Search, User, CreditCard, ShoppingCart, PlusCircle, Share2, X, Printer } from 'lucide-react-native';
 import AbrirCajaModal from '@/src/components/AbrirCajaModal';
+import { useObjetivoGuia, useGuiaMovil } from '@/src/guias/GuiaMovil';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { supabase } from '@/src/supabase/client';
@@ -46,6 +47,15 @@ const getLineTotals = (item: any) => {
 
 export default function POSScreen() {
   const router = useRouter();
+  // (20/11/2026) Guía "Tu primera venta desde el teléfono" (src/guias).
+  const guias = useGuiaMovil();
+  const gCliente = useObjetivoGuia('pos-cliente');
+  const gAgregarVacio = useObjetivoGuia('pos-agregar');
+  const gAgregarMas = useObjetivoGuia('pos-agregar');
+  const gRecibido = useObjetivoGuia('pos-recibido');
+  const gCobrar = useObjetivoGuia('pos-cobrar');
+  const ofrecerGuia = !!guias?.debeOfrecer('app-venta');
+  useEffect(() => { if (ofrecerGuia) guias?.ofrecer('app-venta'); }, [ofrecerGuia]); // eslint-disable-line react-hooks/exhaustive-deps
   const insets = useSafeAreaInsets();
   const { user, empresa, tenantId } = useAuthStore();
   const {
@@ -577,7 +587,7 @@ export default function POSScreen() {
     >
       <View className="bg-white px-4 pb-4 border-b border-gray-100 flex-row justify-between items-center" style={{ paddingTop: Math.max(insets.top + 12, 16) }}>
         {/* Tocar el cliente abre el buscador de clientes ya creados */}
-        <TouchableOpacity className="flex-row items-center flex-1" onPress={() => setPickerOpen(true)}>
+        <TouchableOpacity ref={gCliente.ref} className="flex-row items-center flex-1" onPress={() => setPickerOpen(true)}>
           <View className="bg-gray-100 p-2 rounded-full mr-3">
             <User color="#6b7280" size={20} />
           </View>
@@ -603,6 +613,20 @@ export default function POSScreen() {
         ) : null}
       </View>
 
+      {ofrecerGuia && (
+        <View className="mx-4 mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3">
+          <Text className="font-bold text-blue-900">¿Primera vez vendiendo desde el teléfono?</Text>
+          <Text className="mt-0.5 text-xs text-blue-800">Te enseño en 5 pasos, sobre esta misma pantalla.</Text>
+          <View className="mt-2 flex-row">
+            <TouchableOpacity onPress={() => guias?.empezar('app-venta')} className="mr-2 rounded-xl bg-blue-600 px-4 py-2">
+              <Text className="font-bold text-white">Enséñame</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => guias?.omitir('app-venta')} className="rounded-xl px-3 py-2">
+              <Text className="text-blue-800">No, gracias</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
       <FlatList
         data={items}
         keyExtractor={item => claveLinea(item)}
@@ -622,6 +646,7 @@ export default function POSScreen() {
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity
+              ref={gAgregarVacio.ref}
               className={`${esServicios ? 'mt-3 bg-gray-100' : 'mt-6 bg-brand'} px-6 py-3 rounded-full flex-row items-center`}
               onPress={() => router.push('/(tabs)/catalogo?modo=venta')}
             >
@@ -690,6 +715,7 @@ export default function POSScreen() {
 
           {/* Boton para seguir agregando */}
           <TouchableOpacity
+            ref={gAgregarMas.ref}
             className="bg-gray-100 py-3 rounded-xl flex-row justify-center items-center mb-3"
             onPress={() => router.push('/(tabs)/catalogo?modo=venta')}
           >
@@ -706,7 +732,7 @@ export default function POSScreen() {
           </View>
 
           {/* Monto Pagado (input) */}
-          <View className="flex-row justify-between items-center mb-1">
+          <View ref={gRecibido.ref} collapsable={false} className="flex-row justify-between items-center mb-1">
             <Text className="text-gray-600">Monto Pagado</Text>
             <View className="flex-row items-center bg-gray-100 rounded-lg px-3" style={{ minWidth: 140 }}>
               <Text className="text-gray-500 mr-1">RD$</Text>
@@ -736,7 +762,7 @@ export default function POSScreen() {
           )}
 
           {/* Botones */}
-          <View className="flex-row space-x-3">
+          <View ref={gCobrar.ref} collapsable={false} className="flex-row space-x-3">
             <TouchableOpacity
               className="bg-gray-100 p-4 rounded-xl flex-1 items-center justify-center"
               onPress={() => clearCart()}

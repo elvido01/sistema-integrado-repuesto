@@ -13,7 +13,7 @@ import { Helmet } from 'react-helmet';
 import { Activity, Loader2, MessageCircle, RefreshCw, Target } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 
-const NOMBRE_GUIA = { vendedor: 'Crear un vendedor', producto: 'Crear un artículo', venta: 'Primera venta', compra: 'Primera compra' };
+const NOMBRE_GUIA = { vendedor: 'Crear un vendedor', producto: 'Crear un artículo', venta: 'Primera venta', compra: 'Primera compra', 'app-venta': 'App: primera venta', 'app-catalogo': 'App: precio y existencia' };
 const fecha = (v) => (v ? new Date(v).toLocaleDateString('es-DO', { day: '2-digit', month: 'short' }) : '—');
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
 

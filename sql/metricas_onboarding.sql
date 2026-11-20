@@ -118,7 +118,7 @@ BEGIN
       'omitida',    count(DISTINCT user_id) FILTER (WHERE evento = 'omitida'),
       'rota',       count(*) FILTER (WHERE evento = 'elemento_no_encontrado'),
       'web',        count(DISTINCT user_id) FILTER (WHERE COALESCE(plataforma, 'web') = 'web'),
-      'app',        count(DISTINCT user_id) FILTER (WHERE plataforma = 'app')) AS g
+      'app',        count(DISTINCT user_id) FILTER (WHERE plataforma IN ('app', 'movil'))) AS g
       FROM public.guias_eventos
      WHERE created_at >= v_desde
      GROUP BY guia_id) x;

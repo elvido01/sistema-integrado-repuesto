@@ -3,7 +3,7 @@ import { Alert, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users, Repeat, Calculator } from 'lucide-react-native';
+import { Bot, LogOut, Settings, PackageOpen, MapPin, Barcode, FileText, Boxes, Printer, Receipt, ClipboardList, Pin, PinOff, Users, Repeat, Calculator, GraduationCap } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { canAccessModule } from '@/src/services/permissions';
 import { supabase } from '@/src/supabase/client';
@@ -90,7 +90,9 @@ export default function MasScreen() {
     // Solo admin/owner: no existe permiso 'usuarios' para vendedores, así
     // que canAccessModule lo deja pasar únicamente a full-access roles.
     { title: 'Usuarios', icon: Users, route: '/usuarios', color: '#7c3aed', moduleKey: 'usuarios' },
-  ].filter((item) => canAccessModule(profile, permissions, item.moduleKey)
+    // (20/11/2026) Guías paso a paso de la app: para todos.
+    { title: 'Guías de la app', icon: GraduationCap, route: '/guias', color: '#1d4ed8', moduleKey: '', clave: 'guias' },
+  ].filter((item) => (!item.moduleKey || canAccessModule(profile, permissions, item.moduleKey))
     && (!item.quickName || accesoAplica(item.quickName, { tenantId, tipoNegocio: empresa?.tipo_negocio })));
 
   const roleLabel = profile?.role === 'admin'

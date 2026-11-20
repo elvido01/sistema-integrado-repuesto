@@ -10,6 +10,7 @@ import debounce from 'lodash.debounce';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useObjetivoGuia } from '@/src/guias/GuiaMovil';
 import * as Clipboard from 'expo-clipboard';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import { supabase } from '@/src/supabase/client';
@@ -40,6 +41,8 @@ export default function CatalogoScreen() {
   const modoOrdenCompra = params.modo === 'orden-compra';
   const modoCarrito = modoVenta || modoCotizacion || modoPedido || modoOrdenCompra;
   const router = useRouter();
+  // (20/11/2026) Guías de la app: el buscador es un paso de dos guías.
+  const gBuscar = useObjetivoGuia('cat-buscar');
   const queryClient = useQueryClient();
   const [uploadingImage, setUploadingImage] = useState(false);
   const [sharingImage, setSharingImage] = useState(false);
@@ -409,7 +412,7 @@ export default function CatalogoScreen() {
       <View className="bg-brand px-4 pb-3 shadow-sm" style={{ paddingTop: modoCarrito ? 12 : Math.max(insets.top + 12, 16) }}>
         {/* Barra de busqueda + scanner */}
         <View className="flex-row items-center">
-          <View className="flex-1 bg-white rounded-xl flex-row items-center px-3 py-2">
+          <View ref={gBuscar.ref} collapsable={false} className="flex-1 bg-white rounded-xl flex-row items-center px-3 py-2">
             <Search color="#9ca3af" size={20} />
             <TextInput
               className="flex-1 ml-2 text-base text-gray-900"

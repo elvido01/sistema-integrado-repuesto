@@ -7,6 +7,7 @@ import { supabase } from '@/src/supabase/client';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import BloqueoSuscripcion from '@/src/components/BloqueoSuscripcion';
+import { GuiaMovilProvider } from '@/src/guias/GuiaMovil';
 
 const queryClient = new QueryClient();
 
@@ -48,9 +49,11 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Slot />
-      {/* (19/11/2026) Suscripción vencida o empresa en pausa: tapa todo. */}
-      {session && segments[0] !== '(auth)' && (segments[0] as string) !== 'eliminar-cuenta' ? <BloqueoSuscripcion /> : null}
+      {/* (20/11/2026) Guías de la app: el motor dibuja encima de cualquier pantalla. */}
+      {/* (19/11/2026) Suscripción vencida o empresa en pausa: tapa todo, también la guía. */}
+      <GuiaMovilProvider encima={session && segments[0] !== '(auth)' && (segments[0] as string) !== 'eliminar-cuenta' ? <BloqueoSuscripcion /> : null}>
+        <Slot />
+      </GuiaMovilProvider>
       <StatusBar style="auto" />
     </QueryClientProvider>
   );
