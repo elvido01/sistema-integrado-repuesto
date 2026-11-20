@@ -84,6 +84,7 @@ const CuentasBancariasPage = lazy(() => import('@/pages/CuentasBancariasPage'));
 const AprobacionesComprasPage = lazy(() => import('@/pages/AprobacionesComprasPage'));
 const GruposEquivalentesPage = lazy(() => import('@/pages/GruposEquivalentesPage'));
 const AdminDashboard = lazy(() => import('@/pages/Admin/AdminDashboard'));
+const MetricasOnboardingPage = lazy(() => import('@/pages/Admin/MetricasOnboardingPage'));
 const AICeoPage = lazy(() => import('@/pages/AICeoPage'));
 const GestionEmpresarialPage = lazy(() => import('@/pages/GestionEmpresarialPage'));
 const EquipoIAPage = lazy(() => import('@/pages/EquipoIAPage'));
@@ -208,6 +209,8 @@ const componentMapping = {
   'aprobaciones-compras': { component: () => <Protected module="aprobaciones-compras"><AprobacionesComprasPage /></Protected>, icon: ClipboardList, name: 'Aprobaciones de Compras' },
   'grupos-equivalentes': { component: () => <Protected module="grupos-equivalentes"><GruposEquivalentesPage /></Protected>, icon: Sparkles, name: 'Productos Equivalentes' },
   'master-panel': { component: () => <SuperAdminGuard><AdminDashboard /></SuperAdminGuard>, icon: Shield, name: 'Admin Dashboard' },
+  // (20/11/2026) Fase 6 del onboarding: el indicador del dueño y el embudo.
+  'metricas-onboarding': { component: () => <SuperAdminGuard><MetricasOnboardingPage /></SuperAdminGuard>, icon: Shield, name: 'Métricas del onboarding' },
   'ai-ceo': { component: () => <Protected module="ai-ceo"><AICeoPage /></Protected>, icon: Brain, name: 'MOTOFLOW IA CEO' },
   'gestion-empresarial': { component: () => <Protected module="gestion-empresarial"><GestionEmpresarialPage /></Protected>, icon: Brain, name: 'Gestión Empresarial IA' },
   // El permiso real vive en la base (public.equipo_ia_permitido). Aquí solo

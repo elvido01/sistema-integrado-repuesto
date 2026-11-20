@@ -13,11 +13,12 @@ import AdminPagosReview from '@/components/suscripcion/AdminPagosReview';
 import AdminCuentasBancarias from '@/components/suscripcion/AdminCuentasBancarias';
 import AdminEmpresasVacias from '@/components/admin/AdminEmpresasVacias';
 import { invocarConSesion } from '@/lib/edgeInvoke';
+import { usePanels } from '@/contexts/PanelContext';
 import {
   Shield, Loader2, Building2, Calendar, Zap, RefreshCw, Users, Activity,
   DollarSign, TrendingUp, Eye, Power, PowerOff, Clock, ArrowUpRight,
   Package, CreditCard, Search, ChevronDown, ChevronUp, Plus, Link, Copy, Check,
-  BellRing, AlertTriangle, MailCheck
+  BellRing, AlertTriangle, MailCheck, Target
 } from 'lucide-react';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -52,6 +53,7 @@ const normalizeTenant = (tenant) => ({
 });
 
 const AdminDashboard = () => {
+  const { openPanel } = usePanels();
   const { toast } = useToast();
   const [stats, setStats] = useState(null);
   const [tenants, setTenants] = useState([]);
@@ -439,6 +441,16 @@ const AdminDashboard = () => {
               >
                 {linkCopied ? <Check className="w-4 h-4 text-green-400" /> : <Link className="w-4 h-4" />}
                 <span className="text-xs hidden sm:inline">{linkCopied ? 'Copiado' : 'Link Registro'}</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-white/10 gap-1.5"
+                onClick={() => openPanel('metricas-onboarding')}
+                title="Primera venta en 7 días, embudo y guías de las empresas nuevas"
+              >
+                <Target className="w-4 h-4" />
+                <span className="text-xs hidden sm:inline">Métricas onboarding</span>
               </Button>
               <AdminEmpresasVacias onEliminada={fetchAll} />
               <Button
