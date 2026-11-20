@@ -27,14 +27,8 @@ const emptyForm = {
   notas: '',
 };
 
-const docFields = [
-  { key: 'cedula_pasaporte_path', label: 'Cédula / Pasaporte' },
-  { key: 'matricula_moto_path', label: 'Matrícula Moto' },
-  { key: 'placa_path', label: 'Placa' },
-  { key: 'autorizacion_path', label: 'Autorización' },
-  { key: 'carta_saldo_path', label: 'Carta de Saldo' },
-  { key: 'seguro_path', label: 'Seguro' },
-];
+// (20/11/2026) Lista compartida con Documentación Cliente (incluye "Registro DGII" donde aplica).
+import { TODOS_DOC_FIELDS, camposDocumentacion, gridDocumentos } from '@/lib/documentosCliente';
 
 const normalize = (value) => String(value || '').toLowerCase().trim();
 
@@ -176,7 +170,7 @@ export default function DocumentacionClientePage() {
 
   const uploadFiles = async (recordId, currentRecord = {}) => {
     const uploaded = {};
-    for (const field of docFields) {
+    for (const field of TODOS_DOC_FIELDS) {
       const file = files[field.key];
       if (!file) continue;
       const ext = file.name.split('.').pop() || 'jpg';
@@ -241,7 +235,7 @@ export default function DocumentacionClientePage() {
   const handleDelete = async (record) => {
     if (!window.confirm(`¿Borrar documentación de ${record.cliente_nombre}?`)) return;
     try {
-      const paths = docFields.map((f) => record[f.key]).filter(Boolean);
+      const paths = TODOS_DOC_FIELDS.map((f) => record[f.key]).filter(Boolean);
       if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
       const { error } = await supabase.from('documentacion_clientes').delete().eq('id', record.id);
       if (error) throw error;
@@ -254,7 +248,7 @@ export default function DocumentacionClientePage() {
 
   const getSignedUrls = async (record) => {
     const urls = {};
-    await Promise.all(docFields.map(async (field) => {
+    await Promise.all(TODOS_DOC_FIELDS.map(async (field) => {
       const path = record?.[field.key];
       if (!path) return;
       const { data } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 10);
@@ -298,7 +292,7 @@ export default function DocumentacionClientePage() {
     URL.revokeObjectURL(objectUrl);
   };
 
-  const countDocs = (record) => docFields.filter((f) => record[f.key]).length;
+  const countDocs = (record) => camposDocumentacion(empresa?.tipo_negocio, record).filter((f) => record[f.key]).length;
 
   if (tenantId && !tieneModulo(empresa, 'vehiculos')) {
     return (
@@ -412,7 +406,7 @@ export default function DocumentacionClientePage() {
                 </TableCell>
                 <TableCell className="text-center">
                   <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
-                    {countDocs(record)}/{docFields.length}
+                    {countDocs(record)}/{camposDocumentacion(empresa?.tipo_negocio, record).length}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-center text-xs text-slate-500">
@@ -514,8 +508,8 @@ export default function DocumentacionClientePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-              {docFields.map((field) => (
+            <div className={gridDocumentos(camposDocumentacion(empresa?.tipo_negocio, editing).length)}>
+              {camposDocumentacion(empresa?.tipo_negocio, editing).map((field) => (
                 <DocumentSlot
                   key={field.key}
                   label={field.label}

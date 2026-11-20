@@ -14,14 +14,8 @@ import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 
 // ── Documentación (misma tabla/bucket que Documentación Cliente) ──
 const BUCKET = 'documentacion-clientes';
-const docFields = [
-  { key: 'cedula_pasaporte_path', label: 'Cédula / Pasaporte' },
-  { key: 'matricula_moto_path', label: 'Matrícula Moto' },
-  { key: 'placa_path', label: 'Placa' },
-  { key: 'autorizacion_path', label: 'Autorización' },
-  { key: 'carta_saldo_path', label: 'Carta de Saldo' },
-  { key: 'seguro_path', label: 'Seguro' },
-];
+// (20/11/2026) Lista compartida con Documentación Cliente (incluye "Registro DGII" donde aplica).
+import { TODOS_DOC_FIELDS, camposDocumentacion, gridDocumentos } from '@/lib/documentosCliente';
 const ESTADOS_DOC = ['EN TRAMITE', 'ENTREGADA', 'EN CAMINERO MOTORS'];
 const estadoBadge = (estado) => ({
   'EN TRAMITE': 'bg-red-50 text-red-700 border-red-200',
@@ -44,7 +38,7 @@ const fhora = (ts) => {
 
 const NotasComentariosPage = () => {
   const { toast } = useToast();
-  const { tenantId, user, profile } = useAuth();
+  const { tenantId, user, profile, empresa } = useAuth();
   const { closePanel, activePanel } = usePanels();
 
   const [cliente, setCliente] = useState(null);
@@ -233,7 +227,7 @@ const NotasComentariosPage = () => {
   // ── Documentación ──
   const getSignedUrls = async (record) => {
     const urls = {};
-    await Promise.all(docFields.map(async (field) => {
+    await Promise.all(TODOS_DOC_FIELDS.map(async (field) => {
       const path = record?.[field.key];
       if (!path) return;
       const { data } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 10);
@@ -276,7 +270,7 @@ const NotasComentariosPage = () => {
     try {
       const recordId = docEditing?.id || crypto.randomUUID();
       const uploaded = {};
-      for (const field of docFields) {
+      for (const field of TODOS_DOC_FIELDS) {
         const file = docFiles[field.key];
         if (!file) continue;
         const ext = file.name.split('.').pop() || 'jpg';
@@ -324,7 +318,7 @@ const NotasComentariosPage = () => {
   const eliminarDoc = async (record) => {
     if (!window.confirm(`¿Borrar la documentación del chasis ${record.chasis || '(sin chasis)'}?`)) return;
     try {
-      const paths = docFields.map((f) => record[f.key]).filter(Boolean);
+      const paths = TODOS_DOC_FIELDS.map((f) => record[f.key]).filter(Boolean);
       if (paths.length) await supabase.storage.from(BUCKET).remove(paths).catch(() => {});
       const { error } = await supabase.from('documentacion_clientes').delete().eq('id', record.id);
       if (error) throw error;
@@ -355,7 +349,7 @@ const NotasComentariosPage = () => {
     win.document.close();
   };
 
-  const countDocs = (r) => docFields.filter((f) => r[f.key]).length;
+  const countDocs = (r) => camposDocumentacion(empresa?.tipo_negocio, r).filter((f) => r[f.key]).length;
 
   return (
     <div className="p-1.5 bg-slate-100">
@@ -459,7 +453,7 @@ const NotasComentariosPage = () => {
                         <td className="px-2 py-1">
                           {r.matricula ? <span className={`px-1 rounded border text-[10px] font-bold ${estadoBadge(r.matricula)}`}>{r.matricula}</span> : '—'}
                         </td>
-                        <td className="px-2 py-1 text-center">{countDocs(r)}/{docFields.length}</td>
+                        <td className="px-2 py-1 text-center">{countDocs(r)}/{camposDocumentacion(empresa?.tipo_negocio, r).length}</td>
                         <td className="px-2 py-1 whitespace-nowrap">{fdate(r.created_at)}</td>
                       </tr>
                     ))}
@@ -584,8 +578,8 @@ const NotasComentariosPage = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                    {docFields.map((field) => (
+                  <div className={gridDocumentos(camposDocumentacion(empresa?.tipo_negocio, docEditing).length)}>
+                    {camposDocumentacion(empresa?.tipo_negocio, docEditing).map((field) => (
                       <div key={field.key} className="border border-slate-300 rounded bg-slate-50 overflow-hidden">
                         <div className="px-2 py-1.5 bg-slate-100 border-b flex items-center justify-between gap-2">
                           <span className="text-[11px] font-bold text-slate-700 uppercase truncate">{field.label}</span>
@@ -647,7 +641,7 @@ const NotasComentariosPage = () => {
                       {r.matricula && <span className={`px-1 rounded border text-[10px] font-bold ${estadoBadge(r.matricula)}`}>MATRÍCULA: {r.matricula}</span>}
                     </div>
                     <div className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-slate-500">{countDocs(r)}/{docFields.length} imágenes · {fdate(r.created_at)}</span>
+                      <span className="text-[11px] text-slate-500">{countDocs(r)}/{camposDocumentacion(empresa?.tipo_negocio, r).length} imágenes · {fdate(r.created_at)}</span>
                       <div className="flex gap-1">
                         <Button type="button" size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => abrirDocEditar(r)}>
                           <Eye className="w-3 h-3 mr-1" />Ver / Editar

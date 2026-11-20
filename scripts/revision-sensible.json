@@ -461,16 +461,10 @@
     "src/lib/devolucionEfectivo.js": "99cdff5ab9ce85fb",
     "sql/varias_cajas_recibos_otra_empresa.sql": "c05f105aa277902a",
     "src/assets/plantillas/dgii-606.xlsm": "614b75e6da6a0688",
-    "sql/elite_royal_prestige_compras_2025.sql": "fb3cd8b2c20ecf7b"
+    "sql/elite_royal_prestige_compras_2025.sql": "fb3cd8b2c20ecf7b",
+    "sql/documentacion_registro_dgii.sql": "9c0aaf68bd93130e"
   },
   "historial": [
-    {
-      "fecha": "2026-11-08",
-      "nota": "code-review high recibo nativo colegio: 10 hallazgos; arreglados preferencia global de impresora (helper directo al agente), doble recibo si el agente tarda, direccion cortada, formas de pago largas, linea sin descripcion, textos distintos, numeroRecibo/fmt reusados, una sola busqueda de impresora; queda: el patron viejo setPreferredBackend en otras 4 pantallas (no es de este cambio)",
-      "archivos": [
-        "src/pages/colegio/CajaColegioPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-08",
       "nota": "code-review high logo recibo colegio: 10 hallazgos; arreglados espera sin limite del logo (3 s), GS v 0 en bloques, fromCharCode por pedazos, regla Star compartida, import repetido; no se cambio: proporcion del logo en Star (la prueba impresa salio redonda), cache por URL (cada subida trae nombre nuevo), tramado (logos de colegio son de linea)",
@@ -1011,6 +1005,13 @@
       "archivos": [
         "sql/elite_royal_prestige_compras_2025.sql",
         "src/pages/ReportesDGIIPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high (Registro DGII en documentación, financieras): solo agrega columna nullable; hallazgos de borrado/reemplazo de imágenes son previos (no introducidos) y quedan anotados; la columna ya está en prod antes del deploy; regla por tipo 'financiera' según pidió el dueño.",
+      "archivos": [
+        "sql/documentacion_registro_dgii.sql"
       ]
     }
   ]
