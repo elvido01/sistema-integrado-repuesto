@@ -8,6 +8,8 @@ import { supabase } from '@/lib/customSupabaseClient';
 import MotoFlowLogo from '@/components/common/MotoFlowLogo';
 import CaptchaTurnstile from '@/components/common/CaptchaTurnstile';
 
+const TIPOS_FREE = ['repuestos', 'servicios', 'dealer', 'cafeteria'];
+
 const RegistroEmpresaPage = ({ onVolver }) => {
   const [step, setStep] = useState(1); // 1: empresa, 2: usuario, 3: éxito
   const [loading, setLoading] = useState(false);
@@ -31,6 +33,13 @@ const RegistroEmpresaPage = ({ onVolver }) => {
     password: '',
     confirmPassword: '',
   });
+
+  // (19/11/2026) Igual que registrar_nueva_empresa (sql/registro_free.sql):
+  // estos tipos entran en FREE; los demás, con la prueba de 15 días.
+  const entraFree = TIPOS_FREE.includes(empresa.tipo_negocio);
+  // La empresa ya creada en un intento anterior (y el plan que le dio el servidor).
+  const [creada, setCreada] = useState(null);
+  const quedoFree = creada?.plan ? creada.plan === 'FREE' : entraFree;
 
   const handleEmpresaChange = (e) => {
     setEmpresa(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -67,30 +76,34 @@ const RegistroEmpresaPage = ({ onVolver }) => {
       return;
     }
 
-    if (!captcha) {
+    if (!captcha && !creada) {
       setError('Espera la verificación de que no eres un robot (debajo del formulario).');
       return;
     }
 
     setLoading(true);
-    let tenantId = null;
+    let tenantId = creada?.tenant_id || null;
     try {
       // 1. Crear el tenant: la función registrar-empresa comprueba el
       //    captcha en el servidor y llama registrar_nueva_empresa (el
-      //    público ya no puede llamarla directo).
-      const { data: alta, error: altaError } = await supabase.functions.invoke('registrar-empresa', {
-        body: { ...empresa, captcha },
-      });
-      if (altaError) {
-        let msg = altaError.message;
-        try { msg = (await altaError.context.json()).error || msg; } catch { /* sin cuerpo */ }
-        throw new Error(msg);
+      //    público ya no puede llamarla directo). Si ya se creó en un intento
+      //    anterior (falló solo el usuario), no se crea otra.
+      if (!tenantId) {
+        const { data: alta, error: altaError } = await supabase.functions.invoke('registrar-empresa', {
+          body: { ...empresa, captcha },
+        });
+        if (altaError) {
+          let msg = altaError.message;
+          try { msg = (await altaError.context.json()).error || msg; } catch { /* sin cuerpo */ }
+          throw new Error(msg);
+        }
+        if (!alta?.ok) throw new Error(alta?.error || 'No se pudo registrar la empresa.');
+        tenantId = alta.tenant_id;
+        setCreada({ tenant_id: alta.tenant_id, plan: alta.plan || null });
       }
-      if (!alta?.ok) throw new Error(alta?.error || 'No se pudo registrar la empresa.');
-      tenantId = alta.tenant_id;
 
       // 2. Registrar el usuario admin con el tenant_id en metadata
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data: alta2, error: signUpError } = await supabase.auth.signUp({
         email: usuario.email.trim(),
         password: usuario.password,
         options: {
@@ -104,6 +117,11 @@ const RegistroEmpresaPage = ({ onVolver }) => {
       });
 
       if (signUpError) throw signUpError;
+      // Correo que ya tiene cuenta: Supabase no da error, devuelve un usuario
+      // sin identidades y no manda correo.
+      if (alta2?.user && Array.isArray(alta2.user.identities) && alta2.user.identities.length === 0) {
+        throw new Error('Ese correo ya tiene una cuenta en MotoFlow. Usa otro correo para el dueño de esta empresa.');
+      }
 
       setStep(3);
     } catch (err) {
@@ -128,7 +146,9 @@ const RegistroEmpresaPage = ({ onVolver }) => {
             <MotoFlowLogo size="md" showSlogan={false} />
           </div>
           <h1 className="text-xl font-bold text-gray-800 dark:text-white">Registra tu empresa</h1>
-          <p className="text-gray-500 text-xs mt-1">15 días gratis — sin tarjeta de crédito</p>
+          <p className="text-gray-500 text-xs mt-1">
+            {entraFree ? 'Plan Gratis para siempre — sin tarjeta de crédito' : '15 días gratis — sin tarjeta de crédito'}
+          </p>
         </div>
 
         {/* Steps indicator */}
@@ -373,7 +393,9 @@ const RegistroEmpresaPage = ({ onVolver }) => {
             </h2>
             <p className="text-gray-500 text-sm mb-2">
               <span className="font-semibold text-gray-700">{empresa.nombre}</span> ha sido
-              registrada exitosamente con un plan TRIAL de 15 días.
+              {quedoFree
+                ? ' registrada en el plan Gratis. Cuando quieras, prueba el plan Profesional 15 días desde el Inicio.'
+                : ' registrada exitosamente con una prueba de 15 días.'}
             </p>
             <p className="text-gray-400 text-xs mb-6">
               Revisa tu correo <span className="font-semibold text-gray-700">{usuario.email}</span> para

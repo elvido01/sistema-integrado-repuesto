@@ -66,6 +66,9 @@ Deno.serve(async (req) => {
     p_tipo_negocio: texto(b.tipo_negocio, 20) || 'repuestos',
   });
   if (error) return json({ ok: false, error: error.message }, 400);
-  console.log('empresa registrada', data, ip);
-  return json({ ok: true, tenant_id: data });
+  // (19/11/2026) El plan que de verdad quedó (FREE o TRIAL según el tipo):
+  // la web y la app lo muestran tal cual, sin adivinarlo.
+  const { data: t } = await sb.from('tenants').select('plan').eq('id', data).maybeSingle();
+  console.log('empresa registrada', data, t?.plan, ip);
+  return json({ ok: true, tenant_id: data, plan: t?.plan || null });
 });

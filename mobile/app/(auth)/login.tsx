@@ -133,7 +133,7 @@ export default function LoginScreen() {
           <Text className="text-white text-3xl font-bold">MF</Text>
         </View>
         <Text className="text-3xl font-bold text-gray-900">Motoflow</Text>
-        <Text className="text-gray-500 text-base mt-2">Sistema Integrado Repuestos Morla</Text>
+        <Text className="text-gray-500 text-base mt-2">Maneja tu empresa desde tu teléfono</Text>
       </View>
 
       <View className="space-y-4">
@@ -192,6 +192,12 @@ export default function LoginScreen() {
             <Text className="text-brand text-lg font-semibold ml-2">Entrar con huella</Text>
           </TouchableOpacity>
         ) : null}
+
+        {/* (19/11/2026) Registrar empresa desde la app, igual que la web. */}
+        <TouchableOpacity onPress={() => router.replace('/(auth)/registro' as never)} className="mt-8 items-center">
+          <Text className="text-gray-500 text-sm">¿Tu empresa no usa MotoFlow todavía?</Text>
+          <Text className="text-brand text-base font-semibold mt-1">Crear mi empresa gratis</Text>
+        </TouchableOpacity>
       </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -17,6 +17,7 @@ const RegistroEmpresaPage = lazy(() => import('@/pages/RegistroEmpresaPage'));
 const TiendaPage = lazy(() => import('@/pages/TiendaPage'));
 const PrivacyPolicyPage = lazy(() => import('@/pages/PrivacyPolicyPage'));
 const SitioColegioPublico = lazy(() => import('@/pages/colegio/SitioColegioPublico'));
+const CaptchaAppPage = lazy(() => import('@/pages/CaptchaAppPage'));
 import { supabase } from '@/lib/customSupabaseClient';
 import { esDominioPropio, urlDeAutenticacion } from '@/lib/colegioSitio';
 
@@ -148,6 +149,11 @@ function App() {
   const isTienda = window.location.pathname.startsWith('/tienda');
   if (isTienda) {
     return <Suspense fallback={<CargandoPagina />}><TiendaPage /></Suspense>;
+  }
+
+  // ── Captcha para el registro desde la app (vuelve a la app con el token) ──
+  if (window.location.pathname === '/captcha-app') {
+    return <Suspense fallback={<CargandoPagina />}><CaptchaAppPage /></Suspense>;
   }
 
   const publicLegalPaths = new Set([
