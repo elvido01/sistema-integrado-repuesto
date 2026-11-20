@@ -294,8 +294,8 @@
     "src/components/common/pdf/reciboPagoFinancieraPDF.js": "2406de5e17bc89cc",
     "src/components/compras/AgenteCambioSuplidor.jsx": "5a6e7b9765ba4f47",
     "src/components/compras/CompraDetalles.jsx": "6e9b10e09deaf43f",
-    "src/components/compras/CompraFooter.jsx": "25d112bb2fc5327b",
-    "src/components/compras/CompraHeader.jsx": "bc580cc829a0b23a",
+    "src/components/compras/CompraFooter.jsx": "4f34b674fa9b88e8",
+    "src/components/compras/CompraHeader.jsx": "fc265e6479cd4e21",
     "src/components/compras/CompraInteligentePanel.jsx": "ff804e5782a420d7",
     "src/components/compras/InvoiceUploadModal.jsx": "a209c4511074cee9",
     "src/components/compras/PrecisionOcrModal.jsx": "900ae224342d8381",
@@ -335,8 +335,8 @@
     "src/components/ventas/LineasServicios.jsx": "61c17a6ee2e45db3",
     "src/components/ventas/ProductSearchModal.jsx": "9e0d52ea0eb3c5a0",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
-    "src/components/ventas/VentasFooter.jsx": "2fbfcd31c2637f34",
-    "src/components/ventas/VentasHeader.jsx": "a70b598a2132cb65",
+    "src/components/ventas/VentasFooter.jsx": "92e01cc6d3e8d6d4",
+    "src/components/ventas/VentasHeader.jsx": "92b4d604ebcc8007",
     "src/components/ventas/VentasTable.jsx": "5f4f6f02114febfa",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
@@ -354,7 +354,7 @@
     "src/lib/printNominaFirmas.js": "3dc0d0313bba5afb",
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
-    "src/pages/ComprasPage.jsx": "25acba04e17f748d",
+    "src/pages/ComprasPage.jsx": "9e0baafc192d0751",
     "src/pages/Configuracion/CierreCajaPage.jsx": "b1771929f5d7b3aa",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
@@ -455,14 +455,6 @@
     "src/components/caja/AbrirCajaModal.jsx": "14134503bcfd511c"
   },
   "historial": [
-    {
-      "fecha": "2026-11-05",
-      "nota": "code-review high: 9 hallazgos en vista previa e-NCF; corregidos tipo E31/E32 igual al builder, siguiente=ultimo+1 con aviso fuera de rango, error visible, no recalcula editando, recarga al cambiar empresa. Sin corregir: bloquear guardar con secuencia agotada, helper compartido, estado cargando",
-      "archivos": [
-        "src/components/ventas/VentasHeader.jsx",
-        "src/hooks/useVentas.js"
-      ]
-    },
     {
       "fecha": "2026-11-05",
       "nota": "code-review high: ACECF fechas, 10 hallazgos (cellNF faltante, serial sin redondeo, hora por valor, date1904, codigo muerto, normalizadores repartidos); todos corregidos con un solo fechaDgiiDesdeXlsx en el builder y SSF.format en el navegador",
@@ -985,6 +977,17 @@
         "src/components/caja/AbrirCajaModal.jsx",
         "src/pages/Configuracion/CierreCajaPage.jsx",
         "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high: 10 hallazgos (data-guia del vendedor en el comprobante, paneles ocultos contaban como visibles, cliente sin selector en PC, guardar dentro de setState, paso fuera de rango, botón tapaba el menú, errores RPC callados, re-render cada 200ms, plataforma NULL, archivos sin guardar) — corregidos; los cambios en ventas/compras son solo marcas data-guia",
+      "archivos": [
+        "src/components/compras/CompraFooter.jsx",
+        "src/components/compras/CompraHeader.jsx",
+        "src/components/ventas/VentasFooter.jsx",
+        "src/components/ventas/VentasHeader.jsx",
+        "src/pages/ComprasPage.jsx"
       ]
     }
   ]
