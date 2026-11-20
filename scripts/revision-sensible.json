@@ -354,7 +354,7 @@
     "src/lib/printNominaFirmas.js": "3dc0d0313bba5afb",
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
-    "src/pages/ComprasPage.jsx": "9e0baafc192d0751",
+    "src/pages/ComprasPage.jsx": "712407d792d03790",
     "src/pages/Configuracion/CierreCajaPage.jsx": "b1771929f5d7b3aa",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
@@ -373,8 +373,8 @@
     "src/pages/PagoComisionesPage.jsx": "93b599205d8ae46c",
     "src/pages/PagoSuplidoresPage.jsx": "b949de6dd5010136",
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
-    "src/pages/ReciboPagoFinancieraPage.jsx": "edc2ea78ad549ed7",
-    "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
+    "src/pages/ReciboPagoFinancieraPage.jsx": "dc40079e3bb0b250",
+    "src/pages/ReporteComprasPage.jsx": "854bc2b94bec3750",
     "src/pages/ReportesDGIIPage.jsx": "1a7755683bc8601b",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
     "src/pages/VentasPage.jsx": "bc256d138b0ab681",
@@ -455,15 +455,6 @@
     "src/components/caja/AbrirCajaModal.jsx": "14134503bcfd511c"
   },
   "historial": [
-    {
-      "fecha": "2026-11-05",
-      "nota": "code-review high: ACECF fechas, 10 hallazgos (cellNF faltante, serial sin redondeo, hora por valor, date1904, codigo muerto, normalizadores repartidos); todos corregidos con un solo fechaDgiiDesdeXlsx en el builder y SSF.format en el navegador",
-      "archivos": [
-        "src/components/configuracion/DgiiAprobacionComercialRunner.jsx",
-        "supabase/functions/emitir-fiscal/dgii_xml_builder.ts",
-        "supabase/functions/emitir-fiscal/index.ts"
-      ]
-    },
     {
       "fecha": "2026-11-06",
       "nota": "code-review high: RFCE omite Comprador/FormaDePago/ImpuestoAdicional vacios (Firma Invalida E320000000032) + error claro sin totales + test; firmador no se toca (byte-perfect)",
@@ -988,6 +979,15 @@
         "src/components/ventas/VentasFooter.jsx",
         "src/components/ventas/VentasHeader.jsx",
         "src/pages/ComprasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high: esFree sin definir (Inicio caído) y openPanel faltante corregidos; hallazgos aplicados (jsx-no-undef, archivos ilegibles, errores de eslint no apagan el revisor, estilo FREE, aviso compra:guardada)",
+      "archivos": [
+        "src/pages/ComprasPage.jsx",
+        "src/pages/ReciboPagoFinancieraPage.jsx",
+        "src/pages/ReporteComprasPage.jsx"
       ]
     }
   ]
