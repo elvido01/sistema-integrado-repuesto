@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { importeLineaCompra } from '@/lib/compraLinea';
+import { importeLineaCompra, totalesCompra, totalesCompraPorLinea } from '@/lib/compraLinea';
 import { findAlmacenPrincipal } from '@/lib/almacenUtils';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
@@ -49,6 +49,9 @@ const ComprasPage = () => {
   const currentPanel = panels.find(p => p.id === activePanel);
   const compraParaEditar = currentPanel?.extraData?.compraParaEditar;
   const [isEditMode, setIsEditMode] = useState(false);
+  // Compra grabada con la regla de ITBIS de antes (por línea): se edita con
+  // esa misma regla para que sus pagos y pagarés no se descuadren.
+  const [itbisPorLinea, setItbisPorLinea] = useState(false);
   // >>> EL NÚMERO DE LA COMPRA QUE SE EDITA NO SE TOCA <<<
   // (05/10/2026) Al abrir una compra para editar, la carga inicial pedía "el
   // siguiente número" en paralelo y, si llegaba después, PISABA el de la
@@ -215,6 +218,7 @@ const ComprasPage = () => {
     setFinanciamientoGrupo(null);
     setCompraConPagos(false);
     numeroOriginal.current = null;
+    setItbisPorLinea(false);
 
     // Fetch new number after reset
     const { data: nextNum, error: numError } = await supabase.rpc('get_next_compra_numero');
@@ -230,6 +234,7 @@ const ComprasPage = () => {
     const loadCompraData = async () => {
       if (!compraParaEditar) return;
       setIsEditMode(true);
+      setItbisPorLinea(false);
       
       const { data, error } = await supabase
         .from('compras')
@@ -302,7 +307,7 @@ const ComprasPage = () => {
       const aUSD = (v) => Number(((Number(v) || 0) / tasaCompraUSD).toFixed(2));
 
       if (filaDetalle.compras_detalle) {
-        setDetalles(filaDetalle.compras_detalle.map(d => {
+        const detallesCargados = filaDetalle.compras_detalle.map(d => {
           const costo = tasaCompraUSD ? aUSD(d.costo_unitario) : d.costo_unitario;
           return {
             ...d,
@@ -312,7 +317,19 @@ const ComprasPage = () => {
             original_id: d.id,
             id: Math.random() // for local unique key rendering
           };
-        }));
+        });
+        setDetalles(detallesCargados);
+        // (20/11/2026) ¿Con qué regla de ITBIS se grabó? La que reproduce el
+        // total guardado (en la moneda de pantalla). Si es la de antes (por
+        // línea), se edita con ella: los pagos y pagarés suman ese total.
+        // No se mira la fecha: los pagarés se recrean al editarlos.
+        const filas = esGrupo ? grupo : [data];
+        const guardado = filas.reduce((s, g) => s + (tasaCompraUSD
+          ? Number(g.total_usd ?? aUSD(g.total_compra)) : Number(g.total_compra || 0)), 0);
+        const inc = filaDetalle.itbis_incluido ?? false;
+        const vieja = totalesCompraPorLinea(detallesCargados, inc).total;
+        const nueva = totalesCompra(detallesCargados, inc).total;
+        setItbisPorLinea(Math.abs(vieja - guardado) < 0.005 && Math.abs(nueva - guardado) >= 0.005);
       }
 
       if (esGrupo) {
@@ -442,39 +459,12 @@ const ComprasPage = () => {
     });
   }, [compra.itbis_incluido]);
 
-  const totals = useMemo(() => {
-    let exento = 0;
-    let gravado = 0;
-    let descuento = 0;
-    let itbis = 0;
-
-    detalles.forEach(d => {
-      const subtotalItem = Number((d.cantidad * d.costo_unitario).toFixed(2));
-      const descuentoItem = Number((subtotalItem * (d.descuento_pct / 100)).toFixed(2));
-      descuento += descuentoItem;
-
-      const baseCalculo = Number((subtotalItem - descuentoItem).toFixed(2));
-
-      if (d.itbis_pct > 0) {
-        if (compra.itbis_incluido) {
-          // Si está incluido, la base es (Total / 1.18) y el ITBIS es (Total - Base)
-          const baseSinItbis = Number((baseCalculo / (1 + d.itbis_pct)).toFixed(2));
-          gravado += baseSinItbis;
-          itbis += Number((baseCalculo - baseSinItbis).toFixed(2));
-        } else {
-          // TRUNCAR A 2 DECIMALES SEGUN REQUERIMIENTO USER
-          const itbisItem = Math.trunc((baseCalculo * d.itbis_pct) * 100) / 100;
-          gravado += baseCalculo;
-          itbis += itbisItem;
-        }
-      } else {
-        exento += baseCalculo;
-      }
-    });
-
-    const total = Number((gravado + exento + itbis).toFixed(2));
-    return { exento, gravado, descuento, itbis, total };
-  }, [detalles, compra.itbis_incluido]);
+  // (20/11/2026) ITBIS sobre el total de cada tasa, como en la factura del
+  // suplidor (antes: suma del ITBIS truncado de cada línea, unos centavos
+  // menos que el comprobante). Regla y pruebas en lib/compraLinea.
+  const totals = useMemo(() => (itbisPorLinea
+    ? totalesCompraPorLinea(detalles, compra.itbis_incluido)
+    : totalesCompra(detalles, compra.itbis_incluido)), [detalles, compra.itbis_incluido, itbisPorLinea]);
 
   // --- Suplidor que factura en US$: la compra se digita en dólares y el
   // sistema convierte a RD$ con la tasa del día al grabar (costo/precio

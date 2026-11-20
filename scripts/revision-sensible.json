@@ -354,7 +354,7 @@
     "src/lib/printNominaFirmas.js": "3dc0d0313bba5afb",
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
-    "src/pages/ComprasPage.jsx": "712407d792d03790",
+    "src/pages/ComprasPage.jsx": "cd360a2822e0ce45",
     "src/pages/Configuracion/CierreCajaPage.jsx": "3ecf5ec40d1f57db",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
@@ -417,7 +417,7 @@
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
-    "src/lib/compraLinea.js": "23cb74e4cfc96c56",
+    "src/lib/compraLinea.js": "5eb03c51ccce7259",
     "src/components/ventas/VarianteVentaModal.jsx": "b5614dae50ceb98e",
     "sql/ecf_quitar_secuencia.sql": "1421b83e85017acd",
     "src/lib/docFiscal.js": "545261c10cc50d1e",
@@ -456,14 +456,6 @@
     "sql/contado_con_retencion.sql": "aeb89728ac90e9e9"
   },
   "historial": [
-    {
-      "fecha": "2026-11-06",
-      "nota": "code-review high: 10 hallazgos; 9 arreglados (ano completo por estudiante, efectivo en dolares cuenta como efectivo, esperar el ano antes de abrir, recargos al abrir familia y dentro del cobro, RI en el papel, reimpresion con el ano del recibo, anular por rol de la empresa activa, LIMIT 1 con ORDER BY, busqueda sin respuestas viejas); es_tercero en el recibo se deja a proposito (regla: los cobros a terceros no salen de las formulas de efectivo). Probado con BEGIN/ROLLBACK.",
-      "archivos": [
-        "sql/centros_educativos_caja.sql",
-        "src/pages/colegio/CajaColegioPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-07",
       "nota": "code-review high (parte 4 colegio): 10 hallazgos, 10 arreglados - cargos anulados ya no se recrean (preparar/recargos con NOT EXISTS), cambio de ano exige p_anio_actual, caja relee el ano actual, Marcar como actual vuelve con aviso, desempate por curso, retiro por vencimiento, fecha local, edu_soy_direccion, helpers unicos en colegio.js, cache de cabecera solo si lee bien. Probado BEGIN/ROLLBACK.",
@@ -994,6 +986,14 @@
         "src/hooks/useVentas.js",
         "src/pages/Configuracion/CierreCajaPage.jsx",
         "src/pages/VentasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high x2 (20/11): ITBIS de compra sobre el total por tasa (centavos enteros, medio centavo hacia afuera, simétrico en negativos, tasas por puntos básicos); al editar se usa la regla que reproduce el total guardado (verificado con 300 compras reales: 150 solo vieja, 90 ambas, 27 nueva, 31 ninguna = ya descuadradas antes); USD como antes. Conocido: Σ importe de línea (truncado) puede diferir del total por centavos; PDF por línea igual",
+      "archivos": [
+        "src/lib/compraLinea.js",
+        "src/pages/ComprasPage.jsx"
       ]
     }
   ]
