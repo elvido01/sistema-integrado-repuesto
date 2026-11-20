@@ -236,6 +236,16 @@ const mismoRect = (a, b) => a && b && a.top === b.top && a.left === b.left && a.
 function PasoGuia({ activa, panelActivo, onIr, onSalir, guardar }) {
   const { guia, paso } = activa;
   const p = guia.pasos[paso];
+  const sig = guia.pasos[paso + 1];
+  // (20/11/2026) Un paso "púlsalo" (abre un formulario) no se puede saltar
+  // con Siguiente: los pasos de después señalan campos de ese formulario y,
+  // sin abrirlo, la guía quedaba "en el aire". Si el formulario ya está
+  // abierto (se ve el campo del paso siguiente), la guía avanza sola.
+  const bloqueaSiguiente = !!p?.avanzarAlClic && !!sig;
+  // Paso "púlsalo" anterior más cercano: si se cierra el formulario a mitad
+  // de la guía, se ofrece volver ahí para abrirlo de nuevo.
+  let ancla = -1;
+  for (let i = paso - 1; i >= 0; i -= 1) { if (guia.pasos[i]?.avanzarAlClic) { ancla = i; break; } }
   const [rect, setRect] = useState(null);
   const [perdido, setPerdido] = useState(false);
   const avisado = useRef(false);
@@ -253,6 +263,7 @@ function PasoGuia({ activa, panelActivo, onIr, onSalir, guardar }) {
     let elActual = null;
     let alClic = null;
     const tick = () => {
+      if (p.avanzarAlClic && sig && buscarVisible(sig.selector, panelActivo)) { onIr(paso + 1, paso); return; }
       const el = buscarVisible(p.selector, panelActivo);
       if (el) {
         if (el !== elActual) {
@@ -283,7 +294,7 @@ function PasoGuia({ activa, panelActivo, onIr, onSalir, guardar }) {
     tick();
     const id = setInterval(tick, 200);
     return () => { clearInterval(id); if (elActual && alClic) elActual.removeEventListener('click', alClic, true); };
-  }, [guia, paso, p, panelActivo, onIr, guardar]);
+  }, [guia, paso, p, sig, panelActivo, onIr, guardar]);
 
   useEffect(() => {
     if (ventanita.current) setTam({ ancho: ventanita.current.offsetWidth, alto: ventanita.current.offsetHeight });
@@ -318,18 +329,29 @@ function PasoGuia({ activa, panelActivo, onIr, onSalir, guardar }) {
         <div className="mt-1 text-xs leading-relaxed text-gray-600">{p.texto}</div>
         {perdido && (
           <div className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
-            No veo ese lugar en tu pantalla ahora mismo (puede estar en otra pestaña o cerrado). Puedes seguir con el siguiente paso.
+            {bloqueaSiguiente
+              ? 'No veo ese botón en tu pantalla ahora mismo (puede estar en otra pestaña). Vuelve a la pantalla del módulo para seguir.'
+              : ancla >= 0
+                ? `No veo ese lugar: parece que se cerró la ventana. Vuelve al paso ${ancla + 1} para abrirla de nuevo.`
+                : 'No veo ese lugar en tu pantalla ahora mismo (puede estar en otra pestaña o cerrado). Puedes seguir con el siguiente paso.'}
           </div>
         )}
-        {p.avanzarAlClic && rect && !perdido && <div className="mt-2 text-[11px] font-bold text-blue-700">Púlsalo para seguir.</div>}
+        {perdido && !bloqueaSiguiente && ancla >= 0 && (
+          <button type="button" onClick={() => onIr(ancla)}
+            className="mt-2 w-full rounded-lg border border-amber-300 bg-amber-50 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100">
+            Volver al paso {ancla + 1}: {guia.pasos[ancla].titulo}
+          </button>
+        )}
+        {p.avanzarAlClic && !perdido && <div className="mt-2 text-[11px] font-bold text-blue-700">Pulsa el botón señalado para seguir.</div>}
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-gray-100">
           <div className="h-full bg-blue-600 transition-all" style={{ width: `${Math.round(((paso + 1) / guia.pasos.length) * 100)}%` }} />
         </div>
         <div className="mt-3 flex items-center gap-2">
           <button type="button" disabled={paso === 0} onClick={() => onIr(paso - 1)}
             className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40">Atrás</button>
-          <button type="button" onClick={() => onIr(paso + 1)}
-            className="flex-1 rounded-lg bg-blue-600 py-1.5 text-xs font-bold text-white hover:bg-blue-700">
+          <button type="button" onClick={() => onIr(paso + 1)} disabled={bloqueaSiguiente}
+            title={bloqueaSiguiente ? 'Pulsa el botón señalado para seguir' : undefined}
+            className="flex-1 rounded-lg bg-blue-600 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
             {ultimo ? 'Terminar' : 'Siguiente'}
           </button>
         </div>

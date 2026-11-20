@@ -510,6 +510,7 @@ const ProductBasicInfo = ({ formData, setFormData, onCodigoBlur, onProductSelect
                 <div className="relative flex-1">
                   <Input
                     id="codigo"
+                    data-guia="producto-codigo"
                     value={formData.codigo}
                     onChange={handleInputChange}
                     onBlur={(e) => onCodigoBlur(e.target.value)}
