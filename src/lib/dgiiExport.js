@@ -373,8 +373,8 @@ export const armarTxtDgii = (reporte, rnc, year, month, detalle) => {
 // ─────────────────────────────────────────────────────────
 // Descargar como archivo TXT
 // ─────────────────────────────────────────────────────────
-export const downloadTxt = (contenido, filename) => {
-  const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
+/** Descarga un Blob con ese nombre (el enlace se suelta después, no antes de bajar). */
+export const descargarBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -382,7 +382,16 @@ export const downloadTxt = (contenido, filename) => {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
+
+export const downloadTxt = (contenido, filename) =>
+  descargarBlob(new Blob([contenido], { type: 'text/plain;charset=utf-8' }), filename);
+
+/** RNC (9) o cédula (11) de la empresa, solo dígitos; '' si no sirve. */
+export const rncEmpresaValido = (rnc) => {
+  const r = cleanRncCedula(rnc);
+  return r.length === 9 || r.length === 11 ? r : '';
 };
 
 // Nombre de archivo estándar DGII: DGII_F_<REPORTE>_<RNC>_<YYYYMM>.TXT

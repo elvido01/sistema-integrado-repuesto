@@ -9,12 +9,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Download, FileText, Loader2, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { PLANTILLA_606_URL, prepararPlantilla606, nombreArchivo606 } from '@/lib/plantilla606';
 import { rangoDeFechas } from '@/lib/dateUtils';
 import {
   generar607, generar608, revisar606, fila606, TIPOS_606, tipoBS606,
   downloadTxt, nombreArchivoDgii, fmtMonto, cleanRncCedula, tipoIdentificacion, fmtFecha,
-  armarTxtDgii, MAX_REGISTROS_DGII, montoFacturado607,
+  armarTxtDgii, MAX_REGISTROS_DGII, montoFacturado607, descargarBlob, rncEmpresaValido,
 } from '@/lib/dgiiExport';
+
+const SIN_RNC_606 = { variant: 'destructive', title: 'Falta el RNC de la empresa', description: 'El 606 lleva el RNC (9 dígitos) o la cédula (11). Póngalo en Perfil Empresa.' };
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -321,11 +324,52 @@ const ReportesDGIIPage = () => {
   };
 
   // ── Exportar Excel (preview para contador) ──
-  // (17/11/2026) Uno o varios meses en el mismo archivo. Con varios, cada fila
-  // lleva su período (AAAAMM) al final —en el 606 después de las 23 columnas,
-  // para que se sigan pegando tal cual— y hay una hoja "Resumen" mes por mes.
+  // (17/11/2026) 607 y 608: uno o varios meses en el mismo archivo. Con
+  // varios, cada fila lleva su período (AAAAMM) al final y hay una hoja
+  // "Resumen" mes por mes.
   // periodos: [{ year, month, ventas, rev606, anulados }]
+  // (20/11/2026) El 606 en Excel sale en la plantilla oficial de la DGII
+  // ("Herramienta Formato 606", con sus macros), UN ARCHIVO POR MES: la DGII
+  // lo recibe mes por mes. Los meses sin compras no bajan archivo (se
+  // declaran en cero en la Oficina Virtual).
+  const exportarPlantilla606 = async (periodos) => {
+    const rnc = rncEmpresaValido(empresa?.rnc);
+    if (!rnc) { toast(SIN_RNC_606); return; }
+    const resp = await fetch(PLANTILLA_606_URL);
+    if (!resp.ok) throw new Error('No se pudo bajar la plantilla de la DGII. Revise la conexión e intente de nuevo.');
+    const plantilla = await prepararPlantilla606(await resp.arrayBuffer());
+    const per = (p) => `${p.year}${String(p.month).padStart(2, '0')}`;
+    const nombreMes = (p) => `${MESES[p.month - 1]} ${p.year}`;
+    const bajados = [];
+    const vacios = [];
+    const noVan = [];
+    for (const p of periodos) {
+      const filas = p.rev606.incluidas.map((c) => fila606(c));
+      if (p.rev606.excluidas.length) noVan.push(`${p.rev606.excluidas.length} en ${nombreMes(p)}`);
+      if (!filas.length) { vacios.push(nombreMes(p)); continue; }
+      const blob = await plantilla.armar({ rnc, periodo: per(p), filas });
+      if (!montado.current) return;
+      descargarBlob(blob, nombreArchivo606(rnc, per(p)));
+      bajados.push(nombreMes(p));
+      // El navegador baja varios archivos seguidos si van con una pausa.
+      if (periodos.length > 1) await new Promise((r) => setTimeout(r, 800));
+    }
+    if (!bajados.length) {
+      toast({ title: 'Sin compras para el 606', description: `No hay compras que vayan en el 606 en ${vacios.join(', ')}. Si no hubo compras, se declara en cero en la Oficina Virtual.` });
+      return;
+    }
+    toast({
+      title: bajados.length > 1 ? `606: ${bajados.length} archivos, uno por mes` : 'Excel del 606 descargado',
+      description: `Plantilla de la DGII: ${bajados.join(', ')}.`
+        + (vacios.length ? ` Sin compras: ${vacios.join(', ')}.` : '')
+        + (noVan.length ? ` Compras que no van en el 606: ${noVan.join(', ')} — abra ese mes arriba para verlas.` : '')
+        + (bajados.length > 1 ? ' Si el navegador preguntó y no permitió descargar varios archivos, permítalo y vuelva a bajarlos: revise que tenga uno por cada mes.' : ''),
+      duration: 12000,
+    });
+  };
+
   const exportExcel = async (reporte, periodos) => {
+    if (reporte === '606') return exportarPlantilla606(periodos);
     const varios = periodos.length > 1;
     const per = (p) => `${p.year}${String(p.month).padStart(2, '0')}`;
     const r2 = (x) => Math.round(x * 100) / 100;
@@ -374,45 +418,6 @@ const ReportesDGIIPage = () => {
         });
         resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.ventas.length, monto: r2(monto), itbis: r2(itbis), total: r2(total) });
       });
-    } else if (reporte === '606') {
-      const COLS = ['RNC o Cédula', 'Tipo Id', 'Tipo Bienes y Servicios Comprados', 'NCF', 'NCF o Documento Modificado',
-        'Fecha Comprobante', 'Fecha Pago', 'Monto Facturado en Servicios', 'Monto Facturado en Bienes', 'Total Monto Facturado',
-        'ITBIS Facturado', 'ITBIS Retenido', 'ITBIS sujeto a Proporcionalidad (Art. 349)', 'ITBIS llevado al Costo',
-        'ITBIS por Adelantar', 'ITBIS percibido en compras', 'Tipo de Retención en ISR', 'Monto Retención Renta',
-        'ISR Percibido en compras', 'Impuesto Selectivo al Consumo', 'Otros Impuestos/Tasas', 'Monto Propina Legal', 'Forma de Pago'];
-      ws.columns = [...COLS.map((h, i) => ({ header: h, key: `c${i}`, width: i < 7 ? 15 : 13 })),
-        { header: 'Suplidor (no se pega)', key: 'sup', width: 30 }, { header: 'Aviso (no se pega)', key: 'aviso', width: 45 },
-        ...colPeriodo];
-      const excluidas = [];
-      periodos.forEach((p) => {
-        let monto = 0; let itbis = 0; let total = 0;
-        // Códigos y NCF como texto: Excel no les quita los ceros.
-        p.rev606.incluidas.forEach((c) => {
-          const f = fila606(c);
-          const fila = {};
-          f.forEach((v, i) => { fila[`c${i}`] = (i >= 7 && i <= 21 && i !== 16) ? Number(v || 0) : v; });
-          ws.addRow({ ...fila, sup: c.suplidor_nombre || '', aviso: c.avisos.join(' · '), periodo: per(p) });
-          monto += parseFloat(c.total_gravado || 0) + parseFloat(c.total_exento || 0);
-          itbis += parseFloat(c.itbis_total || 0);
-          total += parseFloat(c.total_compra || 0);
-        });
-        p.rev606.excluidas.forEach((c) => excluidas.push({ c, periodo: per(p) }));
-        resumen.push({ periodo: per(p), mes: `${MESES[p.month - 1]} ${p.year}`, registros: p.rev606.incluidas.length, monto: r2(monto), itbis: r2(itbis), total: r2(total), noVan: p.rev606.excluidas.length });
-      });
-      if (excluidas.length) {
-        const wx = wb.addWorksheet('No van en el 606');
-        wx.columns = [
-          { header: 'Fecha', key: 'fecha', width: 12 }, { header: 'NCF', key: 'ncf', width: 16 },
-          { header: 'Suplidor', key: 'sup', width: 30 }, { header: 'RNC', key: 'rnc', width: 14 },
-          { header: 'Total', key: 'total', width: 12 }, { header: 'Por qué no va', key: 'motivo', width: 60 },
-          { header: 'Qué hacer', key: 'accion', width: 60 }, ...colPeriodo,
-        ];
-        excluidas.forEach(({ c, periodo }) => wx.addRow({
-          fecha: fmtFecha(c.fecha), ncf: c.ncf, sup: c.suplidor_nombre || '', rnc: cleanRncCedula(c.suplidor_rnc),
-          total: parseFloat(c.total_compra || 0), motivo: c.motivo, accion: c.accion, periodo,
-        }));
-        wx.getRow(1).font = { bold: true };
-      }
     } else if (reporte === '608') {
       ws.columns = [
         { header: 'NCF', key: 'ncf', width: 15 },
@@ -445,11 +450,10 @@ const ReportesDGIIPage = () => {
           { header: 'ITBIS', key: 'itbis', width: 14, style: { numFmt: '#,##0.00' } },
           { header: 'Total', key: 'total', width: 16, style: { numFmt: '#,##0.00' } },
         ] : []),
-        ...(reporte === '606' ? [{ header: 'No van en el 606', key: 'noVan', width: 16 }] : []),
       ];
       resumen.forEach((r) => wr.addRow(r));
       const sum = (k) => Math.round(resumen.reduce((s, r) => s + (Number(r[k]) || 0), 0) * 100) / 100;
-      const tot = wr.addRow({ periodo: 'TOTAL', registros: sum('registros'), monto: sum('monto'), itbis: sum('itbis'), total: sum('total'), noVan: sum('noVan') });
+      const tot = wr.addRow({ periodo: 'TOTAL', registros: sum('registros'), monto: sum('monto'), itbis: sum('itbis'), total: sum('total') });
       tot.font = { bold: true };
       wr.getRow(1).font = { bold: true };
       wr.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } };
@@ -457,14 +461,7 @@ const ReportesDGIIPage = () => {
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = varios ? `${reporte}_${per(primero)}-${per(ultimo)}.xlsx` : `${reporte}_${per(primero)}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    descargarBlob(blob, varios ? `${reporte}_${per(primero)}-${per(ultimo)}.xlsx` : `${reporte}_${per(primero)}.xlsx`);
     const deQue = varios
       ? `${MESES[primero.month - 1]} ${primero.year} a ${MESES[ultimo.month - 1]} ${ultimo.year} (${periodos.length} meses)`
       : `${MESES[primero.month - 1]} ${primero.year}`;
@@ -477,7 +474,11 @@ const ReportesDGIIPage = () => {
       toast({ title: 'Espere un momento', description: 'El mes todavía se está cargando.' });
       return;
     }
-    exportExcel(reporte, [{ year: cargado.year, month: cargado.month, ventas, rev606, anulados }]);
+    if (enCurso.current) return; // dos clics rápidos no bajan dos veces
+    enCurso.current = true;
+    exportExcel(reporte, [{ year: cargado.year, month: cargado.month, ventas, rev606, anulados }])
+      .catch((error) => { if (montado.current) toast({ variant: 'destructive', title: 'No se pudo armar el Excel', description: error.message }); })
+      .finally(() => { enCurso.current = false; });
   };
 
   // ── Excel de varios meses ──
@@ -501,9 +502,11 @@ const ReportesDGIIPage = () => {
       return;
     }
     if (fin - ini + 1 > 24) {
-      toast({ variant: 'destructive', title: 'Rango muy largo', description: 'Hasta 24 meses por archivo.' });
+      toast({ variant: 'destructive', title: 'Rango muy largo', description: reporte === '606' ? 'Hasta 24 meses de una vez.' : 'Hasta 24 meses por archivo.' });
       return;
     }
+    // El 606 lleva el RNC: se avisa antes de cargar los meses, no después.
+    if (reporte === '606' && !rncEmpresaValido(empresa?.rnc)) { toast(SIN_RNC_606); return; }
     const tenantInicio = tenantId;
     const que = { v607: reporte === '607', c606: reporte === '606', a608: reporte === '608' };
     const periodos = [];
@@ -571,7 +574,8 @@ const ReportesDGIIPage = () => {
             </div>
           </div>
 
-          {/* (17/11/2026) Excel de varios meses: un archivo con todos, mes por mes. */}
+          {/* (17/11/2026) Excel de varios meses: 607 y 608 en un archivo con
+              todos; el 606 (20/11/2026) baja un archivo por mes en la plantilla de la DGII. */}
           <div className="mt-3 flex flex-wrap items-end gap-2 border-t pt-3">
             <div className="text-xs font-semibold text-slate-600 mr-1 self-center">Excel de varios meses:</div>
             <div>
@@ -683,7 +687,7 @@ const ReportesDGIIPage = () => {
                 <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900 space-y-0.5">
                   <p><b>Van en el 606:</b> {Object.keys(TIPOS_606).join(', ')}. Las facturas electrónicas (E31…) recibidas también se reportan.</p>
                   <p><b>No van:</b> facturas de consumo B02 / E32 (consumidor final), NCF mal escritos, suplidores sin RNC y repetidas.</p>
-                  <p>Si un suplidor ya está obligado a facturar electrónico, la DGII rechaza sus facturas B: pídale la E31. El Excel trae las 23 columnas en el orden de la herramienta de la DGII para pegarlas tal cual.</p>
+                  <p>Si un suplidor ya está obligado a facturar electrónico, la DGII rechaza sus facturas B: pídale la E31. El Excel baja en la plantilla oficial de la DGII (Herramienta Formato 606), un archivo por mes: ábralo, habilite las macros y use Validar y Generar Archivo como siempre.</p>
                 </div>
                 <Table className="text-xs">
                   <TableHeader>
@@ -720,7 +724,7 @@ const ReportesDGIIPage = () => {
                 {!loading && rev606.excluidas.length > 0 && (
                   <div className="mt-5">
                     <h3 className="text-sm font-bold text-red-700 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> No van en el 606 ({rev606.excluidas.length})</h3>
-                    <p className="text-xs text-slate-500 mb-2">No salen en el TXT ni en la hoja principal del Excel (van en la hoja "No van en el 606").</p>
+                    <p className="text-xs text-slate-500 mb-2">No salen en el TXT ni en el Excel del 606.</p>
                     <Table className="text-xs">
                       <TableHeader>
                         <TableRow className="bg-red-50">

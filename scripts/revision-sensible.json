@@ -345,7 +345,7 @@
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
     "src/lib/dgiiCertificacionStorage.js": "9b63d241c5af90e2",
-    "src/lib/dgiiExport.js": "7c836e7d2843778d",
+    "src/lib/dgiiExport.js": "3072d34fb881a782",
     "src/lib/dgiiRepresentacionImpresa.js": "9646fb60aae20abe",
     "src/lib/ecfImpresion.js": "33142e9057386d28",
     "src/lib/nominaUtils.js": "68b952393ad68443",
@@ -375,7 +375,7 @@
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
     "src/pages/ReciboPagoFinancieraPage.jsx": "dc40079e3bb0b250",
     "src/pages/ReporteComprasPage.jsx": "854bc2b94bec3750",
-    "src/pages/ReportesDGIIPage.jsx": "1a7755683bc8601b",
+    "src/pages/ReportesDGIIPage.jsx": "f78e302e40c3374f",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
     "src/pages/VentasPage.jsx": "a384c4a826551a59",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
@@ -459,18 +459,10 @@
     "sql/apertura_freno_venta.sql": "87257d8d33ad9ec3",
     "sql/devolucion_efectivo_neto.sql": "e500309f4513e8d7",
     "src/lib/devolucionEfectivo.js": "99cdff5ab9ce85fb",
-    "sql/varias_cajas_recibos_otra_empresa.sql": "c05f105aa277902a"
+    "sql/varias_cajas_recibos_otra_empresa.sql": "c05f105aa277902a",
+    "src/assets/plantillas/dgii-606.xlsm": "614b75e6da6a0688"
   },
   "historial": [
-    {
-      "fecha": "2026-11-08",
-      "nota": "code-review high: 10 hallazgos en Compras/ITBIS incluido (SQL duplicado, itbis_pct de la orden /100, USD redondeo, redondeo SQL distinto, lineas de paquete, edicion sin recalcular, ticket y 4 copias de la regla); corregidos con regla unica lib/compraLinea + pruebas; queda: totals de cabecera con su formula propia (a proposito)",
-      "archivos": [
-        "sql/compras_itbis_incluido_importe.sql",
-        "src/lib/compraLinea.js",
-        "src/pages/ComprasPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-08",
       "nota": "code-review high CajaColegioPage (montos con comas): 8 hallazgos; arreglados coma decimal de teclado espanol (100x), cursor que saltaba, backspace sobre coma, pegado europeo, monto del concepto sin redondear, componente comun MontoInput; quedan: 17+ digitos pierde precision (no aplica a montos reales)",
@@ -1008,6 +1000,15 @@
       "archivos": [
         "sql/varias_cajas_recibos_otra_empresa.sql",
         "src/pages/Configuracion/CierreCajaPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high (606 en plantilla oficial DGII, un archivo por mes): corregidos 10 hallazgos — excluidas por mes en el aviso, plantilla con huella (sin caché vieja) y chequeo de zip, aviso honesto de descargas bloqueadas, plantilla preparada una vez, RNC antes de cargar meses, guardia de doble clic, regex de celdas con <f/>, restos del 606 viejo, descargarBlob compartido, archivos en git. Validado con la macro Validar de la DGII: 0 errores en 3 archivos de prueba.",
+      "archivos": [
+        "src/assets/plantillas/dgii-606.xlsm",
+        "src/lib/dgiiExport.js",
+        "src/pages/ReportesDGIIPage.jsx"
       ]
     }
   ]
