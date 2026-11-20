@@ -81,6 +81,7 @@ const ConfiguracionSistemaPage = () => {
         formato_comprobante_pago: 'pdf',
         formato_cierre_caja: 'pos_80mm',
         turnos_caja_dia: 1,
+        modo_caja: 'simple',
         formato_compra: 'pos_4inch',
         saldo_inicial_caja: 0,
         caja_historial_desde: '1970-01-01',
@@ -151,6 +152,7 @@ const ConfiguracionSistemaPage = () => {
                     formato_comprobante_pago: data.formato_comprobante_pago || 'pdf',
                     formato_cierre_caja: data.formato_cierre_caja || 'pos_80mm',
                     turnos_caja_dia: data.turnos_caja_dia ?? 1,
+                    modo_caja: ['simple', 'apertura', 'varias'].includes(data.modo_caja) ? data.modo_caja : 'simple',
                     formato_compra: data.formato_compra || 'pos_4inch',
                     saldo_inicial_caja: data.saldo_inicial_caja ?? 0,
                     caja_historial_desde: data.caja_historial_desde || '1970-01-01',
@@ -1075,6 +1077,24 @@ const ConfiguracionSistemaPage = () => {
                                 />
                                 <p className="text-[10px] text-gray-500 italic">
                                     Cuántas veces al día se cierra la caja. Con <b>1</b> no se pregunta el turno al cerrar.
+                                </p>
+                            </div>
+
+                            {/* (19/11/2026) Modo de caja. Por defecto, como siempre: una sola caja sin apertura. */}
+                            <div className="space-y-2">
+                                <Label className="text-[11px] font-bold text-gray-700 uppercase">Modo de Caja</Label>
+                                <Select value={formData.modo_caja} onValueChange={(v) => handleSelectChange('modo_caja', v)}>
+                                    <SelectTrigger className="h-10 border-indigo-200 bg-indigo-50/30 text-indigo-700 font-bold"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="simple">Una sola caja, sin apertura</SelectItem>
+                                        <SelectItem value="apertura">Una caja con apertura y cierre</SelectItem>
+                                        <SelectItem value="varias" disabled>Varias cajas (en preparación)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-gray-500 italic">
+                                    {formData.modo_caja === 'apertura'
+                                        ? 'La caja amanece abierta. Después de cada cierre, el siguiente cajero la abre con su fondo inicial; su cierre cuenta desde esa apertura.'
+                                        : 'Como siempre: se vende sin abrir caja y se cierra al final.'}
                                 </p>
                             </div>
                         </div>

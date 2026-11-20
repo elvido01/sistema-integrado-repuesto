@@ -32,6 +32,7 @@ import { docFiscalValido, tipoExigeRnc } from '@/lib/docFiscal';
 import { useLayout } from '@/contexts/LayoutContext';
 import { useEsTelefono, leerVistaCompleta, guardarVistaCompleta } from '@/hooks/useEsTelefono';
 import { Smartphone } from 'lucide-react';
+import AbrirCajaModal, { consultarEstadoCaja } from '@/components/caja/AbrirCajaModal';
 
 const VentasPage = () => {
   const { toast } = useToast();
@@ -165,6 +166,23 @@ const VentasPage = () => {
   // (29/10/2026) El punto de venta necesita todo el ancho: en pantallas
   // medianas, al entrar a Ventas (o al achicar la ventana) se recoge el menú
   // lateral antes de que la factura se deforme. Nunca lo vuelve a abrir solo.
+  // (19/11/2026) Apertura de caja: con Modo de Caja "Una caja con apertura",
+  // después de un cierre al siguiente cajero le sale "Abrir caja" al entrar a
+  // Ventas, y no se cobra hasta abrirla. En modo simple (el de siempre) no
+  // cambia nada. sql/apertura_caja.sql
+  const [estadoCaja, setEstadoCaja] = useState(null);
+  const [pedirApertura, setPedirApertura] = useState(false);
+  useEffect(() => {
+    if (activePanel !== 'ventas') return undefined;
+    let vivo = true;
+    consultarEstadoCaja().then((e) => {
+      if (!vivo || !e) return;
+      setEstadoCaja(e);
+      if (e.requiere_apertura) setPedirApertura(true);
+    });
+    return () => { vivo = false; };
+  }, [activePanel]);
+
   useEffect(() => {
     if (activePanel !== 'ventas') return undefined;
     const ANCHO_MINIMO = 1500; // menú abierto (260 px) + factura completa
@@ -634,6 +652,12 @@ const VentasPage = () => {
   };
 
   const handleConfirmAndPrint = async () => {
+    // Caja cerrada (modo con apertura): primero se abre. Editar una factura no la exige.
+    if (!editingFacturaId && (!estadoCaja || estadoCaja.modo === 'apertura')) {
+      const e = await consultarEstadoCaja();
+      if (e) setEstadoCaja(e);
+      if (e?.requiere_apertura) { setPedirApertura(true); return; }
+    }
     // Morla Vieja (solo consulta): el POS se abre solo para consultar y mover
     // productos al sistema nuevo. No se puede facturar.
     if (empresa?.solo_consulta) {
@@ -936,6 +960,16 @@ const VentasPage = () => {
   return (
     <div className="bg-gray-50 h-full flex flex-col">
       <Helmet><title>Ventas — MotoFlow</title></Helmet>
+      <AbrirCajaModal
+        abierta={pedirApertura && activePanel === 'ventas'}
+        estado={estadoCaja}
+        onCerrar={() => setPedirApertura(false)}
+        onAbierta={async () => {
+          setPedirApertura(false);
+          setEstadoCaja(await consultarEstadoCaja());
+          toast({ title: 'Caja abierta', description: 'Ya puedes vender.' });
+        }}
+      />
 
       {tactilAbierto && (
         <VentaTactil

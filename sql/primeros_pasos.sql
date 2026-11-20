@@ -48,7 +48,8 @@ BEGIN
       (1, 'empresa',  'Completa los datos de tu empresa', 'Teléfono, dirección y logo: salen en tus facturas.', false, true,
          EXISTS (SELECT 1 FROM public.config_empresa WHERE tenant_id = p_tenant
                   AND NULLIF(btrim(COALESCE(telefono, '')), '') IS NOT NULL
-                  AND NULLIF(btrim(COALESCE(direccion, '')), '') IS NOT NULL)),
+                  -- Perfil Empresa guarda la dirección en direccion1 (direccion es la vieja).
+                  AND NULLIF(btrim(COALESCE(direccion1, direccion, '')), '') IS NOT NULL)),
       (2, 'vendedor', 'Registra tu primer vendedor', 'Para saber quién vendió y calcular comisiones. No necesita usuario ni clave.', true, true,
          EXISTS (SELECT 1 FROM public.vendedores WHERE tenant_id = p_tenant)),
       (3, 'producto',

@@ -3,6 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, Alert, Modal, TextInput, Scroll
 import { useCartStore, claveLinea } from '@/src/store/useCartStore';
 import ServicioLineaModal from '@/src/components/ServicioLineaModal';
 import { Trash2, Plus, Minus, Search, User, CreditCard, ShoppingCart, PlusCircle, Share2, X, Printer } from 'lucide-react-native';
+import AbrirCajaModal from '@/src/components/AbrirCajaModal';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { supabase } from '@/src/supabase/client';
@@ -68,6 +69,8 @@ export default function POSScreen() {
   const esServicios = ['servicios', 'inmobiliaria'].includes(String(empresa?.tipo_negocio || ''));
   const [servicioOpen, setServicioOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Caja cerrada (modo con apertura): ventana para abrirla antes de cobrar.
+  const [abrirCaja, setAbrirCaja] = useState<{ turno?: number } | null>(null);
   // `disabled={loading}` llega un render tarde: dos toques seguidos en Cobrar
   // alcanzaban a grabar dos facturas (FT-3906 y FT-3907, 10/09/2026, 1 minuto).
   const cobrandoRef = useRef(false);
@@ -188,14 +191,25 @@ export default function POSScreen() {
       // servidor lo frena igual. Se pregunta junto con la configuración fiscal
       // (en paralelo) para no sumar una espera más al cobro.
       let esFree = false;
+      // (19/11/2026) Apertura de caja: en el mismo viaje se pregunta si la caja
+      // está abierta. Con "Una caja con apertura", después de un cierre no se
+      // cobra hasta que el cajero la abra con su fondo (sql/apertura_caja.sql).
+      let caja: any = null;
       try {
-        const [cfg, plan] = await Promise.all([getFiscalConfig(tenantId), supabase.rpc('estado_prueba_pro')]);
+        const [cfg, plan, estCaja] = await Promise.all([
+          getFiscalConfig(tenantId), supabase.rpc('estado_prueba_pro'), supabase.rpc('estado_caja'),
+        ]);
         fiscal = cfg;
         esFree = plan?.data?.plan === 'FREE';
+        caja = estCaja?.data || null;
       } catch {
         // Sin saber si la empresa factura electrónico, cobrar podría sacar
         // una factura sin e-NCF en una empresa que ya está en producción.
         Alert.alert('Sin conexión', 'No se pudo confirmar la facturación electrónica de la empresa. Revisa la conexión y vuelve a cobrar.');
+        return;
+      }
+      if (caja?.requiere_apertura) {
+        setAbrirCaja({ turno: caja.turno });
         return;
       }
       // FREE: como si la empresa no facturara electrónico (no se emite e-CF ni
@@ -851,6 +865,13 @@ export default function POSScreen() {
           </View>
         </View>
       </Modal>
+
+      <AbrirCajaModal
+        visible={!!abrirCaja}
+        turno={abrirCaja?.turno}
+        onCerrar={() => setAbrirCaja(null)}
+        onAbierta={() => { setAbrirCaja(null); Alert.alert('Caja abierta', 'Ya puedes cobrar.'); }}
+      />
     </KeyboardAvoidingView>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -17,6 +17,7 @@ import { formatInTimeZone, getCurrentDateInTimeZone, formatDateForSupabase, form
 import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, ChevronDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { consultarEstadoCaja } from '@/components/caja/AbrirCajaModal';
 
 /* ──────────────── Denominaciones de moneda ──────────────── */
 // Todas las que han existido alguna vez, en orden. Los cierres viejos
@@ -106,6 +107,28 @@ const CierreCajaPage = () => {
   // Con 1 —el caso normal— el turno ni se pregunta.
   const turnosPorDia = Math.max(1, parseInt(empresa?.turnos_caja_dia, 10) || 1);
   const unTurno = turnosPorDia <= 1;
+  // (19/11/2026) Apertura de caja (Modo de Caja "Una caja con apertura"):
+  // el cierre de HOY cuenta desde que se abrió su turno y espera en la gaveta
+  // lo cobrado + el fondo. El turno lo pone la apertura. sql/apertura_caja.sql
+  const [estadoCaja, setEstadoCaja] = useState(null);
+  // El estado es el del DÍA ELEGIDO: rehacer el cierre de ayer usa el turno y
+  // la ventana de ayer, nunca los de hoy.
+  const fechaElegida = fecha ? formatDateForSupabase(fecha) : null;
+  useEffect(() => {
+    if (activePanel !== 'cierre-caja' || !fechaElegida) return undefined;
+    let vivo = true;
+    consultarEstadoCaja(fechaElegida).then((e) => { if (vivo) setEstadoCaja(e); });
+    return () => { vivo = false; };
+  }, [activePanel, tenantId, fechaElegida]);
+  const conApertura = estadoCaja?.modo === 'apertura';
+  // ¿El estado cargado es el del día en pantalla? Mientras no, no se cierra.
+  const estadoDelDia = !!estadoCaja && estadoCaja.fecha === fechaElegida;
+  useEffect(() => {
+    if (conApertura && estadoDelDia && estadoCaja?.turno) setTurno(estadoCaja.turno);
+  }, [conApertura, estadoDelDia, estadoCaja?.turno]);
+  // Dos consultas del resumen pueden cruzarse (al llegar el estado de la caja
+  // se vuelve a calcular): solo cuenta la última que se pidió.
+  const pedidoResumenRef = useRef(0);
   const [cajeros, setCajeros] = useState([]);
   const [selectedCajero, setSelectedCajero] = useState('ALL');
   const [showDesglose, setShowDesglose] = useState(false);
@@ -165,6 +188,13 @@ const CierreCajaPage = () => {
     // moto facturada a las 9 de la noche no aparecía en el cierre de esa
     // noche, y sí aparecía en el del día siguiente. Ver rangoDelDia().
     const { desde: startOfDay, hasta: endOfDay } = rangoDelDia(fechaStr);
+    // Con apertura, HOY se cuenta desde la apertura del turno (NULL = turno de
+    // la mañana: el día entero, como siempre). Otros días: el día entero.
+    const ventanaTurno = !soloCalcular && estadoCaja?.modo === 'apertura' && estadoCaja?.fecha === fechaStr;
+    const pedido = soloCalcular ? null : ++pedidoResumenRef.current;
+    const desdeTurno = ventanaTurno ? (estadoCaja.desde || null) : null;
+    const fondoApertura = ventanaTurno ? (Number(estadoCaja.fondo) || 0) : 0;
+    const enTurno = (t) => !desdeTurno || (!!t && new Date(t) >= new Date(desdeTurno));
 
     let ventas = [];
     let devoluciones = [];
@@ -228,7 +258,7 @@ const CierreCajaPage = () => {
       // Devoluciones del día (sin filtro de usuario)
       const { data: devData, error: devErr } = await supabase
         .from('devoluciones')
-        .select('total_devolucion, facturas!inner(forma_pago)')
+        .select('total_devolucion, created_at, facturas!inner(forma_pago)')
         .eq('tenant_id', tenantId)
         .ilike('facturas.forma_pago', 'contado')
         .eq('fecha_devolucion', fechaStr);
@@ -282,7 +312,7 @@ const CierreCajaPage = () => {
       // Pagos a Suplidores del día
       const { data: pagosData, error: pagosErr } = await supabase
         .from('pagos_suplidores')
-        .select('monto_pagado, formas_pago')
+        .select('monto_pagado, formas_pago, created_at')
         .eq('tenant_id', tenantId)
         .eq('anulado', false)
         .gte('created_at', startOfDay)
@@ -300,7 +330,7 @@ const CierreCajaPage = () => {
     try {
       const { data: gastosData, error: gastosErr } = await supabase
         .from('gastos_diarios')
-        .select('monto, descripcion, tipo_gasto, afecta_caja, cuenta_bancaria_id, es_tercero, concepto_tercero')
+        .select('monto, descripcion, tipo_gasto, afecta_caja, cuenta_bancaria_id, es_tercero, concepto_tercero, created_at')
         .eq('tenant_id', tenantId)
         .eq('fecha', fechaStr)
         .eq('anulado', false);
@@ -348,7 +378,7 @@ const CierreCajaPage = () => {
         console.warn('Error cargando compras de contado:', compErr.message);
       } else {
         comprasContadoEfectivo = (compData || [])
-          .filter((c) => (c.estado || '') !== 'ANULADA')
+          .filter((c) => (c.estado || '') !== 'ANULADA' && enTurno(c.created_at))
           .reduce((sum, c) => {
             // Las líneas de «Monto Pagado» dicen de dónde salió. Tipo '01' es
             // Efectivo; lo demás sale de una cuenta y no toca la gaveta.
@@ -483,6 +513,20 @@ const CierreCajaPage = () => {
       }));
     } catch (e) {
       console.warn('Exception cargando efectivo movido a cuentas:', e);
+    }
+
+    // Con apertura: solo lo de este turno (desde su apertura).
+    if (desdeTurno) {
+      ventas = ventas.filter((v) => enTurno(v.created_at));
+      devoluciones = devoluciones.filter((d) => enTurno(d.created_at));
+      recibos = recibos.filter((r) => enTurno(r.created_at));
+      pagosSuplidores = pagosSuplidores.filter((p) => enTurno(p.created_at));
+      gastosDiarios = gastosDiarios.filter((g) => enTurno(g.created_at));
+      pagosTerceros = pagosTerceros.filter((g) => enTurno(g.created_at));
+      pagosNomina = pagosNomina.filter((g) => enTurno(g.created_at));
+      prestamosEfectivo = prestamosEfectivo.filter((p) => enTurno(p.created_at));
+      compromisosEfectivo = compromisosEfectivo.filter((c) => enTurno(c.fecha_pago));
+      efectivoMovido = efectivoMovido.filter((d) => enTurno(d.created_at));
     }
 
     const ventasContado = ventas.filter(v => {
@@ -651,15 +695,20 @@ const CierreCajaPage = () => {
       // totalVentasContado, que incluye las ventas cobradas por
       // transferencia/tarjeta y las del movil: el cierre pedia un efectivo
       // que nunca estuvo en la caja y siempre salia faltante.
+      // Apertura: el fondo con que se abrió el turno (en la gaveta, no es venta)
+      // y desde cuándo cuenta este cierre. Van en la foto (detalle).
+      fondoApertura,
+      desde: desdeTurno,
       efectivoEnCaja: totalVentasContadoCaja + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPagosTerceros - totalPagosNomina - totalPrestamosEfectivo - totalCompromisosEfectivo - comprasContadoEfectivo - totalEfectivoMovido,
     };
 
     if (soloCalcular) return calculado;
+    if (pedido !== pedidoResumenRef.current) return calculado;   // llegó otra más nueva
 
     setResumen(calculado);
     setLoadingResumen(false);
     return calculado;
-  }, [fecha, selectedCajero, tenantId]);
+  }, [fecha, selectedCajero, tenantId, estadoCaja]);
 
   useEffect(() => {
     fetchResumen();
@@ -704,8 +753,15 @@ const CierreCajaPage = () => {
     return DENOMINACIONES.reduce((sum, d) => sum + valorDenominacion(d, cantidades), 0);
   }, [cantidades]);
 
+  // Lo que debe haber en la gaveta: lo cobrado + el fondo de apertura (0 sin apertura).
+  const esperadoEnCaja = (resumen?.efectivoEnCaja || 0) + (resumen?.fondoApertura || 0);
+
   /* ── Cerrar turno ── */
   const handleCerrarTurno = async () => {
+    if (conApertura && !estadoDelDia) {
+      toast({ variant: 'destructive', title: 'Un momento', description: 'Todavía se está leyendo el turno de la caja de ese día. Vuelve a intentar.' });
+      return;
+    }
     setSaving(true);
     try {
       const cajeroName = selectedCajero === 'ALL'
@@ -729,9 +785,9 @@ const CierreCajaPage = () => {
         total_recibos: resumen?.totalRecibos || 0,
         total_gastos_diarios: resumen?.totalGastosDiarios || 0,
         cambio_entregado: resumen?.cambioEntregado || 0,
-        efectivo_en_caja: resumen?.efectivoEnCaja || 0,
+        efectivo_en_caja: (resumen?.efectivoEnCaja || 0) + (resumen?.fondoApertura || 0),
         total_desglose: desgloseTotal,
-        diferencia: desgloseTotal - (resumen?.efectivoEnCaja || 0),
+        diferencia: desgloseTotal - ((resumen?.efectivoEnCaja || 0) + (resumen?.fondoApertura || 0)),
         desglose: Object.fromEntries(Object.entries(cantidades).map(([k, v]) => [k, Number(v) || 0])),
         usuario_id: user?.id,
         // La foto del cierre, para poder reimprimirlo idéntico. Recalcular el
@@ -781,7 +837,9 @@ const CierreCajaPage = () => {
       }));
       setShowDesglose(false);
       // Con una sola caja al día el turno no avanza: siempre es el 1.
-      if (!unTurno) setTurno(prev => Math.min(prev + 1, turnosPorDia));
+      if (!unTurno && !conApertura) setTurno(prev => Math.min(prev + 1, turnosPorDia));
+      // Con apertura, la caja queda cerrada: al siguiente cajero le sale "Abrir caja".
+      if (conApertura) consultarEstadoCaja().then(setEstadoCaja);
       fetchResumen();
     } catch (err) {
       console.error('Error saving cierre:', err);
@@ -972,6 +1030,8 @@ const CierreCajaPage = () => {
                  en vez de un número suelto arriba que hay que ir a comprobar. -->
             <div class="cuadre-final">
               <div class="linea total"><span>EFECTIVO EN CAJA</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
+              ${Number(resumen?.fondoApertura) > 0 ? `<div class="linea"><span>+ FONDO DE APERTURA</span><span>${formatCurrency(resumen.fondoApertura)}</span></div>
+              <div class="linea total"><span>DEBE HABER EN LA GAVETA</span><span>${formatCurrency((Number(resumen.efectivoEnCaja) || 0) + Number(resumen.fondoApertura))}</span></div>` : ''}
             </div>
           </div>
 
@@ -1140,6 +1200,8 @@ const CierreCajaPage = () => {
           </div>`).join('')}
         <div class="row total-row"><span>MOVIDO A CUENTAS:</span><span>${formatCurrency(resumen?.totalEfectivoMovido)}</span></div>` : ''}
         <div class="row total-row"><span>EFECTIVO EN CAJA:</span><span>${formatCurrency(resumen?.efectivoEnCaja)}</span></div>
+        ${Number(resumen?.fondoApertura) > 0 ? `<div class="row"><span>+ FONDO DE APERTURA:</span><span>${formatCurrency(resumen.fondoApertura)}</span></div>
+        <div class="row total-row"><span>DEBE HABER EN GAVETA:</span><span>${formatCurrency((Number(resumen.efectivoEnCaja) || 0) + Number(resumen.fondoApertura))}</span></div>` : ''}
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DINERO EN CAJA</div>
         <div class="row" style="font-size: 12px; border-bottom: 1px solid #000; margin-bottom: 2px;">
@@ -1310,7 +1372,8 @@ const CierreCajaPage = () => {
 
             {/* Turno. Con una sola caja al día no se pregunta: nadie tiene que
                 entender qué es un turno para cerrar la suya. */}
-            {!unTurno && (
+            {/* Con apertura el turno lo pone la apertura: no se escribe a mano. */}
+            {!unTurno && !conApertura && (
               <div className="flex items-center gap-2 min-w-0">
                 <Label className="font-bold text-xs shrink-0">Turno</Label>
                 <Input
@@ -1334,6 +1397,11 @@ const CierreCajaPage = () => {
                   <SelectItem value="caja1">Caja No. 1</SelectItem>
                 </SelectContent>
               </Select>
+              {conApertura && (
+                <span className="text-[11px] text-gray-500 whitespace-nowrap">
+                  Turno {estadoCaja?.turno || 1}{estadoCaja?.desde ? ` · abierto ${new Date(estadoCaja.desde).toLocaleTimeString('es-DO', { hour: 'numeric', minute: '2-digit' })}` : ' · desde la mañana'}{estadoCaja?.requiere_apertura ? ' · cerrado' : ''}
+                </span>
+              )}
             </div>
 
             {/* Cajero */}
@@ -1515,6 +1583,15 @@ const CierreCajaPage = () => {
                     <span className="font-bold text-morla-blue">Efectivo en Caja</span>
                     <span className="font-bold text-morla-blue text-lg font-mono">{formatCurrency(resumen.efectivoEnCaja)}</span>
                   </div>
+                  {Number(resumen.fondoApertura) > 0 && (
+                    <>
+                      <div className="flex justify-between px-3 py-1 text-sm"><span>+ Fondo de apertura</span><span className="font-mono">{formatCurrency(resumen.fondoApertura)}</span></div>
+                      <div className="flex justify-between items-center py-2 bg-emerald-50 rounded px-3 border border-emerald-200">
+                        <span className="font-bold text-emerald-800">Debe haber en la gaveta</span>
+                        <span className="font-bold text-emerald-800 text-lg font-mono">{formatCurrency(esperadoEnCaja)}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1661,16 +1738,16 @@ const CierreCajaPage = () => {
                     {/* Diferencia indicator */}
                     {resumen && (
                       <div className={`mt-3 p-3 rounded-lg text-center font-bold text-sm ${
-                        desgloseTotal - resumen.efectivoEnCaja === 0
+                        desgloseTotal - esperadoEnCaja === 0
                           ? 'bg-green-100 text-green-700'
-                          : desgloseTotal - resumen.efectivoEnCaja < 0
+                          : desgloseTotal - esperadoEnCaja < 0
                             ? 'bg-red-100 text-red-700'
                             : 'bg-yellow-100 text-yellow-700'
                       }`}>
-                        Diferencia: {formatCurrency(desgloseTotal - resumen.efectivoEnCaja)}
-                        {desgloseTotal - resumen.efectivoEnCaja === 0 && ' ✓ Cuadra'}
-                        {desgloseTotal - resumen.efectivoEnCaja < 0 && ' (Faltante)'}
-                        {desgloseTotal - resumen.efectivoEnCaja > 0 && ' (Sobrante)'}
+                        Diferencia: {formatCurrency(desgloseTotal - esperadoEnCaja)}
+                        {desgloseTotal - esperadoEnCaja === 0 && ' ✓ Cuadra'}
+                        {desgloseTotal - esperadoEnCaja < 0 && ' (Faltante)'}
+                        {desgloseTotal - esperadoEnCaja > 0 && ' (Sobrante)'}
                       </div>
                     )}
                   </div>
