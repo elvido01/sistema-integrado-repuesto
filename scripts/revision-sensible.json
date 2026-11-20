@@ -285,7 +285,7 @@
     "src/components/bancos/EfectivoDelDia.jsx": "e74854edc35b5c32",
     "src/components/common/pdf/comisionPDF.js": "9670fced39020a00",
     "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
-    "src/components/common/pdf/devolucionPDF.js": "91b42af5e95a7340",
+    "src/components/common/pdf/devolucionPDF.js": "9787b475fee694e8",
     "src/components/common/pdf/facturaCartaPDF.js": "9268cebc44ed6364",
     "src/components/common/pdf/facturaPDF.js": "43171a4cdf6579ba",
     "src/components/common/pdf/pagoCompromisoPDF.js": "b6467cc47e39114e",
@@ -355,11 +355,11 @@
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
     "src/pages/ComprasPage.jsx": "cd360a2822e0ce45",
-    "src/pages/Configuracion/CierreCajaPage.jsx": "e296af8baca61f2b",
+    "src/pages/Configuracion/CierreCajaPage.jsx": "a850c22a4acd765b",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
     "src/pages/CuentasPorPagarPage.jsx": "efe77dc770754dee",
-    "src/pages/DevolucionesPage.jsx": "ef3ba04a21050944",
+    "src/pages/DevolucionesPage.jsx": "8c250d5fd9515ce2",
     "src/pages/FinancieraPrestamosPage.jsx": "d357e2238c8baf89",
     "src/pages/FlujoCajaPage.jsx": "780178bdfa02b360",
     "src/pages/GestionCobroPage.jsx": "ab20e6df03486db2",
@@ -455,16 +455,12 @@
     "src/components/caja/AbrirCajaModal.jsx": "ee5a97d754e6617d",
     "sql/contado_con_retencion.sql": "aeb89728ac90e9e9",
     "sql/varias_cajas.sql": "c423273c6958da7e",
-    "src/components/caja/AdministrarCajas.jsx": "059a36a13c7632dd"
+    "src/components/caja/AdministrarCajas.jsx": "059a36a13c7632dd",
+    "sql/apertura_freno_venta.sql": "87257d8d33ad9ec3",
+    "sql/devolucion_efectivo_neto.sql": "e500309f4513e8d7",
+    "src/lib/devolucionEfectivo.js": "99cdff5ab9ce85fb"
   },
   "historial": [
-    {
-      "fecha": "2026-11-07",
-      "nota": "code-review high: 10 hallazgos (por_confirmar sin salida sin concepto reserva, lista del cliente vieja, no_continua sin rol direccion, meses pasados con recargo, anulacion sin revertir, por_confirmar de año anterior, abono parcial, texto caja, etiquetas, doble clic) - todos arreglados y probados en transaccion (sql v2)",
-      "archivos": [
-        "src/pages/colegio/CajaColegioPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-07",
       "nota": "code-review high: 10 hallazgos en 606 (forma de pago Contado->07, columnas sin datos, notas/ISR rechazables, tarjeta de credito, RNC propio B13, servicios en col 8, tipo 01-11, doble validacion, alerta muerta); 9 corregidos con pruebas; pendiente: validar NCF al guardar la compra (ComprasPage)",
@@ -999,6 +995,18 @@
       "nota": "code-review high (20/11): guías de la app — en pos.tsx solo se marcaron botones y la tarjeta de oferta; la venta no cambia (confirmado). 10 hallazgos del motor corregidos (no ofrecer antes de cargar, solo pantalla enfocada, reset al cambiar usuario, bloqueo encima, tarjeta con altura real y teclado, Guías se recarga al volver, contexto de registro estable)",
       "archivos": [
         "mobile/app/(tabs)/pos.tsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high: 10 hallazgos (devolución neta con retención + freno apertura); corregidos: efectivo_devuelto fijado por el servidor al grabar, cierre filtra contado/EFECTIVO y excluye transferencia/tarjeta como las ventas, neto impreso en ticket y PDF, freno solo ventas de contado y sin saldos iniciales, falla cerrado, cálculo compartido con netoDe. Pendiente conocido: venta con fecha atrás solo mira el estado de hoy (igual que la pantalla)",
+      "archivos": [
+        "sql/apertura_freno_venta.sql",
+        "sql/devolucion_efectivo_neto.sql",
+        "src/components/common/pdf/devolucionPDF.js",
+        "src/lib/devolucionEfectivo.js",
+        "src/pages/Configuracion/CierreCajaPage.jsx",
+        "src/pages/DevolucionesPage.jsx"
       ]
     }
   ]

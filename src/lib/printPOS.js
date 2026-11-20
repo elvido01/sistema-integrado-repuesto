@@ -1003,6 +1003,15 @@ export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
               <div class="totals-label">TOTAL DEV.:</div>
               <div class="totals-value">${formatCurrency(devolucion.total_devolucion)}</div>
             </div>
+            ${devolucion.efectivo_devuelto != null && Number(devolucion.efectivo_devuelto) < Number(devolucion.total_devolucion) - 0.004 ? `
+            <div class="totals-row">
+              <div class="totals-label">MENOS RETENIDO:</div>
+              <div class="totals-value">${formatCurrency(Number(devolucion.total_devolucion) - Number(devolucion.efectivo_devuelto))}</div>
+            </div>
+            <div class="totals-row grand-total">
+              <div class="totals-label">ENTREGADO:</div>
+              <div class="totals-value">${formatCurrency(devolucion.efectivo_devuelto)}</div>
+            </div>` : ''}
           </div>
         </div>
       </div>

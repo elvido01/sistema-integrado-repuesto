@@ -3,6 +3,7 @@ import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { montoEntregado, netoCobrado, retenidoNoCobrado } from '@/lib/devolucionEfectivo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
 import { Button } from '@/components/ui/button';
@@ -284,9 +285,10 @@ const CierreCajaPage = () => {
       // Devoluciones del día (sin filtro de usuario)
       const { data: devData, error: devErr } = await supabase
         .from('devoluciones')
-        .select('total_devolucion, created_at, usuario_id, facturas!inner(forma_pago)')
+        // (20/11/2026) Contado o EFECTIVO (como las ventas); el filtro de
+        // efectivo/transferencia va abajo, junto al de las ventas.
+        .select('total_devolucion, efectivo_devuelto, created_at, usuario_id, facturas!inner(forma_pago, tipo_pago, total, retenido_no_cobrado)')
         .eq('tenant_id', tenantId)
-        .ilike('facturas.forma_pago', 'contado')
         .eq('fecha_devolucion', fechaStr);
 
       if (devErr) {
@@ -581,8 +583,8 @@ const CierreCajaPage = () => {
     // y lo retenido se lo paga él a la DGII; nunca entra a la caja ni al
     // banco. El servidor lo anota en facturas.retenido_no_cobrado (0 en
     // ventas viejas y en las cobradas completas).
-    const retenidoDe = (v) => Math.min(parseFloat(v.retenido_no_cobrado) || 0, parseFloat(v.total) || 0);
-    const netoDe = (v) => Math.max(0, (parseFloat(v.total) || 0) - retenidoDe(v));
+    const retenidoDe = retenidoNoCobrado;
+    const netoDe = netoCobrado;
     const totalRetencionesContado = ventasContado.reduce((sum, v) => sum + retenidoDe(v), 0);
 
     const totalVentasContadoMovil = ventasContado
@@ -608,7 +610,15 @@ const CierreCajaPage = () => {
     const totalVentas = ventas.reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
     const totalItbis = ventas.reduce((sum, v) => sum + (parseFloat(v.itbis) || 0), 0);
     const totalDescuento = ventas.reduce((sum, v) => sum + (parseFloat(v.descuento) || 0), 0);
-    const totalDevoluciones = devoluciones.reduce((sum, d) => sum + (parseFloat(d.total_devolucion) || 0), 0);
+    // (20/11/2026) Solo devoluciones de ventas de contado cobradas en
+    // efectivo (las de transferencia/tarjeta no salieron de la gaveta), y por
+    // lo que de verdad se entregó: con retención, el neto.
+    const totalDevoluciones = devoluciones
+      .filter((d) => {
+        const fp = String(d.facturas?.forma_pago || '').toUpperCase();
+        return (fp === 'CONTADO' || fp === 'EFECTIVO') && esContadoEfectivo(d.facturas || {});
+      })
+      .reduce((sum, d) => sum + montoEntregado(d, d.facturas), 0);
     const totalRecibos = recibos.reduce((sum, r) => sum + (parseFloat(r.monto_pagado) || 0), 0);
     const totalRecibosMovil = recibos
       .filter(r => String(r.origen || '').toLowerCase() === 'movil')

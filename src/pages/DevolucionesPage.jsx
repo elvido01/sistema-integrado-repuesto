@@ -30,6 +30,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { printDevolucionPOS } from '@/lib/printPOS';
+import { efectivoDevuelto } from '@/lib/devolucionEfectivo';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const DevolucionesPage = () => {
@@ -278,6 +279,12 @@ const DevolucionesPage = () => {
     return totals.subtotal - totals.descuento + totals.itbis;
   }, [totals]);
 
+  // (20/11/2026) Contado a un cliente que retiene: la retención no se cobró,
+  // así que tampoco se devuelve. La nota de crédito sigue siendo por el total.
+  // El servidor guarda este mismo número en devoluciones.efectivo_devuelto.
+  const efectivoADevolver = factura ? efectivoDevuelto(totalDevolucion, factura) : totalDevolucion;
+  const facturaContadoConRetencion = efectivoADevolver < totalDevolucion - 0.004;
+
   const handleSave = async () => {
     if (!factura) {
       toast({ variant: 'destructive', title: 'Error', description: 'Debe cargar una factura.' });
@@ -392,7 +399,12 @@ const DevolucionesPage = () => {
       }
 
       setNumeroGuardado(devolucion.numero);
-      toast({ title: `✅ Devolución DV-${devolucion.numero} guardada`, description: 'Artículos reintegrados al inventario.' });
+      toast({
+        title: `✅ Devolución DV-${devolucion.numero} guardada`,
+        description: facturaContadoConRetencion
+          ? `Artículos reintegrados al inventario. Entrega al cliente RD$ ${efectivoADevolver.toFixed(2)} (la retención no se le cobró).`
+          : 'Artículos reintegrados al inventario.',
+      });
 
       if (imprimir) {
         printDevolucionPOS(devolucion, factura, cliente, detallesDevolucion);
@@ -711,6 +723,15 @@ const DevolucionesPage = () => {
                 <span className="text-[11px] font-black text-slate-800 uppercase">TOTAL DEVOLUCION</span>
                 <span className="font-mono text-base font-black text-blue-800">{totalDevolucion.toFixed(2)}</span>
               </div>
+              {facturaContadoConRetencion && (
+                <div className="mt-1 rounded bg-amber-50 border border-amber-200 px-2 py-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] font-black text-amber-900 uppercase">A devolver al cliente</span>
+                    <span className="font-mono text-base font-black text-amber-900">{efectivoADevolver.toFixed(2)}</span>
+                  </div>
+                  <p className="text-[10px] text-amber-800">El cliente retuvo {Number(factura.retenido_no_cobrado).toFixed(2)} en esta factura: esa parte no se cobró y no se devuelve.</p>
+                </div>
+              )}
             </div>
 
             {/* Print Checkbox */}

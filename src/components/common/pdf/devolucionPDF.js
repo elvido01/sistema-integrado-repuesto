@@ -80,6 +80,12 @@ export const generateDevolucionPDF = (devolucion, factura, cliente, details) => 
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
   doc.text(formatCurrency(devolucion.total_devolucion), 200, totalsY + 47, { align: 'right' });
+  // (20/11/2026) Venta con retención: al cliente se le entregó el neto.
+  if (devolucion.efectivo_devuelto != null && Number(devolucion.efectivo_devuelto) < Number(devolucion.total_devolucion) - 0.004) {
+    doc.setFontSize(10);
+    doc.text('Entregado (sin lo retenido):', totalsX, totalsY + 62);
+    doc.text(formatCurrency(devolucion.efectivo_devuelto), 200, totalsY + 62, { align: 'right' });
+  }
 
   // Notes
   if (devolucion.notas) {
