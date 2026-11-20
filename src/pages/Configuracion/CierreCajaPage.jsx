@@ -20,6 +20,12 @@ import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, Chevr
 import { cn } from '@/lib/utils';
 import { consultarEstadoCaja } from '@/components/caja/AbrirCajaModal';
 
+// Columnas de recibos_ingreso que usa el cierre (las de caja: varias cajas).
+// El respaldo (por created_at) pide solo las de siempre: si algo falla con
+// las columnas nuevas, el cierre sigue trayendo los recibos.
+const RECIBO_COLS_BASE = 'id, numero, monto_pagado, fecha, created_at, origen, formas_pago, usuario_id, clientes(nombre)';
+const RECIBO_COLS = `${RECIBO_COLS_BASE}, caja_cajero_id, caja_asignada_at, caja_externo`;
+
 /* ──────────────── Denominaciones de moneda ──────────────── */
 // Todas las que han existido alguna vez, en orden. Los cierres viejos
 // guardaron sus cantidades con estas etiquetas, así que la lista completa se
@@ -224,6 +230,7 @@ const CierreCajaPage = () => {
       && (!hastaTurno || (!!t && new Date(t) < new Date(hastaTurno)));
 
     let ventas = [];
+    let recibosPendientes = [];
     let devoluciones = [];
     let recibos = [];
     let pagosSuplidores = [];
@@ -306,7 +313,7 @@ const CierreCajaPage = () => {
       // Primero filtramos por fecha como DATE, luego fallback a created_at.
       const { data: recibosData, error: recibosErr } = await supabase
         .from('recibos_ingreso')
-        .select('numero, monto_pagado, fecha, created_at, origen, formas_pago, usuario_id, clientes(nombre)')
+        .select(RECIBO_COLS)
         .eq('tenant_id', tenantId)
         .eq('anulado', false)
         .eq('fecha', fechaStr);
@@ -316,7 +323,7 @@ const CierreCajaPage = () => {
         // Fallback: intentar por created_at (TIMESTAMPTZ)
         const { data: recibosCreatedData, error: recibosCreatedErr } = await supabase
           .from('recibos_ingreso')
-          .select('numero, monto_pagado, created_at, origen, formas_pago, usuario_id, clientes(nombre)')
+          .select(RECIBO_COLS_BASE)
           .eq('tenant_id', tenantId)
           .eq('anulado', false)
           .gte('created_at', startOfDay)
@@ -329,6 +336,21 @@ const CierreCajaPage = () => {
         }
       } else {
         recibos = recibosData || [];
+      }
+
+      // Varias cajas: recibos de otra empresa que siguen sin caja (de
+      // cualquier fecha), para avisarlos.
+      if (cajaVarias || estadoCaja?.modo === 'varias') {
+        const { data: pend, error: pendErr } = await supabase
+          .from('recibos_ingreso')
+          .select('id, fecha, monto_pagado, formas_pago')
+          .eq('tenant_id', tenantId)
+          .eq('anulado', false)
+          .eq('caja_pendiente', true)
+          .order('fecha', { ascending: true })
+          .limit(200);
+        if (pendErr) console.warn('Error cargando recibos sin caja:', pendErr.message);
+        else recibosPendientes = pend || [];
       }
 
       console.log(`Recibos encontrados para ${fechaStr}:`, recibos.length, recibos);
@@ -543,11 +565,20 @@ const CierreCajaPage = () => {
       console.warn('Exception cargando efectivo movido a cuentas:', e);
     }
 
+    // (20/11/2026) Varias cajas: un recibo de hoy que grabó OTRA empresa del
+    // grupo (la financiera pagándole al dealer) entra a la caja que el
+    // servidor le asignó (caja_cajero_id), contado desde que se le asignó. Si ese día no
+    // se abrió ninguna caja ese día, queda esperando (recibosPendientes) y se avisa.
+    const momentoRecibo = (r) => r.caja_asignada_at || r.created_at;
+    // Un recibo de otra empresa sin caja todavía no es de nadie (aunque quien
+    // lo grabó sea cajero aquí): va en el aviso, no en una caja.
+    const cajeroRecibo = (r) => r.caja_cajero_id || (r.caja_externo ? null : r.usuario_id);
+
     // Con apertura: solo lo de este turno (desde su apertura).
     if (desdeTurno || hastaTurno) {
       ventas = ventas.filter((v) => enTurno(v.created_at));
       devoluciones = devoluciones.filter((d) => enTurno(d.created_at));
-      recibos = recibos.filter((r) => enTurno(r.created_at));
+      recibos = recibos.filter((r) => enTurno(momentoRecibo(r)));
       pagosSuplidores = pagosSuplidores.filter((p) => enTurno(p.created_at));
       gastosDiarios = gastosDiarios.filter((g) => enTurno(g.created_at));
       pagosTerceros = pagosTerceros.filter((g) => enTurno(g.created_at));
@@ -561,7 +592,7 @@ const CierreCajaPage = () => {
     if (cajeroCaja) {
       const suyo = (u) => u === cajeroCaja;
       devoluciones = devoluciones.filter((d) => suyo(d.usuario_id));
-      recibos = recibos.filter((r) => suyo(r.usuario_id));
+      recibos = recibos.filter((r) => suyo(cajeroRecibo(r)));
       pagosSuplidores = pagosSuplidores.filter((p) => suyo(p.usuario_id));
       gastosDiarios = gastosDiarios.filter((g) => suyo(g.usuario_id));
       pagosTerceros = pagosTerceros.filter((g) => suyo(g.usuario_id));
@@ -712,6 +743,11 @@ const CierreCajaPage = () => {
     const cantFacturas = ventas.length;
 
     const calculado = {
+      recibosSinCaja: {
+        cantidad: recibosPendientes.length,
+        monto: recibosPendientes.reduce((sum, r) => sum + efectivoDeRecibo(r), 0),
+        fechas: [...new Set(recibosPendientes.map((r) => r.fecha).filter(Boolean))],
+      },
       totalVentas,
       totalVentasContado,
       totalVentasContadoCaja,
@@ -861,7 +897,8 @@ const CierreCajaPage = () => {
         // La foto del cierre, para poder reimprimirlo idéntico. Recalcular el
         // día más tarde daría otro documento: los cobros siguen entrando.
         // Ver sql/cierre_caja_detalle_para_reimprimir.sql
-        detalle: resumen || null,
+        // La foto del cierre es solo lo de esta caja (sin el aviso de pendientes).
+        detalle: resumen ? { ...resumen, recibosSinCaja: undefined } : null,
       };
 
       const { data: cierreRow, error } = await supabase.from('cierres_caja').insert([cierre]).select('id').single();
@@ -1475,6 +1512,11 @@ const CierreCajaPage = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                )}
+                {Number(resumen?.recibosSinCaja?.cantidad) > 0 && (
+                  <span className="text-[11px] font-bold text-amber-700" title={`Los grabó otra empresa del grupo sin caja abierta (o con otra fecha). Los de hoy entran a la primera caja que se abra hoy; los demás hay que cuadrarlos a mano. Fechas: ${(resumen.recibosSinCaja.fechas || []).join(', ')}`}>
+                    {resumen.recibosSinCaja.cantidad} recibo(s) de otra empresa sin caja: {formatCurrency(resumen.recibosSinCaja.monto)}
+                  </span>
                 )}
               </div>
             ) : (
