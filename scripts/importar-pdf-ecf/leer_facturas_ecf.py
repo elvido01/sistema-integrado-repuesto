@@ -38,7 +38,9 @@ def leer(path):
     f['cuadra'] = abs(base - (f['gravado'] + f['exento'])) < 0.05
     return f
 
-facturas = [leer(p) for p in sorted(glob.glob(r'C:\Users\PC\Downloads\DR-Y002-*.pdf'))]
+# Uso: leer_facturas_ecf.py salida.json [carpeta]  (sin carpeta: los DR-Y002-*.pdf de Descargas)
+patron = os.path.join(sys.argv[2], '*.pdf') if len(sys.argv) > 2 else r'C:\Users\PC\Downloads\DR-Y002-*.pdf'
+facturas = [leer(p) for p in sorted(glob.glob(patron))]
 json.dump(facturas, open(sys.argv[1], 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 ok = [f for f in facturas if f['cuadra']]
 print('facturas', len(facturas), 'cuadran', len(ok))

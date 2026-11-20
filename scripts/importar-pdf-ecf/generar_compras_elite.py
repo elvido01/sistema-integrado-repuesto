@@ -1,6 +1,20 @@
-import json, sys, datetime
-facturas = json.load(open(sys.argv[1], encoding='utf-8'))
-salida = sys.argv[2]
+import json, sys, datetime, argparse
+# Uso: generar_compras_elite.py facturas.json salida.sql [--prefijo OC25- --desde AAAA-MM-DD --hasta AAAA-MM-DD
+#        --migracion nombre.sql --nota "texto" --titulo "comentario"]. Sin opciones hace lo mismo que el 15/11/2026.
+ap = argparse.ArgumentParser()
+ap.add_argument('facturas'); ap.add_argument('salida')
+ap.add_argument('--prefijo', default='OC-')
+ap.add_argument('--desde', default=None); ap.add_argument('--hasta', default=None)
+ap.add_argument('--migracion', default='elite_royal_prestige_compras.sql')
+ap.add_argument('--nota', default='Importada del PDF de la factura electrónica de Royal Prestige (15/11/2026). Sin entrada a inventario.')
+ap.add_argument('--titulo', default=None)
+# Sin crear productos: las líneas cuyo código no está en el catálogo quedan
+# con código y descripción pero sin producto (p. ej. empresa en el límite de su plan).
+ap.add_argument('--sin-productos-nuevos', action='store_true')
+args = ap.parse_args()
+facturas = json.load(open(args.facturas, encoding='utf-8'))
+salida = args.salida
+facturas = [f for f in facturas if (not args.desde or f['fecha'] >= args.desde) and (not args.hasta or f['fecha'] <= args.hasta)]
 T = '3e8823fa-ec63-48c2-8305-2396c1a08e42'
 ALM = '8e0bd843-eea1-4a3f-903c-995ecc760559'
 
@@ -21,7 +35,10 @@ for f in fs:
         cat[l['codigo']] = {'descripcion': l['descripcion'], 'costo': l['precio'], 'bos': l['bos'], 'itbis': l['itbis_pct'] / 100}
 
 L = []
-L.append('''-- =====================================================================
+if args.titulo:
+    L.append(args.titulo)
+else:
+  L.append('''-- =====================================================================
 -- ELITE SOLUTIONS COMPANY ESC SRL: catálogo y compras de Royal Prestige
 -- (15/11/2026). Leído de los 56 PDF de facturas electrónicas (E31) de
 -- Royal Prestige DR S.R.L. (RNC 130743819), enero–octubre 2026; un archivo
@@ -43,7 +60,7 @@ WHERE NOT EXISTS (SELECT 1 FROM public.proveedores WHERE tenant_id = {q(T)} AND 
 ''')
 SUP = f"(SELECT id FROM public.proveedores WHERE tenant_id = {q(T)} AND regexp_replace(COALESCE(rnc,''), '\\D', '', 'g') = '130743819' ORDER BY id LIMIT 1)"
 
-for cod, p in sorted(cat.items()):
+for cod, p in ([] if args.sin_productos_nuevos else sorted(cat.items())):
     nat = 'bien' if p['bos'] == 1 else 'servicio'
     L.append(f'''INSERT INTO public.productos (tenant_id, codigo, descripcion, costo, precio, itbis_pct, activo, naturaleza, suplidor_id, min_stock, max_stock)
 SELECT {q(T)}, {q(cod)}, {q(p['descripcion'])}, {p['costo']:.2f}, 0, {p['itbis']:.2f}, true, {q(nat)}, {SUP}, 0, 0
@@ -57,7 +74,7 @@ n = 0
 tot_base = tot_itbis = 0
 for f in fs:
     n += 1
-    num = f'OC-{n:04d}'
+    num = f'{args.prefijo}{n:04d}'
     base = round(sum(l['cantidad'] * l['precio'] for l in f['lineas']), 2)
     itbis = f['itbis']
     total = round(base + itbis, 2)
@@ -71,7 +88,7 @@ WITH c AS (
     forma_pago, dias_credito, monto_pagado, monto_pendiente, estado, pagos, moneda, notas)
   SELECT {q(T)}, {q(num)}, {q(f['fecha'])}, {q(f['encf'])}, {q(f['interno'])}, '09', 'Compra de Merc', {SUP}, {q(ALM)},
     {f['exento']:.2f}, {f['gravado']:.2f}, 0, {itbis:.2f}, {total:.2f}, false, false,
-    'Credito', {dias}, {total:.2f}, 0, 'PAGADA', '[]'::jsonb, 'DOP', 'Importada del PDF de la factura electrónica de Royal Prestige (15/11/2026). Sin entrada a inventario.'
+    'Credito', {dias}, {total:.2f}, 0, 'PAGADA', '[]'::jsonb, 'DOP', {q(args.nota)}
   WHERE NOT EXISTS (SELECT 1 FROM public.compras WHERE tenant_id = {q(T)} AND ncf = {q(f['encf'])})
   RETURNING id
 )
@@ -88,6 +105,6 @@ FROM c, (VALUES''')
     L.append(',\n'.join(vals) + '\n) AS v(codigo, descripcion, cantidad, costo, itbis, importe);')
 
 L.append(f"\n-- Totales: {n} compras · base RD$ {tot_base:,.2f} · ITBIS RD$ {tot_itbis:,.2f}")
-L.append("SELECT registrar_migracion('elite_royal_prestige_compras.sql');\n")
+L.append(f"SELECT registrar_migracion({q(args.migracion)});\n")
 open(salida, 'w', encoding='utf-8', newline='\n').write('\n'.join(L))
 print('compras', n, 'productos', sum(1 for p in cat.values() if p['bos'] == 1), 'servicios', sum(1 for p in cat.values() if p['bos'] == 2), 'base', round(tot_base, 2), 'itbis', round(tot_itbis, 2))
