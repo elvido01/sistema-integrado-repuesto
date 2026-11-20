@@ -3,7 +3,8 @@ import { Helmet } from 'react-helmet';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Loader2, Plus, Receipt, DollarSign, RefreshCw, Printer } from 'lucide-react';
+import { Loader2, Plus, Receipt, DollarSign, RefreshCw, Printer, Pencil } from 'lucide-react';
+import EditarDescripcionPrestamo from '@/components/financiera/EditarDescripcionPrestamo';
 import NuevoPrestamoModal from '@/components/financiera/NuevoPrestamoModal';
 import { usePanels } from '@/contexts/PanelContext';
 import { formatFechaDMY } from '@/lib/dateUtils';
@@ -26,6 +27,7 @@ const FinancieraPrestamosPage = () => {
   const [loading, setLoading] = useState(false);
   const [nuevoOpen, setNuevoOpen] = useState(false);
   const [printingId, setPrintingId] = useState(null);
+  const [editDesc, setEditDesc] = useState(null); // préstamo cuya descripción se edita
 
   // Informe de Préstamo (hoja carta, estructura del sistema viejo)
   const imprimirInforme = async (p) => {
@@ -43,7 +45,7 @@ const FinancieraPrestamosPage = () => {
     try {
       const { data, error } = await supabase
         .from('prestamos')
-        .select('id, numero, tipo, monto_capital, plazo_cuotas, estado, fecha_inicio, cliente_id')
+        .select('id, numero, tipo, monto_capital, plazo_cuotas, estado, fecha_inicio, cliente_id, descripcion')
         .order('created_at', { ascending: false })
         .limit(200);
       if (error) throw error;
@@ -95,7 +97,7 @@ const FinancieraPrestamosPage = () => {
               <th className="text-center p-3">Cuotas</th>
               <th className="text-left p-3">Inicio</th>
               <th className="text-center p-3">Estado</th>
-              <th className="text-center p-3 w-14"></th>
+              <th className="text-center p-3 w-24"></th>
             </tr>
           </thead>
           <tbody>
@@ -105,7 +107,10 @@ const FinancieraPrestamosPage = () => {
             )}
             {prestamos.map((p) => (
               <tr key={p.id} className="border-b last:border-0 hover:bg-slate-50">
-                <td className="p-3 font-mono font-semibold">{p.numero}</td>
+                <td className="p-3">
+                  <div className="font-mono font-semibold">{p.numero}</div>
+                  {p.descripcion && <div className="text-[11px] text-slate-500 max-w-[220px] truncate" title={p.descripcion}>{p.descripcion}</div>}
+                </td>
                 <td className="p-3">{p.cliente_nombre}</td>
                 <td className="p-3 capitalize">{p.tipo}</td>
                 <td className="p-3 text-right">{fmt(p.monto_capital)}</td>
@@ -114,7 +119,12 @@ const FinancieraPrestamosPage = () => {
                 <td className="p-3 text-center">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${ESTADO_BADGE[p.estado] || 'bg-slate-100'}`}>{p.estado}</span>
                 </td>
-                <td className="p-3 text-center">
+                <td className="p-3 text-center whitespace-nowrap">
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2"
+                          title="Descripción del préstamo (sale en el recibo de pago)"
+                          onClick={() => setEditDesc(p)}>
+                    <Pencil className="w-4 h-4" />
+                  </Button>
                   <Button type="button" variant="ghost" size="sm" className="h-7 px-2"
                           title="Imprimir Informe de Préstamo (hoja carta)"
                           disabled={printingId === p.id}
@@ -127,6 +137,14 @@ const FinancieraPrestamosPage = () => {
           </tbody>
         </table>
       </div>
+
+      <EditarDescripcionPrestamo
+        prestamo={editDesc}
+        onClose={(guardada) => {
+          if (guardada !== undefined && editDesc) setPrestamos((ps) => ps.map((x) => (x.id === editDesc.id ? { ...x, descripcion: guardada } : x)));
+          setEditDesc(null);
+        }}
+      />
 
       <NuevoPrestamoModal
         isOpen={nuevoOpen}

@@ -16,6 +16,7 @@ import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import { printNotaCreditoPOS } from '@/lib/printPOS';
 import { round2 } from '@/components/financiera/amortizacion';
 import { formatFechaDMY } from '@/lib/dateUtils';
+import { descripcionPrestamo, useDescripcionesPrestamos } from '@/components/financiera/EditarDescripcionPrestamo';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -120,6 +121,8 @@ const NotaCreditoFinancieraPage = () => {
     () => [...new Map(cuotas.map((c) => [c.prestamo_id, cleanLoanNumber(c.prestamo_numero)])).entries()].map(([id, num]) => ({ id, num })),
     [cuotas]
   );
+  // (20/11/2026) Descripción propia de cada préstamo, como en el Recibo de Pago.
+  const [descPrestamos] = useDescripcionesPrestamos(prestamosUnicos.map((p) => p.id));
   const cuotasFiltradas = useMemo(
     () => (prestamoFiltro === 'todos' ? cuotas : cuotas.filter((c) => c.prestamo_id === prestamoFiltro)),
     [cuotas, prestamoFiltro]
@@ -151,7 +154,7 @@ const NotaCreditoFinancieraPage = () => {
       out.push({
         key: `${c.cuota_id}-fin`, cuota_id: c.cuota_id, esMora: false, esCargo: false,
         fecha: c.fecha || '', vence: c.fecha_vencimiento, origen: cleanLoanNumber(c.prestamo_numero),
-        referencia: c.referencia, descripcion: 'Financiamiento',
+        referencia: c.referencia, descripcion: descripcionPrestamo(descPrestamos[c.prestamo_id]),
         monto: round2(c.monto_cuota), pendiente: round2(Number(c.capital_pend) + Number(c.interes_pend)),
         capital_pend: round2(c.capital_pend), interes_pend: round2(c.interes_pend), mora_pend: 0,
       });
@@ -166,7 +169,7 @@ const NotaCreditoFinancieraPage = () => {
       });
     });
     return out;
-  }, [cuotasFiltradas, cargosFiltrados]);
+  }, [cuotasFiltradas, cargosFiltrados, descPrestamos]);
 
   const montoNum = round2(filas.reduce((a, r) => a + (Number(abonos[r.key]) || 0), 0));
   const balanceActual = Math.max(round2(balanceAnterior - montoNum), 0);

@@ -14,6 +14,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { calcAmortizacion, round2 } from './amortizacion';
 import { formatFechaDMY, formatDateForSupabase, getCurrentDateInTimeZone } from '@/lib/dateUtils';
 import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
+import { MAX_DESCRIPCION_PRESTAMO, descripcionPropia } from '@/components/financiera/EditarDescripcionPrestamo';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 
@@ -68,6 +69,7 @@ const initial = () => ({
   fechaInicio: hoyLocal(),   // cuando EMPEZO el prestamo, no cuando se digita
   fechaPrimera: proximoMes(),
   garantia: '',
+  descripcion: '', // (20/11/2026) sale en el recibo de pago en vez de "Financiamiento"
   notas: '',
   cuotaAjustada: '', // cuota redondeada por el operador (opcional)
   desembolso: 'efectivo', // efectivo resta de la caja del día; transferencia/cheque del excedente
@@ -211,6 +213,16 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
         p_desembolso: form.desembolso || 'efectivo',
       });
       if (error) throw error;
+
+      // (20/11/2026) Descripción propia (como el SiiF): se guarda aparte para no
+      // tocar crear_prestamo. Si falla, el préstamo ya está creado: se avisa.
+      const desc = (descripcionPropia(form.descripcion) || '').slice(0, MAX_DESCRIPCION_PRESTAMO);
+      if (desc && data?.id) {
+        const { data: up, error: descErr } = await supabase.from('prestamos').update({ descripcion: desc }).eq('id', data.id).select('id');
+        if (descErr || !up?.length) {
+          toast({ variant: 'destructive', title: 'Préstamo creado, sin la descripción', description: `${descErr?.message || 'No se guardó'}. Póngala con el lápiz en la lista de Préstamos.` });
+        }
+      }
 
       // Una SALIDA por cuenta: queda en el historial de cada una con el monto,
       // el nombre del cliente y el número del préstamo.
@@ -427,6 +439,11 @@ const NuevoPrestamoModal = ({ isOpen, onClose }) => {
               </p>
             </div>
           )}
+
+          <div className="space-y-1.5">
+            <Label>Descripción (sale en el recibo de pago)</Label>
+            <Input value={form.descripcion} maxLength={MAX_DESCRIPCION_PRESTAMO} onChange={(e) => set('descripcion', e.target.value)} placeholder='Ej: Moto Yamaha AG 125 roja. Vacía = "Financiamiento"' />
+          </div>
 
           <div className="space-y-1.5">
             <Label>Notas</Label>

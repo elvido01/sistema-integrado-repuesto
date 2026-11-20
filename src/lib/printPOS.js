@@ -1435,6 +1435,7 @@ export const printReciboPagoFinancieraPOS = (data, paperSize = '4inch') => {
       ${afectados.map((d) => `
         <div class="det">
           <div>Documento : <span class="bold">${d.documento || ''}</span></div>
+          ${d.descripcion ? `<div>Descripción: <span class="bold">${escHtml(d.descripcion)}</span></div>` : ''}
           <div>Referencia: ${d.referencia || ''}</div>
           <div>Fecha: ${d.fecha ? formatInTimeZone(new Date(`${String(d.fecha).split('T')[0]}T12:00:00`), 'dd-MM-yyyy') : ''}</div>
           <div>Monto: ${formatCurrency(d.monto)}</div>

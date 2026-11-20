@@ -21,6 +21,7 @@ import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 import OtrasTransaccionesModal from '@/components/financiera/OtrasTransaccionesModal';
 import { round2 } from '@/components/financiera/amortizacion';
 import { formatFechaDMY } from '@/lib/dateUtils';
+import EditarDescripcionPrestamo, { descripcionPrestamo, descripcionPropia, leerDescripcionesPrestamos, useDescripcionesPrestamos } from '@/components/financiera/EditarDescripcionPrestamo';
 
 const fmt = (v) => new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v) || 0);
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -113,6 +114,9 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
   const [saving, setSaving] = useState(false);
 
   const [prestamoFiltro, setPrestamoFiltro] = useState('todos');
+  // (20/11/2026) Descripción propia de cada préstamo (como el SiiF): se lee
+  // aparte de get_prestamos_cliente. id → texto (vacío = "Financiamiento").
+  const [editDesc, setEditDesc] = useState(null);
   const [abonos, setAbonos] = useState({}); // { rowKey: monto abonado }
   const [editKey, setEditKey] = useState(null); // fila cuyo abono se esta editando
   const [selKey, setSelKey] = useState(null); // fila seleccionada (resaltado azul)
@@ -232,7 +236,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       if (pago) {
         const { data: det } = await supabase
           .from('prestamo_pago_detalle')
-          .select('abono_capital, abono_interes, abono_mora, abono_total, prestamo_cuotas:cuota_id(numero_cuota, fecha_vencimiento, monto_cuota, capital, interes, capital_pagado, interes_pagado, prestamos:prestamo_id(numero, plazo_cuotas))')
+          .select('abono_capital, abono_interes, abono_mora, abono_total, prestamo_cuotas:cuota_id(numero_cuota, fecha_vencimiento, monto_cuota, capital, interes, capital_pagado, interes_pagado, prestamos:prestamo_id(numero, plazo_cuotas, descripcion))')
           .eq('pago_id', pago.id);
         const s = (det || []).reduce((a, d) => ({
           cap: a.cap + Number(d.abono_capital || 0),
@@ -388,13 +392,14 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       const [{ data: cli }, { data: det }] = await Promise.all([
         supabase.from('clientes').select('nombre, codigo, rnc, direccion').eq('id', pago.cliente_id).maybeSingle(),
         supabase.from('prestamo_pago_detalle')
-          .select('abono_total, cuota:cuota_id (numero_cuota, fecha_vencimiento, monto_cuota, capital, interes, capital_pagado, interes_pagado, prestamos(numero, plazo_cuotas))')
+          .select('abono_total, cuota:cuota_id (numero_cuota, fecha_vencimiento, monto_cuota, capital, interes, capital_pagado, interes_pagado, prestamos(numero, plazo_cuotas, descripcion))')
           .eq('pago_id', pago.id),
       ]);
       const detalles = (det || []).map((d) => {
         const q = d.cuota;
         return {
           documento: cleanLoanNumber(q?.prestamos?.numero || ''),
+          descripcion: descripcionPropia(q?.prestamos?.descripcion),
           referencia: q ? `${String(q.numero_cuota).padStart(3, '0')}/${String(q.prestamos?.plazo_cuotas || 0).padStart(3, '0')}` : '',
           fecha: q?.fecha_vencimiento || pago.fecha,
           monto: q?.monto_cuota || d.abono_total,
@@ -409,7 +414,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         clienteDireccion: cli?.direccion || '',
         filas: detalles.map((d, i) => ({
           key: `rv-${i}`, fecha: pago.fecha, vence: d.fecha, origen: d.documento,
-          referencia: d.referencia, descripcion: '', monto: d.monto,
+          referencia: d.referencia, descripcion: descripcionPrestamo(d.descripcion), monto: d.monto,
           pendiente: d.pendiente, abono: d.abono,
         })),
         printData: {
@@ -553,6 +558,8 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
     [cargos, prestamoFiltro]
   );
 
+  const [descPrestamos, setDescPrestamos] = useDescripcionesPrestamos(prestamosUnicos.map((p) => p.id));
+
   const capitalPend = cuotasFiltradas.reduce((a, c) => a + Number(c.capital_pend || 0), 0);
   const interesPend = cuotasFiltradas.reduce((a, c) => a + Number(c.interes_pend || 0), 0);
   const moraPend = cuotasFiltradas.reduce((a, c) => a + Number(c.mora_pend || 0), 0);
@@ -589,13 +596,14 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         // >>INTERES<< como un pagaré más y lo bloquea. Ver abajo.
         esInteresCorriente: !!c.es_interes_corriente,
         fecha: c.fecha || '', vence: c.fecha_vencimiento, origen: cleanLoanNumber(c.prestamo_numero),
-        referencia: c.referencia, descripcion: 'Financiamiento',
+        prestamo_id: c.prestamo_id,
+        referencia: c.referencia, descripcion: descripcionPrestamo(descPrestamos[c.prestamo_id]),
         monto: round2(c.monto_cuota), pendiente: round2(Number(c.capital_pend) + Number(c.interes_pend)),
         capital_pend: round2(c.capital_pend), interes_pend: round2(c.interes_pend), mora_pend: 0,
       });
     });
     return out;
-  }, [cuotasFiltradas, cargosFiltrados]);
+  }, [cuotasFiltradas, cargosFiltrados, descPrestamos]);
 
   const montoNum = round2(filas.reduce((a, r) => a + (Number(abonos[r.key]) || 0), 0));
   const balanceActual = Math.max(round2(balanceAnterior - montoNum), 0);
@@ -724,6 +732,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         const q = d.prestamo_cuotas;
         return {
           documento: cleanLoanNumber(q?.prestamos?.numero || ''),
+          descripcion: descripcionPropia(q?.prestamos?.descripcion),
           referencia: q ? `${String(q.numero_cuota).padStart(3, '0')}/${String(q.prestamos?.plazo_cuotas || 0).padStart(3, '0')}` : '',
           fecha: q?.fecha_vencimiento || p.fecha,
           monto: q?.monto_cuota || d.abono_total,
@@ -808,6 +817,13 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
       // Imprimir el recibo con el formato del ticket movil (4 pulgadas)
       if (imprimir) {
         try {
+          // La descripción de cada préstamo se lee aparte: si todavía no llegó
+          // (grabaron muy rápido), se busca ahora para que salga en el ticket.
+          let descImprimir = descPrestamos;
+          const faltan = [...new Set(filas.filter((r) => r.prestamo_id && (Number(abonos[r.key]) || 0) > 0 && !(r.prestamo_id in descPrestamos)).map((r) => r.prestamo_id))];
+          if (faltan.length) {
+            try { descImprimir = { ...descPrestamos, ...(await leerDescripcionesPrestamos(faltan)) }; } catch (e) { console.warn('Recibo sin descripción:', e.message); }
+          }
           printReciboPagoFinancieraPOS({
             numero: data?.numero,
             fecha: fechaRecibo ? new Date(`${fechaRecibo}T00:00:00`) : new Date(),
@@ -828,6 +844,7 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                 const ab = Number(abonos[r.key]) || 0;
                 return {
                   documento: r.origen,
+                  descripcion: r.prestamo_id ? descripcionPropia(descImprimir[r.prestamo_id]) : null,
                   referencia: r.referencia || '',
                   fecha: r.vence || r.fecha,
                   monto: r.monto,
@@ -946,9 +963,19 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
                   <SelectTrigger className="h-7 text-xs flex-1 min-w-0"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos…</SelectItem>
-                    {prestamosUnicos.map((p) => <SelectItem key={p.id} value={p.id}>{p.num}</SelectItem>)}
+                    {prestamosUnicos.map((p) => <SelectItem key={p.id} value={p.id}>{p.num}{descPrestamos[p.id] ? ` · ${descPrestamos[p.id]}` : ''}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {prestamoFiltro !== 'todos' && (
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 shrink-0"
+                          title="Descripción de este préstamo (sale en el recibo)"
+                          onClick={() => {
+                            const p = prestamosUnicos.find((x) => x.id === prestamoFiltro);
+                            if (p) setEditDesc({ id: p.id, numero: p.num, descripcion: descPrestamos[p.id] || '' });
+                          }}>
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                )}
               </div>
               {vencidos.length > 0 && (
                 <div
@@ -1327,6 +1354,13 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
         </DialogContent>
       </Dialog>
 
+      <EditarDescripcionPrestamo
+        prestamo={editDesc}
+        onClose={(guardada) => {
+          if (guardada !== undefined && editDesc) setDescPrestamos((m) => ({ ...m, [editDesc.id]: guardada || '' }));
+          setEditDesc(null);
+        }}
+      />
       <OtrasTransaccionesModal
         isOpen={otrasOpen}
         clientePreseleccionado={cliente}
