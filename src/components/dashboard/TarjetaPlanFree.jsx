@@ -91,6 +91,9 @@ export default function TarjetaPlanFree() {
       <p className="mt-3 text-xs text-gray-500">
         ¿Necesitas facturación electrónica, ventas a crédito o cotizaciones? Vienen desde el plan <b>Básico</b>.
       </p>
+      <p className="mt-1 text-xs text-gray-500">
+        En el plan Gratis la empresa se pausa si pasan 7 días sin usarla (te avisamos el día 5). Tus datos quedan guardados.
+      </p>
 
       {puedeProbar && (
         <button type="button" onClick={probarPro} disabled={activando}

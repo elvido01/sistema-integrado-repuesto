@@ -243,8 +243,35 @@ export const SuscripcionProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, [user, fetchSuscripcion]);
 
+  // (19/11/2026) Fase 5: "usar la empresa" = tenerla abierta. Se marca al
+  // entrar, al volver a la pestaña y cada 15 min con la pestaña a la vista
+  // (el servidor escribe como mucho cada 10 min). Un fallo no hace nada.
+  useEffect(() => {
+    if (!user || !tenantId) return undefined;
+    let ultima = 0;
+    const marcar = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - ultima < 10 * 60 * 1000) return;
+      ultima = Date.now();
+      Promise.resolve(supabase.rpc('marcar_actividad')).catch(() => {});
+    };
+    marcar();
+    const t = setInterval(marcar, 15 * 60 * 1000);
+    document.addEventListener('visibilitychange', marcar);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', marcar); };
+  }, [user, tenantId]);
+
+  const reactivarEmpresa = useCallback(async () => {
+    const { data, error } = await supabase.rpc('reactivar_empresa');
+    if (error) throw error;
+    await fetchSuscripcion();
+    return data;
+  }, [fetchSuscripcion]);
+
   const isActiva = suscripcion?.activa === true;
   const isVencida = ['vencido', 'cancelado', 'sin_suscripcion'].includes(suscripcion?.estado) && !suscripcion?.pago_pendiente;
+  // Empresa FREE en pausa por inactividad (Fase 5): bloquea como vencida,
+  // pero con su propia pantalla (reactivar gratis una vez o elegir Básico).
+  const isPausada = suscripcion?.estado === 'pausada';
   const isTrial = suscripcion?.estado === 'trial';
   const diasRestantes = suscripcion?.dias_restantes || 0;
   const porVencer = isActiva && diasRestantes <= 3 && diasRestantes > 0;
@@ -268,7 +295,7 @@ export const SuscripcionProvider = ({ children }) => {
       return { allowed: true, reason: null };
     }
 
-    if (isVencida) {
+    if (isVencida || isPausada) {
       return {
         allowed: false,
         reason: `Sistema bloqueado: ${suscripcion?.mensaje || 'Su suscripcion ha vencido. Renueve su plan para continuar usando el sistema.'}`
@@ -292,7 +319,7 @@ export const SuscripcionProvider = ({ children }) => {
     }
 
     return { allowed: true, reason: null };
-  }, [isSuperAdmin, loading, isVencida, features, suscripcion]);
+  }, [isSuperAdmin, loading, isVencida, isPausada, features, suscripcion]);
 
   const renovarPlan = useCallback(async (planNombre, metodoPago = null, referenciaPago = null, montoPagado = 0) => {
     if (!tenantId) throw new Error('No hay tenant activo');
@@ -317,6 +344,8 @@ export const SuscripcionProvider = ({ children }) => {
     planes,
     isActiva,
     isVencida,
+    isPausada,
+    reactivarEmpresa,
     isTrial,
     diasRestantes,
     porVencer,
@@ -331,7 +360,7 @@ export const SuscripcionProvider = ({ children }) => {
     refetch: fetchSuscripcion
   }), [
     suscripcion, loading, planes, especial, especialVigente,
-    isActiva, isVencida, isTrial, diasRestantes, porVencer, planActual, esFree, limites, features,
+    isActiva, isVencida, isPausada, reactivarEmpresa, isTrial, diasRestantes, porVencer, planActual, esFree, limites, features,
     validarAccion, renovarPlan, fetchSuscripcion
   ]);
 

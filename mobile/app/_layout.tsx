@@ -6,6 +6,7 @@ import '../global.css';
 import { supabase } from '@/src/supabase/client';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import BloqueoSuscripcion from '@/src/components/BloqueoSuscripcion';
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,8 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <Slot />
+      {/* (19/11/2026) Suscripción vencida o empresa en pausa: tapa todo. */}
+      {session && segments[0] !== '(auth)' ? <BloqueoSuscripcion /> : null}
       <StatusBar style="auto" />
     </QueryClientProvider>
   );
