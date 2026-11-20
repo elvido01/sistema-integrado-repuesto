@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -105,6 +105,16 @@ const ReporteComprasPage = () => {
     else fetchPagos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  // (19/11/2026) Al grabar o editar una compra en otra pestaña, se vuelve a
+  // leer: si no, seguía mostrando los montos de antes de la edición.
+  const recargarRef = useRef(null);
+  recargarRef.current = () => { if (tab === 'compras') fetchCompras(); else fetchPagos(); };
+  useEffect(() => {
+    const alGrabar = () => recargarRef.current?.();
+    window.addEventListener('compra:guardada', alGrabar);
+    return () => window.removeEventListener('compra:guardada', alGrabar);
+  }, []);
 
   const handleFilter = () => {
     if (tab === 'compras') fetchCompras();

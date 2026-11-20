@@ -25,7 +25,7 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
   };
   const {
     suscripcion, loading, isActiva, isVencida, isTrial,
-    diasRestantes, porVencer, planActual
+    diasRestantes, porVencer, planActual, esFree
   } = useSuscripcion();
 
   const isEnRevision = suscripcion?.estado === 'en_revision' || suscripcion?.pago_pendiente;
@@ -34,7 +34,8 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
   if (loading || !suscripcion) return null;
 
   // (19/11/2026) FREE no vence: su tarjeta muestra lo usado y la prueba de Pro.
-  if (esFree) {
+  // Con un pago en revisión manda la tarjeta normal ("Verificando pago").
+  if (esFree && !isEnRevision) {
     if (compact) {
       return (
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold bg-emerald-50 border-emerald-100 text-emerald-700">
@@ -47,6 +48,7 @@ const SuscripcionStatusCard = ({ onRenovar, compact = false }) => {
 
   // Plan badge styles
   const planStyles = {
+    FREE:       { bg: 'bg-emerald-500', ring: 'ring-emerald-300', gradient: 'from-emerald-500 to-green-500', icon: Shield,        text: 'Gratis' },
     TRIAL:      { bg: 'bg-amber-500',   ring: 'ring-amber-300', gradient: 'from-amber-500 to-orange-500',   icon: Clock,          text: 'Prueba' },
     BASICO:     { bg: 'bg-blue-500',    ring: 'ring-blue-300',  gradient: 'from-blue-500 to-indigo-500',    icon: Shield,         text: 'Básico' },
     PRO:        { bg: 'bg-emerald-500', ring: 'ring-emerald-300', gradient: 'from-emerald-500 to-teal-500', icon: Crown,          text: 'Profesional' },

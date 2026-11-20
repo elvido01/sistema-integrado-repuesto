@@ -44,7 +44,8 @@ const ComprasPage = () => {
     return (parseFloat(precio) || 0) >= (parseFloat(costo) || 0);
   };
   const { ordenParaFacturar, setOrdenParaFacturar } = useCompras();
-  const { panels, activePanel, closePanel } = usePanels();
+  // openPanel: al terminar de editar una compra se abre el reporte (faltaba y reventaba tras grabar).
+  const { panels, activePanel, closePanel, openPanel } = usePanels();
   const currentPanel = panels.find(p => p.id === activePanel);
   const compraParaEditar = currentPanel?.extraData?.compraParaEditar;
   const [isEditMode, setIsEditMode] = useState(false);
@@ -2075,7 +2076,10 @@ const ComprasPage = () => {
       }
 
       resetForm();
-      
+      // Aviso entre pantallas: el Reporte de Compras (abierto en otra pestaña)
+      // vuelve a leer y muestra la compra recién grabada o editada.
+      window.dispatchEvent(new CustomEvent('compra:guardada', { detail: { id: savedCompra?.id || null } }));
+
       if (isEditMode) {
         setIsEditMode(false);
         closePanel('compras');

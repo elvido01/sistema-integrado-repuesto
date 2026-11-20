@@ -255,12 +255,56 @@ async function revisarBase() {
 }
 
 // ---------------------------------------------------------------- comparar con la base
+// (19/11/2026) Variables SIN DEFINIR en la web (no-undef). Dos llegaron a
+// producción el mismo día: esFree en la tarjeta de suscripción (tumbó el
+// Inicio) y openPanel en Compras (reventaba después de grabar una edición).
+// Fallan solo al pasar por esa línea, a veces después de grabar. Este chequeo
+// es absoluto (no hay casos viejos aceptados): cualquier caso frena.
+// También componentes de pantalla sin importar (<Boton /> sin su import), que
+// no-undef no mira. Un archivo que no se pudo leer también frena: si no, se
+// saltaría callado.
+async function revisarNoDefinidas() {
+  try {
+    const { ESLint } = await import('eslint');
+    const eslint = new ESLint({
+      cwd: RAIZ,
+      useEslintrc: false,
+      cache: true,
+      cacheLocation: join(RAIZ, 'node_modules', '.cache', 'revisor-eslint'),
+      overrideConfig: {
+        parserOptions: { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true } },
+        env: { browser: true, es2022: true, node: true },
+        plugins: ['react'],
+        settings: { react: { version: 'detect' } },
+        rules: { 'no-undef': 'error', 'react/jsx-no-undef': 'error', 'react/jsx-uses-vars': 'error' },
+      },
+    });
+    const resultados = await eslint.lintFiles(['src/**/*.js', 'src/**/*.jsx']);
+    const casos = [];
+    for (const r of resultados) {
+      const archivo = r.filePath.slice(RAIZ.length + 1).split('\\').join('/');
+      for (const m of r.messages) {
+        if (m.ruleId === 'no-undef' || m.ruleId === 'react/jsx-no-undef') casos.push(`${archivo}:${m.line} — ${m.message}`);
+        else if (m.fatal) casos.push(`${archivo}:${m.line} — no se pudo leer el archivo (${m.message})`);
+      }
+    }
+    return { casos };
+  } catch (e) {
+    // Sin eslint o con una versión que no acepta estas opciones: se avisa y
+    // los demás chequeos siguen.
+    return { saltada: `no se pudo correr eslint (${e?.message || e})`, casos: [] };
+  }
+}
+
 const contar = (porArchivo) => Object.fromEntries(Object.entries(porArchivo).map(([f, l]) => [f, l.length]));
 
 async function main() {
   const t0 = Date.now();
   const codigo = revisarCodigo();
-  const bd = await revisarBase();
+  const [bd, sinDefinir] = await Promise.all([
+    revisarBase(),
+    MODO_BASE ? Promise.resolve({ casos: [] }) : revisarNoDefinidas(),
+  ]);
 
   const actual = { codigo: {}, bd: {} };
   for (const r of REGLAS) actual.codigo[r.id] = contar(codigo[r.id]);
@@ -331,7 +375,16 @@ async function main() {
   }
 
   const seg = ((Date.now() - t0) / 1000).toFixed(1);
+  // Se informa junto con los demás problemas (todo en una sola pasada).
+  if (sinDefinir.casos.length) {
+    console.log('\n  ✖ Revisor: hay nombres SIN DEFINIR en la web (variables o componentes). Revientan la pantalla al pasar por esa línea. No se publica.\n');
+    for (const caso of sinDefinir.casos) console.log(`    - ${caso}`);
+    console.log('');
+    process.exitCode = 1;
+  }
+  if (sinDefinir.saltada) console.log(`  (nombres sin definir: sin revisar — ${sinDefinir.saltada})`);
   if (!problemas.length && !nuevosBd.length) {
+    if (sinDefinir.casos.length) return;
     console.log(`\n  ✔ Revisor: sin errores nuevos de los que ya conocemos (${seg} s).${bajo ? ' Algunos casos viejos se arreglaron: base actualizada.' : ''}`);
     if (bd.saltada) console.log(`  (base de datos sin revisar: ${bd.saltada})`);
     return;

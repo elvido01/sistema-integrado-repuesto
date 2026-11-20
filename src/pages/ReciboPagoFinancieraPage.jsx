@@ -699,7 +699,6 @@ const ReciboPagoFinancieraPage = ({ extraData = null }) => {
     if (clienteMandadoBuscar) return { txt: 'SE BUSCA', cls: 'text-red-600' };
     const cuotasP = estado?.cuotas || [];
     return estadoPorCuotas(cuotasP);
-    if (!hayVencida) return { txt: 'AL DÍA', cls: 'text-emerald-600' };
   })();
 
   // Reimprime el ÚLTIMO pago del cliente con el mismo formato del ticket móvil
