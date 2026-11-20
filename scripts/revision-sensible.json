@@ -375,7 +375,7 @@
     "src/pages/ReciboIngresoPage.jsx": "a6cf1133831acff8",
     "src/pages/ReciboPagoFinancieraPage.jsx": "dc40079e3bb0b250",
     "src/pages/ReporteComprasPage.jsx": "854bc2b94bec3750",
-    "src/pages/ReportesDGIIPage.jsx": "f78e302e40c3374f",
+    "src/pages/ReportesDGIIPage.jsx": "2b95abd59c5e83ef",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
     "src/pages/VentasPage.jsx": "a384c4a826551a59",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
@@ -460,16 +460,10 @@
     "sql/devolucion_efectivo_neto.sql": "e500309f4513e8d7",
     "src/lib/devolucionEfectivo.js": "99cdff5ab9ce85fb",
     "sql/varias_cajas_recibos_otra_empresa.sql": "c05f105aa277902a",
-    "src/assets/plantillas/dgii-606.xlsm": "614b75e6da6a0688"
+    "src/assets/plantillas/dgii-606.xlsm": "614b75e6da6a0688",
+    "sql/elite_royal_prestige_compras_2025.sql": "fb3cd8b2c20ecf7b"
   },
   "historial": [
-    {
-      "fecha": "2026-11-08",
-      "nota": "code-review high CajaColegioPage (montos con comas): 8 hallazgos; arreglados coma decimal de teclado espanol (100x), cursor que saltaba, backspace sobre coma, pegado europeo, monto del concepto sin redondear, componente comun MontoInput; quedan: 17+ digitos pierde precision (no aplica a montos reales)",
-      "archivos": [
-        "src/pages/colegio/CajaColegioPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-08",
       "nota": "code-review high recibo nativo colegio: 10 hallazgos; arreglados preferencia global de impresora (helper directo al agente), doble recibo si el agente tarda, direccion cortada, formas de pago largas, linea sin descripcion, textos distintos, numeroRecibo/fmt reusados, una sola busqueda de impresora; queda: el patron viejo setPreferredBackend en otras 4 pantallas (no es de este cambio)",
@@ -1008,6 +1002,14 @@
       "archivos": [
         "src/assets/plantillas/dgii-606.xlsm",
         "src/lib/dgiiExport.js",
+        "src/pages/ReportesDGIIPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high (Reportes DGII, un solo selector Desde–Hasta): corregidos — Desde mueve Hasta si es un mes (no arma rangos sin querer), TXT de un mes exige el mes cargado y usa su período, tope de 24 meses con aviso y conteo real, aviso 'bajando archivos', botones/período bloqueados mientras baja (también un mes), toast cuando ningún mes se bajó, RNC y helpers compartidos, no recarga el mes en pantalla. Aceptado: dos estados (rango y mes visto) sincronizados por cambiarDesde/cambiarHasta.",
+      "archivos": [
+        "sql/elite_royal_prestige_compras_2025.sql",
         "src/pages/ReportesDGIIPage.jsx"
       ]
     }

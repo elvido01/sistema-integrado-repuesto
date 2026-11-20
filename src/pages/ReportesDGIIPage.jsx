@@ -18,6 +18,10 @@ import {
 } from '@/lib/dgiiExport';
 
 const SIN_RNC_606 = { variant: 'destructive', title: 'Falta el RNC de la empresa', description: 'El 606 lleva el RNC (9 dígitos) o la cédula (11). Póngalo en Perfil Empresa.' };
+const SIN_RNC_TXT = { variant: 'destructive', title: 'Falta el RNC de la empresa', description: 'El archivo lleva el RNC (9 dígitos) o la cédula (11) en la primera línea. Póngalo en Perfil Empresa.' };
+const MAX_MESES = 24;
+const idxMes = (y, m) => y * 12 + (m - 1);
+const nombreMesDe = (p) => `${MESES[p.month - 1]} ${p.year}`;
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -293,34 +297,39 @@ const ReportesDGIIPage = () => {
   const conAviso606 = rev606.incluidas.filter((c) => c.avisos.length).length;
 
   // ── Exportar TXT ──
-  const exportTxt = (reporte) => {
+  // TXT de UN mes. d = { ventas, rev606, anulados } de ese mes.
+  // Devuelve { txt, filename, registros } | { vacio: true } | { tope }.
+  const armarTxtMes = (reporte, y, m, d) => {
     const rnc = empresa?.rnc || '';
-    const filename = nombreArchivoDgii(reporte, rnc, year, month);
     let contenido = '';
-    if (reporte === '607') contenido = generar607(ventas);
-    else if (reporte === '606') contenido = rev606.incluidas.map((c) => fila606(c).join('|')).join('\n');
-    else if (reporte === '608') contenido = generar608(anulados.map(a => ({ ncf: a.ncf, fecha: a.updated_at || a.fecha, tipo_anulacion: '02' })));
+    if (reporte === '607') contenido = generar607(d.ventas || []);
+    else if (reporte === '606') contenido = (d.rev606?.incluidas || []).map((c) => fila606(c).join('|')).join('\n');
+    else if (reporte === '608') contenido = generar608((d.anulados || []).map(a => ({ ncf: a.ncf, fecha: a.updated_at || a.fecha, tipo_anulacion: '02' })));
+    if (!contenido) return { vacio: true };
+    // Con el encabezado de la herramienta oficial: <formato>|<RNC>|<AAAAMM>|<registros>.
+    const txt = armarTxtDgii(reporte, rnc, y, m, contenido);
+    const registros = txt.split('\r\n').length - 1;
+    const tope = MAX_REGISTROS_DGII[reporte];
+    if (tope && registros > tope) return { tope, registros };
+    return { txt, filename: nombreArchivoDgii(reporte, rnc, y, m), registros };
+  };
 
-    if (!contenido) {
+  const exportTxt = (reporte) => {
+    // (13/11/2026) El RNC va en la primera línea del archivo: sin él la DGII lo rechaza.
+    if (!rncEmpresaValido(empresa?.rnc)) { toast(SIN_RNC_TXT); return; }
+    // Solo con el mes ya cargado (si la carga falló, no se dice "declare en cero").
+    if (!mesListo()) return;
+    const r = armarTxtMes(reporte, cargado.year, cargado.month, { ventas, rev606, anulados });
+    if (r.vacio) {
       toast({ title: 'Sin datos', description: `No hay registros para el ${reporte} del período. Si no hubo operaciones, preséntelo en la Oficina Virtual como «Declaración en cero».` });
       return;
     }
-    // (13/11/2026) El RNC va en la primera línea del archivo: sin él la DGII lo rechaza.
-    const rncLimpio = cleanRncCedula(rnc);
-    if (rncLimpio.length !== 9 && rncLimpio.length !== 11) {
-      toast({ variant: 'destructive', title: 'Falta el RNC de la empresa', description: 'El archivo lleva el RNC (9 dígitos) o la cédula (11) en la primera línea. Póngalo en Perfil Empresa.' });
+    if (r.tope) {
+      toast({ variant: 'destructive', title: `El ${reporte} tiene ${r.registros} registros`, description: `La DGII acepta hasta ${r.tope.toLocaleString('en-US')} por archivo. Consulte cómo dividir el envío antes de subirlo.` });
       return;
     }
-    // Con el encabezado de la herramienta oficial: <formato>|<RNC>|<AAAAMM>|<registros>.
-    const txt = armarTxtDgii(reporte, rnc, year, month, contenido);
-    const registros = txt.split('\r\n').length - 1;
-    const tope = MAX_REGISTROS_DGII[reporte];
-    if (tope && registros > tope) {
-      toast({ variant: 'destructive', title: `El ${reporte} tiene ${registros} registros`, description: `La DGII acepta hasta ${tope.toLocaleString('en-US')} por archivo. Consulte cómo dividir el envío antes de subirlo.` });
-      return;
-    }
-    downloadTxt(txt, filename);
-    toast({ title: 'Archivo generado', description: `${filename} · ${registros} registro(s), listo para subir a la Oficina Virtual.` });
+    downloadTxt(r.txt, r.filename);
+    toast({ title: 'Archivo generado', description: `${r.filename} · ${r.registros} registro(s), listo para subir a la Oficina Virtual.` });
   };
 
   // ── Exportar Excel (preview para contador) ──
@@ -468,69 +477,155 @@ const ReportesDGIIPage = () => {
     toast({ title: 'Excel descargado', description: `${reporte} · ${deQue}` });
   };
 
+  // ¿El mes en pantalla ya cargó (y es el de la empresa activa)?
+  const mesListo = () => {
+    if (!cargado || cargado.year !== year || cargado.month !== month || cargado.tenantId !== tenantId) {
+      toast({ title: 'Espere un momento', description: 'El mes todavía se está cargando (o no cargó: recargue la página).' });
+      return false;
+    }
+    return true;
+  };
+
   // El mes que está en pantalla.
   const excelDelMes = (reporte) => {
-    if (!cargado || cargado.year !== year || cargado.month !== month || cargado.tenantId !== tenantId) {
-      toast({ title: 'Espere un momento', description: 'El mes todavía se está cargando.' });
-      return;
-    }
-    if (enCurso.current) return; // dos clics rápidos no bajan dos veces
-    enCurso.current = true;
+    if (!mesListo()) return;
+    if (!empezar()) return; // dos clics rápidos no bajan dos veces
+    setRangoEstado('Armando el archivo…');
     exportExcel(reporte, [{ year: cargado.year, month: cargado.month, ventas, rev606, anulados }])
       .catch((error) => { if (montado.current) toast({ variant: 'destructive', title: 'No se pudo armar el Excel', description: error.message }); })
-      .finally(() => { enCurso.current = false; });
+      .finally(terminar);
   };
 
   // ── Excel de varios meses ──
+  // (20/11/2026) UN solo selector de período (Desde – Hasta). Un mes: la
+  // pantalla y los botones son de ese mes. Varios: se escoge en la fila de
+  // meses cuál se ve, y Excel/TXT bajan un archivo por mes (el Excel de 607 y
+  // 608 sigue siendo uno con todos los meses).
   const [rDesdeY, setRDesdeY] = useState(hoy.getFullYear());
-  const [rDesdeM, setRDesdeM] = useState(1);
+  const [rDesdeM, setRDesdeM] = useState(hoy.getMonth() + 1);
   const [rHastaY, setRHastaY] = useState(hoy.getFullYear());
   const [rHastaM, setRHastaM] = useState(hoy.getMonth() + 1);
-  const [rangoEstado, setRangoEstado] = useState(null); // texto mientras carga
+  // Meses del período (como mucho MAX_MESES + 1, para saber que se pasó).
+  const totalMeses = Math.max(1, idxMes(rHastaY, rHastaM) - idxMes(rDesdeY, rDesdeM) + 1);
+  const mesesRango = useMemo(() => {
+    const out = [];
+    for (let k = idxMes(rDesdeY, rDesdeM); k <= idxMes(rHastaY, rHastaM) && out.length < MAX_MESES; k++) out.push({ year: Math.floor(k / 12), month: (k % 12) + 1 });
+    return out;
+  }, [rDesdeY, rDesdeM, rHastaY, rHastaM]);
+  const esRango = totalMeses > 1;
+  const rangoLargo = totalMeses > MAX_MESES;
+  // Un solo mes: mover "Desde" mueve también "Hasta" (sigue siendo un mes;
+  // para un rango se cambia "Hasta"). Con un rango, "Desde" no pasa de "Hasta".
+  const cambiarDesde = (m, y) => {
+    const unMes = idxMes(rDesdeY, rDesdeM) === idxMes(rHastaY, rHastaM);
+    setRDesdeM(m); setRDesdeY(y); setMonth(m); setYear(y);
+    if (unMes || idxMes(y, m) > idxMes(rHastaY, rHastaM)) { setRHastaM(m); setRHastaY(y); }
+  };
+  const cambiarHasta = (m, y) => {
+    setRHastaM(m); setRHastaY(y);
+    if (idxMes(y, m) < idxMes(rDesdeY, rDesdeM)) { setRDesdeM(m); setRDesdeY(y); setMonth(m); setYear(y); }
+    else if (idxMes(year, month) > idxMes(y, m)) { setMonth(m); setYear(y); }
+  };
+  const [rangoEstado, setRangoEstado] = useState(null); // texto mientras carga o baja
+  const [ocupado, setOcupado] = useState(false); // bloquea botones y período mientras baja
   const tenantRef = useRef(tenantId);
   tenantRef.current = tenantId;
   const enCurso = useRef(false); // dos clics rápidos no arman dos archivos
   const montado = useRef(true); // si sale de la pantalla, no baja nada
   useEffect(() => { montado.current = true; return () => { montado.current = false; }; }, []);
+  const empezar = () => {
+    if (enCurso.current) return false;
+    enCurso.current = true; setOcupado(true);
+    return true;
+  };
+  const terminar = () => {
+    enCurso.current = false;
+    if (montado.current) { setOcupado(false); setRangoEstado(null); }
+  };
 
-  const excelDelRango = async (reporte) => {
-    if (enCurso.current) return;
-    const ini = rDesdeY * 12 + (rDesdeM - 1);
-    const fin = rHastaY * 12 + (rHastaM - 1);
-    if (fin < ini) {
-      toast({ variant: 'destructive', title: 'Rango al revés', description: 'El mes "Hasta" es anterior al mes "Desde".' });
-      return;
-    }
-    if (fin - ini + 1 > 24) {
-      toast({ variant: 'destructive', title: 'Rango muy largo', description: reporte === '606' ? 'Hasta 24 meses de una vez.' : 'Hasta 24 meses por archivo.' });
-      return;
-    }
-    // El 606 lleva el RNC: se avisa antes de cargar los meses, no después.
-    if (reporte === '606' && !rncEmpresaValido(empresa?.rnc)) { toast(SIN_RNC_606); return; }
+  // Carga los meses del período, uno por uno (con aviso de avance). El que
+  // ya está en pantalla no se vuelve a pedir. null si se salió de la pantalla.
+  const cargarRango = async (reporte) => {
     const tenantInicio = tenantId;
     const que = { v607: reporte === '607', c606: reporte === '606', a608: reporte === '608' };
     const periodos = [];
-    enCurso.current = true;
-    try {
-      for (let k = ini; k <= fin; k++) {
-        const y = Math.floor(k / 12);
-        const m = (k % 12) + 1;
-        setRangoEstado(`Cargando ${MESES[m - 1]} ${y}… (${k - ini + 1} de ${fin - ini + 1})`);
-        const r = rangoMes(y, m);
-        const d = await traerPeriodo(r.desde, r.hasta, tenantInicio, que);
-        if (!montado.current) return;
-        // Las consultas ya van con la empresa del inicio; esto solo avisa.
-        if (tenantRef.current !== tenantInicio) throw new Error('Cambió de empresa mientras se cargaba. Vuelva a intentarlo.');
-        periodos.push({ year: y, month: m, ventas: d.ventas, rev606: que.c606 ? revisar606(d.compras, empresa?.rnc) : null, anulados: d.anulados });
+    for (let i = 0; i < mesesRango.length; i++) {
+      const { year: y, month: m } = mesesRango[i];
+      if (cargado && cargado.year === y && cargado.month === m && cargado.tenantId === tenantInicio) {
+        periodos.push({ year: y, month: m, ventas, rev606, anulados });
+        continue;
       }
-      await exportExcel(reporte, periodos);
+      setRangoEstado(`Cargando ${MESES[m - 1]} ${y}… (${i + 1} de ${mesesRango.length})`);
+      const r = rangoMes(y, m);
+      const d = await traerPeriodo(r.desde, r.hasta, tenantInicio, que);
+      if (!montado.current) return null;
+      // Las consultas ya van con la empresa del inicio; esto solo avisa.
+      if (tenantRef.current !== tenantInicio) throw new Error('Cambió de empresa mientras se cargaba. Vuelva a intentarlo.');
+      periodos.push({ year: y, month: m, ventas: d.ventas, rev606: que.c606 ? revisar606(d.compras, empresa?.rnc) : null, anulados: d.anulados });
+    }
+    setRangoEstado(`Armando y bajando ${mesesRango.length} archivo(s)…`);
+    return periodos;
+  };
+
+  const avisoRangoLargo = () => toast({ variant: 'destructive', title: 'Período muy largo', description: `Hasta ${MAX_MESES} meses de una vez. Acorte "Hasta".` });
+
+  const excelDelRango = async (reporte) => {
+    if (rangoLargo) { avisoRangoLargo(); return; }
+    // El 606 lleva el RNC: se avisa antes de cargar los meses, no después.
+    if (reporte === '606' && !rncEmpresaValido(empresa?.rnc)) { toast(SIN_RNC_606); return; }
+    if (!empezar()) return;
+    try {
+      const periodos = await cargarRango(reporte);
+      if (periodos) await exportExcel(reporte, periodos);
     } catch (error) {
       if (montado.current) toast({ variant: 'destructive', title: 'No se pudo armar el Excel', description: error.message });
     } finally {
-      enCurso.current = false;
-      if (montado.current) setRangoEstado(null);
+      terminar();
     }
   };
+
+  // TXT de varios meses: uno por mes (la DGII los recibe mes por mes).
+  const txtDelRango = async (reporte) => {
+    if (rangoLargo) { avisoRangoLargo(); return; }
+    if (!rncEmpresaValido(empresa?.rnc)) { toast(SIN_RNC_TXT); return; }
+    if (!empezar()) return;
+    try {
+      const periodos = await cargarRango(reporte);
+      if (!periodos) return;
+      const bajados = []; const vacios = []; const largos = [];
+      for (const p of periodos) {
+        const r = armarTxtMes(reporte, p.year, p.month, p);
+        if (r.vacio) { vacios.push(nombreMesDe(p)); continue; }
+        if (r.tope) { largos.push(`${nombreMesDe(p)} (${r.registros})`); continue; }
+        if (!montado.current) return;
+        downloadTxt(r.txt, r.filename);
+        bajados.push(nombreMesDe(p));
+        if (periodos.length > 1) await new Promise((res) => setTimeout(res, 800));
+      }
+      if (!bajados.length && !largos.length) {
+        toast({ title: 'Sin datos', description: `No hay registros para el ${reporte} en ${vacios.join(', ')}. Si no hubo operaciones, se presenta como «Declaración en cero».` });
+        return;
+      }
+      const partes = [];
+      if (bajados.length) partes.push(`Listos para subir: ${bajados.join(', ')}.`);
+      if (vacios.length) partes.push(`Sin registros (declaración en cero): ${vacios.join(', ')}.`);
+      if (largos.length) partes.push(`Pasan el tope de la DGII y no se bajaron: ${largos.join(', ')}.`);
+      if (bajados.length > 1) partes.push('Si el navegador preguntó y no permitió descargar varios archivos, permítalo y vuelva a bajarlos: revise que tenga uno por cada mes.');
+      toast({
+        variant: largos.length ? 'destructive' : undefined,
+        title: bajados.length ? `${reporte}: ${bajados.length} TXT, uno por mes` : `${reporte}: ningún TXT bajado`,
+        description: partes.join(' '),
+        duration: 12000,
+      });
+    } catch (error) {
+      if (montado.current) toast({ variant: 'destructive', title: 'No se pudieron armar los TXT', description: error.message });
+    } finally {
+      terminar();
+    }
+  };
+
+  const bajarExcel = (reporte) => (esRango ? excelDelRango(reporte) : excelDelMes(reporte));
+  const bajarTxt = (reporte) => (esRango ? txtDelRango(reporte) : exportTxt(reporte));
 
   const years = Array.from({ length: 6 }, (_, i) => hoy.getFullYear() - i);
 
@@ -550,65 +645,59 @@ const ReportesDGIIPage = () => {
                 Formatos 606 (Compras), 607 (Ventas) y 608 (Anulados) — TXT oficial DGII + Excel para contador
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-end gap-3">
               <div>
-                <Label className="text-[10px] font-bold text-slate-500 uppercase">Mes</Label>
-                <select
-                  value={month}
-                  onChange={e => setMonth(parseInt(e.target.value))}
-                  className="h-9 px-2 border rounded text-sm block"
-                >
-                  {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-                </select>
+                <Label className="text-[10px] font-bold text-slate-500 uppercase">Desde</Label>
+                <div className="flex gap-1">
+                  <select value={rDesdeM} onChange={e => cambiarDesde(parseInt(e.target.value), rDesdeY)} disabled={ocupado} className="h-9 px-2 border rounded text-sm">
+                    {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  </select>
+                  <select value={rDesdeY} onChange={e => cambiarDesde(rDesdeM, parseInt(e.target.value))} disabled={ocupado} className="h-9 px-2 border rounded text-sm">
+                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
               </div>
               <div>
-                <Label className="text-[10px] font-bold text-slate-500 uppercase">Año</Label>
-                <select
-                  value={year}
-                  onChange={e => setYear(parseInt(e.target.value))}
-                  className="h-9 px-2 border rounded text-sm block"
-                >
-                  {years.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
+                <Label className="text-[10px] font-bold text-slate-500 uppercase">Hasta</Label>
+                <div className="flex gap-1">
+                  <select value={rHastaM} onChange={e => cambiarHasta(parseInt(e.target.value), rHastaY)} disabled={ocupado} className="h-9 px-2 border rounded text-sm">
+                    {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  </select>
+                  <select value={rHastaY} onChange={e => cambiarHasta(rHastaM, parseInt(e.target.value))} disabled={ocupado} className="h-9 px-2 border rounded text-sm">
+                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* (17/11/2026) Excel de varios meses: 607 y 608 en un archivo con
-              todos; el 606 (20/11/2026) baja un archivo por mes en la plantilla de la DGII. */}
-          <div className="mt-3 flex flex-wrap items-end gap-2 border-t pt-3">
-            <div className="text-xs font-semibold text-slate-600 mr-1 self-center">Excel de varios meses:</div>
-            <div>
-              <Label className="text-[10px] font-bold text-slate-500 uppercase">Desde</Label>
-              <div className="flex gap-1">
-                <select value={rDesdeM} onChange={e => setRDesdeM(parseInt(e.target.value))} className="h-8 px-1 border rounded text-xs">
-                  {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-                </select>
-                <select value={rDesdeY} onChange={e => setRDesdeY(parseInt(e.target.value))} className="h-8 px-1 border rounded text-xs">
-                  {years.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
+          {/* Varios meses: cuál se ve en pantalla. Los botones bajan todo el período. */}
+          {rangoLargo && (
+            <div className="mt-3 border-t pt-3 text-xs text-red-700">
+              <b>{totalMeses} meses:</b> se pueden bajar hasta {MAX_MESES} de una vez. Acorte "Hasta".
+            </div>
+          )}
+          {esRango && !rangoLargo && (
+            <div className="mt-3 border-t pt-3">
+              <div className="text-xs text-slate-600 mb-2">
+                <b>{totalMeses} meses.</b> Los botones <b>Excel</b> y <b>TXT DGII</b> bajan un archivo por cada mes (el Excel de 607 y 608, uno con todos). En pantalla se ve:
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {mesesRango.map((p) => {
+                  const activo = p.year === year && p.month === month;
+                  return (
+                    <button key={`${p.year}-${p.month}`} type="button" disabled={ocupado} onClick={() => { setYear(p.year); setMonth(p.month); }}
+                      className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${activo ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
+                      {MESES[p.month - 1].slice(0, 3)} {p.year}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <div>
-              <Label className="text-[10px] font-bold text-slate-500 uppercase">Hasta</Label>
-              <div className="flex gap-1">
-                <select value={rHastaM} onChange={e => setRHastaM(parseInt(e.target.value))} className="h-8 px-1 border rounded text-xs">
-                  {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-                </select>
-                <select value={rHastaY} onChange={e => setRHastaY(parseInt(e.target.value))} className="h-8 px-1 border rounded text-xs">
-                  {years.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-            </div>
-            {['606', '607', '608'].map((r) => (
-              <Button key={r} variant="outline" size="sm" className="h-8" disabled={!!rangoEstado || !tenantId} onClick={() => excelDelRango(r)}>
-                <FileSpreadsheet className="w-4 h-4 mr-1" /> {r}
-              </Button>
-            ))}
-            {rangoEstado && (
-              <span className="text-xs text-blue-700 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> {rangoEstado}</span>
-            )}
-          </div>
+          )}
+          {rangoEstado && (
+            <div className="mt-2 text-xs text-blue-700 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> {rangoEstado}</div>
+          )}
 
           {!empresa?.rnc && (
             <div className="mt-3 flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs">
@@ -634,8 +723,10 @@ const ReportesDGIIPage = () => {
                 subtitulo={`${ventas.length} facturas con NCF · Subtotal RD$ ${totales607.subtotal.toLocaleString('es-DO', { minimumFractionDigits: 2 })} · ITBIS RD$ ${totales607.itbis.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`}
                 alertas={alertas607}
                 loading={loading}
-                onTxt={() => exportTxt('607')}
-                onExcel={() => excelDelMes('607')}
+                onTxt={() => bajarTxt('607')}
+                onExcel={() => bajarExcel('607')}
+                nMeses={totalMeses}
+                ocupado={ocupado}
               >
                 <Table className="text-xs">
                   <TableHeader>
@@ -681,8 +772,10 @@ const ReportesDGIIPage = () => {
                 alertas={conAviso606}
                 textoAlerta="con aviso: revíselas antes de subir (fila amarilla)"
                 loading={loading}
-                onTxt={() => exportTxt('606')}
-                onExcel={() => excelDelMes('606')}
+                onTxt={() => bajarTxt('606')}
+                onExcel={() => bajarExcel('606')}
+                nMeses={totalMeses}
+                ocupado={ocupado}
               >
                 <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900 space-y-0.5">
                   <p><b>Van en el 606:</b> {Object.keys(TIPOS_606).join(', ')}. Las facturas electrónicas (E31…) recibidas también se reportan.</p>
@@ -761,8 +854,10 @@ const ReportesDGIIPage = () => {
                 subtitulo={`${anulados.length} comprobantes anulados`}
                 alertas={0}
                 loading={loading}
-                onTxt={() => exportTxt('608')}
-                onExcel={() => excelDelMes('608')}
+                onTxt={() => bajarTxt('608')}
+                onExcel={() => bajarExcel('608')}
+                nMeses={totalMeses}
+                ocupado={ocupado}
               >
                 <Table className="text-xs">
                   <TableHeader>
@@ -795,7 +890,7 @@ const ReportesDGIIPage = () => {
   );
 };
 
-const ReporteSection = ({ titulo, subtitulo, alertas, textoAlerta, loading, onTxt, onExcel, children }) => (
+const ReporteSection = ({ titulo, subtitulo, alertas, textoAlerta, loading, onTxt, onExcel, nMeses = 1, ocupado = false, children }) => (
   <div className="space-y-3">
     <div className="flex justify-between items-start gap-4 border-b pb-3">
       <div>
@@ -808,11 +903,11 @@ const ReporteSection = ({ titulo, subtitulo, alertas, textoAlerta, loading, onTx
         )}
       </div>
       <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={onExcel} disabled={loading}>
-          <FileSpreadsheet className="w-4 h-4 mr-1" /> Excel
+        <Button variant="outline" size="sm" onClick={onExcel} disabled={loading || ocupado}>
+          <FileSpreadsheet className="w-4 h-4 mr-1" /> Excel{nMeses > 1 ? ` (${nMeses} meses)` : ''}
         </Button>
-        <Button size="sm" className="bg-blue-700 hover:bg-blue-800 text-white" onClick={onTxt} disabled={loading}>
-          <Download className="w-4 h-4 mr-1" /> TXT DGII
+        <Button size="sm" className="bg-blue-700 hover:bg-blue-800 text-white" onClick={onTxt} disabled={loading || ocupado}>
+          <Download className="w-4 h-4 mr-1" /> TXT DGII{nMeses > 1 ? ` (${nMeses} meses)` : ''}
         </Button>
       </div>
     </div>
