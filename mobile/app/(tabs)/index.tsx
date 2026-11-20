@@ -13,6 +13,7 @@ import {
 import { fetchSanDashboard, suscribirSan, SanDashboard, SAN_VACIO } from '@/src/services/sanService';
 import { fetchCuentasBanco, totalCuentas, CuentaBanco } from '@/src/services/cuentasService';
 import VentanasInicio from '@/src/components/ventanas/VentanasInicio';
+import PrimerosPasosInicio from '@/src/components/PrimerosPasosInicio';
 
 const money = (value: number) =>
   `RD$${Number(value || 0).toLocaleString('es-DO', {
@@ -577,6 +578,9 @@ export default function DashboardScreen() {
 
       {/* Ventanas y aluminio: crear proyecto por sistema, accesos y recientes (solo tipo 'aluminio'). */}
       <VentanasInicio />
+
+      {/* (19/11/2026) Primeros pasos: empresas nuevas / FREE / en prueba; se esconde sola al completar. */}
+      {isManagerRole && <PrimerosPasosInicio />}
 
       <View className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
         <View className="flex-row items-start justify-between">

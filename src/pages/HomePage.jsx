@@ -27,6 +27,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { usePanels } from '@/contexts/PanelContext';
 import InstalarAndroid from '@/components/common/InstalarAndroid';
+import PrimerosPasos from '@/components/dashboard/PrimerosPasos';
 import { TARJETAS_DASHBOARD, permisosDashboard } from '@/lib/permissionsHelper';
 import { isSameWeek, addDays, isBefore, startOfToday, differenceInMonths, differenceInYears, addWeeks, addMonths, addYears } from 'date-fns';
 
@@ -703,6 +704,13 @@ const HomePage = () => {
 
         {/* Banner insights diarios (agente IA) */}
         {isAdmin && <InsightsBanner />}
+
+        {/* (19/11/2026) Primeros pasos: solo empresas nuevas / FREE / en prueba; se esconde sola al completar. */}
+        {isAdmin && (
+          <div className="max-w-3xl mx-auto px-4">
+            <PrimerosPasos className="mb-2" />
+          </div>
+        )}
 
         {/* Panel Administrativo Financiero */}
         {verDashboard && (
