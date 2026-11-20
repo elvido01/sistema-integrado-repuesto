@@ -79,13 +79,16 @@ export default function MetricasOnboardingPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm md:col-span-1">
                 <div className="flex items-center gap-2 text-xs font-black uppercase text-blue-700"><Target className="h-4 w-4" /> Tu indicador</div>
+                {r.whatsapp_medible === false && (
+                  <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">El WhatsApp de MotoFlow (809-769-5965) aún no está conectado al CRM: no se puede saber quién escribió. Mientras tanto el número cuenta solo las ventas en 7 días.</p>
+                )}
                 <div className="mt-2 text-4xl font-black text-gray-900">{r.indicador_pct == null ? '—' : `${r.indicador_pct}%`}</div>
                 <p className="mt-1 text-xs text-gray-600">
-                  Primera venta en 7 días sin escribir por WhatsApp: <b>{r.venta_7d_sin_whatsapp || 0}</b> de <b>{r.maduras || 0}</b> empresas con 7 días cumplidos.
+                  {r.whatsapp_medible === false ? 'Primera venta en 7 días' : 'Primera venta en 7 días sin escribir por WhatsApp'}: <b>{(r.whatsapp_medible === false ? r.venta_7d : r.venta_7d_sin_whatsapp) || 0}</b> de <b>{r.maduras || 0}</b> empresas con 7 días cumplidos.
                 </p>
                 <p className="mt-2 text-[11px] text-gray-400">
                   Vendieron en 7 días: {r.venta_7d || 0} · te escribieron: {r.escribieron_7d || 0} · sin teléfono para saberlo: {r.venta_7d_sin_telefono || 0}.
-                  "Escribir" = mensaje al WhatsApp de MotoFlow desde el teléfono que la empresa registró.
+                  "Escribir" = mensaje al WhatsApp de MotoFlow (809-769-5965) desde el teléfono que la empresa registró.
                 </p>
               </div>
               <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:col-span-2">

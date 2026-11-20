@@ -17,7 +17,8 @@ import { useAuthStore } from '@/src/store/useAuthStore';
 
 const ESTADOS_BLOQUEO = ['vencido', 'cancelado', 'sin_suscripcion'];
 const WEB = 'https://motoflow.com.do';
-const WHATSAPP = 'https://wa.me/18093905965';
+// WhatsApp de MotoFlow: 809-769-5965, SOLO WhatsApp (el 809-390-5965 es de Repuestos Morla).
+const WHATSAPP = 'https://wa.me/18097695965';
 
 type Estado = { estado?: string; pago_pendiente?: boolean; mensaje?: string; puede_reactivar_gratis?: boolean; es_admin?: boolean; plan?: string | null };
 
@@ -121,7 +122,7 @@ export default function BloqueoSuscripcion() {
             <Text className={`font-bold ${gratis ? 'text-gray-800' : 'text-white'}`}>{pausada ? 'Elegir el plan Básico (web)' : 'Ver planes y renovar (web)'}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => Linking.openURL(WHATSAPP)} className="items-center rounded-xl border border-gray-300 bg-white py-3">
-            <Text className="font-bold text-gray-800">Escribir por WhatsApp</Text>
+            <Text className="font-bold text-gray-800">WhatsApp 809-769-5965 (solo mensajes)</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => revisar(true)} className="items-center py-2">
             <Text className="text-xs font-bold text-blue-700">Ya pagué — verificar de nuevo</Text>

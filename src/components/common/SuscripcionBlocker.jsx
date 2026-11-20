@@ -126,10 +126,13 @@ const SuscripcionBlocker = () => {
             )}
 
             <div className="space-y-2">
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Contactar para renovar</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Contactar para renovar (WhatsApp solo mensajes)</p>
               <div className="flex gap-2">
-                <a href="tel:+18093905965" className="flex-1 flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg py-2.5 px-3 text-xs font-bold transition-colors border border-blue-200">
-                  <Phone className="w-3.5 h-3.5" /> Llamar
+                {/* (20/11/2026) WhatsApp de MotoFlow: 809-769-5965, SOLO WhatsApp
+                    (el 809-390-5965 es de Repuestos Morla). */}
+                <a href="https://wa.me/18097695965" target="_blank" rel="noopener noreferrer" title="809-769-5965 · solo WhatsApp, no recibe llamadas"
+                  className="flex-1 flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg py-2.5 px-3 text-xs font-bold transition-colors border border-emerald-200">
+                  <Phone className="w-3.5 h-3.5" /> WhatsApp 809-769-5965
                 </a>
                 <a href="mailto:ventasmotoflowrd@gmail.com" className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg py-2.5 px-3 text-xs font-bold transition-colors border border-indigo-200">
                   <Mail className="w-3.5 h-3.5" /> Email

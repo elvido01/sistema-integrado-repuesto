@@ -6,8 +6,9 @@
 --   * Indicador de éxito (decisión del dueño 19/11): % de empresas nuevas
 --     con PRIMERA VENTA en sus primeros 7 días SIN ESCRIBIR por WhatsApp.
 --     Solo cuentan las que ya cumplieron 7 días.
---     "Escribió" = mensaje entrante al WhatsApp de MotoFlow (809-390-5965,
---     cae en el CRM de la empresa con ese teléfono) desde el teléfono que la
+--     "Escribió" = mensaje entrante al WhatsApp de MotoFlow (809-769-5965,
+--     SOLO WhatsApp; el 809-390-5965 es de Repuestos Morla; cuenta cuando ese
+--     número esté conectado al CRM de alguna empresa con ese teléfono) desde el teléfono que la
 --     empresa puso al registrarse, en esos 7 días. Sin teléfono registrado no
 --     se puede saber: se cuenta aparte (whatsapp = null), no como "no escribió".
 --   * Embudo: registradas → alguien entró → artículo → cliente → venta.
@@ -28,7 +29,7 @@ SET search_path TO 'pg_catalog', 'public', 'private'
 AS $f$
 DECLARE
   v_desde   timestamptz := now() - make_interval(days => GREATEST(1, LEAST(COALESCE(p_dias, 90), 730)));
-  v_tel_mf  text := '8093905965';            -- WhatsApp de MotoFlow
+  v_tel_mf  text := '8097695965';            -- WhatsApp de MotoFlow (solo WhatsApp)
   v_crm     uuid[];
   v_emp     jsonb;
   v_res     jsonb;
@@ -63,7 +64,7 @@ BEGIN
     SELECT e.*,
            now() - e.creada >= interval '7 days' AS madura,
            e.primera_venta IS NOT NULL AND e.primera_venta <= e.creada + interval '7 days' AS venta_7d,
-           CASE WHEN e.tel IS NULL OR length(e.tel) < 10 THEN NULL
+           CASE WHEN v_crm IS NULL OR e.tel IS NULL OR length(e.tel) < 10 THEN NULL
                 ELSE EXISTS (
                   SELECT 1 FROM public.crm_whatsapp_messages m
                     JOIN public.crm_whatsapp_contacts ct ON ct.id = m.contact_id
@@ -98,7 +99,11 @@ BEGIN
       'venta_7d_sin_telefono', count(*) FILTER (WHERE madura AND venta_7d AND whatsapp_7d IS NULL),
       'escribieron_7d', count(*) FILTER (WHERE madura AND whatsapp_7d),
       'pausadas', count(*) FILTER (WHERE pausada_at IS NOT NULL),
+      'whatsapp_medible', v_crm IS NOT NULL,
       'indicador_pct', CASE WHEN count(*) FILTER (WHERE madura) = 0 THEN NULL
+        -- Sin el WhatsApp de MotoFlow conectado al CRM no se sabe quién
+        -- escribió: mientras tanto cuenta solo la primera venta en 7 días.
+        WHEN v_crm IS NULL THEN round(100.0 * count(*) FILTER (WHERE madura AND venta_7d) / count(*) FILTER (WHERE madura), 1)
         ELSE round(100.0 * count(*) FILTER (WHERE madura AND venta_7d AND whatsapp_7d IS FALSE)
                    / count(*) FILTER (WHERE madura), 1) END)
     INTO v_emp, v_res
