@@ -2,7 +2,7 @@
   "huellas": {
     "mobile/app/(tabs)/existencia.tsx": "03d0199fde9d48b7",
     "mobile/app/(tabs)/orden-compra.tsx": "afb0fe45e511582d",
-    "mobile/app/(tabs)/pos.tsx": "e60e92bb59486f78",
+    "mobile/app/(tabs)/pos.tsx": "3ee69c09773bbd8c",
     "mobile/app/(tabs)/recibo-ingreso.tsx": "5a2d47c165dc6679",
     "mobile/app/(tabs)/recibo-pago-financiera.tsx": "6d2c015654ac5900",
     "mobile/app/existencia/index.tsx": "e00bf91a67289cd8",
@@ -355,7 +355,7 @@
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
     "src/pages/ComprasPage.jsx": "25acba04e17f748d",
-    "src/pages/Configuracion/CierreCajaPage.jsx": "2b50de559e520821",
+    "src/pages/Configuracion/CierreCajaPage.jsx": "b1771929f5d7b3aa",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
     "src/pages/CuentasPorPagarPage.jsx": "efe77dc770754dee",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "980f903f566bfef2",
     "src/pages/ReportesDGIIPage.jsx": "1a7755683bc8601b",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "915c47b4048e09b5",
+    "src/pages/VentasPage.jsx": "bc256d138b0ab681",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -449,16 +449,12 @@
     "sql/edu_cuenta_inicial_ajustes.sql": "02e57d2fc9b5cd52",
     "sql/edu_cuenta_inicial_pagado_antes.sql": "1ea5cbb78c51f1a0",
     "sql/edu_caja_solo_cobra.sql": "b31c31e4917e454b",
-    "sql/edu_caja_solo_cobra_ajustes.sql": "b79f4962ece6491a"
+    "sql/edu_caja_solo_cobra_ajustes.sql": "b79f4962ece6491a",
+    "mobile/src/components/AbrirCajaModal.tsx": "87f3ac5e5ac61f87",
+    "sql/apertura_caja.sql": "d1e9b290bca14c98",
+    "src/components/caja/AbrirCajaModal.jsx": "14134503bcfd511c"
   },
   "historial": [
-    {
-      "fecha": "2026-11-05",
-      "nota": "code-review high x2 sobre el refresco del modo fiscal: 1a version (consulta por venta en VentasPage) descartada por la revision (NCF de papel con modo viejo, espera extra); 2a: refrescarFiscal en el contexto (60 s visible, al volver, tras guardar + BroadcastChannel), guardia de respuestas viejas, no apaga si la empresa activa cambio, desactivar con select. Queda: otra PC tarda hasta 60 s en enterarse",
-      "archivos": [
-        "src/components/configuracion/IntegracionFiscalSettings.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-05",
       "nota": "code-review high: 9 hallazgos en vista previa e-NCF; corregidos tipo E31/E32 igual al builder, siguiente=ultimo+1 con aviso fuera de rango, error visible, no recalcula editando, recarga al cambiar empresa. Sin corregir: bloquear guardar con secuencia agotada, helper compartido, estado cargando",
@@ -977,6 +973,18 @@
         "src/pages/ComprasPage.jsx",
         "src/pages/VentasPage.jsx",
         "supabase/functions/emitir-fiscal/index.ts"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high: 10 hallazgos (turno de otro día pisaba cierres, carrera del resumen, movimientos entre cierre y apertura, config sin cargar el modo, guardia de ventas sin estado, apertura doble, efectivo_en_caja sin fondo, varias vs apertura, parseo del fondo, dirección en primeros pasos) — corregidos y probados en ensayo",
+      "archivos": [
+        "mobile/app/(tabs)/pos.tsx",
+        "mobile/src/components/AbrirCajaModal.tsx",
+        "sql/apertura_caja.sql",
+        "src/components/caja/AbrirCajaModal.jsx",
+        "src/pages/Configuracion/CierreCajaPage.jsx",
+        "src/pages/VentasPage.jsx"
       ]
     }
   ]
