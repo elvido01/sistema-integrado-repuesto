@@ -248,6 +248,15 @@ const navItems = [
     ],
   },
   {
+    // (19/11/2026) Aprende MotoFlow: guías y preguntas frecuentes. libre = lo ve
+    // todo usuario en todo plan (la capacitación básica no es de pago).
+    title: 'Aprende MotoFlow',
+    icon: GraduationCap,
+    subItems: [
+      { title: 'Guías y ayuda', id: 'aprende', icon: GraduationCap, libre: true },
+    ],
+  },
+  {
     title: 'Configuración',
     icon: Settings,
     subItems: [
@@ -513,6 +522,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             // módulos por tipo de negocio (ej. Documentos); moduloOr = módulo que
             // también lo enciende aunque la empresa no sea de ese tipo
             // (27/10/2026) Lo que no aplica a un tipo de empresa (servicios no tiene inventario).
+            if (sub.libre) return true;
             if (empresa?.tipo_negocio === 'educativo' && !sub.id.startsWith('colegio-') && !PERMITIDOS_EDUCATIVO.has(sub.id)) return false;
             if (sub.ocultarEnTipos?.includes(empresa?.tipo_negocio)) return false;
             if (sub.soloTipos && !sub.soloTipos.includes(empresa?.tipo_negocio)) return false;

@@ -5,7 +5,7 @@ const free = (id) => accesoFuncion(id, { planActual: 'FREE' });
 
 describe('Plan FREE en el menú', () => {
   it('ve lo básico: ventas, catálogo, compras, inventario, caja', () => {
-    for (const id of ['ventas', 'mercancias', 'clientes', 'suplidores', 'vendedores', 'compras', 'cierre-caja']) {
+    for (const id of ['ventas', 'mercancias', 'clientes', 'suplidores', 'vendedores', 'compras', 'cierre-caja', 'aprende']) {
       expect(free(id).estado).toBe('libre');
     }
   });

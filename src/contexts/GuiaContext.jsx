@@ -161,7 +161,25 @@ export function GuiaProvider({ children }) {
     if (activa && activePanel !== activa.guia.modulo) setActiva(null);
   }, [activePanel, activa]);
 
-  const valor = useMemo(() => ({ disponibles, progreso, iniciar, activa }), [disponibles, progreso, iniciar, activa]);
+  // Abrir una guía desde otra pantalla (Aprende MotoFlow): primero se va al
+  // módulo y la guía arranca cuando ese módulo ya está a la vista.
+  const { openPanel } = usePanels();
+  const [pendiente, setPendiente] = useState(null);   // { guia, desdePaso }
+  const abrirGuia = useCallback((id, { continuar = false } = {}) => {
+    const guia = typeof id === 'string' ? guiaPorId(id) : id;
+    if (!guia) return;
+    const desdePaso = continuar ? (progreso?.[guia.id]?.paso || 0) : 0;
+    setOferta(null);
+    setPendiente({ guia, desdePaso });
+    openPanel(guia.modulo);
+  }, [openPanel, progreso]);
+  useEffect(() => {
+    if (!pendiente || activePanel !== pendiente.guia.modulo) return undefined;
+    const t = setTimeout(() => { iniciar(pendiente.guia, { desdePaso: pendiente.desdePaso }); setPendiente(null); }, 700);
+    return () => clearTimeout(t);
+  }, [pendiente, activePanel, iniciar]);
+
+  const valor = useMemo(() => ({ disponibles, progreso, iniciar, abrirGuia, activa }), [disponibles, progreso, iniciar, abrirGuia, activa]);
   const guiaDelModulo = disponibles.find((g) => g.modulo === activePanel);
   const izquierda = useBordePanel(activePanel, !activa && (!!oferta || !!guiaDelModulo));
 

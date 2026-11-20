@@ -106,7 +106,7 @@ export const PERMITIDOS_FREE = new Set([
   'ventas', 'clientes', 'vendedores', 'suplidores', 'mercancias', 'tipos-producto',
   'marcas', 'modelos', 'ubicaciones', 'compras', 'almacenes', 'entrada-mercancia',
   'salida-mercancia', 'etiquetas-masivas', 'cierre-caja', 'perfil-empresa',
-  'usuarios', 'config_sistema',
+  'usuarios', 'config_sistema', 'aprende',
 ]);
 
 /** Lo que FREE ve con ★ BÁSICO (la ventanita de mejorar plan). */

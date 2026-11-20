@@ -88,6 +88,7 @@ const AICeoPage = lazy(() => import('@/pages/AICeoPage'));
 const GestionEmpresarialPage = lazy(() => import('@/pages/GestionEmpresarialPage'));
 const EquipoIAPage = lazy(() => import('@/pages/EquipoIAPage'));
 const PlanesPage = lazy(() => import('@/pages/PlanesPage'));
+const AprendeMotoFlowPage = lazy(() => import('@/pages/AprendeMotoFlowPage'));
 const WhatsAppCrmPage = lazy(() => import('@/pages/WhatsAppCrmPage'));
 const GpsDashboardPage = lazy(() => import('@/pages/gps/GpsDashboardPage'));
 const GpsDevicesPage = lazy(() => import('@/pages/gps/GpsDevicesPage'));
@@ -221,6 +222,8 @@ const componentMapping = {
   'gps-financiamiento': { component: () => <Protected module="gps-financiamiento"><GpsFinancingPage /></Protected>, icon: DollarSign, name: 'GPS Financiamiento' },
   'gps-dispositivo-detalle': { component: ({ extraData }) => <Protected module="gps-dispositivos"><GpsDeviceDetailPage extraData={extraData} /></Protected>, icon: RadioTower, name: 'GPS Detalle' },
   'planes': { component: PlanesPage, icon: CreditCard, name: 'Planes y Precios' },
+  // (19/11/2026) Centro de aprendizaje: sin Protected, es para todos los usuarios y planes.
+  'aprende': { component: AprendeMotoFlowPage, icon: BookOpen, name: 'Aprende MotoFlow' },
   'prestamos': { component: ({ extraData }) => <Protected module="prestamos"><FinancieraPrestamosPage extraData={extraData} /></Protected>, icon: DollarSign, name: 'Préstamos' },
   'gestion-cobro': { component: () => <Protected module="gestion-cobro"><GestionCobroPage /></Protected>, icon: MessageCircle, name: 'Gestion de Cobro' },
   'cuentas-incobrables': { component: () => <Protected module="cuentas-incobrables"><CuentasIncobrablesPage /></Protected>, icon: ShieldAlert, name: 'Cuentas Incobrables' },

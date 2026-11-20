@@ -33,7 +33,9 @@ const claveOculto = (tenantId, userId) => `motoflow_primeros_pasos_oculto:${tena
 const leerOculto = (k) => { try { return localStorage.getItem(k) === '1'; } catch { return false; } };
 const guardarOculto = (k) => { try { localStorage.setItem(k, '1'); } catch { /* sin almacenamiento */ } };
 
-export default function PrimerosPasos({ className = '' }) {
+// panel: el panel donde está la tarjeta (se vuelve a leer al volver a él).
+// sinOcultar: en Aprende MotoFlow sale aunque se haya ocultado en Inicio.
+export default function PrimerosPasos({ className = '', panel = 'inicio', sinOcultar = false }) {
   const { user, profile, permissions, tenantId, isSuperAdmin } = useAuth();
   const { activePanel, openPanel } = usePanels();
   const { planActual, especialVigente } = useSuscripcion();
@@ -50,9 +52,9 @@ export default function PrimerosPasos({ className = '' }) {
 
   // Al volver a Inicio se vuelve a mirar: quien acaba de crear su primer
   // artículo lo ve marcado sin recargar.
-  useEffect(() => { if (activePanel === 'inicio') cargar(); }, [activePanel, cargar]);
+  useEffect(() => { if (activePanel === panel) cargar(); }, [activePanel, cargar, panel]);
 
-  if (oculto || !datos?.aplica || datos.completo || !datos.pasos?.length) return null;
+  if ((oculto && !sinOcultar) || !datos?.aplica || datos.completo || !datos.pasos?.length) return null;
 
   const pasos = datos.pasos;
   const pct = Math.round((datos.hechos / datos.total) * 100);
@@ -72,8 +74,8 @@ export default function PrimerosPasos({ className = '' }) {
             <div className="h-full bg-blue-600 transition-all" style={{ width: `${pct}%` }} />
           </div>
         </div>
-        <button type="button" title="Ocultar" onClick={() => { guardarOculto(clave); setOculto(true); }}
-          className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X className="h-4 w-4" /></button>
+        {!sinOcultar && <button type="button" title="Ocultar" onClick={() => { guardarOculto(clave); setOculto(true); }}
+          className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X className="h-4 w-4" /></button>}
       </div>
 
       <ul className="mt-3 divide-y divide-gray-100">
